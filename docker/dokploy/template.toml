@@ -1,0 +1,41 @@
+[variables]
+main_domain = "${domain}"
+openrouter_api_key = "${password:40}"
+
+[config]
+env = [
+  "TZ=UTC",
+  "PICOCLAW_GATEWAY_HOST=0.0.0.0",
+]
+mounts = []
+
+[[config.domains]]
+serviceName = "picoclaw"
+port = 18_790
+host = "${main_domain}"
+
+[[config.mounts]]
+filePath = "/root/.picoclaw/config.json"
+content = """
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.picoclaw/workspace",
+      "restrict_to_workspace": true,
+      "model_name": "openrouter-default"
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "openrouter-default",
+      "model": "openrouter/openai/gpt-4o-mini",
+      "api_key": "${openrouter_api_key}",
+      "api_base": "https://openrouter.ai/api/v1"
+    }
+  ],
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
+  }
+}
+"""

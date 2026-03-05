@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  picoclaw:
+    image: docker.io/sipeed/picoclaw:latest
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+      PICOCLAW_GATEWAY_HOST: ${PICOCLAW_GATEWAY_HOST}
+    volumes:
+      - picoclaw-workspace:/root/.picoclaw/workspace
+
+volumes:
+  picoclaw-workspace: {}
