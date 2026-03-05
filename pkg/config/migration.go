@@ -89,6 +89,23 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 			},
 		},
 		{
+			providerNames: []string{"litellm"},
+			protocol:      "litellm",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.LiteLLM.APIKey == "" && p.LiteLLM.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:      "litellm",
+					Model:          "litellm/auto",
+					APIKey:         p.LiteLLM.APIKey,
+					APIBase:        p.LiteLLM.APIBase,
+					Proxy:          p.LiteLLM.Proxy,
+					RequestTimeout: p.LiteLLM.RequestTimeout,
+				}, true
+			},
+		},
+		{
 			providerNames: []string{"openrouter"},
 			protocol:      "openrouter",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
@@ -353,6 +370,23 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					APIBase:        p.Mistral.APIBase,
 					Proxy:          p.Mistral.Proxy,
 					RequestTimeout: p.Mistral.RequestTimeout,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"avian"},
+			protocol:      "avian",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Avian.APIKey == "" && p.Avian.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:      "avian",
+					Model:          "avian/deepseek/deepseek-v3.2",
+					APIKey:         p.Avian.APIKey,
+					APIBase:        p.Avian.APIBase,
+					Proxy:          p.Avian.Proxy,
+					RequestTimeout: p.Avian.RequestTimeout,
 				}, true
 			},
 		},

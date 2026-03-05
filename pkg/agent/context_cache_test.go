@@ -383,6 +383,162 @@ Updated content.`
 	}
 }
 
+// TestGlobalSkillFileContentChange verifies that modifying a global skill
+// (~/.picoclaw/skills) invalidates the cached system prompt.
+func TestGlobalSkillFileContentChange(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	tmpDir := setupWorkspace(t, nil)
+	defer os.RemoveAll(tmpDir)
+
+	globalSkillPath := filepath.Join(tmpHome, ".picoclaw", "skills", "global-skill", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(globalSkillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	v1 := `---
+name: global-skill
+description: global-v1
+---
+# Global Skill v1`
+	if err := os.WriteFile(globalSkillPath, []byte(v1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cb := NewContextBuilder(tmpDir)
+	sp1 := cb.BuildSystemPromptWithCache()
+	if !strings.Contains(sp1, "global-v1") {
+		t.Fatal("expected initial prompt to contain global skill description")
+	}
+
+	v2 := `---
+name: global-skill
+description: global-v2
+---
+# Global Skill v2`
+	if err := os.WriteFile(globalSkillPath, []byte(v2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(globalSkillPath, future, future); err != nil {
+		t.Fatalf("failed to update mtime for %s: %v", globalSkillPath, err)
+	}
+
+	cb.systemPromptMutex.RLock()
+	changed := cb.sourceFilesChangedLocked()
+	cb.systemPromptMutex.RUnlock()
+	if !changed {
+		t.Fatal("sourceFilesChangedLocked() should detect global skill file content change")
+	}
+
+	sp2 := cb.BuildSystemPromptWithCache()
+	if !strings.Contains(sp2, "global-v2") {
+		t.Error("rebuilt prompt should contain updated global skill description")
+	}
+	if sp1 == sp2 {
+		t.Error("cache should be invalidated when global skill file content changes")
+	}
+}
+
+// TestBuiltinSkillFileContentChange verifies that modifying a builtin skill
+// invalidates the cached system prompt.
+func TestBuiltinSkillFileContentChange(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	tmpDir := setupWorkspace(t, nil)
+	defer os.RemoveAll(tmpDir)
+
+	builtinRoot := t.TempDir()
+	t.Setenv("PICOCLAW_BUILTIN_SKILLS", builtinRoot)
+
+	builtinSkillPath := filepath.Join(builtinRoot, "builtin-skill", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(builtinSkillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	v1 := `---
+name: builtin-skill
+description: builtin-v1
+---
+# Builtin Skill v1`
+	if err := os.WriteFile(builtinSkillPath, []byte(v1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cb := NewContextBuilder(tmpDir)
+	sp1 := cb.BuildSystemPromptWithCache()
+	if !strings.Contains(sp1, "builtin-v1") {
+		t.Fatal("expected initial prompt to contain builtin skill description")
+	}
+
+	v2 := `---
+name: builtin-skill
+description: builtin-v2
+---
+# Builtin Skill v2`
+	if err := os.WriteFile(builtinSkillPath, []byte(v2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(builtinSkillPath, future, future); err != nil {
+		t.Fatalf("failed to update mtime for %s: %v", builtinSkillPath, err)
+	}
+
+	cb.systemPromptMutex.RLock()
+	changed := cb.sourceFilesChangedLocked()
+	cb.systemPromptMutex.RUnlock()
+	if !changed {
+		t.Fatal("sourceFilesChangedLocked() should detect builtin skill file content change")
+	}
+
+	sp2 := cb.BuildSystemPromptWithCache()
+	if !strings.Contains(sp2, "builtin-v2") {
+		t.Error("rebuilt prompt should contain updated builtin skill description")
+	}
+	if sp1 == sp2 {
+		t.Error("cache should be invalidated when builtin skill file content changes")
+	}
+}
+
+// TestSkillFileDeletionInvalidatesCache verifies that deleting a nested skill
+// file invalidates the cached system prompt.
+func TestSkillFileDeletionInvalidatesCache(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"skills/delete-me/SKILL.md": `---
+name: delete-me
+description: delete-me-v1
+---
+# Delete Me`,
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	sp1 := cb.BuildSystemPromptWithCache()
+	if !strings.Contains(sp1, "delete-me-v1") {
+		t.Fatal("expected initial prompt to contain skill description")
+	}
+
+	skillPath := filepath.Join(tmpDir, "skills", "delete-me", "SKILL.md")
+	if err := os.Remove(skillPath); err != nil {
+		t.Fatal(err)
+	}
+
+	cb.systemPromptMutex.RLock()
+	changed := cb.sourceFilesChangedLocked()
+	cb.systemPromptMutex.RUnlock()
+	if !changed {
+		t.Fatal("sourceFilesChangedLocked() should detect deleted skill file")
+	}
+
+	sp2 := cb.BuildSystemPromptWithCache()
+	if strings.Contains(sp2, "delete-me-v1") {
+		t.Error("rebuilt prompt should not contain deleted skill description")
+	}
+	if sp1 == sp2 {
+		t.Error("cache should be invalidated when skill file is deleted")
+	}
+}
+
 // TestConcurrentBuildSystemPromptWithCache verifies that multiple goroutines
 // can safely call BuildSystemPromptWithCache concurrently without producing
 // empty results, panics, or data races.

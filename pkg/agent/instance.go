@@ -18,22 +18,25 @@ import (
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
-	ID             string
-	Name           string
-	Model          string
-	Fallbacks      []string
-	Workspace      string
-	MaxIterations  int
-	MaxTokens      int
-	Temperature    float64
-	ContextWindow  int
-	Provider       providers.LLMProvider
-	Sessions       *session.SessionManager
-	ContextBuilder *ContextBuilder
-	Tools          *tools.ToolRegistry
-	Subagents      *config.SubagentsConfig
-	SkillsFilter   []string
-	Candidates     []providers.FallbackCandidate
+	ID                        string
+	Name                      string
+	Model                     string
+	Fallbacks                 []string
+	Workspace                 string
+	MaxIterations             int
+	MaxTokens                 int
+	Temperature               float64
+	ThinkingLevel             ThinkingLevel
+	ContextWindow             int
+	SummarizeMessageThreshold int
+	SummarizeTokenPercent     int
+	Provider                  providers.LLMProvider
+	Sessions                  *session.SessionManager
+	ContextBuilder            *ContextBuilder
+	Tools                     *tools.ToolRegistry
+	Subagents                 *config.SubagentsConfig
+	SkillsFilter              []string
+	Candidates                []providers.FallbackCandidate
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -57,17 +60,30 @@ func NewAgentInstance(
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
 
 	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
-	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
-	toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
-	execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
-	if err != nil {
-		log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
-	}
-	toolsRegistry.Register(execTool)
 
-	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
-	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	if cfg.Tools.IsToolEnabled("read_file") {
+		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("write_file") {
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("list_dir") {
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("exec") {
+		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+		if err != nil {
+			log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
+		}
+		toolsRegistry.Register(execTool)
+	}
+
+	if cfg.Tools.IsToolEnabled("edit_file") {
+		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("append_file") {
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
@@ -99,6 +115,22 @@ func NewAgentInstance(
 	temperature := 0.7
 	if defaults.Temperature != nil {
 		temperature = *defaults.Temperature
+	}
+
+	var thinkingLevelStr string
+	if mc, err := cfg.GetModelConfig(model); err == nil {
+		thinkingLevelStr = mc.ThinkingLevel
+	}
+	thinkingLevel := parseThinkingLevel(thinkingLevelStr)
+
+	summarizeMessageThreshold := defaults.SummarizeMessageThreshold
+	if summarizeMessageThreshold == 0 {
+		summarizeMessageThreshold = 20
+	}
+
+	summarizeTokenPercent := defaults.SummarizeTokenPercent
+	if summarizeTokenPercent == 0 {
+		summarizeTokenPercent = 75
 	}
 
 	// Resolve fallback candidates
@@ -149,22 +181,25 @@ func NewAgentInstance(
 	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
 	return &AgentInstance{
-		ID:             agentID,
-		Name:           agentName,
-		Model:          model,
-		Fallbacks:      fallbacks,
-		Workspace:      workspace,
-		MaxIterations:  maxIter,
-		MaxTokens:      maxTokens,
-		Temperature:    temperature,
-		ContextWindow:  maxTokens,
-		Provider:       provider,
-		Sessions:       sessionsManager,
-		ContextBuilder: contextBuilder,
-		Tools:          toolsRegistry,
-		Subagents:      subagents,
-		SkillsFilter:   skillsFilter,
-		Candidates:     candidates,
+		ID:                        agentID,
+		Name:                      agentName,
+		Model:                     model,
+		Fallbacks:                 fallbacks,
+		Workspace:                 workspace,
+		MaxIterations:             maxIter,
+		MaxTokens:                 maxTokens,
+		Temperature:               temperature,
+		ThinkingLevel:             thinkingLevel,
+		ContextWindow:             maxTokens,
+		SummarizeMessageThreshold: summarizeMessageThreshold,
+		SummarizeTokenPercent:     summarizeTokenPercent,
+		Provider:                  provider,
+		Sessions:                  sessionsManager,
+		ContextBuilder:            contextBuilder,
+		Tools:                     toolsRegistry,
+		Subagents:                 subagents,
+		SkillsFilter:              skillsFilter,
+		Candidates:                candidates,
 	}
 }
 
