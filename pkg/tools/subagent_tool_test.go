@@ -50,9 +50,8 @@ func TestSubagentManager_SetLLMOptions_AppliesToRunToolLoop(t *testing.T) {
 	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", nil)
 	manager.SetLLMOptions(2048, 0.6)
 	tool := NewSubagentTool(manager)
-	tool.SetContext("cli", "direct")
 
-	ctx := context.Background()
+	ctx := WithToolContext(context.Background(), "cli", "direct")
 	args := map[string]any{"task": "Do something"}
 	result := tool.Execute(ctx, args)
 
@@ -166,9 +165,8 @@ func TestSubagentTool_Execute_Success(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", msgBus)
 	tool := NewSubagentTool(manager)
-	tool.SetContext("telegram", "chat-123")
 
-	ctx := context.Background()
+	ctx := WithToolContext(context.Background(), "telegram", "chat-123")
 	args := map[string]any{
 		"task":  "Write a haiku about coding",
 		"label": "haiku-task",
@@ -297,12 +295,9 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", msgBus)
 	tool := NewSubagentTool(manager)
 
-	// Set context
 	channel := "test-channel"
 	chatID := "test-chat"
-	tool.SetContext(channel, chatID)
-
-	ctx := context.Background()
+	ctx := WithToolContext(context.Background(), channel, chatID)
 	args := map[string]any{
 		"task": "Test context passing",
 	}
