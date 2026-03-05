@@ -820,7 +820,6 @@ func (c *Config) findMatches(modelName string) []ModelConfig {
 
 // HasProvidersConfig checks if any provider in the old providers config has configuration.
 func (c *Config) HasProvidersConfig() bool {
-<<<<<<< HEAD
 	v := c.Providers
 	return v.Anthropic.APIKey != "" || v.Anthropic.APIBase != "" ||
 		v.OpenAI.APIKey != "" || v.OpenAI.APIBase != "" ||
@@ -841,9 +840,7 @@ func (c *Config) HasProvidersConfig() bool {
 		v.Antigravity.APIKey != "" || v.Antigravity.APIBase != "" ||
 		v.Qwen.APIKey != "" || v.Qwen.APIBase != "" ||
 		v.Mistral.APIKey != "" || v.Mistral.APIBase != ""
-=======
 	return !c.Providers.IsEmpty()
->>>>>>> origin_picoclaw/main
 }
 
 // ValidateModelList validates all ModelConfig entries in the model_list.
