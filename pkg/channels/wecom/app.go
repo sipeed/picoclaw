@@ -376,7 +376,7 @@ func (c *WeComAppChannel) sendWeComMessage(ctx context.Context, accessToken stri
 	if resp.StatusCode != http.StatusOK {
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("reading wecom_app error response: %w", err)
+			return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("reading wecom_app error response: %w", err))
 		}
 		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("wecom_app API error: %s", string(respBody)))
 	}
