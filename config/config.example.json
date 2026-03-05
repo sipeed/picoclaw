@@ -331,6 +331,14 @@
           "download_path": "/api/v1/download"
         }
       }
+    },
+    "affine": {
+      "enabled": false,
+      "api_url": "https://app.affine.pro/graphql",
+      "mcp_endpoint": "https://app.affine.pro/api/workspaces/YOUR_WORKSPACE_ID/mcp",
+      "api_key": "YOUR_AFFINE_API_KEY",
+      "workspace_id": "YOUR_DEFAULT_WORKSPACE_ID",
+      "timeout_seconds": 30
     }
   },
   "heartbeat": {
