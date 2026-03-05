@@ -48,7 +48,6 @@ type AgentLoop struct {
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
 	cmdRegistry    *commands.Registry
-	modelMu        sync.Mutex // protects AgentInstance.Model writes in SwitchModel
 }
 
 // processOptions configures how a message is processed
@@ -538,7 +537,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Global commands (/help, /show, /switch) work even when routing fails;
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
-	if response, handled := al.handleCommand(ctx, msg); handled {
+	if response, handled := al.handleCommand(ctx, msg, agent); handled {
 		return response, nil
 	}
 
@@ -1466,6 +1465,7 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 func (al *AgentLoop) handleCommand(
 	ctx context.Context,
 	msg bus.InboundMessage,
+	agent *AgentInstance,
 ) (string, bool) {
 	if !commands.HasCommandPrefix(msg.Content) {
 		return "", false
@@ -1475,7 +1475,7 @@ func (al *AgentLoop) handleCommand(
 		return "", false
 	}
 
-	rt := al.buildCommandsRuntime()
+	rt := al.buildCommandsRuntime(agent)
 	executor := commands.NewExecutor(al.cmdRegistry, rt)
 
 	var commandReply string
@@ -1504,16 +1504,9 @@ func (al *AgentLoop) handleCommand(
 	}
 }
 
-func (al *AgentLoop) buildCommandsRuntime() *commands.Runtime {
-	return &commands.Runtime{
-		Config: al.cfg,
-		GetModelInfo: func() (string, string) {
-			agent := al.registry.GetDefaultAgent()
-			if agent == nil {
-				return al.cfg.Agents.Defaults.GetModelName(), al.cfg.Agents.Defaults.Provider
-			}
-			return agent.Model, al.cfg.Agents.Defaults.Provider
-		},
+func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtime {
+	rt := &commands.Runtime{
+		Config:          al.cfg,
 		ListAgentIDs:    al.registry.ListAgentIDs,
 		ListDefinitions: al.cmdRegistry.Definitions,
 		GetEnabledChannels: func() []string {
@@ -1521,20 +1514,6 @@ func (al *AgentLoop) buildCommandsRuntime() *commands.Runtime {
 				return nil
 			}
 			return al.channelManager.GetEnabledChannels()
-		},
-		SwitchModel: func(value string) (string, error) {
-			al.modelMu.Lock()
-			defer al.modelMu.Unlock()
-			defaultAgent := al.registry.GetDefaultAgent()
-			if defaultAgent == nil {
-				return "", fmt.Errorf("no default agent configured")
-			}
-			oldModel := defaultAgent.Model
-			defaultAgent.Model = value
-			if al.cfg != nil {
-				al.cfg.Agents.Defaults.ModelName = value
-			}
-			return oldModel, nil
 		},
 		SwitchChannel: func(value string) error {
 			if al.channelManager == nil {
@@ -1546,6 +1525,20 @@ func (al *AgentLoop) buildCommandsRuntime() *commands.Runtime {
 			return nil
 		},
 	}
+	if agent != nil {
+		rt.GetModelInfo = func() (string, string) {
+			return agent.Model, al.cfg.Agents.Defaults.Provider
+		}
+		rt.SwitchModel = func(value string) (string, error) {
+			oldModel := agent.Model
+			agent.Model = value
+			if al.cfg != nil {
+				al.cfg.Agents.Defaults.ModelName = value
+			}
+			return oldModel, nil
+		}
+	}
+	return rt
 }
 
 func mapCommandError(result commands.ExecuteResult) string {
