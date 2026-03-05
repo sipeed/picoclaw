@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -184,84 +183,28 @@ func (p *Provider) Chat(
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	contentType := resp.Header.Get("Content-Type")
+
+	// check if there is an HTTP error (caused by proxy or gateway) or if the response is HTML
+	if resp.StatusCode != http.StatusOK || strings.Contains(strings.ToLower(contentType), "text/html") {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return nil, wrapHTTPResponseError(resp.StatusCode, body, contentType, p.apiBase)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, wrapHTTPResponseError(resp.StatusCode, body, resp.Header.Get("Content-Type"), p.apiBase)
-	}
-
-	out, err := parseResponse(body)
+	// directly pass the stream (resp.Body) to the JSON parser without loading everything into memory
+	out, err := parseResponse(resp.Body)
 	if err != nil {
-		return nil, wrapResponseParseError(err, body, resp.Header.Get("Content-Type"), p.apiBase)
+		// Note: if it fails here, we do not have the full body in memory for HTML inspection,
+		// but having already checked the Content-Type above, the error is genuinely related to JSON parsing.
+		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
 	return out, nil
 }
 
-func wrapResponseParseError(err error, body []byte, contentType, apiBase string) error {
-	if message, ok := htmlResponseMessage(body, contentType, apiBase); ok {
-		return errors.New(message)
-	}
-	return err
-}
-
 func wrapHTTPResponseError(statusCode int, body []byte, contentType, apiBase string) error {
-	if message, ok := htmlResponseMessage(body, contentType, apiBase); ok {
-		return fmt.Errorf("API request failed:\n  Status: %d\n  Detail: %s", statusCode, message)
-	}
-	return fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", statusCode, string(body))
-}
-
-func htmlResponseMessage(body []byte, contentType, apiBase string) (string, bool) {
-	trimmedContentType := strings.TrimSpace(contentType)
-	if !looksLikeHTML(body, trimmedContentType) {
-		return "", false
-	}
-
-	contentTypeHint := ""
-	if trimmedContentType != "" {
-		contentTypeHint = fmt.Sprintf(" (content-type: %s)", trimmedContentType)
-	}
-
-	return fmt.Sprintf(
-		"expected JSON response from %s/chat/completions, but received HTML%s; check api_base or proxy configuration. Response preview: %s",
-		apiBase,
-		contentTypeHint,
-		responsePreview(body, 160),
-	), true
-}
-
-func looksLikeHTML(body []byte, contentType string) bool {
-	contentType = strings.ToLower(strings.TrimSpace(contentType))
-	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "application/xhtml+xml") {
-		return true
-	}
-
-	trimmed := strings.ToLower(string(leadingTrimmedPrefix(body, 128)))
-	return strings.HasPrefix(trimmed, "<!doctype html") ||
-		strings.HasPrefix(trimmed, "<html") ||
-		strings.HasPrefix(trimmed, "<head") ||
-		strings.HasPrefix(trimmed, "<body")
-}
-
-func leadingTrimmedPrefix(body []byte, maxLen int) []byte {
-	i := 0
-	for i < len(body) {
-		switch body[i] {
-		case ' ', '\t', '\n', '\r', '\f', '\v':
-			i++
-		default:
-			end := i + maxLen
-			if end > len(body) {
-				end = len(body)
-			}
-			return body[i:end]
-		}
-	}
-	return nil
+	respPreview := responsePreview(body, 128)
+	return fmt.Errorf("API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  Body:   %s", apiBase, contentType, statusCode, respPreview)
 }
 
 func responsePreview(body []byte, maxLen int) string {
@@ -275,7 +218,7 @@ func responsePreview(body []byte, maxLen int) string {
 	return string(trimmed[:maxLen]) + "..."
 }
 
-func parseResponse(body []byte) (*LLMResponse, error) {
+func parseResponse(body io.Reader) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
@@ -302,8 +245,8 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		Usage *UsageInfo `json:"usage"`
 	}
 
-	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	if err := json.NewDecoder(body).Decode(&apiResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if len(apiResponse.Choices) == 0 {

@@ -258,10 +258,48 @@ func TestProviderChat_HTMLErrorResponseReturnsHelpfulError(t *testing.T) {
 	}
 }
 
-func TestLooksLikeHTML_SniffsPrefixWithLargeBody(t *testing.T) {
-	body := append([]byte(" \r\n\t<!DOCTYPE html><html><body>x</body></html>"), bytes.Repeat([]byte("A"), 1024*1024)...)
-	if !looksLikeHTML(body, "") {
-		t.Fatal("expected looksLikeHTML to detect html prefix")
+func TestProviderChat_MislabeledHTMLSuccessResponseReturnsHelpfulError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("   \r\n\t<!DOCTYPE html><html><body>gateway login</body></html>"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "received HTML") {
+		t.Fatalf("expected helpful HTML error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "check api_base or proxy configuration") {
+		t.Fatalf("expected configuration hint, got %v", err)
+	}
+}
+
+func TestProviderChat_LargeHTMLResponsePreviewIsTruncated(t *testing.T) {
+	body := append([]byte("<!DOCTYPE html><html><body>"), bytes.Repeat([]byte("A"), 2048)...)
+	body = append(body, []byte("</body></html>")...)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "Response preview: <!DOCTYPE html><html><body>") {
+		t.Fatalf("expected html preview in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "...") {
+		t.Fatalf("expected truncated preview, got %v", err)
 	}
 }
 
