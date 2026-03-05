@@ -29,11 +29,11 @@ func NewPicoclawCommand() *cobra.Command {
 	short := fmt.Sprintf("%s picoclaw - Personal AI Assistant v%s\n\n", internal.Logo, internal.GetVersion())
 
 	cmd := &cobra.Command{
-		Use:               "picoclaw",
-		Short:             short,
-		Example:           "picoclaw list",
-		Args:              rootArgsValidator,
-		ValidArgsFunction: rootCompleteArgs,
+		Use:                "picoclaw",
+		Short:              short,
+		Example:            "picoclaw list",
+		Args:               rootArgsValidator,
+		ValidArgsFunction:  rootCompleteArgs,
 		DisableFlagParsing: true, // Pass all args (including flags) directly to plugins/commands
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// With DisableFlagParsing, --help is just an arg - show help

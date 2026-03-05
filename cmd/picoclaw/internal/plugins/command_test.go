@@ -75,7 +75,7 @@ func TestRunPluginNotFound(t *testing.T) {
 func TestListPluginsIntegration(t *testing.T) {
 	// This is an integration test that checks the actual plugins directory
 	pluginsDir := getPluginsDir()
-	
+
 	// Create a temporary test plugin
 	tmpDir := pluginsDir
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {

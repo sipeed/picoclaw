@@ -102,7 +102,7 @@ func listPlugins() ([]string, error) {
 		}
 
 		// Check if executable by anyone
-		if info.Mode()&0111 != 0 {
+		if info.Mode()&0o111 != 0 {
 			plugins = append(plugins, entry.Name())
 		}
 	}
@@ -120,7 +120,7 @@ func findPlugin(name string) (string, error) {
 
 	// Try exact match first
 	pluginPath := filepath.Join(pluginsDir, name)
-	if info, err := os.Stat(pluginPath); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
+	if info, err := os.Stat(pluginPath); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
 		return pluginPath, nil
 	}
 
@@ -128,7 +128,7 @@ func findPlugin(name string) (string, error) {
 	extensions := []string{".sh", ".bash", ".py", ".go", ""}
 	for _, ext := range extensions {
 		extPath := pluginPath + ext
-		if info, err := os.Stat(extPath); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
+		if info, err := os.Stat(extPath); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
 			return extPath, nil
 		}
 	}
@@ -145,7 +145,7 @@ func findPlugin(name string) (string, error) {
 			if err != nil {
 				continue
 			}
-			if info.Mode()&0111 == 0 {
+			if info.Mode()&0o111 == 0 {
 				continue
 			}
 			pluginName := entry.Name()
