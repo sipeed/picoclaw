@@ -479,3 +479,78 @@ func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
 		t.Errorf("Workspace path with PICOCLAW_HOME = %q, want %q", cfg.Agents.Defaults.Workspace, want)
 	}
 }
+
+func TestConfig_HooksConfig_Parse(t *testing.T) {
+	jsonData := `{
+		"hooks": {
+			"PostToolUse": [
+				{
+					"matcher": "exec",
+					"command": "~/.picoclaw/scripts/error-detector.sh",
+					"inject_output": true
+				}
+			],
+			"PreMessage": [
+				{
+					"matcher": "",
+					"command": "~/.picoclaw/scripts/activator.sh",
+					"inject_output": true
+				}
+			]
+		}
+	}`
+
+	cfg := DefaultConfig()
+	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(cfg.Hooks.PostToolUse) != 1 {
+		t.Fatalf("expected 1 PostToolUse hook, got %d", len(cfg.Hooks.PostToolUse))
+	}
+	hook := cfg.Hooks.PostToolUse[0]
+	if hook.Matcher != "exec" {
+		t.Errorf("expected matcher 'exec', got %q", hook.Matcher)
+	}
+	if hook.Command != "~/.picoclaw/scripts/error-detector.sh" {
+		t.Errorf("expected command path, got %q", hook.Command)
+	}
+	if !hook.InjectOutput {
+		t.Error("expected inject_output true")
+	}
+
+	if len(cfg.Hooks.PreMessage) != 1 {
+		t.Fatalf("expected 1 PreMessage hook, got %d", len(cfg.Hooks.PreMessage))
+	}
+	preHook := cfg.Hooks.PreMessage[0]
+	if preHook.Matcher != "" {
+		t.Errorf("expected empty matcher, got %q", preHook.Matcher)
+	}
+}
+
+func TestConfig_HooksConfig_EmptyByDefault(t *testing.T) {
+	cfg := DefaultConfig()
+	if len(cfg.Hooks.PreMessage) != 0 {
+		t.Error("expected no PreMessage hooks by default")
+	}
+	if len(cfg.Hooks.PostMessage) != 0 {
+		t.Error("expected no PostMessage hooks by default")
+	}
+	if len(cfg.Hooks.PreToolUse) != 0 {
+		t.Error("expected no PreToolUse hooks by default")
+	}
+	if len(cfg.Hooks.PostToolUse) != 0 {
+		t.Error("expected no PostToolUse hooks by default")
+	}
+}
+
+func TestConfig_HooksConfig_OmittedFromJSON(t *testing.T) {
+	cfg := DefaultConfig()
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(data), `"hooks"`) {
+		t.Error("expected hooks to be omitted from JSON when empty")
+	}
+}

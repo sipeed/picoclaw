@@ -7,12 +7,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/hooks"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 type ToolRegistry struct {
 	tools map[string]Tool
+	hooks *hooks.HookManager
 	mu    sync.RWMutex
 }
 
@@ -20,6 +22,13 @@ func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
 		tools: make(map[string]Tool),
 	}
+}
+
+// SetHookManager injects a HookManager for pre/post tool execution hooks.
+func (r *ToolRegistry) SetHookManager(hm *hooks.HookManager) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.hooks = hm
 }
 
 func (r *ToolRegistry) Register(tool Tool) {
@@ -74,6 +83,16 @@ func (r *ToolRegistry) ExecuteWithContext(
 	// Always inject — tools validate what they require.
 	ctx = WithToolContext(ctx, channel, chatID)
 
+	// Pre-tool hook
+	if r.hooks != nil && r.hooks.HasHooks(hooks.PreToolUse) {
+		r.hooks.Trigger(ctx, hooks.PreToolUse, hooks.HookPayload{
+			ToolName: name,
+			ToolArgs: args,
+			Channel:  channel,
+			ChatID:   chatID,
+		})
+	}
+
 	// If tool implements AsyncExecutor and callback is provided, use ExecuteAsync.
 	// The callback is a call parameter, not mutable state on the tool instance.
 	var result *ToolResult
@@ -88,6 +107,21 @@ func (r *ToolRegistry) ExecuteWithContext(
 		result = tool.Execute(ctx, args)
 	}
 	duration := time.Since(start)
+
+	// Post-tool hook
+	if r.hooks != nil && r.hooks.HasHooks(hooks.PostToolUse) {
+		injected := r.hooks.CollectInjectedOutput(ctx, hooks.PostToolUse, hooks.HookPayload{
+			ToolName:   name,
+			ToolArgs:   args,
+			ToolOutput: result.ForLLM,
+			ToolError:  result.IsError,
+			Channel:    channel,
+			ChatID:     chatID,
+		})
+		if injected != "" {
+			result.ForLLM = result.ForLLM + "\n\n[Hook Output]\n" + injected
+		}
+	}
 
 	// Log based on result type
 	if result.IsError {

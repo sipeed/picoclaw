@@ -58,6 +58,7 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
+	Hooks     HooksConfig     `json:"hooks,omitempty"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -67,6 +68,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	aux := &struct {
 		Providers *ProvidersConfig `json:"providers,omitempty"`
 		Session   *SessionConfig   `json:"session,omitempty"`
+		Hooks     *HooksConfig     `json:"hooks,omitempty"`
 		*Alias
 	}{
 		Alias: (*Alias)(&c),
@@ -80,6 +82,11 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	// Only include session if not empty
 	if c.Session.DMScope != "" || len(c.Session.IdentityLinks) > 0 {
 		aux.Session = &c.Session
+	}
+
+	// Only include hooks if configured
+	if !c.Hooks.IsEmpty() {
+		aux.Hooks = &c.Hooks
 	}
 
 	return json.Marshal(aux)
@@ -586,6 +593,29 @@ type MediaCleanupConfig struct {
 	Enabled  bool `json:"enabled"          env:"PICOCLAW_MEDIA_CLEANUP_ENABLED"`
 	MaxAge   int  `json:"max_age_minutes"  env:"PICOCLAW_MEDIA_CLEANUP_MAX_AGE"`
 	Interval int  `json:"interval_minutes" env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL"`
+}
+
+// HookRuleConfig defines a single user-configurable hook.
+type HookRuleConfig struct {
+	Matcher      string `json:"matcher"`       // Tool name filter; empty = match all
+	Command      string `json:"command"`       // Shell command to execute
+	InjectOutput bool   `json:"inject_output"` // Append stdout to result/context
+}
+
+// HooksConfig defines user-configurable hooks at key lifecycle points.
+// Each event maps to a list of hook rules that are executed sequentially.
+// Default is empty (no hooks). See pkg/hooks for event documentation.
+type HooksConfig struct {
+	PreMessage  []HookRuleConfig `json:"PreMessage,omitempty"`
+	PostMessage []HookRuleConfig `json:"PostMessage,omitempty"`
+	PreToolUse  []HookRuleConfig `json:"PreToolUse,omitempty"`
+	PostToolUse []HookRuleConfig `json:"PostToolUse,omitempty"`
+}
+
+// IsEmpty returns true when no hook rules are configured.
+func (h HooksConfig) IsEmpty() bool {
+	return len(h.PreMessage) == 0 && len(h.PostMessage) == 0 &&
+		len(h.PreToolUse) == 0 && len(h.PostToolUse) == 0
 }
 
 type ToolsConfig struct {

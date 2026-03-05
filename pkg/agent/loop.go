@@ -23,6 +23,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/hooks"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/media"
@@ -46,6 +47,7 @@ type AgentLoop struct {
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
+	hookManager    *hooks.HookManager
 }
 
 // processOptions configures how a message is processed
@@ -77,6 +79,27 @@ func NewAgentLoop(
 	cooldown := providers.NewCooldownTracker()
 	fallbackChain := providers.NewFallbackChain(cooldown)
 
+	// Initialize hook manager from config
+	var hookManager *hooks.HookManager
+	hookRules := convertHooksConfig(cfg.Hooks)
+	if len(hookRules) > 0 {
+		hookManager = hooks.NewHookManager(hookRules)
+		logger.InfoCF("agent", "Hook manager initialized",
+			map[string]any{
+				"pre_message":  len(hookRules[hooks.PreMessage]),
+				"post_message": len(hookRules[hooks.PostMessage]),
+				"pre_tool":     len(hookRules[hooks.PreToolUse]),
+				"post_tool":    len(hookRules[hooks.PostToolUse]),
+			})
+
+		// Inject hook manager into all agent tool registries
+		for _, agentID := range registry.ListAgentIDs() {
+			if agent, ok := registry.GetAgent(agentID); ok {
+				agent.Tools.SetHookManager(hookManager)
+			}
+		}
+	}
+
 	// Create state manager using default agent's workspace for channel recording
 	defaultAgent := registry.GetDefaultAgent()
 	var stateManager *state.Manager
@@ -91,7 +114,30 @@ func NewAgentLoop(
 		state:       stateManager,
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
+		hookManager: hookManager,
 	}
+}
+
+// convertHooksConfig converts config.HooksConfig to the hooks package's rule map.
+func convertHooksConfig(cfg config.HooksConfig) map[hooks.Event][]hooks.HookRule {
+	rules := make(map[hooks.Event][]hooks.HookRule)
+
+	convert := func(event hooks.Event, cfgRules []config.HookRuleConfig) {
+		for _, r := range cfgRules {
+			rules[event] = append(rules[event], hooks.HookRule{
+				Matcher:      r.Matcher,
+				Command:      r.Command,
+				InjectOutput: r.InjectOutput,
+			})
+		}
+	}
+
+	convert(hooks.PreMessage, cfg.PreMessage)
+	convert(hooks.PostMessage, cfg.PostMessage)
+	convert(hooks.PreToolUse, cfg.PreToolUse)
+	convert(hooks.PostToolUse, cfg.PostToolUse)
+
+	return rules
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
@@ -659,7 +705,20 @@ func (al *AgentLoop) runAgentLoop(
 		}
 	}
 
-	// 1. Build messages (skip history for heartbeat)
+	// 1. PreMessage hook: inject context before building messages
+	userMessage := opts.UserMessage
+	if al.hookManager != nil && al.hookManager.HasHooks(hooks.PreMessage) {
+		injected := al.hookManager.CollectInjectedOutput(ctx, hooks.PreMessage, hooks.HookPayload{
+			Message: opts.UserMessage,
+			Channel: opts.Channel,
+			ChatID:  opts.ChatID,
+		})
+		if injected != "" {
+			userMessage = userMessage + "\n\n[Hook Context]\n" + injected
+		}
+	}
+
+	// 2. Build messages (skip history for heartbeat)
 	var history []providers.Message
 	var summary string
 	if !opts.NoHistory {
@@ -669,7 +728,7 @@ func (al *AgentLoop) runAgentLoop(
 	messages := agent.ContextBuilder.BuildMessages(
 		history,
 		summary,
-		opts.UserMessage,
+		userMessage,
 		opts.Media,
 		opts.Channel,
 		opts.ChatID,
@@ -679,10 +738,10 @@ func (al *AgentLoop) runAgentLoop(
 	maxMediaSize := al.cfg.Agents.Defaults.GetMaxMediaSize()
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 
-	// 2. Save user message to session
+	// 3. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
-	// 3. Run LLM iteration loop
+	// 4. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
 		return "", err
@@ -691,21 +750,30 @@ func (al *AgentLoop) runAgentLoop(
 	// If last tool had ForUser content and we already sent it, we might not need to send final response
 	// This is controlled by the tool's Silent flag and ForUser content
 
-	// 4. Handle empty response
+	// 5. Handle empty response
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
 	}
 
-	// 5. Save final assistant message to session
+	// 6. Save final assistant message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
 	agent.Sessions.Save(opts.SessionKey)
 
-	// 6. Optional: summarization
+	// 7. PostMessage hook: fire after response is saved
+	if al.hookManager != nil && al.hookManager.HasHooks(hooks.PostMessage) {
+		al.hookManager.Trigger(ctx, hooks.PostMessage, hooks.HookPayload{
+			Message: finalContent,
+			Channel: opts.Channel,
+			ChatID:  opts.ChatID,
+		})
+	}
+
+	// 8. Optional: summarization
 	if opts.EnableSummary {
 		al.maybeSummarize(agent, opts.SessionKey, opts.Channel, opts.ChatID)
 	}
 
-	// 7. Optional: send response via bus
+	// 9. Optional: send response via bus
 	if opts.SendResponse {
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
@@ -714,7 +782,7 @@ func (al *AgentLoop) runAgentLoop(
 		})
 	}
 
-	// 8. Log response
+	// 10. Log response
 	responsePreview := utils.Truncate(finalContent, 120)
 	logger.InfoCF("agent", fmt.Sprintf("Response: %s", responsePreview),
 		map[string]any{
