@@ -362,6 +362,11 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+				SearXNG: SearXNGConfig{
+					Enabled:    false,
+					BaseURL:    "",
+					MaxResults: 5,
+				},
 				GLMSearch: GLMSearchConfig{
 					Enabled:      false,
 					APIKey:       "",

@@ -256,6 +256,11 @@
         "api_key": "",
         "max_results": 5
       },
+      "searxng": {
+        "enabled": false,
+        "base_url": "http://localhost:8888",
+        "max_results": 5
+      },
       "glm_search": {
         "enabled": false,
         "api_key": "",
