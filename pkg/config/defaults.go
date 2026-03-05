@@ -362,6 +362,11 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+				Exa: ExaConfig{
+					Enabled:    false,
+					APIKey:     "",
+					MaxResults: 5,
+				},
 				GLMSearch: GLMSearchConfig{
 					Enabled:      false,
 					APIKey:       "",
