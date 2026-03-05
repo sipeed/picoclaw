@@ -114,9 +114,10 @@ func (si *SkillInstaller) InstallFromGit(ctx context.Context, gitURL string) err
 
 // DiscoveredSkill represents a skill found in a Git repository.
 type DiscoveredSkill struct {
-	Name        string // Directory name (skill identifier)
+	Name        string // Skill name from SKILL.md (or directory name as fallback)
+	DirName     string // Directory name (used for installation path)
 	Path        string // Full path in the cloned repository
-	Description string // First line of SKILL.md (if available)
+	Description string // Description from SKILL.md (if available)
 }
 
 // CloneAndDiscoverSkills clones a Git repository and discovers all skills in it.
@@ -176,13 +177,23 @@ func (si *SkillInstaller) discoverSkillsInDir(dir string) ([]DiscoveredSkill, er
 
 		if _, err := os.Stat(skillFile); err == nil {
 			skill := DiscoveredSkill{
-				Name: entry.Name(),
-				Path: skillDir,
+				Name:    entry.Name(), // Default to directory name.
+				DirName: entry.Name(),
+				Path:    skillDir,
 			}
 
-			// Try to extract description from SKILL.md.
+			// Try to extract metadata from SKILL.md.
 			if content, err := os.ReadFile(skillFile); err == nil {
-				skill.Description = extractFirstLine(string(content))
+				contentStr := string(content)
+				metadata := extractSkillMetadata(contentStr)
+				if metadata.Name != "" {
+					skill.Name = metadata.Name
+				}
+				if metadata.Description != "" {
+					skill.Description = metadata.Description
+				} else {
+					skill.Description = extractFirstLine(contentStr)
+				}
 			}
 
 			skills = append(skills, skill)
@@ -190,6 +201,60 @@ func (si *SkillInstaller) discoverSkillsInDir(dir string) ([]DiscoveredSkill, er
 	}
 
 	return skills, nil
+}
+
+// skillMetadata holds parsed metadata from SKILL.md frontmatter.
+type skillMetadata struct {
+	Name        string
+	Description string
+}
+
+// extractSkillMetadata parses the frontmatter of a SKILL.md file.
+func extractSkillMetadata(content string) skillMetadata {
+	var meta skillMetadata
+
+	// Normalize line endings.
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+
+	// Check for YAML frontmatter (--- delimited).
+	if !strings.HasPrefix(normalized, "---") {
+		return meta
+	}
+
+	// Find end of frontmatter.
+	endIdx := strings.Index(normalized[3:], "\n---")
+	if endIdx == -1 {
+		return meta
+	}
+
+	frontmatter := normalized[3 : 3+endIdx]
+
+	// Parse simple YAML key: value format.
+	for _, line := range strings.Split(frontmatter, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		value = strings.Trim(value, `"'`)
+
+		switch key {
+		case "name":
+			meta.Name = value
+		case "description":
+			meta.Description = value
+		}
+	}
+
+	return meta
 }
 
 // extractFirstLine extracts the description from SKILL.md content.
@@ -213,22 +278,34 @@ func extractFirstLine(content string) string {
 
 // InstallSelectedSkills installs the selected skills from a cloned repository.
 // It copies the skill directories to the workspace and cleans up the temp directory.
-func (si *SkillInstaller) InstallSelectedSkills(tempDir string, skills []DiscoveredSkill) ([]string, error) {
+// If force is true, existing skills will be overwritten.
+func (si *SkillInstaller) InstallSelectedSkills(tempDir string, skills []DiscoveredSkill, force bool) ([]string, error) {
 	skillsDir := filepath.Join(si.workspace, "skills")
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create skills directory: %w", err)
 	}
 
 	var installed []string
+	var updated []string
 	var errors []string
 
 	for _, skill := range skills {
-		targetDir := filepath.Join(skillsDir, skill.Name)
+		// Use DirName for target directory (preserves original folder structure).
+		targetDir := filepath.Join(skillsDir, skill.DirName)
 
 		// Check if skill already exists.
+		exists := false
 		if _, err := os.Stat(targetDir); err == nil {
-			errors = append(errors, fmt.Sprintf("'%s' already exists, skipped", skill.Name))
-			continue
+			if !force {
+				errors = append(errors, fmt.Sprintf("'%s' already exists, use --force to overwrite", skill.Name))
+				continue
+			}
+			// Remove existing directory for force update.
+			if err := os.RemoveAll(targetDir); err != nil {
+				errors = append(errors, fmt.Sprintf("'%s' failed to remove existing: %v", skill.Name, err))
+				continue
+			}
+			exists = true
 		}
 
 		// Copy skill directory.
@@ -237,17 +314,30 @@ func (si *SkillInstaller) InstallSelectedSkills(tempDir string, skills []Discove
 			continue
 		}
 
-		installed = append(installed, skill.Name)
+		if exists {
+			updated = append(updated, skill.Name)
+		} else {
+			installed = append(installed, skill.Name)
+		}
 	}
 
 	// Clean up temp directory.
 	_ = os.RemoveAll(tempDir)
 
-	if len(errors) > 0 && len(installed) == 0 {
+	if len(errors) > 0 && len(installed) == 0 && len(updated) == 0 {
 		return nil, fmt.Errorf("failed to install any skills:\n%s", strings.Join(errors, "\n"))
 	}
 
-	return installed, nil
+	// Combine installed and updated for the return value.
+	result := make([]string, 0, len(installed)+len(updated))
+	for _, name := range installed {
+		result = append(result, name+" (new)")
+	}
+	for _, name := range updated {
+		result = append(result, name+" (updated)")
+	}
+
+	return result, nil
 }
 
 // copyDir recursively copies a directory.

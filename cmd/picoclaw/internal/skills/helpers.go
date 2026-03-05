@@ -53,7 +53,7 @@ func skillsInstallCmd(installer *skills.SkillInstaller, repo string) error {
 }
 
 // skillsInstallFromGitCmd installs a skill from a Git repository URL.
-func skillsInstallFromGitCmd(installer *skills.SkillInstaller, gitURL string) error {
+func skillsInstallFromGitCmd(installer *skills.SkillInstaller, gitURL string, force bool) error {
 	fmt.Printf("Cloning repository: %s...\n", gitURL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -86,7 +86,7 @@ func skillsInstallFromGitCmd(installer *skills.SkillInstaller, gitURL string) er
 
 	// Install selected skills.
 	fmt.Printf("\nInstalling %d skill(s)...\n", len(selectedSkills))
-	installed, err := installer.InstallSelectedSkills(tempDir, selectedSkills)
+	installed, err := installer.InstallSelectedSkills(tempDir, selectedSkills, force)
 	if err != nil {
 		return err
 	}

@@ -11,6 +11,7 @@ import (
 
 func newInstallCommand(installerFn func() (*skills.SkillInstaller, error)) *cobra.Command {
 	var registry string
+	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "install",
@@ -19,6 +20,7 @@ func newInstallCommand(installerFn func() (*skills.SkillInstaller, error)) *cobr
 picoclaw skills install sipeed/picoclaw-skills/weather
 picoclaw skills install git@gitlab.com:user/my-skill.git
 picoclaw skills install https://gitlab.com/user/my-skill.git
+picoclaw skills install --force git@gitlab.com:user/my-skill.git
 picoclaw skills install --registry clawhub github
 `,
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -52,7 +54,7 @@ picoclaw skills install --registry clawhub github
 
 			// Check if input is a Git URL.
 			if skills.IsGitURL(args[0]) {
-				return skillsInstallFromGitCmd(installer, args[0])
+				return skillsInstallFromGitCmd(installer, args[0], force)
 			}
 
 			return skillsInstallCmd(installer, args[0])
@@ -60,6 +62,7 @@ picoclaw skills install --registry clawhub github
 	}
 
 	cmd.Flags().StringVar(&registry, "registry", "", "Install from registry: --registry <name> <slug>")
+	cmd.Flags().BoolVarP(&force, "force", "f", true, "Overwrite existing skills (default: true, use --force=false to skip)")
 
 	return cmd
 }
