@@ -26,6 +26,7 @@ type AgentInstance struct {
 	MaxIterations             int
 	MaxTokens                 int
 	Temperature               float64
+	ThinkingLevel             ThinkingLevel
 	ContextWindow             int
 	SummarizeMessageThreshold int
 	SummarizeTokenPercent     int
@@ -59,17 +60,30 @@ func NewAgentInstance(
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
 
 	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
-	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
-	toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
-	execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
-	if err != nil {
-		log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
-	}
-	toolsRegistry.Register(execTool)
 
-	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
-	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	if cfg.Tools.IsToolEnabled("read_file") {
+		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("write_file") {
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("list_dir") {
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("exec") {
+		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+		if err != nil {
+			log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
+		}
+		toolsRegistry.Register(execTool)
+	}
+
+	if cfg.Tools.IsToolEnabled("edit_file") {
+		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("append_file") {
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
@@ -102,6 +116,12 @@ func NewAgentInstance(
 	if defaults.Temperature != nil {
 		temperature = *defaults.Temperature
 	}
+
+	var thinkingLevelStr string
+	if mc, err := cfg.GetModelConfig(model); err == nil {
+		thinkingLevelStr = mc.ThinkingLevel
+	}
+	thinkingLevel := parseThinkingLevel(thinkingLevelStr)
 
 	summarizeMessageThreshold := defaults.SummarizeMessageThreshold
 	if summarizeMessageThreshold == 0 {
@@ -169,6 +189,7 @@ func NewAgentInstance(
 		MaxIterations:             maxIter,
 		MaxTokens:                 maxTokens,
 		Temperature:               temperature,
+		ThinkingLevel:             thinkingLevel,
 		ContextWindow:             maxTokens,
 		SummarizeMessageThreshold: summarizeMessageThreshold,
 		SummarizeTokenPercent:     summarizeTokenPercent,

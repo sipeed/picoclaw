@@ -9,10 +9,8 @@ import (
 type SendCallback func(channel, chatID, content string) error
 
 type MessageTool struct {
-	sendCallback   SendCallback
-	defaultChannel string
-	defaultChatID  string
-	sentInRound    atomic.Bool // Tracks whether a message was sent in the current processing round
+	sendCallback SendCallback
+	sentInRound  atomic.Bool // Tracks whether a message was sent in the current processing round
 }
 
 func NewMessageTool() *MessageTool {
@@ -48,10 +46,10 @@ func (t *MessageTool) Parameters() map[string]any {
 	}
 }
 
-func (t *MessageTool) SetContext(channel, chatID string) {
-	t.defaultChannel = channel
-	t.defaultChatID = chatID
-	t.sentInRound.Store(false) // Reset send tracking for new processing round
+// ResetSentInRound resets the per-round send tracker.
+// Called by the agent loop at the start of each inbound message processing round.
+func (t *MessageTool) ResetSentInRound() {
+	t.sentInRound.Store(false)
 }
 
 // HasSentInRound returns true if the message tool sent a message during the current round.
@@ -73,10 +71,10 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	chatID, _ := args["chat_id"].(string)
 
 	if channel == "" {
-		channel = t.defaultChannel
+		channel = ToolChannel(ctx)
 	}
 	if chatID == "" {
-		chatID = t.defaultChatID
+		chatID = ToolChatID(ctx)
 	}
 
 	if channel == "" || chatID == "" {
