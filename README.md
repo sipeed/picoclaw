@@ -1293,6 +1293,32 @@ picoclaw agent -m "Hello"
 | `picoclaw cron list`      | List all scheduled jobs       |
 | `picoclaw cron add ...`   | Add a scheduled job           |
 
+### Plugins
+
+PicoClaw supports extensible plugins. Place executable files in `~/.picoclaw/plugins/`:
+
+```bash
+# List available plugins
+picoclaw plugins-list
+
+# Run a plugin (shorthand)
+picoclaw service status
+
+# Run a plugin (full name)
+picoclaw picoclaw-service status
+
+# Get help for a plugin
+picoclaw service --help
+```
+
+Plugins are executables in `~/.picoclaw/plugins/` with names starting with `picoclaw-` (or match via prefix).
+
+For programmatic use, hide the banner:
+
+```bash
+PICOCLAW_NO_BANNER=1 picoclaw service status
+```
+
 ### Scheduled Tasks / Reminders
 
 PicoClaw supports scheduled reminders and recurring tasks through the `cron` tool:
