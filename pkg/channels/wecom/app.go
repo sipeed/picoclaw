@@ -323,7 +323,7 @@ func (c *WeComAppChannel) uploadMedia(ctx context.Context, accessToken, mediaTyp
 	if resp.StatusCode != http.StatusOK {
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return "", fmt.Errorf("reading wecom upload error response: %w", err)
+			return "", channels.ClassifySendError(resp.StatusCode, fmt.Errorf("reading wecom upload error response: %w", err))
 		}
 		return "", channels.ClassifySendError(resp.StatusCode, fmt.Errorf("wecom upload error: %s", string(respBody)))
 	}
