@@ -30,6 +30,8 @@ type QQChannel struct {
 	sessionManager botgo.SessionManager
 	processedIDs   map[string]bool
 	mu             sync.RWMutex
+	chatTypeMap    map[string]string // Track whether a ChatID is group or C2C
+	chatTypeMu     sync.RWMutex      // Protects chatTypeMap
 }
 
 func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
@@ -42,6 +44,7 @@ func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, 
 		BaseChannel:  base,
 		config:       cfg,
 		processedIDs: make(map[string]bool),
+		chatTypeMap:  make(map[string]string),
 	}, nil
 }
 
@@ -126,13 +129,29 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		Content: msg.Content,
 	}
 
-	// send C2C message
-	_, err := c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
-	if err != nil {
-		logger.ErrorCF("qq", "Failed to send C2C message", map[string]any{
-			"error": err.Error(),
-		})
-		return fmt.Errorf("qq send: %w", channels.ErrTemporary)
+	// Check if this is a group chat or C2C chat
+	c.chatTypeMu.RLock()
+	chatType, exists := c.chatTypeMap[msg.ChatID]
+	c.chatTypeMu.RUnlock()
+
+	if exists && chatType == "group" {
+		// Send group message
+		_, err := c.api.PostGroupMessage(ctx, msg.ChatID, msgToCreate)
+		if err != nil {
+			logger.ErrorCF("qq", "Failed to send group message", map[string]any{
+				"error": err.Error(),
+			})
+			return fmt.Errorf("qq send group: %w", channels.ErrTemporary)
+		}
+	} else {
+		// Send C2C message
+		_, err := c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
+		if err != nil {
+			logger.ErrorCF("qq", "Failed to send C2C message", map[string]any{
+				"error": err.Error(),
+			})
+			return fmt.Errorf("qq send C2C: %w", channels.ErrTemporary)
+		}
 	}
 
 	return nil
@@ -166,6 +185,11 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 			"sender": senderID,
 			"length": len(content),
 		})
+
+		// Record chat type for this sender
+		c.chatTypeMu.Lock()
+		c.chatTypeMap[senderID] = "c2c"
+		c.chatTypeMu.Unlock()
 
 		// 转发到消息总线
 		metadata := map[string]string{}
@@ -231,6 +255,11 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			"group":  data.GroupID,
 			"length": len(content),
 		})
+
+		// Record chat type for this group
+		c.chatTypeMu.Lock()
+		c.chatTypeMap[data.GroupID] = "group"
+		c.chatTypeMu.Unlock()
 
 		// 转发到消息总线（使用 GroupID 作为 ChatID）
 		metadata := map[string]string{
