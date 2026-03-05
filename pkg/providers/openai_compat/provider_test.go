@@ -1,6 +1,7 @@
 package openai_compat
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -230,6 +231,37 @@ func TestProviderChat_HTMLSuccessResponseReturnsHelpfulError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "check api_base or proxy configuration") {
 		t.Fatalf("expected configuration hint, got %v", err)
+	}
+}
+
+func TestProviderChat_HTMLErrorResponseReturnsHelpfulError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("<!DOCTYPE html><html><body>bad gateway</body></html>"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "Status: 502") {
+		t.Fatalf("expected status code in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "received HTML") {
+		t.Fatalf("expected helpful HTML error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "check api_base or proxy configuration") {
+		t.Fatalf("expected configuration hint, got %v", err)
+	}
+}
+
+func TestLooksLikeHTML_SniffsPrefixWithLargeBody(t *testing.T) {
+	body := append([]byte(" \r\n\t<!DOCTYPE html><html><body>x</body></html>"), bytes.Repeat([]byte("A"), 1024*1024)...)
+	if !looksLikeHTML(body, "") {
+		t.Fatal("expected looksLikeHTML to detect html prefix")
 	}
 }
 

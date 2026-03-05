@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -189,7 +190,7 @@ func (p *Provider) Chat(
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
+		return nil, wrapHTTPResponseError(resp.StatusCode, body, resp.Header.Get("Content-Type"), p.apiBase)
 	}
 
 	out, err := parseResponse(body)
@@ -201,20 +202,36 @@ func (p *Provider) Chat(
 }
 
 func wrapResponseParseError(err error, body []byte, contentType, apiBase string) error {
-	trimmedContentType := strings.TrimSpace(contentType)
-	if looksLikeHTML(body, trimmedContentType) {
-		contentTypeHint := ""
-		if trimmedContentType != "" {
-			contentTypeHint = fmt.Sprintf(" (content-type: %s)", trimmedContentType)
-		}
-		return fmt.Errorf(
-			"expected JSON response from %s/chat/completions, but received HTML%s; check api_base or proxy configuration. Response preview: %s",
-			apiBase,
-			contentTypeHint,
-			responsePreview(body, 160),
-		)
+	if message, ok := htmlResponseMessage(body, contentType, apiBase); ok {
+		return errors.New(message)
 	}
 	return err
+}
+
+func wrapHTTPResponseError(statusCode int, body []byte, contentType, apiBase string) error {
+	if message, ok := htmlResponseMessage(body, contentType, apiBase); ok {
+		return fmt.Errorf("API request failed:\n  Status: %d\n  Detail: %s", statusCode, message)
+	}
+	return fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", statusCode, string(body))
+}
+
+func htmlResponseMessage(body []byte, contentType, apiBase string) (string, bool) {
+	trimmedContentType := strings.TrimSpace(contentType)
+	if !looksLikeHTML(body, trimmedContentType) {
+		return "", false
+	}
+
+	contentTypeHint := ""
+	if trimmedContentType != "" {
+		contentTypeHint = fmt.Sprintf(" (content-type: %s)", trimmedContentType)
+	}
+
+	return fmt.Sprintf(
+		"expected JSON response from %s/chat/completions, but received HTML%s; check api_base or proxy configuration. Response preview: %s",
+		apiBase,
+		contentTypeHint,
+		responsePreview(body, 160),
+	), true
 }
 
 func looksLikeHTML(body []byte, contentType string) bool {
@@ -223,22 +240,39 @@ func looksLikeHTML(body []byte, contentType string) bool {
 		return true
 	}
 
-	trimmed := strings.ToLower(strings.TrimSpace(string(body)))
+	trimmed := strings.ToLower(string(leadingTrimmedPrefix(body, 128)))
 	return strings.HasPrefix(trimmed, "<!doctype html") ||
 		strings.HasPrefix(trimmed, "<html") ||
 		strings.HasPrefix(trimmed, "<head") ||
 		strings.HasPrefix(trimmed, "<body")
 }
 
+func leadingTrimmedPrefix(body []byte, maxLen int) []byte {
+	i := 0
+	for i < len(body) {
+		switch body[i] {
+		case ' ', '\t', '\n', '\r', '\f', '\v':
+			i++
+		default:
+			end := i + maxLen
+			if end > len(body) {
+				end = len(body)
+			}
+			return body[i:end]
+		}
+	}
+	return nil
+}
+
 func responsePreview(body []byte, maxLen int) string {
-	preview := strings.TrimSpace(string(body))
-	if preview == "" {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
 		return "<empty>"
 	}
-	if len(preview) <= maxLen {
-		return preview
+	if len(trimmed) <= maxLen {
+		return string(trimmed)
 	}
-	return preview[:maxLen] + "..."
+	return string(trimmed[:maxLen]) + "..."
 }
 
 func parseResponse(body []byte) (*LLMResponse, error) {
