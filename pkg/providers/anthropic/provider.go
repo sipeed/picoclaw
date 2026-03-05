@@ -88,12 +88,24 @@ func (p *Provider) Chat(
 		return nil, err
 	}
 
-	resp, err := p.client.Messages.New(ctx, params, opts...)
+	// 使用流式 API 以兼容要求流式请求的服务端
+	// 流式响应会被聚合为完整响应后返回
+	stream := p.client.Messages.NewStreaming(ctx, params, opts...)
+	defer stream.Close()
+
+	// 收集所有流式事件以便后续处理
+	var events []anthropic.MessageStreamEventUnion
+	for stream.Next() {
+		events = append(events, stream.Current())
+	}
+
+	err = stream.Err()
 	if err != nil {
 		return nil, fmt.Errorf("claude API call: %w", err)
 	}
 
-	return parseResponse(resp), nil
+	// 从收集的事件中提取完整的响应
+	return parseStreamingEvents(events), nil
 }
 
 func (p *Provider) GetDefaultModel() string {
@@ -332,6 +344,74 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 			PromptTokens:     int(resp.Usage.InputTokens),
 			CompletionTokens: int(resp.Usage.OutputTokens),
 			TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+		},
+	}
+}
+
+// parseStreamingEvents 从流式事件中提取完整的 Message 对象
+func parseStreamingEvents(events []anthropic.MessageStreamEventUnion) *LLMResponse {
+	var content strings.Builder
+	var reasoning strings.Builder
+	var toolCalls []ToolCall
+	var stopReason anthropic.StopReason
+	var usage anthropic.Usage
+
+	for _, evt := range events {
+		switch evt.Type {
+		case "message_start":
+			if msg := evt.AsMessageStart(); msg.Message.ID != "" {
+				usage = msg.Message.Usage
+			}
+		case "content_block_start":
+			block := evt.AsContentBlockStart()
+			switch block.ContentBlock.Type {
+			case "tool_use":
+				// 工具调用开始，在 delta 中处理
+			}
+		case "content_block_delta":
+			delta := evt.AsContentBlockDelta()
+			switch delta.Delta.Type {
+			case "thinking_delta":
+				reasoning.WriteString(delta.Delta.Thinking)
+			case "text_delta":
+				content.WriteString(delta.Delta.Text)
+			case "input_json_delta":
+				// 工具调用参数增量，需要累积
+				// TODO: 实现完整的工具调用支持
+			}
+		case "content_block_stop":
+			// 内容块结束
+		case "message_delta":
+			msgDelta := evt.AsMessageDelta()
+			stopReason = msgDelta.Delta.StopReason
+			// 更新 usage 字段
+			usage.OutputTokens = msgDelta.Usage.OutputTokens
+		case "message_stop":
+			// 消息完成
+		case "error":
+			log.Printf("anthropic: streaming error: %v", evt)
+		}
+	}
+
+	finishReason := "stop"
+	switch stopReason {
+	case anthropic.StopReasonToolUse:
+		finishReason = "tool_calls"
+	case anthropic.StopReasonMaxTokens:
+		finishReason = "length"
+	case anthropic.StopReasonEndTurn:
+		finishReason = "stop"
+	}
+
+	return &LLMResponse{
+		Content:      content.String(),
+		Reasoning:    reasoning.String(),
+		ToolCalls:    toolCalls,
+		FinishReason: finishReason,
+		Usage: &UsageInfo{
+			PromptTokens:     int(usage.InputTokens),
+			CompletionTokens: int(usage.OutputTokens),
+			TotalTokens:      int(usage.InputTokens + usage.OutputTokens),
 		},
 	}
 }

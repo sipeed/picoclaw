@@ -26,6 +26,13 @@
       "thinking_level": "high"
     },
     {
+      "model_name": "claude-native",
+      "model": "anthropic-messages/claude-sonnet-4.6",
+      "api_key": "sk-ant-your-key",
+      "api_base": "https://api.anthropic.com",
+      "thinking_level": "high"
+    },
+    {
       "model_name": "gemini",
       "model": "antigravity/gemini-2.0-flash",
       "auth_method": "oauth"
