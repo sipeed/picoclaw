@@ -4,10 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -758,8 +759,17 @@ func truncateString(s string, maxLen int) string {
 func randomString(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, n)
+	max := big.NewInt(int64(len(letters)))
 	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+		idx, err := cryptorand.Int(cryptorand.Reader, max)
+		if err != nil {
+			// Fall back to a fixed character rather than panicking; callers use
+			// this only for non-secret request IDs, so degraded randomness is
+			// acceptable in the unlikely event crypto/rand fails.
+			b[i] = letters[0]
+			continue
+		}
+		b[i] = letters[idx.Int64()]
 	}
 	return string(b)
 }

@@ -41,13 +41,18 @@ func OpenAIOAuthConfig() OAuthProviderConfig {
 }
 
 // GoogleAntigravityOAuthConfig returns the OAuth configuration for Google Cloud Code Assist (Antigravity).
-// Client credentials are the same ones used by OpenCode/pi-ai for Cloud Code Assist access.
+// Credentials are read from GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
+// You must register your own OAuth 2.0 credentials at https://console.cloud.google.com/apis/credentials
+// and set these environment variables before using Google authentication.
 func GoogleAntigravityOAuthConfig() OAuthProviderConfig {
-	// These are the same client credentials used by the OpenCode antigravity plugin.
-	clientID := decodeBase64(
-		"MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==",
-	)
-	clientSecret := decodeBase64("R09DU1BYLUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY=")
+	clientID := os.Getenv("GOOGLE_CLIENT_ID")
+	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	if clientID == "" || clientSecret == "" {
+		// Warn loudly — shared credentials should not be used in production.
+		fmt.Fprintln(os.Stderr, "WARNING: GOOGLE_CLIENT_ID and/or GOOGLE_CLIENT_SECRET are not set.")
+		fmt.Fprintln(os.Stderr, "         Google OAuth will not function without valid credentials.")
+		fmt.Fprintln(os.Stderr, "         Register your own at https://console.cloud.google.com/apis/credentials")
+	}
 	return OAuthProviderConfig{
 		Issuer:       "https://accounts.google.com/o/oauth2/v2",
 		TokenURL:     "https://oauth2.googleapis.com/token",
@@ -56,14 +61,6 @@ func GoogleAntigravityOAuthConfig() OAuthProviderConfig {
 		Scopes:       "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs",
 		Port:         51121,
 	}
-}
-
-func decodeBase64(s string) string {
-	data, err := base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		return s
-	}
-	return string(data)
 }
 
 // GenerateState generates a random state string for OAuth CSRF protection.
@@ -212,7 +209,7 @@ func RequestDeviceCode(cfg OAuthProviderConfig) (*DeviceCodeInfo, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("device code request failed: %s", string(body))
 	}
@@ -300,7 +297,7 @@ func LoginDeviceCode(cfg OAuthProviderConfig) (*AuthCredential, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("device code request failed: %s", string(body))
 	}
@@ -360,7 +357,7 @@ func pollDeviceCode(cfg OAuthProviderConfig, deviceAuthID, userCode string) (*Au
 		return nil, fmt.Errorf("pending")
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
 	var tokenResp struct {
 		AuthorizationCode string `json:"authorization_code"`
@@ -401,7 +398,7 @@ func RefreshAccessToken(cred *AuthCredential, cfg OAuthProviderConfig) (*AuthCre
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token refresh failed: %s", string(body))
 	}
@@ -494,7 +491,7 @@ func ExchangeCodeForTokens(cfg OAuthProviderConfig, code, codeVerifier, redirect
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token exchange failed: %s", string(body))
 	}
@@ -608,14 +605,25 @@ func base64URLDecode(s string) ([]byte, error) {
 }
 
 // OpenBrowser opens the given URL in the user's default browser.
-func OpenBrowser(url string) error {
+// Each platform call passes the URL as a discrete argument to avoid shell interpretation.
+func OpenBrowser(rawURL string) error {
+	// Validate the URL before passing it to a browser launcher.
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("refusing to open non-http(s) URL: %s", parsed.Scheme)
+	}
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", url).Start()
+		return exec.Command("open", rawURL).Start()
 	case "linux":
-		return exec.Command("xdg-open", url).Start()
+		return exec.Command("xdg-open", rawURL).Start()
 	case "windows":
-		return exec.Command("cmd", "/c", "start", url).Start()
+		// Use rundll32 instead of "cmd /c start" to avoid cmd.exe shell metacharacter
+		// interpretation (e.g., '&', '|', '^' in URLs would execute commands via cmd.exe).
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start()
 	default:
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}

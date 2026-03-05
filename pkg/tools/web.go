@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -666,6 +667,44 @@ func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64)
 	}, nil
 }
 
+// rejectSSRFTarget returns an error if the URL targets an address that should
+// not be reachable from an agent tool: loopback, link-local, private ranges,
+// and cloud metadata endpoints. This prevents prompt-injected instructions from
+// exfiltrating data via the local launcher API or cloud instance metadata.
+func rejectSSRFTarget(u *url.URL) error {
+	hostname := u.Hostname()
+
+	// Resolve the hostname to catch DNS-based SSRF.
+	// Use the literal hostname for IP checks before DNS resolution too.
+	ips, err := net.LookupHost(hostname)
+	if err != nil {
+		// If we can't resolve it, let the HTTP client fail naturally.
+		// The important case is when we CAN resolve it and it's private.
+		ips = []string{hostname}
+	}
+
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		if ip.IsLoopback() {
+			return fmt.Errorf("SSRF protection: requests to loopback addresses are not allowed")
+		}
+		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return fmt.Errorf("SSRF protection: requests to link-local addresses are not allowed")
+		}
+		if ip.IsPrivate() {
+			return fmt.Errorf("SSRF protection: requests to private network addresses are not allowed")
+		}
+		// Block cloud metadata endpoints (AWS, GCP, Azure all use 169.254.169.254).
+		if ip.Equal(net.ParseIP("169.254.169.254")) {
+			return fmt.Errorf("SSRF protection: requests to cloud metadata endpoints are not allowed")
+		}
+	}
+	return nil
+}
+
 func (t *WebFetchTool) Name() string {
 	return "web_fetch"
 }
@@ -709,6 +748,10 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	if parsedURL.Host == "" {
 		return ErrorResult("missing domain in URL")
+	}
+
+	if err := rejectSSRFTarget(parsedURL); err != nil {
+		return ErrorResult(err.Error())
 	}
 
 	maxChars := t.maxChars

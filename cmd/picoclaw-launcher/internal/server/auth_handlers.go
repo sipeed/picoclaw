@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -12,6 +13,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
+
+// maxOAuthSessions limits the number of concurrent in-flight OAuth sessions to
+// prevent an unauthenticated caller from growing the in-memory session map without
+// bound (HIGH-3: DoS via unlimited session creation).
+const maxOAuthSessions = 50
 
 // oauthSession stores in-flight OAuth state for browser-based flows.
 type oauthSession struct {
@@ -186,8 +192,13 @@ func handleGoogleAntigravityLogin(w http.ResponseWriter, r *http.Request, config
 
 	authURL := auth.BuildAuthorizeURL(oauthCfg, pkce, state, redirectURI)
 
-	// Store session for callback
+	// Enforce session count limit before storing the new session.
 	oauthSessionsMu.Lock()
+	if len(oauthSessions) >= maxOAuthSessions {
+		oauthSessionsMu.Unlock()
+		http.Error(w, "Too many pending OAuth sessions; please try again later", http.StatusTooManyRequests)
+		return
+	}
 	oauthSessions[state] = &oauthSession{
 		Provider:    "google-antigravity",
 		PKCE:        pkce,
@@ -232,8 +243,10 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if code == "" {
-		errMsg := r.URL.Query().Get("error")
-		w.Header().Set("Content-Type", "text/html")
+		// Escape the attacker-controlled query parameter before writing it into HTML
+		// to prevent reflected XSS (HIGH-4).
+		errMsg := html.EscapeString(r.URL.Query().Get("error"))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(
 			w,
 			`<html><body><h2>Authentication failed</h2><p>%s</p><p>You can close this window.</p></body></html>`,
@@ -244,11 +257,11 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	cred, err := auth.ExchangeCodeForTokens(session.OAuthCfg, code, session.PKCE.CodeVerifier, session.RedirectURI)
 	if err != nil {
-		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(
 			w,
 			`<html><body><h2>Authentication failed</h2><p>%s</p><p>You can close this window.</p></body></html>`,
-			err.Error(),
+			html.EscapeString(err.Error()),
 		)
 		return
 	}
@@ -266,8 +279,8 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := auth.SetCredential(session.Provider, cred); err != nil {
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprintf(w, `<html><body><h2>Failed to save credentials</h2><p>%s</p></body></html>`, err.Error())
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<html><body><h2>Failed to save credentials</h2><p>%s</p></body></html>`, html.EscapeString(err.Error()))
 		return
 	}
 
@@ -297,7 +310,7 @@ func fetchGoogleUserEmail(accessToken string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("userinfo request failed: %s", string(body))
 	}

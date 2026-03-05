@@ -398,8 +398,12 @@ type whitelistFs struct {
 }
 
 func (w *whitelistFs) matches(path string) bool {
+	// Canonicalize the path before pattern matching to prevent bypass via
+	// embedded traversal sequences (e.g. /allowed/path/../../../etc/shadow
+	// would match the "/allowed/path" prefix but resolve elsewhere).
+	canonical := filepath.Clean(path)
 	for _, p := range w.patterns {
-		if p.MatchString(path) {
+		if p.MatchString(canonical) {
 			return true
 		}
 	}

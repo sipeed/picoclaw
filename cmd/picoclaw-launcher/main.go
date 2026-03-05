@@ -67,15 +67,20 @@ func main() {
 		addr = "127.0.0.1:" + server.DefaultPort
 	}
 
-	mux := http.NewServeMux()
-	server.RegisterConfigAPI(mux, absPath)
-	server.RegisterAuthAPI(mux, absPath)
-	server.RegisterProcessAPI(mux, absPath)
+	apiMux := http.NewServeMux()
+	server.RegisterConfigAPI(apiMux, absPath)
+	server.RegisterAuthAPI(apiMux, absPath)
+	server.RegisterProcessAPI(apiMux, absPath)
 
 	staticFS, err := fs.Sub(staticFiles, "internal/ui")
 	if err != nil {
 		log.Fatalf("Failed to create sub filesystem: %v", err)
 	}
+
+	mux := http.NewServeMux()
+	// All /api/ and /auth/ routes are protected by the local-origin CSRF guard.
+	mux.Handle("/api/", server.RequireLocalOrigin(apiMux))
+	mux.Handle("/auth/", server.RequireLocalOrigin(apiMux))
 	mux.Handle("/", http.FileServer(http.FS(staticFS)))
 
 	// Print startup banner

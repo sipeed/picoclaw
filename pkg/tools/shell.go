@@ -26,35 +26,48 @@ type ExecTool struct {
 }
 
 var (
-	defaultDenyPatterns = []*regexp.Regexp{
+	// absoluteDenyPatterns are always blocked regardless of customAllowPatterns.
+	// These cover the most dangerous command patterns that should never be executed.
+	absoluteDenyPatterns = []*regexp.Regexp{
 		regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
 		regexp.MustCompile(`\bdel\s+/[fq]\b`),
 		regexp.MustCompile(`\brmdir\s+/s\b`),
-		// Match disk wiping commands (must be followed by space/args)
-		regexp.MustCompile(
-			`\b(format|mkfs|diskpart)\b\s`,
-		),
+		regexp.MustCompile(`\b(format|mkfs|diskpart)\b\s`),
 		regexp.MustCompile(`\bdd\s+if=`),
-		// Block writes to block devices (all common naming schemes).
 		regexp.MustCompile(
 			`>\s*/dev/(sd[a-z]|hd[a-z]|vd[a-z]|xvd[a-z]|nvme\d|mmcblk\d|loop\d|dm-\d|md\d|sr\d|nbd\d)`,
 		),
 		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
-		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
-		regexp.MustCompile(`\$\([^)]+\)`),
-		regexp.MustCompile(`\$\{[^}]+\}`),
-		regexp.MustCompile("`[^`]+`"),
+		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`), // fork bomb
+		regexp.MustCompile(`\$\([^)]+\)`),          // command substitution $()
+		regexp.MustCompile(`\$\{[^}]+\}`),           // variable substitution ${}
+		regexp.MustCompile("`[^`]+`"),               // backtick substitution
 		regexp.MustCompile(`\|\s*sh\b`),
 		regexp.MustCompile(`\|\s*bash\b`),
+		regexp.MustCompile(`\|\s*(\/bin\/)?sh\b`),
+		regexp.MustCompile(`\|\s*(\/bin\/)?bash\b`),
+		regexp.MustCompile(`\bbase64\b.*\|\s*(sh|bash|(\/bin\/)?(sh|bash))\b`),
 		regexp.MustCompile(`;\s*rm\s+-[rf]`),
 		regexp.MustCompile(`&&\s*rm\s+-[rf]`),
 		regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
+		regexp.MustCompile(`\bsudo\b`),
+		regexp.MustCompile(`\beval\b`),
+		// Persist via cron/at/startup files
+		regexp.MustCompile(`\bcrontab\b`),
+		regexp.MustCompile(`\bat\s+now\b`),
+		regexp.MustCompile(`\.ssh[/\\]authorized_keys\b`),
+		regexp.MustCompile(`\.(bashrc|bash_profile|profile|zshrc|zprofile)\b`),
+		// Network exfiltration
+		regexp.MustCompile(`\b(nc|ncat|netcat)\b`),
+	}
+
+	defaultDenyPatterns = []*regexp.Regexp{
+		// Additional patterns that can be overridden by customAllowPatterns
 		regexp.MustCompile(`<<\s*EOF`),
 		regexp.MustCompile(`\$\(\s*cat\s+`),
 		regexp.MustCompile(`\$\(\s*curl\s+`),
 		regexp.MustCompile(`\$\(\s*wget\s+`),
 		regexp.MustCompile(`\$\(\s*which\s+`),
-		regexp.MustCompile(`\bsudo\b`),
 		regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
 		regexp.MustCompile(`\bchown\b`),
 		regexp.MustCompile(`\bpkill\b`),
@@ -72,8 +85,12 @@ var (
 		regexp.MustCompile(`\bgit\s+push\b`),
 		regexp.MustCompile(`\bgit\s+force\b`),
 		regexp.MustCompile(`\bssh\b.*@`),
-		regexp.MustCompile(`\beval\b`),
 		regexp.MustCompile(`\bsource\s+.*\.sh\b`),
+		// Script interpreters running inline code
+		regexp.MustCompile(`\bpython[23]?\s+-c\b`),
+		regexp.MustCompile(`\bperl\s+-e\b`),
+		regexp.MustCompile(`\bruby\s+-e\b`),
+		regexp.MustCompile(`\bnohup\b`),
 	}
 
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
@@ -291,7 +308,14 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
 
-	// Custom allow patterns exempt a command from deny checks.
+	// Absolute deny patterns are always enforced — customAllowPatterns cannot bypass them.
+	for _, pattern := range absoluteDenyPatterns {
+		if pattern.MatchString(lower) {
+			return "Command blocked by safety guard (dangerous pattern detected)"
+		}
+	}
+
+	// Custom allow patterns can exempt a command from the configurable deny checks below.
 	explicitlyAllowed := false
 	for _, pattern := range t.customAllowPatterns {
 		if pattern.MatchString(lower) {

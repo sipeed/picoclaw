@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/auth"
@@ -13,6 +14,47 @@ import (
 )
 
 const DefaultPort = "18800"
+
+// allowedOrigins are the origins from which browser requests to the API are accepted.
+// Any request whose Origin header is set but doesn't match one of these is rejected.
+var allowedOrigins = []string{
+	"http://localhost:" + DefaultPort,
+	"http://127.0.0.1:" + DefaultPort,
+}
+
+// RequireLocalOrigin is HTTP middleware that rejects cross-origin requests to
+// the launcher API. It blocks browser-based CSRF attacks (any browser tab can
+// attempt a cross-origin fetch, but the browser always sends the real Origin
+// header which we validate here). Requests without an Origin header (direct
+// curl/tool access from localhost) are permitted.
+func RequireLocalOrigin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			allowed := false
+			for _, o := range allowedOrigins {
+				if strings.EqualFold(origin, o) {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				http.Error(w, "Forbidden: cross-origin request rejected", http.StatusForbidden)
+				return
+			}
+		}
+		// Set CORS headers so the UI (same origin) works correctly and other
+		// origins are explicitly denied by the browser.
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:"+DefaultPort)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // providerStatus represents the auth status of a single provider in API responses.
 type providerStatus struct {

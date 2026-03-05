@@ -7,11 +7,17 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
+
+// validGitHubRepo matches "owner/repo" where owner and repo contain only
+// alphanumeric characters, hyphens, underscores, and dots — no path traversal,
+// query strings, fragments, or null bytes.
+var validGitHubRepo = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
 type SkillInstaller struct {
 	workspace string
@@ -24,6 +30,9 @@ func NewSkillInstaller(workspace string) *SkillInstaller {
 }
 
 func (si *SkillInstaller) InstallFromGitHub(ctx context.Context, repo string) error {
+	if !validGitHubRepo.MatchString(repo) {
+		return fmt.Errorf("invalid GitHub repo name %q: must be in 'owner/repo' format using only alphanumeric characters, hyphens, underscores, and dots", repo)
+	}
 	skillDir := filepath.Join(si.workspace, "skills", filepath.Base(repo))
 
 	if _, err := os.Stat(skillDir); err == nil {
