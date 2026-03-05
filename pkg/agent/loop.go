@@ -673,7 +673,7 @@ func (al *AgentLoop) runAgentLoop(
 ) (string, error) {
 	// 0. Record last channel for heartbeat notifications (skip internal channels and cli)
 	if opts.Channel != "" && opts.ChatID != "" {
-		if !constants.IsInternalChannel(opts.Channel) && opts.Channel != "cli" {
+		if !constants.IsInternalChannel(opts.Channel) {
 			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
 			if err := al.RecordLastChannel(channelKey); err != nil {
 				logger.WarnCF(
