@@ -370,13 +370,15 @@ func parseStreamingResponse(stream *ssestream.Stream[anthropic.MessageStreamEven
 		case "content_block_start":
 			block := evt.AsContentBlockStart()
 			if block.ContentBlock.Type == "tool_use" {
-				// 初始化工具调用
+				// 初始化工具调用，捕获 ID 和 Name
 				currentToolCall = &struct {
 					ID    string
 					Name  string
 					Args  strings.Builder
 					Index int64
 				}{
+					ID:    block.ContentBlock.ID,
+					Name:  block.ContentBlock.Name,
 					Index: block.Index,
 				}
 			}
@@ -397,11 +399,14 @@ func parseStreamingResponse(stream *ssestream.Stream[anthropic.MessageStreamEven
 
 		case "content_block_stop":
 			// 完成当前工具调用，添加到列表
-			if currentToolCall != nil && currentToolCall.Name != "" {
+			if currentToolCall != nil {
 				var args map[string]any
 				argsStr := currentToolCall.Args.String()
-				if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
-					log.Printf("anthropic: failed to decode tool call input for %q: %v", currentToolCall.Name, err)
+				if argsStr == "" {
+					// 如果没有参数，使用空对象
+					args = make(map[string]any)
+				} else if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+					log.Printf("anthropic: failed to decode tool call input for %q: %v (args: %s)", currentToolCall.Name, err, argsStr)
 					args = map[string]any{"raw": argsStr}
 				}
 				toolCalls = append(toolCalls, ToolCall{
@@ -419,10 +424,10 @@ func parseStreamingResponse(stream *ssestream.Stream[anthropic.MessageStreamEven
 			usage.OutputTokens = msgDelta.Usage.OutputTokens
 
 		case "message_stop":
-			// 消息完成，无需处理
+			// 消息完成
 
 		case "error":
-			return nil, fmt.Errorf("stream error: %v", evt)
+			return nil, fmt.Errorf("stream error: type=%s, error=%v", evt.Type, evt)
 		}
 	}
 

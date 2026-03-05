@@ -47,3 +47,6 @@ dist/
 
 # Windows Application Icon/Resource
 *.syso
+
+# ZCF workflow (local development)
+.zcf/
