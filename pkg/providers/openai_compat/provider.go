@@ -244,11 +244,11 @@ func (p *Provider) ChatStream(
 		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
 	}
 
-	return parseStreamResponse(resp.Body, onChunk)
+	return parseStreamResponse(ctx, resp.Body, onChunk)
 }
 
 // parseStreamResponse parses an OpenAI-compatible SSE stream.
-func parseStreamResponse(reader io.Reader, onChunk func(accumulated string)) (*LLMResponse, error) {
+func parseStreamResponse(ctx context.Context, reader io.Reader, onChunk func(accumulated string)) (*LLMResponse, error) {
 	var textContent strings.Builder
 	var finishReason string
 	var usage *UsageInfo
@@ -262,7 +262,13 @@ func parseStreamResponse(reader io.Reader, onChunk func(accumulated string)) (*L
 	activeTools := map[int]*toolAccum{}
 
 	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 1MB initial, 10MB max
 	for scanner.Scan() {
+		// Check for context cancellation between chunks
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		line := scanner.Text()
 
 		if !strings.HasPrefix(line, "data: ") {

@@ -3,7 +3,8 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"crypto/rand"
+	"encoding/binary"
 	"net/http"
 	"net/url"
 	"os"
@@ -800,7 +801,7 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 	return &telegramStreamer{
 		bot:     c.bot,
 		chatID:  cid,
-		draftID: rand.Intn(1<<31-1) + 1, // non-zero random draft ID
+		draftID: cryptoRandInt(), // non-zero random draft ID
 	}, nil
 }
 
@@ -868,6 +869,11 @@ func (s *telegramStreamer) Finalize(ctx context.Context, content string) error {
 		// Fallback to plain text
 		tgMsg.ParseMode = ""
 		if _, err = s.bot.SendMessage(ctx, tgMsg); err != nil {
+			logger.ErrorCF("telegram", "Finalize failed after HTML and plain-text attempts", map[string]any{
+				"chat_id": s.chatID,
+				"error":   err.Error(),
+				"len":     len(content),
+			})
 			return fmt.Errorf("telegram finalize: %w", err)
 		}
 	}
@@ -876,4 +882,11 @@ func (s *telegramStreamer) Finalize(ctx context.Context, content string) error {
 
 func (s *telegramStreamer) Cancel(ctx context.Context) {
 	// Draft auto-expires on Telegram's side; nothing to clean up.
+}
+
+// cryptoRandInt returns a non-zero random int using crypto/rand.
+func cryptoRandInt() int {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return int(binary.BigEndian.Uint32(b[:])) | 1 // ensure non-zero
 }
