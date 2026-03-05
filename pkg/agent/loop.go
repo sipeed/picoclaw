@@ -1157,7 +1157,7 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	newHistory = append(newHistory, history[len(history)-1]) // Last message
 
 	// Update session
-	agent.Sessions.SetHistory(sessionKey, newHistory)
+	agent.Sessions.SetHistory(sessionKey, sanitizeToolPairs(newHistory))
 	agent.Sessions.Save(sessionKey)
 
 	logger.WarnCF("agent", "Forced compression executed", map[string]any{
