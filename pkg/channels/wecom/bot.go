@@ -453,11 +453,20 @@ func (c *WeComBotChannel) sendWebhookReply(ctx context.Context, userID, content 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+<<<<<<< HEAD
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("reading webhook error response: %w", err))
+=======
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("reading webhook error response: %w", readErr)
+>>>>>>> 908fa8d (fix: resolve govet shadow and golines lint errors in wecom channels)
 		}
-		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("webhook API error: %s", string(body)))
+		return channels.ClassifySendError(
+			resp.StatusCode,
+			fmt.Errorf("webhook API error: %s", string(body)),
+		)
 	}
 
 	body, err := io.ReadAll(resp.Body)

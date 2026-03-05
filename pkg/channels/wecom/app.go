@@ -321,11 +321,22 @@ func (c *WeComAppChannel) uploadMedia(ctx context.Context, accessToken, mediaTyp
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+<<<<<<< HEAD
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return "", channels.ClassifySendError(resp.StatusCode, fmt.Errorf("reading wecom upload error response: %w", err))
+=======
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return "", fmt.Errorf(
+				"reading wecom upload error response: %w", readErr,
+			)
+>>>>>>> 908fa8d (fix: resolve govet shadow and golines lint errors in wecom channels)
 		}
-		return "", channels.ClassifySendError(resp.StatusCode, fmt.Errorf("wecom upload error: %s", string(respBody)))
+		return "", channels.ClassifySendError(
+			resp.StatusCode,
+			fmt.Errorf("wecom upload error: %s", string(respBody)),
+		)
 	}
 
 	var result struct {
@@ -374,11 +385,20 @@ func (c *WeComAppChannel) sendWeComMessage(ctx context.Context, accessToken stri
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+<<<<<<< HEAD
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("reading wecom_app error response: %w", err))
+=======
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("reading wecom_app error response: %w", readErr)
+>>>>>>> 908fa8d (fix: resolve govet shadow and golines lint errors in wecom channels)
 		}
-		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("wecom_app API error: %s", string(respBody)))
+		return channels.ClassifySendError(
+			resp.StatusCode,
+			fmt.Errorf("wecom_app API error: %s", string(respBody)),
+		)
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
