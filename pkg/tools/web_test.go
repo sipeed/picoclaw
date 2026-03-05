@@ -883,12 +883,15 @@ func TestExaSearchProvider_MaxResultsCapping(t *testing.T) {
 func rewriteHostTransport(target string) http.RoundTripper {
 	return roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		newURL := target + req.URL.Path
+		if req.URL.RawQuery != "" {
+			newURL += "?" + req.URL.RawQuery
+		}
 		newReq, err := http.NewRequestWithContext(req.Context(), req.Method, newURL, req.Body)
 		if err != nil {
 			return nil, err
 		}
 		newReq.Header = req.Header
-		return http.DefaultClient.Do(newReq)
+		return http.DefaultTransport.RoundTrip(newReq)
 	})
 }
 
