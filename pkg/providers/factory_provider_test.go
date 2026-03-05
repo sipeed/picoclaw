@@ -135,6 +135,32 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 	}
 }
 
+func TestGetDefaultAPIBase_LiteLLM(t *testing.T) {
+	if got := getDefaultAPIBase("litellm"); got != "http://localhost:4000/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "litellm", got, "http://localhost:4000/v1")
+	}
+}
+
+func TestCreateProviderFromConfig_LiteLLM(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-litellm",
+		Model:     "litellm/my-proxy-alias",
+		APIKey:    "test-key",
+		APIBase:   "http://localhost:4000/v1",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "my-proxy-alias" {
+		t.Errorf("modelID = %q, want %q", modelID, "my-proxy-alias")
+	}
+}
+
 func TestCreateProviderFromConfig_Anthropic(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-anthropic",

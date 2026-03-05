@@ -26,13 +26,15 @@ func DefaultConfig() *Config {
 	return &Config{
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
-				Workspace:           workspacePath,
-				RestrictToWorkspace: true,
-				Provider:            "",
-				Model:               "",
-				MaxTokens:           32768,
-				Temperature:         nil, // nil means use provider default
-				MaxToolIterations:   50,
+				Workspace:                 workspacePath,
+				RestrictToWorkspace:       true,
+				Provider:                  "",
+				Model:                     "",
+				MaxTokens:                 32768,
+				Temperature:               nil, // nil means use provider default
+				MaxToolIterations:         50,
+				SummarizeMessageThreshold: 20,
+				SummarizeTokenPercent:     75,
 			},
 		},
 		Bindings: []AgentBinding{},
@@ -136,6 +138,16 @@ func DefaultConfig() *Config {
 				WebhookPath:    "/webhook/wecom-app",
 				AllowFrom:      FlexibleStringSlice{},
 				ReplyTimeout:   5,
+			},
+			WeComAIBot: WeComAIBotConfig{
+				Enabled:        false,
+				Token:          "",
+				EncodingAESKey: "",
+				WebhookPath:    "/webhook/wecom-aibot",
+				AllowFrom:      FlexibleStringSlice{},
+				ReplyTimeout:   5,
+				MaxSteps:       10,
+				WelcomeMessage: "Hello! I'm your AI assistant. How can I help you today?",
 			},
 			Pico: PicoConfig{
 				Enabled:        false,
@@ -296,6 +308,20 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// Avian - https://avian.io
+			{
+				ModelName: "deepseek-v3.2",
+				Model:     "avian/deepseek/deepseek-v3.2",
+				APIBase:   "https://api.avian.io/v1",
+				APIKey:    "",
+			},
+			{
+				ModelName: "kimi-k2.5",
+				Model:     "avian/moonshotai/kimi-k2.5",
+				APIBase:   "https://api.avian.io/v1",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",
@@ -310,11 +336,16 @@ func DefaultConfig() *Config {
 		},
 		Tools: ToolsConfig{
 			MediaCleanup: MediaCleanupConfig{
-				Enabled:  true,
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
 				MaxAge:   30,
 				Interval: 5,
 			},
 			Web: WebToolsConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
 				Proxy:           "",
 				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
 				Brave: BraveConfig{
@@ -331,14 +362,30 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+				GLMSearch: GLMSearchConfig{
+					Enabled:      false,
+					APIKey:       "",
+					BaseURL:      "https://open.bigmodel.cn/api/paas/v4/web_search",
+					SearchEngine: "search_std",
+					MaxResults:   5,
+				},
 			},
 			Cron: CronToolsConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
 				ExecTimeoutMinutes: 5,
 			},
 			Exec: ExecConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
 				EnableDenyPatterns: true,
 			},
 			Skills: SkillsToolsConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
 				Registries: SkillsRegistriesConfig{
 					ClawHub: ClawHubRegistryConfig{
 						Enabled: true,
@@ -350,6 +397,51 @@ func DefaultConfig() *Config {
 					MaxSize:    50,
 					TTLSeconds: 300,
 				},
+			},
+			MCP: MCPConfig{
+				ToolConfig: ToolConfig{
+					Enabled: false,
+				},
+				Servers: map[string]MCPServerConfig{},
+			},
+			AppendFile: ToolConfig{
+				Enabled: true,
+			},
+			EditFile: ToolConfig{
+				Enabled: true,
+			},
+			FindSkills: ToolConfig{
+				Enabled: true,
+			},
+			I2C: ToolConfig{
+				Enabled: false, // Hardware tool - Linux only
+			},
+			InstallSkill: ToolConfig{
+				Enabled: true,
+			},
+			ListDir: ToolConfig{
+				Enabled: true,
+			},
+			Message: ToolConfig{
+				Enabled: true,
+			},
+			ReadFile: ToolConfig{
+				Enabled: true,
+			},
+			Spawn: ToolConfig{
+				Enabled: true,
+			},
+			SPI: ToolConfig{
+				Enabled: false, // Hardware tool - Linux only
+			},
+			Subagent: ToolConfig{
+				Enabled: true,
+			},
+			WebFetch: ToolConfig{
+				Enabled: true,
+			},
+			WriteFile: ToolConfig{
+				Enabled: true,
 			},
 		},
 		Heartbeat: HeartbeatConfig{
