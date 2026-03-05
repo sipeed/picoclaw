@@ -656,7 +656,7 @@ func (c *LINEChannel) callAPI(ctx context.Context, endpoint string, payload any)
 	if resp.StatusCode != http.StatusOK {
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("reading LINE API error response: %w", err)
+			return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("reading LINE API error response: %w", err))
 		}
 		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("LINE API error: %s", string(respBody)))
 	}
