@@ -403,6 +403,9 @@ func DefaultConfig() *Config {
 					TTLSeconds: 300,
 				},
 			},
+			SendFile: ToolConfig{
+				Enabled: true,
+			},
 			MCP: MCPConfig{
 				ToolConfig: ToolConfig{
 					Enabled: false,

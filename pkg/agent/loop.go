@@ -171,13 +171,15 @@ func registerSharedTools(
 		}
 
 		// Send file tool (outbound media via MediaStore — store injected later by SetMediaStore)
-		sendFileTool := tools.NewSendFileTool(
-			agent.Workspace,
-			cfg.Agents.Defaults.RestrictToWorkspace,
-			cfg.Agents.Defaults.GetMaxMediaSize(),
-			nil,
-		)
-		agent.Tools.Register(sendFileTool)
+		if cfg.Tools.IsToolEnabled("send_file") {
+			sendFileTool := tools.NewSendFileTool(
+				agent.Workspace,
+				cfg.Agents.Defaults.RestrictToWorkspace,
+				cfg.Agents.Defaults.GetMaxMediaSize(),
+				nil,
+			)
+			agent.Tools.Register(sendFileTool)
+		}
 
 		// Skill discovery and installation tools
 		skills_enabled := cfg.Tools.IsToolEnabled("skills")
