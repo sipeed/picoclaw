@@ -78,11 +78,20 @@ func TestExecTool_BackgroundWithCallback(t *testing.T) {
 	if cbResult == nil {
 		t.Fatal("callback was not invoked")
 	}
+	if cbResult.Async {
+		t.Error("callback result should not be async (it is a completion)")
+	}
+	if cbResult.IsError {
+		t.Errorf("callback result should not be an error: %s", cbResult.ForLLM)
+	}
 	if !strings.Contains(cbResult.ForLLM, "bg_output") {
-		t.Errorf("expected output in callback result: %s", cbResult.ForLLM)
+		t.Errorf("expected output in callback ForLLM: %s", cbResult.ForLLM)
 	}
 	if !strings.Contains(cbResult.ForLLM, "completed") {
-		t.Errorf("expected 'completed' in callback result: %s", cbResult.ForLLM)
+		t.Errorf("expected 'completed' in callback ForLLM: %s", cbResult.ForLLM)
+	}
+	if cbResult.ForUser == "" {
+		t.Error("callback ForUser should be populated for user notification")
 	}
 }
 
@@ -115,8 +124,17 @@ func TestExecTool_BackgroundBlockedCommand(t *testing.T) {
 	if cbResult == nil {
 		t.Fatal("callback was not invoked")
 	}
+	if cbResult.Async {
+		t.Error("callback result should not be async (it is a completion)")
+	}
+	if !cbResult.IsError {
+		t.Error("callback result should be an error for blocked commands")
+	}
 	if !strings.Contains(cbResult.ForLLM, "failed") {
-		t.Errorf("expected 'failed' in callback result: %s", cbResult.ForLLM)
+		t.Errorf("expected 'failed' in callback ForLLM: %s", cbResult.ForLLM)
+	}
+	if cbResult.ForUser == "" {
+		t.Error("callback ForUser should be populated for user notification")
 	}
 }
 

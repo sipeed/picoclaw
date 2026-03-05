@@ -114,9 +114,10 @@
    On Windows (`runtime.GOOS == "windows"`), the allowlist MUST additionally include: `PATHEXT`, `SYSTEMROOT`, `SYSTEMDRIVE`, `COMSPEC`, `APPDATA`, `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`. Without `SYSTEMROOT`, many Windows system calls fail. Without `PATHEXT`, executable lookup cannot probe extensions.
 
 7a. The `pathAwareExecHandler` MUST resolve commands using the sanitized environment's PATH (not `os.Getenv`). The `lookPath` implementation MUST:
-   - Detect path-containing commands via `filepath.Base` (handles both `/` and `\`), not `strings.Contains(cmd, "/")`.
-   - On Windows: probe PATHEXT extensions (`.com`, `.exe`, `.bat`, `.cmd` by default) from the sanitized environment for each PATH directory. Accept any non-directory file (the executable bit is meaningless on Windows).
-   - On Unix: require the executable permission bit (`mode & 0o111 != 0`).
+
+- Detect path-containing commands via `filepath.Base` (handles both `/` and `\`), not `strings.Contains(cmd, "/")`.
+- On Windows: probe PATHEXT extensions (`.com`, `.exe`, `.bat`, `.cmd` by default) from the sanitized environment for each PATH directory. Accept any non-directory file (the executable bit is meaningless on Windows).
+- On Unix: require the executable permission bit (`mode & 0o111 != 0`).
 
 7b. The `baseCommand` function MUST extract the basename via `filepath.Base`. On Windows only, it MUST additionally lowercase the result and strip known executable extensions (`.exe`, `.cmd`, `.bat`, `.com`) so that `C:\Windows\System32\cmd.exe` resolves to `cmd` in the risk table. On Unix, these transformations MUST NOT be applied: commands are case-sensitive and extensions are part of the filename. Stripping them on Unix would let an attacker disguise a binary as a known-safe command (e.g., a malicious `ls.exe` classified as low-risk `ls`).
 
@@ -140,7 +141,7 @@
 
 12. The cron tool (`pkg/tools/cron.go`) MUST use the same `ExecTool` with the same guard system.
 
-13. The `ExecTool` MUST implement the `AsyncExecutor` interface (`ExecuteAsync(ctx, args, cb)`). When the LLM passes `background=true` and a `bus.MessageBus` was injected at construction, the command MUST be launched in a goroutine; the result is delivered via `bus.PublishInbound` with `Channel: "system"`, `SenderID: "exec:<cmd>"`, `ChatID: "<channel>:<chatID>"`. When `background=true` but no bus is available (e.g. cron-created instances), execution falls through to synchronous mode. Compile-time interface check: `var _ AsyncExecutor = (*ExecTool)(nil)`.
+13. The `ExecTool` MUST implement the `AsyncExecutor` interface (`ExecuteAsync(ctx, args, cb)`). When the LLM passes `background=true` and a non-nil `AsyncCallback` is provided by the tool registry, the command MUST be launched in a goroutine; the result is delivered via the callback as a completed (non-async) `ToolResult` with `ForLLM`, `ForUser`, and `IsError` populated. When `background=true` but no callback is available (e.g. cron-created instances), execution falls through to synchronous mode. Compile-time interface check: `var _ AsyncExecutor = (*ExecTool)(nil)`.
 
 14. The implementation MUST use a subpackage structure: `pkg/tools/shell/` contains the core logic (risk classifier, env sanitizer, sandbox, runner) and `pkg/tools/shell_tool.go` is the thin adapter implementing the `Tool` + `AsyncExecutor` interfaces. Tests live alongside their source in both locations.
 
@@ -148,7 +149,7 @@
 
 - **Config**: Old fields are silently ignored with a logged warning. No config version bump required. Add a migration note to `docs/tools_configuration.md`.
 - **Behavioral**: Commands that previously passed regex checks but are genuinely dangerous (variable indirection bypasses) will now be blocked. This is intentional and constitutes the security fix.
-- **Backward compatibility**: The `Tool` interface (`Name`, `Description`, `Parameters`, `Execute`) is unchanged. `ExecTool` construction moved from `NewAgentInstance` to `registerSharedTools` (in `loop.go`) where the message bus is available for constructor injection.
+- **Backward compatibility**: The `Tool` interface (`Name`, `Description`, `Parameters`, `Execute`) is unchanged. `ExecTool` construction moved from `NewAgentInstance` to the tool registration block in `loop.go` for consistency with other shared tools.
 
 ---
 
@@ -203,19 +204,19 @@
 
 ### Immediate impacts
 
-| Who / what                                                    | Impact                                                                                                         |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `pkg/tools/shell_tool.go`                                     | Thin adapter: `ExecTool` struct implementing `Tool` + `AsyncExecutor`. Delegates to `pkg/tools/shell/` subpackage. Bus-injected for background result delivery. |
-| `pkg/tools/shell_tool_test.go`                                | Tests for `ExecTool` sync/async behavior and interface compliance.                                             |
-| `pkg/tools/shell_process_unix.go`, `shell_process_windows.go` | Removed. Interpreter manages process lifecycle.                                                                |
-| `pkg/config/config.go` (`ExecConfig`)                         | Three fields removed, four fields added.                                                                       |
-| `pkg/config/defaults.go`                                      | Default `RiskThreshold` set to `"medium"`.                                                                     |
-| `pkg/tools/cron.go`                                           | Updated to use new `ExecTool` constructor.                                                                     |
-| `docs/tools_configuration.md`                                 | Rewritten for new config fields and risk model.                                                                |
-| `config/config.example.json`                                  | Updated.                                                                                                       |
-| `go.mod`                                                      | `mvdan.cc/sh/v3` added.                                                                                        |
-| Self-hosters with `custom_deny_patterns`                      | Logged warning on startup. Patterns no longer functional. Must migrate to `risk_overrides`.                    |
-| LLM agent loop                                                | No code change. Receives richer error messages on blocked commands.                                            |
+| Who / what                                                    | Impact                                                                                                                                                                        |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pkg/tools/shell_tool.go`                                     | Thin adapter: `ExecTool` struct implementing `Tool` + `AsyncExecutor`. Delegates to `pkg/tools/shell/` subpackage. Background results delivered via registry `AsyncCallback`. |
+| `pkg/tools/shell_tool_test.go`                                | Tests for `ExecTool` sync/async behavior and interface compliance.                                                                                                            |
+| `pkg/tools/shell_process_unix.go`, `shell_process_windows.go` | Removed. Interpreter manages process lifecycle.                                                                                                                               |
+| `pkg/config/config.go` (`ExecConfig`)                         | Three fields removed, four fields added.                                                                                                                                      |
+| `pkg/config/defaults.go`                                      | Default `RiskThreshold` set to `"medium"`.                                                                                                                                    |
+| `pkg/tools/cron.go`                                           | Updated to use new `ExecTool` constructor.                                                                                                                                    |
+| `docs/tools_configuration.md`                                 | Rewritten for new config fields and risk model.                                                                                                                               |
+| `config/config.example.json`                                  | Updated.                                                                                                                                                                      |
+| `go.mod`                                                      | `mvdan.cc/sh/v3` added.                                                                                                                                                       |
+| Self-hosters with `custom_deny_patterns`                      | Logged warning on startup. Patterns no longer functional. Must migrate to `risk_overrides`.                                                                                   |
+| LLM agent loop                                                | No code change. Receives richer error messages on blocked commands.                                                                                                           |
 
 ### New files
 
@@ -229,9 +230,9 @@
 | `pkg/tools/shell/sandbox_test.go` | Redirect inside/outside workspace, symlink escape, safe-path exemption.                                                                    |
 | `pkg/tools/shell/runner.go`       | `Run` function: parser + interpreter + `ExecHandlers` middleware integration.                                                              |
 | `pkg/tools/shell/runner_test.go`  | End-to-end runner tests: timeout, working dir, env sanitization, pipelines.                                                                |
-| `pkg/tools/shell_tool.go`         | Adapter: `ExecTool` struct, `NewExecToolWithConfig(workDir, restrict, cfg, bus)`, `AsyncExecutor` impl, arg modifier wiring.               |
+| `pkg/tools/shell_tool.go`         | Adapter: `ExecTool` struct, `NewExecToolWithConfig(workDir, restrict, cfg)`, `AsyncExecutor` impl, arg modifier wiring.                    |
 | `pkg/tools/shell_tool_test.go`    | `ExecTool` sync/async tests, interface compliance checks.                                                                                  |
-| `pkg/tools/cron_exec_test.go`     | AC-8: cron-originated `ExecTool` blocks dangerous commands identically to agent-created one; safe commands pass.                            |
+| `pkg/tools/cron_exec_test.go`     | AC-8: cron-originated `ExecTool` blocks dangerous commands identically to agent-created one; safe commands pass.                           |
 
 ### Follow-up tasks
 
@@ -243,7 +244,7 @@
 | 4   | Rewrite shell tool: parser + interpreter + middleware (`shell/runner.go` + `shell_tool.go`) | Maintainer      | 5, 6   | **Done** |
 | 5   | Port all existing test cases + add bypass tests                                             | Maintainer      | 7      | **Done** |
 | 6   | Update `ExecConfig`, defaults, migration warning                                            | Maintainer      | 7      | **Done** |
-| 7   | Implement `AsyncExecutor` on `ExecTool` (bus-based background delivery)                     | Maintainer      | —      | **Done** |
+| 7   | Implement `AsyncExecutor` on `ExecTool` (callback-based background delivery)                | Maintainer      | —      | **Done** |
 | 8   | Implement configurable `ArgModifiers` (user-defined, highest-match-wins)                    | Maintainer      | —      | **Done** |
 | 9   | Fix runner_test PATH resolution for external binaries in sandboxed interpreter              | Maintainer      | —      | **Done** |
 | 10  | Update cron tool, docs, config example                                                      | Maintainer      | —      | **Done** |

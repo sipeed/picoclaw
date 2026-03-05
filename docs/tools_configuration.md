@@ -138,20 +138,11 @@ parameter.
 
 When the LLM passes `background: true`, the exec tool launches the command in a
 goroutine and immediately returns a confirmation to the agent. The result is
-delivered asynchronously via `bus.PublishInbound` as a system-channel inbound
-message:
+delivered asynchronously via the `AsyncCallback` provided by the tool registry.
 
-| Field      | Value                                  |
-| ---------- | -------------------------------------- |
-| `Channel`  | `"system"`                             |
-| `SenderID` | `"exec:<command>"`                     |
-| `ChatID`   | `"<originChannel>:<originChatID>"`     |
-| `Content`  | stdout/stderr output (or error string) |
-
-This is the same delivery mechanism used by `SpawnTool` for subagent results.
-
-If no message bus is available (e.g. cron-created instances), `background: true`
-falls through to synchronous execution.
+If no callback is available (e.g. cron-created instances using
+`NewExecToolWithConfig`), `background: true` falls through to synchronous
+execution.
 
 ### Configuration Example
 

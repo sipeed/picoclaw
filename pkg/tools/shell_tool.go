@@ -158,15 +158,20 @@ func (t *ExecTool) ExecuteAsync(ctx context.Context, args map[string]any, cb Asy
 	go func() {
 		result := shell.Run(ctx, cfg)
 
-		content := fmt.Sprintf("Background command completed: `%s`\n\n%s",
-			utils.Truncate(cfg.Command, 100), result.Output)
+		var content string
 		if result.IsError {
 			content = fmt.Sprintf("Background command failed: `%s`\n\n%s",
+				utils.Truncate(cfg.Command, 100), result.Output)
+		} else {
+			content = fmt.Sprintf("Background command completed: `%s`\n\n%s",
 				utils.Truncate(cfg.Command, 100), result.Output)
 		}
 
 		if cb != nil {
-			cb(context.Background(), AsyncResult(content))
+			cb(context.Background(), &ToolResult{
+				ForLLM:  content,
+				IsError: result.IsError,
+			})
 		}
 	}()
 	return AsyncResult(fmt.Sprintf("Running `%s` in background", utils.Truncate(cfg.Command, 100)))

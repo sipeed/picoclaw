@@ -49,11 +49,12 @@ func SandboxedOpenHandler(workspaceDir string) interp.OpenHandlerFunc {
 		absWorkspace = workspaceDir
 	}
 	// Resolve workspace symlinks for accurate escape detection.
-	absWorkspace, err = filepath.EvalSymlinks(absWorkspace)
-	if err != nil {
-		// Non-fatal: continue with absolute path. Realpath failures
-		// are caught per-file when the sandbox is actually used.
+	if resolved, err := filepath.EvalSymlinks(absWorkspace); err == nil {
+		absWorkspace = resolved
 	}
+	// Non-fatal: on EvalSymlinks failure, keep the original absolute
+	// path so sandbox checks still run. Per-file realpath failures
+	// are caught when the sandbox is actually used.
 
 	return func(ctx context.Context, path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
 		if isSafePath(path) {

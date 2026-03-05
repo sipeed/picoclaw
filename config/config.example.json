@@ -340,6 +340,7 @@
       }
     },
     "exec": {
+      "enabled": true,
       "risk_threshold": "medium",
       "risk_overrides": {},
       "arg_modifiers": {},
