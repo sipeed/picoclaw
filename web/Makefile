@@ -2,6 +2,10 @@
 
 # Run both frontend and backend dev servers
 dev:
+	@if [ ! -f backend/picoclaw-web ] || [ ! -d backend/dist ]; then \
+		echo "Build artifacts not found, building..."; \
+		$(MAKE) build; \
+	fi
 	@echo "Starting backend and frontend dev servers..."
 	@$(MAKE) dev-backend & $(MAKE) dev-frontend
 
