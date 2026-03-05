@@ -22,7 +22,8 @@
       "model_name": "claude-sonnet-4.6",
       "model": "anthropic/claude-sonnet-4.6",
       "api_key": "sk-ant-your-key",
-      "api_base": "https://api.anthropic.com/v1"
+      "api_base": "https://api.anthropic.com/v1",
+      "thinking_level": "high"
     },
     {
       "model_name": "gemini",

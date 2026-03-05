@@ -834,23 +834,29 @@ func (al *AgentLoop) runLLMIteration(
 		var response *providers.LLMResponse
 		var err error
 
+		llmOpts := map[string]any{
+			"max_tokens":       agent.MaxTokens,
+			"temperature":      agent.Temperature,
+			"prompt_cache_key": agent.ID,
+		}
+		// parseThinkingLevel guarantees ThinkingOff for empty/unknown values,
+		// so checking != ThinkingOff is sufficient.
+		if agent.ThinkingLevel != ThinkingOff {
+			if tc, ok := agent.Provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
+				llmOpts["thinking_level"] = string(agent.ThinkingLevel)
+			} else {
+				logger.WarnCF("agent", "thinking_level is set but current provider does not support it, ignoring",
+					map[string]any{"agent_id": agent.ID, "thinking_level": string(agent.ThinkingLevel)})
+			}
+		}
+
 		callLLM := func() (*providers.LLMResponse, error) {
 			if len(agent.Candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(
 					ctx,
 					agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(
-							ctx,
-							messages,
-							providerToolDefs,
-							model,
-							map[string]any{
-								"max_tokens":       agent.MaxTokens,
-								"temperature":      agent.Temperature,
-								"prompt_cache_key": agent.ID,
-							},
-						)
+						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
 					},
 				)
 				if fbErr != nil {
@@ -866,11 +872,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
-				"max_tokens":       agent.MaxTokens,
-				"temperature":      agent.Temperature,
-				"prompt_cache_key": agent.ID,
-			})
+			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, llmOpts)
 		}
 
 		// Retry loop for context/token errors
