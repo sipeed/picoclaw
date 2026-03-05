@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -17,6 +19,7 @@ const (
 	defaultClawHubTimeout  = 30 * time.Second
 	defaultMaxZipSize      = 50 * 1024 * 1024 // 50 MB
 	defaultMaxResponseSize = 2 * 1024 * 1024  // 2 MB
+	defaultMaxRetries      = 3
 )
 
 // ClawHubRegistry implements SkillRegistry for the ClawHub platform.
@@ -259,15 +262,7 @@ func (c *ClawHubRegistry) DownloadAndInstall(
 	}
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	if c.authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.authToken)
-	}
-
-	tmpPath, err := utils.DownloadToFile(ctx, c.client, req, int64(c.maxZipSize))
+	tmpPath, err := c.downloadToTempFileWithRetry(ctx, u.String())
 	if err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
@@ -284,17 +279,7 @@ func (c *ClawHubRegistry) DownloadAndInstall(
 // --- HTTP helper ---
 
 func (c *ClawHubRegistry) doGet(ctx context.Context, urlStr string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Accept", "application/json")
-	if c.authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.authToken)
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := c.doGetWithRetry(ctx, urlStr, "application/json")
 	if err != nil {
 		return nil, err
 	}
@@ -311,4 +296,141 @@ func (c *ClawHubRegistry) doGet(ctx context.Context, urlStr string) ([]byte, err
 	}
 
 	return body, nil
+}
+
+func (c *ClawHubRegistry) doGetWithRetry(ctx context.Context, urlStr, accept string) (*http.Response, error) {
+	var lastErr error
+	for attempt := 0; attempt < defaultMaxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", accept)
+		if c.authToken != "" {
+			req.Header.Set("Authorization", "Bearer "+c.authToken)
+		}
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			lastErr = err
+		} else {
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return resp, nil
+			}
+
+			if !isRetryableStatus(resp.StatusCode) || attempt == defaultMaxRetries-1 {
+				return resp, nil
+			}
+
+			delay := retryDelay(resp.Header.Get("Retry-After"), attempt)
+			resp.Body.Close()
+			if err := sleepWithContext(ctx, delay); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		if attempt == defaultMaxRetries-1 {
+			return nil, lastErr
+		}
+		if err := sleepWithContext(ctx, retryDelay("", attempt)); err != nil {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+func (c *ClawHubRegistry) downloadToTempFileWithRetry(ctx context.Context, urlStr string) (string, error) {
+	resp, err := c.doGetWithRetry(ctx, urlStr, "application/zip")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errBody := make([]byte, 512)
+		n, _ := io.ReadFull(resp.Body, errBody)
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(errBody[:n]))
+	}
+
+	tmpFile, err := os.CreateTemp("", "picoclaw-dl-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	cleanup := func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+	}
+
+	src := io.LimitReader(resp.Body, int64(c.maxZipSize)+1)
+	written, err := io.Copy(tmpFile, src)
+	if err != nil {
+		cleanup()
+		return "", fmt.Errorf("download write failed: %w", err)
+	}
+
+	if written > int64(c.maxZipSize) {
+		cleanup()
+		return "", fmt.Errorf("download too large: %d bytes (max %d)", written, c.maxZipSize)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	return tmpPath, nil
+}
+
+func isRetryableStatus(statusCode int) bool {
+	return statusCode == http.StatusTooManyRequests || statusCode >= http.StatusInternalServerError
+}
+
+func retryDelay(retryAfter string, attempt int) time.Duration {
+	if d, ok := parseRetryAfter(retryAfter); ok {
+		return d
+	}
+	return time.Duration(attempt+1) * time.Second
+}
+
+func parseRetryAfter(headerValue string) (time.Duration, bool) {
+	headerValue = strings.TrimSpace(headerValue)
+	if headerValue == "" {
+		return 0, false
+	}
+
+	if sec, err := strconv.Atoi(headerValue); err == nil {
+		if sec < 0 {
+			sec = 0
+		}
+		return time.Duration(sec) * time.Second, true
+	}
+
+	if resetAt, err := http.ParseTime(headerValue); err == nil {
+		d := time.Until(resetAt)
+		if d < 0 {
+			d = 0
+		}
+		return d, true
+	}
+
+	return 0, false
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
