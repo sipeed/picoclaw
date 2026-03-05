@@ -455,7 +455,7 @@ func (c *WeComBotChannel) sendWebhookReply(ctx context.Context, userID, content 
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("reading webhook error response: %w", err)
+			return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("reading webhook error response: %w", err))
 		}
 		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("webhook API error: %s", string(body)))
 	}
