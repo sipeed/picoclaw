@@ -49,6 +49,11 @@ type StreamingProvider interface {
 		options map[string]any,
 		onChunk func(accumulated string),
 	) (*LLMResponse, error)
+// ThinkingCapable is an optional interface for providers that support
+// extended thinking (e.g. Anthropic). Used by the agent loop to warn
+// when thinking_level is configured but the active provider cannot use it.
+type ThinkingCapable interface {
+	SupportsThinking() bool
 }
 
 // FailoverReason classifies why an LLM request failed for fallback decisions.
