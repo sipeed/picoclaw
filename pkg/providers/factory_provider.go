@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	anthropicprovider "github.com/sipeed/picoclaw/pkg/providers/anthropic"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -135,6 +136,29 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
 		), modelID, nil
+
+	case "anthropic-messages":
+		// Anthropic 原生 Messages API 格式 (使用 /v1/messages 端点)
+		// 适用于需要使用 Anthropic 原生 API 格式的服务
+		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
+			// 使用 OAuth 凭据（从 auth store 获取）
+			provider, err := createClaudeAuthProvider()
+			if err != nil {
+				return nil, "", err
+			}
+			return provider, modelID, nil
+		}
+		// 使用 API key
+		if cfg.APIKey == "" {
+			return nil, "", fmt.Errorf("api_key is required for anthropic-messages protocol (model: %s)", cfg.Model)
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = "https://api.anthropic.com"
+		}
+		// 使用 anthropicprovider 包中的原生 Anthropic provider
+		provider := anthropicprovider.NewProviderWithBaseURL(cfg.APIKey, apiBase)
+		return provider, modelID, nil
 
 	case "antigravity":
 		return NewAntigravityProvider(), modelID, nil
