@@ -1298,9 +1298,6 @@ picoclaw agent -m "Hello"
 PicoClaw supports extensible plugins. Place executable files in `~/.picoclaw/plugins/`:
 
 ```bash
-# List available plugins
-picoclaw plugins-list
-
 # Run a plugin (shorthand - matches prefix)
 picoclaw service status
 
