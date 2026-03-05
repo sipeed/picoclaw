@@ -1,7 +1,11 @@
-.PHONY: dev dev-frontend dev-backend build test lint clean
+.PHONY: dev dev-frontend dev-backend test lint clean
 
 # Run both frontend and backend dev servers
 dev:
+	@if [ ! -f backend/picoclaw-web ] || [ ! -d frontend/dist ]; then \
+		echo "Build artifacts not found, building..."; \
+		$(MAKE) build; \
+	fi
 	@echo "Starting backend and frontend dev servers..."
 	@$(MAKE) dev-backend & $(MAKE) dev-frontend
 
@@ -14,7 +18,9 @@ dev-backend:
 	cd backend && go run .
 
 # Build frontend and embed into Go binary
-build:
+build: backend/picoclaw-web
+
+backend/picoclaw-web:
 	cd frontend && pnpm build:backend
 	cd backend && go build -o picoclaw-web .
 
