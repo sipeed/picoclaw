@@ -42,6 +42,9 @@ type ContextBuilder struct {
 }
 
 func getGlobalConfigDir() string {
+	if home := os.Getenv("PICOCLAW_HOME"); home != "" {
+		return home
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
