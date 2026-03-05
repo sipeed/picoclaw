@@ -106,10 +106,21 @@ func scanPipe(r io.Reader, buf *LogBuffer) {
 func handleStopGateway(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if runtime.GOOS == "windows" {
-		// Kill via taskkill finding picoclaw.exe (though it might kill this config tool if it's named picoclaw-launcher.exe...? No, /IM does exact match usually, but just to be safe let's stop exactly picoclaw.exe)
-		// Alternatively, we use powershell to kill processes with commandline containing 'gateway'
-		psCmd := `Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -match 'picoclaw.*gateway' } | ForEach-Object { Stop-Process $_.ProcessId -Force }`
-		err = exec.Command("powershell", "-Command", psCmd).Run()
+		// Improved Windows process termination with multiple fallback methods 
+		// Use PowerShell CIM cmdlet (most compatible with different Windows architectures)
+		psCmd := `Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'picoclaw*.exe' -and $_.CommandLine -like '*gateway*' } | ForEach-Object { Stop-Process $_.ProcessId -Force }`
+		err = exec.Command("powershell", "-NoProfile", "-Command", psCmd).Run()
+		// If CIM fails on older systems, try traditional WMI approach
+		if err != nil {
+			log.Printf("Warning: CIM-based process termination failed: %v, trying WMI approach...\n", err)
+			psWithWmi := `Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -match 'picoclaw.*gateway' } | ForEach-Object { Stop-Process $_.ProcessId -Force }`
+			err = exec.Command("powershell", "-NoProfile", "-Command", psWithWmi).Run()
+			// If all PowerShell methods fail, use direct taskkill as last resort
+			if err != nil {
+				log.Printf("Warning: PowerShell approaches failed: %v, using taskkill as final fallback...\n", err)
+				err = exec.Command("taskkill", "/F", "/IM", "picoclaw.exe").Run()
+			}
+		}
 	} else {
 		// Linux/macOS
 		err = exec.Command("pkill", "-f", "picoclaw gateway").Run()
