@@ -9,6 +9,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
@@ -93,19 +94,12 @@ func (p *Provider) Chat(
 	stream := p.client.Messages.NewStreaming(ctx, params, opts...)
 	defer stream.Close()
 
-	// 收集所有流式事件以便后续处理
-	var events []anthropic.MessageStreamEventUnion
-	for stream.Next() {
-		events = append(events, stream.Current())
-	}
-
-	err = stream.Err()
+	// 边流式边解析，避免存储所有事件（优化内存使用）
+	resp, err := parseStreamingResponse(stream)
 	if err != nil {
-		return nil, fmt.Errorf("claude API call: %w", err)
+		return nil, err
 	}
-
-	// 从收集的事件中提取完整的响应
-	return parseStreamingEvents(events), nil
+	return resp, nil
 }
 
 func (p *Provider) GetDefaultModel() string {
@@ -348,26 +342,45 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 	}
 }
 
-// parseStreamingEvents 从流式事件中提取完整的 Message 对象
-func parseStreamingEvents(events []anthropic.MessageStreamEventUnion) *LLMResponse {
+// parseStreamingResponse 从流式响应中提取完整的 Message 对象
+// 边流式边解析，避免存储所有事件（优化内存使用）
+func parseStreamingResponse(stream *ssestream.Stream[anthropic.MessageStreamEventUnion]) (*LLMResponse, error) {
 	var content strings.Builder
 	var reasoning strings.Builder
 	var toolCalls []ToolCall
 	var stopReason anthropic.StopReason
 	var usage anthropic.Usage
+	var currentToolCall *struct {
+		ID    string
+		Name  string
+		Args  strings.Builder
+		Index int64
+	}
 
-	for _, evt := range events {
+	// 直接遍历流式事件，边流式边处理
+	for stream.Next() {
+		evt := stream.Current()
+
 		switch evt.Type {
 		case "message_start":
 			if msg := evt.AsMessageStart(); msg.Message.ID != "" {
 				usage = msg.Message.Usage
 			}
+
 		case "content_block_start":
 			block := evt.AsContentBlockStart()
-			switch block.ContentBlock.Type {
-			case "tool_use":
-				// 工具调用开始，在 delta 中处理
+			if block.ContentBlock.Type == "tool_use" {
+				// 初始化工具调用
+				currentToolCall = &struct {
+					ID    string
+					Name  string
+					Args  strings.Builder
+					Index int64
+				}{
+					Index: block.Index,
+				}
 			}
+
 		case "content_block_delta":
 			delta := evt.AsContentBlockDelta()
 			switch delta.Delta.Type {
@@ -376,23 +389,49 @@ func parseStreamingEvents(events []anthropic.MessageStreamEventUnion) *LLMRespon
 			case "text_delta":
 				content.WriteString(delta.Delta.Text)
 			case "input_json_delta":
-				// 工具调用参数增量，需要累积
-				// TODO: 实现完整的工具调用支持
+				// 累积工具调用参数（PartialJSON 字段是 string）
+				if currentToolCall != nil {
+					currentToolCall.Args.WriteString(delta.Delta.PartialJSON)
+				}
 			}
+
 		case "content_block_stop":
-			// 内容块结束
+			// 完成当前工具调用，添加到列表
+			if currentToolCall != nil && currentToolCall.Name != "" {
+				var args map[string]any
+				argsStr := currentToolCall.Args.String()
+				if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+					log.Printf("anthropic: failed to decode tool call input for %q: %v", currentToolCall.Name, err)
+					args = map[string]any{"raw": argsStr}
+				}
+				toolCalls = append(toolCalls, ToolCall{
+					ID:        currentToolCall.ID,
+					Name:      currentToolCall.Name,
+					Arguments: args,
+				})
+				currentToolCall = nil
+			}
+
 		case "message_delta":
 			msgDelta := evt.AsMessageDelta()
 			stopReason = msgDelta.Delta.StopReason
-			// 更新 usage 字段
+			// 更新最终的使用量
 			usage.OutputTokens = msgDelta.Usage.OutputTokens
+
 		case "message_stop":
-			// 消息完成
+			// 消息完成，无需处理
+
 		case "error":
-			log.Printf("anthropic: streaming error: %v", evt)
+			return nil, fmt.Errorf("stream error: %v", evt)
 		}
 	}
 
+	// 检查流式传输是否有错误
+	if err := stream.Err(); err != nil {
+		return nil, fmt.Errorf("stream processing error: %w", err)
+	}
+
+	// 转换结束原因
 	finishReason := "stop"
 	switch stopReason {
 	case anthropic.StopReasonToolUse:
@@ -413,7 +452,7 @@ func parseStreamingEvents(events []anthropic.MessageStreamEventUnion) *LLMRespon
 			CompletionTokens: int(usage.OutputTokens),
 			TotalTokens:      int(usage.InputTokens + usage.OutputTokens),
 		},
-	}
+	}, nil
 }
 
 func normalizeBaseURL(apiBase string) string {
