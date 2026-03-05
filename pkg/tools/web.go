@@ -88,18 +88,31 @@ func NewAPIKeyPool(keys []string) *APIKeyPool {
 	}
 }
 
-func (p *APIKeyPool) Get() string {
+type APIKeyIterator struct {
+	pool     *APIKeyPool
+	startIdx uint32
+	attempt  uint32
+}
+
+func (p *APIKeyPool) NewIterator() *APIKeyIterator {
 	if len(p.keys) == 0 {
-		return ""
-	}
-	if len(p.keys) == 1 {
-		return p.keys[0]
+		return &APIKeyIterator{pool: p}
 	}
 	idx := atomic.AddUint32(&p.current, 1) - 1
-	if idx >= uint32(len(p.keys))-1 {
-		atomic.CompareAndSwapUint32(&p.current, idx+1, 0)
+	return &APIKeyIterator{
+		pool:     p,
+		startIdx: idx,
 	}
-	return p.keys[idx%uint32(len(p.keys))]
+}
+
+func (it *APIKeyIterator) Next() (string, bool) {
+	length := uint32(len(it.pool.keys))
+	if length == 0 || it.attempt >= length {
+		return "", false
+	}
+	key := it.pool.keys[(it.startIdx+it.attempt)%length]
+	it.attempt++
+	return key, true
 }
 
 type SearchProvider interface {
@@ -117,13 +130,13 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 		url.QueryEscape(query), count)
 
 	var lastErr error
-	maxAttempts := len(p.keyPool.keys)
-	if maxAttempts == 0 {
-		return "", errors.New("no api key available for Brave")
-	}
+	iter := p.keyPool.NewIterator()
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		apiKey := p.keyPool.Get()
+	for {
+		apiKey, ok := iter.Next()
+		if !ok {
+			break
+		}
 
 		req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
 		if err != nil {
@@ -210,13 +223,13 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 	}
 
 	var lastErr error
-	maxAttempts := len(p.keyPool.keys)
-	if maxAttempts == 0 {
-		return "", errors.New("no api key available for Tavily")
-	}
+	iter := p.keyPool.NewIterator()
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		apiKey := p.keyPool.Get()
+	for {
+		apiKey, ok := iter.Next()
+		if !ok {
+			break
+		}
 
 		payload := map[string]any{
 			"api_key":             apiKey,
@@ -402,13 +415,13 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	searchURL := "https://api.perplexity.ai/chat/completions"
 
 	var lastErr error
-	maxAttempts := len(p.keyPool.keys)
-	if maxAttempts == 0 {
-		return "", errors.New("no api key available for Perplexity")
-	}
+	iter := p.keyPool.NewIterator()
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		apiKey := p.keyPool.Get()
+	for {
+		apiKey, ok := iter.Next()
+		if !ok {
+			break
+		}
 
 		payload := map[string]any{
 			"model": "sonar",
