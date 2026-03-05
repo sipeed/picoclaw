@@ -524,7 +524,7 @@ type GatewayConfig struct {
 }
 
 type ToolConfig struct {
-	Enabled bool `json:"enabled"`
+	Enabled bool `json:"enabled" env:"ENABLED"`
 }
 
 type BraveConfig struct {
@@ -562,12 +562,12 @@ type GLMSearchConfig struct {
 }
 
 type WebToolsConfig struct {
-	ToolConfig `                 env:"PICOCLAW_TOOLS_WEB_"`
-	Brave      BraveConfig      `                          json:"brave"`
-	Tavily     TavilyConfig     `                          json:"tavily"`
-	DuckDuckGo DuckDuckGoConfig `                          json:"duckduckgo"`
-	Perplexity PerplexityConfig `                          json:"perplexity"`
-	GLMSearch  GLMSearchConfig  `                          json:"glm_search"`
+	ToolConfig `                 envPrefix:"PICOCLAW_TOOLS_WEB_"`
+	Brave      BraveConfig      `                                json:"brave"`
+	Tavily     TavilyConfig     `                                json:"tavily"`
+	DuckDuckGo DuckDuckGoConfig `                                json:"duckduckgo"`
+	Perplexity PerplexityConfig `                                json:"perplexity"`
+	GLMSearch  GLMSearchConfig  `                                json:"glm_search"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
 	Proxy           string `json:"proxy,omitempty"             env:"PICOCLAW_TOOLS_WEB_PROXY"`
@@ -575,28 +575,28 @@ type WebToolsConfig struct {
 }
 
 type CronToolsConfig struct {
-	ToolConfig         `    env:"PICOCLAW_TOOLS_CRON_"`
-	ExecTimeoutMinutes int `env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES" json:"exec_timeout_minutes"` // 0 means no timeout
+	ToolConfig         `    envPrefix:"PICOCLAW_TOOLS_CRON_"`
+	ExecTimeoutMinutes int `                                 env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES" json:"exec_timeout_minutes"` // 0 means no timeout
 }
 
 type ExecConfig struct {
-	ToolConfig          `         env:"PICOCLAW_TOOLS_EXEC_"`
-	EnableDenyPatterns  bool     `env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"  json:"enable_deny_patterns"`
-	CustomDenyPatterns  []string `env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"  json:"custom_deny_patterns"`
-	CustomAllowPatterns []string `env:"PICOCLAW_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS" json:"custom_allow_patterns"`
+	ToolConfig          `         envPrefix:"PICOCLAW_TOOLS_EXEC_"`
+	EnableDenyPatterns  bool     `                                 env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"  json:"enable_deny_patterns"`
+	CustomDenyPatterns  []string `                                 env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"  json:"custom_deny_patterns"`
+	CustomAllowPatterns []string `                                 env:"PICOCLAW_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS" json:"custom_allow_patterns"`
 }
 
 type SkillsToolsConfig struct {
-	ToolConfig            `                       env:"PICOCLAW_TOOLS_SKILLS_"`
-	Registries            SkillsRegistriesConfig `                                                    json:"registries"`
-	MaxConcurrentSearches int                    `env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES" json:"max_concurrent_searches"`
-	SearchCache           SearchCacheConfig      `                                                    json:"search_cache"`
+	ToolConfig            `                       envPrefix:"PICOCLAW_TOOLS_SKILLS_"`
+	Registries            SkillsRegistriesConfig `                                   json:"registries"`
+	MaxConcurrentSearches int                    `                                   json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
+	SearchCache           SearchCacheConfig      `                                   json:"search_cache"`
 }
 
 type MediaCleanupConfig struct {
-	ToolConfig `    env:"PICOCLAW_MEDIA_CLEANUP_"`
-	MaxAge     int `env:"PICOCLAW_MEDIA_CLEANUP_MAX_AGE"  json:"max_age_minutes"`
-	Interval   int `env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL" json:"interval_minutes"`
+	ToolConfig `    envPrefix:"PICOCLAW_MEDIA_CLEANUP_"`
+	MaxAge     int `                                    env:"PICOCLAW_MEDIA_CLEANUP_MAX_AGE"  json:"max_age_minutes"`
+	Interval   int `                                    env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL" json:"interval_minutes"`
 }
 
 type ToolsConfig struct {
@@ -608,19 +608,19 @@ type ToolsConfig struct {
 	Skills          SkillsToolsConfig  `json:"skills"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 	MCP             MCPConfig          `json:"mcp"`
-	AppendFile      ToolConfig         `json:"append_file"`
-	EditFile        ToolConfig         `json:"edit_file"`
-	FindSkills      ToolConfig         `json:"find_skills"`
-	I2C             ToolConfig         `json:"i2c"`
-	InstallSkill    ToolConfig         `json:"install_skill"`
-	ListDir         ToolConfig         `json:"list_dir"`
-	Message         ToolConfig         `json:"message"`
-	ReadFile        ToolConfig         `json:"read_file"`
-	Spawn           ToolConfig         `json:"spawn"`
-	SPI             ToolConfig         `json:"spi"`
-	Subagent        ToolConfig         `json:"subagent"`
-	WebFetch        ToolConfig         `json:"web_fetch"`
-	WriteFile       ToolConfig         `json:"write_file"`
+	AppendFile      ToolConfig         `json:"append_file"                                              envPrefix:"PICOCLAW_TOOLS_APPEND_FILE_"`
+	EditFile        ToolConfig         `json:"edit_file"                                                envPrefix:"PICOCLAW_TOOLS_EDIT_FILE_"`
+	FindSkills      ToolConfig         `json:"find_skills"                                              envPrefix:"PICOCLAW_TOOLS_FIND_SKILLS_"`
+	I2C             ToolConfig         `json:"i2c"                                                      envPrefix:"PICOCLAW_TOOLS_I2C_"`
+	InstallSkill    ToolConfig         `json:"install_skill"                                            envPrefix:"PICOCLAW_TOOLS_INSTALL_SKILL_"`
+	ListDir         ToolConfig         `json:"list_dir"                                                 envPrefix:"PICOCLAW_TOOLS_LIST_DIR_"`
+	Message         ToolConfig         `json:"message"                                                  envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
+	ReadFile        ToolConfig         `json:"read_file"                                                envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
+	Spawn           ToolConfig         `json:"spawn"                                                    envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
+	SPI             ToolConfig         `json:"spi"                                                      envPrefix:"PICOCLAW_TOOLS_SPI_"`
+	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
+	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
+	WriteFile       ToolConfig         `json:"write_file"                                               envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
 }
 
 type SearchCacheConfig struct {
@@ -666,7 +666,7 @@ type MCPServerConfig struct {
 
 // MCPConfig defines configuration for all MCP servers
 type MCPConfig struct {
-	ToolConfig `env:"PICOCLAW_TOOLS_MCP_"`
+	ToolConfig `envPrefix:"PICOCLAW_TOOLS_MCP_"`
 	// Servers is a map of server name to server configuration
 	Servers map[string]MCPServerConfig `json:"servers,omitempty"`
 }
