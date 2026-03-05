@@ -25,24 +25,24 @@ func (m *mockRegistryTool) Execute(_ context.Context, _ map[string]any) *ToolRes
 	return m.result
 }
 
-type mockCtxTool struct {
+type mockContextAwareTool struct {
 	mockRegistryTool
-	channel string
-	chatID  string
+	lastCtx context.Context
 }
 
-func (m *mockCtxTool) SetContext(channel, chatID string) {
-	m.channel = channel
-	m.chatID = chatID
+func (m *mockContextAwareTool) Execute(ctx context.Context, _ map[string]any) *ToolResult {
+	m.lastCtx = ctx
+	return m.result
 }
 
 type mockAsyncRegistryTool struct {
 	mockRegistryTool
-	cb AsyncCallback
+	lastCB AsyncCallback
 }
 
-func (m *mockAsyncRegistryTool) SetCallback(cb AsyncCallback) {
-	m.cb = cb
+func (m *mockAsyncRegistryTool) ExecuteAsync(_ context.Context, args map[string]any, cb AsyncCallback) *ToolResult {
+	m.lastCB = cb
+	return m.result
 }
 
 // --- helpers ---
@@ -136,34 +136,44 @@ func TestToolRegistry_Execute_NotFound(t *testing.T) {
 	}
 }
 
-func TestToolRegistry_ExecuteWithContext_ContextualTool(t *testing.T) {
+func TestToolRegistry_ExecuteWithContext_InjectsToolContext(t *testing.T) {
 	r := NewToolRegistry()
-	ct := &mockCtxTool{
+	ct := &mockContextAwareTool{
 		mockRegistryTool: *newMockTool("ctx_tool", "needs context"),
 	}
 	r.Register(ct)
 
 	r.ExecuteWithContext(context.Background(), "ctx_tool", nil, "telegram", "chat-42", nil)
 
-	if ct.channel != "telegram" {
-		t.Errorf("expected channel 'telegram', got %q", ct.channel)
+	if ct.lastCtx == nil {
+		t.Fatal("expected Execute to be called")
 	}
-	if ct.chatID != "chat-42" {
-		t.Errorf("expected chatID 'chat-42', got %q", ct.chatID)
+	if got := ToolChannel(ct.lastCtx); got != "telegram" {
+		t.Errorf("expected channel 'telegram', got %q", got)
+	}
+	if got := ToolChatID(ct.lastCtx); got != "chat-42" {
+		t.Errorf("expected chatID 'chat-42', got %q", got)
 	}
 }
 
-func TestToolRegistry_ExecuteWithContext_SkipsEmptyContext(t *testing.T) {
+func TestToolRegistry_ExecuteWithContext_EmptyContext(t *testing.T) {
 	r := NewToolRegistry()
-	ct := &mockCtxTool{
+	ct := &mockContextAwareTool{
 		mockRegistryTool: *newMockTool("ctx_tool", "needs context"),
 	}
 	r.Register(ct)
 
 	r.ExecuteWithContext(context.Background(), "ctx_tool", nil, "", "", nil)
 
-	if ct.channel != "" || ct.chatID != "" {
-		t.Error("SetContext should not be called with empty channel/chatID")
+	if ct.lastCtx == nil {
+		t.Fatal("expected Execute to be called")
+	}
+	// Empty values are still injected; tools decide what to do with them.
+	if got := ToolChannel(ct.lastCtx); got != "" {
+		t.Errorf("expected empty channel, got %q", got)
+	}
+	if got := ToolChatID(ct.lastCtx); got != "" {
+		t.Errorf("expected empty chatID, got %q", got)
 	}
 }
 
@@ -179,14 +189,14 @@ func TestToolRegistry_ExecuteWithContext_AsyncCallback(t *testing.T) {
 	cb := func(_ context.Context, _ *ToolResult) { called = true }
 
 	result := r.ExecuteWithContext(context.Background(), "async_tool", nil, "", "", cb)
-	if at.cb == nil {
-		t.Error("expected SetCallback to have been called")
+	if at.lastCB == nil {
+		t.Error("expected ExecuteAsync to have received a callback")
 	}
 	if !result.Async {
 		t.Error("expected async result")
 	}
 
-	at.cb(context.Background(), SilentResult("done"))
+	at.lastCB(context.Background(), SilentResult("done"))
 	if !called {
 		t.Error("expected callback to be invoked")
 	}

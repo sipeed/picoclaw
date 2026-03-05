@@ -8,23 +8,16 @@ import (
 
 type SpawnTool struct {
 	manager        *SubagentManager
-	originChannel  string
-	originChatID   string
 	allowlistCheck func(targetAgentID string) bool
-	callback       AsyncCallback // For async completion notification
 }
+
+// Compile-time check: SpawnTool implements AsyncExecutor.
+var _ AsyncExecutor = (*SpawnTool)(nil)
 
 func NewSpawnTool(manager *SubagentManager) *SpawnTool {
 	return &SpawnTool{
-		manager:       manager,
-		originChannel: "cli",
-		originChatID:  "direct",
+		manager: manager,
 	}
-}
-
-// SetCallback implements AsyncTool interface for async completion notification
-func (t *SpawnTool) SetCallback(cb AsyncCallback) {
-	t.callback = cb
 }
 
 func (t *SpawnTool) Name() string {
@@ -56,16 +49,21 @@ func (t *SpawnTool) Parameters() map[string]any {
 	}
 }
 
-func (t *SpawnTool) SetContext(channel, chatID string) {
-	t.originChannel = channel
-	t.originChatID = chatID
-}
-
 func (t *SpawnTool) SetAllowlistChecker(check func(targetAgentID string) bool) {
 	t.allowlistCheck = check
 }
 
 func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+	return t.execute(ctx, args, nil)
+}
+
+// ExecuteAsync implements AsyncExecutor. The callback is passed through to the
+// subagent manager as a call parameter — never stored on the SpawnTool instance.
+func (t *SpawnTool) ExecuteAsync(ctx context.Context, args map[string]any, cb AsyncCallback) *ToolResult {
+	return t.execute(ctx, args, cb)
+}
+
+func (t *SpawnTool) execute(ctx context.Context, args map[string]any, cb AsyncCallback) *ToolResult {
 	task, ok := args["task"].(string)
 	if !ok || strings.TrimSpace(task) == "" {
 		return ErrorResult("task is required and must be a non-empty string")
@@ -85,8 +83,20 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResul
 		return ErrorResult("Subagent manager not configured")
 	}
 
+	// Read channel/chatID from context (injected by registry).
+	// Fall back to "cli"/"direct" for non-conversation callers (e.g., CLI, tests)
+	// to preserve the same defaults as the original NewSpawnTool constructor.
+	channel := ToolChannel(ctx)
+	if channel == "" {
+		channel = "cli"
+	}
+	chatID := ToolChatID(ctx)
+	if chatID == "" {
+		chatID = "direct"
+	}
+
 	// Pass callback to manager for async completion notification
-	result, err := t.manager.Spawn(ctx, task, label, agentID, t.originChannel, t.originChatID, t.callback)
+	result, err := t.manager.Spawn(ctx, task, label, agentID, channel, chatID, cb)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to spawn subagent: %v", err))
 	}

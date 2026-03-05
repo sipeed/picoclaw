@@ -50,9 +50,8 @@ func TestSubagentManager_SetLLMOptions_AppliesToRunToolLoop(t *testing.T) {
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
 	manager.SetLLMOptions(2048, 0.6)
 	tool := NewSubagentTool(manager)
-	tool.SetContext("cli", "direct")
 
-	ctx := context.Background()
+	ctx := WithToolContext(context.Background(), "cli", "direct")
 	args := map[string]any{"task": "Do something"}
 	result := tool.Execute(ctx, args)
 
@@ -147,28 +146,14 @@ func TestSubagentTool_Parameters(t *testing.T) {
 	}
 }
 
-// TestSubagentTool_SetContext verifies context setting
-func TestSubagentTool_SetContext(t *testing.T) {
-	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
-	tool := NewSubagentTool(manager)
-
-	tool.SetContext("test-channel", "test-chat")
-
-	// Verify context is set (we can't directly access private fields,
-	// but we can verify it doesn't crash)
-	// The actual context usage is tested in Execute tests
-}
-
 // TestSubagentTool_Execute_Success tests successful execution
 func TestSubagentTool_Execute_Success(t *testing.T) {
 	provider := &MockLLMProvider{}
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
 	tool := NewSubagentTool(manager)
-	tool.SetContext("telegram", "chat-123")
 
-	ctx := context.Background()
+	ctx := WithToolContext(context.Background(), "telegram", "chat-123")
 	args := map[string]any{
 		"task":  "Write a haiku about coding",
 		"label": "haiku-task",
@@ -297,12 +282,9 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
 	tool := NewSubagentTool(manager)
 
-	// Set context
 	channel := "test-channel"
 	chatID := "test-chat"
-	tool.SetContext(channel, chatID)
-
-	ctx := context.Background()
+	ctx := WithToolContext(context.Background(), channel, chatID)
 	args := map[string]any{
 		"task": "Test context passing",
 	}
