@@ -190,6 +190,15 @@ func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMes
 		return nil
 	}
 
+	// Ensure all opened files are closed when done
+	defer func() {
+		for _, f := range files {
+			if closer, ok := f.Reader.(*os.File); ok {
+				closer.Close()
+			}
+		}
+	}()
+
 	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 
@@ -204,23 +213,11 @@ func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMes
 
 	select {
 	case err := <-done:
-		// Close all file readers
-		for _, f := range files {
-			if closer, ok := f.Reader.(*os.File); ok {
-				closer.Close()
-			}
-		}
 		if err != nil {
 			return fmt.Errorf("discord send media: %w", channels.ErrTemporary)
 		}
 		return nil
 	case <-sendCtx.Done():
-		// Close all file readers
-		for _, f := range files {
-			if closer, ok := f.Reader.(*os.File); ok {
-				closer.Close()
-			}
-		}
 		return sendCtx.Err()
 	}
 }
