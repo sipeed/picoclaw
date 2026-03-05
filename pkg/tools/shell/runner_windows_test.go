@@ -37,7 +37,7 @@ func TestRun_WorkingDir_Windows(t *testing.T) {
 		Dir:           tmpDir,
 		Timeout:       5 * time.Second,
 		RiskThreshold: RiskHigh, // cmd.exe is risk=critical
-		RiskOverrides: map[string]string{"cmd.exe": "low"},
+		RiskOverrides: map[string]string{"cmd": "low"},
 	})
 
 	if result.IsError {
@@ -58,7 +58,7 @@ func TestRun_HighThresholdAllowsDel_Windows(t *testing.T) {
 		Dir:           tmpDir,
 		Timeout:       5 * time.Second,
 		RiskThreshold: RiskHigh,
-		RiskOverrides: map[string]string{"cmd.exe": "low"},
+		RiskOverrides: map[string]string{"cmd": "low"},
 	})
 
 	if result.IsError {
@@ -78,7 +78,7 @@ func TestRun_EnvSanitization_Windows(t *testing.T) {
 		Dir:           t.TempDir(),
 		Timeout:       5 * time.Second,
 		RiskThreshold: RiskHigh,
-		RiskOverrides: map[string]string{"cmd.exe": "low"},
+		RiskOverrides: map[string]string{"cmd": "low"},
 	})
 
 	if result.IsError {
@@ -113,7 +113,7 @@ func TestRun_RiskOverrides_Windows(t *testing.T) {
 		Dir:           t.TempDir(),
 		Timeout:       5 * time.Second,
 		RiskThreshold: RiskMedium,
-		RiskOverrides: map[string]string{"cmd.exe": "low"},
+		RiskOverrides: map[string]string{"cmd": "low"},
 	})
 
 	if result.IsError && strings.Contains(result.Output, "blocked") {

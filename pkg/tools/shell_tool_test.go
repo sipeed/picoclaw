@@ -5,9 +5,9 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -29,43 +29,42 @@ func TestExecTool_SyncExecution(t *testing.T) {
 	}
 }
 
-func TestExecTool_BackgroundWithoutBus(t *testing.T) {
+func TestExecTool_BackgroundWithoutCallback(t *testing.T) {
 	tool, err := NewExecTool(t.TempDir(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// background=true but no bus → ExecuteAsync falls back to synchronous
-	cb := func(_ context.Context, _ *ToolResult) {
-		t.Error("callback should not be invoked for sync fallback")
-	}
-
+	// background=true but nil callback → falls back to synchronous
 	result := tool.ExecuteAsync(context.Background(), map[string]any{
 		"command":    "echo fallback",
 		"background": true,
-	}, cb)
+	}, nil)
 
 	if result.Async {
-		t.Error("should fall back to sync when no bus is configured")
+		t.Error("should fall back to sync when no callback is provided")
 	}
 	if result.IsError {
 		t.Fatalf("expected success: %s", result.ForLLM)
 	}
 }
 
-func TestExecTool_BackgroundWithBus(t *testing.T) {
-	msgBus := bus.NewMessageBus()
-	defer msgBus.Close()
-
-	tool, err := NewExecToolWithConfig(t.TempDir(), false, nil, msgBus)
+func TestExecTool_BackgroundWithCallback(t *testing.T) {
+	tool, err := NewExecTool(t.TempDir(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ctx := WithToolContext(context.Background(), "telegram", "chat-123")
+	var wg sync.WaitGroup
+	wg.Add(1)
 
-	cb := func(_ context.Context, _ *ToolResult) {}
-	result := tool.ExecuteAsync(ctx, map[string]any{
+	var cbResult *ToolResult
+	cb := func(_ context.Context, result *ToolResult) {
+		cbResult = result
+		wg.Done()
+	}
+
+	result := tool.ExecuteAsync(context.Background(), map[string]any{
 		"command":    "echo bg_output",
 		"background": true,
 	}, cb)
@@ -74,39 +73,35 @@ func TestExecTool_BackgroundWithBus(t *testing.T) {
 		t.Fatal("expected async result")
 	}
 
-	// Consume the inbound message published by the background goroutine.
-	msg, ok := msgBus.ConsumeInbound(ctx)
-	if !ok {
-		t.Fatal("expected inbound message from background exec")
-	}
+	wg.Wait()
 
-	if msg.Channel != "system" {
-		t.Errorf("expected channel=system, got %q", msg.Channel)
+	if cbResult == nil {
+		t.Fatal("callback was not invoked")
 	}
-	if msg.ChatID != "telegram:chat-123" {
-		t.Errorf("expected chatID=telegram:chat-123, got %q", msg.ChatID)
+	if !strings.Contains(cbResult.ForLLM, "bg_output") {
+		t.Errorf("expected output in callback result: %s", cbResult.ForLLM)
 	}
-	if !strings.Contains(msg.Content, "bg_output") {
-		t.Errorf("expected output in message content: %s", msg.Content)
-	}
-	if !strings.Contains(msg.Content, "completed") {
-		t.Errorf("expected 'completed' in message content: %s", msg.Content)
+	if !strings.Contains(cbResult.ForLLM, "completed") {
+		t.Errorf("expected 'completed' in callback result: %s", cbResult.ForLLM)
 	}
 }
 
 func TestExecTool_BackgroundBlockedCommand(t *testing.T) {
-	msgBus := bus.NewMessageBus()
-	defer msgBus.Close()
-
-	tool, err := NewExecToolWithConfig(t.TempDir(), false, nil, msgBus)
+	tool, err := NewExecTool(t.TempDir(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ctx := WithToolContext(context.Background(), "telegram", "chat-123")
+	var wg sync.WaitGroup
+	wg.Add(1)
 
-	cb := func(_ context.Context, _ *ToolResult) {}
-	result := tool.ExecuteAsync(ctx, map[string]any{
+	var cbResult *ToolResult
+	cb := func(_ context.Context, result *ToolResult) {
+		cbResult = result
+		wg.Done()
+	}
+
+	result := tool.ExecuteAsync(context.Background(), map[string]any{
 		"command":    "sudo rm -rf /",
 		"background": true,
 	}, cb)
@@ -115,13 +110,13 @@ func TestExecTool_BackgroundBlockedCommand(t *testing.T) {
 		t.Fatal("expected async result even for blocked commands")
 	}
 
-	msg, ok := msgBus.ConsumeInbound(ctx)
-	if !ok {
-		t.Fatal("expected inbound message from background exec")
-	}
+	wg.Wait()
 
-	if !strings.Contains(msg.Content, "failed") {
-		t.Errorf("expected 'failed' in message content: %s", msg.Content)
+	if cbResult == nil {
+		t.Fatal("callback was not invoked")
+	}
+	if !strings.Contains(cbResult.ForLLM, "failed") {
+		t.Errorf("expected 'failed' in callback result: %s", cbResult.ForLLM)
 	}
 }
 
@@ -245,7 +240,7 @@ func TestNewExecToolWithConfig_EnableDenyPatternsFalseWarning(t *testing.T) {
 	out := captureStdout(t, func() {
 		cfg := &config.Config{}
 		cfg.Tools.Exec.EnableDenyPatterns = boolPtr(false)
-		_, err := NewExecToolWithConfig(t.TempDir(), false, cfg, nil)
+		_, err := NewExecToolWithConfig(t.TempDir(), false, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}

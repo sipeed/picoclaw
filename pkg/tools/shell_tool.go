@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/tools/shell"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -22,8 +21,8 @@ var (
 // with AST-based risk classification, env sanitization, and file-access sandboxing.
 //
 // ExecTool implements AsyncExecutor. When the LLM passes background=true,
-// the command runs in a goroutine and the result is delivered via
-// bus.PublishInbound (re-entering the agent loop). Without a bus,
+// the command runs in a goroutine and the result is delivered via the
+// AsyncCallback provided by the registry. Without a callback,
 // background=true falls back to synchronous execution.
 type ExecTool struct {
 	workingDir          string
@@ -35,26 +34,22 @@ type ExecTool struct {
 	argModifiers  map[string][]shell.ArgModifier
 	envAllowlist  []string
 	envSet        map[string]string
-
-	bus *bus.MessageBus
 }
 
 func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
-	return NewExecToolWithConfig(workingDir, restrict, nil, nil)
+	return NewExecToolWithConfig(workingDir, restrict, nil)
 }
 
 func NewExecToolWithConfig(
 	workingDir string,
 	restrict bool,
 	cfg *config.Config,
-	msgBus *bus.MessageBus,
 ) (*ExecTool, error) {
 	t := &ExecTool{
 		workingDir:          workingDir,
 		timeout:             60 * time.Second,
 		restrictToWorkspace: restrict,
 		riskThreshold:       shell.RiskMedium,
-		bus:                 msgBus,
 	}
 
 	if cfg != nil {
@@ -70,8 +65,8 @@ func NewExecToolWithConfig(
 				t.riskThreshold = level
 			}
 		}
-		t.riskOverrides = execCfg.RiskOverrides
-		t.argModifiers = parseArgModifiers(execCfg.ArgModifiers)
+		t.riskOverrides = shell.NormalizeCommandKeys(execCfg.RiskOverrides)
+		t.argModifiers = shell.NormalizeCommandKeys(parseArgModifiers(execCfg.ArgModifiers))
 		t.envAllowlist = execCfg.EnvAllowlist
 		t.envSet = execCfg.EnvSet
 	}
@@ -146,13 +141,12 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 }
 
 // ExecuteAsync implements AsyncExecutor. The registry calls this for
-// parallel tool dispatch. When background=true and a bus is configured,
-// the command runs in a goroutine and the result is delivered via
-// bus.PublishInbound (re-entering the agent loop). Without a bus,
-// background=true falls back to synchronous execution.
+// parallel tool dispatch. When background=true and a callback is provided,
+// the command runs in a goroutine and the result is delivered via cb.
+// Without a callback, background=true falls back to synchronous execution.
 func (t *ExecTool) ExecuteAsync(ctx context.Context, args map[string]any, cb AsyncCallback) *ToolResult {
 	background, _ := args["background"].(bool)
-	if !background || t.bus == nil {
+	if !background || cb == nil {
 		return t.Execute(ctx, args)
 	}
 
@@ -160,9 +154,6 @@ func (t *ExecTool) ExecuteAsync(ctx context.Context, args map[string]any, cb Asy
 	if errResult != nil {
 		return errResult
 	}
-
-	channel := ToolChannel(ctx)
-	chatID := ToolChatID(ctx)
 
 	go func() {
 		result := shell.Run(ctx, cfg)
@@ -174,14 +165,9 @@ func (t *ExecTool) ExecuteAsync(ctx context.Context, args map[string]any, cb Asy
 				utils.Truncate(cfg.Command, 100), result.Output)
 		}
 
-		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer pubCancel()
-		_ = t.bus.PublishInbound(pubCtx, bus.InboundMessage{
-			Channel:  "system",
-			SenderID: fmt.Sprintf("exec:%s", utils.Truncate(cfg.Command, 50)),
-			ChatID:   fmt.Sprintf("%s:%s", channel, chatID),
-			Content:  content,
-		})
+		if cb != nil {
+			cb(context.Background(), AsyncResult(content))
+		}
 	}()
 	return AsyncResult(fmt.Sprintf("Running `%s` in background", utils.Truncate(cfg.Command, 100)))
 }

@@ -162,14 +162,16 @@ func pathAwareExecHandler(env expand.Environ) func(next interp.ExecHandlerFunc) 
 				return next(ctx, args)
 			}
 
-			// Look up command using interpreter's PATH
+			// Look up command using interpreter's PATH.
+			// Hard-fail when the command is not found so that resolution
+			// is always constrained to the sanitized environment. Falling
+			// through to next() would let the default handler resolve via
+			// the process-level PATH, bypassing env restrictions.
 			path, err := lookPath(env, args[0])
 			if err != nil {
-				// Command not found in PATH, try the default handler
-				return next(ctx, args)
+				return fmt.Errorf("%s: %w", args[0], err)
 			}
 
-			// Replace command with full path and continue
 			fullArgs := append([]string{path}, args[1:]...)
 			return next(ctx, fullArgs)
 		}

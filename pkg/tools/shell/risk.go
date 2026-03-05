@@ -502,6 +502,21 @@ func formatCommand(args []string) string {
 	return cmd
 }
 
+// NormalizeCommandKeys returns a new map with all keys passed through
+// baseCommand. This ensures user-provided override and modifier keys
+// match the normalized command names used by ClassifyCommand.
+// Duplicate keys after normalization are resolved by last-write-wins.
+func NormalizeCommandKeys[V any](m map[string]V) map[string]V {
+	if len(m) == 0 {
+		return m
+	}
+	normalized := make(map[string]V, len(m))
+	for k, v := range m {
+		normalized[baseCommand(k)] = v
+	}
+	return normalized
+}
+
 // baseCommand extracts the basename from a command path.
 // On Windows, it additionally lowercases the name and strips known
 // executable extensions (.exe, .cmd, .bat, .com) so that

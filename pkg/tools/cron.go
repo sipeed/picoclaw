@@ -31,7 +31,7 @@ func NewCronTool(
 	cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool,
 	execTimeout time.Duration, config *config.Config,
 ) (*CronTool, error) {
-	execTool, err := NewExecToolWithConfig(workspace, restrict, config, nil)
+	execTool, err := NewExecToolWithConfig(workspace, restrict, config)
 	if err != nil {
 		return nil, fmt.Errorf("unable to configure exec tool: %w", err)
 	}
