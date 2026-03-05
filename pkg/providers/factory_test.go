@@ -179,9 +179,64 @@ func TestResolveProviderSelection(t *testing.T) {
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "openrouter/auto"
 			},
-			wantErrSubstr: "no API key configured for provider",
-		},
-	}
+			{
+
+				name: "deepseek-ai model with DeepSeek API key uses DeepSeek API",
+
+				setup: func(cfg *config.Config) {
+
+					cfg.Agents.Defaults.Model = "deepseek-ai/DeepSeek-V3.2"
+
+					cfg.Providers.DeepSeek.APIKey = "deepseek-key"
+
+					cfg.Providers.DeepSeek.APIBase = "https://api.deepseek.com/v1"
+
+				},
+
+				wantType:    providerTypeHTTPCompat,
+
+				wantAPIBase: "https://api.deepseek.com/v1",
+
+			},
+
+			{
+
+				name: "deepseek-ai prefix model routes to DeepSeek when key configured",
+
+				setup: func(cfg *config.Config) {
+
+					cfg.Agents.Defaults.Model = "deepseek-ai/deepseek-coder"
+
+					cfg.Providers.DeepSeek.APIKey = "deepseek-key"
+
+				},
+
+				wantType:    providerTypeHTTPCompat,
+
+				wantAPIBase: "https://api.deepseek.com/v1",
+
+			},
+
+			{
+
+				name: "deepseek model still works for backward compatibility",
+
+				setup: func(cfg *config.Config) {
+
+					cfg.Agents.Defaults.Model = "deepseek/deepseek-chat"
+
+					cfg.Providers.DeepSeek.APIKey = "deepseek-key"
+
+				},
+
+				wantType:    providerTypeHTTPCompat,
+
+				wantAPIBase: "https://api.deepseek.com/v1",
+
+			},
+
+}
+
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
