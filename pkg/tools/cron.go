@@ -150,6 +150,13 @@ func (t *CronTool) addJob(args map[string]any) *ToolResult {
 	everySeconds, hasEvery := args["every_seconds"].(float64)
 	cronExpr, hasCron := args["cron_expr"].(string)
 
+	// Validate that values are meaningful (not zero/empty)
+	// This prevents LLMs from setting unused optional params to default values (e.g., at_seconds: 0)
+	// which would otherwise cause hasAt/hasEvery to be true via Go type assertion
+	hasAt = hasAt && atSeconds > 0
+	hasEvery = hasEvery && everySeconds > 0
+	hasCron = hasCron && cronExpr != ""
+
 	// Priority: at_seconds > every_seconds > cron_expr
 	if hasAt {
 		atMS := time.Now().UnixMilli() + int64(atSeconds)*1000
