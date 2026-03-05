@@ -1532,9 +1532,6 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtim
 		rt.SwitchModel = func(value string) (string, error) {
 			oldModel := agent.Model
 			agent.Model = value
-			if al.cfg != nil {
-				al.cfg.Agents.Defaults.ModelName = value
-			}
 			return oldModel, nil
 		}
 	}
