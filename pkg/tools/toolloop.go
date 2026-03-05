@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -121,37 +122,53 @@ func RunToolLoop(
 		}
 		messages = append(messages, assistantMsg)
 
-		// 7. Execute tool calls
-		for _, tc := range normalizedToolCalls {
-			argsJSON, _ := json.Marshal(tc.Arguments)
-			argsPreview := utils.Truncate(string(argsJSON), 200)
-			logger.InfoCF("toolloop", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-				map[string]any{
-					"tool":      tc.Name,
-					"iteration": iteration,
-				})
+		// 7. Execute tool calls in parallel
+		type indexedResult struct {
+			result *ToolResult
+			tc     providers.ToolCall
+		}
 
-			// Execute tool (no async callback for subagents - they run independently)
-			var toolResult *ToolResult
-			if config.Tools != nil {
-				toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, channel, chatID, nil)
-			} else {
-				toolResult = ErrorResult("No tools available")
+		results := make([]indexedResult, len(normalizedToolCalls))
+		var wg sync.WaitGroup
+
+		for i, tc := range normalizedToolCalls {
+			results[i].tc = tc
+
+			wg.Add(1)
+			go func(idx int, tc providers.ToolCall) {
+				defer wg.Done()
+
+				argsJSON, _ := json.Marshal(tc.Arguments)
+				argsPreview := utils.Truncate(string(argsJSON), 200)
+				logger.InfoCF("toolloop", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
+					map[string]any{
+						"tool":      tc.Name,
+						"iteration": iteration,
+					})
+
+				var toolResult *ToolResult
+				if config.Tools != nil {
+					toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, channel, chatID, nil)
+				} else {
+					toolResult = ErrorResult("No tools available")
+				}
+				results[idx].result = toolResult
+			}(i, tc)
+		}
+		wg.Wait()
+
+		// Append results in original order
+		for _, r := range results {
+			contentForLLM := r.result.ForLLM
+			if contentForLLM == "" && r.result.Err != nil {
+				contentForLLM = r.result.Err.Error()
 			}
 
-			// Determine content for LLM
-			contentForLLM := toolResult.ForLLM
-			if contentForLLM == "" && toolResult.Err != nil {
-				contentForLLM = toolResult.Err.Error()
-			}
-
-			// Add tool result message
-			toolResultMsg := providers.Message{
+			messages = append(messages, providers.Message{
 				Role:       "tool",
 				Content:    contentForLLM,
-				ToolCallID: tc.ID,
-			}
-			messages = append(messages, toolResultMsg)
+				ToolCallID: r.tc.ID,
+			})
 		}
 	}
 
