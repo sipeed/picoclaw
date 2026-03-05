@@ -51,16 +51,16 @@ func (c *IRCChannel) Start(ctx context.Context) error {
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	conn := &ircevent.Connection{
-		Server:       c.config.Server,
-		Nick:         c.config.Nick,
-		User:         c.config.Nick,
-		RealName:     c.config.Nick,
-		Password:     c.config.Password,
-		UseTLS:       c.config.TLS,
-		RequestCaps:  []string{"server-time", "message-tags"},
-		QuitMessage:  "Goodbye",
-		Debug:        false,
-		Log:          nil,
+		Server:      c.config.Server,
+		Nick:        c.config.Nick,
+		User:        c.config.Nick,
+		RealName:    c.config.Nick,
+		Password:    c.config.Password,
+		UseTLS:      c.config.TLS,
+		RequestCaps: []string{"server-time", "message-tags"},
+		QuitMessage: "Goodbye",
+		Debug:       false,
+		Log:         nil,
 	}
 
 	if c.config.TLS {
