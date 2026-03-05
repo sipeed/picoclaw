@@ -3,10 +3,10 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
@@ -45,6 +45,7 @@ func gatewayCmd(debug bool) error {
 		fmt.Println("🔍 Debug mode enabled")
 	}
 
+	configPath := internal.GetConfigPath()
 	cfg, err := internal.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("error loading config: %w", err)
@@ -190,31 +191,172 @@ func gatewayCmd(debug bool) error {
 
 	go agentLoop.Run(ctx)
 
+	// Setup config file watcher for hot reload
+	configReloadChan, stopWatch := setupConfigWatcherPolling(configPath, debug)
+	defer stopWatch()
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
-	<-sigChan
 
-	fmt.Println("\nShutting down...")
-	if cp, ok := provider.(providers.StatefulProvider); ok {
-		cp.Close()
+	// Main event loop - wait for signals or config changes
+	for {
+		select {
+		case <-sigChan:
+			logger.Info("Shutting down...")
+			if cp, ok := provider.(providers.StatefulProvider); ok {
+				cp.Close()
+			}
+			cancel()
+			msgBus.Close()
+
+			// Use a fresh context with timeout for graceful shutdown,
+			// since the original ctx is already canceled.
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer shutdownCancel()
+
+			channelManager.StopAll(shutdownCtx)
+			deviceService.Stop()
+			heartbeatService.Stop()
+			cronService.Stop()
+			mediaStore.Stop()
+			agentLoop.Stop()
+			logger.Info("✓ Gateway stopped")
+
+			return nil
+
+		case newCfg := <-configReloadChan:
+			logger.Info("🔄 Config file changed, reloading...")
+
+			newModel := newCfg.Agents.Defaults.ModelName
+			if newModel == "" {
+				newModel = newCfg.Agents.Defaults.Model
+			}
+
+			logger.Infof(" New model is '%s', recreating provider...", newModel)
+			if cp, ok := provider.(providers.StatefulProvider); ok {
+				cp.Close()
+			}
+
+			// Create new provider from updated config
+			// This will use the correct API key and settings from newCfg.ModelList
+			newProvider, newModelID, err := providers.CreateProvider(newCfg)
+			if err != nil {
+				logger.Errorf("  ⚠ Error creating new provider: %v", err)
+				logger.Warn("  Continuing with old provider")
+				continue
+			}
+
+			provider = newProvider
+			if newModelID != "" {
+				newCfg.Agents.Defaults.ModelName = newModelID
+			}
+
+			// Update agent loop provider and models
+			agentLoop.SetProvider(provider, newCfg)
+
+			logger.Info("  ✓ Provider and agents updated successfully")
+
+			// Update the config reference for other operations
+			// Note: Some changes (like channel configs) may require restart to take full effect
+			cfg = newCfg
+			logger.Info("  ✓ Configuration reloaded successfully")
+		}
 	}
-	cancel()
-	msgBus.Close()
+}
 
-	// Use a fresh context with timeout for graceful shutdown,
-	// since the original ctx is already canceled.
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer shutdownCancel()
+// setupConfigWatcherPolling sets up a simple polling-based config file watcher
+// Returns a channel for config updates and a stop function
+func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Config, func()) {
+	configChan := make(chan *config.Config, 1)
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
 
-	channelManager.StopAll(shutdownCtx)
-	deviceService.Stop()
-	heartbeatService.Stop()
-	cronService.Stop()
-	mediaStore.Stop()
-	agentLoop.Stop()
-	fmt.Println("✓ Gateway stopped")
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-	return nil
+		// Get initial file info
+		lastModTime := getFileModTime(configPath)
+		lastSize := getFileSize(configPath)
+
+		ticker := time.NewTicker(2 * time.Second) // Check every 2 seconds
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				currentModTime := getFileModTime(configPath)
+				currentSize := getFileSize(configPath)
+
+				// Check if file changed (modification time or size changed)
+				if currentModTime.After(lastModTime) || currentSize != lastSize {
+					if debug {
+						logger.DebugSF("🔍 Config file change detected")
+					}
+
+					// Debounce - wait a bit to ensure file write is complete
+					time.Sleep(500 * time.Millisecond)
+
+					// Validate and load new config
+					newCfg, err := config.LoadConfig(configPath)
+					if err != nil {
+						logger.Errorf("⚠ Error loading new config: %v", err)
+						logger.Warn("  Using previous valid config")
+						continue
+					}
+
+					// Validate the new config
+					if err := newCfg.ValidateModelList(); err != nil {
+						logger.Errorf("  ⚠ New config validation failed: %v", err)
+						logger.Warn("  Using previous valid config")
+						continue
+					}
+
+					logger.Info("✓ Config file validated and loaded")
+
+					// Update last known state
+					lastModTime = currentModTime
+					lastSize = currentSize
+
+					// Send new config to main loop (non-blocking)
+					select {
+					case configChan <- newCfg:
+					default:
+						// Channel full, skip this update
+						logger.Warn("⚠ Previous config reload still in progress, skipping")
+					}
+				}
+
+			case <-stop:
+				return
+			}
+		}
+	}()
+
+	stopFunc := func() {
+		close(stop)
+		wg.Wait()
+	}
+
+	return configChan, stopFunc
+}
+
+// getFileModTime returns the modification time of a file, or zero time if file doesn't exist
+func getFileModTime(path string) time.Time {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
+}
+
+// getFileSize returns the size of a file, or 0 if file doesn't exist
+func getFileSize(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
 }
 
 func setupCronTool(
@@ -236,7 +378,7 @@ func setupCronTool(
 		var err error
 		cronTool, err = tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
 		if err != nil {
-			log.Fatalf("Critical error during CronTool initialization: %v", err)
+			logger.Fatalf("Critical error during CronTool initialization: %v", err)
 		}
 
 		agentLoop.RegisterTool(cronTool)

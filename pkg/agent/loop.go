@@ -368,6 +368,14 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }
 
+// SetProvider updates the LLM provider for all agents in the registry
+// and updates their model configurations.
+func (al *AgentLoop) SetProvider(provider providers.LLMProvider, cfg *config.Config) {
+	al.cfg = cfg
+	registry := NewAgentRegistry(cfg, provider)
+	al.registry = registry
+}
+
 // SetMediaStore injects a MediaStore for media lifecycle management.
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
