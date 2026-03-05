@@ -109,10 +109,11 @@ func sessionLabel(summary, preview string, maxLen int) string {
 		return "(empty)"
 	}
 	text = strings.ReplaceAll(text, "\n", " ")
-	if len(text) <= maxLen {
+	runes := []rune(text)
+	if len(runes) <= maxLen {
 		return text
 	}
-	return text[:maxLen] + "..."
+	return string(runes[:maxLen]) + "..."
 }
 
 // extractSessionTag returns the "#N" suffix from a session key, or "#1" for
