@@ -29,16 +29,16 @@ func TestExtractFeatures_EmptyMessage(t *testing.T) {
 }
 
 func TestExtractFeatures_TokenEstimate(t *testing.T) {
-	// 30 ASCII chars / 3 = 10 tokens
+	// 30 ASCII runes: 0 CJK + 30/4 = 7 tokens
 	msg := strings.Repeat("a", 30)
 	f := ExtractFeatures(msg, nil)
-	if f.TokenEstimate != 10 {
-		t.Errorf("TokenEstimate: got %d, want 10", f.TokenEstimate)
+	if f.TokenEstimate != 7 {
+		t.Errorf("TokenEstimate: got %d, want 7", f.TokenEstimate)
 	}
 }
 
 func TestExtractFeatures_TokenEstimate_CJK(t *testing.T) {
-	// 9 CJK runes (U+4F60 U+597D U+4E16 U+754C × 2 + U+4F60) / 3 = 3 tokens.
+	// 9 CJK runes → 9 tokens (each CJK rune ≈ 1 token).
 	// Using a rune slice literal avoids CJK string literals in source.
 	msg := string([]rune{
 		0x4F60, 0x597D, 0x4E16, 0x754C,
@@ -46,8 +46,17 @@ func TestExtractFeatures_TokenEstimate_CJK(t *testing.T) {
 		0x4F60,
 	})
 	f := ExtractFeatures(msg, nil)
-	if f.TokenEstimate != 3 {
-		t.Errorf("CJK TokenEstimate: got %d, want 3", f.TokenEstimate)
+	if f.TokenEstimate != 9 {
+		t.Errorf("CJK TokenEstimate: got %d, want 9", f.TokenEstimate)
+	}
+}
+
+func TestExtractFeatures_TokenEstimate_Mixed(t *testing.T) {
+	// Mixed: 4 CJK runes + 8 ASCII runes → 4 + 8/4 = 6 tokens.
+	msg := string([]rune{0x4F60, 0x597D, 0x4E16, 0x754C}) + "hello ok"
+	f := ExtractFeatures(msg, nil)
+	if f.TokenEstimate != 6 {
+		t.Errorf("Mixed TokenEstimate: got %d, want 6", f.TokenEstimate)
 	}
 }
 
@@ -249,7 +258,7 @@ func TestRouter_NegativeThresholdFallsBackToDefault(t *testing.T) {
 func TestRouter_SelectModel_SimpleMessageUsesLight(t *testing.T) {
 	r := New(RouterConfig{LightModel: "gemini-flash", Threshold: 0.35})
 	msg := "hi"
-	model, usedLight := r.SelectModel(msg, nil, "claude-sonnet-4-6")
+	model, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
 	if !usedLight {
 		t.Error("simple message: expected light model to be selected")
 	}
@@ -261,7 +270,7 @@ func TestRouter_SelectModel_SimpleMessageUsesLight(t *testing.T) {
 func TestRouter_SelectModel_CodeBlockUsesPrimary(t *testing.T) {
 	r := New(RouterConfig{LightModel: "gemini-flash", Threshold: 0.35})
 	msg := "```go\nfmt.Println(\"hello\")\n```"
-	model, usedLight := r.SelectModel(msg, nil, "claude-sonnet-4-6")
+	model, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
 	if usedLight {
 		t.Error("code block: expected primary model to be selected")
 	}
@@ -273,7 +282,7 @@ func TestRouter_SelectModel_CodeBlockUsesPrimary(t *testing.T) {
 func TestRouter_SelectModel_AttachmentUsesPrimary(t *testing.T) {
 	r := New(RouterConfig{LightModel: "gemini-flash", Threshold: 0.35})
 	msg := "can you analyze this? data:image/png;base64,abc123"
-	model, usedLight := r.SelectModel(msg, nil, "claude-sonnet-4-6")
+	model, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
 	if usedLight {
 		t.Error("attachment: expected primary model to be selected")
 	}
@@ -286,7 +295,7 @@ func TestRouter_SelectModel_LongMessageUsesPrimary(t *testing.T) {
 	r := New(RouterConfig{LightModel: "gemini-flash", Threshold: 0.35})
 	// >200 token estimate: 210 * 3 = 630 chars
 	msg := strings.Repeat("word ", 210)
-	model, usedLight := r.SelectModel(msg, nil, "claude-sonnet-4-6")
+	model, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
 	if usedLight {
 		t.Error("long message: expected primary model to be selected")
 	}
@@ -304,7 +313,7 @@ func TestRouter_SelectModel_DeepToolChainUsesLight(t *testing.T) {
 		{Role: "assistant", ToolCalls: []providers.ToolCall{{Name: "exec"}, {Name: "search"}}},
 	}
 	msg := "ok"
-	_, usedLight := r.SelectModel(msg, history, "claude-sonnet-4-6")
+	_, usedLight, _ := r.SelectModel(msg, history, "claude-sonnet-4-6")
 	if !usedLight {
 		t.Error("short message + moderate tool calls: expected light model (score 0.20 < 0.35)")
 	}
@@ -320,7 +329,7 @@ func TestRouter_SelectModel_ToolChainPlusMediumUsesHeavy(t *testing.T) {
 	}
 	// ~55 tokens * 3 = 165 chars
 	msg := strings.Repeat("word ", 55)
-	_, usedLight := r.SelectModel(msg, history, "claude-sonnet-4-6")
+	_, usedLight, _ := r.SelectModel(msg, history, "claude-sonnet-4-6")
 	if usedLight {
 		t.Error("tool chain + medium message: expected primary model (score >= 0.35)")
 	}
@@ -330,7 +339,7 @@ func TestRouter_SelectModel_CustomThreshold(t *testing.T) {
 	// Very low threshold: even a short message triggers heavy model
 	r := New(RouterConfig{LightModel: "gemini-flash", Threshold: 0.05})
 	msg := strings.Repeat("word ", 55) // medium message → 0.15 >= 0.05
-	_, usedLight := r.SelectModel(msg, nil, "claude-sonnet-4-6")
+	_, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
 	if usedLight {
 		t.Error("low threshold: medium message should use primary model")
 	}
@@ -340,7 +349,7 @@ func TestRouter_SelectModel_HighThreshold(t *testing.T) {
 	// Very high threshold: even code blocks route to light
 	r := New(RouterConfig{LightModel: "gemini-flash", Threshold: 0.99})
 	msg := "```go\nfmt.Println()\n```"
-	_, usedLight := r.SelectModel(msg, nil, "claude-sonnet-4-6")
+	_, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
 	if !usedLight {
 		t.Error("very high threshold: code block (0.40) should route to light model")
 	}
@@ -364,7 +373,7 @@ func TestRouter_CustomClassifier_LowScore_SelectsLight(t *testing.T) {
 		RouterConfig{LightModel: "light", Threshold: 0.5},
 		&fixedScoreClassifier{score: 0.2},
 	)
-	_, usedLight := r.SelectModel("anything", nil, "heavy")
+	_, usedLight, _ := r.SelectModel("anything", nil, "heavy")
 	if !usedLight {
 		t.Error("low score with custom classifier: expected light model")
 	}
@@ -375,7 +384,7 @@ func TestRouter_CustomClassifier_HighScore_SelectsPrimary(t *testing.T) {
 		RouterConfig{LightModel: "light", Threshold: 0.5},
 		&fixedScoreClassifier{score: 0.8},
 	)
-	_, usedLight := r.SelectModel("anything", nil, "heavy")
+	_, usedLight, _ := r.SelectModel("anything", nil, "heavy")
 	if usedLight {
 		t.Error("high score with custom classifier: expected primary model")
 	}
@@ -387,8 +396,19 @@ func TestRouter_CustomClassifier_ExactThreshold_SelectsPrimary(t *testing.T) {
 		RouterConfig{LightModel: "light", Threshold: 0.5},
 		&fixedScoreClassifier{score: 0.5},
 	)
-	_, usedLight := r.SelectModel("anything", nil, "heavy")
+	_, usedLight, _ := r.SelectModel("anything", nil, "heavy")
 	if usedLight {
 		t.Error("score == threshold: expected primary model (>= threshold → primary)")
+	}
+}
+
+func TestRouter_SelectModel_ReturnsScore(t *testing.T) {
+	r := newWithClassifier(
+		RouterConfig{LightModel: "light", Threshold: 0.5},
+		&fixedScoreClassifier{score: 0.42},
+	)
+	_, _, score := r.SelectModel("anything", nil, "heavy")
+	if score != 0.42 {
+		t.Errorf("score: got %f, want 0.42", score)
 	}
 }

@@ -50,10 +50,11 @@ func newWithClassifier(cfg RouterConfig, c Classifier) *Router {
 	return &Router{cfg: cfg, classifier: c}
 }
 
-// SelectModel returns the model to use for this conversation turn.
+// SelectModel returns the model to use for this conversation turn along with
+// the computed complexity score (for logging and debugging).
 //
-//   - If score < cfg.Threshold: returns (cfg.LightModel, true)
-//   - Otherwise:               returns (primaryModel, false)
+//   - If score < cfg.Threshold: returns (cfg.LightModel, true, score)
+//   - Otherwise:               returns (primaryModel, false, score)
 //
 // The caller is responsible for resolving the returned model name into
 // provider candidates (see AgentInstance.LightCandidates).
@@ -61,13 +62,13 @@ func (r *Router) SelectModel(
 	msg string,
 	history []providers.Message,
 	primaryModel string,
-) (model string, usedLight bool) {
+) (model string, usedLight bool, score float64) {
 	features := ExtractFeatures(msg, history)
-	score := r.classifier.Score(features)
+	score = r.classifier.Score(features)
 	if score < r.cfg.Threshold {
-		return r.cfg.LightModel, true
+		return r.cfg.LightModel, true, score
 	}
-	return primaryModel, false
+	return primaryModel, false, score
 }
 
 // LightModel returns the configured light model name.
