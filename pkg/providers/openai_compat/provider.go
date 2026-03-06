@@ -158,7 +158,7 @@ func (p *Provider) Chat(
 	// Gemini and other providers reject unknown fields, so skip for non-OpenAI APIs.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
 		if !strings.Contains(p.apiBase, "generativelanguage.googleapis.com") &&
-		   !strings.Contains(p.apiBase, "api.groq.com")  {
+			!strings.Contains(p.apiBase, "api.groq.com") {
 			requestBody["prompt_cache_key"] = cacheKey
 		}
 	}
