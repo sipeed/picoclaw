@@ -94,7 +94,9 @@
 
 5. The risk classifier MUST apply argument-aware modifiers (e.g., `curl` is `medium`, but `curl -X POST` is `high`; `git` is `medium`, but `git push` is `high`). All matching modifiers MUST be scanned and the highest level that exceeds the base level is applied (highest-match-wins, not first-match-wins).
 
-5a. `risk_overrides` sets the **base level** for a command (replacing the built-in table entry). Argument modifiers MUST still be applied on top of the overridden base level and can elevate it further. This means `risk_overrides: {"rm": "medium"}` allows plain `rm` but `rm -rf` is still elevated to `critical` by the built-in modifier.
+5a. Before modifier matching, argv SHOULD be normalized using command-specific flag profiles so equivalent CLI forms are classified identically. The implementation MAY normalize grouped short flags (e.g. `-rf` → `-r`, `-f`), long `--flag=value` forms, and explicitly whitelisted attached short-value forms (e.g. `curl -XPOST` → `-X`, `POST`).
+
+5b. `risk_overrides` sets the **base level** for a command (replacing the built-in table entry). Argument modifiers MUST still be applied on top of the overridden base level and can elevate it further. This means `risk_overrides: {"rm": "medium"}` allows plain `rm` but `rm -rf` is still elevated to `critical` by the built-in modifier.
 
 6. When a command is blocked, the `ToolResult` MUST include:
    - Risk level of the command.
@@ -123,19 +125,20 @@
 
 8. The `interp.Runner` MUST be configured with an `OpenHandler` that validates all file-open paths (from shell redirections) resolve within the configured workspace directory. Paths to safe pseudo-devices (`/dev/null`, `/dev/zero`, `/dev/urandom`, `/dev/stdin`, `/dev/stdout`, `/dev/stderr`) MUST be exempted.
 
-9. The existing regex-based guard (`defaultDenyPatterns`, `guardCommand()`) MUST be removed entirely. The `ExecConfig` fields `EnableDenyPatterns`, `CustomDenyPatterns`, and `CustomAllowPatterns` MUST be removed from the struct.
+9. The existing regex-based guard (`defaultDenyPatterns`, `guardCommand()`) MUST be removed entirely. The deprecated `ExecConfig` fields `EnableDenyPatterns`, `CustomDenyPatterns`, and `CustomAllowPatterns` MAY remain in the struct for backward-compatible config parsing, but they MUST be ignored at runtime and only emit migration warnings.
 
 10. The `ExecConfig` struct MUST be extended with:
 
     ```go
     RiskThreshold  string                          `json:"risk_threshold"`   // "low"|"medium"|"high"|"critical"; default "medium"
     RiskOverrides  map[string]string               `json:"risk_overrides"`   // command → level override
+    ArgProfiles    map[string]ArgProfileConfig     `json:"arg_profiles"`     // command → argv normalization profile (extends built-ins)
     EnvAllowlist   []string                        `json:"env_allowlist"`    // extra vars to pass (extends defaults)
     EnvSet         map[string]string               `json:"env_set"`          // explicit var=value pairs
-    ArgModifiers   map[string][]ArgModifierConfig   `json:"arg_modifiers"`    // command → argument-aware risk adjustments (extends built-ins)
+    ArgModifiers   map[string][]ArgModifierConfig  `json:"arg_modifiers"`    // command → argument-aware risk adjustments (extends built-ins)
     ```
 
-    `ArgModifierConfig` is `struct { Args []string; Level string }`. User-defined modifiers are checked alongside built-ins using highest-match-wins semantics (the maximum level across all matching modifiers is applied).
+    `ArgModifierConfig` is `struct { Args []string; Level string }`. `ArgProfileConfig` configures argv normalization (`split_combined_short`, `split_long_equals`, `short_attached_value_flags`, `separate_value_flags`) using a fixed set of transforms (`identity`, `upper`, `lower`). User-defined modifiers are checked alongside built-ins using highest-match-wins semantics (the maximum level across all matching modifiers is applied). Built-in flag profiles are merged with config-supplied profiles; code remains the source of truth when the document lags.
 
 11. If deprecated config fields (`enable_deny_patterns`, `custom_deny_patterns`, `custom_allow_patterns`) are present in user config, the system SHOULD log a warning with migration instructions. The system MUST NOT fail to start.
 
@@ -209,7 +212,7 @@
 | `pkg/tools/shell_tool.go`                                     | Thin adapter: `ExecTool` struct implementing `Tool` + `AsyncExecutor`. Delegates to `pkg/tools/shell/` subpackage. Background results delivered via registry `AsyncCallback`. |
 | `pkg/tools/shell_tool_test.go`                                | Tests for `ExecTool` sync/async behavior and interface compliance.                                                                                                            |
 | `pkg/tools/shell_process_unix.go`, `shell_process_windows.go` | Removed. Interpreter manages process lifecycle.                                                                                                                               |
-| `pkg/config/config.go` (`ExecConfig`)                         | Three fields removed, four fields added.                                                                                                                                      |
+| `pkg/config/config.go` (`ExecConfig`)                         | Risk config expanded with `risk_threshold`, `risk_overrides`, `arg_profiles`, `arg_modifiers`, env controls; deprecated regex-era fields remain for backward-compatible parsing but are ignored. |
 | `pkg/config/defaults.go`                                      | Default `RiskThreshold` set to `"medium"`.                                                                                                                                    |
 | `pkg/tools/cron.go`                                           | Updated to use new `ExecTool` constructor.                                                                                                                                    |
 | `docs/tools_configuration.md`                                 | Rewritten for new config fields and risk model.                                                                                                                               |
@@ -222,16 +225,16 @@
 
 | File                              | Purpose                                                                                                                                    |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pkg/tools/shell/risk.go`         | Risk classifier: command→level mapping, argument modifiers (built-in + configurable), `ClassifyCommand` with highest-match-wins semantics. |
-| `pkg/tools/shell/risk_test.go`    | Table-driven tests for all 4 levels, argument modifiers, overrides, extra modifiers.                                                       |
+| `pkg/tools/shell/risk.go`         | Risk classifier: command→level mapping, flag-profile-based argv normalization, argument modifiers (built-in + configurable), `ClassifyCommand` / `ClassifyCommandWithProfiles` with highest-match-wins semantics. |
+| `pkg/tools/shell/risk_test.go`    | Table-driven tests for all 4 levels, argument modifiers, overrides, extra modifiers, and profile-driven argv normalization.                |
 | `pkg/tools/shell/env.go`          | Env sanitization: allowlist builder, default list, `LC_*` prefix matching, `env_set` application.                                          |
 | `pkg/tools/shell/env_test.go`     | Verify secrets stripped, allowlist passed, `env_set` applied.                                                                              |
 | `pkg/tools/shell/sandbox.go`      | `OpenHandler` implementation, path-within-workspace validation, pseudo-device exemptions.                                                  |
 | `pkg/tools/shell/sandbox_test.go` | Redirect inside/outside workspace, symlink escape, safe-path exemption.                                                                    |
 | `pkg/tools/shell/runner.go`       | `Run` function: parser + interpreter + `ExecHandlers` middleware integration.                                                              |
 | `pkg/tools/shell/runner_test.go`  | End-to-end runner tests: timeout, working dir, env sanitization, pipelines.                                                                |
-| `pkg/tools/shell_tool.go`         | Adapter: `ExecTool` struct, `NewExecToolWithConfig(workDir, restrict, cfg)`, `AsyncExecutor` impl, arg modifier wiring.                    |
-| `pkg/tools/shell_tool_test.go`    | `ExecTool` sync/async tests, interface compliance checks.                                                                                  |
+| `pkg/tools/shell_tool.go`         | Adapter: `ExecTool` struct, `NewExecToolWithConfig(workDir, restrict, cfg)`, `AsyncExecutor` impl, arg modifier + arg profile wiring.     |
+| `pkg/tools/shell_tool_test.go`    | `ExecTool` sync/async tests, interface compliance checks, deprecated-config warnings, and config→flag-profile parsing coverage.            |
 | `pkg/tools/cron_exec_test.go`     | AC-8: cron-originated `ExecTool` blocks dangerous commands identically to agent-created one; safe commands pass.                           |
 
 ### Follow-up tasks

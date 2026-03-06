@@ -31,6 +31,7 @@ type ExecTool struct {
 
 	riskThreshold shell.RiskLevel
 	riskOverrides map[string]string
+	argProfiles   map[string]shell.FlagProfile
 	argModifiers  map[string][]shell.ArgModifier
 	envAllowlist  []string
 	envSet        map[string]string
@@ -66,6 +67,7 @@ func NewExecToolWithConfig(
 			}
 		}
 		t.riskOverrides = shell.NormalizeCommandKeys(execCfg.RiskOverrides)
+		t.argProfiles = shell.NormalizeCommandKeys(parseArgProfiles(execCfg.ArgProfiles))
 		t.argModifiers = shell.NormalizeCommandKeys(parseArgModifiers(execCfg.ArgModifiers))
 		t.envAllowlist = execCfg.EnvAllowlist
 		t.envSet = execCfg.EnvSet
@@ -214,6 +216,7 @@ func (t *ExecTool) buildConfig(args map[string]any) (shell.RunConfig, *ToolResul
 		WorkspaceDir:      t.workingDir,
 		RiskThreshold:     t.riskThreshold,
 		RiskOverrides:     t.riskOverrides,
+		ExtraFlagProfiles: t.argProfiles,
 		ExtraArgModifiers: t.argModifiers,
 		EnvAllowlist:      t.envAllowlist,
 		EnvSet:            t.envSet,
@@ -255,6 +258,64 @@ func parseArgModifiers(raw map[string][]config.ArgModifierConfig) map[string][]s
 				Level: level,
 			})
 		}
+	}
+	return out
+}
+
+func parseArgProfiles(raw map[string]config.ArgProfileConfig) map[string]shell.FlagProfile {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]shell.FlagProfile, len(raw))
+	for cmd, profile := range raw {
+		parsed := shell.FlagProfile{
+			SplitCombinedShort: profile.SplitCombinedShort,
+			SplitLongEquals:    profile.SplitLongEquals,
+		}
+
+		if transforms := parseFlagTransforms(
+			cmd,
+			"short_attached_value_flags",
+			profile.ShortAttachedValue,
+		); len(
+			transforms,
+		) > 0 {
+			parsed.ShortAttachedValue = transforms
+		}
+		if transforms := parseFlagTransforms(
+			cmd,
+			"separate_value_flags",
+			profile.SeparateValueFlags,
+		); len(
+			transforms,
+		) > 0 {
+			parsed.SeparateValueFlags = transforms
+		}
+
+		out[cmd] = parsed
+	}
+	return out
+}
+
+func parseFlagTransforms(cmd, field string, raw map[string]string) map[string]shell.FlagValueTransform {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]shell.FlagValueTransform, len(raw))
+	for flag, name := range raw {
+		transform, err := shell.ParseFlagValueTransform(name)
+		if err != nil {
+			fmt.Printf(
+				"Warning: invalid %s transform %q for command %q flag %q: %v. Skipping this flag.\n",
+				field,
+				name,
+				cmd,
+				flag,
+				err,
+			)
+			continue
+		}
+		out[flag] = transform
 	}
 	return out
 }

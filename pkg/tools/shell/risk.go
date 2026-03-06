@@ -269,6 +269,59 @@ type ArgModifier struct {
 	Level RiskLevel
 }
 
+type FlagValueTransform string
+
+const (
+	FlagValueIdentity FlagValueTransform = "identity"
+	FlagValueUpper    FlagValueTransform = "upper"
+	FlagValueLower    FlagValueTransform = "lower"
+)
+
+func ParseFlagValueTransform(s string) (FlagValueTransform, error) {
+	switch FlagValueTransform(strings.ToLower(s)) {
+	case "", FlagValueIdentity:
+		return FlagValueIdentity, nil
+	case FlagValueUpper:
+		return FlagValueUpper, nil
+	case FlagValueLower:
+		return FlagValueLower, nil
+	default:
+		return "", fmt.Errorf("unknown flag value transform %q, must be one of: identity, upper, lower", s)
+	}
+}
+
+type FlagProfile struct {
+	SplitCombinedShort bool
+	SplitLongEquals    bool
+	ShortAttachedValue map[string]FlagValueTransform
+	SeparateValueFlags map[string]FlagValueTransform
+}
+
+var defaultFlagProfile = FlagProfile{
+	SplitCombinedShort: true,
+	SplitLongEquals:    true,
+}
+
+var commandFlagProfiles = map[string]FlagProfile{
+	"curl": {
+		SplitCombinedShort: true,
+		SplitLongEquals:    true,
+		ShortAttachedValue: map[string]FlagValueTransform{
+			"-X": FlagValueUpper,
+			"-d": FlagValueIdentity,
+			"-T": FlagValueIdentity,
+		},
+		SeparateValueFlags: map[string]FlagValueTransform{
+			"-X":            FlagValueUpper,
+			"--request":     FlagValueUpper,
+			"-d":            FlagValueIdentity,
+			"--data":        FlagValueIdentity,
+			"-T":            FlagValueIdentity,
+			"--upload-file": FlagValueIdentity,
+		},
+	},
+}
+
 // argumentModifiers maps command names to their argument-aware risk adjustments.
 // All matching modifiers are scanned; the highest level wins.
 //
@@ -380,6 +433,24 @@ var argumentModifiers = map[string][]ArgModifier{
 // This means risk_overrides: {"rm": "medium"} allows plain `rm` but
 // `rm -rf` is still elevated to critical by the built-in modifier.
 func ClassifyCommand(args []string, overrides map[string]string, extraModifiers ...map[string][]ArgModifier) RiskLevel {
+	return classifyCommand(args, overrides, nil, extraModifiers...)
+}
+
+func ClassifyCommandWithProfiles(
+	args []string,
+	overrides map[string]string,
+	extraProfiles map[string]FlagProfile,
+	extraModifiers ...map[string][]ArgModifier,
+) RiskLevel {
+	return classifyCommand(args, overrides, extraProfiles, extraModifiers...)
+}
+
+func classifyCommand(
+	args []string,
+	overrides map[string]string,
+	extraProfiles map[string]FlagProfile,
+	extraModifiers ...map[string][]ArgModifier,
+) RiskLevel {
 	if len(args) == 0 {
 		return RiskMedium
 	}
@@ -404,7 +475,8 @@ func ClassifyCommand(args []string, overrides map[string]string, extraModifiers 
 
 	// Normalize args: expand combined short flags like -rf → -r, -f
 	// so that modifiers match regardless of how flags were grouped or ordered.
-	normalizedArgs := normalizeFlags(args[1:])
+	profile := flagProfileFor(cmdName, extraProfiles)
+	normalizedArgs := normalizeFlagsWithProfile(profile, args[1:])
 
 	// Apply built-in modifiers, then user-supplied. Keep the highest match
 	// across all sources. Modifiers can only elevate, never lower.
@@ -517,6 +589,42 @@ func NormalizeCommandKeys[V any](m map[string]V) map[string]V {
 	return normalized
 }
 
+func MergeFlagProfiles(base, override FlagProfile) FlagProfile {
+	merged := base
+	merged.SplitCombinedShort = base.SplitCombinedShort || override.SplitCombinedShort
+	merged.SplitLongEquals = base.SplitLongEquals || override.SplitLongEquals
+	merged.ShortAttachedValue = mergeFlagTransformMaps(base.ShortAttachedValue, override.ShortAttachedValue)
+	merged.SeparateValueFlags = mergeFlagTransformMaps(base.SeparateValueFlags, override.SeparateValueFlags)
+	return merged
+}
+
+func mergeFlagTransformMaps(base, override map[string]FlagValueTransform) map[string]FlagValueTransform {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	merged := make(map[string]FlagValueTransform, len(base)+len(override))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range override {
+		merged[k] = v
+	}
+	return merged
+}
+
+func flagProfileFor(cmdName string, extraProfiles map[string]FlagProfile) FlagProfile {
+	profile := defaultFlagProfile
+	if builtIn, ok := commandFlagProfiles[cmdName]; ok {
+		profile = MergeFlagProfiles(profile, builtIn)
+	}
+	if extraProfiles != nil {
+		if extra, ok := extraProfiles[cmdName]; ok {
+			profile = MergeFlagProfiles(profile, extra)
+		}
+	}
+	return profile
+}
+
 // baseCommand extracts the basename from a command path.
 // On Windows, it additionally lowercases the name and strips known
 // executable extensions (.exe, .cmd, .bat, .com) so that
@@ -540,24 +648,107 @@ func baseCommand(cmd string) string {
 	return lower
 }
 
-// normalizeFlags expands combined short flags (e.g., "-rf" → "-r", "-f")
-// so that modifier matching works regardless of how flags are grouped.
-// Long flags (--flag), non-flag arguments, and slash flags (/s, /MIR) are
-// passed through unchanged. Single-dash flags longer than 3 characters
-// (e.g., "-urlcache") are treated as long flags and NOT expanded, since
-// no standard tool uses 4+ combined single-letter flags.
-func normalizeFlags(args []string) []string {
+// normalizeFlags expands/normalizes flag forms according to the command's
+// flag profile so modifier matching works regardless of grouping or
+// flag-value style.
+func normalizeFlags(cmdName string, args []string) []string {
+	profile := flagProfileFor(cmdName, nil)
+	return normalizeFlagsWithProfile(profile, args)
+}
+
+func normalizeFlagsWithProfile(profile FlagProfile, args []string) []string {
 	result := make([]string, 0, len(args)*2)
 	for _, a := range args {
-		if len(a) > 2 && len(a) <= 4 && a[0] == '-' && a[1] != '-' {
+		if flag, value, ok := splitShortAttachedValue(profile, a); ok {
+			result = append(result, flag)
+			if value != "" {
+				result = append(result, normalizeFlagValue(profile, flag, value))
+			}
+			continue
+		}
+
+		if profile.SplitLongEquals && len(a) > 2 && strings.HasPrefix(a, "--") {
+			if idx := strings.IndexByte(a, '='); idx > 2 {
+				flag := a[:idx]
+				result = append(result, flag)
+				if idx+1 < len(a) {
+					result = append(result, normalizeFlagValue(profile, flag, a[idx+1:]))
+				}
+				continue
+			}
+		}
+
+		if profile.SplitCombinedShort && len(a) > 2 && len(a) <= 4 && a[0] == '-' && a[1] != '-' {
 			for _, ch := range a[1:] {
 				result = append(result, "-"+string(ch))
 			}
-		} else {
-			result = append(result, a)
+			continue
 		}
+
+		result = append(result, a)
 	}
-	return result
+
+	return normalizeSeparateFlagValues(profile, result)
+}
+
+func splitShortAttachedValue(profile FlagProfile, arg string) (string, string, bool) {
+	if len(arg) <= 3 || arg[0] != '-' || arg[1] == '-' {
+		return "", "", false
+	}
+
+	flag := arg[:2]
+	if _, ok := profile.ShortAttachedValue[flag]; !ok {
+		return "", "", false
+	}
+
+	if arg[2] == '=' {
+		if len(arg) == 3 {
+			return flag, "", true
+		}
+		return flag, arg[3:], true
+	}
+
+	return flag, arg[2:], true
+}
+
+func normalizeFlagValue(profile FlagProfile, flag, value string) string {
+	if transform, ok := profile.SeparateValueFlags[flag]; ok {
+		return applyFlagValueTransform(transform, value)
+	}
+	if transform, ok := profile.ShortAttachedValue[flag]; ok {
+		return applyFlagValueTransform(transform, value)
+	}
+	return value
+}
+
+func applyFlagValueTransform(transform FlagValueTransform, value string) string {
+	switch transform {
+	case FlagValueUpper:
+		return strings.ToUpper(value)
+	case FlagValueLower:
+		return strings.ToLower(value)
+	case FlagValueIdentity, "":
+		return value
+	default:
+		return value
+	}
+}
+
+func normalizeSeparateFlagValues(profile FlagProfile, args []string) []string {
+	if len(profile.SeparateValueFlags) == 0 {
+		return args
+	}
+
+	normalized := append([]string(nil), args...)
+	for i := 0; i+1 < len(normalized); i++ {
+		transform, ok := profile.SeparateValueFlags[normalized[i]]
+		if !ok {
+			continue
+		}
+		normalized[i+1] = applyFlagValueTransform(transform, normalized[i+1])
+		i++
+	}
+	return normalized
 }
 
 // matchArgs checks if ALL pattern tokens are present in args (order-independent).

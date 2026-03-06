@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/tools/shell"
 )
 
 func TestExecTool_SyncExecution(t *testing.T) {
@@ -175,12 +176,12 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
-func boolPtr(b bool) *bool { return &b }
+func ptr[T any](v T) *T { return &v }
 
 func TestWarnDeprecatedExecConfig_EnableDenyPatternsFalse(t *testing.T) {
 	out := captureStdout(t, func() {
 		warnDeprecatedExecConfig(config.ExecConfig{
-			EnableDenyPatterns: boolPtr(false),
+			EnableDenyPatterns: ptr(false),
 		})
 	})
 
@@ -195,7 +196,7 @@ func TestWarnDeprecatedExecConfig_EnableDenyPatternsFalse(t *testing.T) {
 func TestWarnDeprecatedExecConfig_EnableDenyPatternsTrue(t *testing.T) {
 	out := captureStdout(t, func() {
 		warnDeprecatedExecConfig(config.ExecConfig{
-			EnableDenyPatterns: boolPtr(true),
+			EnableDenyPatterns: ptr(true),
 		})
 	})
 
@@ -236,7 +237,7 @@ func TestWarnDeprecatedExecConfig_CustomPatterns(t *testing.T) {
 func TestWarnDeprecatedExecConfig_AllDeprecatedFields(t *testing.T) {
 	out := captureStdout(t, func() {
 		warnDeprecatedExecConfig(config.ExecConfig{
-			EnableDenyPatterns:  boolPtr(false),
+			EnableDenyPatterns:  ptr(false),
 			CustomDenyPatterns:  []string{"rm"},
 			CustomAllowPatterns: []string{"ls"},
 		})
@@ -257,7 +258,7 @@ func TestWarnDeprecatedExecConfig_AllDeprecatedFields(t *testing.T) {
 func TestNewExecToolWithConfig_EnableDenyPatternsFalseWarning(t *testing.T) {
 	out := captureStdout(t, func() {
 		cfg := &config.Config{}
-		cfg.Tools.Exec.EnableDenyPatterns = boolPtr(false)
+		cfg.Tools.Exec.EnableDenyPatterns = ptr(false)
 		_, err := NewExecToolWithConfig(t.TempDir(), false, cfg)
 		if err != nil {
 			t.Fatal(err)
@@ -266,5 +267,47 @@ func TestNewExecToolWithConfig_EnableDenyPatternsFalseWarning(t *testing.T) {
 
 	if !strings.Contains(out, "enable_deny_patterns: false") {
 		t.Errorf("expected warning in NewExecToolWithConfig output: %s", out)
+	}
+}
+
+func TestParseArgProfiles(t *testing.T) {
+	profiles := parseArgProfiles(map[string]config.ArgProfileConfig{
+		"curl": {
+			SplitCombinedShort: true,
+			SplitLongEquals:    true,
+			ShortAttachedValue: map[string]string{"-X": "upper"},
+			SeparateValueFlags: map[string]string{"--request": "upper"},
+		},
+	})
+
+	profile, ok := profiles["curl"]
+	if !ok {
+		t.Fatal("expected curl profile")
+	}
+	if !profile.SplitCombinedShort || !profile.SplitLongEquals {
+		t.Fatal("expected split flags to be enabled")
+	}
+	if got := profile.ShortAttachedValue["-X"]; got != shell.FlagValueUpper {
+		t.Fatalf("ShortAttachedValue[-X] = %q, want %q", got, shell.FlagValueUpper)
+	}
+	if got := profile.SeparateValueFlags["--request"]; got != shell.FlagValueUpper {
+		t.Fatalf("SeparateValueFlags[--request] = %q, want %q", got, shell.FlagValueUpper)
+	}
+}
+
+func TestParseArgProfiles_InvalidTransformWarning(t *testing.T) {
+	out := captureStdout(t, func() {
+		profiles := parseArgProfiles(map[string]config.ArgProfileConfig{
+			"curl": {
+				ShortAttachedValue: map[string]string{"-X": "bogus"},
+			},
+		})
+		if got := len(profiles["curl"].ShortAttachedValue); got != 0 {
+			t.Fatalf("expected invalid transform to be skipped, got %d entries", got)
+		}
+	})
+
+	if !strings.Contains(out, "invalid short_attached_value_flags transform") {
+		t.Fatalf("expected invalid transform warning, got: %s", out)
 	}
 }

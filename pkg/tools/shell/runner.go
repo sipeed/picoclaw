@@ -26,6 +26,7 @@ type RunConfig struct {
 
 	RiskThreshold     RiskLevel
 	RiskOverrides     map[string]string
+	ExtraFlagProfiles map[string]FlagProfile
 	ExtraArgModifiers map[string][]ArgModifier // user-defined, appended after built-ins
 	EnvAllowlist      []string
 	EnvSet            map[string]string
@@ -74,7 +75,7 @@ func Run(ctx context.Context, cfg RunConfig) RunResult {
 		opts,
 		interp.ExecHandlers(
 			pathAwareExecHandler(env),
-			riskExecHandler(cfg.RiskThreshold, cfg.RiskOverrides, cfg.ExtraArgModifiers),
+			riskExecHandler(cfg.RiskThreshold, cfg.RiskOverrides, cfg.ExtraFlagProfiles, cfg.ExtraArgModifiers),
 		),
 	)
 
@@ -134,6 +135,7 @@ func Run(ctx context.Context, cfg RunConfig) RunResult {
 func riskExecHandler(
 	threshold RiskLevel,
 	overrides map[string]string,
+	extraProfiles map[string]FlagProfile,
 	extraMods map[string][]ArgModifier,
 ) func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
@@ -142,7 +144,7 @@ func riskExecHandler(
 				return next(ctx, args)
 			}
 
-			level := ClassifyCommand(args, overrides, extraMods)
+			level := ClassifyCommandWithProfiles(args, overrides, extraProfiles, extraMods)
 			if !IsAllowed(level, threshold) {
 				return NewBlockedError(args, level, threshold, "command risk exceeds configured threshold")
 			}

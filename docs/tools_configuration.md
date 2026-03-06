@@ -54,6 +54,7 @@ AST-based risk classification, environment sanitization, and file-access sandbox
 | ---------------- | ------ | ---------- | ------------------------------------------------------------------------------- |
 | `risk_threshold` | string | `"medium"` | Maximum allowed risk level: `"low"`, `"medium"`, `"high"`, `"critical"`         |
 | `risk_overrides` | object | `{}`       | Per-command base risk level (command name → level); modifiers can still elevate |
+| `arg_profiles`   | object | `{}`       | Per-command argv normalization rules used before argument modifier matching      |
 | `arg_modifiers`  | object | `{}`       | Per-command argument patterns that adjust risk level                            |
 | `env_allowlist`  | array  | `[]`       | Extra environment variables to expose (extends built-in defaults)               |
 | `env_set`        | object | `{}`       | Explicit `VAR=value` pairs injected into every command                          |
@@ -90,6 +91,54 @@ must all be present (order-independent) and the resulting level:
 ```
 
 The **highest matching** modifier wins (built-in and custom are merged).
+
+#### Argument profiles
+
+Argument profiles normalize argv before modifier matching. This is useful when a
+tool accepts multiple flag syntaxes for the same semantic operation, such as
+`curl -XPOST`, `curl -X POST`, and `curl --request=POST`.
+
+Each command profile can enable:
+
+- `split_combined_short`: split grouped flags like `-rf` into `-r`, `-f`
+- `split_long_equals`: split `--flag=value` into `--flag`, `value`
+- `short_attached_value_flags`: split attached short-value forms like `-XPOST`
+- `separate_value_flags`: normalize the token after a flag like `-X post`
+
+Supported value transforms are:
+
+- `identity`: keep the value unchanged
+- `upper`: uppercase the value
+- `lower`: lowercase the value
+
+Example:
+
+```json
+{
+  "arg_profiles": {
+    "curl": {
+      "split_combined_short": true,
+      "split_long_equals": true,
+      "short_attached_value_flags": {
+        "-X": "upper",
+        "-d": "identity",
+        "-T": "identity"
+      },
+      "separate_value_flags": {
+        "-X": "upper",
+        "--request": "upper",
+        "-d": "identity",
+        "--data": "identity",
+        "-T": "identity",
+        "--upload-file": "identity"
+      }
+    }
+  }
+}
+```
+
+Built-in profiles are applied first; config profiles extend or override the
+command's flag maps.
 
 #### Precedence
 
@@ -154,6 +203,22 @@ execution.
       "risk_overrides": {
         "ffmpeg": "low",
         "terraform": "critical"
+      },
+      "arg_profiles": {
+        "curl": {
+          "split_combined_short": true,
+          "split_long_equals": true,
+          "short_attached_value_flags": {
+            "-X": "upper",
+            "-d": "identity"
+          },
+          "separate_value_flags": {
+            "-X": "upper",
+            "--request": "upper",
+            "-d": "identity",
+            "--data": "identity"
+          }
+        }
       },
       "arg_modifiers": {
         "curl": [{ "args": ["--upload-file"], "level": "high" }]

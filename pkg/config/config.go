@@ -608,10 +608,20 @@ type ArgModifierConfig struct {
 	Level string   `json:"level"` // target risk level: "low"|"medium"|"high"|"critical"
 }
 
+// ArgProfileConfig describes how a command's argv should be normalized before
+// argument-aware risk modifiers are matched.
+type ArgProfileConfig struct {
+	SplitCombinedShort bool              `json:"split_combined_short"`
+	SplitLongEquals    bool              `json:"split_long_equals"`
+	ShortAttachedValue map[string]string `json:"short_attached_value_flags"`
+	SeparateValueFlags map[string]string `json:"separate_value_flags"`
+}
+
 type ExecConfig struct {
 	ToolConfig    `                               envPrefix:"PICOCLAW_TOOLS_EXEC_"`
 	RiskThreshold string                         `                                 json:"risk_threshold" env:"PICOCLAW_TOOLS_EXEC_RISK_THRESHOLD"` // "low"|"medium"|"high"|"critical"; default "medium"
 	RiskOverrides map[string]string              `                                 json:"risk_overrides" env:"PICOCLAW_TOOLS_EXEC_RISK_OVERRIDES"` // command → level override
+	ArgProfiles   map[string]ArgProfileConfig    `                                 json:"arg_profiles"`                                            // command → argv normalization profile (extends built-ins)
 	ArgModifiers  map[string][]ArgModifierConfig `                                 json:"arg_modifiers"  env:"PICOCLAW_TOOLS_EXEC_ARG_MODIFIERS"`  // command → argument-aware risk adjustments (extends built-ins)
 	EnvAllowlist  []string                       `                                 json:"env_allowlist"  env:"PICOCLAW_TOOLS_EXEC_ENV_ALLOWLIST"`  // extra env vars to pass (extends defaults)
 	EnvSet        map[string]string              `                                 json:"env_set"        env:"PICOCLAW_TOOLS_EXEC_ENV_SET"`        // explicit var=value pairs

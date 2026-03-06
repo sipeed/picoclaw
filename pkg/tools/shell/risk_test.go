@@ -80,10 +80,18 @@ func TestClassifyCommand_ArgumentModifiers(t *testing.T) {
 
 		{"curl GET (default)", []string{"curl", "https://example.com"}, RiskMedium},
 		{"curl POST", []string{"curl", "-X", "POST", "https://example.com"}, RiskHigh},
+		{"curl post lowercase", []string{"curl", "-X", "post", "https://example.com"}, RiskHigh},
 		{"curl -d data", []string{"curl", "-d", "data", "https://example.com"}, RiskHigh},
 		{"curl --data data", []string{"curl", "--data", "data", "url"}, RiskHigh},
+		{"curl --data=payload", []string{"curl", "--data=payload", "url"}, RiskHigh},
 		{"curl -X DELETE", []string{"curl", "-X", "DELETE", "url"}, RiskHigh},
+		{"curl -XDELETE", []string{"curl", "-XDELETE", "url"}, RiskHigh},
+		{"curl -X=DELETE", []string{"curl", "-X=DELETE", "url"}, RiskHigh},
 		{"curl --request POST", []string{"curl", "--request", "POST", "url"}, RiskHigh},
+		{"curl --request=post lowercase", []string{"curl", "--request=post", "url"}, RiskHigh},
+		{"curl --request=POST", []string{"curl", "--request=POST", "url"}, RiskHigh},
+		{"curl -dDATA", []string{"curl", "-dDATA", "https://example.com"}, RiskHigh},
+		{"curl -d=DATA", []string{"curl", "-d=DATA", "https://example.com"}, RiskHigh},
 
 		{"rm file (no flags)", []string{"rm", "file.txt"}, RiskHigh},
 		{"rm -rf", []string{"rm", "-rf", "/"}, RiskCritical},
@@ -353,15 +361,22 @@ func TestNormalizeFlags(t *testing.T) {
 	}{
 		{[]string{"-rf"}, []string{"-r", "-f"}},
 		{[]string{"-fr"}, []string{"-f", "-r"}},
+		{[]string{"-XPOST"}, []string{"-XPOST"}},
+		{[]string{"-X=POST"}, []string{"-X=POST"}},
+		{[]string{"-dDATA"}, []string{"-dDATA"}},
+		{[]string{"-d=DATA"}, []string{"-d=DATA"}},
+		{[]string{"--request=POST"}, []string{"--request", "POST"}},
+		{[]string{"--data=body"}, []string{"--data", "body"}},
 		{[]string{"-r", "-f"}, []string{"-r", "-f"}},
 		{[]string{"--force"}, []string{"--force"}},
 		{[]string{"-f"}, []string{"-f"}},
+		{[]string{"-9"}, []string{"-9"}},
 		{[]string{"push"}, []string{"push"}},
 		{[]string{"-rf", "dir", "--verbose"}, []string{"-r", "-f", "dir", "--verbose"}},
 	}
 
 	for _, tt := range tests {
-		got := normalizeFlags(tt.input)
+		got := normalizeFlags("git", tt.input)
 		if len(got) != len(tt.want) {
 			t.Errorf("normalizeFlags(%v) = %v, want %v", tt.input, got, tt.want)
 			continue
@@ -372,6 +387,59 @@ func TestNormalizeFlags(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+func TestNormalizeFlags_CurlAttachedShortValues(t *testing.T) {
+	tests := []struct {
+		input []string
+		want  []string
+	}{
+		{[]string{"-XPOST"}, []string{"-X", "POST"}},
+		{[]string{"-Xpost"}, []string{"-X", "POST"}},
+		{[]string{"-X=POST"}, []string{"-X", "POST"}},
+		{[]string{"-dDATA"}, []string{"-d", "DATA"}},
+		{[]string{"-d=DATA"}, []string{"-d", "DATA"}},
+		{[]string{"-Tfile.txt"}, []string{"-T", "file.txt"}},
+		{[]string{"--request=post"}, []string{"--request", "POST"}},
+		{[]string{"-X", "post"}, []string{"-X", "POST"}},
+	}
+
+	for _, tt := range tests {
+		got := normalizeFlags("curl", tt.input)
+		if len(got) != len(tt.want) {
+			t.Errorf("normalizeFlags(curl, %v) = %v, want %v", tt.input, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("normalizeFlags(curl, %v) = %v, want %v", tt.input, got, tt.want)
+				break
+			}
+		}
+	}
+}
+
+func TestClassifyCommandWithProfiles_CustomAttachedValue(t *testing.T) {
+	profiles := map[string]FlagProfile{
+		"http": {
+			ShortAttachedValue: map[string]FlagValueTransform{
+				"-m": FlagValueUpper,
+			},
+			SeparateValueFlags: map[string]FlagValueTransform{
+				"-m": FlagValueUpper,
+			},
+		},
+	}
+	modifiers := map[string][]ArgModifier{
+		"http": {
+			{Args: []string{"-m", "POST"}, Level: RiskHigh},
+		},
+	}
+
+	got := ClassifyCommandWithProfiles([]string{"http", "-mpost", "https://example.com"}, nil, profiles, modifiers)
+	if got != RiskHigh {
+		t.Fatalf("ClassifyCommandWithProfiles(custom attached value) = %s, want %s", got, RiskHigh)
 	}
 }
 
@@ -493,21 +561,21 @@ func TestClassifyCommand_ShellWrapperFullPath(t *testing.T) {
 func TestApplyModifiers_HighestMatchWins(t *testing.T) {
 	// When multiple modifiers match, the highest level should win.
 	// Scenario: git push matches both ["push"] → High and ["push", "-f"] → Critical
-	args := normalizeFlags([]string{"push", "-f", "origin"})
+	args := normalizeFlags("git", []string{"push", "-f", "origin"})
 	result := applyModifiers(args, "git", RiskMedium, argumentModifiers)
 	if result != RiskCritical {
 		t.Errorf("git push -f should resolve to critical (highest match), got %s", result)
 	}
 
 	// Only ["push"] matches → High
-	args2 := normalizeFlags([]string{"push", "origin"})
+	args2 := normalizeFlags("git", []string{"push", "origin"})
 	result2 := applyModifiers(args2, "git", RiskMedium, argumentModifiers)
 	if result2 != RiskHigh {
 		t.Errorf("git push (no -f) should resolve to high, got %s", result2)
 	}
 
 	// No modifier matches → base level unchanged
-	args3 := normalizeFlags([]string{"status"})
+	args3 := normalizeFlags("git", []string{"status"})
 	result3 := applyModifiers(args3, "git", RiskMedium, argumentModifiers)
 	if result3 != RiskMedium {
 		t.Errorf("git status should stay medium, got %s", result3)

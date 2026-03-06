@@ -343,6 +343,7 @@
       "enabled": true,
       "risk_threshold": "medium",
       "risk_overrides": {},
+      "arg_profiles": {},
       "arg_modifiers": {},
       "env_allowlist": [],
       "env_set": {}
