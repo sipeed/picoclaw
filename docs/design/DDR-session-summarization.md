@@ -131,7 +131,7 @@ Both forms are supported. If both are present, the nested struct wins.
 - **Configurability**: Users on constrained hardware (RISC-V, 10MB RAM) need different thresholds than users on GPT-4 with 128k context.
 - **Extensibility**: New summarization strategies (e.g., embeddings-based, local model) plug in via the `Summarizer` interface.
 
-5. **Unified config** — Single `config.SummarizationConfig` used everywhere. No duplicate struct in session package, no field-by-field mapping.
+- **Unified config** — Single `config.SummarizationConfig` used everywhere. No duplicate struct in session package, no field-by-field mapping.
 
 - **Config hygiene**: Grouping related fields under `summarization` prevents `AgentDefaults` from growing into a flat bag of 30+ fields.
 
