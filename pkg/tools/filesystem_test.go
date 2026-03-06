@@ -520,3 +520,40 @@ func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
 		t.Errorf("expected non-whitelisted path to be blocked, got: %s", result.ForLLM)
 	}
 }
+// TestFilesystemTool_ReadFile_BinaryFile verifies rejection of binary files
+func TestFilesystemTool_ReadFile_BinaryFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.pdf")
+	// Create binary content with more than 30% non-printable characters
+	// Start with legitimate content header
+	pdfContent := []byte("%PDF-1.4\n1 0 obj\n<< /Pages 2 0 R >>\nendobj")
+	
+	// Add significant portion of null bytes and control chars (will surpass 30%)
+	multibytes := make([]byte, 20)
+	for i := range multibytes {
+		if i%3 == 0 {
+			multibytes[i] = 0x00 // null
+		} else if i%3 == 1 {
+			multibytes[i] = 0x01 // start of heading control char
+		} else {
+			multibytes[i] = 0x02 // start of text control char
+		}
+	}
+	pdfContent = append(pdfContent, multibytes...)
+	os.WriteFile(testFile, pdfContent, 0o644)
+	tool := NewReadFileTool("", false)
+	ctx := context.Background()
+	args := map[string]any{
+		"path": testFile,
+	}
+
+	result := tool.Execute(ctx, args)
+
+	if !result.IsError {
+		t.Errorf("Expected error for binary file, got IsError=false")
+	}
+
+	if !strings.Contains(result.ForLLM, "binary file detected") {
+		t.Errorf("Expected binary file error message, got: %s", result.ForLLM)
+	}
+}

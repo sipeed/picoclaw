@@ -292,7 +292,50 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	}
 }
 
+// isURLPath checks if the matched path is part of a URL rather than a file path.
+// It detects patterns like "wttr.in/Beijing" or "http://example.com/path"
+func isURLPath(command, matchedPath string) bool {
+	// Find the position of the matched path in the command
+	idx := strings.Index(command, matchedPath)
+	if idx == -1 {
+		return false
+	}
+
+	// Check what comes before the matched path
+	// If it's preceded by a dot (.) or //, it's likely a URL
+	if idx > 0 {
+		prefix := command[:idx]
+		trimmed := strings.TrimSpace(prefix)
+
+		// Check for URL patterns: domain.com/ or http:// or https://
+		if strings.HasSuffix(trimmed, ".") {
+			return true
+		}
+		if strings.HasSuffix(trimmed, "//") {
+			return true
+		}
+
+		// Check if the match starts with / and is preceded by a word character (domain)
+		if matchedPath[0] == '/' && idx > 0 {
+			before := command[idx-1]
+			if before == '.' || before == '/' {
+				return true
+			}
+		}
+	}
+
+	// Check if the matched path itself looks like a URL path component
+	// (contains query parameters or fragments)
+	if strings.Contains(matchedPath, "?") || strings.Contains(matchedPath, "#") || strings.Contains(matchedPath, "&") {
+		return true
+	}
+
+	return false
+}
+
+
 func (t *ExecTool) guardCommand(command, cwd string) string {
+
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
 
@@ -327,6 +370,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	if t.restrictToWorkspace {
+		// Check for explicit path traversal sequences
 		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
 			return "Command blocked by safety guard (path traversal detected)"
 		}
@@ -339,6 +383,12 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		matches := absolutePathPattern.FindAllString(cmd, -1)
 
 		for _, raw := range matches {
+			// Skip URL paths (e.g., wttr.in/Beijing in curl commands)
+			// URL paths typically follow a dot or are part of a URL pattern
+			if isURLPath(cmd, raw) {
+				continue
+			}
+
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue

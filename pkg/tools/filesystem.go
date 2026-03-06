@@ -13,6 +13,29 @@ import (
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
+// isBinaryFile checks if the file content appears to be binary.
+// It checks the first 512 bytes for the ratio of non-printable characters.
+func isBinaryFile(content []byte, sampleSize int) bool {
+	if sampleSize > len(content) {
+		sampleSize = len(content)
+	}
+	if sampleSize == 0 {
+		return false
+	}
+
+	sample := content[:sampleSize]
+	nonPrintable := 0
+	for _, b := range sample {
+		// Check for null byte or control characters (except tab, newline, carriage return)
+		if b == 0 || (b < 32 && b != 9 && b != 10 && b != 13) {
+			nonPrintable++
+		}
+	}
+
+	// If more than 30% is non-printable, consider it binary
+	return float64(nonPrintable)/float64(sampleSize) > 0.3
+}
+
 // validatePath ensures the given path is within the workspace if restrict is true.
 func validatePath(path, workspace string, restrict bool) (string, error) {
 	if workspace == "" {
@@ -127,6 +150,12 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
+
+	// Check if file is binary
+	if isBinaryFile(content, 512) {
+		return ErrorResult("binary file detected. read_file tool does not support reading binary files such as PDF, images, videos, etc.")
+	}
+
 	return NewToolResult(string(content))
 }
 
