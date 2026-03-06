@@ -4,7 +4,8 @@
 \brmdir\s+/s\b
 \b(format|mkfs|diskpart)\b\s
 \bdd\s+if=
->\s*/dev/sd[a-z]\b
+# Block writes to block devices (all common naming schemes)
+>\s*/dev/(sd[a-z]|hd[a-z]|vd[a-z]|xvd[a-z]|nvme\d|mmcblk\d|loop\d|dm-\d|md\d|sr\d|nbd\d)
 \b(shutdown|reboot|poweroff)\b
 :\(\)\s*\{.*\};\s*:
 \$\([^)]+\)
@@ -16,7 +17,6 @@
 ;\s*rm\s+-[rf]
 &&\s*rm\s+-[rf]
 \|\|\s*rm\s+-[rf]
->\s*/dev/null\s*>&?\s*\d?
 <<\s*EOF
 <<<
 \$\(\s*cat\s+
@@ -29,7 +29,7 @@
 \bchown\b
 \bpkill\b
 \bkillall\b
-\bkill\s+-[9]\b
+\bkill\b
 \bcurl\b.*\|\s*(sh|bash)
 \bwget\b.*\|\s*(sh|bash)
 \bnpm\s+install\s+-g\b

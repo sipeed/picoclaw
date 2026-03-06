@@ -19,6 +19,27 @@ func TestGetConfigPath(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+func TestGetConfigPath_WithPICOCLAW_HOME(t *testing.T) {
+	t.Setenv("PICOCLAW_HOME", "/custom/picoclaw")
+	t.Setenv("HOME", "/tmp/home")
+
+	got := GetConfigPath()
+	want := filepath.Join("/custom/picoclaw", "config.json")
+
+	assert.Equal(t, want, got)
+}
+
+func TestGetConfigPath_WithPICOCLAW_CONFIG(t *testing.T) {
+	t.Setenv("PICOCLAW_CONFIG", "/custom/config.json")
+	t.Setenv("PICOCLAW_HOME", "/custom/picoclaw")
+	t.Setenv("HOME", "/tmp/home")
+
+	got := GetConfigPath()
+	want := "/custom/config.json"
+
+	assert.Equal(t, want, got)
+}
+
 func TestFormatVersion_NoGitCommit(t *testing.T) {
 	oldVersion, oldGit := version, gitCommit
 	t.Cleanup(func() { version, gitCommit = oldVersion, oldGit })
@@ -94,4 +115,14 @@ func TestGetConfigPath_Windows(t *testing.T) {
 
 func TestGetVersion(t *testing.T) {
 	assert.Equal(t, "dev", GetVersion())
+}
+
+func TestGetConfigPath_WithEnv(t *testing.T) {
+	t.Setenv("PICOCLAW_CONFIG", "/tmp/custom/config.json")
+	t.Setenv("HOME", "/tmp/home") // Also set home to ensure env is preferred
+
+	got := GetConfigPath()
+	want := "/tmp/custom/config.json"
+
+	assert.Equal(t, want, got)
 }

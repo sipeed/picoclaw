@@ -22,6 +22,7 @@ type ExecTool struct {
 	timeout             time.Duration
 	denyPatterns        []*regexp.Regexp
 	allowPatterns       []*regexp.Regexp
+	customAllowPatterns []*regexp.Regexp
 	restrictToWorkspace bool
 }
 
@@ -63,12 +64,31 @@ func mustCompileRegexPatterns(patterns []string) []*regexp.Regexp {
 	return compiled
 }
 
-func NewExecTool(workingDir string, restrict bool) *ExecTool {
+var (
+	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
+	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+
+	// safePaths are kernel pseudo-devices that are always safe to reference in
+	// commands, regardless of workspace restriction. They contain no user data
+	// and cannot cause destructive writes.
+	safePaths = map[string]bool{
+		"/dev/null":    true,
+		"/dev/zero":    true,
+		"/dev/random":  true,
+		"/dev/urandom": true,
+		"/dev/stdin":   true,
+		"/dev/stdout":  true,
+		"/dev/stderr":  true,
+	}
+)
+
+func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
 	return NewExecToolWithConfig(workingDir, restrict, nil)
 }
 
-func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) *ExecTool {
+func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
+	customAllowPatterns := make([]*regexp.Regexp, 0)
 
 	if config != nil {
 		execConfig := config.Tools.Exec
@@ -80,8 +100,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 				for _, pattern := range execConfig.CustomDenyPatterns {
 					re, err := regexp.Compile(pattern)
 					if err != nil {
-						fmt.Printf("Invalid custom deny pattern %q: %v\n", pattern, err)
-						continue
+						return nil, fmt.Errorf("invalid custom deny pattern %q: %w", pattern, err)
 					}
 					denyPatterns = append(denyPatterns, re)
 				}
@@ -90,17 +109,30 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 			// If deny patterns are disabled, we won't add any patterns, allowing all commands.
 			fmt.Println("Warning: deny patterns are disabled. All commands will be allowed.")
 		}
+		for _, pattern := range execConfig.CustomAllowPatterns {
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return nil, fmt.Errorf("invalid custom allow pattern %q: %w", pattern, err)
+			}
+			customAllowPatterns = append(customAllowPatterns, re)
+		}
 	} else {
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 	}
 
+	timeout := 60 * time.Second
+	if config != nil && config.Tools.Exec.TimeoutSeconds > 0 {
+		timeout = time.Duration(config.Tools.Exec.TimeoutSeconds) * time.Second
+	}
+
 	return &ExecTool{
 		workingDir:          workingDir,
-		timeout:             60 * time.Second,
+		timeout:             timeout,
 		denyPatterns:        denyPatterns,
 		allowPatterns:       nil,
+		customAllowPatterns: customAllowPatterns,
 		restrictToWorkspace: restrict,
-	}
+	}, nil
 }
 
 func (t *ExecTool) Name() string {
@@ -253,9 +285,20 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
 
-	for _, pattern := range t.denyPatterns {
+	// Custom allow patterns exempt a command from deny checks.
+	explicitlyAllowed := false
+	for _, pattern := range t.customAllowPatterns {
 		if pattern.MatchString(lower) {
-			return "Command blocked by safety guard (dangerous pattern detected)"
+			explicitlyAllowed = true
+			break
+		}
+	}
+
+	if !explicitlyAllowed {
+		for _, pattern := range t.denyPatterns {
+			if pattern.MatchString(lower) {
+				return "Command blocked by safety guard (dangerous pattern detected)"
+			}
 		}
 	}
 
@@ -282,12 +325,15 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
+		matches := absolutePathPattern.FindAllString(cmd, -1)
 
 		for _, raw := range matches {
 			p, err := filepath.Abs(raw)
 			if err != nil {
+				continue
+			}
+
+			if safePaths[p] {
 				continue
 			}
 
