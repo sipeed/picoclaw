@@ -335,7 +335,11 @@ func (s *appState) testModel(model *picoclawconfig.ModelConfig) {
 		s.showMessage("Test OK", resp.Status)
 		return
 	}
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	if err != nil {
+		s.showMessage("Test failed", fmt.Sprintf("failed to read response: %v", err))
+		return
+	}
 	s.showMessage(
 		"Test failed",
 		fmt.Sprintf("%s: %s", resp.Status, strings.TrimSpace(string(body))),

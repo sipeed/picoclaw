@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -108,7 +109,7 @@ type ServerConnection struct {
 type Manager struct {
 	servers map[string]*ServerConnection
 	mu      sync.RWMutex
-	closed  bool
+	closed  atomic.Bool    // changed from bool to atomic.Bool to avoid TOCTOU race
 	wg      sync.WaitGroup // tracks in-flight CallTool calls
 }
 
@@ -440,14 +441,20 @@ func (m *Manager) CallTool(
 	serverName, toolName string,
 	arguments map[string]any,
 ) (*mcp.CallToolResult, error) {
+	// Check if closed before acquiring lock (fast path)
+	if m.closed.Load() {
+		return nil, fmt.Errorf("manager is closed")
+	}
+
 	m.mu.RLock()
-	if m.closed {
+	// Double-check after acquiring lock to prevent TOCTOU race
+	if m.closed.Load() {
 		m.mu.RUnlock()
 		return nil, fmt.Errorf("manager is closed")
 	}
 	conn, ok := m.servers[serverName]
 	if ok {
-		m.wg.Add(1)
+		m.wg.Add(1) // Add to WaitGroup while holding the lock
 	}
 	m.mu.RUnlock()
 
@@ -471,15 +478,14 @@ func (m *Manager) CallTool(
 
 // Close closes all server connections
 func (m *Manager) Close() error {
-	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
-		return nil
+	// Use Swap to atomically set closed=true and get the previous value
+	// This prevents TOCTOU race with CallTool's closed check
+	if m.closed.Swap(true) {
+		return nil // already closed
 	}
-	m.closed = true
-	m.mu.Unlock()
 
 	// Wait for all in-flight CallTool calls to finish before closing sessions
+	// After closed=true is set, no new CallTool can start (they check closed first)
 	m.wg.Wait()
 
 	m.mu.Lock()
