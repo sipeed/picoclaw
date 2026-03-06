@@ -259,15 +259,7 @@ func (c *ClawHubRegistry) DownloadAndInstall(
 	}
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	if c.authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.authToken)
-	}
-
-	tmpPath, err := utils.DownloadToFile(ctx, c.client, req, int64(c.maxZipSize))
+	tmpPath, err := c.downloadToTempFileWithRetry(ctx, u.String())
 	if err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
@@ -284,17 +276,12 @@ func (c *ClawHubRegistry) DownloadAndInstall(
 // --- HTTP helper ---
 
 func (c *ClawHubRegistry) doGet(ctx context.Context, urlStr string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
+	req, err := c.newGetRequest(ctx, urlStr, "application/json")
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Accept", "application/json")
-	if c.authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.authToken)
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := utils.DoRequestWithRetry(c.client, req)
 	if err != nil {
 		return nil, err
 	}
@@ -311,4 +298,65 @@ func (c *ClawHubRegistry) doGet(ctx context.Context, urlStr string) ([]byte, err
 	}
 
 	return body, nil
+}
+
+func (c *ClawHubRegistry) newGetRequest(ctx context.Context, urlStr, accept string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", accept)
+	if c.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+	return req, nil
+}
+
+func (c *ClawHubRegistry) downloadToTempFileWithRetry(ctx context.Context, urlStr string) (string, error) {
+	req, err := c.newGetRequest(ctx, urlStr, "application/zip")
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := utils.DoRequestWithRetry(c.client, req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errBody := make([]byte, 512)
+		n, _ := io.ReadFull(resp.Body, errBody)
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(errBody[:n]))
+	}
+
+	tmpFile, err := os.CreateTemp("", "picoclaw-dl-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	cleanup := func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+	}
+
+	src := io.LimitReader(resp.Body, int64(c.maxZipSize)+1)
+	written, err := io.Copy(tmpFile, src)
+	if err != nil {
+		cleanup()
+		return "", fmt.Errorf("download write failed: %w", err)
+	}
+
+	if written > int64(c.maxZipSize) {
+		cleanup()
+		return "", fmt.Errorf("download too large: %d bytes (max %d)", written, c.maxZipSize)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	return tmpPath, nil
 }
