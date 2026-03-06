@@ -20,6 +20,8 @@ import (
 	"time"
 )
 
+const oauthMaxResponseSize int64 = 1 << 20 // 1 MB — more than sufficient for any OAuth response
+
 type OAuthProviderConfig struct {
 	Issuer       string
 	ClientID     string
@@ -212,10 +214,7 @@ func RequestDeviceCode(cfg OAuthProviderConfig) (*DeviceCodeInfo, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading device code response: %w", err)
-	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, oauthMaxResponseSize))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("device code request failed: %s", string(body))
 	}
@@ -303,10 +302,7 @@ func LoginDeviceCode(cfg OAuthProviderConfig) (*AuthCredential, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading device code response: %w", err)
-	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, oauthMaxResponseSize))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("device code request failed: %s", string(body))
 	}
@@ -366,10 +362,7 @@ func pollDeviceCode(cfg OAuthProviderConfig, deviceAuthID, userCode string) (*Au
 		return nil, fmt.Errorf("pending")
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading device token response: %w", err)
-	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, oauthMaxResponseSize))
 
 	var tokenResp struct {
 		AuthorizationCode string `json:"authorization_code"`
@@ -410,10 +403,7 @@ func RefreshAccessToken(cred *AuthCredential, cfg OAuthProviderConfig) (*AuthCre
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading token refresh response: %w", err)
-	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, oauthMaxResponseSize))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token refresh failed: %s", string(body))
 	}
@@ -506,10 +496,7 @@ func ExchangeCodeForTokens(cfg OAuthProviderConfig, code, codeVerifier, redirect
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading token exchange response: %w", err)
-	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, oauthMaxResponseSize))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token exchange failed: %s", string(body))
 	}
