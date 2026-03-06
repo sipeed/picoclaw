@@ -211,7 +211,6 @@ func NewAgentInstance(
 		MaxTokens:       maxTokens,
 		Temperature:     temperature,
 		ThinkingLevel:   thinkingLevel,
-		ContextWindow:   maxTokens,
 		Provider:        provider,
 		Sessions:        sessionsManager,
 		ContextBuilder:  contextBuilder,
