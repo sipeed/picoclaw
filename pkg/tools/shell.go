@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"os"
@@ -24,53 +25,42 @@ type ExecTool struct {
 	restrictToWorkspace bool
 }
 
-var defaultDenyPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
-	regexp.MustCompile(`\bdel\s+/[fq]\b`),
-	regexp.MustCompile(`\brmdir\s+/s\b`),
-	regexp.MustCompile(`\b(format|mkfs|diskpart)\b\s`), // Match disk wiping commands (must be followed by space/args)
-	regexp.MustCompile(`\bdd\s+if=`),
-	regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
-	regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
-	regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
-	regexp.MustCompile(`\$\([^)]+\)`),
-	regexp.MustCompile(`\$\{[^}]+\}`),
-	regexp.MustCompile("`[^`]+`"),
-	regexp.MustCompile(`\|\s*sh\b`),
-	regexp.MustCompile(`\|\s*bash\b`),
-	regexp.MustCompile(`\|\s*/\S*(bash|sh|zsh|ksh|fish|csh|tcsh)\b`), // shell by full path: | /bin/bash, | /usr/bin/sh
-	regexp.MustCompile(`;\s*rm\s+-[rf]`),
-	regexp.MustCompile(`&&\s*rm\s+-[rf]`),
-	regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
-	regexp.MustCompile(`>\s*/dev/null\s*>&?\s*\d?`),
-	regexp.MustCompile(`<<\s*EOF`),
-	regexp.MustCompile(`<<<`), // here-string: bash <<< "rm -rf /"
-	regexp.MustCompile(`\$\(\s*cat\s+`),
-	regexp.MustCompile(`\$\(\s*curl\s+`),
-	regexp.MustCompile(`\$\(\s*wget\s+`),
-	regexp.MustCompile(`\$\(\s*which\s+`),
-	regexp.MustCompile(`\bsudo\b`),
-	regexp.MustCompile(`\bsu\b.*-c\b`), // su -c / su root -c as sudo alternative
-	regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
-	regexp.MustCompile(`\bchown\b`),
-	regexp.MustCompile(`\bpkill\b`),
-	regexp.MustCompile(`\bkillall\b`),
-	regexp.MustCompile(`\bkill\s+-[9]\b`),
-	regexp.MustCompile(`\bcurl\b.*\|\s*(sh|bash)`),
-	regexp.MustCompile(`\bwget\b.*\|\s*(sh|bash)`),
-	regexp.MustCompile(`\bnpm\s+install\s+-g\b`),
-	regexp.MustCompile(`\bpip\s+install\s+--user\b`),
-	regexp.MustCompile(`\bapt\s+(install|remove|purge)\b`),
-	regexp.MustCompile(`\byum\s+(install|remove)\b`),
-	regexp.MustCompile(`\bdnf\s+(install|remove)\b`),
-	regexp.MustCompile(`\bdocker\s+run\b`),
-	regexp.MustCompile(`\bdocker\s+exec\b`),
-	regexp.MustCompile(`\bgit\s+push\b`),
-	regexp.MustCompile(`\bgit\s+force\b`),
-	regexp.MustCompile(`\bssh\b.*@`),
-	regexp.MustCompile(`\beval\b`),
-	regexp.MustCompile(`\bsource\s+\S+`),                             // was: \.sh\b — now catches any sourced file
-	regexp.MustCompile(`(?:^|&&|\|\||;)\s*\.\s+\S`),                  // dot-sourcing: . evil.sh / && . evil.sh
+//go:embed default_deny_patterns.txt
+var defaultDenyPatternsText string
+
+var defaultDenyPatterns = mustCompileRegexPatterns(parsePatternLines(defaultDenyPatternsText))
+
+func parsePatternLines(text string) []string {
+	lines := strings.Split(text, "\n")
+	patterns := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		patterns = append(patterns, trimmed)
+	}
+	return patterns
+}
+
+func compileRegexPatterns(patterns []string) ([]*regexp.Regexp, error) {
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, p := range patterns {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			return nil, fmt.Errorf("invalid pattern %q: %w", p, err)
+		}
+		compiled = append(compiled, re)
+	}
+	return compiled, nil
+}
+
+func mustCompileRegexPatterns(patterns []string) []*regexp.Regexp {
+	compiled, err := compileRegexPatterns(patterns)
+	if err != nil {
+		panic("invalid default deny patterns: " + err.Error())
+	}
+	return compiled
 }
 
 func NewExecTool(workingDir string, restrict bool) *ExecTool {
@@ -324,13 +314,10 @@ func (t *ExecTool) SetRestrictToWorkspace(restrict bool) {
 }
 
 func (t *ExecTool) SetAllowPatterns(patterns []string) error {
-	t.allowPatterns = make([]*regexp.Regexp, 0, len(patterns))
-	for _, p := range patterns {
-		re, err := regexp.Compile(p)
-		if err != nil {
-			return fmt.Errorf("invalid allow pattern %q: %w", p, err)
-		}
-		t.allowPatterns = append(t.allowPatterns, re)
+	compiled, err := compileRegexPatterns(patterns)
+	if err != nil {
+		return fmt.Errorf("invalid allow pattern: %w", err)
 	}
+	t.allowPatterns = compiled
 	return nil
 }

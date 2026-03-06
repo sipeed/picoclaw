@@ -320,3 +320,37 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 		)
 	}
 }
+
+func TestParsePatternLines(t *testing.T) {
+	input := `
+# comment
+\brm\s+-[rf]{1,2}\b
+
+   # another comment
+\bsource\s+\S+
+`
+	got := parsePatternLines(input)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 patterns, got %d: %#v", len(got), got)
+	}
+	if got[0] != `\brm\s+-[rf]{1,2}\b` {
+		t.Fatalf("unexpected first pattern: %q", got[0])
+	}
+	if got[1] != `\bsource\s+\S+` {
+		t.Fatalf("unexpected second pattern: %q", got[1])
+	}
+}
+
+func TestCompileRegexPatterns(t *testing.T) {
+	compiled, err := compileRegexPatterns([]string{`\brm\s+-[rf]{1,2}\b`, `\bsource\s+\S+`})
+	if err != nil {
+		t.Fatalf("expected compile success, got error: %v", err)
+	}
+	if len(compiled) != 2 {
+		t.Fatalf("expected 2 compiled regexes, got %d", len(compiled))
+	}
+
+	if _, err := compileRegexPatterns([]string{`[`}); err == nil {
+		t.Fatalf("expected invalid regex error, got nil")
+	}
+}
