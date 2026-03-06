@@ -235,7 +235,42 @@ func (cs *CronService) executeJobByID(jobID string) {
 		}
 	} else {
 		nextRun := cs.computeNextRun(&job.Schedule, time.Now().UnixMilli())
-		job.State.NextRunAtMS = nextRun
+		if nextRun != nil {
+			// Successfully calculated next run, update as usual
+			job.State.NextRunAtMS = nextRun
+		} else {
+			// Failed to compute next run - this indicates an issue with the schedule, prevent recurring->one-time conversion
+			log.Printf("[cron] Failed to compute next run for recurring job '%s' (%s), kind: %s", 
+				job.Name, job.ID, job.Schedule.Kind)
+			// Handle differently based on schedule type to preserve recurrence
+			switch job.Schedule.Kind {
+			case "every":
+				// For every seconds jobs, compute fallback to prevent breaking recurrence due to temporary calculation issues
+				currentTime := time.Now().UnixMilli()
+				if job.Schedule.EveryMS != nil && *job.Schedule.EveryMS > 0 {
+					fallbackNextRun := currentTime + *job.Schedule.EveryMS
+					job.State.NextRunAtMS = &fallbackNextRun
+				} else {
+					// If interval is invalid, cannot schedule properly
+					job.State.NextRunAtMS = nil
+					job.Enabled = false  // Also disable as invalid configuration
+				}
+			case "cron":
+				// For cron expression jobs, check if expression is invalid and disable appropriately
+				if job.Schedule.Expr == "" {
+					log.Printf("[cron] Empty cron expression for job '%s' (%s), disabling job", job.Name, job.ID)
+					job.Enabled = false
+				} else {
+					// Try to validate the expression further and potentially disable if repeatedly invalid
+					log.Printf("[cron] Invalid cron expression '%s' for job '%s' (%s), disabling job", 
+						job.Schedule.Expr, job.Name, job.ID)
+					job.Enabled = false  // Disable to prevent continuous errors from malformed cron expression
+				}
+			default:
+				// For other unrecognized schedule types, preserve as nil
+				job.State.NextRunAtMS = nil
+			}
+		}
 	}
 
 	if err := cs.saveStoreUnsafe(); err != nil {
