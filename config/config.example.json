@@ -164,6 +164,15 @@
       "max_steps": 10,
       "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
       "reasoning_channel_id": ""
+    },
+    "magicform": {
+      "_comment": "MagicForm - Webhook-based channel for MagicForm agentic task delegation",
+      "enabled": false,
+      "token": "",
+      "backend_url": "",
+      "webhook_path": "/hooks/magicform",
+      "workspace_root": "/data/workspaces",
+      "allow_from": []
     }
   },
   "providers": {

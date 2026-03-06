@@ -301,6 +301,10 @@ func (c *BaseChannel) HandleMessage(
 	}
 }
 
+// Bus returns the underlying MessageBus. This is used by channels that need to
+// publish directly (e.g. to set SessionKey on InboundMessage).
+func (c *BaseChannel) Bus() *bus.MessageBus { return c.bus }
+
 func (c *BaseChannel) SetRunning(running bool) {
 	c.running.Store(running)
 }
