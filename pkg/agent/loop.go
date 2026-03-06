@@ -824,6 +824,12 @@ func (al *AgentLoop) runLLMIteration(
 	iteration := 0
 	var finalContent string
 
+	// Determine effective model tier for this conversation turn.
+	// selectCandidates evaluates routing once and the decision is sticky for
+	// all tool-follow-up iterations within the same turn so that a multi-step
+	// tool chain doesn't switch models mid-way through.
+	activeCandidates, activeModel := al.selectCandidates(agent, opts.UserMessage, messages)
+
 	for iteration < agent.MaxIterations {
 		iteration++
 
@@ -842,7 +848,7 @@ func (al *AgentLoop) runLLMIteration(
 			map[string]any{
 				"agent_id":          agent.ID,
 				"iteration":         iteration,
-				"model":             agent.Model,
+				"model":             activeModel,
 				"messages_count":    len(messages),
 				"tools_count":       len(providerToolDefs),
 				"max_tokens":        agent.MaxTokens,
@@ -858,7 +864,7 @@ func (al *AgentLoop) runLLMIteration(
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		// Call LLM with fallback chain if candidates are configured.
+		// Call LLM with fallback chain if multiple candidates are configured.
 		var response *providers.LLMResponse
 		var err error
 
@@ -879,10 +885,10 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		callLLM := func() (*providers.LLMResponse, error) {
-			if len(agent.Candidates) > 1 && al.fallback != nil {
+			if len(activeCandidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(
 					ctx,
-					agent.Candidates,
+					activeCandidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
 					},
@@ -900,7 +906,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, llmOpts)
+			return agent.Provider.Chat(ctx, messages, providerToolDefs, activeModel, llmOpts)
 		}
 
 		// Retry loop for context/token errors
@@ -1167,6 +1173,44 @@ func (al *AgentLoop) runLLMIteration(
 	}
 
 	return finalContent, iteration, nil
+}
+
+// selectCandidates returns the model candidates and resolved model name to use
+// for a conversation turn. When model routing is configured and the incoming
+// message scores below the complexity threshold, it returns the light model
+// candidates instead of the primary ones.
+//
+// The returned (candidates, model) pair is used for all LLM calls within one
+// turn — tool follow-up iterations use the same tier as the initial call so
+// that a multi-step tool chain doesn't switch models mid-way.
+func (al *AgentLoop) selectCandidates(
+	agent *AgentInstance,
+	userMsg string,
+	history []providers.Message,
+) (candidates []providers.FallbackCandidate, model string) {
+	if agent.Router == nil || len(agent.LightCandidates) == 0 {
+		return agent.Candidates, agent.Model
+	}
+
+	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
+	if !usedLight {
+		logger.DebugCF("agent", "Model routing: primary model selected",
+			map[string]any{
+				"agent_id":  agent.ID,
+				"score":     score,
+				"threshold": agent.Router.Threshold(),
+			})
+		return agent.Candidates, agent.Model
+	}
+
+	logger.InfoCF("agent", "Model routing: light model selected",
+		map[string]any{
+			"agent_id":    agent.ID,
+			"light_model": agent.Router.LightModel(),
+			"score":       score,
+			"threshold":   agent.Router.Threshold(),
+		})
+	return agent.LightCandidates, agent.Router.LightModel()
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
