@@ -242,6 +242,7 @@ type TelegramConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+	UseMarkdownV2      bool                `json:"use_markdown_v2"         env:"PICOCLAW_CHANNELS_TELEGRAM_USE_MARKDOWN_V2"`
 }
 
 type FeishuConfig struct {

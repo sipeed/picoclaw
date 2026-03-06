@@ -238,7 +238,8 @@ picoclaw onboard
     "telegram": {
       "enabled": true,
       "token": "VOTRE_TOKEN_BOT",
-      "allow_from": ["VOTRE_USER_ID"]
+      "allow_from": ["VOTRE_USER_ID"],
+      "use_markdown_v2": false
     }
   },
   "tools": {
@@ -307,7 +308,8 @@ Discutez avec votre PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom
     "telegram": {
       "enabled": true,
       "token": "VOTRE_TOKEN_BOT",
-      "allow_from": ["VOTRE_USER_ID"]
+      "allow_from": ["VOTRE_USER_ID"],
+      "use_markdown_v2": false
     }
   }
 }
@@ -350,7 +352,7 @@ picoclaw gateway
     "discord": {
       "enabled": true,
       "token": "VOTRE_TOKEN_BOT",
-      "allow_from": ["VOTRE_USER_ID"]
+      "*.md": ["VOTRE_USER_ID"]
     }
   }
 }
@@ -866,7 +868,8 @@ picoclaw agent -m "Bonjour, comment ça va ?"
     "telegram": {
       "enabled": true,
       "token": "123456:ABC...",
-      "allow_from": ["123456789"]
+      "allow_from": ["123456789"],
+      "use_markdown_v2": false
     },
     "discord": {
       "enabled": true,

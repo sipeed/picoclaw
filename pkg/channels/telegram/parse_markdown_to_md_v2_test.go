@@ -2,7 +2,6 @@ package telegram
 
 import (
 	_ "embed"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,29 +12,44 @@ var md2AllFormats string
 
 func Test_markdownToTelegramMarkdownV2(t *testing.T) {
 	cases := []struct {
+		name     string
 		input    string
 		expected string
 	}{
 		{
+			name:     "heading -> bolding",
 			input:    `## HeadingH2 #`,
 			expected: "*HeadingH2 \\#*",
 		},
 		{
+			name:     "strikethrough",
 			input:    "~strikethroughMD~",
 			expected: "~strikethroughMD~",
 		},
 		{
+			name:     "inline URL",
 			input:    "[inline URL](http://www.example.com/)",
 			expected: "[inline URL](http://www.example.com/)",
 		},
 		{
+			name:     "all telegram formats",
 			input:    md2AllFormats,
 			expected: md2AllFormats,
+		},
+		{
+			name:     "empty",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "one letter",
+			input:    "o",
+			expected: "o",
 		},
 	}
 
 	for _, tc := range cases {
-		t.Run(fmt.Sprintf("formating %s -> %s", tc.input, tc.expected), func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			actual := markdownToTelegramMarkdownV2(tc.input)
 
 			require.EqualValues(t, tc.expected, actual)

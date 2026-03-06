@@ -301,7 +301,8 @@ Converse com seu PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom.
     "telegram": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"],
+      "use_markdown_v2": false
     }
   }
 }
