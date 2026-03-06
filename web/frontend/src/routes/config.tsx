@@ -71,13 +71,13 @@ function RawJsonPanel() {
         throw new Error("Failed to save config")
       }
     },
-    onSuccess: () => {
+    onSuccess: (_, submittedConfig) => {
       toast.success(
         t("pages.config.save_success", "Configuration saved successfully."),
       )
       // Update last saved config and reset dirty state
       try {
-        const savedConfig = JSON.parse(editorValue)
+        const savedConfig = JSON.parse(submittedConfig)
         setLastSavedConfig(savedConfig)
         setIsDirty(false)
         // Important: Invalidate the query to refresh the cached data
@@ -101,21 +101,14 @@ function RawJsonPanel() {
     unknown
   > | null>(null)
 
-  // Initialize editor value when config is first loaded
-  const getInitialEditorValue = () => {
-    if (config && !editorValue) {
-      return JSON.stringify(config, null, 2)
-    }
-    return editorValue
-  }
-
-  const displayValue = getInitialEditorValue()
+  const effectiveEditorValue =
+    editorValue || (config ? JSON.stringify(config, null, 2) : "")
 
   const handleSave = () => {
     try {
       // Validate JSON before saving
-      JSON.parse(editorValue)
-      mutation.mutate(editorValue)
+      JSON.parse(effectiveEditorValue)
+      mutation.mutate(effectiveEditorValue)
     } catch (error) {
       toast.error(
         t(
@@ -128,7 +121,11 @@ function RawJsonPanel() {
 
   const handleFormat = () => {
     try {
-      const formatted = JSON.stringify(JSON.parse(editorValue), null, 2)
+      const formatted = JSON.stringify(
+        JSON.parse(effectiveEditorValue),
+        null,
+        2,
+      )
       setEditorValue(formatted)
       toast.success(
         t("pages.config.format_success", "JSON formatted successfully."),
@@ -191,7 +188,7 @@ function RawJsonPanel() {
             <div className="bg-muted/30 relative rounded-lg border">
               <ScrollArea className="h-[calc(100vh-20rem)] min-h-[200px]">
                 <Textarea
-                  value={displayValue}
+                  value={effectiveEditorValue}
                   onChange={(e) => {
                     setEditorValue(e.target.value)
                     setIsDirty(true)
