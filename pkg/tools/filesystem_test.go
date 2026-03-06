@@ -584,29 +584,126 @@ func TestIsBinaryFile(t *testing.T) {
 	}
 }
 
-func TestFilesystemTool_ReadFile_BlocksBinary(t *testing.T) {
+// TestReadFileTool_ChunkedReading verifies the pagination logic of the tool
+// by reading a file in multiple chunks using 'offset' and 'length'.
+func TestReadFileTool_ChunkedReading(t *testing.T) {
 	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "pagination_test.txt")
 
-	// Create a dummy binary file (e.g., a PDF).
-	testFile := filepath.Join(tmpDir, "fake_document.pdf")
-	fakePDFContent := []byte("%PDF-1.4\n% Some null test bytes\x00\x00\x00")
-	os.WriteFile(testFile, fakePDFContent, 0o644)
+	// Create a test file with exactly 26 bytes of content
+	fullContent := "abcdefghijklmnopqrstuvwxyz"
+	err := os.WriteFile(testFile, []byte(fullContent), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
 
-	tool := NewReadFileTool(tmpDir, true)
+	tool := NewReadFileTool(tmpDir, false)
 	ctx := context.Background()
+
+	// --- Step 1: Read the first chunk (10 bytes) ---
+	args1 := map[string]any{
+		"path":   testFile,
+		"offset": 0,
+		"length": 10,
+	}
+	result1 := tool.Execute(ctx, args1)
+
+	if result1.IsError {
+		t.Fatalf("Chunk 1 failed: %s", result1.ForLLM)
+	}
+
+	// Expect the first 10 characters
+	if !strings.Contains(result1.ForLLM, "abcdefghij") {
+		t.Errorf("Chunk 1 should contain 'abcdefghij', got: %s", result1.ForLLM)
+	}
+	// Expect the header to indicate the file is truncated
+	if !strings.Contains(result1.ForLLM, "[TRUNCATED") {
+		t.Errorf("Chunk 1 header should indicate truncation, got: %s", result1.ForLLM)
+	}
+	// Expect the header to suggest the next offset (10)
+	if !strings.Contains(result1.ForLLM, "offset=10") {
+		t.Errorf("Chunk 1 header should suggest next offset=10, got: %s", result1.ForLLM)
+	}
+
+	// Step 2: Read the second chunk (10 bytes) ---
+	args2 := map[string]any{
+		"path":   testFile,
+		"offset": 10,
+		"length": 10,
+	}
+	result2 := tool.Execute(ctx, args2)
+
+	if result2.IsError {
+		t.Fatalf("Chunk 2 failed: %s", result2.ForLLM)
+	}
+
+	// Expect the next 10 characters
+	if !strings.Contains(result2.ForLLM, "klmnopqrst") {
+		t.Errorf("Chunk 2 should contain 'klmnopqrst', got: %s", result2.ForLLM)
+	}
+	// Expect the header to suggest the next offset (20)
+	if !strings.Contains(result2.ForLLM, "offset=20") {
+		t.Errorf("Chunk 2 header should suggest next offset=20, got: %s", result2.ForLLM)
+	}
+
+	// Step 3: Read the final chunk (remaining 6 bytes) ---
+	// We ask for 10 bytes, but only 6 are left in the file
+	args3 := map[string]any{
+		"path":   testFile,
+		"offset": 20,
+		"length": 10,
+	}
+	result3 := tool.Execute(ctx, args3)
+
+	if result3.IsError {
+		t.Fatalf("Chunk 3 failed: %s", result3.ForLLM)
+	}
+
+	// Expect the last 6 characters
+	if !strings.Contains(result3.ForLLM, "uvwxyz") {
+		t.Errorf("Chunk 3 should contain 'uvwxyz', got: %s", result3.ForLLM)
+	}
+	// Expect the header to indicate the end of the file
+	if !strings.Contains(result3.ForLLM, "[END OF FILE") {
+		t.Errorf("Chunk 3 header should indicate end of file, got: %s", result3.ForLLM)
+	}
+
+	// Ensure no TRUNCATED message is present in the final chunk
+	if strings.Contains(result3.ForLLM, "[TRUNCATED") {
+		t.Errorf("Chunk 3 header should NOT indicate truncation, got: %s", result3.ForLLM)
+	}
+}
+
+// TestReadFileTool_OffsetBeyondEOF checks the behavior when requesting
+// An offset that exceeds the total file size.
+func TestReadFileTool_OffsetBeyondEOF(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "short.txt")
+
+	// create a file of only 5 bytes
+	err := os.WriteFile(testFile, []byte("12345"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileTool(tmpDir, false)
+	ctx := context.Background()
+
 	args := map[string]any{
-		"path": testFile,
+		"path":   testFile,
+		"offset": int64(100), // Offset beyond the end of the file
 	}
 
 	result := tool.Execute(ctx, args)
 
-	if !result.IsError {
-		t.Errorf("An error was expected when trying to read a binary file, but instead it was successful")
+	// It should not be classified as a tool execution error
+	if result.IsError {
+		t.Errorf("A mistake was not expected, obtained IsError=true: %s", result.ForLLM)
 	}
 
-	// The error should mention that it is a binary file
-	expectedMsg := "appears to be a binary file"
-	if !strings.Contains(result.ForLLM, expectedMsg) {
-		t.Errorf("The error message '%s' was expected, obtained: %s", expectedMsg, result.ForLLM)
+	// Must return EXACTLY the string provided in the code
+	expectedMsg := "[END OF FILE — no content at this offset]"
+	if result.ForLLM != expectedMsg {
+		t.Errorf("The message %q was expected, obtained: %q", expectedMsg, result.ForLLM)
 	}
 }
