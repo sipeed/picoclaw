@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -19,6 +20,7 @@ type MessageBus struct {
 	outboundMedia chan OutboundMediaMessage
 	done          chan struct{}
 	closed        atomic.Bool
+	wg            sync.WaitGroup
 }
 
 func NewMessageBus() *MessageBus {
@@ -31,6 +33,9 @@ func NewMessageBus() *MessageBus {
 }
 
 func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) error {
+	mb.wg.Add(1)
+	defer mb.wg.Done()
+
 	if mb.closed.Load() {
 		return ErrBusClosed
 	}
@@ -59,6 +64,9 @@ func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool)
 }
 
 func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) error {
+	mb.wg.Add(1)
+	defer mb.wg.Done()
+
 	if mb.closed.Load() {
 		return ErrBusClosed
 	}
@@ -87,6 +95,9 @@ func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, b
 }
 
 func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMediaMessage) error {
+	mb.wg.Add(1)
+	defer mb.wg.Done()
+
 	if mb.closed.Load() {
 		return ErrBusClosed
 	}
@@ -115,43 +126,39 @@ func (mb *MessageBus) SubscribeOutboundMedia(ctx context.Context) (OutboundMedia
 }
 
 func (mb *MessageBus) Close() {
-	if mb.closed.CompareAndSwap(false, true) {
-		close(mb.done)
+	if !mb.closed.CompareAndSwap(false, true) {
+		return
+	}
 
-		// Drain buffered channels so messages aren't silently lost.
-		// Channels are NOT closed to avoid send-on-closed panics from concurrent publishers.
-		drained := 0
-		for {
-			select {
-			case <-mb.inbound:
-				drained++
-			default:
-				goto doneInbound
-			}
-		}
-	doneInbound:
-		for {
-			select {
-			case <-mb.outbound:
-				drained++
-			default:
-				goto doneOutbound
-			}
-		}
-	doneOutbound:
-		for {
-			select {
-			case <-mb.outboundMedia:
-				drained++
-			default:
-				goto doneMedia
-			}
-		}
-	doneMedia:
-		if drained > 0 {
-			logger.DebugCF("bus", "Drained buffered messages during close", map[string]any{
-				"count": drained,
-			})
+	// Notify all Pub/Sub that i will be closing down
+	close(mb.done)
+
+	// Make sure all Pub was done
+	mb.wg.Wait()
+
+	// Batch empty the chan
+	drained := 0
+
+	drained += drain(mb.inbound)
+	drained += drain(mb.outbound)
+	drained += drain(mb.outboundMedia)
+
+	if drained > 0 {
+		logger.DebugCF("bus", "Drained buffered messages during close", map[string]any{
+			"count": drained,
+		})
+	}
+
+}
+
+func drain[T any](ch <-chan T) int {
+	n := 0
+	for {
+		select {
+		case <-ch:
+			n++
+		default:
+			return n
 		}
 	}
 }
