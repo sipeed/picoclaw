@@ -22,6 +22,7 @@ Create `~/.picoclaw/config.json` (or set `PICOCLAW_CONFIG` env var):
   ],
   "agents": {
     "defaults": {
+      "workspace_root": "/data/workspaces",
       "model_name": "main",
       "max_tokens": 4096,
       "max_tool_iterations": 20
@@ -31,6 +32,8 @@ Create `~/.picoclaw/config.json` (or set `PICOCLAW_CONFIG` env var):
 ```
 
 The global config is the base. Per-workspace configs overlay it (see [Workspace Config](#workspace-config)).
+
+`workspace_root` defines the security boundary for all workspace and config-dir paths. When set, `--workspace` and `--config-dir` must be relative subdirectories within it. See [Path Security](#path-security) for details.
 
 ---
 
@@ -61,8 +64,8 @@ Interact with the agent directly. Without `-m`, starts an interactive REPL. With
 | `--message` | `-m` | | Single message (non-interactive). Omit for interactive REPL. |
 | `--session` | `-s` | `""` (→ `agent:main:cli:default`) | Session key for conversation isolation (e.g. `stackId:conversationId`). |
 | `--model` | | | Override model name from config. |
-| `--workspace` | | | Override agent workspace directory. |
-| `--config-dir` | | | Directory containing `config.json` (model/agent/tool overrides) and bootstrap files (`AGENTS.md`, `IDENTITY.md`, `SOUL.md`, `USER.md`). |
+| `--workspace` | | | Agent workspace directory, relative to `workspace_root`. Resolved to an absolute path before use. |
+| `--config-dir` | | | Config directory (relative to `workspace_root`) containing `config.json` and bootstrap files (`AGENTS.md`, `IDENTITY.md`, `SOUL.md`, `USER.md`). |
 | `--tools` | | | Comma-separated tool allowlist (e.g. `read_file,web_fetch`). Only these tools are enabled. |
 | `--skills` | | | Comma-separated skill filter (e.g. `summarize,translate`). Only these skills are loaded. |
 | `--debug` | `-d` | `false` | Enable debug logging. |
@@ -98,11 +101,11 @@ picoclaw agent
 # One-shot message
 picoclaw agent -m "Hello, world"
 
-# With workspace isolation
+# With workspace isolation (paths relative to workspace_root)
 picoclaw agent -m "Summarize the report" \
   -s tenant1:conv42 \
-  --workspace /data/workspaces/tenant1/conv42 \
-  --config-dir /data/workspaces/tenant1/config
+  --workspace tenant1/conv42 \
+  --config-dir tenant1/config
 
 # Restricted tools, custom model
 picoclaw agent -m "Search the web for recent news" \
@@ -112,6 +115,8 @@ picoclaw agent -m "Search the web for recent news" \
 # Debug mode to see session key, model, and iteration details
 picoclaw agent -d -m "Hello" -s test
 ```
+
+> **Note**: When `workspace_root` is set in the global config, `--workspace` and `--config-dir` must be relative paths (e.g. `tenant1/conv42`, not `/data/workspaces/tenant1/conv42`). When `workspace_root` is not set, paths fall back to `filepath.Abs` resolution for backward compatibility.
 
 ---
 
@@ -275,6 +280,8 @@ A workspace-level `config.json` (placed in the config directory) overlays the gl
 
 **Not honored** (infrastructure-level): `gateway`, `heartbeat`, `devices`, `providers`, `channels`.
 
+**Protected fields**: `workspace_root` cannot be overridden by a workspace config overlay — the boundary is always set by the base (global) config. If a workspace overlay sets a `workspace` value, it is validated against the base config's `workspace_root`; traversal attempts (e.g. `../../escape`) cause a hard error.
+
 Example `config.json`:
 
 ```json
@@ -352,7 +359,37 @@ For `--tools` (CLI) or `allowedTools` (webhook API):
 
 ---
 
+## Path Security
+
+When `workspace_root` is set in `agents.defaults`, all workspace and config-dir paths are validated as relative subdirectories of that root. This applies uniformly across the CLI (`--workspace`, `--config-dir`), the gateway (webhook `workspace`/`configDir` fields), and workspace config overlays.
+
+**Validation rules** (when `workspace_root` is set):
+
+- **Absolute paths are rejected** — use `tenant1/conv42`, not `/data/workspaces/tenant1/conv42`.
+- **Directory traversal is rejected** — `../escape`, `a/../../etc`, `foo/..` all fail.
+- **Empty string and bare `.` are rejected** — the path must pick a subdirectory, not root itself.
+- **Relative paths are joined to `workspace_root`** — `tenant1/conv42` becomes `/data/workspaces/tenant1/conv42`.
+- **A post-join boundary check** confirms the resolved path stays within `workspace_root`.
+
+**Without `workspace_root`**: paths fall back to `filepath.Abs` resolution for backward compatibility, but traversal (`..`) is still rejected.
+
+**Enforcement points**:
+
+1. **CLI** — `--workspace` and `--config-dir` are validated before any workspace config overlay is loaded.
+2. **Gateway** — webhook `workspace` and `configDir` fields are validated by each channel handler (e.g. MagicForm).
+3. **Agent loop** — defense-in-depth re-validation of metadata-driven workspace overrides.
+4. **Config overlay** — `workspace_root` cannot be overridden; `workspace` values from overlays are validated against the base config boundary.
+
+---
+
 ## Troubleshooting
+
+**`--workspace` or `--config-dir` rejected**
+- When `workspace_root` is set, paths must be relative subdirectories (e.g. `s1/c1`). Absolute paths, `..` traversal, and empty/`.` paths are rejected.
+- If `workspace_root` is not set and you get a traversal error, the path contains `..` which is always blocked.
+
+**Workspace config overlay rejected**
+- A workspace `config.json` that sets `agents.defaults.workspace` to a path escaping `workspace_root` will cause a hard error during config merge. Fix the overlay's `workspace` value.
 
 **Workspace config ignored**
 - Verify `config.json` exists in the `--config-dir` path.

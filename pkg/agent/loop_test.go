@@ -374,7 +374,7 @@ func (h testHelper) executeAndGetResponse(tb testing.TB, ctx context.Context, ms
 	timeoutCtx, cancel := context.WithTimeout(ctx, responseTimeout)
 	defer cancel()
 
-	response, err := h.al.processMessage(timeoutCtx, msg)
+	response, _, err := h.al.processMessage(timeoutCtx, msg)
 	if err != nil {
 		tb.Fatalf("processMessage failed: %v", err)
 	}

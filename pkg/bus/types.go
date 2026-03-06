@@ -29,10 +29,66 @@ type InboundMessage struct {
 	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
+// Outbound message type constants identify the kind of outbound message.
+// Channels that don't support progress/escalation treat all messages as content.
+const (
+	MessageTypeFinal      = ""           // default: final response
+	MessageTypeProgress   = "progress"   // intermediate progress update
+	MessageTypeEscalation = "escalation" // needs human intervention
+)
+
 type OutboundMessage struct {
 	Channel string `json:"channel"`
 	ChatID  string `json:"chat_id"`
 	Content string `json:"content"`
+
+	// Type distinguishes final responses from progress/escalation updates.
+	// Empty string (default) means final response. Channels that don't support
+	// progress callbacks ignore this field and treat all messages as content.
+	Type string `json:"type,omitempty"`
+
+	// Metrics is populated by the agent loop for the final response message.
+	// Channels that support rich callbacks (e.g. MagicForm) use this to include
+	// execution metrics in their response payloads. Nil for intermediate messages.
+	Metrics *ResponseMetrics `json:"metrics,omitempty"`
+
+	// Progress is populated for Type="progress" messages.
+	Progress *OutboundProgress `json:"progress,omitempty"`
+
+	// Escalation is populated for Type="escalation" messages.
+	Escalation *OutboundEscalation `json:"escalation,omitempty"`
+}
+
+// OutboundProgress carries progress update details.
+type OutboundProgress struct {
+	Status     string `json:"status"`               // e.g. "thinking"
+	ToolName   string `json:"toolName,omitempty"`
+	StepNumber int    `json:"stepNumber,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+// OutboundEscalation carries escalation details.
+type OutboundEscalation struct {
+	Reason string `json:"reason"`
+	Notes  string `json:"notes,omitempty"`
+}
+
+// TokenUsage tracks LLM token consumption across all iterations in a turn.
+type TokenUsage struct {
+	PromptTokens     int    `json:"promptTokens"`
+	CompletionTokens int    `json:"completionTokens"`
+	TotalTokens      int    `json:"totalTokens"`
+	Model            string `json:"model"`
+	Provider         string `json:"provider,omitempty"`
+}
+
+// ResponseMetrics captures execution metrics for a single agent processing turn.
+type ResponseMetrics struct {
+	DurationMs int64       `json:"durationMs"`
+	TokenUsage *TokenUsage `json:"tokenUsage,omitempty"`
+	ToolCalls  int         `json:"toolCalls"`
+	Iterations int         `json:"iterations"`
+	Model      string      `json:"model,omitempty"`
 }
 
 // MediaPart describes a single media attachment to send.

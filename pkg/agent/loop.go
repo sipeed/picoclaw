@@ -349,9 +349,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				// 	}
 				// }()
 
-				response, err := al.processMessage(ctx, msg)
+				response, metrics, err := al.processMessage(ctx, msg)
 				if err != nil {
 					response = fmt.Sprintf("Error processing message: %v", err)
+					metrics = nil // don't attach metrics to error responses
 				}
 
 				if response != "" {
@@ -373,6 +374,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							Channel: msg.Channel,
 							ChatID:  msg.ChatID,
 							Content: response,
+							Metrics: metrics,
 						})
 						logger.InfoCF("agent", "Published outbound response",
 							map[string]any{
@@ -548,7 +550,8 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 		SessionKey: sessionKey,
 	}
 
-	return al.processMessage(ctx, msg)
+	result, _, err := al.processMessage(ctx, msg)
+	return result, err
 }
 
 // ProcessHeartbeat processes a heartbeat request without session history.
@@ -561,7 +564,7 @@ func (al *AgentLoop) ProcessHeartbeat(
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for heartbeat")
 	}
-	return al.runAgentLoop(ctx, agent, processOptions{
+	result, _, err := al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      "heartbeat",
 		Channel:         channel,
 		ChatID:          chatID,
@@ -571,9 +574,10 @@ func (al *AgentLoop) ProcessHeartbeat(
 		SendResponse:    false,
 		NoHistory:       true, // Don't load session history for heartbeat
 	})
+	return result, err
 }
 
-func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, *bus.ResponseMetrics, error) {
 	// Add message preview to log (show full content for error messages)
 	var logContent string
 	if strings.Contains(msg.Content, "Error:") || strings.Contains(msg.Content, "error") {
@@ -596,7 +600,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
-		return al.processSystemMessage(ctx, msg)
+		result, err := al.processSystemMessage(ctx, msg)
+		return result, nil, err
 	}
 
 	route, agent, routeErr := al.resolveMessageRoute(msg)
@@ -606,11 +611,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
 	if response, handled := al.handleCommand(ctx, msg, agent); handled {
-		return response, nil
+		return response, nil, nil
 	}
 
 	if routeErr != nil {
-		return "", routeErr
+		return "", nil, routeErr
 	}
 
 	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
@@ -646,7 +651,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		if err != nil {
 			logger.WarnCF("agent", "Rejecting workspace_override from metadata",
 				map[string]any{"workspace_override": workspaceOverride, "error": err.Error()})
-			return "", fmt.Errorf("invalid workspace_override in metadata: %w", err)
+			return "", nil, fmt.Errorf("invalid workspace_override in metadata: %w", err)
 		}
 		workspaceOverride = resolved
 	}
@@ -655,7 +660,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		if err != nil {
 			logger.WarnCF("agent", "Rejecting config_dir from metadata",
 				map[string]any{"config_dir": configDir, "error": err.Error()})
-			return "", fmt.Errorf("invalid config_dir in metadata: %w", err)
+			return "", nil, fmt.Errorf("invalid config_dir in metadata: %w", err)
 		}
 		configDir = resolved
 	}
@@ -774,7 +779,7 @@ func (al *AgentLoop) processSystemMessage(
 	// Use the origin session for context
 	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
 
-	return al.runAgentLoop(ctx, agent, processOptions{
+	result, _, err := al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         originChannel,
 		ChatID:          originChatID,
@@ -783,6 +788,7 @@ func (al *AgentLoop) processSystemMessage(
 		EnableSummary:   false,
 		SendResponse:    true,
 	})
+	return result, err
 }
 
 // runAgentLoop is the core message processing logic.
@@ -790,7 +796,7 @@ func (al *AgentLoop) runAgentLoop(
 	ctx context.Context,
 	agent *AgentInstance,
 	opts processOptions,
-) (string, error) {
+) (string, *bus.ResponseMetrics, error) {
 	// 0. Record last channel for heartbeat notifications (skip internal channels)
 	if opts.Channel != "" && opts.ChatID != "" {
 		// Don't record internal channels (cli, system, subagent)
@@ -836,7 +842,7 @@ func (al *AgentLoop) runAgentLoop(
 		} else if wc != nil {
 			tmpCfg := al.cfg.Clone()
 			if err := tmpCfg.MergeWorkspaceConfig(wc); err != nil {
-				return "", fmt.Errorf("workspace config overlay rejected: %w", err)
+				return "", nil, fmt.Errorf("workspace config overlay rejected: %w", err)
 			}
 			if tmpCfg.Agents.Defaults.GetModelName() == "" {
 				tmpCfg.Agents.Defaults.ModelName = agent.Model
@@ -887,9 +893,30 @@ func (al *AgentLoop) runAgentLoop(
 	opts.effContextBuilder = effContextBuilder
 
 	// 3. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
+	startTime := time.Now()
+	finalContent, iteration, iterMetrics, err := al.runLLMIteration(ctx, agent, messages, opts)
+	durationMs := time.Since(startTime).Milliseconds()
 	if err != nil {
-		return "", err
+		return "", nil, err
+	}
+
+	// Build response metrics from accumulated iteration metrics.
+	var respMetrics *bus.ResponseMetrics
+	if iterMetrics != nil {
+		respMetrics = &bus.ResponseMetrics{
+			DurationMs: durationMs,
+			ToolCalls:  iterMetrics.ToolCalls,
+			Iterations: iteration,
+			Model:      iterMetrics.Model,
+		}
+		if iterMetrics.PromptTokens > 0 || iterMetrics.CompletionTokens > 0 {
+			respMetrics.TokenUsage = &bus.TokenUsage{
+				PromptTokens:     iterMetrics.PromptTokens,
+				CompletionTokens: iterMetrics.CompletionTokens,
+				TotalTokens:      iterMetrics.PromptTokens + iterMetrics.CompletionTokens,
+				Model:            iterMetrics.Model,
+			}
+		}
 	}
 
 	// If last tool had ForUser content and we already sent it, we might not need to send final response
@@ -917,12 +944,13 @@ func (al *AgentLoop) runAgentLoop(
 		)
 	}
 
-	// 7. Optional: send response via bus
+	// 7. Optional: send response via bus (with metrics on the final message)
 	if opts.SendResponse {
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
 			Content: finalContent,
+			Metrics: respMetrics,
 		})
 	}
 
@@ -934,9 +962,10 @@ func (al *AgentLoop) runAgentLoop(
 			"session_key":  opts.SessionKey,
 			"iterations":   iteration,
 			"final_length": len(finalContent),
+			"duration_ms":  durationMs,
 		})
 
-	return finalContent, nil
+	return finalContent, respMetrics, nil
 }
 
 func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string) {
@@ -995,15 +1024,26 @@ func (al *AgentLoop) handleReasoning(
 	}
 }
 
+// turnMetrics accumulates cumulative totals across all LLM iterations within
+// a single agent processing turn. Values are summed after each iteration in
+// runLLMIteration, not per-iteration snapshots.
+type turnMetrics struct {
+	PromptTokens     int
+	CompletionTokens int
+	ToolCalls        int
+	Model            string // last model used
+}
+
 // runLLMIteration executes the LLM call loop with tool handling.
 func (al *AgentLoop) runLLMIteration(
 	ctx context.Context,
 	agent *AgentInstance,
 	messages []providers.Message,
 	opts processOptions,
-) (string, int, error) {
+) (string, int, *turnMetrics, error) {
 	iteration := 0
 	var finalContent string
+	metrics := &turnMetrics{}
 
 	// Resolve effective provider/model — workspace config overrides win
 	effProvider := agent.Provider
@@ -1200,7 +1240,7 @@ func (al *AgentLoop) runLLMIteration(
 					"iteration": iteration,
 					"error":     err.Error(),
 				})
-			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
+			return "", iteration, metrics, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
 		go al.handleReasoning(
@@ -1220,6 +1260,15 @@ func (al *AgentLoop) runLLMIteration(
 				"target_channel": al.targetReasoningChannelID(opts.Channel),
 				"channel":        opts.Channel,
 			})
+
+		// Accumulate token usage and tool call counts across iterations.
+		if response.Usage != nil {
+			metrics.PromptTokens += response.Usage.PromptTokens
+			metrics.CompletionTokens += response.Usage.CompletionTokens
+		}
+		metrics.ToolCalls += len(response.ToolCalls)
+		metrics.Model = activeModel
+
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
@@ -1282,6 +1331,24 @@ func (al *AgentLoop) runLLMIteration(
 
 		// Save assistant message with tool calls to session
 		opts.effSessions.AddFullMessage(opts.SessionKey, assistantMsg)
+
+		// Publish progress callback for channels that support it (e.g. MagicForm).
+		// Non-internal channels receive a progress update before tool execution.
+		if !constants.IsInternalChannel(opts.Channel) && opts.Channel != "" {
+			toolNamesList := strings.Join(toolNames, ", ")
+			al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+				Channel: opts.Channel,
+				ChatID:  opts.ChatID,
+				Type:    bus.MessageTypeProgress,
+				Content: fmt.Sprintf("Running tools: %s", toolNamesList),
+				Progress: &bus.OutboundProgress{
+					Status:     "thinking",
+					ToolName:   toolNames[0],
+					StepNumber: iteration,
+					Message:    fmt.Sprintf("Running tools: %s", toolNamesList),
+				},
+			})
+		}
 
 		// Execute tool calls in parallel
 		type indexedAgentResult struct {
@@ -1405,7 +1472,7 @@ func (al *AgentLoop) runLLMIteration(
 		}
 	}
 
-	return finalContent, iteration, nil
+	return finalContent, iteration, metrics, nil
 }
 
 // selectCandidates returns the model candidates and resolved model name to use

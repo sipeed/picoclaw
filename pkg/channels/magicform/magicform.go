@@ -38,8 +38,31 @@ type WebhookPayload struct {
 type CallbackPayload struct {
 	StackID        string `json:"stackId"`
 	ConversationID string `json:"conversationId"`
+	TaskID         string `json:"taskId,omitempty"`
+	Type           string `json:"type"`             // "final", "progress", "escalation"
+	Status         string `json:"status"`            // "success", "error"
 	Response       string `json:"response"`
-	Type           string `json:"type"` // "final"
+	Error          string `json:"error,omitempty"`
+	Runtime        string `json:"runtime"`
+	DurationMs     int64  `json:"durationMs,omitempty"`
+	TokenUsage     *bus.TokenUsage       `json:"tokenUsage,omitempty"`
+	ToolCalls      int                   `json:"toolCalls,omitempty"`
+	Progress       *ProgressPayload      `json:"progress"`       // null unless type=progress
+	Escalation     *EscalationPayload    `json:"escalation"`     // null unless type=escalation
+}
+
+// ProgressPayload is populated for type="progress" callbacks.
+type ProgressPayload struct {
+	Status     string `json:"status"`               // e.g. "thinking"
+	ToolName   string `json:"toolName,omitempty"`
+	StepNumber int    `json:"stepNumber,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+// EscalationPayload is populated for type="escalation" callbacks.
+type EscalationPayload struct {
+	Reason string `json:"reason"`
+	Notes  string `json:"notes,omitempty"`
 }
 
 // requestContext stores per-request state so Send() can resolve callback info.
@@ -332,12 +355,23 @@ func (c *MagicFormChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 		return channels.ErrNotRunning
 	}
 
-	// Look up request context
-	val, ok := c.requests.LoadAndDelete(msg.ChatID)
-	if !ok {
-		return fmt.Errorf("%w: no request context for chatID %s", channels.ErrSendFailed, msg.ChatID)
+	// For progress/escalation messages, Load (keep) the context since the final
+	// message is still coming. For final messages, LoadAndDelete to clean up.
+	isFinal := msg.Type == bus.MessageTypeFinal
+	var reqCtx *requestContext
+	if isFinal {
+		val, ok := c.requests.LoadAndDelete(msg.ChatID)
+		if !ok {
+			return fmt.Errorf("%w: no request context for chatID %s", channels.ErrSendFailed, msg.ChatID)
+		}
+		reqCtx = val.(*requestContext)
+	} else {
+		val, ok := c.requests.Load(msg.ChatID)
+		if !ok {
+			return fmt.Errorf("%w: no request context for chatID %s", channels.ErrSendFailed, msg.ChatID)
+		}
+		reqCtx = val.(*requestContext)
 	}
-	reqCtx := val.(*requestContext)
 
 	// Resolve callback URL
 	callbackURL := reqCtx.callbackURL
@@ -350,11 +384,44 @@ func (c *MagicFormChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 	}
 
 	// Build callback payload
+	taskID := fmt.Sprintf("claw_task_%s_%d", reqCtx.conversationID, reqCtx.createdAt.UnixMilli())
 	payload := CallbackPayload{
 		StackID:        reqCtx.stackID,
 		ConversationID: reqCtx.conversationID,
+		TaskID:         taskID,
+		Runtime:        "picoclaw",
 		Response:       msg.Content,
-		Type:           "final",
+	}
+
+	switch msg.Type {
+	case bus.MessageTypeProgress:
+		payload.Type = "progress"
+		payload.Status = "success"
+		if msg.Progress != nil {
+			payload.Progress = &ProgressPayload{
+				Status:     msg.Progress.Status,
+				ToolName:   msg.Progress.ToolName,
+				StepNumber: msg.Progress.StepNumber,
+				Message:    msg.Progress.Message,
+			}
+		}
+	case bus.MessageTypeEscalation:
+		payload.Type = "escalation"
+		payload.Status = "success"
+		if msg.Escalation != nil {
+			payload.Escalation = &EscalationPayload{
+				Reason: msg.Escalation.Reason,
+				Notes:  msg.Escalation.Notes,
+			}
+		}
+	default: // final
+		payload.Type = "final"
+		payload.Status = "success"
+		if m := msg.Metrics; m != nil {
+			payload.DurationMs = m.DurationMs
+			payload.ToolCalls = m.ToolCalls
+			payload.TokenUsage = m.TokenUsage
+		}
 	}
 
 	body, err := json.Marshal(payload)
@@ -385,6 +452,7 @@ func (c *MagicFormChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 	logger.InfoCF("magicform", "Callback sent",
 		map[string]any{
 			"conversation_id": reqCtx.conversationID,
+			"type":            payload.Type,
 			"status":          resp.StatusCode,
 		})
 
