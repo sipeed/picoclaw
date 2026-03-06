@@ -79,10 +79,6 @@ var (
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
 	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
 
-	// httpURLPattern matches HTTP(S) URLs so they can be excluded from path-based
-	// workspace checks. URLs are command arguments, not local filesystem paths.
-	httpURLPattern = regexp.MustCompile(`(?i)\bhttps?://[^\s"'<>]+`)
-
 	// safePaths are kernel pseudo-devices that are always safe to reference in
 	// commands, regardless of workspace restriction. They contain no user data
 	// and cannot cause destructive writes.
@@ -369,9 +365,89 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 }
 
 func stripHTTPURLs(command string) string {
-	return httpURLPattern.ReplaceAllStringFunc(command, func(match string) string {
-		return strings.Repeat(" ", len(match))
-	})
+	sanitized := []byte(command)
+	quote := byte(0)
+
+	for i := 0; i < len(command); i++ {
+		ch := command[i]
+
+		switch quote {
+		case '\'':
+			if ch == '\'' {
+				quote = 0
+				continue
+			}
+		case '"':
+			if ch == '\\' && i+1 < len(command) {
+				i++
+				continue
+			}
+			if ch == '"' {
+				quote = 0
+				continue
+			}
+		default:
+			if ch == '\\' && i+1 < len(command) {
+				i++
+				continue
+			}
+			if ch == '\'' || ch == '"' {
+				quote = ch
+				continue
+			}
+		}
+
+		if !hasHTTPURLPrefix(command, i) {
+			continue
+		}
+
+		end := findHTTPURLEnd(command, i, quote)
+		for j := i; j < end; j++ {
+			sanitized[j] = ' '
+		}
+		i = end - 1
+	}
+
+	return string(sanitized)
+}
+
+func hasHTTPURLPrefix(command string, start int) bool {
+	return len(command)-start >= len("http://") &&
+		(strings.EqualFold(command[start:start+len("http://")], "http://") ||
+			(len(command)-start >= len("https://") &&
+				strings.EqualFold(command[start:start+len("https://")], "https://")))
+}
+
+func findHTTPURLEnd(command string, start int, quote byte) int {
+	if quote != 0 {
+		for i := start; i < len(command); i++ {
+			if quote == '"' && command[i] == '\\' && i+1 < len(command) {
+				i++
+				continue
+			}
+			if command[i] == quote {
+				return i
+			}
+		}
+		return len(command)
+	}
+
+	for i := start; i < len(command); i++ {
+		if strings.ContainsRune(" \t\r\n", rune(command[i])) || isShellURLDelimiter(command[i]) {
+			return i
+		}
+	}
+
+	return len(command)
+}
+
+func isShellURLDelimiter(ch byte) bool {
+	switch ch {
+	case ';', '|', '&', '<', '>', '(', ')', '`':
+		return true
+	default:
+		return false
+	}
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {

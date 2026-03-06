@@ -325,12 +325,36 @@ func TestShellTool_RestrictToWorkspace_AllowsHTTPURLs(t *testing.T) {
 		`echo "http://example.com"`,
 		`echo "https://test"`,
 		`echo "https://example.com/path/../still-a-url"`,
+		`echo "https://example.com?a=1&b=/still-a-url"`,
+		`echo 'https://example.com;/bin/sh'`,
 	}
 
 	for _, cmd := range commands {
 		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
 		if result.IsError {
 			t.Fatalf("expected HTTP(S) URL to be allowed, command=%q error=%s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_RestrictToWorkspace_URLDoesNotBypassPathChecks verifies that
+// URLs do not hide real paths that should still be blocked by the workspace guard.
+func TestShellTool_RestrictToWorkspace_URLDoesNotBypassPathChecks(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	commands := []string{
+		`echo https://example.com /etc/passwd`,
+		`echo https://x;/bin/sh -c whoami`,
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "blocked") {
+			t.Fatalf("expected command to stay blocked, command=%q output=%s", cmd, result.ForLLM)
 		}
 	}
 }
