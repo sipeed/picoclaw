@@ -1463,7 +1463,7 @@ func (al *AgentLoop) retryLLMCall(
 			return resp, nil
 		}
 		if attempt < maxRetries-1 {
-			time.Sleep(time.Duration(attempt+1) * time.Second)
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 
