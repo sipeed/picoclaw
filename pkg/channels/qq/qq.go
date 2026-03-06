@@ -30,6 +30,8 @@ type QQChannel struct {
 	sessionManager botgo.SessionManager
 	processedIDs   map[string]bool
 	mu             sync.RWMutex
+	chatTypeMap     map[string]string  // Track whether a ChatID is group or C2C
+	chatTypeMu      sync.RWMutex       // Protects chatTypeMap
 }
 
 func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
