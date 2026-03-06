@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 
@@ -180,22 +181,135 @@ type RoutingConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace                 string         `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace       bool           `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	AllowReadOutsideWorkspace bool           `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
-	Provider                  string         `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	ModelName                 string         `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
-	Model                     string         `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
-	ModelFallbacks            []string       `json:"model_fallbacks,omitempty"`
-	ImageModel                string         `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
-	ImageModelFallbacks       []string       `json:"image_model_fallbacks,omitempty"`
-	MaxTokens                 int            `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature               *float64       `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations         int            `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
-	SummarizeMessageThreshold int            `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
-	SummarizeTokenPercent     int            `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
-	MaxMediaSize              int            `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
-	Routing                   *RoutingConfig `json:"routing,omitempty"`
+	Workspace                 string               `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace       bool                 `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	AllowReadOutsideWorkspace bool                 `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
+	Provider                  string               `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	ModelName                 string               `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
+	Model                     string               `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
+	ModelFallbacks            []string             `json:"model_fallbacks,omitempty"`
+	ImageModel                string               `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks       []string             `json:"image_model_fallbacks,omitempty"`
+	MaxTokens                 int                  `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature               *float64             `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations         int                  `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Summarization             *SummarizationConfig `json:"summarization,omitempty"`
+	MaxMediaSize              int                  `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
+	Routing                   *RoutingConfig       `json:"routing,omitempty"`
+
+	// Deprecated: use summarization.message_threshold instead.
+	SummarizeMessageThreshold int `json:"summarize_message_threshold,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
+	// Deprecated: use summarization.token_percent instead.
+	SummarizeTokenPercent int `json:"summarize_token_percent,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
+}
+
+// SummarizationConfig controls session summarization behavior.
+// All fields are optional — zero values are replaced by sensible defaults
+// via WithDefaults().
+type SummarizationConfig struct {
+	// --- User-facing (documented in config.example.json) ---
+
+	// MessageThreshold is the message count above which summarization is triggered.
+	MessageThreshold int `json:"message_threshold,omitempty"`
+	// TokenPercent is the percentage of context window above which summarization triggers.
+	TokenPercent int `json:"token_percent,omitempty"`
+	// KeepLastMessages is the number of recent messages to retain after summarization.
+	KeepLastMessages int `json:"keep_last_messages,omitempty"`
+	// ContextWindow overrides the token budget for threshold calculations (defaults to max_tokens).
+	ContextWindow int `json:"context_window,omitempty"`
+	// SummaryMaxTokens is the max_tokens limit for the LLM summarization call.
+	SummaryMaxTokens int `json:"summary_max_tokens,omitempty"`
+	// SummaryTemperature is the temperature for the LLM summarization call.
+	SummaryTemperature float64 `json:"summary_temperature,omitempty"`
+
+	// --- Internal (undocumented, tunable for advanced use) ---
+
+	// MultiPartBatchThreshold controls when summarization splits the
+	// message batch into two halves for separate summarization + merge.
+	MultiPartBatchThreshold int `json:"multi_part_batch_threshold,omitempty"`
+	// Timeout is the maximum duration for a single summarization operation.
+	Timeout time.Duration `json:"timeout,omitempty"`
+	// MaxSingleMsgTokenRatio is the fraction of ContextWindow above which
+	// a single message is considered oversized and skipped during summarization.
+	MaxSingleMsgTokenRatio float64 `json:"max_single_msg_token_ratio,omitempty"`
+	// ForceCompressionMinMessages is the minimum message count below which
+	// force-compression is a no-op (not enough to drop).
+	ForceCompressionMinMessages int `json:"force_compression_min_messages,omitempty"`
+	// CharsPerToken is the estimated character-to-token ratio used by
+	// EstimateTokens. Lower values are more conservative (estimate more tokens).
+	CharsPerToken float64 `json:"chars_per_token,omitempty"`
+}
+
+// Defaults for SummarizationConfig fields.
+const (
+	DefaultSummarizeMessageThreshold         = 20
+	DefaultSummarizeTokenPercent             = 75
+	DefaultKeepLastMessages                  = 4
+	DefaultContextWindow                     = 8192
+	DefaultSummaryMaxTokens                  = 1024
+	DefaultSummarizationTemperature  float64 = 0.3
+	DefaultMultiPartBatchThreshold           = 10
+	DefaultSummarizationTimeout              = 120 * time.Second
+	DefaultMaxSingleMsgTokenRatio            = 0.5
+	DefaultForceCompressionMinMsgs           = 4
+	DefaultCharsPerToken                     = 2.5
+)
+
+// WithDefaults fills zero-valued fields with sensible defaults.
+func (c SummarizationConfig) WithDefaults() SummarizationConfig {
+	if c.MessageThreshold == 0 {
+		c.MessageThreshold = DefaultSummarizeMessageThreshold
+	}
+	if c.TokenPercent == 0 {
+		c.TokenPercent = DefaultSummarizeTokenPercent
+	}
+	if c.KeepLastMessages == 0 {
+		c.KeepLastMessages = DefaultKeepLastMessages
+	}
+	if c.ContextWindow == 0 {
+		c.ContextWindow = DefaultContextWindow
+	}
+	if c.SummaryMaxTokens == 0 {
+		c.SummaryMaxTokens = DefaultSummaryMaxTokens
+	}
+	if c.SummaryTemperature == 0 {
+		c.SummaryTemperature = DefaultSummarizationTemperature
+	}
+	if c.MultiPartBatchThreshold == 0 {
+		c.MultiPartBatchThreshold = DefaultMultiPartBatchThreshold
+	}
+	if c.Timeout == 0 {
+		c.Timeout = DefaultSummarizationTimeout
+	}
+	if c.MaxSingleMsgTokenRatio == 0 {
+		c.MaxSingleMsgTokenRatio = DefaultMaxSingleMsgTokenRatio
+	}
+	if c.ForceCompressionMinMessages == 0 {
+		c.ForceCompressionMinMessages = DefaultForceCompressionMinMsgs
+	}
+	if c.CharsPerToken == 0 {
+		c.CharsPerToken = DefaultCharsPerToken
+	}
+	return c
+}
+
+// GetSummarization returns the effective summarization config, merging the
+// new nested field with the deprecated flat fields for backward compatibility.
+// The new Summarization struct takes priority; legacy fields are used only
+// when the corresponding new field is unset.
+func (d *AgentDefaults) GetSummarization() SummarizationConfig {
+	var sc SummarizationConfig
+	if d.Summarization != nil {
+		sc = *d.Summarization
+	}
+	// Legacy fallback: only apply if the new field is zero.
+	if sc.MessageThreshold == 0 && d.SummarizeMessageThreshold != 0 {
+		sc.MessageThreshold = d.SummarizeMessageThreshold
+	}
+	if sc.TokenPercent == 0 && d.SummarizeTokenPercent != 0 {
+		sc.TokenPercent = d.SummarizeTokenPercent
+	}
+	return sc
 }
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB

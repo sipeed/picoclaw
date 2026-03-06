@@ -434,16 +434,48 @@ func TestLoadConfig_WebToolsProxy(t *testing.T) {
 	}
 }
 
-// TestDefaultConfig_DMScope verifies the default dm_scope value
 // TestDefaultConfig_SummarizationThresholds verifies summarization defaults
 func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Agents.Defaults.SummarizeMessageThreshold != 20 {
-		t.Errorf("SummarizeMessageThreshold = %d, want 20", cfg.Agents.Defaults.SummarizeMessageThreshold)
+	sc := cfg.Agents.Defaults.GetSummarization()
+	if sc.MessageThreshold != 20 {
+		t.Errorf("MessageThreshold = %d, want 20", sc.MessageThreshold)
 	}
-	if cfg.Agents.Defaults.SummarizeTokenPercent != 75 {
-		t.Errorf("SummarizeTokenPercent = %d, want 75", cfg.Agents.Defaults.SummarizeTokenPercent)
+	if sc.TokenPercent != 75 {
+		t.Errorf("TokenPercent = %d, want 75", sc.TokenPercent)
+	}
+}
+
+func TestGetSummarization_LegacyFallback(t *testing.T) {
+	d := AgentDefaults{
+		SummarizeMessageThreshold: 30,
+		SummarizeTokenPercent:     80,
+	}
+	sc := d.GetSummarization()
+	if sc.MessageThreshold != 30 {
+		t.Errorf("legacy MessageThreshold = %d, want 30", sc.MessageThreshold)
+	}
+	if sc.TokenPercent != 80 {
+		t.Errorf("legacy TokenPercent = %d, want 80", sc.TokenPercent)
+	}
+}
+
+func TestGetSummarization_NewOverridesLegacy(t *testing.T) {
+	d := AgentDefaults{
+		SummarizeMessageThreshold: 30, // legacy
+		SummarizeTokenPercent:     80, // legacy
+		Summarization: &SummarizationConfig{
+			MessageThreshold: 50,
+			TokenPercent:     90,
+		},
+	}
+	sc := d.GetSummarization()
+	if sc.MessageThreshold != 50 {
+		t.Errorf("new MessageThreshold = %d, want 50", sc.MessageThreshold)
+	}
+	if sc.TokenPercent != 90 {
+		t.Errorf("new TokenPercent = %d, want 90", sc.TokenPercent)
 	}
 }
 

@@ -885,7 +885,11 @@ picoclaw agent -m "Bonjour, comment ça va ?"
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model": "anthropic/claude-opus-4-5",
+      "summarization": {
+        "message_threshold": 20,
+        "token_percent": 75
+      }
     }
   },
   "providers": {

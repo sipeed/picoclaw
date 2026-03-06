@@ -229,7 +229,11 @@ picoclaw onboard
       "model_name": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
-      "max_tool_iterations": 20
+      "max_tool_iterations": 20,
+      "summarization": {
+        "message_threshold": 20,
+        "token_percent": 75
+      }
     }
   },
   "model_list": [
@@ -725,7 +729,11 @@ picoclaw agent -m "你好"
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model": "anthropic/claude-opus-4-5",
+      "summarization": {
+        "message_threshold": 20,
+        "token_percent": 75
+      }
     }
   },
   "session": {
