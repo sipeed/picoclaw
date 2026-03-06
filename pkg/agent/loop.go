@@ -198,6 +198,19 @@ func registerSharedTools(
 			if cfg.Tools.IsToolEnabled("subagent") {
 				subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
 				subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+
+				// Set subagent default model from config
+				if agent.Subagents != nil && agent.Subagents.Model != nil &&
+					agent.Subagents.Model.Primary != "" {
+					subagentManager.SetSubagentDefaultModel(agent.Subagents.Model.Primary)
+				}
+
+				// Set model validator using config's model_list
+				subagentManager.SetModelValidator(func(modelName string) bool {
+					_, err := cfg.GetModelConfig(modelName)
+					return err == nil
+				})
+
 				spawnTool := tools.NewSpawnTool(subagentManager)
 				currentAgentID := agentID
 				spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
