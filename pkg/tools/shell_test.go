@@ -359,6 +359,28 @@ func TestShellTool_RestrictToWorkspace_URLDoesNotBypassPathChecks(t *testing.T) 
 	}
 }
 
+// TestShellTool_RestrictToWorkspace_URLDoesNotMaskQuotedPaths verifies that a
+// URL inside a quoted argument does not hide a later absolute path in the same argument.
+func TestShellTool_RestrictToWorkspace_URLDoesNotMaskQuotedPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	commands := []string{
+		`python3 -c "print('https://x,' + open('/etc/passwd').read())"`,
+		`python3 -c "print('https://x,'+open('/etc/passwd').read())"`,
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "blocked") {
+			t.Fatalf("expected quoted path access to stay blocked, command=%q output=%s", cmd, result.ForLLM)
+		}
+	}
+}
+
 // TestShellTool_DevNullAllowed verifies that /dev/null redirections are not blocked (issue #964).
 func TestShellTool_DevNullAllowed(t *testing.T) {
 	tmpDir := t.TempDir()

@@ -419,26 +419,37 @@ func hasHTTPURLPrefix(command string, start int) bool {
 }
 
 func findHTTPURLEnd(command string, start int, quote byte) int {
-	if quote != 0 {
-		for i := start; i < len(command); i++ {
-			if quote == '"' && command[i] == '\\' && i+1 < len(command) {
-				i++
-				continue
-			}
-			if command[i] == quote {
-				return i
-			}
-		}
-		return len(command)
-	}
-
 	for i := start; i < len(command); i++ {
-		if strings.ContainsRune(" \t\r\n", rune(command[i])) || isShellURLDelimiter(command[i]) {
+		if quote != 0 && (command[i] == quote || command[i] == '\'' || command[i] == '"') {
+			return i
+		}
+		if quote == 0 && (strings.ContainsRune(" \t\r\n", rune(command[i])) || isShellURLDelimiter(command[i])) {
+			return i
+		}
+		if !isHTTPURLChar(command[i]) {
 			return i
 		}
 	}
 
 	return len(command)
+}
+
+func isHTTPURLChar(ch byte) bool {
+	switch {
+	case ch >= 'a' && ch <= 'z':
+		return true
+	case ch >= 'A' && ch <= 'Z':
+		return true
+	case ch >= '0' && ch <= '9':
+		return true
+	}
+
+	switch ch {
+	case ':', '/', '?', '#', '[', ']', '@', '!', '$', '&', '*', '+', ',', ';', '=', '%', '-', '.', '_', '~':
+		return true
+	default:
+		return false
+	}
 }
 
 func isShellURLDelimiter(ch byte) bool {
