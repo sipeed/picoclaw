@@ -170,11 +170,14 @@
       "server": "irc.libera.chat:6697",
       "tls": true,
       "nick": "mybot",
+      "user": "",
+      "real_name": "",
       "password": "",
       "nickserv_password": "",
       "sasl_user": "",
       "sasl_password": "",
       "channels": ["#mychannel"],
+      "request_caps": ["server-time", "message-tags"],
       "allow_from": [],
       "group_trigger": {
         "mention_only": true
