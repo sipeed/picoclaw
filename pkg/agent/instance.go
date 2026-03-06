@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -54,6 +55,14 @@ func NewAgentInstance(
 	toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
 	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
+
+	// Second brain: structured memory database
+	if memDB, err := memory.Open(workspace); err == nil {
+		toolsRegistry.Register(tools.NewMemoryStoreTool(memDB))
+		toolsRegistry.Register(tools.NewMemorySearchTool(memDB))
+		toolsRegistry.Register(tools.NewMemoryListTool(memDB))
+		toolsRegistry.Register(tools.NewMemoryDeleteTool(memDB))
+	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)

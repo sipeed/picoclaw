@@ -74,14 +74,26 @@ Your workspace is at: %s
 
 %s
 
+## Second Brain (Memory Database)
+
+Your memory is stored in a structured database at %s/memory/brain.db.
+Use these tools to remember and recall information across sessions:
+
+- **memory_store** — save a fact, preference, note, or task (categories: general, fact, preference, task, note, contact)
+- **memory_search** — full-text search across all stored memories
+- **memory_list** — browse recent memories, optionally by category
+- **memory_delete** — remove a memory entry by ID
+
+Proactively use memory_store when the user shares anything worth remembering. Use memory_search before answering questions that might draw from stored knowledge.
+
 ## Important Rules
 
 1. **ALWAYS use tools** - When you need to perform an action (schedule reminders, send messages, execute commands, etc.), you MUST call the appropriate tool. Do NOT just say you'll do it or pretend to do it.
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md`,
-		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
+3. **Memory** - Proactively store memorable information with memory_store. Legacy notes also live at %s/memory/MEMORY.md`,
+		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath, workspacePath)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
