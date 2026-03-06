@@ -824,6 +824,10 @@ func (al *AgentLoop) runLLMIteration(
 	iteration := 0
 	var finalContent string
 
+	// Duplicate tool call loop detection
+	var lastToolCallSig string
+	consecutiveDups := 0
+
 	for iteration < agent.MaxIterations {
 		iteration++
 
@@ -1029,6 +1033,70 @@ func (al *AgentLoop) runLLMIteration(
 				"iteration": iteration,
 			})
 
+		// Duplicate tool call loop detection: build a signature from tool names + arguments
+		var sigParts []string
+		for _, tc := range normalizedToolCalls {
+			argsJSON, _ := json.Marshal(tc.Arguments)
+			sigParts = append(sigParts, tc.Name+":"+string(argsJSON))
+		}
+		currentSig := strings.Join(sigParts, "|")
+
+		if currentSig == lastToolCallSig {
+			consecutiveDups++
+		} else {
+			lastToolCallSig = currentSig
+			consecutiveDups = 1
+		}
+
+		if consecutiveDups >= 3 {
+			logger.WarnCF("agent", "Duplicate tool call loop detected, injecting nudge",
+				map[string]any{
+					"agent_id":         agent.ID,
+					"iteration":        iteration,
+					"consecutive_dups": consecutiveDups,
+					"signature":        currentSig,
+				})
+
+			// Build assistant message with the duplicate tool calls
+			dupAssistantMsg := providers.Message{
+				Role:    "assistant",
+				Content: response.Content,
+			}
+			for _, tc := range normalizedToolCalls {
+				argumentsJSON, _ := json.Marshal(tc.Arguments)
+				dupAssistantMsg.ToolCalls = append(dupAssistantMsg.ToolCalls, providers.ToolCall{
+					ID:   tc.ID,
+					Type: "function",
+					Name: tc.Name,
+					Function: &providers.FunctionCall{
+						Name:      tc.Name,
+						Arguments: string(argumentsJSON),
+					},
+				})
+			}
+			messages = append(messages, dupAssistantMsg)
+
+			// Add synthetic tool results for each tool call (skipped)
+			for _, tc := range normalizedToolCalls {
+				messages = append(messages, providers.Message{
+					Role:       "tool",
+					Content:    "[Skipped: duplicate tool call detected — same call repeated 3+ times]",
+					ToolCallID: tc.ID,
+				})
+			}
+
+			// Add a system nudge to break the loop
+			messages = append(messages, providers.Message{
+				Role:    "user",
+				Content: "[System] You have been repeating the same tool call. Please try a different approach or provide a final answer.",
+			})
+
+			// Reset counter so the model gets a fresh chance
+			consecutiveDups = 0
+			lastToolCallSig = ""
+			continue
+		}
+
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
 			Role:             "assistant",
@@ -1164,6 +1232,15 @@ func (al *AgentLoop) runLLMIteration(
 			// Save tool result message to session
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
+	}
+
+	if iteration >= agent.MaxIterations {
+		logger.WarnCF("agent", "Reached max tool iterations",
+			map[string]any{
+				"agent_id":  agent.ID,
+				"max":       agent.MaxIterations,
+				"iteration": iteration,
+			})
 	}
 
 	return finalContent, iteration, nil
