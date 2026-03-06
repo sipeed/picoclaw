@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import type { ChannelInfo } from "@/api/channels"
+import type { ChannelConfig, ChannelInfo } from "@/api/channels"
 import { updateChannel } from "@/api/channels"
 import { DiscordForm } from "@/components/channels/channel-forms/discord-form"
 import { FeishuForm } from "@/components/channels/channel-forms/feishu-form"
@@ -42,8 +42,8 @@ const SECRET_FIELD_MAP: Record<string, string> = {
   verification_token: "_verification_token",
 }
 
-function buildEditConfig(config: Record<string, any>): Record<string, any> {
-  const edit: Record<string, any> = { ...config }
+function buildEditConfig(config: ChannelConfig): ChannelConfig {
+  const edit: ChannelConfig = { ...config }
   // Initialize edit buffer keys for secrets as empty (user fills new values)
   for (const secretKey of Object.keys(SECRET_FIELD_MAP)) {
     if (secretKey in config) {
@@ -55,9 +55,9 @@ function buildEditConfig(config: Record<string, any>): Record<string, any> {
 
 function buildSavePayload(
   channel: ChannelInfo,
-  editConfig: Record<string, any>,
-): Record<string, any> {
-  const payload: Record<string, any> = { enabled: channel.enabled }
+  editConfig: ChannelConfig,
+): ChannelConfig {
+  const payload: ChannelConfig = { enabled: channel.enabled }
 
   for (const [key, value] of Object.entries(editConfig)) {
     // Skip the edit-buffer underscore keys — we use them to populate real keys
@@ -81,7 +81,7 @@ export function EditChannelSheet({
   onSaved,
 }: EditChannelSheetProps) {
   const { t } = useTranslation()
-  const [editConfig, setEditConfig] = useState<Record<string, any>>({})
+  const [editConfig, setEditConfig] = useState<ChannelConfig>({})
   const [saving, setSaving] = useState(false)
   const [serverError, setServerError] = useState("")
 
@@ -92,7 +92,7 @@ export function EditChannelSheet({
     }
   }, [channel])
 
-  const handleChange = useCallback((key: string, value: any) => {
+  const handleChange = useCallback((key: string, value: unknown) => {
     setEditConfig((prev) => ({ ...prev, [key]: value }))
   }, [])
 
@@ -171,9 +171,7 @@ export function EditChannelSheet({
               name: channel?.display_name ?? "",
             })}
           </SheetTitle>
-          <SheetDescription>
-            {t("channels.edit.description")}
-          </SheetDescription>
+          <SheetDescription>{t("channels.edit.description")}</SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-4 py-4">{renderForm()}</div>

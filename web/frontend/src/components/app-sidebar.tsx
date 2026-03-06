@@ -46,9 +46,7 @@ const navGroups = [
   {
     label: "navigation.channels_group",
     defaultOpen: true,
-    items: [
-      { title: "navigation.channels", url: "/channels", icon: IconPlug },
-    ],
+    items: [{ title: "navigation.channels", url: "/channels", icon: IconPlug }],
   },
   {
     label: "navigation.services",

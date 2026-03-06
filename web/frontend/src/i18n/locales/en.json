@@ -247,6 +247,9 @@
       "allowFrom": "Allow From",
       "allowFromHint": "Comma-separated list of allowed user/group IDs. Leave empty to allow all.",
       "allowFromPlaceholder": "e.g. 123456, 789012",
+      "allowOrigins": "Allow Origins",
+      "allowOriginsHint": "Comma-separated list of allowed origins. Leave empty to allow all.",
+      "allowOriginsPlaceholder": "e.g. https://example.com, http://localhost:5173",
       "secretPlaceholder": "Enter secret",
       "secretPlaceholderSet": "Leave blank to keep existing",
       "secretHintSet": "A value is already set. Leave blank to keep it unchanged."

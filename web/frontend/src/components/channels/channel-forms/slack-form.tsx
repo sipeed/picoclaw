@@ -1,16 +1,26 @@
 import { useTranslation } from "react-i18next"
 
-import { Input } from "@/components/ui/input"
+import type { ChannelConfig } from "@/api/channels"
 import {
   AdvancedSection,
   Field,
   KeyInput,
 } from "@/components/models/shared-form"
+import { Input } from "@/components/ui/input"
 
 interface SlackFormProps {
-  config: Record<string, any>
-  onChange: (key: string, value: any) => void
+  config: ChannelConfig
+  onChange: (key: string, value: unknown) => void
   isEdit: boolean
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === "string")
 }
 
 export function SlackForm({ config, onChange, isEdit }: SlackFormProps) {
@@ -21,16 +31,16 @@ export function SlackForm({ config, onChange, isEdit }: SlackFormProps) {
       <Field
         label={t("channels.field.botToken")}
         hint={
-          isEdit && config.bot_token
+          isEdit && asString(config.bot_token)
             ? t("channels.field.secretHintSet")
             : undefined
         }
       >
         <KeyInput
-          value={config._bot_token ?? ""}
+          value={asString(config._bot_token)}
           onChange={(v) => onChange("_bot_token", v)}
           placeholder={
-            isEdit && config.bot_token
+            isEdit && asString(config.bot_token)
               ? t("channels.field.secretPlaceholderSet")
               : "xoxb-xxxx"
           }
@@ -40,16 +50,16 @@ export function SlackForm({ config, onChange, isEdit }: SlackFormProps) {
       <Field
         label={t("channels.field.appToken")}
         hint={
-          isEdit && config.app_token
+          isEdit && asString(config.app_token)
             ? t("channels.field.secretHintSet")
             : undefined
         }
       >
         <KeyInput
-          value={config._app_token ?? ""}
+          value={asString(config._app_token)}
           onChange={(v) => onChange("_app_token", v)}
           placeholder={
-            isEdit && config.app_token
+            isEdit && asString(config.app_token)
               ? t("channels.field.secretPlaceholderSet")
               : "xapp-xxxx"
           }
@@ -62,7 +72,7 @@ export function SlackForm({ config, onChange, isEdit }: SlackFormProps) {
           hint={t("channels.field.allowFromHint")}
         >
           <Input
-            value={(config.allow_from ?? []).join(", ")}
+            value={asStringArray(config.allow_from).join(", ")}
             onChange={(e) =>
               onChange(
                 "allow_from",

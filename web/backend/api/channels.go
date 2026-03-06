@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -105,6 +106,10 @@ func (h *Handler) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	applyChannelUpdate(name, &cfg.Channels, incoming)
+	if errs := validateConfig(cfg); len(errs) > 0 {
+		writeValidationErrors(w, errs)
+		return
+	}
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -133,10 +138,14 @@ func (h *Handler) handleToggleChannel(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var req struct {
-		Enabled bool `json:"enabled"`
+		Enabled *bool `json:"enabled"`
 	}
 	if err = json.Unmarshal(body, &req); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.Enabled == nil {
+		http.Error(w, "Missing required field: enabled", http.StatusBadRequest)
 		return
 	}
 
@@ -146,7 +155,11 @@ func (h *Handler) handleToggleChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setChannelEnabled(name, &cfg.Channels, req.Enabled)
+	setChannelEnabled(name, &cfg.Channels, *req.Enabled)
+	if errs := validateConfig(cfg); len(errs) > 0 {
+		writeValidationErrors(w, errs)
+		return
+	}
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -164,6 +177,15 @@ func isValidChannel(name string) bool {
 		}
 	}
 	return false
+}
+
+func writeValidationErrors(w http.ResponseWriter, errs []string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	json.NewEncoder(w).Encode(map[string]any{
+		"status": "validation_error",
+		"errors": errs,
+	})
 }
 
 // extractChannelInfo returns enabled, configured status and masked config for a channel.
@@ -407,6 +429,50 @@ func applyChannelUpdate(name string, ch *config.ChannelsConfig, incoming map[str
 		}
 		return nil
 	}
+	getStringArray := func(key string) ([]string, bool) {
+		v, ok := incoming[key]
+		if !ok {
+			return nil, false
+		}
+
+		switch arr := v.(type) {
+		case []any:
+			result := make([]string, 0, len(arr))
+			for _, item := range arr {
+				if s, ok := item.(string); ok {
+					s = strings.TrimSpace(s)
+					if s != "" {
+						result = append(result, s)
+					}
+				}
+			}
+			return result, true
+		case []string:
+			result := make([]string, 0, len(arr))
+			for _, s := range arr {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					result = append(result, s)
+				}
+			}
+			return result, true
+		case string:
+			if strings.TrimSpace(arr) == "" {
+				return []string{}, true
+			}
+			parts := strings.Split(arr, ",")
+			result := make([]string, 0, len(parts))
+			for _, part := range parts {
+				part = strings.TrimSpace(part)
+				if part != "" {
+					result = append(result, part)
+				}
+			}
+			return result, true
+		default:
+			return nil, false
+		}
+	}
 	getGroupTrigger := func() config.GroupTriggerConfig {
 		if v, ok := incoming["group_trigger"]; ok {
 			if m, ok := v.(map[string]any); ok {
@@ -583,16 +649,8 @@ func applyChannelUpdate(name string, ch *config.ChannelsConfig, incoming map[str
 		c.Enabled = getBool("enabled")
 		c.Token = preserveSecret(getString("token"), c.Token)
 		c.AllowTokenQuery = getBool("allow_token_query")
-		if v, ok := incoming["allow_origins"]; ok {
-			if arr, ok := v.([]any); ok {
-				origins := make([]string, 0, len(arr))
-				for _, item := range arr {
-					if s, ok := item.(string); ok {
-						origins = append(origins, s)
-					}
-				}
-				c.AllowOrigins = origins
-			}
+		if origins, ok := getStringArray("allow_origins"); ok {
+			c.AllowOrigins = origins
 		}
 		c.PingInterval = getInt("ping_interval")
 		c.ReadTimeout = getInt("read_timeout")

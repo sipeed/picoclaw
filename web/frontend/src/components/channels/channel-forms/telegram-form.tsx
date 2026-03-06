@@ -1,16 +1,26 @@
 import { useTranslation } from "react-i18next"
 
-import { Input } from "@/components/ui/input"
+import type { ChannelConfig } from "@/api/channels"
 import {
   AdvancedSection,
   Field,
   KeyInput,
 } from "@/components/models/shared-form"
+import { Input } from "@/components/ui/input"
 
 interface TelegramFormProps {
-  config: Record<string, any>
-  onChange: (key: string, value: any) => void
+  config: ChannelConfig
+  onChange: (key: string, value: unknown) => void
   isEdit: boolean
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === "string")
 }
 
 export function TelegramForm({ config, onChange, isEdit }: TelegramFormProps) {
@@ -21,16 +31,16 @@ export function TelegramForm({ config, onChange, isEdit }: TelegramFormProps) {
       <Field
         label={t("channels.field.token")}
         hint={
-          isEdit && config.token
+          isEdit && asString(config.token)
             ? t("channels.field.secretHintSet")
             : undefined
         }
       >
         <KeyInput
-          value={config._token ?? ""}
+          value={asString(config._token)}
           onChange={(v) => onChange("_token", v)}
           placeholder={
-            isEdit && config.token
+            isEdit && asString(config.token)
               ? t("channels.field.secretPlaceholderSet")
               : t("channels.field.tokenPlaceholder")
           }
@@ -40,7 +50,7 @@ export function TelegramForm({ config, onChange, isEdit }: TelegramFormProps) {
       <AdvancedSection>
         <Field label={t("channels.field.baseUrl")}>
           <Input
-            value={config.base_url ?? ""}
+            value={asString(config.base_url)}
             onChange={(e) => onChange("base_url", e.target.value)}
             placeholder="https://api.telegram.org"
           />
@@ -50,7 +60,7 @@ export function TelegramForm({ config, onChange, isEdit }: TelegramFormProps) {
           hint={t("channels.field.proxyHint")}
         >
           <Input
-            value={config.proxy ?? ""}
+            value={asString(config.proxy)}
             onChange={(e) => onChange("proxy", e.target.value)}
             placeholder="http://127.0.0.1:7890"
           />
@@ -60,7 +70,7 @@ export function TelegramForm({ config, onChange, isEdit }: TelegramFormProps) {
           hint={t("channels.field.allowFromHint")}
         >
           <Input
-            value={(config.allow_from ?? []).join(", ")}
+            value={asStringArray(config.allow_from).join(", ")}
             onChange={(e) =>
               onChange(
                 "allow_from",

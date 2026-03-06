@@ -1,11 +1,13 @@
 // API client for channel management.
 
+export type ChannelConfig = Record<string, unknown>
+
 export interface ChannelInfo {
   name: string
   display_name: string
   enabled: boolean
   configured: boolean
-  config: Record<string, any>
+  config: ChannelConfig
 }
 
 interface ChannelsListResponse {
@@ -32,7 +34,7 @@ export async function getChannels(): Promise<ChannelsListResponse> {
 
 export async function updateChannel(
   name: string,
-  config: Record<string, any>,
+  config: ChannelConfig,
 ): Promise<ChannelActionResponse> {
   return request<ChannelActionResponse>(`/api/channels/${name}`, {
     method: "PUT",

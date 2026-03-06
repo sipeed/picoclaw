@@ -247,6 +247,9 @@
       "allowFrom": "允许来源",
       "allowFromHint": "用逗号分隔的用户/群组 ID 列表，留空表示允许所有。",
       "allowFromPlaceholder": "例如 123456, 789012",
+      "allowOrigins": "允许来源域名",
+      "allowOriginsHint": "用逗号分隔允许的 Origin，留空表示允许所有。",
+      "allowOriginsPlaceholder": "例如 https://example.com, http://localhost:5173",
       "secretPlaceholder": "输入密钥",
       "secretPlaceholderSet": "留空保持原有值不变",
       "secretHintSet": "已设置密钥，留空表示不修改。"

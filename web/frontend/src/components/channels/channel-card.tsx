@@ -29,7 +29,7 @@ export function ChannelCard({
               {channel.display_name}
             </span>
             {channel.configured ? (
-              <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full px-2 py-0.5 text-[10px] font-medium">
+              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
                 {t("channels.status.configured")}
               </span>
             ) : (
@@ -54,9 +54,7 @@ export function ChannelCard({
           onClick={() => onEdit(channel)}
         >
           <IconSettings className="size-4" />
-          <span className="sr-only">
-            {t("channels.action.configure")}
-          </span>
+          <span className="sr-only">{t("channels.action.configure")}</span>
         </Button>
       </div>
     </div>

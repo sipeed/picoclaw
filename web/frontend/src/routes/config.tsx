@@ -1,18 +1,10 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
+import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import { PageHeader } from "@/components/page-header"
-import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Textarea } from "@/components/ui/textarea"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,8 +16,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Textarea } from "@/components/ui/textarea"
 
 export const Route = createFileRoute("/config")({
   component: ConfigPage,
@@ -72,7 +72,9 @@ function RawJsonPanel() {
       }
     },
     onSuccess: () => {
-      toast.success(t("pages.config.save_success", "Configuration saved successfully."))
+      toast.success(
+        t("pages.config.save_success", "Configuration saved successfully."),
+      )
       // Update last saved config and reset dirty state
       try {
         const savedConfig = JSON.parse(editorValue)
@@ -94,7 +96,10 @@ function RawJsonPanel() {
   const [isDirty, setIsDirty] = useState(false)
 
   // Store the last saved config to detect changes
-  const [lastSavedConfig, setLastSavedConfig] = useState<Record<string, unknown> | null>(null)
+  const [lastSavedConfig, setLastSavedConfig] = useState<Record<
+    string,
+    unknown
+  > | null>(null)
 
   // Initialize editor value when config is first loaded
   const getInitialEditorValue = () => {
@@ -103,7 +108,7 @@ function RawJsonPanel() {
     }
     return editorValue
   }
-  
+
   const displayValue = getInitialEditorValue()
 
   const handleSave = () => {
@@ -112,7 +117,12 @@ function RawJsonPanel() {
       JSON.parse(editorValue)
       mutation.mutate(editorValue)
     } catch (error) {
-      toast.error(t("pages.config.invalid_json", error instanceof Error ? error.message : "Invalid JSON format."))
+      toast.error(
+        t(
+          "pages.config.invalid_json",
+          error instanceof Error ? error.message : "Invalid JSON format.",
+        ),
+      )
     }
   }
 
@@ -120,9 +130,16 @@ function RawJsonPanel() {
     try {
       const formatted = JSON.stringify(JSON.parse(editorValue), null, 2)
       setEditorValue(formatted)
-      toast.success(t("pages.config.format_success", "JSON formatted successfully."))
+      toast.success(
+        t("pages.config.format_success", "JSON formatted successfully."),
+      )
     } catch (error) {
-      toast.error(t("pages.config.format_error", error instanceof Error ? error.message : "Invalid JSON format."))
+      toast.error(
+        t(
+          "pages.config.format_error",
+          error instanceof Error ? error.message : "Invalid JSON format.",
+        ),
+      )
     }
   }
 
@@ -137,7 +154,12 @@ function RawJsonPanel() {
       setEditorValue(JSON.stringify(config, null, 2))
     }
     setIsDirty(false)
-    toast.info(t("pages.config.reset_success", "Changes have been reset to the last saved state."))
+    toast.info(
+      t(
+        "pages.config.reset_success",
+        "Changes have been reset to the last saved state.",
+      ),
+    )
     setShowResetDialog(false)
   }
 
@@ -161,12 +183,12 @@ function RawJsonPanel() {
           </div>
         ) : (
           <div className="space-y-3">
-              {isDirty && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-sm text-yellow-700">
-                  {t("pages.config.unsaved_changes", "You have unsaved changes.")}
-                </div>
-              )}
-              <div className="bg-muted/30 relative rounded-lg border">
+            {isDirty && (
+              <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-2 text-sm text-yellow-700">
+                {t("pages.config.unsaved_changes", "You have unsaved changes.")}
+              </div>
+            )}
+            <div className="bg-muted/30 relative rounded-lg border">
               <ScrollArea className="h-[calc(100vh-20rem)] min-h-[200px]">
                 <Textarea
                   value={displayValue}
@@ -174,7 +196,7 @@ function RawJsonPanel() {
                     setEditorValue(e.target.value)
                     setIsDirty(true)
                   }}
-                  className="font-mono text-sm min-h-[200px] resize-none border-0 bg-transparent px-4 py-3 shadow-none focus-visible:ring-0"
+                  className="min-h-[200px] resize-none border-0 bg-transparent px-4 py-3 font-mono text-sm shadow-none focus-visible:ring-0"
                   placeholder={t(
                     "pages.config.json_placeholder",
                     "Enter valid JSON configuration...",
@@ -183,13 +205,20 @@ function RawJsonPanel() {
               </ScrollArea>
             </div>
             <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={handleFormat} disabled={mutation.isPending}>
+              <Button
+                variant="outline"
+                onClick={handleFormat}
+                disabled={mutation.isPending}
+              >
                 {t("pages.config.format", "Format")}
               </Button>
-              <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+              <AlertDialog
+                open={showResetDialog}
+                onOpenChange={setShowResetDialog}
+              >
                 <AlertDialogTrigger asChild>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     disabled={!isDirty}
                     onClick={() => setShowResetDialog(true)}
                   >
@@ -198,13 +227,20 @@ function RawJsonPanel() {
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>{t("pages.config.reset_confirm_title", "Reset Changes")}</AlertDialogTitle>
+                    <AlertDialogTitle>
+                      {t("pages.config.reset_confirm_title", "Reset Changes")}
+                    </AlertDialogTitle>
                     <AlertDialogDescription>
-                      {t("pages.config.reset_confirm_desc", "Are you sure you want to reset your unsaved changes back to the last saved state?")}
+                      {t(
+                        "pages.config.reset_confirm_desc",
+                        "Are you sure you want to reset your unsaved changes back to the last saved state?",
+                      )}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
+                    <AlertDialogCancel>
+                      {t("common.cancel", "Cancel")}
+                    </AlertDialogCancel>
                     <AlertDialogAction onClick={confirmReset}>
                       {t("common.confirm", "Confirm")}
                     </AlertDialogAction>

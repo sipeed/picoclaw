@@ -30,9 +30,7 @@ export function ChannelsPage() {
       setChannels(sorted)
       setFetchError("")
     } catch (e) {
-      setFetchError(
-        e instanceof Error ? e.message : t("channels.loadError"),
-      )
+      setFetchError(e instanceof Error ? e.message : t("channels.loadError"))
     } finally {
       setLoading(false)
     }

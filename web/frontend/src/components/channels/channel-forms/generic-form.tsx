@@ -1,12 +1,14 @@
 import { useTranslation } from "react-i18next"
 
-import { Input } from "@/components/ui/input"
+import type { ChannelConfig } from "@/api/channels"
 import { Field, KeyInput } from "@/components/models/shared-form"
+import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 
 interface GenericFormProps {
   channelName: string
-  config: Record<string, any>
-  onChange: (key: string, value: any) => void
+  config: ChannelConfig
+  onChange: (key: string, value: unknown) => void
   isEdit: boolean
 }
 
@@ -35,6 +37,7 @@ const OBJECT_FIELDS = new Set([
   "typing",
   "placeholder",
   "allow_from",
+  "allow_origins",
 ])
 
 function formatLabel(key: string): string {
@@ -44,11 +47,16 @@ function formatLabel(key: string): string {
     .join(" ")
 }
 
-export function GenericForm({
-  config,
-  onChange,
-  isEdit,
-}: GenericFormProps) {
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === "string")
+}
+
+export function GenericForm({ config, onChange, isEdit }: GenericFormProps) {
   const { t } = useTranslation()
 
   const fields = Object.keys(config).filter(
@@ -71,10 +79,10 @@ export function GenericForm({
               }
             >
               <KeyInput
-                value={config[editKey] ?? ""}
+                value={asString(config[editKey])}
                 onChange={(v) => onChange(editKey, v)}
                 placeholder={
-                  isEdit && config[key]
+                  isEdit && Boolean(config[key])
                     ? t("channels.field.secretPlaceholderSet")
                     : ""
                 }
@@ -85,7 +93,17 @@ export function GenericForm({
 
         const value = config[key]
         if (typeof value === "boolean") {
-          return null // Booleans are less common in generic; skip for now
+          return (
+            <Field key={key} label={formatLabel(key)}>
+              <div className="border-input flex h-9 items-center justify-end rounded-md border px-2.5">
+                <Switch
+                  checked={value}
+                  onCheckedChange={(checked) => onChange(key, checked)}
+                  aria-label={formatLabel(key)}
+                />
+              </div>
+            </Field>
+          )
         }
 
         return (
@@ -113,7 +131,7 @@ export function GenericForm({
           hint={t("channels.field.allowFromHint")}
         >
           <Input
-            value={(config.allow_from ?? []).join(", ")}
+            value={asStringArray(config.allow_from).join(", ")}
             onChange={(e) =>
               onChange(
                 "allow_from",
@@ -124,6 +142,33 @@ export function GenericForm({
               )
             }
             placeholder={t("channels.field.allowFromPlaceholder")}
+          />
+        </Field>
+      )}
+
+      {config.allow_origins !== undefined && (
+        <Field
+          label={t("channels.field.allowOrigins", "Allow Origins")}
+          hint={t(
+            "channels.field.allowOriginsHint",
+            "Comma-separated list of allowed origins. Leave empty to allow all.",
+          )}
+        >
+          <Input
+            value={asStringArray(config.allow_origins).join(", ")}
+            onChange={(e) =>
+              onChange(
+                "allow_origins",
+                e.target.value
+                  .split(",")
+                  .map((s: string) => s.trim())
+                  .filter(Boolean),
+              )
+            }
+            placeholder={t(
+              "channels.field.allowOriginsPlaceholder",
+              "e.g. https://example.com, http://localhost:5173",
+            )}
           />
         </Field>
       )}
