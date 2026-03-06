@@ -196,12 +196,12 @@ Both forms are supported. If both are present, the nested struct wins.
 
 | Acceptance Criterion                         | Test                                                 |
 | -------------------------------------------- | ---------------------------------------------------- |
-| Summarization triggers above threshold       | `TestMaybeSummarize_AboveThreshold`                  |
+| Summarization triggers above threshold       | `TestMaybeSummarize_AboveMessageThreshold`           |
 | No-op below threshold                        | `TestMaybeSummarize_BelowThreshold`                  |
-| Dedup prevents concurrent summarizations     | `TestMaybeSummarize_Dedup`                           |
+| Dedup prevents concurrent summarizations     | `TestMaybeSummarize_DeduplicatesConcurrent`          |
 | Messages appended during async are preserved | `TestApplySummarization_PreservesNewMessages`        |
 | Stale snapshot rejected                      | `TestApplySummarization_StaleSnapshot`               |
-| Force compression drops older half           | `TestForceCompression_DropsHalf`                     |
+| Force compression drops older half           | `TestForceCompression_DropsOldestHalf`               |
 | Multi-part batching for large sessions       | `TestSummarizeSession_MultiPart`                     |
 | Concurrent read/write safety                 | `TestConcurrent_SummarizeAndWrite`                   |
 | Token estimation (Latin + CJK)               | `TestEstimateTokens_Latin`, `TestEstimateTokens_CJK` |
