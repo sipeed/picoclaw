@@ -39,20 +39,7 @@ Session context grows without bound during long conversations. The original impl
    - `WithLLMSummarizer(provider, model, agentID string, cfg config.SummarizationConfig) Option` — convenience, constructs `LLMSummarizer` internally.
    - When `summarizer` is nil, `MaybeSummarize` is a no-op.
 
-4. **MUST** replace all magic constants with named defaults in `pkg/config`:
-   | Constant | Value | Field |
-   |---|---|---|
-   | `DefaultSummarizeMessageThreshold` | `20` | `MessageThreshold` |
-   | `DefaultSummarizeTokenPercent` | `75` | `TokenPercent` |
-   | `DefaultKeepLastMessages` | `4` | `KeepLastMessages` |
-   | `DefaultContextWindow` | `8192` | `ContextWindow` |
-   | `DefaultSummaryMaxTokens` | `1024` | `SummaryMaxTokens` |
-   | `DefaultSummarizationTemperature` | `0.3` | `SummaryTemperature` |
-   | `DefaultMultiPartBatchThreshold` | `10` | `MultiPartBatchThreshold` |
-   | `DefaultSummarizationTimeout` | `120s` | `Timeout` |
-   | `DefaultMaxSingleMsgTokenRatio` | `0.5` | `MaxSingleMsgTokenRatio` |
-   | `DefaultForceCompressionMinMsgs` | `4` | `ForceCompressionMinMessages` |
-   | `DefaultCharsPerToken` | `2.5` | `CharsPerToken` |
+4. **MUST** replace all magic constants with named defaults in `pkg/config`
 
 5. **MUST** use a single `SummarizationConfig` struct in `pkg/config` as the sole config type for both user-facing JSON fields and internal tuning parameters:
 
