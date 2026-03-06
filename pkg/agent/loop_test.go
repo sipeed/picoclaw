@@ -318,6 +318,39 @@ func (m *simpleMockProvider) GetDefaultModel() string {
 	return "mock-model"
 }
 
+type messageOnlyLoopProvider struct {
+	callCount int
+}
+
+func (m *messageOnlyLoopProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.callCount++
+	return &providers.LLMResponse{
+		ToolCalls: []providers.ToolCall{
+			{
+				ID:   fmt.Sprintf("tc-%d", m.callCount),
+				Name: "message",
+				Arguments: map[string]any{
+					"content": "Context compressed",
+				},
+				Function: &providers.FunctionCall{
+					Name:      "message",
+					Arguments: `{"content":"Context compressed"}`,
+				},
+			},
+		},
+	}, nil
+}
+
+func (m *messageOnlyLoopProvider) GetDefaultModel() string {
+	return "mock-message-only-model"
+}
+
 // mockCustomTool is a simple mock tool for registration testing
 type mockCustomTool struct{}
 
@@ -440,6 +473,58 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 	// User-facing tool should include the output in final response
 	if response != "Command output: hello world" {
 		t.Errorf("Expected 'Command output: hello world', got: %s", response)
+	}
+}
+
+func TestRunLLMIteration_MessageOnlyToolCallsStopAfterOneRound(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &messageOnlyLoopProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	_, iteration, err := al.runLLMIteration(
+		context.Background(),
+		agent,
+		[]providers.Message{
+			{Role: "system", Content: "test system prompt"},
+			{Role: "user", Content: "compress context"},
+		},
+		processOptions{
+			SessionKey:   "test-session",
+			Channel:      "telegram",
+			ChatID:       "chat-1",
+			SendResponse: false,
+		},
+	)
+	if err != nil {
+		t.Fatalf("runLLMIteration failed: %v", err)
+	}
+
+	if iteration != 1 {
+		t.Fatalf("expected runLLMIteration to stop after 1 iteration, got %d", iteration)
+	}
+	if provider.callCount != 1 {
+		t.Fatalf("expected provider to be called once, got %d", provider.callCount)
 	}
 }
 
