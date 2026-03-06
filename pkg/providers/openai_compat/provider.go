@@ -192,10 +192,31 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
 	}
 
+	// Check Content-Type header to catch HTML error pages early
+	contentType := resp.Header.Get("Content-Type")
+	if contentType != "" && !strings.Contains(strings.ToLower(contentType), "application/json") {
+		// Truncate body for error message
+		preview := string(body)
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+		return nil, fmt.Errorf("API returned non-JSON response (Content-Type: %s, check api_base URL): %s", contentType, preview)
+	}
+
 	return parseResponse(body)
 }
 
 func parseResponse(body []byte) (*LLMResponse, error) {
+	// Check if response is HTML (common when API URL is wrong or returns error page)
+	if len(body) > 0 && (body[0] == '<' || bytes.HasPrefix(bytes.ToLower(body[:min(len(body), 15)]), []byte("<!doctype")) || bytes.HasPrefix(bytes.ToLower(body[:min(len(body), 6)]), []byte("<html"))) {
+		// Truncate HTML content for error message
+		htmlPreview := string(body)
+		if len(htmlPreview) > 200 {
+			htmlPreview = htmlPreview[:200] + "..."
+		}
+		return nil, fmt.Errorf("API returned HTML instead of JSON (check api_base URL): response starts with %q", htmlPreview)
+	}
+
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
@@ -223,7 +244,12 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	}
 
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		// Provide more context for JSON parse errors
+		preview := string(body)
+		if len(preview) > 100 {
+			preview = preview[:100] + "..."
+		}
+		return nil, fmt.Errorf("failed to unmarshal response (got: %q): %w", preview, err)
 	}
 
 	if len(apiResponse.Choices) == 0 {
