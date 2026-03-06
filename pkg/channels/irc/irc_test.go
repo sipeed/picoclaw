@@ -66,6 +66,33 @@ func TestExtractHost(t *testing.T) {
 	}
 }
 
+func TestNickMentionedAt(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		nick    string
+		want    int
+	}{
+		{"colon prefix", "bot: hello", "bot", 0},
+		{"comma prefix", "bot, hello", "bot", 0},
+		{"case insensitive", "BOT: hello", "bot", 0},
+		{"word boundary mid", "hey bot what's up", "bot", 4},
+		{"no mention", "hello world", "bot", -1},
+		{"substring mismatch", "robotics are cool", "bot", -1},
+		{"nick at end", "hello bot", "bot", 6},
+		{"empty content", "", "bot", -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := nickMentionedAt(tt.content, tt.nick)
+			if got != tt.want {
+				t.Errorf("nickMentionedAt(%q, %q) = %d, want %d", tt.content, tt.nick, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsBotMentioned(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -114,21 +141,5 @@ func TestStripBotMention(t *testing.T) {
 				t.Errorf("stripBotMention(%q, %q) = %q, want %q", tt.content, tt.nick, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestIsAlphanumeric(t *testing.T) {
-	alphanumeric := "azAZ09_"
-	for _, b := range []byte(alphanumeric) {
-		if !isAlphanumeric(b) {
-			t.Errorf("isAlphanumeric(%q) = false, want true", string(b))
-		}
-	}
-
-	nonAlpha := " !@#:,"
-	for _, b := range []byte(nonAlpha) {
-		if isAlphanumeric(b) {
-			t.Errorf("isAlphanumeric(%q) = true, want false", string(b))
-		}
 	}
 }

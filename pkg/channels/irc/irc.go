@@ -50,14 +50,27 @@ func (c *IRCChannel) Start(ctx context.Context) error {
 	logger.InfoC("irc", "Starting IRC channel")
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
+	user := c.config.User
+	if user == "" {
+		user = c.config.Nick
+	}
+	realName := c.config.RealName
+	if realName == "" {
+		realName = c.config.Nick
+	}
+	caps := []string(c.config.RequestCaps)
+	if len(caps) == 0 {
+		caps = []string{"server-time", "message-tags"}
+	}
+
 	conn := &ircevent.Connection{
 		Server:      c.config.Server,
 		Nick:        c.config.Nick,
-		User:        c.config.Nick,
-		RealName:    c.config.Nick,
+		User:        user,
+		RealName:    realName,
 		Password:    c.config.Password,
 		UseTLS:      c.config.TLS,
-		RequestCaps: []string{"server-time", "message-tags"},
+		RequestCaps: caps,
 		QuitMessage: "Goodbye",
 		Debug:       false,
 		Log:         nil,

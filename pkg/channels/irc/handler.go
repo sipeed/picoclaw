@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ergochat/irc-go/ircevent"
 	"github.com/ergochat/irc-go/ircmsg"
@@ -102,30 +103,47 @@ func (c *IRCChannel) onPrivmsg(conn *ircevent.Connection, e ircmsg.Message) {
 	c.HandleMessage(c.ctx, peer, messageID, nick, chatID, content, nil, metadata, sender)
 }
 
-// isBotMentioned checks if the bot's nick appears in the message.
-func isBotMentioned(content, botNick string) bool {
+// nickMentionedAt returns the byte index where botNick is mentioned in content
+// with word-boundary checks, or -1 if not found. Also checks for "nick:" /
+// "nick," prefix convention.
+func nickMentionedAt(content, botNick string) int {
 	lower := strings.ToLower(content)
 	lowerNick := strings.ToLower(botNick)
 
-	// "nick: " or "nick, " at start (most common IRC convention)
+	// "nick:" or "nick," at start (most common IRC convention)
 	if strings.HasPrefix(lower, lowerNick+":") || strings.HasPrefix(lower, lowerNick+",") {
-		return true
+		return 0
 	}
 
 	// Word-boundary match anywhere in the message
 	idx := strings.Index(lower, lowerNick)
 	if idx < 0 {
-		return false
+		return -1
 	}
-	before := idx == 0 || !isAlphanumeric(lower[idx-1])
-	after := idx+len(lowerNick) >= len(lower) || !isAlphanumeric(lower[idx+len(lowerNick)])
-	return before && after
+	runes := []rune(lower)
+	nickRunes := []rune(lowerNick)
+	endIdx := idx + len(string(nickRunes))
+	before := idx == 0 || !unicode.IsLetter(runes[idx-1]) && !unicode.IsDigit(runes[idx-1])
+	after := endIdx >= len(lower) || !unicode.IsLetter(rune(lower[endIdx])) && !unicode.IsDigit(rune(lower[endIdx]))
+	if before && after {
+		return idx
+	}
+	return -1
+}
+
+// isBotMentioned checks if the bot's nick appears in the message.
+func isBotMentioned(content, botNick string) bool {
+	return nickMentionedAt(content, botNick) >= 0
 }
 
 // stripBotMention removes "nick: " or "nick, " prefix from content.
 func stripBotMention(content, botNick string) string {
-	lower := strings.ToLower(content)
+	idx := nickMentionedAt(content, botNick)
+	if idx != 0 {
+		return content
+	}
 	lowerNick := strings.ToLower(botNick)
+	lower := strings.ToLower(content)
 	for _, sep := range []string{":", ","} {
 		prefix := lowerNick + sep
 		if strings.HasPrefix(lower, prefix) {
@@ -133,8 +151,4 @@ func stripBotMention(content, botNick string) string {
 		}
 	}
 	return content
-}
-
-func isAlphanumeric(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
 }
