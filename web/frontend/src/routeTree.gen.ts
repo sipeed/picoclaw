@@ -14,6 +14,7 @@ import { Route as ModelsRouteImport } from './routes/models'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as CredentialsRouteImport } from './routes/credentials'
 import { Route as ConfigRouteImport } from './routes/config'
+import { Route as ChannelsRouteImport } from './routes/channels'
 import { Route as IndexRouteImport } from './routes/index'
 
 const ProvidersRoute = ProvidersRouteImport.update({
@@ -41,6 +42,11 @@ const ConfigRoute = ConfigRouteImport.update({
   path: '/config',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChannelsRoute = ChannelsRouteImport.update({
+  id: '/channels',
+  path: '/channels',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -49,6 +55,7 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/channels': typeof ChannelsRoute
   '/config': typeof ConfigRoute
   '/credentials': typeof CredentialsRoute
   '/logs': typeof LogsRoute
@@ -57,6 +64,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/channels': typeof ChannelsRoute
   '/config': typeof ConfigRoute
   '/credentials': typeof CredentialsRoute
   '/logs': typeof LogsRoute
@@ -66,6 +74,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/channels': typeof ChannelsRoute
   '/config': typeof ConfigRoute
   '/credentials': typeof CredentialsRoute
   '/logs': typeof LogsRoute
@@ -76,16 +85,25 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/channels'
     | '/config'
     | '/credentials'
     | '/logs'
     | '/models'
     | '/providers'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/config' | '/credentials' | '/logs' | '/models' | '/providers'
+  to:
+    | '/'
+    | '/channels'
+    | '/config'
+    | '/credentials'
+    | '/logs'
+    | '/models'
+    | '/providers'
   id:
     | '__root__'
     | '/'
+    | '/channels'
     | '/config'
     | '/credentials'
     | '/logs'
@@ -95,6 +113,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ChannelsRoute: typeof ChannelsRoute
   ConfigRoute: typeof ConfigRoute
   CredentialsRoute: typeof CredentialsRoute
   LogsRoute: typeof LogsRoute
@@ -139,6 +158,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfigRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/channels': {
+      id: '/channels'
+      path: '/channels'
+      fullPath: '/channels'
+      preLoaderRoute: typeof ChannelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -151,6 +177,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ChannelsRoute: ChannelsRoute,
   ConfigRoute: ConfigRoute,
   CredentialsRoute: CredentialsRoute,
   LogsRoute: LogsRoute,

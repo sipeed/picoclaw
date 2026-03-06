@@ -5,6 +5,7 @@
     "models": "Models",
     "credentials": "Credentials",
     "services": "Services",
+    "channels": "Channels",
     "config": "Config",
     "logs": "Logs"
   },
@@ -213,6 +214,47 @@
       "apiKeyHint": "A key is already set. Leave blank to keep it unchanged.",
       "oauthNote": "This provider uses OAuth — no API key required.",
       "saveError": "Failed to save"
+    }
+  },
+  "channels": {
+    "description": "Configure messaging channels to connect your AI agent to chat platforms.",
+    "loadError": "Failed to load channels",
+    "search": "Search channels...",
+    "noResults": "No channels match your search.",
+    "header": {
+      "enabled": "enabled"
+    },
+    "status": {
+      "configured": "Configured",
+      "unconfigured": "Not configured"
+    },
+    "action": {
+      "configure": "Configure"
+    },
+    "field": {
+      "token": "Bot Token",
+      "tokenPlaceholder": "Enter bot token",
+      "botToken": "Bot Token",
+      "appToken": "App Token",
+      "appId": "App ID",
+      "appSecret": "App Secret",
+      "verificationToken": "Verification Token",
+      "encryptKey": "Encrypt Key",
+      "baseUrl": "API Base URL",
+      "proxy": "HTTP Proxy",
+      "proxyHint": "Optional. e.g. http://127.0.0.1:7890",
+      "allowFrom": "Allow From",
+      "allowFromHint": "Comma-separated list of allowed user/group IDs. Leave empty to allow all.",
+      "allowFromPlaceholder": "e.g. 123456, 789012",
+      "secretPlaceholder": "Enter secret",
+      "secretPlaceholderSet": "Leave blank to keep existing",
+      "secretHintSet": "A value is already set. Leave blank to keep it unchanged."
+    },
+    "edit": {
+      "title": "Configure {{name}}",
+      "description": "Set up credentials and options for this channel.",
+      "saveError": "Failed to save channel configuration",
+      "saving": "Saving..."
     }
   },
   "pages": {

@@ -41,4 +41,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Model list management
 	h.registerModelRoutes(mux)
+
+	// Channel management
+	h.registerChannelRoutes(mux)
 }
