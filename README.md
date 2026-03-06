@@ -7,7 +7,7 @@
 
   <p>
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
-    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20RISC--V-blue" alt="Hardware">
+    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V-blue" alt="Hardware">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
     <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
@@ -54,7 +54,7 @@
 
 ## 📢 News
 
-2026-02-16 🎉 PicoClaw hit 12K stars in one week! Thank you all for your support! PicoClaw is growing faster than we ever imagined. Given the high volume of PRs, we urgently need community maintainers. Our volunteer roles and roadmap are officially posted [here](docs/ROADMAP.md) —we can’t wait to have you on board!
+2026-02-16 🎉 PicoClaw hit 12K stars in one week! Thank you all for your support! PicoClaw is growing faster than we ever imagined. Given the high volume of PRs, we urgently need community maintainers. Our volunteer roles and roadmap are officially posted [here](ROADMAP.md) —we can’t wait to have you on board!
 
 2026-02-13 🎉 PicoClaw hit 5000 stars in 4days! Thank you for the community! There are so many PRs & issues coming in (during Chinese New Year holidays), we are finalizing the Project Roadmap and setting up the Developer Group to accelerate PicoClaw's development.  
 🚀 Call to Action: Please submit your feature requests in GitHub Discussions. We will review and prioritize them during our upcoming weekly meeting.
@@ -69,7 +69,7 @@
 
 ⚡️ **Lightning Fast**: 400X Faster startup time, boot in 1 second even in 0.6GHz single core.
 
-🌍 **True Portability**: Single self-contained binary across RISC-V, ARM, and x86, One-click to Go!
+🌍 **True Portability**: Single self-contained binary across RISC-V, ARM, MIPS, and x86, One-click to Go!
 
 🤖 **AI-Bootstrapped**: Autonomous Go-native implementation — 95% Agent-generated core with human-in-the-loop refinement.
 
@@ -216,7 +216,7 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 > [!TIP]
 > Set your API key in `~/.picoclaw/config.json`.
 > Get API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Web Search is **optional** - get free [Tavily API](https://tavily.com) (1000 free queries/month) or [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or use built-in auto fallback.
+> Web Search is **optional** - get free [Tavily API](https://tavily.com) (1000 free queries/month), [SearXNG](https://github.com/searxng/searxng) (free, self-hosted) or [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or use built-in auto fallback.
 
 **1. Initialize**
 
@@ -265,6 +265,16 @@ picoclaw onboard
       "duckduckgo": {
         "enabled": true,
         "max_results": 5
+      },
+      "perplexity": {
+        "enabled": false,
+        "api_key": "YOUR_PERPLEXITY_API_KEY",
+        "max_results": 5
+      },
+      "searxng": {
+        "enabled": false,
+        "base_url": "http://your-searxng-instance:8888",
+        "max_results": 5
       }
     }
   }
@@ -277,7 +287,12 @@ picoclaw onboard
 **3. Get API Keys**
 
 * **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-* **Web Search** (optional): [Tavily](https://tavily.com) - Optimized for AI Agents (1000 requests/month) · [Brave Search](https://brave.com/search/api) - Free tier available (2000 requests/month)
+* **Web Search** (optional):
+  * [Brave Search](https://brave.com/search/api) - Paid ($5/1000 queries, ~$5-6/month)
+  * [Perplexity](https://www.perplexity.ai) - AI-powered search with chat interface
+  * [SearXNG](https://github.com/searxng/searxng) - Self-hosted metasearch engine (free, no API key needed)
+  * [Tavily](https://tavily.com) - Optimized for AI Agents (1000 requests/month)
+  * DuckDuckGo - Built-in fallback (no API key required)
 
 > **Note**: See `config.example.json` for a complete configuration template.
 
@@ -337,6 +352,13 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or We
 ```bash
 picoclaw gateway
 ```
+
+**4. Telegram command menu (auto-registered at startup)**
+
+PicoClaw now keeps command definitions in one shared registry. On startup, Telegram will automatically register supported bot commands (for example `/start`, `/help`, `/show`, `/list`) so command menu and runtime behavior stay in sync.
+Telegram command menu registration remains channel-local discovery UX; generic command execution is handled centrally in the agent loop via the commands executor.
+
+If command registration fails (network/API transient errors), the channel still starts and PicoClaw retries registration in the background.
 
 </details>
 
@@ -735,6 +757,12 @@ For advanced/test setups, you can override the builtin skills root with:
 export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 ```
 
+### Unified Command Execution Policy
+
+- Generic slash commands are executed through a single path in `pkg/agent/loop.go` via `commands.Executor`.
+- Channel adapters no longer consume generic commands locally; they forward inbound text to the bus/agent path. Telegram still auto-registers supported commands at startup.
+- Unknown slash command (for example `/foo`) passes through to normal LLM processing.
+- Registered but unsupported command on the current channel (for example `/show` on WhatsApp) returns an explicit user-facing error and stops further processing.
 ### 🔒 Security Sandbox
 
 PicoClaw runs in a sandboxed environment by default. The agent can only access files and execute commands within the configured workspace.
@@ -911,7 +939,7 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 ### Providers
 
 > [!NOTE]
-> Groq provides free voice transcription via Whisper. If configured, Telegram voice messages will be automatically transcribed.
+> Groq provides free voice transcription via Whisper. If configured, audio messages from any channel will be automatically transcribed at the agent level.
 
 | Provider                   | Purpose                                 | Get API Key                                                          |
 | -------------------------- | --------------------------------------- | -------------------------------------------------------------------- |
@@ -1190,6 +1218,10 @@ picoclaw agent -m "Hello"
       "model": "anthropic/claude-opus-4-5"
     }
   },
+  "session": {
+    "dm_scope": "per-channel-peer",
+    "backlog_limit": 20
+  },
   "providers": {
     "openrouter": {
       "api_key": "sk-or-v1-xxx"
@@ -1240,6 +1272,16 @@ picoclaw agent -m "Hello"
       },
       "duckduckgo": {
         "enabled": true,
+        "max_results": 5
+      },
+      "perplexity": {
+        "enabled": false,
+        "api_key": "",
+        "max_results": 5
+      },
+      "searxng": {
+        "enabled": false,
+        "base_url": "http://localhost:8888",
         "max_results": 5
       }
     },
@@ -1298,10 +1340,69 @@ discord: <https://discord.gg/V4sAZ9XWpN>
 
 This is normal if you haven't configured a search API key yet. PicoClaw will provide helpful links for manual searching.
 
-To enable web search:
+#### Search Provider Priority
 
-1. **Option 1 (Recommended)**: Get a free API key at [https://brave.com/search/api](https://brave.com/search/api) (2000 free queries/month) for the best results.
-2. **Option 2 (No Credit Card)**: If you don't have a key, we automatically fall back to **DuckDuckGo** (no key required).
+PicoClaw automatically selects the best available search provider in this order:
+1. **Perplexity** (if enabled and API key configured) - AI-powered search with citations
+2. **Brave Search** (if enabled and API key configured) - Privacy-focused paid API ($5/1000 queries)
+3. **SearXNG** (if enabled and base_url configured) - Self-hosted metasearch aggregating 70+ engines (free)
+4. **DuckDuckGo** (if enabled, default fallback) - No API key required (free)
+
+#### Web Search Configuration Options
+
+**Option 1 (Best Results)**: Perplexity AI Search
+```json
+{
+  "tools": {
+    "web": {
+      "perplexity": {
+        "enabled": true,
+        "api_key": "YOUR_PERPLEXITY_API_KEY",
+        "max_results": 5
+      }
+    }
+  }
+}
+```
+
+**Option 2 (Paid API)**: Get an API key at [https://brave.com/search/api](https://brave.com/search/api) ($5/1000 queries, ~$5-6/month)
+```json
+{
+  "tools": {
+    "web": {
+      "brave": {
+        "enabled": true,
+        "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      }
+    }
+  }
+}
+```
+
+**Option 3 (Self-Hosted)**: Deploy your own [SearXNG](https://github.com/searxng/searxng) instance
+```json
+{
+  "tools": {
+    "web": {
+      "searxng": {
+        "enabled": true,
+        "base_url": "http://your-server:8888",
+        "max_results": 5
+      }
+    }
+  }
+}
+```
+
+Benefits of SearXNG:
+- **Zero cost**: No API fees or rate limits
+- **Privacy-focused**: Self-hosted, no tracking
+- **Aggregate results**: Queries 70+ search engines simultaneously
+- **Perfect for cloud VMs**: Solves datacenter IP blocking issues (Oracle Cloud, GCP, AWS, Azure)
+- **No API key needed**: Just deploy and configure the base URL
+
+**Option 4 (No Setup Required)**: DuckDuckGo is enabled by default as fallback (no API key needed)
 
 Add the key to `~/.picoclaw/config.json` if using Brave:
 
@@ -1316,6 +1417,16 @@ Add the key to `~/.picoclaw/config.json` if using Brave:
       },
       "duckduckgo": {
         "enabled": true,
+        "max_results": 5
+      },
+      "perplexity": {
+        "enabled": false,
+        "api_key": "YOUR_PERPLEXITY_API_KEY",
+        "max_results": 5
+      },
+      "searxng": {
+        "enabled": false,
+        "base_url": "http://your-searxng-instance:8888",
         "max_results": 5
       }
     }
@@ -1335,10 +1446,11 @@ This happens when another instance of the bot is running. Make sure only one `pi
 
 ## 📝 API Key Comparison
 
-| Service          | Free Tier           | Use Case                              |
-| ---------------- | ------------------- | ------------------------------------- |
-| **OpenRouter**   | 200K tokens/month   | Multiple models (Claude, GPT-4, etc.) |
-| **Zhipu**        | 200K tokens/month   | Best for Chinese users                |
-| **Brave Search** | 2000 queries/month  | Web search functionality              |
-| **Groq**         | Free tier available | Fast inference (Llama, Mixtral)       |
-| **Cerebras**     | Free tier available | Fast inference (Llama, Qwen, etc.)    |
+| Service          | Free Tier                | Use Case                              |
+| ---------------- | ------------------------ | ------------------------------------- |
+| **OpenRouter**   | 200K tokens/month        | Multiple models (Claude, GPT-4, etc.) |
+| **Zhipu**        | 200K tokens/month        | Best for Chinese users                |
+| **Brave Search** | Paid ($5/1000 queries)   | Web search functionality              |
+| **SearXNG**      | Unlimited (self-hosted)  | Privacy-focused metasearch (70+ engines) |
+| **Groq**         | Free tier available      | Fast inference (Llama, Mixtral)       |
+| **Cerebras**     | Free tier available      | Fast inference (Llama, Qwen, etc.)    |

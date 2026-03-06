@@ -18,6 +18,28 @@ LDFLAGS=-ldflags "-X $(INTERNAL).version=$(VERSION) -X $(INTERNAL).gitCommit=$(G
 GO?=CGO_ENABLED=0 go
 GOFLAGS?=-v -tags stdjson
 
+# Patch MIPS LE ELF e_flags (offset 36) for NaN2008-only kernels (e.g. Ingenic X2600).
+#
+# Bytes (octal): \004 \024 \000 \160  →  little-endian 0x70001404
+#   0x70000000  EF_MIPS_ARCH_32R2   MIPS32 Release 2
+#   0x00001000  EF_MIPS_ABI_O32     O32 ABI
+#   0x00000400  EF_MIPS_NAN2008     IEEE 754-2008 NaN encoding
+#   0x00000004  EF_MIPS_CPIC        PIC calling sequence
+#
+# Go's GOMIPS=softfloat emits no FP instructions, so the NaN mode is irrelevant
+# at runtime — this is purely an ELF metadata fix to satisfy the kernel's check.
+# patchelf cannot modify e_flags; dd at a fixed offset is the most portable way.
+#
+# Ref: https://codebrowser.dev/linux/linux/arch/mips/include/asm/elf.h.html
+define PATCH_MIPS_FLAGS
+	@if [ -f "$(1)" ]; then \
+		printf '\004\024\000\160' | dd of=$(1) bs=1 seek=36 count=4 conv=notrunc 2>/dev/null || \
+		{ echo "Error: failed to patch MIPS e_flags for $(1)"; exit 1; }; \
+	else \
+		echo "Error: $(1) not found, cannot patch MIPS e_flags"; exit 1; \
+	fi
+endef
+
 # Golangci-lint
 GOLANGCI_LINT?=golangci-lint
 
@@ -50,6 +72,8 @@ ifeq ($(UNAME_S),Linux)
 		ARCH=loong64
 	else ifeq ($(UNAME_M),riscv64)
 		ARCH=riscv64
+	else ifeq ($(UNAME_M),mipsel)
+		ARCH=mipsle
 	else
 		ARCH=$(UNAME_M)
 	endif
@@ -97,6 +121,8 @@ build-whatsapp-native: generate
 	GOOS=linux GOARCH=arm64 $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=loong64 $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-loong64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=riscv64 $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=mipsle GOMIPS=softfloat $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle ./$(CMD_DIR)
+	$(call PATCH_MIPS_FLAGS,$(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle)
 	GOOS=darwin GOARCH=arm64 $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)
 	GOOS=windows GOARCH=amd64 $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
 ## @$(GO) build $(GOFLAGS) -tags whatsapp_native $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
@@ -117,6 +143,14 @@ build-linux-arm64: generate
 	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64"
 
+## build-linux-mipsle: Build for Linux MIPS32 LE
+build-linux-mipsle: generate
+	@echo "Building for linux/mipsle (softfloat)..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=mipsle GOMIPS=softfloat $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle ./$(CMD_DIR)
+	$(call PATCH_MIPS_FLAGS,$(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle)
+	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle"
+
 ## build-pi-zero: Build for Raspberry Pi Zero 2 W (32-bit and 64-bit)
 build-pi-zero: build-linux-arm build-linux-arm64
 	@echo "Pi Zero 2 W builds: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm (32-bit), $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 (64-bit)"
@@ -130,6 +164,8 @@ build-all: generate
 	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=loong64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-loong64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=riscv64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=mipsle GOMIPS=softfloat $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle ./$(CMD_DIR)
+	$(call PATCH_MIPS_FLAGS,$(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle)
 	GOOS=linux GOARCH=arm GOARM=7 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-armv7 ./$(CMD_DIR)
 	GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)
 	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)

@@ -6,7 +6,9 @@
       "model_name": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
-      "max_tool_iterations": 20
+      "max_tool_iterations": 20,
+      "summarize_message_threshold": 20,
+      "summarize_token_percent": 75
     }
   },
   "model_list": [
@@ -20,7 +22,8 @@
       "model_name": "claude-sonnet-4.6",
       "model": "anthropic/claude-sonnet-4.6",
       "api_key": "sk-ant-your-key",
-      "api_base": "https://api.anthropic.com/v1"
+      "api_base": "https://api.anthropic.com/v1",
+      "thinking_level": "high"
     },
     {
       "model_name": "gemini",
@@ -59,6 +62,7 @@
     "discord": {
       "enabled": false,
       "token": "YOUR_DISCORD_BOT_TOKEN",
+      "proxy": "",
       "allow_from": [],
       "group_trigger": {
         "mention_only": false
@@ -221,14 +225,27 @@
     "mistral": {
       "api_key": "",
       "api_base": "https://api.mistral.ai/v1"
+    },
+    "avian": {
+      "api_key": "",
+      "api_base": "https://api.avian.io/v1"
     }
   },
   "tools": {
+    "allow_read_paths": null,
+    "allow_write_paths": null,
     "web": {
+      "enabled": true,
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
+      },
+      "tavily": {
+        "enabled": false,
+        "api_key": "",
+        "base_url": "",
+        "max_results": 0
       },
       "duckduckgo": {
         "enabled": true,
@@ -236,12 +253,25 @@
       },
       "perplexity": {
         "enabled": false,
-        "api_key": "pplx-xxx",
+        "api_key": "",
         "max_results": 5
       },
-      "proxy": ""
+      "searxng": {
+        "enabled": false,
+        "base_url": "http://localhost:8888",
+        "max_results": 5
+      },
+      "glm_search": {
+        "enabled": false,
+        "api_key": "",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4/web_search",
+        "search_engine": "search_std",
+        "max_results": 5
+      },
+      "fetch_limit_bytes": 10485760
     },
     "cron": {
+      "enabled": true,
       "exec_timeout_minutes": 5
     },
     "mcp": {
@@ -310,19 +340,75 @@
       }
     },
     "exec": {
-      "enable_deny_patterns": false,
-      "custom_deny_patterns": []
+      "enabled": true,
+      "enable_deny_patterns": true,
+      "custom_deny_patterns": null,
+      "custom_allow_patterns": null
     },
     "skills": {
+      "enabled": true,
       "registries": {
         "clawhub": {
           "enabled": true,
           "base_url": "https://clawhub.ai",
-          "search_path": "/api/v1/search",
-          "skills_path": "/api/v1/skills",
-          "download_path": "/api/v1/download"
+          "auth_token": "",
+          "search_path": "",
+          "skills_path": "",
+          "download_path": "",
+          "timeout": 0,
+          "max_zip_size": 0,
+          "max_response_size": 0
         }
+      },
+      "max_concurrent_searches": 2,
+      "search_cache": {
+        "max_size": 50,
+        "ttl_seconds": 300
       }
+    },
+    "media_cleanup": {
+      "enabled": true,
+      "max_age_minutes": 30,
+      "interval_minutes": 5
+    },
+    "append_file": {
+      "enabled": true
+    },
+    "edit_file": {
+      "enabled": true
+    },
+    "find_skills": {
+      "enabled": true
+    },
+    "i2c": {
+      "enabled": false
+    },
+    "install_skill": {
+      "enabled": true
+    },
+    "list_dir": {
+      "enabled": true
+    },
+    "message": {
+      "enabled": true
+    },
+    "read_file": {
+      "enabled": true
+    },
+    "spawn": {
+      "enabled": true
+    },
+    "spi": {
+      "enabled": false
+    },
+    "subagent": {
+      "enabled": true
+    },
+    "web_fetch": {
+      "enabled": true
+    },
+    "write_file": {
+      "enabled": true
     }
   },
   "heartbeat": {

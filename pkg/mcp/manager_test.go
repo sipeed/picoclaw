@@ -194,7 +194,9 @@ func TestLoadFromMCPConfig_EmptyWorkspaceWithRelativeEnvFile(t *testing.T) {
 	mgr := NewManager()
 
 	mcpCfg := config.MCPConfig{
-		Enabled: true,
+		ToolConfig: config.ToolConfig{
+			Enabled: true,
+		},
 		Servers: map[string]config.MCPServerConfig{
 			"test-server": {
 				Enabled: true,
@@ -228,12 +230,20 @@ func TestNewManager_InitialState(t *testing.T) {
 func TestLoadFromMCPConfig_DisabledOrEmptyServers(t *testing.T) {
 	mgr := NewManager()
 
-	err := mgr.LoadFromMCPConfig(context.Background(), config.MCPConfig{Enabled: false}, "/tmp")
+	err := mgr.LoadFromMCPConfig(
+		context.Background(),
+		config.MCPConfig{ToolConfig: config.ToolConfig{Enabled: false}},
+		"/tmp",
+	)
 	if err != nil {
 		t.Fatalf("expected nil error when MCP disabled, got: %v", err)
 	}
 
-	err = mgr.LoadFromMCPConfig(context.Background(), config.MCPConfig{Enabled: true}, "/tmp")
+	err = mgr.LoadFromMCPConfig(
+		context.Background(),
+		config.MCPConfig{ToolConfig: config.ToolConfig{Enabled: true}},
+		"/tmp",
+	)
 	if err != nil {
 		t.Fatalf("expected nil error when no servers configured, got: %v", err)
 	}

@@ -23,13 +23,19 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 )
 
-const defaultBaseURL = "https://api.anthropic.com"
+const (
+	defaultBaseURL      = "https://api.anthropic.com"
+	anthropicBetaHeader = "oauth-2025-04-20"
+)
 
 type Provider struct {
 	client      *anthropic.Client
 	tokenSource func() (string, error)
 	baseURL     string
 }
+
+// SupportsThinking implements providers.ThinkingCapable.
+func (p *Provider) SupportsThinking() bool { return true }
 
 func NewProvider(token string) *Provider {
 	return NewProviderWithBaseURL(token, "")
@@ -77,12 +83,20 @@ func (p *Provider) Chat(
 		if err != nil {
 			return nil, fmt.Errorf("refreshing token: %w", err)
 		}
-		opts = append(opts, option.WithAuthToken(tok))
+		opts = append(opts,
+			option.WithAuthToken(tok),
+			option.WithHeader("anthropic-beta", anthropicBetaHeader),
+		)
 	}
 
 	params, err := buildParams(messages, tools, model, options)
 	if err != nil {
 		return nil, err
+	}
+
+	// OAuth/setup-tokens require streaming; API keys use non-streaming.
+	if p.tokenSource != nil {
+		return p.chatStreaming(ctx, params, opts)
 	}
 
 	resp, err := p.client.Messages.New(ctx, params, opts...)
@@ -91,6 +105,28 @@ func (p *Provider) Chat(
 	}
 
 	return parseResponse(resp), nil
+}
+
+func (p *Provider) chatStreaming(
+	ctx context.Context,
+	params anthropic.MessageNewParams,
+	opts []option.RequestOption,
+) (*LLMResponse, error) {
+	stream := p.client.Messages.NewStreaming(ctx, params, opts...)
+	defer stream.Close()
+
+	var msg anthropic.Message
+	for stream.Next() {
+		event := stream.Current()
+		if err := msg.Accumulate(event); err != nil {
+			return nil, fmt.Errorf("claude streaming accumulate: %w", err)
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return nil, fmt.Errorf("claude API call: %w", err)
+	}
+
+	return parseResponse(&msg), nil
 }
 
 func (p *Provider) GetDefaultModel() string {
@@ -144,7 +180,16 @@ func buildParams(
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, tc.Name))
+					args := tc.Arguments
+					if args == nil && tc.Function != nil && tc.Function.Arguments != "" {
+						if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+							args = map[string]any{}
+						}
+					}
+					if args == nil {
+						args = map[string]any{}
+					}
+					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, args, tc.Name))
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {
@@ -164,8 +209,12 @@ func buildParams(
 		maxTokens = int64(mt)
 	}
 
+	// Normalize model ID: Anthropic API uses hyphens (claude-sonnet-4-6),
+	// but config may use dots (claude-sonnet-4.6).
+	apiModel := strings.ReplaceAll(model, ".", "-")
+
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(model),
+		Model:     anthropic.Model(apiModel),
 		Messages:  anthropicMessages,
 		MaxTokens: maxTokens,
 	}
@@ -182,7 +231,78 @@ func buildParams(
 		params.Tools = translateTools(tools)
 	}
 
+	// Extended Thinking / Adaptive Thinking
+	// The thinking_level value directly determines the API parameter format:
+	//   "adaptive" → {thinking: {type: "adaptive"}} + output_config.effort
+	//   "low/medium/high/xhigh" → {thinking: {type: "enabled", budget_tokens: N}}
+	if level, ok := options["thinking_level"].(string); ok && level != "" && level != "off" {
+		applyThinkingConfig(&params, level)
+	}
+
 	return params, nil
+}
+
+// applyThinkingConfig sets thinking parameters based on the level value.
+// "adaptive" uses the adaptive thinking API (Claude 4.6+).
+// All other levels use budget_tokens which is universally supported.
+//
+// Anthropic API constraint: temperature must not be set when thinking is enabled.
+// budget_tokens must be strictly less than max_tokens.
+func applyThinkingConfig(params *anthropic.MessageNewParams, level string) {
+	// Anthropic API rejects requests with temperature set alongside thinking.
+	// Reset to zero value (omitted from JSON serialization).
+	if params.Temperature.Valid() {
+		log.Printf("anthropic: temperature cleared because thinking is enabled (level=%s)", level)
+	}
+	params.Temperature = anthropic.MessageNewParams{}.Temperature
+
+	if level == "adaptive" {
+		adaptive := anthropic.NewThinkingConfigAdaptiveParam()
+		params.Thinking = anthropic.ThinkingConfigParamUnion{OfAdaptive: &adaptive}
+		params.OutputConfig = anthropic.OutputConfigParam{
+			Effort: anthropic.OutputConfigEffortHigh,
+		}
+		return
+	}
+
+	budget := int64(levelToBudget(level))
+	if budget <= 0 {
+		return
+	}
+
+	// budget_tokens must be < max_tokens; clamp to respect user's max_tokens setting.
+	if budget >= params.MaxTokens {
+		log.Printf("anthropic: budget_tokens (%d) clamped to %d (max_tokens-1)", budget, params.MaxTokens-1)
+		budget = params.MaxTokens - 1
+	} else if budget > params.MaxTokens*80/100 {
+		log.Printf("anthropic: thinking budget (%d) exceeds 80%% of max_tokens (%d), output may be truncated",
+			budget, params.MaxTokens)
+	}
+	params.Thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
+}
+
+// levelToBudget maps a thinking level to budget_tokens.
+// Values are based on Anthropic's recommendations and community best practices:
+//
+//	low    =  4,096  — simple reasoning, quick debugging (Claude Code "think")
+//	medium = 16,384  — Anthropic recommended sweet spot for most tasks
+//	high   = 32,000  — complex architecture, deep analysis (diminishing returns above this)
+//	xhigh  = 64,000  — extreme reasoning, research problems, benchmarks
+//
+// Note: For Claude 4.6+, prefer adaptive thinking over manual budget_tokens.
+func levelToBudget(level string) int {
+	switch level {
+	case "low":
+		return 4096
+	case "medium":
+		return 16384
+	case "high":
+		return 32000
+	case "xhigh":
+		return 64000
+	default:
+		return 0
+	}
 }
 
 func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
@@ -213,10 +333,14 @@ func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 
 func parseResponse(resp *anthropic.Message) *LLMResponse {
 	var content strings.Builder
+	var reasoning strings.Builder
 	var toolCalls []ToolCall
 
 	for _, block := range resp.Content {
 		switch block.Type {
+		case "thinking":
+			tb := block.AsThinking()
+			reasoning.WriteString(tb.Thinking)
 		case "text":
 			tb := block.AsText()
 			content.WriteString(tb.Text)
@@ -247,6 +371,7 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 
 	return &LLMResponse{
 		Content:      content.String(),
+		Reasoning:    reasoning.String(),
 		ToolCalls:    toolCalls,
 		FinishReason: finishReason,
 		Usage: &UsageInfo{
