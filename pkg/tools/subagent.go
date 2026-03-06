@@ -24,21 +24,21 @@ type SubagentTask struct {
 }
 
 type SubagentManager struct {
-	tasks          map[string]*SubagentTask
-	mu             sync.RWMutex
-	provider       providers.LLMProvider
+	tasks                map[string]*SubagentTask
+	mu                   sync.RWMutex
+	provider             providers.LLMProvider
 	defaultModel         string
 	subagentDefaultModel string            // from SubagentsConfig.Model
 	modelValidator       func(string) bool // validates model_name exists
 	bus                  *bus.MessageBus
-	workspace      string
-	tools          *ToolRegistry
-	maxIterations  int
-	maxTokens      int
-	temperature    float64
-	hasMaxTokens   bool
-	hasTemperature bool
-	nextID         int
+	workspace            string
+	tools                *ToolRegistry
+	maxIterations        int
+	maxTokens            int
+	temperature          float64
+	hasMaxTokens         bool
+	hasTemperature       bool
+	nextID               int
 }
 
 func NewSubagentManager(
