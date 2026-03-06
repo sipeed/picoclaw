@@ -6,8 +6,9 @@ before:
   hooks:
     - go mod tidy
     - go generate ./...
+    - sh -c 'cd web/frontend && pnpm install && pnpm build:backend'
     - go install github.com/tc-hib/go-winres@latest
-    - go-winres make --in cmd/picoclaw-launcher/winres/winres.json --out cmd/picoclaw-launcher/rsrc --product-version={{ .Version }} --file-version={{ .Version }}
+    - go-winres make --in web/backend/winres/winres.json --out web/backend/rsrc --product-version={{ .Version }} --file-version={{ .Version }}
 
 builds:
   - id: picoclaw
@@ -62,7 +63,7 @@ builds:
     goarm:
       - "6"
       - "7"
-    main: ./cmd/picoclaw-launcher
+    main: ./web/backend
     ignore:
       - goos: windows
         goarch: arm
