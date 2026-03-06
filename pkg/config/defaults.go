@@ -5,34 +5,59 @@
 
 package config
 
+import (
+	"os"
+	"path/filepath"
+)
+
 // DefaultConfig returns the default configuration for PicoClaw.
 func DefaultConfig() *Config {
+	// Determine the base path for the workspace.
+	// Priority: $PICOCLAW_HOME > ~/.picoclaw
+	var homePath string
+	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
+		homePath = picoclawHome
+	} else {
+		userHome, _ := os.UserHomeDir()
+		homePath = filepath.Join(userHome, ".picoclaw")
+	}
+	workspacePath := filepath.Join(homePath, "workspace")
+
 	return &Config{
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
-				Workspace:           "~/.picoclaw/workspace",
-				RestrictToWorkspace: true,
-				Provider:            "",
-				Model:               "glm-4.7",
-				MaxTokens:           8192,
-				Temperature:         nil, // nil means use provider default
-				MaxToolIterations:   20,
+				Workspace:                 workspacePath,
+				RestrictToWorkspace:       true,
+				Provider:                  "",
+				Model:                     "",
+				MaxTokens:                 32768,
+				Temperature:               nil, // nil means use provider default
+				MaxToolIterations:         50,
+				SummarizeMessageThreshold: 20,
+				SummarizeTokenPercent:     75,
 			},
 		},
 		Bindings: []AgentBinding{},
 		Session: SessionConfig{
-			DMScope: "main",
+			DMScope: "per-channel-peer",
 		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{
-				Enabled:   false,
-				BridgeURL: "ws://localhost:3001",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:          false,
+				BridgeURL:        "ws://localhost:3001",
+				UseNative:        false,
+				SessionStorePath: "",
+				AllowFrom:        FlexibleStringSlice{},
 			},
 			Telegram: TelegramConfig{
 				Enabled:   false,
 				Token:     "",
 				AllowFrom: FlexibleStringSlice{},
+				Typing:    TypingConfig{Enabled: true},
+				Placeholder: PlaceholderConfig{
+					Enabled: true,
+					Text:    "Thinking... 💭",
+				},
 			},
 			Feishu: FeishuConfig{
 				Enabled:           false,
@@ -80,6 +105,7 @@ func DefaultConfig() *Config {
 				WebhookPort:        18791,
 				WebhookPath:        "/webhook/line",
 				AllowFrom:          FlexibleStringSlice{},
+				GroupTrigger:       GroupTriggerConfig{MentionOnly: true},
 			},
 			OneBot: OneBotConfig{
 				Enabled:            false,
@@ -112,6 +138,25 @@ func DefaultConfig() *Config {
 				WebhookPath:    "/webhook/wecom-app",
 				AllowFrom:      FlexibleStringSlice{},
 				ReplyTimeout:   5,
+			},
+			WeComAIBot: WeComAIBotConfig{
+				Enabled:        false,
+				Token:          "",
+				EncodingAESKey: "",
+				WebhookPath:    "/webhook/wecom-aibot",
+				AllowFrom:      FlexibleStringSlice{},
+				ReplyTimeout:   5,
+				MaxSteps:       10,
+				WelcomeMessage: "Hello! I'm your AI assistant. How can I help you today?",
+			},
+			Pico: PicoConfig{
+				Enabled:        false,
+				Token:          "",
+				PingInterval:   30,
+				ReadTimeout:    60,
+				WriteTimeout:   10,
+				MaxConnections: 100,
+				AllowFrom:      FlexibleStringSlice{},
 			},
 		},
 		Providers: ProvidersConfig{
@@ -255,6 +300,28 @@ func DefaultConfig() *Config {
 				APIKey:    "ollama",
 			},
 
+			// Mistral AI - https://console.mistral.ai/api-keys
+			{
+				ModelName: "mistral-small",
+				Model:     "mistral/mistral-small-latest",
+				APIBase:   "https://api.mistral.ai/v1",
+				APIKey:    "",
+			},
+
+			// Avian - https://avian.io
+			{
+				ModelName: "deepseek-v3.2",
+				Model:     "avian/deepseek/deepseek-v3.2",
+				APIBase:   "https://api.avian.io/v1",
+				APIKey:    "",
+			},
+			{
+				ModelName: "kimi-k2.5",
+				Model:     "avian/moonshotai/kimi-k2.5",
+				APIBase:   "https://api.avian.io/v1",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",
@@ -264,11 +331,23 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
+			Host: "127.0.0.1",
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
+			MediaCleanup: MediaCleanupConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
+				MaxAge:   30,
+				Interval: 5,
+			},
 			Web: WebToolsConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
+				Proxy:           "",
+				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
 				Brave: BraveConfig{
 					Enabled:    false,
 					APIKey:     "",
@@ -283,14 +362,35 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+				SearXNG: SearXNGConfig{
+					Enabled:    false,
+					BaseURL:    "",
+					MaxResults: 5,
+				},
+				GLMSearch: GLMSearchConfig{
+					Enabled:      false,
+					APIKey:       "",
+					BaseURL:      "https://open.bigmodel.cn/api/paas/v4/web_search",
+					SearchEngine: "search_std",
+					MaxResults:   5,
+				},
 			},
 			Cron: CronToolsConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
 				ExecTimeoutMinutes: 5,
 			},
 			Exec: ExecConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
 				EnableDenyPatterns: true,
 			},
 			Skills: SkillsToolsConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
 				Registries: SkillsRegistriesConfig{
 					ClawHub: ClawHubRegistryConfig{
 						Enabled: true,
@@ -302,6 +402,51 @@ func DefaultConfig() *Config {
 					MaxSize:    50,
 					TTLSeconds: 300,
 				},
+			},
+			MCP: MCPConfig{
+				ToolConfig: ToolConfig{
+					Enabled: false,
+				},
+				Servers: map[string]MCPServerConfig{},
+			},
+			AppendFile: ToolConfig{
+				Enabled: true,
+			},
+			EditFile: ToolConfig{
+				Enabled: true,
+			},
+			FindSkills: ToolConfig{
+				Enabled: true,
+			},
+			I2C: ToolConfig{
+				Enabled: false, // Hardware tool - Linux only
+			},
+			InstallSkill: ToolConfig{
+				Enabled: true,
+			},
+			ListDir: ToolConfig{
+				Enabled: true,
+			},
+			Message: ToolConfig{
+				Enabled: true,
+			},
+			ReadFile: ToolConfig{
+				Enabled: true,
+			},
+			Spawn: ToolConfig{
+				Enabled: true,
+			},
+			SPI: ToolConfig{
+				Enabled: false, // Hardware tool - Linux only
+			},
+			Subagent: ToolConfig{
+				Enabled: true,
+			},
+			WebFetch: ToolConfig{
+				Enabled: true,
+			},
+			WriteFile: ToolConfig{
+				Enabled: true,
 			},
 		},
 		Heartbeat: HeartbeatConfig{

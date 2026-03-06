@@ -43,12 +43,18 @@ func TestReadCodexCliCredentials_Valid(t *testing.T) {
 	}
 }
 
+// readCodexCliCredentialsErr calls ReadCodexCliCredentials and returns only the
+// error, for tests that only need to assert on failure.
+func readCodexCliCredentialsErr() error {
+	_, _, _, err := ReadCodexCliCredentials() //nolint:dogsled
+	return err
+}
+
 func TestReadCodexCliCredentials_MissingFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("CODEX_HOME", tmpDir)
 
-	_, _, _, err := ReadCodexCliCredentials()
-	if err == nil {
+	if err := readCodexCliCredentialsErr(); err == nil {
 		t.Fatal("expected error for missing auth.json")
 	}
 }
@@ -64,8 +70,7 @@ func TestReadCodexCliCredentials_EmptyToken(t *testing.T) {
 
 	t.Setenv("CODEX_HOME", tmpDir)
 
-	_, _, _, err := ReadCodexCliCredentials()
-	if err == nil {
+	if err := readCodexCliCredentialsErr(); err == nil {
 		t.Fatal("expected error for empty access_token")
 	}
 }
@@ -80,8 +85,7 @@ func TestReadCodexCliCredentials_InvalidJSON(t *testing.T) {
 
 	t.Setenv("CODEX_HOME", tmpDir)
 
-	_, _, _, err := ReadCodexCliCredentials()
-	if err == nil {
+	if err := readCodexCliCredentialsErr(); err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
 }

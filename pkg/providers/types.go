@@ -17,6 +17,8 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
+	ContentBlock           = protocoltypes.ContentBlock
+	CacheControl           = protocoltypes.CacheControl
 )
 
 type LLMProvider interface {
@@ -28,6 +30,18 @@ type LLMProvider interface {
 		options map[string]any,
 	) (*LLMResponse, error)
 	GetDefaultModel() string
+}
+
+type StatefulProvider interface {
+	LLMProvider
+	Close()
+}
+
+// ThinkingCapable is an optional interface for providers that support
+// extended thinking (e.g. Anthropic). Used by the agent loop to warn
+// when thinking_level is configured but the active provider cannot use it.
+type ThinkingCapable interface {
+	SupportsThinking() bool
 }
 
 // FailoverReason classifies why an LLM request failed for fallback decisions.

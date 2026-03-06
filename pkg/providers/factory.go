@@ -36,7 +36,7 @@ type providerSelection struct {
 }
 
 func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
-	model := cfg.Agents.Defaults.Model
+	model := cfg.Agents.Defaults.GetModelName()
 	providerName := strings.ToLower(cfg.Agents.Defaults.Provider)
 	lowerModel := strings.ToLower(model)
 
@@ -100,6 +100,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = cfg.Providers.OpenRouter.APIBase
 				} else {
 					sel.apiBase = "https://openrouter.ai/api/v1"
+				}
+			}
+		case "litellm":
+			if cfg.Providers.LiteLLM.APIKey != "" || cfg.Providers.LiteLLM.APIBase != "" {
+				sel.apiKey = cfg.Providers.LiteLLM.APIKey
+				sel.apiBase = cfg.Providers.LiteLLM.APIBase
+				sel.proxy = cfg.Providers.LiteLLM.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "http://localhost:4000/v1"
 				}
 			}
 		case "zhipu", "glm":
@@ -170,6 +179,24 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 				}
 				if model != "deepseek-chat" && model != "deepseek-reasoner" {
 					sel.model = "deepseek-chat"
+				}
+			}
+		case "avian":
+			if cfg.Providers.Avian.APIKey != "" {
+				sel.apiKey = cfg.Providers.Avian.APIKey
+				sel.apiBase = cfg.Providers.Avian.APIBase
+				sel.proxy = cfg.Providers.Avian.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.avian.io/v1"
+				}
+			}
+		case "mistral":
+			if cfg.Providers.Mistral.APIKey != "" {
+				sel.apiKey = cfg.Providers.Mistral.APIKey
+				sel.apiBase = cfg.Providers.Mistral.APIBase
+				sel.proxy = cfg.Providers.Mistral.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.mistral.ai/v1"
 				}
 			}
 		case "github_copilot", "copilot":
@@ -274,6 +301,20 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.proxy = cfg.Providers.Ollama.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "http://localhost:11434/v1"
+			}
+		case (strings.Contains(lowerModel, "mistral") || strings.HasPrefix(model, "mistral/")) && cfg.Providers.Mistral.APIKey != "":
+			sel.apiKey = cfg.Providers.Mistral.APIKey
+			sel.apiBase = cfg.Providers.Mistral.APIBase
+			sel.proxy = cfg.Providers.Mistral.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.mistral.ai/v1"
+			}
+		case strings.HasPrefix(model, "avian/") && cfg.Providers.Avian.APIKey != "":
+			sel.apiKey = cfg.Providers.Avian.APIKey
+			sel.apiBase = cfg.Providers.Avian.APIBase
+			sel.proxy = cfg.Providers.Avian.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.avian.io/v1"
 			}
 		case cfg.Providers.VLLM.APIBase != "":
 			sel.apiKey = cfg.Providers.VLLM.APIKey

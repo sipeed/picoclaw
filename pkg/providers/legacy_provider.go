@@ -16,11 +16,23 @@ import (
 // The old providers config is automatically converted to model_list during config loading.
 // Returns the provider, the model ID to use, and any error.
 func CreateProvider(cfg *config.Config) (LLMProvider, string, error) {
-	model := cfg.Agents.Defaults.Model
+	model := cfg.Agents.Defaults.GetModelName()
 
-	// Ensure model_list is populated (should be done by LoadConfig, but handle edge cases)
-	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
-		cfg.ModelList = config.ConvertProvidersToModelList(cfg)
+	// Ensure model_list is populated from providers config if needed
+	// This handles two cases:
+	// 1. ModelList is empty - convert all providers
+	// 2. ModelList has some entries but not all providers - merge missing ones
+	if cfg.HasProvidersConfig() {
+		providerModels := config.ConvertProvidersToModelList(cfg)
+		existingModelNames := make(map[string]bool)
+		for _, m := range cfg.ModelList {
+			existingModelNames[m.ModelName] = true
+		}
+		for _, pm := range providerModels {
+			if !existingModelNames[pm.ModelName] {
+				cfg.ModelList = append(cfg.ModelList, pm)
+			}
+		}
 	}
 
 	// Must have model_list at this point
