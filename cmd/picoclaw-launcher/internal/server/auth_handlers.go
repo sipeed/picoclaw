@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -237,7 +238,7 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(
 			w,
 			`<html><body><h2>Authentication failed</h2><p>%s</p><p>You can close this window.</p></body></html>`,
-			errMsg,
+			html.EscapeString(errMsg),
 		)
 		return
 	}
@@ -248,7 +249,7 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(
 			w,
 			`<html><body><h2>Authentication failed</h2><p>%s</p><p>You can close this window.</p></body></html>`,
-			err.Error(),
+			html.EscapeString(err.Error()),
 		)
 		return
 	}
@@ -267,7 +268,7 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	if err := auth.SetCredential(session.Provider, cred); err != nil {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprintf(w, `<html><body><h2>Failed to save credentials</h2><p>%s</p></body></html>`, err.Error())
+		fmt.Fprintf(w, `<html><body><h2>Failed to save credentials</h2><p>%s</p></body></html>`, html.EscapeString(err.Error()))
 		return
 	}
 
