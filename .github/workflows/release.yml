@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: false
+      upload_tos:
+        description: "Upload to Volcengine TOS"
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   create-tag:
@@ -104,6 +109,7 @@ jobs:
   upload-tos:
     name: Upload to TOS
     needs: release
+    if: ${{ inputs.upload_tos }}
     uses: ./.github/workflows/upload-tos.yml
     with:
       tag: ${{ inputs.tag }}
