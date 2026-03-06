@@ -21,6 +21,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -46,6 +47,7 @@ type AgentLoop struct {
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
+	cmdRegistry    *commands.Registry
 }
 
 // processOptions configures how a message is processed
@@ -61,7 +63,15 @@ type processOptions struct {
 	NoHistory       bool     // If true, don't load session history (for heartbeat)
 }
 
-const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
+const (
+	defaultResponse           = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
+	sessionKeyAgentPrefix     = "agent:"
+	metadataKeyAccountID      = "account_id"
+	metadataKeyGuildID        = "guild_id"
+	metadataKeyTeamID         = "team_id"
+	metadataKeyParentPeerKind = "parent_peer_kind"
+	metadataKeyParentPeerID   = "parent_peer_id"
+)
 
 func NewAgentLoop(
 	cfg *config.Config,
@@ -84,14 +94,17 @@ func NewAgentLoop(
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
-	return &AgentLoop{
+	al := &AgentLoop{
 		bus:         msgBus,
 		cfg:         cfg,
 		registry:    registry,
 		state:       stateManager,
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
+		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
 	}
+
+	return al
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
@@ -549,27 +562,18 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
-	// Check for commands
-	if response, handled := al.handleCommand(ctx, msg); handled {
+	route, agent, routeErr := al.resolveMessageRoute(msg)
+
+	// Commands are checked before requiring a successful route.
+	// Global commands (/help, /show, /switch) work even when routing fails;
+	// context-dependent commands check their own Runtime fields and report
+	// "unavailable" when the required capability is nil.
+	if response, handled := al.handleCommand(ctx, msg, agent); handled {
 		return response, nil
 	}
 
-	// Route to determine agent and session key
-	route := al.registry.ResolveRoute(routing.RouteInput{
-		Channel:    msg.Channel,
-		AccountID:  msg.Metadata["account_id"],
-		Peer:       extractPeer(msg),
-		ParentPeer: extractParentPeer(msg),
-		GuildID:    msg.Metadata["guild_id"],
-		TeamID:     msg.Metadata["team_id"],
-	})
-
-	agent, ok := al.registry.GetAgent(route.AgentID)
-	if !ok {
-		agent = al.registry.GetDefaultAgent()
-	}
-	if agent == nil {
-		return "", fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
+	if routeErr != nil {
+		return "", routeErr
 	}
 
 	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
@@ -579,17 +583,18 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 	}
 
-	// Use routed session key, but honor pre-set agent-scoped keys (for ProcessDirect/cron)
-	sessionKey := route.SessionKey
-	if msg.SessionKey != "" && strings.HasPrefix(msg.SessionKey, "agent:") {
-		sessionKey = msg.SessionKey
-	}
+	// Resolve session key from route, while preserving explicit agent-scoped keys.
+	scopeKey := resolveScopeKey(route, msg.SessionKey)
+	sessionKey := scopeKey
 
 	logger.InfoCF("agent", "Routed message",
 		map[string]any{
-			"agent_id":    agent.ID,
-			"session_key": sessionKey,
-			"matched_by":  route.MatchedBy,
+			"agent_id":      agent.ID,
+			"scope_key":     scopeKey,
+			"session_key":   sessionKey,
+			"matched_by":    route.MatchedBy,
+			"route_agent":   route.AgentID,
+			"route_channel": route.Channel,
 		})
 
 	return al.runAgentLoop(ctx, agent, processOptions{
@@ -602,6 +607,34 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		EnableSummary:   true,
 		SendResponse:    false,
 	})
+}
+
+func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel:    msg.Channel,
+		AccountID:  inboundMetadata(msg, metadataKeyAccountID),
+		Peer:       extractPeer(msg),
+		ParentPeer: extractParentPeer(msg),
+		GuildID:    inboundMetadata(msg, metadataKeyGuildID),
+		TeamID:     inboundMetadata(msg, metadataKeyTeamID),
+	})
+
+	agent, ok := al.registry.GetAgent(route.AgentID)
+	if !ok {
+		agent = al.registry.GetDefaultAgent()
+	}
+	if agent == nil {
+		return routing.ResolvedRoute{}, nil, fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
+	}
+
+	return route, agent, nil
+}
+
+func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
+	if msgSessionKey != "" && strings.HasPrefix(msgSessionKey, sessionKeyAgentPrefix) {
+		return msgSessionKey
+	}
+	return route.SessionKey
 }
 
 func (al *AgentLoop) processSystemMessage(
@@ -1504,94 +1537,87 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	return totalChars * 2 / 5
 }
 
-func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
-	content := strings.TrimSpace(msg.Content)
-	if !strings.HasPrefix(content, "/") {
+func (al *AgentLoop) handleCommand(
+	ctx context.Context,
+	msg bus.InboundMessage,
+	agent *AgentInstance,
+) (string, bool) {
+	if !commands.HasCommandPrefix(msg.Content) {
 		return "", false
 	}
 
-	parts := strings.Fields(content)
-	if len(parts) == 0 {
+	if al.cmdRegistry == nil {
 		return "", false
 	}
 
-	cmd := parts[0]
-	args := parts[1:]
+	rt := al.buildCommandsRuntime(agent)
+	executor := commands.NewExecutor(al.cmdRegistry, rt)
 
-	switch cmd {
-	case "/show":
-		if len(args) < 1 {
-			return "Usage: /show [model|channel|agents]", true
-		}
-		switch args[0] {
-		case "model":
-			defaultAgent := al.registry.GetDefaultAgent()
-			if defaultAgent == nil {
-				return "No default agent configured", true
-			}
-			return fmt.Sprintf("Current model: %s", defaultAgent.Model), true
-		case "channel":
-			return fmt.Sprintf("Current channel: %s", msg.Channel), true
-		case "agents":
-			agentIDs := al.registry.ListAgentIDs()
-			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
-		default:
-			return fmt.Sprintf("Unknown show target: %s", args[0]), true
-		}
+	var commandReply string
+	result := executor.Execute(ctx, commands.Request{
+		Channel:  msg.Channel,
+		ChatID:   msg.ChatID,
+		SenderID: msg.SenderID,
+		Text:     msg.Content,
+		Reply: func(text string) error {
+			commandReply = text
+			return nil
+		},
+	})
 
-	case "/list":
-		if len(args) < 1 {
-			return "Usage: /list [models|channels|agents]", true
+	switch result.Outcome {
+	case commands.OutcomeHandled:
+		if result.Err != nil {
+			return mapCommandError(result), true
 		}
-		switch args[0] {
-		case "models":
-			return "Available models: configured in config.json per agent", true
-		case "channels":
+		if commandReply != "" {
+			return commandReply, true
+		}
+		return "", true
+	default: // OutcomePassthrough — let the message fall through to LLM
+		return "", false
+	}
+}
+
+func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtime {
+	rt := &commands.Runtime{
+		Config:          al.cfg,
+		ListAgentIDs:    al.registry.ListAgentIDs,
+		ListDefinitions: al.cmdRegistry.Definitions,
+		GetEnabledChannels: func() []string {
 			if al.channelManager == nil {
-				return "Channel manager not initialized", true
+				return nil
 			}
-			channels := al.channelManager.GetEnabledChannels()
-			if len(channels) == 0 {
-				return "No channels enabled", true
-			}
-			return fmt.Sprintf("Enabled channels: %s", strings.Join(channels, ", ")), true
-		case "agents":
-			agentIDs := al.registry.ListAgentIDs()
-			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
-		default:
-			return fmt.Sprintf("Unknown list target: %s", args[0]), true
-		}
-
-	case "/switch":
-		if len(args) < 3 || args[1] != "to" {
-			return "Usage: /switch [model|channel] to <name>", true
-		}
-		target := args[0]
-		value := args[2]
-
-		switch target {
-		case "model":
-			defaultAgent := al.registry.GetDefaultAgent()
-			if defaultAgent == nil {
-				return "No default agent configured", true
-			}
-			oldModel := defaultAgent.Model
-			defaultAgent.Model = value
-			return fmt.Sprintf("Switched model from %s to %s", oldModel, value), true
-		case "channel":
+			return al.channelManager.GetEnabledChannels()
+		},
+		SwitchChannel: func(value string) error {
 			if al.channelManager == nil {
-				return "Channel manager not initialized", true
+				return fmt.Errorf("channel manager not initialized")
 			}
 			if _, exists := al.channelManager.GetChannel(value); !exists && value != "cli" {
-				return fmt.Sprintf("Channel '%s' not found or not enabled", value), true
+				return fmt.Errorf("channel '%s' not found or not enabled", value)
 			}
-			return fmt.Sprintf("Switched target channel to %s", value), true
-		default:
-			return fmt.Sprintf("Unknown switch target: %s", target), true
+			return nil
+		},
+	}
+	if agent != nil {
+		rt.GetModelInfo = func() (string, string) {
+			return agent.Model, al.cfg.Agents.Defaults.Provider
+		}
+		rt.SwitchModel = func(value string) (string, error) {
+			oldModel := agent.Model
+			agent.Model = value
+			return oldModel, nil
 		}
 	}
+	return rt
+}
 
-	return "", false
+func mapCommandError(result commands.ExecuteResult) string {
+	if result.Command == "" {
+		return fmt.Sprintf("Failed to execute command: %v", result.Err)
+	}
+	return fmt.Sprintf("Failed to execute /%s: %v", result.Command, result.Err)
 }
 
 // extractPeer extracts the routing peer from the inbound message's structured Peer field.
@@ -1610,10 +1636,17 @@ func extractPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	return &routing.RoutePeer{Kind: msg.Peer.Kind, ID: peerID}
 }
 
+func inboundMetadata(msg bus.InboundMessage, key string) string {
+	if msg.Metadata == nil {
+		return ""
+	}
+	return msg.Metadata[key]
+}
+
 // extractParentPeer extracts the parent peer (reply-to) from inbound message metadata.
 func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
-	parentKind := msg.Metadata["parent_peer_kind"]
-	parentID := msg.Metadata["parent_peer_id"]
+	parentKind := inboundMetadata(msg, metadataKeyParentPeerKind)
+	parentID := inboundMetadata(msg, metadataKeyParentPeerID)
 	if parentKind == "" || parentID == "" {
 		return nil
 	}
