@@ -381,6 +381,29 @@ func TestShellTool_RestrictToWorkspace_URLDoesNotMaskQuotedPaths(t *testing.T) {
 	}
 }
 
+// TestShellTool_RestrictToWorkspace_URLDoesNotMaskShellScriptPaths verifies that
+// URLs inside quoted shell script arguments do not hide later absolute paths
+// behind shell control operators such as ';' or '&&'.
+func TestShellTool_RestrictToWorkspace_URLDoesNotMaskShellScriptPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	commands := []string{
+		`sh -c "https://x;/bin/sh -c true"`,
+		`sh -c "https://x&&/bin/sh -c true"`,
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "blocked") {
+			t.Fatalf("expected shell-script path access to stay blocked, command=%q output=%s", cmd, result.ForLLM)
+		}
+	}
+}
+
 // TestShellTool_DevNullAllowed verifies that /dev/null redirections are not blocked (issue #964).
 func TestShellTool_DevNullAllowed(t *testing.T) {
 	tmpDir := t.TempDir()

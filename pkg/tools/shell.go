@@ -366,46 +366,15 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 
 func stripHTTPURLs(command string) string {
 	sanitized := []byte(command)
-	quote := byte(0)
+	tokens := splitShellTokens(command)
+	shellScriptTokens := shellScriptTokenIndexes(command, tokens)
 
-	for i := 0; i < len(command); i++ {
-		ch := command[i]
-
-		switch quote {
-		case '\'':
-			if ch == '\'' {
-				quote = 0
-				continue
-			}
-		case '"':
-			if ch == '\\' && i+1 < len(command) {
-				i++
-				continue
-			}
-			if ch == '"' {
-				quote = 0
-				continue
-			}
-		default:
-			if ch == '\\' && i+1 < len(command) {
-				i++
-				continue
-			}
-			if ch == '\'' || ch == '"' {
-				quote = ch
-				continue
-			}
-		}
-
-		if !hasHTTPURLPrefix(command, i) {
+	for idx, token := range tokens {
+		if shellScriptTokens[idx] {
+			stripShellScriptTokenHTTPURLs(command, sanitized, token)
 			continue
 		}
-
-		end := findHTTPURLEnd(command, i, quote)
-		for j := i; j < end; j++ {
-			sanitized[j] = ' '
-		}
-		i = end - 1
+		stripTopLevelTokenHTTPURLs(command, sanitized, token)
 	}
 
 	return string(sanitized)
@@ -418,12 +387,12 @@ func hasHTTPURLPrefix(command string, start int) bool {
 				strings.EqualFold(command[start:start+len("https://")], "https://")))
 }
 
-func findHTTPURLEnd(command string, start int, quote byte) int {
-	for i := start; i < len(command); i++ {
+func findTopLevelHTTPURLEnd(command string, start, limit int, quote byte) int {
+	for i := start; i < limit; i++ {
 		if quote != 0 && (command[i] == quote || command[i] == '\'' || command[i] == '"') {
 			return i
 		}
-		if quote == 0 && (strings.ContainsRune(" \t\r\n", rune(command[i])) || isShellURLDelimiter(command[i])) {
+		if quote == 0 && isShellURLDelimiter(command[i]) {
 			return i
 		}
 		if !isHTTPURLChar(command[i]) {
@@ -431,7 +400,7 @@ func findHTTPURLEnd(command string, start int, quote byte) int {
 		}
 	}
 
-	return len(command)
+	return limit
 }
 
 func isHTTPURLChar(ch byte) bool {
@@ -455,6 +424,281 @@ func isHTTPURLChar(ch byte) bool {
 func isShellURLDelimiter(ch byte) bool {
 	switch ch {
 	case ';', '|', '&', '<', '>', '(', ')', '`':
+		return true
+	default:
+		return false
+	}
+}
+
+type shellTokenSpan struct {
+	start int
+	end   int
+}
+
+func splitShellTokens(command string) []shellTokenSpan {
+	tokens := make([]shellTokenSpan, 0)
+
+	for i := 0; i < len(command); {
+		for i < len(command) && isShellWhitespace(command[i]) {
+			i++
+		}
+		if i >= len(command) {
+			break
+		}
+
+		start := i
+		quote := byte(0)
+
+	tokenLoop:
+		for i < len(command) {
+			ch := command[i]
+
+			switch quote {
+			case '\'':
+				i++
+				if ch == '\'' {
+					quote = 0
+				}
+			case '"':
+				if ch == '\\' && i+1 < len(command) {
+					i += 2
+					continue
+				}
+				i++
+				if ch == '"' {
+					quote = 0
+				}
+			default:
+				if isShellWhitespace(ch) {
+					break tokenLoop
+				}
+				if ch == '\\' && i+1 < len(command) {
+					i += 2
+					continue
+				}
+				if ch == '\'' || ch == '"' {
+					quote = ch
+				}
+				i++
+			}
+		}
+
+		tokens = append(tokens, shellTokenSpan{start: start, end: i})
+	}
+
+	return tokens
+}
+
+func shellScriptTokenIndexes(command string, tokens []shellTokenSpan) map[int]bool {
+	scriptTokens := make(map[int]bool)
+
+	for i := 1; i+1 < len(tokens); i++ {
+		if !isShellCommandModeFlag(tokenValue(command, tokens[i])) {
+			continue
+		}
+		if !isShellInterpreter(tokenValue(command, tokens[i-1])) {
+			continue
+		}
+
+		scriptTokens[i+1] = true
+		i++
+	}
+
+	return scriptTokens
+}
+
+func stripTopLevelTokenHTTPURLs(command string, sanitized []byte, token shellTokenSpan) {
+	quote := byte(0)
+
+	for i := token.start; i < token.end; i++ {
+		ch := command[i]
+
+		switch quote {
+		case '\'':
+			if ch == '\'' {
+				quote = 0
+				continue
+			}
+		case '"':
+			if ch == '\\' && i+1 < token.end {
+				i++
+				continue
+			}
+			if ch == '"' {
+				quote = 0
+				continue
+			}
+		default:
+			if ch == '\\' && i+1 < token.end {
+				i++
+				continue
+			}
+			if ch == '\'' || ch == '"' {
+				quote = ch
+				continue
+			}
+		}
+
+		if !hasHTTPURLPrefix(command, i) {
+			continue
+		}
+
+		end := findTopLevelHTTPURLEnd(command, i, token.end, quote)
+		for j := i; j < end; j++ {
+			sanitized[j] = ' '
+		}
+		i = end - 1
+	}
+}
+
+func stripShellScriptTokenHTTPURLs(command string, sanitized []byte, token shellTokenSpan) {
+	start := token.start
+	end := token.end
+
+	if quote := wholeTokenQuote(command[start:end]); quote != 0 {
+		start++
+		end--
+	}
+
+	quote := byte(0)
+	for i := start; i < end; i++ {
+		ch := command[i]
+
+		switch quote {
+		case '\'':
+			if ch == '\'' {
+				quote = 0
+				continue
+			}
+		case '"':
+			if ch == '\\' && i+1 < end {
+				i++
+				continue
+			}
+			if ch == '"' {
+				quote = 0
+				continue
+			}
+		default:
+			if ch == '\\' && i+1 < end {
+				i++
+				continue
+			}
+			if ch == '\'' || ch == '"' {
+				quote = ch
+				continue
+			}
+		}
+
+		if !hasHTTPURLPrefix(command, i) {
+			continue
+		}
+
+		urlEnd := findShellScriptHTTPURLEnd(command, i, end, quote)
+		for j := i; j < urlEnd; j++ {
+			sanitized[j] = ' '
+		}
+		i = urlEnd - 1
+	}
+}
+
+func findShellScriptHTTPURLEnd(command string, start, limit int, quote byte) int {
+	for i := start; i < limit; i++ {
+		switch quote {
+		case '\'':
+			if command[i] == '\'' {
+				return i
+			}
+		case '"':
+			if command[i] == '"' {
+				return i
+			}
+		default:
+			if isShellWhitespace(command[i]) ||
+				isShellURLDelimiter(command[i]) ||
+				command[i] == '\'' ||
+				command[i] == '"' {
+				return i
+			}
+		}
+
+		if !isHTTPURLChar(command[i]) {
+			return i
+		}
+	}
+
+	return limit
+}
+
+func tokenValue(command string, token shellTokenSpan) string {
+	raw := command[token.start:token.end]
+	if quote := wholeTokenQuote(raw); quote != 0 {
+		return raw[1 : len(raw)-1]
+	}
+	return raw
+}
+
+func wholeTokenQuote(raw string) byte {
+	if len(raw) < 2 {
+		return 0
+	}
+
+	quote := raw[0]
+	if quote != '\'' && quote != '"' {
+		return 0
+	}
+
+	for i := 1; i < len(raw); i++ {
+		if quote == '"' && raw[i] == '\\' && i+1 < len(raw) {
+			i++
+			continue
+		}
+		if raw[i] == quote {
+			if i == len(raw)-1 {
+				return quote
+			}
+			return 0
+		}
+	}
+
+	return 0
+}
+
+func isShellInterpreter(token string) bool {
+	token = strings.ToLower(token)
+	token = strings.ReplaceAll(token, "\\", "/")
+	if slash := strings.LastIndexByte(token, '/'); slash >= 0 {
+		token = token[slash+1:]
+	}
+
+	switch token {
+	case "sh", "bash", "zsh", "dash", "ash", "ksh", "fish":
+		return true
+	default:
+		return false
+	}
+}
+
+func isShellCommandModeFlag(token string) bool {
+	if token == "-c" {
+		return true
+	}
+	if len(token) < 3 || token[0] != '-' || strings.HasPrefix(token, "--") {
+		return false
+	}
+
+	for i := 1; i < len(token); i++ {
+		if (token[i] < 'a' || token[i] > 'z') && (token[i] < 'A' || token[i] > 'Z') {
+			return false
+		}
+	}
+
+	return strings.Contains(token[1:], "c")
+}
+
+func isShellWhitespace(ch byte) bool {
+	switch ch {
+	case ' ', '\t', '\r', '\n':
 		return true
 	default:
 		return false
