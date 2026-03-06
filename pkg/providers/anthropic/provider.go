@@ -135,6 +135,20 @@ func buildParams(
 				anthropicMessages = append(anthropicMessages,
 					anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
 				)
+			} else if len(msg.Media) > 0 {
+				// Multimodal message with text + images
+				var blocks []anthropic.ContentBlockParamUnion
+				if msg.Content != "" {
+					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
+				}
+				for _, mediaURL := range msg.Media {
+					if mediaType, b64Data, ok := parseDataURL(mediaURL); ok {
+						blocks = append(blocks, anthropic.NewImageBlockBase64(mediaType, b64Data))
+					}
+				}
+				if len(blocks) > 0 {
+					anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(blocks...))
+				}
 			} else {
 				anthropicMessages = append(anthropicMessages,
 					anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)),
@@ -334,6 +348,23 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 			TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
 		},
 	}
+}
+
+// parseDataURL extracts the media type and base64 data from a data URL.
+// Expected format: "data:<mediaType>;base64,<data>"
+func parseDataURL(url string) (mediaType string, b64Data string, ok bool) {
+	// data:image/jpeg;base64,/9j/4AAQ...
+	if !strings.HasPrefix(url, "data:") {
+		return "", "", false
+	}
+	rest := url[len("data:"):]
+	idx := strings.Index(rest, ";base64,")
+	if idx < 0 {
+		return "", "", false
+	}
+	mediaType = rest[:idx]
+	b64Data = rest[idx+len(";base64,"):]
+	return mediaType, b64Data, mediaType != "" && b64Data != ""
 }
 
 func normalizeBaseURL(apiBase string) string {

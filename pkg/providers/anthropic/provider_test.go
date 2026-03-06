@@ -262,6 +262,73 @@ func TestProvider_ChatUsesTokenSource(t *testing.T) {
 	}
 }
 
+func TestParseDataURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		wantType string
+		wantData string
+		wantOK   bool
+	}{
+		{"valid jpeg", "data:image/jpeg;base64,/9j/4AAQ", "image/jpeg", "/9j/4AAQ", true},
+		{"valid png", "data:image/png;base64,iVBOR", "image/png", "iVBOR", true},
+		{"valid gif", "data:image/gif;base64,R0lG", "image/gif", "R0lG", true},
+		{"valid webp", "data:image/webp;base64,UklG", "image/webp", "UklG", true},
+		{"no data prefix", "https://example.com/image.jpg", "", "", false},
+		{"no base64 marker", "data:image/jpeg,rawdata", "", "", false},
+		{"empty media type", "data:;base64,abc", "", "", false},
+		{"empty data", "data:image/jpeg;base64,", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotType, gotData, gotOK := parseDataURL(tt.url)
+			if gotOK != tt.wantOK {
+				t.Errorf("ok = %v, want %v", gotOK, tt.wantOK)
+				return
+			}
+			if gotOK {
+				if gotType != tt.wantType {
+					t.Errorf("type = %q, want %q", gotType, tt.wantType)
+				}
+				if gotData != tt.wantData {
+					t.Errorf("data = %q, want %q", gotData, tt.wantData)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildParams_MediaMessage(t *testing.T) {
+	messages := []Message{
+		{
+			Role:    "user",
+			Content: "What's in this image?",
+			Media:   []string{"data:image/jpeg;base64,/9j/4AAQ"},
+		},
+	}
+	params, err := buildParams(messages, nil, "claude-sonnet-4.6", map[string]any{})
+	if err != nil {
+		t.Fatalf("buildParams() error: %v", err)
+	}
+	if len(params.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(params.Messages))
+	}
+}
+
+func TestBuildParams_MediaMessageTextOnly(t *testing.T) {
+	// Message without media should still work as text-only
+	messages := []Message{
+		{Role: "user", Content: "Hello"},
+	}
+	params, err := buildParams(messages, nil, "claude-sonnet-4.6", map[string]any{})
+	if err != nil {
+		t.Fatalf("buildParams() error: %v", err)
+	}
+	if len(params.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(params.Messages))
+	}
+}
+
 func createAnthropicTestClient(baseURL, token string) *anthropic.Client {
 	c := anthropic.NewClient(
 		anthropicoption.WithAuthToken(token),
