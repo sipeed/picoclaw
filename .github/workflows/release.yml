@@ -100,3 +100,11 @@ jobs:
           gh release edit "${{ inputs.tag }}" \
             --draft=${{ inputs.draft }} \
             --prerelease=${{ inputs.prerelease }}
+
+  upload-tos:
+    name: Upload to TOS
+    needs: release
+    uses: ./.github/workflows/upload-tos.yml
+    with:
+      tag: ${{ inputs.tag }}
+    secrets: inherit
