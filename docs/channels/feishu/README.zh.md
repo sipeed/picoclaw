@@ -26,7 +26,8 @@
 | app_secret         | string | 是   | 飞书应用的 App Secret            |
 | encrypt_key        | string | 否   | 事件回调加密密钥                 |
 | verification_token | string | 否   | 用于Webhook事件验证的Token       |
-| allow_from         | array  | 否   | 用户ID白名单，空表示允许所有用户 |
+| allow_from         | array  | 否   | 用户ID白名单，空表示所有用户   |
+| random_reaction_emoji | array | 否   | 随机添加的表情列表，空则使用默认 "Pin" |
 
 ## 设置流程
 
