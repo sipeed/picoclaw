@@ -22,7 +22,7 @@ Session context grows without bound during long conversations. The original impl
    - `MaybeSummarize(key)` — threshold check + async dispatch.
    - `ForceCompression(key)` — emergency drop of older half.
    - `ApplySummarization(key, summary, snapshotLen, keepLast)` — atomic merge that compares `snapshotLen` to current message count, preserving messages appended during async work.
-   - `summarizeSession(ctx, key)` — unexported, handles single/multi-part batching.
+   - `summarizeSession(sessionKey string)` — unexported, handles single/multi-part batching.
 
 2. **MUST** define a `Summarizer` interface in `pkg/session`:
 
