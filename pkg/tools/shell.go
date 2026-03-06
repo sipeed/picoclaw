@@ -23,6 +23,7 @@ type ExecTool struct {
 	allowPatterns       []*regexp.Regexp
 	customAllowPatterns []*regexp.Regexp
 	restrictToWorkspace bool
+	filterEnv           bool
 }
 
 var (
@@ -136,6 +137,11 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		timeout = time.Duration(config.Tools.Exec.TimeoutSeconds) * time.Second
 	}
 
+	filterEnv := false
+	if config != nil {
+		filterEnv = config.Tools.Exec.FilterEnv
+	}
+
 	return &ExecTool{
 		workingDir:          workingDir,
 		timeout:             timeout,
@@ -143,6 +149,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		allowPatterns:       nil,
 		customAllowPatterns: customAllowPatterns,
 		restrictToWorkspace: restrict,
+		filterEnv:           filterEnv,
 	}, nil
 }
 
@@ -219,6 +226,10 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	}
 	if cwd != "" {
 		cmd.Dir = cwd
+	}
+
+	if t.filterEnv {
+		cmd.Env = filterEnvironment(os.Environ())
 	}
 
 	prepareCommandForTermination(cmd)
@@ -380,4 +391,39 @@ func (t *ExecTool) SetAllowPatterns(patterns []string) error {
 		t.allowPatterns = append(t.allowPatterns, re)
 	}
 	return nil
+}
+
+// safeEnvVars is the allowlist of environment variable names preserved when
+// filterEnv is enabled. Variables with a PICOCLAW_ prefix are always kept.
+var safeEnvVars = map[string]bool{
+	"PATH":          true,
+	"HOME":          true,
+	"USER":          true,
+	"LANG":          true,
+	"TERM":          true,
+	"SHELL":         true,
+	"TMPDIR":        true,
+	"TMP":           true,
+	"TEMP":          true,
+	"SystemRoot":    true,
+	"COMSPEC":       true,
+	"USERPROFILE":   true,
+	"APPDATA":       true,
+	"LOCALAPPDATA":  true,
+}
+
+// filterEnvironment returns a filtered copy of environ keeping only safe vars.
+func filterEnvironment(environ []string) []string {
+	filtered := make([]string, 0, len(safeEnvVars)+4)
+	for _, entry := range environ {
+		eqIdx := strings.IndexByte(entry, '=')
+		if eqIdx < 0 {
+			continue
+		}
+		name := entry[:eqIdx]
+		if safeEnvVars[name] || strings.HasPrefix(name, "PICOCLAW_") {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }
