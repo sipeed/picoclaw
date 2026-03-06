@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { Toaster } from "sonner"
 
 import { AppHeader } from "@/components/app-header"
 import { AppSidebar } from "@/components/app-sidebar"
@@ -19,6 +20,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </main>
           </div>
         </div>
+        <Toaster position="bottom-center" />
       </SidebarProvider>
     </TooltipProvider>
   )

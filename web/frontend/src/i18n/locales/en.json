@@ -70,7 +70,10 @@
   },
   "common": {
     "cancel": "Cancel",
-    "save": "Save"
+    "save": "Save",
+    "saving": "Saving...",
+    "reset": "Reset",
+    "confirm": "Confirm"
   },
   "credentials": {
     "description": "Manage OAuth and token-based credentials for supported providers.",
@@ -223,7 +226,20 @@
       "description": "Securely manage your API keys and credentials."
     },
     "config": {
-      "description": "System configuration and preferences."
+      "description": "System configuration and preferences.",
+      "raw_json_title": "Raw JSON Configuration",
+      "raw_json_desc": "Advanced users can directly edit the raw JSON configuration below.",
+      "json_placeholder": "Enter valid JSON configuration...",
+      "save_success": "Configuration saved successfully.",
+      "save_error": "Failed to save configuration.",
+      "reset_confirm_title": "Reset Changes",
+      "reset_confirm_desc": "Are you sure you want to reset your unsaved changes back to the last saved state?",
+      "reset_success": "Changes have been reset to the last saved state.",
+      "invalid_json": "Invalid JSON format.",
+      "format_success": "JSON formatted successfully.",
+      "format_error": "Invalid JSON format.",
+      "format": "Format",
+      "lose_unsaved_changes": "You have unsaved changes. Are you sure you want to reset and lose these changes?"
     },
     "logs": {
       "description": "System logs and monitoring."

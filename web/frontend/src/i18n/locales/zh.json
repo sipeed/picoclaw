@@ -70,7 +70,10 @@
   },
   "common": {
     "cancel": "取消",
-    "save": "保存"
+    "save": "保存",
+    "saving": "保存中...",
+    "reset": "重置",
+    "confirm": "确认"
   },
   "credentials": {
     "description": "管理已支持服务商的 OAuth 与 Token 凭据。",
@@ -223,7 +226,21 @@
       "description": "安全管理您的 API 密钥与访问凭据。"
     },
     "config": {
-      "description": "系统配置和偏好设置。"
+      "description": "系统配置和偏好设置。",
+      "raw_json_title": "原始 JSON 配置",
+      "raw_json_desc": "高级用户可以直接编辑下方的原始 JSON 配置。",
+      "json_placeholder": "请输入有效的 JSON 配置...",
+      "save_success": "配置保存成功。",
+      "save_error": "配置保存失败。",
+      "reset_confirm_title": "重置更改",
+      "reset_confirm_desc": "您确定要重置回上次保存的状态吗？",
+      "reset_success": "更改已重置为上次保存的状态。",
+      "invalid_json": "JSON 格式无效。",
+      "format_success": "JSON 格式化成功。",
+      "format_error": "JSON 格式无效。",
+      "format": "格式化",
+      "lose_unsaved_changes": "您有未保存的更改。确定要重置并丢失这些更改吗？",
+      "unsaved_changes": "您有未保存的更改。"
     },
     "logs": {
       "description": "系统日志和监控。"
