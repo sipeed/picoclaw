@@ -22,7 +22,9 @@ import (
 func agentCmd(message, sessionKey, model string, debug bool,
 	workspace, configDir, toolsFlag, skillsFlag string) error {
 	if sessionKey == "" {
-		sessionKey = "cli:default"
+		sessionKey = "agent:main:cli:default"
+	} else if !strings.HasPrefix(sessionKey, "agent:") {
+		sessionKey = "agent:main:cli:" + sessionKey
 	}
 
 	if debug {
@@ -35,6 +37,16 @@ func agentCmd(message, sessionKey, model string, debug bool,
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
+	// Apply workspace-local config overrides from config-dir
+	if configDir != "" {
+		wc, err := config.LoadWorkspaceConfig(configDir)
+		if err != nil {
+			return fmt.Errorf("error loading workspace config from %s: %w", configDir, err)
+		}
+		cfg.MergeWorkspaceConfig(wc)
+	}
+
+	// CLI flags win over workspace config
 	if model != "" {
 		cfg.Agents.Defaults.ModelName = model
 	}

@@ -1,0 +1,30 @@
+{
+  "_comment": "Workspace-local config override. Place as config.json in a config directory passed via --config-dir (CLI) or configDir (webhook). Only the fields below are honored; gateway, heartbeat, devices, and providers (legacy) are ignored.",
+  "model_list": [
+    {
+      "model_name": "main",
+      "model": "anthropic/claude-sonnet-4.6",
+      "api_key": "sk-ant-your-key",
+      "api_base": "https://api.anthropic.com/v1"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model_name": "main",
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "max_tool_iterations": 20
+    }
+  },
+  "session": {
+    "dm_scope": "per-channel-peer"
+  },
+  "tools": {
+    "exec": {
+      "enabled": false
+    },
+    "web": {
+      "enabled": true
+    }
+  }
+}

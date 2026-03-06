@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
@@ -934,4 +935,161 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 	default:
 		return true
 	}
+}
+
+// WorkspaceConfig wraps a parsed Config along with the raw JSON bytes so that
+// merging can distinguish "field not present" from "field is zero-valued".
+type WorkspaceConfig struct {
+	Config  *Config
+	rawJSON json.RawMessage
+}
+
+// LoadWorkspaceConfig loads a workspace-local config.json from the given directory.
+// Returns nil, nil if the file does not exist.
+func LoadWorkspaceConfig(dir string) (*WorkspaceConfig, error) {
+	path := filepath.Join(dir, "config.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading workspace config %s: %w", path, err)
+	}
+
+	var wc Config
+	if err := json.Unmarshal(data, &wc); err != nil {
+		return nil, fmt.Errorf("parsing workspace config %s: %w", path, err)
+	}
+
+	for i := range wc.ModelList {
+		if err := wc.ModelList[i].Validate(); err != nil {
+			return nil, fmt.Errorf("workspace config model_list[%d]: %w", i, err)
+		}
+	}
+
+	return &WorkspaceConfig{Config: &wc, rawJSON: data}, nil
+}
+
+// Clone returns a deep copy of the config via JSON round-trip.
+func (c *Config) Clone() *Config {
+	data, err := json.Marshal(c)
+	if err != nil {
+		// Should never happen with a valid Config
+		return DefaultConfig()
+	}
+	var clone Config
+	if err := json.Unmarshal(data, &clone); err != nil {
+		return DefaultConfig()
+	}
+	return &clone
+}
+
+// MergeWorkspaceConfig overlays allowed fields from a workspace config onto this config.
+// Fields NOT honored (infrastructure-level): Gateway, Heartbeat, Devices, Providers.
+func (c *Config) MergeWorkspaceConfig(wc *WorkspaceConfig) {
+	if wc == nil || wc.Config == nil {
+		return
+	}
+	src := wc.Config
+
+	// model_list: replace if workspace has entries
+	if len(src.ModelList) > 0 {
+		c.ModelList = src.ModelList
+	}
+
+	// agents.defaults: merge non-zero fields
+	mergeAgentDefaults(&c.Agents.Defaults, &src.Agents.Defaults)
+
+	// agents.list: replace if workspace has entries
+	if len(src.Agents.List) > 0 {
+		c.Agents.List = src.Agents.List
+	}
+
+	// tools & channels: use raw JSON overlay so that only keys actually present
+	// in the workspace file are applied (avoids clobbering bool fields with false).
+	mergeRawJSONField(wc.rawJSON, "tools", &c.Tools)
+	mergeRawJSONField(wc.rawJSON, "channels", &c.Channels)
+
+	// bindings: replace if workspace has entries
+	if len(src.Bindings) > 0 {
+		c.Bindings = src.Bindings
+	}
+
+	// session: merge non-zero fields (prevents cross-tenant identity leakage)
+	mergeSessionConfig(&c.Session, &src.Session)
+}
+
+// mergeAgentDefaults copies non-zero fields from src into dst.
+func mergeAgentDefaults(dst, src *AgentDefaults) {
+	if src.Workspace != "" {
+		dst.Workspace = src.Workspace
+	}
+	if src.RestrictToWorkspace {
+		dst.RestrictToWorkspace = true
+	}
+	if src.AllowReadOutsideWorkspace {
+		dst.AllowReadOutsideWorkspace = true
+	}
+	if src.Provider != "" {
+		dst.Provider = src.Provider
+	}
+	if src.ModelName != "" {
+		dst.ModelName = src.ModelName
+	}
+	if src.Model != "" {
+		dst.Model = src.Model
+	}
+	if len(src.ModelFallbacks) > 0 {
+		dst.ModelFallbacks = src.ModelFallbacks
+	}
+	if src.ImageModel != "" {
+		dst.ImageModel = src.ImageModel
+	}
+	if len(src.ImageModelFallbacks) > 0 {
+		dst.ImageModelFallbacks = src.ImageModelFallbacks
+	}
+	if src.MaxTokens > 0 {
+		dst.MaxTokens = src.MaxTokens
+	}
+	if src.Temperature != nil {
+		dst.Temperature = src.Temperature
+	}
+	if src.MaxToolIterations > 0 {
+		dst.MaxToolIterations = src.MaxToolIterations
+	}
+	if src.SummarizeMessageThreshold > 0 {
+		dst.SummarizeMessageThreshold = src.SummarizeMessageThreshold
+	}
+	if src.SummarizeTokenPercent > 0 {
+		dst.SummarizeTokenPercent = src.SummarizeTokenPercent
+	}
+	if src.MaxMediaSize > 0 {
+		dst.MaxMediaSize = src.MaxMediaSize
+	}
+}
+
+// mergeSessionConfig copies non-zero fields from src into dst.
+func mergeSessionConfig(dst, src *SessionConfig) {
+	if src.DMScope != "" {
+		dst.DMScope = src.DMScope
+	}
+	if len(src.IdentityLinks) > 0 {
+		dst.IdentityLinks = src.IdentityLinks
+	}
+}
+
+// mergeRawJSONField extracts a top-level key from raw JSON and unmarshals it
+// onto dst. Because we use the original JSON bytes, only keys actually present
+// in the workspace file are applied — zero-valued fields (e.g. bool false) that
+// were never in the file are not included.
+func mergeRawJSONField[T any](rawJSON json.RawMessage, key string, dst *T) {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(rawJSON, &top); err != nil {
+		return
+	}
+	fieldData, ok := top[key]
+	if !ok || string(fieldData) == "null" {
+		return
+	}
+	json.Unmarshal(fieldData, dst) //nolint:errcheck
 }

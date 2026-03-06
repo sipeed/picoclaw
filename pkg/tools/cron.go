@@ -315,7 +315,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 	}
 
 	// For deliver=false, process through agent (for complex tasks)
-	sessionKey := fmt.Sprintf("cron-%s", job.ID)
+	sessionKey := fmt.Sprintf("agent:main:cron:%s", job.ID)
 
 	// Call agent with job's message
 	response, err := t.executor.ProcessDirectWithChannel(

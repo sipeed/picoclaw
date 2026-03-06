@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -26,14 +25,9 @@ type WebhookPayload struct {
 	ConversationID string `json:"conversationId"`
 	UserID         string `json:"userId"`
 	Message        string `json:"message"`
-	Workspace      string `json:"workspace"`   // e.g. "/data/workspaces/{stackId}/{conversationId}"
+	Workspace      string `json:"workspace"`            // e.g. "s1/c1" — agent working directory (relative to workspace_root)
+	ConfigDir      string `json:"configDir,omitempty"`   // e.g. "s1/config" — pre-provisioned config directory (relative to workspace_root)
 	CallbackURL    string `json:"callbackUrl"`
-
-	// Config overrides (written as bootstrap files into workspace)
-	AgentInstructions string `json:"agentInstructions,omitempty"` // → AGENTS.md
-	AgentIdentity     string `json:"agentIdentity,omitempty"`     // → IDENTITY.md
-	AgentPersonality  string `json:"agentPersonality,omitempty"`  // → SOUL.md
-	UserContext       string `json:"userContext,omitempty"`        // → USER.md
 
 	// Tool/skill filtering
 	AllowedTools  []string `json:"allowedTools,omitempty"`  // Tool allowlist (empty = all)
@@ -181,6 +175,16 @@ func (c *MagicFormChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		payload.Workspace = resolved
 	}
 
+	// Validate configDir path against workspace_root
+	if payload.ConfigDir != "" {
+		resolved, err := c.resolveWorkspace(payload.ConfigDir)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Invalid configDir: %v", err), http.StatusBadRequest)
+			return
+		}
+		payload.ConfigDir = resolved
+	}
+
 	// Return 200 immediately, process asynchronously
 	w.WriteHeader(http.StatusOK)
 
@@ -276,22 +280,11 @@ func (c *MagicFormChannel) processWebhook(ctx context.Context, p WebhookPayload)
 	// Workspace override — agent loop will pick this up
 	if p.Workspace != "" {
 		metadata["workspace_override"] = p.Workspace
+	}
 
-		// Write bootstrap files to the workspace before agent processes
-		if err := os.MkdirAll(p.Workspace, 0o755); err != nil {
-			logger.ErrorCF("magicform", "Failed to create workspace directory",
-				map[string]any{
-					"workspace":       p.Workspace,
-					"stack_id":        p.StackID,
-					"conversation_id": p.ConversationID,
-					"error":           err.Error(),
-				})
-		}
-
-		writeBootstrapFile(p.Workspace, "AGENTS.md", p.AgentInstructions)
-		writeBootstrapFile(p.Workspace, "IDENTITY.md", p.AgentIdentity)
-		writeBootstrapFile(p.Workspace, "SOUL.md", p.AgentPersonality)
-		writeBootstrapFile(p.Workspace, "USER.md", p.UserContext)
+	// Config directory — agent loop reads config.json and copies bootstrap files
+	if p.ConfigDir != "" {
+		metadata["config_dir"] = p.ConfigDir
 	}
 
 	// Tool/skill filtering — passed via metadata, picked up by agent loop
@@ -426,14 +419,3 @@ func (c *MagicFormChannel) cleanupLoop() {
 	}
 }
 
-// writeBootstrapFile writes content to a file in the workspace if non-empty.
-func writeBootstrapFile(workspace, filename, content string) {
-	if content == "" {
-		return
-	}
-	path := filepath.Join(workspace, filename)
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		logger.ErrorCF("magicform", "Failed to write bootstrap file",
-			map[string]any{"path": path, "error": err.Error()})
-	}
-}

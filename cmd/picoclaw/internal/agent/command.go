@@ -29,12 +29,12 @@ func NewAgentCommand() *cobra.Command {
 
 	cmd.Flags().BoolVarP(&debug, "debug", "d", false, "Enable debug logging")
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Send a single message (non-interactive mode)")
-	cmd.Flags().StringVarP(&sessionKey, "session", "s", "cli:default", "Session key")
+	cmd.Flags().StringVarP(&sessionKey, "session", "s", "", "Session key for conversation isolation (e.g. stackId:conversationId)")
 	cmd.Flags().StringVarP(&model, "model", "", "", "Model to use")
 
 	// Workspace and config overrides
 	cmd.Flags().StringVar(&workspace, "workspace", "", "Override agent workspace directory")
-	cmd.Flags().StringVar(&configDir, "config-dir", "", "Directory containing bootstrap files (AGENTS.md, IDENTITY.md, SOUL.md, USER.md) to copy into workspace")
+	cmd.Flags().StringVar(&configDir, "config-dir", "", "Directory containing config.json (model/agent/tool overrides) and bootstrap files (AGENTS.md, IDENTITY.md, SOUL.md, USER.md)")
 	cmd.Flags().StringVar(&tools, "tools", "", "Comma-separated tool allowlist (only these tools enabled)")
 	cmd.Flags().StringVar(&skills, "skills", "", "Comma-separated skill filter (only these skills loaded)")
 

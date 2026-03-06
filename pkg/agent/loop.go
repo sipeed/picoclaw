@@ -64,6 +64,7 @@ type processOptions struct {
 	SendResponse      bool     // Whether to send response via bus
 	NoHistory         bool     // If true, don't load session history (for heartbeat)
 	WorkspaceOverride string   // If set, use this workspace instead of agent.Workspace
+	ConfigDir         string   // If set, config directory for workspace-local overrides
 	AllowedTools      []string // If non-empty, only these tools are active for this request
 	AllowedSkills     []string // If non-empty, only these skills are loaded for this request
 
@@ -72,6 +73,12 @@ type processOptions struct {
 	// retry) MUST use these instead of agent.Sessions / agent.ContextBuilder.
 	effSessions       *session.SessionManager
 	effContextBuilder *ContextBuilder
+
+	// effProvider and effModel are set by runAgentLoop when a workspace config
+	// provides per-request provider overrides. All LLM call sites (runLLMIteration,
+	// summarization) MUST use these instead of agent.Provider / agent.Model.
+	effProvider providers.LLMProvider
+	effModel    string
 }
 
 const (
@@ -628,6 +635,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	// Extract overrides from metadata (used by magicform channel / gateway mode)
 	workspaceOverride := msg.Metadata["workspace_override"]
+	configDir := msg.Metadata["config_dir"]
 
 	var allowedTools, allowedSkills []string
 	if v := msg.Metadata["allowed_tools"]; v != "" {
@@ -655,6 +663,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		EnableSummary:     true,
 		SendResponse:      false,
 		WorkspaceOverride: workspaceOverride,
+		ConfigDir:         configDir,
 		AllowedTools:      allowedTools,
 		AllowedSkills:     allowedSkills,
 	})
@@ -787,6 +796,39 @@ func (al *AgentLoop) runAgentLoop(
 		effContextBuilder = NewContextBuilder(wp)
 	}
 
+	// Copy bootstrap files from config-dir to workspace
+	if opts.ConfigDir != "" && opts.WorkspaceOverride != "" {
+		CopyBootstrapFiles(opts.ConfigDir, opts.WorkspaceOverride)
+	}
+
+	// Load workspace-local config.json for per-request overrides
+	configSource := opts.ConfigDir
+	if configSource == "" {
+		configSource = opts.WorkspaceOverride // fallback: check workspace itself
+	}
+	if configSource != "" {
+		if wc, err := config.LoadWorkspaceConfig(configSource); err != nil {
+			logger.WarnCF("agent", "Failed to load workspace config",
+				map[string]any{"path": configSource, "error": err.Error()})
+		} else if wc != nil {
+			tmpCfg := al.cfg.Clone()
+			tmpCfg.MergeWorkspaceConfig(wc)
+			if tmpCfg.Agents.Defaults.GetModelName() == "" {
+				tmpCfg.Agents.Defaults.ModelName = agent.Model
+			}
+			if provider, modelID, err := providers.CreateProvider(tmpCfg); err != nil {
+				logger.ErrorCF("agent", "Failed to create workspace provider",
+					map[string]any{"path": configSource, "error": err.Error()})
+			} else {
+				opts.effProvider = provider
+				opts.effModel = modelID
+				if sp, ok := provider.(providers.StatefulProvider); ok {
+					defer sp.Close()
+				}
+			}
+		}
+	}
+
 	// Apply skills filter unconditionally — works with or without workspace override
 	if len(opts.AllowedSkills) > 0 {
 		effContextBuilder.SetSkillsFilter(opts.AllowedSkills)
@@ -839,7 +881,7 @@ func (al *AgentLoop) runAgentLoop(
 
 	// 6. Optional: summarization
 	if opts.EnableSummary {
-		al.maybeSummarizeWith(effSessions, agent, opts.SessionKey, opts.Channel, opts.ChatID)
+		al.maybeSummarizeWith(effSessions, agent, opts.SessionKey, opts.Channel, opts.ChatID, opts.effProvider, opts.effModel)
 	}
 
 	// 7. Optional: send response via bus
@@ -930,6 +972,12 @@ func (al *AgentLoop) runLLMIteration(
 	iteration := 0
 	var finalContent string
 
+	// Resolve effective provider — workspace config overrides win
+	effProvider := agent.Provider
+	if opts.effProvider != nil {
+		effProvider = opts.effProvider
+	}
+
 	// Determine effective model tier for this conversation turn.
 	// selectCandidates evaluates routing once and the decision is sticky for
 	// all tool-follow-up iterations within the same turn so that a multi-step
@@ -995,7 +1043,7 @@ func (al *AgentLoop) runLLMIteration(
 		// parseThinkingLevel guarantees ThinkingOff for empty/unknown values,
 		// so checking != ThinkingOff is sufficient.
 		if agent.ThinkingLevel != ThinkingOff {
-			if tc, ok := agent.Provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
+			if tc, ok := effProvider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
 				llmOpts["thinking_level"] = string(agent.ThinkingLevel)
 			} else {
 				logger.WarnCF("agent", "thinking_level is set but current provider does not support it, ignoring",
@@ -1009,7 +1057,7 @@ func (al *AgentLoop) runLLMIteration(
 					ctx,
 					activeCandidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
+						return effProvider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
 					},
 				)
 				if fbErr != nil {
@@ -1025,7 +1073,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, activeModel, llmOpts)
+			return effProvider.Chat(ctx, messages, providerToolDefs, activeModel, llmOpts)
 		}
 
 		// Retry loop for context/token errors
@@ -1352,11 +1400,12 @@ func (al *AgentLoop) selectCandidates(
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
 func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, chatID string) {
-	al.maybeSummarizeWith(agent.Sessions, agent, sessionKey, channel, chatID)
+	al.maybeSummarizeWith(agent.Sessions, agent, sessionKey, channel, chatID, nil, "")
 }
 
-// maybeSummarizeWith is like maybeSummarize but accepts an explicit SessionManager.
-func (al *AgentLoop) maybeSummarizeWith(sessions *session.SessionManager, agent *AgentInstance, sessionKey, channel, chatID string) {
+// maybeSummarizeWith is like maybeSummarize but accepts an explicit SessionManager
+// and optional per-request provider/model overrides.
+func (al *AgentLoop) maybeSummarizeWith(sessions *session.SessionManager, agent *AgentInstance, sessionKey, channel, chatID string, effProvider providers.LLMProvider, effModel string) {
 	newHistory := sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := agent.ContextWindow * agent.SummarizeTokenPercent / 100
@@ -1367,7 +1416,7 @@ func (al *AgentLoop) maybeSummarizeWith(sessions *session.SessionManager, agent 
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
 				logger.Debug("Memory threshold reached. Optimizing conversation history...")
-				al.summarizeSessionWith(sessions, agent, sessionKey)
+				al.summarizeSessionWith(sessions, agent, sessionKey, effProvider, effModel)
 			}()
 		}
 	}
@@ -1521,13 +1570,24 @@ func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 
 // summarizeSession summarizes the conversation history for a session.
 func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
-	al.summarizeSessionWith(agent.Sessions, agent, sessionKey)
+	al.summarizeSessionWith(agent.Sessions, agent, sessionKey, nil, "")
 }
 
-// summarizeSessionWith is like summarizeSession but accepts an explicit SessionManager.
-func (al *AgentLoop) summarizeSessionWith(sessions *session.SessionManager, agent *AgentInstance, sessionKey string) {
+// summarizeSessionWith is like summarizeSession but accepts an explicit SessionManager
+// and optional per-request provider/model overrides.
+func (al *AgentLoop) summarizeSessionWith(sessions *session.SessionManager, agent *AgentInstance, sessionKey string, effProvider providers.LLMProvider, effModel string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
+
+	// Resolve effective provider/model
+	sumProvider := agent.Provider
+	sumModel := agent.Model
+	if effProvider != nil {
+		sumProvider = effProvider
+	}
+	if effModel != "" {
+		sumModel = effModel
+	}
 
 	history := sessions.GetHistory(sessionKey)
 	summary := sessions.GetSummary(sessionKey)
@@ -1567,19 +1627,19 @@ func (al *AgentLoop) summarizeSessionWith(sessions *session.SessionManager, agen
 		part1 := validMessages[:mid]
 		part2 := validMessages[mid:]
 
-		s1, _ := al.summarizeBatch(ctx, agent, part1, "")
-		s2, _ := al.summarizeBatch(ctx, agent, part2, "")
+		s1, _ := al.summarizeBatch(ctx, sumProvider, sumModel, agent.ID, part1, "")
+		s2, _ := al.summarizeBatch(ctx, sumProvider, sumModel, agent.ID, part2, "")
 
 		mergePrompt := fmt.Sprintf(
 			"Merge these two conversation summaries into one cohesive summary:\n\n1: %s\n\n2: %s",
 			s1,
 			s2,
 		)
-		resp, err := agent.Provider.Chat(
+		resp, err := sumProvider.Chat(
 			ctx,
 			[]providers.Message{{Role: "user", Content: mergePrompt}},
 			nil,
-			agent.Model,
+			sumModel,
 			map[string]any{
 				"max_tokens":       1024,
 				"temperature":      0.3,
@@ -1592,7 +1652,7 @@ func (al *AgentLoop) summarizeSessionWith(sessions *session.SessionManager, agen
 			finalSummary = s1 + " " + s2
 		}
 	} else {
-		finalSummary, _ = al.summarizeBatch(ctx, agent, validMessages, summary)
+		finalSummary, _ = al.summarizeBatch(ctx, sumProvider, sumModel, agent.ID, validMessages, summary)
 	}
 
 	if omitted && finalSummary != "" {
@@ -1606,10 +1666,12 @@ func (al *AgentLoop) summarizeSessionWith(sessions *session.SessionManager, agen
 	}
 }
 
-// summarizeBatch summarizes a batch of messages.
+// summarizeBatch summarizes a batch of messages using the given provider/model.
 func (al *AgentLoop) summarizeBatch(
 	ctx context.Context,
-	agent *AgentInstance,
+	provider providers.LLMProvider,
+	model string,
+	agentID string,
 	batch []providers.Message,
 	existingSummary string,
 ) (string, error) {
@@ -1628,15 +1690,15 @@ func (al *AgentLoop) summarizeBatch(
 	}
 	prompt := sb.String()
 
-	response, err := agent.Provider.Chat(
+	response, err := provider.Chat(
 		ctx,
 		[]providers.Message{{Role: "user", Content: prompt}},
 		nil,
-		agent.Model,
+		model,
 		map[string]any{
 			"max_tokens":       1024,
 			"temperature":      0.3,
-			"prompt_cache_key": agent.ID,
+			"prompt_cache_key": agentID,
 		},
 	)
 	if err != nil {
