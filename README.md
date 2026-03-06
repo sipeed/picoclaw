@@ -54,6 +54,8 @@
 
 ## 📢 News
 
+2026-02-16 🎉 PicoClaw hit 12K stars in one week! Thank you all for your support! PicoClaw is growing faster than we ever imagined. Given the high volume of PRs, we urgently need community maintainers. Our volunteer roles and roadmap are officially posted [here](ROADMAP.md) — we can’t wait to have you on board!
+
 2026-02-13 🎉 PicoClaw hit 5000 stars in 4 days! Thank you to the community! There are so many PRs & issues coming in (during Chinese New Year holidays), so we are finalizing the project roadmap and setting up a developer group to accelerate PicoClaw's development.  
 🚀 Call to Action: Please submit your feature requests in GitHub Discussions. We will review and prioritize them during our upcoming weekly meeting.
 
