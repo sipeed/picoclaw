@@ -22,8 +22,9 @@ const (
 	perplexityTimeout = 30 * time.Second // Perplexity (LLM-based, slower)
 	fetchTimeout      = 60 * time.Second // WebFetchTool
 
-	defaultMaxChars = 50000
-	maxRedirects    = 5
+	defaultMaxChars          = 50000
+	maxRedirects             = 5
+	searchMaxResponseSize    int64 = 2 << 20 // 2 MB — limit for search provider responses
 )
 
 // Pre-compiled regexes for HTML text extraction
@@ -104,7 +105,7 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, searchMaxResponseSize))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
@@ -191,7 +192,7 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, searchMaxResponseSize))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
@@ -253,7 +254,7 @@ func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, cou
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, searchMaxResponseSize))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
@@ -367,7 +368,7 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, searchMaxResponseSize))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
