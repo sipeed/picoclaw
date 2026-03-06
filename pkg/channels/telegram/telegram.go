@@ -93,7 +93,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 
 	return &TelegramChannel{
 		BaseChannel: base,
-		commands:    NewTelegramCommands(bot, cfg),
+		commands:    NewTelegramCommands(bot, cfg, bus),
 		bot:         bot,
 		config:      cfg,
 		chatIDs:     make(map[string]int64),
@@ -140,6 +140,10 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.commands.List(ctx, message)
 	}, th.CommandEqual("list"))
+
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.commands.Switch(ctx, message)
+	}, th.CommandEqual("switch"))
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.handleMessage(ctx, &message)
@@ -202,6 +206,10 @@ func (c *TelegramChannel) initBotCommands(ctx context.Context) error {
 		{
 			Command:     "list",
 			Description: "List available options",
+		},
+		{
+			Command:     "switch",
+			Description: "Switch to a different model",
 		},
 	}
 

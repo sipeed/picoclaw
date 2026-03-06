@@ -864,6 +864,18 @@ func (c *Config) ValidateModelList() error {
 	return nil
 }
 
+// SetDefaultModel sets the default model for all agents.
+// It validates the model exists in ModelList before updating.
+func (c *Config) SetDefaultModel(modelName string) error {
+	if _, err := c.GetModelConfig(modelName); err != nil {
+		return fmt.Errorf("model %q not found: %w", modelName, err)
+	}
+
+	c.Agents.Defaults.ModelName = modelName
+
+	return nil
+}
+
 func (t *ToolsConfig) IsToolEnabled(name string) bool {
 	switch name {
 	case "web":
