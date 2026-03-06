@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/pathutil"
 )
 
 // WebhookPayload is the inbound payload from MagicForm.
@@ -54,15 +54,20 @@ type requestContext struct {
 // MagicFormChannel implements the MagicForm channel plugin.
 type MagicFormChannel struct {
 	*channels.BaseChannel
-	config     config.MagicFormConfig
-	httpClient *http.Client
-	requests   sync.Map // chatID → *requestContext
-	ctx        context.Context
-	cancel     context.CancelFunc
+	config        config.MagicFormConfig
+	workspaceRoot string // effective root: channel-level fallback to global
+	httpClient    *http.Client
+	requests      sync.Map // chatID → *requestContext
+	ctx           context.Context
+	cancel        context.CancelFunc
 }
 
 // NewMagicFormChannel creates a new MagicForm channel.
-func NewMagicFormChannel(cfg config.MagicFormConfig, msgBus *bus.MessageBus) (*MagicFormChannel, error) {
+// globalWorkspaceRoot is the agents.defaults.workspace_root from the base config.
+// The channel uses its own config.WorkspaceRoot if set, otherwise falls back to
+// globalWorkspaceRoot. If neither is configured, the constructor returns an error
+// because workspace overrides cannot be validated without a root boundary.
+func NewMagicFormChannel(cfg config.MagicFormConfig, globalWorkspaceRoot string, msgBus *bus.MessageBus) (*MagicFormChannel, error) {
 	base := channels.NewBaseChannel(
 		"magicform",
 		cfg,
@@ -70,11 +75,21 @@ func NewMagicFormChannel(cfg config.MagicFormConfig, msgBus *bus.MessageBus) (*M
 		cfg.AllowFrom,
 	)
 
+	effectiveRoot := cfg.WorkspaceRoot
+	if effectiveRoot == "" {
+		effectiveRoot = globalWorkspaceRoot
+	}
+	if effectiveRoot == "" {
+		return nil, fmt.Errorf("magicform channel requires workspace_root to be configured " +
+			"(set channels.magicform.workspace_root or agents.defaults.workspace_root)")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	ch := &MagicFormChannel{
-		BaseChannel: base,
-		config:      cfg,
+		BaseChannel:   base,
+		config:        cfg,
+		workspaceRoot: effectiveRoot,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -191,31 +206,11 @@ func (c *MagicFormChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go c.processWebhook(c.ctx, payload)
 }
 
-// resolveWorkspace validates and resolves the workspace path.
-// If workspace_root is configured, the workspace must be a relative path that
-// resolves under the root. If workspace_root is not configured, workspace is
-// rejected (no arbitrary path writes allowed).
+// resolveWorkspace validates and resolves the workspace path using the shared
+// pathutil.ResolveWorkspacePath boundary check. The effective workspace root is
+// determined at construction time (channel-level config with global fallback).
 func (c *MagicFormChannel) resolveWorkspace(workspace string) (string, error) {
-	root := c.config.WorkspaceRoot
-	if root == "" {
-		return "", fmt.Errorf("workspace_root not configured; workspace overrides are not allowed")
-	}
-
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return "", fmt.Errorf("invalid workspace_root: %w", err)
-	}
-
-	// Join the root with the provided workspace (which may be relative)
-	resolved := filepath.Join(absRoot, workspace)
-	resolved = filepath.Clean(resolved)
-
-	// Ensure the resolved path is under the root (prevents ../../../etc traversal)
-	if !strings.HasPrefix(resolved, absRoot+string(filepath.Separator)) && resolved != absRoot {
-		return "", fmt.Errorf("workspace path escapes workspace_root")
-	}
-
-	return resolved, nil
+	return pathutil.ResolveWorkspacePath(c.workspaceRoot, workspace)
 }
 
 // verifyToken checks the Authorization Bearer token using constant-time comparison.

@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/pathutil"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -637,6 +638,28 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	workspaceOverride := msg.Metadata["workspace_override"]
 	configDir := msg.Metadata["config_dir"]
 
+	// Defense-in-depth: validate workspace/configDir overrides against workspace_root
+	// even though the originating channel should have already validated them.
+	wsRoot := al.cfg.Agents.Defaults.WorkspaceRoot
+	if workspaceOverride != "" {
+		resolved, err := pathutil.ResolveWorkspacePath(wsRoot, workspaceOverride)
+		if err != nil {
+			logger.WarnCF("agent", "Rejecting workspace_override from metadata",
+				map[string]any{"workspace_override": workspaceOverride, "error": err.Error()})
+			return "", fmt.Errorf("invalid workspace_override in metadata: %w", err)
+		}
+		workspaceOverride = resolved
+	}
+	if configDir != "" {
+		resolved, err := pathutil.ResolveWorkspacePath(wsRoot, configDir)
+		if err != nil {
+			logger.WarnCF("agent", "Rejecting config_dir from metadata",
+				map[string]any{"config_dir": configDir, "error": err.Error()})
+			return "", fmt.Errorf("invalid config_dir in metadata: %w", err)
+		}
+		configDir = resolved
+	}
+
 	var allowedTools, allowedSkills []string
 	if v := msg.Metadata["allowed_tools"]; v != "" {
 		for _, t := range strings.Split(v, ",") {
@@ -812,7 +835,9 @@ func (al *AgentLoop) runAgentLoop(
 				map[string]any{"path": configSource, "error": err.Error()})
 		} else if wc != nil {
 			tmpCfg := al.cfg.Clone()
-			tmpCfg.MergeWorkspaceConfig(wc)
+			if err := tmpCfg.MergeWorkspaceConfig(wc); err != nil {
+				return "", fmt.Errorf("workspace config overlay rejected: %w", err)
+			}
 			if tmpCfg.Agents.Defaults.GetModelName() == "" {
 				tmpCfg.Agents.Defaults.ModelName = agent.Model
 			}

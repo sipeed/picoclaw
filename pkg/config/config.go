@@ -10,6 +10,7 @@ import (
 	"github.com/caarlos0/env/v11"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"github.com/sipeed/picoclaw/pkg/pathutil"
 )
 
 // rrCounter is a global counter for round-robin load balancing across models.
@@ -181,6 +182,7 @@ type RoutingConfig struct {
 }
 
 type AgentDefaults struct {
+	WorkspaceRoot             string         `json:"workspace_root,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE_ROOT"`
 	Workspace                 string         `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
 	RestrictToWorkspace       bool           `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 	AllowReadOutsideWorkspace bool           `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
@@ -986,9 +988,10 @@ func (c *Config) Clone() *Config {
 
 // MergeWorkspaceConfig overlays allowed fields from a workspace config onto this config.
 // Fields NOT honored (infrastructure-level): Gateway, Heartbeat, Devices, Providers.
-func (c *Config) MergeWorkspaceConfig(wc *WorkspaceConfig) {
+// Returns an error if the overlay contains a workspace path that escapes workspace_root.
+func (c *Config) MergeWorkspaceConfig(wc *WorkspaceConfig) error {
 	if wc == nil || wc.Config == nil {
-		return
+		return nil
 	}
 	src := wc.Config
 
@@ -998,7 +1001,9 @@ func (c *Config) MergeWorkspaceConfig(wc *WorkspaceConfig) {
 	}
 
 	// agents.defaults: merge non-zero fields
-	mergeAgentDefaults(&c.Agents.Defaults, &src.Agents.Defaults)
+	if err := mergeAgentDefaults(&c.Agents.Defaults, &src.Agents.Defaults); err != nil {
+		return err
+	}
 
 	// agents.list: replace if workspace has entries
 	if len(src.Agents.List) > 0 {
@@ -1017,11 +1022,20 @@ func (c *Config) MergeWorkspaceConfig(wc *WorkspaceConfig) {
 
 	// session: merge non-zero fields (prevents cross-tenant identity leakage)
 	mergeSessionConfig(&c.Session, &src.Session)
+	return nil
 }
 
 // mergeAgentDefaults copies non-zero fields from src into dst.
-func mergeAgentDefaults(dst, src *AgentDefaults) {
+// WorkspaceRoot is intentionally NOT copied — it is a security boundary
+// set by the base config and must not be overridden by workspace overlays.
+// Returns an error if a workspace overlay attempts to escape the root boundary.
+func mergeAgentDefaults(dst, src *AgentDefaults) error {
 	if src.Workspace != "" {
+		if dst.WorkspaceRoot != "" {
+			if _, err := pathutil.ResolveWorkspacePath(dst.WorkspaceRoot, src.Workspace); err != nil {
+				return fmt.Errorf("workspace config overlay rejected: %w", err)
+			}
+		}
 		dst.Workspace = src.Workspace
 	}
 	if src.RestrictToWorkspace {
@@ -1066,6 +1080,7 @@ func mergeAgentDefaults(dst, src *AgentDefaults) {
 	if src.MaxMediaSize > 0 {
 		dst.MaxMediaSize = src.MaxMediaSize
 	}
+	return nil
 }
 
 // mergeSessionConfig copies non-zero fields from src into dst.

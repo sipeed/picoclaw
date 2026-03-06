@@ -8,6 +8,6 @@ import (
 
 func init() {
 	channels.RegisterFactory("magicform", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
-		return NewMagicFormChannel(cfg.Channels.MagicForm, b)
+		return NewMagicFormChannel(cfg.Channels.MagicForm, cfg.Agents.Defaults.WorkspaceRoot, b)
 	})
 }

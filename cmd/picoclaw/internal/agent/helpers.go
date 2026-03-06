@@ -16,6 +16,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/pathutil"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -38,13 +39,27 @@ func agentCmd(message, sessionKey, model string, debug bool,
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
-	// Apply workspace-local config overrides from config-dir
+	// Snapshot workspace_root from the base config before any overlay can touch it.
+	workspaceRoot := cfg.Agents.Defaults.WorkspaceRoot
+
+	// Validate and resolve --workspace and --config-dir against workspace_root.
+	var resolveErr error
+	workspace, configDir, resolveErr = validateWorkspacePaths(workspaceRoot, workspace, configDir)
+	if resolveErr != nil {
+		return resolveErr
+	}
+
+	// Apply workspace-local config overrides from config-dir.
+	// mergeAgentDefaults will re-validate any workspace field from the overlay
+	// against the snapshotted workspace_root.
 	if configDir != "" {
 		wc, wcErr := config.LoadWorkspaceConfig(configDir)
 		if wcErr != nil {
 			return fmt.Errorf("error loading workspace config from %s: %w", configDir, wcErr)
 		}
-		cfg.MergeWorkspaceConfig(wc)
+		if mergeErr := cfg.MergeWorkspaceConfig(wc); mergeErr != nil {
+			return fmt.Errorf("error merging workspace config from %s: %w", configDir, mergeErr)
+		}
 	}
 
 	// CLI flags win over workspace config
@@ -52,7 +67,7 @@ func agentCmd(message, sessionKey, model string, debug bool,
 		cfg.Agents.Defaults.ModelName = model
 	}
 
-	// Workspace override
+	// Workspace override (already validated above)
 	if workspace != "" {
 		cfg.Agents.Defaults.Workspace = workspace
 		os.MkdirAll(workspace, 0o755)
@@ -160,6 +175,27 @@ func applySkillsFilter(cfg *config.Config, skills []string) {
 			cfg.Agents.List[i].Skills = skills
 		}
 	}
+}
+
+// validateWorkspacePaths resolves --workspace and --config-dir against workspace_root.
+// Both must be relative subdirectories of workspace_root. Returns the resolved
+// absolute paths or an error if validation fails.
+func validateWorkspacePaths(workspaceRoot, workspace, configDir string) (string, string, error) {
+	if workspace != "" {
+		resolved, err := pathutil.ResolveWorkspacePath(workspaceRoot, workspace)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid --workspace: %w", err)
+		}
+		workspace = resolved
+	}
+	if configDir != "" {
+		resolved, err := pathutil.ResolveWorkspacePath(workspaceRoot, configDir)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid --config-dir: %w", err)
+		}
+		configDir = resolved
+	}
+	return workspace, configDir, nil
 }
 
 // copyBootstrapFiles copies recognized bootstrap files (AGENTS.md, IDENTITY.md,

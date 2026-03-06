@@ -1,6 +1,7 @@
 {
   "agents": {
     "defaults": {
+      "workspace_root": "/data/workspaces",
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
       "model_name": "gpt4",
