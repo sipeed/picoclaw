@@ -242,26 +242,26 @@ type SummarizationConfig struct {
 
 // Defaults for SummarizationConfig fields.
 const (
-	DefaultSummarizeMessageThreshold         = 20
-	DefaultSummarizeTokenPercent             = 75
-	DefaultKeepLastMessages                  = 4
-	DefaultContextWindow                     = 8192
-	DefaultSummaryMaxTokens                  = 1024
-	DefaultSummarizationTemperature  float64 = 0.3
-	DefaultMultiPartBatchThreshold           = 10
-	DefaultSummarizationTimeout              = 120 * time.Second
-	DefaultMaxSingleMsgTokenRatio            = 0.5
-	DefaultForceCompressionMinMsgs           = 4
-	DefaultCharsPerToken                     = 2.5
+	DefaultSummarizationMessageThreshold         = 20
+	DefaultSummarizationTokenPercent             = 75
+	DefaultKeepLastMessages                      = 4
+	DefaultContextWindow                         = 8192
+	DefaultSummarizationMaxTokens                = 1024
+	DefaultSummarizationTemperature      float64 = 0.3
+	DefaultMultiPartBatchThreshold               = 10
+	DefaultSummarizationTimeout                  = 120 * time.Second
+	DefaultMaxSingleMsgTokenRatio                = 0.5
+	DefaultForceCompressionMinMsgs               = 4
+	DefaultCharsPerToken                         = 2.5
 )
 
 // WithDefaults fills zero-valued fields with sensible defaults.
 func (c SummarizationConfig) WithDefaults() SummarizationConfig {
 	if c.MessageThreshold == 0 {
-		c.MessageThreshold = DefaultSummarizeMessageThreshold
+		c.MessageThreshold = DefaultSummarizationMessageThreshold
 	}
 	if c.TokenPercent == 0 {
-		c.TokenPercent = DefaultSummarizeTokenPercent
+		c.TokenPercent = DefaultSummarizationTokenPercent
 	}
 	if c.KeepLastMessages == 0 {
 		c.KeepLastMessages = DefaultKeepLastMessages
@@ -270,7 +270,7 @@ func (c SummarizationConfig) WithDefaults() SummarizationConfig {
 		c.ContextWindow = DefaultContextWindow
 	}
 	if c.SummaryMaxTokens == 0 {
-		c.SummaryMaxTokens = DefaultSummaryMaxTokens
+		c.SummaryMaxTokens = DefaultSummarizationMaxTokens
 	}
 	if c.SummaryTemperature == 0 {
 		c.SummaryTemperature = DefaultSummarizationTemperature
