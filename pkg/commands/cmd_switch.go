@@ -8,7 +8,7 @@ import (
 func switchCommand() Definition {
 	return Definition{
 		Name:        "switch",
-		Description: "Switch model or channel",
+		Description: "Switch model",
 		SubCommands: []SubCommand{
 			{
 				Name:        "model",
@@ -32,20 +32,9 @@ func switchCommand() Definition {
 			},
 			{
 				Name:        "channel",
-				Description: "Switch to a different channel",
-				ArgsUsage:   "to <name>",
-				Handler: func(_ context.Context, req Request, rt *Runtime) error {
-					if rt == nil || rt.SwitchChannel == nil {
-						return req.Reply(unavailableMsg)
-					}
-					value := nthToken(req.Text, 3)
-					if nthToken(req.Text, 2) != "to" || value == "" {
-						return req.Reply("Usage: /switch channel to <name>")
-					}
-					if err := rt.SwitchChannel(value); err != nil {
-						return req.Reply(err.Error())
-					}
-					return req.Reply(fmt.Sprintf("Channel '%s' is available and enabled", value))
+				Description: "Moved to /check channel",
+				Handler: func(_ context.Context, req Request, _ *Runtime) error {
+					return req.Reply("This command has moved. Please use: /check channel <name>")
 				},
 			},
 		},

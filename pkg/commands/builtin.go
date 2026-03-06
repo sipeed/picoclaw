@@ -11,5 +11,6 @@ func BuiltinDefinitions() []Definition {
 		showCommand(),
 		listCommand(),
 		switchCommand(),
+		checkCommand(),
 	}
 }
