@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 const oauthMaxResponseSize int64 = 1 << 20 // 1 MB — more than sufficient for any OAuth response
@@ -226,7 +228,8 @@ func RequestDeviceCode(cfg OAuthProviderConfig) (*DeviceCodeInfo, error) {
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, oauthMaxResponseSize))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("device code request failed: %s", string(body))
+		logger.DebugCF("auth", "device code request failed", map[string]any{"status": resp.StatusCode, "body": string(body)})
+		return nil, fmt.Errorf("device code request failed (HTTP %d)", resp.StatusCode)
 	}
 
 	deviceResp, err := parseDeviceCodeResponse(body)
@@ -314,7 +317,8 @@ func LoginDeviceCode(cfg OAuthProviderConfig) (*AuthCredential, error) {
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, oauthMaxResponseSize))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("device code request failed: %s", string(body))
+		logger.DebugCF("auth", "device code request failed", map[string]any{"status": resp.StatusCode, "body": string(body)})
+		return nil, fmt.Errorf("device code request failed (HTTP %d)", resp.StatusCode)
 	}
 
 	deviceResp, err := parseDeviceCodeResponse(body)
@@ -415,7 +419,8 @@ func RefreshAccessToken(cred *AuthCredential, cfg OAuthProviderConfig) (*AuthCre
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, oauthMaxResponseSize))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token refresh failed: %s", string(body))
+		logger.DebugCF("auth", "token refresh failed", map[string]any{"status": resp.StatusCode, "body": string(body)})
+		return nil, fmt.Errorf("token refresh failed (HTTP %d)", resp.StatusCode)
 	}
 
 	refreshed, err := parseTokenResponse(body, cred.Provider)
@@ -508,7 +513,8 @@ func ExchangeCodeForTokens(cfg OAuthProviderConfig, code, codeVerifier, redirect
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, oauthMaxResponseSize))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token exchange failed: %s", string(body))
+		logger.DebugCF("auth", "token exchange failed", map[string]any{"status": resp.StatusCode, "body": string(body)})
+		return nil, fmt.Errorf("token exchange failed (HTTP %d)", resp.StatusCode)
 	}
 
 	return parseTokenResponse(body, provider)
