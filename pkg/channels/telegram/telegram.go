@@ -570,12 +570,6 @@ func logParseFailed(useMarkdownV2 bool, err error) {
 	)
 }
 
-func parseChatID(chatIDStr string) (int64, error) {
-	var id int64
-	_, err := fmt.Sscanf(chatIDStr, "%d", &id)
-	return id, err
-}
-
 // isBotMentioned checks if the bot is mentioned in the message via entities.
 func (c *TelegramChannel) isBotMentioned(message *telego.Message) bool {
 	botUsername := c.bot.Username()
