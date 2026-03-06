@@ -2,7 +2,6 @@
   "navigation": {
     "chat": "Chat",
     "model_group": "Models",
-    "providers": "Providers",
     "models": "Models",
     "credentials": "Credentials",
     "services": "Services",

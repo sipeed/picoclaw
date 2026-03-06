@@ -28,6 +28,7 @@ export function ModelCard({
 }: ModelCardProps) {
   const { t } = useTranslation()
   const isOAuth = model.auth_method === "oauth"
+  const canSetDefault = model.configured && !model.is_default
 
   return (
     <div
@@ -78,7 +79,7 @@ export function ModelCard({
               variant="ghost"
               size="icon-sm"
               onClick={() => onSetDefault(model)}
-              disabled={settingDefault}
+              disabled={settingDefault || !canSetDefault}
               title={t("models.action.setDefault")}
             >
               {settingDefault ? (

@@ -5,7 +5,7 @@ import type { OAuthProviderStatus } from "@/api/oauth"
 import { ProviderStatusLine } from "./provider-status-line"
 
 interface CredentialCardProps {
-  title: string
+  title: ReactNode
   description: string
   status: OAuthProviderStatus["status"]
   authMethod?: string

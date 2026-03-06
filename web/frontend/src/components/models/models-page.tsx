@@ -13,12 +13,12 @@ import { getProviderKey, getProviderLabel } from "./provider-label"
 import { ProviderSection } from "./provider-section"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
-  openai: 0,
-  gemini: 1,
-  anthropic: 2,
-  zhipu: 3,
-  deepseek: 4,
-  volcengine: 5,
+  volcengine: 0,
+  openai: 1,
+  gemini: 2,
+  anthropic: 3,
+  zhipu: 4,
+  deepseek: 5,
   openrouter: 6,
   qwen: 7,
   moonshot: 8,

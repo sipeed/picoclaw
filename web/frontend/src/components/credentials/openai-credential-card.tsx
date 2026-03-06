@@ -45,7 +45,14 @@ export function OpenAICredentialCard({
 
   return (
     <CredentialCard
-      title="OpenAI"
+      title={
+        <span className="inline-flex items-center gap-2">
+          <span className="border-muted inline-flex size-6 items-center justify-center rounded-full border">
+            <IconBrandOpenai className="size-3.5" />
+          </span>
+          <span>OpenAI</span>
+        </span>
+      }
       description={t(
         "credentials.providers.openai.description",
         "Supports browser OAuth, device code, and token login.",

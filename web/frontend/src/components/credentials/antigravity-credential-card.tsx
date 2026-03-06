@@ -1,4 +1,5 @@
 import {
+  IconBrandGoogle,
   IconLoader2,
   IconLockOpen,
   IconPlayerStopFilled,
@@ -31,7 +32,14 @@ export function AntigravityCredentialCard({
 
   return (
     <CredentialCard
-      title="Google Antigravity"
+      title={
+        <span className="inline-flex items-center gap-2">
+          <span className="border-muted inline-flex size-6 items-center justify-center rounded-full border">
+            <IconBrandGoogle className="size-3.5" />
+          </span>
+          <span>Google Antigravity</span>
+        </span>
+      }
       description={t(
         "credentials.providers.antigravity.description",
         "Uses browser OAuth for Google Cloud Code Assist.",

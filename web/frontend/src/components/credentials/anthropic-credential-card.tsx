@@ -1,4 +1,9 @@
-import { IconKey, IconLoader2, IconPlayerStopFilled } from "@tabler/icons-react"
+import {
+  IconKey,
+  IconLoader2,
+  IconPlayerStopFilled,
+  IconSparkles,
+} from "@tabler/icons-react"
 import { useTranslation } from "react-i18next"
 
 import type { OAuthProviderStatus } from "@/api/oauth"
@@ -33,7 +38,14 @@ export function AnthropicCredentialCard({
 
   return (
     <CredentialCard
-      title="Anthropic"
+      title={
+        <span className="inline-flex items-center gap-2">
+          <span className="border-muted inline-flex size-6 items-center justify-center rounded-full border">
+            <IconSparkles className="size-3.5" />
+          </span>
+          <span>Anthropic</span>
+        </span>
+      }
       description={t(
         "credentials.providers.anthropic.description",
         "Uses token login for Claude access.",

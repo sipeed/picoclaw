@@ -33,7 +33,7 @@ export function DeviceCodeSheet({
         side="right"
         className="data-[side=right]:!w-full data-[side=right]:sm:!w-[480px] data-[side=right]:sm:!max-w-[480px]"
       >
-        <SheetHeader className="border-b px-6 py-5">
+        <SheetHeader className="border-b-muted border-b px-6 py-5">
           <SheetTitle>
             {t("credentials.device.title", "OpenAI Device Login")}
           </SheetTitle>
@@ -81,14 +81,14 @@ export function DeviceCodeSheet({
           )}
         </div>
 
-        <SheetFooter className="border-t px-6 py-4">
-          <Button variant="outline" asChild disabled={!flow?.verify_url}>
+        <SheetFooter className="border-t-muted border-t px-6 py-4">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            {t("common.cancel", "Close")}
+          </Button>
+          <Button asChild disabled={!flow?.verify_url}>
             <a href={flow?.verify_url || "#"} target="_blank" rel="noreferrer">
               {t("credentials.device.open", "Open Verification Page")}
             </a>
-          </Button>
-          <Button onClick={() => onOpenChange(false)}>
-            {t("common.cancel", "Close")}
           </Button>
         </SheetFooter>
       </SheetContent>

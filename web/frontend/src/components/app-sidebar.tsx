@@ -1,7 +1,6 @@
 import { IconChevronRight } from "@tabler/icons-react"
 import {
   IconAtom,
-  IconCloud,
   IconKey,
   IconListDetails,
   IconMessageCircle,
@@ -39,7 +38,6 @@ const navGroups = [
     label: "navigation.model_group",
     defaultOpen: true,
     items: [
-      { title: "navigation.providers", url: "/providers", icon: IconCloud },
       { title: "navigation.models", url: "/models", icon: IconAtom },
       { title: "navigation.credentials", url: "/credentials", icon: IconKey },
     ],

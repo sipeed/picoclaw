@@ -126,7 +126,7 @@ export function EditModelSheet({
         side="right"
         className="flex flex-col gap-0 p-0 data-[side=right]:!w-full data-[side=right]:sm:!w-[560px] data-[side=right]:sm:!max-w-[560px]"
       >
-        <SheetHeader className="border-b px-6 py-5">
+        <SheetHeader className="border-b-muted border-b px-6 py-5">
           <SheetTitle className="text-base">
             {t("models.edit.title", { name: model?.model_name })}
           </SheetTitle>
@@ -286,7 +286,7 @@ export function EditModelSheet({
           </div>
         </div>
 
-        <SheetFooter className="border-t px-6 py-4">
+        <SheetFooter className="border-t-muted border-t px-6 py-4">
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             {t("common.cancel")}
           </Button>

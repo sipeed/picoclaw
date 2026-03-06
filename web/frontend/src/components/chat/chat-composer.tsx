@@ -1,14 +1,9 @@
-import { IconArrowUp, IconMicrophone, IconPaperclip } from "@tabler/icons-react"
+import { IconArrowUp } from "@tabler/icons-react"
 import type { KeyboardEvent } from "react"
 import { useTranslation } from "react-i18next"
 import TextareaAutosize from "react-textarea-autosize"
 
 import { Button } from "@/components/ui/button"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 
 interface ChatComposerProps {
   input: string
@@ -50,35 +45,7 @@ export function ChatComposer({
         />
 
         <div className="mt-2 flex items-center justify-between px-1">
-          <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground size-8 rounded-full"
-                  disabled={!isConnected}
-                >
-                  <IconPaperclip className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t("chat.attach")}</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground size-8 rounded-full"
-                  disabled={!isConnected}
-                >
-                  <IconMicrophone className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t("chat.voice")}</TooltipContent>
-            </Tooltip>
-          </div>
+          <div className="flex items-center gap-1">{/* action buttons */}</div>
 
           <Button
             size="icon"
