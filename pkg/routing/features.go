@@ -15,9 +15,9 @@ const lookbackWindow = 6
 // Every dimension is language-agnostic by construction — no keyword or pattern matching
 // against natural-language content. This ensures consistent routing for all locales.
 type Features struct {
-	// TokenEstimate is a conservative proxy for token count.
-	// Computed as utf8.RuneCountInString(msg) / 3, which handles CJK characters
-	// (each rune ≈ 1 token for CJK, ≈ 0.25 tokens for ASCII) without any API call.
+	// TokenEstimate is a proxy for token count.
+	// CJK runes count as 1 token each; non-CJK runes as 0.25 tokens each.
+	// This avoids API calls while giving accurate estimates for all scripts.
 	TokenEstimate int
 
 	// CodeBlockCount is the number of fenced code blocks (``` pairs) in the message.
@@ -50,14 +50,23 @@ func ExtractFeatures(msg string, history []providers.Message) Features {
 	}
 }
 
-// estimateTokens returns a conservative token count proxy.
-// Using rune count / 3 rather than / 4 because CJK characters each map to
-// roughly one token, while ASCII words average ~1.3 chars/token. Dividing
-// by 3 is a safe middle ground that slightly over-estimates for Latin text
-// (errs toward routing to the heavy model) and is accurate for CJK.
+// estimateTokens returns a token count proxy that handles both CJK and Latin text.
+// CJK runes (U+2E80–U+9FFF, U+F900–U+FAFF, U+AC00–U+D7AF) map to roughly one
+// token each, while non-CJK runes average ~0.25 tokens/rune (≈4 chars per token
+// for English). Splitting the count this way avoids the 3x underestimation that a
+// flat rune_count/3 would produce for Chinese, Japanese, and Korean text.
 func estimateTokens(msg string) int {
-	rc := utf8.RuneCountInString(msg)
-	return rc / 3
+	total := utf8.RuneCountInString(msg)
+	if total == 0 {
+		return 0
+	}
+	cjk := 0
+	for _, r := range msg {
+		if r >= 0x2E80 && r <= 0x9FFF || r >= 0xF900 && r <= 0xFAFF || r >= 0xAC00 && r <= 0xD7AF {
+			cjk++
+		}
+	}
+	return cjk + (total-cjk)/4
 }
 
 // countCodeBlocks counts the number of complete fenced code blocks.

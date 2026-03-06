@@ -1192,8 +1192,14 @@ func (al *AgentLoop) selectCandidates(
 		return agent.Candidates, agent.Model
 	}
 
-	_, usedLight := agent.Router.SelectModel(userMsg, history, agent.Model)
+	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
 	if !usedLight {
+		logger.DebugCF("agent", "Model routing: primary model selected",
+			map[string]any{
+				"agent_id":  agent.ID,
+				"score":     score,
+				"threshold": agent.Router.Threshold(),
+			})
 		return agent.Candidates, agent.Model
 	}
 
@@ -1201,6 +1207,7 @@ func (al *AgentLoop) selectCandidates(
 		map[string]any{
 			"agent_id":    agent.ID,
 			"light_model": agent.Router.LightModel(),
+			"score":       score,
 			"threshold":   agent.Router.Threshold(),
 		})
 	return agent.LightCandidates, agent.Router.LightModel()
