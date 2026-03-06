@@ -46,6 +46,14 @@
       "model": "openai/gpt-5.2",
       "api_key": "sk-key2",
       "api_base": "https://api2.example.com/v1"
+    },
+    {
+      "_comment": "Cloudflare AI example: use 'provider' field when model name contains special characters like @cf/",
+      "model_name": "cf_qwen",
+      "model": "@cf/qwen/qwen3-30b-a3b-fp8",
+      "provider": "own",
+      "api_key": "YOUR_CLOUDFLARE_API_TOKEN",
+      "api_base": "https://api.cloudflare.com/client/v4/accounts/[YOUR_ACCOUNT_ID]/ai/v1"
     }
   ],
   "channels": {

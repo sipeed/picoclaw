@@ -501,10 +501,16 @@ type OpenAIProviderConfig struct {
 // The model field uses protocol prefix format: [protocol/]model-identifier
 // Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot
 // Default protocol is "openai" if no prefix is specified.
+//
+// The optional Provider field explicitly sets the protocol/provider, overriding the
+// prefix parsed from the Model field. This is useful when the model identifier
+// itself contains slashes that would be misinterpreted as a protocol prefix
+// (e.g. Cloudflare AI models like "@cf/qwen/qwen3-30b-a3b-fp8").
 type ModelConfig struct {
 	// Required fields
-	ModelName string `json:"model_name"` // User-facing alias for the model
-	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
+	ModelName string `json:"model_name"`          // User-facing alias for the model
+	Model     string `json:"model"`               // Model identifier, optionally prefixed with protocol (e.g., "openai/gpt-4o")
+	Provider  string `json:"provider,omitempty"` // Explicit protocol/provider override (e.g., "openai", "anthropic", "cloudflare", "own")
 
 	// HTTP-based providers
 	APIBase string `json:"api_base,omitempty"` // API endpoint URL
