@@ -18,22 +18,25 @@ import (
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
-	ID             string
-	Name           string
-	Model          string
-	Fallbacks      []string
-	Workspace      string
-	MaxIterations  int
-	MaxTokens      int
-	Temperature    float64
-	ContextWindow  int
-	Provider       providers.LLMProvider
-	Sessions       *session.SessionManager
-	ContextBuilder *ContextBuilder
-	Tools          *tools.ToolRegistry
-	Subagents      *config.SubagentsConfig
-	SkillsFilter   []string
-	Candidates     []providers.FallbackCandidate
+	ID                        string
+	Name                      string
+	Model                     string
+	Fallbacks                 []string
+	Workspace                 string
+	MaxIterations             int
+	MaxTokens                 int
+	Temperature               float64
+	ThinkingLevel             ThinkingLevel
+	ContextWindow             int
+	SummarizeMessageThreshold int
+	SummarizeTokenPercent     int
+	Provider                  providers.LLMProvider
+	Sessions                  *session.SessionManager
+	ContextBuilder            *ContextBuilder
+	Tools                     *tools.ToolRegistry
+	Subagents                 *config.SubagentsConfig
+	SkillsFilter              []string
+	Candidates                []providers.FallbackCandidate
 
 	// Router is non-nil when model routing is configured and the light model
 	// was successfully resolved. It scores each incoming message and decides
@@ -65,17 +68,30 @@ func NewAgentInstance(
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
 
 	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
-	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
-	toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
-	execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
-	if err != nil {
-		log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
-	}
-	toolsRegistry.Register(execTool)
 
-	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
-	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	if cfg.Tools.IsToolEnabled("read_file") {
+		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("write_file") {
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("list_dir") {
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("exec") {
+		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+		if err != nil {
+			log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
+		}
+		toolsRegistry.Register(execTool)
+	}
+
+	if cfg.Tools.IsToolEnabled("edit_file") {
+		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("append_file") {
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
@@ -107,6 +123,22 @@ func NewAgentInstance(
 	temperature := 0.7
 	if defaults.Temperature != nil {
 		temperature = *defaults.Temperature
+	}
+
+	var thinkingLevelStr string
+	if mc, err := cfg.GetModelConfig(model); err == nil {
+		thinkingLevelStr = mc.ThinkingLevel
+	}
+	thinkingLevel := parseThinkingLevel(thinkingLevelStr)
+
+	summarizeMessageThreshold := defaults.SummarizeMessageThreshold
+	if summarizeMessageThreshold == 0 {
+		summarizeMessageThreshold = 20
+	}
+
+	summarizeTokenPercent := defaults.SummarizeTokenPercent
+	if summarizeTokenPercent == 0 {
+		summarizeTokenPercent = 75
 	}
 
 	// Resolve fallback candidates
@@ -176,24 +208,27 @@ func NewAgentInstance(
 	}
 
 	return &AgentInstance{
-		ID:              agentID,
-		Name:            agentName,
-		Model:           model,
-		Fallbacks:       fallbacks,
-		Workspace:       workspace,
-		MaxIterations:   maxIter,
-		MaxTokens:       maxTokens,
-		Temperature:     temperature,
-		ContextWindow:   maxTokens,
-		Provider:        provider,
-		Sessions:        sessionsManager,
-		ContextBuilder:  contextBuilder,
-		Tools:           toolsRegistry,
-		Subagents:       subagents,
-		SkillsFilter:    skillsFilter,
-		Candidates:      candidates,
-		Router:          router,
-		LightCandidates: lightCandidates,
+		ID:                        agentID,
+		Name:                      agentName,
+		Model:                     model,
+		Fallbacks:                 fallbacks,
+		Workspace:                 workspace,
+		MaxIterations:             maxIter,
+		MaxTokens:                 maxTokens,
+		Temperature:               temperature,
+		ThinkingLevel:             thinkingLevel,
+		ContextWindow:             maxTokens,
+		SummarizeMessageThreshold: summarizeMessageThreshold,
+		SummarizeTokenPercent:     summarizeTokenPercent,
+		Provider:                  provider,
+		Sessions:                  sessionsManager,
+		ContextBuilder:            contextBuilder,
+		Tools:                     toolsRegistry,
+		Subagents:                 subagents,
+		SkillsFilter:              skillsFilter,
+		Candidates:                candidates,
+		Router:                    router,
+		LightCandidates:           lightCandidates,
 	}
 }
 
@@ -202,12 +237,13 @@ func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentD
 	if agentCfg != nil && strings.TrimSpace(agentCfg.Workspace) != "" {
 		return expandHome(strings.TrimSpace(agentCfg.Workspace))
 	}
+	// Use the configured default workspace (respects PICOCLAW_HOME)
 	if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
 		return expandHome(defaults.Workspace)
 	}
-	home, _ := os.UserHomeDir()
+	// For named agents without explicit workspace, use default workspace with agent ID suffix
 	id := routing.NormalizeAgentID(agentCfg.ID)
-	return filepath.Join(home, ".picoclaw", "workspace-"+id)
+	return filepath.Join(expandHome(defaults.Workspace), "..", "workspace-"+id)
 }
 
 // resolveAgentModel resolves the primary model for an agent.

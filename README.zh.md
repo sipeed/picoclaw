@@ -362,6 +362,20 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 ```
 
+### 技能来源 (Skill Sources)
+
+默认情况下，技能会按以下顺序加载：
+
+1. `~/.picoclaw/workspace/skills`（工作区）
+2. `~/.picoclaw/skills`（全局）
+3. `<current-working-directory>/skills`（内置）
+
+在高级/测试场景下，可通过以下环境变量覆盖内置技能目录：
+
+```bash
+export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
+```
+
 ### 心跳 / 周期性任务 (Heartbeat)
 
 PicoClaw 可以自动执行周期性任务。在工作区创建 `HEARTBEAT.md` 文件：
@@ -445,7 +459,7 @@ Agent 读取 HEARTBEAT.md
 ### 提供商 (Providers)
 
 > [!NOTE]
-> Groq 通过 Whisper 提供免费的语音转录。如果配置了 Groq，Telegram 语音消息将被自动转录为文字。
+> Groq 通过 Whisper 提供免费的语音转录。如果配置了 Groq，任意渠道的音频消息都将在 Agent 层面自动转录为文字。
 
 | 提供商               | 用途                         | 获取 API Key                                                         |
 | -------------------- | ---------------------------- | -------------------------------------------------------------------- |

@@ -681,3 +681,135 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 		t.Errorf("Expected 'via Tavily' in output, got: %s", result.ForUser)
 	}
 }
+
+func TestWebTool_GLMSearch_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("Expected POST request, got %s", r.Method)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("Expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
+		}
+		if r.Header.Get("Authorization") != "Bearer test-glm-key" {
+			t.Errorf("Expected Authorization Bearer test-glm-key, got %s", r.Header.Get("Authorization"))
+		}
+
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if payload["search_query"] != "test query" {
+			t.Errorf("Expected search_query 'test query', got %v", payload["search_query"])
+		}
+		if payload["search_engine"] != "search_std" {
+			t.Errorf("Expected search_engine 'search_std', got %v", payload["search_engine"])
+		}
+
+		response := map[string]any{
+			"id":      "web-search-test",
+			"created": 1709568000,
+			"search_result": []map[string]any{
+				{
+					"title":        "Test GLM Result",
+					"content":      "GLM search snippet",
+					"link":         "https://example.com/glm",
+					"media":        "Example",
+					"publish_date": "2026-03-04",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		GLMSearchEnabled: true,
+		GLMSearchAPIKey:  "test-glm-key",
+		GLMSearchBaseURL: server.URL,
+		GLMSearchEngine:  "search_std",
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"query": "test query",
+	})
+
+	if result.IsError {
+		t.Errorf("Expected success, got IsError=true: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForUser, "Test GLM Result") {
+		t.Errorf("Expected 'Test GLM Result' in output, got: %s", result.ForUser)
+	}
+	if !strings.Contains(result.ForUser, "https://example.com/glm") {
+		t.Errorf("Expected URL in output, got: %s", result.ForUser)
+	}
+	if !strings.Contains(result.ForUser, "via GLM Search") {
+		t.Errorf("Expected 'via GLM Search' in output, got: %s", result.ForUser)
+	}
+}
+
+func TestWebTool_GLMSearch_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"invalid api key"}`))
+	}))
+	defer server.Close()
+
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		GLMSearchEnabled: true,
+		GLMSearchAPIKey:  "bad-key",
+		GLMSearchBaseURL: server.URL,
+		GLMSearchEngine:  "search_std",
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"query": "test query",
+	})
+
+	if !result.IsError {
+		t.Errorf("Expected IsError=true for 401 response")
+	}
+	if !strings.Contains(result.ForLLM, "status 401") {
+		t.Errorf("Expected status 401 in error, got: %s", result.ForLLM)
+	}
+}
+
+func TestWebTool_GLMSearch_Priority(t *testing.T) {
+	// GLM Search should only be selected when all other providers are disabled
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		DuckDuckGoEnabled:    true,
+		DuckDuckGoMaxResults: 5,
+		GLMSearchEnabled:     true,
+		GLMSearchAPIKey:      "test-key",
+		GLMSearchBaseURL:     "https://example.com",
+		GLMSearchEngine:      "search_std",
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+
+	// DuckDuckGo should win over GLM Search
+	if _, ok := tool.provider.(*DuckDuckGoSearchProvider); !ok {
+		t.Errorf("Expected DuckDuckGoSearchProvider when both enabled, got %T", tool.provider)
+	}
+
+	// With DuckDuckGo disabled, GLM Search should be selected
+	tool2, err := NewWebSearchTool(WebSearchToolOptions{
+		DuckDuckGoEnabled: false,
+		GLMSearchEnabled:  true,
+		GLMSearchAPIKey:   "test-key",
+		GLMSearchBaseURL:  "https://example.com",
+		GLMSearchEngine:   "search_std",
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+	if _, ok := tool2.provider.(*GLMSearchProvider); !ok {
+		t.Errorf("Expected GLMSearchProvider when only GLM enabled, got %T", tool2.provider)
+	}
+}
