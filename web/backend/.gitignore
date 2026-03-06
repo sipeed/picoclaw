@@ -10,7 +10,6 @@ picoclaw-web
 # Frontend build artifacts (embedded by Go)
 dist/*
 !dist/.gitkeep
-!dist/index.html
 
 # OS
 .DS_Store
