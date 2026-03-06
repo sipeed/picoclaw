@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -113,6 +114,7 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 }
 
 // Send sends a message using Interactive Card format for markdown rendering.
+// If the content contains more than 5 tables, it will be split into multiple messages.
 func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
@@ -122,34 +124,86 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
 	}
 
-	// Build interactive card with markdown content
-	cardContent, err := buildMarkdownCard(msg.Content)
-	if err != nil {
-		return fmt.Errorf("feishu send: card build failed: %w", err)
+	// Split content into multiple parts if it contains too many tables
+	parts := splitContentByTableCount(msg.Content)
+
+	// Send each part as a separate message
+	for i, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+
+		// Build interactive card with markdown content
+		cardContent, err := buildMarkdownCard(part)
+		if err != nil {
+			return fmt.Errorf("feishu send: card build failed (part %d/%d): %w", i+1, len(parts), err)
+		}
+
+		if err := c.sendCard(ctx, msg.ChatID, cardContent); err != nil {
+			return fmt.Errorf("feishu send: failed to send part %d/%d: %w", i+1, len(parts), err)
+		}
+
+		logger.DebugCF("feishu", "Feishu message part sent", map[string]any{
+			"chat_id": msg.ChatID,
+			"part":    i + 1,
+			"total":   len(parts),
+		})
 	}
-	return c.sendCard(ctx, msg.ChatID, cardContent)
+
+	return nil
 }
 
 // EditMessage implements channels.MessageEditor.
 // Uses Message.Patch to update an interactive card message.
+// If the content contains more than 5 tables, it will be split:
+// the first part edits the original message, and remaining parts are sent as new messages.
 func (c *FeishuChannel) EditMessage(ctx context.Context, chatID, messageID, content string) error {
-	cardContent, err := buildMarkdownCard(content)
-	if err != nil {
-		return fmt.Errorf("feishu edit: card build failed: %w", err)
+	// Split content into multiple parts if it contains too many tables
+	parts := splitContentByTableCount(content)
+
+	// Edit the original message with the first part
+	if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
+		cardContent, err := buildMarkdownCard(parts[0])
+		if err != nil {
+			return fmt.Errorf("feishu edit: card build failed: %w", err)
+		}
+
+		req := larkim.NewPatchMessageReqBuilder().
+			MessageId(messageID).
+			Body(larkim.NewPatchMessageReqBodyBuilder().Content(cardContent).Build()).
+			Build()
+
+		resp, err := c.client.Im.V1.Message.Patch(ctx, req)
+		if err != nil {
+			return fmt.Errorf("feishu edit: %w", err)
+		}
+		if !resp.Success() {
+			return fmt.Errorf("feishu edit api error (code=%d msg=%s)", resp.Code, resp.Msg)
+		}
 	}
 
-	req := larkim.NewPatchMessageReqBuilder().
-		MessageId(messageID).
-		Body(larkim.NewPatchMessageReqBodyBuilder().Content(cardContent).Build()).
-		Build()
+	// Send remaining parts as new messages
+	for i := 1; i < len(parts); i++ {
+		if strings.TrimSpace(parts[i]) == "" {
+			continue
+		}
 
-	resp, err := c.client.Im.V1.Message.Patch(ctx, req)
-	if err != nil {
-		return fmt.Errorf("feishu edit: %w", err)
+		cardContent, err := buildMarkdownCard(parts[i])
+		if err != nil {
+			return fmt.Errorf("feishu edit: card build failed (part %d/%d): %w", i+1, len(parts), err)
+		}
+
+		if err := c.sendCard(ctx, chatID, cardContent); err != nil {
+			return fmt.Errorf("feishu edit: failed to send part %d/%d: %w", i+1, len(parts), err)
+		}
+
+		logger.DebugCF("feishu", "Feishu edit: additional message part sent", map[string]any{
+			"chat_id": chatID,
+			"part":    i + 1,
+			"total":   len(parts),
+		})
 	}
-	if !resp.Success() {
-		return fmt.Errorf("feishu edit api error (code=%d msg=%s)", resp.Code, resp.Msg)
-	}
+
 	return nil
 }
 
