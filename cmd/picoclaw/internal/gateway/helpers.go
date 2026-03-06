@@ -366,22 +366,25 @@ func setupCronTool(
 ) *cron.CronService {
 	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
 
-	// Create cron service
-	cronService := cron.NewCronService(cronStorePath, nil)
+	// Create and register CronTool if enabled
+	var cronTool *tools.CronTool
+	if cfg.Tools.IsToolEnabled("cron") {
+		var err error
+		cronTool, err = tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
+		if err != nil {
+  		logger.Fatalf("Critical error during CronTool initialization: %v", err)
+		}
 
-	// Create and register CronTool
-	cronTool, err := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
-	if err != nil {
-		logger.Fatalf("Critical error during CronTool initialization: %v", err)
+		agentLoop.RegisterTool(cronTool)
 	}
 
-	agentLoop.RegisterTool(cronTool)
-
-	// Set the onJob handler
-	cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
-		result := cronTool.ExecuteJob(context.Background(), job)
-		return result, nil
-	})
+	// Set onJob handler
+	if cronTool != nil {
+		cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
+			result := cronTool.ExecuteJob(context.Background(), job)
+			return result, nil
+		})
+	}
 
 	return cronService
 }
