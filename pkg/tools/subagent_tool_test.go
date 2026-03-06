@@ -12,6 +12,7 @@ import (
 // MockLLMProvider is a test implementation of LLMProvider
 type MockLLMProvider struct {
 	lastOptions map[string]any
+	lastModel   string
 }
 
 func (m *MockLLMProvider) Chat(
@@ -22,6 +23,7 @@ func (m *MockLLMProvider) Chat(
 	options map[string]any,
 ) (*providers.LLMResponse, error) {
 	m.lastOptions = options
+	m.lastModel = model
 	// Find the last user message to generate a response
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {
@@ -380,6 +382,9 @@ func TestSubagentTool_Execute_WithModel(t *testing.T) {
 	result := tool.Execute(ctx, args)
 	if result.IsError {
 		t.Errorf("Expected success, got error: %s", result.ForLLM)
+	}
+	if provider.lastModel != "custom-model" {
+		t.Errorf("expected model 'custom-model', got %q", provider.lastModel)
 	}
 }
 
