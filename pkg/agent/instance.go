@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -31,7 +33,7 @@ type AgentInstance struct {
 	SummarizeMessageThreshold int
 	SummarizeTokenPercent     int
 	Provider                  providers.LLMProvider
-	Sessions                  *session.SessionManager
+	Sessions                  session.SessionStore
 	ContextBuilder            *ContextBuilder
 	Tools                     *tools.ToolRegistry
 	Subagents                 *config.SubagentsConfig
@@ -86,7 +88,7 @@ func NewAgentInstance(
 	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
-	sessionsManager := session.NewSessionManager(sessionsDir)
+	sessions := initSessionStore(sessionsDir)
 
 	contextBuilder := NewContextBuilder(workspace)
 
@@ -194,7 +196,7 @@ func NewAgentInstance(
 		SummarizeMessageThreshold: summarizeMessageThreshold,
 		SummarizeTokenPercent:     summarizeTokenPercent,
 		Provider:                  provider,
-		Sessions:                  sessionsManager,
+		Sessions:                  sessions,
 		ContextBuilder:            contextBuilder,
 		Tools:                     toolsRegistry,
 		Subagents:                 subagents,
@@ -244,6 +246,25 @@ func compilePatterns(patterns []string) []*regexp.Regexp {
 		compiled = append(compiled, re)
 	}
 	return compiled
+}
+
+// initSessionStore creates the session persistence backend.
+// It uses the JSONL store by default and auto-migrates legacy JSON sessions.
+// Falls back to SessionManager if the JSONL store cannot be initialized.
+func initSessionStore(dir string) session.SessionStore {
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		log.Printf("memory: init store: %v; using json sessions", err)
+		return session.NewSessionManager(dir)
+	}
+
+	if n, merr := memory.MigrateFromJSON(context.Background(), dir, store); merr != nil {
+		log.Printf("memory: migration: %v", merr)
+	} else if n > 0 {
+		log.Printf("memory: migrated %d session(s) to jsonl", n)
+	}
+
+	return session.NewJSONLBackend(store)
 }
 
 func expandHome(path string) string {
