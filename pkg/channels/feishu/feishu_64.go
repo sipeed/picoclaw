@@ -204,6 +204,7 @@ func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID st
 		// Default to "Pin" if no config
 		emojiList = []string{"Pin"}
 	}
+	logger.Info(fmt.Sprintf("[MABEN] c.config.RandomReactionEmoji, %v", c.config.RandomReactionEmoji))
 
 	// Randomly choose one from the list
 	chosenEmoji := emojiList[rand.Intn(len(emojiList))]
@@ -218,7 +219,7 @@ func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID st
 	resp, err := c.client.Im.V1.MessageReaction.Create(ctx, req)
 	if err != nil {
 		logger.ErrorCF("feishu", "Failed to add reaction", map[string]any{
-			"emoji":     chosenEmoji,
+			"emoji":      chosenEmoji,
 			"message_id": messageID,
 			"error":      err.Error(),
 		})

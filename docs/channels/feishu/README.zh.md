@@ -36,3 +36,4 @@
 3. 配置事件订阅和Webhook URL
 4. 设置加密(可选,生产环境建议启用)
 5. 将 App ID、App Secret、Encrypt Key 和 Verification Token(如果启用加密) 填入配置文件中
+6. 自定义你希望 PicoClaw react 你消息时的表情（可选, Reference URL: [Feishu Emoji List](https://open.larkoffice.com/document/server-docs/im-v1/message-reaction/emojis-introduce))
