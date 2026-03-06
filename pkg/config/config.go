@@ -640,6 +640,7 @@ type ToolsConfig struct {
 	ListDir         ToolConfig         `json:"list_dir"                                                 envPrefix:"PICOCLAW_TOOLS_LIST_DIR_"`
 	Message         ToolConfig         `json:"message"                                                  envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
 	ReadFile        ToolConfig         `json:"read_file"                                                envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
+	SendFile        ToolConfig         `json:"send_file"                                                envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
 	Spawn           ToolConfig         `json:"spawn"                                                    envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
 	SPI             ToolConfig         `json:"spi"                                                      envPrefix:"PICOCLAW_TOOLS_SPI_"`
 	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
@@ -913,6 +914,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.Subagent.Enabled
 	case "web_fetch":
 		return t.WebFetch.Enabled
+	case "send_file":
+		return t.SendFile.Enabled
 	case "write_file":
 		return t.WriteFile.Enabled
 	case "mcp":

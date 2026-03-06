@@ -183,6 +183,17 @@ func registerSharedTools(
 			agent.Tools.Register(messageTool)
 		}
 
+		// Send file tool (outbound media via MediaStore — store injected later by SetMediaStore)
+		if cfg.Tools.IsToolEnabled("send_file") {
+			sendFileTool := tools.NewSendFileTool(
+				agent.Workspace,
+				cfg.Agents.Defaults.RestrictToWorkspace,
+				cfg.Agents.Defaults.GetMaxMediaSize(),
+				nil,
+			)
+			agent.Tools.Register(sendFileTool)
+		}
+
 		// Skill discovery and installation tools
 		skills_enabled := cfg.Tools.IsToolEnabled("skills")
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
@@ -384,6 +395,13 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 // SetMediaStore injects a MediaStore for media lifecycle management.
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
+
+	// Propagate store to send_file tools in all agents.
+	al.registry.ForEachTool("send_file", func(t tools.Tool) {
+		if sf, ok := t.(*tools.SendFileTool); ok {
+			sf.SetMediaStore(s)
+		}
+	})
 }
 
 // SetTranscriber injects a voice transcriber for agent-level audio transcription.
@@ -1167,7 +1185,7 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			// If tool returned media refs, publish them as outbound media
-			if len(r.result.Media) > 0 && opts.SendResponse {
+			if len(r.result.Media) > 0 {
 				parts := make([]bus.MediaPart, 0, len(r.result.Media))
 				for _, ref := range r.result.Media {
 					part := bus.MediaPart{Ref: ref}
