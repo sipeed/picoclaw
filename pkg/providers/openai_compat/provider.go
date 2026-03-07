@@ -1,6 +1,7 @@
 package openai_compat
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -185,26 +186,68 @@ func (p *Provider) Chat(
 
 	contentType := resp.Header.Get("Content-Type")
 
-	// check if there is an HTTP error (caused by proxy or gateway) or if the response is HTML
-	if resp.StatusCode != http.StatusOK || strings.Contains(strings.ToLower(contentType), "text/html") {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
-		return nil, wrapHTTPResponseError(resp.StatusCode, body, contentType, p.apiBase)
+	// Non-200: read a prefix to tell HTML error page apart from JSON error body.
+	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 256))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response: %w", err)
+		}
+		if looksLikeHTML(body, contentType) {
+			return nil, wrapHTMLResponseError(resp.StatusCode, body, contentType, p.apiBase)
+		}
+		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, responsePreview(body, 128))
 	}
 
-	// directly pass the stream (resp.Body) to the JSON parser without loading everything into memory
-	out, err := parseResponse(resp.Body)
+	// Peek without consuming so the full stream reaches the JSON decoder.
+	reader := bufio.NewReader(resp.Body)
+	prefix, err := reader.Peek(256) // io.EOF/ErrBufferFull are normal; only real errors abort
+	if err != nil && err != io.EOF && err != bufio.ErrBufferFull {
+		return nil, fmt.Errorf("failed to inspect response: %w", err)
+	}
+	if looksLikeHTML(prefix, contentType) {
+		return nil, wrapHTMLResponseError(resp.StatusCode, prefix, contentType, p.apiBase)
+	}
+
+	out, err := parseResponse(reader)
 	if err != nil {
-		// Note: if it fails here, we do not have the full body in memory for HTML inspection,
-		// but having already checked the Content-Type above, the error is genuinely related to JSON parsing.
 		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
 	return out, nil
 }
 
-func wrapHTTPResponseError(statusCode int, body []byte, contentType, apiBase string) error {
+func wrapHTMLResponseError(statusCode int, body []byte, contentType, apiBase string) error {
 	respPreview := responsePreview(body, 128)
 	return fmt.Errorf("API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  Body:   %s", apiBase, contentType, statusCode, respPreview)
+}
+
+func looksLikeHTML(body []byte, contentType string) bool {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "application/xhtml+xml") {
+		return true
+	}
+	prefix := bytes.ToLower(leadingTrimmedPrefix(body, 128))
+	return bytes.HasPrefix(prefix, []byte("<!doctype html")) ||
+		bytes.HasPrefix(prefix, []byte("<html")) ||
+		bytes.HasPrefix(prefix, []byte("<head")) ||
+		bytes.HasPrefix(prefix, []byte("<body"))
+}
+
+func leadingTrimmedPrefix(body []byte, maxLen int) []byte {
+	i := 0
+	for i < len(body) {
+		switch body[i] {
+		case ' ', '\t', '\n', '\r', '\f', '\v':
+			i++
+		default:
+			end := i + maxLen
+			if end > len(body) {
+				end = len(body)
+			}
+			return body[i:end]
+		}
+	}
+	return nil
 }
 
 func responsePreview(body []byte, maxLen int) string {
