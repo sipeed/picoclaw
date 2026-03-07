@@ -12,6 +12,7 @@ import (
 // MockLLMProvider is a test implementation of LLMProvider
 type MockLLMProvider struct {
 	lastOptions map[string]any
+	lastModel   string
 }
 
 func (m *MockLLMProvider) Chat(
@@ -22,6 +23,7 @@ func (m *MockLLMProvider) Chat(
 	options map[string]any,
 ) (*providers.LLMResponse, error) {
 	m.lastOptions = options
+	m.lastModel = model
 	// Find the last user message to generate a response
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {
@@ -298,6 +300,146 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 
 	// The context is used internally; we can't directly test it
 	// but execution success indicates context was handled properly
+}
+
+func TestSubagentManager_ResolveModel(t *testing.T) {
+	provider := &MockLLMProvider{}
+	alwaysValid := func(name string) bool { return true }
+
+	t.Run("uses requested model when valid", func(t *testing.T) {
+		manager := NewSubagentManager(provider, "parent-model", "/tmp/test", nil)
+		manager.SetModelValidator(alwaysValid)
+		model, err := manager.ResolveModel("requested-model")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if model != "requested-model" {
+			t.Errorf("got %q, want %q", model, "requested-model")
+		}
+	})
+
+	t.Run("returns error for invalid requested model", func(t *testing.T) {
+		manager := NewSubagentManager(provider, "parent-model", "/tmp/test", nil)
+		manager.SetModelValidator(func(name string) bool { return name != "bad-model" })
+		_, err := manager.ResolveModel("bad-model")
+		if err == nil {
+			t.Fatal("expected error for invalid model")
+		}
+	})
+
+	t.Run("falls back to subagent default model", func(t *testing.T) {
+		manager := NewSubagentManager(provider, "parent-model", "/tmp/test", nil)
+		manager.SetSubagentDefaultModel("subagent-default")
+		manager.SetModelValidator(alwaysValid)
+		model, err := manager.ResolveModel("")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if model != "subagent-default" {
+			t.Errorf("got %q, want %q", model, "subagent-default")
+		}
+	})
+
+	t.Run("falls back to parent model", func(t *testing.T) {
+		manager := NewSubagentManager(provider, "parent-model", "/tmp/test", nil)
+		manager.SetModelValidator(alwaysValid)
+		model, err := manager.ResolveModel("")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if model != "parent-model" {
+			t.Errorf("got %q, want %q", model, "parent-model")
+		}
+	})
+
+	t.Run("works without validator set (no validation)", func(t *testing.T) {
+		manager := NewSubagentManager(provider, "parent-model", "/tmp/test", nil)
+		model, err := manager.ResolveModel("any-model")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if model != "any-model" {
+			t.Errorf("got %q, want %q", model, "any-model")
+		}
+	})
+}
+
+func TestSubagentTool_Execute_WithModel(t *testing.T) {
+	provider := &MockLLMProvider{}
+	msgBus := bus.NewMessageBus()
+	manager := NewSubagentManager(provider, "parent-model", "/tmp/test", msgBus)
+	manager.SetModelValidator(func(name string) bool {
+		return name == "custom-model" || name == "parent-model"
+	})
+	tool := NewSubagentTool(manager)
+
+	ctx := WithToolContext(context.Background(), "cli", "direct")
+	args := map[string]any{
+		"task":  "Test with custom model",
+		"model": "custom-model",
+	}
+
+	result := tool.Execute(ctx, args)
+	if result.IsError {
+		t.Errorf("Expected success, got error: %s", result.ForLLM)
+	}
+	if provider.lastModel != "custom-model" {
+		t.Errorf("expected model 'custom-model', got %q", provider.lastModel)
+	}
+}
+
+func TestSubagentTool_Execute_WithInvalidModel(t *testing.T) {
+	provider := &MockLLMProvider{}
+	msgBus := bus.NewMessageBus()
+	manager := NewSubagentManager(provider, "parent-model", "/tmp/test", msgBus)
+	manager.SetModelValidator(func(name string) bool {
+		return name == "parent-model"
+	})
+	tool := NewSubagentTool(manager)
+
+	ctx := WithToolContext(context.Background(), "cli", "direct")
+	args := map[string]any{
+		"task":  "Test with bad model",
+		"model": "nonexistent-model",
+	}
+
+	result := tool.Execute(ctx, args)
+	if !result.IsError {
+		t.Error("Expected error for invalid model")
+	}
+	if !strings.Contains(result.ForLLM, "not found in model_list") {
+		t.Errorf("Error should mention model_list, got: %s", result.ForLLM)
+	}
+}
+
+func TestSpawnTool_Parameters_IncludesModel(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
+	tool := NewSpawnTool(manager)
+	params := tool.Parameters()
+	props := params["properties"].(map[string]any)
+	model, ok := props["model"].(map[string]any)
+	if !ok {
+		t.Fatal("model parameter should exist in spawn tool")
+	}
+	if model["type"] != "string" {
+		t.Errorf("model type should be 'string', got: %v", model["type"])
+	}
+}
+
+func TestSubagentTool_Parameters_IncludesModel(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
+	tool := NewSubagentTool(manager)
+	params := tool.Parameters()
+	props := params["properties"].(map[string]any)
+	model, ok := props["model"].(map[string]any)
+	if !ok {
+		t.Fatal("model parameter should exist in subagent tool")
+	}
+	if model["type"] != "string" {
+		t.Errorf("model type should be 'string', got: %v", model["type"])
+	}
 }
 
 // TestSubagentTool_ForUserTruncation verifies long content is truncated for user

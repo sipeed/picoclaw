@@ -14,6 +14,7 @@ type SubagentTask struct {
 	ID            string
 	Task          string
 	Label         string
+	Model         string // model_name override for this task
 	AgentID       string
 	OriginChannel string
 	OriginChatID  string
@@ -23,19 +24,21 @@ type SubagentTask struct {
 }
 
 type SubagentManager struct {
-	tasks          map[string]*SubagentTask
-	mu             sync.RWMutex
-	provider       providers.LLMProvider
-	defaultModel   string
-	bus            *bus.MessageBus
-	workspace      string
-	tools          *ToolRegistry
-	maxIterations  int
-	maxTokens      int
-	temperature    float64
-	hasMaxTokens   bool
-	hasTemperature bool
-	nextID         int
+	tasks                map[string]*SubagentTask
+	mu                   sync.RWMutex
+	provider             providers.LLMProvider
+	defaultModel         string
+	subagentDefaultModel string            // from SubagentsConfig.Model
+	modelValidator       func(string) bool // validates model_name exists
+	bus                  *bus.MessageBus
+	workspace            string
+	tools                *ToolRegistry
+	maxIterations        int
+	maxTokens            int
+	temperature          float64
+	hasMaxTokens         bool
+	hasTemperature       bool
+	nextID               int
 }
 
 func NewSubagentManager(
@@ -65,6 +68,41 @@ func (sm *SubagentManager) SetLLMOptions(maxTokens int, temperature float64) {
 	sm.hasTemperature = true
 }
 
+// SetSubagentDefaultModel sets the default model for subagents from config.
+func (sm *SubagentManager) SetSubagentDefaultModel(model string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.subagentDefaultModel = model
+}
+
+// SetModelValidator sets the function used to validate model names.
+func (sm *SubagentManager) SetModelValidator(validator func(string) bool) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.modelValidator = validator
+}
+
+// ResolveModel resolves the model to use for a subagent task.
+// Priority: requested > subagentDefaultModel > defaultModel (parent).
+func (sm *SubagentManager) ResolveModel(requested string) (string, error) {
+	sm.mu.RLock()
+	validator := sm.modelValidator
+	subDefault := sm.subagentDefaultModel
+	parentModel := sm.defaultModel
+	sm.mu.RUnlock()
+
+	if requested != "" {
+		if validator != nil && !validator(requested) {
+			return "", fmt.Errorf("model %q not found in model_list", requested)
+		}
+		return requested, nil
+	}
+	if subDefault != "" {
+		return subDefault, nil
+	}
+	return parentModel, nil
+}
+
 // SetTools sets the tool registry for subagent execution.
 // If not set, subagent will have access to the provided tools.
 func (sm *SubagentManager) SetTools(tools *ToolRegistry) {
@@ -82,7 +120,7 @@ func (sm *SubagentManager) RegisterTool(tool Tool) {
 
 func (sm *SubagentManager) Spawn(
 	ctx context.Context,
-	task, label, agentID, originChannel, originChatID string,
+	task, label, agentID, model, originChannel, originChatID string,
 	callback AsyncCallback,
 ) (string, error) {
 	sm.mu.Lock()
@@ -95,6 +133,7 @@ func (sm *SubagentManager) Spawn(
 		ID:            taskID,
 		Task:          task,
 		Label:         label,
+		Model:         model,
 		AgentID:       agentID,
 		OriginChannel: originChannel,
 		OriginChatID:  originChatID,
@@ -143,6 +182,19 @@ After completing the task, provide a clear summary of what was done.`
 	default:
 	}
 
+	// Resolve the model for this task
+	resolvedModel, err := sm.ResolveModel(task.Model)
+	if err != nil {
+		sm.mu.Lock()
+		task.Status = "failed"
+		task.Result = err.Error()
+		sm.mu.Unlock()
+		if callback != nil {
+			callback(ctx, ErrorResult(err.Error()))
+		}
+		return
+	}
+
 	// Run tool loop with access to tools
 	sm.mu.RLock()
 	tools := sm.tools
@@ -166,7 +218,7 @@ After completing the task, provide a clear summary of what was done.`
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
 		Provider:      sm.provider,
-		Model:         sm.defaultModel,
+		Model:         resolvedModel,
 		Tools:         tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
@@ -281,6 +333,10 @@ func (t *SubagentTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional short label for the task (for display)",
 			},
+			"model": map[string]any{
+				"type":        "string",
+				"description": "Optional model_name from model_list to use for the subagent",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -293,9 +349,16 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	label, _ := args["label"].(string)
+	model, _ := args["model"].(string)
 
 	if t.manager == nil {
 		return ErrorResult("Subagent manager not configured").WithError(fmt.Errorf("manager is nil"))
+	}
+
+	// Resolve the model before proceeding
+	resolvedModel, err := t.manager.ResolveModel(model)
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("invalid model: %v", err)).WithError(err)
 	}
 
 	// Build messages for subagent
@@ -345,7 +408,7 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
 		Provider:      sm.provider,
-		Model:         sm.defaultModel,
+		Model:         resolvedModel,
 		Tools:         tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
