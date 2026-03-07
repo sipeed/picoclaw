@@ -386,6 +386,7 @@ func DefaultConfig() *Config {
 					Enabled: true,
 				},
 				EnableDenyPatterns: true,
+				TimeoutSeconds:     60,
 			},
 			Skills: SkillsToolsConfig{
 				ToolConfig: ToolConfig{
@@ -402,6 +403,9 @@ func DefaultConfig() *Config {
 					MaxSize:    50,
 					TTLSeconds: 300,
 				},
+			},
+			SendFile: ToolConfig{
+				Enabled: true,
 			},
 			MCP: MCPConfig{
 				ToolConfig: ToolConfig{
