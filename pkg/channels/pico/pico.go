@@ -27,6 +27,7 @@ type picoConn struct {
 	sessionID string
 	writeMu   sync.Mutex
 	closed    atomic.Bool
+	cancel    context.CancelFunc // cancels per-connection goroutines (e.g. pingLoop)
 }
 
 // writeJSON sends a JSON message to the connection with write locking.
@@ -42,6 +43,9 @@ func (pc *picoConn) writeJSON(v any) error {
 // close closes the connection.
 func (pc *picoConn) close() {
 	if pc.closed.CompareAndSwap(false, true) {
+		if pc.cancel != nil {
+			pc.cancel()
+		}
 		pc.conn.Close()
 	}
 }

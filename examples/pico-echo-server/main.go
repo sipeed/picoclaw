@@ -43,8 +43,7 @@ type server struct {
 func (s *server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if s.token != "" {
 		auth := r.Header.Get("Authorization")
-		qtoken := r.URL.Query().Get("token")
-		if auth != "Bearer "+s.token && qtoken != s.token {
+		if auth != "Bearer "+s.token {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -141,22 +140,21 @@ func main() {
 
 	http.HandleFunc("/ws", s.handleWS)
 
+	log.Printf("listening on %s", *addr)
+	log.Printf("connect with: ws://localhost%s/ws", *addr)
+	fmt.Println("Type messages to send to connected clients (Ctrl+C to quit):")
+
 	go func() {
-		log.Printf("listening on %s (token=%q)", *addr, *token)
-		log.Printf("connect with: ws://localhost%s/ws", *addr)
-		if err := http.ListenAndServe(*addr, nil); err != nil {
-			log.Fatal(err)
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			s.broadcast(line)
+			log.Printf("[server] sent: %s", line)
 		}
 	}()
 
-	fmt.Println("Type messages to send to connected clients (Ctrl+C to quit):")
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		s.broadcast(line)
-		log.Printf("[server] sent: %s", line)
-	}
+	log.Fatal(http.ListenAndServe(*addr, nil))
 }

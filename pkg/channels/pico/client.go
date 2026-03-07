@@ -93,10 +93,13 @@ func (c *PicoClientChannel) dial() error {
 		return err
 	}
 
+	connCtx, connCancel := context.WithCancel(c.ctx)
+
 	pc := &picoConn{
 		id:        uuid.New().String(),
 		conn:      ws,
 		sessionID: c.config.SessionID,
+		cancel:    connCancel,
 	}
 	if pc.sessionID == "" {
 		pc.sessionID = uuid.New().String()
@@ -106,7 +109,7 @@ func (c *PicoClientChannel) dial() error {
 	c.conn = pc
 	c.mu.Unlock()
 
-	go c.readLoop(pc)
+	go c.readLoop(connCtx, pc)
 	return nil
 }
 
@@ -148,7 +151,7 @@ func (c *PicoClientChannel) reconnectLoop() {
 	}
 }
 
-func (c *PicoClientChannel) readLoop(pc *picoConn) {
+func (c *PicoClientChannel) readLoop(connCtx context.Context, pc *picoConn) {
 	defer pc.close()
 
 	readTimeout := time.Duration(c.config.ReadTimeout) * time.Second
@@ -165,11 +168,11 @@ func (c *PicoClientChannel) readLoop(pc *picoConn) {
 	if pingInterval <= 0 {
 		pingInterval = 30 * time.Second
 	}
-	go c.pingLoop(pc, pingInterval)
+	go c.pingLoop(connCtx, pc, pingInterval)
 
 	for {
 		select {
-		case <-c.ctx.Done():
+		case <-connCtx.Done():
 			return
 		default:
 		}
@@ -199,12 +202,12 @@ func (c *PicoClientChannel) readLoop(pc *picoConn) {
 	}
 }
 
-func (c *PicoClientChannel) pingLoop(pc *picoConn, interval time.Duration) {
+func (c *PicoClientChannel) pingLoop(connCtx context.Context, pc *picoConn, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-c.ctx.Done():
+		case <-connCtx.Done():
 			return
 		case <-ticker.C:
 			if pc.closed.Load() {
@@ -303,8 +306,14 @@ func (c *PicoClientChannel) StartTyping(ctx context.Context, chatID string) (fun
 		return func() {}, err
 	}
 	return func() {
+		c.mu.Lock()
+		currentPC := c.conn
+		c.mu.Unlock()
+		if currentPC == nil {
+			return
+		}
 		stopMsg := newMessage(TypeTypingStop, nil)
 		stopMsg.SessionID = strings.TrimPrefix(chatID, "pico_client:")
-		pc.writeJSON(stopMsg)
+		currentPC.writeJSON(stopMsg)
 	}, nil
 }
