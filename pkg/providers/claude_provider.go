@@ -4,22 +4,38 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/sipeed/picoclaw/pkg/auth"
 )
 
+// Would change with newer versions
+const oauthBetaHeader = "oauth-2025-04-20"
+
 type ClaudeProvider struct {
 	client      *anthropic.Client
 	tokenSource func() (string, error)
 }
 
-func NewClaudeProvider(token string) *ClaudeProvider {
-	client := anthropic.NewClient(
-		option.WithAuthToken(token),
+func claudeClientOptions(token string) []option.RequestOption {
+	opts := []option.RequestOption{
 		option.WithBaseURL("https://api.anthropic.com"),
-	)
+	}
+	if strings.HasPrefix(strings.TrimSpace(token), "sk-ant-oat") {
+		opts = append(opts,
+			option.WithAuthToken(token),
+			option.WithHeader("anthropic-beta", oauthBetaHeader),
+		)
+	} else {
+		opts = append(opts, option.WithAPIKey(token))
+	}
+	return opts
+}
+
+func NewClaudeProvider(token string) *ClaudeProvider {
+	client := anthropic.NewClient(claudeClientOptions(token)...)
 	return &ClaudeProvider{client: &client}
 }
 
@@ -36,7 +52,7 @@ func (p *ClaudeProvider) Chat(ctx context.Context, messages []Message, tools []T
 		if err != nil {
 			return nil, fmt.Errorf("refreshing token: %w", err)
 		}
-		opts = append(opts, option.WithAuthToken(tok))
+		opts = append(opts, claudeClientOptions(tok)...)
 	}
 
 	params, err := buildClaudeParams(messages, tools, model, options)
