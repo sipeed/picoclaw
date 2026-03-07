@@ -283,6 +283,9 @@ func TestDefaultConfig_Channels(t *testing.T) {
 	if cfg.Channels.Slack.Enabled {
 		t.Error("Slack should be disabled by default")
 	}
+	if cfg.Channels.Matrix.Enabled {
+		t.Error("Matrix should be disabled by default")
+	}
 }
 
 // TestDefaultConfig_WebTools verifies web tools config
