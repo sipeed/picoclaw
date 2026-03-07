@@ -838,7 +838,11 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model": "anthropic/claude-opus-4-5",
+      "summarization": {
+        "message_threshold": 20,
+        "token_percent": 75
+      }
     }
   },
   "providers": {

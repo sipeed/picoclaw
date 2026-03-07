@@ -45,12 +45,11 @@
 > [!CAUTION]
 > **🚨 SECURITY & OFFICIAL CHANNELS / 安全声明**
 >
-> * **NO CRYPTO:** PicoClaw has **NO** official token/coin. All claims on `pump.fun` or other trading platforms are **SCAMS**.
->
-> * **OFFICIAL DOMAIN:** The **ONLY** official website is **[picoclaw.io](https://picoclaw.io)**, and company website is **[sipeed.com](https://sipeed.com)**
-> * **Warning:** Many `.ai/.org/.com/.net/...` domains are registered by third parties.
-> * **Warning:** picoclaw is in early development now and may have unresolved network security issues. Do not deploy to production environments before the v1.0 release.
-> * **Note:** picoclaw has recently merged a lot of PRs, which may result in a larger memory footprint (10–20MB) in the latest versions. We plan to prioritize resource optimization as soon as the current feature set reaches a stable state.
+> - **NO CRYPTO:** PicoClaw has **NO** official token/coin. All claims on `pump.fun` or other trading platforms are **SCAMS**.
+> - **OFFICIAL DOMAIN:** The **ONLY** official website is **[picoclaw.io](https://picoclaw.io)**, and company website is **[sipeed.com](https://sipeed.com)**
+> - **Warning:** Many `.ai/.org/.com/.net/...` domains are registered by third parties.
+> - **Warning:** picoclaw is in early development now and may have unresolved network security issues. Do not deploy to production environments before the v1.0 release.
+> - **Note:** picoclaw has recently merged a lot of PRs, which may result in a larger memory footprint (10–20MB) in the latest versions. We plan to prioritize resource optimization as soon as the current feature set reaches a stable state.
 
 ## 📢 News
 
@@ -234,7 +233,11 @@ picoclaw onboard
       "model_name": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
-      "max_tool_iterations": 20
+      "max_tool_iterations": 20,
+      "summarization": {
+        "message_threshold": 20,
+        "token_percent": 75
+      }
     }
   },
   "model_list": [
@@ -286,13 +289,13 @@ picoclaw onboard
 
 **3. Get API Keys**
 
-* **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-* **Web Search** (optional):
-  * [Brave Search](https://brave.com/search/api) - Paid ($5/1000 queries, ~$5-6/month)
-  * [Perplexity](https://www.perplexity.ai) - AI-powered search with chat interface
-  * [SearXNG](https://github.com/searxng/searxng) - Self-hosted metasearch engine (free, no API key needed)
-  * [Tavily](https://tavily.com) - Optimized for AI Agents (1000 requests/month)
-  * DuckDuckGo - Built-in fallback (no API key required)
+- **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
+- **Web Search** (optional):
+  - [Brave Search](https://brave.com/search/api) - Paid ($5/1000 queries, ~$5-6/month)
+  - [Perplexity](https://www.perplexity.ai) - AI-powered search with chat interface
+  - [SearXNG](https://github.com/searxng/searxng) - Self-hosted metasearch engine (free, no API key needed)
+  - [Tavily](https://tavily.com) - Optimized for AI Agents (1000 requests/month)
+  - DuckDuckGo - Built-in fallback (no API key required)
 
 > **Note**: See `config.example.json` for a complete configuration template.
 
@@ -312,24 +315,24 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or We
 
 > **Note**: All webhook-based channels (LINE, WeCom, etc.) are served on a single shared Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). There are no per-channel ports to configure. Note: Feishu uses WebSocket/SDK mode and does not use the shared HTTP webhook server.
 
-| Channel      | Setup                              |
-| ------------ | ---------------------------------- |
-| **Telegram** | Easy (just a token)                |
-| **Discord**  | Easy (bot token + intents)         |
-| **WhatsApp** | Easy (native: QR scan; or bridge URL) |
-| **QQ**       | Easy (AppID + AppSecret)           |
-| **DingTalk** | Medium (app credentials)           |
-| **LINE**     | Medium (credentials + webhook URL) |
-| **WeCom AI Bot** | Medium (Token + AES key)       |
+| Channel          | Setup                                 |
+| ---------------- | ------------------------------------- |
+| **Telegram**     | Easy (just a token)                   |
+| **Discord**      | Easy (bot token + intents)            |
+| **WhatsApp**     | Easy (native: QR scan; or bridge URL) |
+| **QQ**           | Easy (AppID + AppSecret)              |
+| **DingTalk**     | Medium (app credentials)              |
+| **LINE**         | Medium (credentials + webhook URL)    |
+| **WeCom AI Bot** | Medium (Token + AES key)              |
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
 
 **1. Create a bot**
 
-* Open Telegram, search `@BotFather`
-* Send `/newbot`, follow prompts
-* Copy the token
+- Open Telegram, search `@BotFather`
+- Send `/newbot`, follow prompts
+- Copy the token
 
 **2. Configure**
 
@@ -367,18 +370,19 @@ If command registration fails (network/API transient errors), the channel still 
 
 **1. Create a bot**
 
-* Go to <https://discord.com/developers/applications>
-* Create an application → Bot → Add Bot
-* Copy the bot token
+- Go to <https://discord.com/developers/applications>
+- Create an application → Bot → Add Bot
+- Copy the bot token
 
 **2. Enable intents**
 
-* In the Bot settings, enable **MESSAGE CONTENT INTENT**
-* (Optional) Enable **SERVER MEMBERS INTENT** if you plan to use allow lists based on member data
+- In the Bot settings, enable **MESSAGE CONTENT INTENT**
+- (Optional) Enable **SERVER MEMBERS INTENT** if you plan to use allow lists based on member data
 
 **3. Get your User ID**
-* Discord Settings → Advanced → enable **Developer Mode**
-* Right-click your avatar → **Copy User ID**
+
+- Discord Settings → Advanced → enable **Developer Mode**
+- Right-click your avatar → **Copy User ID**
 
 **4. Configure**
 
@@ -396,10 +400,10 @@ If command registration fails (network/API transient errors), the channel still 
 
 **5. Invite the bot**
 
-* OAuth2 → URL Generator
-* Scopes: `bot`
-* Bot Permissions: `Send Messages`, `Read Message History`
-* Open the generated invite URL and add the bot to your server
+- OAuth2 → URL Generator
+- Scopes: `bot`
+- Bot Permissions: `Send Messages`, `Read Message History`
+- Open the generated invite URL and add the bot to your server
 
 **Optional: Group trigger mode**
 
@@ -500,9 +504,9 @@ picoclaw gateway
 
 **1. Create a bot**
 
-* Go to [Open Platform](https://open.dingtalk.com/)
-* Create an internal app
-* Copy Client ID and Client Secret
+- Go to [Open Platform](https://open.dingtalk.com/)
+- Create an internal app
+- Copy Client ID and Client Secret
 
 **2. Configure**
 
@@ -526,6 +530,7 @@ picoclaw gateway
 ```bash
 picoclaw gateway
 ```
+
 </details>
 
 <details>
@@ -591,8 +596,8 @@ See [WeCom AI Bot Configuration Guide](docs/channels/wecom/wecom_aibot/README.zh
 
 **1. Create a bot**
 
-* Go to WeCom Admin Console → Group Chat → Add Group Bot
-* Copy the webhook URL (format: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+- Go to WeCom Admin Console → Group Chat → Add Group Bot
+- Copy the webhook URL (format: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
 
 **2. Configure**
 
@@ -617,15 +622,15 @@ See [WeCom AI Bot Configuration Guide](docs/channels/wecom/wecom_aibot/README.zh
 
 **1. Create an app**
 
-* Go to WeCom Admin Console → App Management → Create App
-* Copy **AgentId** and **Secret**
-* Go to "My Company" page, copy **CorpID**
+- Go to WeCom Admin Console → App Management → Create App
+- Copy **AgentId** and **Secret**
+- Go to "My Company" page, copy **CorpID**
 
 **2. Configure receive message**
 
-* In App details, click "Receive Message" → "Set API"
-* Set URL to `http://your-server:18790/webhook/wecom-app`
-* Generate **Token** and **EncodingAESKey**
+- In App details, click "Receive Message" → "Set API"
+- Set URL to `http://your-server:18790/webhook/wecom-app`
+- Generate **Token** and **EncodingAESKey**
 
 **3. Configure**
 
@@ -658,9 +663,9 @@ picoclaw gateway
 
 **1. Create an AI Bot**
 
-* Go to WeCom Admin Console → App Management → AI Bot
-* In the AI Bot settings, configure callback URL: `http://your-server:18791/webhook/wecom-aibot`
-* Copy **Token** and click "Random Generate" for **EncodingAESKey**
+- Go to WeCom Admin Console → App Management → AI Bot
+- In the AI Bot settings, configure callback URL: `http://your-server:18791/webhook/wecom-aibot`
+- Copy **Token** and click "Random Generate" for **EncodingAESKey**
 
 **2. Configure**
 
@@ -703,10 +708,10 @@ Config file: `~/.picoclaw/config.json`
 
 You can override default paths using environment variables. This is useful for portable installations, containerized deployments, or running picoclaw as a system service. These variables are independent and control different paths.
 
-| Variable          | Description                                                                                                                             | Default Path              |
-|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| Variable          | Description                                                                                                                           | Default Path              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
 | `PICOCLAW_CONFIG` | Overrides the path to the configuration file. This directly tells picoclaw which `config.json` to load, ignoring all other locations. | `~/.picoclaw/config.json` |
-| `PICOCLAW_HOME`   | Overrides the root directory for picoclaw data. This changes the default location of the `workspace` and other data directories.          | `~/.picoclaw`             |
+| `PICOCLAW_HOME`   | Overrides the root directory for picoclaw data. This changes the default location of the `workspace` and other data directories.      | `~/.picoclaw`             |
 
 **Examples:**
 
@@ -802,12 +807,12 @@ When `restrict_to_workspace: true`, the following tools are sandboxed:
 
 Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous commands:
 
-* `rm -rf`, `del /f`, `rmdir /s` — Bulk deletion
-* `format`, `mkfs`, `diskpart` — Disk formatting
-* `dd if=` — Disk imaging
-* Writing to `/dev/sd[a-z]` — Direct disk writes
-* `shutdown`, `reboot`, `poweroff` — System shutdown
-* Fork bomb `:(){ :|:& };:`
+- `rm -rf`, `del /f`, `rmdir /s` — Bulk deletion
+- `format`, `mkfs`, `diskpart` — Disk formatting
+- `dd if=` — Disk imaging
+- Writing to `/dev/sd[a-z]` — Direct disk writes
+- `shutdown`, `reboot`, `poweroff` — System shutdown
+- Fork bomb `:(){ :|:& };:`
 
 #### Error Examples
 
@@ -933,8 +938,8 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 
 **Environment variables:**
 
-* `PICOCLAW_HEARTBEAT_ENABLED=false` to disable
-* `PICOCLAW_HEARTBEAT_INTERVAL=60` to change interval
+- `PICOCLAW_HEARTBEAT_ENABLED=false` to disable
+- `PICOCLAW_HEARTBEAT_INTERVAL=60` to change interval
 
 ### Providers
 
@@ -967,7 +972,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 #### 📋 All Supported Vendors
 
 | Vendor              | `model` Prefix    | Default API Base                                    | Protocol  | API Key                                                          |
-| ------------------- | ----------------- |-----------------------------------------------------| --------- | ---------------------------------------------------------------- |
+| ------------------- | ----------------- | --------------------------------------------------- | --------- | ---------------------------------------------------------------- |
 | **OpenAI**          | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
 | **Anthropic**       | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**   | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
@@ -979,7 +984,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
 | **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
 | **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
-| **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1                           | OpenAI    | Your LiteLLM proxy key                                            |
+| **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1                           | OpenAI    | Your LiteLLM proxy key                                           |
 | **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
 | **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://console.volcengine.com)                        |
@@ -1176,7 +1181,7 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
 
 **1. Get API key and base URL**
 
-* Get [API key](https://bigmodel.cn/usercenter/proj-mgmt/apikeys)
+- Get [API key](https://bigmodel.cn/usercenter/proj-mgmt/apikeys)
 
 **2. Configure**
 
@@ -1215,7 +1220,11 @@ picoclaw agent -m "Hello"
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model": "anthropic/claude-opus-4-5",
+      "summarization": {
+        "message_threshold": 20,
+        "token_percent": 75
+      }
     }
   },
   "session": {
@@ -1314,9 +1323,9 @@ picoclaw agent -m "Hello"
 
 PicoClaw supports scheduled reminders and recurring tasks through the `cron` tool:
 
-* **One-time reminders**: "Remind me in 10 minutes" → triggers once after 10min
-* **Recurring tasks**: "Remind me every 2 hours" → triggers every 2 hours
-* **Cron expressions**: "Remind me at 9am daily" → uses cron expression
+- **One-time reminders**: "Remind me in 10 minutes" → triggers once after 10min
+- **Recurring tasks**: "Remind me every 2 hours" → triggers every 2 hours
+- **Cron expressions**: "Remind me at 9am daily" → uses cron expression
 
 Jobs are stored in `~/.picoclaw/workspace/cron/` and processed automatically.
 
@@ -1343,6 +1352,7 @@ This is normal if you haven't configured a search API key yet. PicoClaw will pro
 #### Search Provider Priority
 
 PicoClaw automatically selects the best available search provider in this order:
+
 1. **Perplexity** (if enabled and API key configured) - AI-powered search with citations
 2. **Brave Search** (if enabled and API key configured) - Privacy-focused paid API ($5/1000 queries)
 3. **SearXNG** (if enabled and base_url configured) - Self-hosted metasearch aggregating 70+ engines (free)
@@ -1351,6 +1361,7 @@ PicoClaw automatically selects the best available search provider in this order:
 #### Web Search Configuration Options
 
 **Option 1 (Best Results)**: Perplexity AI Search
+
 ```json
 {
   "tools": {
@@ -1366,6 +1377,7 @@ PicoClaw automatically selects the best available search provider in this order:
 ```
 
 **Option 2 (Paid API)**: Get an API key at [https://brave.com/search/api](https://brave.com/search/api) ($5/1000 queries, ~$5-6/month)
+
 ```json
 {
   "tools": {
@@ -1381,6 +1393,7 @@ PicoClaw automatically selects the best available search provider in this order:
 ```
 
 **Option 3 (Self-Hosted)**: Deploy your own [SearXNG](https://github.com/searxng/searxng) instance
+
 ```json
 {
   "tools": {
@@ -1396,6 +1409,7 @@ PicoClaw automatically selects the best available search provider in this order:
 ```
 
 Benefits of SearXNG:
+
 - **Zero cost**: No API fees or rate limits
 - **Privacy-focused**: Self-hosted, no tracking
 - **Aggregate results**: Queries 70+ search engines simultaneously
@@ -1446,11 +1460,11 @@ This happens when another instance of the bot is running. Make sure only one `pi
 
 ## 📝 API Key Comparison
 
-| Service          | Free Tier                | Use Case                              |
-| ---------------- | ------------------------ | ------------------------------------- |
-| **OpenRouter**   | 200K tokens/month        | Multiple models (Claude, GPT-4, etc.) |
-| **Zhipu**        | 200K tokens/month        | Best for Chinese users                |
-| **Brave Search** | Paid ($5/1000 queries)   | Web search functionality              |
-| **SearXNG**      | Unlimited (self-hosted)  | Privacy-focused metasearch (70+ engines) |
-| **Groq**         | Free tier available      | Fast inference (Llama, Mixtral)       |
-| **Cerebras**     | Free tier available      | Fast inference (Llama, Qwen, etc.)    |
+| Service          | Free Tier               | Use Case                                 |
+| ---------------- | ----------------------- | ---------------------------------------- |
+| **OpenRouter**   | 200K tokens/month       | Multiple models (Claude, GPT-4, etc.)    |
+| **Zhipu**        | 200K tokens/month       | Best for Chinese users                   |
+| **Brave Search** | Paid ($5/1000 queries)  | Web search functionality                 |
+| **SearXNG**      | Unlimited (self-hosted) | Privacy-focused metasearch (70+ engines) |
+| **Groq**         | Free tier available     | Fast inference (Llama, Mixtral)          |
+| **Cerebras**     | Free tier available     | Fast inference (Llama, Qwen, etc.)       |

@@ -18,25 +18,22 @@ import (
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
-	ID                        string
-	Name                      string
-	Model                     string
-	Fallbacks                 []string
-	Workspace                 string
-	MaxIterations             int
-	MaxTokens                 int
-	Temperature               float64
-	ThinkingLevel             ThinkingLevel
-	ContextWindow             int
-	SummarizeMessageThreshold int
-	SummarizeTokenPercent     int
-	Provider                  providers.LLMProvider
-	Sessions                  *session.SessionManager
-	ContextBuilder            *ContextBuilder
-	Tools                     *tools.ToolRegistry
-	Subagents                 *config.SubagentsConfig
-	SkillsFilter              []string
-	Candidates                []providers.FallbackCandidate
+	ID             string
+	Name           string
+	Model          string
+	Fallbacks      []string
+	Workspace      string
+	MaxIterations  int
+	MaxTokens      int
+	Temperature    float64
+	ThinkingLevel  ThinkingLevel
+	Provider       providers.LLMProvider
+	Sessions       *session.SessionManager
+	ContextBuilder *ContextBuilder
+	Tools          *tools.ToolRegistry
+	Subagents      *config.SubagentsConfig
+	SkillsFilter   []string
+	Candidates     []providers.FallbackCandidate
 
 	// Router is non-nil when model routing is configured and the light model
 	// was successfully resolved. It scores each incoming message and decides
@@ -94,7 +91,6 @@ func NewAgentInstance(
 	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
-	sessionsManager := session.NewSessionManager(sessionsDir)
 
 	contextBuilder := NewContextBuilder(workspace)
 
@@ -130,16 +126,6 @@ func NewAgentInstance(
 		thinkingLevelStr = mc.ThinkingLevel
 	}
 	thinkingLevel := parseThinkingLevel(thinkingLevelStr)
-
-	summarizeMessageThreshold := defaults.SummarizeMessageThreshold
-	if summarizeMessageThreshold == 0 {
-		summarizeMessageThreshold = 20
-	}
-
-	summarizeTokenPercent := defaults.SummarizeTokenPercent
-	if summarizeTokenPercent == 0 {
-		summarizeTokenPercent = 75
-	}
 
 	// Resolve fallback candidates
 	modelCfg := providers.ModelConfig{
@@ -207,28 +193,33 @@ func NewAgentInstance(
 		}
 	}
 
+	sc := defaults.GetSummarization()
+	if sc.ContextWindow == 0 {
+		sc.ContextWindow = maxTokens
+	}
+	sessionsManager := session.NewSessionManager(sessionsDir, session.WithLLMSummarizer(
+		provider, model, agentID, sc,
+	))
+
 	return &AgentInstance{
-		ID:                        agentID,
-		Name:                      agentName,
-		Model:                     model,
-		Fallbacks:                 fallbacks,
-		Workspace:                 workspace,
-		MaxIterations:             maxIter,
-		MaxTokens:                 maxTokens,
-		Temperature:               temperature,
-		ThinkingLevel:             thinkingLevel,
-		ContextWindow:             maxTokens,
-		SummarizeMessageThreshold: summarizeMessageThreshold,
-		SummarizeTokenPercent:     summarizeTokenPercent,
-		Provider:                  provider,
-		Sessions:                  sessionsManager,
-		ContextBuilder:            contextBuilder,
-		Tools:                     toolsRegistry,
-		Subagents:                 subagents,
-		SkillsFilter:              skillsFilter,
-		Candidates:                candidates,
-		Router:                    router,
-		LightCandidates:           lightCandidates,
+		ID:              agentID,
+		Name:            agentName,
+		Model:           model,
+		Fallbacks:       fallbacks,
+		Workspace:       workspace,
+		MaxIterations:   maxIter,
+		MaxTokens:       maxTokens,
+		Temperature:     temperature,
+		ThinkingLevel:   thinkingLevel,
+		Provider:        provider,
+		Sessions:        sessionsManager,
+		ContextBuilder:  contextBuilder,
+		Tools:           toolsRegistry,
+		Subagents:       subagents,
+		SkillsFilter:    skillsFilter,
+		Candidates:      candidates,
+		Router:          router,
+		LightCandidates: lightCandidates,
 	}
 }
 
