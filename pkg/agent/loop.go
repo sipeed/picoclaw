@@ -438,6 +438,8 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 		transcriptions = append(transcriptions, result.Text)
 	}
 
+	al.sendTranscriptionFeedback(msg.Channel, msg.ChatID, msg.MessageID, transcriptions)
+
 	if len(transcriptions) == 0 {
 		return msg
 	}
@@ -460,6 +462,37 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 
 	msg.Content = newContent
 	return msg
+}
+
+// sendTranscriptionFeedback Asynchronously sends feedback to the user
+// with the result of audio transcription if the option is enabled.
+func (al *AgentLoop) sendTranscriptionFeedback(channel, chatID string, messageID string, validTexts []string) {
+	if !al.cfg.Voice.EchoTranscription {
+		return
+	}
+
+	go func() {
+		pubCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		var feedbackMsg string
+		if len(validTexts) > 0 {
+			feedbackMsg = "Transcript: " + strings.Join(validTexts, "\n")
+		} else {
+			feedbackMsg = "No voice detected in the audio"
+		}
+
+		err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+			Channel:          channel,
+			ChatID:           chatID,
+			Content:          feedbackMsg,
+			ReplyToMessageID: messageID,
+			SkipPlaceholder:  true, // It serves to avoid consuming the message "Thinking..."
+		})
+		if err != nil {
+			logger.WarnCF("voice", "Failed to send transcription feedback", map[string]any{"error": err.Error()})
+		}
+	}()
 }
 
 // inferMediaType determines the media type ("image", "audio", "video", "file")
@@ -763,6 +796,15 @@ func (al *AgentLoop) runAgentLoop(
 
 	// 2. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+
+	// thinking message only for channels, not for background tasks
+	if opts.Channel != "" && opts.ChatID != "" && !constants.IsInternalChannel(opts.Channel) && !opts.NoHistory {
+		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+			Channel:            opts.Channel,
+			ChatID:             opts.ChatID,
+			TriggerPlaceholder: true,
+		})
+	}
 
 	// 3. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)

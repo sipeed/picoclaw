@@ -461,5 +461,8 @@ func DefaultConfig() *Config {
 			Enabled:    false,
 			MonitorUSB: true,
 		},
+		Voice: VoiceConfig{
+			EchoTranscription: false,
+		},
 	}
 }

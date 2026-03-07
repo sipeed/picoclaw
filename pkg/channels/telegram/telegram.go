@@ -179,6 +179,14 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
 
+	if msg.ReplyToMessageID != "" {
+		if mid, err := strconv.Atoi(msg.ReplyToMessageID); err == nil {
+			tgMsg.ReplyParameters = &telego.ReplyParameters{
+				MessageID: mid,
+			}
+		}
+	}
+
 	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
 		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
 			"error": err.Error(),
