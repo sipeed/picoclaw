@@ -222,6 +222,34 @@ func registerSharedTools(
 			if cfg.Tools.IsToolEnabled("subagent") {
 				subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
 				subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+
+				// Register essential tools for subagent execution
+				// These tools allow subagents to perform file operations and execute commands
+				if cfg.Tools.IsToolEnabled("exec") {
+					execTool, err := tools.NewExecTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace)
+					if err != nil {
+						logger.WarnCF("agent", "Failed to create exec tool for subagent",
+							map[string]any{"error": err.Error()})
+					} else {
+						subagentManager.RegisterTool(execTool)
+					}
+				}
+				if cfg.Tools.IsToolEnabled("read_file") {
+					subagentManager.RegisterTool(tools.NewReadFileTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+				}
+				if cfg.Tools.IsToolEnabled("write_file") {
+					subagentManager.RegisterTool(tools.NewWriteFileTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+				}
+				if cfg.Tools.IsToolEnabled("list_dir") {
+					subagentManager.RegisterTool(tools.NewListDirTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+				}
+				if cfg.Tools.IsToolEnabled("append_file") {
+					subagentManager.RegisterTool(tools.NewAppendFileTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+				}
+				if cfg.Tools.IsToolEnabled("edit_file") {
+					subagentManager.RegisterTool(tools.NewEditFileTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+				}
+
 				spawnTool := tools.NewSpawnTool(subagentManager)
 				currentAgentID := agentID
 				spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {

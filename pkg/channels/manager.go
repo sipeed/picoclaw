@@ -267,6 +267,11 @@ func (m *Manager) initChannels() error {
 		m.initChannel("pico", "Pico")
 	}
 
+
+	if m.config.Channels.Imessage.Enabled {
+		m.initChannel("imessage", "Imessage")
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})
