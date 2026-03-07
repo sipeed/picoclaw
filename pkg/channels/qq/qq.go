@@ -53,17 +53,13 @@ type QQChannel struct {
 	muDedup sync.Mutex
 
 	// done is closed on Stop to shut down the dedup janitor.
-	done chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
-	maxLen := cfg.MaxMessageLength
-	if maxLen == 0 {
-		maxLen = 2000
-	}
-
 	base := channels.NewBaseChannel("qq", cfg, messageBus, cfg.AllowFrom,
-		channels.WithMaxMessageLength(maxLen),
+		channels.WithMaxMessageLength(cfg.MaxMessageLength),
 		channels.WithGroupTrigger(cfg.GroupTrigger),
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
@@ -82,6 +78,10 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	}
 
 	logger.InfoC("qq", "Starting QQ bot (WebSocket mode)")
+
+	// Reinitialize shutdown signal for clean restart.
+	c.done = make(chan struct{})
+	c.stopOnce = sync.Once{}
 
 	// create token source
 	credentials := &token.QQBotCredentials{
@@ -143,8 +143,8 @@ func (c *QQChannel) Stop(ctx context.Context) error {
 	logger.InfoC("qq", "Stopping QQ bot")
 	c.SetRunning(false)
 
-	// Signal the dedup janitor to stop.
-	close(c.done)
+	// Signal the dedup janitor to stop (idempotent).
+	c.stopOnce.Do(func() { close(c.done) })
 
 	if c.cancel != nil {
 		c.cancel()
@@ -153,18 +153,22 @@ func (c *QQChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
+// getChatKind returns the chat type for a given chatID ("group" or "direct").
+func (c *QQChannel) getChatKind(chatID string) string {
+	if v, ok := c.chatType.Load(chatID); ok {
+		if k, ok := v.(string); ok {
+			return k
+		}
+	}
+	return "direct"
+}
+
 func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
 	}
 
-	// Determine chat type (fallback to "direct" if not tracked).
-	chatKind := "direct"
-	if v, ok := c.chatType.Load(msg.ChatID); ok {
-		if k, ok := v.(string); ok {
-			chatKind = k
-		}
-	}
+	chatKind := c.getChatKind(msg.ChatID)
 
 	// Build message with content.
 	msgToCreate := &dto.MessageToCreate{
@@ -241,12 +245,7 @@ func (c *QQChannel) StartTyping(ctx context.Context, chatID string) (func(), err
 		return func() {}, nil
 	}
 
-	chatKind := "direct"
-	if kv, ok := c.chatType.Load(chatID); ok {
-		if k, ok := kv.(string); ok {
-			chatKind = k
-		}
-	}
+	chatKind := c.getChatKind(chatID)
 
 	sendTyping := func(sendCtx context.Context) {
 		typingMsg := &dto.MessageToCreate{
@@ -273,9 +272,9 @@ func (c *QQChannel) StartTyping(ctx context.Context, chatID string) (func(), err
 	}
 
 	// Send immediately.
-	sendTyping(ctx)
+	sendTyping(c.ctx)
 
-	typingCtx, cancel := context.WithCancel(ctx)
+	typingCtx, cancel := context.WithCancel(c.ctx)
 	go func() {
 		ticker := time.NewTicker(typingResend)
 		defer ticker.Stop()
@@ -301,12 +300,7 @@ func (c *QQChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage)
 		return channels.ErrNotRunning
 	}
 
-	chatKind := "direct"
-	if v, ok := c.chatType.Load(msg.ChatID); ok {
-		if k, ok := v.(string); ok {
-			chatKind = k
-		}
-	}
+	chatKind := c.getChatKind(msg.ChatID)
 
 	store := c.GetMediaStore()
 	if store == nil {
@@ -406,8 +400,7 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		c.lastMsgID.Store(senderID, data.ID)
 
 		// Reset msg_seq counter for new inbound message.
-		var counter atomic.Uint64
-		c.msgSeqCounters.Store(senderID, &counter)
+		c.msgSeqCounters.Store(senderID, new(atomic.Uint64))
 
 		metadata := map[string]string{}
 
@@ -478,8 +471,7 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		c.lastMsgID.Store(data.GroupID, data.ID)
 
 		// Reset msg_seq counter for new inbound message.
-		var counter atomic.Uint64
-		c.msgSeqCounters.Store(data.GroupID, &counter)
+		c.msgSeqCounters.Store(data.GroupID, new(atomic.Uint64))
 
 		metadata := map[string]string{
 			"group_id": data.GroupID,
@@ -533,12 +525,17 @@ func (c *QQChannel) dedupJanitor() {
 		case <-c.done:
 			return
 		case <-ticker.C:
+			// Collect expired keys under read-like scan.
 			c.muDedup.Lock()
 			now := time.Now()
+			var expired []string
 			for id, ts := range c.dedup {
 				if now.Sub(ts) >= dedupTTL {
-					delete(c.dedup, id)
+					expired = append(expired, id)
 				}
+			}
+			for _, id := range expired {
+				delete(c.dedup, id)
 			}
 			c.muDedup.Unlock()
 		}
@@ -550,10 +547,12 @@ func isHTTPURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
-// urlPattern matches URLs like http(s)://domain.tld/path and bare domain.tld/path patterns.
+// urlPattern matches URLs with explicit http(s):// scheme.
+// Only scheme-prefixed URLs are matched to avoid false positives on bare text
+// like version numbers (e.g., "1.2.3") or domain-like fragments.
 var urlPattern = regexp.MustCompile(
 	`(?i)` +
-		`(?:https?://)?` + // optional scheme
+		`https?://` + // required scheme
 		`(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+` + // domain parts
 		`[a-zA-Z]{2,}` + // TLD
 		`(?:[/?#]\S*)?`, // optional path/query/fragment
@@ -563,14 +562,10 @@ var urlPattern = regexp.MustCompile(
 // to prevent QQ's URL blacklist from rejecting the message.
 func sanitizeURLs(text string) string {
 	return urlPattern.ReplaceAllStringFunc(text, func(match string) string {
-		// Split into scheme + rest.
-		var scheme, rest string
-		if idx := strings.Index(match, "://"); idx != -1 {
-			scheme = match[:idx+3]
-			rest = match[idx+3:]
-		} else {
-			rest = match
-		}
+		// Split into scheme + rest (scheme is always present).
+		idx := strings.Index(match, "://")
+		scheme := match[:idx+3]
+		rest := match[idx+3:]
 
 		// Find where the domain ends (first / ? or #).
 		domainEnd := len(rest)
