@@ -488,18 +488,56 @@ func TestShellTool_QuotedAndFlagPathsBlocked(t *testing.T) {
 		t.Fatalf("unable to configure exec tool: %s", err)
 	}
 
-	// Paths with single quotes or after short flags should be blocked.
+	// Paths with single quotes should be blocked.
 	blocked := []string{
 		"cat '/etc/passwd'",
+		"cat '/etc/shadow'",
+		"cat '/root/.ssh/id_rsa'",
+		"ls '/home/user'",
+		"rm '/tmp/file'",
+		"cat '/proc/self/environ'",
+		// Double quoted paths
 		"cat \"/etc/passwd\"",
+		"cat \"/etc/shadow\"",
+		"cat \"/root/.ssh/id_rsa\"",
+		// Short flag without space
 		"curl -o/tmp/file https://example.com",
 		"tar -C/etc -xf archive.tar",
+		"ls -l/usr/bin",
+		"cat -n/etc/hosts",
 	}
 
 	for _, cmd := range blocked {
 		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
 		if !result.IsError {
 			t.Errorf("command with path outside workspace should be blocked: %s", cmd)
+		}
+	}
+}
+
+// TestShellTool_QuotedPathsInWorkspace verifies that quoted paths inside
+// workspace are allowed.
+func TestShellTool_QuotedPathsInWorkspace(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// Quoted relative paths inside workspace should be allowed.
+	allowed := []string{
+		"cat './file.txt'",
+		"cat \"./file.txt\"",
+		"cat './subdir/file.txt'",
+		"cat \"./subdir/file.txt\"",
+		"ls './'",
+		"ls \"./\"",
+	}
+
+	for _, cmd := range allowed {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("command with quoted relative path should not be blocked: %s\n  error: %s", cmd, result.ForLLM)
 		}
 	}
 }
