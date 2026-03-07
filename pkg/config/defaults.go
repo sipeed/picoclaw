@@ -80,10 +80,11 @@ func DefaultConfig() *Config {
 				AllowFrom: FlexibleStringSlice{},
 			},
 			QQ: QQConfig{
-				Enabled:   false,
-				AppID:     "",
-				AppSecret: "",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:          false,
+				AppID:            "",
+				AppSecret:        "",
+				AllowFrom:        FlexibleStringSlice{},
+				MaxMessageLength: 2000,
 			},
 			DingTalk: DingTalkConfig{
 				Enabled:      false,
