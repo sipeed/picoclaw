@@ -16,7 +16,6 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
 	_ "github.com/sipeed/picoclaw/pkg/channels/discord"
 	_ "github.com/sipeed/picoclaw/pkg/channels/feishu"
-	_ "github.com/sipeed/picoclaw/pkg/channels/irc"
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
 	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
@@ -31,6 +30,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/devices"
 	"github.com/sipeed/picoclaw/pkg/health"
+	"github.com/sipeed/picoclaw/pkg/dashboard"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
@@ -181,6 +181,10 @@ func gatewayCmd(debug bool) error {
 	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
 	channelManager.SetupHTTPServer(addr, healthServer)
+
+	dashServer := dashboard.NewServer(cfg, cronService, internal.GetConfigPath())
+	dashServer.RegisterOnMux(channelManager.Mux())
+	fmt.Printf("✓ Dashboard available at http://%s:%d/dashboard\n", cfg.Gateway.Host, cfg.Gateway.Port)
 
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
