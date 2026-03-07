@@ -72,10 +72,7 @@ func (b *JSONLBackend) TruncateHistory(key string, keepLast int) {
 // immediately, the data is already durable. Save runs compaction to reclaim
 // space from logically truncated messages (no-op when there are none).
 func (b *JSONLBackend) Save(key string) error {
-	if err := b.store.Compact(context.Background(), key); err != nil {
-		log.Printf("session: compact %s: %v", key, err)
-	}
-	return nil
+	return b.store.Compact(context.Background(), key)
 }
 
 // Close releases resources held by the underlying store.
