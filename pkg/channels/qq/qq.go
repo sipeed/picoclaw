@@ -26,6 +26,7 @@ import (
 const (
 	dedupTTL      = 5 * time.Minute
 	dedupInterval = 60 * time.Second
+	dedupMaxSize  = 10000 // hard cap on dedup map entries
 	typingResend  = 8 * time.Second
 	typingSeconds = 10
 )
@@ -133,6 +134,12 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	// start dedup janitor goroutine
 	go c.dedupJanitor()
 
+	// Pre-register reasoning_channel_id as group chat if configured,
+	// so outbound-only destinations are routed correctly.
+	if c.config.ReasoningChannelID != "" {
+		c.chatType.Store(c.config.ReasoningChannelID, "group")
+	}
+
 	c.SetRunning(true)
 	logger.InfoC("qq", "QQ bot started successfully")
 
@@ -154,13 +161,18 @@ func (c *QQChannel) Stop(ctx context.Context) error {
 }
 
 // getChatKind returns the chat type for a given chatID ("group" or "direct").
+// Unknown chatIDs default to "group" and log a warning, since QQ group IDs are
+// more common as outbound-only destinations (e.g. reasoning_channel_id).
 func (c *QQChannel) getChatKind(chatID string) string {
 	if v, ok := c.chatType.Load(chatID); ok {
 		if k, ok := v.(string); ok {
 			return k
 		}
 	}
-	return "direct"
+	logger.DebugCF("qq", "Unknown chat type for chatID, defaulting to group", map[string]any{
+		"chat_id": chatID,
+	})
+	return "group"
 }
 
 func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
@@ -292,9 +304,9 @@ func (c *QQChannel) StartTyping(ctx context.Context, chatID string) (func(), err
 }
 
 // SendMedia implements the channels.MediaSender interface.
-// It sends rich media (images, videos, audio, files) via QQ RichMediaMessage.
-// Note: RichMediaMessage requires an HTTP/HTTPS URL. Local-only files are skipped
-// with a warning since QQ API does not accept local file paths.
+// QQ RichMediaMessage requires an HTTP/HTTPS URL — local file paths are not supported.
+// If part.Ref is already an http(s) URL it is used directly; otherwise we try
+// the media store, and skip with a warning if the resolved path is not an HTTP URL.
 func (c *QQChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
@@ -302,29 +314,37 @@ func (c *QQChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage)
 
 	chatKind := c.getChatKind(msg.ChatID)
 
-	store := c.GetMediaStore()
-	if store == nil {
-		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
-	}
-
 	for _, part := range msg.Parts {
-		localPath, err := store.Resolve(part.Ref)
-		if err != nil {
-			logger.ErrorCF("qq", "Failed to resolve media ref", map[string]any{
-				"ref":   part.Ref,
-				"error": err.Error(),
-			})
-			continue
-		}
+		// If the ref is already an HTTP(S) URL, use it directly.
+		mediaURL := part.Ref
+		if !isHTTPURL(mediaURL) {
+			// Try resolving through media store.
+			store := c.GetMediaStore()
+			if store == nil {
+				logger.WarnCF("qq", "QQ media requires HTTP/HTTPS URL, no media store available", map[string]any{
+					"ref": part.Ref,
+				})
+				continue
+			}
 
-		// QQ RichMediaMessage requires an HTTP/HTTPS URL.
-		// If the resolved path is a local file, skip with a warning.
-		if !isHTTPURL(localPath) {
-			logger.WarnCF("qq", "QQ media requires HTTP/HTTPS URL, skipping local file", map[string]any{
-				"ref":  part.Ref,
-				"path": localPath,
-			})
-			continue
+			resolved, err := store.Resolve(part.Ref)
+			if err != nil {
+				logger.ErrorCF("qq", "Failed to resolve media ref", map[string]any{
+					"ref":   part.Ref,
+					"error": err.Error(),
+				})
+				continue
+			}
+
+			if !isHTTPURL(resolved) {
+				logger.WarnCF("qq", "QQ media requires HTTP/HTTPS URL, local files not supported", map[string]any{
+					"ref":      part.Ref,
+					"resolved": resolved,
+				})
+				continue
+			}
+
+			mediaURL = resolved
 		}
 
 		// Map part type to QQ file type: 1=image, 2=video, 3=audio, 4=file.
@@ -342,7 +362,7 @@ func (c *QQChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage)
 
 		richMedia := &dto.RichMediaMessage{
 			FileType:   fileType,
-			URL:        localPath,
+			URL:        mediaURL,
 			SrvSendMsg: true,
 		}
 
@@ -503,12 +523,28 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 }
 
 // isDuplicate checks whether a message has been seen within the TTL window.
+// It also enforces a hard cap on map size by evicting oldest entries.
 func (c *QQChannel) isDuplicate(messageID string) bool {
 	c.muDedup.Lock()
 	defer c.muDedup.Unlock()
 
 	if ts, exists := c.dedup[messageID]; exists && time.Since(ts) < dedupTTL {
 		return true
+	}
+
+	// Enforce hard cap: evict oldest entries when at capacity.
+	if len(c.dedup) >= dedupMaxSize {
+		var oldestID string
+		var oldestTS time.Time
+		for id, ts := range c.dedup {
+			if oldestID == "" || ts.Before(oldestTS) {
+				oldestID = id
+				oldestTS = ts
+			}
+		}
+		if oldestID != "" {
+			delete(c.dedup, oldestID)
+		}
 	}
 
 	c.dedup[messageID] = time.Now()
