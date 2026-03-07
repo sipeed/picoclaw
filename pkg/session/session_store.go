@@ -15,4 +15,5 @@ type SessionStore interface {
 	SetHistory(key string, history []providers.Message)
 	TruncateHistory(key string, keepLast int)
 	Save(key string) error
+	Close() error
 }
