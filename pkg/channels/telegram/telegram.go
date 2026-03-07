@@ -168,7 +168,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return channels.ErrNotRunning
 	}
 
-	chatID, err := parseChatID(msg.ChatID)
+	chatID, threadID, err := parseChatIDWithThread(msg.ChatID)
 	if err != nil {
 		return fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
@@ -178,6 +178,14 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	// Typing/placeholder handled by Manager.preSend — just send the message
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
+	logger.InfoCF("telegram", "DEBUG send info", map[string]any{
+		"raw_chat_id": msg.ChatID,
+		"parsed_chat_id": chatID,
+		"parsed_thread_id": threadID,
+	})
+	if threadID != 0 {
+		tgMsg.MessageThreadID = threadID
+	}
 
 	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
 		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
@@ -197,7 +205,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 // (Telegram's typing indicator expires after ~5s) in a background goroutine.
 // The returned stop function is idempotent and cancels the goroutine.
 func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
-	cid, err := parseChatID(chatID)
+	cid, _, err := parseChatIDWithThread(chatID)
 	if err != nil {
 		return func() {}, err
 	}
@@ -224,7 +232,7 @@ func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(
 
 // EditMessage implements channels.MessageEditor.
 func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
-	cid, err := parseChatID(chatID)
+	cid, _, err := parseChatIDWithThread(chatID)
 	if err != nil {
 		return err
 	}
@@ -253,12 +261,16 @@ func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (s
 		text = "Thinking... 💭"
 	}
 
-	cid, err := parseChatID(chatID)
+	cid, tid, err := parseChatIDWithThread(chatID)
 	if err != nil {
 		return "", err
 	}
 
-	pMsg, err := c.bot.SendMessage(ctx, tu.Message(tu.ID(cid), text))
+	phMsg := tu.Message(tu.ID(cid), text)
+	if tid != 0 {
+		phMsg.MessageThreadID = tid
+	}
+	pMsg, err := c.bot.SendMessage(ctx, phMsg)
 	if err != nil {
 		return "", err
 	}
@@ -272,7 +284,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 		return channels.ErrNotRunning
 	}
 
-	chatID, err := parseChatID(msg.ChatID)
+	chatID, _, err := parseChatIDWithThread(msg.ChatID)
 	if err != nil {
 		return fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
@@ -380,6 +392,15 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	mediaPaths := []string{}
 
 	chatIDStr := fmt.Sprintf("%d", chatID)
+	logger.InfoCF("telegram", "DEBUG message info", map[string]any{
+		"chat_id": chatID,
+		"message_thread_id": message.MessageThreadID,
+		"chat_type": message.Chat.Type,
+		"is_topic_message": message.IsTopicMessage,
+	})
+	if message.MessageThreadID != 0 {
+		chatIDStr = fmt.Sprintf("%d|%d", chatID, message.MessageThreadID)
+	}
 	messageIDStr := fmt.Sprintf("%d", message.MessageID)
 	scope := channels.BuildMediaScope("telegram", chatIDStr, messageIDStr)
 
@@ -500,7 +521,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		peer,
 		messageID,
 		platformID,
-		fmt.Sprintf("%d", chatID),
+		chatIDStr,
 		content,
 		mediaPaths,
 		metadata,
@@ -746,4 +767,18 @@ func (c *TelegramChannel) stripBotMention(content string) string {
 	re := regexp.MustCompile(`(?i)@` + regexp.QuoteMeta(botUsername))
 	content = re.ReplaceAllString(content, "")
 	return strings.TrimSpace(content)
+}
+
+func parseChatIDWithThread(chatIDStr string) (int64, int, error) {
+	parts := strings.SplitN(chatIDStr, "|", 2)
+	var id int64
+	_, err := fmt.Sscanf(parts[0], "%d", &id)
+	if err != nil {
+		return 0, 0, err
+	}
+	threadID := 0
+	if len(parts) == 2 {
+		fmt.Sscanf(parts[1], "%d", &threadID)
+	}
+	return id, threadID, nil
 }
