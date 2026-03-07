@@ -62,7 +62,6 @@ var channelRateConfig = map[string]float64{
 	"discord":  1,
 	"slack":    1,
 	"line":     10,
-	"irc":      2,
 }
 
 type channelWorker struct {
@@ -266,10 +265,6 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.Pico.Enabled && m.config.Channels.Pico.Token != "" {
 		m.initChannel("pico", "Pico")
-	}
-
-	if m.config.Channels.IRC.Enabled && m.config.Channels.IRC.Server != "" {
-		m.initChannel("irc", "IRC")
 	}
 
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
@@ -832,4 +827,10 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 	// Fallback: direct send (should not happen)
 	channel, _ := m.channels[channelName]
 	return channel.Send(ctx, msg)
+}
+
+// Mux returns the shared HTTP ServeMux so external packages
+// (e.g. dashboard) can register their own handlers.
+func (m *Manager) Mux() *http.ServeMux {
+	return m.mux
 }
