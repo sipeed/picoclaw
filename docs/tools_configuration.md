@@ -206,6 +206,48 @@ The skills tool configures skill discovery and installation via registries like 
 }
 ```
 
+## Task Tool
+
+The task tool lets the agent create and track a step-by-step execution plan visible to the user in real time.
+
+### Config
+
+| Config              | Type   | Default | Description                            |
+| ------------------- | ------ | ------- | -------------------------------------- |
+| `enabled`           | bool   | true    | Enable the task planning tool          |
+| `icons.pending`     | string | 🔘      | Icon shown for pending tasks           |
+| `icons.in_progress` | string | 🟡      | Icon shown for tasks in progress       |
+| `icons.completed`   | string | 🟢      | Icon shown for completed tasks         |
+| `icons.failed`      | string | 🔴      | Icon shown for failed tasks            |
+
+### Configuration Example
+
+```json
+{
+  "tools": {
+    "tasktool": {
+      "enabled": true,
+      "icons": {
+        "pending": "🔘",
+        "in_progress": "🟡",
+        "completed": "🟢",
+        "failed": "🔴"
+      }
+    }
+  }
+}
+```
+
+### Environment Variables
+
+| Variable                                     | Description              |
+| -------------------------------------------- | ------------------------ |
+| `PICOCLAW_TOOLS_TASK_TOOL_ENABLED`           | Enable/disable the tool  |
+| `PICOCLAW_TOOLS_TASK_TOOL_ICONS_PENDING`     | Pending task icon        |
+| `PICOCLAW_TOOLS_TASK_TOOL_ICONS_IN_PROGRESS` | In-progress task icon    |
+| `PICOCLAW_TOOLS_TASK_TOOL_ICONS_COMPLETED`   | Completed task icon      |
+| `PICOCLAW_TOOLS_TASK_TOOL_ICONS_FAILED`      | Failed task icon         |
+
 ## Environment Variables
 
 All configuration options can be overridden via environment variables with the format `PICOCLAW_TOOLS_<SECTION>_<KEY>`:

@@ -97,6 +97,9 @@ func (tm *TaskManager) CreatePlan(sessionKey string, tasks []Task) *SessionTasks
 	}
 	copy(st.Tasks, tasks)
 	tm.tasks[sessionKey] = st
+	// Persist immediately so the plan survives a restart even when no
+	// message ID is available (e.g. channels that don't return a message ID).
+	go func() { _ = tm.Save(sessionKey) }()
 	return st
 }
 

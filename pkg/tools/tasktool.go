@@ -98,11 +98,14 @@ func (t *TaskTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	channel := ToolChannel(ctx)
 	chatID := ToolChatID(ctx)
-	// We use the same combination for task state as session manager might.
-	// But note: AgentLoop uses scopes out of routes. We'll use channel:chatID as implicit for now
-	// To be perfectly aligned with SessionKey, we'd need to extract SessionKey from context.
-	// We'll add SessionKey to context later if needed, or just use channel:chatID for tasks since planning is chat-specific.
-	sessionKey := fmt.Sprintf("%s:%s", channel, chatID)
+	// Use the agent-scoped session key injected by the agent loop so that task
+	// plans are stored under the same key used for conversation history.
+	// Fall back to channel:chatID only when running outside of an agent loop
+	// (e.g. unit tests or direct tool invocations).
+	sessionKey := ToolSessionKey(ctx)
+	if sessionKey == "" {
+		sessionKey = fmt.Sprintf("%s:%s", channel, chatID)
+	}
 
 	action, ok := args["action"].(string)
 	if !ok {

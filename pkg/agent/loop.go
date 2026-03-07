@@ -798,6 +798,8 @@ func (al *AgentLoop) runAgentLoop(
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
 	// 3. Run LLM iteration loop
+	// Inject session key so tools (e.g. tasktool) can look it up from context.
+	ctx = tools.WithToolSessionKey(ctx, opts.SessionKey)
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
 		return "", err
