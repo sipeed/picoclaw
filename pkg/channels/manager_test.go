@@ -17,15 +17,30 @@ import (
 // mockChannel is a test double that delegates Send to a configurable function.
 type mockChannel struct {
 	BaseChannel
-	sendFn func(ctx context.Context, msg bus.OutboundMessage) error
+	sendFn            func(ctx context.Context, msg bus.OutboundMessage) error
+	sentMessages      []bus.OutboundMessage
+	placeholdersSent  int
+	editedMessages    int
+	lastPlaceholderID string
 }
 
 func (m *mockChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	m.sentMessages = append(m.sentMessages, msg)
 	return m.sendFn(ctx, msg)
 }
 
 func (m *mockChannel) Start(ctx context.Context) error { return nil }
 func (m *mockChannel) Stop(ctx context.Context) error  { return nil }
+
+func (m *mockChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+	m.placeholdersSent++
+	m.lastPlaceholderID = "mock-ph-123"
+	return m.lastPlaceholderID, nil
+}
+func (m *mockChannel) EditMessage(ctx context.Context, chatID, messageID, content string) error {
+	m.editedMessages++
+	return nil
+}
 
 // newTestManager creates a minimal Manager suitable for unit tests.
 func newTestManager() *Manager {
@@ -858,5 +873,82 @@ func TestBuildMediaScope_WithMessageID(t *testing.T) {
 	expected := "discord:chat99:msg123"
 	if scope != expected {
 		t.Fatalf("expected %s, got %s", expected, scope)
+	}
+}
+
+func TestManager_PlaceholderLogic(t *testing.T) {
+	mgr := &Manager{
+		channels:     make(map[string]Channel),
+		workers:      make(map[string]*channelWorker),
+		placeholders: sync.Map{},
+	}
+
+	mockCh := &mockChannel{
+		sendFn: func(ctx context.Context, msg bus.OutboundMessage) error {
+			return nil
+		},
+	}
+	worker := newChannelWorker("mock", mockCh)
+	mgr.channels["mock"] = mockCh
+	mgr.workers["mock"] = worker
+
+	ctx := context.Background()
+
+	// Scenario 1: TriggerPlaceholder creates a placeholder but does NOT send text messages
+	msgTrigger := bus.OutboundMessage{
+		Channel:            "mock",
+		ChatID:             "chat-1",
+		TriggerPlaceholder: true,
+	}
+	mgr.sendWithRetry(ctx, "mock", worker, msgTrigger)
+
+	if mockCh.placeholdersSent != 1 {
+		t.Errorf("expected 1 placeholder sent, got %d", mockCh.placeholdersSent)
+	}
+	if len(mockCh.sentMessages) != 0 {
+		t.Errorf("expected 0 normal messages sent, got %d", len(mockCh.sentMessages))
+	}
+
+	// Verify that the placeholder has been registered in the manager
+	key := "mock:chat-1"
+	if _, ok := mgr.placeholders.Load(key); !ok {
+		t.Errorf("expected placeholder to be recorded in manager")
+	}
+
+	// Scenario 2: SkipPlaceholder (simulates transcription). Must send normally, ignoring Edit.
+	msgSkip := bus.OutboundMessage{
+		Channel:         "mock",
+		ChatID:          "chat-1",
+		Content:         "Transcript: hello",
+		SkipPlaceholder: true,
+	}
+	mgr.sendWithRetry(ctx, "mock", worker, msgSkip)
+
+	if mockCh.editedMessages != 0 {
+		t.Errorf("expected 0 edited messages due to SkipPlaceholder, got %d", mockCh.editedMessages)
+	}
+	if len(mockCh.sentMessages) != 1 {
+		t.Errorf("expected 1 normal message sent, got %d", len(mockCh.sentMessages))
+	}
+
+	// The placeholder must still exist for the next response
+	if _, ok := mgr.placeholders.Load(key); !ok {
+		t.Errorf("expected placeholder to STILL be in manager after SkipPlaceholder")
+	}
+
+	// Scenario 3: Normal Message (simulates the final LLM response). Must consume the placeholder.
+	msgFinal := bus.OutboundMessage{
+		Channel: "mock",
+		ChatID:  "chat-1",
+		Content: "Final Answer",
+	}
+	mgr.sendWithRetry(ctx, "mock", worker, msgFinal)
+
+	if mockCh.editedMessages != 1 {
+		t.Errorf("expected 1 edited message (consuming placeholder), got %d", mockCh.editedMessages)
+	}
+	// The placeholder must have been removed
+	if _, ok := mgr.placeholders.Load(key); ok {
+		t.Errorf("expected placeholder to be removed after being consumed")
 	}
 }
