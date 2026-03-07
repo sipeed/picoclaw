@@ -3,6 +3,7 @@ package openai_compat
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -235,69 +236,57 @@ func TestProviderChat_JSONHTTPErrorDoesNotReportHTML(t *testing.T) {
 	}
 }
 
-func TestProviderChat_HTMLSuccessResponseReturnsHelpfulError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("<!DOCTYPE html><html><body>gateway login</body></html>"))
-	}))
-	defer server.Close()
+func TestProviderChat_HTMLResponsesReturnHelpfulError(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		statusCode  int
+		body        string
+	}{
+		{
+			name:        "html success response",
+			contentType: "text/html; charset=utf-8",
+			statusCode:  http.StatusOK,
+			body:        "<!DOCTYPE html><html><body>gateway login</body></html>",
+		},
+		{
+			name:        "html error response",
+			contentType: "text/html; charset=utf-8",
+			statusCode:  http.StatusBadGateway,
+			body:        "<!DOCTYPE html><html><body>bad gateway</body></html>",
+		},
+		{
+			name:        "mislabeled html success response",
+			contentType: "application/json",
+			statusCode:  http.StatusOK,
+			body:        "   \r\n\t<!DOCTYPE html><html><body>gateway login</body></html>",
+		},
+	}
 
-	p := NewProvider("key", server.URL, "")
-	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "returned HTML instead of JSON") {
-		t.Fatalf("expected helpful HTML error, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "check api_base or proxy configuration") {
-		t.Fatalf("expected configuration hint, got %v", err)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tt.contentType)
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
 
-func TestProviderChat_HTMLErrorResponseReturnsHelpfulError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte("<!DOCTYPE html><html><body>bad gateway</body></html>"))
-	}))
-	defer server.Close()
-
-	p := NewProvider("key", server.URL, "")
-	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "Status: 502") {
-		t.Fatalf("expected status code in error, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "returned HTML instead of JSON") {
-		t.Fatalf("expected helpful HTML error, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "check api_base or proxy configuration") {
-		t.Fatalf("expected configuration hint, got %v", err)
-	}
-}
-
-func TestProviderChat_MislabeledHTMLSuccessResponseReturnsHelpfulError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("   \r\n\t<!DOCTYPE html><html><body>gateway login</body></html>"))
-	}))
-	defer server.Close()
-
-	p := NewProvider("key", server.URL, "")
-	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "returned HTML instead of JSON") {
-		t.Fatalf("expected helpful HTML error, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "check api_base or proxy configuration") {
-		t.Fatalf("expected configuration hint, got %v", err)
+			p := NewProvider("key", server.URL, "")
+			_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), fmt.Sprintf("Status: %d", tt.statusCode)) {
+				t.Fatalf("expected status code in error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "returned HTML instead of JSON") {
+				t.Fatalf("expected helpful HTML error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "check api_base or proxy configuration") {
+				t.Fatalf("expected configuration hint, got %v", err)
+			}
+		})
 	}
 }
 

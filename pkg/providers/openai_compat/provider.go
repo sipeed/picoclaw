@@ -188,14 +188,18 @@ func (p *Provider) Chat(
 
 	// Non-200: read a prefix to tell HTML error page apart from JSON error body.
 	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 256))
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response: %w", err)
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 256))
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read response: %w", readErr)
 		}
 		if looksLikeHTML(body, contentType) {
 			return nil, wrapHTMLResponseError(resp.StatusCode, body, contentType, p.apiBase)
 		}
-		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, responsePreview(body, 128))
+		return nil, fmt.Errorf(
+			"API request failed:\n  Status: %d\n  Body:   %s",
+			resp.StatusCode,
+			responsePreview(body, 128),
+		)
 	}
 
 	// Peek without consuming so the full stream reaches the JSON decoder.
@@ -218,7 +222,13 @@ func (p *Provider) Chat(
 
 func wrapHTMLResponseError(statusCode int, body []byte, contentType, apiBase string) error {
 	respPreview := responsePreview(body, 128)
-	return fmt.Errorf("API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  Body:   %s", apiBase, contentType, statusCode, respPreview)
+	return fmt.Errorf(
+		"API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  Body:   %s",
+		apiBase,
+		contentType,
+		statusCode,
+		respPreview,
+	)
 }
 
 func looksLikeHTML(body []byte, contentType string) bool {
