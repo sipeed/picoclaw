@@ -284,12 +284,6 @@ func (c *BaseChannel) HandleMessage(
 				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, undo)
 			}
 		}
-		// Placeholder — independent pipeline
-		if pc, ok := c.owner.(PlaceholderCapable); ok {
-			if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
-				c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
-			}
-		}
 	}
 
 	if err := c.bus.PublishInbound(ctx, msg); err != nil {

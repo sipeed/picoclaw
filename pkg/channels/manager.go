@@ -133,13 +133,15 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	}
 
 	// 3. Try editing placeholder
-	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
-		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
-			if editor, ok := ch.(MessageEditor); ok {
-				if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
-					return true // edited successfully, skip Send
+	if !msg.SkipPlaceholder {
+		if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
+			if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
+				if editor, ok := ch.(MessageEditor); ok {
+					if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
+						return true // edited successfully, skip Send
+					}
+					// edit failed → fall through to normal Send
 				}
-				// edit failed → fall through to normal Send
 			}
 		}
 	}
@@ -490,6 +492,15 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 	// Rate limit: wait for token
 	if err := w.limiter.Wait(ctx); err != nil {
 		// ctx canceled, shutting down
+		return
+	}
+
+	if msg.TriggerPlaceholder {
+		if pc, ok := w.ch.(PlaceholderCapable); ok {
+			if phID, err := pc.SendPlaceholder(ctx, msg.ChatID); err == nil && phID != "" {
+				m.RecordPlaceholder(name, msg.ChatID, phID)
+			}
+		}
 		return
 	}
 
