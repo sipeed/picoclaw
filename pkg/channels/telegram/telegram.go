@@ -237,14 +237,10 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return nil
 	}
 
-	// Split the raw markdown before converting to HTML so that
-	// SplitMessage's code-fence-aware logic works correctly and
-	// we never break HTML tags/entities by splitting converted output.
-	mdChunks := channels.SplitMessage(msg.Content, 4000)
-
-	// Use a queue so that chunks whose HTML expansion still exceeds
-	// Telegram's 4096-char limit can be re-split until every chunk fits.
-	queue := append([]string{}, mdChunks...)
+	// The Manager already splits messages to ≤4000 chars (WithMaxMessageLength),
+	// so msg.Content is guaranteed to be within that limit. We still need to
+	// check if HTML expansion pushes it beyond Telegram's 4096-char API limit.
+	queue := []string{msg.Content}
 	for len(queue) > 0 {
 		chunk := queue[0]
 		queue = queue[1:]

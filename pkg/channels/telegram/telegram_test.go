@@ -115,7 +115,11 @@ func TestSend_ShortMessage_SingleCall(t *testing.T) {
 	assert.Len(t, caller.calls, 1, "short message should result in exactly one SendMessage call")
 }
 
-func TestSend_LongMessage_MultipleCalls(t *testing.T) {
+func TestSend_LongMessage_SingleCall(t *testing.T) {
+	// With WithMaxMessageLength(4000), the Manager pre-splits messages before
+	// they reach Send(). A message at exactly 4000 chars should go through
+	// as a single SendMessage call (no re-split needed since HTML expansion
+	// won't exceed 4096 for plain text).
 	caller := &stubCaller{
 		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
 			return successResponse(t), nil
@@ -123,8 +127,7 @@ func TestSend_LongMessage_MultipleCalls(t *testing.T) {
 	}
 	ch := newTestChannel(t, caller)
 
-	// Create a message over 4000 chars so it gets split into multiple chunks.
-	longContent := strings.Repeat("a", 4001)
+	longContent := strings.Repeat("a", 4000)
 
 	err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "12345",
@@ -132,7 +135,7 @@ func TestSend_LongMessage_MultipleCalls(t *testing.T) {
 	})
 
 	assert.NoError(t, err)
-	assert.Greater(t, len(caller.calls), 1, "long message should be split into multiple SendMessage calls")
+	assert.Len(t, caller.calls, 1, "pre-split message within limit should result in one SendMessage call")
 }
 
 func TestSend_HTMLFallback_PerChunk(t *testing.T) {
