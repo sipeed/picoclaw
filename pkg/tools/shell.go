@@ -74,14 +74,26 @@ var (
 		regexp.MustCompile(`\bssh\b.*@`),
 		regexp.MustCompile(`\beval\b`),
 		regexp.MustCompile(`\bsource\s+.*\.sh\b`),
+		// file:// protocol allows reading local files outside workspace
+		regexp.MustCompile(`\bfile://`),
+		// Sensitive /proc paths that may expose credentials or process info
+		regexp.MustCompile(`/proc/self/environ\b`),
+		regexp.MustCompile(`/proc/self/cmdline\b`),
+		regexp.MustCompile(`/proc/self/fd/\d+`),
+		regexp.MustCompile(`/proc/self/mem\b`),
+		regexp.MustCompile(`/proc/self/maps\b`),
+		regexp.MustCompile(`/proc/\d+/environ\b`),
 	}
 
-	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
-	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+	// absolutePathPattern matches absolute file paths (Unix and Windows).
+	// Unix paths must be preceded by whitespace, '=', '"' or start of string
+	// to avoid matching paths inside relative paths like "./download/file".
+	absolutePathPattern = regexp.MustCompile(`(?:^|[\s="])(/[^\s\"']+)|([A-Za-z]:\\[^\\\"']+)`)
 
-	// safePaths are kernel pseudo-devices that are always safe to reference in
-	// commands, regardless of workspace restriction. They contain no user data
-	// and cannot cause destructive writes.
+	// urlPattern matches URLs (http://, https://, ftp://, sftp://, git+https://, etc.)
+	urlPattern = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://[^\s\"']+`)
+
+	// safePaths are always safe to reference regardless of workspace restriction.
 	safePaths = map[string]bool{
 		"/dev/null":    true,
 		"/dev/zero":    true,
@@ -90,6 +102,13 @@ var (
 		"/dev/stdin":   true,
 		"/dev/stdout":  true,
 		"/dev/stderr":  true,
+		// Safe read-only procfs paths
+		"/proc/cpuinfo":     true,
+		"/proc/meminfo":     true,
+		"/proc/version":     true,
+		"/proc/uptime":      true,
+		"/proc/loadavg":     true,
+		"/proc/self/status": true,
 	}
 )
 
@@ -336,9 +355,19 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		matches := absolutePathPattern.FindAllString(cmd, -1)
+		// Remove URLs before matching paths to avoid treating https://github.com as a file path
+		cmdWithoutURLs := urlPattern.ReplaceAllString(cmd, "")
 
-		for _, raw := range matches {
+		submatches := absolutePathPattern.FindAllStringSubmatch(cmdWithoutURLs, -1)
+		for _, match := range submatches {
+			raw := match[1] // Unix path
+			if raw == "" {
+				raw = match[2] // Windows path
+			}
+			if raw == "" {
+				continue
+			}
+
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue
