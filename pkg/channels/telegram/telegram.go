@@ -180,7 +180,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	tgMsg.ParseMode = telego.ModeHTML
 
 	if msg.ReplyToMessageID != "" {
-		if mid, err := strconv.Atoi(msg.ReplyToMessageID); err == nil {
+		if mid, parseErr := strconv.Atoi(msg.ReplyToMessageID); parseErr == nil {
 			tgMsg.ReplyParameters = &telego.ReplyParameters{
 				MessageID: mid,
 			}
