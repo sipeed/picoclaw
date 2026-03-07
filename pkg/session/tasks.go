@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 type TaskStatus string
@@ -48,10 +49,23 @@ func NewTaskManager(storage string) *TaskManager {
 	}
 	if storage != "" {
 		if err := tm.loadAll(); err != nil {
-			// just log
+			logger.ErrorCF("tasks", "Failed to load session tasks on startup", map[string]any{
+				"error": err.Error(),
+			})
 		}
 	}
 	return tm
+}
+
+func (tm *TaskManager) Get(sessionKey string) *SessionTasks {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	tasks, ok := tm.tasks[sessionKey]
+	if ok {
+		return tasks
+	}
+	return nil
 }
 
 func (tm *TaskManager) GetOrCreate(sessionKey string) *SessionTasks {
@@ -137,7 +151,10 @@ func (tm *TaskManager) Save(key string) error {
 		return nil
 	}
 
-	filename := sanitizeFilenameTasks(key) + "_tasks.json"
+	if err := os.MkdirAll(tm.storage, 0o755); err != nil {
+		return err
+	}
+	filename := fileutil.SanitizeFilename(key) + "_tasks.json"
 
 	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, "/\\") {
 		return os.ErrInvalid
@@ -197,10 +214,4 @@ func (tm *TaskManager) loadAll() error {
 		tm.tasks[st.SessionKey] = &st
 	}
 	return nil
-}
-
-// Ensure sanitizeFilename is accessible by importing from another file or duplicating.
-// For now, copying it since it's an unexported utility in manager.go.
-func sanitizeFilenameTasks(key string) string {
-	return strings.ReplaceAll(key, ":", "_")
 }

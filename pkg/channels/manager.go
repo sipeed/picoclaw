@@ -849,9 +849,13 @@ func (m *Manager) SendMessageWithID(ctx context.Context, msg bus.OutboundMessage
 			return msgID, nil
 		}
 		logger.ErrorCF("manager", "SendMessageWithID failed", map[string]any{"error": err, "msgID": msgID})
-		logger.WarnCF("manager", "channel does not implement SyncSender", map[string]any{"channel": msg.Channel})
+		if err == nil {
+			err = fmt.Errorf("sync sender returned empty message ID")
+		}
+		return "", err
 	}
 
+	logger.WarnCF("manager", "channel does not implement SyncSender", map[string]any{"channel": msg.Channel})
 	logger.WarnCF("manager", "falling back to bus publish", nil)
 	m.bus.PublishOutbound(ctx, msg)
 

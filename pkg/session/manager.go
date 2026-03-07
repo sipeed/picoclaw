@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -145,21 +146,12 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	session.Updated = time.Now()
 }
 
-// sanitizeFilename converts a session key into a cross-platform safe filename.
-// Session keys use "channel:chatID" (e.g. "telegram:123456") but ':' is the
-// volume separator on Windows, so filepath.Base would misinterpret the key.
-// We replace it with '_'. The original key is preserved inside the JSON file,
-// so loadSessions still maps back to the right in-memory key.
-func sanitizeFilename(key string) string {
-	return strings.ReplaceAll(key, ":", "_")
-}
-
 func (sm *SessionManager) Save(key string) error {
 	if sm.storage == "" {
 		return nil
 	}
 
-	filename := sanitizeFilename(key)
+	filename := fileutil.SanitizeFilename(key)
 
 	// filepath.IsLocal rejects empty names, "..", absolute paths, and
 	// OS-reserved device names (NUL, COM1 … on Windows).

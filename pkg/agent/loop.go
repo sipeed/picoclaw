@@ -410,16 +410,16 @@ func (al *AgentLoop) bindAdvancedMessageManagers(cm *channels.Manager) {
 		if advancedManager, ok := t.(tools.AdvancedMessageManager); ok {
 			advancedManager.SetCallbacks(
 				// sendPlaceholder
-				func(channelName, chatID, content string) (string, error) {
-					return cm.SendMessageWithID(context.Background(), bus.OutboundMessage{
+				func(ctx context.Context, channelName, chatID, content string) (string, error) {
+					return cm.SendMessageWithID(ctx, bus.OutboundMessage{
 						Channel: channelName,
 						ChatID:  chatID,
 						Content: content,
 					})
 				},
 				// editMessage
-				func(channelName, chatID, messageID, content string) error {
-					return cm.EditMessage(context.Background(), channelName, chatID, messageID, content)
+				func(ctx context.Context, channelName, chatID, messageID, content string) error {
+					return cm.EditMessage(ctx, channelName, chatID, messageID, content)
 				},
 			)
 		}

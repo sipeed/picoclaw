@@ -7,29 +7,18 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/session"
 )
 
 type TaskTool struct {
 	taskManager     *session.TaskManager
-	sendPlaceholder func(channel, chatID, content string) (string, error)
-	editMessage     func(channel, chatID, messageID, content string) error
+	sendPlaceholder func(ctx context.Context, channel, chatID, content string) (string, error)
+	editMessage     func(ctx context.Context, channel, chatID, messageID, content string) error
 	icons           config.TaskToolIconsConfig
 }
 
 func NewTaskTool(taskManager *session.TaskManager, icons config.TaskToolIconsConfig) *TaskTool {
-	if icons.Pending == "" {
-		icons.Pending = "🔘"
-	}
-	if icons.InProgress == "" {
-		icons.InProgress = "🟡"
-	}
-	if icons.Completed == "" {
-		icons.Completed = "🟢"
-	}
-	if icons.Failed == "" {
-		icons.Failed = "🔴"
-	}
 
 	return &TaskTool{
 		taskManager: taskManager,
@@ -95,8 +84,8 @@ func (t *TaskTool) Parameters() map[string]any {
 }
 
 func (t *TaskTool) SetCallbacks(
-	sendPlaceholder func(channel, chatID, content string) (string, error),
-	editMessage func(channel, chatID, messageID, content string) error,
+	sendPlaceholder func(ctx context.Context, channel, chatID, content string) (string, error),
+	editMessage func(ctx context.Context, channel, chatID, messageID, content string) error,
 ) {
 	t.sendPlaceholder = sendPlaceholder
 	t.editMessage = editMessage
@@ -122,19 +111,19 @@ func (t *TaskTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	switch action {
 	case "create_plan":
-		return t.handleCreatePlan(sessionKey, channel, chatID, args)
+		return t.handleCreatePlan(ctx, sessionKey, channel, chatID, args)
 	case "update_task":
-		return t.handleUpdateTask(sessionKey, channel, chatID, args)
+		return t.handleUpdateTask(ctx, sessionKey, channel, chatID, args)
 	case "list_plan":
 		return t.handleListPlan(sessionKey)
 	case "resend_plan":
-		return t.handleResendPlan(sessionKey, channel, chatID)
+		return t.handleResendPlan(ctx, sessionKey, channel, chatID)
 	default:
 		return &ToolResult{ForLLM: fmt.Sprintf("tasktool: unknown action '%s'", action), IsError: true}
 	}
 }
 
-func (t *TaskTool) handleCreatePlan(sessionKey, channel, chatID string, args map[string]any) *ToolResult {
+func (t *TaskTool) handleCreatePlan(ctx context.Context, sessionKey, channel, chatID string, args map[string]any) *ToolResult {
 	tasksRaw, ok := args["tasks"].([]interface{})
 	if !ok || len(tasksRaw) == 0 {
 		return &ToolResult{ForLLM: "tasktool: tasks array is required and cannot be empty for 'create_plan'", IsError: true}
@@ -170,7 +159,7 @@ func (t *TaskTool) handleCreatePlan(sessionKey, channel, chatID string, args map
 
 	// Send message through callback if available
 	if t.sendPlaceholder != nil {
-		msgID, err := t.sendPlaceholder(channel, chatID, content)
+		msgID, err := t.sendPlaceholder(ctx, channel, chatID, content)
 		if err == nil && msgID != "" {
 			t.taskManager.SetMessageID(sessionKey, msgID)
 		}
@@ -184,8 +173,8 @@ func (t *TaskTool) handleCreatePlan(sessionKey, channel, chatID string, args map
 }
 
 func (t *TaskTool) handleListPlan(sessionKey string) *ToolResult {
-	st := t.taskManager.GetOrCreate(sessionKey)
-	if len(st.Tasks) == 0 {
+	st := t.taskManager.Get(sessionKey)
+	if st == nil || len(st.Tasks) == 0 {
 		return &ToolResult{
 			ForLLM: "No active plan found for this session.",
 			Silent: true,
@@ -201,7 +190,7 @@ func (t *TaskTool) handleListPlan(sessionKey string) *ToolResult {
 	}
 }
 
-func (t *TaskTool) handleResendPlan(sessionKey, channel, chatID string) *ToolResult {
+func (t *TaskTool) handleResendPlan(ctx context.Context, sessionKey, channel, chatID string) *ToolResult {
 	st := t.taskManager.GetOrCreate(sessionKey)
 	if len(st.Tasks) == 0 {
 		return &ToolResult{
@@ -213,9 +202,13 @@ func (t *TaskTool) handleResendPlan(sessionKey, channel, chatID string) *ToolRes
 	content := t.formatPlanMessage(st.Tasks)
 
 	if t.sendPlaceholder != nil {
-		msgID, err := t.sendPlaceholder(channel, chatID, content)
-		if err == nil && msgID != "" {
-			t.taskManager.SetMessageID(sessionKey, msgID)
+		msgID, err := t.sendPlaceholder(ctx, channel, chatID, content)
+		if err == nil {
+			if msgID != "" {
+				t.taskManager.SetMessageID(sessionKey, msgID)
+			}
+			// If err == nil but msgID == "", the channel delivered the message
+			// (or is async) but doesn't support returning IDs. We consider this a success.
 		} else {
 			return &ToolResult{ForLLM: fmt.Sprintf("Failed to resend message: %v", err), IsError: true}
 		}
@@ -230,7 +223,7 @@ func (t *TaskTool) handleResendPlan(sessionKey, channel, chatID string) *ToolRes
 	}
 }
 
-func (t *TaskTool) handleUpdateTask(sessionKey, channel, chatID string, args map[string]any) *ToolResult {
+func (t *TaskTool) handleUpdateTask(ctx context.Context, sessionKey, channel, chatID string, args map[string]any) *ToolResult {
 	taskID, _ := args["task_id"].(string)
 	if taskID == "" {
 		return &ToolResult{ForLLM: "tasktool: task_id is required for 'update_task'", IsError: true}
@@ -252,10 +245,17 @@ func (t *TaskTool) handleUpdateTask(sessionKey, channel, chatID string, args map
 
 	// Edit message through callback if available
 	if t.editMessage != nil && st.MessageID != "" {
-		_ = t.editMessage(channel, chatID, st.MessageID, content)
+		if err := t.editMessage(ctx, channel, chatID, st.MessageID, content); err != nil {
+			logger.WarnCF("tasktool", "Failed to edit task message", map[string]any{
+				"channel":    channel,
+				"chat_id":    chatID,
+				"message_id": st.MessageID,
+				"error":      err.Error(),
+			})
+		}
 	} else if t.sendPlaceholder != nil && st.MessageID == "" {
 		// Fallback: send new progress message if we didn't have one
-		msgID, err := t.sendPlaceholder(channel, chatID, content)
+		msgID, err := t.sendPlaceholder(ctx, channel, chatID, content)
 		if err == nil && msgID != "" {
 			t.taskManager.SetMessageID(sessionKey, msgID)
 		}
@@ -289,11 +289,11 @@ func (t *TaskTool) formatPlanMessage(tasks []session.Task) string {
 
 		// Primitive markdown-to-html regex parser across multiple lines.
 		// For the description and result, we replace lone underscores to prevent similar italic bugs.
-		safeDesc := strings.ReplaceAll(task.Description, "_", " ")
+		safeDesc := strings.ReplaceAll(task.Description, "_", "\\_")
 
 		sb.WriteString(fmt.Sprintf("%s %s\n", icon, safeDesc))
 		if task.Result != "" {
-			safeResult := strings.ReplaceAll(task.Result, "_", " ")
+			safeResult := strings.ReplaceAll(task.Result, "_", "\\_")
 			sb.WriteString(fmt.Sprintf("    **Result**: %s\n", safeResult))
 		}
 	}

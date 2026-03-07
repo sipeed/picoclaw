@@ -97,7 +97,7 @@ func ToolToSchema(tool Tool) map[string]any {
 type AdvancedMessageManager interface {
 	Tool
 	SetCallbacks(
-		sendPlaceholder func(channel, chatID, content string) (string, error),
-		editMessage func(channel, chatID, messageID, content string) error,
+		sendPlaceholder func(ctx context.Context, channel, chatID, content string) (string, error),
+		editMessage func(ctx context.Context, channel, chatID, messageID, content string) error,
 	)
 }
