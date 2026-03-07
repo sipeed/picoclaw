@@ -154,9 +154,15 @@ func (tm *TaskManager) Save(key string) error {
 	if err := os.MkdirAll(tm.storage, 0o755); err != nil {
 		return err
 	}
+	// Reject keys containing path separators before sanitizing, so that
+	// traversal-like inputs (e.g. "foo/bar") are never silently normalized.
+	if strings.ContainsAny(key, "/\\") {
+		return os.ErrInvalid
+	}
+
 	filename := fileutil.SanitizeFilename(key) + "_tasks.json"
 
-	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, "/\\") {
+	if filename == "." || !filepath.IsLocal(filename) {
 		return os.ErrInvalid
 	}
 

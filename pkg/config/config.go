@@ -953,6 +953,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.WriteFile.Enabled
 	case "mcp":
 		return t.MCP.Enabled
+	case "tasktool":
+		return t.TaskTool.Enabled
 	default:
 		return true
 	}

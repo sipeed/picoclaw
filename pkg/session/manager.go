@@ -151,13 +151,19 @@ func (sm *SessionManager) Save(key string) error {
 		return nil
 	}
 
+	// Reject keys containing path separators before sanitizing, so that
+	// traversal-like inputs (e.g. "foo/bar") are never silently normalized.
+	if strings.ContainsAny(key, `/\`) {
+		return os.ErrInvalid
+	}
+
 	filename := fileutil.SanitizeFilename(key)
 
 	// filepath.IsLocal rejects empty names, "..", absolute paths, and
 	// OS-reserved device names (NUL, COM1 … on Windows).
-	// The extra checks reject "." and any directory separators so that
-	// the session file is always written directly inside sm.storage.
-	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, `/\`) {
+	// The extra check rejects "." so that the session file is always
+	// written directly inside sm.storage.
+	if filename == "." || !filepath.IsLocal(filename) {
 		return os.ErrInvalid
 	}
 
