@@ -183,6 +183,28 @@
       "ping_interval": 30,
       "read_timeout": 60,
       "allow_from": []
+    },
+    "irc": {
+      "enabled": false,
+      "server": "irc.libera.chat:6697",
+      "tls": true,
+      "nick": "mybot",
+      "user": "",
+      "real_name": "",
+      "password": "",
+      "nickserv_password": "",
+      "sasl_user": "",
+      "sasl_password": "",
+      "channels": ["#mychannel"],
+      "request_caps": ["server-time", "message-tags"],
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "typing": {
+        "enabled": false
+      },
+      "reasoning_channel_id": ""
     }
   },
   "providers": {
