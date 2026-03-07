@@ -4,6 +4,13 @@
 
 **Antigravity** (Google Cloud Code Assist) is a Google-backed AI model provider that offers access to models like Claude Opus 4.6 and Gemini through Google's Cloud infrastructure. This document provides a complete guide on how authentication works, how to fetch models, and how to implement a new provider in PicoClaw.
 
+> [!WARNING]
+> **Account Suspension Risk / 账号封禁风险**
+>
+> Google has been actively enforcing its Terms of Service against programmatic or large-scale use of Google Cloud Code Assist outside of its intended IDE plugin context. **Your Google account may be suspended if you use this integration heavily or in automated/server environments.**
+>
+> Use this provider for testing and evaluation only. For any sustained or production usage, switch to a provider with an explicit API agreement (e.g., Anthropic, OpenAI, OpenRouter).
+
 ---
 
 ## Table of Contents

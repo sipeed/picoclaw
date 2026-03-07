@@ -2,6 +2,16 @@
 
 This guide explains how to set up and use the **Antigravity** (Google Cloud Code Assist) provider in PicoClaw.
 
+> [!WARNING]
+> **Account Suspension Risk / 账号封禁风险**
+>
+> Google has been actively enforcing its Terms of Service for Google Cloud Code Assist. Using this provider to access AI models beyond the intended scope of the service may result in **suspension or termination of your Google account**.
+>
+> - This integration relies on the free quota provided by Google Cloud Code Assist, which is intended for individual developer use within IDE plugins.
+> - Using it programmatically at scale or in automated/server environments may violate [Google Cloud Terms of Service](https://cloud.google.com/terms/).
+> - Many users have reported account restrictions after heavy usage. Proceed at your own risk.
+> - For production or high-volume usage, consider using a paid API key from a supported provider (Anthropic, OpenAI, OpenRouter, etc.).
+
 ## Prerequisites
 
 1.  A Google account.
