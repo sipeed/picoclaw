@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -27,7 +26,6 @@ type SubagentManager struct {
 	mu             sync.RWMutex
 	provider       providers.LLMProvider
 	defaultModel   string
-	bus            *bus.MessageBus
 	workspace      string
 	tools          *ToolRegistry
 	maxIterations  int
@@ -41,13 +39,11 @@ type SubagentManager struct {
 func NewSubagentManager(
 	provider providers.LLMProvider,
 	defaultModel, workspace string,
-	bus *bus.MessageBus,
 ) *SubagentManager {
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,
 		defaultModel:  defaultModel,
-		bus:           bus,
 		workspace:     workspace,
 		tools:         NewToolRegistry(),
 		maxIterations: 10,
@@ -213,20 +209,6 @@ After completing the task, provide a clear summary of what was done.`
 			IsError: false,
 			Async:   false,
 		}
-	}
-
-	// Send announce message back to main agent
-	if sm.bus != nil {
-		announceContent := fmt.Sprintf("Task '%s' completed.\n\nResult:\n%s", task.Label, task.Result)
-		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer pubCancel()
-		sm.bus.PublishInbound(pubCtx, bus.InboundMessage{
-			Channel:  "system",
-			SenderID: fmt.Sprintf("subagent:%s", task.ID),
-			// Format: "original_channel:original_chat_id" for routing back
-			ChatID:  fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
-			Content: announceContent,
-		})
 	}
 }
 
