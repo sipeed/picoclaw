@@ -91,6 +91,22 @@ func TestIsBotMentioned(t *testing.T) {
 			},
 			want: false,
 		},
+		{
+			name: "formatted mention href matrix.to plain",
+			msg: event.MessageEventContent{
+				Body:          "hello bot",
+				FormattedBody: `<a href="https://matrix.to/#/@picoclaw:matrix.org">PicoClaw</a> hello`,
+			},
+			want: true,
+		},
+		{
+			name: "formatted mention href matrix.to encoded",
+			msg: event.MessageEventContent{
+				Body:          "hello bot",
+				FormattedBody: `<a href="https://matrix.to/#/%40picoclaw%3Amatrix.org">PicoClaw</a> hello`,
+			},
+			want: true,
+		},
 	}
 
 	for _, tc := range cases {

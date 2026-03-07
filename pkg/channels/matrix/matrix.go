@@ -3,7 +3,9 @@ package matrix
 import (
 	"context"
 	"fmt"
+	"html"
 	"mime"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -28,6 +30,8 @@ const (
 	typingServerTTL       = 30 * time.Second
 	roomKindCacheTTL      = 5 * time.Minute
 )
+
+var matrixMentionHrefRegexp = regexp.MustCompile(`(?i)<a[^>]+href=["']([^"']+)["']`)
 
 type roomKindCacheEntry struct {
 	isGroup   bool
@@ -469,6 +473,12 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 		}
 		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
 		if !respond {
+			logger.DebugCF("matrix", "Ignoring group message by trigger rules", map[string]any{
+				"room_id":      roomID,
+				"is_mentioned": isMentioned,
+				"mention_only": c.config.GroupTrigger.MentionOnly,
+				"prefixes":     c.config.GroupTrigger.Prefixes,
+			})
 			return
 		}
 		content = cleaned
@@ -807,7 +817,10 @@ func (c *MatrixChannel) isBotMentioned(msgEvt *event.MessageEventContent) bool {
 	}
 
 	userID := c.client.UserID.String()
-	if userID != "" && (strings.Contains(msgEvt.Body, userID) || strings.Contains(msgEvt.FormattedBody, userID)) {
+	if userID != "" && strings.Contains(msgEvt.Body, userID) {
+		return true
+	}
+	if mentionsUserInFormattedBody(msgEvt.FormattedBody, c.client.UserID) {
 		return true
 	}
 
@@ -818,6 +831,63 @@ func (c *MatrixChannel) isBotMentioned(msgEvt *event.MessageEventContent) bool {
 
 	re := localpartMentionRegexp(localpart)
 	return re.MatchString(msgEvt.Body) || re.MatchString(msgEvt.FormattedBody)
+}
+
+func mentionsUserInFormattedBody(formattedBody string, userID id.UserID) bool {
+	target := strings.ToLower(strings.TrimSpace(userID.String()))
+	if target == "" {
+		return false
+	}
+
+	formattedBody = strings.TrimSpace(formattedBody)
+	if formattedBody == "" {
+		return false
+	}
+
+	if strings.Contains(strings.ToLower(formattedBody), target) {
+		return true
+	}
+
+	matches := matrixMentionHrefRegexp.FindAllStringSubmatch(formattedBody, -1)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		decoded := decodeMatrixMentionHref(match[1])
+		if strings.Contains(strings.ToLower(decoded), target) {
+			return true
+		}
+
+		u, err := url.Parse(decoded)
+		if err != nil {
+			continue
+		}
+
+		if strings.Contains(strings.ToLower(u.Path), target) || strings.Contains(strings.ToLower(u.Fragment), target) {
+			return true
+		}
+		if strings.Contains(strings.ToLower(decodeMatrixMentionHref(u.Fragment)), target) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func decodeMatrixMentionHref(v string) string {
+	decoded := html.UnescapeString(strings.TrimSpace(v))
+	if decoded == "" {
+		return ""
+	}
+
+	for i := 0; i < 2; i++ {
+		next, err := url.QueryUnescape(decoded)
+		if err != nil || next == decoded {
+			break
+		}
+		decoded = next
+	}
+	return decoded
 }
 
 func (c *MatrixChannel) typingLoop(ctx context.Context, roomID id.RoomID, session *typingSession) {
