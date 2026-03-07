@@ -453,48 +453,54 @@ func TestShellTool_RemoteURLsAllowed(t *testing.T) {
 		t.Fatalf("unable to configure exec tool: %s", err)
 	}
 
-	// Commands with remote URLs should not be blocked by path check.
+	// Use harmless echo commands that still contain the same URL patterns,
+	// so we exercise the guard logic without performing network operations.
 	allowed := []string{
-		"curl https://github.com/user/repo",
-		"wget http://example.com/file.tar.gz",
-		"git clone https://github.com/user/repo.git",
-		"agent-browser open https://github.com",
-		"pip install git+https://github.com/user/pkg",
-		"curl ftp://ftp.example.com/file",
-		"curl sftp://server.com/path/file",
-		"curl HTTPS://github.com/user/repo", // case insensitive
-		"curl HTTP://example.com/file",      // case insensitive
+		"echo https://github.com/user/repo",
+		"echo http://example.com/file.tar.gz",
+		"echo https://github.com/user/repo.git",
+		"echo https://github.com",
+		"echo git+https://github.com/user/pkg",
+		"echo ftp://ftp.example.com/file",
+		"echo sftp://server.com/path/file",
+		"echo HTTPS://github.com/user/repo", // case insensitive
+		"echo HTTP://example.com/file",      // case insensitive
+		// URL with path traversal should not be blocked (it's in the URL)
+		"echo https://example.com/a/../b",
+		"echo https://example.com/proc/self/environ",
 	}
 
 	for _, cmd := range allowed {
 		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
-		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
-			t.Errorf("URL command should not be blocked by path check: %s\n  error: %s", cmd, result.ForLLM)
+		// URL commands should not be blocked by the workspace/path guard.
+		if result.IsError {
+			t.Errorf("URL command should not fail or be blocked: %s\n  error: %s", cmd, result.ForLLM)
 		}
 	}
 }
 
-// TestShellTool_RemotePathInSSHAllowed verifies that remote paths in SSH/SCP commands
-// are not blocked (they refer to remote systems, not local files).
-func TestShellTool_RemotePathInSSHAllowed(t *testing.T) {
+// TestShellTool_QuotedAndFlagPathsBlocked verifies that paths with quotes
+// or after short flags are properly detected and blocked.
+func TestShellTool_QuotedAndFlagPathsBlocked(t *testing.T) {
 	tmpDir := t.TempDir()
 	tool, err := NewExecTool(tmpDir, true)
 	if err != nil {
 		t.Fatalf("unable to configure exec tool: %s", err)
 	}
 
-	// SSH/SCP with remote paths - the /path/file is on the remote host.
-	// Note: "ssh user@host" is blocked by deny pattern, so we test the path logic
-	// only by checking that /path/file in scp/rsync syntax is not blocked.
-	allowed := []string{
-		"rsync /local/file ./dest", // local absolute path in workspace check
-		"rsync ./src/ /tmp/",       // /tmp/ should be blocked
+	// Paths with single quotes or after short flags should be blocked.
+	blocked := []string{
+		"cat '/etc/passwd'",
+		"cat \"/etc/passwd\"",
+		"curl -o/tmp/file https://example.com",
+		"tar -C/etc -xf archive.tar",
 	}
 
-	for _, cmd := range allowed {
+	for _, cmd := range blocked {
 		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
-		// We just verify no crash and proper handling
-		_ = result
+		if !result.IsError {
+			t.Errorf("command with path outside workspace should be blocked: %s", cmd)
+		}
 	}
 }
 

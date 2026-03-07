@@ -74,21 +74,25 @@ var (
 		regexp.MustCompile(`\bssh\b.*@`),
 		regexp.MustCompile(`\beval\b`),
 		regexp.MustCompile(`\bsource\s+.*\.sh\b`),
-		// file:// protocol allows reading local files outside workspace
+		// file:// protocol allows reading local files outside workspace.
+		// Note: deny patterns are skipped when CustomAllowPatterns match,
+		// so configuring custom allow patterns may disable this protection.
 		regexp.MustCompile(`\bfile://`),
-		// Sensitive /proc paths that may expose credentials or process info
-		regexp.MustCompile(`/proc/self/environ\b`),
-		regexp.MustCompile(`/proc/self/cmdline\b`),
-		regexp.MustCompile(`/proc/self/fd/\d+`),
-		regexp.MustCompile(`/proc/self/mem\b`),
-		regexp.MustCompile(`/proc/self/maps\b`),
-		regexp.MustCompile(`/proc/\d+/environ\b`),
+		// Sensitive /proc paths that may expose credentials or process info.
+		// Prefix constraint prevents false positives from URLs containing /proc.
+		regexp.MustCompile(`(?:^|[\s=\"])/proc/self/environ\b`),
+		regexp.MustCompile(`(?:^|[\s=\"])/proc/self/cmdline\b`),
+		regexp.MustCompile(`(?:^|[\s=\"])/proc/self/fd/\d+`),
+		regexp.MustCompile(`(?:^|[\s=\"])/proc/self/mem\b`),
+		regexp.MustCompile(`(?:^|[\s=\"])/proc/self/maps\b`),
+		regexp.MustCompile(`(?:^|[\s=\"])/proc/\d+/environ\b`),
 	}
 
 	// absolutePathPattern matches absolute file paths (Unix and Windows).
-	// Unix paths must be preceded by whitespace, '=', '"' or start of string
-	// to avoid matching paths inside relative paths like "./download/file".
-	absolutePathPattern = regexp.MustCompile(`(?:^|[\s="])(/[^\s\"']+)|([A-Za-z]:\\[^\\\"']+)`)
+	// Unix paths must be preceded by whitespace, '=', '"', "'", a short flag
+	// (e.g., "-o"), or start of string to avoid matching paths inside URLs
+	// or relative paths like "./download/file".
+	absolutePathPattern = regexp.MustCompile(`(?:^|[\s=\"']|-[A-Za-z]*)(/[^\s\"']+)|([A-Za-z]:\\[^\\\"']+)`)
 
 	// urlPattern matches URLs (http://, https://, ftp://, sftp://, git+https://, etc.)
 	urlPattern = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://[^\s\"']+`)
@@ -346,7 +350,10 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	if t.restrictToWorkspace {
-		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
+		// Remove URLs before checking path traversal to avoid false positives
+		// from URLs like https://example.com/a/../b
+		cmdWithoutURLs := urlPattern.ReplaceAllString(cmd, "")
+		if strings.Contains(cmdWithoutURLs, "..\\") || strings.Contains(cmdWithoutURLs, "../") {
 			return "Command blocked by safety guard (path traversal detected)"
 		}
 
@@ -354,9 +361,6 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		if err != nil {
 			return ""
 		}
-
-		// Remove URLs before matching paths to avoid treating https://github.com as a file path
-		cmdWithoutURLs := urlPattern.ReplaceAllString(cmd, "")
 
 		submatches := absolutePathPattern.FindAllStringSubmatch(cmdWithoutURLs, -1)
 		for _, match := range submatches {
