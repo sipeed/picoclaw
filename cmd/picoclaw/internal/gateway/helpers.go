@@ -233,11 +233,8 @@ func gatewayCmd(debug bool) error {
 			}
 
 			logger.Infof(" New model is '%s', recreating provider...", newModel)
-			if cp, ok := provider.(providers.StatefulProvider); ok {
-				cp.Close()
-			}
 
-			// Create new provider from updated config
+			// Create new provider from updated config first to ensure validity
 			// This will use the correct API key and settings from newCfg.ModelList
 			newProvider, newModelID, err := providers.CreateProvider(newCfg)
 			if err != nil {
@@ -246,20 +243,37 @@ func gatewayCmd(debug bool) error {
 				continue
 			}
 
-			provider = newProvider
 			if newModelID != "" {
 				newCfg.Agents.Defaults.ModelName = newModelID
 			}
 
+			// Use the atomic reload method on AgentLoop to safely swap provider and config.
+			// This handles locking internally to prevent races with in-flight LLM calls
+			// and concurrent reads of registry/config while the swap occurs.
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			if err := agentLoop.ReloadProviderAndConfig(ctx, newProvider, newCfg); err != nil {
+				logger.Errorf("  ⚠ Error reloading agent loop: %v", err)
+				// Close the newly created provider since it wasn't adopted
+				if cp, ok := newProvider.(providers.StatefulProvider); ok {
+					cp.Close()
+				}
+				logger.Warn("  Continuing with old provider and config")
+				continue
+			}
+
+			// Update local references only after successful atomic reload
+			if cp, ok := provider.(providers.StatefulProvider); ok {
+				cp.Close()
+			}
+			provider = newProvider
+
 			// Update agent loop provider and models
-			agentLoop.SetProvider(provider, newCfg)
+			//agentLoop.SetProvider(provider, newCfg)
 
-			logger.Info("  ✓ Provider and agents updated successfully")
-
-			// Update the config reference for other operations
-			// Note: Some changes (like channel configs) may require restart to take full effect
 			cfg = newCfg
-			logger.Info("  ✓ Configuration reloaded successfully")
+			logger.Info("  ✓ Provider and configuration reloaded successfully (thread-safe)")
 		}
 	}
 }
@@ -291,7 +305,7 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 				// Check if file changed (modification time or size changed)
 				if currentModTime.After(lastModTime) || currentSize != lastSize {
 					if debug {
-						logger.DebugSF("🔍 Config file change detected")
+						logger.Debugf("🔍 Config file change detected")
 					}
 
 					// Debounce - wait a bit to ensure file write is complete

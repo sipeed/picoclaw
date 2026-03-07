@@ -168,7 +168,7 @@ func DebugC(component string, message string) {
 	logMessage(DEBUG, component, message, nil)
 }
 
-func DebugSF(message string, ss ...any) {
+func Debugf(message string, ss ...any) {
 	logMessage(DEBUG, "", fmt.Sprintf(message, ss...), nil)
 }
 

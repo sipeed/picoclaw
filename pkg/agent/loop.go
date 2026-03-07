@@ -46,6 +46,7 @@ type AgentLoop struct {
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
+	mu             sync.RWMutex
 }
 
 // processOptions configures how a message is processed
@@ -368,12 +369,110 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }
 
-// SetProvider updates the LLM provider for all agents in the registry
-// and updates their model configurations.
-func (al *AgentLoop) SetProvider(provider providers.LLMProvider, cfg *config.Config) {
+// ReloadProviderAndConfig atomically swaps the provider and config with proper synchronization.
+// It uses a context to allow timeout control from the caller.
+// Returns an error if the reload fails or context is cancelled.
+func (al *AgentLoop) ReloadProviderAndConfig(ctx context.Context, provider providers.LLMProvider, cfg *config.Config) error {
+	// Validate inputs
+	if provider == nil {
+		return fmt.Errorf("provider cannot be nil")
+	}
+	if cfg == nil {
+		return fmt.Errorf("config cannot be nil")
+	}
+
+	// Check context before starting
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context cancelled before reload: %w", err)
+	}
+
+	// Create new registry with updated config and provider
+	// Wrap in defer/recover to handle any panics gracefully
+	var registry *AgentRegistry
+	done := make(chan struct{}, 1)
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.ErrorCF("agent", "Panic during registry creation",
+					map[string]any{"panic": r})
+			}
+			close(done)
+		}()
+
+		registry = NewAgentRegistry(cfg, provider)
+	}()
+
+	// Wait for completion or context cancellation
+	select {
+	case <-done:
+		if registry == nil {
+			return fmt.Errorf("registry creation failed (nil result)")
+		}
+	case <-ctx.Done():
+		return fmt.Errorf("context cancelled during registry creation: %w", ctx.Err())
+	}
+
+	// Check context again before proceeding
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context cancelled after registry creation: %w", err)
+	}
+
+	// Ensure shared tools are re-registered on the new registry
+	registerSharedTools(cfg, al.bus, registry, provider)
+
+	// Atomically swap the config and registry under write lock
+	// This ensures readers see a consistent pair
+	al.mu.Lock()
+	oldRegistry := al.registry
+
+	// Store new values
 	al.cfg = cfg
-	registry := NewAgentRegistry(cfg, provider)
 	al.registry = registry
+
+	// Also update fallback chain with new config
+	al.fallback = providers.NewFallbackChain(providers.NewCooldownTracker())
+
+	al.mu.Unlock()
+
+	// Close old provider after releasing the lock
+	// This prevents blocking readers while closing
+	if oldProvider, ok := extractProvider(oldRegistry); ok {
+		if stateful, ok := oldProvider.(providers.StatefulProvider); ok {
+			// Give in-flight requests a moment to complete
+			// Use a reasonable timeout that balances cleanup vs resource usage
+			select {
+			case <-time.After(100 * time.Millisecond):
+				stateful.Close()
+			case <-ctx.Done():
+				// Context cancelled, close immediately but log warning
+				logger.WarnCF("agent", "Context cancelled during provider cleanup, forcing close",
+					map[string]any{"error": ctx.Err()})
+				stateful.Close()
+			}
+		}
+	}
+
+	logger.InfoCF("agent", "Provider and config reloaded successfully",
+		map[string]any{
+			"model": cfg.Agents.Defaults.GetModelName(),
+		})
+
+	return nil
+}
+
+// GetRegistry returns the current registry (thread-safe)
+func (al *AgentLoop) GetRegistry() *AgentRegistry {
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+	return al.registry
+}
+
+// GetConfig returns the current config (thread-safe)
+func (al *AgentLoop) GetConfig() *config.Config {
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+	return al.cfg
 }
 
 // SetMediaStore injects a MediaStore for media lifecycle management.
@@ -991,6 +1090,7 @@ func (al *AgentLoop) runLLMIteration(
 				map[string]any{
 					"agent_id":  agent.ID,
 					"iteration": iteration,
+					"model":     activeModel,
 					"error":     err.Error(),
 				})
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
@@ -1626,4 +1726,17 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 		return nil
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
+}
+
+// Helper to extract provider from registry for cleanup
+func extractProvider(registry *AgentRegistry) (providers.LLMProvider, bool) {
+	if registry == nil {
+		return nil, false
+	}
+	// Get any agent to access the provider
+	defaultAgent := registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		return nil, false
+	}
+	return defaultAgent.Provider, true
 }
