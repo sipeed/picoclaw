@@ -37,6 +37,7 @@ func (m *mockChannel) SendPlaceholder(ctx context.Context, chatID string) (strin
 	m.lastPlaceholderID = "mock-ph-123"
 	return m.lastPlaceholderID, nil
 }
+
 func (m *mockChannel) EditMessage(ctx context.Context, chatID, messageID, content string) error {
 	m.editedMessages++
 	return nil
