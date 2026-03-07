@@ -31,6 +31,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      date: ${{ steps.version.outputs.date }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -52,8 +53,10 @@ jobs:
           
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "date=${DATE}" >> $GITHUB_OUTPUT
           echo "Generated version: ${VERSION}"
           echo "Generated tag: ${TAG}"
+          echo "Generated date: ${DATE}"
 
   build:
     name: Build Picoclaw
@@ -97,23 +100,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=nightly-{{date 'YYYYMMDD'}},priority=100
-            type=raw,value=nightly,priority=90
-            type=sha,prefix={{branch}}-,priority=50
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ needs.generate-version.outputs.tag }}
+            ghcr.io/${{ github.repository }}:nightly-${{ needs.generate-version.outputs.date }}
+            ghcr.io/${{ github.repository }}:nightly
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -152,28 +147,28 @@ jobs:
           - `picoclaw-linux-amd64` - Pre-built binary for Linux x86_64
           
           ### Docker Image
-          ```bash
+          \`\`\`bash
           docker pull ghcr.io/${{ github.repository }}:nightly-$(date +%Y%m%d)
           # or latest nightly
           docker pull ghcr.io/${{ github.repository }}:nightly
-          ```
+          \`\`\`
           
           ---
           
           ## 🔧 Installation
           
           ### Using binary
-          ```bash
+          \`\`\`bash
           chmod +x picoclaw
           sudo mv picoclaw /usr/local/bin/
-          ```
+          \`\`\`
           
           ### Using Docker
-          ```bash
-          docker run -d --name picoclaw \
-            -v /path/to/config:/config \
+          \`\`\`bash
+          docker run -d --name picoclaw \\
+            -v /path/to/config:/config \\
             ghcr.io/${{ github.repository }}:nightly
-          ```
+          \`\`\`
           
           ---
           
