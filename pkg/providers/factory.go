@@ -304,7 +304,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			if sel.apiBase == "" {
 				sel.apiBase = "https://integrate.api.nvidia.com/v1"
 			}
-		case (strings.Contains(lowerModel, "vivgrid") || strings.HasPrefix(model, "vivgrid/")) && cfg.Providers.Vivgrid.APIKey != "":
+		case strings.HasPrefix(model, "vivgrid/") && cfg.Providers.Vivgrid.APIKey != "":
 			sel.apiKey = cfg.Providers.Vivgrid.APIKey
 			sel.apiBase = cfg.Providers.Vivgrid.APIBase
 			sel.proxy = cfg.Providers.Vivgrid.Proxy
