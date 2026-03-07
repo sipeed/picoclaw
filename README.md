@@ -308,7 +308,7 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or WeCom
+Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, or WeCom
 
 > **Note**: All webhook-based channels (LINE, WeCom, etc.) are served on a single shared Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). There are no per-channel ports to configure. Note: Feishu uses WebSocket/SDK mode and does not use the shared HTTP webhook server.
 
@@ -317,6 +317,7 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or We
 | **Telegram** | Easy (just a token)                |
 | **Discord**  | Easy (bot token + intents)         |
 | **WhatsApp** | Easy (native: QR scan; or bridge URL) |
+| **Matrix**   | Medium (homeserver + bot access token) |
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
@@ -526,6 +527,40 @@ picoclaw gateway
 ```bash
 picoclaw gateway
 ```
+</details>
+
+<details>
+<summary><b>Matrix</b></summary>
+
+**1. Prepare bot account**
+
+* Use your preferred homeserver (e.g. `https://matrix.org` or self-hosted)
+* Create a bot user and obtain its access token
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "matrix": {
+      "enabled": true,
+      "homeserver": "https://matrix.org",
+      "user_id": "@your-bot:matrix.org",
+      "access_token": "YOUR_MATRIX_ACCESS_TOKEN",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**3. Run**
+
+```bash
+picoclaw gateway
+```
+
+For full options (`device_id`, `join_on_invite`, `group_trigger`, `placeholder`, `reasoning_channel_id`), see [Matrix Channel Configuration Guide](docs/channels/matrix/README.md).
+
 </details>
 
 <details>
