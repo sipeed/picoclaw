@@ -8,7 +8,7 @@
 
 <p>
 <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
-<img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20RISC--V-blue" alt="Hardware">
+<img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V-blue" alt="Hardware">
 <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
 
@@ -49,7 +49,7 @@
 
 ⚡️ **超高速**: 起動時間 400 倍高速、0.6GHz シングルコアでも 1 秒で起動。
 
-🌍 **真のポータビリティ**: RISC-V、ARM、x86 対応の単一バイナリ。ワンクリックで Go！
+🌍 **真のポータビリティ**: RISC-V、ARM、MIPS、x86 対応の単一バイナリ。ワンクリックで Go！
 
 🤖 **AI ブートストラップ**: 自律的な Go ネイティブ実装 — コアの 95% が AI 生成、人間によるレビュー付き。
 

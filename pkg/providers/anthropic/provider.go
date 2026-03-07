@@ -23,7 +23,10 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 )
 
-const defaultBaseURL = "https://api.anthropic.com"
+const (
+	defaultBaseURL      = "https://api.anthropic.com"
+	anthropicBetaHeader = "oauth-2025-04-20"
+)
 
 type Provider struct {
 	client      *anthropic.Client
@@ -80,12 +83,20 @@ func (p *Provider) Chat(
 		if err != nil {
 			return nil, fmt.Errorf("refreshing token: %w", err)
 		}
-		opts = append(opts, option.WithAuthToken(tok))
+		opts = append(opts,
+			option.WithAuthToken(tok),
+			option.WithHeader("anthropic-beta", anthropicBetaHeader),
+		)
 	}
 
 	params, err := buildParams(messages, tools, model, options)
 	if err != nil {
 		return nil, err
+	}
+
+	// OAuth/setup-tokens require streaming; API keys use non-streaming.
+	if p.tokenSource != nil {
+		return p.chatStreaming(ctx, params, opts)
 	}
 
 	resp, err := p.client.Messages.New(ctx, params, opts...)
@@ -94,6 +105,28 @@ func (p *Provider) Chat(
 	}
 
 	return parseResponse(resp), nil
+}
+
+func (p *Provider) chatStreaming(
+	ctx context.Context,
+	params anthropic.MessageNewParams,
+	opts []option.RequestOption,
+) (*LLMResponse, error) {
+	stream := p.client.Messages.NewStreaming(ctx, params, opts...)
+	defer stream.Close()
+
+	var msg anthropic.Message
+	for stream.Next() {
+		event := stream.Current()
+		if err := msg.Accumulate(event); err != nil {
+			return nil, fmt.Errorf("claude streaming accumulate: %w", err)
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return nil, fmt.Errorf("claude API call: %w", err)
+	}
+
+	return parseResponse(&msg), nil
 }
 
 func (p *Provider) GetDefaultModel() string {
@@ -147,7 +180,16 @@ func buildParams(
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, tc.Name))
+					args := tc.Arguments
+					if args == nil && tc.Function != nil && tc.Function.Arguments != "" {
+						if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+							args = map[string]any{}
+						}
+					}
+					if args == nil {
+						args = map[string]any{}
+					}
+					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, args, tc.Name))
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {
@@ -167,8 +209,12 @@ func buildParams(
 		maxTokens = int64(mt)
 	}
 
+	// Normalize model ID: Anthropic API uses hyphens (claude-sonnet-4-6),
+	// but config may use dots (claude-sonnet-4.6).
+	apiModel := strings.ReplaceAll(model, ".", "-")
+
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(model),
+		Model:     anthropic.Model(apiModel),
 		Messages:  anthropicMessages,
 		MaxTokens: maxTokens,
 	}

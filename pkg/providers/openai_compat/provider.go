@@ -1,6 +1,7 @@
 package openai_compat
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -183,19 +184,94 @@ func (p *Provider) Chat(
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
+	contentType := resp.Header.Get("Content-Type")
 
+	// Non-200: read a prefix to tell HTML error page apart from JSON error body.
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 256))
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read response: %w", readErr)
+		}
+		if looksLikeHTML(body, contentType) {
+			return nil, wrapHTMLResponseError(resp.StatusCode, body, contentType, p.apiBase)
+		}
+		return nil, fmt.Errorf(
+			"API request failed:\n  Status: %d\n  Body:   %s",
+			resp.StatusCode,
+			responsePreview(body, 128),
+		)
 	}
 
-	return parseResponse(body)
+	// Peek without consuming so the full stream reaches the JSON decoder.
+	reader := bufio.NewReader(resp.Body)
+	prefix, err := reader.Peek(256) // io.EOF/ErrBufferFull are normal; only real errors abort
+	if err != nil && err != io.EOF && err != bufio.ErrBufferFull {
+		return nil, fmt.Errorf("failed to inspect response: %w", err)
+	}
+	if looksLikeHTML(prefix, contentType) {
+		return nil, wrapHTMLResponseError(resp.StatusCode, prefix, contentType, p.apiBase)
+	}
+
+	out, err := parseResponse(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
+	}
+
+	return out, nil
 }
 
-func parseResponse(body []byte) (*LLMResponse, error) {
+func wrapHTMLResponseError(statusCode int, body []byte, contentType, apiBase string) error {
+	respPreview := responsePreview(body, 128)
+	return fmt.Errorf(
+		"API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  Body:   %s",
+		apiBase,
+		contentType,
+		statusCode,
+		respPreview,
+	)
+}
+
+func looksLikeHTML(body []byte, contentType string) bool {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "application/xhtml+xml") {
+		return true
+	}
+	prefix := bytes.ToLower(leadingTrimmedPrefix(body, 128))
+	return bytes.HasPrefix(prefix, []byte("<!doctype html")) ||
+		bytes.HasPrefix(prefix, []byte("<html")) ||
+		bytes.HasPrefix(prefix, []byte("<head")) ||
+		bytes.HasPrefix(prefix, []byte("<body"))
+}
+
+func leadingTrimmedPrefix(body []byte, maxLen int) []byte {
+	i := 0
+	for i < len(body) {
+		switch body[i] {
+		case ' ', '\t', '\n', '\r', '\f', '\v':
+			i++
+		default:
+			end := i + maxLen
+			if end > len(body) {
+				end = len(body)
+			}
+			return body[i:end]
+		}
+	}
+	return nil
+}
+
+func responsePreview(body []byte, maxLen int) string {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return "<empty>"
+	}
+	if len(trimmed) <= maxLen {
+		return string(trimmed)
+	}
+	return string(trimmed[:maxLen]) + "..."
+}
+
+func parseResponse(body io.Reader) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
@@ -222,8 +298,8 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		Usage *UsageInfo `json:"usage"`
 	}
 
-	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	if err := json.NewDecoder(body).Decode(&apiResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if len(apiResponse.Choices) == 0 {
