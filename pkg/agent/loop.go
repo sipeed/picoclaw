@@ -1055,9 +1055,12 @@ func (al *AgentLoop) runLLMIteration(
 				"target_channel": al.targetReasoningChannelID(opts.Channel),
 				"channel":        opts.Channel,
 			})
-		// Check if no tool calls - we're done
+		// Check if no tool calls - then check reasoning content if any
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
+			if finalContent == "" && response.ReasoningContent != "" {
+				finalContent = response.ReasoningContent
+			}
 			logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
 				map[string]any{
 					"agent_id":      agent.ID,
