@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type ContextBuilder struct {
@@ -505,10 +506,7 @@ func (cb *ContextBuilder) BuildMessages(
 		})
 
 	// Log preview of system prompt (avoid logging huge content)
-	preview := fullSystemPrompt
-	if len(preview) > 500 {
-		preview = preview[:500] + "... (truncated)"
-	}
+	preview := utils.Truncate(fullSystemPrompt, 500)
 	logger.DebugCF("agent", "System prompt preview",
 		map[string]any{
 			"preview": preview,
