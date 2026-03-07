@@ -837,16 +837,10 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 // SendMessageWithID sends a message synchronously via the channel's native API if supported,
 // returning the platform-specific message ID. If the channel does not support SyncSender,
 // it falls back to the async bus and returns an error.
-func (m *Manager) SendMessageWithID(ctx context.Context, channelName, chatID, content string) (string, error) {
-	ch, ok := m.GetChannel(channelName)
+func (m *Manager) SendMessageWithID(ctx context.Context, msg bus.OutboundMessage) (string, error) {
+	ch, ok := m.GetChannel(msg.Channel)
 	if !ok {
-		return "", fmt.Errorf("channel %s not found", channelName)
-	}
-
-	msg := bus.OutboundMessage{
-		Channel: channelName,
-		ChatID:  chatID,
-		Content: content,
+		return "", fmt.Errorf("channel %s not found", msg.Channel)
 	}
 
 	if syncSender, ok := ch.(SyncSender); ok {
@@ -855,8 +849,7 @@ func (m *Manager) SendMessageWithID(ctx context.Context, channelName, chatID, co
 			return msgID, nil
 		}
 		logger.ErrorCF("manager", "SendMessageWithID failed", map[string]any{"error": err, "msgID": msgID})
-	} else {
-		logger.WarnCF("manager", "channel does not implement SyncSender", map[string]any{"channel": channelName})
+		logger.WarnCF("manager", "channel does not implement SyncSender", map[string]any{"channel": msg.Channel})
 	}
 
 	logger.WarnCF("manager", "falling back to bus publish", nil)
