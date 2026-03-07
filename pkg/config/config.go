@@ -675,10 +675,10 @@ type TaskToolConfig struct {
 }
 
 type TaskToolIconsConfig struct {
-	Pending    string `json:"pending"     env:"PICOCLAW_TOOLS_TASK_TOOL_ICONS_PENDING"    default:"🔘"`
-	InProgress string `json:"in_progress" env:"PICOCLAW_TOOLS_TASK_TOOL_ICONS_IN_PROGRESS" default:"🟡"`
-	Completed  string `json:"completed"   env:"PICOCLAW_TOOLS_TASK_TOOL_ICONS_COMPLETED"  default:"🟢"`
-	Failed     string `json:"failed"      env:"PICOCLAW_TOOLS_TASK_TOOL_ICONS_FAILED"     default:"🔴"`
+	Pending    string `json:"pending"     env:"PICOCLAW_TOOLS_TASK_TOOL_ICONS_PENDING,default=🔘"`
+	InProgress string `json:"in_progress" env:"PICOCLAW_TOOLS_TASK_TOOL_ICONS_IN_PROGRESS,default=🟡"`
+	Completed  string `json:"completed"   env:"PICOCLAW_TOOLS_TASK_TOOL_ICONS_COMPLETED,default=🟢"`
+	Failed     string `json:"failed"      env:"PICOCLAW_TOOLS_TASK_TOOL_ICONS_FAILED,default=🔴"`
 }
 
 type SearchCacheConfig struct {

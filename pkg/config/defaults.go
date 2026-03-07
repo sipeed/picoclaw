@@ -452,6 +452,17 @@ func DefaultConfig() *Config {
 			WriteFile: ToolConfig{
 				Enabled: true,
 			},
+			TaskTool: TaskToolConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
+				Icons: TaskToolIconsConfig{
+					Pending:    "🔘",
+					InProgress: "🟡",
+					Completed:  "🟢",
+					Failed:     "🔴",
+				},
+			},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
