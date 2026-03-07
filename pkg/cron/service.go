@@ -15,6 +15,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
+const defaultTimezone = "UTC"
+
 type CronSchedule struct {
 	Kind    string `json:"kind"`
 	AtMS    *int64 `json:"atMs,omitempty"`
@@ -273,7 +275,7 @@ func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int6
 			tz = cs.defaultTZ
 		}
 		if tz == "" {
-			tz = "UTC"
+			tz = defaultTimezone
 		}
 		if loc, err := time.LoadLocation(tz); err == nil {
 			now = now.In(loc)
