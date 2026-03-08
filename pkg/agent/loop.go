@@ -1158,86 +1158,110 @@ func (al *AgentLoop) runLLMIteration(
 		// Save assistant message with tool calls to session
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
-		// Execute tool calls in parallel
+		// Execute tool calls, preserving model order for tools that require it.
 		type indexedAgentResult struct {
 			result *tools.ToolResult
 			tc     providers.ToolCall
 		}
 
 		agentResults := make([]indexedAgentResult, len(normalizedToolCalls))
-		var wg sync.WaitGroup
+		executeToolCall := func(idx int, tc providers.ToolCall) {
+			argsJSON, _ := json.Marshal(tc.Arguments)
+			argsPreview := utils.Truncate(string(argsJSON), 200)
+			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
+				map[string]any{
+					"agent_id":  agent.ID,
+					"tool":      tc.Name,
+					"iteration": iteration,
+				})
 
-		for i, tc := range normalizedToolCalls {
-			agentResults[i].tc = tc
-
-			wg.Add(1)
-			go func(idx int, tc providers.ToolCall) {
-				defer wg.Done()
-
-				argsJSON, _ := json.Marshal(tc.Arguments)
-				argsPreview := utils.Truncate(string(argsJSON), 200)
-				logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-					map[string]any{
-						"agent_id":  agent.ID,
-						"tool":      tc.Name,
-						"iteration": iteration,
-					})
-
-				// Create async callback for tools that implement AsyncExecutor.
-				// When the background work completes, this publishes the result
-				// as an inbound system message so processSystemMessage routes it
-				// back to the user via the normal agent loop.
-				asyncCallback := func(_ context.Context, result *tools.ToolResult) {
-					// Send ForUser content directly to the user (immediate feedback),
-					// mirroring the synchronous tool execution path.
-					if !result.Silent && result.ForUser != "" {
-						outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
-						defer outCancel()
-						_ = al.bus.PublishOutbound(outCtx, bus.OutboundMessage{
-							Channel: opts.Channel,
-							ChatID:  opts.ChatID,
-							Content: result.ForUser,
-						})
-					}
-
-					// Determine content for the agent loop (ForLLM or error).
-					content := result.ForLLM
-					if content == "" && result.Err != nil {
-						content = result.Err.Error()
-					}
-					if content == "" {
-						return
-					}
-
-					logger.InfoCF("agent", "Async tool completed, publishing result",
-						map[string]any{
-							"tool":        tc.Name,
-							"content_len": len(content),
-							"channel":     opts.Channel,
-						})
-
-					pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer pubCancel()
-					_ = al.bus.PublishInbound(pubCtx, bus.InboundMessage{
-						Channel:  "system",
-						SenderID: fmt.Sprintf("async:%s", tc.Name),
-						ChatID:   fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID),
-						Content:  content,
+			// Create async callback for tools that implement AsyncExecutor.
+			// When the background work completes, this publishes the result
+			// as an inbound system message so processSystemMessage routes it
+			// back to the user via the normal agent loop.
+			asyncCallback := func(_ context.Context, result *tools.ToolResult) {
+				// Send ForUser content directly to the user (immediate feedback),
+				// mirroring the synchronous tool execution path.
+				if !result.Silent && result.ForUser != "" {
+					outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer outCancel()
+					_ = al.bus.PublishOutbound(outCtx, bus.OutboundMessage{
+						Channel: opts.Channel,
+						ChatID:  opts.ChatID,
+						Content: result.ForUser,
 					})
 				}
 
-				toolResult := agent.Tools.ExecuteWithContext(
-					ctx,
-					tc.Name,
-					tc.Arguments,
-					opts.Channel,
-					opts.ChatID,
-					asyncCallback,
-				)
-				agentResults[idx].result = toolResult
-			}(i, tc)
+				// Determine content for the agent loop (ForLLM or error).
+				content := result.ForLLM
+				if content == "" && result.Err != nil {
+					content = result.Err.Error()
+				}
+				if content == "" {
+					return
+				}
+
+				logger.InfoCF("agent", "Async tool completed, publishing result",
+					map[string]any{
+						"tool":        tc.Name,
+						"content_len": len(content),
+						"channel":     opts.Channel,
+					})
+
+				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer pubCancel()
+				_ = al.bus.PublishInbound(pubCtx, bus.InboundMessage{
+					Channel:  "system",
+					SenderID: fmt.Sprintf("async:%s", tc.Name),
+					ChatID:   fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID),
+					Content:  content,
+				})
+			}
+
+			toolResult := agent.Tools.ExecuteWithContext(
+				ctx,
+				tc.Name,
+				tc.Arguments,
+				opts.Channel,
+				opts.ChatID,
+				asyncCallback,
+			)
+			agentResults[idx].result = toolResult
 		}
-		wg.Wait()
+
+		executeParallelBatch := func(start, end int) {
+			var wg sync.WaitGroup
+			for i := start; i < end; i++ {
+				tc := normalizedToolCalls[i]
+				wg.Add(1)
+				go func(idx int, tc providers.ToolCall) {
+					defer wg.Done()
+					executeToolCall(idx, tc)
+				}(i, tc)
+			}
+			wg.Wait()
+		}
+
+		batchStart := -1
+		for i, tc := range normalizedToolCalls {
+			agentResults[i].tc = tc
+
+			if agent.Tools.ExecutesSequentially(tc.Name) {
+				if batchStart != -1 {
+					executeParallelBatch(batchStart, i)
+					batchStart = -1
+				}
+				executeToolCall(i, tc)
+				continue
+			}
+
+			if batchStart == -1 {
+				batchStart = i
+			}
+		}
+		if batchStart != -1 {
+			executeParallelBatch(batchStart, len(normalizedToolCalls))
+		}
 
 		// Process results in original order (send to user, save to session)
 		for _, r := range agentResults {

@@ -45,6 +45,15 @@ func (m *mockAsyncRegistryTool) ExecuteAsync(_ context.Context, args map[string]
 	return m.result
 }
 
+type mockSequentialRegistryTool struct {
+	mockRegistryTool
+	sequential bool
+}
+
+func (m *mockSequentialRegistryTool) ExecuteSequentially() bool {
+	return m.sequential
+}
+
 // --- helpers ---
 
 func newMockTool(name, desc string) *mockRegistryTool {
@@ -101,6 +110,25 @@ func TestToolRegistry_RegisterOverwrite(t *testing.T) {
 	tool, _ := r.Get("dup")
 	if tool.Description() != "second" {
 		t.Errorf("expected overwritten description 'second', got %q", tool.Description())
+	}
+}
+
+func TestToolRegistry_ExecutesSequentially(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockSequentialRegistryTool{
+		mockRegistryTool: *newMockTool("seq", "ordered"),
+		sequential:       true,
+	})
+	r.Register(newMockTool("plain", "parallel"))
+
+	if !r.ExecutesSequentially("seq") {
+		t.Fatal("expected sequential tool to be detected")
+	}
+	if r.ExecutesSequentially("plain") {
+		t.Fatal("expected non-sequential tool to remain parallel")
+	}
+	if r.ExecutesSequentially("missing") {
+		t.Fatal("expected missing tool to report false")
 	}
 }
 

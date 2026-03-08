@@ -30,6 +30,10 @@ func (t *TaskTool) Name() string {
 	return "tasktool"
 }
 
+func (t *TaskTool) ExecuteSequentially() bool {
+	return true
+}
+
 func (t *TaskTool) Description() string {
 	return "Manage planning mode tasks. Use action='create_plan' to start a new plan with a list of tasks. Use action='update_task' to update the status of an existing task and return the current plan state.\n\n" +
 		"CRITICAL INSTRUCTIONS:\n" +

@@ -93,6 +93,15 @@ type AsyncExecutor interface {
 	ExecuteAsync(ctx context.Context, args map[string]any, cb AsyncCallback) *ToolResult
 }
 
+// SequentialTool marks tools that must execute in model order within a single
+// LLM turn, instead of being fanned out in parallel with sibling tool calls.
+// This is intended for tools whose calls mutate shared state and can depend on
+// earlier calls from the same assistant message.
+type SequentialTool interface {
+	Tool
+	ExecuteSequentially() bool
+}
+
 func ToolToSchema(tool Tool) map[string]any {
 	return map[string]any{
 		"type": "function",

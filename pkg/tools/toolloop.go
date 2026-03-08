@@ -122,40 +122,64 @@ func RunToolLoop(
 		}
 		messages = append(messages, assistantMsg)
 
-		// 7. Execute tool calls in parallel
+		// 7. Execute tool calls, preserving model order for tools that require it.
 		type indexedResult struct {
 			result *ToolResult
 			tc     providers.ToolCall
 		}
 
 		results := make([]indexedResult, len(normalizedToolCalls))
-		var wg sync.WaitGroup
+		executeToolCall := func(idx int, tc providers.ToolCall) {
+			argsJSON, _ := json.Marshal(tc.Arguments)
+			argsPreview := utils.Truncate(string(argsJSON), 200)
+			logger.InfoCF("toolloop", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
+				map[string]any{
+					"tool":      tc.Name,
+					"iteration": iteration,
+				})
 
+			var toolResult *ToolResult
+			if config.Tools != nil {
+				toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, channel, chatID, nil)
+			} else {
+				toolResult = ErrorResult("No tools available")
+			}
+			results[idx].result = toolResult
+		}
+
+		executeParallelBatch := func(start, end int) {
+			var wg sync.WaitGroup
+			for i := start; i < end; i++ {
+				tc := normalizedToolCalls[i]
+				wg.Add(1)
+				go func(idx int, tc providers.ToolCall) {
+					defer wg.Done()
+					executeToolCall(idx, tc)
+				}(i, tc)
+			}
+			wg.Wait()
+		}
+
+		batchStart := -1
 		for i, tc := range normalizedToolCalls {
 			results[i].tc = tc
 
-			wg.Add(1)
-			go func(idx int, tc providers.ToolCall) {
-				defer wg.Done()
-
-				argsJSON, _ := json.Marshal(tc.Arguments)
-				argsPreview := utils.Truncate(string(argsJSON), 200)
-				logger.InfoCF("toolloop", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-					map[string]any{
-						"tool":      tc.Name,
-						"iteration": iteration,
-					})
-
-				var toolResult *ToolResult
-				if config.Tools != nil {
-					toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, channel, chatID, nil)
-				} else {
-					toolResult = ErrorResult("No tools available")
+			if config.Tools != nil && config.Tools.ExecutesSequentially(tc.Name) {
+				if batchStart != -1 {
+					executeParallelBatch(batchStart, i)
+					batchStart = -1
 				}
-				results[idx].result = toolResult
-			}(i, tc)
+				executeToolCall(i, tc)
+				continue
+			}
+
+			if batchStart == -1 {
+				batchStart = i
+			}
 		}
-		wg.Wait()
+		if batchStart != -1 {
+			executeParallelBatch(batchStart, len(normalizedToolCalls))
+		}
 
 		// Append results in original order
 		for _, r := range results {
