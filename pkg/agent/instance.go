@@ -37,6 +37,14 @@ type AgentInstance struct {
 	Subagents                 *config.SubagentsConfig
 	SkillsFilter              []string
 	Candidates                []providers.FallbackCandidate
+
+	// Router is non-nil when model routing is configured and the light model
+	// was successfully resolved. It scores each incoming message and decides
+	// whether to route to LightCandidates or stay with Candidates.
+	Router *routing.Router
+	// LightCandidates holds the resolved provider candidates for the light model.
+	// Pre-computed at agent creation to avoid repeated model_list lookups at runtime.
+	LightCandidates []providers.FallbackCandidate
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -180,6 +188,25 @@ func NewAgentInstance(
 
 	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
+	// Model routing setup: pre-resolve light model candidates at creation time
+	// to avoid repeated model_list lookups on every incoming message.
+	var router *routing.Router
+	var lightCandidates []providers.FallbackCandidate
+	if rc := defaults.Routing; rc != nil && rc.Enabled && rc.LightModel != "" {
+		lightModelCfg := providers.ModelConfig{Primary: rc.LightModel}
+		resolved := providers.ResolveCandidatesWithLookup(lightModelCfg, defaults.Provider, resolveFromModelList)
+		if len(resolved) > 0 {
+			router = routing.New(routing.RouterConfig{
+				LightModel: rc.LightModel,
+				Threshold:  rc.Threshold,
+			})
+			lightCandidates = resolved
+		} else {
+			log.Printf("routing: light_model %q not found in model_list — routing disabled for agent %q",
+				rc.LightModel, agentID)
+		}
+	}
+
 	return &AgentInstance{
 		ID:                        agentID,
 		Name:                      agentName,
@@ -200,6 +227,8 @@ func NewAgentInstance(
 		Subagents:                 subagents,
 		SkillsFilter:              skillsFilter,
 		Candidates:                candidates,
+		Router:                    router,
+		LightCandidates:           lightCandidates,
 	}
 }
 
@@ -208,12 +237,13 @@ func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentD
 	if agentCfg != nil && strings.TrimSpace(agentCfg.Workspace) != "" {
 		return expandHome(strings.TrimSpace(agentCfg.Workspace))
 	}
+	// Use the configured default workspace (respects PICOCLAW_HOME)
 	if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
 		return expandHome(defaults.Workspace)
 	}
-	home, _ := os.UserHomeDir()
+	// For named agents without explicit workspace, use default workspace with agent ID suffix
 	id := routing.NormalizeAgentID(agentCfg.ID)
-	return filepath.Join(home, ".picoclaw", "workspace-"+id)
+	return filepath.Join(expandHome(defaults.Workspace), "..", "workspace-"+id)
 }
 
 // resolveAgentModel resolves the primary model for an agent.

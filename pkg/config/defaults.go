@@ -261,6 +261,14 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// Vivgrid - https://vivgrid.com
+			{
+				ModelName: "vivgrid-auto",
+				Model:     "vivgrid/auto",
+				APIBase:   "https://api.vivgrid.com/v1",
+				APIKey:    "",
+			},
+
 			// Volcengine (火山引擎) - https://console.volcengine.com/ark
 			{
 				ModelName: "doubao-pro",
@@ -362,6 +370,11 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+				SearXNG: SearXNGConfig{
+					Enabled:    false,
+					BaseURL:    "",
+					MaxResults: 5,
+				},
 				GLMSearch: GLMSearchConfig{
 					Enabled:      false,
 					APIKey:       "",
@@ -381,6 +394,7 @@ func DefaultConfig() *Config {
 					Enabled: true,
 				},
 				EnableDenyPatterns: true,
+				TimeoutSeconds:     60,
 			},
 			Skills: SkillsToolsConfig{
 				ToolConfig: ToolConfig{
@@ -397,6 +411,9 @@ func DefaultConfig() *Config {
 					MaxSize:    50,
 					TTLSeconds: 300,
 				},
+			},
+			SendFile: ToolConfig{
+				Enabled: true,
 			},
 			MCP: MCPConfig{
 				ToolConfig: ToolConfig{
