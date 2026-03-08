@@ -4,10 +4,11 @@ package feishu
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -204,10 +205,15 @@ func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID st
 		// Default to "Pin" if no config
 		emojiList = []string{"Pin"}
 	}
-	logger.Info(fmt.Sprintf("[MABEN] c.config.RandomReactionEmoji, %v", c.config.RandomReactionEmoji))
 
-	// Randomly choose one from the list
-	chosenEmoji := emojiList[rand.Intn(len(emojiList))]
+	// Randomly choose one from the list using crypto/rand for better distribution
+	idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(emojiList))))
+	var chosenEmoji string
+	if err != nil {
+		chosenEmoji = emojiList[0]
+	} else {
+		chosenEmoji = emojiList[idx.Int64()]
+	}
 
 	req := larkim.NewCreateMessageReactionReqBuilder().
 		MessageId(messageID).
