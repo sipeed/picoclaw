@@ -1302,6 +1302,9 @@ func (al *AgentLoop) runLLMIteration(
 		// Tick down TTL of discovered tools after processing tool results.
 		// Only reached when tool calls were made (the loop continues);
 		// the break on no-tool-call responses skips this.
+		// NOTE: This is safe because processMessage is sequential per agent.
+		// If per-agent concurrency is added, TTL consistency between
+		// ToProviderDefs and Get must be re-evaluated.
 		agent.Tools.TickTTL()
 	}
 
