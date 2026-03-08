@@ -114,6 +114,23 @@
       "allow_from": [],
       "reasoning_channel_id": ""
     },
+    "matrix": {
+      "enabled": false,
+      "homeserver": "https://matrix.org",
+      "user_id": "@your-bot:matrix.org",
+      "access_token": "YOUR_MATRIX_ACCESS_TOKEN",
+      "device_id": "",
+      "join_on_invite": true,
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
+      "reasoning_channel_id": ""
+    },
     "line": {
       "enabled": false,
       "channel_secret": "YOUR_LINE_CHANNEL_SECRET",

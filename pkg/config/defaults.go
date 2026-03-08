@@ -97,6 +97,22 @@ func DefaultConfig() *Config {
 				AppToken:  "",
 				AllowFrom: FlexibleStringSlice{},
 			},
+			Matrix: MatrixConfig{
+				Enabled:      false,
+				Homeserver:   "https://matrix.org",
+				UserID:       "",
+				AccessToken:  "",
+				DeviceID:     "",
+				JoinOnInvite: true,
+				AllowFrom:    FlexibleStringSlice{},
+				GroupTrigger: GroupTriggerConfig{
+					MentionOnly: true,
+				},
+				Placeholder: PlaceholderConfig{
+					Enabled: true,
+					Text:    "Thinking... 💭",
+				},
+			},
 			LINE: LINEConfig{
 				Enabled:            false,
 				ChannelSecret:      "",
