@@ -217,16 +217,19 @@ type bm25CachedEngine struct {
 // getOrBuildEngine returns a cached BM25 engine, rebuilding it only when
 // the registry version has changed (new tools registered).
 func (t *BM25SearchTool) getOrBuildEngine() *bm25CachedEngine {
-	currentVersion := t.registry.version.Load()
+	// Fast path: optimistic check without locking the registry.
+	// If the version hasn't changed, the cache is still valid.
+	if t.cachedEngine != nil && t.cacheVersion == t.registry.version.Load() {
+		return t.cachedEngine
+	}
 
 	t.cacheMu.Lock()
 	defer t.cacheMu.Unlock()
 
-	if t.cachedEngine != nil && t.cacheVersion == currentVersion {
-		return t.cachedEngine
-	}
-
+	// Read version inside the registry RLock so the snapshot and version
+	// are guaranteed to be consistent (no TOCTOU between Load and RLock).
 	t.registry.mu.RLock()
+	snapshotVersion := t.registry.version.Load()
 	snapshot := make([]searchDoc, 0, len(t.registry.tools))
 	for name, entry := range t.registry.tools {
 		if !entry.IsCore {
@@ -238,9 +241,14 @@ func (t *BM25SearchTool) getOrBuildEngine() *bm25CachedEngine {
 	}
 	t.registry.mu.RUnlock()
 
+	// Re-check: another goroutine may have rebuilt while we waited for cacheMu.
+	if t.cachedEngine != nil && t.cacheVersion == snapshotVersion {
+		return t.cachedEngine
+	}
+
 	if len(snapshot) == 0 {
 		t.cachedEngine = nil
-		t.cacheVersion = currentVersion
+		t.cacheVersion = snapshotVersion
 		return nil
 	}
 
@@ -253,7 +261,7 @@ func (t *BM25SearchTool) getOrBuildEngine() *bm25CachedEngine {
 
 	cached := &bm25CachedEngine{engine: engine}
 	t.cachedEngine = cached
-	t.cacheVersion = currentVersion
+	t.cacheVersion = snapshotVersion
 	return cached
 }
 
