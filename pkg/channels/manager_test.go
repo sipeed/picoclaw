@@ -877,7 +877,7 @@ func TestBuildMediaScope_WithMessageID(t *testing.T) {
 	}
 }
 
-func TestManager_PlaceholderLogic(t *testing.T) {
+func TestManager_PlaceholderConsumedByResponse(t *testing.T) {
 	mgr := &Manager{
 		channels:     make(map[string]Channel),
 		workers:      make(map[string]*channelWorker),
@@ -894,50 +894,37 @@ func TestManager_PlaceholderLogic(t *testing.T) {
 	mgr.workers["mock"] = worker
 
 	ctx := context.Background()
+	key := "mock:chat-1"
 
-	// Scenario 1: TriggerPlaceholder creates a placeholder but does NOT send text messages
-	msgTrigger := bus.OutboundMessage{
-		Channel:            "mock",
-		ChatID:             "chat-1",
-		TriggerPlaceholder: true,
+	// Simulate a placeholder recorded by base.go HandleMessage
+	mgr.RecordPlaceholder("mock", "chat-1", "ph-123")
+
+	if _, ok := mgr.placeholders.Load(key); !ok {
+		t.Fatal("expected placeholder to be recorded")
 	}
-	mgr.sendWithRetry(ctx, "mock", worker, msgTrigger)
 
-	if mockCh.placeholdersSent != 1 {
-		t.Errorf("expected 1 placeholder sent, got %d", mockCh.placeholdersSent)
+	// Transcription feedback arrives first — it should consume the placeholder
+	// and be delivered via EditMessage, not Send.
+	msgTranscript := bus.OutboundMessage{
+		Channel: "mock",
+		ChatID:  "chat-1",
+		Content: "Transcript: hello",
+	}
+	mgr.sendWithRetry(ctx, "mock", worker, msgTranscript)
+
+	if mockCh.editedMessages != 1 {
+		t.Errorf("expected 1 edited message (placeholder consumed by transcript), got %d", mockCh.editedMessages)
 	}
 	if len(mockCh.sentMessages) != 0 {
-		t.Errorf("expected 0 normal messages sent, got %d", len(mockCh.sentMessages))
+		t.Errorf("expected 0 normal messages (transcript used edit), got %d", len(mockCh.sentMessages))
 	}
 
-	// Verify that the placeholder has been registered in the manager
-	key := "mock:chat-1"
-	if _, ok := mgr.placeholders.Load(key); !ok {
-		t.Errorf("expected placeholder to be recorded in manager")
+	// Placeholder should be gone now
+	if _, ok := mgr.placeholders.Load(key); ok {
+		t.Error("expected placeholder to be removed after being consumed")
 	}
 
-	// Scenario 2: SkipPlaceholder (simulates transcription). Must send normally, ignoring Edit.
-	msgSkip := bus.OutboundMessage{
-		Channel:         "mock",
-		ChatID:          "chat-1",
-		Content:         "Transcript: hello",
-		SkipPlaceholder: true,
-	}
-	mgr.sendWithRetry(ctx, "mock", worker, msgSkip)
-
-	if mockCh.editedMessages != 0 {
-		t.Errorf("expected 0 edited messages due to SkipPlaceholder, got %d", mockCh.editedMessages)
-	}
-	if len(mockCh.sentMessages) != 1 {
-		t.Errorf("expected 1 normal message sent, got %d", len(mockCh.sentMessages))
-	}
-
-	// The placeholder must still exist for the next response
-	if _, ok := mgr.placeholders.Load(key); !ok {
-		t.Errorf("expected placeholder to STILL be in manager after SkipPlaceholder")
-	}
-
-	// Scenario 3: Normal Message (simulates the final LLM response). Must consume the placeholder.
+	// Final LLM response arrives — no placeholder left, so it goes through Send
 	msgFinal := bus.OutboundMessage{
 		Channel: "mock",
 		ChatID:  "chat-1",
@@ -945,11 +932,44 @@ func TestManager_PlaceholderLogic(t *testing.T) {
 	}
 	mgr.sendWithRetry(ctx, "mock", worker, msgFinal)
 
-	if mockCh.editedMessages != 1 {
-		t.Errorf("expected 1 edited message (consuming placeholder), got %d", mockCh.editedMessages)
+	if len(mockCh.sentMessages) != 1 {
+		t.Errorf("expected 1 normal message sent, got %d", len(mockCh.sentMessages))
 	}
-	// The placeholder must have been removed
-	if _, ok := mgr.placeholders.Load(key); ok {
-		t.Errorf("expected placeholder to be removed after being consumed")
+}
+
+func TestManager_SendPlaceholder(t *testing.T) {
+	mgr := &Manager{
+		channels:     make(map[string]Channel),
+		workers:      make(map[string]*channelWorker),
+		placeholders: sync.Map{},
+	}
+
+	mockCh := &mockChannel{
+		sendFn: func(ctx context.Context, msg bus.OutboundMessage) error {
+			return nil
+		},
+	}
+	mgr.channels["mock"] = mockCh
+
+	ctx := context.Background()
+
+	// SendPlaceholder should send a placeholder and record it
+	ok := mgr.SendPlaceholder(ctx, "mock", "chat-1")
+	if !ok {
+		t.Fatal("expected SendPlaceholder to succeed")
+	}
+	if mockCh.placeholdersSent != 1 {
+		t.Errorf("expected 1 placeholder sent, got %d", mockCh.placeholdersSent)
+	}
+
+	key := "mock:chat-1"
+	if _, loaded := mgr.placeholders.Load(key); !loaded {
+		t.Error("expected placeholder to be recorded in manager")
+	}
+
+	// SendPlaceholder on unknown channel should return false
+	ok = mgr.SendPlaceholder(ctx, "unknown", "chat-1")
+	if ok {
+		t.Error("expected SendPlaceholder to fail for unknown channel")
 	}
 }

@@ -413,9 +413,10 @@ var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
 
 // transcribeAudioInMessage resolves audio media refs, transcribes them, and
 // replaces audio annotations in msg.Content with the transcribed text.
-func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.InboundMessage) bus.InboundMessage {
+// Returns the (possibly modified) message and true if audio was transcribed.
+func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.InboundMessage) (bus.InboundMessage, bool) {
 	if al.transcriber == nil || al.mediaStore == nil || len(msg.Media) == 0 {
-		return msg
+		return msg, false
 	}
 
 	// Transcribe each audio media ref in order.
@@ -439,10 +440,10 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	}
 
 	if len(transcriptions) == 0 {
-		return msg
+		return msg, false
 	}
 
-	al.sendTranscriptionFeedback(msg.Channel, msg.ChatID, msg.MessageID, transcriptions)
+	al.sendTranscriptionFeedback(ctx, msg.Channel, msg.ChatID, msg.MessageID, transcriptions)
 
 	// Replace audio annotations sequentially with transcriptions.
 	idx := 0
@@ -461,45 +462,56 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	}
 
 	msg.Content = newContent
-	return msg
+	return msg, true
 }
 
-// sendTranscriptionFeedback Asynchronously sends feedback to the user
-// with the result of audio transcription if the option is enabled.
-func (al *AgentLoop) sendTranscriptionFeedback(channel, chatID string, messageID string, validTexts []string) {
+// sendTranscriptionFeedback sends feedback to the user with the result of
+// audio transcription if the option is enabled. It sends the message directly
+// through the channel (bypassing the bus queue) so that ordering with the
+// subsequent placeholder is guaranteed.
+func (al *AgentLoop) sendTranscriptionFeedback(
+	ctx context.Context,
+	channel, chatID, messageID string,
+	validTexts []string,
+) {
 	if !al.cfg.Voice.EchoTranscription {
 		return
 	}
+	if al.channelManager == nil {
+		return
+	}
 
-	go func() {
-		pubCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		var nonEmpty []string
-		for _, t := range validTexts {
-			if t != "" {
-				nonEmpty = append(nonEmpty, t)
-			}
+	var nonEmpty []string
+	for _, t := range validTexts {
+		if t != "" {
+			nonEmpty = append(nonEmpty, t)
 		}
+	}
 
-		var feedbackMsg string
-		if len(nonEmpty) > 0 {
-			feedbackMsg = "Transcript: " + strings.Join(nonEmpty, "\n")
-		} else {
-			feedbackMsg = "No voice detected in the audio"
-		}
+	var feedbackMsg string
+	if len(nonEmpty) > 0 {
+		feedbackMsg = "Transcript: " + strings.Join(nonEmpty, "\n")
+	} else {
+		feedbackMsg = "No voice detected in the audio"
+	}
 
-		err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
-			Channel:          channel,
-			ChatID:           chatID,
-			Content:          feedbackMsg,
-			ReplyToMessageID: messageID,
-			SkipPlaceholder:  true, // It serves to avoid consuming the message "Thinking..."
-		})
-		if err != nil {
-			logger.WarnCF("voice", "Failed to send transcription feedback", map[string]any{"error": err.Error()})
-		}
-	}()
+	ch, ok := al.channelManager.GetChannel(channel)
+	if !ok {
+		return
+	}
+
+	sendCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	err := ch.Send(sendCtx, bus.OutboundMessage{
+		Channel:          channel,
+		ChatID:           chatID,
+		Content:          feedbackMsg,
+		ReplyToMessageID: messageID,
+	})
+	if err != nil {
+		logger.WarnCF("voice", "Failed to send transcription feedback", map[string]any{"error": err.Error()})
+	}
 }
 
 // inferMediaType determines the media type ("image", "audio", "video", "file")
@@ -613,7 +625,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		},
 	)
 
-	msg = al.transcribeAudioInMessage(ctx, msg)
+	var hadAudio bool
+	msg, hadAudio = al.transcribeAudioInMessage(ctx, msg)
+
+	// For audio messages the placeholder was deferred by the channel.
+	// Now that transcription (and optional feedback) is done, send it.
+	if hadAudio && al.channelManager != nil {
+		al.channelManager.SendPlaceholder(ctx, msg.Channel, msg.ChatID)
+	}
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
@@ -802,15 +821,6 @@ func (al *AgentLoop) runAgentLoop(
 
 	// 2. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
-
-	// thinking message only for channels, not for background tasks
-	if opts.Channel != "" && opts.ChatID != "" && !constants.IsInternalChannel(opts.Channel) && !opts.NoHistory {
-		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-			Channel:            opts.Channel,
-			ChatID:             opts.ChatID,
-			TriggerPlaceholder: true,
-		})
-	}
 
 	// 3. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)

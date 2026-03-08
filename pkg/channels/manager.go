@@ -100,6 +100,27 @@ func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
 	m.placeholders.Store(key, placeholderEntry{id: placeholderID, createdAt: time.Now()})
 }
 
+// SendPlaceholder sends a "Thinking…" placeholder for the given channel/chatID
+// and records it for later editing. Returns true if a placeholder was sent.
+func (m *Manager) SendPlaceholder(ctx context.Context, channel, chatID string) bool {
+	m.mu.RLock()
+	ch, ok := m.channels[channel]
+	m.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	pc, ok := ch.(PlaceholderCapable)
+	if !ok {
+		return false
+	}
+	phID, err := pc.SendPlaceholder(ctx, chatID)
+	if err != nil || phID == "" {
+		return false
+	}
+	m.RecordPlaceholder(channel, chatID, phID)
+	return true
+}
+
 // RecordTypingStop registers a typing stop function for later invocation.
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
@@ -134,15 +155,13 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	}
 
 	// 3. Try editing placeholder
-	if !msg.SkipPlaceholder {
-		if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
-			if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
-				if editor, ok := ch.(MessageEditor); ok {
-					if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
-						return true // edited successfully, skip Send
-					}
-					// edit failed → fall through to normal Send
+	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
+		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
+			if editor, ok := ch.(MessageEditor); ok {
+				if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
+					return true // edited successfully, skip Send
 				}
+				// edit failed → fall through to normal Send
 			}
 		}
 	}
@@ -497,15 +516,6 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 	// Rate limit: wait for token
 	if err := w.limiter.Wait(ctx); err != nil {
 		// ctx canceled, shutting down
-		return
-	}
-
-	if msg.TriggerPlaceholder {
-		if pc, ok := w.ch.(PlaceholderCapable); ok {
-			if phID, err := pc.SendPlaceholder(ctx, msg.ChatID); err == nil && phID != "" {
-				m.RecordPlaceholder(name, msg.ChatID, phID)
-			}
-		}
 		return
 	}
 
