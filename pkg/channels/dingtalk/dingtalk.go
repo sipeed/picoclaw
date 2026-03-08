@@ -27,10 +27,13 @@ type DingTalkChannel struct {
 	clientID     string
 	clientSecret string
 	streamClient *client.StreamClient
+	client       *Client
 	ctx          context.Context
 	cancel       context.CancelFunc
 	// Map to store session webhooks for each chat
 	sessionWebhooks sync.Map // chatID -> sessionWebhook
+	// chatID -> cardInstanceId
+	cardInstanceIds sync.Map
 }
 
 // NewDingTalkChannel creates a new DingTalk channel instance
@@ -44,12 +47,18 @@ func NewDingTalkChannel(cfg config.DingTalkConfig, messageBus *bus.MessageBus) (
 		channels.WithGroupTrigger(cfg.GroupTrigger),
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
+	// dingtalk client
+	dingTalkClient := NewClient(cfg.ClientID, cfg.ClientSecret,
+		WithRobotCode(cfg.RobotCode),
+		WithCardTemplateID(cfg.CardTemplateID),
+		WithCardTemplateContentKey(cfg.CardTemplateContentKey))
 
 	return &DingTalkChannel{
 		BaseChannel:  base,
 		config:       cfg,
 		clientID:     cfg.ClientID,
 		clientSecret: cfg.ClientSecret,
+		client:       dingTalkClient,
 	}, nil
 }
 
@@ -103,25 +112,16 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
 	}
-
-	// Get session webhook from storage
-	sessionWebhookRaw, ok := c.sessionWebhooks.Load(msg.ChatID)
+	// Check if we have a card instance ID for this chat (indicating we can send a card reply)
+	cardInstanceIdRaw, ok := c.cardInstanceIds.LoadAndDelete(msg.ChatID)
 	if !ok {
-		return fmt.Errorf("no session_webhook found for chat %s, cannot send message", msg.ChatID)
+		return c.SendDirectReply(ctx, msg)
 	}
-
-	sessionWebhook, ok := sessionWebhookRaw.(string)
+	cardInstanceId, ok := cardInstanceIdRaw.(string)
 	if !ok {
-		return fmt.Errorf("invalid session_webhook type for chat %s", msg.ChatID)
+		return c.SendDirectReply(ctx, msg)
 	}
-
-	logger.DebugCF("dingtalk", "Sending message", map[string]any{
-		"chat_id": msg.ChatID,
-		"preview": utils.Truncate(msg.Content, 100),
-	})
-
-	// Use the session webhook to send the reply
-	return c.SendDirectReply(ctx, sessionWebhook, msg.Content)
+	return c.SendCardReply(ctx, cardInstanceId, msg.Content)
 }
 
 // onChatBotMessageReceived implements the IChatBotMessageHandler function signature
@@ -153,9 +153,6 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 		// For group chats
 		chatID = data.ConversationId
 	}
-
-	// Store the session webhook for this chat so we can reply later
-	c.sessionWebhooks.Store(chatID, data.SessionWebhook)
 
 	metadata := map[string]string{
 		"sender_name":       senderNick,
@@ -196,6 +193,16 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 		return nil, nil
 	}
 
+	if err := c.tryCardCreateAndDeliver(ctx, chatID, data); err != nil {
+		logger.ErrorCF("dingtalk", "Failed to create or deliver card", map[string]any{
+			"error":     err.Error(),
+			"chat_id":   chatID,
+			"sender_id": senderID,
+		})
+		return nil, nil
+	}
+	// Store the session webhook for this chat so we can reply later
+	c.sessionWebhooks.Store(chatID, data.SessionWebhook)
 	// Handle the message through the base channel
 	c.HandleMessage(ctx, peer, "", senderID, chatID, content, nil, metadata, sender)
 
@@ -205,11 +212,25 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 }
 
 // SendDirectReply sends a direct reply using the session webhook
-func (c *DingTalkChannel) SendDirectReply(ctx context.Context, sessionWebhook, content string) error {
+func (c *DingTalkChannel) SendDirectReply(ctx context.Context, msg bus.OutboundMessage) error {
+	// Get session webhook from storage
+	sessionWebhookRaw, ok := c.sessionWebhooks.LoadAndDelete(msg.ChatID)
+	if !ok {
+		return fmt.Errorf("no session_webhook found for chat %s, cannot send message", msg.ChatID)
+	}
+	sessionWebhook, ok := sessionWebhookRaw.(string)
+	if !ok {
+		return fmt.Errorf("invalid session_webhook type for chat %s", msg.ChatID)
+	}
+
+	logger.DebugCF("dingtalk", "Sending message", map[string]any{
+		"chat_id": msg.ChatID,
+		"preview": utils.Truncate(msg.Content, 100),
+	})
 	replier := chatbot.NewChatbotReplier()
 
 	// Convert string content to []byte for the API
-	contentBytes := []byte(content)
+	contentBytes := []byte(msg.Content)
 	titleBytes := []byte("PicoClaw")
 
 	// Send markdown formatted reply
@@ -222,6 +243,24 @@ func (c *DingTalkChannel) SendDirectReply(ctx context.Context, sessionWebhook, c
 	if err != nil {
 		return fmt.Errorf("dingtalk send: %w", channels.ErrTemporary)
 	}
+	return nil
+}
 
+func (c *DingTalkChannel) SendCardReply(ctx context.Context, cardInstanceId, content string) error {
+	if err := c.client.CardStreaming(ctx, cardInstanceId, content); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *DingTalkChannel) tryCardCreateAndDeliver(ctx context.Context, chatID string, data *chatbot.BotCallbackDataModel) error {
+	if c.config.CardTemplateID == "" {
+		return nil
+	}
+	cardInstanceId, err := c.client.CardCreateAndDeliver(ctx, data)
+	if err != nil {
+		return err
+	}
+	c.cardInstanceIds.Store(chatID, cardInstanceId)
 	return nil
 }
