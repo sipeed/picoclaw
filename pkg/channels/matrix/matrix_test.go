@@ -2,7 +2,10 @@ package matrix
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
@@ -113,6 +116,57 @@ func TestIsBotMentioned(t *testing.T) {
 		if got := ch.isBotMentioned(&tc.msg); got != tc.want {
 			t.Fatalf("%s: got=%v want=%v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestRoomKindCache_ExpiresEntries(t *testing.T) {
+	cache := newRoomKindCache(4, 5*time.Second)
+	now := time.Unix(100, 0)
+	cache.set("!room:matrix.org", true, now)
+
+	if got, ok := cache.get("!room:matrix.org", now.Add(2*time.Second)); !ok || !got {
+		t.Fatalf("expected cached group room before ttl, got ok=%v group=%v", ok, got)
+	}
+
+	if _, ok := cache.get("!room:matrix.org", now.Add(6*time.Second)); ok {
+		t.Fatal("expected cache miss after ttl expiry")
+	}
+}
+
+func TestRoomKindCache_EvictsOldestWhenFull(t *testing.T) {
+	cache := newRoomKindCache(2, time.Minute)
+	now := time.Unix(200, 0)
+
+	cache.set("!room1:matrix.org", false, now)
+	cache.set("!room2:matrix.org", false, now.Add(1*time.Second))
+	cache.set("!room3:matrix.org", true, now.Add(2*time.Second))
+
+	if _, ok := cache.get("!room1:matrix.org", now.Add(2*time.Second)); ok {
+		t.Fatal("expected oldest cache entry to be evicted")
+	}
+	if got, ok := cache.get("!room2:matrix.org", now.Add(2*time.Second)); !ok || got {
+		t.Fatalf("expected room2 to remain and be direct, got ok=%v group=%v", ok, got)
+	}
+	if got, ok := cache.get("!room3:matrix.org", now.Add(2*time.Second)); !ok || !got {
+		t.Fatalf("expected room3 to remain and be group, got ok=%v group=%v", ok, got)
+	}
+}
+
+func TestMatrixMediaTempDir(t *testing.T) {
+	dir, err := matrixMediaTempDir()
+	if err != nil {
+		t.Fatalf("matrixMediaTempDir failed: %v", err)
+	}
+	if filepath.Base(dir) != matrixMediaTempDirName {
+		t.Fatalf("unexpected media dir base: %q", filepath.Base(dir))
+	}
+
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("media dir not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected directory, got mode=%v", info.Mode())
 	}
 }
 
