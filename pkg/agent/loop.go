@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -285,7 +284,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 						mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
 
-						if al.cfg.Tools.MCP.ToolConfig.Enabled {
+						if al.cfg.Tools.MCP.Discovery.Enabled {
 							agent.Tools.RegisterHidden(mcpTool)
 						} else {
 							agent.Tools.Register(mcpTool)
@@ -315,10 +314,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				useBM25 := al.cfg.Tools.MCP.Discovery.UseBM25
 				useRegex := al.cfg.Tools.MCP.Discovery.UseRegex
 
-				// Fail fast: If discovery is enabled but no tool is turned on, break the app
+				// Fail fast: If discovery is enabled but no search method is turned on
 				if !useBM25 && !useRegex {
-					log.Fatalf(
-						"Critical error: tool discovery is enabled but neither 'use_bm25' nor 'use_regex' is set to true in the configuration.",
+					return fmt.Errorf(
+						"tool discovery is enabled but neither 'use_bm25' nor 'use_regex' is set to true in the configuration",
 					)
 				}
 
@@ -328,6 +327,9 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				}
 
 				maxSearchResults := al.cfg.Tools.MCP.Discovery.MaxSearchResults
+				if maxSearchResults <= 0 {
+					maxSearchResults = 5 // Default value
+				}
 
 				for _, agentID := range agentIDs {
 					agent, ok := al.registry.GetAgent(agentID)
@@ -931,9 +933,6 @@ func (al *AgentLoop) runLLMIteration(
 				"max":       agent.MaxIterations,
 			})
 
-		// Scale down the TTL of the discovered tools with each new round of the LLM
-		agent.Tools.TickTTL()
-
 		// Build tool definitions
 		providerToolDefs := agent.Tools.ToProviderDefs()
 
@@ -1299,6 +1298,11 @@ func (al *AgentLoop) runLLMIteration(
 			// Save tool result message to session
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
+
+		// Tick down TTL of discovered tools after processing tool results.
+		// Only reached when tool calls were made (the loop continues);
+		// the break on no-tool-call responses skips this.
+		agent.Tools.TickTTL()
 	}
 
 	return finalContent, iteration, nil

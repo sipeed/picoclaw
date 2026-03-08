@@ -568,8 +568,7 @@ type ToolDiscoveryConfig struct {
 }
 
 type ToolConfig struct {
-	Enabled   bool                `json:"enabled"   env:"ENABLED"`
-	Discovery ToolDiscoveryConfig `json:"discovery"`
+	Enabled bool `json:"enabled" env:"ENABLED"`
 }
 
 type BraveConfig struct {
@@ -720,7 +719,8 @@ type MCPServerConfig struct {
 
 // MCPConfig defines configuration for all MCP servers
 type MCPConfig struct {
-	ToolConfig `envPrefix:"PICOCLAW_TOOLS_MCP_"`
+	ToolConfig `                    envPrefix:"PICOCLAW_TOOLS_MCP_"`
+	Discovery  ToolDiscoveryConfig `                                json:"discovery"`
 	// Servers is a map of server name to server configuration
 	Servers map[string]MCPServerConfig `json:"servers,omitempty"`
 }

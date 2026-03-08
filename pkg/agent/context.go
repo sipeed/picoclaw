@@ -18,10 +18,11 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace     string
-	skillsLoader  *skills.SkillsLoader
-	memory        *MemoryStore
-	toolDiscovery bool
+	workspace          string
+	skillsLoader       *skills.SkillsLoader
+	memory             *MemoryStore
+	toolDiscoveryBM25  bool
+	toolDiscoveryRegex bool
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -42,8 +43,9 @@ type ContextBuilder struct {
 	skillFilesAtCache map[string]time.Time
 }
 
-func (cb *ContextBuilder) WithToolDiscovery(enabled bool) *ContextBuilder {
-	cb.toolDiscovery = enabled
+func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuilder {
+	cb.toolDiscoveryBM25 = useBM25
+	cb.toolDiscoveryRegex = useRegex
 	return cb
 }
 
@@ -104,10 +106,22 @@ Your workspace is at: %s
 }
 
 func (cb *ContextBuilder) getDiscoveryRule() string {
-	if cb.toolDiscovery {
-		return `5. **Tool Discovery** - Your visible tools are limited to save memory, but a vast hidden library exists. If you lack the right tool for a task, BEFORE giving up, you MUST search using the "tool_search_tool_bm25" or "tool_search_tool_regex" tool. Do not refuse a request unless the search returns nothing. Found tools will temporarily unlock for your next turn.`
+	if !cb.toolDiscoveryBM25 && !cb.toolDiscoveryRegex {
+		return ""
 	}
-	return ""
+
+	var toolNames []string
+	if cb.toolDiscoveryBM25 {
+		toolNames = append(toolNames, `"tool_search_tool_bm25"`)
+	}
+	if cb.toolDiscoveryRegex {
+		toolNames = append(toolNames, `"tool_search_tool_regex"`)
+	}
+
+	return fmt.Sprintf(
+		`5. **Tool Discovery** - Your visible tools are limited to save memory, but a vast hidden library exists. If you lack the right tool for a task, BEFORE giving up, you MUST search using the %s tool. Do not refuse a request unless the search returns nothing. Found tools will temporarily unlock for your next turn.`,
+		strings.Join(toolNames, " or "),
+	)
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {

@@ -6,8 +6,13 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/utils"
+)
+
+const (
+	MaxRegexPatternLength = 200
 )
 
 type RegexSearchTool struct {
@@ -49,6 +54,11 @@ func (t *RegexSearchTool) Execute(ctx context.Context, args map[string]any) *Too
 		return ErrorResult("Missing or invalid 'pattern' argument. Must be a non-empty string.")
 	}
 
+	if len(pattern) > MaxRegexPatternLength {
+		// Limit on length to avoid catastrophic patterns
+		return ErrorResult(fmt.Sprintf("Pattern too long: max %d characters allowed", MaxRegexPatternLength))
+	}
+
 	res, err := t.registry.SearchRegex(pattern, t.maxSearchResults)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("Invalid regex pattern syntax: %v. Please fix your regex and try again.", err))
@@ -61,6 +71,11 @@ type BM25SearchTool struct {
 	registry         *ToolRegistry
 	ttl              int
 	maxSearchResults int
+
+	// Cache: rebuilt only when the registry version changes.
+	cacheMu      sync.Mutex
+	cachedEngine *bm25CachedEngine
+	cacheVersion uint64
 }
 
 func NewBM25SearchTool(r *ToolRegistry, ttl int, maxSearchResults int) *BM25SearchTool {
@@ -96,17 +111,40 @@ func (t *BM25SearchTool) Execute(ctx context.Context, args map[string]any) *Tool
 		return ErrorResult("Missing or invalid 'query' argument. Must be a non-empty string.")
 	}
 
-	return formatDiscoveryResponse(t.registry, t.registry.SearchBM25(query, t.maxSearchResults), t.ttl)
+	cached := t.getOrBuildEngine()
+	if cached == nil {
+		return SilentResult("No tools found matching the query.")
+	}
+
+	ranked := cached.engine.Search(query, t.maxSearchResults)
+	if len(ranked) == 0 {
+		return SilentResult("No tools found matching the query.")
+	}
+
+	results := make([]ToolSearchResult, len(ranked))
+	for i, r := range ranked {
+		results[i] = ToolSearchResult{
+			Name:        r.Document.Name,
+			Description: r.Document.Description,
+		}
+	}
+
+	return formatDiscoveryResponse(t.registry, results, t.ttl)
 }
 
 // ToolSearchResult represents the result returned to the LLM.
+// Parameters are omitted from the JSON response to save context tokens;
+// the LLM will see full schemas via ToProviderDefs after promotion.
 type ToolSearchResult struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Parameters  map[string]any `json:"parameters"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 func (r *ToolRegistry) SearchRegex(pattern string, maxSearchResults int) ([]ToolSearchResult, error) {
+	if maxSearchResults <= 0 {
+		return nil, nil
+	}
+
 	regex, err := regexp.Compile("(?i)" + pattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile regex pattern %q: %w", pattern, err)
@@ -117,7 +155,9 @@ func (r *ToolRegistry) SearchRegex(pattern string, maxSearchResults int) ([]Tool
 
 	var results []ToolSearchResult
 
-	for name, entry := range r.tools {
+	// Iterate in sorted order for deterministic results across calls.
+	for _, name := range r.sortedToolNames() {
+		entry := r.tools[name]
 		// Search only among the hidden tools (Core tools are already visible)
 		if !entry.IsCore {
 			// Directly call interface methods! No reflection/unmarshalling needed.
@@ -127,7 +167,6 @@ func (r *ToolRegistry) SearchRegex(pattern string, maxSearchResults int) ([]Tool
 				results = append(results, ToolSearchResult{
 					Name:        name,
 					Description: desc,
-					Parameters:  entry.Tool.Parameters(),
 				})
 				if len(results) >= maxSearchResults {
 					break // Stop searching once we hit the max! Saves CPU.
@@ -144,9 +183,11 @@ func formatDiscoveryResponse(registry *ToolRegistry, results []ToolSearchResult,
 		return SilentResult("No tools found matching the query.")
 	}
 
-	for _, r := range results {
-		registry.PromoteTool(r.Name, ttl)
+	names := make([]string, len(results))
+	for i, r := range results {
+		names[i] = r.Name
 	}
+	registry.PromoteTools(names, ttl)
 
 	b, err := json.Marshal(results)
 	if err != nil {
@@ -162,20 +203,64 @@ func formatDiscoveryResponse(registry *ToolRegistry, results []ToolSearchResult,
 	return SilentResult(msg)
 }
 
-// Lightweight internal type
+// Lightweight internal type used as corpus document for BM25.
 type searchDoc struct {
 	Name        string
 	Description string
-	Tool        Tool // Hold the interface reference
+}
+
+// bm25CachedEngine wraps a BM25Engine with its corpus snapshot.
+type bm25CachedEngine struct {
+	engine *utils.BM25Engine[searchDoc]
+}
+
+// getOrBuildEngine returns a cached BM25 engine, rebuilding it only when
+// the registry version has changed (new tools registered).
+func (t *BM25SearchTool) getOrBuildEngine() *bm25CachedEngine {
+	currentVersion := t.registry.version.Load()
+
+	t.cacheMu.Lock()
+	defer t.cacheMu.Unlock()
+
+	if t.cachedEngine != nil && t.cacheVersion == currentVersion {
+		return t.cachedEngine
+	}
+
+	t.registry.mu.RLock()
+	snapshot := make([]searchDoc, 0, len(t.registry.tools))
+	for name, entry := range t.registry.tools {
+		if !entry.IsCore {
+			snapshot = append(snapshot, searchDoc{
+				Name:        name,
+				Description: entry.Tool.Description(),
+			})
+		}
+	}
+	t.registry.mu.RUnlock()
+
+	if len(snapshot) == 0 {
+		t.cachedEngine = nil
+		t.cacheVersion = currentVersion
+		return nil
+	}
+
+	engine := utils.NewBM25Engine(
+		snapshot,
+		func(doc searchDoc) string {
+			return doc.Name + " " + doc.Description
+		},
+	)
+
+	cached := &bm25CachedEngine{engine: engine}
+	t.cachedEngine = cached
+	t.cacheVersion = currentVersion
+	return cached
 }
 
 // SearchBM25 ranks hidden tools against query using BM25 via utils.BM25Engine.
 // The corpus snapshot is built under the registry read-lock, then released
 // before scoring so the lock is not held during CPU-intensive work.
 func (r *ToolRegistry) SearchBM25(query string, maxSearchResults int) []ToolSearchResult {
-	// We copy only the lightweight searchDoc values (name, description,
-	// Tool interface reference). This keeps the lock window short and avoids
-	// holding it during BM25 indexing and scoring.
 	r.mu.RLock()
 	snapshot := make([]searchDoc, 0, len(r.tools))
 	for name, entry := range r.tools {
@@ -183,7 +268,6 @@ func (r *ToolRegistry) SearchBM25(query string, maxSearchResults int) []ToolSear
 			snapshot = append(snapshot, searchDoc{
 				Name:        name,
 				Description: entry.Tool.Description(),
-				Tool:        entry.Tool,
 			})
 		}
 	}
@@ -193,7 +277,6 @@ func (r *ToolRegistry) SearchBM25(query string, maxSearchResults int) []ToolSear
 		return nil
 	}
 
-	// Delegate scoring to the generic BM25 engine
 	engine := utils.NewBM25Engine(
 		snapshot,
 		func(doc searchDoc) string {
@@ -211,7 +294,6 @@ func (r *ToolRegistry) SearchBM25(query string, maxSearchResults int) []ToolSear
 		out[i] = ToolSearchResult{
 			Name:        r.Document.Name,
 			Description: r.Document.Description,
-			Parameters:  r.Document.Tool.Parameters(),
 		}
 	}
 	return out

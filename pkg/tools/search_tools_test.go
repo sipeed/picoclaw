@@ -138,6 +138,74 @@ func TestBM25SearchTool_Execute(t *testing.T) {
 	})
 }
 
+func TestRegexSearchTool_PatternTooLong(t *testing.T) {
+	reg := setupPopulatedRegistry()
+	tool := NewRegexSearchTool(reg, 5, 10)
+	ctx := context.Background()
+
+	longPattern := strings.Repeat("a", MaxRegexPatternLength+1)
+	res := tool.Execute(ctx, map[string]any{"pattern": longPattern})
+	if !res.IsError || !strings.Contains(res.ForLLM, "Pattern too long") {
+		t.Errorf("Expected pattern too long error, got: %v", res.ForLLM)
+	}
+}
+
+func TestSearchRegex_ZeroMaxResults(t *testing.T) {
+	reg := setupPopulatedRegistry()
+
+	res, err := reg.SearchRegex("mcp", 0)
+	if err != nil {
+		t.Fatalf("SearchRegex failed: %v", err)
+	}
+	if len(res) != 0 {
+		t.Errorf("Expected 0 results with maxSearchResults=0, got %d", len(res))
+	}
+}
+
+func TestSearchBM25_ZeroMaxResults(t *testing.T) {
+	reg := setupPopulatedRegistry()
+
+	res := reg.SearchBM25("read file", 0)
+	if len(res) != 0 {
+		t.Errorf("Expected 0 results with maxSearchResults=0, got %d", len(res))
+	}
+}
+
+func TestSearchRegex_DeterministicOrder(t *testing.T) {
+	reg := NewToolRegistry()
+	for i := 0; i < 20; i++ {
+		reg.RegisterHidden(&mockSearchableTool{
+			name: fmt.Sprintf("tool_%02d", i),
+			desc: "searchable tool",
+		})
+	}
+
+	// Run the same search multiple times and verify order is stable
+	var firstRun []string
+	for attempt := 0; attempt < 10; attempt++ {
+		res, err := reg.SearchRegex("searchable", 20)
+		if err != nil {
+			t.Fatalf("SearchRegex failed: %v", err)
+		}
+
+		names := make([]string, len(res))
+		for i, r := range res {
+			names[i] = r.Name
+		}
+
+		if attempt == 0 {
+			firstRun = names
+		} else {
+			for i, name := range names {
+				if name != firstRun[i] {
+					t.Fatalf("Non-deterministic order at attempt %d, index %d: got %q, want %q",
+						attempt, i, name, firstRun[i])
+				}
+			}
+		}
+	}
+}
+
 func TestToolRegistry_SearchLimitsAndCoreFiltering(t *testing.T) {
 	reg := NewToolRegistry()
 

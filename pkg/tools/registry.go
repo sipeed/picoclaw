@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -18,8 +19,9 @@ type ToolEntry struct {
 }
 
 type ToolRegistry struct {
-	tools map[string]*ToolEntry
-	mu    sync.RWMutex
+	tools   map[string]*ToolEntry
+	mu      sync.RWMutex
+	version atomic.Uint64 // incremented on Register/RegisterHidden for cache invalidation
 }
 
 func NewToolRegistry() *ToolRegistry {
@@ -41,6 +43,7 @@ func (r *ToolRegistry) Register(tool Tool) {
 		IsCore: true,
 		TTL:    0, // Core tools do not use TTL
 	}
+	r.version.Add(1)
 }
 
 // RegisterHidden saves hidden tools (visible only via TTL)
@@ -48,20 +51,28 @@ func (r *ToolRegistry) RegisterHidden(tool Tool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	name := tool.Name()
+	if _, exists := r.tools[name]; exists {
+		logger.WarnCF("tools", "Hidden tool registration overwrites existing tool",
+			map[string]any{"name": name})
+	}
 	r.tools[name] = &ToolEntry{
 		Tool:   tool,
 		IsCore: false,
 		TTL:    0,
 	}
+	r.version.Add(1)
 }
 
-// PromoteTool imposta il TTL solo se il tool NON è un core tool
-func (r *ToolRegistry) PromoteTool(name string, ttl int) {
+// PromoteTools atomically sets the TTL for multiple non-core tools.
+// This prevents a concurrent TickTTL from decrementing between promotions.
+func (r *ToolRegistry) PromoteTools(names []string, ttl int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if entry, exists := r.tools[name]; exists {
-		if !entry.IsCore {
-			entry.TTL = ttl
+	for _, name := range names {
+		if entry, exists := r.tools[name]; exists {
+			if !entry.IsCore {
+				entry.TTL = ttl
+			}
 		}
 	}
 }
@@ -82,6 +93,10 @@ func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	defer r.mu.RUnlock()
 	entry, ok := r.tools[name]
 	if !ok {
+		return nil, false
+	}
+	// Hidden tools with expired TTL are not callable.
+	if !entry.IsCore && entry.TTL <= 0 {
 		return nil, false
 	}
 	return entry.Tool, true
