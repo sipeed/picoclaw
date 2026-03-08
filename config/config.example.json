@@ -49,6 +49,11 @@
     }
   ],
   "channels": {
+    "imessage": {
+      "enabled": false,
+      "allow_from": [],
+      "db_path": "~/Library/Messages/chat.db"
+    },
     "telegram": {
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
@@ -431,7 +436,10 @@
     },
     "write_file": {
       "enabled": true
-    }
+    },
+    "llm_call_log": {
+      "enabled":false
+   }
   },
   "heartbeat": {
     "enabled": true,
