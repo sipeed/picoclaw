@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/tencent-connect/botgo/dto"
 	"github.com/tencent-connect/botgo/openapi"
 	"golang.org/x/oauth2"
@@ -160,14 +161,18 @@ func (c *Client) apiRequestWithRetry(ctx context.Context, accessToken, method, p
 
 		// Fast-fail on non-retriable errors
 		if strings.Contains(errMsg, "400") || strings.Contains(errMsg, "401") ||
-			strings.Contains(errMsg, "Invalid") || strings.Contains(errMsg, "上传超时") ||
+			strings.Contains(errMsg, "Invalid") || strings.Contains(errMsg, "upload timeout") ||
 			strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "Timeout") {
 			return nil, lastErr
 		}
 
 		if attempt < uploadMaxRetries {
 			delay := time.Duration(uploadBaseDelayMs*pow(2, attempt)) * time.Millisecond
-			fmt.Printf("[qqbot-api] Upload attempt %d failed, retrying in %v: %s\n", attempt+1, delay, truncate(errMsg, 100))
+			logger.WarnCF("qq", "Upload attempt failed, retrying", map[string]any{
+				"attempt": attempt + 1,
+				"delay":   delay.String(),
+				"error":   truncate(errMsg, 100),
+			})
 
 			select {
 			case <-time.After(delay):
@@ -235,7 +240,7 @@ func (c *Client) uploadC2CMedia(
 	if fileData != "" {
 		contentHash := computeFileHash(fileData)
 		if cached, ok := c.getCachedFileInfo(contentHash, "c2c", openid, fileType); ok {
-			fmt.Println("[qqbot-api] uploadC2CMedia: using cached file_info (skip upload)")
+			logger.InfoC("qq", "uploadC2CMedia: using cached file_info (skip upload)")
 			return &UploadMediaResponse{FileInfo: cached}, nil
 		}
 	}
