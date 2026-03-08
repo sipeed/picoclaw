@@ -138,6 +138,12 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		timeout = time.Duration(config.Tools.Exec.TimeoutSeconds) * time.Second
 	}
 
+	// Get envSet from config (if provided)
+	var envSet map[string]string
+	if config != nil && config.Tools.Exec.EnvSet != nil {
+		envSet = config.Tools.Exec.EnvSet
+	}
+
 	return &ExecTool{
 		workingDir:          workingDir,
 		timeout:             timeout,
@@ -145,7 +151,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		allowPatterns:       nil,
 		customAllowPatterns: customAllowPatterns,
 		restrictToWorkspace: restrict,
-		cachedEnv:           shell.BuildSanitizedEnv(os.Environ(), nil, nil, nil),
+		cachedEnv:           shell.BuildSanitizedEnv(os.Environ(), nil, envSet, nil),
 	}, nil
 }
 
