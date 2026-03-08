@@ -130,7 +130,6 @@ func getCallerInfo() (string, int, string) {
 
 		funcName := fn.Name()
 		if strings.HasPrefix(funcName, "runtime.") {
-			fmt.Println("===", funcName)
 			continue
 		}
 
@@ -296,6 +295,7 @@ func FatalCF(component string, message string, fields map[string]any) {
 // Logger implements common Logger interface
 type Logger struct {
 	component string
+	levels    map[int]LogLevel
 }
 
 // Debug logs debug messages
@@ -335,15 +335,46 @@ func (b *Logger) Warnf(format string, v ...any) {
 	logMessage(WARN, b.component, fmt.Sprintf(format, v...), nil)
 }
 
+// Warningf logs formatted warning messages
+func (b *Logger) Warningf(format string, v ...any) {
+	logMessage(WARN, b.component, fmt.Sprintf(format, v...), nil)
+}
+
 // Errorf logs formatted error messages
 func (b *Logger) Errorf(format string, v ...any) {
 	//debugCallerInfo()
 	logMessage(ERROR, b.component, fmt.Sprintf(format, v...), nil)
 }
 
+// Fatalf logs formatted fatal messages and exits
+func (b *Logger) Fatalf(format string, v ...any) {
+	logMessage(FATAL, b.component, fmt.Sprintf(format, v...), nil)
+}
+
+// Log logs a message at a given level with caller information
+// msgL: message level (DEBUG, INFO, WARN, ERROR, FATAL)
+// caller: unused parameter reserved for compatibility
+// format: format string
+// a: format arguments
+func (b *Logger) Log(msgL, caller int, format string, a ...interface{}) {
+	level := LogLevel(msgL)
+	if b.levels != nil {
+		if lvl, ok := b.levels[msgL]; ok {
+			level = lvl
+		}
+	}
+	logMessage(level, b.component, fmt.Sprintf(format, a...), nil)
+}
+
 // Sync flushes log buffer (no-op for this implementation)
 func (b *Logger) Sync() error {
 	return nil
+}
+
+// WithLevels sets log levels mapping for this logger
+func (b *Logger) WithLevels(levels map[int]LogLevel) *Logger {
+	b.levels = levels
+	return b
 }
 
 // NewLogger creates a new logger instance with optional component name
