@@ -435,10 +435,47 @@ func TestLoadConfig_WebToolsProxy(t *testing.T) {
 }
 
 // TestDefaultConfig_DMScope verifies the default dm_scope value
+// TestDefaultConfig_SummarizationThresholds verifies summarization defaults
+func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Agents.Defaults.SummarizeMessageThreshold != 20 {
+		t.Errorf("SummarizeMessageThreshold = %d, want 20", cfg.Agents.Defaults.SummarizeMessageThreshold)
+	}
+	if cfg.Agents.Defaults.SummarizeTokenPercent != 75 {
+		t.Errorf("SummarizeTokenPercent = %d, want 75", cfg.Agents.Defaults.SummarizeTokenPercent)
+	}
+}
+
 func TestDefaultConfig_DMScope(t *testing.T) {
 	cfg := DefaultConfig()
 
 	if cfg.Session.DMScope != "per-channel-peer" {
 		t.Errorf("Session.DMScope = %q, want 'per-channel-peer'", cfg.Session.DMScope)
+	}
+}
+
+func TestDefaultConfig_WorkspacePath_Default(t *testing.T) {
+	// Unset to ensure we test the default
+	t.Setenv("PICOCLAW_HOME", "")
+	// Set a known home for consistent test results
+	t.Setenv("HOME", "/tmp/home")
+
+	cfg := DefaultConfig()
+	want := filepath.Join("/tmp/home", ".picoclaw", "workspace")
+
+	if cfg.Agents.Defaults.Workspace != want {
+		t.Errorf("Default workspace path = %q, want %q", cfg.Agents.Defaults.Workspace, want)
+	}
+}
+
+func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
+	t.Setenv("PICOCLAW_HOME", "/custom/picoclaw/home")
+
+	cfg := DefaultConfig()
+	want := "/custom/picoclaw/home/workspace"
+
+	if cfg.Agents.Defaults.Workspace != want {
+		t.Errorf("Workspace path with PICOCLAW_HOME = %q, want %q", cfg.Agents.Defaults.Workspace, want)
 	}
 }

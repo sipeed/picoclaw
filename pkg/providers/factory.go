@@ -102,6 +102,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = "https://openrouter.ai/api/v1"
 				}
 			}
+		case "litellm":
+			if cfg.Providers.LiteLLM.APIKey != "" || cfg.Providers.LiteLLM.APIBase != "" {
+				sel.apiKey = cfg.Providers.LiteLLM.APIKey
+				sel.apiBase = cfg.Providers.LiteLLM.APIBase
+				sel.proxy = cfg.Providers.LiteLLM.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "http://localhost:4000/v1"
+				}
+			}
 		case "zhipu", "glm":
 			if cfg.Providers.Zhipu.APIKey != "" {
 				sel.apiKey = cfg.Providers.Zhipu.APIKey
@@ -144,6 +153,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = "https://integrate.api.nvidia.com/v1"
 				}
 			}
+		case "vivgrid":
+			if cfg.Providers.Vivgrid.APIKey != "" {
+				sel.apiKey = cfg.Providers.Vivgrid.APIKey
+				sel.apiBase = cfg.Providers.Vivgrid.APIBase
+				sel.proxy = cfg.Providers.Vivgrid.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.vivgrid.com/v1"
+				}
+			}
 		case "claude-cli", "claude-code", "claudecode":
 			workspace := cfg.WorkspacePath()
 			if workspace == "" {
@@ -170,6 +188,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 				}
 				if model != "deepseek-chat" && model != "deepseek-reasoner" {
 					sel.model = "deepseek-chat"
+				}
+			}
+		case "avian":
+			if cfg.Providers.Avian.APIKey != "" {
+				sel.apiKey = cfg.Providers.Avian.APIKey
+				sel.apiBase = cfg.Providers.Avian.APIBase
+				sel.proxy = cfg.Providers.Avian.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.avian.io/v1"
 				}
 			}
 		case "mistral":
@@ -277,6 +304,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			if sel.apiBase == "" {
 				sel.apiBase = "https://integrate.api.nvidia.com/v1"
 			}
+		case strings.HasPrefix(model, "vivgrid/") && cfg.Providers.Vivgrid.APIKey != "":
+			sel.apiKey = cfg.Providers.Vivgrid.APIKey
+			sel.apiBase = cfg.Providers.Vivgrid.APIBase
+			sel.proxy = cfg.Providers.Vivgrid.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.vivgrid.com/v1"
+			}
 		case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && cfg.Providers.Ollama.APIKey != "":
 			sel.apiKey = cfg.Providers.Ollama.APIKey
 			sel.apiBase = cfg.Providers.Ollama.APIBase
@@ -290,6 +324,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.proxy = cfg.Providers.Mistral.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "https://api.mistral.ai/v1"
+			}
+		case strings.HasPrefix(model, "avian/") && cfg.Providers.Avian.APIKey != "":
+			sel.apiKey = cfg.Providers.Avian.APIKey
+			sel.apiBase = cfg.Providers.Avian.APIBase
+			sel.proxy = cfg.Providers.Avian.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.avian.io/v1"
 			}
 		case cfg.Providers.VLLM.APIBase != "":
 			sel.apiKey = cfg.Providers.VLLM.APIKey

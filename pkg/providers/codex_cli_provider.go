@@ -115,7 +115,7 @@ func (p *CodexCliProvider) buildPrompt(messages []Message, tools []ToolDefinitio
 	}
 
 	if len(tools) > 0 {
-		sb.WriteString(p.buildToolsPrompt(tools))
+		sb.WriteString(buildCLIToolsPrompt(tools))
 		sb.WriteString("\n\n")
 	}
 
@@ -125,38 +125,6 @@ func (p *CodexCliProvider) buildPrompt(messages []Message, tools []ToolDefinitio
 	}
 
 	sb.WriteString(strings.Join(conversationParts, "\n"))
-	return sb.String()
-}
-
-// buildToolsPrompt creates a tool definitions section for the prompt.
-func (p *CodexCliProvider) buildToolsPrompt(tools []ToolDefinition) string {
-	var sb strings.Builder
-
-	sb.WriteString("## Available Tools\n\n")
-	sb.WriteString("When you need to use a tool, respond with ONLY a JSON object:\n\n")
-	sb.WriteString("```json\n")
-	sb.WriteString(
-		`{"tool_calls":[{"id":"call_xxx","type":"function","function":{"name":"tool_name","arguments":"{...}"}}]}`,
-	)
-	sb.WriteString("\n```\n\n")
-	sb.WriteString("CRITICAL: The 'arguments' field MUST be a JSON-encoded STRING.\n\n")
-	sb.WriteString("### Tool Definitions:\n\n")
-
-	for _, tool := range tools {
-		if tool.Type != "function" {
-			continue
-		}
-		sb.WriteString(fmt.Sprintf("#### %s\n", tool.Function.Name))
-		if tool.Function.Description != "" {
-			sb.WriteString(fmt.Sprintf("Description: %s\n", tool.Function.Description))
-		}
-		if len(tool.Function.Parameters) > 0 {
-			paramsJSON, _ := json.Marshal(tool.Function.Parameters)
-			sb.WriteString(fmt.Sprintf("Parameters:\n```json\n%s\n```\n", string(paramsJSON)))
-		}
-		sb.WriteString("\n")
-	}
-
 	return sb.String()
 }
 

@@ -54,6 +54,39 @@ func TestClawHubRegistrySearch(t *testing.T) {
 	assert.Equal(t, "clawhub", results[0].RegistryName)
 }
 
+func TestClawHubRegistrySearchRetries429(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte("rate limited"))
+			return
+		}
+
+		slug := "github"
+		name := "GitHub Integration"
+		summary := "Interact with GitHub repos"
+		version := "1.0.0"
+
+		json.NewEncoder(w).Encode(clawhubSearchResponse{
+			Results: []clawhubSearchResult{
+				{Score: 0.95, Slug: &slug, DisplayName: &name, Summary: &summary, Version: &version},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	reg := newTestRegistry(srv.URL, "")
+	results, err := reg.Search(context.Background(), "github", 5)
+
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, 2, attempts)
+	assert.Equal(t, "github", results[0].Slug)
+}
+
 func TestClawHubRegistryGetSkillMeta(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/skills/github", r.URL.Path)
@@ -135,6 +168,54 @@ func TestClawHubRegistryDownloadAndInstall(t *testing.T) {
 	readmeContent, err := os.ReadFile(filepath.Join(targetDir, "README.md"))
 	require.NoError(t, err)
 	assert.Contains(t, string(readmeContent), "# Test Skill")
+}
+
+func TestClawHubRegistryDownloadAndInstallRetries429(t *testing.T) {
+	zipBuf := createTestZip(t, map[string]string{
+		"SKILL.md": "---\nname: retry-skill\ndescription: A test\n---\nHello skill",
+	})
+
+	downloadAttempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/skills/retry-skill":
+			json.NewEncoder(w).Encode(clawhubSkillResponse{
+				Slug:          "retry-skill",
+				DisplayName:   "Retry Skill",
+				Summary:       "A retry test skill",
+				LatestVersion: &clawhubVersionInfo{Version: "1.0.0"},
+			})
+		case "/api/v1/download":
+			downloadAttempts++
+			if downloadAttempts == 1 {
+				w.Header().Set("Retry-After", "0")
+				w.WriteHeader(http.StatusTooManyRequests)
+				w.Write([]byte("rate limited"))
+				return
+			}
+			assert.Equal(t, "retry-skill", r.URL.Query().Get("slug"))
+			w.Header().Set("Content-Type", "application/zip")
+			w.Write(zipBuf)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	targetDir := filepath.Join(tmpDir, "retry-skill")
+
+	reg := newTestRegistry(srv.URL, "")
+	result, err := reg.DownloadAndInstall(context.Background(), "retry-skill", "", targetDir)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "1.0.0", result.Version)
+	assert.Equal(t, 2, downloadAttempts)
+
+	skillContent, err := os.ReadFile(filepath.Join(targetDir, "SKILL.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(skillContent), "Hello skill")
 }
 
 func TestClawHubRegistryAuthToken(t *testing.T) {

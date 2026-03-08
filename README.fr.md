@@ -7,7 +7,7 @@
 
   <p>
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
-    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20RISC--V-blue" alt="Hardware">
+    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V-blue" alt="Hardware">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
     <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
@@ -65,7 +65,7 @@
 
 ⚡️ **Démarrage Éclair** : Temps de démarrage 400X plus rapide, boot en 1 seconde même sur un cœur unique à 0,6 GHz.
 
-🌍 **Véritable Portabilité** : Un seul binaire autonome pour RISC-V, ARM et x86. Un clic et c'est parti !
+🌍 **Véritable Portabilité** : Un seul binaire autonome pour RISC-V, ARM, MIPS et x86. Un clic et c'est parti !
 
 🤖 **Auto-Construit par l'IA** : Implémentation native en Go de manière autonome — 95% du cœur généré par l'Agent avec affinement humain dans la boucle.
 
@@ -288,7 +288,7 @@ Discutez avec votre PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom
 | **QQ**       | Facile (AppID + AppSecret)             |
 | **DingTalk** | Moyen (identifiants de l'application)  |
 | **LINE**     | Moyen (identifiants + URL de webhook)  |
-| **WeCom**    | Moyen (CorpID + configuration webhook) |
+| **WeCom AI Bot** | Moyen (Token + clé AES)            |
 
 <details>
 <summary><b>Telegram</b> (Recommandé)</summary>
@@ -456,8 +456,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "VOTRE_CHANNEL_SECRET",
       "channel_access_token": "VOTRE_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -470,11 +468,13 @@ picoclaw gateway
 LINE exige HTTPS pour les webhooks. Utilisez un reverse proxy ou un tunnel :
 
 ```bash
-# Exemple avec ngrok
-ngrok http 18791
+# Exemple avec ngrok (tunnel vers le serveur Gateway partagé)
+ngrok http 18790
 ```
 
 Puis configurez l'URL du Webhook dans la LINE Developers Console sur `https://votre-domaine/webhook/line` et activez **Use webhook**.
+
+> **Note** : Le webhook LINE est servi par le serveur Gateway partagé (par défaut `127.0.0.1:18790`). Si vous utilisez ngrok ou un proxy inverse, faites pointer le tunnel vers le port `18790`.
 
 **4. Lancer**
 
@@ -484,19 +484,20 @@ picoclaw gateway
 
 > Dans les discussions de groupe, le bot répond uniquement lorsqu'il est mentionné avec @. Les réponses citent le message original.
 
-> **Docker Compose** : Ajoutez `ports: ["18791:18791"]` au service `picoclaw-gateway` pour exposer le port du webhook.
+> **Docker Compose** : Si vous avez besoin d'exposer le webhook LINE via Docker, mappez le port du Gateway partagé (par défaut `18790`) vers l'hôte, par exemple `ports: ["18790:18790"]`. Notez que le serveur Gateway sert les webhooks de tous les canaux à partir de ce port.
 
 </details>
 
 <details>
 <summary><b>WeCom (WeChat Work)</b></summary>
 
-PicoClaw prend en charge deux types d'intégration WeCom :
+PicoClaw prend en charge trois types d'intégration WeCom :
 
-**Option 1 : WeCom Bot (Robot Intelligent)** - Configuration plus facile, prend en charge les discussions de groupe
-**Option 2 : WeCom App (Application Personnalisée)** - Plus de fonctionnalités, messagerie proactive
+**Option 1 : WeCom Bot (Robot)** - Configuration plus facile, prend en charge les discussions de groupe
+**Option 2 : WeCom App (Application Personnalisée)** - Plus de fonctionnalités, messagerie proactive, chat privé uniquement
+**Option 3 : WeCom AI Bot (Bot Intelligent)** - Bot IA officiel, réponses en streaming, prend en charge groupe et privé
 
-Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour des instructions détaillées.
+Voir le [Guide de Configuration WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) pour des instructions détaillées.
 
 **Configuration Rapide - WeCom Bot :**
 
@@ -515,8 +516,6 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": []
     }
@@ -535,7 +534,7 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
 **2. Configurer la réception des messages**
 
 * Dans les détails de l'application, cliquez sur "Recevoir les Messages" → "Configurer l'API"
-* Définissez l'URL sur `http://your-server:18792/webhook/wecom-app`
+* Définissez l'URL sur `http://your-server:18790/webhook/wecom-app`
 * Générez le **Token** et l'**EncodingAESKey**
 
 **3. Configurer**
@@ -550,8 +549,6 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": []
     }
@@ -565,7 +562,40 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
 picoclaw gateway
 ```
 
-> **Note** : WeCom App nécessite l'ouverture du port 18792 pour les callbacks webhook. Utilisez un proxy inverse pour HTTPS en production.
+> **Note** : Les callbacks webhook WeCom App sont servis par le serveur Gateway partagé (par défaut `127.0.0.1:18790`). Assurez-vous que le port `18790` est accessible ou utilisez un proxy inverse HTTPS en production.
+
+**Configuration Rapide - WeCom AI Bot :**
+
+**1. Créer un AI Bot**
+
+* Accédez à la Console d'Administration WeCom → Gestion des Applications → AI Bot
+* Configurez l'URL de callback : `http://your-server:18791/webhook/wecom-aibot`
+* Copiez le **Token** et générez l'**EncodingAESKey**
+
+**2. Configurer**
+
+```json
+{
+  "channels": {
+    "wecom_aibot": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-aibot",
+      "allow_from": [],
+      "welcome_message": "Bonjour ! Comment puis-je vous aider ?"
+    }
+  }
+}
+```
+
+**3. Lancer**
+
+```bash
+picoclaw gateway
+```
+
+> **Note** : WeCom AI Bot utilise le protocole pull en streaming — pas de problème de timeout. Les tâches longues (>5,5 min) basculent automatiquement vers la livraison via `response_url`.
 
 </details>
 
@@ -578,6 +608,31 @@ Connectez PicoClaw au Réseau Social d'Agents simplement en envoyant un seul mes
 ## ⚙️ Configuration
 
 Fichier de configuration : `~/.picoclaw/config.json`
+
+### Variables d'Environnement
+
+Vous pouvez remplacer les chemins par défaut à l'aide de variables d'environnement. Ceci est utile pour les installations portables, les déploiements conteneurisés ou l'exécution de picoclaw en tant que service système. Ces variables sont indépendantes et contrôlent différents chemins.
+
+| Variable          | Description                                                                                                                             | Chemin par Défaut         |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Remplace le chemin du fichier de configuration. Cela indique directement à picoclaw quel `config.json` charger, en ignorant tous les autres emplacements. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Remplace le répertoire racine des données picoclaw. Cela modifie l'emplacement par défaut du `workspace` et des autres répertoires de données.          | `~/.picoclaw`             |
+
+**Exemples :**
+
+```bash
+# Exécuter picoclaw en utilisant un fichier de configuration spécifique
+# Le chemin du workspace sera lu à partir de ce fichier de configuration
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Exécuter picoclaw avec toutes ses données stockées dans /opt/picoclaw
+# La configuration sera chargée à partir du fichier par défaut ~/.picoclaw/config.json
+# Le workspace sera créé dans /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Utiliser les deux pour une configuration entièrement personnalisée
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
 
 ### Structure du Workspace
 
@@ -772,7 +827,7 @@ Le sous-agent a accès aux outils (message, web_search, etc.) et peut communique
 ### Fournisseurs
 
 > [!NOTE]
-> Groq fournit la transcription vocale gratuite via Whisper. Si configuré, les messages vocaux Telegram seront automatiquement transcrits.
+> Groq fournit la transcription vocale gratuite via Whisper. Si configuré, les messages audio de n'importe quel canal seront automatiquement transcrits au niveau de l'agent.
 
 | Fournisseur              | Utilisation                              | Obtenir une Clé API                                    |
 | ------------------------ | ---------------------------------------- | ------------------------------------------------------ |
