@@ -297,8 +297,9 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	}
 
 	// Parse decrypted JSON message (AIBOT uses JSON format)
+	// Reference: https://developer.work.weixin.qq.com/document/path/90968#%E4%B8%BE%E4%BE%8B%E8%AF%B4%E6%98%8E
 	var msg WeComBotMessage
-	if err := json.Unmarshal([]byte(decryptedMsg), &msg); err != nil {
+	if err := xml.Unmarshal([]byte(decryptedMsg), &msg); err != nil {
 		logger.ErrorCF("wecom", "Failed to parse decrypted message", map[string]any{
 			"error": err.Error(),
 		})
