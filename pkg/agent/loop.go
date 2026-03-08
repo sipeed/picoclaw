@@ -438,11 +438,11 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 		transcriptions = append(transcriptions, result.Text)
 	}
 
-	al.sendTranscriptionFeedback(msg.Channel, msg.ChatID, msg.MessageID, transcriptions)
-
 	if len(transcriptions) == 0 {
 		return msg
 	}
+
+	al.sendTranscriptionFeedback(msg.Channel, msg.ChatID, msg.MessageID, transcriptions)
 
 	// Replace audio annotations sequentially with transcriptions.
 	idx := 0
@@ -475,9 +475,16 @@ func (al *AgentLoop) sendTranscriptionFeedback(channel, chatID string, messageID
 		pubCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
+		var nonEmpty []string
+		for _, t := range validTexts {
+			if t != "" {
+				nonEmpty = append(nonEmpty, t)
+			}
+		}
+
 		var feedbackMsg string
-		if len(validTexts) > 0 {
-			feedbackMsg = "Transcript: " + strings.Join(validTexts, "\n")
+		if len(nonEmpty) > 0 {
+			feedbackMsg = "Transcript: " + strings.Join(nonEmpty, "\n")
 		} else {
 			feedbackMsg = "No voice detected in the audio"
 		}
