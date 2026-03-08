@@ -611,7 +611,8 @@ func (c *MatrixChannel) downloadMedia(
 
 	// Encrypted attachments put URL in msgEvt.File and require client-side decryption.
 	if msgEvt != nil && msgEvt.File != nil && msgEvt.URL == "" {
-		if err := msgEvt.File.DecryptInPlace(data); err != nil {
+		err = msgEvt.File.DecryptInPlace(data)
+		if err != nil {
 			return "", fmt.Errorf("decrypt matrix media: %w", err)
 		}
 	}
