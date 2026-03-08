@@ -130,10 +130,6 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		opts = append(opts, slack.MsgOptionTS(threadTS))
 	}
 
-	if threadTS != "" {
-		opts = append(opts, slack.MsgOptionTS(threadTS))
-	}
-
 	_, _, err := c.api.PostMessageContext(ctx, channelID, opts...)
 	if err != nil {
 		return fmt.Errorf("slack send: %w", channels.ErrTemporary)
