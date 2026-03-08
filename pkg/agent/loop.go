@@ -1379,7 +1379,7 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
 				logger.Debug("Memory threshold reached. Optimizing conversation history...")
-				al.summarizeSession(agent, sessionKey)
+				al.summarizeSession(agent, sessionKey, channel, chatID)
 			}()
 		}
 	}
@@ -1526,7 +1526,10 @@ func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 }
 
 // summarizeSession summarizes the conversation history for a session.
-func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
+func (al *AgentLoop) summarizeSession(
+	agent *AgentInstance,
+	sessionKey, channel, chatID string,
+) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -1570,27 +1573,18 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 
 		s1, _ := al.summarizeBatch(ctx, agent, part1, "")
 		s2, _ := al.summarizeBatch(ctx, agent, part2, "")
-
-		mergePrompt := fmt.Sprintf(
-			"Merge these two conversation summaries into one cohesive summary:\n\n1: %s\n\n2: %s",
-			s1,
-			s2,
-		)
-		resp, err := agent.Provider.Chat(
+		mergedSummary, err := al.mergeRunningSummaries(
 			ctx,
-			[]providers.Message{{Role: "user", Content: mergePrompt}},
-			nil,
-			agent.Model,
-			map[string]any{
-				"max_tokens":       1024,
-				"temperature":      0.3,
-				"prompt_cache_key": agent.ID,
-			},
+			agent,
+			summary,
+			[]string{s1, s2},
 		)
 		if err == nil {
-			finalSummary = resp.Content
+			finalSummary = mergedSummary
 		} else {
-			finalSummary = s1 + " " + s2
+			finalSummary = strings.TrimSpace(
+				strings.Join([]string{summary, s1, s2}, "\n\n"),
+			)
 		}
 	} else {
 		finalSummary, _ = al.summarizeBatch(ctx, agent, validMessages, summary)
@@ -1601,6 +1595,53 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	}
 
 	if finalSummary != "" {
+		meta := compactionNoteMetadata{
+			SessionKey:      sessionKey,
+			Channel:         channel,
+			ChatID:          chatID,
+			SourceMessages:  len(validMessages),
+			OmittedMessages: omitted,
+		}
+
+		noteTimestamp := time.Now()
+		detailedNote, detailErr := al.generateDetailedCompactionNote(
+			ctx,
+			agent,
+			validMessages,
+			finalSummary,
+			meta,
+		)
+		if detailErr != nil {
+			logger.WarnCF("agent", "Detailed compaction summary generation failed", map[string]any{
+				"session_key": sessionKey,
+				"error":       detailErr.Error(),
+			})
+		}
+
+		if agent.ContextBuilder != nil && agent.ContextBuilder.memory != nil {
+			content := buildCompactionFileContent(
+				noteTimestamp,
+				meta,
+				finalSummary,
+				detailedNote,
+			)
+			path, err := agent.ContextBuilder.memory.WriteCompactionSummary(
+				noteTimestamp,
+				content,
+			)
+			if err != nil {
+				logger.WarnCF("agent", "Failed to persist compaction summary", map[string]any{
+					"session_key": sessionKey,
+					"error":       err.Error(),
+				})
+			} else {
+				logger.DebugCF("agent", "Compaction summary persisted", map[string]any{
+					"session_key": sessionKey,
+					"path":        path,
+				})
+			}
+		}
+
 		agent.Sessions.SetSummary(sessionKey, finalSummary)
 		agent.Sessions.TruncateHistory(sessionKey, 4)
 		agent.Sessions.Save(sessionKey)
@@ -1614,20 +1655,7 @@ func (al *AgentLoop) summarizeBatch(
 	batch []providers.Message,
 	existingSummary string,
 ) (string, error) {
-	var sb strings.Builder
-	sb.WriteString(
-		"Provide a concise summary of this conversation segment, preserving core context and key points.\n",
-	)
-	if existingSummary != "" {
-		sb.WriteString("Existing context: ")
-		sb.WriteString(existingSummary)
-		sb.WriteString("\n")
-	}
-	sb.WriteString("\nCONVERSATION:\n")
-	for _, m := range batch {
-		fmt.Fprintf(&sb, "%s: %s\n", m.Role, m.Content)
-	}
-	prompt := sb.String()
+	prompt := buildRunningSummaryPrompt(existingSummary, batch)
 
 	response, err := agent.Provider.Chat(
 		ctx,
@@ -1644,6 +1672,155 @@ func (al *AgentLoop) summarizeBatch(
 		return "", err
 	}
 	return response.Content, nil
+}
+
+func (al *AgentLoop) mergeRunningSummaries(
+	ctx context.Context,
+	agent *AgentInstance,
+	existingSummary string,
+	partialSummaries []string,
+) (string, error) {
+	prompt := buildRunningSummaryMergePrompt(existingSummary, partialSummaries)
+
+	response, err := agent.Provider.Chat(
+		ctx,
+		[]providers.Message{{Role: "user", Content: prompt}},
+		nil,
+		agent.Model,
+		map[string]any{
+			"max_tokens":       1024,
+			"temperature":      0.2,
+			"prompt_cache_key": agent.ID,
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+	return response.Content, nil
+}
+
+func (al *AgentLoop) summarizeDetailedCompactionBatch(
+	ctx context.Context,
+	agent *AgentInstance,
+	batch []providers.Message,
+	runningSummary string,
+	meta compactionNoteMetadata,
+) (string, error) {
+	prompt := buildDetailedCompactionPrompt(runningSummary, batch, meta)
+
+	response, err := agent.Provider.Chat(
+		ctx,
+		[]providers.Message{{Role: "user", Content: prompt}},
+		nil,
+		agent.Model,
+		map[string]any{
+			"max_tokens":       2048,
+			"temperature":      0.2,
+			"prompt_cache_key": agent.ID,
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+	return response.Content, nil
+}
+
+func (al *AgentLoop) mergeDetailedCompactionNotes(
+	ctx context.Context,
+	agent *AgentInstance,
+	runningSummary string,
+	partialNotes []string,
+	meta compactionNoteMetadata,
+) (string, error) {
+	prompt := buildDetailedCompactionMergePrompt(
+		runningSummary,
+		partialNotes,
+		meta,
+	)
+
+	response, err := agent.Provider.Chat(
+		ctx,
+		[]providers.Message{{Role: "user", Content: prompt}},
+		nil,
+		agent.Model,
+		map[string]any{
+			"max_tokens":       2048,
+			"temperature":      0.2,
+			"prompt_cache_key": agent.ID,
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+	return response.Content, nil
+}
+
+func (al *AgentLoop) generateDetailedCompactionNote(
+	ctx context.Context,
+	agent *AgentInstance,
+	validMessages []providers.Message,
+	runningSummary string,
+	meta compactionNoteMetadata,
+) (string, error) {
+	if len(validMessages) == 0 {
+		return "", nil
+	}
+
+	if len(validMessages) <= 10 {
+		return al.summarizeDetailedCompactionBatch(
+			ctx,
+			agent,
+			validMessages,
+			runningSummary,
+			meta,
+		)
+	}
+
+	mid := len(validMessages) / 2
+	parts := [][]providers.Message{
+		validMessages[:mid],
+		validMessages[mid:],
+	}
+
+	notes := make([]string, 0, len(parts))
+	var firstErr error
+	for _, part := range parts {
+		note, err := al.summarizeDetailedCompactionBatch(
+			ctx,
+			agent,
+			part,
+			runningSummary,
+			meta,
+		)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if strings.TrimSpace(note) != "" {
+			notes = append(notes, note)
+		}
+	}
+
+	switch len(notes) {
+	case 0:
+		return "", firstErr
+	case 1:
+		return notes[0], nil
+	default:
+		merged, err := al.mergeDetailedCompactionNotes(
+			ctx,
+			agent,
+			runningSummary,
+			notes,
+			meta,
+		)
+		if err != nil {
+			return strings.Join(notes, "\n\n"), err
+		}
+		return merged, nil
+	}
 }
 
 // estimateTokens estimates the number of tokens in a message list.

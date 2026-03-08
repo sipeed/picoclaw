@@ -105,6 +105,44 @@ func (ms *MemoryStore) AppendToday(content string) error {
 	return fileutil.WriteFileAtomic(todayFile, []byte(newContent), 0o600)
 }
 
+// WriteCompactionSummary writes a timestamped compaction summary file under
+// memory/YYYYMM/YYYYMMDD-HHMMSS.compactions.md. If a file with the same second
+// already exists, it appends a numeric suffix to avoid collisions.
+func (ms *MemoryStore) WriteCompactionSummary(
+	timestamp time.Time,
+	content string,
+) (string, error) {
+	monthDir := filepath.Join(ms.memoryDir, timestamp.Format("200601"))
+	if err := os.MkdirAll(monthDir, 0o755); err != nil {
+		return "", err
+	}
+
+	baseName := timestamp.Format("20060102-150405")
+	filePath := filepath.Join(monthDir, baseName+".compactions.md")
+
+	for i := 2; ; i++ {
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			break
+		} else if err != nil {
+			return "", err
+		}
+		filePath = filepath.Join(
+			monthDir,
+			fmt.Sprintf("%s-%02d.compactions.md", baseName, i),
+		)
+	}
+
+	trimmed := strings.TrimSpace(content)
+	if trimmed != "" {
+		trimmed += "\n"
+	}
+
+	if err := fileutil.WriteFileAtomic(filePath, []byte(trimmed), 0o600); err != nil {
+		return "", err
+	}
+	return filePath, nil
+}
+
 // GetRecentDailyNotes returns daily notes from the last N days.
 // Contents are joined with "---" separator.
 func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
