@@ -500,7 +500,7 @@ func (p *Provider) doRequest(
 
 	out, err := parse(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
 	return out, nil
