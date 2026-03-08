@@ -800,6 +800,15 @@ func (al *AgentLoop) runAgentLoop(
 		history = agent.Sessions.GetHistory(opts.SessionKey)
 		summary = agent.Sessions.GetSummary(opts.SessionKey)
 	}
+
+	// Auto-inject SKILL.md content when the user references an installed skill.
+	var skillCtx string
+	if matched := agent.ContextBuilder.MatchSkillsInMessage(opts.UserMessage); len(matched) > 0 {
+		skillCtx = agent.ContextBuilder.LoadSkillContext(matched)
+		logger.DebugCF("agent", "Skills matched in user message",
+			map[string]any{"matched": matched, "context_len": len(skillCtx)})
+	}
+
 	messages := agent.ContextBuilder.BuildMessages(
 		history,
 		summary,
@@ -807,6 +816,7 @@ func (al *AgentLoop) runAgentLoop(
 		opts.Media,
 		opts.Channel,
 		opts.ChatID,
+		skillCtx,
 	)
 
 	// Resolve media:// refs to base64 data URLs (streaming)
