@@ -516,6 +516,20 @@ func TestParsePatternLines(t *testing.T) {
 	}
 }
 
+func TestDefaultDenyPatternsTxt(t *testing.T) {
+	patterns := parsePatternLines(defaultDenyPatternsText)
+	if len(patterns) == 0 {
+		t.Fatal("expected at least one pattern in default_deny_patterns.txt")
+	}
+	compiled, err := compileRegexPatterns(patterns)
+	if err != nil {
+		t.Fatalf("default_deny_patterns.txt contains invalid regex: %v", err)
+	}
+	if len(compiled) != len(patterns) {
+		t.Fatalf("expected %d compiled patterns, got %d", len(patterns), len(compiled))
+	}
+}
+
 func TestCompileRegexPatterns(t *testing.T) {
 	compiled, err := compileRegexPatterns([]string{`\brm\s+-[rf]{1,2}\b`, `\bsource\s+\S+`})
 	if err != nil {
