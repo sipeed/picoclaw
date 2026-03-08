@@ -3,6 +3,7 @@ package qq
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ type QQChannel struct {
 	cancel         context.CancelFunc
 	sessionManager botgo.SessionManager
 	processedIDs   map[string]bool
+	client         *Client
 	mu             sync.RWMutex
 }
 
@@ -69,6 +71,7 @@ func (c *QQChannel) Start(ctx context.Context) error {
 
 	// initialize OpenAPI client
 	c.api = botgo.NewOpenAPI(c.config.AppID, c.tokenSource).WithTimeout(5 * time.Second)
+	c.client = NewClient(c.api, c.tokenSource)
 
 	// register event handlers
 	intent := event.RegisterHandlers(
@@ -124,6 +127,7 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	// construct message
 	msgToCreate := &dto.MessageToCreate{
 		Content: msg.Content,
+		MsgType: dto.TextMsg,
 	}
 
 	// send C2C message
@@ -133,6 +137,79 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 			"error": err.Error(),
 		})
 		return fmt.Errorf("qq send: %w", channels.ErrTemporary)
+	}
+
+	return nil
+}
+
+func (c *QQChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	store := c.GetMediaStore()
+	if store == nil {
+		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+	}
+
+	type MediaInfo struct {
+		Path    string
+		Type    MediaFileType
+		Caption string
+	}
+
+	mediaMap := make(map[string]MediaInfo)
+
+	for _, part := range msg.Parts {
+		localPath, err := store.Resolve(part.Ref)
+		if err != nil {
+			logger.ErrorCF("qq", "Failed to resolve media ref", map[string]any{
+				"ref":   part.Ref,
+				"error": err.Error(),
+			})
+			continue
+		}
+		var fileType MediaFileType
+		switch part.Type {
+		case "image":
+			fileType = MediaFileTypeImage
+		case "video":
+			fileType = MediaFileTypeVideo
+		case "audio":
+			fileType = MediaFileTypeVoice
+		default:
+			fileType = MediaFileTypeFile
+		}
+		mediaMap[localPath] = MediaInfo{
+			Path:    localPath,
+			Type:    fileType,
+			Caption: part.Caption,
+		}
+	}
+
+	for path, media := range mediaMap {
+		fileData, err := os.ReadFile(path)
+		if err != nil {
+			logger.ErrorCF("qq", "Failed to read media file", map[string]any{
+				"path":  path,
+				"error": err.Error(),
+			})
+			continue
+		}
+		_, err = c.client.SendC2CMediaMessage(ctx, msg.ChatID, media.Caption, media.Type, fileData)
+		if err != nil {
+			logger.ErrorCF("qq", "Failed to send media message", map[string]any{
+				"chat_id": msg.ChatID,
+				"error":   err.Error(),
+			})
+			return fmt.Errorf("qq send media message: %w", channels.ErrTemporary)
+		}
 	}
 
 	return nil
