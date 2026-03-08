@@ -88,6 +88,45 @@ func (r *ToolRegistry) TickTTL() {
 	}
 }
 
+// Version returns the current registry version (atomically).
+func (r *ToolRegistry) Version() uint64 {
+	return r.version.Load()
+}
+
+// HiddenToolSnapshot holds a consistent snapshot of hidden tools and the
+// registry version at which it was taken. Used by BM25SearchTool cache.
+type HiddenToolSnapshot struct {
+	Docs    []HiddenToolDoc
+	Version uint64
+}
+
+// HiddenToolDoc is a lightweight representation of a hidden tool for search indexing.
+type HiddenToolDoc struct {
+	Name        string
+	Description string
+}
+
+// SnapshotHiddenTools returns all non-core tools and the current registry
+// version under a single read-lock, guaranteeing consistency between the
+// two values.
+func (r *ToolRegistry) SnapshotHiddenTools() HiddenToolSnapshot {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	docs := make([]HiddenToolDoc, 0, len(r.tools))
+	for name, entry := range r.tools {
+		if !entry.IsCore {
+			docs = append(docs, HiddenToolDoc{
+				Name:        name,
+				Description: entry.Tool.Description(),
+			})
+		}
+	}
+	return HiddenToolSnapshot{
+		Docs:    docs,
+		Version: r.version.Load(),
+	}
+}
+
 func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

@@ -214,85 +214,69 @@ type bm25CachedEngine struct {
 	engine *utils.BM25Engine[searchDoc]
 }
 
+// snapshotToSearchDocs converts a HiddenToolSnapshot to BM25 searchDoc slice.
+func snapshotToSearchDocs(snap HiddenToolSnapshot) []searchDoc {
+	docs := make([]searchDoc, len(snap.Docs))
+	for i, d := range snap.Docs {
+		docs[i] = searchDoc{Name: d.Name, Description: d.Description}
+	}
+	return docs
+}
+
+// buildBM25Engine creates a BM25Engine from a slice of searchDocs.
+func buildBM25Engine(docs []searchDoc) *utils.BM25Engine[searchDoc] {
+	return utils.NewBM25Engine(
+		docs,
+		func(doc searchDoc) string {
+			return doc.Name + " " + doc.Description
+		},
+	)
+}
+
 // getOrBuildEngine returns a cached BM25 engine, rebuilding it only when
 // the registry version has changed (new tools registered).
 func (t *BM25SearchTool) getOrBuildEngine() *bm25CachedEngine {
-	// Fast path: optimistic check without locking the registry.
-	// If the version hasn't changed, the cache is still valid.
-	if t.cachedEngine != nil && t.cacheVersion == t.registry.version.Load() {
+	// Fast path: optimistic check without locking.
+	if t.cachedEngine != nil && t.cacheVersion == t.registry.Version() {
 		return t.cachedEngine
 	}
 
 	t.cacheMu.Lock()
 	defer t.cacheMu.Unlock()
 
-	// Read version inside the registry RLock so the snapshot and version
-	// are guaranteed to be consistent (no TOCTOU between Load and RLock).
-	t.registry.mu.RLock()
-	snapshotVersion := t.registry.version.Load()
-	snapshot := make([]searchDoc, 0, len(t.registry.tools))
-	for name, entry := range t.registry.tools {
-		if !entry.IsCore {
-			snapshot = append(snapshot, searchDoc{
-				Name:        name,
-				Description: entry.Tool.Description(),
-			})
-		}
-	}
-	t.registry.mu.RUnlock()
+	// Snapshot + version are read under a single registry RLock,
+	// guaranteeing consistency (no TOCTOU).
+	snap := t.registry.SnapshotHiddenTools()
 
 	// Re-check: another goroutine may have rebuilt while we waited for cacheMu.
-	if t.cachedEngine != nil && t.cacheVersion == snapshotVersion {
+	if t.cachedEngine != nil && t.cacheVersion == snap.Version {
 		return t.cachedEngine
 	}
 
-	if len(snapshot) == 0 {
+	docs := snapshotToSearchDocs(snap)
+	if len(docs) == 0 {
 		t.cachedEngine = nil
-		t.cacheVersion = snapshotVersion
+		t.cacheVersion = snap.Version
 		return nil
 	}
 
-	engine := utils.NewBM25Engine(
-		snapshot,
-		func(doc searchDoc) string {
-			return doc.Name + " " + doc.Description
-		},
-	)
-
-	cached := &bm25CachedEngine{engine: engine}
+	cached := &bm25CachedEngine{engine: buildBM25Engine(docs)}
 	t.cachedEngine = cached
-	t.cacheVersion = snapshotVersion
+	t.cacheVersion = snap.Version
 	return cached
 }
 
 // SearchBM25 ranks hidden tools against query using BM25 via utils.BM25Engine.
-// The corpus snapshot is built under the registry read-lock, then released
-// before scoring so the lock is not held during CPU-intensive work.
+// This non-cached variant rebuilds the engine on every call. Used by tests
+// and any code that doesn't hold a BM25SearchTool instance.
 func (r *ToolRegistry) SearchBM25(query string, maxSearchResults int) []ToolSearchResult {
-	r.mu.RLock()
-	snapshot := make([]searchDoc, 0, len(r.tools))
-	for name, entry := range r.tools {
-		if !entry.IsCore {
-			snapshot = append(snapshot, searchDoc{
-				Name:        name,
-				Description: entry.Tool.Description(),
-			})
-		}
-	}
-	r.mu.RUnlock()
-
-	if len(snapshot) == 0 {
+	snap := r.SnapshotHiddenTools()
+	docs := snapshotToSearchDocs(snap)
+	if len(docs) == 0 {
 		return nil
 	}
 
-	engine := utils.NewBM25Engine(
-		snapshot,
-		func(doc searchDoc) string {
-			return doc.Name + " " + doc.Description
-		},
-	)
-
-	ranked := engine.Search(query, maxSearchResults)
+	ranked := buildBM25Engine(docs).Search(query, maxSearchResults)
 	if len(ranked) == 0 {
 		return nil
 	}
