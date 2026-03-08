@@ -52,15 +52,17 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string   // Session identifier for history/context
-	Channel         string   // Target channel for tool execution
-	ChatID          string   // Target chat ID for tool execution
-	UserMessage     string   // User message content (may include prefix)
-	Media           []string // media:// refs from inbound message
-	DefaultResponse string   // Response when LLM returns empty
-	EnableSummary   bool     // Whether to trigger summarization
-	SendResponse    bool     // Whether to send response via bus
-	NoHistory       bool     // If true, don't load session history (for heartbeat)
+	SessionKey       string   // Session identifier for history/context
+	Channel          string   // Target channel for tool execution
+	ChatID           string   // Target chat ID for tool execution
+	UserMessage      string   // User message content (may include prefix)
+	Media            []string // media:// refs from inbound message
+	DefaultResponse  string   // Response when LLM returns empty
+	EnableSummary    bool     // Whether to trigger summarization
+	SendResponse     bool     // Whether to send response via bus
+	NoHistory        bool     // If true, don't load session history (for heartbeat)
+	ReplyToMessageID string   // Platform message ID to reply to (threaded response)
+	ThreadID         string   // Forum topic / thread ID for Telegram forum routing
 }
 
 const (
@@ -351,9 +353,11 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 					if !alreadySent {
 						al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-							Channel: msg.Channel,
-							ChatID:  msg.ChatID,
-							Content: response,
+							Channel:          msg.Channel,
+							ChatID:           msg.ChatID,
+							Content:          response,
+							ReplyToMessageID: msg.MessageID,
+							ThreadID:         msg.ThreadID,
 						})
 						logger.InfoCF("agent", "Published outbound response",
 							map[string]any{
@@ -616,14 +620,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		})
 
 	return al.runAgentLoop(ctx, agent, processOptions{
-		SessionKey:      sessionKey,
-		Channel:         msg.Channel,
-		ChatID:          msg.ChatID,
-		UserMessage:     msg.Content,
-		Media:           msg.Media,
-		DefaultResponse: defaultResponse,
-		EnableSummary:   true,
-		SendResponse:    false,
+		SessionKey:       sessionKey,
+		Channel:          msg.Channel,
+		ChatID:           msg.ChatID,
+		UserMessage:      msg.Content,
+		Media:            msg.Media,
+		DefaultResponse:  defaultResponse,
+		EnableSummary:    true,
+		SendResponse:     false,
+		ThreadID:         msg.ThreadID,
+		ReplyToMessageID: msg.MessageID,
 	})
 }
 
@@ -789,9 +795,11 @@ func (al *AgentLoop) runAgentLoop(
 	// 7. Optional: send response via bus
 	if opts.SendResponse {
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-			Channel: opts.Channel,
-			ChatID:  opts.ChatID,
-			Content: finalContent,
+			Channel:          opts.Channel,
+			ChatID:           opts.ChatID,
+			Content:          finalContent,
+			ReplyToMessageID: opts.ReplyToMessageID,
+			ThreadID:         opts.ThreadID,
 		})
 	}
 
@@ -1010,9 +1018,10 @@ func (al *AgentLoop) runLLMIteration(
 
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
 					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-						Channel: opts.Channel,
-						ChatID:  opts.ChatID,
-						Content: "Context window exceeded. Compressing history and retrying...",
+						Channel:  opts.Channel,
+						ChatID:   opts.ChatID,
+						Content:  "Context window exceeded. Compressing history and retrying...",
+						ThreadID: opts.ThreadID,
 					})
 				}
 
@@ -1207,9 +1216,10 @@ func (al *AgentLoop) runLLMIteration(
 			// Send ForUser content to user immediately if not Silent
 			if !r.result.Silent && r.result.ForUser != "" && opts.SendResponse {
 				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-					Channel: opts.Channel,
-					ChatID:  opts.ChatID,
-					Content: r.result.ForUser,
+					Channel:  opts.Channel,
+					ChatID:   opts.ChatID,
+					Content:  r.result.ForUser,
+					ThreadID: opts.ThreadID,
 				})
 				logger.DebugCF("agent", "Sent tool result to user",
 					map[string]any{

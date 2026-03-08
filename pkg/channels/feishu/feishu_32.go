@@ -46,7 +46,7 @@ func (c *FeishuChannel) EditMessage(ctx context.Context, chatID, messageID, cont
 }
 
 // SendPlaceholder is a stub method to satisfy PlaceholderCapable
-func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string, _ string, _ string) (string, error) {
 	return "", errUnsupported
 }
 

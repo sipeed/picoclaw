@@ -256,6 +256,12 @@ func (c *BaseChannel) HandleMessage(
 
 	scope := BuildMediaScope(c.name, chatID, messageID)
 
+	// Resolve thread ID from metadata (set by channels that support threading).
+	threadID := ""
+	if metadata != nil {
+		threadID = metadata["thread_id"]
+	}
+
 	msg := bus.InboundMessage{
 		Channel:    c.name,
 		SenderID:   resolvedSenderID,
@@ -265,6 +271,7 @@ func (c *BaseChannel) HandleMessage(
 		Media:      media,
 		Peer:       peer,
 		MessageID:  messageID,
+		ThreadID:   threadID,
 		MediaScope: scope,
 		Metadata:   metadata,
 	}
@@ -274,20 +281,20 @@ func (c *BaseChannel) HandleMessage(
 	if c.owner != nil && c.placeholderRecorder != nil {
 		// Typing — independent pipeline
 		if tc, ok := c.owner.(TypingCapable); ok {
-			if stop, err := tc.StartTyping(ctx, chatID); err == nil {
-				c.placeholderRecorder.RecordTypingStop(c.name, chatID, stop)
+			if stop, err := tc.StartTyping(ctx, chatID, threadID); err == nil {
+				c.placeholderRecorder.RecordTypingStop(c.name, chatID, threadID, stop)
 			}
 		}
 		// Reaction — independent pipeline
 		if rc, ok := c.owner.(ReactionCapable); ok && messageID != "" {
 			if undo, err := rc.ReactToMessage(ctx, chatID, messageID); err == nil {
-				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, undo)
+				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, threadID, undo)
 			}
 		}
 		// Placeholder — independent pipeline
 		if pc, ok := c.owner.(PlaceholderCapable); ok {
-			if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
-				c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
+			if phID, err := pc.SendPlaceholder(ctx, chatID, threadID, messageID); err == nil && phID != "" {
+				c.placeholderRecorder.RecordPlaceholder(c.name, chatID, threadID, phID)
 			}
 		}
 	}

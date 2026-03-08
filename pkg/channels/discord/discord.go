@@ -241,7 +241,7 @@ func (c *DiscordChannel) EditMessage(ctx context.Context, chatID string, message
 // SendPlaceholder implements channels.PlaceholderCapable.
 // It sends a placeholder message that will later be edited to the actual
 // response via EditMessage (channels.MessageEditor).
-func (c *DiscordChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+func (c *DiscordChannel) SendPlaceholder(ctx context.Context, chatID string, _ string, _ string) (string, error) {
 	if !c.config.Placeholder.Enabled {
 		return "", nil
 	}
@@ -488,7 +488,7 @@ func (c *DiscordChannel) stopTyping(chatID string) {
 
 // StartTyping implements channels.TypingCapable.
 // It starts a continuous typing indicator and returns an idempotent stop function.
-func (c *DiscordChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+func (c *DiscordChannel) StartTyping(ctx context.Context, chatID string, _ string) (func(), error) {
 	c.startTyping(chatID)
 	return func() { c.stopTyping(chatID) }, nil
 }
