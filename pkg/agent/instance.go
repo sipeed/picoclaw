@@ -96,9 +96,10 @@ func NewAgentInstance(
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
 
+	mcpDiscoveryActive := cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled
 	contextBuilder := NewContextBuilder(workspace).WithToolDiscovery(
-		cfg.Tools.MCP.Discovery.Enabled && cfg.Tools.MCP.Discovery.UseBM25,
-		cfg.Tools.MCP.Discovery.Enabled && cfg.Tools.MCP.Discovery.UseRegex,
+		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
+		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
 	)
 
 	agentID := routing.DefaultAgentID
