@@ -14,6 +14,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 const testToken = "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc"
@@ -77,6 +78,7 @@ func newTestChannel(t *testing.T, caller *stubCaller) *TelegramChannel {
 		BaseChannel: base,
 		bot:         bot,
 		chatIDs:     make(map[string]int64),
+		config:      config.DefaultConfig(),
 	}
 }
 

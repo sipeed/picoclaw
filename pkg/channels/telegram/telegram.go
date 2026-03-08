@@ -212,7 +212,12 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 
 // sendChunk sends a single HTML/MarkdownV2 message, falling back to the original
 // markdown as plain text on parse failure so users never see raw HTML/MarkdownV2 tags.
-func (c *TelegramChannel) sendChunk(ctx context.Context, chatID int64, content, mdFallback string, useMarkdownV2 bool) error {
+func (c *TelegramChannel) sendChunk(
+	ctx context.Context,
+	chatID int64,
+	content, mdFallback string,
+	useMarkdownV2 bool,
+) error {
 	tgMsg := tu.Message(tu.ID(chatID), content)
 	if useMarkdownV2 {
 		tgMsg.WithParseMode(telego.ModeMarkdownV2)
