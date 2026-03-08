@@ -32,8 +32,8 @@ type DingTalkChannel struct {
 	cancel       context.CancelFunc
 	// Map to store session webhooks for each chat
 	sessionWebhooks sync.Map // chatID -> sessionWebhook
-	// chatID -> cardInstanceId
-	cardInstanceIds sync.Map
+	// chatID -> cardInstanceID
+	cardInstanceIDs sync.Map
 }
 
 // NewDingTalkChannel creates a new DingTalk channel instance
@@ -113,7 +113,7 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return channels.ErrNotRunning
 	}
 	// Check if we have a card instance ID for this chat (indicating we can send a card reply)
-	cardInstanceIdRaw, ok := c.cardInstanceIds.LoadAndDelete(msg.ChatID)
+	cardInstanceIdRaw, ok := c.cardInstanceIDs.LoadAndDelete(msg.ChatID)
 	if !ok {
 		return c.SendDirectReply(ctx, msg)
 	}
@@ -261,6 +261,6 @@ func (c *DingTalkChannel) tryCardCreateAndDeliver(ctx context.Context, chatID st
 	if err != nil {
 		return err
 	}
-	c.cardInstanceIds.Store(chatID, cardInstanceId)
+	c.cardInstanceIDs.Store(chatID, cardInstanceId)
 	return nil
 }
