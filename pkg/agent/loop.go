@@ -624,50 +624,41 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	// Transcribe any audio media refs before passing to the agent.
 	userMessage := msg.Content
+
 	if al.transcriber != nil && len(msg.Media) > 0 && al.mediaStore != nil {
-		logger.DebugCF("agent", "Checking media for transcription", map[string]any{
-			"media_count": len(msg.Media),
-		})
 		for _, ref := range msg.Media {
 			localPath, meta, err := al.mediaStore.ResolveWithMeta(ref)
 			if err != nil {
-				logger.WarnCF("agent", "Failed to resolve media ref for transcription", map[string]any{
-					"ref": ref, "error": err.Error(),
-				})
 				continue
 			}
-			if inferMediaType(meta.Filename, meta.ContentType) != "audio" {
-				logger.DebugCF("agent", "Skipping non-audio media", map[string]any{
-					"ref": ref, "filename": meta.Filename,
+
+			mediaType := inferMediaType(meta.Filename, meta.ContentType)
+
+			// Handle audio transcription
+			if mediaType == "audio" {
+				logger.InfoCF("agent", "Transcribing audio", map[string]any{
+					"ref": ref, "path": localPath, "filename": meta.Filename,
 				})
-				continue
-			}
-			logger.InfoCF("agent", "Transcribing audio", map[string]any{
-				"ref": ref, "path": localPath, "filename": meta.Filename,
-			})
-			result, err := al.transcriber.Transcribe(ctx, localPath)
-			if err != nil {
-				logger.WarnCF("agent", "Audio transcription failed", map[string]any{
-					"ref": ref, "error": err.Error(),
+				result, err := al.transcriber.Transcribe(ctx, localPath)
+				if err != nil {
+					logger.WarnCF("agent", "Audio transcription failed", map[string]any{
+						"ref": ref, "error": err.Error(),
+					})
+					continue
+				}
+				logger.InfoCF("agent", "Transcribed audio", map[string]any{
+					"ref": ref, "length": len(result.Text),
 				})
-				continue
-			}
-			logger.InfoCF("agent", "Transcribed audio", map[string]any{
-				"ref": ref, "length": len(result.Text),
-			})
-			// Replace the [voice]/[audio] placeholder with the actual transcript
-			userMessage = strings.NewReplacer("[voice]", "", "[audio]", "").Replace(userMessage)
-			userMessage = strings.TrimSpace(userMessage)
-			if userMessage != "" {
-				userMessage = userMessage + "\n\n[Voice transcript]: " + result.Text
-			} else {
-				userMessage = result.Text
+				// Replace the [voice]/[audio] placeholder with the actual transcript
+				userMessage = strings.NewReplacer("[voice]", "", "[audio]", "").Replace(userMessage)
+				userMessage = strings.TrimSpace(userMessage)
+				if userMessage != "" {
+					userMessage = userMessage + "\n\n[Voice transcript]: " + result.Text
+				} else {
+					userMessage = result.Text
+				}
 			}
 		}
-	} else if al.transcriber == nil && len(msg.Media) > 0 {
-		logger.WarnCF("agent", "Transcriber not configured, skipping media", map[string]any{
-			"media_count": len(msg.Media),
-		})
 	}
 
 	return al.runAgentLoop(ctx, agent, processOptions{
@@ -1759,3 +1750,5 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
 }
+
+
