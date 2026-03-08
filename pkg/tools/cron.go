@@ -285,20 +285,17 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		}
 
 		result := t.execTool.Execute(ctx, args)
-		var output string
+		// Only notify on error, silent on success
 		if result.IsError {
-			output = fmt.Sprintf("Error executing scheduled command: %s", result.ForLLM)
-		} else {
-			output = fmt.Sprintf("Scheduled command '%s' executed:\n%s", job.Payload.Command, result.ForLLM)
+			output := fmt.Sprintf("Error executing scheduled command: %s", result.ForLLM)
+			pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer pubCancel()
+			t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
+				Channel: channel,
+				ChatID:  chatID,
+				Content: output,
+			})
 		}
-
-		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer pubCancel()
-		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-			Channel: channel,
-			ChatID:  chatID,
-			Content: output,
-		})
 		return "ok"
 	}
 
