@@ -221,8 +221,20 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		cmd = exec.CommandContext(cmdCtx, "sh", "-c", command)
 	}
 
+	// Parse env param from LLM (if provided)
+	var extraEnv map[string]string
+	if envArg, ok := args["env"].(map[string]any); ok && envArg != nil {
+		extraEnv = make(map[string]string)
+		for k, v := range envArg {
+			if strVal, ok := v.(string); ok {
+				extraEnv[k] = strVal
+			}
+		}
+	}
+
 	// Use sanitized environment - strips secrets, prevents env-based attacks
-	cmd.Env = t.cachedEnv
+	// Pass extraEnv from LLM to apply blocklist filtering
+	cmd.Env = shell.BuildSanitizedEnv(t.cachedEnv, nil, nil, extraEnv)
 
 	if cwd != "" {
 		cmd.Dir = cwd
