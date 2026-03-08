@@ -251,3 +251,89 @@ func TestToolRegistry_SearchLimitsAndCoreFiltering(t *testing.T) {
 		}
 	})
 }
+
+func TestGet_HiddenToolTTLLifecycle(t *testing.T) {
+	reg := NewToolRegistry()
+	reg.RegisterHidden(&mockSearchableTool{name: "hidden_tool", desc: "test"})
+
+	// TTL=0 at registration → not gettable
+	_, ok := reg.Get("hidden_tool")
+	if ok {
+		t.Error("Expected hidden tool with TTL=0 to NOT be gettable")
+	}
+
+	// Promote → gettable
+	reg.PromoteTools([]string{"hidden_tool"}, 3)
+	_, ok = reg.Get("hidden_tool")
+	if !ok {
+		t.Error("Expected promoted hidden tool to be gettable")
+	}
+
+	// Tick down to 0 → not gettable again
+	reg.TickTTL() // 3→2
+	reg.TickTTL() // 2→1
+	reg.TickTTL() // 1→0
+	_, ok = reg.Get("hidden_tool")
+	if ok {
+		t.Error("Expected hidden tool with TTL ticked to 0 to NOT be gettable")
+	}
+
+	// Core tools remain always gettable
+	reg.Register(&mockSearchableTool{name: "core_tool", desc: "core"})
+	_, ok = reg.Get("core_tool")
+	if !ok {
+		t.Error("Expected core tool to always be gettable")
+	}
+}
+
+func TestBM25CacheInvalidation(t *testing.T) {
+	reg := NewToolRegistry()
+	reg.RegisterHidden(&mockSearchableTool{name: "tool_alpha", desc: "alpha functionality"})
+
+	tool := NewBM25SearchTool(reg, 5, 10)
+	ctx := context.Background()
+
+	// First search should find tool_alpha
+	res := tool.Execute(ctx, map[string]any{"query": "alpha"})
+	if !strings.Contains(res.ForLLM, "tool_alpha") {
+		t.Fatalf("Expected 'tool_alpha' in first search, got: %v", res.ForLLM)
+	}
+
+	// Register a new hidden tool
+	reg.RegisterHidden(&mockSearchableTool{name: "tool_beta", desc: "beta functionality"})
+
+	// Cache should be invalidated; new tool should be findable
+	res = tool.Execute(ctx, map[string]any{"query": "beta"})
+	if !strings.Contains(res.ForLLM, "tool_beta") {
+		t.Errorf("Expected 'tool_beta' after cache invalidation, got: %v", res.ForLLM)
+	}
+}
+
+func TestPromoteTools_ConcurrentWithTickTTL(t *testing.T) {
+	reg := NewToolRegistry()
+	for i := 0; i < 20; i++ {
+		reg.RegisterHidden(&mockSearchableTool{
+			name: fmt.Sprintf("concurrent_tool_%d", i),
+			desc: "concurrent test tool",
+		})
+	}
+
+	names := make([]string, 20)
+	for i := 0; i < 20; i++ {
+		names[i] = fmt.Sprintf("concurrent_tool_%d", i)
+	}
+
+	// Hammer PromoteTools and TickTTL concurrently to detect races
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 1000; i++ {
+			reg.PromoteTools(names, 5)
+		}
+		close(done)
+	}()
+
+	for i := 0; i < 1000; i++ {
+		reg.TickTTL()
+	}
+	<-done
+}
