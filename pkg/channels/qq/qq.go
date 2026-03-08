@@ -126,13 +126,25 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		Content: msg.Content,
 	}
 
-	// send C2C message
-	_, err := c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
-	if err != nil {
-		logger.ErrorCF("qq", "Failed to send C2C message", map[string]any{
-			"error": err.Error(),
-		})
-		return fmt.Errorf("qq send: %w", channels.ErrTemporary)
+	// Use appropriate API based on peer type
+	if msg.Peer.Kind == "group" {
+		// send group message
+		_, err := c.api.PostGroupMessage(ctx, msg.ChatID, msgToCreate)
+		if err != nil {
+			logger.ErrorCF("qq", "Failed to send group message", map[string]any{
+				"error": err.Error(),
+			})
+			return fmt.Errorf("qq send: %w", channels.ErrTemporary)
+		}
+	} else {
+		// send C2C (private) message
+		_, err := c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
+		if err != nil {
+			logger.ErrorCF("qq", "Failed to send C2C message", map[string]any{
+				"error": err.Error(),
+			})
+			return fmt.Errorf("qq send: %w", channels.ErrTemporary)
+		}
 	}
 
 	return nil

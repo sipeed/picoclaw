@@ -343,6 +343,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							Channel: msg.Channel,
 							ChatID:  msg.ChatID,
 							Content: response,
+							Peer:    msg.Peer,
 						})
 						logger.InfoCF("agent", "Published outbound response",
 							map[string]any{

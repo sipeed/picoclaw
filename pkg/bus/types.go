@@ -33,6 +33,7 @@ type OutboundMessage struct {
 	Channel string `json:"channel"`
 	ChatID  string `json:"chat_id"`
 	Content string `json:"content"`
+	Peer    Peer   `json:"peer"` // routing peer (direct, group, etc.)
 }
 
 // MediaPart describes a single media attachment to send.
