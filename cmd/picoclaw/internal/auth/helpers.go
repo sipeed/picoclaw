@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,14 +16,17 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-const supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
+const (
+	supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
+	defaultAnthropicModel = "claude-sonnet-4.6"
+)
 
-func authLoginCmd(provider string, useDeviceCode bool) error {
+func authLoginCmd(provider string, useDeviceCode bool, useOauth bool) error {
 	switch provider {
 	case "openai":
 		return authLoginOpenAI(useDeviceCode)
 	case "anthropic":
-		return authLoginPasteToken(provider)
+		return authLoginAnthropic(useOauth)
 	case "google-antigravity", "antigravity":
 		return authLoginGoogleAntigravity()
 	default:
@@ -163,6 +167,81 @@ func authLoginGoogleAntigravity() error {
 	return nil
 }
 
+func authLoginAnthropic(useOauth bool) error {
+	if useOauth {
+		return authLoginAnthropicSetupToken()
+	}
+
+	fmt.Println("Anthropic login method:")
+	fmt.Println("  1) Setup token (from `claude setup-token`) (Recommended)")
+	fmt.Println("  2) API key (from console.anthropic.com)")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	for {
+		fmt.Print("Choose [1]: ")
+		choice := "1"
+		if scanner.Scan() {
+			text := strings.TrimSpace(scanner.Text())
+			if text != "" {
+				choice = text
+			}
+		}
+
+		switch choice {
+		case "1":
+			return authLoginAnthropicSetupToken()
+		case "2":
+			return authLoginPasteToken("anthropic")
+		default:
+			fmt.Printf("Invalid choice: %s. Please enter 1 or 2.\n", choice)
+		}
+	}
+}
+
+func authLoginAnthropicSetupToken() error {
+	cred, err := auth.LoginSetupToken(os.Stdin)
+	if err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+
+	if err = auth.SetCredential("anthropic", cred); err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	appCfg, err := internal.LoadConfig()
+	if err == nil {
+		appCfg.Providers.Anthropic.AuthMethod = "oauth"
+
+		found := false
+		for i := range appCfg.ModelList {
+			if isAnthropicModel(appCfg.ModelList[i].Model) {
+				appCfg.ModelList[i].AuthMethod = "oauth"
+				found = true
+				break
+			}
+		}
+		if !found {
+			appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
+				ModelName:  defaultAnthropicModel,
+				Model:      "anthropic/" + defaultAnthropicModel,
+				AuthMethod: "oauth",
+			})
+			// Only set default model if user has no default configured yet
+			if appCfg.Agents.Defaults.GetModelName() == "" {
+				appCfg.Agents.Defaults.ModelName = defaultAnthropicModel
+			}
+		}
+
+		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
+			return fmt.Errorf("could not update config: %w", err)
+		}
+	}
+
+	fmt.Println("Setup token saved for Anthropic!")
+
+	return nil
+}
+
 func fetchGoogleUserEmail(accessToken string) (string, error) {
 	req, err := http.NewRequest("GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
 	if err != nil {
@@ -220,13 +299,12 @@ func authLoginPasteToken(provider string) error {
 			}
 			if !found {
 				appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
-					ModelName:  "claude-sonnet-4.6",
-					Model:      "anthropic/claude-sonnet-4.6",
+					ModelName:  defaultAnthropicModel,
+					Model:      "anthropic/" + defaultAnthropicModel,
 					AuthMethod: "token",
 				})
+				appCfg.Agents.Defaults.ModelName = defaultAnthropicModel
 			}
-			// Update default model
-			appCfg.Agents.Defaults.ModelName = "claude-sonnet-4.6"
 		case "openai":
 			appCfg.Providers.OpenAI.AuthMethod = "token"
 			// Update ModelList
@@ -362,6 +440,16 @@ func authStatusCmd() error {
 		}
 		if !cred.ExpiresAt.IsZero() {
 			fmt.Printf("    Expires: %s\n", cred.ExpiresAt.Format("2006-01-02 15:04"))
+		}
+
+		if provider == "anthropic" && cred.AuthMethod == "oauth" {
+			usage, err := auth.FetchAnthropicUsage(cred.AccessToken)
+			if err != nil {
+				fmt.Printf("    Usage: unavailable (%v)\n", err)
+			} else {
+				fmt.Printf("    Usage (5h):  %.1f%%\n", usage.FiveHourUtilization*100)
+				fmt.Printf("    Usage (7d):  %.1f%%\n", usage.SevenDayUtilization*100)
+			}
 		}
 	}
 
