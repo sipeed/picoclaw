@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -53,8 +54,8 @@ func ExtractProtocol(model string) (protocol, modelID string) {
 
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
-// Supported protocols: openai, litellm, anthropic, antigravity, claude-cli, codex-cli, github-copilot
-// Returns the provider, the model ID (without protocol prefix), and any error.
+// Supported protocols: openai, litellm, anthropic, antigravity, claude-cli, codex-cli, github-copilot, and any OpenAI-compatible HTTP provider.
+// Returns the provider, the model ID (full model string for unknown protocols, otherwise without protocol prefix), and any error.
 func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, error) {
 	if cfg == nil {
 		return nil, "", fmt.Errorf("config is nil")
@@ -169,7 +170,16 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return provider, modelID, nil
 
 	default:
-		return nil, "", fmt.Errorf("unknown protocol %q in model %q", protocol, cfg.Model)
+		// Treat unknown protocols as OpenAI-compatible
+		logger.WarnF("unknown protocol, falling back to OpenAI-compatible HTTP provider", map[string]any{"protocol": protocol, "model": cfg.Model})
+		if cfg.APIKey == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase("openai")
+		}
+		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(cfg.APIKey, apiBase, cfg.Proxy, cfg.MaxTokensField, cfg.RequestTimeout), cfg.Model, nil
 	}
 }
 

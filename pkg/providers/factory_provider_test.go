@@ -254,9 +254,46 @@ func TestCreateProviderFromConfig_UnknownProtocol(t *testing.T) {
 		APIKey:    "test-key",
 	}
 
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() unexpected error: %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider for unknown protocol with APIKey")
+	}
+	if modelID != cfg.Model {
+		t.Fatalf("CreateProviderFromConfig() expected modelID=%q, got %q", cfg.Model, modelID)
+	}
+}
+
+func TestCreateProviderFromConfig_UnknownProtocolWithAPIBase(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-unknown",
+		Model:     "unknown-protocol/model",
+		APIBase:   "http://localhost:8080/v1",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() unexpected error: %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != cfg.Model {
+		t.Fatalf("CreateProviderFromConfig() expected modelID=%q, got %q", cfg.Model, modelID)
+	}
+}
+
+func TestCreateProviderFromConfig_UnknownProtocolNoAuth(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-unknown",
+		Model:     "unknown-protocol/model",
+	}
+
 	_, _, err := CreateProviderFromConfig(cfg)
 	if err == nil {
-		t.Fatal("CreateProviderFromConfig() expected error for unknown protocol")
+		t.Fatal("CreateProviderFromConfig() expected error for unknown protocol without api_key or api_base")
 	}
 }
 
