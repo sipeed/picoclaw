@@ -33,7 +33,8 @@
       "Bash(golangci-lint run:*)",
       "WebFetch(domain:core.telegram.org)",
       "Bash(go doc:*)",
-      "Bash(go install:*)"
+      "Bash(go install:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   },
   "remote": {

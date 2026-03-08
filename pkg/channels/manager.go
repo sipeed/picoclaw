@@ -633,26 +633,43 @@ func (m *Manager) handleTaskStatusSend(ctx context.Context, name string, w *chan
 
 	taskKey := taskStatusKey(name, msg.ChatID, msg.TaskID)
 
-	// Final message: send as permanent (non-draft) message so it persists.
-	// Drafts are ephemeral and disappear after a short time; the completion
-	// message must survive. Clear the draft tracking and send via SendWithID
-	// or regular Send, which creates a permanent Telegram message.
+	// Final message: reuse the existing bubble when possible to avoid
+	// duplicate messages. If a permanent message (messageID) is tracked,
+	// edit it in-place. If a draft (draftID) is tracked, update it with
+	// the completion content (the draft persists in Telegram and serves
+	// as the visible message; sending a separate permanent message would
+	// create a duplicate).
 	if msg.Final {
-		if v, loaded := m.taskMsgIDs.LoadAndDelete(taskKey); loaded {
-			if entry, ok := v.(statusMsgEntry); ok && entry.draftID != 0 {
-				if drafter, ok := w.ch.(DraftSender); ok {
-					if err := drafter.SendDraft(ctx, msg.ChatID, entry.draftID, ""); err != nil {
-						logger.WarnCF("channels", "Failed to dismiss task draft before final message", map[string]any{
-							"task_id":  taskKey,
-							"chat_id":  msg.ChatID,
-							"draft_id": entry.draftID,
-							"error":    err.Error(),
-						})
+		v, loaded := m.taskMsgIDs.LoadAndDelete(taskKey)
+		m.statusEditTimes.Delete(taskKey)
+
+		if loaded {
+			if entry, ok := v.(statusMsgEntry); ok {
+				// Path A: a permanent message exists — edit it in-place.
+				if entry.messageID != "" {
+					if editor, ok := w.ch.(MessageEditor); ok {
+						if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
+							return
+						}
 					}
+					// Edit failed — fall through to send a new message.
+				}
+
+				// Path B: a draft exists — update it with the final
+				// content. Drafts persist visibly in Telegram, so do NOT
+				// send a separate permanent message (that causes duplicates).
+				if entry.draftID != 0 {
+					if drafter, ok := w.ch.(DraftSender); ok {
+						if err := drafter.SendDraft(ctx, msg.ChatID, entry.draftID, msg.Content); err == nil {
+							return
+						}
+					}
+					// Draft update failed — fall through to send permanent.
 				}
 			}
 		}
-		m.statusEditTimes.Delete(taskKey)
+
+		// No existing bubble to reuse — send a new permanent message.
 		if sender, ok := w.ch.(MessageSenderWithID); ok {
 			if msgID, err := sender.SendWithID(ctx, msg.ChatID, msg.Content); err == nil && msgID != "" {
 				return
