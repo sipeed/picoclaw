@@ -691,6 +691,13 @@ func parseResponsesResponse(body io.Reader) (*LLMResponse, error) {
 		if len(apiResponse.Output) == 0 {
 			return nil, errors.New("openai responses returned terminal status with empty output")
 		}
+	case "failed":
+		if apiResponse.Error != nil {
+			if msg := strings.TrimSpace(apiResponse.Error.Message); msg != "" {
+				return nil, errors.New(msg)
+			}
+		}
+		return nil, errors.New("openai responses request failed")
 	default:
 		return nil, fmt.Errorf("openai responses returned unexpected or non-terminal status: %q", status)
 	}
@@ -760,17 +767,10 @@ func parseResponsesResponse(body io.Reader) (*LLMResponse, error) {
 		}
 	}
 
-	if apiResponse.Status == "failed" {
-		if apiResponse.Error != nil && apiResponse.Error.Message != "" {
-			return nil, errors.New(apiResponse.Error.Message)
-		}
-		return nil, errors.New("openai responses request failed")
-	}
-
 	finishReason := "stop"
 	if len(toolCalls) > 0 {
 		finishReason = "tool_calls"
-	} else if apiResponse.Status == "incomplete" {
+	} else if status == "incomplete" {
 		finishReason = "length"
 		if apiResponse.IncompleteDetails != nil && apiResponse.IncompleteDetails.Reason != "" && apiResponse.IncompleteDetails.Reason != "max_output_tokens" {
 			finishReason = apiResponse.IncompleteDetails.Reason

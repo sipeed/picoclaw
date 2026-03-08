@@ -556,6 +556,29 @@ func TestProviderChat_ParsesRefusalFromResponses(t *testing.T) {
 	}
 }
 
+func TestParseResponsesResponse_FailedStatusUsesServerMessage(t *testing.T) {
+	_, err := parseResponsesResponse(strings.NewReader(`{"status":" failed ","error":{"message":"responses failed"}}`))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if err.Error() != "responses failed" {
+		t.Fatalf("error = %q, want %q", err.Error(), "responses failed")
+	}
+}
+
+func TestParseResponsesResponse_UsesNormalizedIncompleteStatus(t *testing.T) {
+	out, err := parseResponsesResponse(strings.NewReader(`{"status":" incomplete ","output":[{"type":"message","content":[{"type":"output_text","text":"partial answer"}]}],"incomplete_details":{"reason":"content_filter"}}`))
+	if err != nil {
+		t.Fatalf("parseResponsesResponse() error = %v", err)
+	}
+	if out.Content != "partial answer" {
+		t.Fatalf("Content = %q, want %q", out.Content, "partial answer")
+	}
+	if out.FinishReason != "content_filter" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "content_filter")
+	}
+}
+
 func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 	var requestBody map[string]any
 
