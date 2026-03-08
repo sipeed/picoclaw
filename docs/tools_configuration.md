@@ -52,10 +52,35 @@ The exec tool is used to execute shell commands.
 | `enable_deny_patterns` | bool  | true    | Enable default dangerous command blocking  |
 | `custom_deny_patterns` | array | []      | Custom deny patterns (regular expressions) |
 
-### Functionality
+### Environment Sanitization
 
-- **`enable_deny_patterns`**: Set to `false` to completely disable the default dangerous command blocking patterns
-- **`custom_deny_patterns`**: Add custom deny regex patterns; commands matching these will be blocked
+The exec tool sanitizes the environment passed to child processes:
+
+1. **Default allowlist** — Only these variables are inherited from the parent process:
+   - `PATH`, `HOME`, `USER`, `LANG`, `SHELL`, `TERM`, `PWD`, `OLDPWD`, `HOSTNAME`, `LOGNAME`, `TZ`, `DISPLAY`, `TMPDIR`, `EDITOR`, `PAGER`
+   - Plus: `PICOCLAW_CONFIG`, `PICOCLAW_HOME`, `PICOCLAW_SERVICE_NAME`, `PICOCLAW_EXE`, `PICOCLAW_WORKSPACE`
+   - Plus: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`
+   - Plus any variable starting with `LC_`
+
+2. **Config env_set** — Variables from config are merged (can override inherited values)
+
+3. **LLM env injection** — The LLM can inject additional variables per-call via the `env` parameter:
+
+   ```json
+   {
+     "name": "exec",
+     "arguments": {
+       "command": "echo $DEBUG_MODE",
+       "env": {
+         "DEBUG_MODE": "true"
+       }
+     }
+   }
+   ```
+
+   **Blocked variables** — The LLM cannot override these sensitive variables:
+   - `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`
+   - `LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`, `LD_DEBUG`
 
 ### Default Blocked Command Patterns
 

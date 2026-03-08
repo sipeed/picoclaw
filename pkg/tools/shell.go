@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/tools/shell"
 )
 
 type ExecTool struct {
@@ -23,6 +24,7 @@ type ExecTool struct {
 	allowPatterns       []*regexp.Regexp
 	customAllowPatterns []*regexp.Regexp
 	restrictToWorkspace bool
+	cachedEnv           []string // cached sanitized env from os.Environ() at init
 }
 
 var (
@@ -143,6 +145,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		allowPatterns:       nil,
 		customAllowPatterns: customAllowPatterns,
 		restrictToWorkspace: restrict,
+		cachedEnv:           shell.BuildSanitizedEnv(os.Environ(), nil, nil, nil),
 	}, nil
 }
 
@@ -217,6 +220,10 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	} else {
 		cmd = exec.CommandContext(cmdCtx, "sh", "-c", command)
 	}
+
+	// Use sanitized environment - strips secrets, prevents env-based attacks
+	cmd.Env = t.cachedEnv
+
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
