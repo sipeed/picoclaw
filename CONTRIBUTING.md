@@ -269,8 +269,8 @@ Once your PR is submitted, you can reach out to the assigned reviewers listed in
 |Function| Reviewer|
 |---     |---      |
 |Provider|@yinwm   |
-|Channel |@yinwm   |
-|Agent   |@lxowalle|
+|Channel |@yinwm/@alexhoshina   |
+|Agent   |@lxowalle/@Zhaoyikaiii|
 |Tools   |@lxowalle|
 |SKill   ||
 |MCP     ||

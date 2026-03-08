@@ -18,6 +18,27 @@ func TestResolveProviderSelection(t *testing.T) {
 		wantErrSubstr string
 	}{
 		{
+			name: "explicit litellm provider uses configured base",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "litellm"
+				cfg.Providers.LiteLLM.APIKey = "litellm-key"
+				cfg.Providers.LiteLLM.APIBase = "http://localhost:4000/v1"
+				cfg.Providers.LiteLLM.Proxy = "http://127.0.0.1:7890"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "http://localhost:4000/v1",
+			wantProxy:   "http://127.0.0.1:7890",
+		},
+		{
+			name: "explicit litellm provider defaults base when only key is configured",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "litellm"
+				cfg.Providers.LiteLLM.APIKey = "litellm-key"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "http://localhost:4000/v1",
+		},
+		{
 			name: "explicit claude-cli provider routes to cli provider type",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Provider = "claude-cli"
@@ -65,6 +86,17 @@ func TestResolveProviderSelection(t *testing.T) {
 			},
 			wantType:    providerTypeHTTPCompat,
 			wantAPIBase: "https://integrate.api.nvidia.com/v1",
+			wantProxy:   "http://127.0.0.1:7890",
+		},
+		{
+			name: "explicit vivgrid provider uses defaults",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "vivgrid"
+				cfg.Providers.Vivgrid.APIKey = "vivgrid-key"
+				cfg.Providers.Vivgrid.Proxy = "http://127.0.0.1:7890"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "https://api.vivgrid.com/v1",
 			wantProxy:   "http://127.0.0.1:7890",
 		},
 		{
