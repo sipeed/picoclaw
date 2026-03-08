@@ -42,7 +42,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Build
-        run: make build-all
+        run: make build-all VERSION=${{ needs.generate-version.outputs.version }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
