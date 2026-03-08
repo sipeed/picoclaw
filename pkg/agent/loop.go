@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -283,7 +284,13 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						}
 
 						mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
-						agent.Tools.Register(mcpTool)
+
+						if al.cfg.Tools.MCP.ToolConfig.Enabled {
+							agent.Tools.RegisterHidden(mcpTool)
+						} else {
+							agent.Tools.Register(mcpTool)
+						}
+
 						totalRegistrations++
 						logger.DebugCF("agent", "Registered MCP tool",
 							map[string]any{
@@ -302,6 +309,43 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					"total_registrations": totalRegistrations,
 					"agent_count":         agentCount,
 				})
+
+			// Initializes Discovery Tools only if enabled by configuration
+			if al.cfg.Tools.MCP.Enabled && al.cfg.Tools.MCP.Discovery.Enabled {
+				useBM25 := al.cfg.Tools.MCP.Discovery.UseBM25
+				useRegex := al.cfg.Tools.MCP.Discovery.UseRegex
+
+				// Fail fast: If discovery is enabled but no tool is turned on, break the app
+				if !useBM25 && !useRegex {
+					log.Fatalf(
+						"Critical error: tool discovery is enabled but neither 'use_bm25' nor 'use_regex' is set to true in the configuration.",
+					)
+				}
+
+				ttl := al.cfg.Tools.MCP.Discovery.TTL
+				if ttl <= 0 {
+					ttl = 5 // Default value
+				}
+
+				maxSearchResults := al.cfg.Tools.MCP.Discovery.MaxSearchResults
+
+				for _, agentID := range agentIDs {
+					agent, ok := al.registry.GetAgent(agentID)
+					if !ok {
+						continue
+					}
+
+					if useRegex {
+						agent.Tools.Register(tools.NewRegexSearchTool(agent.Tools, ttl, maxSearchResults))
+					}
+					if useBM25 {
+						agent.Tools.Register(tools.NewBM25SearchTool(agent.Tools, ttl, maxSearchResults))
+					}
+
+					// Always record the fallback
+					agent.Tools.Register(tools.NewCallDiscoveredTool(agent.Tools, ttl))
+				}
+			}
 		}
 	}
 
@@ -889,6 +933,9 @@ func (al *AgentLoop) runLLMIteration(
 				"iteration": iteration,
 				"max":       agent.MaxIterations,
 			})
+
+		// Scale down the TTL of the discovered tools with each new round of the LLM
+		agent.Tools.TickTTL()
 
 		// Build tool definitions
 		providerToolDefs := agent.Tools.ToProviderDefs()

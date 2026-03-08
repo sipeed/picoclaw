@@ -11,14 +11,20 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+type ToolEntry struct {
+	Tool   Tool
+	IsCore bool
+	TTL    int
+}
+
 type ToolRegistry struct {
-	tools map[string]Tool
+	tools map[string]*ToolEntry
 	mu    sync.RWMutex
 }
 
 func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
-		tools: make(map[string]Tool),
+		tools: make(map[string]*ToolEntry),
 	}
 }
 
@@ -30,14 +36,55 @@ func (r *ToolRegistry) Register(tool Tool) {
 		logger.WarnCF("tools", "Tool registration overwrites existing tool",
 			map[string]any{"name": name})
 	}
-	r.tools[name] = tool
+	r.tools[name] = &ToolEntry{
+		Tool:   tool,
+		IsCore: true,
+		TTL:    0, // Core tools do not use TTL
+	}
+}
+
+// RegisterHidden saves hidden tools (visible only via TTL)
+func (r *ToolRegistry) RegisterHidden(tool Tool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	name := tool.Name()
+	r.tools[name] = &ToolEntry{
+		Tool:   tool,
+		IsCore: false,
+		TTL:    0,
+	}
+}
+
+// PromoteTool imposta il TTL solo se il tool NON è un core tool
+func (r *ToolRegistry) PromoteTool(name string, ttl int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if entry, exists := r.tools[name]; exists {
+		if !entry.IsCore {
+			entry.TTL = ttl
+		}
+	}
+}
+
+// TickTTL decreases TTL only for non-core tools
+func (r *ToolRegistry) TickTTL() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, entry := range r.tools {
+		if !entry.IsCore && entry.TTL > 0 {
+			entry.TTL--
+		}
+	}
 }
 
 func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	tool, ok := r.tools[name]
-	return tool, ok
+	entry, ok := r.tools[name]
+	if !ok {
+		return nil, false
+	}
+	return entry.Tool, true
 }
 
 func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]any) *ToolResult {
@@ -135,7 +182,13 @@ func (r *ToolRegistry) GetDefinitions() []map[string]any {
 	sorted := r.sortedToolNames()
 	definitions := make([]map[string]any, 0, len(sorted))
 	for _, name := range sorted {
-		definitions = append(definitions, ToolToSchema(r.tools[name]))
+		entry := r.tools[name]
+
+		if !entry.IsCore && entry.TTL <= 0 {
+			continue
+		}
+
+		definitions = append(definitions, ToolToSchema(r.tools[name].Tool))
 	}
 	return definitions
 }
@@ -149,8 +202,13 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 	sorted := r.sortedToolNames()
 	definitions := make([]providers.ToolDefinition, 0, len(sorted))
 	for _, name := range sorted {
-		tool := r.tools[name]
-		schema := ToolToSchema(tool)
+		entry := r.tools[name]
+
+		if !entry.IsCore && entry.TTL <= 0 {
+			continue
+		}
+
+		schema := ToolToSchema(entry.Tool)
 
 		// Safely extract nested values with type checks
 		fn, ok := schema["function"].(map[string]any)
@@ -198,8 +256,13 @@ func (r *ToolRegistry) GetSummaries() []string {
 	sorted := r.sortedToolNames()
 	summaries := make([]string, 0, len(sorted))
 	for _, name := range sorted {
-		tool := r.tools[name]
-		summaries = append(summaries, fmt.Sprintf("- `%s` - %s", tool.Name(), tool.Description()))
+		entry := r.tools[name]
+
+		if !entry.IsCore && entry.TTL <= 0 {
+			continue
+		}
+
+		summaries = append(summaries, fmt.Sprintf("- `%s` - %s", entry.Tool.Name(), entry.Tool.Description()))
 	}
 	return summaries
 }

@@ -96,7 +96,7 @@ func NewAgentInstance(
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
 
-	contextBuilder := NewContextBuilder(workspace)
+	contextBuilder := NewContextBuilder(workspace).WithToolDiscovery(cfg.Tools.MCP.ToolConfig.Discovery.Enabled)
 
 	agentID := routing.DefaultAgentID
 	agentName := ""

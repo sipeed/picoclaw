@@ -410,6 +410,13 @@ func DefaultConfig() *Config {
 			MCP: MCPConfig{
 				ToolConfig: ToolConfig{
 					Enabled: false,
+					Discovery: ToolDiscoveryConfig{
+						Enabled:          false,
+						TTL:              5,
+						MaxSearchResults: 5,
+						UseBM25:          true,
+						UseRegex:         false,
+					},
 				},
 				Servers: map[string]MCPServerConfig{},
 			},
