@@ -180,6 +180,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	// The Manager already splits messages to ≤4000 chars (WithMaxMessageLength),
 	// so msg.Content is guaranteed to be within that limit. We still need to
 	// check if HTML expansion pushes it beyond Telegram's 4096-char API limit.
+	replyToID := msg.ReplyToMessageID
 	queue := []string{msg.Content}
 	for len(queue) > 0 {
 		chunk := queue[0]
@@ -200,9 +201,11 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			continue
 		}
 
-		if err := c.sendHTMLChunk(ctx, chatID, htmlContent, chunk, msg.ReplyToMessageID); err != nil {
+		if err := c.sendHTMLChunk(ctx, chatID, htmlContent, chunk, replyToID); err != nil {
 			return err
 		}
+		// Only the first chunk should be a reply; subsequent chunks are normal messages.
+		replyToID = ""
 	}
 
 	return nil
