@@ -662,6 +662,7 @@ type ToolsConfig struct {
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 	MCP             MCPConfig          `json:"mcp"`
 	LLMCallLog      LLMCallLogConfig   `json:"llm_call_log"`
+	ConversationLog ConversationLogConfig `json:"conversation_log"`
 	AppendFile      ToolConfig         `json:"append_file"                                              envPrefix:"PICOCLAW_TOOLS_APPEND_FILE_"`
 	EditFile        ToolConfig         `json:"edit_file"                                                envPrefix:"PICOCLAW_TOOLS_EDIT_FILE_"`
 	FindSkills      ToolConfig         `json:"find_skills"                                              envPrefix:"PICOCLAW_TOOLS_FIND_SKILLS_"`
@@ -683,6 +684,13 @@ type LLMCallLogConfig struct {
 	Enabled  bool   `json:"enabled"   env:"PICOCLAW_TOOLS_LLM_CALL_LOG_ENABLED"`
 	LogDir   string `json:"log_dir"   env:"PICOCLAW_TOOLS_LLM_CALL_LOG_DIR"`
 	MaxFiles int    `json:"max_files" env:"PICOCLAW_TOOLS_LLM_CALL_LOG_MAX_FILES"`
+}
+
+// ConversationLogConfig 配置对话日志
+type ConversationLogConfig struct {
+	Enabled  bool   `json:"enabled"   env:"PICOCLAW_TOOLS_CONVERSATION_LOG_ENABLED"`
+	LogDir   string `json:"log_dir"   env:"PICOCLAW_TOOLS_CONVERSATION_LOG_DIR"`
+	MaxFiles int    `json:"max_files" env:"PICOCLAW_TOOLS_CONVERSATION_LOG_MAX_FILES"`
 }
 
 type SearchCacheConfig struct {

@@ -82,6 +82,9 @@ func NewAgentLoop(
 	workspace := cfg.WorkspacePath()
 	logger.InitLLMLogger(cfg.Tools.LLMCallLog, workspace)
 
+	// Initialize conversation logger
+	logger.InitConversationLogger(cfg.Tools.ConversationLog, workspace)
+
 	// Wrap provider with logging if enabled
 	llmLogger := logger.GetLLMLogger()
 	if llmLogger != nil && llmLogger.IsEnabled() {
@@ -801,6 +804,18 @@ func (al *AgentLoop) runAgentLoop(
 	// 2. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
+	// Log conversation
+	if convLogger := logger.GetConversationLogger(); convLogger != nil && convLogger.IsEnabled() {
+		convLogger.Log(&logger.ConversationRecord{
+			Timestamp:  time.Now().Format(time.RFC3339),
+			SessionKey: opts.SessionKey,
+			Role:       "user",
+			Content:    opts.UserMessage,
+			Channel:    opts.Channel,
+			ChatID:     opts.ChatID,
+		})
+	}
+
 	// 3. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
@@ -817,6 +832,19 @@ func (al *AgentLoop) runAgentLoop(
 
 	// 5. Save final assistant message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
+
+	// Log conversation
+	if convLogger := logger.GetConversationLogger(); convLogger != nil && convLogger.IsEnabled() {
+		convLogger.Log(&logger.ConversationRecord{
+			Timestamp:  time.Now().Format(time.RFC3339),
+			SessionKey: opts.SessionKey,
+			Role:       "assistant",
+			Content:    finalContent,
+			Channel:    opts.Channel,
+			ChatID:     opts.ChatID,
+		})
+	}
+
 	agent.Sessions.Save(opts.SessionKey)
 
 	// 6. Optional: summarization

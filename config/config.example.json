@@ -439,6 +439,9 @@
     },
     "llm_call_log": {
       "enabled":false
+   },
+   "conversation_log" :{
+    "enabled":false
    }
   },
   "heartbeat": {
