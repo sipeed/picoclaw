@@ -84,9 +84,9 @@ type Manager struct {
 	mux           *http.ServeMux
 	httpServer    *http.Server
 	mu            sync.RWMutex
-	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
-	typingStops   sync.Map // "channel:chatID" → func()
-	reactionUndos sync.Map // "channel:chatID" → reactionEntry
+	placeholders  sync.Map // "channel:chatID:threadID" → placeholderEntry
+	typingStops   sync.Map // "channel:chatID:threadID" → typingEntry
+	reactionUndos sync.Map // "channel:chatID:threadID" → reactionEntry
 }
 
 type asyncTask struct {

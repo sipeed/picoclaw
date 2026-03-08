@@ -271,3 +271,21 @@ func TestSend_InvalidChatID(t *testing.T) {
 	assert.True(t, errors.Is(err, channels.ErrSendFailed), "error should wrap ErrSendFailed")
 	assert.Empty(t, caller.calls)
 }
+
+func TestParseOptionalInt(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int
+	}{
+		{"", 0},
+		{"0", 0},
+		{"42", 42},
+		{"-1", -1},
+		{"abc", 0},
+		{"123456", 123456},
+	}
+	for _, tt := range tests {
+		got := parseOptionalInt(tt.input)
+		assert.Equal(t, tt.want, got, "parseOptionalInt(%q)", tt.input)
+	}
+}

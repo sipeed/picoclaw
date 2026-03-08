@@ -1166,9 +1166,11 @@ func (al *AgentLoop) runLLMIteration(
 						outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
 						defer outCancel()
 						_ = al.bus.PublishOutbound(outCtx, bus.OutboundMessage{
-							Channel: opts.Channel,
-							ChatID:  opts.ChatID,
-							Content: result.ForUser,
+							Channel:          opts.Channel,
+							ChatID:           opts.ChatID,
+							Content:          result.ForUser,
+							ThreadID:         opts.ThreadID,
+							ReplyToMessageID: opts.ReplyToMessageID,
 						})
 					}
 

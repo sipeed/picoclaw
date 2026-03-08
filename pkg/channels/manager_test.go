@@ -570,6 +570,44 @@ func TestPreSend_TypingAndPlaceholder(t *testing.T) {
 	}
 }
 
+func TestPreSend_ThreadIsolation(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockMessageEditor{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+				return nil
+			},
+		},
+		editFn: func(_ context.Context, _, _, _ string) error {
+			return nil
+		},
+	}
+
+	// Register placeholder for thread "100"
+	m.RecordPlaceholder("test", "123", "100", "ph-100")
+
+	// Sending to the same chat but different thread should NOT find the placeholder
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello", ThreadID: "200"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+	if edited {
+		t.Fatal("expected preSend to return false for a different threadID")
+	}
+
+	// Sending to the correct thread should find it
+	msg.ThreadID = "100"
+	edited = m.preSend(context.Background(), "test", msg, ch)
+	if !edited {
+		t.Fatal("expected preSend to return true for matching threadID")
+	}
+
+	// Second call to same thread should not find it (already consumed)
+	edited = m.preSend(context.Background(), "test", msg, ch)
+	if edited {
+		t.Fatal("expected preSend to return false after placeholder was consumed")
+	}
+}
+
 func TestRecordPlaceholder_ConcurrentSafe(t *testing.T) {
 	m := newTestManager()
 

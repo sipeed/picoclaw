@@ -213,15 +213,9 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 func (c *TelegramChannel) sendHTMLChunk(ctx context.Context, chatID int64, htmlContent, mdFallback, threadID, replyToMsgID string) error {
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
-	if threadID != "" {
-		if tid, err2 := strconv.Atoi(threadID); err2 == nil {
-			tgMsg.MessageThreadID = tid
-		}
-	}
-	if replyToMsgID != "" {
-		if mid, err2 := strconv.Atoi(replyToMsgID); err2 == nil {
-			tgMsg.ReplyParameters = &telego.ReplyParameters{MessageID: mid}
-		}
+	tgMsg.MessageThreadID = parseOptionalInt(threadID)
+	if mid := parseOptionalInt(replyToMsgID); mid != 0 {
+		tgMsg.ReplyParameters = &telego.ReplyParameters{MessageID: mid}
 	}
 
 	if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
@@ -248,14 +242,9 @@ func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string, thread
 		return func() {}, err
 	}
 
-	tid := 0
-	if threadID != "" {
-		tid, _ = strconv.Atoi(threadID)
-	}
-
 	sendTyping := func(sctx context.Context) {
 		params := tu.ChatAction(tu.ID(cid), telego.ChatActionTyping)
-		params.MessageThreadID = tid
+		params.MessageThreadID = parseOptionalInt(threadID)
 		_ = c.bot.SendChatAction(sctx, params)
 	}
 
@@ -318,15 +307,9 @@ func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string, th
 	}
 
 	params := tu.Message(tu.ID(cid), text)
-	if threadID != "" {
-		if tid, err2 := strconv.Atoi(threadID); err2 == nil {
-			params.MessageThreadID = tid
-		}
-	}
-	if replyToMsgID != "" {
-		if mid, err2 := strconv.Atoi(replyToMsgID); err2 == nil {
-			params.ReplyParameters = &telego.ReplyParameters{MessageID: mid}
-		}
+	params.MessageThreadID = parseOptionalInt(threadID)
+	if mid := parseOptionalInt(replyToMsgID); mid != 0 {
+		params.ReplyParameters = &telego.ReplyParameters{MessageID: mid}
 	}
 
 	pMsg, err := c.bot.SendMessage(ctx, params)
@@ -626,6 +609,15 @@ func parseChatID(chatIDStr string) (int64, error) {
 	var id int64
 	_, err := fmt.Sscanf(chatIDStr, "%d", &id)
 	return id, err
+}
+
+// parseOptionalInt converts a string to int, returning 0 if the string is empty or invalid.
+func parseOptionalInt(s string) int {
+	if s == "" {
+		return 0
+	}
+	n, _ := strconv.Atoi(s)
+	return n
 }
 
 func markdownToTelegramHTML(text string) string {
