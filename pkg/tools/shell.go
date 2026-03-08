@@ -175,6 +175,13 @@ func (t *ExecTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional working directory for the command",
 			},
+			"env": map[string]any{
+				"type":        "object",
+				"description": "Additional environment variables to set for this command. Cannot override: PATH, HOME, USER, LOGNAME, SHELL, LD_PRELOAD, LD_LIBRARY_PATH, LD_AUDIT, LD_DEBUG",
+				"additionalProperties": map[string]any{
+					"type": "string",
+				},
+			},
 		},
 		"required": []string{"command"},
 	}
