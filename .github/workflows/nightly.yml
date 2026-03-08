@@ -128,7 +128,7 @@ jobs:
         run: |
           TAG="${{ needs.generate-version.outputs.tag }}"
           TITLE="${{ needs.generate-version.outputs.version }}"
-          NOTES="Nightly build for ${{ needs.generate-version.outputs.version }}"
+          NOTES="Nightly build for **${{ needs.generate-version.outputs.version }}**\n\n This is an automated build and may be unstable. Use with caution."
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists, updating metadata and assets..."
