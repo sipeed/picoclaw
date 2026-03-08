@@ -18,7 +18,7 @@ func TestMatrixLocalpartMentionRegexp(t *testing.T) {
 	}{
 		{text: "@picoclaw hello", want: true},
 		{text: "hi @picoclaw:matrix.org", want: true},
-		{text: "欢迎一下picoclaw小龙虾", want: false}, // historical false-positive case in PR #356
+		{text: "\u6b22\u8fce\u4e00\u4e0bpicoclaw\u5c0f\u9f99\u867e", want: false}, // historical false-positive case in PR #356
 		{text: "mail test@example.com", want: false},
 	}
 
@@ -87,7 +87,7 @@ func TestIsBotMentioned(t *testing.T) {
 		{
 			name: "localpart without at sign should not match",
 			msg: event.MessageEventContent{
-				Body: "欢迎一下picoclaw小龙虾",
+				Body: "\u6b22\u8fce\u4e00\u4e0bpicoclaw\u5c0f\u9f99\u867e",
 			},
 			want: false,
 		},
