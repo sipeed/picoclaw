@@ -765,8 +765,12 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 
 ```
 ~/.picoclaw/workspace/
-├── sessions/          # Conversation sessions and history
-├── memory/           # Long-term memory (MEMORY.md)
+├── sessions/          # Conversation sessions, summaries, and recent history
+├── memory/
+│   ├── MEMORY.md      # Long-term memory
+│   └── YYYYMM/
+│       ├── YYYYMMDD.md                  # Daily notes
+│       └── YYYYMMDD-HHMMSS.compactions.md # Detailed auto-generated compaction notes
 ├── state/            # Persistent state (last channel, etc.)
 ├── cron/             # Scheduled jobs database
 ├── skills/           # Custom skills
@@ -777,6 +781,14 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 ├── TOOLS.md          # Tool descriptions
 └── USER.md           # User preferences
 ```
+
+### Memory And Conversation Compaction
+
+- `memory/MEMORY.md` stores durable long-term facts and preferences.
+- `memory/YYYYMM/YYYYMMDD.md` stores daily notes.
+- When a session grows beyond the summarization threshold, PicoClaw keeps a short structured running summary for future prompt context and truncates the old session history to the most recent turns.
+- At the same time, PicoClaw writes a detailed record of the compacted conversation segment to `memory/YYYYMM/YYYYMMDD-HHMMSS.compactions.md`.
+- These `.compactions.md` files are for audit trail and later review. They are not injected back into the default memory context, so they do not bloat the active prompt.
 
 ### Skill Sources
 
