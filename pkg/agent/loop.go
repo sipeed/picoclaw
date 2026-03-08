@@ -78,6 +78,16 @@ func NewAgentLoop(
 	msgBus *bus.MessageBus,
 	provider providers.LLMProvider,
 ) *AgentLoop {
+	// Initialize LLM call logger
+	workspace := cfg.WorkspacePath()
+	logger.InitLLMLogger(cfg.Tools.LLMCallLog, workspace)
+
+	// Wrap provider with logging if enabled
+	llmLogger := logger.GetLLMLogger()
+	if llmLogger != nil && llmLogger.IsEnabled() {
+		provider = providers.NewLoggingProvider(provider, llmLogger, cfg.Agents.Defaults.Provider)
+	}
+
 	registry := NewAgentRegistry(cfg, provider)
 
 	// Register shared tools to all agents
