@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -39,6 +40,13 @@ type Provider struct {
 type Option func(*Provider)
 
 const defaultRequestTimeout = 120 * time.Second
+
+var (
+	// Providers sometimes leak chain-of-thought in these tags in `content`.
+	quickReasoningTagRE = regexp.MustCompile(`(?i)<\s*/?\s*(?:think(?:ing)?|thought|reasoning|final)\b`)
+	finalTagRE          = regexp.MustCompile(`(?i)<\s*/?\s*final\b[^>]*>`)
+	thinkingTagRE       = regexp.MustCompile(`(?i)<\s*(/?)\s*(?:think(?:ing)?|thought|reasoning)\b[^>]*>`)
+)
 
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {
@@ -271,6 +279,52 @@ func responsePreview(body []byte, maxLen int) string {
 	return string(trimmed[:maxLen]) + "..."
 }
 
+// stripThinkingAndFinalTags removes leaked reasoning blocks while preserving
+// user-facing answer text (e.g. <final>answer</final> -> answer).
+func stripThinkingAndFinalTags(content string) string {
+	if content == "" {
+		return content
+	}
+	// Some APIs double-escape angle brackets in JSON payloads.
+	content = strings.ReplaceAll(content, `\u003c`, "<")
+	content = strings.ReplaceAll(content, `\u003e`, ">")
+	content = strings.ReplaceAll(content, `\u003C`, "<")
+	content = strings.ReplaceAll(content, `\u003E`, ">")
+
+	if !quickReasoningTagRE.MatchString(content) {
+		return strings.TrimSpace(content)
+	}
+
+	cleaned := finalTagRE.ReplaceAllString(content, "")
+	indexes := thinkingTagRE.FindAllStringSubmatchIndex(cleaned, -1)
+	if len(indexes) == 0 {
+		return strings.TrimSpace(cleaned)
+	}
+
+	var b strings.Builder
+	lastIndex := 0
+	inThinking := false
+	for _, idx := range indexes {
+		matchStart, matchEnd := idx[0], idx[1]
+		isClose := idx[2] >= 0 && cleaned[idx[2]:idx[3]] == "/"
+
+		if !inThinking {
+			b.WriteString(cleaned[lastIndex:matchStart])
+			if !isClose {
+				inThinking = true
+			}
+		} else if isClose {
+			inThinking = false
+		}
+		lastIndex = matchEnd
+	}
+
+	if !inThinking {
+		b.WriteString(cleaned[lastIndex:])
+	}
+	return strings.TrimSpace(b.String())
+}
+
 func parseResponse(body io.Reader) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
@@ -351,7 +405,7 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 	}
 
 	return &LLMResponse{
-		Content:          choice.Message.Content,
+		Content:          stripThinkingAndFinalTags(choice.Message.Content),
 		ReasoningContent: choice.Message.ReasoningContent,
 		Reasoning:        choice.Message.Reasoning,
 		ReasoningDetails: choice.Message.ReasoningDetails,
