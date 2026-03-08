@@ -538,6 +538,7 @@
                         <div class="sidebar-item" data-panel="panelCh_telegram">Telegram</div>
                         <div class="sidebar-item" data-panel="panelCh_discord">Discord</div>
                         <div class="sidebar-item" data-panel="panelCh_slack">Slack</div>
+                        <div class="sidebar-item" data-panel="panelCh_matrix">Matrix</div>
                         <div class="sidebar-item" data-panel="panelCh_wecom">WeCom</div>
                         <div class="sidebar-item" data-panel="panelCh_wecom_app">WeCom App</div>
                         <div class="sidebar-item" data-panel="panelCh_dingtalk">DingTalk</div>
@@ -606,6 +607,7 @@
                 <div class="content-panel" id="panelCh_telegram"></div>
                 <div class="content-panel" id="panelCh_discord"></div>
                 <div class="content-panel" id="panelCh_slack"></div>
+                <div class="content-panel" id="panelCh_matrix"></div>
                 <div class="content-panel" id="panelCh_wecom"></div>
                 <div class="content-panel" id="panelCh_wecom_app"></div>
                 <div class="content-panel" id="panelCh_dingtalk"></div>
@@ -1011,6 +1013,16 @@ const channelSchemas = {
             { key: 'app_token', label: 'App Token', type: 'password', placeholder: 'xapp-...' },
         ]
     },
+    matrix: {
+        title: 'Matrix', configKey: 'matrix', docSlug: null,
+        fields: [
+            { key: 'homeserver', label: 'Homeserver', type: 'text', placeholder: 'https://matrix.org' },
+            { key: 'user_id', label: 'User ID', type: 'text', placeholder: '@bot:matrix.org' },
+            { key: 'access_token', label: 'Access Token', type: 'password', placeholder: 'syt_...' },
+            { key: 'device_id', label: 'Device ID', type: 'text', placeholder: 'Optional device ID' },
+            { key: 'join_on_invite', label: 'Join On Invite', type: 'toggle' },
+        ]
+    },
     wecom: {
         title: 'WeCom (Bot)', configKey: 'wecom', docSlug: 'wecom-bot',
         fields: [
@@ -1392,9 +1404,7 @@ function saveModelFromModal() {
     saveConfig().then(renderModels);
 }
 
-document.getElementById('modelModal').addEventListener('click', function(e) {
-    if (e.target === this) closeModelModal();
-});
+
 
 // ── Channel Forms ───────────────────────────────────
 function renderChannelForm(chKey) {

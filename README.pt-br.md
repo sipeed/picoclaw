@@ -7,7 +7,7 @@
 
   <p>
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
-    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20RISC--V-blue" alt="Hardware">
+    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V-blue" alt="Hardware">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
     <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
@@ -66,7 +66,7 @@
 
 ⚡️ **Inicialização Relámpago**: Tempo de inicialização 400X mais rápido, boot em 1 segundo mesmo em CPU single-core de 0.6GHz.
 
-🌍 **Portabilidade Real**: Um único binário auto-contido para RISC-V, ARM e x86. Um clique e já era!
+🌍 **Portabilidade Real**: Um único binário auto-contido para RISC-V, ARM, MIPS e x86. Um clique e já era!
 
 🤖 **Auto-Construído por IA**: Implementação nativa em Go de forma autônoma — 95% do núcleo gerado pelo Agente com refinamento humano no loop.
 
@@ -282,7 +282,7 @@ Converse com seu PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom.
 | **QQ** | Fácil (AppID + AppSecret) |
 | **DingTalk** | Médio (credenciais do app) |
 | **LINE** | Médio (credenciais + webhook URL) |
-| **WeCom** | Médio (CorpID + configuração webhook) |
+| **WeCom AI Bot** | Médio (Token + chave AES) |
 
 <details>
 <summary><b>Telegram</b> (Recomendado)</summary>
@@ -485,12 +485,13 @@ picoclaw gateway
 <details>
 <summary><b>WeCom (WeChat Work)</b></summary>
 
-O PicoClaw suporta dois tipos de integração WeCom:
+O PicoClaw suporta três tipos de integração WeCom:
 
-**Opção 1: WeCom Bot (Robô Inteligente)** - Configuração mais fácil, suporta chats em grupo
-**Opção 2: WeCom App (Aplicativo Personalizado)** - Mais recursos, mensagens proativas
+**Opção 1: WeCom Bot (Robô)** - Configuração mais fácil, suporta chats em grupo
+**Opção 2: WeCom App (Aplicativo Personalizado)** - Mais recursos, mensagens proativas, somente chat privado
+**Opção 3: WeCom AI Bot (Robô Inteligente)** - Bot IA oficial, respostas em streaming, suporta grupo e privado
 
-Veja o [Guia de Configuração WeCom App](docs/wecom-app-configuration.md) para instruções detalhadas.
+Veja o [Guia de Configuração WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) para instruções detalhadas.
 
 **Configuração Rápida - WeCom Bot:**
 
@@ -558,6 +559,39 @@ picoclaw gateway
 ```
 
 > **Nota**: O WeCom App (callbacks de webhook) é servido pelo Gateway compartilhado (padrão 127.0.0.1:18790). Em produção use um proxy reverso HTTPS para expor a porta do Gateway, ou atualize `PICOCLAW_GATEWAY_HOST` para `0.0.0.0` se necessário.
+
+**Configuração Rápida - WeCom AI Bot:**
+
+**1. Criar um AI Bot**
+
+* Acesse o Console de Administração WeCom → Gerenciamento de Aplicativos → AI Bot
+* Configure a URL de callback: `http://your-server:18791/webhook/wecom-aibot`
+* Copie o **Token** e gere o **EncodingAESKey**
+
+**2. Configurar**
+
+```json
+{
+  "channels": {
+    "wecom_aibot": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-aibot",
+      "allow_from": [],
+      "welcome_message": "Olá! Como posso ajudá-lo?"
+    }
+  }
+}
+```
+
+**3. Executar**
+
+```bash
+picoclaw gateway
+```
+
+> **Nota**: O WeCom AI Bot usa protocolo de pull em streaming — sem preocupações com timeout de resposta. Tarefas longas (>5,5 min) alternam automaticamente para entrega via `response_url`.
 
 </details>
 
@@ -789,7 +823,7 @@ O subagente tem acesso às ferramentas (message, web_search, etc.) e pode se com
 ### Provedores
 
 > [!NOTE]
-> O Groq fornece transcrição de voz gratuita via Whisper. Se configurado, mensagens de voz do Telegram serão automaticamente transcritas.
+> O Groq fornece transcrição de voz gratuita via Whisper. Se configurado, mensagens de áudio de qualquer canal serão automaticamente transcritas no nível do agente.
 
 | Provedor | Finalidade | Obter API Key |
 | --- | --- | --- |
