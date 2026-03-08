@@ -52,7 +52,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: picoclaw-binaries
-          path: build/*
+          path: build
 
   build-docker:
     name: Build Docker
