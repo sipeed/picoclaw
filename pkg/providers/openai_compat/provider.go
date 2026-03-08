@@ -361,10 +361,12 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 	}, nil
 }
 
-// openaiMessage is the wire-format message for OpenAI-compatible APIs.
-// It mirrors protocoltypes.Message but omits SystemParts, which is an
-// internal field that would be unknown to third-party endpoints.
-// Content can be either a string or an array of content blocks for multimodal messages.
+// openaiMessage is the wire-format message for OpenAI-compatible APIs for
+// simple text-only messages. It mirrors protocoltypes.Message but omits
+// SystemParts, which is an internal field that would be unknown to
+// third-party endpoints. For messages that include media, serializeMessages
+// constructs a map[string]any where "content" is an array of content blocks,
+// instead of using this struct.
 type openaiMessage struct {
 	Role             string     `json:"role"`
 	Content          string     `json:"content"`

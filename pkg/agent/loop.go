@@ -622,44 +622,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"route_channel": route.Channel,
 		})
 
-	// Transcribe any audio media refs before passing to the agent.
+	// transcribeAudioInMessage already ran earlier in processMessage,
+	// so msg.Content has transcripts injected. Use it directly.
 	userMessage := msg.Content
-
-	if al.transcriber != nil && len(msg.Media) > 0 && al.mediaStore != nil {
-		for _, ref := range msg.Media {
-			localPath, meta, err := al.mediaStore.ResolveWithMeta(ref)
-			if err != nil {
-				continue
-			}
-
-			mediaType := inferMediaType(meta.Filename, meta.ContentType)
-
-			// Handle audio transcription
-			if mediaType == "audio" {
-				logger.InfoCF("agent", "Transcribing audio", map[string]any{
-					"ref": ref, "path": localPath, "filename": meta.Filename,
-				})
-				result, err := al.transcriber.Transcribe(ctx, localPath)
-				if err != nil {
-					logger.WarnCF("agent", "Audio transcription failed", map[string]any{
-						"ref": ref, "error": err.Error(),
-					})
-					continue
-				}
-				logger.InfoCF("agent", "Transcribed audio", map[string]any{
-					"ref": ref, "length": len(result.Text),
-				})
-				// Replace the [voice]/[audio] placeholder with the actual transcript
-				userMessage = strings.NewReplacer("[voice]", "", "[audio]", "").Replace(userMessage)
-				userMessage = strings.TrimSpace(userMessage)
-				if userMessage != "" {
-					userMessage = userMessage + "\n\n[Voice transcript]: " + result.Text
-				} else {
-					userMessage = result.Text
-				}
-			}
-		}
-	}
 
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
@@ -1750,5 +1715,3 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
 }
-
-
