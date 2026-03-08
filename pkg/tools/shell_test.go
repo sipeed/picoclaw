@@ -443,3 +443,32 @@ func TestShellTool_CustomAllowPatterns(t *testing.T) {
 		t.Errorf("'git push upstream main' should still be blocked by deny pattern")
 	}
 }
+
+// TestShellTool_URLsNotBlocked verifies that commands containing URLs are not
+// incorrectly blocked by the workspace restriction safety guard (issue #1203).
+func TestShellTool_URLsNotBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// These commands contain URLs and should NOT be blocked by workspace restriction.
+	// The URL path components (e.g., "//github.com") should be recognized as URLs,
+	// not as file system paths.
+	commands := []string{
+		"agent-browser open https://github.com",
+		"curl https://api.example.com/data",
+		"wget http://example.com/file",
+		"browser open https://github.com/user/repo",
+		"fetch ftp://ftp.example.com/file.txt",
+		"git clone https://github.com/sipeed/picoclaw.git",
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("command with URL should not be blocked by workspace check: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
