@@ -24,8 +24,8 @@ jobs:
       - name: Generate version
         id: version
         run: |
-          DATE=$(date +%Y%m%d)
-          SHA=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y%m%d)
+          SHA=$(git rev-parse --short=8 HEAD)
           BASE_VERSION=$(git describe --tags --match "v*" --exclude "*nightly*" --abbrev=0 2>/dev/null || true)
           if [ -z "$BASE_VERSION" ] || [ "$BASE_VERSION" = "v0.0.0" ]; then
             VERSION="nightly-${DATE}-${SHA}"
@@ -109,7 +109,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [generate-version, build]
+    needs: [generate-version, build, build-docker]
     permissions:
       contents: write
     steps:
@@ -124,7 +124,7 @@ jobs:
 
       - name: Create release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ needs.generate-version.outputs.tag }}"
           TITLE="${{ needs.generate-version.outputs.version }}"
