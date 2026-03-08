@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,12 @@ import (
 
 const (
 	sendTimeout = 10 * time.Second
+)
+
+var (
+	// Pre-compiled regexes for resolveDiscordRefs (avoid re-compiling per call)
+	channelRefRe = regexp.MustCompile(`<#(\d+)>`)
+	msgLinkRe    = regexp.MustCompile(`https://(?:discord\.com|discordapp\.com)/channels/(\d+)/(\d+)/(\d+)`)
 )
 
 type DiscordChannel struct {
@@ -338,6 +345,24 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		content = c.stripBotMention(content)
 	}
 
+	// Resolve Discord refs in main content before concatenation to avoid
+	// double-expanding links that appear in the referenced message.
+	content = c.resolveDiscordRefs(s, content, m.GuildID)
+
+	// Prepend referenced (quoted) message content if this is a reply
+	if m.MessageReference != nil && m.ReferencedMessage != nil {
+		refContent := m.ReferencedMessage.Content
+		if refContent != "" {
+			refAuthor := "unknown"
+			if m.ReferencedMessage.Author != nil {
+				refAuthor = m.ReferencedMessage.Author.Username
+			}
+			refContent = c.resolveDiscordRefs(s, refContent, m.GuildID)
+			content = fmt.Sprintf("[quoted message from %s]: %s\n\n%s",
+				refAuthor, refContent, content)
+		}
+	}
+
 	senderID := m.Author.ID
 
 	mediaPaths := make([]string, 0, len(m.Attachments))
@@ -506,6 +531,51 @@ func applyDiscordProxy(session *discordgo.Session, proxyAddr string) error {
 	}
 
 	return nil
+}
+
+// resolveDiscordRefs resolves channel references (<#id> → #channel-name) and
+// expands Discord message links to show the linked message content.
+// Only links pointing to the same guild are expanded to prevent cross-guild leakage.
+func (c *DiscordChannel) resolveDiscordRefs(s *discordgo.Session, text string, guildID string) string {
+	// 1. Resolve channel references: <#id> → #channel-name
+	text = channelRefRe.ReplaceAllStringFunc(text, func(match string) string {
+		parts := channelRefRe.FindStringSubmatch(match)
+		if len(parts) < 2 {
+			return match
+		}
+		// Prefer session state cache to avoid API calls
+		if ch, err := s.State.Channel(parts[1]); err == nil {
+			return "#" + ch.Name
+		}
+		if ch, err := s.Channel(parts[1]); err == nil {
+			return "#" + ch.Name
+		}
+		return match
+	})
+
+	// 2. Expand Discord message links (max 3, same guild only)
+	matches := msgLinkRe.FindAllStringSubmatch(text, 3)
+	for _, m := range matches {
+		if len(m) < 4 {
+			continue
+		}
+		linkGuildID, channelID, messageID := m[1], m[2], m[3]
+		// Security: only expand links from the same guild
+		if linkGuildID != guildID {
+			continue
+		}
+		msg, err := s.ChannelMessage(channelID, messageID)
+		if err != nil || msg == nil || msg.Content == "" {
+			continue
+		}
+		author := "unknown"
+		if msg.Author != nil {
+			author = msg.Author.Username
+		}
+		text += fmt.Sprintf("\n[linked message from %s]: %s", author, msg.Content)
+	}
+
+	return text
 }
 
 // stripBotMention removes the bot mention from the message content.

@@ -9,7 +9,7 @@ A standalone launcher for PicoClaw, providing visual JSON editing and OAuth prov
 
 - 📝 **Config Editor** — Sidebar-based settings UI with model management, channel configuration forms, and a raw JSON editor
 - 🤖 **Model Management** — Model card grid with availability status (grayed out without API key), primary model selection, add/edit/delete with required/optional field separation
-- 📡 **Channel Configuration** — Form-based settings for 12 channel types (Telegram, Discord, Slack, WeCom, DingTalk, Feishu, LINE, WhatsApp, QQ, OneBot, MaixCAM, etc.) with documentation links
+- 📡 **Channel Configuration** — Form-based settings for 13 channel types (Telegram, Discord, Slack, Matrix, WeCom, DingTalk, Feishu, LINE, WhatsApp, QQ, OneBot, MaixCAM, etc.) with documentation links
 - 🔐 **Provider Auth** — Login to OpenAI (Device Code), Anthropic (API Token), Google Antigravity (Browser OAuth)
 - 🌐 **Embedded Frontend** — Compiles to a single binary with no external dependencies
 - 🌍 **i18n** — Chinese/English language switching with browser auto-detection

@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -164,35 +165,21 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 	}
 }
 
-// TestToolContext_Updates verifies tool context is updated with channel/chatID
+// TestToolContext_Updates verifies tool context helpers work correctly
 func TestToolContext_Updates(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "agent-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	ctx := tools.WithToolContext(context.Background(), "telegram", "chat-42")
 
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         4096,
-				MaxToolIterations: 10,
-			},
-		},
+	if got := tools.ToolChannel(ctx); got != "telegram" {
+		t.Errorf("expected channel 'telegram', got %q", got)
+	}
+	if got := tools.ToolChatID(ctx); got != "chat-42" {
+		t.Errorf("expected chatID 'chat-42', got %q", got)
 	}
 
-	msgBus := bus.NewMessageBus()
-	provider := &simpleMockProvider{response: "OK"}
-	_ = NewAgentLoop(cfg, msgBus, provider)
-
-	// Verify that ContextualTool interface is defined and can be implemented
-	// This test validates the interface contract exists
-	ctxTool := &mockContextualTool{}
-
-	// Verify the tool implements the interface correctly
-	var _ tools.ContextualTool = ctxTool
+	// Empty context returns empty strings
+	if got := tools.ToolChannel(context.Background()); got != "" {
+		t.Errorf("expected empty channel from bare context, got %q", got)
+	}
 }
 
 // TestToolRegistry_GetDefinitions verifies tool definitions can be retrieved
@@ -241,16 +228,11 @@ func TestAgentLoop_GetStartupInfo(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         4096,
-				MaxToolIterations: 10,
-			},
-		},
-	}
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = tmpDir
+	cfg.Agents.Defaults.Model = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 10
 
 	msgBus := bus.NewMessageBus()
 	provider := &mockProvider{}
@@ -337,6 +319,29 @@ func (m *simpleMockProvider) GetDefaultModel() string {
 	return "mock-model"
 }
 
+type countingMockProvider struct {
+	response string
+	calls    int
+}
+
+func (m *countingMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	return &providers.LLMResponse{
+		Content:   m.response,
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *countingMockProvider) GetDefaultModel() string {
+	return "counting-mock-model"
+}
+
 // mockCustomTool is a simple mock tool for registration testing
 type mockCustomTool struct{}
 
@@ -359,36 +364,6 @@ func (m *mockCustomTool) Execute(ctx context.Context, args map[string]any) *tool
 	return tools.SilentResult("Custom tool executed")
 }
 
-// mockContextualTool tracks context updates
-type mockContextualTool struct {
-	lastChannel string
-	lastChatID  string
-}
-
-func (m *mockContextualTool) Name() string {
-	return "mock_contextual"
-}
-
-func (m *mockContextualTool) Description() string {
-	return "Mock contextual tool"
-}
-
-func (m *mockContextualTool) Parameters() map[string]any {
-	return map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
-	}
-}
-
-func (m *mockContextualTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
-	return tools.SilentResult("Contextual tool executed")
-}
-
-func (m *mockContextualTool) SetContext(channel, chatID string) {
-	m.lastChannel = channel
-	m.lastChatID = chatID
-}
-
 // testHelper executes a message and returns the response
 type testHelper struct {
 	al *AgentLoop
@@ -407,6 +382,198 @@ func (h testHelper) executeAndGetResponse(tb testing.TB, ctx context.Context, ms
 }
 
 const responseTimeout = 3 * time.Second
+
+func TestProcessMessage_UsesRouteSessionKey(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "ok"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: msg.Channel,
+		Peer:    extractPeer(msg),
+	})
+	sessionKey := route.SessionKey
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	helper := testHelper{al: al}
+	_ = helper.executeAndGetResponse(t, context.Background(), msg)
+
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 2 {
+		t.Fatalf("expected session history len=2, got %d", len(history))
+	}
+	if history[0].Role != "user" || history[0].Content != "hello" {
+		t.Fatalf("unexpected first message in session: %+v", history[0])
+	}
+}
+
+func TestProcessMessage_CommandOutcomes(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Session: config.SessionConfig{
+			DMScope: "per-channel-peer",
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &countingMockProvider{response: "LLM reply"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	baseMsg := bus.InboundMessage{
+		Channel:  "whatsapp",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+
+	showResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/show channel",
+		Peer:     baseMsg.Peer,
+	})
+	if showResp != "Current Channel: whatsapp" {
+		t.Fatalf("unexpected /show reply: %q", showResp)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("LLM should not be called for handled command, calls=%d", provider.calls)
+	}
+
+	fooResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/foo",
+		Peer:     baseMsg.Peer,
+	})
+	if fooResp != "LLM reply" {
+		t.Fatalf("unexpected /foo reply: %q", fooResp)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("LLM should be called exactly once after /foo passthrough, calls=%d", provider.calls)
+	}
+
+	newResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/new",
+		Peer:     baseMsg.Peer,
+	})
+	if newResp != "LLM reply" {
+		t.Fatalf("unexpected /new reply: %q", newResp)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("LLM should be called for passthrough /new command, calls=%d", provider.calls)
+	}
+}
+
+func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Provider:          "openai",
+				Model:             "before-switch",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &countingMockProvider{response: "LLM reply"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	switchResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/switch model to after-switch",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if !strings.Contains(switchResp, "Switched model from before-switch to after-switch") {
+		t.Fatalf("unexpected /switch reply: %q", switchResp)
+	}
+
+	showResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/show model",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if !strings.Contains(showResp, "Current Model: after-switch (Provider: openai)") {
+		t.Fatalf("unexpected /show model reply after switch: %q", showResp)
+	}
+
+	if provider.calls != 0 {
+		t.Fatalf("LLM should not be called for /switch and /show, calls=%d", provider.calls)
+	}
+}
 
 // TestToolResult_SilentToolDoesNotSendUserMessage verifies silent tools don't trigger outbound
 func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {

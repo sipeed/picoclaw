@@ -1,7 +1,10 @@
 package openai_compat
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -212,6 +215,132 @@ func TestProviderChat_HTTPError(t *testing.T) {
 	}
 }
 
+func TestProviderChat_JSONHTTPErrorDoesNotReportHTML(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"bad request"}`))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "Status: 400") {
+		t.Fatalf("expected status code in error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "returned HTML instead of JSON") {
+		t.Fatalf("expected non-HTML http error, got %v", err)
+	}
+}
+
+func TestProviderChat_HTMLResponsesReturnHelpfulError(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		statusCode  int
+		body        string
+	}{
+		{
+			name:        "html success response",
+			contentType: "text/html; charset=utf-8",
+			statusCode:  http.StatusOK,
+			body:        "<!DOCTYPE html><html><body>gateway login</body></html>",
+		},
+		{
+			name:        "html error response",
+			contentType: "text/html; charset=utf-8",
+			statusCode:  http.StatusBadGateway,
+			body:        "<!DOCTYPE html><html><body>bad gateway</body></html>",
+		},
+		{
+			name:        "mislabeled html success response",
+			contentType: "application/json",
+			statusCode:  http.StatusOK,
+			body:        "   \r\n\t<!DOCTYPE html><html><body>gateway login</body></html>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tt.contentType)
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			p := NewProvider("key", server.URL, "")
+			_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), fmt.Sprintf("Status: %d", tt.statusCode)) {
+				t.Fatalf("expected status code in error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "returned HTML instead of JSON") {
+				t.Fatalf("expected helpful HTML error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "check api_base or proxy configuration") {
+				t.Fatalf("expected configuration hint, got %v", err)
+			}
+		})
+	}
+}
+
+func TestProviderChat_SuccessResponseUsesStreamingDecoder(t *testing.T) {
+	content := strings.Repeat("a", 1024)
+	body := `{"choices":[{"message":{"content":"` + content + `"},"finish_reason":"stop"}]}`
+
+	p := NewProvider("key", "https://example.com/v1", "")
+	p.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: &errAfterDataReadCloser{
+					data:      []byte(body),
+					chunkSize: 64,
+				},
+			}, nil
+		}),
+	}
+
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if out.Content != content {
+		t.Fatalf("Content = %q, want %q", out.Content, content)
+	}
+}
+
+func TestProviderChat_LargeHTMLResponsePreviewIsTruncated(t *testing.T) {
+	body := append([]byte("<!DOCTYPE html><html><body>"), bytes.Repeat([]byte("A"), 2048)...)
+	body = append(body, []byte("</body></html>")...)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "Body:   <!DOCTYPE html><html><body>") {
+		t.Fatalf("expected html preview in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "...") {
+		t.Fatalf("expected truncated preview, got %v", err)
+	}
+}
+
 func TestProviderChat_StripsMoonshotPrefixAndNormalizesKimiTemperature(t *testing.T) {
 	var requestBody map[string]any
 
@@ -253,7 +382,7 @@ func TestProviderChat_StripsMoonshotPrefixAndNormalizesKimiTemperature(t *testin
 	}
 }
 
-func TestProviderChat_StripsGroqAndOllamaPrefixes(t *testing.T) {
+func TestProviderChat_StripsGroqOllamaDeepseekVivgridPrefixes(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
@@ -278,6 +407,11 @@ func TestProviderChat_StripsGroqAndOllamaPrefixes(t *testing.T) {
 			name:      "strips deepseek prefix",
 			input:     "deepseek/deepseek-chat",
 			wantModel: "deepseek-chat",
+		},
+		{
+			name:      "strips vivgrid prefix",
+			input:     "vivgrid/auto",
+			wantModel: "auto",
 		},
 	}
 
@@ -383,6 +517,12 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
 	}
+	if got := normalizeModel("vivgrid/managed", "https://api.vivgrid.com/v1"); got != "managed" {
+		t.Fatalf("normalizeModel(vivgrid) = %q, want %q", got, "managed")
+	}
+	if got := normalizeModel("vivgrid/auto", "https://api.vivgrid.com/v1"); got != "auto" {
+		t.Fatalf("normalizeModel(vivgrid auto) = %q, want %q", got, "auto")
+	}
 }
 
 func TestProvider_RequestTimeoutDefault(t *testing.T) {
@@ -397,6 +537,40 @@ func TestProvider_RequestTimeoutOverride(t *testing.T) {
 	if p.httpClient.Timeout != 300*time.Second {
 		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, 300*time.Second)
 	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+type errAfterDataReadCloser struct {
+	data      []byte
+	chunkSize int
+	offset    int
+}
+
+func (r *errAfterDataReadCloser) Read(p []byte) (int, error) {
+	if r.offset >= len(r.data) {
+		return 0, io.ErrUnexpectedEOF
+	}
+
+	n := r.chunkSize
+	if n <= 0 || n > len(p) {
+		n = len(p)
+	}
+	remaining := len(r.data) - r.offset
+	if n > remaining {
+		n = remaining
+	}
+	copy(p, r.data[r.offset:r.offset+n])
+	r.offset += n
+	return n, nil
+}
+
+func (r *errAfterDataReadCloser) Close() error {
+	return nil
 }
 
 func TestProvider_FunctionalOptionMaxTokensField(t *testing.T) {
