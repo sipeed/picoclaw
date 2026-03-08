@@ -26,8 +26,12 @@ jobs:
         run: |
           DATE=$(date +%Y%m%d)
           SHA=$(git rev-parse --short HEAD)
-          BASE_VERSION=$(git describe --tags --match "v*" --exclude "*nightly*" --abbrev=0 2>/dev/null || echo "v0.0.0")
-          VERSION="${BASE_VERSION}-nightly-${DATE}-${SHA}"
+          BASE_VERSION=$(git describe --tags --match "v*" --exclude "*nightly*" --abbrev=0 2>/dev/null || true)
+          if [ -z "$BASE_VERSION" ] || [ "$BASE_VERSION" = "v0.0.0" ]; then
+            VERSION="nightly-${DATE}-${SHA}"
+          else
+            VERSION="${BASE_VERSION}-nightly-${DATE}-${SHA}"
+          fi
           TAG="nightly-${DATE}-${SHA}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
