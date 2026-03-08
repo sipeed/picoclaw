@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -271,6 +272,9 @@ func responsePreview(body []byte, maxLen int) string {
 	return string(trimmed[:maxLen]) + "..."
 }
 
+// thinkTagRe matches <think>…</think> blocks (including multi-line).
+var thinkTagRe = regexp.MustCompile(`(?s)<think>(.*?)</think>`)
+
 func parseResponse(body io.Reader) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
@@ -310,6 +314,26 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 	}
 
 	choice := apiResponse.Choices[0]
+
+	// Strip <think>...</think> blocks from content.
+	// Some models (e.g. MiniMax M2.5, DeepSeek) embed chain-of-thought in the
+	// content field using <think> tags rather than a dedicated reasoning_content
+	// field. We move them into ReasoningContent so channels don't render them.
+	msgContent := choice.Message.Content
+	msgReasoning := choice.Message.ReasoningContent
+	if msgReasoning == "" && strings.Contains(msgContent, "<think>") {
+		var blocks []string
+		msgContent = thinkTagRe.ReplaceAllStringFunc(msgContent, func(m string) string {
+			sub := thinkTagRe.FindStringSubmatch(m)
+			if len(sub) > 1 {
+				blocks = append(blocks, strings.TrimSpace(sub[1]))
+			}
+			return ""
+		})
+		msgContent = strings.TrimSpace(msgContent)
+		msgReasoning = strings.Join(blocks, "\n\n")
+	}
+
 	toolCalls := make([]ToolCall, 0, len(choice.Message.ToolCalls))
 	for _, tc := range choice.Message.ToolCalls {
 		arguments := make(map[string]any)
@@ -351,8 +375,8 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 	}
 
 	return &LLMResponse{
-		Content:          choice.Message.Content,
-		ReasoningContent: choice.Message.ReasoningContent,
+		Content:          msgContent,
+		ReasoningContent: msgReasoning,
 		Reasoning:        choice.Message.Reasoning,
 		ReasoningDetails: choice.Message.ReasoningDetails,
 		ToolCalls:        toolCalls,
