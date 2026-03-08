@@ -11,10 +11,10 @@ import (
 
 func TestIndexRegistryMapURL(t *testing.T) {
 	tests := []struct {
-		name         string
-		mappings     map[string]string
-		inputURL     string
-		expectedURL  string
+		name        string
+		mappings    map[string]string
+		inputURL    string
+		expectedURL string
 	}{
 		{
 			name: "maps HTTP to fork",
@@ -41,16 +41,16 @@ func TestIndexRegistryMapURL(t *testing.T) {
 			expectedURL: "https://raw.githubusercontent.com/keithy/angelhub/main/skills",
 		},
 		{
-			name:         "empty mappings returns original",
-			mappings:     map[string]string{},
-			inputURL:     "https://raw.githubusercontent.com/keithy/angelhub/main/skills",
-			expectedURL:  "https://raw.githubusercontent.com/keithy/angelhub/main/skills",
+			name:        "empty mappings returns original",
+			mappings:    map[string]string{},
+			inputURL:    "https://raw.githubusercontent.com/keithy/angelhub/main/skills",
+			expectedURL: "https://raw.githubusercontent.com/keithy/angelhub/main/skills",
 		},
 		{
-			name:         "nil mappings returns original",
-			mappings:     nil,
-			inputURL:     "https://raw.githubusercontent.com/keithy/angelhub/main/skills",
-			expectedURL:  "https://raw.githubusercontent.com/keithy/angelhub/main/skills",
+			name:        "nil mappings returns original",
+			mappings:    nil,
+			inputURL:    "https://raw.githubusercontent.com/keithy/angelhub/main/skills",
+			expectedURL: "https://raw.githubusercontent.com/keithy/angelhub/main/skills",
 		},
 		{
 			name: "first matching prefix wins",
@@ -106,10 +106,13 @@ func TestIndexRegistryIsURLAllowed(t *testing.T) {
 			expected:        true,
 		},
 		{
-			name:            "multiple prefixes first match wins",
-			allowedPrefixes: []string{"https://raw.githubusercontent.com/other/", "https://raw.githubusercontent.com/keithy/"},
-			url:             "https://raw.githubusercontent.com/keithy/angelhub/main",
-			expected:        true,
+			name: "multiple prefixes first match wins",
+			allowedPrefixes: []string{
+				"https://raw.githubusercontent.com/other/",
+				"https://raw.githubusercontent.com/keithy/",
+			},
+			url:      "https://raw.githubusercontent.com/keithy/angelhub/main",
+			expected: true,
 		},
 		{
 			name:            "prefix not at start returns false",

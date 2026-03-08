@@ -38,14 +38,14 @@ func TestInstallCommandArgs(t *testing.T) {
 		{
 			name:     "no registry with one arg passes",
 			registry: "",
-			args:     []string{"sioeed/picoclaw-skills/weather"},
+			args:     []string{"sipeed/picoclaw-skills/weather"},
 			wantErr:  false,
 		},
 		{
-			name:     "no registry with no args fails",
-			registry: "",
-			args:     []string{},
-			wantErr:  true,
+			name:        "no registry with no args fails",
+			registry:    "",
+			args:        []string{},
+			wantErr:     true,
 			errContains: "exactly 1 argument",
 		},
 		{

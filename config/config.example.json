@@ -393,7 +393,6 @@
           },
           "symlink_local": true
         }
-        }
       },
       "max_concurrent_searches": 2,
       "search_cache": {
