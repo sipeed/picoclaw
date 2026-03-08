@@ -24,7 +24,14 @@ func TestMatchSkillsInMessage_Basic(t *testing.T) {
 	tmpDir := setupWorkspace(t, nil)
 	defer os.RemoveAll(tmpDir)
 
-	createTestSkill(t, filepath.Join(tmpDir, "skills"), "news-summary", "news-summary", "Summarize news", "Read RSS feeds")
+	createTestSkill(
+		t,
+		filepath.Join(tmpDir, "skills"),
+		"news-summary",
+		"news-summary",
+		"Summarize news",
+		"Read RSS feeds",
+	)
 	createTestSkill(t, filepath.Join(tmpDir, "skills"), "weather", "weather", "Get weather info", "Check weather API")
 
 	cb := NewContextBuilder(tmpDir)
@@ -144,7 +151,14 @@ func TestLoadSkillContext(t *testing.T) {
 	tmpDir := setupWorkspace(t, nil)
 	defer os.RemoveAll(tmpDir)
 
-	createTestSkill(t, filepath.Join(tmpDir, "skills"), "weather", "weather", "Get weather", "Call the weather API with the user's location.")
+	createTestSkill(
+		t,
+		filepath.Join(tmpDir, "skills"),
+		"weather",
+		"weather",
+		"Get weather",
+		"Call the weather API with the user's location.",
+	)
 
 	cb := NewContextBuilder(tmpDir)
 
