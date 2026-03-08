@@ -97,6 +97,22 @@ func DefaultConfig() *Config {
 				AppToken:  "",
 				AllowFrom: FlexibleStringSlice{},
 			},
+			Matrix: MatrixConfig{
+				Enabled:      false,
+				Homeserver:   "https://matrix.org",
+				UserID:       "",
+				AccessToken:  "",
+				DeviceID:     "",
+				JoinOnInvite: true,
+				AllowFrom:    FlexibleStringSlice{},
+				GroupTrigger: GroupTriggerConfig{
+					MentionOnly: true,
+				},
+				Placeholder: PlaceholderConfig{
+					Enabled: true,
+					Text:    "Thinking... 💭",
+				},
+			},
 			LINE: LINEConfig{
 				Enabled:            false,
 				ChannelSecret:      "",
@@ -258,6 +274,14 @@ func DefaultConfig() *Config {
 				ModelName: "cerebras-llama-3.3-70b",
 				Model:     "cerebras/llama-3.3-70b",
 				APIBase:   "https://api.cerebras.ai/v1",
+				APIKey:    "",
+			},
+
+			// Vivgrid - https://vivgrid.com
+			{
+				ModelName: "vivgrid-auto",
+				Model:     "vivgrid/auto",
+				APIBase:   "https://api.vivgrid.com/v1",
 				APIKey:    "",
 			},
 
