@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -375,6 +376,96 @@ func TestConvertToPicoClawWithQQAndDingTalk(t *testing.T) {
 	}
 }
 
+func TestConvertToPicoClawWithMatrix(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "openclaw.json")
+
+	testConfig := `{
+		"channels": {
+			"matrix": {
+				"enabled": true,
+				"homeserver": "https://matrix.example.com",
+				"userId": "@bot:matrix.example.com",
+				"accessToken": "syt_test_token",
+				"allowFrom": ["@alice:matrix.example.com"]
+			}
+		}
+	}`
+
+	err := os.WriteFile(configPath, []byte(testConfig), 0o644)
+	if err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := LoadOpenClawConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	picoCfg, warnings, err := cfg.ConvertToPicoClaw("")
+	if err != nil {
+		t.Fatalf("failed to convert config: %v", err)
+	}
+
+	if !picoCfg.Channels.Matrix.Enabled {
+		t.Error("matrix should be enabled")
+	}
+	if picoCfg.Channels.Matrix.Homeserver != "https://matrix.example.com" {
+		t.Errorf("expected matrix homeserver, got %q", picoCfg.Channels.Matrix.Homeserver)
+	}
+	if picoCfg.Channels.Matrix.UserID != "@bot:matrix.example.com" {
+		t.Errorf("expected matrix user_id, got %q", picoCfg.Channels.Matrix.UserID)
+	}
+	if picoCfg.Channels.Matrix.AccessToken != "syt_test_token" {
+		t.Errorf("expected matrix access_token, got %q", picoCfg.Channels.Matrix.AccessToken)
+	}
+	if len(picoCfg.Channels.Matrix.AllowFrom) != 1 ||
+		picoCfg.Channels.Matrix.AllowFrom[0] != "@alice:matrix.example.com" {
+		t.Errorf("unexpected matrix allow_from: %#v", picoCfg.Channels.Matrix.AllowFrom)
+	}
+
+	for _, w := range warnings {
+		if strings.Contains(w, "Channel 'matrix'") {
+			t.Fatalf("matrix should no longer be reported as unsupported, warning=%q", w)
+		}
+	}
+}
+
+func TestConvertToPicoClawWithMatrixDisabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "openclaw.json")
+
+	testConfig := `{
+		"channels": {
+			"matrix": {
+				"enabled": false,
+				"homeserver": "https://matrix.example.com",
+				"userId": "@bot:matrix.example.com",
+				"accessToken": "syt_test_token"
+			}
+		}
+	}`
+
+	err := os.WriteFile(configPath, []byte(testConfig), 0o644)
+	if err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := LoadOpenClawConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	picoCfg, _, err := cfg.ConvertToPicoClaw("")
+	if err != nil {
+		t.Fatalf("failed to convert config: %v", err)
+	}
+
+	if picoCfg.Channels.Matrix.Enabled {
+		t.Error("matrix should respect enabled=false from source config")
+	}
+}
+
 func TestOpenClawAgentModel(t *testing.T) {
 	model := &OpenClawAgentModel{
 		Primary:   strPtr("anthropic/claude-3-opus"),
@@ -424,6 +515,9 @@ func TestChannelEnabled(t *testing.T) {
 	}
 	if !cfg.IsChannelEnabled("slack") {
 		t.Error("slack should be enabled (explicitly set)")
+	}
+	if !cfg.IsChannelEnabled("matrix") {
+		t.Error("matrix should be enabled (nil config defaults to enabled)")
 	}
 	if cfg.IsChannelEnabled("line") {
 		t.Error("line should return false (not in switch cases)")
