@@ -34,7 +34,10 @@ var DefaultEnvAllowlist = map[string]bool{
 	"HTTP_PROXY":   true,
 	"HTTPS_PROXY":  true,
 	"NO_PROXY":     true,
+	"PICOCLAW_HOME":      true,
+	"PICOCLAW_CONFIG":   true,
 	"PICOCLAW_SERVICE_NAME": true,
+	"PICOCLAW_EXE":      true,
 }
 
 // defaultEnvAllowPrefixes are env var prefixes that are always allowed.
