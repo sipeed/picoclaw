@@ -7,7 +7,7 @@
 
   <p>
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
-    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20RISC--V-blue" alt="Hardware">
+    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V-blue" alt="Hardware">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
     <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
@@ -69,7 +69,7 @@
 
 ⚡️ **Lightning Fast**: 400X Faster startup time, boot in 1 second even in 0.6GHz single core.
 
-🌍 **True Portability**: Single self-contained binary across RISC-V, ARM, and x86, One-click to Go!
+🌍 **True Portability**: Single self-contained binary across RISC-V, ARM, MIPS, and x86, One-click to Go!
 
 🤖 **AI-Bootstrapped**: Autonomous Go-native implementation — 95% Agent-generated core with human-in-the-loop refinement.
 
@@ -352,6 +352,13 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or We
 ```bash
 picoclaw gateway
 ```
+
+**4. Telegram command menu (auto-registered at startup)**
+
+PicoClaw now keeps command definitions in one shared registry. On startup, Telegram will automatically register supported bot commands (for example `/start`, `/help`, `/show`, `/list`) so command menu and runtime behavior stay in sync.
+Telegram command menu registration remains channel-local discovery UX; generic command execution is handled centrally in the agent loop via the commands executor.
+
+If command registration fails (network/API transient errors), the channel still starts and PicoClaw retries registration in the background.
 
 </details>
 
@@ -750,6 +757,12 @@ For advanced/test setups, you can override the builtin skills root with:
 export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 ```
 
+### Unified Command Execution Policy
+
+- Generic slash commands are executed through a single path in `pkg/agent/loop.go` via `commands.Executor`.
+- Channel adapters no longer consume generic commands locally; they forward inbound text to the bus/agent path. Telegram still auto-registers supported commands at startup.
+- Unknown slash command (for example `/foo`) passes through to normal LLM processing.
+- Registered but unsupported command on the current channel (for example `/show` on WhatsApp) returns an explicit user-facing error and stops further processing.
 ### 🔒 Security Sandbox
 
 PicoClaw runs in a sandboxed environment by default. The agent can only access files and execute commands within the configured workspace.
@@ -939,6 +952,7 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 | `qwen`                     | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                         |
 | `cerebras`                 | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                                   |
+| `vivgrid`                  | LLM (Vivgrid direct)                    | [vivgrid.com](https://vivgrid.com)                                   |
 
 ### Model Configuration (model_list)
 
@@ -966,11 +980,12 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
 | **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
 | **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
-| **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1                           | OpenAI    | Your LiteLLM proxy key                                            |
+| **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                            |
 | **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
 | **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://console.volcengine.com)                        |
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
+| **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
 
@@ -1204,6 +1219,10 @@ picoclaw agent -m "Hello"
     "defaults": {
       "model": "anthropic/claude-opus-4-5"
     }
+  },
+  "session": {
+    "dm_scope": "per-channel-peer",
+    "backlog_limit": 20
   },
   "providers": {
     "openrouter": {

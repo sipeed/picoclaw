@@ -207,3 +207,77 @@ func assertRoles(t *testing.T, msgs []providers.Message, expected ...string) {
 		}
 	}
 }
+
+// TestSanitizeHistoryForProvider_IncompleteToolResults tests the forward validation
+// that ensures assistant messages with tool_calls have ALL matching tool results.
+// This fixes the DeepSeek error: "An assistant message with 'tool_calls' must be
+// followed by tool messages responding to each 'tool_call_id'."
+func TestSanitizeHistoryForProvider_IncompleteToolResults(t *testing.T) {
+	// Assistant expects tool results for both A and B, but only A is present
+	history := []providers.Message{
+		msg("user", "do two things"),
+		assistantWithTools("A", "B"),
+		toolResult("A"),
+		// toolResult("B") is missing - this would cause DeepSeek to fail
+		msg("user", "next question"),
+		msg("assistant", "answer"),
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	// The assistant message with incomplete tool results should be dropped,
+	// along with its partial tool result. The remaining messages are:
+	// user ("do two things"), user ("next question"), assistant ("answer")
+	if len(result) != 3 {
+		t.Fatalf("expected 3 messages, got %d: %+v", len(result), roles(result))
+	}
+	assertRoles(t, result, "user", "user", "assistant")
+}
+
+// TestSanitizeHistoryForProvider_MissingAllToolResults tests the case where
+// an assistant message has tool_calls but no tool results follow at all.
+func TestSanitizeHistoryForProvider_MissingAllToolResults(t *testing.T) {
+	history := []providers.Message{
+		msg("user", "do something"),
+		assistantWithTools("A"),
+		// No tool results at all
+		msg("user", "hello"),
+		msg("assistant", "hi"),
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	// The assistant message with no tool results should be dropped.
+	// Remaining: user ("do something"), user ("hello"), assistant ("hi")
+	if len(result) != 3 {
+		t.Fatalf("expected 3 messages, got %d: %+v", len(result), roles(result))
+	}
+	assertRoles(t, result, "user", "user", "assistant")
+}
+
+// TestSanitizeHistoryForProvider_PartialToolResultsInMiddle tests that
+// incomplete tool results in the middle of a conversation are properly handled.
+func TestSanitizeHistoryForProvider_PartialToolResultsInMiddle(t *testing.T) {
+	history := []providers.Message{
+		msg("user", "first"),
+		assistantWithTools("A"),
+		toolResult("A"),
+		msg("assistant", "done"),
+		msg("user", "second"),
+		assistantWithTools("B", "C"),
+		toolResult("B"),
+		// toolResult("C") is missing
+		msg("user", "third"),
+		assistantWithTools("D"),
+		toolResult("D"),
+		msg("assistant", "all done"),
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	// First round is complete (user, assistant+tools, tool, assistant),
+	// second round is incomplete and dropped (assistant+tools, partial tool),
+	// third round is complete (user, assistant+tools, tool, assistant).
+	// Remaining: user, assistant, tool, assistant, user, user, assistant, tool, assistant
+	if len(result) != 9 {
+		t.Fatalf("expected 9 messages, got %d: %+v", len(result), roles(result))
+	}
+	assertRoles(t, result, "user", "assistant", "tool", "assistant", "user", "user", "assistant", "tool", "assistant")
+}
