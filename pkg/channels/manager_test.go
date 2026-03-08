@@ -1439,39 +1439,32 @@ func TestHandleTaskStatusSend_UsesDraftSender(t *testing.T) {
 	}
 }
 
-func TestHandleTaskStatusSend_Final_DismissesDraftBeforePermanentMessage(t *testing.T) {
+func TestHandleTaskStatusSend_Final_UpdatesDraftInPlace(t *testing.T) {
 	m := newTestManager()
-	var dismissCalled bool
-	var dismissDraftID int
-	var dismissContent string
-	var finalSendWithIDCalled bool
+	var draftUpdateCalled bool
+	var draftUpdateDraftID int
+	var draftUpdateContent string
 
 	ch := &mockDraftSender{
 		mockChannel: mockChannel{
 			sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
-				t.Fatal("Send should not be called when SendWithID succeeds")
+				t.Fatal("Send should not be called when draft update succeeds")
 				return nil
 			},
 		},
 		draftFn: func(_ context.Context, chatID string, draftID int, content string) error {
-			dismissCalled = true
-			dismissDraftID = draftID
-			dismissContent = content
+			draftUpdateCalled = true
+			draftUpdateDraftID = draftID
+			draftUpdateContent = content
 			if chatID != "123" {
-				t.Fatalf("expected dismiss chatID 123, got %s", chatID)
+				t.Fatalf("expected chatID 123, got %s", chatID)
 			}
 			return nil
 		},
 		editFn: func(_ context.Context, _, _, _ string) error { return nil },
-		sendWithID: func(_ context.Context, chatID, content string) (string, error) {
-			finalSendWithIDCalled = true
-			if chatID != "123" {
-				t.Fatalf("expected final chatID 123, got %s", chatID)
-			}
-			if content != "task completed" {
-				t.Fatalf("expected final content 'task completed', got %s", content)
-			}
-			return "task-final-1", nil
+		sendWithID: func(_ context.Context, _, _ string) (string, error) {
+			t.Fatal("SendWithID should not be called when draft update succeeds")
+			return "", nil
 		},
 	}
 
@@ -1490,17 +1483,14 @@ func TestHandleTaskStatusSend_Final_DismissesDraftBeforePermanentMessage(t *test
 	}
 	m.handleTaskStatusSend(context.Background(), "test", w, msg)
 
-	if !dismissCalled {
-		t.Fatal("expected SendDraft dismiss call for final task status")
+	if !draftUpdateCalled {
+		t.Fatal("expected SendDraft to update draft with final content")
 	}
-	if dismissDraftID != 42 {
-		t.Fatalf("expected dismiss draftID 42, got %d", dismissDraftID)
+	if draftUpdateDraftID != 42 {
+		t.Fatalf("expected draftID 42, got %d", draftUpdateDraftID)
 	}
-	if dismissContent != "" {
-		t.Fatalf("expected empty dismiss content, got %q", dismissContent)
-	}
-	if !finalSendWithIDCalled {
-		t.Fatal("expected final SendWithID to be called")
+	if draftUpdateContent != "task completed" {
+		t.Fatalf("expected draft content 'task completed', got %q", draftUpdateContent)
 	}
 	if _, loaded := m.taskMsgIDs.Load(taskStatusKey("test", "123", "task-final")); loaded {
 		t.Fatal("expected taskMsgIDs entry to be deleted for final task status")
