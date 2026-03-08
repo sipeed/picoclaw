@@ -115,17 +115,21 @@ func BuildSanitizedEnv(baseEnv []string, extraAllowlist []string, envSet, extraE
 		}
 	}
 
-	for k, v := range envSet {
-		vars[envKey(k)] = v
+	if envSet != nil {
+		for k, v := range envSet {
+			vars[envKey(k)] = v
+		}
 	}
 
 	// Merge extraEnv (tool call) - highest priority
 	// Filter against LLM blocklist to prevent override of sensitive vars
-	for k, v := range extraEnv {
-		if LLMBlocklist[envKey(k)] {
-			continue // Skip blocked vars
+	if extraEnv != nil {
+		for k, v := range extraEnv {
+			if LLMBlocklist[envKey(k)] {
+				continue // Skip blocked vars
+			}
+			vars[envKey(k)] = v
 		}
-		vars[envKey(k)] = v
 	}
 
 	// Convert to []string for exec.Cmd.Env
