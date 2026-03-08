@@ -1392,9 +1392,7 @@ function saveModelFromModal() {
     saveConfig().then(renderModels);
 }
 
-document.getElementById('modelModal').addEventListener('click', function(e) {
-    if (e.target === this) closeModelModal();
-});
+
 
 // ── Channel Forms ───────────────────────────────────
 function renderChannelForm(chKey) {

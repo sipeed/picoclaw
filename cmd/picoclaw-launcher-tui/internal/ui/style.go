@@ -5,6 +5,19 @@ import (
 	"github.com/rivo/tview"
 )
 
+const (
+	colorBlue = "[#3e5db9]"
+	colorRed  = "[#d54646]"
+	banner    = "\r\n[::b]" +
+		colorBlue + "██████╗ ██╗ ██████╗ ██████╗ " + colorRed + " ██████╗██╗      █████╗ ██╗    ██╗\n" +
+		colorBlue + "██╔══██╗██║██╔════╝██╔═══██╗" + colorRed + "██╔════╝██║     ██╔══██╗██║    ██║\n" +
+		colorBlue + "██████╔╝██║██║     ██║   ██║" + colorRed + "██║     ██║     ███████║██║ █╗ ██║\n" +
+		colorBlue + "██╔═══╝ ██║██║     ██║   ██║" + colorRed + "██║     ██║     ██╔══██║██║███╗██║\n" +
+		colorBlue + "██║     ██║╚██████╗╚██████╔╝" + colorRed + "╚██████╗███████╗██║  ██║╚███╔███╔╝\n" +
+		colorBlue + "╚═╝     ╚═╝ ╚═════╝ ╚═════╝ " + colorRed + " ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝\n " +
+		"[:]"
+)
+
 func applyStyles() {
 	tview.Styles.PrimitiveBackgroundColor = tcell.NewRGBColor(12, 13, 22)
 	tview.Styles.ContrastBackgroundColor = tcell.NewRGBColor(34, 19, 53)
@@ -24,14 +37,7 @@ func bannerView() *tview.TextView {
 	text.SetDynamicColors(true)
 	text.SetTextAlign(tview.AlignCenter)
 	text.SetBackgroundColor(tview.Styles.PrimitiveBackgroundColor)
-	text.SetText(
-		"[::b][#84aaff]██████╗ ██╗ ██████╗ ██████╗  ██████╗██╗      █████╗ ██╗    ██╗\n" +
-			"[#84aaff]██╔══██╗██║██╔════╝██╔═══██╗██╔════╝██║     ██╔══██╗██║    ██║\n" +
-			"[#84aaff]██████╔╝██║██║     ██║   ██║██║     ██║     ███████║██║ █╗ ██║\n" +
-			"[#84aaff]██╔═══╝ ██║██║     ██║   ██║██║     ██║     ██╔══██║██║███╗██║\n" +
-			"[#84aaff]██║     ██║╚██████╗╚██████╔╝╚██████╗███████╗██║  ██║╚███╔███╔╝\n" +
-			"[#84aaff]╚═╝     ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝",
-	)
+	text.SetText(banner)
 	text.SetBorder(false)
 	return text
 }

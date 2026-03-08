@@ -6,13 +6,16 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -162,35 +165,21 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 	}
 }
 
-// TestToolContext_Updates verifies tool context is updated with channel/chatID
+// TestToolContext_Updates verifies tool context helpers work correctly
 func TestToolContext_Updates(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "agent-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	ctx := tools.WithToolContext(context.Background(), "telegram", "chat-42")
 
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         4096,
-				MaxToolIterations: 10,
-			},
-		},
+	if got := tools.ToolChannel(ctx); got != "telegram" {
+		t.Errorf("expected channel 'telegram', got %q", got)
+	}
+	if got := tools.ToolChatID(ctx); got != "chat-42" {
+		t.Errorf("expected chatID 'chat-42', got %q", got)
 	}
 
-	msgBus := bus.NewMessageBus()
-	provider := &simpleMockProvider{response: "OK"}
-	_ = NewAgentLoop(cfg, msgBus, provider)
-
-	// Verify that ContextualTool interface is defined and can be implemented
-	// This test validates the interface contract exists
-	ctxTool := &mockContextualTool{}
-
-	// Verify the tool implements the interface correctly
-	var _ tools.ContextualTool = ctxTool
+	// Empty context returns empty strings
+	if got := tools.ToolChannel(context.Background()); got != "" {
+		t.Errorf("expected empty channel from bare context, got %q", got)
+	}
 }
 
 // TestToolRegistry_GetDefinitions verifies tool definitions can be retrieved
@@ -239,16 +228,11 @@ func TestAgentLoop_GetStartupInfo(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         4096,
-				MaxToolIterations: 10,
-			},
-		},
-	}
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = tmpDir
+	cfg.Agents.Defaults.Model = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 10
 
 	msgBus := bus.NewMessageBus()
 	provider := &mockProvider{}
@@ -335,6 +319,29 @@ func (m *simpleMockProvider) GetDefaultModel() string {
 	return "mock-model"
 }
 
+type countingMockProvider struct {
+	response string
+	calls    int
+}
+
+func (m *countingMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	return &providers.LLMResponse{
+		Content:   m.response,
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *countingMockProvider) GetDefaultModel() string {
+	return "counting-mock-model"
+}
+
 // mockCustomTool is a simple mock tool for registration testing
 type mockCustomTool struct{}
 
@@ -357,36 +364,6 @@ func (m *mockCustomTool) Execute(ctx context.Context, args map[string]any) *tool
 	return tools.SilentResult("Custom tool executed")
 }
 
-// mockContextualTool tracks context updates
-type mockContextualTool struct {
-	lastChannel string
-	lastChatID  string
-}
-
-func (m *mockContextualTool) Name() string {
-	return "mock_contextual"
-}
-
-func (m *mockContextualTool) Description() string {
-	return "Mock contextual tool"
-}
-
-func (m *mockContextualTool) Parameters() map[string]any {
-	return map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
-	}
-}
-
-func (m *mockContextualTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
-	return tools.SilentResult("Contextual tool executed")
-}
-
-func (m *mockContextualTool) SetContext(channel, chatID string) {
-	m.lastChannel = channel
-	m.lastChatID = chatID
-}
-
 // testHelper executes a message and returns the response
 type testHelper struct {
 	al *AgentLoop
@@ -405,6 +382,198 @@ func (h testHelper) executeAndGetResponse(tb testing.TB, ctx context.Context, ms
 }
 
 const responseTimeout = 3 * time.Second
+
+func TestProcessMessage_UsesRouteSessionKey(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "ok"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: msg.Channel,
+		Peer:    extractPeer(msg),
+	})
+	sessionKey := route.SessionKey
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	helper := testHelper{al: al}
+	_ = helper.executeAndGetResponse(t, context.Background(), msg)
+
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 2 {
+		t.Fatalf("expected session history len=2, got %d", len(history))
+	}
+	if history[0].Role != "user" || history[0].Content != "hello" {
+		t.Fatalf("unexpected first message in session: %+v", history[0])
+	}
+}
+
+func TestProcessMessage_CommandOutcomes(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Session: config.SessionConfig{
+			DMScope: "per-channel-peer",
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &countingMockProvider{response: "LLM reply"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	baseMsg := bus.InboundMessage{
+		Channel:  "whatsapp",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+
+	showResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/show channel",
+		Peer:     baseMsg.Peer,
+	})
+	if showResp != "Current Channel: whatsapp" {
+		t.Fatalf("unexpected /show reply: %q", showResp)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("LLM should not be called for handled command, calls=%d", provider.calls)
+	}
+
+	fooResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/foo",
+		Peer:     baseMsg.Peer,
+	})
+	if fooResp != "LLM reply" {
+		t.Fatalf("unexpected /foo reply: %q", fooResp)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("LLM should be called exactly once after /foo passthrough, calls=%d", provider.calls)
+	}
+
+	newResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/new",
+		Peer:     baseMsg.Peer,
+	})
+	if newResp != "LLM reply" {
+		t.Fatalf("unexpected /new reply: %q", newResp)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("LLM should be called for passthrough /new command, calls=%d", provider.calls)
+	}
+}
+
+func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Provider:          "openai",
+				Model:             "before-switch",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &countingMockProvider{response: "LLM reply"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	switchResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/switch model to after-switch",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if !strings.Contains(switchResp, "Switched model from before-switch to after-switch") {
+		t.Fatalf("unexpected /switch reply: %q", switchResp)
+	}
+
+	showResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/show model",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if !strings.Contains(showResp, "Current Model: after-switch (Provider: openai)") {
+		t.Fatalf("unexpected /show model reply after switch: %q", showResp)
+	}
+
+	if provider.calls != 0 {
+		t.Fatalf("LLM should not be called for /switch and /show, calls=%d", provider.calls)
+	}
+}
 
 // TestToolResult_SilentToolDoesNotSendUserMessage verifies silent tools don't trigger outbound
 func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
@@ -807,4 +976,143 @@ func TestHandleReasoning(t *testing.T) {
 			t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
 		}
 	})
+}
+
+func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	// Create a minimal valid PNG (8-byte header is enough for filetype detection)
+	pngPath := filepath.Join(dir, "test.png")
+	// PNG magic: 0x89 P N G \r \n 0x1A \n + minimal IHDR
+	pngHeader := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+		0x00, 0x00, 0x00, 0x0D, // IHDR length
+		0x49, 0x48, 0x44, 0x52, // "IHDR"
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, // 1x1 RGB
+		0x00, 0x00, 0x00, // no interlace
+		0x90, 0x77, 0x53, 0xDE, // CRC
+	}
+	if err := os.WriteFile(pngPath, pngHeader, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := store.Store(pngPath, media.MediaMeta{}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	messages := []providers.Message{
+		{Role: "user", Content: "describe this", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 1 {
+		t.Fatalf("expected 1 resolved media, got %d", len(result[0].Media))
+	}
+	if !strings.HasPrefix(result[0].Media[0], "data:image/png;base64,") {
+		t.Fatalf("expected data:image/png;base64, prefix, got %q", result[0].Media[0][:40])
+	}
+}
+
+func TestResolveMediaRefs_SkipsOversizedFile(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	bigPath := filepath.Join(dir, "big.png")
+	// Write PNG header + padding to exceed limit
+	data := make([]byte, 1024+1) // 1KB + 1 byte
+	copy(data, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A})
+	if err := os.WriteFile(bigPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := store.Store(bigPath, media.MediaMeta{}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "hi", Media: []string{ref}},
+	}
+	// Use a tiny limit (1KB) so the file is oversized
+	result := resolveMediaRefs(messages, store, 1024)
+
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media (oversized), got %d", len(result[0].Media))
+	}
+}
+
+func TestResolveMediaRefs_SkipsUnknownType(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	txtPath := filepath.Join(dir, "readme.txt")
+	if err := os.WriteFile(txtPath, []byte("hello world"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := store.Store(txtPath, media.MediaMeta{}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "hi", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media (unknown type), got %d", len(result[0].Media))
+	}
+}
+
+func TestResolveMediaRefs_PassesThroughNonMediaRefs(t *testing.T) {
+	messages := []providers.Message{
+		{Role: "user", Content: "hi", Media: []string{"https://example.com/img.png"}},
+	}
+	result := resolveMediaRefs(messages, nil, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 1 || result[0].Media[0] != "https://example.com/img.png" {
+		t.Fatalf("expected passthrough of non-media:// URL, got %v", result[0].Media)
+	}
+}
+
+func TestResolveMediaRefs_DoesNotMutateOriginal(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+	pngPath := filepath.Join(dir, "test.png")
+	pngHeader := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
+		0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
+	}
+	os.WriteFile(pngPath, pngHeader, 0o644)
+	ref, _ := store.Store(pngPath, media.MediaMeta{}, "test")
+
+	original := []providers.Message{
+		{Role: "user", Content: "hi", Media: []string{ref}},
+	}
+	originalRef := original[0].Media[0]
+
+	resolveMediaRefs(original, store, config.DefaultMaxMediaSize)
+
+	if original[0].Media[0] != originalRef {
+		t.Fatal("resolveMediaRefs mutated original message slice")
+	}
+}
+
+func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	// File with JPEG content but stored with explicit content type
+	jpegPath := filepath.Join(dir, "photo")
+	jpegHeader := []byte{0xFF, 0xD8, 0xFF, 0xE0} // JPEG magic bytes
+	os.WriteFile(jpegPath, jpegHeader, 0o644)
+	ref, _ := store.Store(jpegPath, media.MediaMeta{ContentType: "image/jpeg"}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "hi", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 1 {
+		t.Fatalf("expected 1 media, got %d", len(result[0].Media))
+	}
+	if !strings.HasPrefix(result[0].Media[0], "data:image/jpeg;base64,") {
+		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
+	}
 }
