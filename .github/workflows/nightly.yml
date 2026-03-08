@@ -135,5 +135,6 @@ jobs:
             gh release create "$TAG" \
               --title "$TITLE" \
               --notes "$NOTES" \
+              --target "${{ github.sha }}" \
               build/*
           fi
