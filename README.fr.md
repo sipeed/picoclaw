@@ -7,7 +7,7 @@
 
   <p>
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
-    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20RISC--V-blue" alt="Hardware">
+    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V-blue" alt="Hardware">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
     <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
@@ -65,7 +65,7 @@
 
 ⚡️ **Démarrage Éclair** : Temps de démarrage 400X plus rapide, boot en 1 seconde même sur un cœur unique à 0,6 GHz.
 
-🌍 **Véritable Portabilité** : Un seul binaire autonome pour RISC-V, ARM et x86. Un clic et c'est parti !
+🌍 **Véritable Portabilité** : Un seul binaire autonome pour RISC-V, ARM, MIPS et x86. Un clic et c'est parti !
 
 🤖 **Auto-Construit par l'IA** : Implémentation native en Go de manière autonome — 95% du cœur généré par l'Agent avec affinement humain dans la boucle.
 
@@ -288,7 +288,7 @@ Discutez avec votre PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom
 | **QQ**       | Facile (AppID + AppSecret)             |
 | **DingTalk** | Moyen (identifiants de l'application)  |
 | **LINE**     | Moyen (identifiants + URL de webhook)  |
-| **WeCom**    | Moyen (CorpID + configuration webhook) |
+| **WeCom AI Bot** | Moyen (Token + clé AES)            |
 
 <details>
 <summary><b>Telegram</b> (Recommandé)</summary>
@@ -491,12 +491,13 @@ picoclaw gateway
 <details>
 <summary><b>WeCom (WeChat Work)</b></summary>
 
-PicoClaw prend en charge deux types d'intégration WeCom :
+PicoClaw prend en charge trois types d'intégration WeCom :
 
-**Option 1 : WeCom Bot (Robot Intelligent)** - Configuration plus facile, prend en charge les discussions de groupe
-**Option 2 : WeCom App (Application Personnalisée)** - Plus de fonctionnalités, messagerie proactive
+**Option 1 : WeCom Bot (Robot)** - Configuration plus facile, prend en charge les discussions de groupe
+**Option 2 : WeCom App (Application Personnalisée)** - Plus de fonctionnalités, messagerie proactive, chat privé uniquement
+**Option 3 : WeCom AI Bot (Bot Intelligent)** - Bot IA officiel, réponses en streaming, prend en charge groupe et privé
 
-Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour des instructions détaillées.
+Voir le [Guide de Configuration WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) pour des instructions détaillées.
 
 **Configuration Rapide - WeCom Bot :**
 
@@ -563,6 +564,39 @@ picoclaw gateway
 
 > **Note** : Les callbacks webhook WeCom App sont servis par le serveur Gateway partagé (par défaut `127.0.0.1:18790`). Assurez-vous que le port `18790` est accessible ou utilisez un proxy inverse HTTPS en production.
 
+**Configuration Rapide - WeCom AI Bot :**
+
+**1. Créer un AI Bot**
+
+* Accédez à la Console d'Administration WeCom → Gestion des Applications → AI Bot
+* Configurez l'URL de callback : `http://your-server:18791/webhook/wecom-aibot`
+* Copiez le **Token** et générez l'**EncodingAESKey**
+
+**2. Configurer**
+
+```json
+{
+  "channels": {
+    "wecom_aibot": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-aibot",
+      "allow_from": [],
+      "welcome_message": "Bonjour ! Comment puis-je vous aider ?"
+    }
+  }
+}
+```
+
+**3. Lancer**
+
+```bash
+picoclaw gateway
+```
+
+> **Note** : WeCom AI Bot utilise le protocole pull en streaming — pas de problème de timeout. Les tâches longues (>5,5 min) basculent automatiquement vers la livraison via `response_url`.
+
 </details>
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Rejoignez le Réseau Social d'Agents
@@ -574,6 +608,31 @@ Connectez PicoClaw au Réseau Social d'Agents simplement en envoyant un seul mes
 ## ⚙️ Configuration
 
 Fichier de configuration : `~/.picoclaw/config.json`
+
+### Variables d'Environnement
+
+Vous pouvez remplacer les chemins par défaut à l'aide de variables d'environnement. Ceci est utile pour les installations portables, les déploiements conteneurisés ou l'exécution de picoclaw en tant que service système. Ces variables sont indépendantes et contrôlent différents chemins.
+
+| Variable          | Description                                                                                                                             | Chemin par Défaut         |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Remplace le chemin du fichier de configuration. Cela indique directement à picoclaw quel `config.json` charger, en ignorant tous les autres emplacements. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Remplace le répertoire racine des données picoclaw. Cela modifie l'emplacement par défaut du `workspace` et des autres répertoires de données.          | `~/.picoclaw`             |
+
+**Exemples :**
+
+```bash
+# Exécuter picoclaw en utilisant un fichier de configuration spécifique
+# Le chemin du workspace sera lu à partir de ce fichier de configuration
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Exécuter picoclaw avec toutes ses données stockées dans /opt/picoclaw
+# La configuration sera chargée à partir du fichier par défaut ~/.picoclaw/config.json
+# Le workspace sera créé dans /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Utiliser les deux pour une configuration entièrement personnalisée
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
 
 ### Structure du Workspace
 
@@ -768,7 +827,7 @@ Le sous-agent a accès aux outils (message, web_search, etc.) et peut communique
 ### Fournisseurs
 
 > [!NOTE]
-> Groq fournit la transcription vocale gratuite via Whisper. Si configuré, les messages vocaux Telegram seront automatiquement transcrits.
+> Groq fournit la transcription vocale gratuite via Whisper. Si configuré, les messages audio de n'importe quel canal seront automatiquement transcrits au niveau de l'agent.
 
 | Fournisseur              | Utilisation                              | Obtenir une Clé API                                    |
 | ------------------------ | ---------------------------------------- | ------------------------------------------------------ |

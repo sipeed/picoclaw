@@ -22,6 +22,7 @@ var supportedChannels = map[string]bool{
 	"qq":        true,
 	"dingtalk":  true,
 	"slack":     true,
+	"matrix":    true,
 	"line":      true,
 	"onebot":    true,
 	"wecom":     true,

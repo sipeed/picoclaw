@@ -326,3 +326,19 @@ func TestStripFrontmatter(t *testing.T) {
 		})
 	}
 }
+
+func TestSkillRootsTrimsWhitespaceAndDedups(t *testing.T) {
+	tmp := t.TempDir()
+	workspace := filepath.Join(tmp, "workspace")
+	global := filepath.Join(tmp, "global")
+	builtin := filepath.Join(tmp, "builtin")
+
+	sl := NewSkillsLoader(workspace, "  "+global+"  ", "\t"+builtin+"\n")
+	roots := sl.SkillRoots()
+
+	assert.Equal(t, []string{
+		filepath.Join(workspace, "skills"),
+		global,
+		builtin,
+	}, roots)
+}
