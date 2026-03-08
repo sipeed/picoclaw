@@ -17,11 +17,6 @@ on:
         required: false
         type: boolean
         default: false
-      upload_tos:
-        description: "Upload to Volcengine TOS"
-        required: false
-        type: boolean
-        default: true
 
 jobs:
   create-tag:
@@ -45,13 +40,21 @@ jobs:
           git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
           git push origin "$RELEASE_TAG"
 
-  release:
-    name: GoReleaser Release
+  build-release:
+    name: GoReleaser Build (${{ matrix.arch }})
     needs: create-tag
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
-      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+
     steps:
       - name: Checkout tag
         uses: actions/checkout@v6
@@ -65,36 +68,46 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Run GoReleaser
+      - name: Run GoReleaser (split)
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: ~> v2
-          args: release --clean
+          args: release --clean --split
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
-          DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY }}
+          GOVERSION: ${{ steps.setup-go.outputs.go-version }}
+          GOARCH: ${{ matrix.arch }}
+
+  merge-release:
+    name: GoReleaser Merge & Publish
+    needs: build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Go from go.mod
+        id: setup-go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Run GoReleaser (merge)
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: ~> v2
+          args: continue --merge
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GOVERSION: ${{ steps.setup-go.outputs.go-version }}
 
       - name: Apply release flags
@@ -106,11 +119,15 @@ jobs:
             --draft=${{ inputs.draft }} \
             --prerelease=${{ inputs.prerelease }}
 
-  upload-tos:
-    name: Upload to TOS
-    needs: release
-    if: ${{ inputs.upload_tos }}
-    uses: ./.github/workflows/upload-tos.yml
+  docker:
+    name: Build & Push Docker Image
+    needs: create-tag
+    uses: ./.github/workflows/docker-build.yml
     with:
       tag: ${{ inputs.tag }}
+      ref: ${{ inputs.tag }}
+      push_dockerhub: true
+    permissions:
+      contents: read
+      packages: write
     secrets: inherit

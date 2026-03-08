@@ -1,0 +1,35 @@
+name: CI - Docker Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      ref: ${{ steps.tag.outputs.ref }}
+    steps:
+      - id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "tag=pr-${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+  docker:
+    needs: prepare
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+      ref: ${{ needs.prepare.outputs.ref }}
+      push_dockerhub: false
+    permissions:
+      contents: read
+      packages: write
