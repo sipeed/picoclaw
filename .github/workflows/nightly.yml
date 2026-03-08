@@ -50,7 +50,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Build
-        run: make build-all VERSION=${{ needs.generate-version.outputs.version }}
+        env:
+          VERSION: ${{ needs.generate-version.outputs.version }}
+        run: make build-all VERSION="$VERSION"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v6
@@ -69,10 +71,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Generate lowercase repo
-        id: repo
-        run: echo "repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -86,16 +84,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ needs.generate-version.outputs.tag }}
+            type=raw,value=${{ needs.generate-version.outputs.version }}
+            type=raw,value=nightly
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./docker/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ steps.repo.outputs.repo }}:${{ needs.generate-version.outputs.tag }}
-            ghcr.io/${{ steps.repo.outputs.repo }}:${{ needs.generate-version.outputs.version }}
-            ghcr.io/${{ steps.repo.outputs.repo }}:nightly
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64,linux/riscv64
