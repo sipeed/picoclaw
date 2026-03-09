@@ -32,9 +32,13 @@ builds:
       - riscv64
       - loong64
       - arm
+      - s390x
+      - mipsle
     goarm:
       - "6"
       - "7"
+    gomips:
+      - softfloat
     main: ./cmd/picoclaw
     ignore:
       - goos: windows
@@ -59,9 +63,13 @@ builds:
       - riscv64
       - loong64
       - arm
+      - s390x
+      - mipsle
     goarm:
       - "6"
       - "7"
+    gomips:
+      - softfloat
     main: ./cmd/picoclaw-launcher
     ignore:
       - goos: windows
@@ -86,9 +94,13 @@ builds:
       - riscv64
       - loong64
       - arm
+      - s390x
+      - mipsle
     goarm:
       - "6"
       - "7"
+    gomips:
+      - softfloat
     main: ./cmd/picoclaw-launcher-tui
     ignore:
       - goos: windows
