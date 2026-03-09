@@ -442,6 +442,9 @@
    },
    "conversation_log" :{
     "enabled":false
+   },
+   "sanitizer":{
+    "enabled":false
    }
   },
   "heartbeat": {
