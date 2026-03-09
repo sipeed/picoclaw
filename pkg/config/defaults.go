@@ -346,6 +346,14 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// Minimax - https://api.minimaxi.com/
+			{
+				ModelName: "MiniMax-M2.5",
+				Model:     "minimax/MiniMax-M2.5",
+				APIBase:   "https://api.minimaxi.com/v1",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",
@@ -458,8 +466,9 @@ func DefaultConfig() *Config {
 			Message: ToolConfig{
 				Enabled: true,
 			},
-			ReadFile: ToolConfig{
-				Enabled: true,
+			ReadFile: ReadFileToolConfig{
+				Enabled:         true,
+				MaxReadFileSize: 64 * 1024, // 64KB
 			},
 			Spawn: ToolConfig{
 				Enabled: true,
