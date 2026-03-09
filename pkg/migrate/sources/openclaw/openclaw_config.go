@@ -371,6 +371,8 @@ func (c *OpenClawConfig) IsChannelEnabled(name string) bool {
 		return c.Channels.Discord == nil || c.Channels.Discord.Enabled == nil || *c.Channels.Discord.Enabled
 	case "slack":
 		return c.Channels.Slack == nil || c.Channels.Slack.Enabled == nil || *c.Channels.Slack.Enabled
+	case "matrix":
+		return c.Channels.Matrix == nil || c.Channels.Matrix.Enabled == nil || *c.Channels.Matrix.Enabled
 	case "whatsapp":
 		return c.Channels.WhatsApp == nil || c.Channels.WhatsApp.Enabled == nil || *c.Channels.WhatsApp.Enabled
 	case "feishu":
@@ -393,6 +395,11 @@ func GetChannelAllowFrom(ch any) []string {
 		}
 		return c.AllowFrom
 	case *OpenClawSlackConfig:
+		if c == nil {
+			return nil
+		}
+		return c.AllowFrom
+	case *OpenClawMatrixConfig:
 		if c == nil {
 			return nil
 		}
@@ -627,6 +634,7 @@ type ChannelsConfig struct {
 	QQ       QQConfig       `json:"qq"`
 	DingTalk DingTalkConfig `json:"dingtalk"`
 	Slack    SlackConfig    `json:"slack"`
+	Matrix   MatrixConfig   `json:"matrix"`
 	LINE     LINEConfig     `json:"line"`
 }
 
@@ -685,6 +693,14 @@ type SlackConfig struct {
 	BotToken  string   `json:"bot_token"`
 	AppToken  string   `json:"app_token"`
 	AllowFrom []string `json:"allow_from"`
+}
+
+type MatrixConfig struct {
+	Enabled     bool     `json:"enabled"`
+	Homeserver  string   `json:"homeserver"`
+	UserID      string   `json:"user_id"`
+	AccessToken string   `json:"access_token"`
+	AllowFrom   []string `json:"allow_from"`
 }
 
 type LINEConfig struct {
@@ -862,11 +878,25 @@ func (c *OpenClawConfig) convertChannels(warnings *[]string) ChannelsConfig {
 		}
 	}
 
+	if c.Channels.Matrix != nil && supportedChannels["matrix"] {
+		enabled := c.Channels.Matrix.Enabled == nil || *c.Channels.Matrix.Enabled
+		channels.Matrix = MatrixConfig{
+			Enabled:   enabled,
+			AllowFrom: c.Channels.Matrix.AllowFrom,
+		}
+		if c.Channels.Matrix.Homeserver != nil {
+			channels.Matrix.Homeserver = *c.Channels.Matrix.Homeserver
+		}
+		if c.Channels.Matrix.UserID != nil {
+			channels.Matrix.UserID = *c.Channels.Matrix.UserID
+		}
+		if c.Channels.Matrix.AccessToken != nil {
+			channels.Matrix.AccessToken = *c.Channels.Matrix.AccessToken
+		}
+	}
+
 	if c.Channels.Signal != nil {
 		*warnings = append(*warnings, "Channel 'signal': No PicoClaw adapter available")
-	}
-	if c.Channels.Matrix != nil {
-		*warnings = append(*warnings, "Channel 'matrix': No PicoClaw adapter available")
 	}
 	if c.Channels.IRC != nil {
 		*warnings = append(*warnings, "Channel 'irc': No PicoClaw adapter available")
@@ -1019,6 +1049,14 @@ func (c ChannelsConfig) ToStandardChannels() config.ChannelsConfig {
 			Enabled:  c.Slack.Enabled,
 			BotToken: c.Slack.BotToken,
 			AppToken: c.Slack.AppToken,
+		},
+		Matrix: config.MatrixConfig{
+			Enabled:      c.Matrix.Enabled,
+			Homeserver:   c.Matrix.Homeserver,
+			UserID:       c.Matrix.UserID,
+			AccessToken:  c.Matrix.AccessToken,
+			AllowFrom:    c.Matrix.AllowFrom,
+			JoinOnInvite: true,
 		},
 		LINE: config.LINEConfig{
 			Enabled:            c.LINE.Enabled,
