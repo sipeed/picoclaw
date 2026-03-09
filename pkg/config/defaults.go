@@ -458,8 +458,9 @@ func DefaultConfig() *Config {
 			Message: ToolConfig{
 				Enabled: true,
 			},
-			ReadFile: ToolConfig{
-				Enabled: true,
+			ReadFile: ReadFileToolConfig{
+				Enabled:         true,
+				MaxReadFileSize: 64 * 1024, // 64KB
 			},
 			Spawn: ToolConfig{
 				Enabled: true,

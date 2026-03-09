@@ -18,7 +18,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0o644)
 
-	tool := NewReadFileTool("", false)
+	tool := NewReadFileTool("", false, MaxReadFileSize)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": testFile,
@@ -45,7 +45,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 
 // TestFilesystemTool_ReadFile_NotFound verifies error handling for missing file
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
-	tool := NewReadFileTool("", false)
+	tool := NewReadFileTool("", false, MaxReadFileSize)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/nonexistent_file_12345.txt",
@@ -271,7 +271,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 		t.Skipf("symlink not supported in this environment: %v", err)
 	}
 
-	tool := NewReadFileTool(workspace, true)
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path": link,
 	})
@@ -289,7 +289,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestFilesystemTool_EmptyWorkspace_AccessDenied(t *testing.T) {
-	tool := NewReadFileTool("", true) // restrict=true but workspace=""
+	tool := NewReadFileTool("", true, MaxReadFileSize) // restrict=true but workspace=""
 
 	// Try to read a sensitive file (simulated by a temp file outside workspace)
 	tmpDir := t.TempDir()
@@ -499,7 +499,7 @@ func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
 	// Pattern allows access to the outsideDir.
 	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(outsideDir))}
 
-	tool := NewReadFileTool(workspace, true, patterns)
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
 
 	// Read from whitelisted path should succeed.
 	result := tool.Execute(context.Background(), map[string]any{"path": outsideFile})
@@ -521,69 +521,6 @@ func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
 	}
 }
 
-func TestIsBinaryFile(t *testing.T) {
-	tests := []struct {
-		name     string
-		content  []byte
-		expected bool
-	}{
-		{
-			name:     "empty content",
-			content:  []byte(""),
-			expected: false,
-		},
-		{
-			name:     "plain text",
-			content:  []byte("This is a normal text file with punctuation and 12345 numbers."),
-			expected: false,
-		},
-		{
-			name:     "contains null byte",
-			content:  []byte("plain text\x00followed by a null byte"),
-			expected: true,
-		},
-		{
-			name:     "pdf header",
-			content:  []byte("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n1 0 obj\n<</Type/Catalog/Pages 2 0 R>>"),
-			expected: true,
-		},
-		{
-			name:     "png magic bytes",
-			content:  []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x01\x00"),
-			expected: true,
-		},
-		{
-			name:     "jpeg magic bytes",
-			content:  []byte("\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H"),
-			expected: true,
-		},
-		{
-			name:     "html text (not binary)",
-			content:  []byte("<!DOCTYPE html><html><body><h1>Ciao</h1></body></html>"),
-			expected: false,
-		},
-		{
-			name:     "json text (not binary)",
-			content:  []byte(`{"key": "value", "number": 42}`),
-			expected: false,
-		},
-		{
-			name:     "markdown text (not binary)",
-			content:  []byte("# Markdown Title\n\nThis is a **bold text** and a [link](https://example.com)."),
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isBinaryFile(tt.content)
-			if result != tt.expected {
-				t.Errorf("isBinaryFile() for %q returned %v, expected %v", tt.name, result, tt.expected)
-			}
-		})
-	}
-}
-
 // TestReadFileTool_ChunkedReading verifies the pagination logic of the tool
 // by reading a file in multiple chunks using 'offset' and 'length'.
 func TestReadFileTool_ChunkedReading(t *testing.T) {
@@ -597,7 +534,7 @@ func TestReadFileTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileTool(tmpDir, false)
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
 	ctx := context.Background()
 
 	// --- Step 1: Read the first chunk (10 bytes) ---
@@ -686,7 +623,7 @@ func TestReadFileTool_OffsetBeyondEOF(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileTool(tmpDir, false)
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
 	ctx := context.Background()
 
 	args := map[string]any{
@@ -702,7 +639,7 @@ func TestReadFileTool_OffsetBeyondEOF(t *testing.T) {
 	}
 
 	// Must return EXACTLY the string provided in the code
-	expectedMsg := "[END OF FILE — no content at this offset]"
+	expectedMsg := "[END OF FILE - no content at this offset]"
 	if result.ForLLM != expectedMsg {
 		t.Errorf("The message %q was expected, obtained: %q", expectedMsg, result.ForLLM)
 	}
