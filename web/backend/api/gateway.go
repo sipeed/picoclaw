@@ -84,8 +84,8 @@ func (h *Handler) gatewayStartReady() (bool, string, error) {
 		return false, "no default model configured", nil
 	}
 
-	modelCfg, err := cfg.GetModelConfig(modelName)
-	if err != nil {
+	modelCfg := lookupModelConfig(cfg, modelName)
+	if modelCfg == nil {
 		return false, fmt.Sprintf("default model %q is invalid", modelName), nil
 	}
 
@@ -96,6 +96,14 @@ func (h *Handler) gatewayStartReady() (bool, string, error) {
 	}
 
 	return true, "", nil
+}
+
+func lookupModelConfig(cfg *config.Config, modelName string) *config.ModelConfig {
+	modelCfg, err := cfg.GetModelConfig(modelName)
+	if err != nil {
+		return nil
+	}
+	return modelCfg
 }
 
 func isGatewayProcessAliveLocked() bool {

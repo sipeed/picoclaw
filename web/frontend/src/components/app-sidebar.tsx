@@ -1,10 +1,11 @@
 import { IconChevronRight } from "@tabler/icons-react"
 import {
   IconAtom,
+  IconChevronsDown,
+  IconChevronsUp,
   IconKey,
   IconListDetails,
   IconMessageCircle,
-  IconPlug,
   IconSettings,
 } from "@tabler/icons-react"
 import { Link, useRouterState } from "@tanstack/react-router"
@@ -27,34 +28,34 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { useSidebarChannels } from "@/hooks/use-sidebar-channels"
 
-// Navigation data with real routes
-const navGroups = [
+interface NavItem {
+  title: string
+  url: string
+  icon: React.ComponentType<{ className?: string }>
+  translateTitle?: boolean
+}
+
+interface NavGroup {
+  label: string
+  defaultOpen: boolean
+  items: NavItem[]
+  isChannelsGroup?: boolean
+}
+
+const baseNavGroups: Omit<NavGroup, "items">[] = [
   {
     label: "navigation.chat",
     defaultOpen: true,
-    items: [{ title: "navigation.chat", url: "/", icon: IconMessageCircle }],
   },
   {
     label: "navigation.model_group",
     defaultOpen: true,
-    items: [
-      { title: "navigation.models", url: "/models", icon: IconAtom },
-      { title: "navigation.credentials", url: "/credentials", icon: IconKey },
-    ],
-  },
-  {
-    label: "navigation.channels_group",
-    defaultOpen: true,
-    items: [{ title: "navigation.channels", url: "/channels", icon: IconPlug }],
   },
   {
     label: "navigation.services",
     defaultOpen: true,
-    items: [
-      { title: "navigation.config", url: "/config", icon: IconSettings },
-      { title: "navigation.logs", url: "/logs", icon: IconListDetails },
-    ],
   },
 ]
 
@@ -62,6 +63,73 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const routerState = useRouterState()
   const { t } = useTranslation()
   const currentPath = routerState.location.pathname
+  const {
+    channelItems,
+    hasMoreChannels,
+    showAllChannels,
+    toggleShowAllChannels,
+  } = useSidebarChannels({ t })
+
+  const navGroups: NavGroup[] = React.useMemo(() => {
+    return [
+      {
+        ...baseNavGroups[0],
+        items: [
+          {
+            title: "navigation.chat",
+            url: "/",
+            icon: IconMessageCircle,
+            translateTitle: true,
+          },
+        ],
+      },
+      {
+        ...baseNavGroups[1],
+        items: [
+          {
+            title: "navigation.models",
+            url: "/models",
+            icon: IconAtom,
+            translateTitle: true,
+          },
+          {
+            title: "navigation.credentials",
+            url: "/credentials",
+            icon: IconKey,
+            translateTitle: true,
+          },
+        ],
+      },
+      {
+        label: "navigation.channels_group",
+        defaultOpen: true,
+        items: channelItems.map((item) => ({
+          title: item.title,
+          url: item.url,
+          icon: item.icon,
+          translateTitle: false,
+        })),
+        isChannelsGroup: true,
+      },
+      {
+        ...baseNavGroups[2],
+        items: [
+          {
+            title: "navigation.config",
+            url: "/config",
+            icon: IconSettings,
+            translateTitle: true,
+          },
+          {
+            title: "navigation.logs",
+            url: "/logs",
+            icon: IconListDetails,
+            translateTitle: true,
+          },
+        ],
+      },
+    ]
+  }, [channelItems])
 
   return (
     <Sidebar
@@ -103,13 +171,34 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                                   isActive ? "opacity-100" : "opacity-80"
                                 }
                               >
-                                {t(item.title)}
+                                {item.translateTitle === false
+                                  ? item.title
+                                  : t(item.title)}
                               </span>
                             </Link>
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       )
                     })}
+                    {group.isChannelsGroup && hasMoreChannels && (
+                      <SidebarMenuItem key="channels-more-toggle">
+                        <SidebarMenuButton
+                          onClick={toggleShowAllChannels}
+                          className="text-muted-foreground hover:bg-muted/60 h-9 px-3"
+                        >
+                          {showAllChannels ? (
+                            <IconChevronsUp className="size-4 opacity-60" />
+                          ) : (
+                            <IconChevronsDown className="size-4 opacity-60" />
+                          )}
+                          <span className="opacity-80">
+                            {showAllChannels
+                              ? t("navigation.show_less_channels")
+                              : t("navigation.show_more_channels")}
+                          </span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )}
                   </SidebarMenu>
                 </SidebarGroupContent>
               </CollapsibleContent>

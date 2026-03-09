@@ -14,8 +14,9 @@ import { Route as ModelsRouteImport } from './routes/models'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as CredentialsRouteImport } from './routes/credentials'
 import { Route as ConfigRouteImport } from './routes/config'
-import { Route as ChannelsRouteImport } from './routes/channels'
+import { Route as ChannelsRouteRouteImport } from './routes/channels/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ChannelsNameRouteImport } from './routes/channels/$name'
 
 const ProvidersRoute = ProvidersRouteImport.update({
   id: '/providers',
@@ -42,7 +43,7 @@ const ConfigRoute = ConfigRouteImport.update({
   path: '/config',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ChannelsRoute = ChannelsRouteImport.update({
+const ChannelsRouteRoute = ChannelsRouteRouteImport.update({
   id: '/channels',
   path: '/channels',
   getParentRoute: () => rootRouteImport,
@@ -52,34 +53,42 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChannelsNameRoute = ChannelsNameRouteImport.update({
+  id: '/$name',
+  path: '/$name',
+  getParentRoute: () => ChannelsRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/channels': typeof ChannelsRoute
+  '/channels': typeof ChannelsRouteRouteWithChildren
   '/config': typeof ConfigRoute
   '/credentials': typeof CredentialsRoute
   '/logs': typeof LogsRoute
   '/models': typeof ModelsRoute
   '/providers': typeof ProvidersRoute
+  '/channels/$name': typeof ChannelsNameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/channels': typeof ChannelsRoute
+  '/channels': typeof ChannelsRouteRouteWithChildren
   '/config': typeof ConfigRoute
   '/credentials': typeof CredentialsRoute
   '/logs': typeof LogsRoute
   '/models': typeof ModelsRoute
   '/providers': typeof ProvidersRoute
+  '/channels/$name': typeof ChannelsNameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/channels': typeof ChannelsRoute
+  '/channels': typeof ChannelsRouteRouteWithChildren
   '/config': typeof ConfigRoute
   '/credentials': typeof CredentialsRoute
   '/logs': typeof LogsRoute
   '/models': typeof ModelsRoute
   '/providers': typeof ProvidersRoute
+  '/channels/$name': typeof ChannelsNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/models'
     | '/providers'
+    | '/channels/$name'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/models'
     | '/providers'
+    | '/channels/$name'
   id:
     | '__root__'
     | '/'
@@ -109,11 +120,12 @@ export interface FileRouteTypes {
     | '/logs'
     | '/models'
     | '/providers'
+    | '/channels/$name'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ChannelsRoute: typeof ChannelsRoute
+  ChannelsRouteRoute: typeof ChannelsRouteRouteWithChildren
   ConfigRoute: typeof ConfigRoute
   CredentialsRoute: typeof CredentialsRoute
   LogsRoute: typeof LogsRoute
@@ -162,7 +174,7 @@ declare module '@tanstack/react-router' {
       id: '/channels'
       path: '/channels'
       fullPath: '/channels'
-      preLoaderRoute: typeof ChannelsRouteImport
+      preLoaderRoute: typeof ChannelsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -172,12 +184,31 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/channels/$name': {
+      id: '/channels/$name'
+      path: '/$name'
+      fullPath: '/channels/$name'
+      preLoaderRoute: typeof ChannelsNameRouteImport
+      parentRoute: typeof ChannelsRouteRoute
+    }
   }
 }
 
+interface ChannelsRouteRouteChildren {
+  ChannelsNameRoute: typeof ChannelsNameRoute
+}
+
+const ChannelsRouteRouteChildren: ChannelsRouteRouteChildren = {
+  ChannelsNameRoute: ChannelsNameRoute,
+}
+
+const ChannelsRouteRouteWithChildren = ChannelsRouteRoute._addFileChildren(
+  ChannelsRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ChannelsRoute: ChannelsRoute,
+  ChannelsRouteRoute: ChannelsRouteRouteWithChildren,
   ConfigRoute: ConfigRoute,
   CredentialsRoute: CredentialsRoute,
   LogsRoute: LogsRoute,

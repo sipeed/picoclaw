@@ -8,18 +8,24 @@ import {
   Field as UiField,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 
 interface FieldProps {
   label: string
   hint?: string
+  error?: string
+  required?: boolean
   children: ReactNode
 }
 
-export function Field({ label, hint, children }: FieldProps) {
+export function Field({ label, hint, error, required, children }: FieldProps) {
   return (
     <UiField className="gap-2.5">
       <div className="space-y-1">
-        <FieldLabel>{label}</FieldLabel>
+        <FieldLabel>
+          {label}
+          {required && <span className="text-destructive ml-1">*</span>}
+        </FieldLabel>
         {hint && (
           <FieldDescription className="text-xs leading-normal">
             {hint}
@@ -27,6 +33,11 @@ export function Field({ label, hint, children }: FieldProps) {
         )}
       </div>
       {children}
+      {error && (
+        <FieldDescription className="text-destructive text-xs leading-normal">
+          {error}
+        </FieldDescription>
+      )}
     </UiField>
   )
 }
@@ -61,6 +72,50 @@ export function KeyInput({ value, onChange, placeholder }: KeyInputProps) {
           <IconEye className="size-4" />
         )}
       </button>
+    </div>
+  )
+}
+
+interface SwitchCardFieldProps {
+  label: string
+  hint?: string
+  error?: string
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  ariaLabel?: string
+  children?: ReactNode
+}
+
+export function SwitchCardField({
+  label,
+  hint,
+  error,
+  checked,
+  onCheckedChange,
+  ariaLabel,
+  children,
+}: SwitchCardFieldProps) {
+  return (
+    <div className="border-border/60 bg-background rounded-lg border px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">{label}</p>
+          {hint && (
+            <p className="text-muted-foreground mt-0.5 text-xs leading-normal">
+              {hint}
+            </p>
+          )}
+        </div>
+        <Switch
+          checked={checked}
+          onCheckedChange={onCheckedChange}
+          aria-label={ariaLabel ?? label}
+        />
+      </div>
+      {children && <div className="mt-3">{children}</div>}
+      {error && (
+        <p className="text-destructive mt-2 text-xs leading-normal">{error}</p>
+      )}
     </div>
   )
 }
