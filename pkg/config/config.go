@@ -9,11 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	import (
 	"github.com/fsnotify/fsnotify"
-	"sync"
-
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"sync"
 )
 
 // rrCounter is a global counter for round-robin load balancing across models.
