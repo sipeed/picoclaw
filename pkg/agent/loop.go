@@ -377,15 +377,21 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						al.bus.PublishOutbound(ctx, response.outboundMessage(msg.Channel, msg.ChatID))
 						logger.InfoCF("agent", "Published outbound response",
 							map[string]any{
-								"channel":     msg.Channel,
-								"chat_id":     msg.ChatID,
-								"content_len": len(response.Content),
+								"channel":             msg.Channel,
+								"chat_id":             msg.ChatID,
+								"content_len":         len(response.Content),
+								"reply_to_message_id": response.ReplyToMessageID,
 							})
 					} else {
 						logger.DebugCF(
 							"agent",
 							"Skipped outbound (message tool already sent)",
-							map[string]any{"channel": msg.Channel},
+							map[string]any{
+								"channel":             msg.Channel,
+								"chat_id":             msg.ChatID,
+								"content_len":         len(response.Content),
+								"reply_to_message_id": response.ReplyToMessageID,
+							},
 						)
 					}
 				}
@@ -882,6 +888,42 @@ func resolveFinalResponse(
 	rawContent string,
 ) agentResponse {
 	content, replyToMessageID := parseFinalReplyDirective(channel, replyCtx, rawContent)
+	if channel == "telegram" {
+		firstLine, _, _ := strings.Cut(rawContent, "\n")
+		directive := strings.TrimSpace(firstLine)
+		hasDirective := strings.HasPrefix(directive, "[[reply:") && strings.HasSuffix(directive, "]]")
+		directiveMode := ""
+		if hasDirective {
+			directiveMode = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(directive, "[[reply:"), "]]"))
+		}
+		directiveStatus := "none"
+		switch {
+		case !hasDirective:
+			directiveStatus = "none"
+		case directiveMode == "chat":
+			directiveStatus = "applied_chat"
+		case replyToMessageID != "":
+			directiveStatus = "applied_reply"
+		default:
+			directiveStatus = "dropped"
+		}
+
+		fields := map[string]any{
+			"directive_status":    directiveStatus,
+			"reply_to_message_id": replyToMessageID,
+			"raw_content_len":     len(rawContent),
+			"final_content_len":   len(content),
+		}
+		if hasDirective {
+			fields["directive"] = directive
+			fields["directive_mode"] = directiveMode
+		}
+		if replyCtx != nil {
+			fields["current_message_id"] = strings.TrimSpace(replyCtx.CurrentMessageID)
+			fields["parent_message_id"] = strings.TrimSpace(replyCtx.ParentMessageID)
+		}
+		logger.DebugCF("agent", "Resolved final reply routing", fields)
+	}
 	return agentResponse{
 		Content:          content,
 		ReplyToMessageID: replyToMessageID,

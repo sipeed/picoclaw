@@ -156,6 +156,9 @@ func TestBuildMessages_TelegramReplyRoutingContext(t *testing.T) {
 	if !strings.Contains(sys, "[[reply:current]]") {
 		t.Fatal("system prompt missing final reply directive guidance")
 	}
+	if !strings.Contains(sys, "Do not use the `message` tool for the normal reply in this chat") {
+		t.Fatal("system prompt missing guidance to avoid message tool for normal replies")
+	}
 }
 
 // TestMtimeAutoInvalidation verifies that the cache detects source file changes

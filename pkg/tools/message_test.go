@@ -284,6 +284,9 @@ func TestMessageTool_Description(t *testing.T) {
 	if desc == "" {
 		t.Error("Description should not be empty")
 	}
+	if desc == "Send a message to the user on a chat channel. Use this when you want to communicate something or explicitly control reply threading." {
+		t.Fatal("description still advertises reply threading")
+	}
 }
 
 func TestMessageTool_Parameters(t *testing.T) {
@@ -334,19 +337,10 @@ func TestMessageTool_Parameters(t *testing.T) {
 		t.Error("Expected chat_id type to be 'string'")
 	}
 
-	replyModeProp, ok := props["reply_mode"].(map[string]any)
-	if !ok {
-		t.Error("Expected 'reply_mode' property")
+	if _, ok := props["reply_mode"]; ok {
+		t.Error("Did not expect 'reply_mode' property in advertised schema")
 	}
-	if replyModeProp["type"] != "string" {
-		t.Error("Expected reply_mode type to be 'string'")
-	}
-
-	replyToProp, ok := props["reply_to_message_id"].(map[string]any)
-	if !ok {
-		t.Error("Expected 'reply_to_message_id' property")
-	}
-	if replyToProp["type"] != "string" {
-		t.Error("Expected reply_to_message_id type to be 'string'")
+	if _, ok := props["reply_to_message_id"]; ok {
+		t.Error("Did not expect 'reply_to_message_id' property in advertised schema")
 	}
 }

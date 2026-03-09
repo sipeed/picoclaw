@@ -463,6 +463,7 @@ func buildReplyRoutingContext(channel string, replyCtx *ReplyContextInfo) string
 			"- `[[reply:parent]]` replies to the parent/replied-to message when there is one\n"+
 			"- `[[reply:message_id=123]]` replies to a specific known message ID\n\n"+
 			"After the directive, add a blank line and then the user-visible message.\n"+
+			"Do not use the `message` tool for the normal reply in this chat; use the final answer plus a directive when you need reply routing.\n"+
 			"If you do not need special routing, answer normally without a directive.\n"+
 			"Never mention the directive in the visible message body.",
 		replyCtx.CurrentMessageID,

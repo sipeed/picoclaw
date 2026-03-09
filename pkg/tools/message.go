@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 type SendCallback func(msg bus.OutboundMessage) error
@@ -31,7 +32,7 @@ func (t *MessageTool) Name() string {
 }
 
 func (t *MessageTool) Description() string {
-	return "Send a message to the user on a chat channel. Use this when you want to communicate something or explicitly control reply threading."
+	return "Send an out-of-band message to a chat channel. Do not use this for the normal final reply in the current conversation."
 }
 
 func (t *MessageTool) Parameters() map[string]any {
@@ -49,15 +50,6 @@ func (t *MessageTool) Parameters() map[string]any {
 			"chat_id": map[string]any{
 				"type":        "string",
 				"description": "Optional: target chat/user ID",
-			},
-			"reply_mode": map[string]any{
-				"type":        "string",
-				"enum":        []string{replyModeChat, replyModeCurrent, replyModeParent},
-				"description": "Optional: threading mode. chat sends a normal message, current replies to the current inbound message, parent replies to the parent/replied-to inbound message.",
-			},
-			"reply_to_message_id": map[string]any{
-				"type":        "string",
-				"description": "Optional: explicit platform message ID to reply to. Overrides reply_mode when provided.",
 			},
 		},
 		"required": []string{"content"},
@@ -99,6 +91,32 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		return &ToolResult{ForLLM: "No target channel/chat specified", IsError: true}
 	}
 
+	currentChannel := ToolChannel(ctx)
+	currentChatID := ToolChatID(ctx)
+	replyMode, _ := args["reply_mode"].(string)
+	replyMode = strings.ToLower(strings.TrimSpace(replyMode))
+	explicitReplyTo, _ := args["reply_to_message_id"].(string)
+	explicitReplyTo = strings.TrimSpace(explicitReplyTo)
+
+	if replyMode != "" || explicitReplyTo != "" {
+		logger.WarnCF("tool", "Message tool received deprecated reply routing args", map[string]any{
+			"channel":             channel,
+			"chat_id":             chatID,
+			"reply_mode":          replyMode,
+			"reply_to_message_id": explicitReplyTo,
+		})
+	}
+	if currentChannel != "" && currentChatID != "" && channel == currentChannel && chatID == currentChatID {
+		logger.InfoCF("tool", "Message tool targeting current conversation", map[string]any{
+			"channel":     channel,
+			"chat_id":     chatID,
+			"content_len": len(content),
+			"reply_mode":  replyMode,
+			"same_target": true,
+			"session_key": ToolSessionKey(ctx),
+		})
+	}
+
 	replyToMessageID, err := resolveReplyTarget(ctx, args)
 	if err != nil {
 		return &ToolResult{
@@ -127,6 +145,14 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	}
 
 	t.sentInRound.Store(true)
+	logger.InfoCF("tool", "Message tool sent outbound message", map[string]any{
+		"channel":             channel,
+		"chat_id":             chatID,
+		"content_len":         len(content),
+		"reply_to_message_id": replyToMessageID,
+		"same_target":         currentChannel != "" && currentChatID != "" && channel == currentChannel && chatID == currentChatID,
+	})
+
 	// Silent: user already received the message directly
 	status := fmt.Sprintf("Message sent to %s:%s", channel, chatID)
 	if replyToMessageID != "" {
