@@ -134,7 +134,8 @@ jobs:
             echo "Release $TAG already exists, updating metadata and assets..."
             gh release edit "$TAG" \
               --title "$TITLE" \
-              --notes "$NOTES"
+              --notes "$NOTES" \
+              --prerelease
             gh release upload "$TAG" build/* --clobber
           else
             echo "Creating new release $TAG..."
@@ -142,5 +143,24 @@ jobs:
               --title "$TITLE" \
               --notes "$NOTES" \
               --target "${{ github.sha }}" \
+              --prerelease \
               build/*
           fi
+
+          echo "Updating rolling 'nightly' release..."
+          gh release delete nightly --cleanup-tag -y >/dev/null 2>&1 || true
+          sleep 2
+          gh release create nightly \
+            --title "Nightly Build" \
+            --notes "$NOTES" \
+            --target "${{ github.sha }}" \
+            --prerelease \
+            build/*
+
+          echo "Cleaning up old nightly releases (keeping only the most recent)..."
+          gh release list --limit 100 --json tagName -q '.[].tagName | select(startswith("nightly-"))' | tail -n +2 | while read -r old_tag; do
+            if [ -n "$old_tag" ] && [ "$old_tag" != "$TAG" ]; then
+              echo "Deleting old nightly release: $old_tag"
+              gh release delete "$old_tag" --cleanup-tag -y || true
+            fi
+          done
