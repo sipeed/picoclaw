@@ -149,7 +149,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 	}
 
 	// Ensure PICOCLAW_* vars are set for child processes
-	envSet = shell.WithPicoclawEnvVars(envSet)
+	envSet = shell.WithPicoclawEnvVars(envSet, workingDir)
 
 	return &ExecTool{
 		workingDir:          workingDir,

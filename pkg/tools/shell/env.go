@@ -156,7 +156,7 @@ func isAllowedPrefix(name string) bool {
 
 // WithPicoclawEnvVars ensures PICOCLAW_* vars are set in envSet.
 // These are needed for child processes to locate config, workspace, etc.
-func WithPicoclawEnvVars(envSet map[string]string) map[string]string {
+func WithPicoclawEnvVars(envSet map[string]string, workspace string) map[string]string {
 	if envSet == nil {
 		envSet = make(map[string]string)
 	}
@@ -172,6 +172,11 @@ func WithPicoclawEnvVars(envSet map[string]string) map[string]string {
 		envSet["PICOCLAW_CONFIG"] = v
 	} else if home := envSet["PICOCLAW_HOME"]; home != "" {
 		envSet["PICOCLAW_CONFIG"] = filepath.Join(home, "config.json")
+	}
+
+	// Workspace - this is the agent's working directory
+	if workspace != "" {
+		envSet["PICOCLAW_AGENT_WORKSPACE"] = workspace
 	}
 
 	if exe, err := os.Executable(); err == nil {
