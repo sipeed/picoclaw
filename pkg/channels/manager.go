@@ -61,7 +61,9 @@ var channelRateConfig = map[string]float64{
 	"telegram": 20,
 	"discord":  1,
 	"slack":    1,
+	"matrix":   2,
 	"line":     10,
+	"irc":      2,
 }
 
 type channelWorker struct {
@@ -243,6 +245,13 @@ func (m *Manager) initChannels() error {
 		m.initChannel("slack", "Slack")
 	}
 
+	if m.config.Channels.Matrix.Enabled &&
+		m.config.Channels.Matrix.Homeserver != "" &&
+		m.config.Channels.Matrix.UserID != "" &&
+		m.config.Channels.Matrix.AccessToken != "" {
+		m.initChannel("matrix", "Matrix")
+	}
+
 	if m.config.Channels.LINE.Enabled && m.config.Channels.LINE.ChannelAccessToken != "" {
 		m.initChannel("line", "LINE")
 	}
@@ -265,6 +274,10 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.Pico.Enabled && m.config.Channels.Pico.Token != "" {
 		m.initChannel("pico", "Pico")
+	}
+
+	if m.config.Channels.IRC.Enabled && m.config.Channels.IRC.Server != "" {
+		m.initChannel("irc", "IRC")
 	}
 
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{

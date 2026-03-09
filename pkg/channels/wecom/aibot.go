@@ -793,7 +793,10 @@ func (c *WeComAIBotChannel) sendViaResponseURL(responseURL, content string) erro
 		return nil
 	}
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading response_url body: %w: %w", channels.ErrTemporary, err)
+	}
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return fmt.Errorf("response_url rate limited (%d): %s: %w",
