@@ -14,6 +14,10 @@ type RouteInput struct {
 	ParentPeer *RoutePeer
 	GuildID    string
 	TeamID     string
+	// OverrideAgentID forces routing to a specific agent before bindings/defaults.
+	// Intended for channel-level explicit overrides such as Telegram topic config.
+	OverrideAgentID   string
+	OverrideMatchedBy string
 }
 
 // ResolvedRoute is the result of agent routing.
@@ -23,7 +27,7 @@ type ResolvedRoute struct {
 	AccountID      string
 	SessionKey     string
 	MainSessionKey string
-	MatchedBy      string // "binding.peer", "binding.peer.parent", "binding.guild", "binding.team", "binding.account", "binding.channel", "default"
+	MatchedBy      string // e.g. "binding.peer", "binding.peer.parent", "binding.guild", "binding.team", "binding.account", "binding.channel", "default", "override"
 }
 
 // RouteResolver determines which agent handles a message based on config bindings.
@@ -37,8 +41,8 @@ func NewRouteResolver(cfg *config.Config) *RouteResolver {
 }
 
 // ResolveRoute determines which agent handles the message and constructs session keys.
-// Implements the 7-level priority cascade:
-// peer > parent_peer > guild > team > account > channel_wildcard > default
+// Implements the 8-level priority cascade:
+// override > peer > parent_peer > guild > team > account > channel_wildcard > default
 func (r *RouteResolver) ResolveRoute(input RouteInput) ResolvedRoute {
 	channel := strings.ToLower(strings.TrimSpace(input.Channel))
 	accountID := NormalizeAccountID(input.AccountID)
@@ -71,6 +75,15 @@ func (r *RouteResolver) ResolveRoute(input RouteInput) ResolvedRoute {
 			MainSessionKey: mainSessionKey,
 			MatchedBy:      matchedBy,
 		}
+	}
+
+	// Priority 0: Explicit override
+	if override := strings.TrimSpace(input.OverrideAgentID); override != "" {
+		matchedBy := strings.TrimSpace(input.OverrideMatchedBy)
+		if matchedBy == "" {
+			matchedBy = "override"
+		}
+		return choose(override, matchedBy)
 	}
 
 	// Priority 1: Peer binding

@@ -73,6 +73,8 @@ const (
 	metadataKeyTeamID         = "team_id"
 	metadataKeyParentPeerKind = "parent_peer_kind"
 	metadataKeyParentPeerID   = "parent_peer_id"
+	metadataKeyRouteAgentID   = "route_agent_id"
+	metadataKeyRouteMatchedBy = "route_matched_by"
 )
 
 func NewAgentLoop(
@@ -663,12 +665,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
 	route := al.registry.ResolveRoute(routing.RouteInput{
-		Channel:    msg.Channel,
-		AccountID:  inboundMetadata(msg, metadataKeyAccountID),
-		Peer:       extractPeer(msg),
-		ParentPeer: extractParentPeer(msg),
-		GuildID:    inboundMetadata(msg, metadataKeyGuildID),
-		TeamID:     inboundMetadata(msg, metadataKeyTeamID),
+		Channel:           msg.Channel,
+		AccountID:         inboundMetadata(msg, metadataKeyAccountID),
+		Peer:              extractPeer(msg),
+		ParentPeer:        extractParentPeer(msg),
+		GuildID:           inboundMetadata(msg, metadataKeyGuildID),
+		TeamID:            inboundMetadata(msg, metadataKeyTeamID),
+		OverrideAgentID:   inboundMetadata(msg, metadataKeyRouteAgentID),
+		OverrideMatchedBy: inboundMetadata(msg, metadataKeyRouteMatchedBy),
 	})
 
 	agent, ok := al.registry.GetAgent(route.AgentID)

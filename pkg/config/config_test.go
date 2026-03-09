@@ -189,6 +189,41 @@ func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
 	}
 }
 
+func TestTelegramTopicAgentConfig_Parse(t *testing.T) {
+	jsonData := `{
+		"channels": {
+			"telegram": {
+				"groups": {
+					"-1001234567890": {
+						"topics": {
+							"42": {
+								"agent_id": "coder"
+							}
+						}
+					}
+				}
+			}
+		}
+	}`
+
+	cfg := DefaultConfig()
+	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	groupCfg, ok := cfg.Channels.Telegram.Groups["-1001234567890"]
+	if !ok {
+		t.Fatal("expected telegram group config to be parsed")
+	}
+	topicCfg, ok := groupCfg.Topics["42"]
+	if !ok {
+		t.Fatal("expected telegram topic config to be parsed")
+	}
+	if topicCfg.AgentID != "coder" {
+		t.Errorf("topicCfg.AgentID = %q, want %q", topicCfg.AgentID, "coder")
+	}
+}
+
 // TestDefaultConfig_HeartbeatEnabled verifies heartbeat is enabled by default
 func TestDefaultConfig_HeartbeatEnabled(t *testing.T) {
 	cfg := DefaultConfig()

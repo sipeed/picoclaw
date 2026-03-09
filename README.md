@@ -348,6 +348,36 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk,
 
 > Get your user ID from `@userinfobot` on Telegram.
 
+**Optional: Telegram forum topics**
+
+PicoClaw now isolates Telegram forum topics automatically. Each topic in a forum-enabled supergroup gets its own conversation/session, and replies stay in the same topic thread.
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_BOT_TOKEN",
+      "allow_from": ["YOUR_USER_ID"],
+      "groups": {
+        "-1001234567890": {
+          "topics": {
+            "1": { "agent_id": "main" },
+            "42": { "agent_id": "coder" }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Notes:
+- Topic IDs are Telegram `message_thread_id` values.
+- The General topic uses thread ID `1`.
+- Internally, topic targets use the form `-1001234567890:topic:42`.
+- Non-forum groups do not create separate sessions for reply threads.
+
 **3. Run**
 
 ```bash
@@ -1283,7 +1313,16 @@ picoclaw agent -m "Hello"
     "telegram": {
       "enabled": true,
       "token": "123456:ABC...",
-      "allow_from": ["123456789"]
+      "allow_from": ["123456789"],
+      "groups": {
+        "-1001234567890": {
+          "topics": {
+            "42": {
+              "agent_id": "coder"
+            }
+          }
+        }
+      }
     },
     "discord": {
       "enabled": true,
