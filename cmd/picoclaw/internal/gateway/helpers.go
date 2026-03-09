@@ -16,8 +16,10 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
 	_ "github.com/sipeed/picoclaw/pkg/channels/discord"
 	_ "github.com/sipeed/picoclaw/pkg/channels/feishu"
+	_ "github.com/sipeed/picoclaw/pkg/channels/irc"
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
+	_ "github.com/sipeed/picoclaw/pkg/channels/matrix"
 	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
 	_ "github.com/sipeed/picoclaw/pkg/channels/pico"
 	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
@@ -230,19 +232,25 @@ func setupCronTool(
 	// Create cron service
 	cronService := cron.NewCronService(cronStorePath, nil)
 
-	// Create and register CronTool
-	cronTool, err := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
-	if err != nil {
-		log.Fatalf("Critical error during CronTool initialization: %v", err)
+	// Create and register CronTool if enabled
+	var cronTool *tools.CronTool
+	if cfg.Tools.IsToolEnabled("cron") {
+		var err error
+		cronTool, err = tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
+		if err != nil {
+			log.Fatalf("Critical error during CronTool initialization: %v", err)
+		}
+
+		agentLoop.RegisterTool(cronTool)
 	}
 
-	agentLoop.RegisterTool(cronTool)
-
-	// Set the onJob handler
-	cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
-		result := cronTool.ExecuteJob(context.Background(), job)
-		return result, nil
-	})
+	// Set onJob handler
+	if cronTool != nil {
+		cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
+			result := cronTool.ExecuteJob(context.Background(), job)
+			return result, nil
+		})
+	}
 
 	return cronService
 }

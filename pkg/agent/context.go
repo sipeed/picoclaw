@@ -41,6 +41,9 @@ type ContextBuilder struct {
 }
 
 func getGlobalConfigDir() string {
+	if home := os.Getenv("PICOCLAW_HOME"); home != "" {
+		return home
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
@@ -656,7 +659,60 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 		}
 	}
 
-	return sanitized
+	// Second pass: ensure every assistant message with tool_calls has matching
+	// tool result messages following it. This is required by strict providers
+	// like DeepSeek that enforce: "An assistant message with 'tool_calls' must
+	// be followed by tool messages responding to each 'tool_call_id'."
+	final := make([]providers.Message, 0, len(sanitized))
+	for i := 0; i < len(sanitized); i++ {
+		msg := sanitized[i]
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			// Collect expected tool_call IDs
+			expected := make(map[string]bool, len(msg.ToolCalls))
+			for _, tc := range msg.ToolCalls {
+				expected[tc.ID] = false
+			}
+
+			// Check following messages for matching tool results
+			toolMsgCount := 0
+			for j := i + 1; j < len(sanitized); j++ {
+				if sanitized[j].Role != "tool" {
+					break
+				}
+				toolMsgCount++
+				if _, exists := expected[sanitized[j].ToolCallID]; exists {
+					expected[sanitized[j].ToolCallID] = true
+				}
+			}
+
+			// If any tool_call_id is missing, drop this assistant message and its partial tool messages
+			allFound := true
+			for toolCallID, found := range expected {
+				if !found {
+					allFound = false
+					logger.DebugCF(
+						"agent",
+						"Dropping assistant message with incomplete tool results",
+						map[string]any{
+							"missing_tool_call_id": toolCallID,
+							"expected_count":       len(expected),
+							"found_count":          toolMsgCount,
+						},
+					)
+					break
+				}
+			}
+
+			if !allFound {
+				// Skip this assistant message and its tool messages
+				i += toolMsgCount
+				continue
+			}
+		}
+		final = append(final, msg)
+	}
+
+	return final
 }
 
 func (cb *ContextBuilder) AddToolResult(

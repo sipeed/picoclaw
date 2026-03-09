@@ -395,6 +395,68 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
 }
 
+type SearXNGSearchProvider struct {
+	baseURL string
+}
+
+func (p *SearXNGSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := fmt.Sprintf("%s/search?q=%s&format=json&categories=general",
+		strings.TrimSuffix(p.baseURL, "/"),
+		url.QueryEscape(query))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("SearXNG returned status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Results []struct {
+			Title   string  `json:"title"`
+			URL     string  `json:"url"`
+			Content string  `json:"content"`
+			Engine  string  `json:"engine"`
+			Score   float64 `json:"score"`
+		} `json:"results"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(result.Results) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	// Limit results to requested count
+	if len(result.Results) > count {
+		result.Results = result.Results[:count]
+	}
+
+	// Format results in standard PicoClaw format
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Results for: %s (via SearXNG)\n", query))
+	for i, r := range result.Results {
+		b.WriteString(fmt.Sprintf("%d. %s\n", i+1, r.Title))
+		b.WriteString(fmt.Sprintf("   %s\n", r.URL))
+		if r.Content != "" {
+			b.WriteString(fmt.Sprintf("   %s\n", r.Content))
+		}
+	}
+
+	return b.String(), nil
+}
+
 type GLMSearchProvider struct {
 	apiKey       string
 	baseURL      string
@@ -495,6 +557,9 @@ type WebSearchToolOptions struct {
 	PerplexityAPIKey     string
 	PerplexityMaxResults int
 	PerplexityEnabled    bool
+	SearXNGBaseURL       string
+	SearXNGMaxResults    int
+	SearXNGEnabled       bool
 	GLMSearchAPIKey      string
 	GLMSearchBaseURL     string
 	GLMSearchEngine      string
@@ -507,7 +572,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	var provider SearchProvider
 	maxResults := 5
 
-	// Priority: Perplexity > Brave > Tavily > DuckDuckGo > GLM Search
+	// Priority: Perplexity > Brave > SearXNG > Tavily > DuckDuckGo > GLM Search
 	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
 		client, err := createHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
@@ -525,6 +590,11 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey, proxy: opts.Proxy, client: client}
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults
+		}
+	} else if opts.SearXNGEnabled && opts.SearXNGBaseURL != "" {
+		provider = &SearXNGSearchProvider{baseURL: opts.SearXNGBaseURL}
+		if opts.SearXNGMaxResults > 0 {
+			maxResults = opts.SearXNGMaxResults
 		}
 	} else if opts.TavilyEnabled && opts.TavilyAPIKey != "" {
 		client, err := createHTTPClient(opts.Proxy, searchTimeout)
