@@ -1495,7 +1495,6 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	const (
 		maxSummarizationMessages = 10
 		llmMaxRetries            = 3
-		llmMaxTokens             = 1024
 		llmTemperature           = 0.3
 		fallbackMaxContentLength = 200
 	)
@@ -1573,7 +1572,6 @@ func (al *AgentLoop) retryLLMCall(
 	maxRetries int,
 ) (*providers.LLMResponse, error) {
 	const (
-		llmMaxTokens   = 1024
 		llmTemperature = 0.3
 	)
 
@@ -1587,7 +1585,7 @@ func (al *AgentLoop) retryLLMCall(
 			nil,
 			agent.Model,
 			map[string]any{
-				"max_tokens":       llmMaxTokens,
+				"max_tokens":       agent.MaxTokens,
 				"temperature":      llmTemperature,
 				"prompt_cache_key": agent.ID,
 			},
@@ -1612,7 +1610,6 @@ func (al *AgentLoop) summarizeBatch(
 ) (string, error) {
 	const (
 		llmMaxRetries             = 3
-		llmMaxTokens              = 1024
 		llmTemperature            = 0.3
 		fallbackMinContentLength  = 200
 		fallbackMaxContentPercent = 10
