@@ -231,6 +231,28 @@ func buildParams(
 		params.Tools = translateTools(tools)
 	}
 
+	if tcOpt, ok := options["tool_choice"].(map[string]any); ok {
+		tcType, _ := tcOpt["type"].(string)
+		switch tcType {
+		case "auto":
+			params.ToolChoice = anthropic.ToolChoiceUnionParam{
+				OfAuto: &anthropic.ToolChoiceAutoParam{},
+			}
+		case "any":
+			params.ToolChoice = anthropic.ToolChoiceUnionParam{
+				OfAny: &anthropic.ToolChoiceAnyParam{},
+			}
+		case "tool":
+			if name, ok := tcOpt["name"].(string); ok {
+				params.ToolChoice = anthropic.ToolChoiceParamOfTool(name)
+			}
+		case "none":
+			params.ToolChoice = anthropic.ToolChoiceUnionParam{
+				OfNone: &anthropic.ToolChoiceNoneParam{},
+			}
+		}
+	}
+
 	// Extended Thinking / Adaptive Thinking
 	// The thinking_level value directly determines the API parameter format:
 	//   "adaptive" → {thinking: {type: "adaptive"}} + output_config.effort
@@ -325,6 +347,9 @@ func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 				}
 			}
 			tool.InputSchema.Required = required
+		}
+		if t.CacheControl != nil && t.CacheControl.Type == "ephemeral" {
+			tool.CacheControl = anthropic.NewCacheControlEphemeralParam()
 		}
 		result = append(result, anthropic.ToolUnionParam{OfTool: &tool})
 	}

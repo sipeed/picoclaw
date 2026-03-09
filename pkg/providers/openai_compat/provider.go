@@ -122,7 +122,27 @@ func (p *Provider) Chat(
 
 	if len(tools) > 0 {
 		requestBody["tools"] = tools
-		requestBody["tool_choice"] = "auto"
+
+		if tcOpt, ok := options["tool_choice"].(map[string]any); ok {
+			tcType, _ := tcOpt["type"].(string)
+			switch tcType {
+			case "none":
+				requestBody["tool_choice"] = "none"
+			case "auto", "any":
+				requestBody["tool_choice"] = "auto"
+			case "tool":
+				if name, ok := tcOpt["name"].(string); ok {
+					requestBody["tool_choice"] = map[string]any{
+						"type": "function",
+						"function": map[string]any{
+							"name": name,
+						},
+					}
+				}
+			}
+		} else {
+			requestBody["tool_choice"] = "auto"
+		}
 	}
 
 	if maxTokens, ok := asInt(options["max_tokens"]); ok {

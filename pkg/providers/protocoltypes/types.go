@@ -73,8 +73,9 @@ type Message struct {
 }
 
 type ToolDefinition struct {
-	Type     string                 `json:"type"`
-	Function ToolFunctionDefinition `json:"function"`
+	Type         string                 `json:"type"`
+	Function     ToolFunctionDefinition `json:"function"`
+	CacheControl *CacheControl          `json:"cache_control,omitempty"`
 }
 
 type ToolFunctionDefinition struct {
