@@ -716,7 +716,7 @@ func (al *AgentLoop) processSystemMessage(
 		UserMessage:     fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content),
 		DefaultResponse: "Background task completed.",
 		EnableSummary:   false,
-		SendResponse:    true,
+		SendResponse:    false,  // Prevent duplicate responses caused by system message processing
 	})
 }
 
@@ -1359,8 +1359,8 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	newHistory = append(newHistory, history[len(history)-1]) // Last message
 
 	// Update session
-	agent.Sessions.SetHistory(sessionKey, newHistory)
-	agent.Sessions.Save(sessionKey)
+	// Update session with sanitized history to ensure tool pair integrity
+	agent.Sessions.SetHistory(sessionKey, sanitizeToolPairs(newHistory))
 
 	logger.WarnCF("agent", "Forced compression executed", map[string]any{
 		"session_key":  sessionKey,
@@ -1477,7 +1477,7 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	omitted := false
 
 	for _, m := range toSummarize {
-		if m.Role != "user" && m.Role != "assistant" {
+		if m.Role != "user" && m.Role != "assistant" && m.Role != "tool" && m.Role != "function" {
 			continue
 		}
 		msgTokens := len(m.Content) / 2
@@ -1703,4 +1703,41 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 		return nil
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
+}
+
+// sanitizeToolPairs removes malformed tool_call/tool_result pairs from message histories. It ensures
+// that all tool_use IDs referenced in tool results have corresponding tool_use blocks in
+// assistant messages, and removes orphaned tool_result messages that don't pair with a
+// prior tool_call in the same session history.
+func sanitizeToolPairs(messages []providers.Message) []providers.Message {
+	// Build map of expected tool call IDs
+	expectedToolCallIDs := make(map[string]bool)
+	var sanitized []providers.Message
+
+	for _, msg := range messages {
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			// Record all tool call IDs in assistant messages
+			for _, call := range msg.ToolCalls {
+				expectedToolCallIDs[call.ID] = true
+			}
+			sanitized = append(sanitized, msg)
+		} else if msg.Role == "tool" {
+			// Verify this tool result has a corresponding tool call
+			if expectedToolCallIDs[msg.ToolCallID] {
+				// Valid pairing: tool result has corresponding tool call
+				sanitized = append(sanitized, msg)
+				// Remove the ID after use to avoid reuse of stale ID
+				delete(expectedToolCallIDs, msg.ToolCallID)
+			} else {
+				// Invalid: orphaned tool result without matching tool call
+				// Skip this message rather than including it
+				continue
+			}
+		} else {
+			// Regular messages (user/assistant without tools/other) - always include
+			sanitized = append(sanitized, msg)
+		}
+	}
+
+	return sanitized
 }

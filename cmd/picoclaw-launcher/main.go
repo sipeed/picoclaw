@@ -112,16 +112,22 @@ func main() {
 
 // openBrowser automatically opens the given URL in the default browser.
 func openBrowser(url string) error {
-	var err error
-	switch runtime.GOOS {
-	case "linux":
-		err = exec.Command("xdg-open", url).Start()
+var err error
+switch runtime.GOOS {
+case "linux":
+err = exec.Command("xdg-open", url).Start()
 	case "windows":
+		// Using PowerShell approach which is more reliable on various Windows architectures (including x86)
+		err = exec.Command("powershell", "-NoProfile", "-Command", "Start-Process", url).Run()
+		// Fallback to rundll32 if PowerShell fails (ensuring compatibility with older/limited Windows systems)
+		if err != nil {
+			log.Printf("Warning: PowerShell failed to open browser: %v, trying rundll32...\n", err)
 		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
-	case "darwin":
-		err = exec.Command("open", url).Start()
-	default:
-		err = fmt.Errorf("unsupported platform")
-	}
-	return err
+		}
+case "darwin":
+err = exec.Command("open", url).Start()
+default:
+err = fmt.Errorf("unsupported platform")
+}
+return err
 }
