@@ -21,8 +21,7 @@ const (
 	providerTypeCodexCLIToken
 	providerTypeClaudeCLI
 	providerTypeCodexCLI
-providerTypeGitHubCopilot
-	providerTypePicoLM
+	providerTypeGitHubCopilot
 )
 
 type providerSelection struct {
@@ -200,15 +199,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			}
 			sel.connectMode = cfg.Providers.GitHubCopilot.ConnectMode
 			return sel, nil
-		case "picolm":
-			// Local picolm provider - no API key required
-			workspace := cfg.WorkspacePath()
-			if workspace == "" {
-				workspace = "."
-			}
-			sel.providerType = providerTypePicoLM
-			sel.workspace = workspace
-			return sel, nil
+		}
 	}
 
 	// Fallback: infer provider from model and configured keys.
@@ -308,34 +299,8 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.proxy = cfg.Providers.Mistral.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "https://api.mistral.ai/v1"
-		case (strings.Contains(lowerModel, "deepseek") || strings.HasPrefix(model, "deepseek/") || strings.HasPrefix(model, "deepseek-ai/")) && cfg.Providers.DeepSeek.APIKey != "":
-
-			sel.apiKey = cfg.Providers.DeepSeek.APIKey
-
-			sel.apiBase = cfg.Providers.DeepSeek.APIBase
-
-			sel.proxy = cfg.Providers.DeepSeek.Proxy
-
-			if sel.apiBase == "" {
-
-				sel.apiBase = "https://api.deepseek.com/v1"
-
 			}
-
-			// Keep original model name logic for backward compatibility
-
-			if !strings.HasPrefix(model, "deepseek/") && !strings.HasPrefix(model, "deepseek-ai/") {
-
-				if model != "deepseek-chat" && model != "deepseek-reasoner" {
-
-					sel.model = "deepseek-chat"
-
-				}
-
-			}
-
-		case cfg.Providers.VLLM.APIBase != ":
-
+		case cfg.Providers.VLLM.APIBase != "":
 			sel.apiKey = cfg.Providers.VLLM.APIKey
 			sel.apiBase = cfg.Providers.VLLM.APIBase
 			sel.proxy = cfg.Providers.VLLM.Proxy
@@ -359,29 +324,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			return providerSelection{}, fmt.Errorf("no API key configured for provider (model: %s)", model)
 		}
 		if sel.apiBase == "" {
-			// Rather than defaulting to a specific provider (including GLM), we'll prioritize
-			// the first configured provider base in a consistent order
-			// This prevents default always choosing GLM provider when it shouldn't
-			orderedBases := []string{
-				cfg.Providers.OpenAI.APIBase,
-				cfg.Providers.Anthropic.APIBase,
-				cfg.Providers.Gemini.APIBase,
-				cfg.Providers.Groq.APIBase,
-				cfg.Providers.Zhipu.APIBase, // The GLM provider is lower in the order to prevent automatic defaulting
-				cfg.Providers.OpenRouter.APIBase,
-				cfg.Providers.LiteLLM.APIBase,
-				cfg.Providers.VLLM.APIBase,
-			}
-			for _, base := range orderedBases {
-				if base != "" {
-					sel.apiBase = base
-					break
-				}
-			}
-			if sel.apiBase == "" {
-				return providerSelection{}, fmt.Errorf("no API base configured for provider (model: %s)", model)
-			}
-
+			return providerSelection{}, fmt.Errorf("no API base configured for provider (model: %s)", model)
 		}
 	}
 
