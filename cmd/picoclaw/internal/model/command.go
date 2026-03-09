@@ -9,6 +9,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
+const LocalModel = "local-model"
+
 func NewModelCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "model [model_name]",
@@ -36,10 +38,6 @@ Examples:
 				// Show current default model
 				showCurrentModel(cfg)
 				return nil
-			}
-
-			if len(args) > 1 {
-				return fmt.Errorf("wrong command, should be model [model_name]")
 			}
 
 			// Set new default model
@@ -96,11 +94,8 @@ func setDefaultModel(configPath string, cfg *config.Config, modelName string) er
 		}
 	}
 
-	if !modelFound {
-		fmt.Printf("Error: Model '%s' not found in config.\n\n", modelName)
-		fmt.Println("Available models:")
-		listAvailableModels(cfg)
-		panic("")
+	if !modelFound && modelName != LocalModel {
+		return fmt.Errorf("Model '%s' not found in config.", modelName)
 	}
 
 	// Update the default model
