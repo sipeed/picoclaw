@@ -176,13 +176,9 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 	}
 
 	command, _ := args["command"].(string)
-	if command != "" {
-		// Commands must be processed by agent/exec tool, so deliver must be false (or handled specifically)
-		// Actually, let's keep deliver=false to let the system know it's not a simple chat message
-		// But for our new logic in ExecuteJob, we can handle it regardless of deliver flag if Payload.Command is set.
-		// However, logically, it's not "delivered" to chat directly as is.
-		deliver = false
-	}
+	// Note: deliver parameter is now respected for commands too
+	// deliver=true: send command result to user
+	// deliver=false: silent on success, only notify on error
 
 	// Truncate message for job name (max 30 chars)
 	messagePreview := utils.Truncate(message, 30)
@@ -285,8 +281,25 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		}
 
 		result := t.execTool.Execute(ctx, args)
-		// Only notify on error, silent on success
-		if result.IsError {
+
+		// If deliver=true, always send result; if deliver=false, only notify on error
+		if job.Payload.Deliver {
+			// Send result to user
+			var output string
+			if result.IsError {
+				output = fmt.Sprintf("Error executing scheduled command: %s", result.ForLLM)
+			} else {
+				output = fmt.Sprintf("Scheduled command '%s' executed:\n%s", job.Payload.Command, result.ForLLM)
+			}
+			pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer pubCancel()
+			t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
+				Channel: channel,
+				ChatID:  chatID,
+				Content: output,
+			})
+		} else if result.IsError {
+			// deliver=false, only notify on error
 			output := fmt.Sprintf("Error executing scheduled command: %s", result.ForLLM)
 			pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer pubCancel()
