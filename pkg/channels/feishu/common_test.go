@@ -230,6 +230,8 @@ func TestBuildMarkdownCard(t *testing.T) {
 func TestStripMentionPlaceholders(t *testing.T) {
 	strPtr := func(s string) *string { return &s }
 
+	botOpenID := "ou_bot123"
+
 	tests := []struct {
 		name     string
 		content  string
@@ -243,21 +245,37 @@ func TestStripMentionPlaceholders(t *testing.T) {
 			want:     "Hello world",
 		},
 		{
-			name:    "single mention",
+			name:    "bot mention is stripped",
 			content: "@_user_1 hello",
 			mentions: []*larkim.MentionEvent{
-				{Key: strPtr("@_user_1")},
+				{Key: strPtr("@_user_1"), Id: &larkim.UserId{OpenId: strPtr(botOpenID)}, Name: strPtr("Bot")},
 			},
 			want: "hello",
 		},
 		{
-			name:    "multiple mentions",
-			content: "@_user_1 @_user_2 hey",
+			name:    "user mention preserved with name and id",
+			content: "@_user_1 hello",
 			mentions: []*larkim.MentionEvent{
-				{Key: strPtr("@_user_1")},
-				{Key: strPtr("@_user_2")},
+				{Key: strPtr("@_user_1"), Id: &larkim.UserId{OpenId: strPtr("ou_user456")}, Name: strPtr("张三")},
 			},
-			want: "hey",
+			want: "@张三(open_id:ou_user456) hello",
+		},
+		{
+			name:    "mixed bot and user mentions",
+			content: "@_user_1 给我和 @_user_2 拉个群",
+			mentions: []*larkim.MentionEvent{
+				{Key: strPtr("@_user_1"), Id: &larkim.UserId{OpenId: strPtr(botOpenID)}, Name: strPtr("Bot")},
+				{Key: strPtr("@_user_2"), Id: &larkim.UserId{OpenId: strPtr("ou_user789")}, Name: strPtr("李四")},
+			},
+			want: "给我和 @李四(open_id:ou_user789) 拉个群",
+		},
+		{
+			name:    "user mention with name only",
+			content: "@_user_1 hello",
+			mentions: []*larkim.MentionEvent{
+				{Key: strPtr("@_user_1"), Name: strPtr("张三")},
+			},
+			want: "@张三 hello",
 		},
 		{
 			name:     "empty content",
@@ -283,7 +301,7 @@ func TestStripMentionPlaceholders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := stripMentionPlaceholders(tt.content, tt.mentions)
+			got := stripMentionPlaceholders(tt.content, tt.mentions, botOpenID)
 			if got != tt.want {
 				t.Errorf("stripMentionPlaceholders(%q, ...) = %q, want %q", tt.content, got, tt.want)
 			}
