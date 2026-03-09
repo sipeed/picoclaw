@@ -116,10 +116,10 @@ dockers_v2:
       - picoclaw
     images:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
-      - "docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}"
+      - '{{ if not (isEnvSet "NIGHTLY_BUILD") }}docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}{{ end }}'
     tags:
       - "{{ .Tag }}"
-      - "latest"
+      - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly{{ else }}latest{{ end }}'
     platforms:
       - linux/amd64
       - linux/arm64
@@ -159,7 +159,7 @@ archives:
 
 nfpms:
   - id: picoclaw
-    builds:
+    ids:
       - picoclaw
       - picoclaw-launcher
       - picoclaw-launcher-tui
