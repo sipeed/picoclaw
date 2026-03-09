@@ -825,6 +825,39 @@ func (m *Manager) UnregisterChannel(name string) {
 	delete(m.channels, name)
 }
 
+// SendMessage sends an outbound message synchronously through the channel
+// worker's rate limiter and retry logic. It blocks until the message is
+// delivered (or all retries are exhausted), which preserves ordering when
+// a subsequent operation depends on the message having been sent.
+func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) error {
+	m.mu.RLock()
+	_, exists := m.channels[msg.Channel]
+	w, wExists := m.workers[msg.Channel]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("channel %s not found", msg.Channel)
+	}
+	if !wExists || w == nil {
+		return fmt.Errorf("channel %s has no active worker", msg.Channel)
+	}
+
+	maxLen := 0
+	if mlp, ok := w.ch.(MessageLengthProvider); ok {
+		maxLen = mlp.MaxMessageLength()
+	}
+	if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
+		for _, chunk := range SplitMessage(msg.Content, maxLen) {
+			chunkMsg := msg
+			chunkMsg.Content = chunk
+			m.sendWithRetry(ctx, msg.Channel, w, chunkMsg)
+		}
+	} else {
+		m.sendWithRetry(ctx, msg.Channel, w, msg)
+	}
+	return nil
+}
+
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {
 	m.mu.RLock()
 	_, exists := m.channels[channelName]

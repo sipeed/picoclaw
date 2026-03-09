@@ -466,9 +466,9 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 }
 
 // sendTranscriptionFeedback sends feedback to the user with the result of
-// audio transcription if the option is enabled. It sends the message directly
-// through the channel (bypassing the bus queue) so that ordering with the
-// subsequent placeholder is guaranteed.
+// audio transcription if the option is enabled. It uses Manager.SendMessage
+// which executes synchronously (rate limiting, splitting, retry) so that
+// ordering with the subsequent placeholder is guaranteed.
 func (al *AgentLoop) sendTranscriptionFeedback(
 	ctx context.Context,
 	channel, chatID, messageID string,
@@ -495,15 +495,7 @@ func (al *AgentLoop) sendTranscriptionFeedback(
 		feedbackMsg = "No voice detected in the audio"
 	}
 
-	ch, ok := al.channelManager.GetChannel(channel)
-	if !ok {
-		return
-	}
-
-	sendCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	err := ch.Send(sendCtx, bus.OutboundMessage{
+	err := al.channelManager.SendMessage(ctx, bus.OutboundMessage{
 		Channel:          channel,
 		ChatID:           chatID,
 		Content:          feedbackMsg,
