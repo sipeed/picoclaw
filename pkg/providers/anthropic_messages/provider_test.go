@@ -1,0 +1,455 @@
+// PicoClaw - Ultra-lightweight personal AI agent
+// License: MIT
+//
+// Copyright (c) 2026 PicoClaw contributors
+
+package anthropicmessages
+
+import (
+	"context"
+	"encoding/json"
+	"reflect"
+	"testing"
+)
+
+func TestBuildRequestBody(t *testing.T) {
+	tests := []struct {
+		name     string
+		messages []Message
+		tools    []ToolDefinition
+		model    string
+		options  map[string]any
+		want     map[string]any
+		wantErr  bool
+	}{
+		{
+			name: "basic user message",
+			messages: []Message{
+				{Role: "user", Content: "Hello, world!"},
+			},
+			model:   "test-model",
+			options: map[string]any{},
+			want: map[string]any{
+				"model":      "test-model",
+				"max_tokens": int64(4096),
+				"messages": []any{
+					map[string]any{
+						"role":    "user",
+						"content": "Hello, world!",
+					},
+				},
+			},
+		},
+		{
+			name: "user and assistant messages",
+			messages: []Message{
+				{Role: "user", Content: "What is 2+2?"},
+				{Role: "assistant", Content: "4"},
+			},
+			model:   "test-model",
+			options: map[string]any{},
+			want: map[string]any{
+				"model":      "test-model",
+				"max_tokens": int64(4096),
+				"messages": []any{
+					map[string]any{
+						"role":    "user",
+						"content": "What is 2+2?",
+					},
+					map[string]any{
+						"role": "assistant",
+						"content": []any{
+							map[string]any{
+								"type": "text",
+								"text": "4",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "with system message",
+			messages: []Message{
+				{Role: "system", Content: "You are a helpful assistant."},
+				{Role: "user", Content: "Hello"},
+			},
+			model:   "test-model",
+			options: map[string]any{},
+			want: map[string]any{
+				"model":      "test-model",
+				"max_tokens": int64(4096),
+				"system":     "You are a helpful assistant.",
+				"messages": []any{
+					map[string]any{
+						"role":    "user",
+						"content": "Hello",
+					},
+				},
+			},
+		},
+		{
+			name: "with custom max_tokens and temperature",
+			messages: []Message{
+				{Role: "user", Content: "Test"},
+			},
+			model: "test-model",
+			options: map[string]any{
+				"max_tokens":  2048,
+				"temperature": 0.5,
+			},
+			want: map[string]any{
+				"model":       "test-model",
+				"max_tokens":  int64(2048),
+				"temperature": 0.5,
+				"messages": []any{
+					map[string]any{
+						"role":    "user",
+						"content": "Test",
+					},
+				},
+			},
+		},
+		{
+			name: "with tools",
+			messages: []Message{
+				{Role: "user", Content: "What's the weather?"},
+			},
+			tools: []ToolDefinition{
+				{
+					Function: ToolFunctionDefinition{
+						Name:        "get_weather",
+						Description: "Get current weather",
+						Parameters: map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"location": map[string]any{
+									"type":        "string",
+									"description": "City name",
+								},
+							},
+						},
+					},
+				},
+			},
+			model:   "test-model",
+			options: map[string]any{},
+			want: map[string]any{
+				"model":      "test-model",
+				"max_tokens": int64(4096),
+				"messages": []any{
+					map[string]any{
+						"role":    "user",
+						"content": "What's the weather?",
+					},
+				},
+				"tools": []any{
+					map[string]any{
+						"name":        "get_weather",
+						"description": "Get current weather",
+						"input_schema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"location": map[string]any{
+									"type":        "string",
+									"description": "City name",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := buildRequestBody(tt.messages, tt.tools, tt.model, tt.options)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("buildRequestBody() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				gotJSON, _ := json.MarshalIndent(got, "", "  ")
+				wantJSON, _ := json.MarshalIndent(tt.want, "", "  ")
+				t.Errorf("buildRequestBody() mismatch:\ngot:\n%s\nwant:\n%s", gotJSON, wantJSON)
+			}
+		})
+	}
+}
+
+func TestParseResponseBody(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    []byte
+		want    *LLMResponse
+		wantErr bool
+	}{
+		{
+			name: "basic text response",
+			body: []byte(`{
+				"id": "msg-123",
+				"type": "message",
+				"role": "assistant",
+				"content": [
+					{"type": "text", "text": "Hello, how can I help?"}
+				],
+				"stop_reason": "end_turn",
+				"model": "test-model",
+				"usage": {
+					"input_tokens": 10,
+					"output_tokens": 5
+				}
+			}`),
+			want: &LLMResponse{
+				Content:          "Hello, how can I help?",
+				ToolCalls:        []ToolCall{},
+				FinishReason:     "stop",
+				Usage: &UsageInfo{
+					PromptTokens:     10,
+					CompletionTokens: 5,
+					TotalTokens:      15,
+				},
+				Reasoning:        "",
+				ReasoningDetails: nil,
+			},
+			wantErr: false,
+		},
+		{
+			name: "response with tool use",
+			body: []byte(`{
+				"id": "msg-456",
+				"type": "message",
+				"role": "assistant",
+				"content": [
+					{"type": "text", "text": "I'll check the weather for you."},
+					{
+						"type": "tool_use",
+						"id": "toolu-123",
+						"name": "get_weather",
+						"input": {"location": "Tokyo"}
+					}
+				],
+				"stop_reason": "tool_use",
+				"model": "test-model",
+				"usage": {
+					"input_tokens": 20,
+					"output_tokens": 15
+				}
+			}`),
+			want: &LLMResponse{
+				Content: "I'll check the weather for you.",
+				ToolCalls: []ToolCall{
+					{
+						ID:   "toolu-123",
+						Name: "get_weather",
+						Arguments: map[string]any{
+							"location": "Tokyo",
+						},
+						Function: &FunctionCall{
+							Name:      "get_weather",
+							Arguments: `{"location":"Tokyo"}`,
+						},
+					},
+				},
+				FinishReason:     "tool_calls",
+				Usage: &UsageInfo{
+					PromptTokens:     20,
+					CompletionTokens: 15,
+					TotalTokens:      35,
+				},
+				Reasoning:        "",
+				ReasoningDetails: nil,
+			},
+			wantErr: false,
+		},
+		{
+			name:    "invalid JSON",
+			body:    []byte(`invalid json`),
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "max_tokens stop reason",
+			body: []byte(`{
+				"id": "msg-789",
+				"type": "message",
+				"role": "assistant",
+				"content": [
+					{"type": "text", "text": "Partial response"}
+				],
+				"stop_reason": "max_tokens",
+				"model": "test-model",
+				"usage": {
+					"input_tokens": 100,
+					"output_tokens": 4096
+				}
+			}`),
+			want: &LLMResponse{
+				Content:          "Partial response",
+				ToolCalls:        []ToolCall{},
+				FinishReason:     "length",
+				Usage: &UsageInfo{
+					PromptTokens:     100,
+					CompletionTokens: 4096,
+					TotalTokens:      4196,
+				},
+				Reasoning:        "",
+				ReasoningDetails: nil,
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseResponseBody(tt.body)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseResponseBody() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err != nil {
+				return
+			}
+
+			// Compare individual fields
+			if got.Content != tt.want.Content {
+				t.Errorf("Content = %q, want %q", got.Content, tt.want.Content)
+			}
+			if got.FinishReason != tt.want.FinishReason {
+				t.Errorf("FinishReason = %q, want %q", got.FinishReason, tt.want.FinishReason)
+			}
+			if got.Usage == nil && tt.want.Usage != nil {
+				t.Errorf("Usage = nil, want non-nil")
+			} else if got.Usage != nil && tt.want.Usage == nil {
+				t.Errorf("Usage = non-nil, want nil")
+			} else if got.Usage != nil && tt.want.Usage != nil {
+				if got.Usage.PromptTokens != tt.want.Usage.PromptTokens {
+					t.Errorf("Usage.PromptTokens = %d, want %d", got.Usage.PromptTokens, tt.want.Usage.PromptTokens)
+				}
+				if got.Usage.CompletionTokens != tt.want.Usage.CompletionTokens {
+					t.Errorf("Usage.CompletionTokens = %d, want %d", got.Usage.CompletionTokens, tt.want.Usage.CompletionTokens)
+				}
+				if got.Usage.TotalTokens != tt.want.Usage.TotalTokens {
+					t.Errorf("Usage.TotalTokens = %d, want %d", got.Usage.TotalTokens, tt.want.Usage.TotalTokens)
+				}
+			}
+			if len(got.ToolCalls) != len(tt.want.ToolCalls) {
+				t.Errorf("ToolCalls length = %d, want %d", len(got.ToolCalls), len(tt.want.ToolCalls))
+			} else {
+				for i := range got.ToolCalls {
+					if got.ToolCalls[i].ID != tt.want.ToolCalls[i].ID {
+						t.Errorf("ToolCalls[%d].ID = %q, want %q", i, got.ToolCalls[i].ID, tt.want.ToolCalls[i].ID)
+					}
+					if got.ToolCalls[i].Name != tt.want.ToolCalls[i].Name {
+						t.Errorf("ToolCalls[%d].Name = %q, want %q", i, got.ToolCalls[i].Name, tt.want.ToolCalls[i].Name)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestNormalizeBaseURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		apiBase  string
+		expected string
+	}{
+		{
+			name:     "empty string defaults to official API",
+			apiBase:  "",
+			expected: "https://api.anthropic.com/v1",
+		},
+		{
+			name:     "URL without /v1 gets it appended",
+			apiBase:  "https://api.example.com/anthropic",
+			expected: "https://api.example.com/anthropic/v1",
+		},
+		{
+			name:     "URL with /v1 remains unchanged",
+			apiBase:  "https://api.example.com/v1",
+			expected: "https://api.example.com/v1",
+		},
+		{
+			name:     "URL with trailing slash gets cleaned",
+			apiBase:  "https://api.example.com/anthropic/",
+			expected: "https://api.example.com/anthropic/v1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeBaseURL(tt.apiBase)
+			if got != tt.expected {
+				t.Errorf("normalizeBaseURL(%q) = %q, want %q", tt.apiBase, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestNewProvider(t *testing.T) {
+	provider := NewProvider("test-key", "https://api.example.com")
+	if provider == nil {
+		t.Fatal("NewProvider() returned nil")
+	}
+	if provider.apiKey != "test-key" {
+		t.Errorf("provider.apiKey = %q, want %q", provider.apiKey, "test-key")
+	}
+	if provider.apiBase != "https://api.example.com/v1" {
+		t.Errorf("provider.apiBase = %q, want %q", provider.apiBase, "https://api.example.com/v1")
+	}
+}
+
+func TestGetDefaultModel(t *testing.T) {
+	provider := NewProvider("test-key", "")
+	got := provider.GetDefaultModel()
+	expected := "claude-sonnet-4.6"
+	if got != expected {
+		t.Errorf("GetDefaultModel() = %q, want %q", got, expected)
+	}
+}
+
+// Mock HTTP server test for integration testing
+func TestProviderChatErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		apiKey     string
+		apiBase    string
+		messages   []Message
+		wantErrMsg string
+	}{
+		{
+			name:       "missing API base",
+			apiKey:     "test-key",
+			apiBase:    "",
+			messages:   []Message{{Role: "user", Content: "Test"}},
+			wantErrMsg: "API base not configured",
+		},
+		{
+			name:       "missing API key",
+			apiKey:     "",
+			apiBase:    "https://api.example.com",
+			messages:   []Message{{Role: "user", Content: "Test"}},
+			wantErrMsg: "API key not configured",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create provider with empty apiBase to trigger error
+			provider := &Provider{
+				apiKey:  tt.apiKey,
+				apiBase: tt.apiBase,
+			}
+
+			_, err := provider.Chat(context.Background(), tt.messages, nil, "test-model", nil)
+			if err == nil {
+				t.Fatal("Chat() expected error, got nil")
+			}
+			if err.Error() != tt.wantErrMsg {
+				t.Errorf("Chat() error = %q, want %q", err.Error(), tt.wantErrMsg)
+			}
+		})
+	}
+}
