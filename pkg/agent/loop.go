@@ -1754,6 +1754,9 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 		}
 
 		rt.ClearHistory = func() error {
+			if opts == nil {
+				return fmt.Errorf("process options not available")
+			}
 			if agent.Sessions == nil {
 				return fmt.Errorf("sessions not initialized for agent")
 			}
