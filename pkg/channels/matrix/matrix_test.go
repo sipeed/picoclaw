@@ -1,0 +1,291 @@
+package matrix
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
+)
+
+func TestMatrixLocalpartMentionRegexp(t *testing.T) {
+	re := localpartMentionRegexp("picoclaw")
+
+	cases := []struct {
+		text string
+		want bool
+	}{
+		{text: "@picoclaw hello", want: true},
+		{text: "hi @picoclaw:matrix.org", want: true},
+		{
+			text: "\u6b22\u8fce\u4e00\u4e0bpicoclaw\u5c0f\u9f99\u867e",
+			want: false, // historical false-positive case in PR #356
+		},
+		{text: "mail test@example.com", want: false},
+	}
+
+	for _, tc := range cases {
+		if got := re.MatchString(tc.text); got != tc.want {
+			t.Fatalf("text=%q match=%v want=%v", tc.text, got, tc.want)
+		}
+	}
+}
+
+func TestStripUserMention(t *testing.T) {
+	userID := id.UserID("@picoclaw:matrix.org")
+
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{in: "@picoclaw:matrix.org hello", want: "hello"},
+		{in: "@picoclaw, hello", want: "hello"},
+		{in: "no mention here", want: "no mention here"},
+	}
+
+	for _, tc := range cases {
+		if got := stripUserMention(tc.in, userID); got != tc.want {
+			t.Fatalf("stripUserMention(%q)=%q want=%q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestIsBotMentioned(t *testing.T) {
+	ch := &MatrixChannel{
+		client: &mautrix.Client{
+			UserID: id.UserID("@picoclaw:matrix.org"),
+		},
+	}
+
+	cases := []struct {
+		name string
+		msg  event.MessageEventContent
+		want bool
+	}{
+		{
+			name: "mentions field",
+			msg: event.MessageEventContent{
+				Body: "hello",
+				Mentions: &event.Mentions{
+					UserIDs: []id.UserID{id.UserID("@picoclaw:matrix.org")},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "full user id in body",
+			msg: event.MessageEventContent{
+				Body: "@picoclaw:matrix.org hello",
+			},
+			want: true,
+		},
+		{
+			name: "localpart with at sign",
+			msg: event.MessageEventContent{
+				Body: "@picoclaw hello",
+			},
+			want: true,
+		},
+		{
+			name: "localpart without at sign should not match",
+			msg: event.MessageEventContent{
+				Body: "\u6b22\u8fce\u4e00\u4e0bpicoclaw\u5c0f\u9f99\u867e",
+			},
+			want: false,
+		},
+		{
+			name: "formatted mention href matrix.to plain",
+			msg: event.MessageEventContent{
+				Body:          "hello bot",
+				FormattedBody: `<a href="https://matrix.to/#/@picoclaw:matrix.org">PicoClaw</a> hello`,
+			},
+			want: true,
+		},
+		{
+			name: "formatted mention href matrix.to encoded",
+			msg: event.MessageEventContent{
+				Body:          "hello bot",
+				FormattedBody: `<a href="https://matrix.to/#/%40picoclaw%3Amatrix.org">PicoClaw</a> hello`,
+			},
+			want: true,
+		},
+	}
+
+	for _, tc := range cases {
+		if got := ch.isBotMentioned(&tc.msg); got != tc.want {
+			t.Fatalf("%s: got=%v want=%v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestRoomKindCache_ExpiresEntries(t *testing.T) {
+	cache := newRoomKindCache(4, 5*time.Second)
+	now := time.Unix(100, 0)
+	cache.set("!room:matrix.org", true, now)
+
+	if got, ok := cache.get("!room:matrix.org", now.Add(2*time.Second)); !ok || !got {
+		t.Fatalf("expected cached group room before ttl, got ok=%v group=%v", ok, got)
+	}
+
+	if _, ok := cache.get("!room:matrix.org", now.Add(6*time.Second)); ok {
+		t.Fatal("expected cache miss after ttl expiry")
+	}
+}
+
+func TestRoomKindCache_EvictsOldestWhenFull(t *testing.T) {
+	cache := newRoomKindCache(2, time.Minute)
+	now := time.Unix(200, 0)
+
+	cache.set("!room1:matrix.org", false, now)
+	cache.set("!room2:matrix.org", false, now.Add(1*time.Second))
+	cache.set("!room3:matrix.org", true, now.Add(2*time.Second))
+
+	if _, ok := cache.get("!room1:matrix.org", now.Add(2*time.Second)); ok {
+		t.Fatal("expected oldest cache entry to be evicted")
+	}
+	if got, ok := cache.get("!room2:matrix.org", now.Add(2*time.Second)); !ok || got {
+		t.Fatalf("expected room2 to remain and be direct, got ok=%v group=%v", ok, got)
+	}
+	if got, ok := cache.get("!room3:matrix.org", now.Add(2*time.Second)); !ok || !got {
+		t.Fatalf("expected room3 to remain and be group, got ok=%v group=%v", ok, got)
+	}
+}
+
+func TestMatrixMediaTempDir(t *testing.T) {
+	dir, err := matrixMediaTempDir()
+	if err != nil {
+		t.Fatalf("matrixMediaTempDir failed: %v", err)
+	}
+	if filepath.Base(dir) != matrixMediaTempDirName {
+		t.Fatalf("unexpected media dir base: %q", filepath.Base(dir))
+	}
+
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("media dir not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected directory, got mode=%v", info.Mode())
+	}
+}
+
+func TestMatrixMediaExt(t *testing.T) {
+	if got := matrixMediaExt("photo.png", "", "image"); got != ".png" {
+		t.Fatalf("filename extension mismatch: got=%q", got)
+	}
+	if got := matrixMediaExt("", "image/webp", "image"); got != ".webp" {
+		t.Fatalf("content-type extension mismatch: got=%q", got)
+	}
+	if got := matrixMediaExt("", "", "image"); got != ".jpg" {
+		t.Fatalf("default image extension mismatch: got=%q", got)
+	}
+	if got := matrixMediaExt("", "", "audio"); got != ".ogg" {
+		t.Fatalf("default audio extension mismatch: got=%q", got)
+	}
+	if got := matrixMediaExt("", "", "video"); got != ".mp4" {
+		t.Fatalf("default video extension mismatch: got=%q", got)
+	}
+	if got := matrixMediaExt("", "", "file"); got != ".bin" {
+		t.Fatalf("default file extension mismatch: got=%q", got)
+	}
+}
+
+func TestExtractInboundContent_ImageNoURLFallback(t *testing.T) {
+	ch := &MatrixChannel{}
+	msg := &event.MessageEventContent{
+		MsgType: event.MsgImage,
+		Body:    "test.png",
+	}
+
+	content, mediaRefs, ok := ch.extractInboundContent(context.Background(), msg, "matrix:room:event")
+	if !ok {
+		t.Fatal("expected ok for image fallback")
+	}
+	if content != "[image: test.png]" {
+		t.Fatalf("unexpected content: %q", content)
+	}
+	if len(mediaRefs) != 0 {
+		t.Fatalf("expected no media refs, got %d", len(mediaRefs))
+	}
+}
+
+func TestExtractInboundContent_AudioNoURLFallback(t *testing.T) {
+	ch := &MatrixChannel{}
+	msg := &event.MessageEventContent{
+		MsgType:  event.MsgAudio,
+		FileName: "voice.ogg",
+		Body:     "please transcribe",
+	}
+
+	content, mediaRefs, ok := ch.extractInboundContent(context.Background(), msg, "matrix:room:event")
+	if !ok {
+		t.Fatal("expected ok for audio fallback")
+	}
+	if content != "please transcribe\n[audio: voice.ogg]" {
+		t.Fatalf("unexpected content: %q", content)
+	}
+	if len(mediaRefs) != 0 {
+		t.Fatalf("expected no media refs, got %d", len(mediaRefs))
+	}
+}
+
+func TestMatrixOutboundMsgType(t *testing.T) {
+	cases := []struct {
+		name        string
+		partType    string
+		filename    string
+		contentType string
+		want        event.MessageType
+	}{
+		{name: "explicit image", partType: "image", want: event.MsgImage},
+		{name: "explicit audio", partType: "audio", want: event.MsgAudio},
+		{name: "mime fallback video", contentType: "video/mp4", want: event.MsgVideo},
+		{name: "extension fallback audio", filename: "voice.ogg", want: event.MsgAudio},
+		{name: "unknown defaults file", filename: "report.txt", want: event.MsgFile},
+	}
+
+	for _, tc := range cases {
+		if got := matrixOutboundMsgType(tc.partType, tc.filename, tc.contentType); got != tc.want {
+			t.Fatalf("%s: got=%q want=%q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestMatrixOutboundContent(t *testing.T) {
+	content := matrixOutboundContent(
+		"please review",
+		"voice.ogg",
+		event.MsgAudio,
+		"audio/ogg",
+		1234,
+		id.ContentURIString("mxc://matrix.org/abc"),
+	)
+	if content.Body != "please review" {
+		t.Fatalf("unexpected body: %q", content.Body)
+	}
+	if content.FileName != "voice.ogg" {
+		t.Fatalf("unexpected filename: %q", content.FileName)
+	}
+	if content.Info == nil || content.Info.MimeType != "audio/ogg" {
+		t.Fatalf("unexpected content type: %+v", content.Info)
+	}
+	if content.Info == nil || content.Info.Size != 1234 {
+		t.Fatalf("unexpected size: %+v", content.Info)
+	}
+
+	noCaption := matrixOutboundContent(
+		"",
+		"image.png",
+		event.MsgImage,
+		"image/png",
+		0,
+		id.ContentURIString("mxc://matrix.org/def"),
+	)
+	if noCaption.Body != "image.png" {
+		t.Fatalf("unexpected fallback body: %q", noCaption.Body)
+	}
+}

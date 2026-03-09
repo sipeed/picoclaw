@@ -18,9 +18,11 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace    string
-	skillsLoader *skills.SkillsLoader
-	memory       *MemoryStore
+	workspace          string
+	skillsLoader       *skills.SkillsLoader
+	memory             *MemoryStore
+	toolDiscoveryBM25  bool
+	toolDiscoveryRegex bool
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -39,6 +41,12 @@ type ContextBuilder struct {
 	// build time. This catches nested file creations/deletions/mtime changes
 	// that may not update the top-level skill root directory mtime.
 	skillFilesAtCache map[string]time.Time
+}
+
+func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuilder {
+	cb.toolDiscoveryBM25 = useBM25
+	cb.toolDiscoveryRegex = useRegex
+	return cb
 }
 
 func getGlobalConfigDir() string {
@@ -71,6 +79,7 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 
 func (cb *ContextBuilder) getIdentity() string {
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
+	toolDiscovery := cb.getDiscoveryRule()
 
 	return fmt.Sprintf(`# picoclaw 🦞
 
@@ -90,8 +99,29 @@ Your workspace is at: %s
 
 3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
 
-4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
-		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
+4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
+
+%s`,
+		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
+}
+
+func (cb *ContextBuilder) getDiscoveryRule() string {
+	if !cb.toolDiscoveryBM25 && !cb.toolDiscoveryRegex {
+		return ""
+	}
+
+	var toolNames []string
+	if cb.toolDiscoveryBM25 {
+		toolNames = append(toolNames, `"tool_search_tool_bm25"`)
+	}
+	if cb.toolDiscoveryRegex {
+		toolNames = append(toolNames, `"tool_search_tool_regex"`)
+	}
+
+	return fmt.Sprintf(
+		`5. **Tool Discovery** - Your visible tools are limited to save memory, but a vast hidden library exists. If you lack the right tool for a task, BEFORE giving up, you MUST search using the %s tool. Do not refuse a request unless the search returns nothing. Found tools will temporarily unlock for your next turn.`,
+		strings.Join(toolNames, " or "),
+	)
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
