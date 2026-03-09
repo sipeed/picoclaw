@@ -98,7 +98,8 @@
       "encrypt_key": "",
       "verification_token": "",
       "allow_from": [],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "random_reaction_emoji": []
     },
     "dingtalk": {
       "enabled": false,
@@ -112,6 +113,23 @@
       "bot_token": "xoxb-YOUR-BOT-TOKEN",
       "app_token": "xapp-YOUR-APP-TOKEN",
       "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "matrix": {
+      "enabled": false,
+      "homeserver": "https://matrix.org",
+      "user_id": "@your-bot:matrix.org",
+      "access_token": "YOUR_MATRIX_ACCESS_TOKEN",
+      "device_id": "",
+      "join_on_invite": true,
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
       "reasoning_channel_id": ""
     },
     "line": {
@@ -176,8 +194,13 @@
       "nickserv_password": "",
       "sasl_user": "",
       "sasl_password": "",
-      "channels": ["#mychannel"],
-      "request_caps": ["server-time", "message-tags"],
+      "channels": [
+        "#mychannel"
+      ],
+      "request_caps": [
+        "server-time",
+        "message-tags"
+      ],
       "allow_from": [],
       "group_trigger": {
         "mention_only": true
@@ -298,6 +321,13 @@
     },
     "mcp": {
       "enabled": false,
+      "discovery": {
+        "enabled": false,
+        "ttl": 5,
+        "max_search_results": 5,
+        "use_bm25": true,
+        "use_regex": false
+      },
       "servers": {
         "context7": {
           "enabled": false,

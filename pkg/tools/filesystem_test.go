@@ -18,7 +18,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0o644)
 
-	tool := NewReadFileTool("", false)
+	tool := NewReadFileTool("", false, MaxReadFileSize)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": testFile,
@@ -45,7 +45,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 
 // TestFilesystemTool_ReadFile_NotFound verifies error handling for missing file
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
-	tool := NewReadFileTool("", false)
+	tool := NewReadFileTool("", false, MaxReadFileSize)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/nonexistent_file_12345.txt",
@@ -59,7 +59,7 @@ func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 	}
 
 	// Should contain error message
-	if !strings.Contains(result.ForLLM, "failed to read") && !strings.Contains(result.ForUser, "failed to read") {
+	if !strings.Contains(result.ForLLM, "failed to open file") && !strings.Contains(result.ForUser, "failed to read") {
 		t.Errorf("Expected error message, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
 	}
 }
@@ -271,7 +271,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 		t.Skipf("symlink not supported in this environment: %v", err)
 	}
 
-	tool := NewReadFileTool(workspace, true)
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path": link,
 	})
@@ -289,7 +289,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestFilesystemTool_EmptyWorkspace_AccessDenied(t *testing.T) {
-	tool := NewReadFileTool("", true) // restrict=true but workspace=""
+	tool := NewReadFileTool("", true, MaxReadFileSize) // restrict=true but workspace=""
 
 	// Try to read a sensitive file (simulated by a temp file outside workspace)
 	tmpDir := t.TempDir()
@@ -499,7 +499,7 @@ func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
 	// Pattern allows access to the outsideDir.
 	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(outsideDir))}
 
-	tool := NewReadFileTool(workspace, true, patterns)
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
 
 	// Read from whitelisted path should succeed.
 	result := tool.Execute(context.Background(), map[string]any{"path": outsideFile})
@@ -518,5 +518,129 @@ func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
 	result = tool.Execute(context.Background(), map[string]any{"path": otherFile})
 	if !result.IsError {
 		t.Errorf("expected non-whitelisted path to be blocked, got: %s", result.ForLLM)
+	}
+}
+
+// TestReadFileTool_ChunkedReading verifies the pagination logic of the tool
+// by reading a file in multiple chunks using 'offset' and 'length'.
+func TestReadFileTool_ChunkedReading(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "pagination_test.txt")
+
+	// Create a test file with exactly 26 bytes of content
+	fullContent := "abcdefghijklmnopqrstuvwxyz"
+	err := os.WriteFile(testFile, []byte(fullContent), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
+	ctx := context.Background()
+
+	// --- Step 1: Read the first chunk (10 bytes) ---
+	args1 := map[string]any{
+		"path":   testFile,
+		"offset": 0,
+		"length": 10,
+	}
+	result1 := tool.Execute(ctx, args1)
+
+	if result1.IsError {
+		t.Fatalf("Chunk 1 failed: %s", result1.ForLLM)
+	}
+
+	// Expect the first 10 characters
+	if !strings.Contains(result1.ForLLM, "abcdefghij") {
+		t.Errorf("Chunk 1 should contain 'abcdefghij', got: %s", result1.ForLLM)
+	}
+	// Expect the header to indicate the file is truncated
+	if !strings.Contains(result1.ForLLM, "[TRUNCATED") {
+		t.Errorf("Chunk 1 header should indicate truncation, got: %s", result1.ForLLM)
+	}
+	// Expect the header to suggest the next offset (10)
+	if !strings.Contains(result1.ForLLM, "offset=10") {
+		t.Errorf("Chunk 1 header should suggest next offset=10, got: %s", result1.ForLLM)
+	}
+
+	// Step 2: Read the second chunk (10 bytes) ---
+	args2 := map[string]any{
+		"path":   testFile,
+		"offset": 10,
+		"length": 10,
+	}
+	result2 := tool.Execute(ctx, args2)
+
+	if result2.IsError {
+		t.Fatalf("Chunk 2 failed: %s", result2.ForLLM)
+	}
+
+	// Expect the next 10 characters
+	if !strings.Contains(result2.ForLLM, "klmnopqrst") {
+		t.Errorf("Chunk 2 should contain 'klmnopqrst', got: %s", result2.ForLLM)
+	}
+	// Expect the header to suggest the next offset (20)
+	if !strings.Contains(result2.ForLLM, "offset=20") {
+		t.Errorf("Chunk 2 header should suggest next offset=20, got: %s", result2.ForLLM)
+	}
+
+	// Step 3: Read the final chunk (remaining 6 bytes) ---
+	// We ask for 10 bytes, but only 6 are left in the file
+	args3 := map[string]any{
+		"path":   testFile,
+		"offset": 20,
+		"length": 10,
+	}
+	result3 := tool.Execute(ctx, args3)
+
+	if result3.IsError {
+		t.Fatalf("Chunk 3 failed: %s", result3.ForLLM)
+	}
+
+	// Expect the last 6 characters
+	if !strings.Contains(result3.ForLLM, "uvwxyz") {
+		t.Errorf("Chunk 3 should contain 'uvwxyz', got: %s", result3.ForLLM)
+	}
+	// Expect the header to indicate the end of the file
+	if !strings.Contains(result3.ForLLM, "[END OF FILE") {
+		t.Errorf("Chunk 3 header should indicate end of file, got: %s", result3.ForLLM)
+	}
+
+	// Ensure no TRUNCATED message is present in the final chunk
+	if strings.Contains(result3.ForLLM, "[TRUNCATED") {
+		t.Errorf("Chunk 3 header should NOT indicate truncation, got: %s", result3.ForLLM)
+	}
+}
+
+// TestReadFileTool_OffsetBeyondEOF checks the behavior when requesting
+// An offset that exceeds the total file size.
+func TestReadFileTool_OffsetBeyondEOF(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "short.txt")
+
+	// create a file of only 5 bytes
+	err := os.WriteFile(testFile, []byte("12345"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
+	ctx := context.Background()
+
+	args := map[string]any{
+		"path":   testFile,
+		"offset": int64(100), // Offset beyond the end of the file
+	}
+
+	result := tool.Execute(ctx, args)
+
+	// It should not be classified as a tool execution error
+	if result.IsError {
+		t.Errorf("A mistake was not expected, obtained IsError=true: %s", result.ForLLM)
+	}
+
+	// Must return EXACTLY the string provided in the code
+	expectedMsg := "[END OF FILE - no content at this offset]"
+	if result.ForLLM != expectedMsg {
+		t.Errorf("The message %q was expected, obtained: %q", expectedMsg, result.ForLLM)
 	}
 }

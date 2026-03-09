@@ -6,8 +6,9 @@ before:
   hooks:
     - go mod tidy
     - go generate ./...
+    - sh -c 'cd web/frontend && pnpm install && pnpm build:backend'
     - go install github.com/tc-hib/go-winres@latest
-    - go-winres make --in cmd/picoclaw-launcher/winres/winres.json --out cmd/picoclaw-launcher/rsrc --product-version={{ .Version }} --file-version={{ .Version }}
+    - go-winres make --in web/backend/winres/winres.json --out web/backend/rsrc --product-version={{ .Version }} --file-version={{ .Version }}
 
 builds:
   - id: picoclaw
@@ -32,9 +33,13 @@ builds:
       - riscv64
       - loong64
       - arm
+      - s390x
+      - mipsle
     goarm:
       - "6"
       - "7"
+    gomips:
+      - softfloat
     main: ./cmd/picoclaw
     ignore:
       - goos: windows
@@ -59,10 +64,14 @@ builds:
       - riscv64
       - loong64
       - arm
+      - s390x
+      - mipsle
     goarm:
       - "6"
       - "7"
-    main: ./cmd/picoclaw-launcher
+    gomips:
+      - softfloat
+    main: ./web/backend
     ignore:
       - goos: windows
         goarch: arm
@@ -86,9 +95,13 @@ builds:
       - riscv64
       - loong64
       - arm
+      - s390x
+      - mipsle
     goarm:
       - "6"
       - "7"
+    gomips:
+      - softfloat
     main: ./cmd/picoclaw-launcher-tui
     ignore:
       - goos: windows
@@ -103,14 +116,31 @@ dockers_v2:
       - picoclaw
     images:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
-      - "docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}"
+      - '{{ if not (isEnvSet "NIGHTLY_BUILD") }}docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}{{ end }}'
     tags:
       - "{{ .Tag }}"
-      - "latest"
+      - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly{{ else }}latest{{ end }}'
     platforms:
       - linux/amd64
       - linux/arm64
       - linux/riscv64
+
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids:
+        - picoclaw
+        - picoclaw-launcher
+        - picoclaw-launcher-tui
+      sign:
+        certificate: "{{.Env.MACOS_SIGN_P12}}"
+        password: "{{.Env.MACOS_SIGN_PASSWORD}}"
+      notarize:
+        issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
+        key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
+        key: "{{.Env.MACOS_NOTARY_KEY}}"
+        wait: true
+        timeout: 20m
 
 archives:
   - formats: [tar.gz]
@@ -129,7 +159,7 @@ archives:
 
 nfpms:
   - id: picoclaw
-    builds:
+    ids:
       - picoclaw
       - picoclaw-launcher
       - picoclaw-launcher-tui
@@ -149,6 +179,11 @@ nfpms:
       - rpm
       - deb
     bindir: /usr/bin
+    contents:
+      - src: web/picoclaw-launcher.desktop
+        dst: /usr/share/applications/picoclaw-launcher.desktop
+      - src: web/picoclaw-launcher.png
+        dst: /usr/share/icons/hicolor/512x512/apps/picoclaw-launcher.png
 
 changelog:
   sort: asc
