@@ -184,7 +184,7 @@ func (t *ExecTool) Parameters() map[string]any {
 			},
 			"env": map[string]any{
 				"type":        "object",
-				"description": "Additional environment variables to set for this command. Cannot override: PATH, HOME, USER, LOGNAME, SHELL, LD_PRELOAD, LD_LIBRARY_PATH, LD_AUDIT, LD_DEBUG",
+				"description": "Additional environment variables to set for this command. Available: PICOCLAW_HOME, PICOCLAW_CONFIG, PICOCLAW_AGENT_WORKSPACE, PICOCLAW_EXE, PICOCLAW_SERVICE_NAME. Cannot override: PATH, HOME, USER, LOGNAME, SHELL, LD_PRELOAD, LD_LIBRARY_PATH, LD_AUDIT, LD_DEBUG",
 				"additionalProperties": map[string]any{
 					"type": "string",
 				},
