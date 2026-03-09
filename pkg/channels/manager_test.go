@@ -52,7 +52,6 @@ func TestSendMessageWithID_FallsBackToBusWithoutError(t *testing.T) {
 		ChatID:  "1",
 		Content: "hello",
 	})
-
 	if err != nil {
 		t.Fatalf("expected nil error for async fallback, got %v", err)
 	}

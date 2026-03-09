@@ -782,7 +782,12 @@ func parseTelegramMessageIDs(messageID string) ([]int, error) {
 	return ids, nil
 }
 
-func (c *TelegramChannel) editHTMLChunk(ctx context.Context, chatID int64, messageID int, htmlContent, mdFallback string) error {
+func (c *TelegramChannel) editHTMLChunk(
+	ctx context.Context,
+	chatID int64,
+	messageID int,
+	htmlContent, mdFallback string,
+) error {
 	editMsg := tu.EditMessageText(tu.ID(chatID), messageID, htmlContent)
 	editMsg.ParseMode = telego.ModeHTML
 

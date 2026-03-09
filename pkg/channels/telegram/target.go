@@ -61,14 +61,6 @@ func resolveTelegramForumThreadID(isForum bool, messageThreadID int) (int, bool)
 	return messageThreadID, true
 }
 
-func (t telegramTarget) chatIDString() string {
-	return strconv.FormatInt(t.ChatID, 10)
-}
-
-func (t telegramTarget) topicChatID() string {
-	return buildTelegramTopicChatID(t.ChatID, t.MessageThreadID)
-}
-
 func (t telegramTarget) messageThreadIDForSend() (int, bool) {
 	if t.MessageThreadID <= 0 || t.MessageThreadID == telegramGeneralTopicID {
 		return 0, false

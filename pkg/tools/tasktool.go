@@ -19,7 +19,6 @@ type TaskTool struct {
 }
 
 func NewTaskTool(taskManager *session.TaskManager, icons config.TaskToolIconsConfig) *TaskTool {
-
 	return &TaskTool{
 		taskManager: taskManager,
 		icons:       icons,
@@ -130,15 +129,22 @@ func (t *TaskTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	}
 }
 
-func (t *TaskTool) handleCreatePlan(ctx context.Context, sessionKey, channel, chatID string, args map[string]any) *ToolResult {
-	tasksRaw, ok := args["tasks"].([]interface{})
+func (t *TaskTool) handleCreatePlan(
+	ctx context.Context,
+	sessionKey, channel, chatID string,
+	args map[string]any,
+) *ToolResult {
+	tasksRaw, ok := args["tasks"].([]any)
 	if !ok || len(tasksRaw) == 0 {
-		return &ToolResult{ForLLM: "tasktool: tasks array is required and cannot be empty for 'create_plan'", IsError: true}
+		return &ToolResult{
+			ForLLM:  "tasktool: tasks array is required and cannot be empty for 'create_plan'",
+			IsError: true,
+		}
 	}
 
 	var parsedTasks []session.Task
 	for i, raw := range tasksRaw {
-		taskMap, ok := raw.(map[string]interface{})
+		taskMap, ok := raw.(map[string]any)
 		if !ok {
 			return &ToolResult{ForLLM: fmt.Sprintf("tasktool: invalid task at index %d", i), IsError: true}
 		}
@@ -150,7 +156,10 @@ func (t *TaskTool) handleCreatePlan(ctx context.Context, sessionKey, channel, ch
 
 		desc, ok := taskMap["description"].(string)
 		if !ok || desc == "" {
-			return &ToolResult{ForLLM: fmt.Sprintf("tasktool: missing description for task at index %d", i), IsError: true}
+			return &ToolResult{
+				ForLLM:  fmt.Sprintf("tasktool: missing description for task at index %d", i),
+				IsError: true,
+			}
 		}
 
 		parsedTasks = append(parsedTasks, session.Task{
@@ -236,7 +245,11 @@ func (t *TaskTool) handleResendPlan(ctx context.Context, sessionKey, channel, ch
 	return t.newPlanResult(summary, content, delivered, deliveryErr)
 }
 
-func (t *TaskTool) handleUpdateTask(ctx context.Context, sessionKey, channel, chatID string, args map[string]any) *ToolResult {
+func (t *TaskTool) handleUpdateTask(
+	ctx context.Context,
+	sessionKey, channel, chatID string,
+	args map[string]any,
+) *ToolResult {
 	taskID, _ := args["task_id"].(string)
 	if taskID == "" {
 		return &ToolResult{ForLLM: "tasktool: task_id is required for 'update_task'", IsError: true}
@@ -331,15 +344,25 @@ func (t *TaskTool) newPlanResult(summary, content string, delivered bool, delive
 		}
 	}
 
-	forLLM := summary
 	if deliveryErr != nil {
-		forLLM = fmt.Sprintf("%s\nAutomatic delivery failed (%v). Respond to the user with the following plan content:\n\n%s", summary, deliveryErr, content)
-	} else {
-		forLLM = fmt.Sprintf("%s\nAutomatic delivery is unavailable in this context. Respond to the user with the following plan content:\n\n%s", summary, content)
+		return &ToolResult{
+			ForLLM: fmt.Sprintf(
+				"%s\nAutomatic delivery failed (%v). Respond to the user with the following plan content:\n\n%s",
+				summary,
+				deliveryErr,
+				content,
+			),
+			ForUser: content,
+			Silent:  false,
+		}
 	}
 
 	return &ToolResult{
-		ForLLM:  forLLM,
+		ForLLM: fmt.Sprintf(
+			"%s\nAutomatic delivery is unavailable in this context. Respond to the user with the following plan content:\n\n%s",
+			summary,
+			content,
+		),
 		ForUser: content,
 		Silent:  false,
 	}

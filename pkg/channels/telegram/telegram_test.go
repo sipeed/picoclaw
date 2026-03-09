@@ -151,7 +151,10 @@ func TestSendMessageWithID_ShortMessage_SingleCall(t *testing.T) {
 	}
 	ch := newTestChannel(t, caller)
 
-	msgID, err := ch.SendMessageWithID(context.Background(), bus.OutboundMessage{ChatID: "12345", Content: "Hello, world!"})
+	msgID, err := ch.SendMessageWithID(context.Background(), bus.OutboundMessage{
+		ChatID:  "12345",
+		Content: "Hello, world!",
+	})
 
 	assert.NoError(t, err)
 	assert.Equal(t, "1", msgID)
@@ -253,7 +256,10 @@ func TestSendMessageWithID_HTMLFallback_PerChunk(t *testing.T) {
 	}
 	ch := newTestChannel(t, caller)
 
-	msgID, err := ch.SendMessageWithID(context.Background(), bus.OutboundMessage{ChatID: "12345", Content: "Hello **world**"})
+	msgID, err := ch.SendMessageWithID(
+		context.Background(),
+		bus.OutboundMessage{ChatID: "12345", Content: "Hello **world**"},
+	)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "1", msgID)
@@ -306,10 +312,18 @@ func TestSendMessageWithID_MarkdownShortButHTMLLong_MultipleCalls(t *testing.T) 
 	markdownContent := strings.Repeat("**a** ", 600)
 	assert.LessOrEqual(t, len([]rune(markdownContent)), 4000)
 
-	msgID, err := ch.SendMessageWithID(context.Background(), bus.OutboundMessage{ChatID: "12345", Content: markdownContent})
+	msgID, err := ch.SendMessageWithID(
+		context.Background(),
+		bus.OutboundMessage{ChatID: "12345", Content: markdownContent},
+	)
 
 	assert.NoError(t, err)
-	assert.Greater(t, len(caller.calls), 1, "markdown-short but HTML-long message should be split into multiple SendMessage calls")
+	assert.Greater(
+		t,
+		len(caller.calls),
+		1,
+		"markdown-short but HTML-long message should be split into multiple SendMessage calls",
+	)
 	assert.Equal(t, "1,2", msgID)
 }
 
@@ -458,7 +472,10 @@ func TestSendMessageWithID_InvalidChatID(t *testing.T) {
 	}
 	ch := newTestChannel(t, caller)
 
-	msgID, err := ch.SendMessageWithID(context.Background(), bus.OutboundMessage{ChatID: "not-a-number", Content: "Hello"})
+	msgID, err := ch.SendMessageWithID(
+		context.Background(),
+		bus.OutboundMessage{ChatID: "not-a-number", Content: "Hello"},
+	)
 
 	assert.Error(t, err)
 	assert.Empty(t, msgID)

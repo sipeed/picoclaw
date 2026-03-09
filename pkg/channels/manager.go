@@ -142,12 +142,16 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 			if msg.ReplyToMessageID != "" {
 				if deleter, ok := ch.(MessageDeleter); ok {
 					if err := deleter.DeleteMessage(ctx, msg.ChatID, entry.id); err != nil {
-						logger.WarnCF("manager", "Failed to delete placeholder before reply-targeted send", map[string]any{
-							"channel":        name,
-							"chat_id":        msg.ChatID,
-							"placeholder_id": entry.id,
-							"error":          err.Error(),
-						})
+						logger.WarnCF(
+							"manager",
+							"Failed to delete placeholder before reply-targeted send",
+							map[string]any{
+								"channel":        name,
+								"chat_id":        msg.ChatID,
+								"placeholder_id": entry.id,
+								"error":          err.Error(),
+							},
+						)
 					}
 				}
 				return false

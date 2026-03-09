@@ -93,6 +93,10 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 
 	currentChannel := ToolChannel(ctx)
 	currentChatID := ToolChatID(ctx)
+	sameTarget := currentChannel != "" &&
+		currentChatID != "" &&
+		channel == currentChannel &&
+		chatID == currentChatID
 	replyMode, _ := args["reply_mode"].(string)
 	replyMode = strings.ToLower(strings.TrimSpace(replyMode))
 	explicitReplyTo, _ := args["reply_to_message_id"].(string)
@@ -106,7 +110,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 			"reply_to_message_id": explicitReplyTo,
 		})
 	}
-	if currentChannel != "" && currentChatID != "" && channel == currentChannel && chatID == currentChatID {
+	if sameTarget {
 		logger.InfoCF("tool", "Message tool targeting current conversation", map[string]any{
 			"channel":     channel,
 			"chat_id":     chatID,
@@ -150,7 +154,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		"chat_id":             chatID,
 		"content_len":         len(content),
 		"reply_to_message_id": replyToMessageID,
-		"same_target":         currentChannel != "" && currentChatID != "" && channel == currentChannel && chatID == currentChatID,
+		"same_target":         sameTarget,
 	})
 
 	// Silent: user already received the message directly
