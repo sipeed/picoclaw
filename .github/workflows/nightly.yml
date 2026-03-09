@@ -187,7 +187,7 @@ jobs:
           OLD_NIGHTLY_VERSIONS=$(gh api -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             /user/packages/container/picoclaw/versions \
-            --jq ".[] | select(.metadata.container.tags[] | startswith(\"nightly-\") and (. != \"nightly\") and (. != \"$TAG\")) | .id" 2>/dev/null || true)
+            --jq ". | map(select(any(.metadata.container.tags[]; startswith(\"nightly-\") and (. != \"nightly\") and (. != \"$TAG\"))) | .id) | unique[]" 2>/dev/null || true)
 
           for version_id in $OLD_NIGHTLY_VERSIONS; do
             if [ -n "$version_id" ]; then
