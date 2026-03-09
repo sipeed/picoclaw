@@ -263,7 +263,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	// Use sanitized environment - merge cached env with exec time vars and LLM extra env
 	// Note: cachedEnv is NOT re-filtered - PICOCLAW_* vars are preserved
-	cmd.Env = shell.MergeEnvVars(t.cachedEnv, execTimeEnv, extraEnv)
+	cmd.Env = shell.MapToEnvSlice(shell.MergeEnvVars(t.cachedEnv, execTimeEnv, extraEnv))
 
 	if cwd != "" {
 		cmd.Dir = cwd

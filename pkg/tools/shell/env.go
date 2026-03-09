@@ -17,45 +17,39 @@ import (
 // Note: Do NOT add wildcard patterns like "*_API_KEY" here - use explicit names
 // to avoid accidentally leaking secrets.
 var DefaultEnvAllowlist = map[string]bool{
-	"PATH":            true,
-	"HOME":            true,
-	"USER":            true,
-	"LANG":            true,
-	"SHELL":           true,
-	"TERM":            true,
-	"PWD":             true,
-	"OLDPWD":          true,
-	"HOSTNAME":        true,
-	"LOGNAME":         true,
-	"TZ":              true,
-	"DISPLAY":         true,
-	"TMPDIR":       true,
-	"EDITOR":       true,
-	"PAGER":        true,
-	"HTTP_PROXY":   true,
-	"HTTPS_PROXY":  true,
-	"NO_PROXY":     true,
+	"PATH":        true,
+	"HOME":        true,
+	"USER":        true,
+	"LANG":        true,
+	"SHELL":       true,
+	"TERM":        true,
+	"PWD":         true,
+	"OLDPWD":      true,
+	"HOSTNAME":    true,
+	"LOGNAME":     true,
+	"TZ":          true,
+	"DISPLAY":     true,
+	"TMPDIR":      true,
+	"EDITOR":      true,
+	"PAGER":       true,
+	"HTTP_PROXY":  true,
+	"HTTPS_PROXY": true,
+	"NO_PROXY":    true,
 
 	// Locale
-	"LC_ALL":          true,
-	"LC_CTYPE":        true,
-	"LC_MESSAGES":     true,
-	"LC_MONETARY":     true,
-	"LC_NUMERIC":      true,
-	"LC_TIME":         true,
-	"LC_PAPER":        true,
-	"LC_NAME":         true,
-	"LC_ADDRESS":      true,
-	"LC_TELEPHONE":    true,
-	"LC_MEASUREMENT":  true,
+	"LC_ALL":            true,
+	"LC_CTYPE":          true,
+	"LC_MESSAGES":       true,
+	"LC_MONETARY":       true,
+	"LC_NUMERIC":        true,
+	"LC_TIME":           true,
+	"LC_PAPER":          true,
+	"LC_NAME":           true,
+	"LC_ADDRESS":        true,
+	"LC_TELEPHONE":      true,
+	"LC_MEASUREMENT":    true,
 	"LC_IDENTIFICATION": true,
-	"LC_COLLATE":      true,
-}
-
-// defaultEnvAllowPrefixes are env var prefixes that are always allowed.
-// Currently empty - all allowed vars are explicit in DefaultEnvAllowlist.
-var defaultEnvAllowPrefixes = []string{
-	// Currently empty - all allowed vars are explicit
+	"LC_COLLATE":        true,
 }
 
 // LLMBlocklist is the set of environment variable names that the LLM
@@ -65,21 +59,21 @@ var LLMBlocklist = map[string]bool{
 	"PATH":            true, // Could hijack command resolution
 	"HOME":            true, // Could redirect file access
 	"USER":            true, // Could impersonate user
-	"LOGNAME":        true, // Could impersonate user
+	"LOGNAME":         true, // Could impersonate user
 	"SHELL":           true, // Could change shell behavior
 	"LD_PRELOAD":      true, // Could inject code
 	"LD_LIBRARY_PATH": true, // Could hijack library resolution
-	"LD_AUDIT":       true, // Could inject code
-	"LD_DEBUG":       true, // Could leak info
+	"LD_AUDIT":        true, // Could inject code
+	"LD_DEBUG":        true, // Could leak info
 
 	// PICOCLAW_* vars - controlled by the agent, not LLM
-	"PICOCLAW_HOME":             true,
-	"PICOCLAW_CONFIG":           true,
-	"PICOCLAW_AGENT_WORKSPACE":  true,
-	"PICOCLAW_EXE":              true,
-	"PICOCLAW_SERVICE_NAME":     true,
-	"PICOCLAW_EXEC_TIME":        true,
-	"PICOCLAW_EXEC_TIMEOUT":     true,
+	"PICOCLAW_HOME":            true,
+	"PICOCLAW_CONFIG":          true,
+	"PICOCLAW_AGENT_WORKSPACE": true,
+	"PICOCLAW_EXE":             true,
+	"PICOCLAW_SERVICE_NAME":    true,
+	"PICOCLAW_EXEC_TIME":       true,
+	"PICOCLAW_EXEC_TIMEOUT":    true,
 }
 
 // windowsEnvAllowlist contains additional variables needed on Windows.
@@ -154,11 +148,11 @@ func isBlocked(key string) bool {
 	return false
 }
 
-// MergeEnvVars merges multiple env sources into a final []string for exec.Cmd.Env.
+// MergeEnvVars merges multiple env sources into a map.
 // baseEnv is the cached map from AllowedEnv.
 // envSet provides explicit key=value pairs (config, not filtered).
 // extraEnv provides additional key=value pairs from LLM (filtered by blocklist).
-func MergeEnvVars(baseEnv map[string]string, envSet, extraEnv map[string]string) []string {
+func MergeEnvVars(baseEnv map[string]string, envSet, extraEnv map[string]string) map[string]string {
 	vars := make(map[string]string, len(baseEnv)+len(envSet)+len(extraEnv))
 
 	// Start with base env (already filtered)
@@ -183,74 +177,12 @@ func MergeEnvVars(baseEnv map[string]string, envSet, extraEnv map[string]string)
 		}
 	}
 
-	// Convert to []string for exec.Cmd.Env
-	result := make([]string, 0, len(vars))
-	for k, v := range vars {
-		result = append(result, k+"="+v)
-	}
-	return result
+	return vars
 }
 
-// BuildSanitizedEnv constructs a sanitized environment []string suitable for
-// exec.Cmd.Env. It filters the inherited environment to only allowlisted variables.
-//
-// baseEnv is the inherited environment (e.g., from os.Environ() or cached).
-// If nil, os.Environ() will be used for backwards compatibility.
-// extraAllowlist adds additional variable names to the default allowlist.
-// envSet provides explicit key=value pairs from config (override inherited).
-// extraEnv provides additional key=value pairs from tool call (merged with envSet).
-func BuildSanitizedEnv(baseEnv []string, extraAllowlist []string, envSet, extraEnv map[string]string) []string {
-
-	// Use provided env or fall back to os.Environ
-	inherited := baseEnv
-	if inherited == nil {
-		inherited = os.Environ()
-	}
-
-	allowed := make(map[string]bool, len(DefaultEnvAllowlist)+len(extraAllowlist)+len(windowsEnvAllowlist))
-	for k := range DefaultEnvAllowlist {
-		allowed[envKey(k)] = true
-	}
-	if runtime.GOOS == "windows" {
-		for k := range windowsEnvAllowlist {
-			allowed[envKey(k)] = true
-		}
-	}
-	for _, k := range extraAllowlist {
-		allowed[envKey(k)] = true
-	}
-
-	vars := make(map[string]string, len(allowed)+len(envSet)+len(extraEnv))
-
-	for _, entry := range inherited {
-		k, v, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		norm := envKey(k)
-		if allowed[norm] || isAllowedPrefix(norm) {
-			vars[norm] = v
-		}
-	}
-
-	if envSet != nil {
-		for k, v := range envSet {
-			vars[envKey(k)] = v
-		}
-	}
-
-	// Merge extraEnv (tool call) - highest priority
-	// Filter against LLM blocklist to prevent override of sensitive vars
-	if extraEnv != nil {
-		for k, v := range extraEnv {
-			if LLMBlocklist[envKey(k)] {
-				continue // Skip blocked vars
-			}
-			vars[envKey(k)] = v
-		}
-	}
-
-	// Convert to []string for exec.Cmd.Env
+// MapToEnvSlice converts a map of environment variables to a []string
+// in the format "KEY=value" suitable for exec.Cmd.Env.
+func MapToEnvSlice(vars map[string]string) []string {
 	result := make([]string, 0, len(vars))
 	for k, v := range vars {
 		result = append(result, k+"="+v)
@@ -266,15 +198,6 @@ func envKey(k string) string {
 		return strings.ToUpper(k)
 	}
 	return k
-}
-
-func isAllowedPrefix(name string) bool {
-	for _, prefix := range defaultEnvAllowPrefixes {
-		if strings.HasPrefix(name, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 // WithPicoclawEnvVars ensures PICOCLAW_* vars are set in envSet.
