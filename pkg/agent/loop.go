@@ -1463,7 +1463,7 @@ func (al *AgentLoop) retryLLMCall(
 			return resp, nil
 		}
 		if attempt < maxRetries-1 {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
 		}
 	}
 
@@ -1478,10 +1478,11 @@ func (al *AgentLoop) summarizeBatch(
 	existingSummary string,
 ) (string, error) {
 	const (
-		llmMaxRetries            = 3
-		llmMaxTokens             = 1024
-		llmTemperature           = 0.3
-		fallbackMaxContentLength = 200
+		llmMaxRetries             = 3
+		llmMaxTokens              = 1024
+		llmTemperature            = 0.3
+		fallbackMinContentLength  = 200
+		fallbackMaxContentPercent = 10
 	)
 
 	var sb strings.Builder
@@ -1512,8 +1513,23 @@ func (al *AgentLoop) summarizeBatch(
 		}
 		content := strings.TrimSpace(m.Content)
 		runes := []rune(content)
-		if len(runes) > fallbackMaxContentLength {
-			content = string(runes[:fallbackMaxContentLength]) + "..."
+		if len(runes) == 0 {
+			fallback.WriteString(fmt.Sprintf("%s: ", m.Role))
+			continue
+		}
+
+		keepLength := len(runes) * fallbackMaxContentPercent / 100
+		if keepLength < fallbackMinContentLength {
+			keepLength = fallbackMinContentLength
+		}
+
+		if keepLength > len(runes) {
+			keepLength = len(runes)
+		}
+
+		content = string(runes[:keepLength])
+		if keepLength < len(runes) {
+			content += "..."
 		}
 		fallback.WriteString(fmt.Sprintf("%s: %s", m.Role, content))
 	}
