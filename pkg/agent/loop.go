@@ -168,6 +168,18 @@ func registerSharedTools(
 			agent.Tools.Register(tools.NewSPITool())
 		}
 
+		// Exec tool — created here (not in NewAgentInstance) for
+		// consistent tool registration alongside other shared tools.
+		if cfg.Tools.IsToolEnabled("exec") {
+			restrict := cfg.Agents.Defaults.RestrictToWorkspace
+			execTool, err := tools.NewExecToolWithConfig(agent.Workspace, restrict, cfg)
+			if err != nil {
+				logger.ErrorCF("agent", "Failed to create exec tool", map[string]any{"error": err.Error()})
+			} else {
+				agent.Tools.Register(execTool)
+			}
+		}
+
 		// Message tool
 		if cfg.Tools.IsToolEnabled("message") {
 			messageTool := tools.NewMessageTool()

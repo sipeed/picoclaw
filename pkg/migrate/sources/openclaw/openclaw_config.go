@@ -553,7 +553,6 @@ func (c *OpenClawConfig) ConvertToPicoClaw(sourceHome string) (*PicoClawConfig, 
 			"Auth profiles (API keys, OAuth tokens) not migrated for security - set env vars manually",
 		)
 	}
-
 	return cfg, warnings, nil
 }
 
@@ -1103,10 +1102,6 @@ func (c ToolsConfig) ToStandardTools() config.ToolsConfig {
 		},
 		Cron: config.CronToolsConfig{
 			ExecTimeoutMinutes: c.Cron.ExecTimeoutMinutes,
-		},
-		Exec: config.ExecConfig{
-			EnableDenyPatterns: c.Exec.EnableDenyPatterns,
-			CustomDenyPatterns: c.Exec.CustomDenyPatterns,
 		},
 	}
 }

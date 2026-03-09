@@ -45,34 +45,153 @@ Web tools are used for web search and fetching.
 
 ## Exec Tool
 
-The exec tool is used to execute shell commands.
+The exec tool executes shell commands using an in-process POSIX interpreter with
+AST-based risk classification, environment sanitization, and file-access sandboxing.
 
-| Config                 | Type  | Default | Description                                |
-| ---------------------- | ----- | ------- | ------------------------------------------ |
-| `enable_deny_patterns` | bool  | true    | Enable default dangerous command blocking  |
-| `custom_deny_patterns` | array | []      | Custom deny patterns (regular expressions) |
+### Configuration
 
-### Functionality
+| Config           | Type   | Default    | Description                                                                     |
+| ---------------- | ------ | ---------- | ------------------------------------------------------------------------------- |
+| `risk_threshold` | string | `"medium"` | Maximum allowed risk level: `"low"`, `"medium"`, `"high"`, `"critical"`         |
+| `risk_overrides` | object | `{}`       | Per-command base risk level (command name → level); modifiers can still elevate |
+| `arg_profiles`   | object | `{}`       | Per-command argv normalization rules used before argument modifier matching      |
+| `arg_modifiers`  | object | `{}`       | Per-command argument patterns that adjust risk level                            |
+| `env_allowlist`  | array  | `[]`       | Extra environment variables to expose (extends built-in defaults)               |
+| `env_set`        | object | `{}`       | Explicit `VAR=value` pairs injected into every command                          |
 
-- **`enable_deny_patterns`**: Set to `false` to completely disable the default dangerous command blocking patterns
-- **`custom_deny_patterns`**: Add custom deny regex patterns; commands matching these will be blocked
+### Risk Classification
 
-### Default Blocked Command Patterns
+Every command is parsed into an AST before execution. Each resolved binary is
+looked up in a built-in risk table with four levels:
 
-By default, PicoClaw blocks the following dangerous commands:
+| Level      | Meaning                               | Examples                           |
+| ---------- | ------------------------------------- | ---------------------------------- |
+| `low`      | Read-only / informational             | `echo`, `cat`, `ls`, `date`        |
+| `medium`   | Writes files but limited blast radius | `cp`, `mv`, `mkdir`, `tee`         |
+| `high`     | System-wide side effects              | `apt`, `brew`, `docker`, `mount`   |
+| `critical` | Destructive / privilege escalation    | `sudo`, `rm -rf`, `shutdown`, `dd` |
 
-- Delete commands: `rm -rf`, `del /f/q`, `rmdir /s`
-- Disk operations: `format`, `mkfs`, `diskpart`, `dd if=`, writing to `/dev/sd*`
-- System operations: `shutdown`, `reboot`, `poweroff`
-- Command substitution: `$()`, `${}`, backticks
-- Pipe to shell: `| sh`, `| bash`
-- Privilege escalation: `sudo`, `chmod`, `chown`
-- Process control: `pkill`, `killall`, `kill -9`
-- Remote operations: `curl | sh`, `wget | sh`, `ssh`
-- Package management: `apt`, `yum`, `dnf`, `npm install -g`, `pip install --user`
-- Containers: `docker run`, `docker exec`
-- Git: `git push`, `git force`
-- Other: `eval`, `source *.sh`
+Commands with a risk level **above** `risk_threshold` are blocked before execution.
+
+#### Argument modifiers
+
+Some commands change risk depending on their arguments. For example, `rm` is
+classified as `high` by default, and `rm -rf` is treated as `critical`.
+
+You can add custom argument modifiers via config. Each entry lists tokens that
+must all be present (order-independent) and the resulting level:
+
+```json
+{
+  "arg_modifiers": {
+    "curl": [{ "args": ["--upload-file"], "level": "high" }],
+    "git": [{ "args": ["push", "--force"], "level": "critical" }]
+  }
+}
+```
+
+The **highest matching** modifier wins (built-in and custom are merged).
+
+#### Argument profiles
+
+Argument profiles normalize argv before modifier matching. This is useful when a
+tool accepts multiple flag syntaxes for the same semantic operation, such as
+`curl -XPOST`, `curl -X POST`, and `curl --request=POST`.
+
+Each command profile can enable:
+
+- `split_combined_short`: split grouped flags like `-rf` into `-r`, `-f`
+- `split_long_equals`: split `--flag=value` into `--flag`, `value`
+- `short_attached_value_flags`: split attached short-value forms like `-XPOST`
+- `separate_value_flags`: normalize the token after a flag like `-X post`
+
+Supported value transforms are:
+
+- `identity`: keep the value unchanged
+- `upper`: uppercase the value
+- `lower`: lowercase the value
+
+Example:
+
+```json
+{
+  "arg_profiles": {
+    "curl": {
+      "split_combined_short": true,
+      "split_long_equals": true,
+      "short_attached_value_flags": {
+        "-X": "upper",
+        "-d": "identity",
+        "-T": "identity"
+      },
+      "separate_value_flags": {
+        "-X": "upper",
+        "--request": "upper",
+        "-d": "identity",
+        "--data": "identity",
+        "-T": "identity",
+        "--upload-file": "identity"
+      }
+    }
+  }
+}
+```
+
+Built-in profiles are applied first; config profiles extend or override the
+command's flag maps.
+
+#### Precedence
+
+The final risk level is computed as:
+
+1. **Base level**: `risk_overrides` entry if present, else built-in table, else `medium`.
+2. **Modifiers**: All matching argument modifiers (built-in + custom) are scanned.
+   The highest level that exceeds the base is applied. Modifiers can only elevate,
+   never lower.
+
+This means `"risk_overrides": {"rm": "medium"}` allows plain `rm` at the `medium`
+threshold, but `rm -rf` is still elevated to `critical` by the built-in modifier.
+
+#### Shell wrappers
+
+Shell interpreters (`sh`, `bash`, `zsh`, `dash`, `fish`, `ksh`, `csh`, `tcsh`,
+`powershell`, `pwsh`, `cmd`) are classified as `critical` because they can execute
+arbitrary nested commands that bypass the risk classifier (e.g., `sh -c 'rm -rf /'`).
+
+### Environment Sanitization
+
+The shell interpreter runs with a sanitized environment. Only a safe allowlist
+of variables is exposed (e.g., `PATH`, `HOME`, `LANG`, `TERM`).
+
+- **`env_allowlist`**: Extend the defaults with additional variable names.
+- **`env_set`**: Inject fixed `VAR=value` pairs (overrides real env).
+
+### File-Access Sandboxing
+
+When `restrict_to_workspace` is enabled (the default), the interpreter's
+`OpenHandler` blocks reads and writes outside the configured workspace directory for shell-managed redirections (`>`, `<`, `>>`).
+
+> NOTE: This is not a general filesystem sandbox. External programs invoked by the
+> shell can still perform arbitrary file I/O via their own syscalls; only
+> shell-level redirections are constrained by `OpenHandler`.
+
+### Cron Integration
+
+The cron tool creates its own `ExecTool` via `NewExecToolWithConfig` (with `nil`
+bus), so scheduled commands go through the same risk classifier, env
+sanitization, and sandbox as agent-originated commands. Because there is no bus,
+cron-executed commands always run synchronously regardless of the `background`
+parameter.
+
+### Background Execution
+
+When the LLM passes `background: true`, the exec tool launches the command in a
+goroutine and immediately returns a confirmation to the agent. The result is
+delivered asynchronously via the `AsyncCallback` provided by the tool registry.
+
+If no callback is available (e.g. cron-created instances using
+`NewExecToolWithConfig`), `background: true` falls through to synchronous
+execution.
 
 ### Configuration Example
 
@@ -80,8 +199,34 @@ By default, PicoClaw blocks the following dangerous commands:
 {
   "tools": {
     "exec": {
-      "enable_deny_patterns": true,
-      "custom_deny_patterns": ["\\brm\\s+-r\\b", "\\bkillall\\s+python"]
+      "risk_threshold": "medium",
+      "risk_overrides": {
+        "ffmpeg": "low",
+        "terraform": "critical"
+      },
+      "arg_profiles": {
+        "curl": {
+          "split_combined_short": true,
+          "split_long_equals": true,
+          "short_attached_value_flags": {
+            "-X": "upper",
+            "-d": "identity"
+          },
+          "separate_value_flags": {
+            "-X": "upper",
+            "--request": "upper",
+            "-d": "identity",
+            "--data": "identity"
+          }
+        }
+      },
+      "arg_modifiers": {
+        "curl": [{ "args": ["--upload-file"], "level": "high" }]
+      },
+      "env_allowlist": ["GOPATH", "JAVA_HOME"],
+      "env_set": {
+        "NODE_ENV": "production"
+      }
     }
   }
 }
@@ -213,7 +358,7 @@ All configuration options can be overridden via environment variables with the f
 For example:
 
 - `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
-- `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
+- `PICOCLAW_TOOLS_EXEC_RISK_THRESHOLD=high`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`
 

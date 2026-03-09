@@ -409,8 +409,7 @@ func DefaultConfig() *Config {
 				ToolConfig: ToolConfig{
 					Enabled: true,
 				},
-				EnableDenyPatterns: true,
-				TimeoutSeconds:     60,
+				RiskThreshold: "medium",
 			},
 			Skills: SkillsToolsConfig{
 				ToolConfig: ToolConfig{

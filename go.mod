@@ -30,6 +30,7 @@ require (
 	google.golang.org/protobuf v1.36.11
 	maunium.net/go/mautrix v0.26.3
 	modernc.org/sqlite v1.46.1
+	mvdan.cc/sh/v3 v3.12.0
 )
 
 require (

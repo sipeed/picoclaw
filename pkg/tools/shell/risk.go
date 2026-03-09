@@ -1,0 +1,772 @@
+package shell
+
+import (
+	"fmt"
+	"path/filepath"
+	"runtime"
+	"strings"
+)
+
+// RiskLevel represents the potential danger of a shell command.
+type RiskLevel int
+
+const (
+	RiskLow      RiskLevel = iota // Read-only, informational
+	RiskMedium                    // File modification, network read
+	RiskHigh                      // Destructive, system-modifying
+	RiskCritical                  // Privilege escalation, always dangerous
+)
+
+func (r RiskLevel) String() string {
+	switch r {
+	case RiskLow:
+		return "low"
+	case RiskMedium:
+		return "medium"
+	case RiskHigh:
+		return "high"
+	case RiskCritical:
+		return "critical"
+	default:
+		return "unknown"
+	}
+}
+
+// ParseRiskLevel converts a string to a RiskLevel.
+// Returns an error if the string is unrecognized.
+func ParseRiskLevel(s string) (RiskLevel, error) {
+	switch s {
+	case "low":
+		return RiskLow, nil
+	case "medium":
+		return RiskMedium, nil
+	case "high":
+		return RiskHigh, nil
+	case "critical":
+		return RiskCritical, nil
+	default:
+		return RiskMedium, fmt.Errorf("unknown risk level %q, must be one of: low, medium, high, critical", s)
+	}
+}
+
+// commandRiskTable maps base command names to their default risk level.
+// Commands not in this table default to RiskMedium.
+var commandRiskTable = map[string]RiskLevel{
+	// Low — read-only, informational
+	"ls":        RiskLow,
+	"cat":       RiskLow,
+	"head":      RiskLow,
+	"tail":      RiskLow,
+	"grep":      RiskLow,
+	"egrep":     RiskLow,
+	"fgrep":     RiskLow,
+	"find":      RiskLow,
+	"wc":        RiskLow,
+	"echo":      RiskLow,
+	"printf":    RiskLow,
+	"pwd":       RiskLow,
+	"whoami":    RiskLow,
+	"id":        RiskLow,
+	"date":      RiskLow,
+	"uname":     RiskLow,
+	"hostname":  RiskLow,
+	"env":       RiskLow,
+	"printenv":  RiskLow,
+	"which":     RiskLow,
+	"type":      RiskLow,
+	"file":      RiskLow,
+	"stat":      RiskLow,
+	"readlink":  RiskLow,
+	"realpath":  RiskLow,
+	"basename":  RiskLow,
+	"dirname":   RiskLow,
+	"sort":      RiskLow,
+	"uniq":      RiskLow,
+	"cut":       RiskLow,
+	"tr":        RiskLow,
+	"awk":       RiskLow,
+	"sed":       RiskLow,
+	"diff":      RiskLow,
+	"md5sum":    RiskLow,
+	"sha256sum": RiskLow,
+	"sha1sum":   RiskLow,
+	"xxd":       RiskLow,
+	"od":        RiskLow,
+	"hexdump":   RiskLow,
+	"strings":   RiskLow,
+	"tee":       RiskLow,
+	"xargs":     RiskLow,
+	"true":      RiskLow,
+	"false":     RiskLow,
+	"test":      RiskLow,
+	"[":         RiskLow,
+	"seq":       RiskLow,
+	"yes":       RiskLow,
+	"sleep":     RiskLow,
+	"du":        RiskLow,
+	"df":        RiskLow,
+	"free":      RiskLow,
+	"top":       RiskLow,
+	"ps":        RiskLow,
+	"uptime":    RiskLow,
+	"lsof":      RiskLow,
+	"tree":      RiskLow,
+	"less":      RiskLow,
+	"more":      RiskLow,
+	"jq":        RiskLow,
+	"yq":        RiskLow,
+	"column":    RiskLow,
+	"fold":      RiskLow,
+	"fmt":       RiskLow,
+	"rev":       RiskLow,
+	"tac":       RiskLow,
+	"nl":        RiskLow,
+	"comm":      RiskLow,
+	"join":      RiskLow,
+	"paste":     RiskLow,
+	"expand":    RiskLow,
+	"unexpand":  RiskLow,
+	"man":       RiskLow,
+	"info":      RiskLow,
+	"dig":       RiskLow,
+	"nslookup":  RiskLow,
+	"host":      RiskLow,
+	"ping":      RiskLow,
+	"ss":        RiskLow,
+	"netstat":   RiskLow,
+	"lsblk":     RiskLow,
+	"w":         RiskLow,
+	"who":       RiskLow,
+	"last":      RiskLow,
+	"bc":        RiskLow,
+	"expr":      RiskLow,
+	"time":      RiskLow,
+	"nproc":     RiskLow,
+	"arch":      RiskLow,
+	"getent":    RiskLow,
+
+	// Medium — file modification, network reads, build tools
+	"cp":      RiskMedium,
+	"mv":      RiskMedium,
+	"mkdir":   RiskMedium,
+	"touch":   RiskMedium,
+	"ln":      RiskMedium,
+	"tar":     RiskMedium,
+	"zip":     RiskMedium,
+	"unzip":   RiskMedium,
+	"gzip":    RiskMedium,
+	"gunzip":  RiskMedium,
+	"bzip2":   RiskMedium,
+	"xz":      RiskMedium,
+	"curl":    RiskMedium,
+	"wget":    RiskMedium,
+	"git":     RiskMedium,
+	"make":    RiskMedium,
+	"go":      RiskMedium,
+	"python":  RiskMedium,
+	"python3": RiskMedium,
+	"node":    RiskMedium,
+	"npm":     RiskMedium,
+	"npx":     RiskMedium,
+	"yarn":    RiskMedium,
+	"pnpm":    RiskMedium,
+	"pip":     RiskMedium,
+	"pip3":    RiskMedium,
+	"cargo":   RiskMedium,
+	"rustc":   RiskMedium,
+	"gcc":     RiskMedium,
+	"g++":     RiskMedium,
+	"clang":   RiskMedium,
+	"javac":   RiskMedium,
+	"java":    RiskMedium,
+	"ruby":    RiskMedium,
+	"perl":    RiskMedium,
+	"php":     RiskMedium,
+	"patch":   RiskMedium,
+	"nano":    RiskMedium,
+	"vi":      RiskMedium,
+	"vim":     RiskMedium,
+	"openssl": RiskMedium,
+	"crontab": RiskMedium,
+	"nohup":   RiskMedium,
+	"gpg":     RiskMedium,
+	"sftp":    RiskMedium,
+	"ftp":     RiskMedium,
+
+	// High — destructive, system-modifying
+	"rm":        RiskHigh,
+	"rmdir":     RiskHigh,
+	"chmod":     RiskHigh,
+	"chown":     RiskHigh,
+	"chgrp":     RiskHigh,
+	"kill":      RiskHigh,
+	"pkill":     RiskHigh,
+	"killall":   RiskHigh,
+	"ssh":       RiskHigh,
+	"scp":       RiskHigh,
+	"rsync":     RiskHigh,
+	"docker":    RiskHigh,
+	"kubectl":   RiskHigh,
+	"systemctl": RiskHigh,
+	"service":   RiskHigh,
+	"nc":        RiskHigh,
+	"netcat":    RiskHigh,
+	"ncat":      RiskHigh,
+	"socat":     RiskHigh,
+	"useradd":   RiskHigh,
+	"userdel":   RiskHigh,
+	"usermod":   RiskHigh,
+	"passwd":    RiskHigh,
+	"chroot":    RiskHigh,
+	"truncate":  RiskHigh,
+	"shred":     RiskHigh,
+
+	// Critical — privilege escalation, always dangerous
+	"sudo":      RiskCritical,
+	"su":        RiskCritical,
+	"dd":        RiskCritical,
+	"mkfs":      RiskCritical,
+	"fdisk":     RiskCritical,
+	"parted":    RiskCritical,
+	"mount":     RiskCritical,
+	"umount":    RiskCritical,
+	"shutdown":  RiskCritical,
+	"reboot":    RiskCritical,
+	"poweroff":  RiskCritical,
+	"halt":      RiskCritical,
+	"init":      RiskCritical,
+	"insmod":    RiskCritical,
+	"rmmod":     RiskCritical,
+	"modprobe":  RiskCritical,
+	"iptables":  RiskCritical,
+	"ip6tables": RiskCritical,
+	"nft":       RiskCritical,
+	"chattr":    RiskCritical,
+	"visudo":    RiskCritical,
+	"eval":      RiskCritical,
+	"exec":      RiskCritical,
+	"source":    RiskCritical,
+	".":         RiskCritical,
+
+	// Critical — shell wrappers can execute arbitrary nested commands,
+	// bypassing the risk classifier entirely (e.g. sh -c 'rm -rf /').
+	"sh":   RiskCritical,
+	"bash": RiskCritical,
+	"zsh":  RiskCritical,
+	"dash": RiskCritical,
+	"fish": RiskCritical,
+	"csh":  RiskCritical,
+	"tcsh": RiskCritical,
+	"ksh":  RiskCritical,
+	"pwsh": RiskCritical, // PowerShell Core 7+ (cross-platform)
+}
+
+// ArgModifier describes a condition that elevates a command's risk level.
+// All tokens in Args must be present in the command (order-independent, after
+// flag normalization).
+type ArgModifier struct {
+	Args  []string
+	Level RiskLevel
+}
+
+type FlagValueTransform string
+
+const (
+	FlagValueIdentity FlagValueTransform = "identity"
+	FlagValueUpper    FlagValueTransform = "upper"
+	FlagValueLower    FlagValueTransform = "lower"
+)
+
+func ParseFlagValueTransform(s string) (FlagValueTransform, error) {
+	switch FlagValueTransform(strings.ToLower(s)) {
+	case "", FlagValueIdentity:
+		return FlagValueIdentity, nil
+	case FlagValueUpper:
+		return FlagValueUpper, nil
+	case FlagValueLower:
+		return FlagValueLower, nil
+	default:
+		return "", fmt.Errorf("unknown flag value transform %q, must be one of: identity, upper, lower", s)
+	}
+}
+
+type FlagProfile struct {
+	SplitCombinedShort bool
+	SplitLongEquals    bool
+	ShortAttachedValue map[string]FlagValueTransform
+	SeparateValueFlags map[string]FlagValueTransform
+}
+
+var defaultFlagProfile = FlagProfile{
+	SplitCombinedShort: true,
+	SplitLongEquals:    true,
+}
+
+var commandFlagProfiles = map[string]FlagProfile{
+	"curl": {
+		SplitCombinedShort: true,
+		SplitLongEquals:    true,
+		ShortAttachedValue: map[string]FlagValueTransform{
+			"-X": FlagValueUpper,
+			"-d": FlagValueIdentity,
+			"-T": FlagValueIdentity,
+		},
+		SeparateValueFlags: map[string]FlagValueTransform{
+			"-X":            FlagValueUpper,
+			"--request":     FlagValueUpper,
+			"-d":            FlagValueIdentity,
+			"--data":        FlagValueIdentity,
+			"-T":            FlagValueIdentity,
+			"--upload-file": FlagValueIdentity,
+		},
+	},
+}
+
+// argumentModifiers maps command names to their argument-aware risk adjustments.
+// All matching modifiers are scanned; the highest level wins.
+//
+// Patterns use individual flags (e.g., "-r", "-f") rather than combined forms
+// ("-rf") because normalizeFlags splits combined flags before matching. This
+// means "rm -rf", "rm -fr", "rm -r -f", and "rm -f -r" all match correctly.
+var argumentModifiers = map[string][]ArgModifier{
+	"git": {
+		{Args: []string{"push", "--force"}, Level: RiskCritical},
+		{Args: []string{"push", "-f"}, Level: RiskCritical},
+		{Args: []string{"push"}, Level: RiskHigh},
+		{Args: []string{"reset", "--hard"}, Level: RiskHigh},
+		{Args: []string{"clean", "-f", "-d"}, Level: RiskHigh},
+		{Args: []string{"clean", "-f"}, Level: RiskHigh},
+	},
+	"curl": {
+		{Args: []string{"-X", "POST"}, Level: RiskHigh},
+		{Args: []string{"-X", "PUT"}, Level: RiskHigh},
+		{Args: []string{"-X", "DELETE"}, Level: RiskHigh},
+		{Args: []string{"--request", "POST"}, Level: RiskHigh},
+		{Args: []string{"--request", "PUT"}, Level: RiskHigh},
+		{Args: []string{"--request", "DELETE"}, Level: RiskHigh},
+		{Args: []string{"--data"}, Level: RiskHigh},
+		{Args: []string{"-d"}, Level: RiskHigh},
+		{Args: []string{"--upload-file"}, Level: RiskHigh},
+		{Args: []string{"-T"}, Level: RiskHigh},
+	},
+	"wget": {
+		{Args: []string{"--post-data"}, Level: RiskHigh},
+		{Args: []string{"--post-file"}, Level: RiskHigh},
+	},
+	"npm": {
+		{Args: []string{"install", "-g"}, Level: RiskHigh},
+		{Args: []string{"install", "--global"}, Level: RiskHigh},
+		{Args: []string{"publish"}, Level: RiskHigh},
+	},
+	"pip": {
+		{Args: []string{"install", "--user"}, Level: RiskHigh},
+	},
+	"pip3": {
+		{Args: []string{"install", "--user"}, Level: RiskHigh},
+	},
+	"docker": {
+		{Args: []string{"run", "--privileged"}, Level: RiskCritical},
+		{Args: []string{"run"}, Level: RiskHigh},
+		{Args: []string{"exec"}, Level: RiskHigh},
+		{Args: []string{"rm"}, Level: RiskHigh},
+		{Args: []string{"rmi"}, Level: RiskHigh},
+	},
+	"apt": {
+		{Args: []string{"install"}, Level: RiskHigh},
+		{Args: []string{"remove"}, Level: RiskHigh},
+		{Args: []string{"purge"}, Level: RiskCritical},
+	},
+	"apt-get": {
+		{Args: []string{"install"}, Level: RiskHigh},
+		{Args: []string{"remove"}, Level: RiskHigh},
+		{Args: []string{"purge"}, Level: RiskCritical},
+	},
+	"yum": {
+		{Args: []string{"install"}, Level: RiskHigh},
+		{Args: []string{"remove"}, Level: RiskHigh},
+	},
+	"dnf": {
+		{Args: []string{"install"}, Level: RiskHigh},
+		{Args: []string{"remove"}, Level: RiskHigh},
+	},
+	"rm": {
+		{Args: []string{"-r", "-f"}, Level: RiskCritical},
+	},
+	"kill": {
+		{Args: []string{"-9"}, Level: RiskCritical},
+		{Args: []string{"-KILL"}, Level: RiskCritical},
+		{Args: []string{"-SIGKILL"}, Level: RiskCritical},
+	},
+	"find": {
+		{Args: []string{"-delete"}, Level: RiskHigh},
+		{Args: []string{"-exec"}, Level: RiskHigh},
+	},
+	"sed": {
+		{Args: []string{"-i"}, Level: RiskMedium},
+	},
+	"rsync": {
+		{Args: []string{"--delete"}, Level: RiskCritical},
+	},
+	"crontab": {
+		{Args: []string{"-r"}, Level: RiskHigh},
+	},
+	"ssh": {
+		{Args: []string{"-R"}, Level: RiskHigh},
+		{Args: []string{"-L"}, Level: RiskHigh},
+	},
+	"tar": {
+		{Args: []string{"--to-command"}, Level: RiskCritical},
+	},
+}
+
+// ClassifyCommand determines the risk level of a resolved command.
+// args[0] is the command name (basename), args[1:] are the arguments.
+//
+// Precedence (highest wins):
+//  1. Argument modifiers (built-in, then user-supplied extraModifiers) —
+//     all matching modifiers are scanned; the maximum level is kept.
+//  2. risk_overrides from config — sets the base level for the command,
+//     replacing the built-in table entry. Modifiers can still elevate above it.
+//  3. Built-in commandRiskTable — default base level per command.
+//  4. Commands not in any table default to RiskMedium.
+//
+// This means risk_overrides: {"rm": "medium"} allows plain `rm` but
+// `rm -rf` is still elevated to critical by the built-in modifier.
+func ClassifyCommand(args []string, overrides map[string]string, extraModifiers ...map[string][]ArgModifier) RiskLevel {
+	return classifyCommand(args, overrides, nil, extraModifiers...)
+}
+
+func ClassifyCommandWithProfiles(
+	args []string,
+	overrides map[string]string,
+	extraProfiles map[string]FlagProfile,
+	extraModifiers ...map[string][]ArgModifier,
+) RiskLevel {
+	return classifyCommand(args, overrides, extraProfiles, extraModifiers...)
+}
+
+func classifyCommand(
+	args []string,
+	overrides map[string]string,
+	extraProfiles map[string]FlagProfile,
+	extraModifiers ...map[string][]ArgModifier,
+) RiskLevel {
+	if len(args) == 0 {
+		return RiskMedium
+	}
+
+	cmdName := baseCommand(args[0])
+
+	// Determine base level: override > table > medium default.
+	level, known := commandRiskTable[cmdName]
+	if !known {
+		level = RiskMedium
+	}
+	if overrides != nil {
+		if levelStr, ok := overrides[cmdName]; ok {
+			parsed, err := ParseRiskLevel(levelStr)
+			if err == nil {
+				level = parsed
+			}
+			// Invalid risk level in override: keep table/default level.
+			// Config-time validation catches user errors.
+		}
+	}
+
+	// Normalize args: expand combined short flags like -rf → -r, -f
+	// so that modifiers match regardless of how flags were grouped or ordered.
+	profile := flagProfileFor(cmdName, extraProfiles)
+	normalizedArgs := normalizeFlagsWithProfile(profile, args[1:])
+
+	// Apply built-in modifiers, then user-supplied. Keep the highest match
+	// across all sources. Modifiers can only elevate, never lower.
+	level = applyModifiers(normalizedArgs, cmdName, level, argumentModifiers)
+	for _, extra := range extraModifiers {
+		if extra == nil {
+			continue
+		}
+		level = applyModifiers(normalizedArgs, cmdName, level, extra)
+	}
+
+	return level
+}
+
+// applyModifiers scans all modifiers for cmdName, matches them against
+// normalizedArgs, and returns the highest level that exceeds baseLevel.
+// If no modifier elevates, returns baseLevel unchanged.
+func applyModifiers(
+	normalizedArgs []string,
+	cmdName string,
+	baseLevel RiskLevel,
+	mods map[string][]ArgModifier,
+) RiskLevel {
+	entries, ok := mods[cmdName]
+	if !ok {
+		return baseLevel
+	}
+	result := baseLevel
+	for _, mod := range entries {
+		if matchArgs(normalizedArgs, mod.Args) && mod.Level > result {
+			result = mod.Level
+		}
+	}
+	return result
+}
+
+// IsAllowed returns true if the given risk level is at or below the threshold.
+func IsAllowed(level, threshold RiskLevel) bool {
+	return level <= threshold
+}
+
+// BlockedError is returned when a command is blocked by the risk classifier.
+type BlockedError struct {
+	Command   string
+	Level     RiskLevel
+	Threshold RiskLevel
+	Reason    string
+}
+
+func (e *BlockedError) Error() string {
+	return fmt.Sprintf(
+		"Command blocked by risk classifier: command=%q risk_level=%s threshold=%s reason=%s",
+		e.Command, e.Level, e.Threshold, e.Reason,
+	)
+}
+
+// BlockedCommandError formats a structured error message for the LLM.
+// Deprecated: use BlockedError directly.
+func BlockedCommandError(args []string, level, threshold RiskLevel, reason string) string {
+	return (&BlockedError{
+		Command:   formatCommand(args),
+		Level:     level,
+		Threshold: threshold,
+		Reason:    reason,
+	}).Error()
+}
+
+// NewBlockedError constructs a BlockedError from a command's args.
+func NewBlockedError(args []string, level, threshold RiskLevel, reason string) *BlockedError {
+	return &BlockedError{
+		Command:   formatCommand(args),
+		Level:     level,
+		Threshold: threshold,
+		Reason:    reason,
+	}
+}
+
+func formatCommand(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	cmd := args[0]
+	if len(args) > 1 {
+		end := len(args)
+		if end > 5 {
+			end = 5
+		}
+		for _, a := range args[1:end] {
+			cmd += " " + a
+		}
+		if len(args) > 5 {
+			cmd += " ..."
+		}
+	}
+	return cmd
+}
+
+// NormalizeCommandKeys returns a new map with all keys passed through
+// baseCommand. This ensures user-provided override and modifier keys
+// match the normalized command names used by ClassifyCommand.
+// Duplicate keys after normalization are resolved by last-write-wins.
+func NormalizeCommandKeys[V any](m map[string]V) map[string]V {
+	if len(m) == 0 {
+		return m
+	}
+	normalized := make(map[string]V, len(m))
+	for k, v := range m {
+		normalized[baseCommand(k)] = v
+	}
+	return normalized
+}
+
+func MergeFlagProfiles(base, override FlagProfile) FlagProfile {
+	merged := base
+	merged.SplitCombinedShort = base.SplitCombinedShort || override.SplitCombinedShort
+	merged.SplitLongEquals = base.SplitLongEquals || override.SplitLongEquals
+	merged.ShortAttachedValue = mergeFlagTransformMaps(base.ShortAttachedValue, override.ShortAttachedValue)
+	merged.SeparateValueFlags = mergeFlagTransformMaps(base.SeparateValueFlags, override.SeparateValueFlags)
+	return merged
+}
+
+func mergeFlagTransformMaps(base, override map[string]FlagValueTransform) map[string]FlagValueTransform {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	merged := make(map[string]FlagValueTransform, len(base)+len(override))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range override {
+		merged[k] = v
+	}
+	return merged
+}
+
+func flagProfileFor(cmdName string, extraProfiles map[string]FlagProfile) FlagProfile {
+	profile := defaultFlagProfile
+	if builtIn, ok := commandFlagProfiles[cmdName]; ok {
+		profile = MergeFlagProfiles(profile, builtIn)
+	}
+	if extraProfiles != nil {
+		if extra, ok := extraProfiles[cmdName]; ok {
+			profile = MergeFlagProfiles(profile, extra)
+		}
+	}
+	return profile
+}
+
+// baseCommand extracts the basename from a command path.
+// On Windows, it additionally lowercases the name and strips known
+// executable extensions (.exe, .cmd, .bat, .com) so that
+// "C:\Windows\System32\cmd.exe" resolves to "cmd" in the risk table.
+//
+// On Unix these transformations are NOT applied: commands are
+// case-sensitive and extensions are part of the filename. Stripping
+// them would let an attacker disguise a binary as a known-safe command
+// (e.g., a malicious "ls.exe" classified as low-risk "ls").
+func baseCommand(cmd string) string {
+	name := filepath.Base(cmd)
+	if runtime.GOOS != "windows" {
+		return name
+	}
+	lower := strings.ToLower(name)
+	for _, ext := range []string{".exe", ".cmd", ".bat", ".com"} {
+		if strings.HasSuffix(lower, ext) {
+			return lower[:len(lower)-len(ext)]
+		}
+	}
+	return lower
+}
+
+// normalizeFlags expands/normalizes flag forms according to the command's
+// flag profile so modifier matching works regardless of grouping or
+// flag-value style.
+func normalizeFlags(cmdName string, args []string) []string {
+	profile := flagProfileFor(cmdName, nil)
+	return normalizeFlagsWithProfile(profile, args)
+}
+
+func normalizeFlagsWithProfile(profile FlagProfile, args []string) []string {
+	result := make([]string, 0, len(args)*2)
+	for _, a := range args {
+		if flag, value, ok := splitShortAttachedValue(profile, a); ok {
+			result = append(result, flag)
+			if value != "" {
+				result = append(result, normalizeFlagValue(profile, flag, value))
+			}
+			continue
+		}
+
+		if profile.SplitLongEquals && len(a) > 2 && strings.HasPrefix(a, "--") {
+			if idx := strings.IndexByte(a, '='); idx > 2 {
+				flag := a[:idx]
+				result = append(result, flag)
+				if idx+1 < len(a) {
+					result = append(result, normalizeFlagValue(profile, flag, a[idx+1:]))
+				}
+				continue
+			}
+		}
+
+		if profile.SplitCombinedShort && len(a) > 2 && len(a) <= 4 && a[0] == '-' && a[1] != '-' {
+			for _, ch := range a[1:] {
+				result = append(result, "-"+string(ch))
+			}
+			continue
+		}
+
+		result = append(result, a)
+	}
+
+	return normalizeSeparateFlagValues(profile, result)
+}
+
+func splitShortAttachedValue(profile FlagProfile, arg string) (string, string, bool) {
+	if len(arg) <= 3 || arg[0] != '-' || arg[1] == '-' {
+		return "", "", false
+	}
+
+	flag := arg[:2]
+	if _, ok := profile.ShortAttachedValue[flag]; !ok {
+		return "", "", false
+	}
+
+	if arg[2] == '=' {
+		if len(arg) == 3 {
+			return flag, "", true
+		}
+		return flag, arg[3:], true
+	}
+
+	return flag, arg[2:], true
+}
+
+func normalizeFlagValue(profile FlagProfile, flag, value string) string {
+	if transform, ok := profile.SeparateValueFlags[flag]; ok {
+		return applyFlagValueTransform(transform, value)
+	}
+	if transform, ok := profile.ShortAttachedValue[flag]; ok {
+		return applyFlagValueTransform(transform, value)
+	}
+	return value
+}
+
+func applyFlagValueTransform(transform FlagValueTransform, value string) string {
+	switch transform {
+	case FlagValueUpper:
+		return strings.ToUpper(value)
+	case FlagValueLower:
+		return strings.ToLower(value)
+	case FlagValueIdentity, "":
+		return value
+	default:
+		return value
+	}
+}
+
+func normalizeSeparateFlagValues(profile FlagProfile, args []string) []string {
+	if len(profile.SeparateValueFlags) == 0 {
+		return args
+	}
+
+	normalized := append([]string(nil), args...)
+	for i := 0; i+1 < len(normalized); i++ {
+		transform, ok := profile.SeparateValueFlags[normalized[i]]
+		if !ok {
+			continue
+		}
+		normalized[i+1] = applyFlagValueTransform(transform, normalized[i+1])
+		i++
+	}
+	return normalized
+}
+
+// matchArgs checks if ALL pattern tokens are present in args (order-independent).
+// "git push -x -f" matches pattern ["push", "-f"] because both tokens exist.
+// "git -f push" also matches ["push", "-f"]. Order does not matter.
+func matchArgs(args, pattern []string) bool {
+	if len(pattern) == 0 {
+		return true
+	}
+	argSet := make(map[string]int, len(args))
+	for _, a := range args {
+		argSet[a]++
+	}
+	for _, p := range pattern {
+		if argSet[p] <= 0 {
+			return false
+		}
+		argSet[p]--
+	}
+	return true
+}
