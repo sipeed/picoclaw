@@ -493,6 +493,20 @@ func TestDefaultConfig_DMScope(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_TelegramReactionEmojiDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if len(cfg.Channels.Telegram.AllowedReactionEmoji) != 15 {
+		t.Fatalf("AllowedReactionEmoji len = %d, want 15", len(cfg.Channels.Telegram.AllowedReactionEmoji))
+	}
+	if cfg.Channels.Telegram.AllowedReactionEmoji[0] != "👍" {
+		t.Fatalf("first AllowedReactionEmoji = %q, want %q", cfg.Channels.Telegram.AllowedReactionEmoji[0], "👍")
+	}
+	if !cfg.Tools.Reaction.Enabled {
+		t.Fatal("DefaultConfig().Tools.Reaction.Enabled should be true")
+	}
+}
+
 func TestDefaultConfig_WorkspacePath_Default(t *testing.T) {
 	// Unset to ensure we test the default
 	t.Setenv("PICOCLAW_HOME", "")

@@ -55,7 +55,7 @@ func RunToolLoop(
 		// 1. Build tool definitions
 		var providerToolDefs []providers.ToolDefinition
 		if config.Tools != nil {
-			providerToolDefs = config.Tools.ToProviderDefs()
+			providerToolDefs = config.Tools.ToProviderDefsWithContext(ctx, channel, chatID)
 		}
 
 		// 2. Set default LLM options

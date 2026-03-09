@@ -127,6 +127,13 @@ type SequentialTool interface {
 	ExecuteSequentially() bool
 }
 
+// AvailabilityAwareTool marks tools whose visibility depends on the current
+// request context, such as channel-specific tools.
+type AvailabilityAwareTool interface {
+	Tool
+	Available(ctx context.Context) bool
+}
+
 func ToolToSchema(tool Tool) map[string]any {
 	return map[string]any{
 		"type": "function",

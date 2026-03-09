@@ -57,6 +57,23 @@
       "allow_from": [
         "YOUR_USER_ID"
       ],
+      "allowed_reaction_emoji": [
+        "👍",
+        "👎",
+        "❤️",
+        "🔥",
+        "🥰",
+        "👏",
+        "😁",
+        "🤔",
+        "🤯",
+        "😱",
+        "🤬",
+        "😢",
+        "🎉",
+        "🤩",
+        "🤮"
+      ],
       "reasoning_channel_id": ""
     },
     "discord": {
@@ -430,6 +447,9 @@
       "enabled": true
     },
     "message": {
+      "enabled": true
+    },
+    "reaction": {
       "enabled": true
     },
     "read_file": {

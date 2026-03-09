@@ -141,13 +141,22 @@ func (r *ToolRegistry) sortedToolNames() []string {
 }
 
 func (r *ToolRegistry) GetDefinitions() []map[string]any {
+	return r.GetDefinitionsWithContext(context.Background(), "", "")
+}
+
+func (r *ToolRegistry) GetDefinitionsWithContext(ctx context.Context, channel, chatID string) []map[string]any {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	ctx = availabilityContext(ctx, channel, chatID)
 	sorted := r.sortedToolNames()
 	definitions := make([]map[string]any, 0, len(sorted))
 	for _, name := range sorted {
-		definitions = append(definitions, ToolToSchema(r.tools[name]))
+		tool := r.tools[name]
+		if !toolAvailableInContext(tool, ctx) {
+			continue
+		}
+		definitions = append(definitions, ToolToSchema(tool))
 	}
 	return definitions
 }
@@ -155,13 +164,21 @@ func (r *ToolRegistry) GetDefinitions() []map[string]any {
 // ToProviderDefs converts tool definitions to provider-compatible format.
 // This is the format expected by LLM provider APIs.
 func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
+	return r.ToProviderDefsWithContext(context.Background(), "", "")
+}
+
+func (r *ToolRegistry) ToProviderDefsWithContext(ctx context.Context, channel, chatID string) []providers.ToolDefinition {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	ctx = availabilityContext(ctx, channel, chatID)
 	sorted := r.sortedToolNames()
 	definitions := make([]providers.ToolDefinition, 0, len(sorted))
 	for _, name := range sorted {
 		tool := r.tools[name]
+		if !toolAvailableInContext(tool, ctx) {
+			continue
+		}
 		schema := ToolToSchema(tool)
 
 		// Safely extract nested values with type checks
@@ -184,6 +201,21 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 		})
 	}
 	return definitions
+}
+
+func availabilityContext(ctx context.Context, channel, chatID string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return WithToolContext(ctx, channel, chatID)
+}
+
+func toolAvailableInContext(tool Tool, ctx context.Context) bool {
+	conditional, ok := tool.(AvailabilityAwareTool)
+	if !ok {
+		return true
+	}
+	return conditional.Available(ctx)
 }
 
 // List returns a list of all registered tool names.

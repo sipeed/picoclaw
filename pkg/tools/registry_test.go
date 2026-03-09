@@ -54,6 +54,17 @@ func (m *mockSequentialRegistryTool) ExecuteSequentially() bool {
 	return m.sequential
 }
 
+type mockAvailabilityTool struct {
+	mockRegistryTool
+	allowedChannel string
+	lastCtx        context.Context
+}
+
+func (m *mockAvailabilityTool) Available(ctx context.Context) bool {
+	m.lastCtx = ctx
+	return ToolChannel(ctx) == m.allowedChannel
+}
+
 // --- helpers ---
 
 func newMockTool(name, desc string) *mockRegistryTool {
@@ -292,6 +303,35 @@ func TestToolRegistry_ToProviderDefs(t *testing.T) {
 	}
 	if got.Function.Description != want.Function.Description {
 		t.Errorf("Description: want %q, got %q", want.Function.Description, got.Function.Description)
+	}
+}
+
+func TestToolRegistry_ToProviderDefsWithContext_FiltersUnavailableTools(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(newMockTool("always", "always visible"))
+	rt := &mockAvailabilityTool{
+		mockRegistryTool: *newMockTool("reaction", "telegram only"),
+		allowedChannel:   "telegram",
+	}
+	r.Register(rt)
+
+	defs := r.ToProviderDefsWithContext(context.Background(), "cli", "direct")
+	if len(defs) != 1 {
+		t.Fatalf("defs len = %d, want 1", len(defs))
+	}
+	if defs[0].Function.Name != "always" {
+		t.Fatalf("visible tool = %q, want %q", defs[0].Function.Name, "always")
+	}
+	if rt.lastCtx == nil {
+		t.Fatal("expected availability check to receive context")
+	}
+	if got := ToolChannel(rt.lastCtx); got != "cli" {
+		t.Fatalf("availability context channel = %q, want %q", got, "cli")
+	}
+
+	defs = r.ToProviderDefsWithContext(context.Background(), "telegram", "chat-1")
+	if len(defs) != 2 {
+		t.Fatalf("telegram defs len = %d, want 2", len(defs))
 	}
 }
 

@@ -438,6 +438,42 @@ func (m *taskToolRaceMockProvider) GetDefaultModel() string {
 	return "tasktool-race-mock-model"
 }
 
+type reactionToolMockProvider struct {
+	calls int
+}
+
+func (m *reactionToolMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:   "call_reaction",
+					Name: "reaction",
+					Arguments: map[string]any{
+						"emoji": "❤️",
+					},
+				},
+			},
+		}, nil
+	}
+
+	return &providers.LLMResponse{
+		Content:   "",
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *reactionToolMockProvider) GetDefaultModel() string {
+	return "reaction-tool-mock-model"
+}
+
 type blockingSequentialTaskTool struct {
 	inner         *tools.TaskTool
 	createOnce    sync.Once
@@ -943,6 +979,82 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 	// User-facing tool should include the output in final response
 	if response != "Command output: hello world" {
 		t.Errorf("Expected 'Command output: hello world', got: %s", response)
+	}
+}
+
+func TestReactionTool_SuppressesDefaultFinalResponse(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = tmpDir
+	cfg.Agents.Defaults.Model = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 4
+
+	msgBus := bus.NewMessageBus()
+	provider := &reactionToolMockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	tool, ok := defaultAgent.Tools.Get("reaction")
+	if !ok {
+		t.Fatal("expected reaction tool to be registered")
+	}
+	rt, ok := tool.(*tools.ReactionTool)
+	if !ok {
+		t.Fatalf("reaction tool type = %T", tool)
+	}
+
+	var calls int
+	rt.SetReactionCallback(func(ctx context.Context, channel, chatID, messageID, emoji string) error {
+		calls++
+		if channel != "telegram" || chatID != "chat1" || messageID != "910" || emoji != "❤️" {
+			t.Fatalf("unexpected callback args channel=%q chatID=%q messageID=%q emoji=%q", channel, chatID, messageID, emoji)
+		}
+		return nil
+	})
+
+	response := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:   "telegram",
+		SenderID:  "user1",
+		ChatID:    "chat1",
+		Content:   "thanks",
+		MessageID: "910",
+	})
+
+	if calls != 1 {
+		t.Fatalf("reaction callback calls = %d, want 1", calls)
+	}
+	if response != "" {
+		t.Fatalf("expected empty final response after reaction tool, got %q", response)
+	}
+}
+
+func TestReactionTool_BecomesAvailableForTelegramAfterChannelManagerBinding(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Channels.Telegram.Enabled = true
+
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), nil)
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	before := defaultAgent.Tools.ToProviderDefsWithContext(context.Background(), "telegram", "chat1")
+	if slices.ContainsFunc(before, func(def providers.ToolDefinition) bool { return def.Function.Name == "reaction" }) {
+		t.Fatal("reaction tool should not be available before channel manager binding")
+	}
+
+	al.SetChannelManager(&channels.Manager{})
+
+	after := defaultAgent.Tools.ToProviderDefsWithContext(context.Background(), "telegram", "chat1")
+	if !slices.ContainsFunc(after, func(def providers.ToolDefinition) bool { return def.Function.Name == "reaction" }) {
+		t.Fatal("reaction tool should be available for telegram after channel manager binding")
 	}
 }
 

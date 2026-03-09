@@ -339,6 +339,34 @@ func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, mess
 	return nil
 }
 
+// SetMessageReaction implements channels.MessageReactor.
+func (c *TelegramChannel) SetMessageReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	target, err := parseTelegramTarget(chatID)
+	if err != nil {
+		return fmt.Errorf("invalid chat ID %s: %w", chatID, channels.ErrSendFailed)
+	}
+	messageIDs, err := parseTelegramMessageIDs(messageID)
+	if err != nil {
+		return fmt.Errorf("invalid message ID %s: %w", messageID, channels.ErrSendFailed)
+	}
+	if len(messageIDs) != 1 {
+		return fmt.Errorf("telegram react: expected a single message ID: %w", channels.ErrSendFailed)
+	}
+
+	if err := c.bot.SetMessageReaction(ctx, (&telego.SetMessageReactionParams{}).
+		WithChatID(tu.ID(target.ChatID)).
+		WithMessageID(messageIDs[0]).
+		WithReaction(tu.ReactionEmoji(emoji))); err != nil {
+		return fmt.Errorf("telegram react: %w", channels.ErrTemporary)
+	}
+
+	return nil
+}
+
 // SendPlaceholder implements channels.PlaceholderCapable.
 // It sends a placeholder message (e.g. "Thinking... 💭") that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).

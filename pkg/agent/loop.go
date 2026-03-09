@@ -67,8 +67,9 @@ type processOptions struct {
 }
 
 type agentResponse struct {
-	Content          string
-	ReplyToMessageID string
+	Content           string
+	ReplyToMessageID  string
+	HandledExternally bool
 }
 
 func (r agentResponse) outboundMessage(channel, chatID string) bus.OutboundMessage {
@@ -199,6 +200,9 @@ func registerSharedTools(
 				return msgBus.PublishOutbound(pubCtx, msg)
 			})
 			agent.Tools.Register(messageTool)
+		}
+		if cfg.Tools.IsToolEnabled("reaction") {
+			agent.Tools.Register(tools.NewReactionTool([]string(cfg.Channels.Telegram.AllowedReactionEmoji)))
 		}
 
 		// Send file tool (outbound media via MediaStore — store injected later by SetMediaStore)
@@ -359,30 +363,13 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					response = agentResponse{Content: fmt.Sprintf("Error processing message: %v", err)}
 				}
 
-				if response.Content != "" {
-					// Check if the message tool already sent a response during this round.
-					// If so, skip publishing to avoid duplicate messages to the user.
-					// Use default agent's tools to check (message tool is shared).
-					alreadySent := false
-					defaultAgent := al.registry.GetDefaultAgent()
-					if defaultAgent != nil {
-						if tool, ok := defaultAgent.Tools.Get("message"); ok {
-							if mt, ok := tool.(*tools.MessageTool); ok {
-								alreadySent = mt.HasSentInRound()
-							}
-						}
+				if response.HandledExternally {
+					// A direct tool action (message or reaction) already sent user-facing output.
+					// Stop typing and delete placeholder since no outbound message will trigger preSend.
+					if al.channelManager != nil {
+						al.channelManager.CleanupState(ctx, msg.Channel, msg.ChatID)
 					}
-
-					if !alreadySent {
-						al.bus.PublishOutbound(ctx, response.outboundMessage(msg.Channel, msg.ChatID))
-						logger.InfoCF("agent", "Published outbound response",
-							map[string]any{
-								"channel":             msg.Channel,
-								"chat_id":             msg.ChatID,
-								"content_len":         len(response.Content),
-								"reply_to_message_id": response.ReplyToMessageID,
-							})
-					} else {
+					if response.Content != "" {
 						logger.DebugCF(
 							"agent",
 							"Skipped outbound (message tool already sent)",
@@ -394,6 +381,15 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							},
 						)
 					}
+				} else if response.Content != "" {
+					al.bus.PublishOutbound(ctx, response.outboundMessage(msg.Channel, msg.ChatID))
+					logger.InfoCF("agent", "Published outbound response",
+						map[string]any{
+							"channel":             msg.Channel,
+							"chat_id":             msg.ChatID,
+							"content_len":         len(response.Content),
+							"reply_to_message_id": response.ReplyToMessageID,
+						})
 				}
 			}()
 		}
@@ -417,6 +413,7 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 	al.bindAdvancedMessageManagers(cm)
+	al.bindReactionTools(cm)
 }
 
 // bindAdvancedMessageManagers wires up channel callbacks to any tools that
@@ -442,6 +439,16 @@ func (al *AgentLoop) bindAdvancedMessageManagers(cm *channels.Manager) {
 	})
 }
 
+func (al *AgentLoop) bindReactionTools(cm *channels.Manager) {
+	al.registry.ForEachTool("reaction", func(t tools.Tool) {
+		if rt, ok := t.(*tools.ReactionTool); ok {
+			rt.SetReactionCallback(func(ctx context.Context, channel, chatID, messageID, emoji string) error {
+				return cm.SetMessageReaction(ctx, channel, chatID, messageID, emoji)
+			})
+		}
+	})
+}
+
 // SetMediaStore injects a MediaStore for media lifecycle management.
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
@@ -457,6 +464,39 @@ func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 // SetTranscriber injects a voice transcriber for agent-level audio transcription.
 func (al *AgentLoop) SetTranscriber(t voice.Transcriber) {
 	al.transcriber = t
+}
+
+func (al *AgentLoop) agentTurnHandledByDirectToolAction(agent *AgentInstance) bool {
+	if agent == nil {
+		return false
+	}
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if mt, ok := tool.(*tools.MessageTool); ok && mt.HasSentInRound() {
+			return true
+		}
+	}
+	if tool, ok := agent.Tools.Get("reaction"); ok {
+		if rt, ok := tool.(*tools.ReactionTool); ok && rt.HasHandledInRound() {
+			return true
+		}
+	}
+	return false
+}
+
+func (al *AgentLoop) resetRoundActionTools(agent *AgentInstance) {
+	if agent == nil {
+		return
+	}
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if resetter, ok := tool.(interface{ ResetSentInRound() }); ok {
+			resetter.ResetSentInRound()
+		}
+	}
+	if tool, ok := agent.Tools.Get("reaction"); ok {
+		if resetter, ok := tool.(interface{ ResetHandledInRound() }); ok {
+			resetter.ResetHandledInRound()
+		}
+	}
 }
 
 var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
@@ -644,12 +684,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return agentResponse{}, routeErr
 	}
 
-	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
-	if tool, ok := agent.Tools.Get("message"); ok {
-		if resetter, ok := tool.(interface{ ResetSentInRound() }); ok {
-			resetter.ResetSentInRound()
-		}
-	}
+	al.resetRoundActionTools(agent)
 
 	// Resolve session key from route, while preserving explicit agent-scoped keys.
 	scopeKey := resolveScopeKey(route, msg.SessionKey)
@@ -847,16 +882,19 @@ func (al *AgentLoop) runAgentLoop(
 	// This is controlled by the tool's Silent flag and ForUser content
 
 	// 4. Handle empty response
-	if finalContent == "" {
+	directActionHandled := al.agentTurnHandledByDirectToolAction(agent)
+	if finalContent == "" && !directActionHandled {
 		finalContent = opts.DefaultResponse
 	}
 	response := resolveFinalResponse(opts.Channel, opts.ReplyContext, finalContent)
-	if response.Content == "" {
+	if response.Content == "" && !directActionHandled {
 		response.Content = opts.DefaultResponse
 	}
 
 	// 5. Save final assistant message to session
-	agent.Sessions.AddMessage(opts.SessionKey, "assistant", response.Content)
+	if response.Content != "" {
+		agent.Sessions.AddMessage(opts.SessionKey, "assistant", response.Content)
+	}
 	agent.Sessions.Save(opts.SessionKey)
 
 	// 6. Optional: summarization
@@ -865,7 +903,7 @@ func (al *AgentLoop) runAgentLoop(
 	}
 
 	// 7. Optional: send response via bus
-	if opts.SendResponse {
+	if opts.SendResponse && response.Content != "" {
 		al.bus.PublishOutbound(ctx, response.outboundMessage(opts.Channel, opts.ChatID))
 	}
 
@@ -879,6 +917,7 @@ func (al *AgentLoop) runAgentLoop(
 			"final_length": len(response.Content),
 		})
 
+	response.HandledExternally = directActionHandled
 	return response, nil
 }
 
@@ -1061,7 +1100,7 @@ func (al *AgentLoop) runLLMIteration(
 			})
 
 		// Build tool definitions
-		providerToolDefs := agent.Tools.ToProviderDefs()
+		providerToolDefs := agent.Tools.ToProviderDefsWithContext(ctx, opts.Channel, opts.ChatID)
 
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",

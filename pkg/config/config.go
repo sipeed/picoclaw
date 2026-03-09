@@ -262,16 +262,17 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled            bool                           `json:"enabled"                 env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token              string                         `json:"token"                   env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	BaseURL            string                         `json:"base_url"                env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
-	Proxy              string                         `json:"proxy"                   env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom          FlexibleStringSlice            `json:"allow_from"              env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
-	Groups             map[string]TelegramGroupConfig `json:"groups,omitempty"`
-	GroupTrigger       GroupTriggerConfig             `json:"group_trigger,omitempty"`
-	Typing             TypingConfig                   `json:"typing,omitempty"`
-	Placeholder        PlaceholderConfig              `json:"placeholder,omitempty"`
-	ReasoningChannelID string                         `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+	Enabled              bool                           `json:"enabled"                 env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Token                string                         `json:"token"                   env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	BaseURL              string                         `json:"base_url"                env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
+	Proxy                string                         `json:"proxy"                   env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	AllowFrom            FlexibleStringSlice            `json:"allow_from"              env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	AllowedReactionEmoji FlexibleStringSlice            `json:"allowed_reaction_emoji"  env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOWED_REACTION_EMOJI"`
+	Groups               map[string]TelegramGroupConfig `json:"groups,omitempty"`
+	GroupTrigger         GroupTriggerConfig             `json:"group_trigger,omitempty"`
+	Typing               TypingConfig                   `json:"typing,omitempty"`
+	Placeholder          PlaceholderConfig              `json:"placeholder,omitempty"`
+	ReasoningChannelID   string                         `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
 }
 
 type TelegramTopicConfig struct {
@@ -293,6 +294,30 @@ type FeishuConfig struct {
 	Placeholder         PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID  string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
 	RandomReactionEmoji FlexibleStringSlice `json:"random_reaction_emoji"   env:"PICOCLAW_CHANNELS_FEISHU_RANDOM_REACTION_EMOJI"`
+}
+
+var defaultTelegramReactionEmoji = FlexibleStringSlice{
+	"👍",
+	"👎",
+	"❤️",
+	"🔥",
+	"🥰",
+	"👏",
+	"😁",
+	"🤔",
+	"🤯",
+	"😱",
+	"🤬",
+	"😢",
+	"🎉",
+	"🤩",
+	"🤮",
+}
+
+func DefaultTelegramReactionEmoji() FlexibleStringSlice {
+	emojis := make(FlexibleStringSlice, len(defaultTelegramReactionEmoji))
+	copy(emojis, defaultTelegramReactionEmoji)
+	return emojis
 }
 
 type DiscordConfig struct {
@@ -692,6 +717,7 @@ type ToolsConfig struct {
 	InstallSkill    ToolConfig         `json:"install_skill"                                            envPrefix:"PICOCLAW_TOOLS_INSTALL_SKILL_"`
 	ListDir         ToolConfig         `json:"list_dir"                                                 envPrefix:"PICOCLAW_TOOLS_LIST_DIR_"`
 	Message         ToolConfig         `json:"message"                                                  envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
+	Reaction        ToolConfig         `json:"reaction"                                                 envPrefix:"PICOCLAW_TOOLS_REACTION_"`
 	ReadFile        ReadFileToolConfig `json:"read_file"                                                envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
 	SendFile        ToolConfig         `json:"send_file"                                                envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
 	Spawn           ToolConfig         `json:"spawn"                                                    envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
@@ -970,6 +996,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.ListDir.Enabled
 	case "message":
 		return t.Message.Enabled
+	case "reaction":
+		return t.Reaction.Enabled
 	case "read_file":
 		return t.ReadFile.Enabled
 	case "spawn":
