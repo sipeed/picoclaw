@@ -221,8 +221,14 @@ func setupCronTool(
 	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
 
 	// Create cron service
-	cronService := cron.NewCronService(cronStorePath, nil)
-
+	cronService := cron.NewCronService(
+		cronStorePath,
+		nil,
+		cron.CronConfig{
+			ExecTimeoutMinutes: cfg.Tools.Cron.ExecTimeoutMinutes,
+			DefaultTimezone:    cfg.Tools.Cron.DefaultTimezone,
+		},
+	)
 	// Create and register CronTool
 	cronTool, err := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
 	if err != nil {

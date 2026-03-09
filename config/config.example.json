@@ -243,7 +243,8 @@
       "proxy": ""
     },
     "cron": {
-      "exec_timeout_minutes": 5
+      "exec_timeout_minutes": 5,
+      "default_timezone": "Asia/Shanghai"
     },
     "mcp": {
       "enabled": false,

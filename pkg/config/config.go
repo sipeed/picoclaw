@@ -570,7 +570,8 @@ type WebToolsConfig struct {
 }
 
 type CronToolsConfig struct {
-	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
+	ExecTimeoutMinutes int    `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
+	DefaultTimezone  string `json:"default_timezone" env:"PICOCLAW_TOOLS_CRON_DEFAULT_TIMEZONE"`
 }
 
 type ExecConfig struct {

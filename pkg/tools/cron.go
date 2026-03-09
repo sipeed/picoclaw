@@ -173,6 +173,11 @@ func (t *CronTool) addJob(args map[string]any) *ToolResult {
 			Kind: "cron",
 			Expr: cronExpr,
 		}
+        
+		// Get timezone if present in args
+		if tz, ok := args["timezone"].(string); ok && tz != "" {
+			schedule.TZ = tz  // Set timezone on cron schedule
+		}
 	} else {
 		return ErrorResult("one of at_seconds, every_seconds, or cron_expr is required")
 	}
