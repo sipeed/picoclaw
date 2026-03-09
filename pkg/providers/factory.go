@@ -153,6 +153,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = "https://integrate.api.nvidia.com/v1"
 				}
 			}
+		case "vivgrid":
+			if cfg.Providers.Vivgrid.APIKey != "" {
+				sel.apiKey = cfg.Providers.Vivgrid.APIKey
+				sel.apiBase = cfg.Providers.Vivgrid.APIBase
+				sel.proxy = cfg.Providers.Vivgrid.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.vivgrid.com/v1"
+				}
+			}
 		case "claude-cli", "claude-code", "claudecode":
 			workspace := cfg.WorkspacePath()
 			if workspace == "" {
@@ -294,6 +303,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.proxy = cfg.Providers.Nvidia.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "https://integrate.api.nvidia.com/v1"
+			}
+		case strings.HasPrefix(model, "vivgrid/") && cfg.Providers.Vivgrid.APIKey != "":
+			sel.apiKey = cfg.Providers.Vivgrid.APIKey
+			sel.apiBase = cfg.Providers.Vivgrid.APIBase
+			sel.proxy = cfg.Providers.Vivgrid.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.vivgrid.com/v1"
 			}
 		case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && cfg.Providers.Ollama.APIKey != "":
 			sel.apiKey = cfg.Providers.Ollama.APIKey

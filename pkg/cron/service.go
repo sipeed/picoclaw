@@ -190,13 +190,20 @@ func (cs *CronService) executeJobByID(jobID string) {
 	cs.mu.RUnlock()
 
 	if callbackJob == nil {
+		log.Printf("[cron] job %s not found, skipping", jobID)
 		return
 	}
+
+	// Log job execution start
+	log.Printf("[cron] ▶ executing job '%s' (id: %s, schedule: %s, channel: %s)",
+		callbackJob.Name, jobID, callbackJob.Schedule.Kind, callbackJob.Payload.Channel)
 
 	var err error
 	if cs.onJob != nil {
 		_, err = cs.onJob(callbackJob)
 	}
+
+	execDuration := time.Now().UnixMilli() - startTime
 
 	// Now acquire lock to update state
 	cs.mu.Lock()
@@ -220,22 +227,35 @@ func (cs *CronService) executeJobByID(jobID string) {
 	if err != nil {
 		job.State.LastStatus = "error"
 		job.State.LastError = err.Error()
+		log.Printf("[cron] ✗ job '%s' failed after %dms: %v", job.Name, execDuration, err)
 	} else {
 		job.State.LastStatus = "ok"
 		job.State.LastError = ""
 	}
 
 	// Compute next run time
+	var nextRunStr string
 	if job.Schedule.Kind == "at" {
 		if job.DeleteAfterRun {
 			cs.removeJobUnsafe(job.ID)
+			nextRunStr = "(deleted)"
 		} else {
 			job.Enabled = false
 			job.State.NextRunAtMS = nil
+			nextRunStr = "(disabled)"
 		}
 	} else {
 		nextRun := cs.computeNextRun(&job.Schedule, time.Now().UnixMilli())
 		job.State.NextRunAtMS = nextRun
+		if nextRun != nil {
+			nextRunStr = time.UnixMilli(*nextRun).Format("2006-01-02 15:04:05")
+		} else {
+			nextRunStr = "(none)"
+		}
+	}
+
+	if err == nil {
+		log.Printf("[cron] ✓ job '%s' completed in %dms, next run: %s", job.Name, execDuration, nextRunStr)
 	}
 
 	if err := cs.saveStoreUnsafe(); err != nil {

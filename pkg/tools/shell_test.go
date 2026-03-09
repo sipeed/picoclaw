@@ -151,6 +151,26 @@ func TestShellTool_DangerousCommand(t *testing.T) {
 	}
 }
 
+func TestShellTool_DangerousCommand_KillBlocked(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
+
+	ctx := context.Background()
+	args := map[string]any{
+		"command": "kill 12345",
+	}
+
+	result := tool.Execute(ctx, args)
+	if !result.IsError {
+		t.Errorf("Expected kill command to be blocked")
+	}
+	if !strings.Contains(result.ForLLM, "blocked") && !strings.Contains(result.ForUser, "blocked") {
+		t.Errorf("Expected blocked message, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
+	}
+}
+
 // TestShellTool_MissingCommand verifies error handling for missing command
 func TestShellTool_MissingCommand(t *testing.T) {
 	tool, err := NewExecTool("", false)

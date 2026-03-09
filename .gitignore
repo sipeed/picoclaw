@@ -42,6 +42,9 @@ ralph/
 .ralph/
 tasks/
 
+# Plans
+docs/plans/
+
 # Editors
 .vscode/
 .idea/
