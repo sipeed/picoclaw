@@ -233,6 +233,7 @@ type ChannelsConfig struct {
 	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
 	Pico       PicoConfig       `json:"pico"`
 	IRC        IRCConfig        `json:"irc"`
+	Mattermost MattermostConfig `json:"mattermost"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
@@ -346,6 +347,19 @@ type MatrixConfig struct {
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
+}
+
+type MattermostConfig struct {
+	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_MATTERMOST_ENABLED"`
+	URL                string              `json:"url"                     env:"PICOCLAW_CHANNELS_MATTERMOST_URL"`
+	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_MATTERMOST_TOKEN"`
+	Username           string              `json:"username"                env:"PICOCLAW_CHANNELS_MATTERMOST_USERNAME"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_MATTERMOST_ALLOW_FROM"`
+	ReplyInThread      bool                `json:"reply_in_thread"         env:"PICOCLAW_CHANNELS_MATTERMOST_REPLY_IN_THREAD"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	Typing             TypingConfig        `json:"typing,omitempty"`
+	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_MATTERMOST_REASONING_CHANNEL_ID"`
 }
 
 type LINEConfig struct {

@@ -308,7 +308,7 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, or WeCom
+Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, Mattermost, QQ, DingTalk, LINE, or WeCom
 
 > **Note**: All webhook-based channels (LINE, WeCom, etc.) are served on a single shared Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). There are no per-channel ports to configure. Note: Feishu uses WebSocket/SDK mode and does not use the shared HTTP webhook server.
 
@@ -321,6 +321,7 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk,
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
+| **Mattermost** | Easy (bot token)                   |
 | **WeCom AI Bot** | Medium (Token + AES key)       |
 
 <details>
@@ -433,6 +434,47 @@ You can also trigger by keyword prefixes (e.g. `!bot`):
 ```bash
 picoclaw gateway
 ```
+
+</details>
+
+<details>
+<summary><b>Mattermost</b></summary>
+
+**1. Create a bot account**
+
+* Go to your Mattermost instance → Integrations → Bot Accounts → Add Bot Account
+* Copy the bot token
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "mattermost": {
+      "enabled": true,
+      "url": "https://your-mattermost-server.com",
+      "token": "YOUR_BOT_TOKEN",
+      "username": "picoclaw",
+      "reply_in_thread": true,
+      "allow_from": ["YOUR_USER_ID"]
+    }
+  }
+}
+```
+
+| Field            | Type   | Required | Description                                     |
+| ---------------- | ------ | -------- | ----------------------------------------------- |
+| enabled          | bool   | Yes      | Enable Mattermost channel                       |
+| url              | string | Yes      | Mattermost server URL                           |
+| token            | string | Yes      | Bot access token                                |
+| username         | string | No       | Bot username for @mention stripping             |
+| reply_in_thread  | bool   | No       | Auto-thread replies in channels (default: true) |
+| allow_from       | array  | No       | User ID allowlist (empty = allow all)           |
+| group_trigger    | object | No       | Group trigger config (mention_only, etc.)       |
+| typing           | object | No       | Typing indicator config (enabled, etc.)         |
+| placeholder      | object | No       | Placeholder config (enabled, text; default: "Thinking... 💭") |
+
+**3. Add the bot to channels** in Mattermost, then DM it or @mention it.
 
 </details>
 
