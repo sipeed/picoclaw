@@ -786,12 +786,31 @@ func (cb *ContextBuilder) MatchSkillsInMessage(message string) []string {
 }
 
 // LoadSkillContext loads the full SKILL.md content for the given skill names
-// via the underlying SkillsLoader.
+// via the underlying SkillsLoader. It resolves frontmatter names to directory
+// names so that skills whose metadata name differs from the directory name
+// are loaded correctly.
 func (cb *ContextBuilder) LoadSkillContext(skillNames []string) string {
-	if cb.skillsLoader == nil {
+	if cb.skillsLoader == nil || len(skillNames) == 0 {
 		return ""
 	}
-	return cb.skillsLoader.LoadSkillsForContext(skillNames)
+
+	allSkills := cb.skillsLoader.ListSkills()
+	nameToDir := make(map[string]string, len(allSkills))
+	for _, s := range allSkills {
+		dirName := filepath.Base(filepath.Dir(s.Path))
+		nameToDir[strings.ToLower(s.Name)] = dirName
+	}
+
+	resolved := make([]string, 0, len(skillNames))
+	for _, name := range skillNames {
+		if dir, ok := nameToDir[strings.ToLower(name)]; ok {
+			resolved = append(resolved, dir)
+		} else {
+			resolved = append(resolved, name)
+		}
+	}
+
+	return cb.skillsLoader.LoadSkillsForContext(resolved)
 }
 
 // isSkillNameChar returns true for characters that can appear inside a skill

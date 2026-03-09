@@ -171,6 +171,35 @@ func TestLoadSkillContext(t *testing.T) {
 	}
 }
 
+func TestLoadSkillContext_MetadataNameDiffersFromDir(t *testing.T) {
+	tmpDir := setupWorkspace(t, nil)
+	defer os.RemoveAll(tmpDir)
+
+	createTestSkill(
+		t,
+		filepath.Join(tmpDir, "skills"),
+		"weather-skill",
+		"weather",
+		"Get weather",
+		"Call the weather API (metadata name test).",
+	)
+
+	cb := NewContextBuilder(tmpDir)
+
+	matched := cb.MatchSkillsInMessage("use the weather skill")
+	if len(matched) == 0 {
+		t.Fatal("expected to match skill by metadata name 'weather'")
+	}
+
+	ctx := cb.LoadSkillContext(matched)
+	if ctx == "" {
+		t.Fatal("expected non-empty skill context when metadata name differs from directory name")
+	}
+	if !strings.Contains(ctx, "metadata name test") {
+		t.Errorf("skill context should contain skill body, got: %s", ctx)
+	}
+}
+
 func TestLoadSkillContext_NilLoader(t *testing.T) {
 	cb := &ContextBuilder{skillsLoader: nil}
 	ctx := cb.LoadSkillContext([]string{"weather"})

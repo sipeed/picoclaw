@@ -61,6 +61,7 @@ type processOptions struct {
 	EnableSummary   bool     // Whether to trigger summarization
 	SendResponse    bool     // Whether to send response via bus
 	NoHistory       bool     // If true, don't load session history (for heartbeat)
+	SkillContext    string   // Injected SKILL.md content for matched skills
 }
 
 const (
@@ -802,11 +803,10 @@ func (al *AgentLoop) runAgentLoop(
 	}
 
 	// Auto-inject SKILL.md content when the user references an installed skill.
-	var skillCtx string
 	if matched := agent.ContextBuilder.MatchSkillsInMessage(opts.UserMessage); len(matched) > 0 {
-		skillCtx = agent.ContextBuilder.LoadSkillContext(matched)
+		opts.SkillContext = agent.ContextBuilder.LoadSkillContext(matched)
 		logger.DebugCF("agent", "Skills matched in user message",
-			map[string]any{"matched": matched, "context_len": len(skillCtx)})
+			map[string]any{"matched": matched, "context_len": len(opts.SkillContext)})
 	}
 
 	messages := agent.ContextBuilder.BuildMessages(
@@ -816,7 +816,7 @@ func (al *AgentLoop) runAgentLoop(
 		opts.Media,
 		opts.Channel,
 		opts.ChatID,
-		skillCtx,
+		opts.SkillContext,
 	)
 
 	// Resolve media:// refs to base64 data URLs (streaming)
@@ -1085,6 +1085,7 @@ func (al *AgentLoop) runLLMIteration(
 				messages = agent.ContextBuilder.BuildMessages(
 					newHistory, newSummary, "",
 					nil, opts.Channel, opts.ChatID,
+					opts.SkillContext,
 				)
 				continue
 			}
