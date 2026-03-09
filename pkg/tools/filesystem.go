@@ -184,7 +184,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	// measure total size
 	totalSize := int64(-1) // -1 means unknown
-	if info, err := file.Stat(); err == nil {
+	if info, statErr := file.Stat(); statErr == nil {
 		totalSize = info.Size()
 	}
 
@@ -195,7 +195,8 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	// Reset read position to beginning before applying the caller's offset.
 	if seeker, ok := file.(io.Seeker); ok {
-		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+		_, err = seeker.Seek(0, io.SeekStart)
+		if err != nil {
 			return ErrorResult(fmt.Sprintf("failed to reset file position after sniff: %v", err))
 		}
 	} else {
@@ -212,7 +213,8 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	// Seek to the requested offset.
 	if seeker, ok := file.(io.Seeker); ok {
-		if _, err := seeker.Seek(offset, io.SeekStart); err != nil {
+		_, err = seeker.Seek(offset, io.SeekStart)
+		if err != nil {
 			return ErrorResult(fmt.Sprintf("failed to seek to offset %d: %v", offset, err))
 		}
 	} else if offset > 0 {
@@ -220,7 +222,8 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		// sniffN bytes were already consumed above, so subtract them.
 		remaining := offset - int64(sniffN)
 		if remaining > 0 {
-			if _, err := io.CopyN(io.Discard, file, remaining); err != nil {
+			_, err = io.CopyN(io.Discard, file, remaining)
+			if err != nil {
 				return ErrorResult(fmt.Sprintf("failed to advance to offset %d: %v", offset, err))
 			}
 		}
