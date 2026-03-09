@@ -155,6 +155,12 @@ jobs:
               exit 1
             fi
           fi
+          
+          # Delete existing nightly release and tag to avoid conflicts
+          echo "Deleting existing nightly release and tag..."
+          gh release delete nightly --cleanup-tag -y || true
+          git push origin :refs/tags/nightly || true
+          
           gh release create nightly \
             --title "Nightly Build" \
             --notes "$NOTES" \
