@@ -1,12 +1,12 @@
 package tools
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
-	"net/http"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,9 +15,10 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-const MaxReadFileSize = 128 * 1024 // 64KB limit to avoid context overflow
+const MaxReadFileSize = 64 * 1024 // 64KB limit to avoid context overflow
 
 // validatePath ensures the given path is within the workspace if restrict is true.
 func validatePath(path, workspace string, restrict bool) (string, error) {
@@ -91,15 +92,30 @@ func isWithinWorkspace(candidate, workspace string) bool {
 }
 
 type ReadFileTool struct {
-	fs fileSystem
+	fs      fileSystem
+	maxSize int64
 }
 
-func NewReadFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *ReadFileTool {
+func NewReadFileTool(
+	workspace string,
+	restrict bool,
+	maxReadFileSize int,
+	allowPaths ...[]*regexp.Regexp,
+) *ReadFileTool {
 	var patterns []*regexp.Regexp
 	if len(allowPaths) > 0 {
 		patterns = allowPaths[0]
 	}
-	return &ReadFileTool{fs: buildFs(workspace, restrict, patterns)}
+
+	maxSize := int64(maxReadFileSize)
+	if maxSize <= 0 {
+		maxSize = MaxReadFileSize
+	}
+
+	return &ReadFileTool{
+		fs:      buildFs(workspace, restrict, patterns),
+		maxSize: maxSize,
+	}
 }
 
 func (t *ReadFileTool) Name() string {
@@ -107,9 +123,7 @@ func (t *ReadFileTool) Name() string {
 }
 
 func (t *ReadFileTool) Description() string {
-	return "Read the contents of a file. Supports pagination via `offset` and `length` " +
-		"for files larger than the per-call limit. If the response header indicates the " +
-		"file is TRUNCATED, use the provided offset in your next call to continue reading."
+	return "Read the contents of a file. Supports pagination via `offset` and `length`."
 }
 
 func (t *ReadFileTool) Parameters() map[string]any {
@@ -122,15 +136,13 @@ func (t *ReadFileTool) Parameters() map[string]any {
 			},
 			"offset": map[string]any{
 				"type":        "integer",
-				"description": "Byte offset to start reading from (default: 0).",
+				"description": "Byte offset to start reading from.",
 				"default":     0,
 			},
 			"length": map[string]any{
-				"type": "integer",
-				"description": fmt.Sprintf(
-					"Maximum number of bytes to read (default / max: %d).", MaxReadFileSize,
-				),
-				"default": MaxReadFileSize,
+				"type":        "integer",
+				"description": "Maximum number of bytes to read.",
+				"default":     t.maxSize,
 			},
 		},
 		"required": []string{"path"},
@@ -153,15 +165,15 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	// length (optional, capped at MaxReadFileSize)
-	length, err := getInt64Arg(args, "length", MaxReadFileSize)
+	length, err := getInt64Arg(args, "length", t.maxSize)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
 	if length <= 0 {
 		return ErrorResult("length must be > 0")
 	}
-	if length > MaxReadFileSize {
-		length = MaxReadFileSize
+	if length > t.maxSize {
+		length = t.maxSize
 	}
 
 	file, err := t.fs.Open(path)
@@ -174,65 +186,103 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	totalSize := int64(-1) // -1 means unknown
 	if info, err := file.Stat(); err == nil {
 		totalSize = info.Size()
-	} else {
-		return ErrorResult(fmt.Sprintf("failed to get file info: %v", err))
 	}
 
-	// seek to offset
+	// sniff the first 512 bytes to detect binary content before loading
+	// it into the LLM context. Seeking back to 0 afterwards restores state.
+	sniff := make([]byte, 512)
+	sniffN, _ := file.Read(sniff)
+
+	// Reset read position to beginning before applying the caller's offset.
+	if seeker, ok := file.(io.Seeker); ok {
+		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+			return ErrorResult(fmt.Sprintf("failed to reset file position after sniff: %v", err))
+		}
+	} else {
+		// Non-seekable: we consumed sniffN bytes above; account for them when
+		// discarding to reach the requested offset below.
+		// If offset < sniffN the data we already read covers it, which we
+		// cannot replay on a non-seekable stream — return a clear error.
+		if offset < int64(sniffN) && offset > 0 {
+			return ErrorResult(
+				"non-seekable file: cannot seek to an offset within the first 512 bytes after binary detection",
+			)
+		}
+	}
+
+	// Seek to the requested offset.
 	if seeker, ok := file.(io.Seeker); ok {
 		if _, err := seeker.Seek(offset, io.SeekStart); err != nil {
 			return ErrorResult(fmt.Sprintf("failed to seek to offset %d: %v", offset, err))
 		}
 	} else if offset > 0 {
 		// Fallback for non-seekable streams: discard leading bytes.
-		if _, err := io.CopyN(io.Discard, file, offset); err != nil {
-			return ErrorResult(fmt.Sprintf("failed to advance to offset %d: %v", offset, err))
+		// sniffN bytes were already consumed above, so subtract them.
+		remaining := offset - int64(sniffN)
+		if remaining > 0 {
+			if _, err := io.CopyN(io.Discard, file, remaining); err != nil {
+				return ErrorResult(fmt.Sprintf("failed to advance to offset %d: %v", offset, err))
+			}
 		}
 	}
 
-	// read up to `length` bytes
-	data, err := io.ReadAll(io.LimitReader(file, length))
-	if err != nil {
+	// read length+1 bytes to reliably detect whether more content exists
+	// without relying on totalSize (which may be -1 for non-seekable streams).
+	// This avoids the false-positive TRUNCATED message on the last page.
+	probe := make([]byte, length+1)
+	n, err := io.ReadFull(file, probe)
+	// FIX: io.ReadFull returns io.ErrUnexpectedEOF for partial reads (0 < n < len),
+	// and io.EOF only when n == 0. Both are normal terminal conditions — only
+	// other errors are genuine failures.
+	if err != nil && err != io.EOF && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return ErrorResult(fmt.Sprintf("failed to read file content: %v", err))
 	}
 
-	if len(data) == 0 && offset > 0 {
-		return NewToolResult("[END OF FILE — no content at this offset]")
-	}
+	// hasMore is true only when we actually got the extra probe byte.
+	hasMore := int64(n) > length
+	data := probe[:min(int64(n), length)]
 
-	// build metadata header
-	readEnd := offset + int64(len(data))
-	hasMore := int64(len(data)) == length && (totalSize < 0 || readEnd < totalSize)
-
-	// Calculates the reading range avoiding negative numbers if the file is empty
-	var readRange string
 	if len(data) == 0 {
-		readRange = "0 bytes"
-	} else {
-		readRange = fmt.Sprintf("bytes %d–%d", offset, readEnd-1)
+		return NewToolResult("[END OF FILE - no content at this offset]")
 	}
 
+	// Build metadata header.
+	// use filepath.Base(path) instead of the raw path to avoid leaking
+	// internal filesystem structure into the LLM context.
+	readEnd := offset + int64(len(data))
+	// use ASCII hyphen-minus instead of en-dash (U+2013) to keep the
+	// header parseable by downstream tools and log processors.
+	readRange := fmt.Sprintf("bytes %d-%d", offset, readEnd-1)
+
+	displayPath := filepath.Base(path)
 	var header string
 	if totalSize >= 0 {
 		header = fmt.Sprintf(
 			"[file: %s | total: %d bytes | read: %s]",
-			path, totalSize, readRange,
+			displayPath, totalSize, readRange,
 		)
 	} else {
 		header = fmt.Sprintf(
 			"[file: %s | read: %s | total size unknown]",
-			path, readRange,
+			displayPath, readRange,
 		)
 	}
 
 	if hasMore {
 		header += fmt.Sprintf(
-			"\n[TRUNCATED — file has more content. Call read_file again with offset=%d to continue.]",
+			"\n[TRUNCATED - file has more content. Call read_file again with offset=%d to continue.]",
 			readEnd,
 		)
 	} else {
-		header += "\n[END OF FILE — no further content.]"
+		header += "\n[END OF FILE - no further content.]"
 	}
+
+	logger.DebugCF("tool", "ReadFileTool execution completed successfully",
+		map[string]any{
+			"path":       path,
+			"bytes_read": len(data),
+			"has_more":   hasMore,
+		})
 
 	return NewToolResult(header + "\n\n" + string(data))
 }
@@ -247,6 +297,12 @@ func getInt64Arg(args map[string]any, key string, defaultVal int64) (int64, erro
 
 	switch v := raw.(type) {
 	case float64:
+		if v != math.Trunc(v) {
+			return 0, fmt.Errorf("%s must be an integer, got float %v", key, v)
+		}
+		if v > math.MaxInt64 || v < math.MinInt64 {
+			return 0, fmt.Errorf("%s value %v overflows int64", key, v)
+		}
 		return int64(v), nil
 	case int:
 		return int64(v), nil
@@ -635,34 +691,4 @@ func getSafeRelPath(workspace, path string) (string, error) {
 	}
 
 	return rel, nil
-}
-
-// isBinaryFile uses common heuristics to determine if the content is a binary file.
-func isBinaryFile(content []byte) bool {
-	if len(content) == 0 {
-		return false
-	}
-
-	// Sample the first 512 bytes (or less if the file is smaller)
-	limit := len(content)
-	if limit > 512 {
-		limit = 512
-	}
-	sample := content[:limit]
-
-	// Check for NUL bytes in the sample (standard binary detection)
-	if bytes.IndexByte(sample, 0) != -1 {
-		return true
-	}
-
-	// Use standard library content type detection to catch specific formats like PDF
-	contentType := http.DetectContentType(sample)
-	if contentType == "application/pdf" ||
-		strings.HasPrefix(contentType, "image/") ||
-		strings.HasPrefix(contentType, "video/") ||
-		strings.HasPrefix(contentType, "audio/") {
-		return true
-	}
-
-	return false
 }
