@@ -617,8 +617,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		SendResponse:    false,
 	}
 
-	// Commands are checked before requiring a successful route.
-	// Global commands (/help, /show, /switch) work even when routing fails;
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
 	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {
