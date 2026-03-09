@@ -302,10 +302,17 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 			name = tc.Function.Name
 			if tc.Function.Arguments != "" {
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &arguments); err != nil {
-					// JSON is malformed (likely truncated due to max_tokens). Log and signal truncation.
-					log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
-					truncated = true
-					continue // Skip this malformed tool call entirely
+					// JSON is malformed (likely truncated due to max_tokens or LLM stopping early).
+					// Try to repair it by appending closing characters.
+					if repairedArgs, repairErr := repairJSON(tc.Function.Arguments); repairErr == nil {
+						arguments = repairedArgs
+						log.Printf("openai_compat: recovered tool call arguments for %q (auto-repaired)", name)
+					} else {
+						// JSON is too malformed to repair. Log and signal truncation.
+						log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
+						truncated = true
+						continue // Skip this malformed tool call entirely
+					}
 				}
 			}
 		}
@@ -457,4 +464,26 @@ func asFloat(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// repairJSON attempts to fix commonly truncated JSON objects by appending closing characters.
+func repairJSON(s string) (map[string]any, error) {
+	var result map[string]any
+
+	// Fast path: try closing suffixes for flat JSON objects
+	suffixes := []string{
+		"}",
+		"\"}",
+		"\"}}",
+		"\"}]}",
+		"]}",
+	}
+
+	for _, suffix := range suffixes {
+		if err := json.Unmarshal([]byte(s+suffix), &result); err == nil {
+			return result, nil
+		}
+	}
+
+	return nil, fmt.Errorf("failed to repair json")
 }

@@ -513,3 +513,51 @@ func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 		t.Fatal("system_parts should not appear in serialized output")
 	}
 }
+
+func TestProviderChat_RepairsTruncatedToolCall(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call_1",
+								"type": "function",
+								"function": map[string]any{
+									"name":      "read_file",
+									"arguments": "{\"path\": \"/my/file.txt\"", // missing }
+								},
+							},
+						},
+					},
+					"finish_reason": "length",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "read_file" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "read_file")
+	}
+	if out.ToolCalls[0].Arguments["path"] != "/my/file.txt" {
+		t.Fatalf("ToolCalls[0].Arguments[path] = %v, want /my/file.txt", out.ToolCalls[0].Arguments["path"])
+	}
+	// Even though it was repaired, the finish reason should still be truncated because the LLM originally returned length or we truncated it?
+	// Actually, if finish_reason was "length", parseResponse will set finishReason to "truncated" anyway.
+	if out.FinishReason != "truncated" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "truncated")
+	}
+}
