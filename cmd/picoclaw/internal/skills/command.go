@@ -29,7 +29,7 @@ func NewSkillsCommand() *cobra.Command {
 			}
 
 			d.workspace = cfg.WorkspacePath()
-			d.installer = skills.NewSkillInstaller(d.workspace)
+			d.installer = skills.NewSkillInstaller(d.workspace, cfg.Tools.Skills.Github.Token)
 
 			// get global config directory and builtin skills directory
 			globalDir := filepath.Dir(internal.GetConfigPath())

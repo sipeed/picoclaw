@@ -650,6 +650,7 @@ type ExecConfig struct {
 type SkillsToolsConfig struct {
 	ToolConfig            `                       envPrefix:"PICOCLAW_TOOLS_SKILLS_"`
 	Registries            SkillsRegistriesConfig `                                   json:"registries"`
+	Github                SkillsGithubConfig     `                                   json:"github"`
 	MaxConcurrentSearches int                    `                                   json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
 	SearchCache           SearchCacheConfig      `                                   json:"search_cache"`
 }
@@ -692,6 +693,10 @@ type SearchCacheConfig struct {
 
 type SkillsRegistriesConfig struct {
 	ClawHub ClawHubRegistryConfig `json:"clawhub"`
+}
+
+type SkillsGithubConfig struct {
+	Token string `json:"token"`
 }
 
 type ClawHubRegistryConfig struct {
@@ -961,3 +966,4 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return true
 	}
 }
+
