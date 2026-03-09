@@ -23,6 +23,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
@@ -626,7 +627,7 @@ func (c *FeishuChannel) downloadResource(
 		return ""
 	}
 	ext := filepath.Ext(filename)
-	localPath := filepath.Join(mediaDir, utils.SanitizeFilename(messageID+"-"+fileKey+ext))
+	localPath := filepath.Join(mediaDir, fileutil.SanitizeFilename(messageID+"-"+fileKey+ext))
 
 	out, err := os.Create(localPath)
 	if err != nil {

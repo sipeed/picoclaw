@@ -302,6 +302,67 @@ The skills tool configures skill discovery and installation via registries like 
 }
 ```
 
+## Task Tool
+
+The task tool lets the agent create and track a step-by-step execution plan visible to the user in real time.
+
+### Runtime Behavior
+
+The tool supports four actions:
+
+| Action | Purpose |
+| ------ | ------- |
+| `create_plan` | Create a new checklist for the current session |
+| `update_task` | Change a task status and optionally attach a short result |
+| `list_plan` | Return the current checklist state |
+| `resend_plan` | Send the current checklist again as a fresh message |
+
+Delivery is channel-aware:
+
+- On channels that can send and later edit a message, the initial plan is posted immediately and later `update_task` calls edit that same progress message.
+- In direct/CLI mode, or on paths where out-of-band delivery is unavailable, the plan falls back to normal user-visible output so the checklist is still shown in chat.
+- Telegram may split long plans across multiple messages; PicoClaw keeps track of all chunks so later updates can edit the full plan consistently.
+
+Most users only need to configure the tool. The LLM is responsible for choosing the appropriate action during planning and execution.
+
+### Config
+
+| Config              | Type   | Default | Description                            |
+| ------------------- | ------ | ------- | -------------------------------------- |
+| `enabled`           | bool   | true    | Enable the task planning tool          |
+| `icons.pending`     | string | 🔘      | Icon shown for pending tasks           |
+| `icons.in_progress` | string | 🟡      | Icon shown for tasks in progress       |
+| `icons.completed`   | string | 🟢      | Icon shown for completed tasks         |
+| `icons.failed`      | string | 🔴      | Icon shown for failed tasks            |
+
+### Configuration Example
+
+```json
+{
+  "tools": {
+    "tasktool": {
+      "enabled": true,
+      "icons": {
+        "pending": "🔘",
+        "in_progress": "🟡",
+        "completed": "🟢",
+        "failed": "🔴"
+      }
+    }
+  }
+}
+```
+
+### Environment Variables
+
+| Variable                                     | Description              |
+| -------------------------------------------- | ------------------------ |
+| `PICOCLAW_TOOLS_TASK_TOOL_ENABLED`           | Enable/disable the tool  |
+| `PICOCLAW_TOOLS_TASK_TOOL_ICONS_PENDING`     | Pending task icon        |
+| `PICOCLAW_TOOLS_TASK_TOOL_ICONS_IN_PROGRESS` | In-progress task icon    |
+| `PICOCLAW_TOOLS_TASK_TOOL_ICONS_COMPLETED`   | Completed task icon      |
+| `PICOCLAW_TOOLS_TASK_TOOL_ICONS_FAILED`      | Failed task icon         |
+
 ## Environment Variables
 
 All configuration options can be overridden via environment variables with the format `PICOCLAW_TOOLS_<SECTION>_<KEY>`:

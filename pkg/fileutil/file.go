@@ -11,8 +11,26 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
+
+// SanitizeFilename removes potentially dangerous characters from a filename
+// and returns a safe version for local filesystem storage.
+func SanitizeFilename(filename string) string {
+	// First, replace common directory separators and colons with underscores
+	safe := strings.ReplaceAll(filename, "/", "_")
+	safe = strings.ReplaceAll(safe, "\\", "_")
+	safe = strings.ReplaceAll(safe, ":", "_")
+
+	// Then get the base filename to ensure no path components remain
+	base := filepath.Base(safe)
+
+	// Finally, remove any exact ".." sequences that might have slipped through
+	base = strings.ReplaceAll(base, "..", "")
+
+	return base
+}
 
 // WriteFileAtomic atomically writes data to a file using a temp file + rename pattern.
 //

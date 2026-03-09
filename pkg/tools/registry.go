@@ -150,6 +150,18 @@ func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	return entry.Tool, true
 }
 
+// ExecutesSequentially reports whether the named tool must preserve model order
+// within a single LLM turn instead of being fanned out with sibling calls.
+func (r *ToolRegistry) ExecutesSequentially(name string) bool {
+	tool, ok := r.Get(name)
+	if !ok {
+		return false
+	}
+
+	sequential, ok := tool.(SequentialTool)
+	return ok && sequential.ExecuteSequentially()
+}
+
 func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]any) *ToolResult {
 	return r.ExecuteWithContext(ctx, name, args, "", "", nil)
 }

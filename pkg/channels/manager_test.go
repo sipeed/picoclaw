@@ -35,6 +35,39 @@ func newTestManager() *Manager {
 	}
 }
 
+func TestSendMessageWithID_FallsBackToBusWithoutError(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	m := &Manager{
+		channels: map[string]Channel{
+			"test": &mockChannel{
+				sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+			},
+		},
+		workers: make(map[string]*channelWorker),
+		bus:     msgBus,
+	}
+
+	msgID, err := m.SendMessageWithID(context.Background(), bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "1",
+		Content: "hello",
+	})
+	if err != nil {
+		t.Fatalf("expected nil error for async fallback, got %v", err)
+	}
+	if msgID != "" {
+		t.Fatalf("expected empty message ID for async fallback, got %q", msgID)
+	}
+
+	outbound, ok := msgBus.SubscribeOutbound(context.Background())
+	if !ok {
+		t.Fatal("expected fallback message to be queued on the outbound bus")
+	}
+	if outbound.Content != "hello" {
+		t.Fatalf("expected fallback content %q, got %q", "hello", outbound.Content)
+	}
+}
+
 func TestSendWithRetry_Success(t *testing.T) {
 	m := newTestManager()
 	var callCount int

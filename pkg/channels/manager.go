@@ -841,3 +841,43 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 	channel, _ := m.channels[channelName]
 	return channel.Send(ctx, msg)
 }
+
+// SendMessageWithID sends a message synchronously via the channel's native API if supported,
+// returning the platform-specific message ID. If the channel does not support SyncSender,
+// it falls back to the async bus and returns an empty message ID with a nil error.
+func (m *Manager) SendMessageWithID(ctx context.Context, msg bus.OutboundMessage) (string, error) {
+	ch, ok := m.GetChannel(msg.Channel)
+	if !ok {
+		return "", fmt.Errorf("channel %s not found", msg.Channel)
+	}
+
+	if syncSender, ok := ch.(SyncSender); ok {
+		msgID, err := syncSender.SendMessageWithID(ctx, msg)
+		if err != nil {
+			logger.ErrorCF("manager", "SendMessageWithID failed", map[string]any{"error": err, "msgID": msgID})
+			return "", err
+		}
+		return msgID, nil
+	}
+
+	logger.WarnCF("manager", "channel does not implement SyncSender", map[string]any{"channel": msg.Channel})
+	logger.WarnCF("manager", "falling back to bus publish", nil)
+	if err := m.bus.PublishOutbound(ctx, msg); err != nil {
+		return "", err
+	}
+
+	return "", nil
+}
+
+// EditMessage synchronously edits an existing message if the channel supports MessageEditor.
+func (m *Manager) EditMessage(ctx context.Context, channelName, chatID, messageID, content string) error {
+	ch, ok := m.GetChannel(channelName)
+	if !ok {
+		return fmt.Errorf("channel %s not found", channelName)
+	}
+	editor, ok := ch.(MessageEditor)
+	if !ok {
+		return fmt.Errorf("channel %s does not support message editing", channelName)
+	}
+	return editor.EditMessage(ctx, chatID, messageID, content)
+}

@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/commands"
 )
 
@@ -49,4 +50,11 @@ type PlaceholderRecorder interface {
 // Channels that do not support platform-level command menus can ignore it.
 type CommandRegistrarCapable interface {
 	RegisterCommands(ctx context.Context, defs []commands.Definition) error
+}
+
+// SyncSender — channels that can bypass the async bus to send a message synchronously.
+// This is typically used by internal tools (like TaskTool) that must immediately
+// receive the generated message ID in order to edit it later.
+type SyncSender interface {
+	SendMessageWithID(ctx context.Context, msg bus.OutboundMessage) (string, error)
 }

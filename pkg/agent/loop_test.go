@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -342,6 +344,152 @@ func (m *countingMockProvider) GetDefaultModel() string {
 	return "counting-mock-model"
 }
 
+type taskToolPlanMockProvider struct {
+	calls int
+}
+
+func (m *taskToolPlanMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:   "call_tasktool",
+					Name: "tasktool",
+					Arguments: map[string]any{
+						"action": "create_plan",
+						"tasks": []any{
+							map[string]any{
+								"id":          "step_1",
+								"description": "Inspect direct mode",
+							},
+						},
+					},
+				},
+			},
+		}, nil
+	}
+
+	return &providers.LLMResponse{
+		Content:   "",
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *taskToolPlanMockProvider) GetDefaultModel() string {
+	return "tasktool-mock-model"
+}
+
+type taskToolRaceMockProvider struct {
+	calls int
+}
+
+func (m *taskToolRaceMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:   "call_tasktool_create",
+					Name: "tasktool",
+					Arguments: map[string]any{
+						"action": "create_plan",
+						"tasks": []any{
+							map[string]any{
+								"id":          "step_1",
+								"description": "Create the plan",
+							},
+						},
+					},
+				},
+				{
+					ID:   "call_tasktool_update",
+					Name: "tasktool",
+					Arguments: map[string]any{
+						"action":  "update_task",
+						"task_id": "step_1",
+						"status":  string(session.TaskStatusCompleted),
+						"result":  "done",
+					},
+				},
+			},
+		}, nil
+	}
+
+	return &providers.LLMResponse{
+		Content:   "",
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *taskToolRaceMockProvider) GetDefaultModel() string {
+	return "tasktool-race-mock-model"
+}
+
+type blockingSequentialTaskTool struct {
+	inner         *tools.TaskTool
+	createOnce    sync.Once
+	updateOnce    sync.Once
+	createStarted chan struct{}
+	updateStarted chan struct{}
+}
+
+func newBlockingSequentialTaskTool(inner *tools.TaskTool) *blockingSequentialTaskTool {
+	return &blockingSequentialTaskTool{
+		inner:         inner,
+		createStarted: make(chan struct{}),
+		updateStarted: make(chan struct{}),
+	}
+}
+
+func (t *blockingSequentialTaskTool) Name() string {
+	return t.inner.Name()
+}
+
+func (t *blockingSequentialTaskTool) Description() string {
+	return t.inner.Description()
+}
+
+func (t *blockingSequentialTaskTool) Parameters() map[string]any {
+	return t.inner.Parameters()
+}
+
+func (t *blockingSequentialTaskTool) ExecuteSequentially() bool {
+	return true
+}
+
+func (t *blockingSequentialTaskTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	action, _ := args["action"].(string)
+	switch action {
+	case "create_plan":
+		t.createOnce.Do(func() { close(t.createStarted) })
+
+		select {
+		case <-t.updateStarted:
+			// If sibling tool calls are still fanned out in parallel, allow the
+			// update path to reach TaskManager.UpdateTask before the plan exists.
+			time.Sleep(10 * time.Millisecond)
+		case <-time.After(50 * time.Millisecond):
+		}
+	case "update_task":
+		t.updateOnce.Do(func() { close(t.updateStarted) })
+	}
+
+	return t.inner.Execute(ctx, args)
+}
+
 // mockCustomTool is a simple mock tool for registration testing
 type mockCustomTool struct{}
 
@@ -656,6 +804,89 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 	// User-facing tool should include the output in final response
 	if response != "Command output: hello world" {
 		t.Errorf("Expected 'Command output: hello world', got: %s", response)
+	}
+}
+
+func TestTaskTool_DirectModeWithoutChannelManagerReturnsPlan(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = tmpDir
+	cfg.Agents.Defaults.Model = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 4
+
+	msgBus := bus.NewMessageBus()
+	provider := &taskToolPlanMockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.ProcessDirect(context.Background(), "make a plan", "cli:default")
+	if err != nil {
+		t.Fatalf("ProcessDirect failed: %v", err)
+	}
+
+	if !strings.Contains(response, "Execution Plan") {
+		t.Fatalf("expected direct-mode response to include the execution plan, got: %q", response)
+	}
+	if !strings.Contains(response, "Inspect direct mode") {
+		t.Fatalf("expected direct-mode response to include the task description, got: %q", response)
+	}
+}
+
+func TestTaskTool_CreatePlanAndUpdateTaskSameTurnRunsInOrder(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = tmpDir
+	cfg.Agents.Defaults.Model = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 4
+
+	msgBus := bus.NewMessageBus()
+	provider := &taskToolRaceMockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	taskTool, ok := defaultAgent.Tools.Get("tasktool")
+	if !ok {
+		t.Fatal("tasktool is not registered")
+	}
+
+	inner, ok := taskTool.(*tools.TaskTool)
+	if !ok {
+		t.Fatalf("tasktool has unexpected type %T", taskTool)
+	}
+
+	defaultAgent.Tools.Register(newBlockingSequentialTaskTool(inner))
+
+	if _, err := al.ProcessDirect(context.Background(), "make a plan and complete it", "cli:race"); err != nil {
+		t.Fatalf("ProcessDirect failed: %v", err)
+	}
+
+	st := al.taskManager.Get(routing.BuildAgentMainSessionKey(defaultAgent.ID))
+	if st == nil {
+		t.Fatal("expected task plan to be stored")
+	}
+	if len(st.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(st.Tasks))
+	}
+	if st.Tasks[0].Status != session.TaskStatusCompleted {
+		t.Fatalf("expected task status %q, got %q", session.TaskStatusCompleted, st.Tasks[0].Status)
+	}
+	if st.Tasks[0].Result != "done" {
+		t.Fatalf("expected task result %q, got %q", "done", st.Tasks[0].Result)
 	}
 }
 

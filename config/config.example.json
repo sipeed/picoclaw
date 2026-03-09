@@ -461,6 +461,15 @@
     },
     "write_file": {
       "enabled": true
+    },
+    "tasktool": {
+      "enabled": true,
+      "icons": {
+        "pending": "🔘",
+        "in_progress": "🟡",
+        "completed": "🟢",
+        "failed": "🔴"
+      }
     }
   },
   "heartbeat": {

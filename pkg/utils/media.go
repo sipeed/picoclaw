@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
@@ -32,20 +33,6 @@ func IsAudioFile(filename, contentType string) bool {
 	}
 
 	return false
-}
-
-// SanitizeFilename removes potentially dangerous characters from a filename
-// and returns a safe version for local filesystem storage.
-func SanitizeFilename(filename string) string {
-	// Get the base filename without path
-	base := filepath.Base(filename)
-
-	// Remove any directory traversal attempts
-	base = strings.ReplaceAll(base, "..", "")
-	base = strings.ReplaceAll(base, "/", "_")
-	base = strings.ReplaceAll(base, "\\", "_")
-
-	return base
 }
 
 // DownloadOptions holds optional parameters for downloading files
@@ -76,7 +63,7 @@ func DownloadFile(urlStr, filename string, opts DownloadOptions) string {
 	}
 
 	// Generate unique filename with UUID prefix to prevent conflicts
-	safeName := SanitizeFilename(filename)
+	safeName := fileutil.SanitizeFilename(filename)
 	localPath := filepath.Join(mediaDir, uuid.New().String()[:8]+"_"+safeName)
 
 	// Create HTTP request

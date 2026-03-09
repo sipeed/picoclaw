@@ -114,6 +114,20 @@ func (r *AgentRegistry) ForEachTool(name string, fn func(tools.Tool)) {
 	}
 }
 
+// ForEachToolInstance calls fn for every tool registered across all agents.
+// This is useful for propagating dependencies matching a specific interface.
+func (r *AgentRegistry) ForEachToolInstance(fn func(tools.Tool)) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, agent := range r.agents {
+		for _, name := range agent.Tools.List() {
+			if t, ok := agent.Tools.Get(name); ok {
+				fn(t)
+			}
+		}
+	}
+}
+
 // GetDefaultAgent returns the default agent instance.
 func (r *AgentRegistry) GetDefaultAgent() *AgentInstance {
 	r.mu.RLock()

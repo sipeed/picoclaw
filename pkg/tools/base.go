@@ -21,8 +21,9 @@ type Tool interface {
 type toolCtxKey struct{ name string }
 
 var (
-	ctxKeyChannel = &toolCtxKey{"channel"}
-	ctxKeyChatID  = &toolCtxKey{"chatID"}
+	ctxKeyChannel    = &toolCtxKey{"channel"}
+	ctxKeyChatID     = &toolCtxKey{"chatID"}
+	ctxKeySessionKey = &toolCtxKey{"sessionKey"}
 )
 
 // WithToolContext returns a child context carrying channel and chatID.
@@ -30,6 +31,11 @@ func WithToolContext(ctx context.Context, channel, chatID string) context.Contex
 	ctx = context.WithValue(ctx, ctxKeyChannel, channel)
 	ctx = context.WithValue(ctx, ctxKeyChatID, chatID)
 	return ctx
+}
+
+// WithToolSessionKey returns a child context carrying the session key.
+func WithToolSessionKey(ctx context.Context, sessionKey string) context.Context {
+	return context.WithValue(ctx, ctxKeySessionKey, sessionKey)
 }
 
 // ToolChannel extracts the channel from ctx, or "" if unset.
@@ -41,6 +47,12 @@ func ToolChannel(ctx context.Context) string {
 // ToolChatID extracts the chatID from ctx, or "" if unset.
 func ToolChatID(ctx context.Context) string {
 	v, _ := ctx.Value(ctxKeyChatID).(string)
+	return v
+}
+
+// ToolSessionKey extracts the session key from ctx, or "" if unset.
+func ToolSessionKey(ctx context.Context) string {
+	v, _ := ctx.Value(ctxKeySessionKey).(string)
 	return v
 }
 
@@ -81,6 +93,15 @@ type AsyncExecutor interface {
 	ExecuteAsync(ctx context.Context, args map[string]any, cb AsyncCallback) *ToolResult
 }
 
+// SequentialTool marks tools that must execute in model order within a single
+// LLM turn, instead of being fanned out in parallel with sibling tool calls.
+// This is intended for tools whose calls mutate shared state and can depend on
+// earlier calls from the same assistant message.
+type SequentialTool interface {
+	Tool
+	ExecuteSequentially() bool
+}
+
 func ToolToSchema(tool Tool) map[string]any {
 	return map[string]any{
 		"type": "function",
@@ -90,4 +111,14 @@ func ToolToSchema(tool Tool) map[string]any {
 			"parameters":  tool.Parameters(),
 		},
 	}
+}
+
+// AdvancedMessageManager represents tools that require direct, synchronous
+// interaction with messaging channels (e.g., sending placeholders and editing messages).
+type AdvancedMessageManager interface {
+	Tool
+	SetCallbacks(
+		sendPlaceholder func(ctx context.Context, channel, chatID, content string) (string, error),
+		editMessage func(ctx context.Context, channel, chatID, messageID, content string) error,
+	)
 }
