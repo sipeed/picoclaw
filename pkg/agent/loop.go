@@ -1856,7 +1856,14 @@ func (al *AgentLoop) handleCommandAsync(ctx context.Context, msg bus.InboundMess
 	// Get default agent for command handling
 	agent := al.registry.GetDefaultAgent()
 
-	response, handled := al.handleCommand(ctx, msg, agent)
+	// Build processOptions for commands that need session info (e.g., /clear)
+	opts := &processOptions{
+		SessionKey: msg.SessionKey,
+		Channel:    msg.Channel,
+		ChatID:     msg.ChatID,
+	}
+
+	response, handled := al.handleCommand(ctx, msg, agent, opts)
 	if !handled {
 		// Command not recognized or passed through, ignore
 		return
