@@ -9,7 +9,7 @@ This guide explains how to set up and use the **Antigravity** (Google Cloud Code
 >
 > - This integration relies on the free quota provided by Google Cloud Code Assist, which is intended for individual developer use within IDE plugins.
 > - Using it programmatically at scale or in automated/server environments may violate [Google Cloud Terms of Service](https://cloud.google.com/terms/).
-> - Many users have reported account restrictions after heavy usage. Proceed at your own risk.
+> - Heavy or atypical usage may increase the risk of account restrictions. Proceed at your own risk and regularly review Google's Terms of Service and policy updates.
 > - For production or high-volume usage, consider using a paid API key from a supported provider (Anthropic, OpenAI, OpenRouter, etc.).
 
 ## Prerequisites
