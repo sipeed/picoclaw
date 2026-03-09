@@ -279,4 +279,3 @@ func (si *SkillInstaller) Uninstall(skillName string) error {
 
 	return nil
 }
-

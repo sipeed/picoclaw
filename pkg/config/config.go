@@ -966,4 +966,3 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return true
 	}
 }
-
