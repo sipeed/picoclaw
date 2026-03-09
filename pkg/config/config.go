@@ -571,6 +571,10 @@ func (c *ModelConfig) Validate() error {
 	return nil
 }
 
+type ToolConfig struct {
+	Enabled bool `json:"enabled" env:"ENABLED"`
+}
+
 type GatewayConfig struct {
 	Host string `json:"host" env:"PICOCLAW_GATEWAY_HOST"`
 	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
@@ -772,6 +776,12 @@ func LoadConfig(path string) (*Config, error) {
 	// Auto-migrate: if only legacy providers config exists, convert to model_list
 	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
+	}
+
+	// If model_list is still empty and no legacy providers, use default model list
+	// This ensures new users get a working config template on first run
+	if len(cfg.ModelList) == 0 && !cfg.HasProvidersConfig() {
+		cfg.ModelList = GetDefaultModelList()
 	}
 
 	// Validate model_list for uniqueness and required fields
