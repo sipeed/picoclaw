@@ -8,6 +8,7 @@
 > **Account Suspension Risk / 账号封禁风险**
 >
 > Google has been actively enforcing its Terms of Service against programmatic or large-scale use of Google Cloud Code Assist outside of its intended IDE plugin context. **Your Google account may be suspended if you use this integration heavily or in automated/server environments.**
+> For details, review the [Google Cloud Terms of Service](https://cloud.google.com/terms) applicable to Google Cloud Code Assist usage.
 >
 > Use this provider for testing and evaluation only. For any sustained or production usage, switch to a provider with an explicit API agreement (e.g., Anthropic, OpenAI, OpenRouter).
 
