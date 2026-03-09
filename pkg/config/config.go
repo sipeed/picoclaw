@@ -702,8 +702,8 @@ type ToolsConfig struct {
 }
 
 type TaskToolConfig struct {
-	ToolConfig `envPrefix:"PICOCLAW_TOOLS_TASK_TOOL_"`
-	Icons      TaskToolIconsConfig `json:"icons"`
+	ToolConfig `                    envPrefix:"PICOCLAW_TOOLS_TASK_TOOL_"`
+	Icons      TaskToolIconsConfig `                                      json:"icons"`
 }
 
 type TaskToolIconsConfig struct {

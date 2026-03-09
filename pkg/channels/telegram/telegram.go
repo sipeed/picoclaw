@@ -201,7 +201,11 @@ func (c *TelegramChannel) SendMessageWithID(ctx context.Context, msg bus.Outboun
 
 // sendHTMLChunk sends a single HTML message, falling back to the original
 // markdown as plain text on parse failure so users never see raw HTML tags.
-func (c *TelegramChannel) sendHTMLChunk(ctx context.Context, chatID int64, htmlContent, mdFallback string) (int, error) {
+func (c *TelegramChannel) sendHTMLChunk(
+	ctx context.Context,
+	chatID int64,
+	htmlContent, mdFallback string,
+) (int, error) {
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
 
@@ -647,7 +651,12 @@ func parseTelegramMessageIDs(messageID string) ([]int, error) {
 	return ids, nil
 }
 
-func (c *TelegramChannel) editHTMLChunk(ctx context.Context, chatID int64, messageID int, htmlContent, mdFallback string) error {
+func (c *TelegramChannel) editHTMLChunk(
+	ctx context.Context,
+	chatID int64,
+	messageID int,
+	htmlContent, mdFallback string,
+) error {
 	editMsg := tu.EditMessageText(tu.ID(chatID), messageID, htmlContent)
 	editMsg.ParseMode = telego.ModeHTML
 
