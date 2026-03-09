@@ -12,5 +12,14 @@ func BuiltinDefinitions() []Definition {
 		listCommand(),
 		switchCommand(),
 		checkCommand(),
+		// Session mode commands (formerly : prefix)
+		cmdModeCommand(),
+		picoModeCommand(),
+		hipicoCmnd(),
+		editCommand(),
+		// Info and session management
+		usageCommand(),
+		clearCommand(),
+		compactCommand(),
 	}
 }

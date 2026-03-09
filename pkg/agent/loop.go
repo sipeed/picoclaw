@@ -634,11 +634,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	route, agent, routeErr := al.resolveMessageRoute(msg)
 
+	// Compute session key upfront so session-scoped commands (/cmd, /pico, /clear…)
+	// get the same key that the agent loop will use. Falls back to msg.SessionKey when
+	// routing fails, which is fine — context-dependent commands guard against nil agent.
+	sessionKey := resolveScopeKey(route, msg.SessionKey)
+
 	// Commands are checked before requiring a successful route.
 	// Global commands (/help, /show, /switch) work even when routing fails;
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
-	if response, handled := al.handleCommand(ctx, msg, agent); handled {
+	if response, handled := al.handleCommand(ctx, msg, agent, sessionKey); handled {
 		return response, nil
 	}
 
@@ -653,49 +658,18 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 	}
 
-	// Resolve session key from route, while preserving explicit agent-scoped keys.
-	scopeKey := resolveScopeKey(route, msg.SessionKey)
-	sessionKey := scopeKey
-
 	logger.InfoCF("agent", "Routed message",
 		map[string]any{
 			"agent_id":      agent.ID,
-			"scope_key":     scopeKey,
+			"scope_key":     sessionKey,
 			"session_key":   sessionKey,
 			"matched_by":    route.MatchedBy,
 			"route_agent":   route.AgentID,
 			"route_channel": route.Channel,
 		})
 
-	// Handle mode-switching commands (:cmd, :pico, :hipico)
-	content := strings.TrimSpace(msg.Content)
-	if strings.HasPrefix(content, ":") {
-		if response, handled := al.handleModeCommand(content, sessionKey, agent); handled {
-			return response, nil
-		}
-		// :hipico <msg> falls through here — one-shot LLM call, stays in modeCmd
-		if strings.HasPrefix(content, ":hipico") {
-			userMessage := strings.TrimSpace(strings.TrimPrefix(content, ":hipico"))
-			workDir := al.getSessionWorkDir(sessionKey)
-			if workDir == "" {
-				workDir = agent.Workspace
-			}
-			hipicoSessionKey := sessionKey + ":hipico"
-			return al.runAgentLoop(ctx, agent, processOptions{
-				SessionKey:      hipicoSessionKey,
-				Channel:         msg.Channel,
-				ChatID:          msg.ChatID,
-				UserMessage:     userMessage,
-				Media:           msg.Media,
-				DefaultResponse: defaultResponse,
-				EnableSummary:   false,
-				SendResponse:    false,
-				WorkingDir:      workDir,
-			})
-		}
-	}
-
 	// Dispatch based on current session mode
+	content := strings.TrimSpace(msg.Content)
 	switch al.getSessionMode(sessionKey) {
 	case modeCmd:
 		return al.executeCmdMode(ctx, agent, content, sessionKey, msg.Channel, msg.ChatID)
@@ -1712,14 +1686,8 @@ func (al *AgentLoop) handleCommand(
 	ctx context.Context,
 	msg bus.InboundMessage,
 	agent *AgentInstance,
+	sessionKey string,
 ) (string, bool) {
-	content := strings.TrimSpace(msg.Content)
-
-	// Handle : prefixed extension commands (work across all channels)
-	if strings.HasPrefix(content, ":") {
-		return al.handleExtensionCommand(content)
-	}
-
 	if !commands.HasCommandPrefix(msg.Content) {
 		return "", false
 	}
@@ -1728,7 +1696,7 @@ func (al *AgentLoop) handleCommand(
 		return "", false
 	}
 
-	rt := al.buildCommandsRuntime(agent)
+	rt := al.buildCommandsRuntime(agent, sessionKey, msg)
 	executor := commands.NewExecutor(al.cmdRegistry, rt)
 
 	var commandReply string
@@ -1757,7 +1725,7 @@ func (al *AgentLoop) handleCommand(
 	}
 }
 
-func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtime {
+func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey string, msg bus.InboundMessage) *commands.Runtime {
 	rt := &commands.Runtime{
 		Config:          al.cfg,
 		ListAgentIDs:    al.registry.ListAgentIDs,
@@ -1777,7 +1745,107 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtim
 			}
 			return nil
 		},
+
+		// Session mode (session-scoped)
+		GetSessionMode: func() string {
+			if al.getSessionMode(sessionKey) == modeCmd {
+				return "cmd"
+			}
+			return "pico"
+		},
+		SetModeCmd: func() string {
+			if agent == nil {
+				return "Command unavailable in current context."
+			}
+			al.setSessionMode(sessionKey, modeCmd)
+			workDir := al.getSessionWorkDir(sessionKey)
+			if workDir == "" {
+				workDir = agent.Workspace
+				al.setSessionWorkDir(sessionKey, workDir)
+			}
+			return fmt.Sprintf("```\n%s$\n```\nType `/pico` to return to chat mode.", shortenHomePath(workDir))
+		},
+		SetModePico: func() string {
+			al.setSessionMode(sessionKey, modePico)
+			return "Switched to chat mode. Type /cmd to enter command mode."
+		},
+		GetWorkDir: func() string {
+			if agent == nil {
+				return ""
+			}
+			workDir := al.getSessionWorkDir(sessionKey)
+			if workDir == "" {
+				return agent.Workspace
+			}
+			return workDir
+		},
+		GetWorkspace: func() string {
+			if agent == nil {
+				return ""
+			}
+			return agent.Workspace
+		},
+
+		// File editing — delegates to handleEditCommand with proper path resolution
+		EditFile: func(content string) string {
+			if agent == nil {
+				return "Command unavailable in current context."
+			}
+			workDir := al.getSessionWorkDir(sessionKey)
+			if workDir == "" {
+				workDir = agent.Workspace
+			}
+			return al.handleEditCommand(content, workDir, agent.Workspace)
+		},
+
+		// Token usage stats
+		GetTokenUsage: func() (int64, int64, int64) {
+			if agent == nil {
+				return 0, 0, 0
+			}
+			return agent.TotalPromptTokens.Load(), agent.TotalCompletionTokens.Load(), agent.TotalRequests.Load()
+		},
+
+		// One-shot AI query for /hipico (stays in modeCmd, separate session key)
+		RunOneShot: func(ctx context.Context, message string) (string, error) {
+			if agent == nil {
+				return "", fmt.Errorf("no agent available")
+			}
+			workDir := al.getSessionWorkDir(sessionKey)
+			if workDir == "" {
+				workDir = agent.Workspace
+			}
+			return al.runAgentLoop(ctx, agent, processOptions{
+				SessionKey:      sessionKey + ":hipico",
+				Channel:         msg.Channel,
+				ChatID:          msg.ChatID,
+				UserMessage:     message,
+				Media:           msg.Media,
+				DefaultResponse: defaultResponse,
+				EnableSummary:   false,
+				SendResponse:    false,
+				WorkingDir:      workDir,
+			})
+		},
+
+		// Session management
+		ClearSession: func() error {
+			if agent == nil {
+				return fmt.Errorf("no agent available")
+			}
+			agent.Sessions.TruncateHistory(sessionKey, 0)
+			agent.Sessions.SetSummary(sessionKey, "")
+			return agent.Sessions.Save(sessionKey)
+		},
+		CompactSession: func() error {
+			if agent == nil {
+				return fmt.Errorf("no agent available")
+			}
+			al.summarizeSession(agent, sessionKey)
+			return nil
+		},
 	}
+
 	if agent != nil {
 		rt.GetModelInfo = func() (string, string) {
 			return agent.Model, al.cfg.Agents.Defaults.Provider
@@ -1798,98 +1866,6 @@ func mapCommandError(result commands.ExecuteResult) string {
 	return fmt.Sprintf("Failed to execute /%s: %v", result.Command, result.Err)
 }
 
-// handleExtensionCommand handles : prefixed commands that work across all channels.
-func (al *AgentLoop) handleExtensionCommand(content string) (string, bool) {
-	parts := strings.Fields(content)
-	if len(parts) == 0 {
-		return "", false
-	}
-
-	cmd := parts[0]
-
-	switch cmd {
-	case ":cmd", ":pico", ":hipico", ":edit":
-		// Pass through to processMessage for mode handling (needs sessionKey from routing)
-		return "", false
-
-	case ":help":
-		return `:help - Show this help message
-:usage - Show model info and token usage
-:cmd - Switch to command mode (execute shell commands)
-:pico - Switch to chat mode (default, AI conversation)
-:hipico <msg> - Ask AI for help (from command mode, one-shot)
-:edit <file> - View/edit files (cmd mode)`, true
-
-	case ":usage":
-		agent := al.registry.GetDefaultAgent()
-		if agent == nil {
-			return "No agent available.", true
-		}
-		promptTokens := agent.TotalPromptTokens.Load()
-		completionTokens := agent.TotalCompletionTokens.Load()
-		return fmt.Sprintf(`Model: %s
-Max tokens: %d
-Temperature: %.1f
-
-Token usage (this session):
-  Prompt tokens: %d
-  Completion tokens: %d
-  Total tokens: %d
-  Requests: %d`,
-			agent.Model,
-			agent.MaxTokens,
-			agent.Temperature,
-			promptTokens,
-			completionTokens,
-			promptTokens+completionTokens,
-			agent.TotalRequests.Load(),
-		), true
-
-	default:
-		// Don't intercept unrecognized : prefixed messages (e.g. :) :D :thinking:)
-		// Let them pass through as normal chat messages
-		return "", false
-	}
-}
-
-// handleModeCommand processes mode-switching commands (:cmd, :pico, :hipico).
-// Returns (response, handled). If handled is true, the caller should return the response directly.
-// For :hipico with a message, it returns ("", false) so processMessage continues with a one-shot LLM call.
-func (al *AgentLoop) handleModeCommand(content, sessionKey string, agent *AgentInstance) (string, bool) {
-	parts := strings.Fields(content)
-	if len(parts) == 0 {
-		return "", false
-	}
-
-	cmd := parts[0]
-
-	switch cmd {
-	case ":cmd":
-		al.setSessionMode(sessionKey, modeCmd)
-		workDir := al.getSessionWorkDir(sessionKey)
-		if workDir == "" {
-			workDir = agent.Workspace
-			al.setSessionWorkDir(sessionKey, workDir)
-		}
-		displayDir := shortenHomePath(workDir)
-		return fmt.Sprintf("```\n%s$\n```\nType `:pico` to return to chat mode.", displayDir), true
-
-	case ":pico":
-		al.setSessionMode(sessionKey, modePico)
-		return "Switched to chat mode. Type :cmd to enter command mode.", true
-
-	case ":hipico":
-		msg := strings.TrimSpace(strings.TrimPrefix(content, ":hipico"))
-		if msg == "" {
-			return "Usage: :hipico <message>\nExample: :hipico check the log files for errors", true
-		}
-		// Stay in modeCmd, just flag for one-shot LLM call — processMessage handles it
-		return "", false
-	}
-
-	return "", false
-}
-
 // executeCmdMode executes a shell command in command mode via ExecTool.
 // Output is formatted as a console code block for channel display.
 func (al *AgentLoop) executeCmdMode(
@@ -1905,15 +1881,6 @@ func (al *AgentLoop) executeCmdMode(
 	// Handle cd command specially
 	if content == "cd" || strings.HasPrefix(content, "cd ") {
 		return al.handleCdCommand(content, sessionKey, agent), nil
-	}
-
-	// Handle :edit command
-	if content == ":edit" || strings.HasPrefix(content, ":edit ") {
-		workDir := al.getSessionWorkDir(sessionKey)
-		if workDir == "" {
-			workDir = agent.Workspace
-		}
-		return al.handleEditCommand(content, workDir, agent.Workspace), nil
 	}
 
 	// Intercept interactive editors
@@ -2023,7 +1990,7 @@ func shortenHomePath(path string) string {
 //	:edit <file> -<N>               → delete line N
 //	:edit <file> -m """<content>""" → write full content (create if needed)
 func (al *AgentLoop) handleEditCommand(content, workDir, workspace string) string {
-	raw := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(content), ":edit"))
+	raw := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(content), "/edit"))
 	if raw == "" {
 		return editUsage()
 	}
@@ -2044,12 +2011,12 @@ func (al *AgentLoop) handleEditCommand(content, workDir, workspace string) strin
 		return fmt.Sprintf("Access denied: %s", err)
 	}
 
-	// :edit <file> — show file content
+	// /edit <file> — show file content
 	if len(parts) == 1 && !strings.Contains(raw, "\n") {
 		return editShowFile(filename)
 	}
 
-	// :edit <file> -m """..."""
+	// /edit <file> -m """..."""
 	if len(parts) >= 2 && parts[1] == "-m" {
 		return editMultiline(filename, raw)
 	}
@@ -2081,11 +2048,11 @@ func resolveEditPath(name, workDir, workspace string) (string, error) {
 
 func editUsage() string {
 	return "Usage:\n" +
-		"  :edit <file>              — view file\n" +
-		"  :edit <file> <N> <text>   — replace line N\n" +
-		"  :edit <file> +<N> <text>  — insert after line N\n" +
-		"  :edit <file> -<N>         — delete line N\n" +
-		"  :edit <file> -m \"\"\"       — write content\n" +
+		"  /edit <file>              — view file\n" +
+		"  /edit <file> <N> <text>   — replace line N\n" +
+		"  /edit <file> +<N> <text>  — insert after line N\n" +
+		"  /edit <file> -<N>         — delete line N\n" +
+		"  /edit <file> -m \"\"\"       — write content\n" +
 		"  <content>\n" +
 		"  \"\"\""
 }
@@ -2095,7 +2062,7 @@ func editShowFile(path string) string {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Sprintf(
-				"File not found: %s\nUse :edit %s -m \"\"\" to create it.",
+				"File not found: %s\nUse /edit %s -m \"\"\" to create it.",
 				shortenHomePath(path),
 				filepath.Base(path),
 			)
@@ -2262,9 +2229,9 @@ func interceptEditor(cmd string) string {
 	name := parts[0]
 	switch name {
 	case "vim", "vi", "nvim", "nano", "emacs", "pico", "joe", "mcedit":
-		return fmt.Sprintf("⚠ %s requires a terminal and cannot run here.\nUse :edit instead:\n\n"+
-			":edit <file>              — view file\n"+
-			":edit <file> -m \"\"\"       — write content\n"+
+		return fmt.Sprintf("⚠ %s requires a terminal and cannot run here.\nUse /edit instead:\n\n"+
+			"/edit <file>              — view file\n"+
+			"/edit <file> -m \"\"\"       — write content\n"+
 			"<content>\n"+
 			"\"\"\"\n\n"+
 			"Type :help for all commands.", name)
