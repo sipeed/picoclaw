@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/tools/shell"
 )
 
 type ExecTool struct {
@@ -23,6 +24,7 @@ type ExecTool struct {
 	allowPatterns       []*regexp.Regexp
 	customAllowPatterns []*regexp.Regexp
 	restrictToWorkspace bool
+	cachedEnv           map[string]string // cached sanitized env from os.Getenv() at init
 }
 
 var (
@@ -136,6 +138,22 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		timeout = time.Duration(config.Tools.Exec.TimeoutSeconds) * time.Second
 	}
 
+	// Get envSet and envAllowlist from config (if provided)
+	var envSet map[string]string
+	var envAllowlist []string
+	if config != nil && config.Tools.Exec.EnvSet != nil {
+		envSet = config.Tools.Exec.EnvSet
+	}
+	if config != nil && config.Tools.Exec.EnvAllowlist != nil {
+		envAllowlist = config.Tools.Exec.EnvAllowlist
+	}
+
+	// Ensure PICOCLAW_* vars are set for child processes
+	envSet = shell.WithPicoclawEnvVars(envSet, workingDir)
+
+	// Build cached env: start with envSet (PICOCLAW_*), then add allowed inherited vars
+	cachedEnv := shell.WithAllowedEnv(envSet, envAllowlist)
+
 	return &ExecTool{
 		workingDir:          workingDir,
 		timeout:             timeout,
@@ -143,6 +161,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		allowPatterns:       nil,
 		customAllowPatterns: customAllowPatterns,
 		restrictToWorkspace: restrict,
+		cachedEnv:           cachedEnv,
 	}, nil
 }
 
@@ -165,6 +184,13 @@ func (t *ExecTool) Parameters() map[string]any {
 			"working_dir": map[string]any{
 				"type":        "string",
 				"description": "Optional working directory for the command",
+			},
+			"env": map[string]any{
+				"type":        "object",
+				"description": "Additional environment variables to set for this command. Available: PICOCLAW_HOME, PICOCLAW_CONFIG, PICOCLAW_AGENT_WORKSPACE, PICOCLAW_EXE, PICOCLAW_SERVICE_NAME, PICOCLAW_EXEC_TIME (RFC3339), PICOCLAW_EXEC_TIMEOUT. Cannot override: PATH, HOME, USER, LOGNAME, SHELL, LD_PRELOAD, LD_LIBRARY_PATH, LD_AUDIT, LD_DEBUG, PICOCLAW_*",
+				"additionalProperties": map[string]any{
+					"type": "string",
+				},
 			},
 		},
 		"required": []string{"command"},
@@ -217,6 +243,28 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	} else {
 		cmd = exec.CommandContext(cmdCtx, "sh", "-c", command)
 	}
+
+	// Parse env param from LLM (if provided)
+	var extraEnv map[string]string
+	if envArg, ok := args["env"].(map[string]any); ok && envArg != nil {
+		extraEnv = make(map[string]string)
+		for k, v := range envArg {
+			if strVal, ok := v.(string); ok {
+				extraEnv[k] = strVal
+			}
+		}
+	}
+
+	// Add PICOCLAW_EXEC_TIME - timestamp when command is executed
+	execTimeEnv := map[string]string{
+		"PICOCLAW_EXEC_TIME":    time.Now().Format(time.RFC3339),
+		"PICOCLAW_EXEC_TIMEOUT": t.timeout.String(),
+	}
+
+	// Use sanitized environment - merge cached env with exec time vars and LLM extra env
+	// Note: cachedEnv is NOT re-filtered - PICOCLAW_* vars are preserved
+	cmd.Env = shell.MergeEnvVars(t.cachedEnv, execTimeEnv, extraEnv)
+
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
