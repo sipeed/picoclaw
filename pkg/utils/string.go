@@ -39,7 +39,7 @@ func SanitizeMessageContent(input string) string {
 // Handles multi-byte Unicode characters properly.
 // If the string is truncated, "..." is appended to indicate truncation.
 func Truncate(s string, maxLen int) string {
-	// If the no-truncate flag is active, it returns the integer string
+	// If the no-truncate flag is active, it returns the full string
 	if disableTruncation.Load() {
 		return s
 	}
