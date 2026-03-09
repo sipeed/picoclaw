@@ -31,11 +31,11 @@ jobs:
           SHA=$(git rev-parse --short=8 HEAD)
           BASE_VERSION=$(git describe --tags --match "v*" --exclude "*nightly*" --abbrev=0 2>/dev/null || true)
           if [ -z "$BASE_VERSION" ] || [ "$BASE_VERSION" = "v0.0.0" ]; then
-            VERSION="nightly-${DATE}-${SHA}"
+            TAG="v0.0.0-nightly.${DATE}.${SHA}"
           else
-            VERSION="${BASE_VERSION}-nightly-${DATE}-${SHA}"
+            TAG="${BASE_VERSION}-nightly.${DATE}.${SHA}"
           fi
-          TAG="nightly-${DATE}-${SHA}"
+          VERSION=$TAG
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "Nightly build $VERSION"
@@ -154,19 +154,19 @@ jobs:
             build/*
 
           echo "Cleaning up old nightly releases (keeping only the most recent)..."
-          gh release list --limit 100 --json tagName -q '.[].tagName | select(startswith("nightly-"))' | tail -n +2 | while read -r old_tag; do
+          gh release list --limit 100 --json tagName -q '.[].tagName | select(contains("-nightly."))' | tail -n +2 | while read -r old_tag; do
             if [ -n "$old_tag" ] && [ "$old_tag" != "$TAG" ]; then
               echo "Deleting old nightly release: $old_tag"
               gh release delete "$old_tag" --cleanup-tag -y || true
             fi
           done
           
-          echo "Cleaning up old 'nightly-YYYYMMDD-SHA' Docker images on GHCR..."
+          echo "Cleaning up old 'vX.X.X-nightly...' Docker images on GHCR..."
           PACKAGE_URL="/users/${{ github.repository_owner }}/packages/container/${{ github.event.repository.name }}/versions"
           OLD_NIGHTLY_VERSIONS=$(gh api --paginate -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "$PACKAGE_URL" \
-            --jq ". | map(select(any(.metadata.container.tags[]; startswith(\"nightly-\") and (. != \"nightly\") and (. != \"$TAG\")))) | .[].id" 2>/dev/null || true)
+            --jq ". | map(select(any(.metadata.container.tags[]; contains(\"-nightly.\") and (. != \"nightly\") and (. != \"$TAG\")))) | .[].id" 2>/dev/null || true)
             
           for version_id in $OLD_NIGHTLY_VERSIONS; do
             if [ -n "$version_id" ]; then
