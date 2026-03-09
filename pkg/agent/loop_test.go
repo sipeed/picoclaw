@@ -526,7 +526,7 @@ func (h testHelper) executeAndGetResponse(tb testing.TB, ctx context.Context, ms
 	if err != nil {
 		tb.Fatalf("processMessage failed: %v", err)
 	}
-	return response
+	return response.Content
 }
 
 const responseTimeout = 3 * time.Second
@@ -584,6 +584,145 @@ func TestProcessMessage_UsesRouteSessionKey(t *testing.T) {
 	}
 	if history[0].Role != "user" || history[0].Content != "hello" {
 		t.Fatalf("unexpected first message in session: %+v", history[0])
+	}
+}
+
+func TestParseFinalReplyDirective(t *testing.T) {
+	content, replyTo := parseFinalReplyDirective(
+		"telegram",
+		&ReplyContextInfo{
+			CurrentMessageID: "910",
+			ParentMessageID:  "905",
+		},
+		"[[reply:parent]]\n\nThreaded answer",
+	)
+
+	if content != "Threaded answer" {
+		t.Fatalf("content=%q", content)
+	}
+	if replyTo != "905" {
+		t.Fatalf("replyTo=%q", replyTo)
+	}
+}
+
+func TestProcessMessage_TelegramFinalDirectiveSetsReplyTarget(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "[[reply:parent]]\n\nThreaded answer"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	msg := bus.InboundMessage{
+		Channel:   "telegram",
+		SenderID:  "user1",
+		ChatID:    "chat1",
+		Content:   "hello",
+		MessageID: "910",
+		Metadata: map[string]string{
+			"reply_to_message_id": "905",
+		},
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+
+	response, err := al.processMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("processMessage failed: %v", err)
+	}
+	if response.Content != "Threaded answer" {
+		t.Fatalf("content=%q", response.Content)
+	}
+	if response.ReplyToMessageID != "905" {
+		t.Fatalf("reply_to_message_id=%q", response.ReplyToMessageID)
+	}
+}
+
+func TestRun_PublishesTelegramReplyTargetFromFinalDirective(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "[[reply:parent]]\n\nThreaded answer"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- al.Run(ctx)
+	}()
+	defer func() {
+		al.Stop()
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("agent loop did not stop in time")
+		}
+	}()
+
+	inbound := bus.InboundMessage{
+		Channel:   "telegram",
+		SenderID:  "user1",
+		ChatID:    "chat1",
+		Content:   "hello",
+		MessageID: "910",
+		Metadata: map[string]string{
+			"reply_to_message_id": "905",
+		},
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+	if err := msgBus.PublishInbound(context.Background(), inbound); err != nil {
+		t.Fatalf("publish inbound: %v", err)
+	}
+
+	outCtx, outCancel := context.WithTimeout(context.Background(), time.Second)
+	defer outCancel()
+
+	outbound, ok := msgBus.SubscribeOutbound(outCtx)
+	if !ok {
+		t.Fatal("expected outbound message")
+	}
+	if outbound.Content != "Threaded answer" {
+		t.Fatalf("content=%q", outbound.Content)
+	}
+	if outbound.ReplyToMessageID != "905" {
+		t.Fatalf("reply_to_message_id=%q", outbound.ReplyToMessageID)
 	}
 }
 

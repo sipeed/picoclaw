@@ -82,7 +82,7 @@ func TestSingleSystemMessage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msgs := cb.BuildMessages(tt.history, tt.summary, tt.message, nil, "test", "chat1")
+			msgs := cb.BuildMessages(tt.history, tt.summary, tt.message, nil, "test", "chat1", nil)
 
 			systemCount := 0
 			for _, m := range msgs {
@@ -123,6 +123,41 @@ func TestSingleSystemMessage(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBuildMessages_TelegramReplyRoutingContext(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"IDENTITY.md": "# Identity\nTest agent.",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	msgs := cb.BuildMessages(
+		nil,
+		"",
+		"hello",
+		nil,
+		"telegram",
+		"chat1",
+		&ReplyContextInfo{
+			CurrentMessageID: "910",
+			ParentMessageID:  "905",
+		},
+	)
+
+	sys := msgs[0].Content
+	if !strings.Contains(sys, "## Reply Routing") {
+		t.Fatal("system prompt missing reply routing section")
+	}
+	if !strings.Contains(sys, "Current inbound message ID: 910") {
+		t.Fatal("system prompt missing current message ID")
+	}
+	if !strings.Contains(sys, "[[reply:current]]") {
+		t.Fatal("system prompt missing final reply directive guidance")
+	}
+	if !strings.Contains(sys, "Do not use the `message` tool for the normal reply in this chat") {
+		t.Fatal("system prompt missing guidance to avoid message tool for normal replies")
 	}
 }
 
@@ -576,7 +611,7 @@ func TestConcurrentBuildSystemPromptWithCache(t *testing.T) {
 				}
 
 				// Also exercise BuildMessages concurrently
-				msgs := cb.BuildMessages(nil, "", "hello", nil, "test", "chat")
+				msgs := cb.BuildMessages(nil, "", "hello", nil, "test", "chat", nil)
 				if len(msgs) < 2 {
 					errs <- "BuildMessages returned fewer than 2 messages"
 					return
@@ -664,6 +699,6 @@ func BenchmarkBuildMessagesWithCache(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = cb.BuildMessages(history, "summary", "new message", nil, "cli", "test")
+		_ = cb.BuildMessages(history, "summary", "new message", nil, "cli", "test", nil)
 	}
 }

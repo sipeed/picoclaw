@@ -438,12 +438,46 @@ func (cb *ContextBuilder) buildDynamicContext(channel, chatID string) string {
 	return sb.String()
 }
 
+type ReplyContextInfo struct {
+	CurrentMessageID string
+	ParentMessageID  string
+}
+
+func buildReplyRoutingContext(channel string, replyCtx *ReplyContextInfo) string {
+	if channel != "telegram" || replyCtx == nil || strings.TrimSpace(replyCtx.CurrentMessageID) == "" {
+		return ""
+	}
+
+	parentID := strings.TrimSpace(replyCtx.ParentMessageID)
+	if parentID == "" {
+		parentID = "(none)"
+	}
+
+	return fmt.Sprintf(
+		"## Reply Routing\n"+
+			"Current inbound message ID: %s\n"+
+			"Parent message ID: %s\n\n"+
+			"To control Telegram reply threading through the final answer, you may put exactly one hidden directive on the first line of your final response:\n"+
+			"- `[[reply:chat]]` posts a normal chat message\n"+
+			"- `[[reply:current]]` replies to the current inbound message\n"+
+			"- `[[reply:parent]]` replies to the parent/replied-to message when there is one\n"+
+			"- `[[reply:message_id=123]]` replies to a specific known message ID\n\n"+
+			"After the directive, add a blank line and then the user-visible message.\n"+
+			"Do not use the `message` tool for the normal reply in this chat; use the final answer plus a directive when you need reply routing.\n"+
+			"If you do not need special routing, answer normally without a directive.\n"+
+			"Never mention the directive in the visible message body.",
+		replyCtx.CurrentMessageID,
+		parentID,
+	)
+}
+
 func (cb *ContextBuilder) BuildMessages(
 	history []providers.Message,
 	summary string,
 	currentMessage string,
 	media []string,
 	channel, chatID string,
+	replyCtx *ReplyContextInfo,
 ) []providers.Message {
 	messages := []providers.Message{}
 
@@ -460,6 +494,7 @@ func (cb *ContextBuilder) BuildMessages(
 
 	// Build short dynamic context (time, runtime, session) — changes per request
 	dynamicCtx := cb.buildDynamicContext(channel, chatID)
+	replyRoutingCtx := buildReplyRoutingContext(channel, replyCtx)
 
 	// Compose a single system message: static (cached) + dynamic + optional summary.
 	// Keeping all system content in one message ensures every provider adapter can
@@ -475,6 +510,11 @@ func (cb *ContextBuilder) BuildMessages(
 	contentBlocks := []providers.ContentBlock{
 		{Type: "text", Text: staticPrompt, CacheControl: &providers.CacheControl{Type: "ephemeral"}},
 		{Type: "text", Text: dynamicCtx},
+	}
+
+	if replyRoutingCtx != "" {
+		stringParts = append(stringParts, replyRoutingCtx)
+		contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: replyRoutingCtx})
 	}
 
 	if summary != "" {

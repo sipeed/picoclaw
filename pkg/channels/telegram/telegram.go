@@ -186,7 +186,13 @@ func (c *TelegramChannel) SendMessageWithID(ctx context.Context, msg bus.Outboun
 	chunks := telegramMessageChunks(msg.Content)
 	ids := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
-		msgID, err := c.sendHTMLChunk(ctx, target, chunk.HTML, chunk.Markdown)
+		msgID, err := c.sendHTMLChunk(
+			ctx,
+			target,
+			msg.ReplyToMessageID,
+			chunk.HTML,
+			chunk.Markdown,
+		)
 		if err != nil {
 			return "", err
 		}
@@ -204,12 +210,16 @@ func (c *TelegramChannel) SendMessageWithID(ctx context.Context, msg bus.Outboun
 func (c *TelegramChannel) sendHTMLChunk(
 	ctx context.Context,
 	target telegramTarget,
+	replyToMessageID string,
 	htmlContent, mdFallback string,
 ) (int, error) {
 	tgMsg := tu.Message(tu.ID(target.ChatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
 	if threadID, ok := target.messageThreadIDForSend(); ok {
 		tgMsg.MessageThreadID = threadID
+	}
+	if replyParams, ok := telegramReplyParameters(replyToMessageID); ok {
+		tgMsg.ReplyParameters = replyParams
 	}
 
 	msg, err := c.bot.SendMessage(ctx, tgMsg)
@@ -225,6 +235,23 @@ func (c *TelegramChannel) sendHTMLChunk(
 		}
 	}
 	return msg.MessageID, nil
+}
+
+func telegramReplyParameters(replyToMessageID string) (*telego.ReplyParameters, bool) {
+	replyToMessageID = strings.TrimSpace(replyToMessageID)
+	if replyToMessageID == "" {
+		return nil, false
+	}
+
+	id, err := strconv.Atoi(replyToMessageID)
+	if err != nil || id <= 0 {
+		return nil, false
+	}
+
+	return &telego.ReplyParameters{
+		MessageID:                id,
+		AllowSendingWithoutReply: true,
+	}, true
 }
 
 // StartTyping implements channels.TypingCapable.
@@ -292,6 +319,26 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 	return nil
 }
 
+// DeleteMessage implements channels.MessageDeleter.
+func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
+	target, err := parseTelegramTarget(chatID)
+	if err != nil {
+		return err
+	}
+	messageIDs, err := parseTelegramMessageIDs(messageID)
+	if err != nil {
+		return err
+	}
+
+	for _, mid := range messageIDs {
+		if err := c.bot.DeleteMessage(ctx, tu.Delete(tu.ID(target.ChatID), mid)); err != nil {
+			return fmt.Errorf("telegram delete: %w", channels.ErrTemporary)
+		}
+	}
+
+	return nil
+}
+
 // SendPlaceholder implements channels.PlaceholderCapable.
 // It sends a placeholder message (e.g. "Thinking... 💭") that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).
@@ -304,14 +351,17 @@ func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (s
 		return "", nil
 	}
 
-	text := phCfg.Text
-	if text == "" {
-		text = "Thinking... 💭"
-	}
-
 	target, err := parseTelegramTarget(chatID)
 	if err != nil {
 		return "", err
+	}
+	if target.ChatID < 0 {
+		return "", nil
+	}
+
+	text := phCfg.Text
+	if text == "" {
+		text = "Thinking... 💭"
 	}
 
 	params := tu.Message(tu.ID(target.ChatID), text)
@@ -371,6 +421,9 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 			if threadID, ok := target.messageThreadIDForSend(); ok {
 				params.MessageThreadID = threadID
 			}
+			if replyParams, ok := telegramReplyParameters(msg.ReplyToMessageID); ok {
+				params.ReplyParameters = replyParams
+			}
 			_, err = c.bot.SendPhoto(ctx, params)
 		case "audio":
 			params := &telego.SendAudioParams{
@@ -380,6 +433,9 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 			}
 			if threadID, ok := target.messageThreadIDForSend(); ok {
 				params.MessageThreadID = threadID
+			}
+			if replyParams, ok := telegramReplyParameters(msg.ReplyToMessageID); ok {
+				params.ReplyParameters = replyParams
 			}
 			_, err = c.bot.SendAudio(ctx, params)
 		case "video":
@@ -391,6 +447,9 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 			if threadID, ok := target.messageThreadIDForSend(); ok {
 				params.MessageThreadID = threadID
 			}
+			if replyParams, ok := telegramReplyParameters(msg.ReplyToMessageID); ok {
+				params.ReplyParameters = replyParams
+			}
 			_, err = c.bot.SendVideo(ctx, params)
 		default: // "file" or unknown types
 			params := &telego.SendDocumentParams{
@@ -400,6 +459,9 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 			}
 			if threadID, ok := target.messageThreadIDForSend(); ok {
 				params.MessageThreadID = threadID
+			}
+			if replyParams, ok := telegramReplyParameters(msg.ReplyToMessageID); ok {
+				params.ReplyParameters = replyParams
 			}
 			_, err = c.bot.SendDocument(ctx, params)
 		}
@@ -574,6 +636,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 		"is_forum":   fmt.Sprintf("%t", message.Chat.IsForum),
 		"chat_id":    fmt.Sprintf("%d", chatID),
+	}
+	if message.ReplyToMessage != nil {
+		metadata["reply_to_message_id"] = strconv.Itoa(message.ReplyToMessage.MessageID)
 	}
 	if hasTopic {
 		metadata["thread_id"] = strconv.Itoa(threadID)

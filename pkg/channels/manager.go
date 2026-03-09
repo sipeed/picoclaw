@@ -134,9 +134,24 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 		}
 	}
 
-	// 3. Try editing placeholder
+	// 3. Try editing placeholder.
+	// Reply-targeted outbound messages must remain new sends so the transport can
+	// attach platform reply metadata; editing a placeholder would lose that target.
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
+			if msg.ReplyToMessageID != "" {
+				if deleter, ok := ch.(MessageDeleter); ok {
+					if err := deleter.DeleteMessage(ctx, msg.ChatID, entry.id); err != nil {
+						logger.WarnCF("manager", "Failed to delete placeholder before reply-targeted send", map[string]any{
+							"channel":        name,
+							"chat_id":        msg.ChatID,
+							"placeholder_id": entry.id,
+							"error":          err.Error(),
+						})
+					}
+				}
+				return false
+			}
 			if editor, ok := ch.(MessageEditor); ok {
 				if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
 					return true // edited successfully, skip Send

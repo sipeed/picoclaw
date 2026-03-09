@@ -21,9 +21,11 @@ type Tool interface {
 type toolCtxKey struct{ name string }
 
 var (
-	ctxKeyChannel    = &toolCtxKey{"channel"}
-	ctxKeyChatID     = &toolCtxKey{"chatID"}
-	ctxKeySessionKey = &toolCtxKey{"sessionKey"}
+	ctxKeyChannel          = &toolCtxKey{"channel"}
+	ctxKeyChatID           = &toolCtxKey{"chatID"}
+	ctxKeySessionKey       = &toolCtxKey{"sessionKey"}
+	ctxKeyCurrentMessageID = &toolCtxKey{"currentMessageID"}
+	ctxKeyParentMessageID  = &toolCtxKey{"parentMessageID"}
 )
 
 // WithToolContext returns a child context carrying channel and chatID.
@@ -36,6 +38,17 @@ func WithToolContext(ctx context.Context, channel, chatID string) context.Contex
 // WithToolSessionKey returns a child context carrying the session key.
 func WithToolSessionKey(ctx context.Context, sessionKey string) context.Context {
 	return context.WithValue(ctx, ctxKeySessionKey, sessionKey)
+}
+
+// WithToolReplyContext returns a child context carrying the current and parent
+// inbound platform message IDs for reply routing decisions.
+func WithToolReplyContext(
+	ctx context.Context,
+	currentMessageID, parentMessageID string,
+) context.Context {
+	ctx = context.WithValue(ctx, ctxKeyCurrentMessageID, currentMessageID)
+	ctx = context.WithValue(ctx, ctxKeyParentMessageID, parentMessageID)
+	return ctx
 }
 
 // ToolChannel extracts the channel from ctx, or "" if unset.
@@ -53,6 +66,18 @@ func ToolChatID(ctx context.Context) string {
 // ToolSessionKey extracts the session key from ctx, or "" if unset.
 func ToolSessionKey(ctx context.Context) string {
 	v, _ := ctx.Value(ctxKeySessionKey).(string)
+	return v
+}
+
+// ToolCurrentMessageID extracts the current inbound platform message ID.
+func ToolCurrentMessageID(ctx context.Context) string {
+	v, _ := ctx.Value(ctxKeyCurrentMessageID).(string)
+	return v
+}
+
+// ToolParentMessageID extracts the parent/replied-to inbound platform message ID.
+func ToolParentMessageID(ctx context.Context) string {
+	v, _ := ctx.Value(ctxKeyParentMessageID).(string)
 	return v
 }
 

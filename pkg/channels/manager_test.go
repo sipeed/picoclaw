@@ -461,6 +461,15 @@ func (m *mockMessageEditor) EditMessage(ctx context.Context, chatID, messageID, 
 	return m.editFn(ctx, chatID, messageID, content)
 }
 
+type mockMessageEditorDeleter struct {
+	mockMessageEditor
+	deleteFn func(ctx context.Context, chatID, messageID string) error
+}
+
+func (m *mockMessageEditorDeleter) DeleteMessage(ctx context.Context, chatID, messageID string) error {
+	return m.deleteFn(ctx, chatID, messageID)
+}
+
 func TestPreSend_PlaceholderEditSuccess(t *testing.T) {
 	m := newTestManager()
 	var sendCalled bool
@@ -526,6 +535,90 @@ func TestPreSend_PlaceholderEditFails_FallsThrough(t *testing.T) {
 
 	if edited {
 		t.Fatal("expected preSend to return false when edit fails")
+	}
+}
+
+func TestPreSend_ReplyTargetSkipsPlaceholderEdit(t *testing.T) {
+	m := newTestManager()
+	var editCalled bool
+	var deleteCalled bool
+
+	ch := &mockMessageEditorDeleter{
+		mockMessageEditor: mockMessageEditor{
+			mockChannel: mockChannel{
+				sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+					return nil
+				},
+			},
+			editFn: func(_ context.Context, _, _, _ string) error {
+				editCalled = true
+				return nil
+			},
+		},
+		deleteFn: func(_ context.Context, chatID, messageID string) error {
+			deleteCalled = true
+			if chatID != "123" {
+				t.Fatalf("expected chatID 123, got %s", chatID)
+			}
+			if messageID != "456" {
+				t.Fatalf("expected messageID 456, got %s", messageID)
+			}
+			return nil
+		},
+	}
+
+	m.RecordPlaceholder("test", "123", "456")
+
+	msg := bus.OutboundMessage{
+		Channel:          "test",
+		ChatID:           "123",
+		Content:          "hello",
+		ReplyToMessageID: "99",
+	}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if edited {
+		t.Fatal("expected preSend to fall through for reply-targeted outbound")
+	}
+	if editCalled {
+		t.Fatal("expected placeholder edit to be skipped when reply target is set")
+	}
+	if !deleteCalled {
+		t.Fatal("expected placeholder delete to be attempted for reply-targeted outbound")
+	}
+}
+
+func TestPreSend_ReplyTargetWithoutDeleterStillSkipsEdit(t *testing.T) {
+	m := newTestManager()
+	var editCalled bool
+
+	ch := &mockMessageEditor{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+				return nil
+			},
+		},
+		editFn: func(_ context.Context, _, _, _ string) error {
+			editCalled = true
+			return nil
+		},
+	}
+
+	m.RecordPlaceholder("test", "123", "456")
+
+	msg := bus.OutboundMessage{
+		Channel:          "test",
+		ChatID:           "123",
+		Content:          "hello",
+		ReplyToMessageID: "99",
+	}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if edited {
+		t.Fatal("expected preSend to fall through for reply-targeted outbound")
+	}
+	if editCalled {
+		t.Fatal("expected placeholder edit to be skipped when reply target is set")
 	}
 }
 

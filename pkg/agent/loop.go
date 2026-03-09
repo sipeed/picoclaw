@@ -63,6 +63,21 @@ type processOptions struct {
 	EnableSummary   bool     // Whether to trigger summarization
 	SendResponse    bool     // Whether to send response via bus
 	NoHistory       bool     // If true, don't load session history (for heartbeat)
+	ReplyContext    *ReplyContextInfo
+}
+
+type agentResponse struct {
+	Content          string
+	ReplyToMessageID string
+}
+
+func (r agentResponse) outboundMessage(channel, chatID string) bus.OutboundMessage {
+	return bus.OutboundMessage{
+		Channel:          channel,
+		ChatID:           chatID,
+		Content:          r.Content,
+		ReplyToMessageID: r.ReplyToMessageID,
+	}
 }
 
 const (
@@ -73,6 +88,7 @@ const (
 	metadataKeyTeamID         = "team_id"
 	metadataKeyParentPeerKind = "parent_peer_kind"
 	metadataKeyParentPeerID   = "parent_peer_id"
+	metadataKeyReplyToMessage = "reply_to_message_id"
 	metadataKeyRouteAgentID   = "route_agent_id"
 	metadataKeyRouteMatchedBy = "route_matched_by"
 )
@@ -177,14 +193,10 @@ func registerSharedTools(
 		// Message tool
 		if cfg.Tools.IsToolEnabled("message") {
 			messageTool := tools.NewMessageTool()
-			messageTool.SetSendCallback(func(channel, chatID, content string) error {
+			messageTool.SetSendCallback(func(msg bus.OutboundMessage) error {
 				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer pubCancel()
-				return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-					Channel: channel,
-					ChatID:  chatID,
-					Content: content,
-				})
+				return msgBus.PublishOutbound(pubCtx, msg)
 			})
 			agent.Tools.Register(messageTool)
 		}
@@ -344,10 +356,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 				response, err := al.processMessage(ctx, msg)
 				if err != nil {
-					response = fmt.Sprintf("Error processing message: %v", err)
+					response = agentResponse{Content: fmt.Sprintf("Error processing message: %v", err)}
 				}
 
-				if response != "" {
+				if response.Content != "" {
 					// Check if the message tool already sent a response during this round.
 					// If so, skip publishing to avoid duplicate messages to the user.
 					// Use default agent's tools to check (message tool is shared).
@@ -362,22 +374,24 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					}
 
 					if !alreadySent {
-						al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-							Channel: msg.Channel,
-							ChatID:  msg.ChatID,
-							Content: response,
-						})
+						al.bus.PublishOutbound(ctx, response.outboundMessage(msg.Channel, msg.ChatID))
 						logger.InfoCF("agent", "Published outbound response",
 							map[string]any{
-								"channel":     msg.Channel,
-								"chat_id":     msg.ChatID,
-								"content_len": len(response),
+								"channel":             msg.Channel,
+								"chat_id":             msg.ChatID,
+								"content_len":         len(response.Content),
+								"reply_to_message_id": response.ReplyToMessageID,
 							})
 					} else {
 						logger.DebugCF(
 							"agent",
 							"Skipped outbound (message tool already sent)",
-							map[string]any{"channel": msg.Channel},
+							map[string]any{
+								"channel":             msg.Channel,
+								"chat_id":             msg.ChatID,
+								"content_len":         len(response.Content),
+								"reply_to_message_id": response.ReplyToMessageID,
+							},
 						)
 					}
 				}
@@ -565,7 +579,8 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 		SessionKey: sessionKey,
 	}
 
-	return al.processMessage(ctx, msg)
+	response, err := al.processMessage(ctx, msg)
+	return response.Content, err
 }
 
 // ProcessHeartbeat processes a heartbeat request without session history.
@@ -578,7 +593,7 @@ func (al *AgentLoop) ProcessHeartbeat(
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for heartbeat")
 	}
-	return al.runAgentLoop(ctx, agent, processOptions{
+	response, err := al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      "heartbeat",
 		Channel:         channel,
 		ChatID:          chatID,
@@ -588,9 +603,10 @@ func (al *AgentLoop) ProcessHeartbeat(
 		SendResponse:    false,
 		NoHistory:       true, // Don't load session history for heartbeat
 	})
+	return response.Content, err
 }
 
-func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (agentResponse, error) {
 	// Add message preview to log (show full content for error messages)
 	var logContent string
 	if strings.Contains(msg.Content, "Error:") || strings.Contains(msg.Content, "error") {
@@ -618,7 +634,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	route, agent, routeErr := al.resolveMessageRoute(msg)
 	if routeErr != nil {
-		return "", routeErr
+		// Commands are checked before requiring a successful route.
+		// Global commands (/help, /show, /switch) work even when routing fails;
+		// context-dependent commands check their own Runtime fields and report
+		// "unavailable" when the required capability is nil.
+		if response, handled := al.handleCommand(ctx, msg, agent, nil); handled {
+			return agentResponse{Content: response}, nil
+		}
+		return agentResponse{}, routeErr
 	}
 
 	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
@@ -651,12 +674,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
 		SendResponse:    false,
+		ReplyContext: &ReplyContextInfo{
+			CurrentMessageID: msg.MessageID,
+			ParentMessageID:  inboundMetadata(msg, metadataKeyReplyToMessage),
+		},
 	}
 
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
 	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {
-		return response, nil
+		return agentResponse{Content: response}, nil
 	}
 
 	return al.runAgentLoop(ctx, agent, opts)
@@ -695,9 +722,9 @@ func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
 func (al *AgentLoop) processSystemMessage(
 	ctx context.Context,
 	msg bus.InboundMessage,
-) (string, error) {
+) (agentResponse, error) {
 	if msg.Channel != "system" {
-		return "", fmt.Errorf(
+		return agentResponse{}, fmt.Errorf(
 			"processSystemMessage called with non-system message channel: %s",
 			msg.Channel,
 		)
@@ -734,13 +761,13 @@ func (al *AgentLoop) processSystemMessage(
 				"content_len": len(content),
 				"channel":     originChannel,
 			})
-		return "", nil
+		return agentResponse{}, nil
 	}
 
 	// Use default agent for system messages
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {
-		return "", fmt.Errorf("no default agent for system message")
+		return agentResponse{}, fmt.Errorf("no default agent for system message")
 	}
 
 	// Use the origin session for context
@@ -762,7 +789,7 @@ func (al *AgentLoop) runAgentLoop(
 	ctx context.Context,
 	agent *AgentInstance,
 	opts processOptions,
-) (string, error) {
+) (agentResponse, error) {
 	// 0. Record last channel for heartbeat notifications (skip internal channels and cli)
 	if opts.Channel != "" && opts.ChatID != "" {
 		if !constants.IsInternalChannel(opts.Channel) {
@@ -791,6 +818,7 @@ func (al *AgentLoop) runAgentLoop(
 		opts.Media,
 		opts.Channel,
 		opts.ChatID,
+		opts.ReplyContext,
 	)
 
 	// Resolve media:// refs to base64 data URLs (streaming)
@@ -803,9 +831,16 @@ func (al *AgentLoop) runAgentLoop(
 	// 3. Run LLM iteration loop
 	// Inject session key so tools (e.g. tasktool) can look it up from context.
 	ctx = tools.WithToolSessionKey(ctx, opts.SessionKey)
+	if opts.ReplyContext != nil {
+		ctx = tools.WithToolReplyContext(
+			ctx,
+			opts.ReplyContext.CurrentMessageID,
+			opts.ReplyContext.ParentMessageID,
+		)
+	}
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
-		return "", err
+		return agentResponse{}, err
 	}
 
 	// If last tool had ForUser content and we already sent it, we might not need to send final response
@@ -815,9 +850,13 @@ func (al *AgentLoop) runAgentLoop(
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
 	}
+	response := resolveFinalResponse(opts.Channel, opts.ReplyContext, finalContent)
+	if response.Content == "" {
+		response.Content = opts.DefaultResponse
+	}
 
 	// 5. Save final assistant message to session
-	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
+	agent.Sessions.AddMessage(opts.SessionKey, "assistant", response.Content)
 	agent.Sessions.Save(opts.SessionKey)
 
 	// 6. Optional: summarization
@@ -827,24 +866,115 @@ func (al *AgentLoop) runAgentLoop(
 
 	// 7. Optional: send response via bus
 	if opts.SendResponse {
-		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-			Channel: opts.Channel,
-			ChatID:  opts.ChatID,
-			Content: finalContent,
-		})
+		al.bus.PublishOutbound(ctx, response.outboundMessage(opts.Channel, opts.ChatID))
 	}
 
 	// 8. Log response
-	responsePreview := utils.Truncate(finalContent, 120)
+	responsePreview := utils.Truncate(response.Content, 120)
 	logger.InfoCF("agent", fmt.Sprintf("Response: %s", responsePreview),
 		map[string]any{
 			"agent_id":     agent.ID,
 			"session_key":  opts.SessionKey,
 			"iterations":   iteration,
-			"final_length": len(finalContent),
+			"final_length": len(response.Content),
 		})
 
-	return finalContent, nil
+	return response, nil
+}
+
+func resolveFinalResponse(
+	channel string,
+	replyCtx *ReplyContextInfo,
+	rawContent string,
+) agentResponse {
+	content, replyToMessageID := parseFinalReplyDirective(channel, replyCtx, rawContent)
+	if channel == "telegram" {
+		firstLine, _, _ := strings.Cut(rawContent, "\n")
+		directive := strings.TrimSpace(firstLine)
+		hasDirective := strings.HasPrefix(directive, "[[reply:") && strings.HasSuffix(directive, "]]")
+		directiveMode := ""
+		if hasDirective {
+			directiveMode = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(directive, "[[reply:"), "]]"))
+		}
+		directiveStatus := "none"
+		switch {
+		case !hasDirective:
+			directiveStatus = "none"
+		case directiveMode == "chat":
+			directiveStatus = "applied_chat"
+		case replyToMessageID != "":
+			directiveStatus = "applied_reply"
+		default:
+			directiveStatus = "dropped"
+		}
+
+		fields := map[string]any{
+			"directive_status":    directiveStatus,
+			"reply_to_message_id": replyToMessageID,
+			"raw_content_len":     len(rawContent),
+			"final_content_len":   len(content),
+		}
+		if hasDirective {
+			fields["directive"] = directive
+			fields["directive_mode"] = directiveMode
+		}
+		if replyCtx != nil {
+			fields["current_message_id"] = strings.TrimSpace(replyCtx.CurrentMessageID)
+			fields["parent_message_id"] = strings.TrimSpace(replyCtx.ParentMessageID)
+		}
+		logger.DebugCF("agent", "Resolved final reply routing", fields)
+	}
+	return agentResponse{
+		Content:          content,
+		ReplyToMessageID: replyToMessageID,
+	}
+}
+
+func parseFinalReplyDirective(
+	channel string,
+	replyCtx *ReplyContextInfo,
+	rawContent string,
+) (content, replyToMessageID string) {
+	content = rawContent
+	if channel != "telegram" {
+		return content, ""
+	}
+
+	firstLine, rest, hasRest := strings.Cut(rawContent, "\n")
+	directive := strings.TrimSpace(firstLine)
+	if !strings.HasPrefix(directive, "[[reply:") || !strings.HasSuffix(directive, "]]") {
+		return content, ""
+	}
+
+	body := ""
+	if hasRest {
+		body = strings.TrimLeft(rest, "\n")
+	}
+
+	mode := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(directive, "[[reply:"), "]]"))
+	switch {
+	case mode == "chat":
+		return body, ""
+	case mode == "current":
+		if replyCtx != nil && strings.TrimSpace(replyCtx.CurrentMessageID) != "" {
+			return body, strings.TrimSpace(replyCtx.CurrentMessageID)
+		}
+	case mode == "parent":
+		if replyCtx != nil && strings.TrimSpace(replyCtx.ParentMessageID) != "" {
+			return body, strings.TrimSpace(replyCtx.ParentMessageID)
+		}
+	case strings.HasPrefix(mode, "message_id="):
+		id := strings.TrimSpace(strings.TrimPrefix(mode, "message_id="))
+		if id != "" {
+			return body, id
+		}
+	}
+
+	logger.WarnCF("agent", "Ignoring invalid final reply directive", map[string]any{
+		"channel":   channel,
+		"directive": directive,
+	})
+	return body, ""
 }
 
 func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string) {
@@ -1061,7 +1191,7 @@ func (al *AgentLoop) runLLMIteration(
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
 					newHistory, newSummary, "",
-					nil, opts.Channel, opts.ChatID,
+					nil, opts.Channel, opts.ChatID, opts.ReplyContext,
 				)
 				continue
 			}

@@ -171,7 +171,8 @@ func TestToolRegistry_ExecuteWithContext_InjectsToolContext(t *testing.T) {
 	}
 	r.Register(ct)
 
-	r.ExecuteWithContext(context.Background(), "ctx_tool", nil, "telegram", "chat-42", nil)
+	ctx := WithToolReplyContext(context.Background(), "910", "905")
+	r.ExecuteWithContext(ctx, "ctx_tool", nil, "telegram", "chat-42", nil)
 
 	if ct.lastCtx == nil {
 		t.Fatal("expected Execute to be called")
@@ -181,6 +182,12 @@ func TestToolRegistry_ExecuteWithContext_InjectsToolContext(t *testing.T) {
 	}
 	if got := ToolChatID(ct.lastCtx); got != "chat-42" {
 		t.Errorf("expected chatID 'chat-42', got %q", got)
+	}
+	if got := ToolCurrentMessageID(ct.lastCtx); got != "910" {
+		t.Errorf("expected current message ID '910', got %q", got)
+	}
+	if got := ToolParentMessageID(ct.lastCtx); got != "905" {
+		t.Errorf("expected parent message ID '905', got %q", got)
 	}
 }
 

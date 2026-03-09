@@ -178,6 +178,30 @@ func TestSendMessageWithID_ForumTopic_UsesThreadID(t *testing.T) {
 	assert.Equal(t, float64(42), body["message_thread_id"])
 }
 
+func TestSendMessageWithID_ReplyToMessage_UsesReplyParameters(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return successResponse(t), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+
+	msgID, err := ch.SendMessageWithID(context.Background(), bus.OutboundMessage{
+		ChatID:           "12345",
+		Content:          "Hello, thread!",
+		ReplyToMessageID: "99",
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, "1", msgID)
+	require.Len(t, caller.calls, 1)
+	body := decodeCallBody(t, caller.calls[0])
+	replyParams, ok := body["reply_parameters"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(99), replyParams["message_id"])
+	assert.Equal(t, true, replyParams["allow_sending_without_reply"])
+}
+
 func TestSendMessageWithID_GeneralTopic_OmitsThreadID(t *testing.T) {
 	caller := &stubCaller{
 		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
@@ -339,7 +363,7 @@ func TestStartTyping_GeneralTopic_KeepsThreadID(t *testing.T) {
 	assert.Equal(t, float64(1), body["message_thread_id"])
 }
 
-func TestSendPlaceholder_ForumTopic_UsesThreadID(t *testing.T) {
+func TestSendPlaceholder_GroupSkipsPlaceholder(t *testing.T) {
 	caller := &stubCaller{
 		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
 			return successResponse(t), nil
@@ -352,10 +376,27 @@ func TestSendPlaceholder_ForumTopic_UsesThreadID(t *testing.T) {
 
 	msgID, err := ch.SendPlaceholder(context.Background(), "-1001234567890:topic:42")
 	require.NoError(t, err)
+	assert.Empty(t, msgID)
+	assert.Empty(t, caller.calls)
+}
+
+func TestSendPlaceholder_PrivateChatSendsMessage(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return successResponse(t), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.config = config.DefaultConfig()
+	ch.config.Channels.Telegram.Placeholder.Enabled = true
+	ch.config.Channels.Telegram.Placeholder.Text = "Thinking"
+
+	msgID, err := ch.SendPlaceholder(context.Background(), "12345")
+	require.NoError(t, err)
 	assert.Equal(t, "1", msgID)
 	require.Len(t, caller.calls, 1)
 	body := decodeCallBody(t, caller.calls[0])
-	assert.Equal(t, float64(42), body["message_thread_id"])
+	assert.Equal(t, "Thinking", body["text"])
 }
 
 func TestSendMedia_ForumTopic_UsesThreadID(t *testing.T) {

@@ -162,3 +162,43 @@ func TestHandleMessage_NonForumGroup_IgnoresThreadID(t *testing.T) {
 		t.Fatalf("unexpected thread_id metadata=%q", inbound.Metadata["thread_id"])
 	}
 }
+
+func TestHandleMessage_CapturesReplyToMessageID(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
+		chatIDs:     make(map[string]int64),
+		ctx:         context.Background(),
+	}
+
+	msg := &telego.Message{
+		Text:      "replying here",
+		MessageID: 15,
+		Chat: telego.Chat{
+			ID:   -1001234567890,
+			Type: "supergroup",
+		},
+		ReplyToMessage: &telego.Message{
+			MessageID: 11,
+		},
+		From: &telego.User{
+			ID:        42,
+			FirstName: "Alice",
+		},
+	}
+
+	if err := ch.handleMessage(context.Background(), msg); err != nil {
+		t.Fatalf("handleMessage error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	inbound, ok := messageBus.ConsumeInbound(ctx)
+	if !ok {
+		t.Fatal("expected inbound message to be forwarded")
+	}
+	if inbound.Metadata["reply_to_message_id"] != "11" {
+		t.Fatalf("reply_to_message_id=%q", inbound.Metadata["reply_to_message_id"])
+	}
+}
