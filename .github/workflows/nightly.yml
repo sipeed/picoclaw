@@ -113,6 +113,7 @@ jobs:
     needs: [generate-version, build, build-docker]
     permissions:
       contents: write
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
