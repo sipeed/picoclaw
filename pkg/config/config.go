@@ -228,6 +228,7 @@ type ChannelsConfig struct {
 	QQ         QQConfig         `json:"qq"`
 	DingTalk   DingTalkConfig   `json:"dingtalk"`
 	Slack      SlackConfig      `json:"slack"`
+	Matrix     MatrixConfig     `json:"matrix"`
 	LINE       LINEConfig       `json:"line"`
 	OneBot     OneBotConfig     `json:"onebot"`
 	WeCom      WeComConfig      `json:"wecom"`
@@ -235,6 +236,7 @@ type ChannelsConfig struct {
 	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
 	Pico       PicoConfig       `json:"pico"`
 	MagicForm  MagicFormConfig  `json:"magicform"`
+	IRC        IRCConfig        `json:"irc"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
@@ -276,15 +278,16 @@ type TelegramConfig struct {
 }
 
 type FeishuConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
-	AppID              string              `json:"app_id"                  env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
-	AppSecret          string              `json:"app_secret"              env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
-	EncryptKey         string              `json:"encrypt_key"             env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
-	VerificationToken  string              `json:"verification_token"      env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
+	Enabled             bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
+	AppID               string              `json:"app_id"                  env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
+	AppSecret           string              `json:"app_secret"              env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
+	EncryptKey          string              `json:"encrypt_key"             env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
+	VerificationToken   string              `json:"verification_token"      env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
+	AllowFrom           FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
+	GroupTrigger        GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	Placeholder         PlaceholderConfig   `json:"placeholder,omitempty"`
+	ReasoningChannelID  string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
+	RandomReactionEmoji FlexibleStringSlice `json:"random_reaction_emoji"   env:"PICOCLAW_CHANNELS_FEISHU_RANDOM_REACTION_EMOJI"`
 }
 
 type DiscordConfig struct {
@@ -334,6 +337,19 @@ type SlackConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_SLACK_REASONING_CHANNEL_ID"`
+}
+
+type MatrixConfig struct {
+	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_MATRIX_ENABLED"`
+	Homeserver         string              `json:"homeserver"              env:"PICOCLAW_CHANNELS_MATRIX_HOMESERVER"`
+	UserID             string              `json:"user_id"                 env:"PICOCLAW_CHANNELS_MATRIX_USER_ID"`
+	AccessToken        string              `json:"access_token"            env:"PICOCLAW_CHANNELS_MATRIX_ACCESS_TOKEN"`
+	DeviceID           string              `json:"device_id,omitempty"     env:"PICOCLAW_CHANNELS_MATRIX_DEVICE_ID"`
+	JoinOnInvite       bool                `json:"join_on_invite"          env:"PICOCLAW_CHANNELS_MATRIX_JOIN_ON_INVITE"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_MATRIX_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
 }
 
 type LINEConfig struct {
@@ -427,6 +443,25 @@ type MagicFormConfig struct {
 	AllowFrom     FlexibleStringSlice `json:"allow_from"     env:"PICOCLAW_CHANNELS_MAGICFORM_ALLOW_FROM"`
 }
 
+type IRCConfig struct {
+	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_IRC_ENABLED"`
+	Server             string              `json:"server"                  env:"PICOCLAW_CHANNELS_IRC_SERVER"`
+	TLS                bool                `json:"tls"                     env:"PICOCLAW_CHANNELS_IRC_TLS"`
+	Nick               string              `json:"nick"                    env:"PICOCLAW_CHANNELS_IRC_NICK"`
+	User               string              `json:"user,omitempty"          env:"PICOCLAW_CHANNELS_IRC_USER"`
+	RealName           string              `json:"real_name,omitempty"     env:"PICOCLAW_CHANNELS_IRC_REAL_NAME"`
+	Password           string              `json:"password"                env:"PICOCLAW_CHANNELS_IRC_PASSWORD"`
+	NickServPassword   string              `json:"nickserv_password"       env:"PICOCLAW_CHANNELS_IRC_NICKSERV_PASSWORD"`
+	SASLUser           string              `json:"sasl_user"               env:"PICOCLAW_CHANNELS_IRC_SASL_USER"`
+	SASLPassword       string              `json:"sasl_password"           env:"PICOCLAW_CHANNELS_IRC_SASL_PASSWORD"`
+	Channels           FlexibleStringSlice `json:"channels"                env:"PICOCLAW_CHANNELS_IRC_CHANNELS"`
+	RequestCaps        FlexibleStringSlice `json:"request_caps,omitempty"  env:"PICOCLAW_CHANNELS_IRC_REQUEST_CAPS"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_IRC_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	Typing             TypingConfig        `json:"typing,omitempty"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_IRC_REASONING_CHANNEL_ID"`
+}
+
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled"  env:"PICOCLAW_HEARTBEAT_ENABLED"`
 	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
@@ -452,6 +487,7 @@ type ProvidersConfig struct {
 	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig       `json:"deepseek"`
 	Cerebras      ProviderConfig       `json:"cerebras"`
+	Vivgrid       ProviderConfig       `json:"vivgrid"`
 	VolcEngine    ProviderConfig       `json:"volcengine"`
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
 	Antigravity   ProviderConfig       `json:"antigravity"`
@@ -477,6 +513,7 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" &&
 		p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" &&
 		p.Cerebras.APIKey == "" && p.Cerebras.APIBase == "" &&
+		p.Vivgrid.APIKey == "" && p.Vivgrid.APIBase == "" &&
 		p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" &&
 		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
 		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
