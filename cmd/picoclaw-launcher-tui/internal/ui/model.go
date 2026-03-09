@@ -44,7 +44,7 @@ func (s *appState) modelMenu() tview.Primitive {
 	// Add model entry appended at the end so the models map to rows 1..N
 	items = append(items,
 		MenuItem{
-			Label:       "Add model",
+			Label:       "**Add model**",
 			Description: "Append a new model entry",
 			Action: func() {
 				newName := s.nextAvailableModelName("new-model")
@@ -282,7 +282,7 @@ func refreshModelMenuFromState(menu *Menu, s *appState) {
 	}
 	items = append(items,
 		MenuItem{
-			Label:       "Add model",
+			Label:       "**Add Model**",
 			Description: "Append a new model entry",
 			Action: func() {
 				newName := s.nextAvailableModelName("new-model")

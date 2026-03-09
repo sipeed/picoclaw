@@ -337,16 +337,13 @@ func (s *appState) selectedModelName() string {
 
 func rootModelLabel(selected string) string {
 	if selected == "" {
-		return "Model (no model selected)"
+		return "Model (None)"
 	}
 	return "Model (" + selected + ")"
 }
 
 func rootModelDescription(selected string) string {
-	if selected == "" {
-		return "no model selected"
-	}
-	return "selected"
+	return "Using SPACE to choose your model"
 }
 
 func rootChannelLabel(valid bool) string {
