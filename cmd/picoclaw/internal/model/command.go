@@ -71,9 +71,9 @@ func listAvailableModels(cfg *config.Config) {
 		return
 	}
 
-	for i, model := range cfg.ModelList {
+	for _, model := range cfg.ModelList {
 		marker := "  "
-		if i == 0 {
+		if model.ModelName == cfg.Agents.Defaults.ModelName {
 			marker = "> "
 		}
 		if model.APIKey == "" {
