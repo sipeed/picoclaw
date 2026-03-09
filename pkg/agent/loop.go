@@ -94,6 +94,12 @@ func NewAgentLoop(
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
+	// Set up transcriber if configured
+	t := voice.DetectTranscriber(cfg)
+	if t != nil {
+		logger.InfoC("agent", fmt.Sprintf("Audio transcription enabled (%s)", t.Name()))
+	}
+
 	al := &AgentLoop{
 		bus:         msgBus,
 		cfg:         cfg,
@@ -101,6 +107,7 @@ func NewAgentLoop(
 		state:       stateManager,
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
+		transcriber: t,
 		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
 	}
 
@@ -615,11 +622,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"route_channel": route.Channel,
 		})
 
+	// transcribeAudioInMessage already ran earlier in processMessage,
+	// so msg.Content has transcripts injected. Use it directly.
+	userMessage := msg.Content
+
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
-		UserMessage:     msg.Content,
+		UserMessage:     userMessage,
 		Media:           msg.Media,
 		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
