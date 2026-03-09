@@ -13,7 +13,7 @@ func TestWriteCompactionSummaryCreatesTimestampedFile(t *testing.T) {
 
 	workspace := t.TempDir()
 	store := NewMemoryStore(workspace)
-	timestamp := time.Date(2026, time.March, 8, 14, 5, 9, 0, time.Local)
+	timestamp := time.Date(2026, time.March, 8, 14, 5, 9, 0, time.UTC)
 
 	path, err := store.WriteCompactionSummary(timestamp, "# Summary\n\nBody")
 	if err != nil {

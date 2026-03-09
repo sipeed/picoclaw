@@ -896,7 +896,7 @@ func resolveFinalResponse(
 		if hasDirective {
 			directiveMode = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(directive, "[[reply:"), "]]"))
 		}
-		directiveStatus := "none"
+		var directiveStatus string
 		switch {
 		case !hasDirective:
 			directiveStatus = "none"
