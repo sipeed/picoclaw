@@ -2,6 +2,7 @@ package shell
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -34,10 +35,6 @@ var DefaultEnvAllowlist = map[string]bool{
 	"HTTP_PROXY":   true,
 	"HTTPS_PROXY":  true,
 	"NO_PROXY":     true,
-	"PICOCLAW_HOME":      true,
-	"PICOCLAW_CONFIG":   true,
-	"PICOCLAW_SERVICE_NAME": true,
-	"PICOCLAW_EXE":      true,
 }
 
 // defaultEnvAllowPrefixes are env var prefixes that are always allowed.
@@ -155,4 +152,37 @@ func isAllowedPrefix(name string) bool {
 		}
 	}
 	return false
+}
+
+// WithPicoclawEnvVars ensures PICOCLAW_* vars are set in envSet.
+// These are needed for child processes to locate config, workspace, etc.
+func WithPicoclawEnvVars(envSet map[string]string) map[string]string {
+	if envSet == nil {
+		envSet = make(map[string]string)
+	}
+
+	// Always compute PICOCLAW_* vars - priority: env var > default
+	if v := os.Getenv("PICOCLAW_HOME"); v != "" {
+		envSet["PICOCLAW_HOME"] = v
+	} else if home, _ := os.UserHomeDir(); home != "" {
+		envSet["PICOCLAW_HOME"] = filepath.Join(home, ".picoclaw")
+	}
+
+	if v := os.Getenv("PICOCLAW_CONFIG"); v != "" {
+		envSet["PICOCLAW_CONFIG"] = v
+	} else if home := envSet["PICOCLAW_HOME"]; home != "" {
+		envSet["PICOCLAW_CONFIG"] = filepath.Join(home, "config.json")
+	}
+
+	if exe, err := os.Executable(); err == nil {
+		envSet["PICOCLAW_EXE"] = exe
+	}
+
+	if v := os.Getenv("PICOCLAW_SERVICE_NAME"); v != "" {
+		envSet["PICOCLAW_SERVICE_NAME"] = v
+	} else {
+		envSet["PICOCLAW_SERVICE_NAME"] = "picoclaw"
+	}
+
+	return envSet
 }
