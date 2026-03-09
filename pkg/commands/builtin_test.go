@@ -35,12 +35,17 @@ func TestBuiltinHelpHandler_ReturnsFormattedMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("/help handler error: %v", err)
 	}
-	// Now uses auto-generated EffectiveUsage which includes agents
 	if !strings.Contains(reply, "/show [model|channel|agents]") {
 		t.Fatalf("/help reply missing /show usage, got %q", reply)
 	}
 	if !strings.Contains(reply, "/list [models|channels|agents]") {
 		t.Fatalf("/help reply missing /list usage, got %q", reply)
+	}
+	if !strings.Contains(reply, "/new") {
+		t.Fatalf("/help reply missing /new, got %q", reply)
+	}
+	if !strings.Contains(reply, "/session [list|resume") {
+		t.Fatalf("/help reply missing /session usage, got %q", reply)
 	}
 }
 

@@ -7,12 +7,20 @@ import (
 
 type Handler func(ctx context.Context, req Request, rt *Runtime) error
 
+// Request describes an incoming command invocation — the "what / who / where."
+// It carries identity and context derived from the inbound message and its
+// routing resolution. Fields here answer "where did this come from?" and
+// "what scope does it belong to?"
+//
+// Contrast with [Runtime], which carries capabilities and services ("what can
+// I do?"). A handler reads context from Request and calls services on Runtime.
 type Request struct {
-	Channel  string
-	ChatID   string
-	SenderID string
-	Text     string
+	Channel  string // platform the message arrived on
+	ChatID   string // conversation identifier
+	SenderID string // who sent the message
+	Text     string // raw command text
 	Reply    func(text string) error
+	ScopeKey string // routing-resolved scope for session operations
 }
 
 const unavailableMsg = "Command unavailable in current context."

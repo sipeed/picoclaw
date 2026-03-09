@@ -503,6 +503,7 @@ func TestProcessMessage_CommandOutcomes(t *testing.T) {
 		t.Fatalf("LLM should be called exactly once after /foo passthrough, calls=%d", provider.calls)
 	}
 
+	// /new is now a handled session command (starts a new session)
 	newResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
 		Channel:  baseMsg.Channel,
 		SenderID: baseMsg.SenderID,
@@ -510,11 +511,11 @@ func TestProcessMessage_CommandOutcomes(t *testing.T) {
 		Content:  "/new",
 		Peer:     baseMsg.Peer,
 	})
-	if newResp != "LLM reply" {
+	if !strings.Contains(newResp, "Started new session") {
 		t.Fatalf("unexpected /new reply: %q", newResp)
 	}
-	if provider.calls != 2 {
-		t.Fatalf("LLM should be called for passthrough /new command, calls=%d", provider.calls)
+	if provider.calls != 1 {
+		t.Fatalf("LLM should NOT be called for handled /new command, calls=%d", provider.calls)
 	}
 }
 

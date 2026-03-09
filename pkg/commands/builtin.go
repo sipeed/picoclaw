@@ -8,6 +8,8 @@ func BuiltinDefinitions() []Definition {
 	return []Definition{
 		startCommand(),
 		helpCommand(),
+		newCommand(),
+		sessionCommand(),
 		showCommand(),
 		listCommand(),
 		switchCommand(),

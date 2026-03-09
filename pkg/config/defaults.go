@@ -39,7 +39,8 @@ func DefaultConfig() *Config {
 		},
 		Bindings: []AgentBinding{},
 		Session: SessionConfig{
-			DMScope: "per-channel-peer",
+			DMScope:      "per-channel-peer",
+			BacklogLimit: DefaultSessionBacklogLimit,
 		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{
