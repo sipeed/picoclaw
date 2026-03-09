@@ -154,7 +154,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <SidebarGroupContent className="pt-1">
                   <SidebarMenu>
                     {group.items.map((item) => {
-                      const isActive = currentPath === item.url
+                      const isActive =
+                        currentPath === item.url ||
+                        (item.url !== "/" &&
+                          currentPath.startsWith(`${item.url}/`))
                       return (
                         <SidebarMenuItem key={item.title}>
                           <SidebarMenuButton

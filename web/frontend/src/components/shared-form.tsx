@@ -83,6 +83,7 @@ interface SwitchCardFieldProps {
   checked: boolean
   onCheckedChange: (checked: boolean) => void
   ariaLabel?: string
+  disabled?: boolean
   children?: ReactNode
 }
 
@@ -93,6 +94,7 @@ export function SwitchCardField({
   checked,
   onCheckedChange,
   ariaLabel,
+  disabled,
   children,
 }: SwitchCardFieldProps) {
   return (
@@ -109,6 +111,7 @@ export function SwitchCardField({
         <Switch
           checked={checked}
           onCheckedChange={onCheckedChange}
+          disabled={disabled}
           aria-label={ariaLabel ?? label}
         />
       </div>
