@@ -937,6 +937,192 @@ func TestManager_PlaceholderConsumedByResponse(t *testing.T) {
 	}
 }
 
+func TestSendMessage_Synchronous(t *testing.T) {
+	m := newTestManager()
+
+	var received []bus.OutboundMessage
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, msg bus.OutboundMessage) error {
+			received = append(received, msg)
+			return nil
+		},
+	}
+
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.channels["test"] = ch
+	m.workers["test"] = w
+
+	msg := bus.OutboundMessage{
+		Channel:          "test",
+		ChatID:           "123",
+		Content:          "hello world",
+		ReplyToMessageID: "msg-456",
+	}
+
+	err := m.SendMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// SendMessage is synchronous — message should already be delivered
+	if len(received) != 1 {
+		t.Fatalf("expected 1 message sent, got %d", len(received))
+	}
+	if received[0].ReplyToMessageID != "msg-456" {
+		t.Fatalf("expected ReplyToMessageID msg-456, got %s", received[0].ReplyToMessageID)
+	}
+	if received[0].Content != "hello world" {
+		t.Fatalf("expected content 'hello world', got %s", received[0].Content)
+	}
+}
+
+func TestSendMessage_UnknownChannel(t *testing.T) {
+	m := newTestManager()
+
+	msg := bus.OutboundMessage{
+		Channel: "nonexistent",
+		ChatID:  "123",
+		Content: "hello",
+	}
+
+	err := m.SendMessage(context.Background(), msg)
+	if err == nil {
+		t.Fatal("expected error for unknown channel")
+	}
+}
+
+func TestSendMessage_NoWorker(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+	}
+	m.channels["test"] = ch
+	// No worker registered
+
+	msg := bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "hello",
+	}
+
+	err := m.SendMessage(context.Background(), msg)
+	if err == nil {
+		t.Fatal("expected error when no worker exists")
+	}
+}
+
+func TestSendMessage_WithRetry(t *testing.T) {
+	m := newTestManager()
+
+	var callCount int
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+			callCount++
+			if callCount == 1 {
+				return fmt.Errorf("transient: %w", ErrTemporary)
+			}
+			return nil
+		},
+	}
+
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.channels["test"] = ch
+	m.workers["test"] = w
+
+	msg := bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "retry me",
+	}
+
+	err := m.SendMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if callCount != 2 {
+		t.Fatalf("expected 2 Send calls (1 failure + 1 success), got %d", callCount)
+	}
+}
+
+func TestSendMessage_WithSplitting(t *testing.T) {
+	m := newTestManager()
+
+	var received []string
+	ch := &mockChannelWithLength{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, msg bus.OutboundMessage) error {
+				received = append(received, msg.Content)
+				return nil
+			},
+		},
+		maxLen: 5,
+	}
+
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.channels["test"] = ch
+	m.workers["test"] = w
+
+	msg := bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "hello world",
+	}
+
+	err := m.SendMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if len(received) < 2 {
+		t.Fatalf("expected message to be split into at least 2 chunks, got %d", len(received))
+	}
+}
+
+func TestSendMessage_PreservesOrdering(t *testing.T) {
+	m := newTestManager()
+
+	var order []string
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, msg bus.OutboundMessage) error {
+			order = append(order, msg.Content)
+			return nil
+		},
+	}
+
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.channels["test"] = ch
+	m.workers["test"] = w
+
+	// Send two messages sequentially — they must arrive in order
+	_ = m.SendMessage(context.Background(), bus.OutboundMessage{
+		Channel: "test", ChatID: "1", Content: "first",
+	})
+	_ = m.SendMessage(context.Background(), bus.OutboundMessage{
+		Channel: "test", ChatID: "1", Content: "second",
+	})
+
+	if len(order) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(order))
+	}
+	if order[0] != "first" || order[1] != "second" {
+		t.Fatalf("expected [first, second], got %v", order)
+	}
+}
+
 func TestManager_SendPlaceholder(t *testing.T) {
 	mgr := &Manager{
 		channels:     make(map[string]Channel),
