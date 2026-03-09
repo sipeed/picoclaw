@@ -45,7 +45,6 @@ type DiscordChannel struct {
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
-
 	discordgo.Logger = logger.NewLogger("discord").
 		WithLevels(map[int]logger.LogLevel{
 			discordgo.LogError:         logger.ERROR,

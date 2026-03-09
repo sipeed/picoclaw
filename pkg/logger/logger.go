@@ -47,7 +47,7 @@ func init() {
 			NoColor:    false,
 		}
 
-		consoleWriter.FormatLevel = func(i interface{}) string {
+		consoleWriter.FormatLevel = func(i any) string {
 			level, ok := i.(string)
 			if !ok {
 				return fmt.Sprintf("| %-5s |", i)
@@ -164,7 +164,6 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 
 	// Build combined field with component and caller
 	if component != "" {
-		//event.Str("component", component)
 		event.Str("caller", fmt.Sprintf("%-6s | %s:%d (%s)", component, callerFile, callerLine, callerFunc))
 	} else {
 		event.Str("caller", fmt.Sprintf("<none> | %s:%d (%s)", callerFile, callerLine, callerFunc))
@@ -299,34 +298,32 @@ type Logger struct {
 }
 
 // Debug logs debug messages
-func (b *Logger) Debug(v ...interface{}) {
+func (b *Logger) Debug(v ...any) {
 	logMessage(DEBUG, b.component, fmt.Sprint(v...), nil)
 }
 
 // Info logs info messages
-func (b *Logger) Info(v ...interface{}) {
+func (b *Logger) Info(v ...any) {
 	logMessage(INFO, b.component, fmt.Sprint(v...), nil)
 }
 
 // Warn logs warning messages
-func (b *Logger) Warn(v ...interface{}) {
+func (b *Logger) Warn(v ...any) {
 	logMessage(WARN, b.component, fmt.Sprint(v...), nil)
 }
 
 // Error logs error messages
-func (b *Logger) Error(v ...interface{}) {
+func (b *Logger) Error(v ...any) {
 	logMessage(ERROR, b.component, fmt.Sprint(v...), nil)
 }
 
 // Debugf logs formatted debug messages
 func (b *Logger) Debugf(format string, v ...any) {
-	//debugCallerInfo()
 	logMessage(DEBUG, b.component, fmt.Sprintf(format, v...), nil)
 }
 
 // Infof logs formatted info messages
 func (b *Logger) Infof(format string, v ...any) {
-	//debugCallerInfo()
 	logMessage(INFO, b.component, fmt.Sprintf(format, v...), nil)
 }
 
@@ -342,7 +339,6 @@ func (b *Logger) Warningf(format string, v ...any) {
 
 // Errorf logs formatted error messages
 func (b *Logger) Errorf(format string, v ...any) {
-	//debugCallerInfo()
 	logMessage(ERROR, b.component, fmt.Sprintf(format, v...), nil)
 }
 
@@ -352,11 +348,14 @@ func (b *Logger) Fatalf(format string, v ...any) {
 }
 
 // Log logs a message at a given level with caller information
+// the func name must be this because 3rd party loggers expect this
 // msgL: message level (DEBUG, INFO, WARN, ERROR, FATAL)
 // caller: unused parameter reserved for compatibility
 // format: format string
 // a: format arguments
-func (b *Logger) Log(msgL, caller int, format string, a ...interface{}) {
+//
+//nolint:goprintffuncname
+func (b *Logger) Log(msgL, caller int, format string, a ...any) {
 	level := LogLevel(msgL)
 	if b.levels != nil {
 		if lvl, ok := b.levels[msgL]; ok {
@@ -383,6 +382,8 @@ func NewLogger(component string) *Logger {
 }
 
 // for debugging logger only
+//
+//nolint:unused
 func debugCallerInfo() {
 	for i := 2; i < 15; i++ {
 		pc, file, line, ok := runtime.Caller(i)
