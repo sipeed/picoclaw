@@ -586,7 +586,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Global commands (/help, /show, /switch) work even when routing fails;
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
-	if response, handled := al.handleCommand(ctx, msg, agent); handled {
+	if response, handled := al.handleCommand(ctx, msg, agent, ""); handled {
 		return response, nil
 	}
 
@@ -604,6 +604,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Resolve session key from route, while preserving explicit agent-scoped keys.
 	scopeKey := resolveScopeKey(route, msg.SessionKey)
 	sessionKey := scopeKey
+
+	if response, handled := al.handleCommand(ctx, msg, agent, sessionKey); handled {
+		return response, nil
+	}
 
 	logger.InfoCF("agent", "Routed message",
 		map[string]any{
@@ -874,6 +878,8 @@ func (al *AgentLoop) runLLMIteration(
 	iteration := 0
 	var finalContent string
 
+	thinkingLevel := resolveThinkingLevel(al.cfg, agent, opts.SessionKey)
+
 	// Determine effective model tier for this conversation turn.
 	// selectCandidates evaluates routing once and the decision is sticky for
 	// all tool-follow-up iterations within the same turn so that a multi-step
@@ -903,6 +909,7 @@ func (al *AgentLoop) runLLMIteration(
 				"tools_count":       len(providerToolDefs),
 				"max_tokens":        agent.MaxTokens,
 				"temperature":       agent.Temperature,
+				"thinking_level":    thinkingLevel,
 				"system_prompt_len": len(messages[0].Content),
 			})
 
@@ -923,14 +930,15 @@ func (al *AgentLoop) runLLMIteration(
 			"temperature":      agent.Temperature,
 			"prompt_cache_key": agent.ID,
 		}
-		// parseThinkingLevel guarantees ThinkingOff for empty/unknown values,
-		// so checking != ThinkingOff is sufficient.
-		if agent.ThinkingLevel != ThinkingOff {
+		if effort := reasoningEffortForLevel(thinkingLevel); effort != "" {
+			llmOpts["reasoning_effort"] = effort
+		}
+		if thinkingLevel != "" && thinkingLevel != thinkingOff {
 			if tc, ok := agent.Provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
-				llmOpts["thinking_level"] = string(agent.ThinkingLevel)
+				llmOpts["thinking_level"] = thinkingLevel
 			} else {
 				logger.WarnCF("agent", "thinking_level is set but current provider does not support it, ignoring",
-					map[string]any{"agent_id": agent.ID, "thinking_level": string(agent.ThinkingLevel)})
+					map[string]any{"agent_id": agent.ID, "thinking_level": thinkingLevel})
 			}
 		}
 
@@ -959,8 +967,10 @@ func (al *AgentLoop) runLLMIteration(
 			return agent.Provider.Chat(ctx, messages, providerToolDefs, activeModel, llmOpts)
 		}
 
-		// Retry loop for context/token errors
+		// Retry loop for context/token errors and thinking downgrade
 		maxRetries := 2
+		maxThinkingDowngrades := len(thinkingDowngradeOrder)
+		thinkingDowngrades := 0
 		for retry := 0; retry <= maxRetries; retry++ {
 			response, err = callLLM()
 			if err == nil {
@@ -968,6 +978,41 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			errMsg := strings.ToLower(err.Error())
+
+			// Thinking downgrade on provider error
+			if isThinkingUnsupportedError(errMsg) && thinkingLevel != "" && thinkingDowngrades < maxThinkingDowngrades {
+				supported := parseSupportedThinkingLevels(errMsg)
+				if nextLevel, ok := nextDowngradedThinkingLevel(thinkingLevel, supported); ok && nextLevel != thinkingLevel {
+					prevLevel := thinkingLevel
+					thinkingLevel = nextLevel
+					if effort := reasoningEffortForLevel(thinkingLevel); effort != "" {
+						llmOpts["reasoning_effort"] = effort
+					} else {
+						delete(llmOpts, "reasoning_effort")
+					}
+					if thinkingLevel != "" && thinkingLevel != thinkingOff {
+						llmOpts["thinking_level"] = thinkingLevel
+					} else {
+						delete(llmOpts, "thinking_level")
+					}
+					thinkingDowngrades++
+					logger.WarnCF("agent", "Thinking level downgraded after provider error", map[string]any{
+						"agent_id": agent.ID, "session_key": opts.SessionKey,
+						"from": prevLevel, "to": thinkingLevel, "provider_error": err.Error(),
+					})
+					continue
+				}
+				if strings.Contains(errMsg, "not supported") && thinkingLevel != thinkingOff {
+					thinkingLevel = thinkingOff
+					delete(llmOpts, "reasoning_effort")
+					delete(llmOpts, "thinking_level")
+					thinkingDowngrades++
+					logger.WarnCF("agent", "Thinking level forced to off after provider rejection", map[string]any{
+						"agent_id": agent.ID, "session_key": opts.SessionKey, "provider_error": err.Error(),
+					})
+					continue
+				}
+			}
 
 			// Check if this is a network/HTTP timeout — not a context window error.
 			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
@@ -1593,6 +1638,7 @@ func (al *AgentLoop) handleCommand(
 	ctx context.Context,
 	msg bus.InboundMessage,
 	agent *AgentInstance,
+	sessionKey string,
 ) (string, bool) {
 	if !commands.HasCommandPrefix(msg.Content) {
 		return "", false
@@ -1600,6 +1646,56 @@ func (al *AgentLoop) handleCommand(
 
 	if al.cmdRegistry == nil {
 		return "", false
+	}
+
+	// Session-scoped /think and /show thinking (require sessionKey)
+	content := strings.TrimSpace(msg.Content)
+	parts := strings.Fields(content)
+	cmd := ""
+	if len(parts) > 0 {
+		cmd = parts[0]
+	}
+	args := parts[1:]
+	if cmd == "/think" || cmd == "/thinking" || cmd == "/t" {
+		if sessionKey == "" {
+			return "", false
+		}
+		if agent == nil {
+			return "No agent available for thinking control", true
+		}
+		if len(args) == 0 {
+			level := resolveThinkingLevel(al.cfg, agent, sessionKey)
+			if level == "" {
+				level = thinkingAdaptive
+			}
+			return fmt.Sprintf(
+				"Current thinking level: %s\nAvailable levels: off, minimal, low, medium, high, xhigh, adaptive",
+				level,
+			), true
+		}
+		level, ok := normalizeThinkingLevel(args[0])
+		if !ok {
+			return "Invalid thinking level. Use one of: off, minimal, low, medium, high, xhigh, adaptive", true
+		}
+		if level == thinkingXHigh && !supportsXHigh(agent.Model, al.cfg) {
+			return "xhigh is only supported by GPT-5.2 and Codex model series", true
+		}
+		agent.Sessions.SetThinkingLevel(sessionKey, level)
+		_ = agent.Sessions.Save(sessionKey)
+		return fmt.Sprintf("Thinking level for this session is now set to %s", level), true
+	}
+	if cmd == "/show" && len(args) >= 1 && args[0] == "thinking" {
+		if sessionKey == "" {
+			return "", false
+		}
+		if agent == nil {
+			return "No default agent configured", true
+		}
+		level := resolveThinkingLevel(al.cfg, agent, sessionKey)
+		if level == "" {
+			level = thinkingAdaptive
+		}
+		return fmt.Sprintf("Current thinking level: %s", level), true
 	}
 
 	rt := al.buildCommandsRuntime(agent)

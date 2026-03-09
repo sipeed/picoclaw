@@ -187,6 +187,7 @@ type AgentDefaults struct {
 	ModelName                 string         `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
 	Model                     string         `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
 	ModelFallbacks            []string       `json:"model_fallbacks,omitempty"`
+	Thinking                  string         `json:"thinking,omitempty"               env:"PICOCLAW_AGENTS_DEFAULTS_THINKING"`
 	ImageModel                string         `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks       []string       `json:"image_model_fallbacks,omitempty"`
 	MaxTokens                 int            `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`

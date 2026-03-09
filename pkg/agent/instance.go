@@ -26,7 +26,7 @@ type AgentInstance struct {
 	MaxIterations             int
 	MaxTokens                 int
 	Temperature               float64
-	ThinkingLevel             ThinkingLevel
+	ThinkingLevel             ThinkingLevel // Default from model config at creation (main compatibility).
 	ContextWindow             int
 	SummarizeMessageThreshold int
 	SummarizeTokenPercent     int
