@@ -1,0 +1,393 @@
+{
+  "navigation": {
+    "chat": "Chat",
+    "model_group": "Models",
+    "models": "Models",
+    "credentials": "Credentials",
+    "services": "Services",
+    "channels_group": "Channels",
+    "show_more_channels": "More",
+    "show_less_channels": "Less",
+    "config": "Config",
+    "logs": "Logs"
+  },
+  "chat": {
+    "welcome": "How can I help you today?",
+    "welcomeDesc": "Ask me about weather, settings, or any other tasks. I'm here to assist you.",
+    "placeholder": "Start a new message...",
+    "newChat": "New Chat",
+    "notConnected": "Gateway is not running. Start it to chat.",
+    "thinking": {
+      "step1": "Thinking...",
+      "step2": "Analyzing your request...",
+      "step3": "Preparing response...",
+      "step4": "Almost there..."
+    },
+    "history": "History",
+    "noHistory": "No chat history yet",
+    "loadingMore": "Loading more...",
+    "deleteSession": "Delete session",
+    "messagesCount": "{{count}} messages",
+    "noModel": "Select model",
+    "empty": {
+      "noConfiguredModel": "No Model Configured",
+      "noConfiguredModelDescription": "You need to configure at least one AI model with an API key before you can start chatting.",
+      "goToModels": "Go to Models",
+      "noSelectedModel": "No Model Selected",
+      "noSelectedModelDescription": "You have configured models, but none is set as default. Select a model before starting chat.",
+      "notRunning": "Gateway Not Running",
+      "notRunningDescription": "Start the gateway service to begin chatting. Use the Start Gateway button in the top bar."
+    },
+    "modelGroup": {
+      "apikey": "API Key",
+      "oauth": "OAuth",
+      "local": "Local"
+    }
+  },
+  "header": {
+    "gateway": {
+      "stopDialog": {
+        "title": "Stop Gateway Service?",
+        "description": "Are you sure you want to stop the gateway? This will disconnect your active chat sessions and halt inference.",
+        "confirm": "Stop Gateway"
+      },
+      "action": {
+        "start": "Start Gateway",
+        "stop": "Stop Gateway"
+      },
+      "status": {
+        "starting": "Starting Gateway..."
+      }
+    }
+  },
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving...",
+    "reset": "Reset",
+    "confirm": "Confirm"
+  },
+  "labels": {
+    "loading": "Loading..."
+  },
+  "credentials": {
+    "description": "Manage OAuth and token-based credentials for supported providers.",
+    "loading": "Loading credentials...",
+    "providers": {
+      "openai": {
+        "description": "Supports browser OAuth, device code, and token login."
+      },
+      "anthropic": {
+        "description": "Uses token login for Claude access."
+      },
+      "antigravity": {
+        "description": "Uses browser OAuth for Google Cloud Code Assist."
+      }
+    },
+    "status": {
+      "connected": "Connected",
+      "needsRefresh": "Needs refresh",
+      "expired": "Expired",
+      "notLoggedIn": "Not logged in"
+    },
+    "actions": {
+      "browser": "Browser OAuth",
+      "deviceCode": "Device Code",
+      "stopLoading": "Stop Loading",
+      "saveToken": "Save",
+      "logout": "Logout"
+    },
+    "logoutDialog": {
+      "title": "Logout provider?",
+      "description": "This will remove your saved credential for {{provider}}."
+    },
+    "fields": {
+      "openaiToken": "OpenAI token",
+      "anthropicToken": "Anthropic token"
+    },
+    "labels": {
+      "account": "Account",
+      "email": "Email",
+      "project": "Project"
+    },
+    "errors": {
+      "loadFailed": "Failed to load credentials",
+      "flowFailed": "Failed to check authentication flow",
+      "loginFailed": "Login failed",
+      "logoutFailed": "Logout failed",
+      "invalidBrowserResponse": "Invalid browser login response",
+      "invalidDeviceResponse": "Invalid device code response",
+      "popupBlocked": "Unable to open a new tab. Please allow popups and try again."
+    },
+    "flow": {
+      "current": "Current authentication status",
+      "pending": "Waiting for authorization...",
+      "success": "Authentication successful",
+      "error": "Authentication failed",
+      "expired": "Authentication session expired"
+    },
+    "device": {
+      "title": "OpenAI Device Login",
+      "description": "Open the verification page and enter the code below. This page will refresh automatically.",
+      "code": "User Code",
+      "url": "Verification URL",
+      "polling": "Polling login status...",
+      "open": "Open Verification Page"
+    }
+  },
+  "models": {
+    "description": "Configure API keys for AI providers. Only configured models are available for chat.",
+    "loadError": "Failed to load models",
+    "noDefaultHintPrefix": "No default model set yet. Click",
+    "noDefaultHintSuffix": "to set one.",
+    "status": {
+      "configured": "Configured",
+      "unconfigured": "Not configured"
+    },
+    "badge": {
+      "default": "Default"
+    },
+    "action": {
+      "edit": "Edit API key",
+      "setDefault": "Set as default",
+      "delete": "Delete model"
+    },
+    "defaultOnSave": {
+      "label": "Default Model",
+      "description": "Automatically set this model as default after saving."
+    },
+    "add": {
+      "button": "Add Model",
+      "title": "Add Custom Model",
+      "description": "Add an OpenAI-compatible or native model endpoint.",
+      "modelName": "Model Alias",
+      "modelNamePlaceholder": "e.g. my-gpt4",
+      "modelNameHint": "A short name used to identify this model in conversations.",
+      "modelId": "Model Identifier",
+      "modelIdPlaceholder": "e.g. openai/gpt-4o",
+      "modelIdHint": "Format: protocol/model-id. Supported: openai, anthropic, gemini, groq, …",
+      "errorRequired": "This field is required.",
+      "errorDuplicateModelName": "Model alias already exists. Please use a different name.",
+      "saveError": "Failed to add model",
+      "confirm": "Add Model"
+    },
+    "delete": {
+      "title": "Delete Model?",
+      "description": "\"{{name}}\" will be permanently removed from your model list. This cannot be undone.",
+      "confirm": "Delete"
+    },
+    "advanced": {
+      "toggle": "Advanced options"
+    },
+    "field": {
+      "apiBase": "API Base URL",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "Enter your API key",
+      "apiKeyPlaceholderSet": "Leave blank to keep existing key",
+      "proxy": "HTTP Proxy",
+      "proxyHint": "Optional. e.g. http://127.0.0.1:7890",
+      "authMethod": "Auth Method",
+      "authMethodHint": "Authentication method: oauth, token. Leave blank for API key auth.",
+      "connectMode": "Connect Mode",
+      "connectModeHint": "Connection mode for CLI-based providers: stdio or grpc.",
+      "workspace": "Workspace Path",
+      "workspaceHint": "Working directory for CLI-based providers (e.g. GitHub Copilot).",
+      "requestTimeout": "Request Timeout (s)",
+      "requestTimeoutHint": "Maximum seconds to wait for a response. 0 = use default.",
+      "rpm": "Rate Limit (RPM)",
+      "rpmHint": "Maximum requests per minute. 0 = no limit.",
+      "thinkingLevel": "Thinking Level",
+      "thinkingLevelHint": "Extended thinking budget: off, low, medium, high, xhigh, adaptive.",
+      "maxTokensField": "Max Tokens Field",
+      "maxTokensFieldHint": "Override the request field name for max tokens, e.g. max_completion_tokens."
+    },
+    "edit": {
+      "title": "Configure {{name}}",
+      "apiKeyHint": "A key is already set. Leave blank to keep it unchanged.",
+      "oauthNote": "This provider uses OAuth — no API key required.",
+      "saveError": "Failed to save"
+    }
+  },
+  "channels": {
+    "loadError": "Failed to load channels",
+    "edit": "Configure {{name}}",
+    "status": {
+      "configured": "Configured"
+    },
+    "name": {
+      "telegram": "Telegram",
+      "discord": "Discord",
+      "slack": "Slack",
+      "feishu": "Feishu",
+      "dingtalk": "DingTalk",
+      "line": "LINE",
+      "qq": "QQ",
+      "onebot": "OneBot",
+      "wecom": "WeCom",
+      "wecom_app": "WeCom App",
+      "wecom_aibot": "WeCom AI Bot",
+      "whatsapp": "WhatsApp",
+      "whatsapp_native": "WhatsApp Native",
+      "pico": "Web",
+      "maixcam": "MaixCam",
+      "matrix": "Matrix",
+      "irc": "IRC"
+    },
+    "field": {
+      "token": "Bot Token",
+      "tokenPlaceholder": "Enter bot token",
+      "botToken": "Bot Token",
+      "appToken": "App Token",
+      "appId": "App ID",
+      "appSecret": "App Secret",
+      "verificationToken": "Verification Token",
+      "encryptKey": "Encrypt Key",
+      "baseUrl": "API Base URL",
+      "proxy": "HTTP Proxy",
+      "mentionOnly": "Mention Only",
+      "typingEnabled": "Typing Indicator",
+      "placeholderEnabled": "Placeholder Message",
+      "placeholderText": "Placeholder Text",
+      "groupTriggerMentionOnly": "Group Mention Only",
+      "groupTriggerPrefixes": "Group Trigger Prefixes",
+      "allowFrom": "Allow From",
+      "allowFromPlaceholder": "e.g. 123456, 789012",
+      "allowOrigins": "Allow Origins",
+      "allowOriginsPlaceholder": "e.g. https://example.com, http://localhost:5173",
+      "secretPlaceholder": "Enter secret",
+      "secretHintSet": "A value is already set. Leave blank to keep it unchanged."
+    },
+    "page": {
+      "notFound": "Channel \"{{name}}\" is not supported.",
+      "saveSuccess": "Channel configuration saved.",
+      "saveError": "Failed to save channel configuration",
+      "enabled": "enabled",
+      "docLink": "Documentation",
+      "enableLabel": "Enable channel"
+    },
+    "form": {
+      "desc": {
+        "token": "Bot access token used to connect to the platform API.",
+        "botToken": "Bot token used to send and receive messages.",
+        "appToken": "App token used for Socket Mode connections.",
+        "appId": "Unique application ID used for authentication.",
+        "appSecret": "Application secret used for signing and authentication.",
+        "verificationToken": "Verification token for event callbacks.",
+        "encryptKey": "Encryption key used to decrypt callback payloads.",
+        "baseUrl": "Platform API base URL. Official endpoint is used by default.",
+        "proxy": "HTTP proxy address for outbound network access.",
+        "mentionOnly": "Only respond when the bot is explicitly mentioned in group chats.",
+        "typingEnabled": "Display typing status while the assistant is generating a response.",
+        "placeholderEnabled": "Enable temporary placeholder messages before the final reply is sent.",
+        "groupTriggerMentionOnly": "In group chats, respond only when the bot is mentioned.",
+        "groupTriggerPrefixes": "Custom group-chat trigger prefixes, separated by commas.",
+        "allowFrom": "Allowed user or group IDs, separated by commas.",
+        "allowOrigins": "Allowed origin domains, separated by commas.",
+        "wsUrl": "WebSocket service URL.",
+        "reconnectInterval": "Reconnect interval after disconnection (seconds).",
+        "bridgeUrl": "Bridge service URL.",
+        "sessionStorePath": "Local path for session storage.",
+        "useNative": "Whether to use native client mode.",
+        "host": "Service host address.",
+        "port": "Service port.",
+        "homeserver": "Matrix homeserver URL.",
+        "userId": "Account user ID.",
+        "deviceId": "Device ID.",
+        "joinOnInvite": "Automatically join rooms when invited.",
+        "clientId": "Client ID used for platform authentication.",
+        "corpId": "Enterprise Corp ID.",
+        "agentId": "Enterprise application Agent ID.",
+        "webhookUrl": "Full webhook URL.",
+        "webhookHost": "Webhook listening host.",
+        "webhookPort": "Webhook listening port.",
+        "webhookPath": "Webhook route path.",
+        "replyTimeout": "Reply timeout in seconds.",
+        "maxSteps": "Maximum number of processing steps.",
+        "welcomeMessage": "Welcome message content for new sessions.",
+        "allowTokenQuery": "Allow token in URL query parameters.",
+        "pingInterval": "Connection heartbeat interval in seconds.",
+        "readTimeout": "Read timeout in seconds.",
+        "writeTimeout": "Write timeout in seconds.",
+        "maxConnections": "Maximum number of concurrent connections.",
+        "server": "IRC server address.",
+        "tls": "Whether to enable TLS.",
+        "nick": "Bot nickname.",
+        "user": "IRC username.",
+        "realName": "Displayed real name.",
+        "channels": "IRC channels to join.",
+        "requestCaps": "IRC capability list requested on connect.",
+        "genericField": "Used to configure {{field}}."
+      }
+    },
+    "validation": {
+      "requiredField": "This field is required."
+    }
+  },
+  "pages": {
+    "config": {
+      "load_error": "Failed to load configuration. Please refresh and try again.",
+      "workspace": "Workspace Directory",
+      "workspace_hint": "Base directory for agent file operations.",
+      "restrict_workspace": "Restrict to Workspace",
+      "restrict_workspace_hint": "Only allow file operations inside workspace.",
+      "max_tokens": "Max Tokens",
+      "max_tokens_hint": "Upper token limit per model response.",
+      "max_tool_iterations": "Max Tool Iterations",
+      "max_tool_iterations_hint": "Maximum tool-call loops in a single task.",
+      "summarize_threshold": "Summarize Message Threshold",
+      "summarize_threshold_hint": "Start summarization after this many messages.",
+      "summarize_token_percent": "Summarize Token Percent",
+      "summarize_token_percent_hint": "Used when conversation summary is triggered.",
+      "session_scope": "Session Scope",
+      "session_scope_hint": "How chat context is isolated across peers/channels.",
+      "session_scope_per_channel_peer": "Per Channel + Peer",
+      "session_scope_per_channel_peer_desc": "Separate context for each user in each channel.",
+      "session_scope_per_channel": "Per Channel",
+      "session_scope_per_channel_desc": "One shared context per channel.",
+      "session_scope_per_peer": "Per Peer",
+      "session_scope_per_peer_desc": "One context per user across channels.",
+      "session_scope_global": "Global",
+      "session_scope_global_desc": "All messages share one global context.",
+      "heartbeat_enabled": "Heartbeat",
+      "heartbeat_enabled_hint": "Send periodic heartbeat messages.",
+      "heartbeat_interval": "Heartbeat Interval (minutes)",
+      "heartbeat_interval_hint": "Interval in minutes between heartbeat signals.",
+      "devices_enabled": "Enable Devices",
+      "devices_enabled_hint": "Enable hardware-device integrations.",
+      "monitor_usb": "Monitor USB",
+      "monitor_usb_hint": "Watch USB plug/unplug events when devices are enabled.",
+      "autostart_label": "Launch at Login",
+      "autostart_hint": "Start PicoClaw Web automatically when you log in.",
+      "autostart_unsupported": "Launch at login is not supported on this platform.",
+      "autostart_load_error": "Failed to load launch-at-login status.",
+      "server_port": "Service Port",
+      "server_port_hint": "HTTP port used by PicoClaw Web.",
+      "lan_access": "Enable LAN Access",
+      "lan_access_hint": "Allow access from other devices on your local network.",
+      "allowed_cidrs": "Allowed Network CIDRs",
+      "allowed_cidrs_hint": "Only clients from these CIDR ranges can access the service. One per line or comma-separated. Leave empty to allow all.",
+      "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
+      "launcher_load_error": "Failed to load service parameters.",
+      "launcher_restart_hint": "Service parameter changes apply after restarting PicoClaw Web.",
+      "advanced_desc": "Open the raw JSON page to edit every field directly.",
+      "open_raw": "Raw Config",
+      "back_to_visual": "Visual Config",
+      "raw_json_title": "Raw JSON Configuration",
+      "raw_json_desc": "Advanced users can directly edit the raw JSON configuration below.",
+      "json_placeholder": "Enter valid JSON configuration...",
+      "save_success": "Configuration saved successfully.",
+      "save_error": "Failed to save configuration.",
+      "reset_confirm_title": "Reset Changes",
+      "reset_confirm_desc": "Are you sure you want to reset your unsaved changes back to the last saved state?",
+      "reset_success": "Changes have been reset to the last saved state.",
+      "invalid_json": "Invalid JSON format.",
+      "format_success": "JSON formatted successfully.",
+      "format_error": "Invalid JSON format.",
+      "format": "Format",
+      "unsaved_changes": "You have unsaved changes."
+    },
+    "logs": {
+      "description": "System logs and monitoring."
+    }
+  }
+}

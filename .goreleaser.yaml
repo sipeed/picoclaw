@@ -6,8 +6,9 @@ before:
   hooks:
     - go mod tidy
     - go generate ./...
+    - sh -c 'cd web/frontend && pnpm install && pnpm build:backend'
     - go install github.com/tc-hib/go-winres@latest
-    - go-winres make --in cmd/picoclaw-launcher/winres/winres.json --out cmd/picoclaw-launcher/rsrc --product-version={{ .Version }} --file-version={{ .Version }}
+    - go-winres make --in web/backend/winres/winres.json --out web/backend/rsrc --product-version={{ .Version }} --file-version={{ .Version }}
 
 builds:
   - id: picoclaw
@@ -70,7 +71,7 @@ builds:
       - "7"
     gomips:
       - softfloat
-    main: ./cmd/picoclaw-launcher
+    main: ./web/backend
     ignore:
       - goos: windows
         goarch: arm
@@ -178,6 +179,11 @@ nfpms:
       - rpm
       - deb
     bindir: /usr/bin
+    contents:
+      - src: web/picoclaw-launcher.desktop
+        dst: /usr/share/applications/picoclaw-launcher.desktop
+      - src: web/picoclaw-launcher.png
+        dst: /usr/share/icons/hicolor/512x512/apps/picoclaw-launcher.png
 
 changelog:
   sort: asc
