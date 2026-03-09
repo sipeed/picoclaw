@@ -675,14 +675,8 @@ type WebSearchToolOptions struct {
 func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	var provider SearchProvider
 	maxResults := 5
-
-<<<<<<< feat/mutil_keys
-	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
-	if opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0 {
-=======
 	// Priority: Perplexity > Brave > SearXNG > Tavily > DuckDuckGo > GLM Search
-	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
->>>>>>> main
+	if opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0 {
 		client, err := createHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Perplexity: %w", err)
@@ -704,16 +698,12 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults
 		}
-<<<<<<< feat/mutil_keys
-	} else if opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0 {
-=======
 	} else if opts.SearXNGEnabled && opts.SearXNGBaseURL != "" {
 		provider = &SearXNGSearchProvider{baseURL: opts.SearXNGBaseURL}
 		if opts.SearXNGMaxResults > 0 {
 			maxResults = opts.SearXNGMaxResults
 		}
-	} else if opts.TavilyEnabled && opts.TavilyAPIKey != "" {
->>>>>>> main
+	} else if opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0 {
 		client, err := createHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Tavily: %w", err)
