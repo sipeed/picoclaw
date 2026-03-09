@@ -2,7 +2,6 @@ package model
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -37,6 +36,10 @@ Examples:
 				// Show current default model
 				showCurrentModel(cfg)
 				return nil
+			}
+
+			if len(args) > 1 {
+				return fmt.Errorf("wrong command, should be model [model_name]")
 			}
 
 			// Set new default model
@@ -97,7 +100,7 @@ func setDefaultModel(configPath string, cfg *config.Config, modelName string) er
 		fmt.Printf("Error: Model '%s' not found in config.\n\n", modelName)
 		fmt.Println("Available models:")
 		listAvailableModels(cfg)
-		os.Exit(1)
+		panic("")
 	}
 
 	// Update the default model
