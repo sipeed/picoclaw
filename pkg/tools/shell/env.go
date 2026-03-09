@@ -55,6 +55,15 @@ var LLMBlocklist = map[string]bool{
 	"LD_LIBRARY_PATH": true, // Could hijack library resolution
 	"LD_AUDIT":       true, // Could inject code
 	"LD_DEBUG":       true, // Could leak info
+
+	// PICOCLAW_* vars - controlled by the agent, not LLM
+	"PICOCLAW_HOME":             true,
+	"PICOCLAW_CONFIG":           true,
+	"PICOCLAW_AGENT_WORKSPACE":  true,
+	"PICOCLAW_EXE":              true,
+	"PICOCLAW_SERVICE_NAME":     true,
+	"PICOCLAW_EXEC_TIME":        true,
+	"PICOCLAW_EXEC_TIMEOUT":     true,
 }
 
 // windowsEnvAllowlist contains additional variables needed on Windows.
@@ -78,6 +87,7 @@ var windowsEnvAllowlist = map[string]bool{
 // envSet provides explicit key=value pairs from config (override inherited).
 // extraEnv provides additional key=value pairs from tool call (merged with envSet).
 func BuildSanitizedEnv(baseEnv []string, extraAllowlist []string, envSet, extraEnv map[string]string) []string {
+
 	// Use provided env or fall back to os.Environ
 	inherited := baseEnv
 	if inherited == nil {

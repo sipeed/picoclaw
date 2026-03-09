@@ -184,7 +184,7 @@ func (t *ExecTool) Parameters() map[string]any {
 			},
 			"env": map[string]any{
 				"type":        "object",
-				"description": "Additional environment variables to set for this command. Available: PICOCLAW_HOME, PICOCLAW_CONFIG, PICOCLAW_AGENT_WORKSPACE, PICOCLAW_EXE, PICOCLAW_SERVICE_NAME. Cannot override: PATH, HOME, USER, LOGNAME, SHELL, LD_PRELOAD, LD_LIBRARY_PATH, LD_AUDIT, LD_DEBUG",
+				"description": "Additional environment variables to set for this command. Available: PICOCLAW_HOME, PICOCLAW_CONFIG, PICOCLAW_AGENT_WORKSPACE, PICOCLAW_EXE, PICOCLAW_SERVICE_NAME, PICOCLAW_EXEC_TIME (RFC3339), PICOCLAW_EXEC_TIMEOUT. Cannot override: PATH, HOME, USER, LOGNAME, SHELL, LD_PRELOAD, LD_LIBRARY_PATH, LD_AUDIT, LD_DEBUG, PICOCLAW_*",
 				"additionalProperties": map[string]any{
 					"type": "string",
 				},
@@ -252,9 +252,15 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		}
 	}
 
+	// Add PICOCLAW_EXEC_TIME - timestamp when command is executed
+	execTimeEnv := map[string]string{
+		"PICOCLAW_EXEC_TIME":    time.Now().Format(time.RFC3339),
+		"PICOCLAW_EXEC_TIMEOUT": t.timeout.String(),
+	}
+
 	// Use sanitized environment - strips secrets, prevents env-based attacks
 	// Pass extraEnv from LLM to apply blocklist filtering
-	cmd.Env = shell.BuildSanitizedEnv(t.cachedEnv, nil, nil, extraEnv)
+	cmd.Env = shell.BuildSanitizedEnv(t.cachedEnv, nil, execTimeEnv, extraEnv)
 
 	if cwd != "" {
 		cmd.Dir = cwd
