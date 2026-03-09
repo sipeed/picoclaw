@@ -78,48 +78,55 @@ var windowsEnvAllowlist = map[string]bool{
 	"HOMEPATH":    true,
 }
 
-// FilterByAllowlist filters the inherited environment to only allowlisted variables.
-// This should only be used at init time to create the cached environment.
-func FilterByAllowlist(baseEnv []string, extraAllowlist []string) map[string]string {
-	if baseEnv == nil {
-		baseEnv = os.Environ()
+// WithAllowedEnv builds a map of allowed environment variables by looking them up.
+// This is more efficient than filtering os.Environ() with string parsing.
+// It starts with the provided env map, then adds allowed inherited vars (if not set).
+// extraAllowlist adds to the default allowlist.
+func WithAllowedEnv(envSet map[string]string, extraAllowlist []string) map[string]string {
+	// Start with provided envSet map
+	result := envSet
+	if result == nil {
+		result = make(map[string]string)
 	}
 
-	allowed := make(map[string]bool, len(DefaultEnvAllowlist)+len(extraAllowlist)+len(windowsEnvAllowlist))
+	// Add default allowlist (only if not already set)
 	for k := range DefaultEnvAllowlist {
-		allowed[envKey(k)] = true
+		if _, exists := result[k]; !exists {
+			if val := os.Getenv(k); val != "" {
+				result[k] = val
+			}
+		}
 	}
+	// Add Windows-specific vars
 	if runtime.GOOS == "windows" {
 		for k := range windowsEnvAllowlist {
-			allowed[envKey(k)] = true
+			if _, exists := result[k]; !exists {
+				if val := os.Getenv(k); val != "" {
+					result[k] = val
+				}
+			}
 		}
 	}
+	// Add extra allowlist from config
 	for _, k := range extraAllowlist {
-		allowed[envKey(k)] = true
+		if _, exists := result[k]; !exists {
+			if val := os.Getenv(k); val != "" {
+				result[k] = val
+			}
+		}
 	}
 
-	vars := make(map[string]string)
-	for _, entry := range baseEnv {
-		k, v, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		norm := envKey(k)
-		if allowed[norm] || isAllowedPrefix(norm) {
-			vars[norm] = v
-		}
-	}
-	return vars
+	return result
 }
 
 // MergeEnvVars merges multiple env sources into a final []string for exec.Cmd.Env.
-// baseEnv is NOT filtered - it's assumed to already be sanitized (e.g., cachedEnv).
+// baseEnv is the cached map from AllowedEnv.
 // envSet provides explicit key=value pairs (config, not filtered).
 // extraEnv provides additional key=value pairs from LLM (filtered by blocklist).
 func MergeEnvVars(baseEnv map[string]string, envSet, extraEnv map[string]string) []string {
 	vars := make(map[string]string, len(baseEnv)+len(envSet)+len(extraEnv))
 
-	// Start with base env (already sanitized)
+	// Start with base env (already filtered)
 	for k, v := range baseEnv {
 		vars[envKey(k)] = v
 	}

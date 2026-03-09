@@ -24,7 +24,7 @@ type ExecTool struct {
 	allowPatterns       []*regexp.Regexp
 	customAllowPatterns []*regexp.Regexp
 	restrictToWorkspace bool
-	cachedEnv           map[string]string // cached sanitized env map from os.Environ() at init
+	cachedEnv           map[string]string // cached sanitized env from os.Getenv() at init
 }
 
 var (
@@ -151,14 +151,8 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 	// Ensure PICOCLAW_* vars are set for child processes
 	envSet = shell.WithPicoclawEnvVars(envSet, workingDir)
 
-	// Build cached env: filter inherited env by allowlist, then merge with config envSet
-	filteredBase := shell.FilterByAllowlist(os.Environ(), envAllowlist)
-	// Pre-merge envSet into cachedEnv so PICOCLAW_* vars are preserved
-	// (MergeEnvVars returns []string, so we merge maps manually)
-	cachedEnv := filteredBase
-	for k, v := range envSet {
-		cachedEnv[k] = v
-	}
+	// Build cached env: start with envSet (PICOCLAW_*), then add allowed inherited vars
+	cachedEnv := shell.WithAllowedEnv(envSet, envAllowlist)
 
 	return &ExecTool{
 		workingDir:          workingDir,
