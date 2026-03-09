@@ -481,6 +481,7 @@ type ProvidersConfig struct {
 	Qwen          ProviderConfig       `json:"qwen"`
 	Mistral       ProviderConfig       `json:"mistral"`
 	Avian         ProviderConfig       `json:"avian"`
+	Minimax       ProviderConfig       `json:"minimax"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -506,7 +507,8 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
 		p.Qwen.APIKey == "" && p.Qwen.APIBase == "" &&
 		p.Mistral.APIKey == "" && p.Mistral.APIBase == "" &&
-		p.Avian.APIKey == "" && p.Avian.APIBase == ""
+		p.Avian.APIKey == "" && p.Avian.APIBase == "" &&
+		p.Minimax.APIKey == "" && p.Minimax.APIBase == ""
 }
 
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig
