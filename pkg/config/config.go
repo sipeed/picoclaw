@@ -646,7 +646,7 @@ type ExecConfig struct {
 	CustomAllowPatterns []string          `                                 env:"PICOCLAW_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS" json:"custom_allow_patterns"`
 	TimeoutSeconds      int               `                                 env:"PICOCLAW_TOOLS_EXEC_TIMEOUT_SECONDS"       json:"timeout_seconds"` // 0 means use default (60s)
 	EnvSet              map[string]string `                                 json:"env_set"`          // env vars to set for all exec commands
-	EnvAllowlist        []string          `                                 json:"env_allowlist"`   // additional env vars to allow (extends default)
+	EnvAllowlist        []string          `                                 json:"env_allowlist"`   // additional env vars to allow (extends default) - use explicit names, not wildcards
 }
 
 type SkillsToolsConfig struct {

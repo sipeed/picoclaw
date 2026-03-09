@@ -35,11 +35,27 @@ var DefaultEnvAllowlist = map[string]bool{
 	"HTTP_PROXY":   true,
 	"HTTPS_PROXY":  true,
 	"NO_PROXY":     true,
+
+	// Locale
+	"LC_ALL":          true,
+	"LC_CTYPE":        true,
+	"LC_MESSAGES":     true,
+	"LC_MONETARY":     true,
+	"LC_NUMERIC":      true,
+	"LC_TIME":         true,
+	"LC_PAPER":        true,
+	"LC_NAME":         true,
+	"LC_ADDRESS":      true,
+	"LC_TELEPHONE":    true,
+	"LC_MEASUREMENT":  true,
+	"LC_IDENTIFICATION": true,
+	"LC_COLLATE":      true,
 }
 
 // defaultEnvAllowPrefixes are env var prefixes that are always allowed.
+// Currently empty - all allowed vars are explicit in DefaultEnvAllowlist.
 var defaultEnvAllowPrefixes = []string{
-	"LC_",
+	// Currently empty - all allowed vars are explicit
 }
 
 // LLMBlocklist is the set of environment variable names that the LLM
@@ -119,6 +135,25 @@ func WithAllowedEnv(envSet map[string]string, extraAllowlist []string) map[strin
 	return result
 }
 
+// LLMBlocklistPrefixes are env var prefixes that the LLM cannot override.
+var LLMBlocklistPrefixes = []string{
+	"PICOCLAW_",
+}
+
+// isBlocked returns true if the key is in the blocklist or matches a blocked prefix.
+func isBlocked(key string) bool {
+	norm := envKey(key)
+	if LLMBlocklist[norm] {
+		return true
+	}
+	for _, prefix := range LLMBlocklistPrefixes {
+		if strings.HasPrefix(norm, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // MergeEnvVars merges multiple env sources into a final []string for exec.Cmd.Env.
 // baseEnv is the cached map from AllowedEnv.
 // envSet provides explicit key=value pairs (config, not filtered).
@@ -141,7 +176,7 @@ func MergeEnvVars(baseEnv map[string]string, envSet, extraEnv map[string]string)
 	// Merge extraEnv (LLM-provided) - filtered by blocklist
 	if extraEnv != nil {
 		for k, v := range extraEnv {
-			if LLMBlocklist[envKey(k)] {
+			if isBlocked(k) {
 				continue // Skip blocked vars
 			}
 			vars[envKey(k)] = v
