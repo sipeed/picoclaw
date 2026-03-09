@@ -41,3 +41,15 @@ func bannerView() *tview.TextView {
 	text.SetBorder(false)
 	return text
 }
+
+const footerText = "Esc: Back/Exit | Enter: Enter | ←↓↑→ : Move | Space: Select | Tab/Shift+Tab: Switch"
+
+func footerView() *tview.TextView {
+	text := tview.NewTextView()
+	text.SetTextAlign(tview.AlignCenter)
+	text.SetText(footerText)
+	text.SetBackgroundColor(tview.Styles.MoreContrastBackgroundColor)
+	text.SetTextColor(tview.Styles.PrimaryTextColor)
+	text.SetBorder(false)
+	return text
+}
