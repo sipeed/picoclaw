@@ -24,7 +24,7 @@ type ExecTool struct {
 	allowPatterns       []*regexp.Regexp
 	customAllowPatterns []*regexp.Regexp
 	restrictToWorkspace bool
-	cachedEnv           []string // cached sanitized env from os.Environ() at init
+	cachedEnv           map[string]string // cached sanitized env map from os.Environ() at init
 }
 
 var (
@@ -151,6 +151,15 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 	// Ensure PICOCLAW_* vars are set for child processes
 	envSet = shell.WithPicoclawEnvVars(envSet, workingDir)
 
+	// Build cached env: filter inherited env by allowlist, then merge with config envSet
+	filteredBase := shell.FilterByAllowlist(os.Environ(), envAllowlist)
+	// Pre-merge envSet into cachedEnv so PICOCLAW_* vars are preserved
+	// (MergeEnvVars returns []string, so we merge maps manually)
+	cachedEnv := filteredBase
+	for k, v := range envSet {
+		cachedEnv[k] = v
+	}
+
 	return &ExecTool{
 		workingDir:          workingDir,
 		timeout:             timeout,
@@ -158,7 +167,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		allowPatterns:       nil,
 		customAllowPatterns: customAllowPatterns,
 		restrictToWorkspace: restrict,
-		cachedEnv:           shell.BuildSanitizedEnv(os.Environ(), envAllowlist, envSet, nil),
+		cachedEnv:           cachedEnv,
 	}, nil
 }
 
@@ -258,9 +267,9 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		"PICOCLAW_EXEC_TIMEOUT": t.timeout.String(),
 	}
 
-	// Use sanitized environment - strips secrets, prevents env-based attacks
-	// Pass extraEnv from LLM to apply blocklist filtering
-	cmd.Env = shell.BuildSanitizedEnv(t.cachedEnv, nil, execTimeEnv, extraEnv)
+	// Use sanitized environment - merge cached env with exec time vars and LLM extra env
+	// Note: cachedEnv is NOT re-filtered - PICOCLAW_* vars are preserved
+	cmd.Env = shell.MergeEnvVars(t.cachedEnv, execTimeEnv, extraEnv)
 
 	if cwd != "" {
 		cmd.Dir = cwd

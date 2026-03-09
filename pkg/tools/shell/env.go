@@ -78,6 +78,77 @@ var windowsEnvAllowlist = map[string]bool{
 	"HOMEPATH":    true,
 }
 
+// FilterByAllowlist filters the inherited environment to only allowlisted variables.
+// This should only be used at init time to create the cached environment.
+func FilterByAllowlist(baseEnv []string, extraAllowlist []string) map[string]string {
+	if baseEnv == nil {
+		baseEnv = os.Environ()
+	}
+
+	allowed := make(map[string]bool, len(DefaultEnvAllowlist)+len(extraAllowlist)+len(windowsEnvAllowlist))
+	for k := range DefaultEnvAllowlist {
+		allowed[envKey(k)] = true
+	}
+	if runtime.GOOS == "windows" {
+		for k := range windowsEnvAllowlist {
+			allowed[envKey(k)] = true
+		}
+	}
+	for _, k := range extraAllowlist {
+		allowed[envKey(k)] = true
+	}
+
+	vars := make(map[string]string)
+	for _, entry := range baseEnv {
+		k, v, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		norm := envKey(k)
+		if allowed[norm] || isAllowedPrefix(norm) {
+			vars[norm] = v
+		}
+	}
+	return vars
+}
+
+// MergeEnvVars merges multiple env sources into a final []string for exec.Cmd.Env.
+// baseEnv is NOT filtered - it's assumed to already be sanitized (e.g., cachedEnv).
+// envSet provides explicit key=value pairs (config, not filtered).
+// extraEnv provides additional key=value pairs from LLM (filtered by blocklist).
+func MergeEnvVars(baseEnv map[string]string, envSet, extraEnv map[string]string) []string {
+	vars := make(map[string]string, len(baseEnv)+len(envSet)+len(extraEnv))
+
+	// Start with base env (already sanitized)
+	for k, v := range baseEnv {
+		vars[envKey(k)] = v
+	}
+
+	// Add envSet (config-provided, not filtered)
+	if envSet != nil {
+		for k, v := range envSet {
+			vars[envKey(k)] = v
+		}
+	}
+
+	// Merge extraEnv (LLM-provided) - filtered by blocklist
+	if extraEnv != nil {
+		for k, v := range extraEnv {
+			if LLMBlocklist[envKey(k)] {
+				continue // Skip blocked vars
+			}
+			vars[envKey(k)] = v
+		}
+	}
+
+	// Convert to []string for exec.Cmd.Env
+	result := make([]string, 0, len(vars))
+	for k, v := range vars {
+		result = append(result, k+"="+v)
+	}
+	return result
+}
+
 // BuildSanitizedEnv constructs a sanitized environment []string suitable for
 // exec.Cmd.Env. It filters the inherited environment to only allowlisted variables.
 //
