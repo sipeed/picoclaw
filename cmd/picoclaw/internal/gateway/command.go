@@ -36,7 +36,7 @@ func NewGatewayCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVarP(&debug, "debug", "d", false, "Enable debug logging")
-	cmd.Flags().BoolVar(&noTruncate, "no-truncate", false, "Disable string truncation in debug logs")
+	cmd.Flags().BoolVarP(&noTruncate, "no-truncate", "T", false, "Disable string truncation in debug logs")
 
 	return cmd
 }
