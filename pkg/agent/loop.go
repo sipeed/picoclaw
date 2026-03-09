@@ -581,15 +581,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	route, agent, routeErr := al.resolveMessageRoute(msg)
-
-	// Commands are checked before requiring a successful route.
-	// Global commands (/help, /show, /switch) work even when routing fails;
-	// context-dependent commands check their own Runtime fields and report
-	// "unavailable" when the required capability is nil.
-	if response, handled := al.handleCommand(ctx, msg, agent); handled {
-		return response, nil
-	}
-
 	if routeErr != nil {
 		return "", routeErr
 	}
@@ -615,7 +606,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"route_channel": route.Channel,
 		})
 
-	return al.runAgentLoop(ctx, agent, processOptions{
+	opts := processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
@@ -624,7 +615,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
 		SendResponse:    false,
-	})
+	}
+
+	// context-dependent commands check their own Runtime fields and report
+	// "unavailable" when the required capability is nil.
+	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {
+		return response, nil
+	}
+
+	return al.runAgentLoop(ctx, agent, opts)
 }
 
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
@@ -1682,6 +1681,7 @@ func (al *AgentLoop) handleCommand(
 	ctx context.Context,
 	msg bus.InboundMessage,
 	agent *AgentInstance,
+	opts *processOptions,
 ) (string, bool) {
 	if !commands.HasCommandPrefix(msg.Content) {
 		return "", false
@@ -1691,7 +1691,7 @@ func (al *AgentLoop) handleCommand(
 		return "", false
 	}
 
-	rt := al.buildCommandsRuntime(agent)
+	rt := al.buildCommandsRuntime(agent, opts)
 	executor := commands.NewExecutor(al.cmdRegistry, rt)
 
 	var commandReply string
@@ -1720,7 +1720,7 @@ func (al *AgentLoop) handleCommand(
 	}
 }
 
-func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtime {
+func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOptions) *commands.Runtime {
 	rt := &commands.Runtime{
 		Config:          al.cfg,
 		ListAgentIDs:    al.registry.ListAgentIDs,
@@ -1749,6 +1749,20 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtim
 			oldModel := agent.Model
 			agent.Model = value
 			return oldModel, nil
+		}
+
+		rt.ClearHistory = func() error {
+			if opts == nil {
+				return fmt.Errorf("process options not available")
+			}
+			if agent.Sessions == nil {
+				return fmt.Errorf("sessions not initialized for agent")
+			}
+
+			agent.Sessions.SetHistory(opts.SessionKey, make([]providers.Message, 0))
+			agent.Sessions.SetSummary(opts.SessionKey, "")
+			agent.Sessions.Save(opts.SessionKey)
+			return nil
 		}
 	}
 	return rt
