@@ -200,7 +200,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			continue
 		}
 
-		if err := c.sendHTMLChunk(ctx, chatID, htmlContent, chunk); err != nil {
+		if err := c.sendHTMLChunk(ctx, chatID, htmlContent, chunk, msg.ThreadID, msg.ReplyToMessageID); err != nil {
 			return err
 		}
 	}
@@ -210,9 +210,13 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 
 // sendHTMLChunk sends a single HTML message, falling back to the original
 // markdown as plain text on parse failure so users never see raw HTML tags.
-func (c *TelegramChannel) sendHTMLChunk(ctx context.Context, chatID int64, htmlContent, mdFallback string) error {
+func (c *TelegramChannel) sendHTMLChunk(ctx context.Context, chatID int64, htmlContent, mdFallback, threadID, replyToMsgID string) error {
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
+	tgMsg.MessageThreadID = parseOptionalInt(threadID)
+	if mid := parseOptionalInt(replyToMsgID); mid != 0 {
+		tgMsg.ReplyParameters = &telego.ReplyParameters{MessageID: mid}
+	}
 
 	if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
 		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
@@ -231,14 +235,21 @@ func (c *TelegramChannel) sendHTMLChunk(ctx context.Context, chatID int64, htmlC
 // It sends ChatAction(typing) immediately and then repeats every 4 seconds
 // (Telegram's typing indicator expires after ~5s) in a background goroutine.
 // The returned stop function is idempotent and cancels the goroutine.
-func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+// When threadID is non-empty it routes the action to the given forum topic.
+func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string, threadID string) (func(), error) {
 	cid, err := parseChatID(chatID)
 	if err != nil {
 		return func() {}, err
 	}
 
+	sendTyping := func(sctx context.Context) {
+		params := tu.ChatAction(tu.ID(cid), telego.ChatActionTyping)
+		params.MessageThreadID = parseOptionalInt(threadID)
+		_ = c.bot.SendChatAction(sctx, params)
+	}
+
 	// Send the first typing action immediately
-	_ = c.bot.SendChatAction(ctx, tu.ChatAction(tu.ID(cid), telego.ChatActionTyping))
+	sendTyping(ctx)
 
 	typingCtx, cancel := context.WithCancel(ctx)
 	go func() {
@@ -249,7 +260,7 @@ func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(
 			case <-typingCtx.Done():
 				return
 			case <-ticker.C:
-				_ = c.bot.SendChatAction(typingCtx, tu.ChatAction(tu.ID(cid), telego.ChatActionTyping))
+				sendTyping(typingCtx)
 			}
 		}
 	}()
@@ -277,7 +288,9 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 // SendPlaceholder implements channels.PlaceholderCapable.
 // It sends a placeholder message (e.g. "Thinking... 💭") that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).
-func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+// When threadID is non-empty the placeholder is sent into the given forum topic.
+// When replyToMsgID is non-empty the placeholder is sent as a reply to that message.
+func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string, threadID string, replyToMsgID string) (string, error) {
 	phCfg := c.config.Channels.Telegram.Placeholder
 	if !phCfg.Enabled {
 		return "", nil
@@ -293,7 +306,13 @@ func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (s
 		return "", err
 	}
 
-	pMsg, err := c.bot.SendMessage(ctx, tu.Message(tu.ID(cid), text))
+	params := tu.Message(tu.ID(cid), text)
+	params.MessageThreadID = parseOptionalInt(threadID)
+	if mid := parseOptionalInt(replyToMsgID); mid != 0 {
+		params.ReplyParameters = &telego.ReplyParameters{MessageID: mid}
+	}
+
+	pMsg, err := c.bot.SendMessage(ctx, params)
 	if err != nil {
 		return "", err
 	}
@@ -530,6 +549,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		"first_name": user.FirstName,
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
+	if message.MessageThreadID != 0 {
+		metadata["thread_id"] = fmt.Sprintf("%d", message.MessageThreadID)
+	}
 
 	c.HandleMessage(c.ctx,
 		peer,
@@ -587,6 +609,15 @@ func parseChatID(chatIDStr string) (int64, error) {
 	var id int64
 	_, err := fmt.Sscanf(chatIDStr, "%d", &id)
 	return id, err
+}
+
+// parseOptionalInt converts a string to int, returning 0 if the string is empty or invalid.
+func parseOptionalInt(s string) int {
+	if s == "" {
+		return 0
+	}
+	n, _ := strconv.Atoi(s)
+	return n
 }
 
 func markdownToTelegramHTML(text string) string {

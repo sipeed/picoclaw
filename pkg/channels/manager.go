@@ -85,40 +85,44 @@ type Manager struct {
 	mux           *http.ServeMux
 	httpServer    *http.Server
 	mu            sync.RWMutex
-	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
-	typingStops   sync.Map // "channel:chatID" → func()
-	reactionUndos sync.Map // "channel:chatID" → reactionEntry
+	placeholders  sync.Map // "channel:chatID:threadID" → placeholderEntry
+	typingStops   sync.Map // "channel:chatID:threadID" → typingEntry
+	reactionUndos sync.Map // "channel:chatID:threadID" → reactionEntry
 }
 
 type asyncTask struct {
 	cancel context.CancelFunc
 }
 
+func placeholderKey(channel, chatID, threadID string) string {
+	return channel + ":" + chatID + ":" + threadID
+}
+
 // RecordPlaceholder registers a placeholder message for later editing.
 // Implements PlaceholderRecorder.
-func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
-	key := channel + ":" + chatID
+func (m *Manager) RecordPlaceholder(channel, chatID, threadID, placeholderID string) {
+	key := placeholderKey(channel, chatID, threadID)
 	m.placeholders.Store(key, placeholderEntry{id: placeholderID, createdAt: time.Now()})
 }
 
 // RecordTypingStop registers a typing stop function for later invocation.
 // Implements PlaceholderRecorder.
-func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
-	key := channel + ":" + chatID
+func (m *Manager) RecordTypingStop(channel, chatID, threadID string, stop func()) {
+	key := placeholderKey(channel, chatID, threadID)
 	m.typingStops.Store(key, typingEntry{stop: stop, createdAt: time.Now()})
 }
 
 // RecordReactionUndo registers a reaction undo function for later invocation.
 // Implements PlaceholderRecorder.
-func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
-	key := channel + ":" + chatID
+func (m *Manager) RecordReactionUndo(channel, chatID, threadID string, undo func()) {
+	key := placeholderKey(channel, chatID, threadID)
 	m.reactionUndos.Store(key, reactionEntry{undo: undo, createdAt: time.Now()})
 }
 
 // preSend handles typing stop, reaction undo, and placeholder editing before sending a message.
 // Returns true if the message was edited into a placeholder (skip Send).
 func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) bool {
-	key := name + ":" + msg.ChatID
+	key := placeholderKey(name, msg.ChatID, msg.ThreadID)
 
 	// 1. Stop typing
 	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {

@@ -24,15 +24,18 @@ type InboundMessage struct {
 	Media      []string          `json:"media,omitempty"`
 	Peer       Peer              `json:"peer"`                  // routing peer
 	MessageID  string            `json:"message_id,omitempty"`  // platform message ID
+	ThreadID   string            `json:"thread_id,omitempty"`   // forum topic / thread ID
 	MediaScope string            `json:"media_scope,omitempty"` // media lifecycle scope
 	SessionKey string            `json:"session_key"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
 type OutboundMessage struct {
-	Channel string `json:"channel"`
-	ChatID  string `json:"chat_id"`
-	Content string `json:"content"`
+	Channel          string `json:"channel"`
+	ChatID           string `json:"chat_id"`
+	Content          string `json:"content"`
+	ThreadID         string `json:"thread_id,omitempty"`           // forum topic / message thread ID
+	ReplyToMessageID string `json:"reply_to_message_id,omitempty"` // platform message ID to reply to
 }
 
 // MediaPart describes a single media attachment to send.

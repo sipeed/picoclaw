@@ -455,7 +455,7 @@ func TestPreSend_PlaceholderEditSuccess(t *testing.T) {
 	}
 
 	// Register placeholder
-	m.RecordPlaceholder("test", "123", "456")
+	m.RecordPlaceholder("test", "123", "", "456")
 
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
 	edited := m.preSend(context.Background(), "test", msg, ch)
@@ -485,7 +485,7 @@ func TestPreSend_PlaceholderEditFails_FallsThrough(t *testing.T) {
 		},
 	}
 
-	m.RecordPlaceholder("test", "123", "456")
+	m.RecordPlaceholder("test", "123", "", "456")
 
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
 	edited := m.preSend(context.Background(), "test", msg, ch)
@@ -505,7 +505,7 @@ func TestPreSend_TypingStopCalled(t *testing.T) {
 		},
 	}
 
-	m.RecordTypingStop("test", "123", func() {
+	m.RecordTypingStop("test", "123", "", func() {
 		stopCalled = true
 	})
 
@@ -551,10 +551,10 @@ func TestPreSend_TypingAndPlaceholder(t *testing.T) {
 		},
 	}
 
-	m.RecordTypingStop("test", "123", func() {
+	m.RecordTypingStop("test", "123", "", func() {
 		stopCalled = true
 	})
-	m.RecordPlaceholder("test", "123", "456")
+	m.RecordPlaceholder("test", "123", "", "456")
 
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
 	edited := m.preSend(context.Background(), "test", msg, ch)
@@ -570,6 +570,44 @@ func TestPreSend_TypingAndPlaceholder(t *testing.T) {
 	}
 }
 
+func TestPreSend_ThreadIsolation(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockMessageEditor{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+				return nil
+			},
+		},
+		editFn: func(_ context.Context, _, _, _ string) error {
+			return nil
+		},
+	}
+
+	// Register placeholder for thread "100"
+	m.RecordPlaceholder("test", "123", "100", "ph-100")
+
+	// Sending to the same chat but different thread should NOT find the placeholder
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello", ThreadID: "200"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+	if edited {
+		t.Fatal("expected preSend to return false for a different threadID")
+	}
+
+	// Sending to the correct thread should find it
+	msg.ThreadID = "100"
+	edited = m.preSend(context.Background(), "test", msg, ch)
+	if !edited {
+		t.Fatal("expected preSend to return true for matching threadID")
+	}
+
+	// Second call to same thread should not find it (already consumed)
+	edited = m.preSend(context.Background(), "test", msg, ch)
+	if edited {
+		t.Fatal("expected preSend to return false after placeholder was consumed")
+	}
+}
+
 func TestRecordPlaceholder_ConcurrentSafe(t *testing.T) {
 	m := newTestManager()
 
@@ -579,7 +617,7 @@ func TestRecordPlaceholder_ConcurrentSafe(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			chatID := fmt.Sprintf("chat_%d", i%10)
-			m.RecordPlaceholder("test", chatID, fmt.Sprintf("msg_%d", i))
+			m.RecordPlaceholder("test", chatID, "", fmt.Sprintf("msg_%d", i))
 		}(i)
 	}
 	wg.Wait()
@@ -594,7 +632,7 @@ func TestRecordTypingStop_ConcurrentSafe(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			chatID := fmt.Sprintf("chat_%d", i%10)
-			m.RecordTypingStop("test", chatID, func() {})
+			m.RecordTypingStop("test", chatID, "", func() {})
 		}(i)
 	}
 	wg.Wait()
@@ -616,7 +654,7 @@ func TestSendWithRetry_PreSendEditsPlaceholder(t *testing.T) {
 		},
 	}
 
-	m.RecordPlaceholder("test", "123", "456")
+	m.RecordPlaceholder("test", "123", "", "456")
 
 	w := &channelWorker{
 		ch:      ch,
@@ -781,10 +819,10 @@ func TestPreSendStillWorksWithWrappedTypes(t *testing.T) {
 	}
 
 	// Use the new wrapped types via the public API
-	m.RecordTypingStop("test", "chat1", func() {
+	m.RecordTypingStop("test", "chat1", "", func() {
 		stopCalled = true
 	})
-	m.RecordPlaceholder("test", "chat1", "ph_id")
+	m.RecordPlaceholder("test", "chat1", "", "ph_id")
 
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "chat1", Content: "response"}
 	edited := m.preSend(context.Background(), "test", msg, ch)

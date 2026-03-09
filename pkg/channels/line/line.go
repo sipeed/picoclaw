@@ -583,7 +583,7 @@ func (c *LINEChannel) sendPush(ctx context.Context, to, content, quoteToken stri
 // NOTE: The LINE loading animation API only works for 1:1 chats.
 // Group/room chat IDs (starting with "C" or "R") are detected automatically;
 // for these, a no-op stop function is returned without calling the API.
-func (c *LINEChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+func (c *LINEChannel) StartTyping(ctx context.Context, chatID string, _ string) (func(), error) {
 	if chatID == "" {
 		return func() {}, nil
 	}

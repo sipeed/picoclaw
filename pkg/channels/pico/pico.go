@@ -160,7 +160,7 @@ func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID 
 }
 
 // StartTyping implements channels.TypingCapable.
-func (c *PicoChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+func (c *PicoChannel) StartTyping(ctx context.Context, chatID string, _ string) (func(), error) {
 	startMsg := newMessage(TypeTypingStart, nil)
 	if err := c.broadcastToSession(chatID, startMsg); err != nil {
 		return func() {}, err
@@ -174,7 +174,7 @@ func (c *PicoChannel) StartTyping(ctx context.Context, chatID string) (func(), e
 // SendPlaceholder implements channels.PlaceholderCapable.
 // It sends a placeholder message via the Pico Protocol that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).
-func (c *PicoChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+func (c *PicoChannel) SendPlaceholder(ctx context.Context, chatID string, _ string, _ string) (string, error) {
 	if !c.config.Placeholder.Enabled {
 		return "", nil
 	}

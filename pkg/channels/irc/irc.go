@@ -163,7 +163,7 @@ func (c *IRCChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 
 // StartTyping implements channels.TypingCapable using IRCv3 +typing client tag.
 // Requires typing.enabled in config and server support for message-tags capability.
-func (c *IRCChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+func (c *IRCChannel) StartTyping(ctx context.Context, chatID string, _ string) (func(), error) {
 	noop := func() {}
 
 	if !c.config.Typing.Enabled || !c.IsRunning() || c.conn == nil {
