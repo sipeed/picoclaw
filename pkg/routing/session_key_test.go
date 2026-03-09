@@ -84,6 +84,19 @@ func TestBuildAgentPeerSessionKey_GroupPeer(t *testing.T) {
 	}
 }
 
+func TestBuildAgentPeerSessionKey_GroupTopicPeer(t *testing.T) {
+	got := BuildAgentPeerSessionKey(SessionKeyParams{
+		AgentID: "main",
+		Channel: "telegram",
+		Peer:    &RoutePeer{Kind: "group", ID: "-1001234567890:topic:42"},
+		DMScope: DMScopePerPeer,
+	})
+	want := "agent:main:telegram:group:-1001234567890:topic:42"
+	if got != want {
+		t.Errorf("GroupTopicPeer = %q, want %q", got, want)
+	}
+}
+
 func TestBuildAgentPeerSessionKey_NilPeer(t *testing.T) {
 	got := BuildAgentPeerSessionKey(SessionKeyParams{
 		AgentID: "main",

@@ -261,6 +261,79 @@ func TestResolveRoute_InvalidAgentFallsToDefault(t *testing.T) {
 	}
 }
 
+func TestResolveRoute_ParentPeerFallback(t *testing.T) {
+	agents := []config.AgentConfig{
+		{ID: "main", Default: true},
+		{ID: "ops"},
+	}
+	bindings := []config.AgentBinding{
+		{
+			AgentID: "ops",
+			Match: config.BindingMatch{
+				Channel:   "telegram",
+				AccountID: "*",
+				Peer:      &config.PeerMatch{Kind: "group", ID: "-1001234567890"},
+			},
+		},
+	}
+	cfg := testConfig(agents, bindings)
+	r := NewRouteResolver(cfg)
+
+	route := r.ResolveRoute(RouteInput{
+		Channel:    "telegram",
+		Peer:       &RoutePeer{Kind: "group", ID: "-1001234567890:topic:42"},
+		ParentPeer: &RoutePeer{Kind: "group", ID: "-1001234567890"},
+	})
+
+	if route.AgentID != "ops" {
+		t.Errorf("AgentID = %q, want 'ops'", route.AgentID)
+	}
+	if route.MatchedBy != "binding.peer.parent" {
+		t.Errorf("MatchedBy = %q, want 'binding.peer.parent'", route.MatchedBy)
+	}
+	if route.SessionKey != "agent:ops:telegram:group:-1001234567890:topic:42" {
+		t.Errorf("SessionKey = %q", route.SessionKey)
+	}
+}
+
+func TestResolveRoute_OverrideBeatsBindings(t *testing.T) {
+	agents := []config.AgentConfig{
+		{ID: "main", Default: true},
+		{ID: "coder"},
+		{ID: "support"},
+	}
+	bindings := []config.AgentBinding{
+		{
+			AgentID: "support",
+			Match: config.BindingMatch{
+				Channel:   "telegram",
+				AccountID: "*",
+				Peer:      &config.PeerMatch{Kind: "group", ID: "-1001234567890"},
+			},
+		},
+	}
+	cfg := testConfig(agents, bindings)
+	r := NewRouteResolver(cfg)
+
+	route := r.ResolveRoute(RouteInput{
+		Channel:           "telegram",
+		Peer:              &RoutePeer{Kind: "group", ID: "-1001234567890:topic:42"},
+		ParentPeer:        &RoutePeer{Kind: "group", ID: "-1001234567890"},
+		OverrideAgentID:   "coder",
+		OverrideMatchedBy: "telegram.topic",
+	})
+
+	if route.AgentID != "coder" {
+		t.Errorf("AgentID = %q, want 'coder'", route.AgentID)
+	}
+	if route.MatchedBy != "telegram.topic" {
+		t.Errorf("MatchedBy = %q, want 'telegram.topic'", route.MatchedBy)
+	}
+	if route.SessionKey != "agent:coder:telegram:group:-1001234567890:topic:42" {
+		t.Errorf("SessionKey = %q", route.SessionKey)
+	}
+}
+
 func TestResolveRoute_DefaultAgentSelection(t *testing.T) {
 	agents := []config.AgentConfig{
 		{ID: "alpha"},
