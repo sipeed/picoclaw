@@ -198,7 +198,6 @@ changelog:
 #      lzma: true
 
 release:
-  disable: '{{ isEnvSet "NIGHTLY_BUILD" }}'
   footer: >-
 
     ---

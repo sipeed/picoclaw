@@ -130,19 +130,15 @@ jobs:
           TAG: ${{ needs.create-tag.outputs.tag }}
           TITLE: ${{ needs.create-tag.outputs.version }}
         run: |
-          # Fetch the auto-generated notes from the release
-          NOTES=$(gh release view "$TAG" --json body -q .body || true)
           CHANGELOG='${{ needs.create-tag.outputs.changelog }}'
-          if [ -z "$NOTES" ]; then
-            NOTES=$(cat <<EOF
+          NOTES=$(cat <<EOF
           Nightly build for **${TITLE}**
           
           This is an automated build and may be unstable. Use with caution.
           
           ${CHANGELOG}
           EOF
-            )
-          fi
+          )
           
           # Download assets from the newly created release
           mkdir -p build
@@ -167,7 +163,18 @@ jobs:
           done
           
           echo "Cleaning up old 'vX.X.X-nightly...' Docker images on GHCR..."
-          PACKAGE_URL="/users/${{ github.repository_owner }}/packages/container/${{ github.event.repository.name }}/versions"
+          OWNER="${{ github.repository_owner }}"
+          PACKAGE_NAME="${{ github.event.repository.name }}"
+          
+          # Check if owner is an organization or user
+          ORG_TEST=$(gh api -H "Accept: application/vnd.github+json" /orgs/$OWNER 2>/dev/null || true)
+          if echo "$ORG_TEST" | grep -q '"login"'; then
+            ACCOUNT_TYPE="orgs"
+          else
+            ACCOUNT_TYPE="users"
+          fi
+          
+          PACKAGE_URL="/${ACCOUNT_TYPE}/${OWNER}/packages/container/${PACKAGE_NAME}/versions"
           OLD_NIGHTLY_VERSIONS=$(gh api --paginate -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "$PACKAGE_URL" \
@@ -178,6 +185,6 @@ jobs:
               echo "Deleting Docker image version ID: $version_id"
               gh api -X DELETE -H "Accept: application/vnd.github+json" \
                 -H "X-GitHub-Api-Version: 2022-11-28" \
-                "/users/${{ github.repository_owner }}/packages/container/${{ github.event.repository.name }}/versions/$version_id" || true
+                "/${ACCOUNT_TYPE}/${OWNER}/packages/container/${PACKAGE_NAME}/versions/$version_id" || true
             fi
           done
