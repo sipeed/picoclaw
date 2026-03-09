@@ -228,8 +228,9 @@ After completing the task, provide a clear summary of what was done.`
 				// Format: "original_channel:original_chat_id" for routing back
 				ChatID:  fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
 				Content: announceContent,
-			})
 		})
+	})
+}
 
 func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {
 	sm.mu.RLock()
