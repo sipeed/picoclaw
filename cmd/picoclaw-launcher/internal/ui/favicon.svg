@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <!-- linear-gradient(135deg, #6366f1, #a78bfa) — matches .logo CSS -->
+    <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+  </defs>
+  <!-- border-radius: 8px rounded square -->
+  <rect width="32" height="32" rx="8" fill="url(#grad)"/>
+  <!-- White bold "P", font-size:16px font-weight:700 centered -->
+  <text x="16" y="22" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700"
+        fill="white" text-anchor="middle">P</text>
+</svg>
