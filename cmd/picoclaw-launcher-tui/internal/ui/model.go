@@ -103,7 +103,11 @@ func (s *appState) modelForm(index int) tview.Primitive {
 			s.showMessage("Duplicate model name", fmt.Sprintf("Model Name '%s' already exists", value))
 			return
 		}
+		oldName := model.ModelName
 		model.ModelName = value
+		if s.config.Agents.Defaults.Model == oldName {
+			s.config.Agents.Defaults.Model = value
+		}
 		s.dirty = true
 		form.SetTitle(fmt.Sprintf("Model: %s", model.ModelName))
 		refreshMainMenuIfPresent(s)
