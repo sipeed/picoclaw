@@ -520,14 +520,13 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		content = cleaned
 	}
 
-	// Build composite chatID. For forum topics, embed the thread ID in the
-	// chatID as "chatID/threadID" (same pattern as Slack's "channelID/threadTS")
-	// so all outbound methods route replies to the correct topic.
-	// Note: Telegram's "General" topic uses thread ID 1; it is treated like any
-	// other topic for session isolation and agent binding.
+	// For forum topics, embed the thread ID as "chatID/threadID" so replies
+	// route to the correct topic and each topic gets its own session.
+	// Only forum groups (IsForum) are handled; regular group reply threads
+	// must share one session per group.
 	compositeChatID := fmt.Sprintf("%d", chatID)
 	threadID := message.MessageThreadID
-	if threadID != 0 {
+	if message.Chat.IsForum && threadID != 0 {
 		compositeChatID = fmt.Sprintf("%d/%d", chatID, threadID)
 	}
 
@@ -555,9 +554,8 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
 
-	// For forum topic messages, set parent_peer metadata so the routing system
-	// can isolate sessions per topic via the existing 7-level priority cascade.
-	if threadID != 0 {
+	// Set parent_peer metadata for per-topic agent binding.
+	if message.Chat.IsForum && threadID != 0 {
 		metadata["parent_peer_kind"] = "topic"
 		metadata["parent_peer_id"] = fmt.Sprintf("%d", threadID)
 	}
@@ -614,11 +612,8 @@ func (c *TelegramChannel) downloadFile(ctx context.Context, fileID, ext string) 
 	return c.downloadFileWithInfo(file, ext)
 }
 
-// parseTelegramChatID splits a composite chat ID "chatID/threadID" into its
-// components. For non-forum messages the threadID is 0. If the chatID string
-// contains a "/" segment, the second part must be a valid integer thread ID;
-// otherwise an error is returned. This mirrors the Slack adapter (channelID/threadTS).
-// Implemented with strings.Index to avoid allocating a slice in the hot path.
+// parseTelegramChatID splits "chatID/threadID" into its components.
+// Returns threadID=0 when no "/" is present (non-forum messages).
 func parseTelegramChatID(chatID string) (int64, int, error) {
 	idx := strings.Index(chatID, "/")
 	if idx == -1 {
