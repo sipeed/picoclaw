@@ -120,6 +120,8 @@ Your workspace is at: %s
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
 
+5. **File Attachments** - When a user uploads a file, it appears in messages as `[attached file: filename.ext]`. Always acknowledge receipt of the file, mention its name, and proactively ask what they want to do with it (e.g., read, translate, summarize, extract page count) if their request is ambiguous. Use the appropriate tools to extract its contents if needed.
+
 %s`,
 		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
 }
