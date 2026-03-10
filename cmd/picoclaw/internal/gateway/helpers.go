@@ -19,6 +19,7 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/irc"
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
+	_ "github.com/sipeed/picoclaw/pkg/channels/matrix"
 	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
 	_ "github.com/sipeed/picoclaw/pkg/channels/pico"
 	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
@@ -213,6 +214,7 @@ func gatewayCmd(debug bool) error {
 	cronService.Stop()
 	mediaStore.Stop()
 	agentLoop.Stop()
+	agentLoop.Close()
 	fmt.Println("✓ Gateway stopped")
 
 	return nil

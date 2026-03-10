@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -31,7 +33,7 @@ type AgentInstance struct {
 	SummarizeMessageThreshold int
 	SummarizeTokenPercent     int
 	Provider                  providers.LLMProvider
-	Sessions                  *session.SessionManager
+	Sessions                  session.SessionStore
 	ContextBuilder            *ContextBuilder
 	Tools                     *tools.ToolRegistry
 	Subagents                 *config.SubagentsConfig
@@ -70,7 +72,8 @@ func NewAgentInstance(
 	toolsRegistry := tools.NewToolRegistry()
 
 	if cfg.Tools.IsToolEnabled("read_file") {
-		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
+		maxReadFileSize := cfg.Tools.ReadFile.MaxReadFileSize
+		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
 	}
 	if cfg.Tools.IsToolEnabled("write_file") {
 		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
@@ -94,9 +97,13 @@ func NewAgentInstance(
 	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
-	sessionsManager := session.NewSessionManager(sessionsDir)
+	sessions := initSessionStore(sessionsDir)
 
-	contextBuilder := NewContextBuilder(workspace)
+	mcpDiscoveryActive := cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled
+	contextBuilder := NewContextBuilder(workspace).WithToolDiscovery(
+		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
+		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
+	)
 
 	agentID := routing.DefaultAgentID
 	agentName := ""
@@ -221,7 +228,7 @@ func NewAgentInstance(
 		SummarizeMessageThreshold: summarizeMessageThreshold,
 		SummarizeTokenPercent:     summarizeTokenPercent,
 		Provider:                  provider,
-		Sessions:                  sessionsManager,
+		Sessions:                  sessions,
 		ContextBuilder:            contextBuilder,
 		Tools:                     toolsRegistry,
 		Subagents:                 subagents,
@@ -273,6 +280,39 @@ func compilePatterns(patterns []string) []*regexp.Regexp {
 		compiled = append(compiled, re)
 	}
 	return compiled
+}
+
+// Close releases resources held by the agent's session store.
+func (a *AgentInstance) Close() error {
+	if a.Sessions != nil {
+		return a.Sessions.Close()
+	}
+	return nil
+}
+
+// initSessionStore creates the session persistence backend.
+// It uses the JSONL store by default and auto-migrates legacy JSON sessions.
+// Falls back to SessionManager if the JSONL store cannot be initialized or
+// if migration fails (which indicates the store cannot write reliably).
+func initSessionStore(dir string) session.SessionStore {
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		log.Printf("memory: init store: %v; using json sessions", err)
+		return session.NewSessionManager(dir)
+	}
+
+	if n, merr := memory.MigrateFromJSON(context.Background(), dir, store); merr != nil {
+		// Migration failure means the store could not write data.
+		// Fall back to SessionManager to avoid a split state where
+		// some sessions are in JSONL and others remain in JSON.
+		log.Printf("memory: migration failed: %v; falling back to json sessions", merr)
+		store.Close()
+		return session.NewSessionManager(dir)
+	} else if n > 0 {
+		log.Printf("memory: migrated %d session(s) to jsonl", n)
+	}
+
+	return session.NewJSONLBackend(store)
 }
 
 func expandHome(path string) string {
