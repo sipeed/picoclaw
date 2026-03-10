@@ -48,6 +48,7 @@ type AgentLoop struct {
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
 	cmdRegistry    *commands.Registry
+	providerCache  sync.Map // map[string]providers.LLMProvider — lazily created per provider/model
 }
 
 // processOptions configures how a message is processed
@@ -233,6 +234,45 @@ func registerSharedTools(
 			}
 		}
 	}
+}
+
+// resolveProvider returns the correct LLM provider for a fallback candidate.
+// It lazily creates and caches provider instances per provider/model key so that
+// each candidate uses its own API key and endpoint from the model_list config.
+func (al *AgentLoop) resolveProvider(
+	providerName, model string,
+	fallbackProvider providers.LLMProvider,
+) providers.LLMProvider {
+	key := providers.ModelKey(providerName, model)
+
+	if cached, ok := al.providerCache.Load(key); ok {
+		return cached.(providers.LLMProvider)
+	}
+
+	// Search model_list for a config entry matching this provider/model.
+	target := providerName + "/" + model
+	for i := range al.cfg.ModelList {
+		entryModel := strings.TrimSpace(al.cfg.ModelList[i].Model)
+		if !strings.EqualFold(entryModel, target) {
+			continue
+		}
+		mc := al.cfg.ModelList[i]
+		if mc.Workspace == "" {
+			mc.Workspace = al.cfg.WorkspacePath()
+		}
+		p, _, err := providers.CreateProviderFromConfig(&mc)
+		if err != nil {
+			logger.WarnCF("agent", "Failed to create provider for fallback candidate, using default",
+				map[string]any{"candidate": target, "error": err.Error()})
+			break
+		}
+		al.providerCache.Store(key, p)
+		return p
+	}
+
+	// Not found or creation failed — fall back to agent's default provider.
+	al.providerCache.Store(key, fallbackProvider)
+	return fallbackProvider
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
@@ -993,7 +1033,8 @@ func (al *AgentLoop) runLLMIteration(
 					ctx,
 					activeCandidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
+						p := al.resolveProvider(provider, model, agent.Provider)
+						return p.Chat(ctx, messages, providerToolDefs, model, llmOpts)
 					},
 				)
 				if fbErr != nil {
