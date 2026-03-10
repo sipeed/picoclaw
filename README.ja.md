@@ -152,17 +152,17 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ```bash
 # 質問を投げる
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "What is 2+2?"
+docker compose -f docker/docker-compose.yml --profile agent run --rm picoclaw-agent -m "What is 2+2?"
 
 # インタラクティブモード
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml --profile agent run --rm picoclaw-agent
 ```
 
 ### アップデート
 
 ```bash
-docker compose -f docker/docker-compose.yml pull
-docker compose -f docker/docker-compose.yml --profile gateway up -d
+git pull
+docker compose -f docker/docker-compose.yml --profile gateway up --build -d
 ```
 
 ### 🚀 クイックスタート（ネイティブ）

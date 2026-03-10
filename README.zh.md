@@ -192,17 +192,17 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ```bash
 # 提问
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "2+2 等于几？"
+docker compose -f docker/docker-compose.yml --profile agent run --rm picoclaw-agent -m "2+2 等于几？"
 
 # 交互模式
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml --profile agent run --rm picoclaw-agent
 ```
 
 ### 更新镜像
 
 ```bash
-docker compose -f docker/docker-compose.yml pull
-docker compose -f docker/docker-compose.yml --profile gateway up -d
+git pull
+docker compose -f docker/docker-compose.yml --profile gateway up --build -d
 ```
 
 ### 🚀 快速开始
