@@ -510,5 +510,11 @@ func DefaultConfig() *Config {
 			Enabled:    false,
 			MonitorUSB: true,
 		},
+		BuildInfo: BuildInfo{
+			Version:   Version,
+			GitCommit: GitCommit,
+			BuildTime: BuildTime,
+			GoVersion: GoVersion,
+		},
 	}
 }

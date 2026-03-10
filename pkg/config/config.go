@@ -59,6 +59,16 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
+	// BuildInfo contains build-time version information
+	BuildInfo BuildInfo `json:"build_info,omitempty"`
+}
+
+// BuildInfo contains build-time version information
+type BuildInfo struct {
+	Version   string `json:"version"`
+	GitCommit string `json:"git_commit"`
+	BuildTime string `json:"build_time"`
+	GoVersion string `json:"go_version"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
