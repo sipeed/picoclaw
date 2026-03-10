@@ -32,6 +32,7 @@ const (
 	wsConnectTimeout    = 15 * time.Second
 	wsSubscribeTimeout  = 10 * time.Second
 	wsSendMsgTimeout    = 10 * time.Second
+	wsRespondMsgTimeout = 10 * time.Second
 	wsMaxReconnectWait  = 60 * time.Second
 	wsInitialReconnect  = time.Second
 
@@ -81,8 +82,7 @@ type wsTask struct {
 	ChatType    uint32
 	StreamID    string // our generated stream.id
 	CreatedTime time.Time
-	answerCh    chan string          // agent delivers its reply here via Send()
-	mediaCh     chan []bus.MediaPart // agent's media attachments (buffered: 1)
+	answerCh    chan string // agent delivers its reply here via Send()
 	ctx         context.Context
 	cancel      context.CancelFunc
 }
@@ -738,7 +738,6 @@ func (c *WeComAIBotWSChannel) dispatchWSAgentTask(
 		StreamID:    streamID,
 		CreatedTime: time.Now(),
 		answerCh:    make(chan string, 1),
-		mediaCh:     make(chan []bus.MediaPart, 1),
 		ctx:         taskCtx,
 		cancel:      taskCancel,
 	}
@@ -817,10 +816,10 @@ func (c *WeComAIBotWSChannel) dispatchWSAgentTask(
 					map[string]any{"chat_id": actualChatID, "tick": tickCount})
 				c.wsSendStreamChunk(reqID, streamID, false, hint)
 			case <-deadlineTimer.C:
-				logger.WarnCF("wecom_aibot", "Stream deadline reached without agent reply",
-					map[string]any{"chat_id": actualChatID, "stream_id": streamID})
-				c.wsSendStreamFinish(reqID, streamID,
-					"⏳ Processing is taking longer than expected. Please resend your message to try again.")
+				logger.WarnCF("wecom_aibot", "Stream response deadline reached, waiting for agent to finish",
+					map[string]any{"chat_id": actualChatID})
+				c.wsSendStreamChunk(reqID, streamID, false,
+					"⏳ Processing is taking longer than expected, the response will be sent as soon as it's ready!")
 				return
 			case <-taskCtx.Done():
 				// Give a short grace period so that a response queued in the bus
@@ -869,7 +868,7 @@ func (c *WeComAIBotWSChannel) wsSendStreamChunk(reqID, streamID string, finish b
 		"finish":    finish,
 		"preview":   utils.Truncate(content, 100),
 	})
-	c.writeWS(wsCommand{
+	cmd := wsCommand{
 		Cmd:     "aibot_respond_msg",
 		Headers: wsHeaders{ReqID: reqID},
 		Body: wsRespondMsgBody{
@@ -880,7 +879,15 @@ func (c *WeComAIBotWSChannel) wsSendStreamChunk(reqID, streamID string, finish b
 				Content: content,
 			},
 		},
-	})
+	}
+	if err := c.writeWSAndWait(cmd, wsRespondMsgTimeout); err != nil {
+		logger.WarnCF("wecom_aibot", "Stream chunk ack failed", map[string]any{
+			"req_id":    reqID,
+			"stream_id": streamID,
+			"finish":    finish,
+			"error":     err,
+		})
+	}
 }
 
 // wsSendStreamFinish sends the final aibot_respond_msg frame (finish=true, no images).
@@ -891,14 +898,18 @@ func (c *WeComAIBotWSChannel) wsSendStreamFinish(reqID, streamID, content string
 // wsSendWelcomeMsg sends a text welcome message via aibot_respond_welcome_msg.
 func (c *WeComAIBotWSChannel) wsSendWelcomeMsg(reqID, content string) {
 	logger.DebugCF("wecom_aibot", "Sending welcome message", map[string]any{"req_id": reqID})
-	c.writeWS(wsCommand{
+	cmd := wsCommand{
 		Cmd:     "aibot_respond_welcome_msg",
 		Headers: wsHeaders{ReqID: reqID},
 		Body: wsRespondMsgBody{
 			MsgType: "text",
 			Text:    &wsTextContent{Content: content},
 		},
-	})
+	}
+	if err := c.writeWSAndWait(cmd, wsRespondMsgTimeout); err != nil {
+		logger.WarnCF("wecom_aibot", "Welcome message ack failed",
+			map[string]any{"req_id": reqID, "error": err})
+	}
 }
 
 // wsSendActivePush sends a proactive markdown message using aibot_send_msg.
@@ -935,28 +946,27 @@ func (c *WeComAIBotWSChannel) wsSendActivePush(chatID string, chatType uint32, c
 	return nil
 }
 
-// writeWS serializes cmd to JSON and writes it to the active WebSocket
-// connection.  It is safe to call from multiple goroutines.
-func (c *WeComAIBotWSChannel) writeWS(cmd any) {
-	data, err := json.Marshal(cmd)
-	if err != nil {
-		logger.ErrorCF("wecom_aibot", "Failed to marshal WebSocket command",
-			map[string]any{"error": err})
-		return
+// writeWSAndWait writes cmd to the active connection and validates the command response.
+func (c *WeComAIBotWSChannel) writeWSAndWait(cmd wsCommand, timeout time.Duration) error {
+	if cmd.Headers.ReqID == "" {
+		return fmt.Errorf("req_id is empty")
 	}
+
 	c.connMu.Lock()
 	conn := c.conn
-	if conn != nil {
-		err = conn.WriteMessage(websocket.TextMessage, data)
-	}
 	c.connMu.Unlock()
 	if conn == nil {
-		logger.WarnC("wecom_aibot", "WebSocket connection unavailable, dropping outbound message")
-		return
+		return fmt.Errorf("websocket not connected")
 	}
+
+	resp, err := c.sendAndWait(conn, cmd.Headers.ReqID, cmd, timeout)
 	if err != nil {
-		logger.WarnCF("wecom_aibot", "WebSocket write failed", map[string]any{"error": err})
+		return err
 	}
+	if resp.ErrCode != 0 {
+		return fmt.Errorf("%s rejected (errcode=%d): %s", cmd.Cmd, resp.ErrCode, resp.ErrMsg)
+	}
+	return nil
 }
 
 // cancelAllTasks cancels every pending agent task; called when the connection drops.
