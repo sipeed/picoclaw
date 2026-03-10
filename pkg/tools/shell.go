@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"os"
@@ -25,57 +26,45 @@ type ExecTool struct {
 	restrictToWorkspace bool
 }
 
-var (
-	defaultDenyPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
-		regexp.MustCompile(`\bdel\s+/[fq]\b`),
-		regexp.MustCompile(`\brmdir\s+/s\b`),
-		// Match disk wiping commands (must be followed by space/args)
-		regexp.MustCompile(
-			`\b(format|mkfs|diskpart)\b\s`,
-		),
-		regexp.MustCompile(`\bdd\s+if=`),
-		// Block writes to block devices (all common naming schemes).
-		regexp.MustCompile(
-			`>\s*/dev/(sd[a-z]|hd[a-z]|vd[a-z]|xvd[a-z]|nvme\d|mmcblk\d|loop\d|dm-\d|md\d|sr\d|nbd\d)`,
-		),
-		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
-		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
-		regexp.MustCompile(`\$\([^)]+\)`),
-		regexp.MustCompile(`\$\{[^}]+\}`),
-		regexp.MustCompile("`[^`]+`"),
-		regexp.MustCompile(`\|\s*sh\b`),
-		regexp.MustCompile(`\|\s*bash\b`),
-		regexp.MustCompile(`;\s*rm\s+-[rf]`),
-		regexp.MustCompile(`&&\s*rm\s+-[rf]`),
-		regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
-		regexp.MustCompile(`<<\s*EOF`),
-		regexp.MustCompile(`\$\(\s*cat\s+`),
-		regexp.MustCompile(`\$\(\s*curl\s+`),
-		regexp.MustCompile(`\$\(\s*wget\s+`),
-		regexp.MustCompile(`\$\(\s*which\s+`),
-		regexp.MustCompile(`\bsudo\b`),
-		regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
-		regexp.MustCompile(`\bchown\b`),
-		regexp.MustCompile(`\bpkill\b`),
-		regexp.MustCompile(`\bkillall\b`),
-		regexp.MustCompile(`\bkill\b`),
-		regexp.MustCompile(`\bcurl\b.*\|\s*(sh|bash)`),
-		regexp.MustCompile(`\bwget\b.*\|\s*(sh|bash)`),
-		regexp.MustCompile(`\bnpm\s+install\s+-g\b`),
-		regexp.MustCompile(`\bpip\s+install\s+--user\b`),
-		regexp.MustCompile(`\bapt\s+(install|remove|purge)\b`),
-		regexp.MustCompile(`\byum\s+(install|remove)\b`),
-		regexp.MustCompile(`\bdnf\s+(install|remove)\b`),
-		regexp.MustCompile(`\bdocker\s+run\b`),
-		regexp.MustCompile(`\bdocker\s+exec\b`),
-		regexp.MustCompile(`\bgit\s+push\b`),
-		regexp.MustCompile(`\bgit\s+force\b`),
-		regexp.MustCompile(`\bssh\b.*@`),
-		regexp.MustCompile(`\beval\b`),
-		regexp.MustCompile(`\bsource\s+.*\.sh\b`),
-	}
+//go:embed default_deny_patterns.txt
+var defaultDenyPatternsText string
 
+var defaultDenyPatterns = mustCompileRegexPatterns(parsePatternLines(defaultDenyPatternsText))
+
+func parsePatternLines(text string) []string {
+	lines := strings.Split(text, "\n")
+	patterns := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		patterns = append(patterns, trimmed)
+	}
+	return patterns
+}
+
+func compileRegexPatterns(patterns []string) ([]*regexp.Regexp, error) {
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, p := range patterns {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			return nil, fmt.Errorf("invalid pattern %q: %w", p, err)
+		}
+		compiled = append(compiled, re)
+	}
+	return compiled, nil
+}
+
+func mustCompileRegexPatterns(patterns []string) []*regexp.Regexp {
+	compiled, err := compileRegexPatterns(patterns)
+	if err != nil {
+		panic("invalid default deny patterns: " + err.Error())
+	}
+	return compiled
+}
+
+var (
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
 	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
 
@@ -371,13 +360,10 @@ func (t *ExecTool) SetRestrictToWorkspace(restrict bool) {
 }
 
 func (t *ExecTool) SetAllowPatterns(patterns []string) error {
-	t.allowPatterns = make([]*regexp.Regexp, 0, len(patterns))
-	for _, p := range patterns {
-		re, err := regexp.Compile(p)
-		if err != nil {
-			return fmt.Errorf("invalid allow pattern %q: %w", p, err)
-		}
-		t.allowPatterns = append(t.allowPatterns, re)
+	compiled, err := compileRegexPatterns(patterns)
+	if err != nil {
+		return fmt.Errorf("invalid allow pattern: %w", err)
 	}
+	t.allowPatterns = compiled
 	return nil
 }
