@@ -120,19 +120,21 @@ func registerSharedTools(
 			continue
 		}
 
-		// Web tools
 		if cfg.Tools.IsToolEnabled("web") {
 			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
-				BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
+				BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey, cfg.Tools.Web.Brave.APIKeys),
 				BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 				BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-				TavilyAPIKey:         cfg.Tools.Web.Tavily.APIKey,
+				TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey, cfg.Tools.Web.Tavily.APIKeys),
 				TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
 				TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
 				TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
 				DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 				DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
-				PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
+				PerplexityAPIKeys: config.MergeAPIKeys(
+					cfg.Tools.Web.Perplexity.APIKey,
+					cfg.Tools.Web.Perplexity.APIKeys,
+				),
 				PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 				PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 				SearXNGBaseURL:       cfg.Tools.Web.SearXNG.BaseURL,

@@ -733,16 +733,18 @@ type WebToolsConfig struct {
 }
 
 type BraveConfig struct {
-	Enabled    bool   `json:"enabled"`
-	APIKey     string `json:"api_key"`
-	MaxResults int    `json:"max_results"`
+	Enabled    bool     `json:"enabled"`
+	APIKey     string   `json:"api_key"`
+	APIKeys    []string `json:"api_keys"`
+	MaxResults int      `json:"max_results"`
 }
 
 type TavilyConfig struct {
-	Enabled    bool   `json:"enabled"`
-	APIKey     string `json:"api_key"`
-	BaseURL    string `json:"base_url"`
-	MaxResults int    `json:"max_results"`
+	Enabled    bool     `json:"enabled"`
+	APIKey     string   `json:"api_key"`
+	APIKeys    []string `json:"api_keys"`
+	BaseURL    string   `json:"base_url"`
+	MaxResults int      `json:"max_results"`
 }
 
 type DuckDuckGoConfig struct {
@@ -751,9 +753,10 @@ type DuckDuckGoConfig struct {
 }
 
 type PerplexityConfig struct {
-	Enabled    bool   `json:"enabled"`
-	APIKey     string `json:"api_key"`
-	MaxResults int    `json:"max_results"`
+	Enabled    bool     `json:"enabled"`
+	APIKey     string   `json:"api_key"`
+	APIKeys    []string `json:"api_keys"`
+	MaxResults int      `json:"max_results"`
 }
 
 type CronConfig struct {
@@ -1082,6 +1085,7 @@ func (c ToolsConfig) ToStandardTools() config.ToolsConfig {
 			Brave: config.BraveConfig{
 				Enabled:    c.Web.Brave.Enabled,
 				APIKey:     c.Web.Brave.APIKey,
+				APIKeys:    c.Web.Brave.APIKeys,
 				MaxResults: c.Web.Brave.MaxResults,
 			},
 			Tavily: config.TavilyConfig{
