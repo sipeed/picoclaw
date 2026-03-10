@@ -33,6 +33,7 @@ var (
 	currentLevel = INFO
 	logger       zerolog.Logger
 	fileLogger   zerolog.Logger
+	logFile      *os.File
 	once         sync.Once
 	mu           sync.RWMutex
 )
@@ -72,18 +73,29 @@ func EnableFileLogging(filePath string) error {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	newFile, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
 
-	fileLogger = zerolog.New(file).With().Timestamp().Caller().Logger()
+	// Close old file if exists
+	if logFile != nil {
+		logFile.Close()
+	}
+
+	logFile = newFile
+	fileLogger = zerolog.New(logFile).With().Timestamp().Caller().Logger()
 	return nil
 }
 
 func DisableFileLogging() {
 	mu.Lock()
 	defer mu.Unlock()
+
+	if logFile != nil {
+		logFile.Close()
+		logFile = nil
+	}
 	fileLogger = zerolog.Logger{}
 }
 
