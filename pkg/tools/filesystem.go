@@ -3,21 +3,45 @@ package tools
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
+
+const MaxReadFileSize = 64 * 1024 // 64KB limit to avoid context overflow
+
+// validatePath ensures the given path is within the workspace if restrict is true.
+func validatePath(path, workspace string, restrict bool) (string, error) {
+	return sandbox.ValidatePath(path, workspace, restrict)
+}
 
 type ReadFileTool struct {
 	allowPaths []*regexp.Regexp
+	maxSize    int64
 }
 
-func NewReadFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *ReadFileTool {
-	return &ReadFileTool{allowPaths: firstPatternSet(allowPaths)}
+func NewReadFileTool(
+	workspace string,
+	restrict bool,
+	maxReadFileSize int,
+	allowPaths ...[]*regexp.Regexp,
+) *ReadFileTool {
+	maxSize := int64(maxReadFileSize)
+	if maxSize <= 0 {
+		maxSize = MaxReadFileSize
+	}
+
+	return &ReadFileTool{
+		allowPaths: firstPatternSet(allowPaths),
+		maxSize:    maxSize,
+	}
 }
 
 func (t *ReadFileTool) Name() string {
@@ -25,7 +49,7 @@ func (t *ReadFileTool) Name() string {
 }
 
 func (t *ReadFileTool) Description() string {
-	return "Read the contents of a file"
+	return "Read the contents of a file. Supports pagination via `offset` and `length`."
 }
 
 func (t *ReadFileTool) Parameters() map[string]any {
@@ -34,7 +58,17 @@ func (t *ReadFileTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Path to the file to read",
+				"description": "Path to the file to read.",
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "Byte offset to start reading from.",
+				"default":     0,
+			},
+			"length": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of bytes to read.",
+				"default":     t.maxSize,
 			},
 		},
 		"required": []string{"path"},
@@ -47,11 +81,32 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("path is required")
 	}
 
+	// offset (optional, default 0)
+	offset, err := getInt64Arg(args, "offset", 0)
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	if offset < 0 {
+		return ErrorResult("offset must be >= 0")
+	}
+
+	// length (optional, capped at MaxReadFileSize)
+	length, err := getInt64Arg(args, "length", t.maxSize)
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	if length <= 0 {
+		return ErrorResult("length must be > 0")
+	}
+	if length > t.maxSize {
+		length = t.maxSize
+	}
+
 	if content, handled, err := readAllowedHostPath(ctx, path, t.allowPaths); handled {
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 		}
-		return NewToolResult(string(content))
+		return buildReadResult(path, content, offset, length)
 	}
 
 	sb := sandbox.FromContext(ctx)
@@ -63,7 +118,57 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}
-	return NewToolResult(string(content))
+	return buildReadResult(path, content, offset, length)
+}
+
+func buildReadResult(path string, content []byte, offset, length int64) *ToolResult {
+	totalSize := int64(len(content))
+	if offset >= totalSize {
+		return NewToolResult("[END OF FILE - no content at this offset]")
+	}
+	if length <= 0 {
+		return ErrorResult("length must be > 0")
+	}
+
+	end := offset + length
+	if end > totalSize {
+		end = totalSize
+	}
+
+	data := content[offset:end]
+	if len(data) == 0 {
+		return NewToolResult("[END OF FILE - no content at this offset]")
+	}
+
+	// Build metadata header.
+	// use filepath.Base(path) instead of the raw path to avoid leaking
+	// internal filesystem structure into the LLM context.
+	readEnd := offset + int64(len(data))
+	readRange := fmt.Sprintf("bytes %d-%d", offset, readEnd-1)
+
+	displayPath := filepath.Base(path)
+	header := fmt.Sprintf(
+		"[file: %s | total: %d bytes | read: %s]",
+		displayPath, totalSize, readRange,
+	)
+
+	if readEnd < totalSize {
+		header += fmt.Sprintf(
+			"\n[TRUNCATED - file has more content. Call read_file again with offset=%d to continue.]",
+			readEnd,
+		)
+	} else {
+		header += "\n[END OF FILE - no further content.]"
+	}
+
+	logger.DebugCF("tool", "ReadFileTool execution completed successfully",
+		map[string]any{
+			"path":       path,
+			"bytes_read": len(data),
+			"has_more":   readEnd < totalSize,
+		})
+
+	return NewToolResult(header + "\n\n" + string(data))
 }
 
 type WriteFileTool struct {
@@ -141,7 +246,7 @@ func (t *ListDirTool) Name() string {
 }
 
 func (t *ListDirTool) Description() string {
-	return "List files and directories in a path"
+	return "List files and directories in a directory"
 }
 
 func (t *ListDirTool) Parameters() map[string]any {
@@ -150,16 +255,15 @@ func (t *ListDirTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Path to list",
+				"description": "Path to the directory to list",
 			},
 		},
-		"required": []string{"path"},
 	}
 }
 
 func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
-	path, ok := args["path"].(string)
-	if !ok {
+	path, _ := args["path"].(string)
+	if path == "" {
 		path = "."
 	}
 
@@ -179,6 +283,7 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to read directory: %v", err))
 	}
+
 	return formatDirEntries(entries)
 }
 
@@ -186,9 +291,9 @@ func formatDirEntries(entries []os.DirEntry) *ToolResult {
 	var result strings.Builder
 	for _, entry := range entries {
 		if entry.IsDir() {
-			result.WriteString("DIR:  " + entry.Name() + "\n")
+			result.WriteString(fmt.Sprintf("%s/ (dir)\n", entry.Name()))
 		} else {
-			result.WriteString("FILE: " + entry.Name() + "\n")
+			result.WriteString(fmt.Sprintf("%s\n", entry.Name()))
 		}
 	}
 	return NewToolResult(result.String())
@@ -199,10 +304,6 @@ func firstPatternSet(sets [][]*regexp.Regexp) []*regexp.Regexp {
 		return nil
 	}
 	return sets[0]
-}
-
-func validatePath(path, workspace string, restrict bool) (string, error) {
-	return sandbox.ValidatePath(path, workspace, restrict)
 }
 
 func hostSandboxFromContext(ctx context.Context) *sandbox.HostSandbox {
@@ -254,4 +355,34 @@ func readAllowedHostDir(ctx context.Context, path string, patterns []*regexp.Reg
 	}
 	entries, err := os.ReadDir(path)
 	return entries, true, err
+}
+
+func getInt64Arg(args map[string]any, key string, defaultVal int64) (int64, error) {
+	raw, exists := args[key]
+	if !exists {
+		return defaultVal, nil
+	}
+
+	switch v := raw.(type) {
+	case float64:
+		if v != math.Trunc(v) {
+			return 0, fmt.Errorf("%s must be an integer, got float %v", key, v)
+		}
+		if v > math.MaxInt64 || v < math.MinInt64 {
+			return 0, fmt.Errorf("%s value %v overflows int64", key, v)
+		}
+		return int64(v), nil
+	case int:
+		return int64(v), nil
+	case int64:
+		return v, nil
+	case string:
+		parsed, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid integer format for %s parameter: %w", key, err)
+		}
+		return parsed, nil
+	default:
+		return 0, fmt.Errorf("unsupported type %T for %s parameter", raw, key)
+	}
 }

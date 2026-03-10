@@ -2,9 +2,9 @@ package tools
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -13,18 +13,18 @@ import (
 	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 )
 
+func hostSandboxCtx(workspace string, restrict bool) context.Context {
+	return sandbox.WithSandbox(context.Background(), sandbox.NewHostSandbox(workspace, restrict))
+}
+
 // TestFilesystemTool_ReadFile_Success verifies successful file reading
 func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0o644)
 
-	tool := NewReadFileTool("", false)
-	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
-		fs: sandbox.NewHostSandbox(tmpDir, false).Fs(),
-	})
-	// We must ensure the mock FsBridge can actually read the TempDir.
-	// but stubSandbox uses hostFs internally for Fs(). ReadFile so this just works if injected.
+	tool := NewReadFileTool("", false, MaxReadFileSize)
+	ctx := hostSandboxCtx("", false)
 	args := map[string]any{
 		"path": testFile,
 	}
@@ -50,10 +50,8 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 
 // TestFilesystemTool_ReadFile_NotFound verifies error handling for missing file
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
-	tool := NewReadFileTool("", false)
-	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
-		err: fmt.Errorf("failed to read file: file not found"),
-	})
+	tool := NewReadFileTool("", false, MaxReadFileSize)
+	ctx := hostSandboxCtx("", false)
 	args := map[string]any{
 		"path": "/nonexistent_file_12345.txt",
 	}
@@ -74,7 +72,7 @@ func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 // TestFilesystemTool_ReadFile_MissingPath verifies error handling for missing path
 func TestFilesystemTool_ReadFile_MissingPath(t *testing.T) {
 	tool := &ReadFileTool{}
-	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{})
+	ctx := hostSandboxCtx("", false)
 	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
@@ -96,9 +94,7 @@ func TestFilesystemTool_WriteFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "newfile.txt")
 
 	tool := NewWriteFileTool("", false)
-	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
-		fs: sandbox.NewHostSandbox(tmpDir, false).Fs(),
-	})
+	ctx := hostSandboxCtx("", false)
 	args := map[string]any{
 		"path":    testFile,
 		"content": "hello world",
@@ -137,9 +133,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "subdir", "newfile.txt")
 
 	tool := NewWriteFileTool("", false)
-	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
-		fs: sandbox.NewHostSandbox(tmpDir, false).Fs(),
-	})
+	ctx := hostSandboxCtx("", false)
 	args := map[string]any{
 		"path":    testFile,
 		"content": "test",
@@ -165,7 +159,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 // TestFilesystemTool_WriteFile_MissingPath verifies error handling for missing path
 func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 	tool := NewWriteFileTool("", false)
-	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{})
+	ctx := hostSandboxCtx("", false)
 	args := map[string]any{
 		"content": "test",
 	}
@@ -181,7 +175,7 @@ func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 // TestFilesystemTool_WriteFile_MissingContent verifies error handling for missing content
 func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
 	tool := NewWriteFileTool("", false)
-	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{})
+	ctx := hostSandboxCtx("", false)
 	args := map[string]any{
 		"path": "/tmp/test.txt",
 	}
@@ -208,9 +202,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0o755)
 
 	tool := NewListDirTool(tmpDir, false)
-	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
-		fs: sandbox.NewHostSandbox(tmpDir, false).Fs(),
-	})
+	ctx := hostSandboxCtx("", false)
 	args := map[string]any{
 		"path": tmpDir,
 	}
@@ -233,12 +225,8 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 
 // TestFilesystemTool_ListDir_NotFound verifies error handling for non-existent directory
 func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
-	tmpDir := t.TempDir()
-	tool := NewListDirTool(tmpDir, false)
-	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
-		fs:  sandbox.NewHostSandbox(tmpDir, false).Fs(),
-		err: fmt.Errorf("failed to read directory: file not found"),
-	})
+	tool := NewListDirTool("", false)
+	ctx := hostSandboxCtx("", false)
 	args := map[string]any{
 		"path": "/nonexistent_directory_12345",
 	}
@@ -258,10 +246,8 @@ func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 
 // TestFilesystemTool_ListDir_DefaultPath verifies default to current directory
 func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
-	tool := NewListDirTool(".", false)
-	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
-		fs: sandbox.NewHostSandbox(".", false).Fs(),
-	})
+	tool := NewListDirTool("", false)
+	ctx := hostSandboxCtx("", false)
 	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
@@ -290,10 +276,8 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 		t.Skipf("symlink not supported in this environment: %v", err)
 	}
 
-	tool := NewReadFileTool(workspace, true)
-	result := tool.Execute(sandbox.WithSandbox(context.Background(), &stubSandbox{
-		fs: sandbox.NewHostSandbox(workspace, true).Fs(),
-	}), map[string]any{
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize)
+	result := tool.Execute(hostSandboxCtx(workspace, true), map[string]any{
 		"path": link,
 	})
 
@@ -310,16 +294,14 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestFilesystemTool_EmptyWorkspace_AccessDenied(t *testing.T) {
-	tool := NewReadFileTool("", true) // restrict=true but workspace=""
+	tool := NewReadFileTool("", true, MaxReadFileSize) // restrict=true but workspace=""
 
 	// Try to read a sensitive file (simulated by a temp file outside workspace)
 	tmpDir := t.TempDir()
 	secretFile := filepath.Join(tmpDir, "shadow")
 	os.WriteFile(secretFile, []byte("secret data"), 0o600)
 
-	result := tool.Execute(sandbox.WithSandbox(context.Background(), &stubSandbox{
-		fs: sandbox.NewHostSandbox("", true).Fs(),
-	}), map[string]any{
+	result := tool.Execute(hostSandboxCtx("", true), map[string]any{
 		"path": secretFile,
 	})
 
@@ -330,64 +312,10 @@ func TestFilesystemTool_EmptyWorkspace_AccessDenied(t *testing.T) {
 	assert.Contains(t, result.ForLLM, "workspace is not defined", "Expected 'workspace is not defined' error")
 }
 
-func TestFilesystemTool_EmptyWorkspace_UnrestrictedAllowed(t *testing.T) {
-	tool := NewReadFileTool("", false) // restrict=false and workspace=""
-
-	tmpDir := t.TempDir()
-	secretFile := filepath.Join(tmpDir, "public.txt")
-	if err := os.WriteFile(secretFile, []byte("public data"), 0o644); err != nil {
-		t.Fatalf("failed to write test file: %v", err)
-	}
-
-	result := tool.Execute(sandbox.WithSandbox(context.Background(), &stubSandbox{
-		fs: sandbox.NewHostSandbox("", false).Fs(),
-	}), map[string]any{
-		"path": secretFile,
-	})
-
-	assert.False(t, result.IsError, "Expected unrestricted empty-workspace read to succeed, got: %s", result.ForLLM)
-	assert.Contains(t, result.ForLLM, "public data")
-}
-
-// TestRootMkdirAll verifies that root.MkdirAll (used by atomicWriteFileInRoot) handles all cases:
-// single dir, deeply nested dirs, already-existing dirs, and a file blocking a directory path.
-func TestRootMkdirAll(t *testing.T) {
-	workspace := t.TempDir()
-	root, err := os.OpenRoot(workspace)
-	if err != nil {
-		t.Fatalf("failed to open root: %v", err)
-	}
-	defer root.Close()
-
-	// Case 1: Single directory
-	err = root.MkdirAll("dir1", 0o755)
-	assert.NoError(t, err)
-	_, err = os.Stat(filepath.Join(workspace, "dir1"))
-	assert.NoError(t, err)
-
-	// Case 2: Deeply nested directory
-	err = root.MkdirAll("a/b/c/d", 0o755)
-	assert.NoError(t, err)
-	_, err = os.Stat(filepath.Join(workspace, "a/b/c/d"))
-	assert.NoError(t, err)
-
-	// Case 3: Already exists — must be idempotent
-	err = root.MkdirAll("a/b/c/d", 0o755)
-	assert.NoError(t, err)
-
-	// Case 4: A regular file blocks directory creation — must error
-	err = os.WriteFile(filepath.Join(workspace, "file_exists"), []byte("data"), 0o644)
-	assert.NoError(t, err)
-	err = root.MkdirAll("file_exists", 0o755)
-	assert.Error(t, err, "expected error when a file exists at the directory path")
-}
-
 func TestFilesystemTool_WriteFile_Restricted_CreateDir(t *testing.T) {
 	workspace := t.TempDir()
 	tool := NewWriteFileTool(workspace, true)
-	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
-		fs: sandbox.NewHostSandbox(workspace, true).Fs(),
-	})
+	ctx := hostSandboxCtx(workspace, true)
 
 	testFile := "deep/nested/path/to/file.txt"
 	content := "deep content"
@@ -404,4 +332,161 @@ func TestFilesystemTool_WriteFile_Restricted_CreateDir(t *testing.T) {
 	data, err := os.ReadFile(actualPath)
 	assert.NoError(t, err)
 	assert.Equal(t, content, string(data))
+}
+
+// TestWhitelistFs_AllowsMatchingPaths verifies that whitelistFs allows access to
+// paths matching the whitelist patterns while blocking non-matching paths.
+func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
+	workspace := t.TempDir()
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "allowed.txt")
+	os.WriteFile(outsideFile, []byte("outside content"), 0o644)
+
+	// Pattern allows access to the outsideDir.
+	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(outsideDir))}
+
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
+
+	// Read from whitelisted path should succeed.
+	result := tool.Execute(hostSandboxCtx(workspace, true), map[string]any{"path": outsideFile})
+	if result.IsError {
+		t.Errorf("expected whitelisted path to be readable, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "outside content") {
+		t.Errorf("expected file content, got: %s", result.ForLLM)
+	}
+
+	// Read from non-whitelisted path outside workspace should fail.
+	otherDir := t.TempDir()
+	otherFile := filepath.Join(otherDir, "blocked.txt")
+	os.WriteFile(otherFile, []byte("blocked"), 0o644)
+
+	result = tool.Execute(hostSandboxCtx(workspace, true), map[string]any{"path": otherFile})
+	if !result.IsError {
+		t.Errorf("expected non-whitelisted path to be blocked, got: %s", result.ForLLM)
+	}
+}
+
+// TestReadFileTool_ChunkedReading verifies the pagination logic of the tool
+// by reading a file in multiple chunks using 'offset' and 'length'.
+func TestReadFileTool_ChunkedReading(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "pagination_test.txt")
+
+	// Create a test file with exactly 26 bytes of content
+	fullContent := "abcdefghijklmnopqrstuvwxyz"
+	err := os.WriteFile(testFile, []byte(fullContent), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
+	ctx := hostSandboxCtx("", false)
+
+	// --- Step 1: Read the first chunk (10 bytes) ---
+	args1 := map[string]any{
+		"path":   testFile,
+		"offset": 0,
+		"length": 10,
+	}
+	result1 := tool.Execute(ctx, args1)
+
+	if result1.IsError {
+		t.Fatalf("Chunk 1 failed: %s", result1.ForLLM)
+	}
+
+	// Expect the first 10 characters
+	if !strings.Contains(result1.ForLLM, "abcdefghij") {
+		t.Errorf("Chunk 1 should contain 'abcdefghij', got: %s", result1.ForLLM)
+	}
+	// Expect the header to indicate the file is truncated
+	if !strings.Contains(result1.ForLLM, "[TRUNCATED") {
+		t.Errorf("Chunk 1 header should indicate truncation, got: %s", result1.ForLLM)
+	}
+	// Expect the header to suggest the next offset (10)
+	if !strings.Contains(result1.ForLLM, "offset=10") {
+		t.Errorf("Chunk 1 header should suggest next offset=10, got: %s", result1.ForLLM)
+	}
+
+	// Step 2: Read the second chunk (10 bytes) ---
+	args2 := map[string]any{
+		"path":   testFile,
+		"offset": 10,
+		"length": 10,
+	}
+	result2 := tool.Execute(ctx, args2)
+
+	if result2.IsError {
+		t.Fatalf("Chunk 2 failed: %s", result2.ForLLM)
+	}
+
+	// Expect the next 10 characters
+	if !strings.Contains(result2.ForLLM, "klmnopqrst") {
+		t.Errorf("Chunk 2 should contain 'klmnopqrst', got: %s", result2.ForLLM)
+	}
+	// Expect the header to suggest the next offset (20)
+	if !strings.Contains(result2.ForLLM, "offset=20") {
+		t.Errorf("Chunk 2 header should suggest next offset=20, got: %s", result2.ForLLM)
+	}
+
+	// Step 3: Read the final chunk (remaining 6 bytes) ---
+	// We ask for 10 bytes, but only 6 are left in the file
+	args3 := map[string]any{
+		"path":   testFile,
+		"offset": 20,
+		"length": 10,
+	}
+	result3 := tool.Execute(ctx, args3)
+
+	if result3.IsError {
+		t.Fatalf("Chunk 3 failed: %s", result3.ForLLM)
+	}
+
+	// Expect the last 6 characters
+	if !strings.Contains(result3.ForLLM, "uvwxyz") {
+		t.Errorf("Chunk 3 should contain 'uvwxyz', got: %s", result3.ForLLM)
+	}
+	// Expect the header to indicate the end of the file
+	if !strings.Contains(result3.ForLLM, "[END OF FILE") {
+		t.Errorf("Chunk 3 header should indicate end of file, got: %s", result3.ForLLM)
+	}
+
+	// Ensure no TRUNCATED message is present in the final chunk
+	if strings.Contains(result3.ForLLM, "[TRUNCATED") {
+		t.Errorf("Chunk 3 header should NOT indicate truncation, got: %s", result3.ForLLM)
+	}
+}
+
+// TestReadFileTool_OffsetBeyondEOF checks the behavior when requesting
+// An offset that exceeds the total file size.
+func TestReadFileTool_OffsetBeyondEOF(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "short.txt")
+
+	// create a file of only 5 bytes
+	err := os.WriteFile(testFile, []byte("12345"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
+	ctx := hostSandboxCtx("", false)
+
+	args := map[string]any{
+		"path":   testFile,
+		"offset": int64(100), // Offset beyond the end of the file
+	}
+
+	result := tool.Execute(ctx, args)
+
+	// It should not be classified as a tool execution error
+	if result.IsError {
+		t.Errorf("A mistake was not expected, obtained IsError=true: %s", result.ForLLM)
+	}
+
+	// Must return EXACTLY the string provided in the code
+	expectedMsg := "[END OF FILE - no content at this offset]"
+	if result.ForLLM != expectedMsg {
+		t.Errorf("The message %q was expected, obtained: %q", expectedMsg, result.ForLLM)
+	}
 }

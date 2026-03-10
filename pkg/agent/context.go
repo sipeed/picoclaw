@@ -12,15 +12,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
 type ContextBuilder struct {
-	workspace    string
-	skillsLoader *skills.SkillsLoader
-	memory       *MemoryStore
+	workspace          string
+	skillsLoader       *skills.SkillsLoader
+	memory             *MemoryStore
+	toolDiscoveryBM25  bool
+	toolDiscoveryRegex bool
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -39,6 +42,17 @@ type ContextBuilder struct {
 	// build time. This catches nested file creations/deletions/mtime changes
 	// that may not update the top-level skill root directory mtime.
 	skillFilesAtCache map[string]time.Time
+}
+
+type SandboxInfo struct {
+	IsHost       bool
+	WorkspaceDir string
+}
+
+func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuilder {
+	cb.toolDiscoveryBM25 = useBM25
+	cb.toolDiscoveryRegex = useRegex
+	return cb
 }
 
 func getGlobalConfigDir() string {
@@ -69,13 +83,12 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 	}
 }
 
-type SandboxInfo struct {
-	IsHost       bool
-	WorkspaceDir string
-}
-
 func (cb *ContextBuilder) getIdentity() string {
-	return fmt.Sprintf(`# picoclaw 🦞
+	toolDiscovery := cb.getDiscoveryRule()
+	version := config.FormatVersion()
+
+	return fmt.Sprintf(
+		`# picoclaw 🦞 (%s)
 
 You are picoclaw, a helpful AI assistant.
 
@@ -85,8 +98,6 @@ Your workspace is at: {{WORKSPACE}}
 - Daily Notes: {{WORKSPACE}}/memory/YYYYMM/YYYYMMDD.md
 - Skills: {{WORKSPACE}}/skills/{skill-name}/SKILL.md
 
-{{SANDBOX_GUIDANCE}}
-
 ## Important Rules
 
 1. **ALWAYS use tools** - When you need to perform an action (schedule reminders, send messages, execute commands, etc.), you MUST call the appropriate tool. Do NOT just say you'll do it or pretend to do it.
@@ -95,7 +106,31 @@ Your workspace is at: {{WORKSPACE}}
 
 3. **Memory** - When interacting with me if something seems memorable, update {{WORKSPACE}}/memory/MEMORY.md
 
-4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`)
+4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
+
+{{SANDBOX_GUIDANCE}}
+
+%s`,
+		version, toolDiscovery)
+}
+
+func (cb *ContextBuilder) getDiscoveryRule() string {
+	if !cb.toolDiscoveryBM25 && !cb.toolDiscoveryRegex {
+		return ""
+	}
+
+	var toolNames []string
+	if cb.toolDiscoveryBM25 {
+		toolNames = append(toolNames, `"tool_search_tool_bm25"`)
+	}
+	if cb.toolDiscoveryRegex {
+		toolNames = append(toolNames, `"tool_search_tool_regex"`)
+	}
+
+	return fmt.Sprintf(
+		`5. **Tool Discovery** - Your visible tools are limited to save memory, but a vast hidden library exists. If you lack the right tool for a task, BEFORE giving up, you MUST search using the %s tool. Do not refuse a request unless the search returns nothing. Found tools will temporarily unlock for your next turn.`,
+		strings.Join(toolNames, " or "),
+	)
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {

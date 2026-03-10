@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -32,7 +34,7 @@ type AgentInstance struct {
 	SummarizeMessageThreshold int
 	SummarizeTokenPercent     int
 	Provider                  providers.LLMProvider
-	Sessions                  *session.SessionManager
+	Sessions                  session.SessionStore
 	ContextBuilder            *ContextBuilder
 	Tools                     *tools.ToolRegistry
 	Subagents                 *config.SubagentsConfig
@@ -61,12 +63,14 @@ func NewAgentInstance(
 
 	model := resolveAgentModel(agentCfg, defaults)
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
+
 	restrict := defaults.RestrictToWorkspace
 	readRestrict := restrict && !defaults.AllowReadOutsideWorkspace
 
 	// Compile path whitelist patterns from config.
 	allowReadPaths := compilePatterns(cfg.Tools.AllowReadPaths)
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
+
 	agentID := routing.DefaultAgentID
 	agentName := ""
 	var subagents *config.SubagentsConfig
@@ -90,7 +94,8 @@ func NewAgentInstance(
 	}
 
 	if isToolEnabled("read_file") {
-		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
+		maxReadFileSize := cfg.Tools.ReadFile.MaxReadFileSize
+		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
 	}
 	if !roContainer && isToolEnabled("write_file") {
 		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
@@ -105,6 +110,7 @@ func NewAgentInstance(
 		}
 		toolsRegistry.Register(execTool)
 	}
+
 	if !roContainer {
 		if isToolEnabled("edit_file") {
 			toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
@@ -115,9 +121,13 @@ func NewAgentInstance(
 	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
-	sessionsManager := session.NewSessionManager(sessionsDir)
+	sessions := initSessionStore(sessionsDir)
 
-	contextBuilder := NewContextBuilder(workspace)
+	mcpDiscoveryActive := cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled
+	contextBuilder := NewContextBuilder(workspace).WithToolDiscovery(
+		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
+		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
+	)
 
 	maxIter := defaults.MaxToolIterations
 	if maxIter == 0 {
@@ -230,15 +240,15 @@ func NewAgentInstance(
 		SummarizeMessageThreshold: summarizeMessageThreshold,
 		SummarizeTokenPercent:     summarizeTokenPercent,
 		Provider:                  provider,
-		Sessions:                  sessionsManager,
+		Sessions:                  sessions,
 		ContextBuilder:            contextBuilder,
 		Tools:                     toolsRegistry,
-		SandboxManager:            sandboxManager,
 		Subagents:                 subagents,
 		SkillsFilter:              skillsFilter,
 		Candidates:                candidates,
 		Router:                    router,
 		LightCandidates:           lightCandidates,
+		SandboxManager:            sandboxManager,
 	}
 }
 
@@ -247,13 +257,13 @@ func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentD
 	if agentCfg != nil && strings.TrimSpace(agentCfg.Workspace) != "" {
 		return expandHome(strings.TrimSpace(agentCfg.Workspace))
 	}
-	defaultWS := expandHome(defaults.Workspace)
+	// Use the configured default workspace (respects PICOCLAW_HOME)
 	if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
-		return defaultWS
+		return expandHome(defaults.Workspace)
 	}
-	parent := filepath.Dir(defaultWS)
+	// For named agents without explicit workspace, use default workspace with agent ID suffix
 	id := routing.NormalizeAgentID(agentCfg.ID)
-	return filepath.Join(parent, "workspace-"+id)
+	return filepath.Join(expandHome(defaults.Workspace), "..", "workspace-"+id)
 }
 
 // resolveAgentModel resolves the primary model for an agent.
@@ -298,6 +308,39 @@ func compilePatterns(patterns []string) []*regexp.Regexp {
 		compiled = append(compiled, re)
 	}
 	return compiled
+}
+
+// Close releases resources held by the agent's session store.
+func (a *AgentInstance) Close() error {
+	if a.Sessions != nil {
+		return a.Sessions.Close()
+	}
+	return nil
+}
+
+// initSessionStore creates the session persistence backend.
+// It uses the JSONL store by default and auto-migrates legacy JSON sessions.
+// Falls back to SessionManager if the JSONL store cannot be initialized or
+// if migration fails (which indicates the store cannot write reliably).
+func initSessionStore(dir string) session.SessionStore {
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		log.Printf("memory: init store: %v; using json sessions", err)
+		return session.NewSessionManager(dir)
+	}
+
+	if n, merr := memory.MigrateFromJSON(context.Background(), dir, store); merr != nil {
+		// Migration failure means the store could not write data.
+		// Fall back to SessionManager to avoid a split state where
+		// some sessions are in JSONL and others remain in JSON.
+		log.Printf("memory: migration failed: %v; falling back to json sessions", merr)
+		store.Close()
+		return session.NewSessionManager(dir)
+	} else if n > 0 {
+		log.Printf("memory: migrated %d session(s) to jsonl", n)
+	}
+
+	return session.NewJSONLBackend(store)
 }
 
 func expandHome(path string) string {

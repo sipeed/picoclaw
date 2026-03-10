@@ -208,6 +208,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = "https://api.mistral.ai/v1"
 				}
 			}
+		case "minimax":
+			if cfg.Providers.Minimax.APIKey != "" {
+				sel.apiKey = cfg.Providers.Minimax.APIKey
+				sel.apiBase = cfg.Providers.Minimax.APIBase
+				sel.proxy = cfg.Providers.Minimax.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.minimaxi.com/v1"
+				}
+			}
 		case "github_copilot", "copilot":
 			sel.providerType = providerTypeGitHubCopilot
 			if cfg.Providers.GitHubCopilot.APIBase != "" {
@@ -324,6 +333,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.proxy = cfg.Providers.Mistral.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "https://api.mistral.ai/v1"
+			}
+		case (strings.Contains(lowerModel, "minimax") || strings.HasPrefix(model, "minimax/")) && cfg.Providers.Minimax.APIKey != "":
+			sel.apiKey = cfg.Providers.Minimax.APIKey
+			sel.apiBase = cfg.Providers.Minimax.APIBase
+			sel.proxy = cfg.Providers.Minimax.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.minimaxi.com/v1"
 			}
 		case strings.HasPrefix(model, "avian/") && cfg.Providers.Avian.APIKey != "":
 			sel.apiKey = cfg.Providers.Avian.APIKey
