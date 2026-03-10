@@ -1350,17 +1350,20 @@ func (al *AgentLoop) selectCandidates(
 		return agent.Candidates, agent.Model
 	}
 
-	logger.InfoCF("agent", "Model routing: light model selected",
-		map[string]any{
-			"agent_id":    agent.ID,
-			"light_model": agent.Router.LightModel(),
-			"score":       score,
-			"threshold":   agent.Router.Threshold(),
-		})
-	resolvedModel := agent.Router.LightModel()
-	if len(agent.LightCandidates) > 0 && strings.TrimSpace(agent.LightCandidates[0].Model) != "" {
+	configuredAlias := agent.Router.LightModel()
+	resolvedModel := configuredAlias
+	if strings.TrimSpace(agent.LightCandidates[0].Model) != "" {
 		resolvedModel = agent.LightCandidates[0].Model
 	}
+
+	logger.InfoCF("agent", "Model routing: light model selected",
+		map[string]any{
+			"agent_id":             agent.ID,
+			"light_model_alias":    configuredAlias,
+			"resolved_light_model": resolvedModel,
+			"score":                score,
+			"threshold":            agent.Router.Threshold(),
+		})
 	return agent.LightCandidates, resolvedModel
 }
 
