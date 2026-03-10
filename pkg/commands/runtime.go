@@ -24,7 +24,7 @@ type Runtime struct {
 	SetModePico    func() string // switches to pico mode, returns status string
 
 	// Working directory (session-scoped)
-	GetWorkDir  func() string // current working directory for this session
+	GetWorkDir   func() string // current working directory for this session
 	GetWorkspace func() string // agent workspace root
 
 	// File editing — delegates to the loop's handleEditCommand with proper path resolution

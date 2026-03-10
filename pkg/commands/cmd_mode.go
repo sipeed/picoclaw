@@ -51,7 +51,9 @@ func hipicoCmnd() Definition {
 				}
 			}
 			if msg == "" {
-				return req.Reply("👋 Hi~ What can I help you with?\n\n💡 Examples:\n  /hipico what files are in the working directory?\n  /hipico what time is it now?\n  /hipico what's the progress on the previous task?")
+				return req.Reply(
+					"👋 Hi~ What can I help you with?\n\n💡 Examples:\n  /hipico what files are in the working directory?\n  /hipico what time is it now?\n  /hipico what's the progress on the previous task?",
+				)
 			}
 			reply, err := rt.RunOneShot(ctx, msg)
 			if err != nil {

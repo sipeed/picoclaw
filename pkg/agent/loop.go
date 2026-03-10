@@ -1999,7 +1999,6 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 			agent.Model = value
 			return oldModel, nil
 		}
-
 	}
 	return rt
 }
