@@ -107,8 +107,8 @@ func (p *Provider) Chat(
 
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", p.apiKey)
-	req.Header.Set("anthropic-version", defaultAPIVersion)
+	req.Header.Set("X-API-Key", p.apiKey)
+	req.Header.Set("Anthropic-Version", defaultAPIVersion)
 
 	// Execute request
 	resp, err := p.httpClient.Do(req)
