@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -71,10 +72,18 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 
 func (cb *ContextBuilder) getIdentity() string {
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
+	version := config.FormatVersion()
+	buildTime, goVersion := config.FormatBuildInfo()
 
-	return fmt.Sprintf(`# picoclaw 🦞
+	return fmt.Sprintf(
+		`# picoclaw 🦞 v%s
 
 You are picoclaw, a helpful AI assistant.
+
+## Version Info
+- Version: %s
+- Build Time: %s
+- Go Version: %s
 
 ## Workspace
 Your workspace is at: %s
@@ -91,7 +100,16 @@ Your workspace is at: %s
 3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
-		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
+		version,
+		version,
+		buildTime,
+		goVersion,
+		workspacePath,
+		workspacePath,
+		workspacePath,
+		workspacePath,
+		workspacePath,
+	)
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
