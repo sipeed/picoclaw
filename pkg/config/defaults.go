@@ -97,6 +97,22 @@ func DefaultConfig() *Config {
 				AppToken:  "",
 				AllowFrom: FlexibleStringSlice{},
 			},
+			Matrix: MatrixConfig{
+				Enabled:      false,
+				Homeserver:   "https://matrix.org",
+				UserID:       "",
+				AccessToken:  "",
+				DeviceID:     "",
+				JoinOnInvite: true,
+				AllowFrom:    FlexibleStringSlice{},
+				GroupTrigger: GroupTriggerConfig{
+					MentionOnly: true,
+				},
+				Placeholder: PlaceholderConfig{
+					Enabled: true,
+					Text:    "Thinking... 💭",
+				},
+			},
 			LINE: LINEConfig{
 				Enabled:            false,
 				ChannelSecret:      "",
@@ -261,6 +277,14 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// Vivgrid - https://vivgrid.com
+			{
+				ModelName: "vivgrid-auto",
+				Model:     "vivgrid/auto",
+				APIBase:   "https://api.vivgrid.com/v1",
+				APIKey:    "",
+			},
+
 			// Volcengine (火山引擎) - https://console.volcengine.com/ark
 			{
 				ModelName: "doubao-pro",
@@ -319,6 +343,14 @@ func DefaultConfig() *Config {
 				ModelName: "kimi-k2.5",
 				Model:     "avian/moonshotai/kimi-k2.5",
 				APIBase:   "https://api.avian.io/v1",
+				APIKey:    "",
+			},
+
+			// Minimax - https://api.minimaxi.com/
+			{
+				ModelName: "MiniMax-M2.5",
+				Model:     "minimax/MiniMax-M2.5",
+				APIBase:   "https://api.minimaxi.com/v1",
 				APIKey:    "",
 			},
 

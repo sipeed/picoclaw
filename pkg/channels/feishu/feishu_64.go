@@ -4,9 +4,11 @@ package feishu
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -195,18 +197,35 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 }
 
 // ReactToMessage implements channels.ReactionCapable.
-// Adds an "Pin" reaction and returns an undo function to remove it.
+// Adds a reaction (randomly chosen from config) and returns an undo function to remove it.
 func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
+	// Get emoji list from config
+	emojiList := c.config.RandomReactionEmoji
+	if len(emojiList) == 0 {
+		// Default to "Pin" if no config
+		emojiList = []string{"Pin"}
+	}
+
+	// Randomly choose one from the list using crypto/rand for better distribution
+	idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(emojiList))))
+	var chosenEmoji string
+	if err != nil {
+		chosenEmoji = emojiList[0]
+	} else {
+		chosenEmoji = emojiList[idx.Int64()]
+	}
+
 	req := larkim.NewCreateMessageReactionReqBuilder().
 		MessageId(messageID).
 		Body(larkim.NewCreateMessageReactionReqBodyBuilder().
-			ReactionType(larkim.NewEmojiBuilder().EmojiType("Pin").Build()).
+			ReactionType(larkim.NewEmojiBuilder().EmojiType(chosenEmoji).Build()).
 			Build()).
 		Build()
 
 	resp, err := c.client.Im.V1.MessageReaction.Create(ctx, req)
 	if err != nil {
 		logger.ErrorCF("feishu", "Failed to add reaction", map[string]any{
+			"emoji":      chosenEmoji,
 			"message_id": messageID,
 			"error":      err.Error(),
 		})
@@ -214,6 +233,7 @@ func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID st
 	}
 	if !resp.Success() {
 		logger.ErrorCF("feishu", "Reaction API error", map[string]any{
+			"emoji":      chosenEmoji,
 			"message_id": messageID,
 			"code":       resp.Code,
 			"msg":        resp.Msg,

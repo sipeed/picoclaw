@@ -581,15 +581,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	route, agent, routeErr := al.resolveMessageRoute(msg)
-
-	// Commands are checked before requiring a successful route.
-	// Global commands (/help, /show, /switch) work even when routing fails;
-	// context-dependent commands check their own Runtime fields and report
-	// "unavailable" when the required capability is nil.
-	if response, handled := al.handleCommand(ctx, msg, agent); handled {
-		return response, nil
-	}
-
 	if routeErr != nil {
 		return "", routeErr
 	}
@@ -615,7 +606,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"route_channel": route.Channel,
 		})
 
-	return al.runAgentLoop(ctx, agent, processOptions{
+	opts := processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
@@ -624,7 +615,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
 		SendResponse:    false,
-	})
+	}
+
+	// context-dependent commands check their own Runtime fields and report
+	// "unavailable" when the required capability is nil.
+	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {
+		return response, nil
+	}
+
+	return al.runAgentLoop(ctx, agent, opts)
 }
 
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
@@ -1055,9 +1054,12 @@ func (al *AgentLoop) runLLMIteration(
 				"target_channel": al.targetReasoningChannelID(opts.Channel),
 				"channel":        opts.Channel,
 			})
-		// Check if no tool calls - we're done
+		// Check if no tool calls - then check reasoning content if any
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
+			if finalContent == "" && response.ReasoningContent != "" {
+				finalContent = response.ReasoningContent
+			}
 			logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
 				map[string]any{
 					"agent_id":      agent.ID,
@@ -1489,10 +1491,20 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 		return
 	}
 
+	const (
+		maxSummarizationMessages = 10
+		llmMaxRetries            = 3
+		llmTemperature           = 0.3
+		fallbackMaxContentLength = 200
+	)
+
 	// Multi-Part Summarization
 	var finalSummary string
-	if len(validMessages) > 10 {
+	if len(validMessages) > maxSummarizationMessages {
 		mid := len(validMessages) / 2
+
+		mid = al.findNearestUserMessage(validMessages, mid)
+
 		part1 := validMessages[:mid]
 		part2 := validMessages[mid:]
 
@@ -1504,18 +1516,9 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 			s1,
 			s2,
 		)
-		resp, err := agent.Provider.Chat(
-			ctx,
-			[]providers.Message{{Role: "user", Content: mergePrompt}},
-			nil,
-			agent.Model,
-			map[string]any{
-				"max_tokens":       1024,
-				"temperature":      0.3,
-				"prompt_cache_key": agent.ID,
-			},
-		)
-		if err == nil {
+
+		resp, err := al.retryLLMCall(ctx, agent, mergePrompt, llmMaxRetries)
+		if err == nil && resp.Content != "" {
 			finalSummary = resp.Content
 		} else {
 			finalSummary = s1 + " " + s2
@@ -1535,6 +1538,68 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	}
 }
 
+// findNearestUserMessage finds the nearest user message to the given index.
+// It searches backward first, then forward if no user message is found.
+func (al *AgentLoop) findNearestUserMessage(messages []providers.Message, mid int) int {
+	originalMid := mid
+
+	for mid > 0 && messages[mid].Role != "user" {
+		mid--
+	}
+
+	if messages[mid].Role == "user" {
+		return mid
+	}
+
+	mid = originalMid
+	for mid < len(messages) && messages[mid].Role != "user" {
+		mid++
+	}
+
+	if mid < len(messages) {
+		return mid
+	}
+
+	return originalMid
+}
+
+// retryLLMCall calls the LLM with retry logic.
+func (al *AgentLoop) retryLLMCall(
+	ctx context.Context,
+	agent *AgentInstance,
+	prompt string,
+	maxRetries int,
+) (*providers.LLMResponse, error) {
+	const (
+		llmTemperature = 0.3
+	)
+
+	var resp *providers.LLMResponse
+	var err error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		resp, err = agent.Provider.Chat(
+			ctx,
+			[]providers.Message{{Role: "user", Content: prompt}},
+			nil,
+			agent.Model,
+			map[string]any{
+				"max_tokens":       agent.MaxTokens,
+				"temperature":      llmTemperature,
+				"prompt_cache_key": agent.ID,
+			},
+		)
+		if err == nil && resp != nil && resp.Content != "" {
+			return resp, nil
+		}
+		if attempt < maxRetries-1 {
+			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+		}
+	}
+
+	return resp, err
+}
+
 // summarizeBatch summarizes a batch of messages.
 func (al *AgentLoop) summarizeBatch(
 	ctx context.Context,
@@ -1542,6 +1607,13 @@ func (al *AgentLoop) summarizeBatch(
 	batch []providers.Message,
 	existingSummary string,
 ) (string, error) {
+	const (
+		llmMaxRetries             = 3
+		llmTemperature            = 0.3
+		fallbackMinContentLength  = 200
+		fallbackMaxContentPercent = 10
+	)
+
 	var sb strings.Builder
 	sb.WriteString(
 		"Provide a concise summary of this conversation segment, preserving core context and key points.\n",
@@ -1557,21 +1629,40 @@ func (al *AgentLoop) summarizeBatch(
 	}
 	prompt := sb.String()
 
-	response, err := agent.Provider.Chat(
-		ctx,
-		[]providers.Message{{Role: "user", Content: prompt}},
-		nil,
-		agent.Model,
-		map[string]any{
-			"max_tokens":       1024,
-			"temperature":      0.3,
-			"prompt_cache_key": agent.ID,
-		},
-	)
-	if err != nil {
-		return "", err
+	response, err := al.retryLLMCall(ctx, agent, prompt, llmMaxRetries)
+	if err == nil && response.Content != "" {
+		return strings.TrimSpace(response.Content), nil
 	}
-	return response.Content, nil
+
+	var fallback strings.Builder
+	fallback.WriteString("Conversation summary: ")
+	for i, m := range batch {
+		if i > 0 {
+			fallback.WriteString(" | ")
+		}
+		content := strings.TrimSpace(m.Content)
+		runes := []rune(content)
+		if len(runes) == 0 {
+			fallback.WriteString(fmt.Sprintf("%s: ", m.Role))
+			continue
+		}
+
+		keepLength := len(runes) * fallbackMaxContentPercent / 100
+		if keepLength < fallbackMinContentLength {
+			keepLength = fallbackMinContentLength
+		}
+
+		if keepLength > len(runes) {
+			keepLength = len(runes)
+		}
+
+		content = string(runes[:keepLength])
+		if keepLength < len(runes) {
+			content += "..."
+		}
+		fallback.WriteString(fmt.Sprintf("%s: %s", m.Role, content))
+	}
+	return fallback.String(), nil
 }
 
 // estimateTokens estimates the number of tokens in a message list.
@@ -1590,6 +1681,7 @@ func (al *AgentLoop) handleCommand(
 	ctx context.Context,
 	msg bus.InboundMessage,
 	agent *AgentInstance,
+	opts *processOptions,
 ) (string, bool) {
 	if !commands.HasCommandPrefix(msg.Content) {
 		return "", false
@@ -1599,7 +1691,7 @@ func (al *AgentLoop) handleCommand(
 		return "", false
 	}
 
-	rt := al.buildCommandsRuntime(agent)
+	rt := al.buildCommandsRuntime(agent, opts)
 	executor := commands.NewExecutor(al.cmdRegistry, rt)
 
 	var commandReply string
@@ -1628,7 +1720,7 @@ func (al *AgentLoop) handleCommand(
 	}
 }
 
-func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtime {
+func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOptions) *commands.Runtime {
 	rt := &commands.Runtime{
 		Config:          al.cfg,
 		ListAgentIDs:    al.registry.ListAgentIDs,
@@ -1657,6 +1749,20 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtim
 			oldModel := agent.Model
 			agent.Model = value
 			return oldModel, nil
+		}
+
+		rt.ClearHistory = func() error {
+			if opts == nil {
+				return fmt.Errorf("process options not available")
+			}
+			if agent.Sessions == nil {
+				return fmt.Errorf("sessions not initialized for agent")
+			}
+
+			agent.Sessions.SetHistory(opts.SessionKey, make([]providers.Message, 0))
+			agent.Sessions.SetSummary(opts.SessionKey, "")
+			agent.Sessions.Save(opts.SessionKey)
+			return nil
 		}
 	}
 	return rt

@@ -382,7 +382,7 @@ func TestProviderChat_StripsMoonshotPrefixAndNormalizesKimiTemperature(t *testin
 	}
 }
 
-func TestProviderChat_StripsGroqAndOllamaPrefixes(t *testing.T) {
+func TestProviderChat_StripsGroqOllamaDeepseekVivgridPrefixes(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
@@ -407,6 +407,11 @@ func TestProviderChat_StripsGroqAndOllamaPrefixes(t *testing.T) {
 			name:      "strips deepseek prefix",
 			input:     "deepseek/deepseek-chat",
 			wantModel: "deepseek-chat",
+		},
+		{
+			name:      "strips vivgrid prefix",
+			input:     "vivgrid/auto",
+			wantModel: "auto",
 		},
 	}
 
@@ -511,6 +516,12 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	}
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
+	}
+	if got := normalizeModel("vivgrid/managed", "https://api.vivgrid.com/v1"); got != "managed" {
+		t.Fatalf("normalizeModel(vivgrid) = %q, want %q", got, "managed")
+	}
+	if got := normalizeModel("vivgrid/auto", "https://api.vivgrid.com/v1"); got != "auto" {
+		t.Fatalf("normalizeModel(vivgrid auto) = %q, want %q", got, "auto")
 	}
 }
 
