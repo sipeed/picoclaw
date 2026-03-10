@@ -23,22 +23,42 @@ func helpCommand() Definition {
 	}
 }
 
-func formatHelpMessage(defs []Definition) string {
-	if len(defs) == 0 {
-		return "No commands available."
-	}
+func formatHelpMessage(_ []Definition) string {
+	return `System:
+  /help             Show this help
+  /model [name]     Show or switch the active model
+  /version          Show version info
+  /tools            List available tools
+  /debug            Toggle debug mode
+  /ping             Connectivity check
+  /vps login <pw>   Set VPS password securely
+  /whatsapp qr      Get WhatsApp pairing QR code
+  /acp <cmd> <args> Manage active ACP harness sessions
 
-	lines := make([]string, 0, len(defs))
-	for _, def := range defs {
-		usage := def.EffectiveUsage()
-		if usage == "" {
-			usage = "/" + def.Name
-		}
-		desc := def.Description
-		if desc == "" {
-			desc = "No description"
-		}
-		lines = append(lines, fmt.Sprintf("%s - %s", usage, desc))
-	}
-	return strings.Join(lines, "\n")
+Jobs:
+  /job <desc>       Create a new job
+  /status <id>      Check job status
+  /cancel <id>      Cancel a job
+  /list             List all jobs
+
+Session:
+  /undo             Undo last turn
+  /redo             Redo undone turn
+  /compact          Compress context window
+  /clear            Clear current thread
+  /interrupt        Stop current operation
+  /new              New conversation thread
+  /thread <id>      Switch to thread
+  /resume <id>      Resume from checkpoint
+
+Skills:
+  /skills             List installed skills
+  /skills search <q>  Search ClawHub registry
+
+Agent:
+  /heartbeat        Run heartbeat check
+  /summarize        Summarize current thread
+  /suggest          Suggest next steps
+
+  /quit             Exit`
 }

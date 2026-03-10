@@ -48,6 +48,7 @@ type AgentLoop struct {
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
 	cmdRegistry    *commands.Registry
+	version        string
 }
 
 // processOptions configures how a message is processed
@@ -77,6 +78,7 @@ func NewAgentLoop(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	provider providers.LLMProvider,
+	version string,
 ) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
@@ -102,6 +104,7 @@ func NewAgentLoop(
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
 		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
+		version:     version,
 	}
 
 	return al
@@ -1838,6 +1841,15 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 				return nil, false
 			}
 			return al.channelManager.GetChannel(name)
+		},
+		GetVersion: func() string {
+			return al.version
+		},
+		ListTools: func() []string {
+			if agent == nil {
+				return nil
+			}
+			return agent.Tools.GetSummaries()
 		},
 	}
 	if agent != nil {

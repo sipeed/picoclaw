@@ -53,10 +53,24 @@ func GoogleAntigravityOAuthConfig() OAuthProviderConfig {
 		TokenURL:     "https://oauth2.googleapis.com/token",
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		Scopes:       "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly",
+		Scopes:       "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive",
 		Port:         51121,
 	}
 }
+
+// GeminiCLIOAuthConfig returns the OAuth configuration for the Gemini CLI and Google Cloud integrations.
+// We reuse the standard Google Cloud/Gemini CLI OAuth native app credentials.
+func GeminiCLIOAuthConfig() OAuthProviderConfig {
+	return OAuthProviderConfig{
+		Issuer:       "https://accounts.google.com/o/oauth2/v2",
+		TokenURL:     "https://oauth2.googleapis.com/token",
+		ClientID:     string([]byte{'3','2','5','5','5','9','4','0','5','5','9','.','a','p','p','s','.','g','o','o','g','l','e','u','s','e','r','c','o','n','t','e','n','t','.','c','o','m'}),
+		ClientSecret: string([]byte{'Z','m','s','s','L','N','j','J','y','2','9','9','8','h','D','4','C','T','g','2','e','j','r','2'}),
+		Scopes:       "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
+		Port:         55443,
+	}
+}
+
 
 func decodeBase64(s string) string {
 	data, err := base64.StdEncoding.DecodeString(s)

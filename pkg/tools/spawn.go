@@ -42,7 +42,19 @@ func (t *SpawnTool) Parameters() map[string]any {
 			},
 			"agent_id": map[string]any{
 				"type":        "string",
-				"description": "Optional target agent ID to delegate the task to",
+				"description": "Optional target agent ID to delegate the task to (or the harness ID for ACP)",
+			},
+			"runtime": map[string]any{
+				"type":        "string",
+				"description": "Execution runtime. Can be 'subagent' (default) or 'acp'. Use 'acp' for external harnesses like codex, gemini, etc.",
+			},
+			"mode": map[string]any{
+				"type":        "string",
+				"description": "For ACP runtime: 'run' (one-shot) or 'session' (persistent)",
+			},
+			"cwd": map[string]any{
+				"type":        "string",
+				"description": "Requested working directory for the subagent or ACP process",
 			},
 		},
 		"required": []string{"task"},
@@ -79,13 +91,52 @@ func (t *SpawnTool) execute(ctx context.Context, args map[string]any, cb AsyncCa
 		}
 	}
 
+	// Extract new parameters
+	runtime, _ := args["runtime"].(string)
+	if runtime == "" {
+		runtime = "subagent"
+	}
+	mode, _ := args["mode"].(string)
+	if mode == "" {
+		mode = "run"
+	}
+	cwd, _ := args["cwd"].(string)
+	
+	if runtime == "acp" {
+		// Verify agent_id mapping. E.g., agent_id=gemini might map to `gemini` executable.
+		command := agentID
+		if command == "" {
+			command = "gemini" // fallback default
+		}
+		
+		session, err := acp.GetManager().Spawn(agentID, mode, command, cwd, label, []string{})
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("Failed to spawn ACP session: %v", err))
+		}
+		
+		// Send initial task
+		if err := session.Write(task); err != nil {
+			return ErrorResult(fmt.Sprintf("ACP session spawned but failed to steer initial task: %v", err))
+		}
+		
+		msg := fmt.Sprintf("Spawned ACP session '%s' (key: %s)", command, session.Key)
+		
+		// Since ACP is persistent and runs externally, we return synchronously for the initial spawn command.
+		// Detailed communication should happen via /acp steer or message routing.
+		return &ToolResult{
+			ForLLM:  msg,
+			ForUser: msg,
+			Silent:  false,
+			IsError: false,
+			Async:   false,
+		}
+	}
+
+	// Normal Subagent Logic
 	if t.manager == nil {
 		return ErrorResult("Subagent manager not configured")
 	}
 
-	// Read channel/chatID from context (injected by registry).
-	// Fall back to "cli"/"direct" for non-conversation callers (e.g., CLI, tests)
-	// to preserve the same defaults as the original NewSpawnTool constructor.
 	channel := ToolChannel(ctx)
 	if channel == "" {
 		channel = "cli"

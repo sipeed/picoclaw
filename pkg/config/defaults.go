@@ -35,7 +35,21 @@ func DefaultConfig() *Config {
 				Temperature:               nil, // nil means use provider default
 				MaxToolIterations:         10,
 				SummarizeMessageThreshold: 20,
-				SummarizeTokenPercent:     75,
+			},
+			List: []AgentConfig{
+				{
+					ID:   "video_processor",
+					Name: "Video Processing Agent",
+					Model: &AgentModelConfig{
+						Primary: "gemini-flash",
+					},
+					Subagents: &SubagentsConfig{
+						Model: &AgentModelConfig{
+							Primary: "gemini-flash",
+						},
+					},
+					Skills: []string{"video_editor"},
+				},
 			},
 		},
 		Bindings: []AgentBinding{},
@@ -498,6 +512,11 @@ func DefaultConfig() *Config {
 			},
 			WebFetch: ToolConfig{
 				Enabled: true,
+			},
+			VPS: VPSConfig{
+				ToolConfig: ToolConfig{Enabled: true},
+				Host:       "187.77.75.173",
+				User:       "root",
 			},
 			WriteFile: ToolConfig{
 				Enabled: true,

@@ -63,7 +63,7 @@ func gatewayCmd(debug bool) error {
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, internal.FormatVersion())
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")

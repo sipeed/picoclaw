@@ -3,8 +3,11 @@ package commands
 import (
 	"context"
 	"fmt"
-	"github.com/sipeed/picoclaw/pkg/channels"
 )
+
+type qrProvider interface {
+	GetLastQR() string
+}
 
 func whatsappCommand() Definition {
 	return Definition{
@@ -23,7 +26,7 @@ func whatsappCommand() Definition {
 						}
 					}
 
-					qrProvider, ok := ch.(channels.QRProvider)
+					qp, ok := ch.(qrProvider)
 					if !ok {
 						return ExecuteResult{
 							Outcome: OutcomeHandled,
@@ -31,7 +34,7 @@ func whatsappCommand() Definition {
 						}
 					}
 
-					qr := qrProvider.GetLastQR()
+					qr := qp.GetLastQR()
 					if qr == "" {
 						return ExecuteResult{
 							Outcome: OutcomeHandled,

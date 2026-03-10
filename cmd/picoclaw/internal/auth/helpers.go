@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
+	supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity, gemini-cli"
 	defaultAnthropicModel = "claude-sonnet-4.6"
 )
 
@@ -29,6 +29,8 @@ func authLoginCmd(provider string, useDeviceCode bool, useOauth bool) error {
 		return authLoginAnthropic(useOauth)
 	case "google-antigravity", "antigravity":
 		return authLoginGoogleAntigravity()
+	case "gemini-cli":
+		return authLoginGeminiCLI()
 	default:
 		return fmt.Errorf("unsupported provider: %s (%s)", provider, supportedProvidersMsg)
 	}
@@ -163,6 +165,26 @@ func authLoginGoogleAntigravity() error {
 	fmt.Println("\n✓ Google Antigravity login successful!")
 	fmt.Println("Default model set to: gemini-flash")
 	fmt.Println("Try it: picoclaw agent -m \"Hello world\"")
+
+	return nil
+}
+
+func authLoginGeminiCLI() error {
+	cfg := auth.GeminiCLIOAuthConfig()
+
+	cred, err := auth.LoginBrowser(cfg)
+	if err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+
+	cred.Provider = "gemini-cli"
+
+	if err = auth.SetCredential("gemini-cli", cred); err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	fmt.Println("\n✓ Gemini CLI OAuth login successful!")
+	fmt.Println("Credentials saved natively for Gemini CLI access.")
 
 	return nil
 }
@@ -361,6 +383,10 @@ func authLogoutCmd(provider string) error {
 					}
 				case "google-antigravity", "antigravity":
 					if isAntigravityModel(appCfg.ModelList[i].Model) {
+						appCfg.ModelList[i].AuthMethod = ""
+					}
+				case "gemini-cli":
+					if appCfg.ModelList[i].Model == "gemini-cli" {
 						appCfg.ModelList[i].AuthMethod = ""
 					}
 				}

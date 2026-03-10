@@ -14,5 +14,10 @@ func BuiltinDefinitions() []Definition {
 		checkCommand(),
 		clearCommand(),
 		whatsappCommand(),
+		pingCommand(),
+		toolsCommand(),
+		modelCommand(),
+		vpsCommand(),
+		acpCommand(),
 	}
 }

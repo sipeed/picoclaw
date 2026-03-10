@@ -89,8 +89,18 @@ func NewAgentInstance(
 		}
 		toolsRegistry.Register(execTool)
 	}
+	if cfg.Tools.IsToolEnabled("vps") {
+		toolsRegistry.Register(&tools.VPSTool{
+			Host: cfg.Tools.VPS.Host,
+			User: cfg.Tools.VPS.User,
+		})
+	}
+	if cfg.Tools.IsToolEnabled("voice_call") {
+		toolsRegistry.Register(tools.NewVoiceCallTool())
+	}
 
 	if cfg.Tools.IsToolEnabled("edit_file") {
+	}
 		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("append_file") {

@@ -62,3 +62,27 @@ func rejectByPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Error(w, "Forbidden", http.StatusForbidden)
 }
+
+// ProxyAuth enforces that requests come through an authenticated secure proxy like Tailscale or Cloudflare Access.
+// Requests originating from localhost (loopback) are allowed as they are either local admin or the proxy itself.
+func ProxyAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := clientIPFromRemoteAddr(r.RemoteAddr)
+		if ip != nil && ip.IsLoopback() {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Check for Tailscale Serve / Cloudflare Access headers
+		tsUser := r.Header.Get("Tailscale-User-Login")
+		cfUser := r.Header.Get("Cf-Access-Authenticated-User-Email")
+
+		if tsUser == "" && cfUser == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte("Unauthorized: Application must be accessed via Tailscale or Cloudflare Access."))
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}

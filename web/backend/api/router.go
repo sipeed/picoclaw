@@ -63,4 +63,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Launcher service parameters (port/public)
 	h.registerLauncherConfigRoutes(mux)
+
+	// Voice Subsystem Webhooks
+	mux.HandleFunc("/webhook/voice", h.VoiceWebhookHandler)
 }

@@ -657,6 +657,12 @@ type ExecConfig struct {
 	TimeoutSeconds      int      `                                 env:"PICOCLAW_TOOLS_EXEC_TIMEOUT_SECONDS"       json:"timeout_seconds"` // 0 means use default (60s)
 }
 
+type VPSConfig struct {
+	ToolConfig `envPrefix:"PICOCLAW_TOOLS_VPS_"`
+	Host       string `json:"host"     env:"PICOCLAW_TOOLS_VPS_HOST"`
+	User       string `json:"user"     env:"PICOCLAW_TOOLS_VPS_USER"`
+}
+
 type SkillsToolsConfig struct {
 	ToolConfig            `                       envPrefix:"PICOCLAW_TOOLS_SKILLS_"`
 	Registries            SkillsRegistriesConfig `                                   json:"registries"`
@@ -698,6 +704,8 @@ type ToolsConfig struct {
 	SPI             ToolConfig         `json:"spi"                                                      envPrefix:"PICOCLAW_TOOLS_SPI_"`
 	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
 	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
+	VPS             VPSConfig          `json:"vps"                                                      envPrefix:"PICOCLAW_TOOLS_VPS_"`
+	VoiceCall       ToolConfig         `json:"voice_call"                                               envPrefix:"PICOCLAW_TOOLS_VOICECALL_"`
 	WriteFile       ToolConfig         `json:"write_file"                                               envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
 }
 
@@ -956,6 +964,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.InstallSkill.Enabled
 	case "google":
 		return t.Google.Enabled
+	case "vps":
+		return t.VPS.Enabled
 	case "list_dir":
 		return t.ListDir.Enabled
 	case "message":

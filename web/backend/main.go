@@ -123,7 +123,7 @@ func main() {
 	// Apply middleware stack
 	handler := middleware.Recoverer(
 		middleware.Logger(
-			middleware.JSONContentType(accessControlledMux),
+			middleware.JSONContentType(middleware.ProxyAuth(accessControlledMux)),
 		),
 	)
 
