@@ -52,6 +52,8 @@ type LogEntry struct {
 func init() {
 	once.Do(func() {
 		logger = &Logger{}
+		// disable default log prefix date & timestamp
+		log.SetFlags(0)
 	})
 }
 
