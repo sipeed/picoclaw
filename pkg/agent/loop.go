@@ -974,6 +974,7 @@ func (al *AgentLoop) runLLMIteration(
 
 	for iteration < agent.MaxIterations {
 		iteration++
+		iterStart := time.Now()
 
 		logger.DebugCF("agent", "LLM iteration",
 			map[string]any{
@@ -1151,6 +1152,16 @@ func (al *AgentLoop) runLLMIteration(
 				"target_channel": al.targetReasoningChannelID(opts.Channel),
 				"channel":        opts.Channel,
 			})
+
+		// Telemetry: Log iteration performance
+		duration := time.Since(iterStart)
+		logger.InfoCF("agent", "Iteration performance", map[string]any{
+			"agent_id":     agent.ID,
+			"model":        activeModel,
+			"iteration":    iteration,
+			"duration_ms":  duration.Milliseconds(),
+			"has_tool_use": len(response.ToolCalls) > 0,
+		})
 		// Check if no tool calls - then check reasoning content if any
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
