@@ -1,6 +1,8 @@
 package telegram
 
-import "strings"
+import (
+	"strings"
+)
 
 // markdownToTelegramMarkdownV2 takes a standardized markdown string and
 // strictly escapes or transforms it to fit Telegram's MarkdownV2 requirements.
@@ -8,6 +10,7 @@ import "strings"
 func markdownToTelegramMarkdownV2(text string) string {
 	// replace Heading to bolding
 	text = reHeading.ReplaceAllString(text, "*$1*")
+	text = reBoldStar.ReplaceAllString(text, "*$1*")
 
 	var result strings.Builder
 	runes := []rune(text)
@@ -69,7 +72,7 @@ func markdownToTelegramMarkdownV2(text string) string {
 		// and we are currently on '('. To keep logic linear, we handle it as we traverse.
 		// NOTE: A true deep-parser would link `[` to `](...)`. For safety, whenever we see `(`,
 		// if it looks like a URL part, we escape it via URL rules. Let's do a basic lookbehind.
-		if runes[i] == '(' && i > 0 && runes[i-1] == ']' {
+		if i != 0 && runes[i] == '(' && i > 0 && runes[i-1] == ']' {
 			result.WriteRune('(')
 			i++
 			for i < length {
@@ -90,14 +93,14 @@ func markdownToTelegramMarkdownV2(text string) string {
 		}
 
 		// 4. Handle blockquotes starts
-		if runes[i] == '>' && (i == 0 || runes[i-1] == '\n') {
+		if i != 0 && runes[i] == '>' && (i == 0 || runes[i-1] == '\n') {
 			result.WriteRune('>')
 			i++
 			continue
 		}
 
 		// 5. Handle expandable block quotation starts
-		if runes[i] == '>' && runes[i-1] == '*' && runes[i-2] == '*' && (i == 0 || runes[i-3] == '\n') {
+		if i+3 < length && runes[i] == '>' && runes[i-1] == '*' && runes[i-2] == '*' && (i == 0 || runes[i-3] == '\n') {
 			result.WriteRune(runes[i])
 			i++
 			continue
@@ -123,7 +126,7 @@ func markdownToTelegramMarkdownV2(text string) string {
 		}
 
 		// Standard single-char boundaries
-		if runes[i] == '*' || runes[i] == '_' || runes[i] == '~' || runes[i] == '[' || runes[i] == ']' {
+		if runes[i] == '*' || runes[i] == '_' || runes[i] == '[' || runes[i] == ']' {
 			result.WriteRune(runes[i])
 			i++
 			continue

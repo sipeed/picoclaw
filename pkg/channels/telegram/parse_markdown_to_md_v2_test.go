@@ -46,6 +46,11 @@ func Test_markdownToTelegramMarkdownV2(t *testing.T) {
 			input:    "o",
 			expected: "o",
 		},
+		{
+			name:     "",
+			input:    "~10",
+			expected: "\\~10",
+		},
 	}
 
 	for _, tc := range cases {
