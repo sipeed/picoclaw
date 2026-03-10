@@ -226,53 +226,64 @@ func gatewayCmd(debug bool) error {
 			return nil
 
 		case newCfg := <-configReloadChan:
-			logger.Info("🔄 Config file changed, reloading...")
-
-			newModel := newCfg.Agents.Defaults.ModelName
-			if newModel == "" {
-				newModel = newCfg.Agents.Defaults.Model
-			}
-
-			logger.Infof(" New model is '%s', recreating provider...", newModel)
-
-			// Create new provider from updated config first to ensure validity
-			// This will use the correct API key and settings from newCfg.ModelList
-			newProvider, newModelID, err := providers.CreateProvider(newCfg)
-			if err != nil {
-				logger.Errorf("  ⚠ Error creating new provider: %v", err)
-				logger.Warn("  Continuing with old provider")
-				continue
-			}
-
-			if newModelID != "" {
-				newCfg.Agents.Defaults.ModelName = newModelID
-			}
-
-			// Use the atomic reload method on AgentLoop to safely swap provider and config.
-			// This handles locking internally to prevent races with in-flight LLM calls
-			// and concurrent reads of registry/config while the swap occurs.
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			if err := agentLoop.ReloadProviderAndConfig(ctx, newProvider, newCfg); err != nil {
-				logger.Errorf("  ⚠ Error reloading agent loop: %v", err)
-				// Close the newly created provider since it wasn't adopted
-				if cp, ok := newProvider.(providers.StatefulProvider); ok {
-					cp.Close()
-				}
-				logger.Warn("  Continuing with old provider and config")
-				continue
-			}
-
-			// Update local references only after successful atomic reload
-			if cp, ok := provider.(providers.StatefulProvider); ok {
-				cp.Close()
-			}
-			provider = newProvider
-
-			logger.Info("  ✓ Provider and configuration reloaded successfully (thread-safe)")
+			handleConfigReload(agentLoop, newCfg, &provider)
 		}
 	}
+}
+
+// handleConfigReload handles config file reload in a dedicated function.
+// Extracting this improves the semantics of context cancellation,
+// avoiding defer in the select-case.
+func handleConfigReload(
+	al *agent.AgentLoop,
+	newCfg *config.Config,
+	providerRef *providers.LLMProvider,
+) {
+	logger.Info("🔄 Config file changed, reloading...")
+
+	newModel := newCfg.Agents.Defaults.ModelName
+	if newModel == "" {
+		newModel = newCfg.Agents.Defaults.Model
+	}
+
+	logger.Infof(" New model is '%s', recreating provider...", newModel)
+
+	// Create new provider from updated config first to ensure validity
+	// This will use the correct API key and settings from newCfg.ModelList
+	newProvider, newModelID, err := providers.CreateProvider(newCfg)
+	if err != nil {
+		logger.Errorf("  ⚠ Error creating new provider: %v", err)
+		logger.Warn("  Continuing with old provider")
+		return
+	}
+
+	if newModelID != "" {
+		newCfg.Agents.Defaults.ModelName = newModelID
+	}
+
+	// Use the atomic reload method on AgentLoop to safely swap provider and config.
+	// This handles locking internally to prevent races with in-flight LLM calls
+	// and concurrent reads of registry/config while the swap occurs.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := al.ReloadProviderAndConfig(ctx, newProvider, newCfg); err != nil {
+		logger.Errorf("  ⚠ Error reloading agent loop: %v", err)
+		// Close the newly created provider since it wasn't adopted
+		if cp, ok := newProvider.(providers.StatefulProvider); ok {
+			cp.Close()
+		}
+		logger.Warn("  Continuing with old provider and config")
+		return
+	}
+
+	// Update local references only after successful atomic reload
+	if cp, ok := (*providerRef).(providers.StatefulProvider); ok {
+		cp.Close()
+	}
+	*providerRef = newProvider
+
+	logger.Info("  ✓ Provider and configuration reloaded successfully (thread-safe)")
 }
 
 // setupConfigWatcherPolling sets up a simple polling-based config file watcher

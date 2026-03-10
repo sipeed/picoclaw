@@ -240,7 +240,8 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
 
 	// Initialize MCP servers for all agents
-	if al.cfg.Tools.IsToolEnabled("mcp") {
+	cfg := al.GetConfig()
+	if cfg.Tools.IsToolEnabled("mcp") {
 		mcpManager := mcp.NewManager()
 		// Ensure MCP connections are cleaned up on exit, regardless of initialization success
 		// This fixes resource leak when LoadFromMCPConfig partially succeeds then fails
@@ -253,15 +254,15 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			}
 		}()
 
-		defaultAgent := al.registry.GetDefaultAgent()
+		defaultAgent := al.GetRegistry().GetDefaultAgent()
 		var workspacePath string
 		if defaultAgent != nil && defaultAgent.Workspace != "" {
 			workspacePath = defaultAgent.Workspace
 		} else {
-			workspacePath = al.cfg.WorkspacePath()
+			workspacePath = cfg.WorkspacePath()
 		}
 
-		if err := mcpManager.LoadFromMCPConfig(ctx, al.cfg.Tools.MCP, workspacePath); err != nil {
+		if err := mcpManager.LoadFromMCPConfig(ctx, cfg.Tools.MCP, workspacePath); err != nil {
 			logger.WarnCF("agent", "Failed to load MCP servers, MCP tools will not be available",
 				map[string]any{
 					"error": err.Error(),
@@ -271,14 +272,15 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			servers := mcpManager.GetServers()
 			uniqueTools := 0
 			totalRegistrations := 0
-			agentIDs := al.registry.ListAgentIDs()
+			registry := al.GetRegistry()
+			agentIDs := registry.ListAgentIDs()
 			agentCount := len(agentIDs)
 
 			for serverName, conn := range servers {
 				uniqueTools += len(conn.Tools)
 				for _, tool := range conn.Tools {
 					for _, agentID := range agentIDs {
-						agent, ok := al.registry.GetAgent(agentID)
+						agent, ok := registry.GetAgent(agentID)
 						if !ok {
 							continue
 						}
@@ -341,7 +343,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					// If so, skip publishing to avoid duplicate messages to the user.
 					// Use default agent's tools to check (message tool is shared).
 					alreadySent := false
-					defaultAgent := al.registry.GetDefaultAgent()
+					defaultAgent := al.GetRegistry().GetDefaultAgent()
 					if defaultAgent != nil {
 						if tool, ok := defaultAgent.Tools.Get("message"); ok {
 							if mt, ok := tool.(*tools.MessageTool); ok {
@@ -382,8 +384,9 @@ func (al *AgentLoop) Stop() {
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
-	for _, agentID := range al.registry.ListAgentIDs() {
-		if agent, ok := al.registry.GetAgent(agentID); ok {
+	registry := al.GetRegistry()
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
 			agent.Tools.Register(tool)
 		}
 	}
@@ -412,11 +415,13 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	// Create new registry with updated config and provider
 	// Wrap in defer/recover to handle any panics gracefully
 	var registry *AgentRegistry
+	var panicErr error
 	done := make(chan struct{}, 1)
 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				panicErr = fmt.Errorf("panic during registry creation: %v", r)
 				logger.ErrorCF("agent", "Panic during registry creation",
 					map[string]any{"panic": r})
 			}
@@ -430,6 +435,9 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	select {
 	case <-done:
 		if registry == nil {
+			if panicErr != nil {
+				return fmt.Errorf("registry creation failed: %w", panicErr)
+			}
 			return fmt.Errorf("registry creation failed (nil result)")
 		}
 	case <-ctx.Done():
@@ -503,7 +511,8 @@ func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
 
 	// Propagate store to send_file tools in all agents.
-	al.registry.ForEachTool("send_file", func(t tools.Tool) {
+	registry := al.GetRegistry()
+	registry.ForEachTool("send_file", func(t tools.Tool) {
 		if sf, ok := t.(*tools.SendFileTool); ok {
 			sf.SetMediaStore(s)
 		}
@@ -644,7 +653,7 @@ func (al *AgentLoop) ProcessHeartbeat(
 	ctx context.Context,
 	content, channel, chatID string,
 ) (string, error) {
-	agent := al.registry.GetDefaultAgent()
+	agent := al.GetRegistry().GetDefaultAgent()
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for heartbeat")
 	}
@@ -734,7 +743,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 }
 
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
-	route := al.registry.ResolveRoute(routing.RouteInput{
+	registry := al.GetRegistry()
+	route := registry.ResolveRoute(routing.RouteInput{
 		Channel:    msg.Channel,
 		AccountID:  inboundMetadata(msg, metadataKeyAccountID),
 		Peer:       extractPeer(msg),
@@ -743,9 +753,9 @@ func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.Resolv
 		TeamID:     inboundMetadata(msg, metadataKeyTeamID),
 	})
 
-	agent, ok := al.registry.GetAgent(route.AgentID)
+	agent, ok := registry.GetAgent(route.AgentID)
 	if !ok {
-		agent = al.registry.GetDefaultAgent()
+		agent = registry.GetDefaultAgent()
 	}
 	if agent == nil {
 		return routing.ResolvedRoute{}, nil, fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
@@ -807,7 +817,7 @@ func (al *AgentLoop) processSystemMessage(
 	}
 
 	// Use default agent for system messages
-	agent := al.registry.GetDefaultAgent()
+	agent := al.GetRegistry().GetDefaultAgent()
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for system message")
 	}
@@ -863,7 +873,8 @@ func (al *AgentLoop) runAgentLoop(
 	)
 
 	// Resolve media:// refs to base64 data URLs (streaming)
-	maxMediaSize := al.cfg.Agents.Defaults.GetMaxMediaSize()
+	cfg := al.GetConfig()
+	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 
 	// 2. Save user message to session
@@ -1480,7 +1491,8 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 func (al *AgentLoop) GetStartupInfo() map[string]any {
 	info := make(map[string]any)
 
-	agent := al.registry.GetDefaultAgent()
+	registry := al.GetRegistry()
+	agent := registry.GetDefaultAgent()
 	if agent == nil {
 		return info
 	}
@@ -1497,8 +1509,8 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 
 	// Agents info
 	info["agents"] = map[string]any{
-		"count": len(al.registry.ListAgentIDs()),
-		"ids":   al.registry.ListAgentIDs(),
+		"count": len(registry.ListAgentIDs()),
+		"ids":   registry.ListAgentIDs(),
 	}
 
 	return info
@@ -1739,9 +1751,11 @@ func (al *AgentLoop) handleCommand(
 }
 
 func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtime {
+	registry := al.GetRegistry()
+	cfg := al.GetConfig()
 	rt := &commands.Runtime{
-		Config:          al.cfg,
-		ListAgentIDs:    al.registry.ListAgentIDs,
+		Config:          cfg,
+		ListAgentIDs:    registry.ListAgentIDs,
 		ListDefinitions: al.cmdRegistry.Definitions,
 		GetEnabledChannels: func() []string {
 			if al.channelManager == nil {
@@ -1761,7 +1775,7 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtim
 	}
 	if agent != nil {
 		rt.GetModelInfo = func() (string, string) {
-			return agent.Model, al.cfg.Agents.Defaults.Provider
+			return agent.Model, cfg.Agents.Defaults.Provider
 		}
 		rt.SwitchModel = func(value string) (string, error) {
 			oldModel := agent.Model
