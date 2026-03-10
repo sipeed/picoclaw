@@ -277,9 +277,18 @@ func compilePatterns(patterns []string) []*regexp.Regexp {
 	return compiled
 }
 
+// Close releases resources held by the agent's session store.
+func (a *AgentInstance) Close() error {
+	if a.Sessions != nil {
+		return a.Sessions.Close()
+	}
+	return nil
+}
+
 // initSessionStore creates the session persistence backend.
 // It uses the JSONL store by default and auto-migrates legacy JSON sessions.
-// Falls back to SessionManager if the JSONL store cannot be initialized.
+// Falls back to SessionManager if the JSONL store cannot be initialized or
+// if migration fails (which indicates the store cannot write reliably).
 func initSessionStore(dir string) session.SessionStore {
 	store, err := memory.NewJSONLStore(dir)
 	if err != nil {
@@ -288,7 +297,12 @@ func initSessionStore(dir string) session.SessionStore {
 	}
 
 	if n, merr := memory.MigrateFromJSON(context.Background(), dir, store); merr != nil {
-		log.Printf("memory: migration: %v", merr)
+		// Migration failure means the store could not write data.
+		// Fall back to SessionManager to avoid a split state where
+		// some sessions are in JSONL and others remain in JSON.
+		log.Printf("memory: migration failed: %v; falling back to json sessions", merr)
+		store.Close()
+		return session.NewSessionManager(dir)
 	} else if n > 0 {
 		log.Printf("memory: migrated %d session(s) to jsonl", n)
 	}
