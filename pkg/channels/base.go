@@ -311,6 +311,9 @@ func (c *BaseChannel) SetMediaStore(s media.MediaStore) { c.mediaStore = s }
 // GetMediaStore returns the injected MediaStore (may be nil).
 func (c *BaseChannel) GetMediaStore() media.MediaStore { return c.mediaStore }
 
+// Bus returns the underlying MessageBus.
+func (c *BaseChannel) Bus() *bus.MessageBus { return c.bus }
+
 // SetPlaceholderRecorder injects a PlaceholderRecorder into the channel.
 func (c *BaseChannel) SetPlaceholderRecorder(r PlaceholderRecorder) {
 	c.placeholderRecorder = r

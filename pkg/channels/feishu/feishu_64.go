@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -32,16 +34,26 @@ import (
 type FeishuChannel struct {
 	*channels.BaseChannel
 	config   config.FeishuConfig
+	features config.FeaturesConfig
 	client   *lark.Client
 	wsClient *larkws.Client
 
 	botOpenID atomic.Value // stores string; populated lazily for @mention detection
 
-	mu     sync.Mutex
-	cancel context.CancelFunc
+	mu           sync.Mutex
+	cancel       context.CancelFunc
+	placeholders sync.Map // chatID -> *progressState
 }
 
-func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
+// progressState tracks the placeholder card and accumulated progress lines for a chat.
+type progressState struct {
+	messageID string
+	lines     []string
+}
+
+func NewFeishuChannel(
+	cfg config.FeishuConfig, features config.FeaturesConfig, bus *bus.MessageBus,
+) (*FeishuChannel, error) {
 	base := channels.NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom,
 		channels.WithGroupTrigger(cfg.GroupTrigger),
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
@@ -50,6 +62,7 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 	ch := &FeishuChannel{
 		BaseChannel: base,
 		config:      cfg,
+		features:    features,
 		client:      lark.NewClient(cfg.AppID, cfg.AppSecret),
 	}
 	ch.SetOwner(ch)
@@ -120,6 +133,31 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	if msg.ChatID == "" {
 		return fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
 	}
+
+	// Progress update: append to the existing placeholder card instead of sending a new message.
+	if msg.IsProgress {
+		if !c.features.Verbose {
+			return nil
+		}
+		val, ok := c.placeholders.Load(msg.ChatID)
+		if !ok {
+			// Placeholder already consumed (e.g. by final response); silently discard.
+			return nil
+		}
+		state := val.(*progressState)
+		state.lines = append(state.lines, "─ "+msg.Content)
+		combined := strings.Join(state.lines, "\n")
+		if err := c.EditMessage(ctx, msg.ChatID, state.messageID, combined); err != nil {
+			logger.DebugCF("feishu", "Failed to update progress card", map[string]any{
+				"chat_id": msg.ChatID,
+				"error":   err.Error(),
+			})
+		}
+		return nil
+	}
+
+	// Final response: consume placeholder (stop progress updates), then send as new message.
+	c.placeholders.Delete(msg.ChatID)
 
 	// Build interactive card with markdown content
 	cardContent, err := buildMarkdownCard(msg.Content)
@@ -423,6 +461,30 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		"message_id": messageID,
 		"preview":    utils.Truncate(content, 80),
 	})
+
+	// Send thinking placeholder as interactive card before dispatching to agent.
+	// Using a card (not text) so that subsequent Message.Patch calls can update it.
+	placeholderCtx, placeholderCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer placeholderCancel()
+
+	initialText := "Thinking..."
+	cardContent, _ := buildMarkdownCard(initialText)
+	placeholderReq := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(larkim.ReceiveIdTypeChatId).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(chatID).
+			MsgType(larkim.MsgTypeInteractive).
+			Content(cardContent).
+			Build()).
+		Build()
+
+	placeholderResp, placeholderErr := c.client.Im.V1.Message.Create(placeholderCtx, placeholderReq)
+	if placeholderErr == nil && placeholderResp.Success() && placeholderResp.Data.MessageId != nil {
+		c.placeholders.Store(chatID, &progressState{
+			messageID: *placeholderResp.Data.MessageId,
+			lines:     []string{initialText},
+		})
+	}
 
 	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaRefs, metadata, senderInfo)
 	return nil

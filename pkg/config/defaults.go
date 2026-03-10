@@ -510,6 +510,9 @@ func DefaultConfig() *Config {
 			Enabled:    false,
 			MonitorUSB: true,
 		},
+		Features: FeaturesConfig{
+			Verbose: false,
+		},
 		BuildInfo: BuildInfo{
 			Version:   Version,
 			GitCommit: GitCommit,
