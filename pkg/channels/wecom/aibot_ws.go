@@ -2,7 +2,6 @@ package wecom
 
 import (
 	"context"
-	"crypto/md5"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -43,10 +42,6 @@ const (
 
 	// wsImageDownloadTimeout caps the time we spend downloading an inbound image.
 	wsImageDownloadTimeout = 30 * time.Second
-
-	// wsMediaWaitTimeout is how long the goroutine waits for images (delivered via
-	// SendMedia → mediaCh) AFTER sending the text finish frame, before giving up.
-	wsMediaWaitTimeout = 500 * time.Millisecond
 )
 
 // WeComAIBotWSChannel implements channels.Channel for WeCom AI Bot using the
@@ -64,8 +59,9 @@ type WeComAIBotWSChannel struct {
 	conn   *websocket.Conn
 	connMu sync.Mutex
 
-	// tasks holds one live agent task per chatID.
-	// A new message for the same chat cancels the previous task.
+	// tasks holds one live agent task per req_id (WeCom turn identifier).
+	// Each inbound message gets a unique req_id, so concurrent messages are
+	// handled independently without canceling each other.
 	tasks   map[string]*wsTask
 	tasksMu sync.Mutex
 
@@ -73,23 +69,6 @@ type WeComAIBotWSChannel struct {
 	// Used only for subscribe/ping command-response pairs.
 	reqPending   map[string]chan wsEnvelope
 	reqPendingMu sync.Mutex
-
-	// lastReqIDs records the most recent req_id per chat so that SendMedia can
-	// send images even after the stream has finished.
-	lastReqIDs   map[string]wsReqIDRecord
-	lastReqIDsMu sync.Mutex
-
-	// tasksByMsgID allows Send() to route a response to the exact task that
-	// originated from a given inbound message ID, even if a newer task has
-	// since replaced it in the tasks map (concurrent-message race prevention).
-	// Protected by tasksMu.
-	tasksByMsgID map[string]*wsTask
-}
-
-// wsReqIDRecord stores a req_id and its expiry time.
-type wsReqIDRecord struct {
-	ReqID     string
-	ExpiresAt time.Time
 }
 
 // wsTask tracks one in-progress agent reply for a single chat turn.
@@ -213,12 +192,10 @@ func newWeComAIBotWSChannel(
 	)
 
 	return &WeComAIBotWSChannel{
-		BaseChannel:  base,
-		config:       cfg,
-		tasks:        make(map[string]*wsTask),
-		tasksByMsgID: make(map[string]*wsTask),
-		reqPending:   make(map[string]chan wsEnvelope),
-		lastReqIDs:   make(map[string]wsReqIDRecord),
+		BaseChannel: base,
+		config:      cfg,
+		tasks:       make(map[string]*wsTask),
+		reqPending:  make(map[string]chan wsEnvelope),
 	}, nil
 }
 
@@ -261,21 +238,14 @@ func (c *WeComAIBotWSChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 		return channels.ErrNotRunning
 	}
 
+	// msg.ChatID carries the inbound req_id (set by dispatchWSAgentTask).
 	c.tasksMu.Lock()
-	var task *wsTask
-	// Prefer exact per-message routing to avoid stale responses going to the
-	// wrong (newer) task when two messages arrive in rapid succession.
-	if msg.MessageID != "" {
-		task = c.tasksByMsgID[msg.MessageID]
-	}
-	if task == nil {
-		task = c.tasks[msg.ChatID]
-	}
+	task := c.tasks[msg.ChatID]
 	c.tasksMu.Unlock()
 
 	if task == nil {
-		logger.DebugCF("wecom_aibot", "Send: no active task for chat (may have finished or timed out)",
-			map[string]any{"chat_id": msg.ChatID, "message_id": msg.MessageID})
+		logger.DebugCF("wecom_aibot", "Send: no active task for req_id (may have finished or timed out)",
+			map[string]any{"req_id": msg.ChatID})
 		return nil
 	}
 
@@ -294,46 +264,6 @@ func (c *WeComAIBotWSChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
-	}
-	return nil
-}
-
-// SendMedia implements channels.MediaSender.
-// if there is an active task for this chat, media is sent to the task's mediaCh and will be delivered after the text reply.
-func (c *WeComAIBotWSChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
-	if !c.IsRunning() {
-		return channels.ErrNotRunning
-	}
-	c.tasksMu.Lock()
-	task := c.tasks[msg.ChatID]
-	c.tasksMu.Unlock()
-	logger.InfoCF("wecom_aibot", "SendMedia called",
-		map[string]any{"chat_id": msg.ChatID, "parts": len(msg.Parts), "has_task": task != nil})
-	if task != nil {
-		select {
-		case task.mediaCh <- msg.Parts:
-			return nil
-		case <-task.ctx.Done():
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			logger.DebugCF("wecom_aibot", "SendMedia: mediaCh full or task done", map[string]any{"chat_id": msg.ChatID})
-		}
-	}
-	reqID := c.getLastReqID(msg.ChatID)
-	if reqID == "" {
-		logger.WarnCF("wecom_aibot", "SendMedia: no active req_id for chat, dropping media",
-			map[string]any{"chat_id": msg.ChatID})
-		return nil
-	}
-	store := c.GetMediaStore()
-	if store == nil {
-		return nil
-	}
-	for _, part := range msg.Parts {
-		if part.Type == "image" {
-			c.sendWSStandaloneImage(reqID, part, store)
-		}
 	}
 	return nil
 }
@@ -745,9 +675,11 @@ func (c *WeComAIBotWSChannel) dispatchWSAgentTask(
 	if userID == "" {
 		userID = "unknown"
 	}
-	chatID := msg.ChatID
-	if chatID == "" {
-		chatID = userID
+	// actualChatID is the real WeCom chat/user ID used for peer identification.
+	// reqID is used as the routing chatID so each turn is independently addressable.
+	actualChatID := msg.ChatID
+	if actualChatID == "" {
+		actualChatID = userID
 	}
 
 	streamID := wsGenerateID()
@@ -755,7 +687,7 @@ func (c *WeComAIBotWSChannel) dispatchWSAgentTask(
 
 	task := &wsTask{
 		ReqID:       reqID,
-		ChatID:      chatID,
+		ChatID:      actualChatID,
 		StreamID:    streamID,
 		CreatedTime: time.Now(),
 		answerCh:    make(chan string, 1),
@@ -765,19 +697,12 @@ func (c *WeComAIBotWSChannel) dispatchWSAgentTask(
 	}
 
 	c.tasksMu.Lock()
-	// Cancel any previous task for this chat (user sent a new message mid-reply).
-	if prev, ok := c.tasks[chatID]; ok {
-		prev.cancel()
-	}
-	c.tasks[chatID] = task
-	// Also register by inbound message ID for precise response routing.
-	if msg.MsgID != "" {
-		c.tasksByMsgID[msg.MsgID] = task
-	}
+	// Each req_id is unique per WeCom turn; tasks run concurrently, no cancellation.
+	c.tasks[reqID] = task
 	c.tasksMu.Unlock()
 
-	// Record this reqID so SendMedia can route images even after the stream closes.
-	c.recordLastReqID(chatID, reqID)
+	logger.DebugCF("wecom_aibot", "Registered new agent task",
+		map[string]any{"chat_id": actualChatID, "req_id": reqID, "stream_id": streamID})
 
 	// Send an empty stream opening frame (finish=false) immediately.
 	c.wsSendStreamChunk(reqID, streamID, false, "")
@@ -786,11 +711,8 @@ func (c *WeComAIBotWSChannel) dispatchWSAgentTask(
 		defer func() {
 			taskCancel()
 			c.tasksMu.Lock()
-			if c.tasks[chatID] == task {
-				delete(c.tasks, chatID)
-			}
-			if msg.MsgID != "" && c.tasksByMsgID[msg.MsgID] == task {
-				delete(c.tasksByMsgID, msg.MsgID)
+			if c.tasks[reqID] == task {
+				delete(c.tasks, reqID)
 			}
 			c.tasksMu.Unlock()
 		}()
@@ -805,16 +727,18 @@ func (c *WeComAIBotWSChannel) dispatchWSAgentTask(
 		if msg.ChatType == "group" {
 			peerKind = "group"
 		}
-		peer := bus.Peer{Kind: peerKind, ID: chatID}
+		peer := bus.Peer{Kind: peerKind, ID: actualChatID}
 		metadata := map[string]string{
 			"channel":   "wecom_aibot",
+			"chat_id":   actualChatID,
 			"chat_type": msg.ChatType,
 			"msg_type":  msg.MsgType,
 			"msgid":     msg.MsgID,
 			"aibotid":   msg.AIBotID,
 			"stream_id": streamID,
 		}
-		c.HandleMessage(taskCtx, peer, msg.MsgID, userID, chatID,
+		// Pass reqID as chatID: OutboundMessage.ChatID = reqID → Send() finds tasks[reqID].
+		c.HandleMessage(taskCtx, peer, reqID, userID, reqID,
 			content, mediaRefs, metadata, sender)
 
 		// Wait for the agent reply. While waiting, send periodic finish=false
@@ -834,35 +758,18 @@ func (c *WeComAIBotWSChannel) dispatchWSAgentTask(
 		for {
 			select {
 			case answer := <-task.answerCh:
-				// 1. send final frame with finish=true; any media will come in subsequent frames (if at all)
+				// send final frame with finish=true; any media will come in subsequent frames (if at all)
 				c.wsSendStreamFinish(reqID, streamID, answer)
-				// 2. wait briefly for any media to arrive via SendMedia → mediaCh,
-				// and send each image in its own frame (WeCom does not support multiple images in one frame,
-				// and the agent may have sent them at different times)
-				var mediaParts []bus.MediaPart
-				select {
-				case mediaParts = <-task.mediaCh:
-					logger.InfoCF("wecom_aibot", "Sending queued media images",
-						map[string]any{"chat_id": chatID, "count": len(mediaParts)})
-				case <-time.After(wsMediaWaitTimeout):
-				}
-				if store := c.GetMediaStore(); store != nil {
-					for _, part := range mediaParts {
-						if part.Type == "image" {
-							c.sendWSStandaloneImage(reqID, part, store)
-						}
-					}
-				}
 				return
 			case <-ticker.C:
 				hint := waitHints[tickCount%len(waitHints)]
 				tickCount++
 				logger.DebugCF("wecom_aibot", "Sending stream progress hint",
-					map[string]any{"chat_id": chatID, "tick": tickCount})
+					map[string]any{"chat_id": actualChatID, "tick": tickCount})
 				c.wsSendStreamChunk(reqID, streamID, false, hint)
 			case <-deadlineTimer.C:
 				logger.WarnCF("wecom_aibot", "Stream deadline reached without agent reply",
-					map[string]any{"chat_id": chatID, "stream_id": streamID})
+					map[string]any{"chat_id": actualChatID, "stream_id": streamID})
 				c.wsSendStreamFinish(reqID, streamID,
 					"⏳ Processing is taking longer than expected. Please resend your message to try again.")
 				return
@@ -982,61 +889,6 @@ func (c *WeComAIBotWSChannel) cancelAllTasks() {
 // It is package-level (not a method) so it can be shared by both channel modes.
 func wsGenerateID() string {
 	return generateRandomID(10)
-}
-
-// ---- req_id tracking (for SendMedia after stream close) ----
-
-// recordLastReqID stores the req_id for chatID with a TTL slightly beyond the
-// stream max duration so that SendMedia can find it after finish=true is sent.
-func (c *WeComAIBotWSChannel) recordLastReqID(chatID, reqID string) {
-	c.lastReqIDsMu.Lock()
-	c.lastReqIDs[chatID] = wsReqIDRecord{
-		ReqID:     reqID,
-		ExpiresAt: time.Now().Add(wsStreamMaxDuration + 2*time.Minute),
-	}
-	c.lastReqIDsMu.Unlock()
-}
-
-// getLastReqID returns the most recent req_id for chatID, or "" if none/expired.
-func (c *WeComAIBotWSChannel) getLastReqID(chatID string) string {
-	c.lastReqIDsMu.Lock()
-	r, ok := c.lastReqIDs[chatID]
-	c.lastReqIDsMu.Unlock()
-	if !ok || time.Now().After(r.ExpiresAt) {
-		return ""
-	}
-	return r.ReqID
-}
-
-// ---- Image send helpers ----
-
-// sendWSStandaloneImage reads a media part from store and sends it as a
-// standalone aibot_respond_msg with msgtype "image".
-func (c *WeComAIBotWSChannel) sendWSStandaloneImage(reqID string, part bus.MediaPart, store media.MediaStore) {
-	localPath, err := store.Resolve(part.Ref)
-	if err != nil {
-		logger.ErrorCF("wecom_aibot", "SendMedia: resolve failed", map[string]any{"ref": part.Ref, "error": err})
-		return
-	}
-	data, err := os.ReadFile(localPath)
-	if err != nil {
-		logger.ErrorCF("wecom_aibot", "SendMedia: read file failed", map[string]any{"path": localPath, "error": err})
-		return
-	}
-	hash := md5.Sum(data)
-	logger.InfoCF("wecom_aibot", "Sending standalone image",
-		map[string]any{"req_id": reqID, "path": localPath, "bytes": len(data)})
-	c.writeWS(wsCommand{
-		Cmd:     "aibot_respond_msg",
-		Headers: wsHeaders{ReqID: reqID},
-		Body: wsRespondMsgBody{
-			MsgType: "image",
-			Image: &wsImageContent{
-				Base64: base64.StdEncoding.EncodeToString(data),
-				MD5:    fmt.Sprintf("%x", hash),
-			},
-		},
-	})
 }
 
 // ---- Inbound image download helpers ----
