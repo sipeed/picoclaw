@@ -336,15 +336,17 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				}
 
 				if response != "" {
-					// Check if the message tool already sent a response during this round.
+					// Check if the message tool already sent a response to the SAME chat during this round.
 					// If so, skip publishing to avoid duplicate messages to the user.
+					// Only skip when the target chat_id matches — sending to a different chat
+					// (e.g. a newly created group) should not suppress the reply to the original chat.
 					// Use default agent's tools to check (message tool is shared).
 					alreadySent := false
 					defaultAgent := al.registry.GetDefaultAgent()
 					if defaultAgent != nil {
 						if tool, ok := defaultAgent.Tools.Get("message"); ok {
 							if mt, ok := tool.(*tools.MessageTool); ok {
-								alreadySent = mt.HasSentInRound()
+								alreadySent = mt.HasSentInRound() && mt.SentToChatID() == msg.ChatID
 							}
 						}
 					}
