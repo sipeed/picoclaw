@@ -265,6 +265,12 @@ func (sm *SessionManager) loadSessions() error {
 	return nil
 }
 
+// Close is a no-op for the in-memory SessionManager; it satisfies the
+// SessionStore interface so callers can release resources uniformly.
+func (sm *SessionManager) Close() error {
+	return nil
+}
+
 // SetHistory updates the messages of a session.
 func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 	sm.mu.Lock()
