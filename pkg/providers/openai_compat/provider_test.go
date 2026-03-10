@@ -523,6 +523,27 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	if got := normalizeModel("vivgrid/auto", "https://api.vivgrid.com/v1"); got != "auto" {
 		t.Fatalf("normalizeModel(vivgrid auto) = %q, want %q", got, "auto")
 	}
+
+	// Bug fix: qwen/qwen3-235b-a22b-2507 sent to openrouter.ai must be preserved in full
+	if got := normalizeModel("qwen/qwen3-235b-a22b-2507", "https://openrouter.ai/api/v1"); got != "qwen/qwen3-235b-a22b-2507" {
+		t.Fatalf("normalizeModel(qwen@openrouter) = %q, want %q", got, "qwen/qwen3-235b-a22b-2507")
+	}
+	// Same prefix, different (native) provider: strip the prefix
+	if got := normalizeModel("qwen/qwen3-235b-a22b-2507", "https://dashscope.aliyuncs.com/compatible-mode/v1"); got != "qwen3-235b-a22b-2507" {
+		t.Fatalf("normalizeModel(qwen@dashscope) = %q, want %q", got, "qwen3-235b-a22b-2507")
+	}
+	// openai/ prefix should be stripped for non-openrouter providers
+	if got := normalizeModel("openai/gpt-4o", "https://api.openai.com/v1"); got != "gpt-4o" {
+		t.Fatalf("normalizeModel(openai) = %q, want %q", got, "gpt-4o")
+	}
+	// anthropic/ prefix should be stripped for non-openrouter providers
+	if got := normalizeModel("anthropic/claude-sonnet-4.6", "https://api.anthropic.com/v1"); got != "claude-sonnet-4.6" {
+		t.Fatalf("normalizeModel(anthropic) = %q, want %q", got, "claude-sonnet-4.6")
+	}
+	// Models with unknown prefix are left unchanged
+	if got := normalizeModel("meta-llama/llama-3.1-8b", "https://openrouter.ai/api/v1"); got != "meta-llama/llama-3.1-8b" {
+		t.Fatalf("normalizeModel(meta-llama@openrouter) = %q, want %q", got, "meta-llama/llama-3.1-8b")
+	}
 }
 
 func TestProvider_RequestTimeoutDefault(t *testing.T) {
