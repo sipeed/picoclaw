@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"testing"
 
@@ -52,5 +53,95 @@ func TestNewPicoclawCommand(t *testing.T) {
 		assert.True(t, found, "unexpected subcommand %q", subcmd.Name())
 
 		assert.False(t, subcmd.Hidden)
+	}
+}
+
+func TestShouldShowBanner(t *testing.T) {
+	// Save original args to restore later
+	originalArgs := os.Args
+	defer func() { os.Args = originalArgs }()
+
+	tests := []struct {
+		name     string
+		args     []string
+		envVar   string
+		expected bool
+	}{
+		{
+			name:     "default shows banner",
+			args:     []string{"picoclaw"},
+			envVar:   "",
+			expected: true,
+		},
+		{
+			name:     "normal command shows banner",
+			args:     []string{"picoclaw", "version"},
+			envVar:   "",
+			expected: true,
+		},
+		{
+			name:     "__complete suppresses banner",
+			args:     []string{"picoclaw", "__complete", "ver"},
+			envVar:   "",
+			expected: false,
+		},
+		{
+			name:     "__completeNoDesc suppresses banner",
+			args:     []string{"picoclaw", "__completeNoDesc", "ver"},
+			envVar:   "",
+			expected: false,
+		},
+		{
+			name:     "completion command suppresses banner",
+			args:     []string{"picoclaw", "completion", "bash"},
+			envVar:   "",
+			expected: false,
+		},
+		{
+			name:     "PICOCLAW_NO_BANNER=1 suppresses banner",
+			args:     []string{"picoclaw", "version"},
+			envVar:   "1",
+			expected: false,
+		},
+		{
+			name:     "PICOCLAW_NO_BANNER=true suppresses banner",
+			args:     []string{"picoclaw", "version"},
+			envVar:   "true",
+			expected: false,
+		},
+		{
+			name:     "PICOCLAW_NO_BANNER=TRUE suppresses banner",
+			args:     []string{"picoclaw", "version"},
+			envVar:   "TRUE",
+			expected: false,
+		},
+		{
+			name:     "PICOCLAW_NO_BANNER=0 does not suppress banner",
+			args:     []string{"picoclaw", "version"},
+			envVar:   "0",
+			expected: true,
+		},
+		{
+			name:     "PICOCLAW_NO_BANNER=false does not suppress banner",
+			args:     []string{"picoclaw", "version"},
+			envVar:   "false",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Args = tt.args
+
+			if tt.envVar != "" {
+				t.Setenv("PICOCLAW_NO_BANNER", tt.envVar)
+			} else {
+				// Clear env var if not set in test
+				os.Unsetenv("PICOCLAW_NO_BANNER")
+			}
+
+			result := shouldShowBanner()
+			assert.Equal(t, tt.expected, result)
+		})
 	}
 }

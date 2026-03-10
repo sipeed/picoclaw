@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -61,8 +62,31 @@ const (
 		"\033[0m\r\n"
 )
 
+// shouldShowBanner returns true if the banner should be displayed.
+// Banner is suppressed when:
+// - PICOCLAW_NO_BANNER environment variable is set to "1" or "true"
+// - Running shell completion commands (e.g., __complete, completion)
+func shouldShowBanner() bool {
+	// Check environment variable
+	if noBanner := os.Getenv("PICOCLAW_NO_BANNER"); noBanner == "1" || strings.ToLower(noBanner) == "true" {
+		return false
+	}
+
+	// Check for shell completion commands
+	// Cobra uses "__complete" and "__completeNoDesc" for completion
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(arg, "__complete") || arg == "completion" {
+			return false
+		}
+	}
+
+	return true
+}
+
 func main() {
-	fmt.Printf("%s", banner)
+	if shouldShowBanner() {
+		fmt.Printf("%s", banner)
+	}
 	cmd := NewPicoclawCommand()
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
