@@ -1,34 +1,66 @@
 services:
   # ─────────────────────────────────────────────
-  # PicoClaw Agent (one-shot query)
-  #   docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Hello"
+  # LiteLLM Proxy (translates OpenAI format → AWS Bedrock)
   # ─────────────────────────────────────────────
-  picoclaw-agent:
-    image: docker.io/sipeed/picoclaw:latest
-    container_name: picoclaw-agent
-    profiles:
-      - agent
-    # Uncomment to access host network; leave commented unless needed.
-    #extra_hosts:
-    #  - "host.docker.internal:host-gateway"
-    volumes:
-      - ./data:/root/.picoclaw
-    entrypoint: ["picoclaw", "agent"]
-    stdin_open: true
-    tty: true
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm
+    restart: on-failure
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION_NAME=${AWS_REGION_NAME:-ap-southeast-1}
+    command: ["--model", "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0", "--port", "4000"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   # ─────────────────────────────────────────────
-  # PicoClaw Gateway (Long-running Bot)
-  #   docker compose -f docker/docker-compose.yml up picoclaw-gateway
+  # PicoClaw Gateway (Long-running, persistent)
+  #   Start:  docker compose --env-file .env --profile gateway up -d
+  #   Logs:   docker logs picoclaw-gateway -f
+  #   Stop:   docker compose --env-file .env --profile gateway down
   # ─────────────────────────────────────────────
   picoclaw-gateway:
-    image: docker.io/sipeed/picoclaw:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: picoclaw-gateway
     restart: on-failure
     profiles:
       - gateway
-    # Uncomment to access host network; leave commented unless needed.
-    #extra_hosts:
-    #  - "host.docker.internal:host-gateway"
+    depends_on:
+      litellm:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION_NAME=${AWS_REGION_NAME:-ap-southeast-1}
     volumes:
-      - ./data:/root/.picoclaw
+      - ./data:/home/picoclaw/.picoclaw
+
+  # ─────────────────────────────────────────────
+  # PicoClaw Agent (one-shot, connects to gateway via pico channel)
+  #   docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m "Hello"
+  # ─────────────────────────────────────────────
+  picoclaw-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: picoclaw-agent
+    profiles:
+      - gateway
+    depends_on:
+      - picoclaw-gateway
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION_NAME=${AWS_REGION_NAME:-ap-southeast-1}
+    volumes:
+      - ./data:/home/picoclaw/.picoclaw
+    entrypoint: ["picoclaw", "agent"]
+    stdin_open: true
+    tty: true
