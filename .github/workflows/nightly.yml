@@ -1,0 +1,204 @@
+name: Nightly Build
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  create-tag:
+    name: Create Git Tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      changelog: ${{ steps.version.outputs.changelog }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Generate and push tag
+        id: version
+        run: |
+          DATE=$(date -u +%Y%m%d)
+          SHA=$(git rev-parse --short=8 HEAD)
+          BASE_VERSION=$(git describe --tags --match "v*" --exclude "*nightly*" --abbrev=0 2>/dev/null || true)
+          if [ -z "$BASE_VERSION" ] || [ "$BASE_VERSION" = "v0.0.0" ]; then
+            TAG="v0.0.0-nightly.${DATE}.${SHA}"
+          else
+            TAG="${BASE_VERSION}-nightly.${DATE}.${SHA}"
+          fi
+          VERSION=$TAG
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists, reusing existing tag"
+          else
+            git tag -a "$TAG" -m "Nightly build $VERSION"
+          fi
+          git push origin "$TAG"
+          
+          COMPARE_URL="https://github.com/${{ github.repository }}/commits/${TAG}"
+          if [ -n "$BASE_VERSION" ] && [ "$BASE_VERSION" != "v0.0.0" ]; then
+            COMPARE_URL="https://github.com/${{ github.repository }}/compare/${BASE_VERSION}...${TAG}"
+          fi
+          echo "changelog=**Full Changelog**: $COMPARE_URL" >> "$GITHUB_OUTPUT"
+          
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: GoReleaser Release
+    needs: create-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.create-tag.outputs.tag }}
+
+      - name: Setup Go from go.mod
+        id: setup-go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        run: corepack enable && corepack prepare pnpm@latest --activate
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: ~> v2
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY }}
+          GOVERSION: ${{ steps.setup-go.outputs.go-version }}
+          NIGHTLY_BUILD: "true"
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+
+  update-rolling:
+    name: Update Rolling Nightly
+    needs: [create-tag, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Update nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-tag.outputs.tag }}
+          TITLE: ${{ needs.create-tag.outputs.version }}
+        run: |
+          CHANGELOG='${{ needs.create-tag.outputs.changelog }}'
+          NOTES=$(cat <<EOF
+          Nightly build for **${TITLE}**
+          
+          This is an automated build and may be unstable. Use with caution.
+          
+          ${CHANGELOG}
+          EOF
+          )
+          
+          # Download assets from the newly created release if it exists,
+          # otherwise fall back to using locally built dist/ artifacts.
+          mkdir -p build
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Downloading assets from GitHub release for $TAG..."
+            gh release download "$TAG" --dir build
+          else
+            echo "GitHub release for $TAG not found; falling back to local dist/ artifacts..."
+            if [ -d "dist" ]; then
+              cp -R dist/* build/
+            else
+              echo "Error: no GitHub release for $TAG and no local dist/ directory found." >&2
+              exit 1
+            fi
+          fi
+          
+          # Delete existing nightly release and tag to avoid conflicts
+          echo "Deleting existing nightly release and tag..."
+          gh release delete nightly --cleanup-tag -y || true
+          git push origin :refs/tags/nightly || true
+          
+          gh release create nightly \
+            --title "Nightly Build" \
+            --notes "$NOTES" \
+            --target "${{ github.sha }}" \
+            --prerelease \
+            build/*
+
+          echo "Cleaning up old nightly releases (keeping only the most recent)..."
+          gh release list --limit 100 --json tagName -q '.[].tagName | select(contains("-nightly."))' | tail -n +2 | while read -r old_tag; do
+            if [ -n "$old_tag" ] && [ "$old_tag" != "$TAG" ]; then
+              echo "Deleting old nightly release: $old_tag"
+              gh release delete "$old_tag" --cleanup-tag -y || true
+            fi
+          done
+          
+          echo "Cleaning up old 'vX.X.X-nightly...' Docker images on GHCR..."
+          OWNER="${{ github.repository_owner }}"
+          PACKAGE_NAME="${{ github.event.repository.name }}"
+          
+          # Check if owner is an organization or user
+          ORG_TEST=$(gh api -H "Accept: application/vnd.github+json" /orgs/$OWNER 2>/dev/null || true)
+          if echo "$ORG_TEST" | grep -q '"login"'; then
+            ACCOUNT_TYPE="orgs"
+          else
+            ACCOUNT_TYPE="users"
+          fi
+          
+          PACKAGE_URL="/${ACCOUNT_TYPE}/${OWNER}/packages/container/${PACKAGE_NAME}/versions"
+          OLD_NIGHTLY_VERSIONS=$(gh api --paginate -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$PACKAGE_URL" \
+            --jq ". | map(select(any(.metadata.container.tags[]; contains(\"-nightly.\") and (. != \"nightly\") and (. != \"$TAG\")))) | .[].id" 2>/dev/null || true)
+            
+          for version_id in $OLD_NIGHTLY_VERSIONS; do
+            if [ -n "$version_id" ]; then
+              echo "Deleting Docker image version ID: $version_id"
+              gh api -X DELETE -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "/${ACCOUNT_TYPE}/${OWNER}/packages/container/${PACKAGE_NAME}/versions/$version_id" || true
+            fi
+          done

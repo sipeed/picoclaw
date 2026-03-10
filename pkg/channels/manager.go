@@ -61,7 +61,9 @@ var channelRateConfig = map[string]float64{
 	"telegram": 20,
 	"discord":  1,
 	"slack":    1,
+	"matrix":   2,
 	"line":     10,
+	"qq":       5,
 	"irc":      2,
 }
 
@@ -242,6 +244,13 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.Slack.Enabled && m.config.Channels.Slack.BotToken != "" {
 		m.initChannel("slack", "Slack")
+	}
+
+	if m.config.Channels.Matrix.Enabled &&
+		m.config.Channels.Matrix.Homeserver != "" &&
+		m.config.Channels.Matrix.UserID != "" &&
+		m.config.Channels.Matrix.AccessToken != "" {
+		m.initChannel("matrix", "Matrix")
 	}
 
 	if m.config.Channels.LINE.Enabled && m.config.Channels.LINE.ChannelAccessToken != "" {
