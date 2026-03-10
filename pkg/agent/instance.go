@@ -100,7 +100,6 @@ func NewAgentInstance(
 	}
 
 	if cfg.Tools.IsToolEnabled("edit_file") {
-	}
 		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("append_file") {
