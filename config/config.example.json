@@ -194,8 +194,13 @@
       "nickserv_password": "",
       "sasl_user": "",
       "sasl_password": "",
-      "channels": ["#mychannel"],
-      "request_caps": ["server-time", "message-tags"],
+      "channels": [
+        "#mychannel"
+      ],
+      "request_caps": [
+        "server-time",
+        "message-tags"
+      ],
       "allow_from": [],
       "group_trigger": {
         "mention_only": true
@@ -316,6 +321,13 @@
     },
     "mcp": {
       "enabled": false,
+      "discovery": {
+        "enabled": false,
+        "ttl": 5,
+        "max_search_results": 5,
+        "use_bm25": true,
+        "use_regex": false
+      },
       "servers": {
         "context7": {
           "enabled": false,

@@ -318,7 +318,13 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						}
 
 						mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
-						agent.Tools.Register(mcpTool)
+
+						if al.cfg.Tools.MCP.Discovery.Enabled {
+							agent.Tools.RegisterHidden(mcpTool)
+						} else {
+							agent.Tools.Register(mcpTool)
+						}
+
 						totalRegistrations++
 						logger.DebugCF("agent", "Registered MCP tool",
 							map[string]any{
@@ -337,6 +343,47 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					"total_registrations": totalRegistrations,
 					"agent_count":         agentCount,
 				})
+
+			// Initializes Discovery Tools only if enabled by configuration
+			if al.cfg.Tools.MCP.Enabled && al.cfg.Tools.MCP.Discovery.Enabled {
+				useBM25 := al.cfg.Tools.MCP.Discovery.UseBM25
+				useRegex := al.cfg.Tools.MCP.Discovery.UseRegex
+
+				// Fail fast: If discovery is enabled but no search method is turned on
+				if !useBM25 && !useRegex {
+					return fmt.Errorf(
+						"tool discovery is enabled but neither 'use_bm25' nor 'use_regex' is set to true in the configuration",
+					)
+				}
+
+				ttl := al.cfg.Tools.MCP.Discovery.TTL
+				if ttl <= 0 {
+					ttl = 5 // Default value
+				}
+
+				maxSearchResults := al.cfg.Tools.MCP.Discovery.MaxSearchResults
+				if maxSearchResults <= 0 {
+					maxSearchResults = 5 // Default value
+				}
+
+				logger.InfoCF("agent", "Initializing tool discovery", map[string]any{
+					"bm25": useBM25, "regex": useRegex, "ttl": ttl, "max_results": maxSearchResults,
+				})
+
+				for _, agentID := range agentIDs {
+					agent, ok := al.registry.GetAgent(agentID)
+					if !ok {
+						continue
+					}
+
+					if useRegex {
+						agent.Tools.Register(tools.NewRegexSearchTool(agent.Tools, ttl, maxSearchResults))
+					}
+					if useBM25 {
+						agent.Tools.Register(tools.NewBM25SearchTool(agent.Tools, ttl, maxSearchResults))
+					}
+				}
+			}
 		}
 	}
 
@@ -634,18 +681,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	route, agent, routeErr := al.resolveMessageRoute(msg)
 
-	// Compute session key upfront so session-scoped commands (/cmd, /pico, /clear…)
-	// get the same key that the agent loop will use. Falls back to msg.SessionKey when
-	// routing fails, which is fine — context-dependent commands guard against nil agent.
+	// Resolve session key from route, while preserving explicit agent-scoped keys.
 	sessionKey := resolveScopeKey(route, msg.SessionKey)
-
-	// Commands are checked before requiring a successful route.
-	// Global commands (/help, /show, /switch) work even when routing fails;
-	// context-dependent commands check their own Runtime fields and report
-	// "unavailable" when the required capability is nil.
-	if response, handled := al.handleCommand(ctx, msg, agent, sessionKey); handled {
-		return response, nil
-	}
 
 	if routeErr != nil {
 		return "", routeErr
@@ -668,24 +705,31 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"route_channel": route.Channel,
 		})
 
+	opts := processOptions{
+		SessionKey:      sessionKey,
+		Channel:         msg.Channel,
+		ChatID:          msg.ChatID,
+		UserMessage:     msg.Content,
+		Media:           msg.Media,
+		DefaultResponse: defaultResponse,
+		EnableSummary:   true,
+		SendResponse:    false,
+		WorkingDir:      msg.Metadata["work_dir"],
+	}
+
+	// context-dependent commands check their own Runtime fields and report
+	// "unavailable" when the required capability is nil.
+	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {
+		return response, nil
+	}
+
 	// Dispatch based on current session mode
 	content := strings.TrimSpace(msg.Content)
 	switch al.getSessionMode(sessionKey) {
 	case modeCmd:
 		return al.executeCmdMode(ctx, agent, content, sessionKey, msg.Channel, msg.ChatID)
-
 	default: // modePico
-		return al.runAgentLoop(ctx, agent, processOptions{
-			SessionKey:      sessionKey,
-			Channel:         msg.Channel,
-			ChatID:          msg.ChatID,
-			UserMessage:     msg.Content,
-			Media:           msg.Media,
-			DefaultResponse: defaultResponse,
-			EnableSummary:   true,
-			SendResponse:    false,
-			WorkingDir:      msg.Metadata["work_dir"],
-		})
+		return al.runAgentLoop(ctx, agent, opts)
 	}
 }
 
@@ -1329,6 +1373,17 @@ func (al *AgentLoop) runLLMIteration(
 			// Save tool result message to session
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
+
+		// Tick down TTL of discovered tools after processing tool results.
+		// Only reached when tool calls were made (the loop continues);
+		// the break on no-tool-call responses skips this.
+		// NOTE: This is safe because processMessage is sequential per agent.
+		// If per-agent concurrency is added, TTL consistency between
+		// ToProviderDefs and Get must be re-evaluated.
+		agent.Tools.TickTTL()
+		logger.DebugCF("agent", "TTL tick after tool execution", map[string]any{
+			"agent_id": agent.ID, "iteration": iteration,
+		})
 	}
 
 	return finalContent, iteration, nil
@@ -1775,7 +1830,7 @@ func (al *AgentLoop) handleCommand(
 	ctx context.Context,
 	msg bus.InboundMessage,
 	agent *AgentInstance,
-	sessionKey string,
+	opts *processOptions,
 ) (string, bool) {
 	if !commands.HasCommandPrefix(msg.Content) {
 		return "", false
@@ -1785,7 +1840,7 @@ func (al *AgentLoop) handleCommand(
 		return "", false
 	}
 
-	rt := al.buildCommandsRuntime(agent, sessionKey, msg)
+	rt := al.buildCommandsRuntime(agent, opts)
 	executor := commands.NewExecutor(al.cmdRegistry, rt)
 
 	var commandReply string
@@ -1814,7 +1869,7 @@ func (al *AgentLoop) handleCommand(
 	}
 }
 
-func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey string, msg bus.InboundMessage) *commands.Runtime {
+func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOptions) *commands.Runtime {
 	rt := &commands.Runtime{
 		Config:          al.cfg,
 		ListAgentIDs:    al.registry.ListAgentIDs,
@@ -1837,7 +1892,7 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey strin
 
 		// Session mode (session-scoped)
 		GetSessionMode: func() string {
-			if al.getSessionMode(sessionKey) == modeCmd {
+			if al.getSessionMode(opts.SessionKey) == modeCmd {
 				return "cmd"
 			}
 			return "pico"
@@ -1846,23 +1901,23 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey strin
 			if agent == nil {
 				return "Command unavailable in current context."
 			}
-			al.setSessionMode(sessionKey, modeCmd)
-			workDir := al.getSessionWorkDir(sessionKey)
+			al.setSessionMode(opts.SessionKey, modeCmd)
+			workDir := al.getSessionWorkDir(opts.SessionKey)
 			if workDir == "" {
 				workDir = agent.Workspace
-				al.setSessionWorkDir(sessionKey, workDir)
+				al.setSessionWorkDir(opts.SessionKey, workDir)
 			}
 			return fmt.Sprintf("```\n%s$\n```\nType `/pico` to return to chat mode.", shortenHomePath(workDir))
 		},
 		SetModePico: func() string {
-			al.setSessionMode(sessionKey, modePico)
+			al.setSessionMode(opts.SessionKey, modePico)
 			return "Switched to chat mode. Type /cmd to enter command mode."
 		},
 		GetWorkDir: func() string {
 			if agent == nil {
 				return ""
 			}
-			workDir := al.getSessionWorkDir(sessionKey)
+			workDir := al.getSessionWorkDir(opts.SessionKey)
 			if workDir == "" {
 				return agent.Workspace
 			}
@@ -1880,7 +1935,7 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey strin
 			if agent == nil {
 				return "Command unavailable in current context."
 			}
-			workDir := al.getSessionWorkDir(sessionKey)
+			workDir := al.getSessionWorkDir(opts.SessionKey)
 			if workDir == "" {
 				workDir = agent.Workspace
 			}
@@ -1900,16 +1955,16 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey strin
 			if agent == nil {
 				return "", fmt.Errorf("no agent available")
 			}
-			workDir := al.getSessionWorkDir(sessionKey)
+			workDir := al.getSessionWorkDir(opts.SessionKey)
 			if workDir == "" {
 				workDir = agent.Workspace
 			}
 			return al.runAgentLoop(ctx, agent, processOptions{
-				SessionKey:      sessionKey + ":hipico",
-				Channel:         msg.Channel,
-				ChatID:          msg.ChatID,
+				SessionKey:      opts.SessionKey + ":hipico",
+				Channel:         opts.Channel,
+				ChatID:          opts.ChatID,
 				UserMessage:     message,
-				Media:           msg.Media,
+				Media:           opts.Media,
 				DefaultResponse: defaultResponse,
 				EnableSummary:   false,
 				SendResponse:    false,
@@ -1922,15 +1977,15 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey strin
 			if agent == nil {
 				return fmt.Errorf("no agent available")
 			}
-			agent.Sessions.TruncateHistory(sessionKey, 0)
-			agent.Sessions.SetSummary(sessionKey, "")
-			return agent.Sessions.Save(sessionKey)
+			agent.Sessions.TruncateHistory(opts.SessionKey, 0)
+			agent.Sessions.SetSummary(opts.SessionKey, "")
+			return agent.Sessions.Save(opts.SessionKey)
 		},
 		CompactSession: func() error {
 			if agent == nil {
 				return fmt.Errorf("no agent available")
 			}
-			al.summarizeSession(agent, sessionKey)
+			al.summarizeSession(agent, opts.SessionKey)
 			return nil
 		},
 	}
@@ -1944,6 +1999,7 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey strin
 			agent.Model = value
 			return oldModel, nil
 		}
+
 	}
 	return rt
 }
