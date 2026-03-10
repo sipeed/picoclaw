@@ -27,7 +27,14 @@ func switchCommand() Definition {
 					if err != nil {
 						return req.Reply(err.Error())
 					}
-					return req.Reply(fmt.Sprintf("Switched model from %s to %s", oldModel, value))
+					newModel := value
+					if rt.GetModelInfo != nil {
+						currentModel, _ := rt.GetModelInfo()
+						if currentModel != "" {
+							newModel = currentModel
+						}
+					}
+					return req.Reply(fmt.Sprintf("Switched model from %s to %s", oldModel, newModel))
 				},
 			},
 			{

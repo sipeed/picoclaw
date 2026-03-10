@@ -11,6 +11,9 @@ func TestSwitchModel_Success(t *testing.T) {
 		SwitchModel: func(value string) (string, error) {
 			return "old-model", nil
 		},
+		GetModelInfo: func() (string, string) {
+			return "openai/test-model", "openai"
+		},
 	}
 	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
@@ -25,7 +28,7 @@ func TestSwitchModel_Success(t *testing.T) {
 	if res.Outcome != OutcomeHandled {
 		t.Fatalf("outcome=%v, want=%v", res.Outcome, OutcomeHandled)
 	}
-	want := "Switched model from old-model to gpt-4"
+	want := "Switched model from old-model to openai/test-model"
 	if reply != want {
 		t.Fatalf("reply=%q, want=%q", reply, want)
 	}
@@ -239,6 +242,9 @@ func TestSwitch_BangPrefix(t *testing.T) {
 		SwitchModel: func(value string) (string, error) {
 			return "old", nil
 		},
+		GetModelInfo: func() (string, string) {
+			return "openai/test-model", "openai"
+		},
 	}
 	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
@@ -253,7 +259,7 @@ func TestSwitch_BangPrefix(t *testing.T) {
 	if res.Outcome != OutcomeHandled {
 		t.Fatalf("! prefix: outcome=%v, want=%v", res.Outcome, OutcomeHandled)
 	}
-	if reply != "Switched model from old to gpt-4" {
+	if reply != "Switched model from old to openai/test-model" {
 		t.Fatalf("! prefix: reply=%q, want success message", reply)
 	}
 }

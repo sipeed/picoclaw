@@ -25,7 +25,6 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
 	_ "github.com/sipeed/picoclaw/pkg/channels/slack"
 	_ "github.com/sipeed/picoclaw/pkg/channels/telegram"
-	tgchannel "github.com/sipeed/picoclaw/pkg/channels/telegram"
 	_ "github.com/sipeed/picoclaw/pkg/channels/wecom"
 	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp"
 	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp_native"
@@ -142,12 +141,6 @@ func gatewayCmd(debug bool) error {
 	if transcriber := voice.DetectTranscriber(cfg); transcriber != nil {
 		agentLoop.SetTranscriber(transcriber)
 		logger.InfoCF("voice", "Transcription enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
-	}
-
-	if telegramCh, ok := channelManager.GetChannel("telegram"); ok {
-		if tc, ok := telegramCh.(*tgchannel.TelegramChannel); ok {
-			tc.SetRegistry(agentLoop.GetRegistry())
-		}
 	}
 
 	enabledChannels := channelManager.GetEnabledChannels()

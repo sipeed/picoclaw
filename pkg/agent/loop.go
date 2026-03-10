@@ -1812,12 +1812,18 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 	}
 	if agent != nil {
 		rt.GetModelInfo = func() (string, string) {
-			return agent.Model, al.cfg.Agents.Defaults.Provider
+			provider := al.cfg.Agents.Defaults.Provider
+			if len(agent.Candidates) > 0 && agent.Candidates[0].Provider != "" {
+				provider = agent.Candidates[0].Provider
+			}
+			return agent.Model, provider
 		}
 		rt.SwitchModel = func(value string) (string, error) {
-			oldModel := agent.Model
-			agent.Model = value
-			return oldModel, nil
+			if al.registry == nil {
+				return "", fmt.Errorf("agent registry not initialized")
+			}
+			oldModel, _, err := al.registry.SwitchDefaultAgentModel(value)
+			return oldModel, err
 		}
 
 		rt.ClearHistory = func() error {

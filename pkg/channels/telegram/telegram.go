@@ -40,13 +40,12 @@ var (
 
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot      *telego.Bot
-	bh       *th.BotHandler
-	commands TelegramCommander
-	config   *config.Config
-	chatIDs  map[string]int64
-	ctx      context.Context
-	cancel   context.CancelFunc
+	bot     *telego.Bot
+	bh      *th.BotHandler
+	config  *config.Config
+	chatIDs map[string]int64
+	ctx     context.Context
+	cancel  context.CancelFunc
 
 	registerFunc     func(context.Context, []commands.Definition) error
 	commandRegCancel context.CancelFunc
@@ -96,15 +95,10 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 
 	return &TelegramChannel{
 		BaseChannel: base,
-		commands:    NewTelegramCommands(bot, cfg, nil),
 		bot:         bot,
 		config:      cfg,
 		chatIDs:     make(map[string]int64),
 	}, nil
-}
-
-func (c *TelegramChannel) SetRegistry(switcher AgentModelSwitcher) {
-	c.commands = NewTelegramCommands(c.bot, c.config, switcher)
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
@@ -128,25 +122,6 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	c.bh = bh
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Start(ctx, message)
-	}, th.CommandEqual("start"))
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Help(ctx, message)
-	}, th.CommandEqual("help"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Show(ctx, message)
-	}, th.CommandEqual("show"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.List(ctx, message)
-	}, th.CommandEqual("list"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Model(ctx, message)
-	}, th.CommandEqual("model"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.handleMessage(ctx, &message)
 	}, th.AnyMessage())
 
@@ -155,11 +130,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 		"username": c.bot.Username(),
 	})
 
-	commandDefs := append(commands.BuiltinDefinitions(), commands.Definition{
-		Name:        "model",
-		Description: "Show or switch the active model",
-	})
-	c.startCommandRegistration(c.ctx, commandDefs)
+	c.startCommandRegistration(c.ctx, commands.BuiltinDefinitions())
 
 	go func() {
 		if err = bh.Start(); err != nil {

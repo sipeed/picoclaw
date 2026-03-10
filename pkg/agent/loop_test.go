@@ -531,8 +531,21 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 				Workspace:         tmpDir,
 				Provider:          "openai",
 				Model:             "before-switch",
+				ModelName:         "test-openai-mini",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "test-openai-mini",
+				Model:     "openai/fake-openai-mini",
+				APIKey:    "test-openai-key",
+			},
+			{
+				ModelName: "test-qwen-plus",
+				Model:     "qwen/fake-qwen-plus",
+				APIKey:    "test-qwen-key",
 			},
 		},
 	}
@@ -546,13 +559,13 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 		Channel:  "telegram",
 		SenderID: "user1",
 		ChatID:   "chat1",
-		Content:  "/switch model to after-switch",
+		Content:  "/switch model to test-qwen-plus",
 		Peer: bus.Peer{
 			Kind: "direct",
 			ID:   "user1",
 		},
 	})
-	if !strings.Contains(switchResp, "Switched model from before-switch to after-switch") {
+	if !strings.Contains(switchResp, "Switched model from test-openai-mini to fake-qwen-plus") {
 		t.Fatalf("unexpected /switch reply: %q", switchResp)
 	}
 
@@ -566,7 +579,7 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 			ID:   "user1",
 		},
 	})
-	if !strings.Contains(showResp, "Current Model: after-switch (Provider: openai)") {
+	if !strings.Contains(showResp, "Current Model: fake-qwen-plus (Provider: qwen)") {
 		t.Fatalf("unexpected /show model reply after switch: %q", showResp)
 	}
 
