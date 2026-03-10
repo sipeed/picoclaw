@@ -233,6 +233,8 @@ func (sm *SessionManager) Save(key string) error {
 	}
 
 	sessionPath := filepath.Join(sm.storage, filename+".json")
+	bakPath := sessionPath + ".bak"
+
 	tmpFile, err := os.CreateTemp(sm.storage, "session-*.tmp")
 	if err != nil {
 		return err
@@ -262,7 +264,13 @@ func (sm *SessionManager) Save(key string) error {
 		return err
 	}
 
+	// If primary exists, rename it to .bak before applying the new version.
+	if _, err := os.Stat(sessionPath); err == nil {
+		_ = os.Rename(sessionPath, bakPath)
+	}
+
 	if err := os.Rename(tmpPath, sessionPath); err != nil {
+		_ = os.Rename(bakPath, sessionPath)
 		return err
 	}
 	cleanup = false
@@ -285,6 +293,8 @@ func (sm *SessionManager) loadSessions() error {
 		}
 
 		sessionPath := filepath.Join(sm.storage, file.Name())
+		bakPath := sessionPath + ".bak"
+
 		data, err := os.ReadFile(sessionPath)
 		if err != nil {
 			continue
@@ -292,6 +302,13 @@ func (sm *SessionManager) loadSessions() error {
 
 		var session Session
 		if err := json.Unmarshal(data, &session); err != nil {
+			// Try to recover from backup
+			if bakData, bakErr := os.ReadFile(bakPath); bakErr == nil {
+				if err := json.Unmarshal(bakData, &session); err == nil {
+					sm.sessions[session.Key] = &session
+					continue
+				}
+			}
 			continue
 		}
 

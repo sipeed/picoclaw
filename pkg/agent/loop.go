@@ -49,6 +49,7 @@ type AgentLoop struct {
 	transcriber    voice.Transcriber
 	cmdRegistry    *commands.Registry
 	version        string
+	wg             sync.WaitGroup
 }
 
 // processOptions configures how a message is processed
@@ -428,6 +429,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+}
+
+func (al *AgentLoop) Wait() {
+	al.wg.Wait()
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
@@ -1122,12 +1127,16 @@ func (al *AgentLoop) runLLMIteration(
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
-		go al.handleReasoning(
-			ctx,
-			response.Reasoning,
-			opts.Channel,
-			al.targetReasoningChannelID(opts.Channel),
-		)
+		al.wg.Add(1)
+		go func() {
+			defer al.wg.Done()
+			al.handleReasoning(
+				ctx,
+				response.Reasoning,
+				opts.Channel,
+				al.targetReasoningChannelID(opts.Channel),
+			)
+		}()
 
 		logger.DebugCF("agent", "LLM response",
 			map[string]any{
@@ -1402,7 +1411,9 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 	if len(newHistory) > agent.SummarizeMessageThreshold || tokenEstimate > threshold {
 		summarizeKey := agent.ID + ":" + sessionKey
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
+			al.wg.Add(1)
 			go func() {
+				defer al.wg.Done()
 				defer al.summarizing.Delete(summarizeKey)
 				logger.Debug("Memory threshold reached. Optimizing conversation history...")
 				al.summarizeSession(agent, sessionKey)

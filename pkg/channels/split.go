@@ -42,7 +42,11 @@ func SplitMessage(content string, maxLen int) []string {
 		end := start + effectiveLimit
 
 		// Find natural split point within the effective limit
-		msgEnd := findLastNewlineInRange(runes, start, end, 200)
+		// Try double-newline (\n\n) first for semantic paragraph splitting.
+		msgEnd := findLastDoubleNewlineInRange(runes, start, end, 300)
+		if msgEnd <= start {
+			msgEnd = findLastNewlineInRange(runes, start, end, 200)
+		}
 		if msgEnd <= start {
 			msgEnd = findLastSpaceInRange(runes, start, end, 100)
 		}
@@ -206,3 +210,16 @@ func findLastSpaceInRange(runes []rune, start, end, searchWindow int) int {
 	}
 	return start - 1
 }
+
+// findLastDoubleNewlineInRange finds the last \n\n within the last searchWindow runes
+// of the range runes[start:end]. Returns the absolute index of the second newline or start-1.
+func findLastDoubleNewlineInRange(runes []rune, start, end, searchWindow int) int {
+	searchStart := max(end-searchWindow, start)
+	for i := end - 1; i > searchStart; i-- {
+		if runes[i] == '\n' && runes[i-1] == '\n' {
+			return i
+		}
+	}
+	return start - 1
+}
+
