@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func NewVersionCommand() *cobra.Command {
@@ -22,8 +23,8 @@ func NewVersionCommand() *cobra.Command {
 }
 
 func printVersion() {
-	fmt.Printf("%s picoclaw %s\n", internal.Logo, internal.FormatVersion())
-	build, goVer := internal.FormatBuildInfo()
+	fmt.Printf("%s picoclaw %s\n", internal.Logo, config.FormatVersion())
+	build, goVer := config.FormatBuildInfo()
 	if build != "" {
 		fmt.Printf("  Build: %s\n", build)
 	}
