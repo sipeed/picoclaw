@@ -49,6 +49,8 @@ docs/plans/
 dist/
 *.vite/
 
+vendor/
+
 # Windows Application Icon/Resource
 *.syso
 
