@@ -1357,7 +1357,11 @@ func (al *AgentLoop) selectCandidates(
 			"score":       score,
 			"threshold":   agent.Router.Threshold(),
 		})
-	return agent.LightCandidates, agent.Router.LightModel()
+	resolvedModel := agent.Router.LightModel()
+	if len(agent.LightCandidates) > 0 && strings.TrimSpace(agent.LightCandidates[0].Model) != "" {
+		resolvedModel = agent.LightCandidates[0].Model
+	}
+	return agent.LightCandidates, resolvedModel
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
