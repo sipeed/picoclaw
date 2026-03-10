@@ -34,6 +34,10 @@ var (
 	logger       *Logger
 	once         sync.Once
 	mu           sync.RWMutex
+	
+	// componentFilter is a list of components to allow.
+	// If empty, all components are allowed.
+	componentFilter map[string]bool
 )
 
 type Logger struct {
@@ -67,6 +71,25 @@ func GetLevel() LogLevel {
 	return currentLevel
 }
 
+func SetComponentFilter(filter string) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if filter == "" {
+		componentFilter = nil
+		return
+	}
+
+	componentFilter = make(map[string]bool)
+	parts := strings.Split(filter, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			componentFilter[p] = true
+		}
+	}
+}
+
 func EnableFileLogging(filePath string) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -97,7 +120,18 @@ func DisableFileLogging() {
 }
 
 func logMessage(level LogLevel, component string, message string, fields map[string]any) {
-	if level < currentLevel {
+	mu.RLock()
+	// Check filter first if it exists
+	if componentFilter != nil && component != "" {
+		if !componentFilter[component] {
+			mu.RUnlock()
+			return
+		}
+	}
+	lvl := currentLevel
+	mu.RUnlock()
+
+	if level < lvl {
 		return
 	}
 
