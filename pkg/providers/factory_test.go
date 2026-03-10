@@ -89,6 +89,17 @@ func TestResolveProviderSelection(t *testing.T) {
 			wantProxy:   "http://127.0.0.1:7890",
 		},
 		{
+			name: "explicit vivgrid provider uses defaults",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "vivgrid"
+				cfg.Providers.Vivgrid.APIKey = "vivgrid-key"
+				cfg.Providers.Vivgrid.Proxy = "http://127.0.0.1:7890"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "https://api.vivgrid.com/v1",
+			wantProxy:   "http://127.0.0.1:7890",
+		},
+		{
 			name: "openrouter model uses openrouter defaults",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "openrouter/auto"

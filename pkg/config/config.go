@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
@@ -58,7 +59,16 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
-	Voice     VoiceConfig     `json:"voice"`
+	// BuildInfo contains build-time version information
+	BuildInfo BuildInfo `json:"build_info,omitempty"`
+}
+
+// BuildInfo contains build-time version information
+type BuildInfo struct {
+	Version   string `json:"version"`
+	GitCommit string `json:"git_commit"`
+	BuildTime string `json:"build_time"`
+	GoVersion string `json:"go_version"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -226,6 +236,7 @@ type ChannelsConfig struct {
 	QQ         QQConfig         `json:"qq"`
 	DingTalk   DingTalkConfig   `json:"dingtalk"`
 	Slack      SlackConfig      `json:"slack"`
+	Matrix     MatrixConfig     `json:"matrix"`
 	LINE       LINEConfig       `json:"line"`
 	OneBot     OneBotConfig     `json:"onebot"`
 	WeCom      WeComConfig      `json:"wecom"`
@@ -274,15 +285,16 @@ type TelegramConfig struct {
 }
 
 type FeishuConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
-	AppID              string              `json:"app_id"                  env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
-	AppSecret          string              `json:"app_secret"              env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
-	EncryptKey         string              `json:"encrypt_key"             env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
-	VerificationToken  string              `json:"verification_token"      env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
+	Enabled             bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
+	AppID               string              `json:"app_id"                  env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
+	AppSecret           string              `json:"app_secret"              env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
+	EncryptKey          string              `json:"encrypt_key"             env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
+	VerificationToken   string              `json:"verification_token"      env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
+	AllowFrom           FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
+	GroupTrigger        GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	Placeholder         PlaceholderConfig   `json:"placeholder,omitempty"`
+	ReasoningChannelID  string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
+	RandomReactionEmoji FlexibleStringSlice `json:"random_reaction_emoji"   env:"PICOCLAW_CHANNELS_FEISHU_RANDOM_REACTION_EMOJI"`
 }
 
 type DiscordConfig struct {
@@ -311,6 +323,8 @@ type QQConfig struct {
 	AppSecret          string              `json:"app_secret"              env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	MaxMessageLength   int                 `json:"max_message_length"      env:"PICOCLAW_CHANNELS_QQ_MAX_MESSAGE_LENGTH"`
+	SendMarkdown       bool                `json:"send_markdown"           env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
 }
 
@@ -332,6 +346,19 @@ type SlackConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_SLACK_REASONING_CHANNEL_ID"`
+}
+
+type MatrixConfig struct {
+	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_MATRIX_ENABLED"`
+	Homeserver         string              `json:"homeserver"              env:"PICOCLAW_CHANNELS_MATRIX_HOMESERVER"`
+	UserID             string              `json:"user_id"                 env:"PICOCLAW_CHANNELS_MATRIX_USER_ID"`
+	AccessToken        string              `json:"access_token"            env:"PICOCLAW_CHANNELS_MATRIX_ACCESS_TOKEN"`
+	DeviceID           string              `json:"device_id,omitempty"     env:"PICOCLAW_CHANNELS_MATRIX_DEVICE_ID"`
+	JoinOnInvite       bool                `json:"join_on_invite"          env:"PICOCLAW_CHANNELS_MATRIX_JOIN_ON_INVITE"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_MATRIX_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
 }
 
 type LINEConfig struct {
@@ -445,10 +472,6 @@ type DevicesConfig struct {
 	MonitorUSB bool `json:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
 }
 
-type VoiceConfig struct {
-	EchoTranscription bool `json:"echo_transcription" env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
-}
-
 type ProvidersConfig struct {
 	Anthropic     ProviderConfig       `json:"anthropic"`
 	OpenAI        OpenAIProviderConfig `json:"openai"`
@@ -464,12 +487,14 @@ type ProvidersConfig struct {
 	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig       `json:"deepseek"`
 	Cerebras      ProviderConfig       `json:"cerebras"`
+	Vivgrid       ProviderConfig       `json:"vivgrid"`
 	VolcEngine    ProviderConfig       `json:"volcengine"`
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
 	Antigravity   ProviderConfig       `json:"antigravity"`
 	Qwen          ProviderConfig       `json:"qwen"`
 	Mistral       ProviderConfig       `json:"mistral"`
 	Avian         ProviderConfig       `json:"avian"`
+	Minimax       ProviderConfig       `json:"minimax"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -489,12 +514,14 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" &&
 		p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" &&
 		p.Cerebras.APIKey == "" && p.Cerebras.APIBase == "" &&
+		p.Vivgrid.APIKey == "" && p.Vivgrid.APIBase == "" &&
 		p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" &&
 		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
 		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
 		p.Qwen.APIKey == "" && p.Qwen.APIBase == "" &&
 		p.Mistral.APIKey == "" && p.Mistral.APIBase == "" &&
-		p.Avian.APIKey == "" && p.Avian.APIBase == ""
+		p.Avian.APIKey == "" && p.Avian.APIBase == "" &&
+		p.Minimax.APIKey == "" && p.Minimax.APIBase == ""
 }
 
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig
@@ -564,21 +591,31 @@ type GatewayConfig struct {
 	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
 }
 
+type ToolDiscoveryConfig struct {
+	Enabled          bool `json:"enabled"            env:"PICOCLAW_TOOLS_DISCOVERY_ENABLED"`
+	TTL              int  `json:"ttl"                env:"PICOCLAW_TOOLS_DISCOVERY_TTL"`
+	MaxSearchResults int  `json:"max_search_results" env:"PICOCLAW_MAX_SEARCH_RESULTS"`
+	UseBM25          bool `json:"use_bm25"           env:"PICOCLAW_TOOLS_DISCOVERY_USE_BM25"`
+	UseRegex         bool `json:"use_regex"          env:"PICOCLAW_TOOLS_DISCOVERY_USE_REGEX"`
+}
+
 type ToolConfig struct {
 	Enabled bool `json:"enabled" env:"ENABLED"`
 }
 
 type BraveConfig struct {
-	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_BRAVE_ENABLED"`
-	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEY"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
+	Enabled    bool     `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_BRAVE_ENABLED"`
+	APIKey     string   `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEY"`
+	APIKeys    []string `json:"api_keys"    env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEYS"`
+	MaxResults int      `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
 }
 
 type TavilyConfig struct {
-	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_TAVILY_ENABLED"`
-	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_TAVILY_API_KEY"`
-	BaseURL    string `json:"base_url"    env:"PICOCLAW_TOOLS_WEB_TAVILY_BASE_URL"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_TAVILY_MAX_RESULTS"`
+	Enabled    bool     `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_TAVILY_ENABLED"`
+	APIKey     string   `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_TAVILY_API_KEY"`
+	APIKeys    []string `json:"api_keys"    env:"PICOCLAW_TOOLS_WEB_TAVILY_API_KEYS"`
+	BaseURL    string   `json:"base_url"    env:"PICOCLAW_TOOLS_WEB_TAVILY_BASE_URL"`
+	MaxResults int      `json:"max_results" env:"PICOCLAW_TOOLS_WEB_TAVILY_MAX_RESULTS"`
 }
 
 type DuckDuckGoConfig struct {
@@ -587,9 +624,10 @@ type DuckDuckGoConfig struct {
 }
 
 type PerplexityConfig struct {
-	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
-	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEY"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
+	Enabled    bool     `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
+	APIKey     string   `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEY"`
+	APIKeys    []string `json:"api_keys"    env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEYS"`
+	MaxResults int      `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
 }
 
 type SearXNGConfig struct {
@@ -648,6 +686,11 @@ type MediaCleanupConfig struct {
 	Interval   int `                                    env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL" json:"interval_minutes"`
 }
 
+type ReadFileToolConfig struct {
+	Enabled         bool `json:"enabled"`
+	MaxReadFileSize int  `json:"max_read_file_size"`
+}
+
 type ToolsConfig struct {
 	AllowReadPaths  []string           `json:"allow_read_paths"  env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
 	AllowWritePaths []string           `json:"allow_write_paths" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
@@ -664,7 +707,7 @@ type ToolsConfig struct {
 	InstallSkill    ToolConfig         `json:"install_skill"                                            envPrefix:"PICOCLAW_TOOLS_INSTALL_SKILL_"`
 	ListDir         ToolConfig         `json:"list_dir"                                                 envPrefix:"PICOCLAW_TOOLS_LIST_DIR_"`
 	Message         ToolConfig         `json:"message"                                                  envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
-	ReadFile        ToolConfig         `json:"read_file"                                                envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
+	ReadFile        ReadFileToolConfig `json:"read_file"                                                envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
 	SendFile        ToolConfig         `json:"send_file"                                                envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
 	Spawn           ToolConfig         `json:"spawn"                                                    envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
 	SPI             ToolConfig         `json:"spi"                                                      envPrefix:"PICOCLAW_TOOLS_SPI_"`
@@ -716,7 +759,8 @@ type MCPServerConfig struct {
 
 // MCPConfig defines configuration for all MCP servers
 type MCPConfig struct {
-	ToolConfig `envPrefix:"PICOCLAW_TOOLS_MCP_"`
+	ToolConfig `                    envPrefix:"PICOCLAW_TOOLS_MCP_"`
+	Discovery  ToolDiscoveryConfig `                                json:"discovery"`
 	// Servers is a map of server name to server configuration
 	Servers map[string]MCPServerConfig `json:"servers,omitempty"`
 }
@@ -901,6 +945,29 @@ func (c *Config) ValidateModelList() error {
 		}
 	}
 	return nil
+}
+
+func MergeAPIKeys(apiKey string, apiKeys []string) []string {
+	seen := make(map[string]struct{})
+	var all []string
+
+	if k := strings.TrimSpace(apiKey); k != "" {
+		if _, exists := seen[k]; !exists {
+			seen[k] = struct{}{}
+			all = append(all, k)
+		}
+	}
+
+	for _, k := range apiKeys {
+		if trimmed := strings.TrimSpace(k); trimmed != "" {
+			if _, exists := seen[trimmed]; !exists {
+				seen[trimmed] = struct{}{}
+				all = append(all, trimmed)
+			}
+		}
+	}
+
+	return all
 }
 
 func (t *ToolsConfig) IsToolEnabled(name string) bool {

@@ -1,22 +1,13 @@
 package internal
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 const Logo = "🦞"
-
-var (
-	version   = "dev"
-	gitCommit string
-	buildTime string
-	goVersion string
-)
 
 // GetPicoclawHome returns the picoclaw home directory.
 // Priority: $PICOCLAW_HOME > ~/.picoclaw
@@ -40,25 +31,19 @@ func LoadConfig() (*config.Config, error) {
 }
 
 // FormatVersion returns the version string with optional git commit
+// Deprecated: Use pkg/config.FormatVersion instead
 func FormatVersion() string {
-	v := version
-	if gitCommit != "" {
-		v += fmt.Sprintf(" (git: %s)", gitCommit)
-	}
-	return v
+	return config.FormatVersion()
 }
 
 // FormatBuildInfo returns build time and go version info
+// Deprecated: Use pkg/config.FormatBuildInfo instead
 func FormatBuildInfo() (string, string) {
-	build := buildTime
-	goVer := goVersion
-	if goVer == "" {
-		goVer = runtime.Version()
-	}
-	return build, goVer
+	return config.FormatBuildInfo()
 }
 
 // GetVersion returns the version string
+// Deprecated: Use pkg/config.GetVersion instead
 func GetVersion() string {
-	return version
+	return config.GetVersion()
 }
