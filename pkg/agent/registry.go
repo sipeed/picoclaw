@@ -114,6 +114,18 @@ func (r *AgentRegistry) ForEachTool(name string, fn func(tools.Tool)) {
 	}
 }
 
+// Close releases resources held by all registered agents.
+func (r *AgentRegistry) Close() {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, agent := range r.agents {
+		if err := agent.Close(); err != nil {
+			logger.WarnCF("agent", "Failed to close agent",
+				map[string]any{"agent_id": agent.ID, "error": err.Error()})
+		}
+	}
+}
+
 // GetDefaultAgent returns the default agent instance.
 func (r *AgentRegistry) GetDefaultAgent() *AgentInstance {
 	r.mu.RLock()
