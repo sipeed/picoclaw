@@ -1324,10 +1324,14 @@ func (al *AgentLoop) runLLMIteration(
 	return finalContent, iteration, nil
 }
 
-// selectCandidates returns the model candidates and resolved model name to use
+// selectCandidates returns the model candidates and resolved model ID to use
 // for a conversation turn. When model routing is configured and the incoming
 // message scores below the complexity threshold, it returns the light model
 // candidates instead of the primary ones.
+//
+// The returned model string is the resolved full model ID (e.g. openrouter/qwen/...)
+// for API requests, not the model name alias, so that providers (e.g. OpenRouter)
+// receive the correct format including provider prefix.
 //
 // The returned (candidates, model) pair is used for all LLM calls within one
 // turn — tool follow-up iterations use the same tier as the initial call so
@@ -1337,8 +1341,15 @@ func (al *AgentLoop) selectCandidates(
 	userMsg string,
 	history []providers.Message,
 ) (candidates []providers.FallbackCandidate, model string) {
+	resolveModel := func(cands []providers.FallbackCandidate, fallbackName string) string {
+		if len(cands) > 0 {
+			return cands[0].Model
+		}
+		return fallbackName
+	}
+
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
-		return agent.Candidates, agent.Model
+		return agent.Candidates, resolveModel(agent.Candidates, agent.Model)
 	}
 
 	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
@@ -1349,7 +1360,7 @@ func (al *AgentLoop) selectCandidates(
 				"score":     score,
 				"threshold": agent.Router.Threshold(),
 			})
-		return agent.Candidates, agent.Model
+		return agent.Candidates, resolveModel(agent.Candidates, agent.Model)
 	}
 
 	logger.InfoCF("agent", "Model routing: light model selected",
@@ -1359,7 +1370,7 @@ func (al *AgentLoop) selectCandidates(
 			"score":       score,
 			"threshold":   agent.Router.Threshold(),
 		})
-	return agent.LightCandidates, agent.Router.LightModel()
+	return agent.LightCandidates, resolveModel(agent.LightCandidates, agent.Router.LightModel())
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
