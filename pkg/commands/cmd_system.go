@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/auth"
 )
 
 func versionCommand() Definition {

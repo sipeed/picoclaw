@@ -1,7 +1,6 @@
 package providers
 
 import (
-	"strings"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
