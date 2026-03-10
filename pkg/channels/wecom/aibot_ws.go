@@ -286,7 +286,7 @@ func (c *WeComAIBotWSChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 		if err := c.wsSendActivePush(route.ChatID, route.ChatType, msg.Content); err != nil {
 			logger.WarnCF("wecom_aibot", "Late reply proactive push failed",
 				map[string]any{"req_id": msg.ChatID, "chat_id": route.ChatID, "error": err})
-			return fmt.Errorf("response_url delivery failed: %w", channels.ErrSendFailed)
+			return fmt.Errorf("websocket delivery failed: %w", channels.ErrSendFailed)
 		}
 		logger.InfoCF("wecom_aibot", "Late reply delivered via proactive push",
 			map[string]any{"req_id": msg.ChatID, "chat_id": route.ChatID, "chat_type": route.ChatType})
