@@ -48,8 +48,8 @@ func Test_markdownToTelegramMarkdownV2(t *testing.T) {
 		},
 		{
 			name:     "",
-			input:    "~10",
-			expected: "\\~10",
+			input:    "*Last update: ~10 24h*",
+			expected: "*Last update: \\~10 24h*",
 		},
 	}
 

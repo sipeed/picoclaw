@@ -1,163 +1,196 @@
 package telegram
 
 import (
+	"regexp"
 	"strings"
 )
 
-// markdownToTelegramMarkdownV2 takes a standardized markdown string and
-// strictly escapes or transforms it to fit Telegram's MarkdownV2 requirements.
-// https://core.telegram.org/bots/api#formatting-options
+// mdV2SpecialChars are all characters that must be escaped in Telegram MarkdownV2
+var mdV2SpecialChars = map[rune]bool{
+	'*':  true,
+	'_':  true,
+	'[':  true,
+	']':  true,
+	'(':  true,
+	')':  true,
+	'~':  true,
+	'`':  true,
+	'>':  true,
+	'#':  true,
+	'+':  true,
+	'-':  true,
+	'=':  true,
+	'|':  true,
+	'{':  true,
+	'}':  true,
+	'.':  true,
+	'!':  true,
+	'\\': true,
+}
+
+// entityPattern describes one Telegram MarkdownV2 inline entity type.
+type entityPattern struct {
+	re    *regexp.Regexp
+	open  string
+	close string
+}
+
+// allEntityPatterns lists every recognised entity in priority order
+// (longer / more-specific delimiters first so they win over shorter ones).
+// Each entry's regex is anchored to find the first occurrence in a string.
+var allEntityPatterns = []entityPattern{
+	// fenced code block — content is completely verbatim
+	{re: regexp.MustCompile("(?s)```(?:[\\w]*\\n)?[\\s\\S]*?```"), open: "```", close: "```"},
+	// inline code — content is completely verbatim
+	{re: regexp.MustCompile("`(?:[^`\\\n]|\\\\.)*`"), open: "`", close: "`"},
+	// expandable block-quote opener  **>…
+	{re: regexp.MustCompile(`(?m)\*\*>(?:[^\n]*)`), open: "**>", close: ""},
+	// block-quote line  >…
+	{re: regexp.MustCompile(`(?m)>(?:[^\n]*)`), open: ">", close: ""},
+	// custom emoji / timestamp  ![…](…)   — must come before plain link
+	{re: regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`), open: "!", close: ""},
+	// inline URL / user mention  […](…)
+	{re: regexp.MustCompile(`\[[^\]]*\]\([^)]*\)`), open: "[", close: ""},
+	// spoiler  ||…||  — before single | so it wins
+	{re: regexp.MustCompile(`\|\|(?:[^|\\\n]|\\.)*\|\|`), open: "||", close: "||"},
+	// underline  __…__  — before single _ so it wins
+	{re: regexp.MustCompile(`__(?:[^_\\\n]|\\.)*__`), open: "__", close: "__"},
+	// bold  *…*
+	{re: regexp.MustCompile(`\*(?:[^*\\\n]|\\.)*\*`), open: "*", close: "*"},
+	// italic  _…_
+	{re: regexp.MustCompile(`_(?:[^_\\\n]|\\.)*_`), open: "_", close: "_"},
+	// strikethrough  ~…~
+	{re: regexp.MustCompile(`~(?:[^~\\\n]|\\.)*~`), open: "~", close: "~"},
+}
+
+// verbatimEntities are entity types whose inner content must never be
+// touched (code blocks, URLs, quotes, custom emoji).
+// Their content is passed through completely unchanged.
+var verbatimEntities = map[string]bool{
+	"```": true,
+	"`":   true,
+	"**>": true,
+	">":   true,
+	"!":   true,
+	"[":   true,
+}
+
+// markdownToTelegramMarkdownV2 converts a Markdown string into a string safe
+// for sending with Telegram's MarkdownV2 parse mode.
+//
+// Rules:
+//   - Markdown headings (# … ######) are converted to *bold*.
+//   - **bold** Markdown syntax is converted to *bold*.
+//   - Recognised Telegram MarkdownV2 entity spans are preserved; their inner
+//     content is processed recursively so that nested valid entities are kept
+//     intact while stray special characters are escaped.
+//   - All plain-text segments have their MarkdownV2 special characters escaped.
+//
+// Reference: https://core.telegram.org/bots/api#formatting-options
 func markdownToTelegramMarkdownV2(text string) string {
-	// replace Heading to bolding
-	text = reHeading.ReplaceAllString(text, "*$1*")
+	// 1. Convert Markdown headings → *escaped heading text*
+	text = reHeading.ReplaceAllStringFunc(text, func(match string) string {
+		sub := reHeading.FindStringSubmatch(match)
+		if len(sub) < 2 {
+			return match
+		}
+		// The heading content is fresh plain text — escape everything
+		// including * so the resulting *…* bold span stays valid.
+		return "*" + escapeMarkdownV2(sub[1]) + "*"
+	})
+
+	// 2. Convert **bold** → *bold*
 	text = reBoldStar.ReplaceAllString(text, "*$1*")
 
-	var result strings.Builder
-	runes := []rune(text)
-	length := len(runes)
+	// 3. Recursively escape the full string.
+	return processText(text)
+}
 
-	// List of characters that must be escaped in standard text contexts
-	needsNormalEscape := func(r rune) bool {
-		switch r {
-		case '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!':
-			return true
-		}
-		return false
+// processText walks `text`, finds the leftmost / longest matching entity,
+// escapes the gap before it, processes the entity (recursing into its inner
+// content when appropriate), then continues with the remainder.
+func processText(text string) string {
+	if text == "" {
+		return ""
 	}
 
-	i := 0
-	for i < length {
-		// 1. Check for Pre-formatted Code Block (```...```)
-		if i+2 < length && runes[i] == '`' && runes[i+1] == '`' && runes[i+2] == '`' {
-			result.WriteString("```")
-			i += 3
-			// Find closing ```
-			for i < length {
-				if i+2 < length && runes[i] == '`' && runes[i+1] == '`' && runes[i+2] == '`' {
-					result.WriteString("```")
-					i += 3
-					break
-				}
-				// Inside code blocks, escape `\` and `\`
-				if runes[i] == '\\' || runes[i] == '`' {
-					result.WriteRune('\\')
-				}
-				result.WriteRune(runes[i])
-				i++
-			}
+	// Find the leftmost match among all entity patterns.
+	bestStart := -1
+	bestEnd := -1
+	var bestPat *entityPattern
+
+	for i := range allEntityPatterns {
+		p := &allEntityPatterns[i]
+		loc := p.re.FindStringIndex(text)
+		if loc == nil {
 			continue
 		}
-
-		// 2. Check for Inline Code (`...`)
-		if runes[i] == '`' {
-			result.WriteRune('`')
-			i++
-			for i < length {
-				if runes[i] == '`' {
-					result.WriteRune('`')
-					i++
-					break
-				}
-				if runes[i] == '\\' || runes[i] == '`' {
-					result.WriteRune('\\')
-				}
-				result.WriteRune(runes[i])
-				i++
-			}
-			continue
+		if bestStart == -1 || loc[0] < bestStart ||
+			(loc[0] == bestStart && (loc[1]-loc[0]) > (bestEnd-bestStart)) {
+			bestStart = loc[0]
+			bestEnd = loc[1]
+			bestPat = p
 		}
-
-		// 3. Link or Custom Emoji definition: URL part (...)
-		// We detect this by checking if the previous non-space character closed a bracket ']',
-		// and we are currently on '('. To keep logic linear, we handle it as we traverse.
-		// NOTE: A true deep-parser would link `[` to `](...)`. For safety, whenever we see `(`,
-		// if it looks like a URL part, we escape it via URL rules. Let's do a basic lookbehind.
-		if i != 0 && runes[i] == '(' && i > 0 && runes[i-1] == ']' {
-			result.WriteRune('(')
-			i++
-			for i < length {
-				if runes[i] == ')' {
-					// Unescaped closing bracket ends the URL
-					result.WriteRune(')')
-					i++
-					break
-				}
-				// In URL part, escape `\` and `)`
-				if runes[i] == '\\' || runes[i] == ')' {
-					result.WriteRune('\\')
-				}
-				result.WriteRune(runes[i])
-				i++
-			}
-			continue
-		}
-
-		// 4. Handle blockquotes starts
-		if i != 0 && runes[i] == '>' && (i == 0 || runes[i-1] == '\n') {
-			result.WriteRune('>')
-			i++
-			continue
-		}
-
-		// 5. Handle expandable block quotation starts
-		if i+3 < length && runes[i] == '>' && runes[i-1] == '*' && runes[i-2] == '*' && (i == 0 || runes[i-3] == '\n') {
-			result.WriteRune(runes[i])
-			i++
-			continue
-		}
-
-		// 6. Handle standard Markdown Entities Boundaries
-		// If they are part of valid markdown boundaries, we write them as-is.
-		// We trust the syntax rules: * _ ~ || [ ]
-		// (Assuming the text is a valid markdown, we don't escape these if formatting is intended)
-
-		// Note on Ambiguity (__ vs _):
-		// Telegram parses `__` from left to right greedily.
-		if i+1 < length && runes[i] == '_' && runes[i+1] == '_' {
-			result.WriteString("__")
-			i += 2
-			continue
-		}
-
-		if i+1 < length && runes[i] == '|' && runes[i+1] == '|' {
-			result.WriteString("||")
-			i += 2
-			continue
-		}
-
-		// Standard single-char boundaries
-		if runes[i] == '*' || runes[i] == '_' || runes[i] == '[' || runes[i] == ']' {
-			result.WriteRune(runes[i])
-			i++
-			continue
-		}
-
-		// Custom emoji boundary check `![`
-		if i+1 < length && runes[i] == '!' && runes[i+1] == '[' {
-			result.WriteString("![")
-			i += 2
-			continue
-		}
-
-		// 7. Handle plain text characters
-		// Escape remaining special characters if they aren't forming intended valid markup
-		if needsNormalEscape(runes[i]) {
-			// Check if it's already escaped; if an escape character exists, consume it legitimately
-			if runes[i] == '\\' && i+1 < length && needsNormalEscape(runes[i+1]) {
-				// Keep the backslash and the escaped char as is, avoiding double escaping
-				result.WriteRune('\\')
-				result.WriteRune(runes[i+1])
-				i += 2
-				continue
-			}
-
-			// Auto-escape the character
-			result.WriteRune('\\')
-		}
-
-		result.WriteRune(runes[i])
-		i++
 	}
 
-	return result.String()
+	if bestPat == nil {
+		// No entity found — escape everything.
+		return escapeMarkdownV2(text)
+	}
+
+	var b strings.Builder
+
+	// Plain text before the entity.
+	if bestStart > 0 {
+		b.WriteString(escapeMarkdownV2(text[:bestStart]))
+	}
+
+	// The matched entity span.
+	matched := text[bestStart:bestEnd]
+
+	if verbatimEntities[bestPat.open] {
+		// Code blocks, URLs, quotes: pass through completely untouched.
+		b.WriteString(matched)
+	} else {
+		// Inline formatting (bold, italic, underline, strikethrough, spoiler):
+		// keep the delimiters and recursively process the inner content so that
+		// nested entities survive but stray specials get escaped.
+		openLen := len(bestPat.open)
+		closeLen := len(bestPat.close)
+		inner := matched[openLen : len(matched)-closeLen]
+
+		b.WriteString(bestPat.open)
+		b.WriteString(processText(inner))
+		b.WriteString(bestPat.close)
+	}
+
+	// Continue with the remainder of the string.
+	b.WriteString(processText(text[bestEnd:]))
+
+	return b.String()
+}
+
+// escapeMarkdownV2 escapes every MarkdownV2 special character in a plain-text
+// segment (i.e. a segment that is not part of any recognised entity).
+// Already-escaped sequences (backslash + char) are forwarded verbatim to avoid
+// double-escaping.
+func escapeMarkdownV2(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
+		// Forward an existing escape sequence verbatim.
+		if ch == '\\' && i+1 < len(runes) {
+			b.WriteRune(ch)
+			b.WriteRune(runes[i+1])
+			i++
+			continue
+		}
+		if mdV2SpecialChars[ch] {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(ch)
+	}
+	return b.String()
 }
