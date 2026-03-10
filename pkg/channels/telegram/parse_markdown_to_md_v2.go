@@ -16,6 +16,7 @@ var mdV2SpecialChars = map[rune]bool{
 	'~':  true,
 	'`':  true,
 	'>':  true,
+	'<':  true,
 	'#':  true,
 	'+':  true,
 	'-':  true,
@@ -46,7 +47,7 @@ var allEntityPatterns = []entityPattern{
 	// expandable block-quote opener  **>…
 	{re: regexp.MustCompile(`(?m)\*\*>(?:[^\n]*)`), open: "**>", close: ""},
 	// block-quote line  >…
-	{re: regexp.MustCompile(`(?m)>(?:[^\n]*)`), open: ">", close: ""},
+	{re: regexp.MustCompile(`(?m)^>(?:[^\n]*)`), open: ">", close: ""},
 	// custom emoji / timestamp  ![…](…)   — must come before plain link
 	{re: regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`), open: "!", close: ""},
 	// inline URL / user mention  […](…)

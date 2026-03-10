@@ -51,6 +51,11 @@ func Test_markdownToTelegramMarkdownV2(t *testing.T) {
 			input:    "*Last update: ~10 24h*",
 			expected: "*Last update: \\~10 24h*",
 		},
+		{
+			name:     "",
+			input:    "<Market Capitalization>",
+			expected: "\\<Market Capitalization\\>",
+		},
 	}
 
 	for _, tc := range cases {
