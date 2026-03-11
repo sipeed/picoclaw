@@ -1957,6 +1957,14 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 			return agent.TotalPromptTokens.Load(), agent.TotalCompletionTokens.Load(), agent.TotalRequests.Load()
 		},
 
+		// Shell command execution — wraps executeCmdMode with session context
+		ExecCmd: func(ctx context.Context, command string) (string, error) {
+			if agent == nil {
+				return "", fmt.Errorf("no agent available")
+			}
+			return al.executeCmdMode(ctx, agent, command, opts.SessionKey, opts.Channel, opts.ChatID)
+		},
+
 		// One-shot AI query for /hipico (stays in modeCmd, separate session key)
 		RunOneShot: func(ctx context.Context, message string) (string, error) {
 			if agent == nil {

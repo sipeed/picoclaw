@@ -16,6 +16,7 @@ func BuiltinDefinitions() []Definition {
 		cmdModeCommand(),
 		picoModeCommand(),
 		hipicoCmnd(),
+		execCommand(),
 		editCommand(),
 		// Info and session management
 		usageCommand(),

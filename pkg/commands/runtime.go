@@ -33,6 +33,9 @@ type Runtime struct {
 	// Token and model usage stats
 	GetTokenUsage func() (promptTokens, completionTokens, requests int64)
 
+	// Shell command execution — delegates to the loop's executeCmdMode with proper path/session handling
+	ExecCmd func(ctx context.Context, command string) (string, error)
+
 	// One-shot AI query from cmd mode (/hipico)
 	RunOneShot func(ctx context.Context, message string) (string, error)
 

@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type Outcome int
@@ -44,6 +45,14 @@ func (e *Executor) Execute(ctx context.Context, req Request) ExecuteResult {
 
 	def, found := e.reg.Lookup(cmdName)
 	if !found {
+		// "!foo" where foo is not a registered command → fall back to /exec.
+		// This makes ! a universal shell-exec prefix: !ls, !git status, etc.
+		if strings.HasPrefix(strings.TrimSpace(req.Text), "!") {
+			if execDef, ok := e.reg.Lookup("exec"); ok {
+				req.Text = "/exec " + strings.TrimSpace(req.Text)[1:]
+				return e.executeDefinition(ctx, req, execDef)
+			}
+		}
 		return ExecuteResult{Outcome: OutcomePassthrough, Command: cmdName}
 	}
 
