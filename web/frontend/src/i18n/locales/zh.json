@@ -4,6 +4,9 @@
     "model_group": "模型",
     "models": "模型",
     "credentials": "凭据",
+    "agent_group": "智能体",
+    "skills": "技能",
+    "tools": "工具",
     "services": "服务",
     "channels_group": "频道",
     "show_more_channels": "更多",
@@ -25,6 +28,8 @@
     },
     "history": "历史记录",
     "noHistory": "暂无对话历史",
+    "historyLoadFailed": "加载历史记录失败",
+    "historyOpenFailed": "打开该历史会话失败",
     "loadingMore": "加载更多...",
     "deleteSession": "删除会话",
     "messagesCount": "{{count}} 条消息",
@@ -324,6 +329,100 @@
     }
   },
   "pages": {
+    "agent": {
+      "load_error": "加载 Agent 支持信息失败。",
+      "stats": {
+        "workspace": "工作目录",
+        "workspace_hint": "默认 Agent 运行时使用的工作目录，也用于加载工作区技能。",
+        "skills": "可用技能数",
+        "skills_hint": "从工作区、全局目录和内置目录发现的技能。",
+        "tools": "已启用工具",
+        "tools_hint": "其中 {{blocked}} 个因依赖未满足而不可用。"
+      },
+      "skills": {
+        "title": "技能",
+        "description": "技能会从工作区、PicoClaw 全局目录和内置目录中加载。",
+        "hero_title": "技能库",
+        "hero_description": "在这里查看 Agent 当前可加载的能力包，并且不离开页面就能直接阅读生效后的 SKILL.md。",
+        "stats": {
+          "total": "技能总数",
+          "workspace": "工作区技能",
+          "shared": "共享技能"
+        },
+        "empty": "当前没有可用技能。",
+        "import": "导入技能",
+        "import_title": "导入技能",
+        "import_description": "通过上传 Markdown 文件创建工作区技能，文件会保存为新的 SKILL.md。",
+        "import_name": "技能名称",
+        "import_name_placeholder": "例如 my-workflow",
+        "import_file": "Markdown 文件",
+        "import_file_hint": "上传一个 .md 文件。后端会保存到 workspace/skills/<name>/SKILL.md。",
+        "import_confirm": "导入技能",
+        "import_success": "技能导入成功。",
+        "import_error": "导入技能失败。",
+        "view": "查看",
+        "delete": "删除",
+        "delete_title": "删除技能？",
+        "delete_description": "将从工作区技能中移除「{{name}}」。",
+        "delete_confirm": "删除",
+        "delete_success": "技能已删除。",
+        "delete_error": "删除技能失败。",
+        "viewer_title": "技能内容",
+        "viewer_description": "这里展示当前生效的 SKILL.md 内容。",
+        "loading_detail": "正在加载技能内容...",
+        "load_detail_error": "加载技能内容失败。",
+        "source": "来源",
+        "path": "技能路径",
+        "no_description": "未提供描述。",
+        "sources": {
+          "workspace": "工作区",
+          "global": "全局",
+          "builtin": "内置"
+        },
+        "errors": {
+          "file_required": "请先选择要导入的 Markdown 文件。"
+        }
+      },
+      "tools": {
+        "title": "工具",
+        "description": "这里展示每个 Agent 工具当前是已启用、已禁用，还是被依赖条件阻塞。",
+        "hero_title": "工具面板",
+        "hero_description": "集中查看 Agent 现在真正可调用的工具、被阻塞的能力，以及它们分别受哪项配置控制。",
+        "stats": {
+          "enabled": "已启用",
+          "blocked": "被阻塞",
+          "categories": "分类数"
+        },
+        "empty": "当前没有可用工具。",
+        "enable": "启用",
+        "disable": "禁用",
+        "enable_success": "工具已启用。",
+        "disable_success": "工具已禁用。",
+        "toggle_error": "更新工具状态失败。",
+        "config_key": "由 tools.{{key}} 控制",
+        "status": {
+          "enabled": "已启用",
+          "disabled": "已禁用",
+          "blocked": "被阻塞"
+        },
+        "categories": {
+          "automation": "自动化",
+          "filesystem": "文件系统",
+          "web": "网页",
+          "communication": "通信",
+          "skills": "技能",
+          "agents": "Agent",
+          "hardware": "硬件",
+          "discovery": "发现"
+        },
+        "reasons": {
+          "requires_linux": "该工具仅在 Linux 主机上可用，并且需要暴露对应的设备文件。",
+          "requires_skills": "需要先启用 `tools.skills`，该技能注册表工具才能使用。",
+          "requires_subagent": "需要先启用 `tools.subagent`，`spawn` 才能委派任务。",
+          "requires_mcp_discovery": "需要先启用 `tools.mcp.discovery`，MCP 发现工具才会可用。"
+        }
+      }
+    },
     "config": {
       "load_error": "加载配置失败，请刷新后重试。",
       "workspace": "工作目录",
@@ -387,7 +486,9 @@
       "unsaved_changes": "您有未保存的更改。"
     },
     "logs": {
-      "description": "系统日志和监控。"
+      "description": "系统日志和监控。",
+      "clear": "清空日志",
+      "empty": "等待日志中..."
     }
   }
 }

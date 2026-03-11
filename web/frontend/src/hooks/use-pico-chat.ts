@@ -1,6 +1,8 @@
 import dayjs from "dayjs"
 import { useAtomValue } from "jotai"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import { getPicoToken } from "@/api/pico"
 import { getSessionHistory } from "@/api/sessions"
@@ -100,6 +102,7 @@ export function formatMessageTime(dateRaw: number | string | Date): string {
 }
 
 export function usePicoChat() {
+  const { t } = useTranslation()
   const { status: gatewayState } = useAtomValue(gatewayAtom)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [connectionState, setConnectionState] =
@@ -317,43 +320,38 @@ export function usePicoChat() {
   // Switch to a historical session
   const switchSession = useCallback(
     async (sessionId: string) => {
-      // Disconnect current WebSocket
-      disconnect()
-
-      // Set new session ID
-      setActiveSessionId(sessionId)
-      setIsTyping(false)
-
-      // Load history from backend
-      try {
-        const detail = await getSessionHistory(sessionId)
-        // Set all history messages timestamp from the session updated time as fallback,
-        // since currently the backend doesn't return per-message timestamp in the history API.
-        // We'll use the session's updated time for now.
-        const fallbackTime = detail.updated
-
-        setMessages(
-          detail.messages.map((m, i) => ({
-            id: `hist-${i}-${Date.now()}`,
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            timestamp: fallbackTime,
-          })),
-        )
-      } catch (err) {
-        console.error("Failed to load session history:", err)
-        setMessages([])
+      if (sessionId === activeSessionIdRef.current) {
+        return
       }
 
-      // Reconnect with new session ID (will use the updated ref)
-      // Small delay to ensure state has settled
+      try {
+        const detail = await getSessionHistory(sessionId)
+        const fallbackTime = detail.updated
+        const historyMessages = detail.messages.map((m, i) => ({
+          id: `hist-${i}-${Date.now()}`,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          timestamp: fallbackTime,
+        }))
+
+        // Only switch the active websocket session after history has loaded successfully.
+        disconnect()
+        setActiveSessionId(sessionId)
+        setIsTyping(false)
+        setMessages(historyMessages)
+      } catch (err) {
+        console.error("Failed to load session history:", err)
+        toast.error(t("chat.historyOpenFailed"))
+        return
+      }
+
       setTimeout(() => {
         if (gatewayState === "running") {
           connect()
         }
       }, 100)
     },
-    [disconnect, connect, gatewayState],
+    [connect, disconnect, gatewayState, t],
   )
 
   // Start a new empty chat

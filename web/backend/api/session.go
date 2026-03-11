@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -33,10 +35,20 @@ type sessionFile struct {
 // sessionListItem is a lightweight summary returned by GET /api/sessions.
 type sessionListItem struct {
 	ID           string `json:"id"`
+	Title        string `json:"title"`
 	Preview      string `json:"preview"`
 	MessageCount int    `json:"message_count"`
 	Created      string `json:"created"`
 	Updated      string `json:"updated"`
+}
+
+type sessionMetaFile struct {
+	Key       string    `json:"key"`
+	Summary   string    `json:"summary"`
+	Skip      int       `json:"skip"`
+	Count     int       `json:"count"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // picoSessionPrefix is the key prefix used by the gateway's routing for Pico
@@ -47,7 +59,12 @@ type sessionListItem struct {
 // The sanitized filename replaces ':' with '_', so on disk it becomes:
 //
 //	agent_main_pico_direct_pico_<session-uuid>.json
-const picoSessionPrefix = "agent:main:pico:direct:pico:"
+const (
+	picoSessionPrefix          = "agent:main:pico:direct:pico:"
+	sanitizedPicoSessionPrefix = "agent_main_pico_direct_pico_"
+	maxSessionJSONLLineSize    = 10 * 1024 * 1024 // 10 MB
+	maxSessionTitleRunes       = 60
+)
 
 // extractPicoSessionID extracts the session UUID from a full session key.
 // Returns the UUID and true if the key matches the Pico session pattern.
@@ -56,6 +73,178 @@ func extractPicoSessionID(key string) (string, bool) {
 		return strings.TrimPrefix(key, picoSessionPrefix), true
 	}
 	return "", false
+}
+
+func extractPicoSessionIDFromSanitizedKey(key string) (string, bool) {
+	if strings.HasPrefix(key, sanitizedPicoSessionPrefix) {
+		return strings.TrimPrefix(key, sanitizedPicoSessionPrefix), true
+	}
+	return "", false
+}
+
+func sanitizeSessionKey(key string) string {
+	return strings.ReplaceAll(key, ":", "_")
+}
+
+func (h *Handler) readLegacySession(dir, sessionID string) (sessionFile, error) {
+	path := filepath.Join(dir, sanitizeSessionKey(picoSessionPrefix+sessionID)+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return sessionFile{}, err
+	}
+
+	var sess sessionFile
+	if err := json.Unmarshal(data, &sess); err != nil {
+		return sessionFile{}, err
+	}
+	return sess, nil
+}
+
+func (h *Handler) readSessionMeta(path, sessionKey string) (sessionMetaFile, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return sessionMetaFile{Key: sessionKey}, nil
+	}
+	if err != nil {
+		return sessionMetaFile{}, err
+	}
+
+	var meta sessionMetaFile
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return sessionMetaFile{}, err
+	}
+	if meta.Key == "" {
+		meta.Key = sessionKey
+	}
+	return meta, nil
+}
+
+func (h *Handler) readSessionMessages(path string, skip int) ([]providers.Message, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	msgs := make([]providers.Message, 0)
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxSessionJSONLLineSize)
+
+	seen := 0
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		seen++
+		if seen <= skip {
+			continue
+		}
+
+		var msg providers.Message
+		if err := json.Unmarshal(line, &msg); err != nil {
+			continue
+		}
+		msgs = append(msgs, msg)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return msgs, nil
+}
+
+func (h *Handler) readJSONLSession(dir, sessionID string) (sessionFile, error) {
+	sessionKey := picoSessionPrefix + sessionID
+	base := filepath.Join(dir, sanitizeSessionKey(sessionKey))
+	jsonlPath := base + ".jsonl"
+	metaPath := base + ".meta.json"
+
+	meta, err := h.readSessionMeta(metaPath, sessionKey)
+	if err != nil {
+		return sessionFile{}, err
+	}
+
+	messages, err := h.readSessionMessages(jsonlPath, meta.Skip)
+	if err != nil {
+		return sessionFile{}, err
+	}
+
+	updated := meta.UpdatedAt
+	created := meta.CreatedAt
+	if created.IsZero() || updated.IsZero() {
+		if info, statErr := os.Stat(jsonlPath); statErr == nil {
+			if created.IsZero() {
+				created = info.ModTime()
+			}
+			if updated.IsZero() {
+				updated = info.ModTime()
+			}
+		}
+	}
+
+	return sessionFile{
+		Key:      meta.Key,
+		Messages: messages,
+		Summary:  meta.Summary,
+		Created:  created,
+		Updated:  updated,
+	}, nil
+}
+
+func buildSessionListItem(sessionID string, sess sessionFile) sessionListItem {
+	preview := ""
+	for _, msg := range sess.Messages {
+		if msg.Role == "user" && strings.TrimSpace(msg.Content) != "" {
+			preview = msg.Content
+			break
+		}
+	}
+	title := strings.TrimSpace(sess.Summary)
+	if title == "" {
+		title = preview
+	}
+
+	title = truncateRunes(title, maxSessionTitleRunes)
+	preview = truncateRunes(preview, maxSessionTitleRunes)
+
+	if preview == "" {
+		preview = "(empty)"
+	}
+	if title == "" {
+		title = preview
+	}
+
+	validMessageCount := 0
+	for _, msg := range sess.Messages {
+		if (msg.Role == "user" || msg.Role == "assistant") && strings.TrimSpace(msg.Content) != "" {
+			validMessageCount++
+		}
+	}
+
+	return sessionListItem{
+		ID:           sessionID,
+		Title:        title,
+		Preview:      preview,
+		MessageCount: validMessageCount,
+		Created:      sess.Created.Format(time.RFC3339),
+		Updated:      sess.Updated.Format(time.RFC3339),
+	}
+}
+
+func isEmptySession(sess sessionFile) bool {
+	return len(sess.Messages) == 0 && strings.TrimSpace(sess.Summary) == ""
+}
+
+func truncateRunes(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	runes := []rune(strings.TrimSpace(s))
+	if len(runes) <= maxLen {
+		return string(runes)
+	}
+	return string(runes[:maxLen]) + "..."
 }
 
 // sessionsDir resolves the path to the gateway's session storage directory.
@@ -104,58 +293,76 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := []sessionListItem{}
+	seen := make(map[string]struct{})
 
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+		if entry.IsDir() {
 			continue
 		}
 
-		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
-		if err != nil {
-			continue
-		}
+		name := entry.Name()
+		var (
+			sessionID string
+			sess      sessionFile
+			loadErr   error
+			ok        bool
+		)
 
-		var sess sessionFile
-		if err := json.Unmarshal(data, &sess); err != nil {
-			continue
-		}
-
-		// Only include Pico channel sessions
-		sessionID, ok := extractPicoSessionID(sess.Key)
-		if !ok {
-			continue
-		}
-
-		// Build a preview from the first user message
-		preview := ""
-		for _, msg := range sess.Messages {
-			if msg.Role == "user" && strings.TrimSpace(msg.Content) != "" {
-				preview = msg.Content
-				break
+		switch {
+		case strings.HasSuffix(name, ".jsonl"):
+			sessionID, ok = extractPicoSessionIDFromSanitizedKey(strings.TrimSuffix(name, ".jsonl"))
+			if !ok {
+				continue
 			}
-		}
-		if len([]rune(preview)) > 60 {
-			preview = string([]rune(preview)[:60]) + "..."
-		}
-		if preview == "" {
-			preview = "(empty)"
-		}
-
-		// Only count non-empty user and assistant messages
-		validMessageCount := 0
-		for _, msg := range sess.Messages {
-			if (msg.Role == "user" || msg.Role == "assistant") && strings.TrimSpace(msg.Content) != "" {
-				validMessageCount++
+			sess, loadErr = h.readJSONLSession(dir, sessionID)
+			if loadErr == nil && isEmptySession(sess) {
+				continue
 			}
+		case strings.HasSuffix(name, ".meta.json"):
+			continue
+		case filepath.Ext(name) == ".json":
+			base := strings.TrimSuffix(name, ".json")
+			if _, statErr := os.Stat(filepath.Join(dir, base+".jsonl")); statErr == nil {
+				if jsonlSessionID, found := extractPicoSessionIDFromSanitizedKey(base); found {
+					if jsonlSess, jsonlErr := h.readJSONLSession(
+						dir,
+						jsonlSessionID,
+					); jsonlErr == nil &&
+						!isEmptySession(jsonlSess) {
+						continue
+					}
+				}
+			}
+			data, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil {
+				continue
+			}
+			if err := json.Unmarshal(data, &sess); err != nil {
+				continue
+			}
+			if isEmptySession(sess) {
+				continue
+			}
+			sessionID, ok = extractPicoSessionID(sess.Key)
+			if !ok {
+				continue
+			}
+			if _, exists := seen[sessionID]; exists {
+				continue
+			}
+		default:
+			continue
 		}
 
-		items = append(items, sessionListItem{
-			ID:           sessionID,
-			Preview:      preview,
-			MessageCount: validMessageCount,
-			Created:      sess.Created.Format(time.RFC3339),
-			Updated:      sess.Updated.Format(time.RFC3339),
-		})
+		if loadErr != nil {
+			continue
+		}
+		if _, exists := seen[sessionID]; exists {
+			continue
+		}
+
+		seen[sessionID] = struct{}{}
+		items = append(items, buildSessionListItem(sessionID, sess))
 	}
 
 	// Sort by updated descending (most recent first)
@@ -209,20 +416,25 @@ func (h *Handler) handleGetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The sanitized filename replaces ':' with '_':
-	// agent:main:pico:direct:pico:<uuid> -> agent_main_pico_direct_pico_<uuid>.json
-	filename := strings.ReplaceAll(picoSessionPrefix+sessionID, ":", "_") + ".json"
-
-	data, err := os.ReadFile(filepath.Join(dir, filename))
-	if err != nil {
-		http.Error(w, "session not found", http.StatusNotFound)
-		return
+	sess, err := h.readJSONLSession(dir, sessionID)
+	if err == nil && isEmptySession(sess) {
+		err = os.ErrNotExist
 	}
-
-	var sess sessionFile
-	if err := json.Unmarshal(data, &sess); err != nil {
-		http.Error(w, "failed to parse session", http.StatusInternalServerError)
-		return
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			sess, err = h.readLegacySession(dir, sessionID)
+			if err == nil && isEmptySession(sess) {
+				err = os.ErrNotExist
+			}
+		}
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				http.Error(w, "session not found", http.StatusNotFound)
+			} else {
+				http.Error(w, "failed to parse session", http.StatusInternalServerError)
+			}
+			return
+		}
 	}
 
 	// Convert to a simpler format for the frontend
@@ -268,17 +480,25 @@ func (h *Handler) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The sanitized filename replaces ':' with '_':
-	// agent:main:pico:direct:pico:<uuid> -> agent_main_pico_direct_pico_<uuid>.json
-	filename := strings.ReplaceAll(picoSessionPrefix+sessionID, ":", "_") + ".json"
-	filePath := filepath.Join(dir, filename)
+	base := filepath.Join(dir, sanitizeSessionKey(picoSessionPrefix+sessionID))
+	jsonlPath := base + ".jsonl"
+	metaPath := base + ".meta.json"
+	legacyPath := base + ".json"
 
-	if err := os.Remove(filePath); err != nil {
-		if os.IsNotExist(err) {
-			http.Error(w, "session not found", http.StatusNotFound)
-		} else {
+	removed := false
+	for _, path := range []string{jsonlPath, metaPath, legacyPath} {
+		if err := os.Remove(path); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
 			http.Error(w, "failed to delete session", http.StatusInternalServerError)
+			return
 		}
+		removed = true
+	}
+
+	if !removed {
+		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
 

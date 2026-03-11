@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -17,36 +16,11 @@ func (h *Handler) registerConfigRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/config", h.handlePatchConfig)
 }
 
-// loadFilteredConfig loads the configuration and filters out default placeholder credentials
-// (like API limits/keys) if the configuration file has not been created yet by the user.
-func (h *Handler) loadFilteredConfig() (*config.Config, error) {
-	cfg, err := config.LoadConfig(h.configPath)
-	if err != nil {
-		return nil, err
-	}
-
-	configExists := false
-	if h.configPath != "" {
-		if _, err := os.Stat(h.configPath); err == nil {
-			configExists = true
-		}
-	}
-
-	if !configExists {
-		for i := range cfg.ModelList {
-			cfg.ModelList[i].APIKey = ""
-			cfg.ModelList[i].AuthMethod = ""
-		}
-	}
-
-	return cfg, nil
-}
-
 // handleGetConfig returns the complete system configuration.
 //
 //	GET /api/config
 func (h *Handler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
-	cfg, err := h.loadFilteredConfig()
+	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return

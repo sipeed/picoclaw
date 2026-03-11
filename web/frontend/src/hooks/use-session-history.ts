@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 
 import { type SessionSummary, deleteSession, getSessions } from "@/api/sessions"
 
@@ -13,22 +14,26 @@ export function useSessionHistory({
   activeSessionId,
   onDeletedActiveSession,
 }: UseSessionHistoryOptions) {
+  const { t } = useTranslation()
   const observerRef = useRef<HTMLDivElement>(null)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [loadError, setLoadError] = useState(false)
 
   const loadSessions = useCallback(
     async (reset = true) => {
       try {
         const currentOffset = reset ? 0 : offset
         if (reset) {
+          setLoadError(false)
           setHasMore(true)
           setOffset(0)
         }
 
         const data = await getSessions(currentOffset, LIMIT)
+        setLoadError(false)
 
         if (data.length < LIMIT) {
           setHasMore(false)
@@ -45,8 +50,12 @@ export function useSessionHistory({
         }
 
         setOffset(currentOffset + data.length)
-      } catch {
-        // silently fail
+      } catch (err) {
+        console.error("Failed to fetch session history:", err)
+        setLoadError(true)
+        if (!reset) {
+          setHasMore(false)
+        }
       } finally {
         setIsLoadingMore(false)
       }
@@ -55,11 +64,16 @@ export function useSessionHistory({
   )
 
   useEffect(() => {
-    if (!observerRef.current || !hasMore || isLoadingMore) return
+    if (!observerRef.current || !hasMore || isLoadingMore || loadError) return
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+        if (
+          entries[0].isIntersecting &&
+          hasMore &&
+          !isLoadingMore &&
+          !loadError
+        ) {
           setIsLoadingMore(true)
           void loadSessions(false)
         }
@@ -69,7 +83,7 @@ export function useSessionHistory({
 
     observer.observe(observerRef.current)
     return () => observer.disconnect()
-  }, [hasMore, isLoadingMore, loadSessions])
+  }, [hasMore, isLoadingMore, loadError, loadSessions])
 
   const handleDeleteSession = useCallback(
     async (id: string) => {
@@ -89,6 +103,8 @@ export function useSessionHistory({
   return {
     sessions,
     hasMore,
+    loadError,
+    loadErrorMessage: t("chat.historyLoadFailed"),
     observerRef,
     loadSessions,
     handleDeleteSession,

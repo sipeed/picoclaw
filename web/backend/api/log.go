@@ -4,7 +4,7 @@ import "sync"
 
 // LogBuffer is a thread-safe ring buffer that stores the most recent N log lines.
 // It supports incremental reads via LinesSince and tracks a runID that increments
-// on each Reset (used to detect gateway restarts).
+// whenever the buffer is reset or cleared so clients can detect log history resets.
 type LogBuffer struct {
 	mu    sync.RWMutex
 	lines []string
@@ -43,6 +43,12 @@ func (b *LogBuffer) Reset() {
 	b.lines = b.lines[:0]
 	b.total = 0
 	b.runID++
+}
+
+// Clear removes all buffered lines and increments the runID so clients treat
+// subsequent reads as a new log stream.
+func (b *LogBuffer) Clear() {
+	b.Reset()
 }
 
 // LinesSince returns lines appended after the given offset, the current total count, and the runID.

@@ -14,6 +14,8 @@ interface GatewayStatusResponse {
 interface GatewayActionResponse {
   status: string
   pid?: number
+  log_total?: number
+  log_run_id?: number
 }
 
 const BASE_URL = ""
@@ -55,6 +57,12 @@ export async function stopGateway(): Promise<GatewayActionResponse> {
 
 export async function restartGateway(): Promise<GatewayActionResponse> {
   return request<GatewayActionResponse>("/api/gateway/restart", {
+    method: "POST",
+  })
+}
+
+export async function clearGatewayLogs(): Promise<GatewayActionResponse> {
+  return request<GatewayActionResponse>("/api/gateway/logs/clear", {
     method: "POST",
   })
 }
