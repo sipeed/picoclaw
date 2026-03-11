@@ -670,7 +670,14 @@ type ExecConfig struct {
 	EnableDenyPatterns  bool     `                                 env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"  json:"enable_deny_patterns"`
 	CustomDenyPatterns  []string `                                 env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"  json:"custom_deny_patterns"`
 	CustomAllowPatterns []string `                                 env:"PICOCLAW_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS" json:"custom_allow_patterns"`
-	TimeoutSeconds      int      `                                 env:"PICOCLAW_TOOLS_EXEC_TIMEOUT_SECONDS"       json:"timeout_seconds"` // 0 means use default (60s)
+	TimeoutSeconds      int      `                                 env:"PICOCLAW_TOOLS_EXEC_TIMEOUT_SECONDS"       json:"timeout_seconds"`        // 0 means use default (60s)
+	// DevMode disables all command guards, allowing unrestricted shell execution.
+	// AllowedCommands has no effect when DevMode is true.
+	DevMode bool `env:"PICOCLAW_TOOLS_EXEC_DEV_MODE" json:"dev_mode"`
+	// AllowedCommands is a whitelist of regex patterns matched against the command string.
+	// When non-empty and DevMode is false, only commands matching at least one pattern are permitted;
+	// deny patterns are bypassed — the whitelist is the sole access control.
+	AllowedCommands []string `env:"PICOCLAW_TOOLS_EXEC_ALLOWED_COMMANDS" json:"allowed_commands"`
 }
 
 type SkillsToolsConfig struct {

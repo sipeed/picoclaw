@@ -401,7 +401,31 @@
       "enabled": true,
       "enable_deny_patterns": true,
       "custom_deny_patterns": null,
-      "custom_allow_patterns": null
+      "custom_allow_patterns": null,
+      "timeout_seconds": 0,
+      "dev_mode": false,
+      "allowed_commands": [
+        "^ls\\b",
+        "^ll\\b",
+        "^pwd\\b",
+        "^cd\\b",
+        "^cat\\b",
+        "^head\\b",
+        "^tail\\b",
+        "^echo\\b",
+        "^find\\b",
+        "^grep\\b",
+        "^wc\\b",
+        "^cp\\b",
+        "^mv\\b",
+        "^mkdir\\b",
+        "^touch\\b",
+        "^zip\\b",
+        "^unzip\\b",
+        "^tar\\b",
+        "^git\\b",
+        "^rm\\s+(?!.*-[rR])\\S"
+      ]
     },
     "skills": {
       "enabled": true,

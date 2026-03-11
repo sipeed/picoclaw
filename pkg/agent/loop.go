@@ -724,20 +724,20 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		WorkingDir:      msg.Metadata["work_dir"],
 	}
 
+	// In cmd mode, rewrite bare text as /exec so all shell execution flows
+	// through the registry path — no second dispatch branch needed.
+	content := strings.TrimSpace(msg.Content)
+	if al.getSessionMode(sessionKey) == modeCmd && !commands.HasCommandPrefix(content) && content != "" {
+		msg.Content = "/exec " + content
+	}
+
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
 	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {
 		return response, nil
 	}
 
-	// Dispatch based on current session mode
-	content := strings.TrimSpace(msg.Content)
-	switch al.getSessionMode(sessionKey) {
-	case modeCmd:
-		return al.executeCmdMode(ctx, agent, content, sessionKey, msg.Channel, msg.ChatID)
-	default: // modePico
-		return al.runAgentLoop(ctx, agent, opts)
-	}
+	return al.runAgentLoop(ctx, agent, opts)
 }
 
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {

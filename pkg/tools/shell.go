@@ -24,6 +24,8 @@ type ExecTool struct {
 	allowPatterns       []*regexp.Regexp
 	customAllowPatterns []*regexp.Regexp
 	restrictToWorkspace bool
+	devMode             bool
+	allowedCommands     []*regexp.Regexp
 }
 
 var (
@@ -42,24 +44,15 @@ var (
 		),
 		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
 		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
-		regexp.MustCompile(`\$\([^)]+\)`),
-		regexp.MustCompile(`\$\{[^}]+\}`),
-		regexp.MustCompile("`[^`]+`"),
 		regexp.MustCompile(`\|\s*sh\b`),
 		regexp.MustCompile(`\|\s*bash\b`),
 		regexp.MustCompile(`;\s*rm\s+-[rf]`),
 		regexp.MustCompile(`&&\s*rm\s+-[rf]`),
 		regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
-		regexp.MustCompile(`<<\s*EOF`),
-		regexp.MustCompile(`\$\(\s*cat\s+`),
-		regexp.MustCompile(`\$\(\s*curl\s+`),
-		regexp.MustCompile(`\$\(\s*wget\s+`),
-		regexp.MustCompile(`\$\(\s*which\s+`),
 		regexp.MustCompile(`\bsudo\b`),
 		regexp.MustCompile(`\bsu\b`),
 		regexp.MustCompile(`\bdoas\b`),
 		regexp.MustCompile(`\bpkexec\b`),
-		regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
 		regexp.MustCompile(`\bchown\b`),
 		regexp.MustCompile(`\bpkill\b`),
 		regexp.MustCompile(`\bkillall\b`),
@@ -73,11 +66,8 @@ var (
 		regexp.MustCompile(`\bdnf\s+(install|remove)\b`),
 		regexp.MustCompile(`\bdocker\s+run\b`),
 		regexp.MustCompile(`\bdocker\s+exec\b`),
-		regexp.MustCompile(`\bgit\s+push\b`),
-		regexp.MustCompile(`\bgit\s+force\b`),
 		regexp.MustCompile(`\bssh\b.*@`),
 		regexp.MustCompile(`\beval\b`),
-		regexp.MustCompile(`\bsource\s+.*\.sh\b`),
 	}
 
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
@@ -104,32 +94,44 @@ func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
 func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
 	customAllowPatterns := make([]*regexp.Regexp, 0)
+	allowedCommands := make([]*regexp.Regexp, 0)
+	devMode := false
 
 	if config != nil {
 		execConfig := config.Tools.Exec
-		enableDenyPatterns := execConfig.EnableDenyPatterns
-		if enableDenyPatterns {
-			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
-			if len(execConfig.CustomDenyPatterns) > 0 {
-				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
-				for _, pattern := range execConfig.CustomDenyPatterns {
-					re, err := regexp.Compile(pattern)
-					if err != nil {
-						return nil, fmt.Errorf("invalid custom deny pattern %q: %w", pattern, err)
+		devMode = execConfig.DevMode
+
+		if !devMode {
+			enableDenyPatterns := execConfig.EnableDenyPatterns
+			if enableDenyPatterns {
+				denyPatterns = append(denyPatterns, defaultDenyPatterns...)
+				if len(execConfig.CustomDenyPatterns) > 0 {
+					fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
+					for _, pattern := range execConfig.CustomDenyPatterns {
+						re, err := regexp.Compile(pattern)
+						if err != nil {
+							return nil, fmt.Errorf("invalid custom deny pattern %q: %w", pattern, err)
+						}
+						denyPatterns = append(denyPatterns, re)
 					}
-					denyPatterns = append(denyPatterns, re)
 				}
+			} else {
+				fmt.Println("Warning: deny patterns are disabled. All commands will be allowed.")
 			}
-		} else {
-			// If deny patterns are disabled, we won't add any patterns, allowing all commands.
-			fmt.Println("Warning: deny patterns are disabled. All commands will be allowed.")
-		}
-		for _, pattern := range execConfig.CustomAllowPatterns {
-			re, err := regexp.Compile(pattern)
-			if err != nil {
-				return nil, fmt.Errorf("invalid custom allow pattern %q: %w", pattern, err)
+			for _, pattern := range execConfig.CustomAllowPatterns {
+				re, err := regexp.Compile(pattern)
+				if err != nil {
+					return nil, fmt.Errorf("invalid custom allow pattern %q: %w", pattern, err)
+				}
+				customAllowPatterns = append(customAllowPatterns, re)
 			}
-			customAllowPatterns = append(customAllowPatterns, re)
+			for _, pattern := range execConfig.AllowedCommands {
+				re, err := regexp.Compile(pattern)
+				if err != nil {
+					return nil, fmt.Errorf("invalid allowed command pattern %q: %w", pattern, err)
+				}
+				allowedCommands = append(allowedCommands, re)
+			}
 		}
 	} else {
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
@@ -147,6 +149,8 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		allowPatterns:       nil,
 		customAllowPatterns: customAllowPatterns,
 		restrictToWorkspace: restrict,
+		devMode:             devMode,
+		allowedCommands:     allowedCommands,
 	}, nil
 }
 
@@ -307,36 +311,56 @@ func sanitizeCommand(cmd string) string {
 }
 
 func (t *ExecTool) guardCommand(command, cwd string) string {
+	// Dev mode: no restrictions at all.
+	if t.devMode {
+		return ""
+	}
+
 	cmd := sanitizeCommand(strings.TrimSpace(command))
 	lower := strings.ToLower(cmd)
 
-	// Custom allow patterns exempt a command from deny checks.
-	explicitlyAllowed := false
-	for _, pattern := range t.customAllowPatterns {
-		if pattern.MatchString(lower) {
-			explicitlyAllowed = true
-			break
-		}
-	}
-
-	if !explicitlyAllowed {
-		for _, pattern := range t.denyPatterns {
-			if pattern.MatchString(lower) {
-				return "Command blocked by safety guard (dangerous pattern detected)"
-			}
-		}
-	}
-
-	if len(t.allowPatterns) > 0 {
+	// Whitelist mode: AllowedCommands is the sole access control; deny patterns are bypassed.
+	if len(t.allowedCommands) > 0 {
 		allowed := false
-		for _, pattern := range t.allowPatterns {
+		for _, pattern := range t.allowedCommands {
 			if pattern.MatchString(lower) {
 				allowed = true
 				break
 			}
 		}
 		if !allowed {
-			return "Command blocked by safety guard (not in allowlist)"
+			return "Command not permitted (not in allowed commands list)"
+		}
+		// Fall through to workspace restriction check below.
+	} else {
+		// Deny-list mode (default): custom allow patterns exempt a command from deny checks.
+		explicitlyAllowed := false
+		for _, pattern := range t.customAllowPatterns {
+			if pattern.MatchString(lower) {
+				explicitlyAllowed = true
+				break
+			}
+		}
+
+		if !explicitlyAllowed {
+			for _, pattern := range t.denyPatterns {
+				if pattern.MatchString(lower) {
+					return "Command blocked by safety guard (dangerous pattern detected)"
+				}
+			}
+		}
+
+		if len(t.allowPatterns) > 0 {
+			allowed := false
+			for _, pattern := range t.allowPatterns {
+				if pattern.MatchString(lower) {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				return "Command blocked by safety guard (not in allowlist)"
+			}
 		}
 	}
 
