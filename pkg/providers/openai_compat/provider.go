@@ -283,8 +283,8 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function *struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
+						Name      string          `json:"name"`
+						Arguments json.RawMessage `json:"arguments"`
 					} `json:"function"`
 					ExtraContent *struct {
 						Google *struct {
@@ -314,6 +314,7 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 	for _, tc := range choice.Message.ToolCalls {
 		arguments := make(map[string]any)
 		name := ""
+		rawArguments := ""
 
 		// Extract thought_signature from Gemini/Google-specific extra content
 		thoughtSignature := ""
@@ -323,20 +324,23 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 
 		if tc.Function != nil {
 			name = tc.Function.Name
-			if tc.Function.Arguments != "" {
-				if err := json.Unmarshal([]byte(tc.Function.Arguments), &arguments); err != nil {
-					log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
-					arguments["raw"] = tc.Function.Arguments
-				}
-			}
+			rawArguments, arguments = decodeToolCallArguments(tc.Function.Arguments)
 		}
 
 		// Build ToolCall with ExtraContent for Gemini 3 thought_signature persistence
 		toolCall := ToolCall{
 			ID:               tc.ID,
+			Type:             tc.Type,
 			Name:             name,
 			Arguments:        arguments,
 			ThoughtSignature: thoughtSignature,
+		}
+
+		if tc.Function != nil {
+			toolCall.Function = &FunctionCall{
+				Name:      name,
+				Arguments: rawArguments,
+			}
 		}
 
 		if thoughtSignature != "" {
@@ -359,6 +363,43 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 		FinishReason:     choice.FinishReason,
 		Usage:            apiResponse.Usage,
 	}, nil
+}
+
+func decodeToolCallArguments(raw json.RawMessage) (string, map[string]any) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return "", map[string]any{}
+	}
+
+	if raw[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(raw, &encoded); err != nil {
+			log.Printf("openai_compat: failed to decode tool call argument string: %v", err)
+			return string(raw), map[string]any{"raw": string(raw)}
+		}
+
+		arguments := map[string]any{}
+		if encoded == "" {
+			return "", arguments
+		}
+		if err := json.Unmarshal([]byte(encoded), &arguments); err != nil {
+			log.Printf("openai_compat: failed to decode tool call arguments JSON: %v", err)
+			arguments["raw"] = encoded
+		}
+		return encoded, arguments
+	}
+
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		log.Printf("openai_compat: failed to decode tool call arguments payload: %v", err)
+		return string(raw), map[string]any{"raw": string(raw)}
+	}
+
+	if object, ok := decoded.(map[string]any); ok {
+		return string(raw), object
+	}
+
+	return string(raw), map[string]any{"raw": decoded}
 }
 
 // openaiMessage is the wire-format message for OpenAI-compatible APIs.
