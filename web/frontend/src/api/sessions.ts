@@ -2,6 +2,7 @@
 
 export interface SessionSummary {
   id: string
+  title: string
   preview: string
   message_count: number
   created: string

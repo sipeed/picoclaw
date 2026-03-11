@@ -43,11 +43,18 @@ export function ChatPage() {
     handleSetDefault,
   } = useChatModels({ isConnected })
 
-  const { sessions, hasMore, observerRef, loadSessions, handleDeleteSession } =
-    useSessionHistory({
-      activeSessionId,
-      onDeletedActiveSession: newChat,
-    })
+  const {
+    sessions,
+    hasMore,
+    loadError,
+    loadErrorMessage,
+    observerRef,
+    loadSessions,
+    handleDeleteSession,
+  } = useSessionHistory({
+    activeSessionId,
+    onDeletedActiveSession: newChat,
+  })
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
@@ -96,6 +103,8 @@ export function ChatPage() {
           sessions={sessions}
           activeSessionId={activeSessionId}
           hasMore={hasMore}
+          loadError={loadError}
+          loadErrorMessage={loadErrorMessage}
           observerRef={observerRef}
           onOpenChange={(open) => {
             if (open) {

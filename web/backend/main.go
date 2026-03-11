@@ -25,6 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/web/backend/api"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 	"github.com/sipeed/picoclaw/web/backend/middleware"
+	"github.com/sipeed/picoclaw/web/backend/utils"
 )
 
 func main() {
@@ -51,7 +52,7 @@ func main() {
 	flag.Parse()
 
 	// Resolve config path
-	configPath := getDefaultConfigPath()
+	configPath := utils.GetDefaultConfigPath()
 	if flag.NArg() > 0 {
 		configPath = flag.Arg(0)
 	}
@@ -59,6 +60,10 @@ func main() {
 	absPath, err := filepath.Abs(configPath)
 	if err != nil {
 		log.Fatalf("Failed to resolve config path: %v", err)
+	}
+	err = utils.EnsureOnboarded(absPath)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize PicoClaw config automatically: %v", err)
 	}
 
 	var explicitPort bool
@@ -109,7 +114,7 @@ func main() {
 
 	// API Routes (e.g. /api/status)
 	apiHandler := api.NewHandler(absPath)
-	apiHandler.SetServerOptions(portNum, effectivePublic, launcherCfg.AllowedCIDRs)
+	apiHandler.SetServerOptions(portNum, effectivePublic, explicitPublic, launcherCfg.AllowedCIDRs)
 	apiHandler.RegisterRoutes(mux)
 
 	// Frontend Embedded Assets
@@ -128,13 +133,13 @@ func main() {
 	)
 
 	// Print startup banner
-	fmt.Print(banner)
+	fmt.Print(utils.Banner)
 	fmt.Println()
 	fmt.Println("  Open the following URL in your browser:")
 	fmt.Println()
 	fmt.Printf("    >> http://localhost:%s <<\n", effectivePort)
 	if effectivePublic {
-		if ip := getLocalIP(); ip != "" {
+		if ip := utils.GetLocalIP(); ip != "" {
 			fmt.Printf("    >> http://%s:%s <<\n", ip, effectivePort)
 		}
 	}
@@ -145,7 +150,7 @@ func main() {
 		go func() {
 			time.Sleep(500 * time.Millisecond)
 			url := "http://localhost:" + effectivePort
-			if err := openBrowser(url); err != nil {
+			if err := utils.OpenBrowser(url); err != nil {
 				log.Printf("Warning: Failed to auto-open browser: %v", err)
 			}
 		}()
