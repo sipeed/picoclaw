@@ -8,6 +8,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -72,6 +73,10 @@ func (t *CronTool) Parameters() map[string]any {
 			"command": map[string]any{
 				"type":        "string",
 				"description": "Optional: Shell command to execute directly (e.g., 'df -h'). If set, the agent will run this command and report output instead of just showing the message. 'deliver' will be forced to false for commands.",
+			},
+			"command_confirm": map[string]any{
+				"type":        "boolean",
+				"description": "Required when using command=true. Must be true to explicitly confirm scheduling a shell command.",
 			},
 			"at_seconds": map[string]any{
 				"type":        "integer",
@@ -175,12 +180,17 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		deliver = d
 	}
 
+	// GHSA-pv8c-p6jf-3fpp: command scheduling requires internal channel + explicit confirm.
+	// Non-command reminders (plain messages) remain open to all channels.
 	command, _ := args["command"].(string)
+	commandConfirm, _ := args["command_confirm"].(bool)
 	if command != "" {
-		// Commands must be processed by agent/exec tool, so deliver must be false (or handled specifically)
-		// Actually, let's keep deliver=false to let the system know it's not a simple chat message
-		// But for our new logic in ExecuteJob, we can handle it regardless of deliver flag if Payload.Command is set.
-		// However, logically, it's not "delivered" to chat directly as is.
+		if !constants.IsInternalChannel(channel) {
+			return ErrorResult("scheduling command execution is restricted to internal channels")
+		}
+		if !commandConfirm {
+			return ErrorResult("command_confirm=true is required to schedule command execution")
+		}
 		deliver = false
 	}
 
@@ -281,7 +291,9 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 	// Execute command if present
 	if job.Payload.Command != "" {
 		args := map[string]any{
-			"command": job.Payload.Command,
+			"command":   job.Payload.Command,
+			"__channel": channel,
+			"__chat_id": chatID,
 		}
 
 		result := t.execTool.Execute(ctx, args)

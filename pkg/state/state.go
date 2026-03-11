@@ -40,8 +40,8 @@ func NewManager(workspace string) *Manager {
 	oldStateFile := filepath.Join(workspace, "state.json")
 
 	// Create state directory if it doesn't exist
-	if err := os.MkdirAll(stateDir, 0o755); err != nil {
-		log.Fatalf("[FATAL] state: failed to create state directory: %v", err)
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		log.Printf("[WARN] state: failed to create state directory %s: %v", stateDir, err)
 	}
 
 	sm := &Manager{
