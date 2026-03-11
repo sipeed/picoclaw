@@ -77,3 +77,38 @@ func TestSpawnTool_Execute_NilManager(t *testing.T) {
 		t.Errorf("Error message should mention manager not configured, got: %s", result.ForLLM)
 	}
 }
+
+func TestSubagentManager_ModelResolver(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "default-model", "/tmp/test")
+
+	// Set up model resolver
+	resolvedAgentID := ""
+	manager.SetModelResolver(func(agentID string) string {
+		resolvedAgentID = agentID
+		if agentID == "premium-agent" {
+			return "gpt-4"
+		}
+		return ""
+	})
+
+	// Verify resolver is set
+	if manager.modelResolver == nil {
+		t.Fatal("Model resolver should be set")
+	}
+
+	// Test resolver is called with correct agent ID
+	result := manager.modelResolver("premium-agent")
+	if resolvedAgentID != "premium-agent" {
+		t.Errorf("Expected resolver to be called with 'premium-agent', got '%s'", resolvedAgentID)
+	}
+	if result != "gpt-4" {
+		t.Errorf("Expected 'gpt-4', got '%s'", result)
+	}
+
+	// Test fallback for unknown agent
+	result = manager.modelResolver("unknown-agent")
+	if result != "" {
+		t.Errorf("Expected empty string for unknown agent, got '%s'", result)
+	}
+}
