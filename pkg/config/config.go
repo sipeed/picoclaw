@@ -356,6 +356,7 @@ type MatrixConfig struct {
 	AccessToken        string              `json:"access_token"            env:"PICOCLAW_CHANNELS_MATRIX_ACCESS_TOKEN"`
 	DeviceID           string              `json:"device_id,omitempty"     env:"PICOCLAW_CHANNELS_MATRIX_DEVICE_ID"`
 	JoinOnInvite       bool                `json:"join_on_invite"          env:"PICOCLAW_CHANNELS_MATRIX_JOIN_ON_INVITE"`
+	MessageFormat      string              `json:"message_format,omitempty" env:"PICOCLAW_CHANNELS_MATRIX_MESSAGE_FORMAT"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_MATRIX_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
