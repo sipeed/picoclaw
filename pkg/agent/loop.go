@@ -346,7 +346,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					if defaultAgent != nil {
 						if tool, ok := defaultAgent.Tools.Get("message"); ok {
 							if mt, ok := tool.(*tools.MessageTool); ok {
-								alreadySent = mt.HasSentInRound() && mt.SentToChatID() == msg.ChatID
+								alreadySent = mt.HasSentInRound() && mt.HasSentToChatID(msg.ChatID)
 							}
 						}
 					}
