@@ -36,6 +36,11 @@
       "api_key": "sk-your-deepseek-key"
     },
     {
+      "model_name": "longcat",
+      "model": "longcat/LongCat-Flash-Thinking",
+      "api_key": "your-longcat-api-key"
+    },
+    {
       "model_name": "loadbalanced-gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-key1",
@@ -274,6 +279,10 @@
     "avian": {
       "api_key": "",
       "api_base": "https://api.avian.io/v1"
+    },
+    "longcat": {
+      "api_key": "",
+      "api_base": "https://api.longcat.chat/openai"
     }
   },
   "tools": {
