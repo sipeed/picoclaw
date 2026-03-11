@@ -68,6 +68,9 @@ func NewAgentInstance(
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
 
 	toolsRegistry := tools.NewToolRegistry()
+	if cfg.Tools.MaxTools > 0 {
+		toolsRegistry.SetMaxTools(cfg.Tools.MaxTools)
+	}
 
 	if cfg.Tools.IsToolEnabled("read_file") {
 		maxReadFileSize := cfg.Tools.ReadFile.MaxReadFileSize

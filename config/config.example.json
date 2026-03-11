@@ -279,6 +279,7 @@
   "tools": {
     "allow_read_paths": null,
     "allow_write_paths": null,
+    "max_tools": 128,
     "web": {
       "enabled": true,
       "brave": {
