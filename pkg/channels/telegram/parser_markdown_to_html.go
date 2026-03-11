@@ -109,9 +109,3 @@ func escapeHTML(text string) string {
 	text = strings.ReplaceAll(text, ">", "&gt;")
 	return text
 }
-
-func parseChatID(chatIDStr string) (int64, error) {
-	var id int64
-	_, err := fmt.Sscanf(chatIDStr, "%d", &id)
-	return id, err
-}

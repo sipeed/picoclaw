@@ -36,7 +36,7 @@ type entityPattern struct {
 	close string
 }
 
-// allEntityPatterns lists every recognised entity in priority order
+// allEntityPatterns lists every recognized entity in priority order
 // (longer / more-specific delimiters first so they win over shorter ones).
 // Each entry's regex is anchored to find the first occurrence in a string.
 var allEntityPatterns = []entityPattern{
@@ -82,7 +82,7 @@ var verbatimEntities = map[string]bool{
 // Rules:
 //   - Markdown headings (# … ######) are converted to *bold*.
 //   - **bold** Markdown syntax is converted to *bold*.
-//   - Recognised Telegram MarkdownV2 entity spans are preserved; their inner
+//   - Recognized Telegram MarkdownV2 entity spans are preserved; their inner
 //     content is processed recursively so that nested valid entities are kept
 //     intact while stray special characters are escaped.
 //   - All plain-text segments have their MarkdownV2 special characters escaped.
@@ -172,7 +172,7 @@ func processText(text string) string {
 }
 
 // escapeMarkdownV2 escapes every MarkdownV2 special character in a plain-text
-// segment (i.e. a segment that is not part of any recognised entity).
+// segment (i.e. a segment that is not part of any recognized entity).
 // Already-escaped sequences (backslash + char) are forwarded verbatim to avoid
 // double-escaping.
 func escapeMarkdownV2(s string) string {
