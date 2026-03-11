@@ -189,6 +189,11 @@ export function ConfigPage() {
           session: {
             dm_scope: dmScope,
           },
+          tools: {
+            exec: {
+              allow_remote: form.allowRemote,
+            },
+          },
           heartbeat: {
             enabled: form.heartbeatEnabled,
             interval: heartbeatInterval,

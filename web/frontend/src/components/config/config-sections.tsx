@@ -63,6 +63,13 @@ export function AgentDefaultsSection({
           }
         />
 
+        <SwitchCardField
+          label={t("pages.config.allow_remote")}
+          hint={t("pages.config.allow_remote_hint")}
+          checked={form.allowRemote}
+          onCheckedChange={(checked) => onFieldChange("allowRemote", checked)}
+        />
+
         <Field
           label={t("pages.config.max_tokens")}
           hint={t("pages.config.max_tokens_hint")}
