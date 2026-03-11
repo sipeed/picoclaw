@@ -182,6 +182,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	// The Manager already splits messages to ≤4000 chars (WithMaxMessageLength),
 	// so msg.Content is guaranteed to be within that limit. We still need to
 	// check if HTML expansion pushes it beyond Telegram's 4096-char API limit.
+	replyToID := msg.ReplyToMessageID
 	queue := []string{msg.Content}
 	for len(queue) > 0 {
 		chunk := queue[0]
@@ -202,9 +203,11 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			continue
 		}
 
-		if err := c.sendChunk(ctx, chatID, threadID, content, chunk, useMarkdownV2); err != nil {
+		if err := c.sendChunk(ctx, chatID, threadID, content, chunk, replyToID, useMarkdownV2); err != nil {
 			return err
 		}
+		// Only the first chunk should be a reply; subsequent chunks are normal messages.
+		replyToID = ""
 	}
 
 	return nil
@@ -216,7 +219,7 @@ func (c *TelegramChannel) sendChunk(
 	ctx context.Context,
 	chatID int64,
 	threadID int,
-	content, mdFallback string,
+	content, replyToID, mdFallback string,
 	useMarkdownV2 bool,
 ) error {
 	tgMsg := tu.Message(tu.ID(chatID), content)
@@ -225,6 +228,14 @@ func (c *TelegramChannel) sendChunk(
 		tgMsg.WithParseMode(telego.ModeMarkdownV2)
 	} else {
 		tgMsg.WithParseMode(telego.ModeHTML)
+	}
+
+	if replyToID != "" {
+		if mid, parseErr := strconv.Atoi(replyToID); parseErr == nil {
+			tgMsg.ReplyParameters = &telego.ReplyParameters{
+				MessageID: mid,
+			}
+		}
 	}
 
 	if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
