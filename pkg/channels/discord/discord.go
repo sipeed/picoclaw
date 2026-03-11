@@ -134,7 +134,7 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 		return nil
 	}
 
-	return c.sendChunk(ctx, channelID, msg.Content)
+	return c.sendChunk(ctx, channelID, msg.Content, msg.ReplyToMessageID)
 }
 
 // SendMedia implements the channels.MediaSender interface.
@@ -259,14 +259,29 @@ func (c *DiscordChannel) SendPlaceholder(ctx context.Context, chatID string) (st
 	return msg.ID, nil
 }
 
-func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content string) error {
+func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content, replyToID string) error {
 	// Use the passed ctx for timeout control
 	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.session.ChannelMessageSend(channelID, content)
+		var err error
+
+		// If we have an ID, we send the message as "Reply"
+		if replyToID != "" {
+			_, err = c.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+				Content: content,
+				Reference: &discordgo.MessageReference{
+					MessageID: replyToID,
+					ChannelID: channelID,
+				},
+			})
+		} else {
+			// Otherwise, we send a normal message
+			_, err = c.session.ChannelMessageSend(channelID, content)
+		}
+
 		done <- err
 	}()
 
