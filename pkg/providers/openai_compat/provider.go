@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/go-retryablehttp"
 
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
@@ -26,6 +29,21 @@ type (
 	GoogleExtra            = protocoltypes.GoogleExtra
 	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
+
+var vendorPrefixes = map[string]struct{}{
+	"litellm":    {},
+	"moonshot":   {},
+	"nvidia":     {},
+	"groq":       {},
+	"ollama":     {},
+	"deepseek":   {},
+	"google":     {},
+	"openrouter": {},
+	"zhipu":      {},
+	"mistral":    {},
+	"vivgrid":    {},
+	"minimax":    {},
+}
 
 type Provider struct {
 	apiKey         string
@@ -52,17 +70,56 @@ func WithRequestTimeout(timeout time.Duration) Option {
 	}
 }
 
+func WithRetry(maxRetries int, minWait, maxWait time.Duration) Option {
+	return func(p *Provider) {
+		if rc, ok := p.httpClient.Transport.(*retryablehttp.RoundTripper); ok {
+			if maxRetries >= 0 {
+				rc.Client.RetryMax = maxRetries
+			}
+			if minWait > 0 {
+				rc.Client.RetryWaitMin = minWait
+			}
+			if maxWait > 0 {
+				rc.Client.RetryWaitMax = maxWait
+			}
+		}
+	}
+}
+
 func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
+	retryClient := retryablehttp.NewClient()
+	retryClient.RetryMax = 3
+	retryClient.RetryWaitMin = 1 * time.Second
+	retryClient.RetryWaitMax = 30 * time.Second
+	retryClient.Backoff = retryablehttp.LinearJitterBackoff
+	retryClient.Logger = nil
+
+	transport := &http.Transport{}
+	if proxy != "" {
+		if parsed, err := url.Parse(proxy); err == nil {
+			transport.Proxy = http.ProxyURL(parsed)
+		} else {
+			log.Printf("openai_compat: invalid proxy URL %q: %v", proxy, err)
+		}
+	}
+
+	retryClient.HTTPClient.Transport = transport
+	retryClient.HTTPClient.Timeout = defaultRequestTimeout
+
 	p := &Provider{
 		apiKey:     apiKey,
 		apiBase:    strings.TrimRight(apiBase, "/"),
-		httpClient: common.NewHTTPClient(proxy),
+		httpClient: retryClient.StandardClient(),
 	}
 
 	for _, opt := range opts {
 		if opt != nil {
 			opt(p)
 		}
+	}
+
+	if p.maxTokensField == "" {
+		p.maxTokensField = "max_tokens"
 	}
 
 	return p
@@ -112,19 +169,7 @@ func (p *Provider) Chat(
 	}
 
 	if maxTokens, ok := common.AsInt(options["max_tokens"]); ok {
-		// Use configured maxTokensField if specified, otherwise fallback to model-based detection
-		fieldName := p.maxTokensField
-		if fieldName == "" {
-			// Fallback: detect from model name for backward compatibility
-			lowerModel := strings.ToLower(model)
-			if strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "o1") ||
-				strings.Contains(lowerModel, "gpt-5") {
-				fieldName = "max_completion_tokens"
-			} else {
-				fieldName = "max_tokens"
-			}
-		}
-		requestBody[fieldName] = maxTokens
+		requestBody[p.maxTokensField] = maxTokens
 	}
 
 	if temperature, ok := common.AsFloat(options["temperature"]); ok {
@@ -171,6 +216,14 @@ func (p *Provider) Chat(
 	}
 	defer resp.Body.Close()
 
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		// continue processing response
+	}
+
+	// Non-200: read a prefix to tell HTML error page apart from JSON error body.
 	if resp.StatusCode != http.StatusOK {
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
@@ -179,23 +232,20 @@ func (p *Provider) Chat(
 }
 
 func normalizeModel(model, apiBase string) string {
+	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
+		return model
+	}
+
 	before, after, ok := strings.Cut(model, "/")
 	if !ok {
 		return model
 	}
 
-	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
-		return model
+	if _, exists := vendorPrefixes[strings.ToLower(before)]; exists {
+		return after
 	}
 
-	prefix := strings.ToLower(before)
-	switch prefix {
-	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google",
-		"openrouter", "zhipu", "mistral", "vivgrid", "minimax":
-		return after
-	default:
-		return model
-	}
+	return model
 }
 
 func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {
