@@ -126,6 +126,57 @@ func TestSingleSystemMessage(t *testing.T) {
 	}
 }
 
+// TestToolsMdIncludedInBootstrap verifies that TOOLS.md is loaded into the
+// system prompt as a bootstrap file, alongside AGENTS.md, SOUL.md, etc.
+// Fixes #1315: TOOLS.md was documented in README and migrated from openclaw,
+// but never read into the agent context.
+func TestToolsMdIncludedInBootstrap(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"TOOLS.md": "# Tools\nUse the search tool for web queries.",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	prompt := cb.BuildSystemPrompt()
+
+	if !strings.Contains(prompt, "Use the search tool for web queries") {
+		t.Error("system prompt should contain TOOLS.md content")
+	}
+	if !strings.Contains(prompt, "TOOLS.md") {
+		t.Error("system prompt should contain TOOLS.md header")
+	}
+}
+
+// TestToolsMdCacheInvalidation verifies that changes to TOOLS.md invalidate
+// the cached system prompt.
+func TestToolsMdCacheInvalidation(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"TOOLS.md": "# Tools v1",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	sp1 := cb.BuildSystemPromptWithCache()
+	if !strings.Contains(sp1, "Tools v1") {
+		t.Fatal("initial prompt should contain TOOLS.md content")
+	}
+
+	// Update TOOLS.md
+	toolsPath := filepath.Join(tmpDir, "TOOLS.md")
+	os.WriteFile(toolsPath, []byte("# Tools v2\nUpdated tool descriptions."), 0o644)
+	future := time.Now().Add(2 * time.Second)
+	os.Chtimes(toolsPath, future, future)
+
+	// Cache should auto-invalidate
+	sp2 := cb.BuildSystemPromptWithCache()
+	if !strings.Contains(sp2, "Tools v2") {
+		t.Error("rebuilt prompt should contain updated TOOLS.md content")
+	}
+	if sp1 == sp2 {
+		t.Error("cache should be invalidated when TOOLS.md changes")
+	}
+}
+
 // TestMtimeAutoInvalidation verifies that the cache detects source file changes
 // via mtime without requiring explicit InvalidateCache().
 // Fix: original implementation had no auto-invalidation — edits to bootstrap files,
