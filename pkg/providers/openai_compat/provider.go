@@ -480,8 +480,9 @@ func asFloat(v any) (float64, bool) {
 
 // supportsPromptCacheKey reports whether the given API base is known to
 // support the prompt_cache_key request field. Currently only OpenAI's own
-// API supports this. All other OpenAI-compatible providers (Mistral,
-// Gemini, DeepSeek, Groq, etc.) reject unknown fields with 422 errors.
+// API and Azure OpenAI support this. All other OpenAI-compatible providers
+// (Mistral, Gemini, DeepSeek, Groq, etc.) reject unknown fields with 422 errors.
 func supportsPromptCacheKey(apiBase string) bool {
-	return strings.Contains(apiBase, "api.openai.com")
+	return strings.Contains(apiBase, "api.openai.com") ||
+		strings.Contains(apiBase, "openai.azure.com")
 }

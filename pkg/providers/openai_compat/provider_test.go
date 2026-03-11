@@ -785,6 +785,8 @@ func TestSupportsPromptCacheKey(t *testing.T) {
 	}{
 		{"https://api.openai.com/v1", true},
 		{"https://api.openai.com/v1/", true},
+		{"https://myresource.openai.azure.com/openai/deployments/gpt-4", true},
+		{"https://eastus.openai.azure.com/v1", true},
 		{"https://api.mistral.ai/v1", false},
 		{"https://generativelanguage.googleapis.com/v1beta", false},
 		{"https://api.deepseek.com/v1", false},
