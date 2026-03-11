@@ -4,12 +4,15 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestMatrixLocalpartMentionRegexp(t *testing.T) {
@@ -287,5 +290,52 @@ func TestMatrixOutboundContent(t *testing.T) {
 	)
 	if noCaption.Body != "image.png" {
 		t.Fatalf("unexpected fallback body: %q", noCaption.Body)
+	}
+}
+
+func TestMarkdownToHTML(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		contains string
+	}{
+		{"bold", "**hello**", "<strong>hello</strong>"},
+		{"italic", "_world_", "<em>world</em>"},
+		{"header", "### Title", "<h3"},
+		{"code block", "```\nfoo()\n```", "<code>"},
+		{"inline code", "`x`", "<code>x</code>"},
+		{"plain text", "just text", "just text"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := markdownToHTML(tt.input)
+			if !strings.Contains(got, tt.contains) {
+				t.Fatalf("markdownToHTML(%q) = %q, want it to contain %q", tt.input, got, tt.contains)
+			}
+		})
+	}
+}
+
+func TestMessageContent(t *testing.T) {
+	richtext := &MatrixChannel{config: config.MatrixConfig{MessageFormat: "richtext"}}
+	plain := &MatrixChannel{config: config.MatrixConfig{MessageFormat: "plain"}}
+	defaultt := &MatrixChannel{config: config.MatrixConfig{}}
+
+	for _, c := range []*MatrixChannel{richtext, defaultt} {
+		mc := c.messageContent("**hi**")
+		if mc.Format != event.FormatHTML {
+			t.Errorf("format %q: expected FormatHTML, got %q", c.config.MessageFormat, mc.Format)
+		}
+		if !strings.Contains(mc.FormattedBody, "<strong>hi</strong>") {
+			t.Errorf("format %q: FormattedBody %q missing <strong>", c.config.MessageFormat, mc.FormattedBody)
+		}
+		if mc.Body != "**hi**" {
+			t.Errorf("format %q: Body should remain plain, got %q", c.config.MessageFormat, mc.Body)
+		}
+	}
+
+	mc := plain.messageContent("**hi**")
+	if mc.Format != "" || mc.FormattedBody != "" {
+		t.Errorf("plain: expected no formatting, got format=%q formattedBody=%q", mc.Format, mc.FormattedBody)
 	}
 }
