@@ -1093,7 +1093,7 @@ func (al *AgentLoop) runLLMIteration(
 
 		go al.handleReasoning(
 			ctx,
-			response.Reasoning,
+			response.ReasoningContent,
 			opts.Channel,
 			al.targetReasoningChannelID(opts.Channel),
 		)
@@ -1104,7 +1104,7 @@ func (al *AgentLoop) runLLMIteration(
 				"iteration":      iteration,
 				"content_chars":  len(response.Content),
 				"tool_calls":     len(response.ToolCalls),
-				"reasoning":      response.Reasoning,
+				"reasoning_content":      response.ReasoningContent,
 				"target_channel": al.targetReasoningChannelID(opts.Channel),
 				"channel":        opts.Channel,
 			})
