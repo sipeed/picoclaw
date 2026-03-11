@@ -52,6 +52,8 @@ func DefaultConfig() *Config {
 			Telegram: TelegramConfig{
 				Enabled:   false,
 				Token:     "",
+				BaseURL:   "",
+				Proxy:     "",
 				AllowFrom: FlexibleStringSlice{},
 				Typing:    TypingConfig{Enabled: true},
 				Placeholder: PlaceholderConfig{

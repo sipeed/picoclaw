@@ -353,6 +353,7 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk,
     "telegram": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
+      "base_url": "",
       "allow_from": ["YOUR_USER_ID"]
     }
   }
@@ -360,6 +361,8 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk,
 ```
 
 > Get your user ID from `@userinfobot` on Telegram.
+>
+> Set `base_url` when you need a custom Telegram Bot API endpoint (for example, local Bot API server or reverse proxy).
 
 **3. Run**
 
@@ -1284,6 +1287,7 @@ picoclaw agent -m "Hello"
     "telegram": {
       "enabled": true,
       "token": "123456:ABC...",
+      "base_url": "",
       "allow_from": ["123456789"]
     },
     "discord": {
