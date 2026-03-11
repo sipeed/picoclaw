@@ -336,3 +336,40 @@ func TestIsImageSizeError(t *testing.T) {
 		t.Error("should not match normal error")
 	}
 }
+
+func TestIsContextWindowError(t *testing.T) {
+	// Should match token-related errors
+	positives := []string{
+		"context window length exceeded",
+		"maximum context length is 128000 tokens",
+		"context_length_exceeded",
+		"max token limit reached",
+		"total tokens exceeded model limit",
+		"tokens exceeded the maximum",
+		"exceeds the model token limit",
+		"invalidparameter: max_tokens exceeded",
+	}
+	for _, msg := range positives {
+		if !IsContextWindowError(errors.New(msg)) {
+			t.Errorf("expected true for %q", msg)
+		}
+	}
+
+	// Should NOT match non-token errors (false positive regression test)
+	negatives := []string{
+		"invalidparameter: temperature must be between 0 and 2",
+		"invalidparameter: model not found",
+		"invalid authentication token",
+		"normal error message",
+	}
+	for _, msg := range negatives {
+		if IsContextWindowError(errors.New(msg)) {
+			t.Errorf("expected false for %q (false positive)", msg)
+		}
+	}
+
+	// Nil error
+	if IsContextWindowError(nil) {
+		t.Error("expected false for nil error")
+	}
+}

@@ -73,6 +73,12 @@
 
 🤖 **AI-Bootstrapped**: Autonomous Go-native implementation — 95% Agent-generated core with human-in-the-loop refinement.
 
+🎙️ **Voice & Media**: Built-in voice transcription (via Groq Whisper) and media attachment handling across all channels.
+
+🔌 **MCP Support**: Connect external tool servers via the Model Context Protocol for extensible capabilities.
+
+🔀 **Model Routing**: Automatic light/heavy model routing to reduce costs — simple queries go to cheaper models, complex ones to full-power models.
+
 |                               | OpenClaw      | NanoBot                  | **PicoClaw**                              |
 | ----------------------------- | ------------- | ------------------------ | ----------------------------------------- |
 | **Language**                  | TypeScript    | Python                   | **Go**                                    |
@@ -997,6 +1003,9 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 | `anthropic(To be tested)`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com)               |
 | `openai(To be tested)`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)                   |
 | `deepseek(To be tested)`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)               |
+| `mistral`                  | LLM (Mistral direct)                    | [console.mistral.ai](https://console.mistral.ai)                     |
+| `minimax`                  | LLM (MiniMax direct)                    | [platform.minimaxi.com](https://platform.minimaxi.com)               |
+| `avian`                    | LLM (Avian direct)                      | [avian.io](https://avian.io)                                         |
 | `qwen`                     | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                         |
 | `cerebras`                 | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                                   |
@@ -1034,6 +1043,9 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://console.volcengine.com)                        |
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
 | **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
+| **Mistral**         | `mistral/`        | `https://api.mistral.ai/v1`                         | OpenAI    | [Get Key](https://console.mistral.ai)                            |
+| **MiniMax**         | `minimax/`        | `https://api.minimaxi.com/v1`                       | OpenAI    | [Get Key](https://platform.minimaxi.com)                         |
+| **Avian**           | `avian/`          | `https://api.avian.io/v1`                           | OpenAI    | [Get Key](https://avian.io)                                      |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
 
@@ -1213,13 +1225,16 @@ For detailed migration guide, see [docs/migration/model-list-migration.md](docs/
 
 ### Provider Architecture
 
-PicoClaw routes providers by protocol family:
+PicoClaw uses a **table-driven provider registry** that routes providers by protocol family:
 
-- OpenAI-compatible protocol: OpenRouter, OpenAI-compatible gateways, Groq, Zhipu, and vLLM-style endpoints.
-- Anthropic protocol: Claude-native API behavior.
-- Codex/OAuth path: OpenAI OAuth/token authentication route.
+- **OpenAI-compatible protocol**: OpenRouter, Groq, Zhipu, DeepSeek, Mistral, MiniMax, Avian, Ollama, VLLM, and other OpenAI-compatible gateways.
+- **Anthropic protocol**: Claude-native API behavior (with OAuth/token support).
+- **Codex/OAuth path**: OpenAI OAuth/token authentication route.
+- **Special providers**: Claude CLI, Codex CLI, GitHub Copilot (gRPC), Antigravity (Google Cloud OAuth).
 
-This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_key`).
+Adding a new OpenAI-compatible provider requires only a registry entry (`api_base` + `api_key` accessor) — no switch statements or code changes.
+
+The agent loop uses a **fallback chain** with cooldown tracking, error classification, and exponential backoff. Context window errors trigger automatic **history compression**; rate limits and server errors trigger fallback to the next configured model.
 
 <details>
 <summary><b>Zhipu</b></summary>
