@@ -477,6 +477,9 @@
     "enabled": false,
     "monitor_usb": true
   },
+  "voice": {
+    "echo_transcription": false
+  },
   "gateway": {
     "host": "127.0.0.1",
     "port": 18790

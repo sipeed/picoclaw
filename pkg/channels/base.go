@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -31,6 +32,9 @@ func init() {
 	}
 	uniqueIDPrefix = hex.EncodeToString(b[:])
 }
+
+// audioAnnotationRe matches audio/voice annotations injected by channels (e.g. [voice], [audio: file.ogg]).
+var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
 
 // uniqueID generates a process-unique ID using a random prefix and an atomic counter.
 // This ID is intended for internal correlation (e.g. media scope keys) and is NOT
@@ -284,10 +288,15 @@ func (c *BaseChannel) HandleMessage(
 				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, undo)
 			}
 		}
-		// Placeholder — independent pipeline
-		if pc, ok := c.owner.(PlaceholderCapable); ok {
-			if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
-				c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
+		// Placeholder — independent pipeline.
+		// Skip when the message contains audio: the agent will send the
+		// placeholder after transcription completes, so the user sees
+		// "Thinking…" only once the voice has been processed.
+		if !audioAnnotationRe.MatchString(content) {
+			if pc, ok := c.owner.(PlaceholderCapable); ok {
+				if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
+					c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
+				}
 			}
 		}
 	}
