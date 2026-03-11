@@ -424,8 +424,9 @@
         "^unzip\\b",
         "^tar\\b",
         "^git\\b",
-        "^rm\\s+(?!.*-[rR])\\S"
-      ]
+        "^rm\\s+[^-]"
+      ],
+      "exec_admins": []
     },
     "skills": {
       "enabled": true,

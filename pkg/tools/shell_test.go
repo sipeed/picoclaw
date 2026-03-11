@@ -369,7 +369,7 @@ func TestGuardCommand_URLEncodedTraversal(t *testing.T) {
 	}
 	tool.SetRestrictToWorkspace(true)
 
-	msg := tool.guardCommand("cat %2e%2e%2f%2e%2e%2fetc/passwd", tmpDir)
+	msg := tool.guardCommand("cat %2e%2e%2f%2e%2e%2fetc/passwd", tmpDir, false)
 	if msg == "" {
 		t.Error("Expected URL-encoded path traversal to be blocked")
 	}
@@ -385,7 +385,7 @@ func TestGuardCommand_NullByte(t *testing.T) {
 	}
 	tool.SetRestrictToWorkspace(true)
 
-	msg := tool.guardCommand("cat foo\x00../../etc/passwd", tmpDir)
+	msg := tool.guardCommand("cat foo\x00../../etc/passwd", tmpDir, false)
 	if msg == "" {
 		t.Error("Expected null-byte traversal to be blocked")
 	}
@@ -402,7 +402,7 @@ func TestGuardCommand_SuBlocked(t *testing.T) {
 
 	cases := []string{"su", "su -", "su root", "doas ls", "pkexec /bin/bash"}
 	for _, cmd := range cases {
-		msg := tool.guardCommand(cmd, tmpDir)
+		msg := tool.guardCommand(cmd, tmpDir, false)
 		if msg == "" {
 			t.Errorf("Expected %q to be blocked", cmd)
 		}
@@ -420,7 +420,7 @@ func TestGuardCommand_SuNoFalsePositive(t *testing.T) {
 
 	cases := []string{"echo surplus", "cat summary.txt", "ls result/"}
 	for _, cmd := range cases {
-		msg := tool.guardCommand(cmd, tmpDir)
+		msg := tool.guardCommand(cmd, tmpDir, false)
 		if msg != "" {
 			t.Errorf("Expected %q to NOT be blocked, got: %s", cmd, msg)
 		}

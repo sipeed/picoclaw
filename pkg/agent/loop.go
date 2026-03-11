@@ -26,6 +26,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/media"
@@ -64,16 +65,17 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string   // Session identifier for history/context
-	Channel         string   // Target channel for tool execution
-	ChatID          string   // Target chat ID for tool execution
-	UserMessage     string   // User message content (may include prefix)
-	Media           []string // media:// refs from inbound message
-	DefaultResponse string   // Response when LLM returns empty
-	EnableSummary   bool     // Whether to trigger summarization
-	SendResponse    bool     // Whether to send response via bus
-	NoHistory       bool     // If true, don't load session history (for heartbeat)
-	WorkingDir      string   // Current working directory override (for hipico from cmd mode)
+	SessionKey      string         // Session identifier for history/context
+	Channel         string         // Target channel for tool execution
+	ChatID          string         // Target chat ID for tool execution
+	UserMessage     string         // User message content (may include prefix)
+	Media           []string       // media:// refs from inbound message
+	DefaultResponse string         // Response when LLM returns empty
+	EnableSummary   bool           // Whether to trigger summarization
+	SendResponse    bool           // Whether to send response via bus
+	NoHistory       bool           // If true, don't load session history (for heartbeat)
+	WorkingDir      string         // Current working directory override (for hipico from cmd mode)
+	Sender          bus.SenderInfo // Sender identity for per-user permission checks
 }
 
 const (
@@ -722,6 +724,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		EnableSummary:   true,
 		SendResponse:    false,
 		WorkingDir:      msg.Metadata["work_dir"],
+		Sender:          msg.Sender,
 	}
 
 	// In cmd mode, rewrite bare text as /exec so all shell execution flows
@@ -1962,7 +1965,8 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 			if agent == nil {
 				return "", fmt.Errorf("no agent available")
 			}
-			return al.executeCmdMode(ctx, agent, command, opts.SessionKey, opts.Channel, opts.ChatID)
+			isAdmin := al.isExecAdmin(opts.Sender)
+			return al.executeCmdMode(ctx, agent, command, opts.SessionKey, opts.Channel, opts.ChatID, isAdmin)
 		},
 
 		// One-shot AI query for /hipico (stays in modeCmd, separate session key)
@@ -2025,12 +2029,26 @@ func mapCommandError(result commands.ExecuteResult) string {
 	return fmt.Sprintf("Failed to execute /%s: %v", result.Command, result.Err)
 }
 
+// isExecAdmin returns true if the sender is listed in tools.exec.exec_admins,
+// using the same identity matching as channel allow_from.
+func (al *AgentLoop) isExecAdmin(sender bus.SenderInfo) bool {
+	admins := al.cfg.Tools.Exec.ExecAdmins
+	for _, admin := range admins {
+		if identity.MatchAllowed(sender, admin) {
+			return true
+		}
+	}
+	return false
+}
+
 // executeCmdMode executes a shell command in command mode via ExecTool.
 // Output is formatted as a console code block for channel display.
+// isAdmin bypasses all command guards for verified exec admins.
 func (al *AgentLoop) executeCmdMode(
 	ctx context.Context,
 	agent *AgentInstance,
 	content, sessionKey, channel, chatID string,
+	isAdmin bool,
 ) (string, error) {
 	content = strings.TrimSpace(content)
 	if content == "" {
@@ -2053,11 +2071,23 @@ func (al *AgentLoop) executeCmdMode(
 		workDir = agent.Workspace
 	}
 
-	// Execute via ExecTool
-	result := agent.Tools.ExecuteWithContext(ctx, "exec", map[string]any{
+	execArgs := map[string]any{
 		"command":     content,
 		"working_dir": workDir,
-	}, channel, chatID, nil)
+	}
+
+	// Execute via ExecTool — admins bypass command guards
+	var result *tools.ToolResult
+	if isAdmin {
+		if t, ok := agent.Tools.Get("exec"); ok {
+			if et, ok := t.(*tools.ExecTool); ok {
+				result = et.ExecuteUnrestricted(ctx, execArgs)
+			}
+		}
+	}
+	if result == nil {
+		result = agent.Tools.ExecuteWithContext(ctx, "exec", execArgs, channel, chatID, nil)
+	}
 
 	displayDir := shortenHomePath(workDir)
 	output := result.ForLLM

@@ -678,6 +678,9 @@ type ExecConfig struct {
 	// When non-empty and DevMode is false, only commands matching at least one pattern are permitted;
 	// deny patterns are bypassed — the whitelist is the sole access control.
 	AllowedCommands []string `env:"PICOCLAW_TOOLS_EXEC_ALLOWED_COMMANDS" json:"allowed_commands"`
+	// ExecAdmins lists sender identities (same format as channel allow_from) that are granted
+	// unrestricted shell execution regardless of DevMode or AllowedCommands.
+	ExecAdmins []string `env:"PICOCLAW_TOOLS_EXEC_ADMINS" json:"exec_admins"`
 }
 
 type SkillsToolsConfig struct {

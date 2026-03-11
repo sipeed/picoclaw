@@ -179,7 +179,17 @@ func (t *ExecTool) Parameters() map[string]any {
 	}
 }
 
+// ExecuteUnrestricted executes a command bypassing all command guards.
+// Use only after the caller has verified the sender is an exec admin.
+func (t *ExecTool) ExecuteUnrestricted(ctx context.Context, args map[string]any) *ToolResult {
+	return t.execute(ctx, args, true)
+}
+
 func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+	return t.execute(ctx, args, false)
+}
+
+func (t *ExecTool) execute(ctx context.Context, args map[string]any, adminOverride bool) *ToolResult {
 	command, ok := args["command"].(string)
 	if !ok {
 		return ErrorResult("command is required")
@@ -205,7 +215,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		}
 	}
 
-	if guardError := t.guardCommand(command, cwd); guardError != "" {
+	if guardError := t.guardCommand(command, cwd, adminOverride); guardError != "" {
 		return ErrorResult(guardError)
 	}
 
@@ -310,9 +320,9 @@ func sanitizeCommand(cmd string) string {
 	return cmd
 }
 
-func (t *ExecTool) guardCommand(command, cwd string) string {
-	// Dev mode: no restrictions at all.
-	if t.devMode {
+func (t *ExecTool) guardCommand(command, cwd string, adminOverride bool) string {
+	// Dev mode or exec admin: no restrictions at all.
+	if t.devMode || adminOverride {
 		return ""
 	}
 
