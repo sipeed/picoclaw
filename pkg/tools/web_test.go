@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -16,23 +19,49 @@ import (
 
 const testFetchLimit = int64(10 * 1024 * 1024)
 
+// mockRoundTripper intercepts HTTP requests and returns a fake response,
+// allowing tests to bypass actual network calls and SSRF checks.
+// Tests must use a non-private URL (e.g. RFC 5737 range 192.0.2.0/24)
+// so the SSRF check passes before the transport is invoked.
+type mockRoundTripper struct {
+	fn func(r *http.Request) *http.Response
+}
+
+func (m *mockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	return m.fn(r), nil
+}
+
+func newMockFetchTool(
+	maxChars int,
+	fetchLimitBytes int64,
+	fn func(*http.Request) *http.Response,
+) (*WebFetchTool, error) {
+	tool, err := NewWebFetchTool(maxChars, fetchLimitBytes)
+	if err != nil {
+		return nil, err
+	}
+	tool.client = &http.Client{Transport: &mockRoundTripper{fn: fn}}
+	return tool, nil
+}
+
 // TestWebTool_WebFetch_Success verifies successful URL fetching
 func TestWebTool_WebFetch_Success(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("<html><body><h1>Test Page</h1><p>Content here</p></body></html>"))
-	}))
-	defer server.Close()
-
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := newMockFetchTool(50000, testFetchLimit, func(r *http.Request) *http.Response {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/html"}},
+			Body: io.NopCloser(
+				strings.NewReader("<html><body><h1>Test Page</h1><p>Content here</p></body></html>"),
+			),
+		}
+	})
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
 
 	ctx := context.Background()
 	args := map[string]any{
-		"url": server.URL,
+		"url": "http://192.0.2.1/test", // RFC 5737 documentation IP, passes SSRF check
 	}
 
 	result := tool.Execute(ctx, args)
@@ -58,21 +87,20 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	testData := map[string]string{"key": "value", "number": "123"}
 	expectedJSON, _ := json.MarshalIndent(testData, "", "  ")
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(expectedJSON)
-	}))
-	defer server.Close()
-
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := newMockFetchTool(50000, testFetchLimit, func(r *http.Request) *http.Response {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader(expectedJSON)),
+		}
+	})
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
 
 	ctx := context.Background()
 	args := map[string]any{
-		"url": server.URL,
+		"url": "http://192.0.2.1/test", // RFC 5737 documentation IP, passes SSRF check
 	}
 
 	result := tool.Execute(ctx, args)
@@ -165,21 +193,20 @@ func TestWebTool_WebFetch_MissingURL(t *testing.T) {
 func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	longContent := strings.Repeat("x", 20000)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(longContent))
-	}))
-	defer server.Close()
-
-	tool, err := NewWebFetchTool(1000, testFetchLimit) // Limit to 1000 chars
+	tool, err := newMockFetchTool(1000, testFetchLimit, func(r *http.Request) *http.Response { // Limit to 1000 chars
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/plain"}},
+			Body:       io.NopCloser(strings.NewReader(longContent)),
+		}
+	})
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
 
 	ctx := context.Background()
 	args := map[string]any{
-		"url": server.URL,
+		"url": "http://192.0.2.1/test", // RFC 5737 documentation IP, passes SSRF check
 	}
 
 	result := tool.Execute(ctx, args)
@@ -205,29 +232,25 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 }
 
 func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
-	// Create a mock HTTP server
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
+	// Generate a payload intentionally larger than our limit.
+	// Limit: 10 * 1024 * 1024 (10MB). We generate 10MB + 100 bytes of the letter 'A'.
+	largeData := bytes.Repeat([]byte("A"), int(testFetchLimit)+100)
 
-		// Generate a payload intentionally larger than our limit.
-		// Limit: 10 * 1024 * 1024 (10MB). We generate 10MB + 100 bytes of the letter 'A'.
-		largeData := bytes.Repeat([]byte("A"), int(testFetchLimit)+100)
-
-		w.Write(largeData)
-	}))
-	// Ensure the server is shut down at the end of the test
-	defer ts.Close()
-
-	// Initialize the tool
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	// Initialize the tool with a mock transport returning the oversized payload.
+	tool, err := newMockFetchTool(50000, testFetchLimit, func(r *http.Request) *http.Response {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/html"}},
+			Body:       io.NopCloser(bytes.NewReader(largeData)),
+		}
+	})
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
 
-	// Prepare the arguments pointing to the URL of our local mock server
+	// Prepare the arguments with an RFC 5737 documentation IP that passes SSRF check.
 	args := map[string]any{
-		"url": ts.URL,
+		"url": "http://192.0.2.1/test",
 	}
 
 	// Execute the tool
@@ -290,25 +313,22 @@ func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
 
 // TestWebTool_WebFetch_HTMLExtraction verifies HTML text extraction
 func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-		w.Write(
-			[]byte(
-				`<html><body><script>alert('test');</script><style>body{color:red;}</style><h1>Title</h1><p>Content</p></body></html>`,
-			),
-		)
-	}))
-	defer server.Close()
+	htmlContent := `<html><body><script>alert('test');</script><style>body{color:red;}</style><h1>Title</h1><p>Content</p></body></html>`
 
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := newMockFetchTool(50000, testFetchLimit, func(r *http.Request) *http.Response {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/html"}},
+			Body:       io.NopCloser(strings.NewReader(htmlContent)),
+		}
+	})
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
 
 	ctx := context.Background()
 	args := map[string]any{
-		"url": server.URL,
+		"url": "http://192.0.2.1/test", // RFC 5737 documentation IP, passes SSRF check
 	}
 
 	result := tool.Execute(ctx, args)
@@ -686,6 +706,85 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 	}
 }
 
+func TestBlockPrivateTarget(t *testing.T) {
+	ctx := context.Background()
+
+	blocked := []struct {
+		name string
+		raw  string
+	}{
+		{"loopback IPv4", "http://127.0.0.1/"},
+		{"RFC1918 10/8", "http://10.0.0.1/"},
+		{"RFC1918 172.16/12", "http://172.16.0.1/"},
+		{"RFC1918 192.168/16", "http://192.168.1.1/"},
+		{"link-local", "http://169.254.1.1/"},
+		{"unspecified", "http://0.0.0.0/"},
+		{"loopback IPv6", "http://[::1]/"},
+		{"link-local IPv6", "http://[fe80::1]/"},
+	}
+	for _, tc := range blocked {
+		t.Run(tc.name, func(t *testing.T) {
+			u, _ := url.Parse(tc.raw)
+			if err := blockPrivateTarget(ctx, u); err == nil {
+				t.Errorf("expected blockPrivateTarget to block %s, but it was allowed", tc.raw)
+			}
+		})
+	}
+
+	allowed := []struct {
+		name string
+		raw  string
+	}{
+		{"public DNS", "http://8.8.8.8/"},
+		{"RFC5737 doc range", "http://192.0.2.1/"},
+	}
+	for _, tc := range allowed {
+		t.Run(tc.name, func(t *testing.T) {
+			u, _ := url.Parse(tc.raw)
+			if err := blockPrivateTarget(ctx, u); err != nil {
+				t.Errorf("expected blockPrivateTarget to allow %s, got error: %v", tc.raw, err)
+			}
+		})
+	}
+}
+
+func TestSafeDialer(t *testing.T) {
+	base := &net.Dialer{Timeout: 2 * time.Second}
+	dial := newSafeDialer(base)
+	ctx := context.Background()
+
+	privateAddrs := []struct {
+		name string
+		addr string
+	}{
+		{"loopback", "127.0.0.1:80"},
+		{"RFC1918 10/8", "10.0.0.1:80"},
+		{"RFC1918 192.168/16", "192.168.1.1:80"},
+	}
+	for _, tc := range privateAddrs {
+		t.Run("blocks "+tc.name, func(t *testing.T) {
+			_, err := dial(ctx, "tcp", tc.addr)
+			if err == nil {
+				t.Fatalf("expected error for private addr %s, got nil", tc.addr)
+			}
+			if !strings.Contains(err.Error(), "private/internal") {
+				t.Errorf("expected SSRF error for %s, got: %v", tc.addr, err)
+			}
+		})
+	}
+
+	// 192.0.2.1 (RFC 5737) is public — SSRF check passes, connection fails at
+	// the network level (unreachable host), NOT with an SSRF error.
+	t.Run("allows public RFC5737 IP", func(t *testing.T) {
+		_, err := dial(ctx, "tcp", "192.0.2.1:80")
+		if err == nil {
+			// Unexpected success — the IP is supposed to be unreachable.
+			return
+		}
+		if strings.Contains(err.Error(), "private/internal") {
+			t.Errorf("192.0.2.1 should not be blocked as private, got: %v", err)
+		}
+	})
 func TestAPIKeyPool(t *testing.T) {
 	pool := NewAPIKeyPool([]string{"key1", "key2", "key3"})
 	if len(pool.keys) != 3 {
