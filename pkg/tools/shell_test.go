@@ -500,7 +500,7 @@ func TestShellTool_FileURISandboxing(t *testing.T) {
 	// These file:// URIs should be allowed if they reference paths inside the workspace.
 	// Create a test file inside the temp directory
 	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("failed to create test file: %s", err)
 	}
 
