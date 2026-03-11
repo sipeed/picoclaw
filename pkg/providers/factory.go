@@ -40,6 +40,10 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 	providerName := strings.ToLower(cfg.Agents.Defaults.Provider)
 	lowerModel := strings.ToLower(model)
 
+	if providerName == "" && model == "" {
+		return providerSelection{}, fmt.Errorf("no model configured: agents.defaults.model is empty")
+	}
+
 	sel := providerSelection{
 		providerType: providerTypeHTTPCompat,
 		model:        model,
