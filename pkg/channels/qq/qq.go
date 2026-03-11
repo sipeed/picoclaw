@@ -466,7 +466,9 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		c.chatType.Store(senderID, "direct")
 		c.lastMsgID.Store(senderID, data.ID)
 
-		metadata := map[string]string{}
+		metadata := map[string]string{
+			"account_id": senderID,
+		}
 
 		sender := bus.SenderInfo{
 			Platform:    "qq",
@@ -534,7 +536,8 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		c.lastMsgID.Store(data.GroupID, data.ID)
 
 		metadata := map[string]string{
-			"group_id": data.GroupID,
+			"account_id": senderID,
+			"group_id":   data.GroupID,
 		}
 
 		sender := bus.SenderInfo{
