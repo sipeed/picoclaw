@@ -22,6 +22,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// responseURLHTTPClient is a shared HTTP client for posting to WeCom response_url.
+// Reusing it enables connection pooling across replies.
+var responseURLHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 // WeComAIBotChannel implements the Channel interface for WeCom AI Bot (企业微信智能机器人)
 type WeComAIBotChannel struct {
 	*channels.BaseChannel
@@ -794,8 +798,7 @@ func (c *WeComAIBotChannel) sendViaResponseURL(responseURL, content string) erro
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := responseURLHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("post to response_url failed: %w: %w", channels.ErrTemporary, err)
 	}
@@ -805,7 +808,8 @@ func (c *WeComAIBotChannel) sendViaResponseURL(responseURL, content string) erro
 		return nil
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
+	const maxErrBody = 64 << 10 // 64 KB is more than enough for any error response
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
 	if err != nil {
 		return fmt.Errorf("reading response_url body: %w: %w", channels.ErrTemporary, err)
 	}

@@ -3,6 +3,7 @@ package wecom
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -334,4 +335,121 @@ func TestWSGenerateID(t *testing.T) {
 		}
 		ids[id] = true
 	}
+}
+
+// ---- Webhook streaming fallback tests ----
+
+// makeWebhookChannel creates a started WeComAIBotChannel for testing.
+func makeWebhookChannel(t *testing.T) *WeComAIBotChannel {
+	t.Helper()
+	cfg := config.WeComAIBotConfig{
+		Enabled:        true,
+		Token:          "test_token",
+		EncodingAESKey: "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+	}
+	ch, err := NewWeComAIBotChannel(cfg, bus.NewMessageBus())
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	wc := ch.(*WeComAIBotChannel)
+	wc.ctx, wc.cancel = context.WithCancel(context.Background())
+	return wc
+}
+
+// makeStreamTask creates and registers a streamTask for testing.
+func makeStreamTask(t *testing.T, ch *WeComAIBotChannel, streamID, chatID string, deadline time.Time) *streamTask {
+	t.Helper()
+	task := &streamTask{
+		StreamID: streamID,
+		ChatID:   chatID,
+		Deadline: deadline,
+		answerCh: make(chan string, 1),
+	}
+	task.ctx, task.cancel = context.WithCancel(ch.ctx)
+	ch.taskMu.Lock()
+	ch.streamTasks[streamID] = task
+	ch.chatTasks[chatID] = append(ch.chatTasks[chatID], task)
+	ch.taskMu.Unlock()
+	return task
+}
+
+// TestGetStreamResponse_ImmediateAnswer verifies that when the agent has already
+// placed its answer in answerCh, getStreamResponse returns a finish=true response
+// and fully removes the task.
+func TestGetStreamResponse_ImmediateAnswer(t *testing.T) {
+	ch := makeWebhookChannel(t)
+	defer ch.cancel()
+
+	task := makeStreamTask(t, ch, "stream-1", "chat-1", time.Now().Add(30*time.Second))
+	task.answerCh <- "hello from agent"
+
+	result := ch.getStreamResponse(task, "ts123", "nonce123")
+	if result == "" {
+		t.Fatal("expected non-empty encrypted response")
+	}
+
+	ch.taskMu.RLock()
+	_, exists := ch.streamTasks["stream-1"]
+	ch.taskMu.RUnlock()
+	if exists {
+		t.Error("task should have been removed from streamTasks after normal finish")
+	}
+	if !task.Finished {
+		t.Error("task.Finished should be true after normal finish")
+	}
+}
+
+// TestGetStreamResponse_DeadlinePassed verifies that when the stream deadline has
+// elapsed (no agent reply yet), getStreamResponse closes the stream but keeps the
+// task alive so the response_url fallback can still deliver the answer.
+func TestGetStreamResponse_DeadlinePassed(t *testing.T) {
+	ch := makeWebhookChannel(t)
+	defer ch.cancel()
+
+	task := makeStreamTask(t, ch, "stream-2", "chat-2", time.Now().Add(-time.Millisecond))
+
+	result := ch.getStreamResponse(task, "ts456", "nonce456")
+	if result == "" {
+		t.Fatal("expected non-empty encrypted response")
+	}
+
+	ch.taskMu.RLock()
+	_, stillStreaming := ch.streamTasks["stream-2"]
+	ch.taskMu.RUnlock()
+	if stillStreaming {
+		t.Error("task should have been removed from streamTasks after deadline")
+	}
+	if !task.StreamClosed {
+		t.Error("task.StreamClosed should be true after deadline")
+	}
+	if task.Finished {
+		t.Error("task.Finished must remain false: agent reply still expected via response_url")
+	}
+}
+
+// TestGetStreamResponse_StillPending verifies that when neither the agent has
+// replied nor the deadline has passed, getStreamResponse returns without altering
+// task state (client should poll again).
+func TestGetStreamResponse_StillPending(t *testing.T) {
+	ch := makeWebhookChannel(t)
+	defer ch.cancel()
+
+	task := makeStreamTask(t, ch, "stream-3", "chat-3", time.Now().Add(30*time.Second))
+
+	result := ch.getStreamResponse(task, "ts789", "nonce789")
+	if result == "" {
+		t.Fatal("expected non-empty encrypted response")
+	}
+
+	ch.taskMu.RLock()
+	_, exists := ch.streamTasks["stream-3"]
+	ch.taskMu.RUnlock()
+	if !exists {
+		t.Error("pending task should still be in streamTasks")
+	}
+	if task.Finished || task.StreamClosed {
+		t.Error("pending task should not be finished or stream-closed")
+	}
+	// Cleanup.
+	ch.removeTask(task)
 }

@@ -2,7 +2,9 @@ package media
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -105,6 +107,64 @@ func (s *FileMediaStore) Store(localPath string, meta MediaMeta, scope string) (
 	s.scopeToRefs[scope][ref] = struct{}{}
 	s.refToScope[ref] = scope
 
+	return ref, nil
+}
+
+// StoreFromReader creates a temp file in dir by streaming r into it, then
+// atomically renames it to a UUID-based final filename and registers it under
+// scope. The file is owned by the store and deleted by ReleaseAll.
+// This uses the same temp-write + sync + rename pattern as fileutil.WriteFileAtomic
+// to guarantee flash-storage durability.
+func (s *FileMediaStore) StoreFromReader(r io.Reader, meta MediaMeta, scope, dir string) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("media store: mkdir: %w", err)
+	}
+	tmpPath := filepath.Join(dir, ".tmp-picoclaw-"+uuid.New().String())
+	tmpFile, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("media store: create temp: %w", err)
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			tmpFile.Close()
+			os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err = io.Copy(tmpFile, r); err != nil {
+		return "", fmt.Errorf("media store: write: %w", err)
+	}
+	if err = tmpFile.Sync(); err != nil {
+		return "", fmt.Errorf("media store: sync: %w", err)
+	}
+	if err = tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("media store: close: %w", err)
+	}
+	cleanup = false
+
+	// Atomic rename to a UUID-based final name (preserving the original extension).
+	ext := filepath.Ext(meta.Filename)
+	finalPath := filepath.Join(dir, uuid.New().String()+ext)
+	if err = os.Rename(tmpPath, finalPath); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("media store: rename: %w", err)
+	}
+	// Sync the directory so the rename is durable.
+	if d, openErr := os.Open(dir); openErr == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+
+	ref := "media://" + uuid.New().String()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refs[ref] = mediaEntry{path: finalPath, meta: meta, storedAt: s.nowFunc()}
+	if s.scopeToRefs[scope] == nil {
+		s.scopeToRefs[scope] = make(map[string]struct{})
+	}
+	s.scopeToRefs[scope][ref] = struct{}{}
+	s.refToScope[ref] = scope
 	return ref, nil
 }
 

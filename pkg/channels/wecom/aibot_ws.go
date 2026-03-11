@@ -1,6 +1,7 @@
 package wecom
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -48,6 +49,10 @@ const (
 	// Keep req_id -> chat route for late fallback pushes after stream window closes.
 	wsLateReplyRouteTTL = 30 * time.Minute
 )
+
+// wsImageHTTPClient is a shared HTTP client for downloading inbound images.
+// Reusing it enables connection pooling across multiple image downloads.
+var wsImageHTTPClient = &http.Client{Timeout: wsImageDownloadTimeout}
 
 // WeComAIBotWSChannel implements channels.Channel for WeCom AI Bot using the
 // WebSocket long-connection API.
@@ -1040,49 +1045,10 @@ func wsGenerateID() string {
 
 // ---- Inbound image download helpers ----
 
-// downloadWSImage fetches and optionally decrypts a WeCom WS image resource.
-// aesKey is the per-resource AES key provided in the callback (may be empty).
-func (c *WeComAIBotWSChannel) downloadWSImage(ctx context.Context, imageURL, aesKey string) ([]byte, error) {
-	const maxSize = 20 << 20 // 20 MB
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	client := &http.Client{Timeout: wsImageDownloadTimeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("download: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download HTTP %d", resp.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxSize+1))
-	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
-	}
-	if len(data) > maxSize {
-		return nil, fmt.Errorf("image too large (> %d MB)", maxSize>>20)
-	}
-	if aesKey == "" {
-		return data, nil
-	}
-	// WeCom per-image AES key: try standard base64 first, then WeCom 43-char format.
-	key, decErr := base64.StdEncoding.DecodeString(aesKey)
-	if decErr != nil || len(key) != 32 {
-		key, decErr = decodeWeComAESKey(aesKey)
-		if decErr != nil {
-			return nil, fmt.Errorf("decode image AES key: %w", decErr)
-		}
-	}
-	decrypted, err := decryptAESCBC(key, data)
-	if err != nil {
-		return nil, fmt.Errorf("decrypt image: %w", err)
-	}
-	return decrypted, nil
-}
-
 // storeWSImage downloads, optionally decrypts, and stores an inbound image.
+// It streams the HTTP response body directly into the MediaStore, avoiding any
+// caller-managed temp files. File lifecycle (creation and deletion) is owned
+// entirely by the store and cleaned up via store.ReleaseAll.
 func (c *WeComAIBotWSChannel) storeWSImage(
 	ctx context.Context,
 	chatID, msgID, imageURL, aesKey string,
@@ -1091,26 +1057,121 @@ func (c *WeComAIBotWSChannel) storeWSImage(
 	if store == nil {
 		return "", fmt.Errorf("no media store available")
 	}
-	data, err := c.downloadWSImage(ctx, imageURL, aesKey)
+
+	const maxSize = 20 << 20 // 20 MB
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create request: %w", err)
 	}
+	resp, err := wsImageHTTPClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("download: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download HTTP %d", resp.StatusCode)
+	}
+
 	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	scope := channels.BuildMediaScope("wecom_aibot", chatID, msgID)
+	meta := media.MediaMeta{Filename: msgID + ".jpg", Source: "wecom_aibot"}
+
+	// lr wraps the response body with a +1 limit: if lr.N reaches 0 after the
+	// transfer, the body was at least maxSize+1 bytes and must be rejected.
+	lr := &io.LimitedReader{R: resp.Body, N: int64(maxSize) + 1}
+	var r io.Reader = lr
+
+	if aesKey != "" {
+		// AES-CBC decryption requires full ciphertext. Buffer the bounded encrypted
+		// bytes, decrypt, then pass the plaintext as a reader.
+		encrypted, readErr := io.ReadAll(lr)
+		if readErr != nil {
+			return "", fmt.Errorf("read for decrypt: %w", readErr)
+		}
+		if lr.N == 0 {
+			return "", fmt.Errorf("image too large (> %d MB)", maxSize>>20)
+		}
+		key, decErr := base64.StdEncoding.DecodeString(aesKey)
+		if decErr != nil || len(key) != 32 {
+			key, decErr = decodeWeComAESKey(aesKey)
+			if decErr != nil {
+				return "", fmt.Errorf("decode image AES key: %w", decErr)
+			}
+		}
+		decrypted, decErr := decryptAESCBC(key, encrypted)
+		if decErr != nil {
+			return "", fmt.Errorf("decrypt image: %w", decErr)
+		}
+		r = bytes.NewReader(decrypted)
+	}
+
+	// Fast path: FileMediaStore supports StoreFromReader which manages the file
+	// lifecycle entirely (temp-rename-fsync pattern, deleted by ReleaseAll).
+	if fsStore, ok := store.(*media.FileMediaStore); ok {
+		ref, storeErr := fsStore.StoreFromReader(r, meta, scope, mediaDir)
+		if storeErr != nil {
+			return "", storeErr
+		}
+		// For the no-AES path, check whether the response body hit the size limit.
+		if aesKey == "" && lr.N == 0 {
+			_ = store.ReleaseAll(scope) // remove the oversized file
+			return "", fmt.Errorf("image too large (> %d MB)", maxSize>>20)
+		}
+		return ref, nil
+	}
+
+	// Fallback path for non-FileMediaStore implementations: stream into a temp
+	// file using the temp-rename-fsync pattern, then register the path.
+	// The file lifecycle is managed by store.ReleaseAll().
 	if mkErr := os.MkdirAll(mediaDir, 0o700); mkErr != nil {
 		return "", fmt.Errorf("mkdir: %w", mkErr)
 	}
-	filename := msgID + ".jpg"
-	localPath := filepath.Join(mediaDir, utils.SanitizeFilename(filename))
-	if writeErr := os.WriteFile(localPath, data, 0o600); writeErr != nil {
-		return "", fmt.Errorf("write: %w", writeErr)
-	}
-	scope := channels.BuildMediaScope("wecom_aibot", chatID, msgID)
-	ref, err := store.Store(localPath, media.MediaMeta{
-		Filename: filename,
-		Source:   "wecom_aibot",
-	}, scope)
+	tmpPath := filepath.Join(mediaDir, ".tmp-"+wsGenerateID())
+	tmpFile, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		os.Remove(localPath)
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			tmpFile.Close()
+			os.Remove(tmpPath)
+		}
+	}()
+	n, cpErr := io.Copy(tmpFile, r)
+	syncErr := tmpFile.Sync()
+	closeErr := tmpFile.Close()
+	cleanup = false
+	if cpErr != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("write image: %w", cpErr)
+	}
+	if syncErr != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("sync image: %w", syncErr)
+	}
+	if closeErr != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("close image: %w", closeErr)
+	}
+	if aesKey == "" && lr.N == 0 {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("image too large (> %d MB)", maxSize>>20)
+	}
+	_ = n
+	finalPath := filepath.Join(mediaDir, wsGenerateID()+".jpg")
+	if err = os.Rename(tmpPath, finalPath); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("rename: %w", err)
+	}
+	if d, openErr := os.Open(mediaDir); openErr == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+	ref, err := store.Store(finalPath, meta, scope)
+	if err != nil {
+		os.Remove(finalPath)
 		return "", fmt.Errorf("store: %w", err)
 	}
 	return ref, nil
