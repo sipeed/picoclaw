@@ -256,26 +256,26 @@ func TestStripMentionPlaceholders(t *testing.T) {
 			name:    "user mention preserved with name and id",
 			content: "@_user_1 hello",
 			mentions: []*larkim.MentionEvent{
-				{Key: strPtr("@_user_1"), Id: &larkim.UserId{OpenId: strPtr("ou_user456")}, Name: strPtr("张三")},
+				{Key: strPtr("@_user_1"), Id: &larkim.UserId{OpenId: strPtr("ou_user456")}, Name: strPtr("ZhangSan")},
 			},
-			want: "@张三(open_id:ou_user456) hello",
+			want: "@ZhangSan(open_id:ou_user456) hello",
 		},
 		{
 			name:    "mixed bot and user mentions",
-			content: "@_user_1 给我和 @_user_2 拉个群",
+			content: "@_user_1 create a group with @_user_2",
 			mentions: []*larkim.MentionEvent{
 				{Key: strPtr("@_user_1"), Id: &larkim.UserId{OpenId: strPtr(botOpenID)}, Name: strPtr("Bot")},
-				{Key: strPtr("@_user_2"), Id: &larkim.UserId{OpenId: strPtr("ou_user789")}, Name: strPtr("李四")},
+				{Key: strPtr("@_user_2"), Id: &larkim.UserId{OpenId: strPtr("ou_user789")}, Name: strPtr("LiSi")},
 			},
-			want: "给我和 @李四(open_id:ou_user789) 拉个群",
+			want: "create a group with @LiSi(open_id:ou_user789)",
 		},
 		{
 			name:    "user mention with name only",
 			content: "@_user_1 hello",
 			mentions: []*larkim.MentionEvent{
-				{Key: strPtr("@_user_1"), Name: strPtr("张三")},
+				{Key: strPtr("@_user_1"), Name: strPtr("ZhangSan")},
 			},
-			want: "@张三 hello",
+			want: "@ZhangSan hello",
 		},
 		{
 			name:     "empty content",
