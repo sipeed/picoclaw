@@ -52,6 +52,19 @@ func (p *HTTPProvider) Chat(
 	return p.delegate.Chat(ctx, messages, tools, model, options)
 }
 
+// ChatStream implements providers.StreamingProvider by delegating to the
+// OpenAI-compatible streaming endpoint (SSE with stream: true).
+func (p *HTTPProvider) ChatStream(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	return p.delegate.ChatStream(ctx, messages, tools, model, options, onChunk)
+}
+
 func (p *HTTPProvider) GetDefaultModel() string {
 	return ""
 }
