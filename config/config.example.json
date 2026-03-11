@@ -282,7 +282,7 @@
     },
     "longcat": {
       "api_key": "",
-      "api_base": ""
+      "api_base": "https://api.longcat.chat/openai"
     }
   },
   "tools": {
