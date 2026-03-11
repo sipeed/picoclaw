@@ -122,7 +122,11 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		slack.MsgOptionText(msg.Content, false),
 	}
 
-	if threadTS != "" {
+	if msg.ReplyToMessageID != "" && threadTS == "" {
+		// Answer to the message by creating a Thread under it
+		opts = append(opts, slack.MsgOptionTS(msg.ReplyToMessageID))
+	} else if threadTS != "" {
+		// If we are already in a thread, continue in the thread
 		opts = append(opts, slack.MsgOptionTS(threadTS))
 	}
 

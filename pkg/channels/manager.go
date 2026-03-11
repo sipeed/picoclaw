@@ -102,6 +102,27 @@ func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
 	m.placeholders.Store(key, placeholderEntry{id: placeholderID, createdAt: time.Now()})
 }
 
+// SendPlaceholder sends a "Thinking…" placeholder for the given channel/chatID
+// and records it for later editing. Returns true if a placeholder was sent.
+func (m *Manager) SendPlaceholder(ctx context.Context, channel, chatID string) bool {
+	m.mu.RLock()
+	ch, ok := m.channels[channel]
+	m.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	pc, ok := ch.(PlaceholderCapable)
+	if !ok {
+		return false
+	}
+	phID, err := pc.SendPlaceholder(ctx, chatID)
+	if err != nil || phID == "" {
+		return false
+	}
+	m.RecordPlaceholder(channel, chatID, phID)
+	return true
+}
+
 // RecordTypingStop registers a typing stop function for later invocation.
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
@@ -815,6 +836,39 @@ func (m *Manager) UnregisterChannel(name string) {
 	}
 	delete(m.workers, name)
 	delete(m.channels, name)
+}
+
+// SendMessage sends an outbound message synchronously through the channel
+// worker's rate limiter and retry logic. It blocks until the message is
+// delivered (or all retries are exhausted), which preserves ordering when
+// a subsequent operation depends on the message having been sent.
+func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) error {
+	m.mu.RLock()
+	_, exists := m.channels[msg.Channel]
+	w, wExists := m.workers[msg.Channel]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("channel %s not found", msg.Channel)
+	}
+	if !wExists || w == nil {
+		return fmt.Errorf("channel %s has no active worker", msg.Channel)
+	}
+
+	maxLen := 0
+	if mlp, ok := w.ch.(MessageLengthProvider); ok {
+		maxLen = mlp.MaxMessageLength()
+	}
+	if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
+		for _, chunk := range SplitMessage(msg.Content, maxLen) {
+			chunkMsg := msg
+			chunkMsg.Content = chunk
+			m.sendWithRetry(ctx, msg.Channel, w, chunkMsg)
+		}
+	} else {
+		m.sendWithRetry(ctx, msg.Channel, w, msg)
+	}
+	return nil
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {
