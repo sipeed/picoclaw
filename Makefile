@@ -11,12 +11,34 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT=$(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date +%FT%T%z)
 GO_VERSION=$(shell $(GO) version | awk '{print $$3}')
-INTERNAL=github.com/sipeed/picoclaw/cmd/picoclaw/internal
-LDFLAGS=-ldflags "-X $(INTERNAL).version=$(VERSION) -X $(INTERNAL).gitCommit=$(GIT_COMMIT) -X $(INTERNAL).buildTime=$(BUILD_TIME) -X $(INTERNAL).goVersion=$(GO_VERSION) -s -w"
+CONFIG_PKG=github.com/sipeed/picoclaw/pkg/config
+LDFLAGS=-ldflags "-X $(CONFIG_PKG).Version=$(VERSION) -X $(CONFIG_PKG).GitCommit=$(GIT_COMMIT) -X $(CONFIG_PKG).BuildTime=$(BUILD_TIME) -X $(CONFIG_PKG).GoVersion=$(GO_VERSION) -s -w"
 
 # Go variables
 GO?=CGO_ENABLED=0 go
 GOFLAGS?=-v -tags stdjson
+
+# Patch MIPS LE ELF e_flags (offset 36) for NaN2008-only kernels (e.g. Ingenic X2600).
+#
+# Bytes (octal): \004 \024 \000 \160  →  little-endian 0x70001404
+#   0x70000000  EF_MIPS_ARCH_32R2   MIPS32 Release 2
+#   0x00001000  EF_MIPS_ABI_O32     O32 ABI
+#   0x00000400  EF_MIPS_NAN2008     IEEE 754-2008 NaN encoding
+#   0x00000004  EF_MIPS_CPIC        PIC calling sequence
+#
+# Go's GOMIPS=softfloat emits no FP instructions, so the NaN mode is irrelevant
+# at runtime — this is purely an ELF metadata fix to satisfy the kernel's check.
+# patchelf cannot modify e_flags; dd at a fixed offset is the most portable way.
+#
+# Ref: https://codebrowser.dev/linux/linux/arch/mips/include/asm/elf.h.html
+define PATCH_MIPS_FLAGS
+	@if [ -f "$(1)" ]; then \
+		printf '\004\024\000\160' | dd of=$(1) bs=1 seek=36 count=4 conv=notrunc 2>/dev/null || \
+		{ echo "Error: failed to patch MIPS e_flags for $(1)"; exit 1; }; \
+	else \
+		echo "Error: $(1) not found, cannot patch MIPS e_flags"; exit 1; \
+	fi
+endef
 
 # Golangci-lint
 GOLANGCI_LINT?=golangci-lint
@@ -50,6 +72,8 @@ ifeq ($(UNAME_S),Linux)
 		ARCH=loong64
 	else ifeq ($(UNAME_M),riscv64)
 		ARCH=riscv64
+	else ifeq ($(UNAME_M),mipsel)
+		ARCH=mipsle
 	else
 		ARCH=$(UNAME_M)
 	endif
@@ -87,6 +111,18 @@ build: generate
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
 
+## build-launcher: Build the picoclaw-launcher (web console) binary
+build-launcher:
+	@echo "Building picoclaw-launcher for $(PLATFORM)/$(ARCH)..."
+	@mkdir -p $(BUILD_DIR)
+	@if [ ! -f web/backend/dist/index.html ]; then \
+		echo "Building frontend..."; \
+		cd web/frontend && pnpm install && pnpm build:backend; \
+	fi
+	@$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH) ./web/backend
+	@ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher
+	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher"
+
 ## build-whatsapp-native: Build with WhatsApp native (whatsmeow) support; larger binary
 build-whatsapp-native: generate
 ## @echo "Building $(BINARY_NAME) with WhatsApp native for $(PLATFORM)/$(ARCH)..."
@@ -97,6 +133,8 @@ build-whatsapp-native: generate
 	GOOS=linux GOARCH=arm64 $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=loong64 $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-loong64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=riscv64 $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=mipsle GOMIPS=softfloat $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle ./$(CMD_DIR)
+	$(call PATCH_MIPS_FLAGS,$(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle)
 	GOOS=darwin GOARCH=arm64 $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)
 	GOOS=windows GOARCH=amd64 $(GO) build -tags whatsapp_native $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
 ## @$(GO) build $(GOFLAGS) -tags whatsapp_native $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
@@ -117,6 +155,14 @@ build-linux-arm64: generate
 	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64"
 
+## build-linux-mipsle: Build for Linux MIPS32 LE
+build-linux-mipsle: generate
+	@echo "Building for linux/mipsle (softfloat)..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=mipsle GOMIPS=softfloat $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle ./$(CMD_DIR)
+	$(call PATCH_MIPS_FLAGS,$(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle)
+	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle"
+
 ## build-pi-zero: Build for Raspberry Pi Zero 2 W (32-bit and 64-bit)
 build-pi-zero: build-linux-arm build-linux-arm64
 	@echo "Pi Zero 2 W builds: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm (32-bit), $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 (64-bit)"
@@ -130,6 +176,8 @@ build-all: generate
 	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=loong64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-loong64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=riscv64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=mipsle GOMIPS=softfloat $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle ./$(CMD_DIR)
+	$(call PATCH_MIPS_FLAGS,$(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle)
 	GOOS=linux GOARCH=arm GOARM=7 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-armv7 ./$(CMD_DIR)
 	GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)
 	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)

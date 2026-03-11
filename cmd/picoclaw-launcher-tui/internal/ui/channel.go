@@ -12,7 +12,6 @@ import (
 
 func (s *appState) buildChannelMenuItems() []MenuItem {
 	return []MenuItem{
-		{Label: "Back", Description: "Return to main menu", Action: func() { s.pop() }},
 		channelItem(
 			"Telegram",
 			"Telegram bot settings",
@@ -62,6 +61,12 @@ func (s *appState) buildChannelMenuItems() []MenuItem {
 			func() { s.push("channel-slack", s.slackForm()) },
 		),
 		channelItem(
+			"Matrix",
+			"Matrix bot settings",
+			s.config.Channels.Matrix.Enabled,
+			func() { s.push("channel-matrix", s.matrixForm()) },
+		),
+		channelItem(
 			"LINE",
 			"LINE bot settings",
 			s.config.Channels.LINE.Enabled,
@@ -92,10 +97,6 @@ func (s *appState) channelMenu() tview.Primitive {
 	menu := NewMenu("Channels", s.buildChannelMenuItems())
 	menu.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEsc {
-			s.pop()
-			return nil
-		}
-		if event.Rune() == 'q' {
 			s.pop()
 			return nil
 		}
@@ -228,6 +229,28 @@ func (s *appState) lineForm() tview.Primitive {
 	addIntField(form, "Webhook Port", cfg.WebhookPort, func(value int) { cfg.WebhookPort = value })
 	form.AddInputField("Webhook Path", cfg.WebhookPath, 64, nil, func(text string) {
 		cfg.WebhookPath = strings.TrimSpace(text)
+	})
+	addAllowFromField(form, &cfg.AllowFrom)
+	return wrapWithBack(form, s)
+}
+
+func (s *appState) matrixForm() tview.Primitive {
+	cfg := &s.config.Channels.Matrix
+	form := baseChannelForm("Matrix", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
+	form.AddInputField("Homeserver", cfg.Homeserver, 128, nil, func(text string) {
+		cfg.Homeserver = strings.TrimSpace(text)
+	})
+	form.AddInputField("User ID", cfg.UserID, 128, nil, func(text string) {
+		cfg.UserID = strings.TrimSpace(text)
+	})
+	form.AddInputField("Access Token", cfg.AccessToken, 128, nil, func(text string) {
+		cfg.AccessToken = strings.TrimSpace(text)
+	})
+	form.AddInputField("Device ID", cfg.DeviceID, 128, nil, func(text string) {
+		cfg.DeviceID = strings.TrimSpace(text)
+	})
+	form.AddCheckbox("Join On Invite", cfg.JoinOnInvite, func(checked bool) {
+		cfg.JoinOnInvite = checked
 	})
 	addAllowFromField(form, &cfg.AllowFrom)
 	return wrapWithBack(form, s)

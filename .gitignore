@@ -38,12 +38,21 @@ ralph/
 .ralph/
 tasks/
 
+# Plans
+docs/plans/
+
 # Editors
 .vscode/
 .idea/
 
 # Added by goreleaser init:
 dist/
+*.vite/
 
 # Windows Application Icon/Resource
 *.syso
+
+# Keep embedded backend dist directory placeholder in VCS
+!web/backend/dist/
+web/backend/dist/*
+!web/backend/dist/.gitkeep

@@ -98,7 +98,8 @@
       "encrypt_key": "",
       "verification_token": "",
       "allow_from": [],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "random_reaction_emoji": []
     },
     "dingtalk": {
       "enabled": false,
@@ -112,6 +113,23 @@
       "bot_token": "xoxb-YOUR-BOT-TOKEN",
       "app_token": "xapp-YOUR-APP-TOKEN",
       "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "matrix": {
+      "enabled": false,
+      "homeserver": "https://matrix.org",
+      "user_id": "@your-bot:matrix.org",
+      "access_token": "YOUR_MATRIX_ACCESS_TOKEN",
+      "device_id": "",
+      "join_on_invite": true,
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
       "reasoning_channel_id": ""
     },
     "line": {
@@ -163,6 +181,33 @@
       "webhook_path": "/webhook/wecom-aibot",
       "max_steps": 10,
       "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
+      "reasoning_channel_id": ""
+    },
+    "irc": {
+      "enabled": false,
+      "server": "irc.libera.chat:6697",
+      "tls": true,
+      "nick": "mybot",
+      "user": "",
+      "real_name": "",
+      "password": "",
+      "nickserv_password": "",
+      "sasl_user": "",
+      "sasl_password": "",
+      "channels": [
+        "#mychannel"
+      ],
+      "request_caps": [
+        "server-time",
+        "message-tags"
+      ],
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "typing": {
+        "enabled": false
+      },
       "reasoning_channel_id": ""
     }
   },
@@ -239,6 +284,9 @@
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
+        "api_keys": [
+          "YOUR_BRAVE_API_KEY"
+        ],
         "max_results": 5
       },
       "tavily": {
@@ -253,7 +301,10 @@
       },
       "perplexity": {
         "enabled": false,
-        "api_key": "",
+        "api_key": "pplx-xxx",
+        "api_keys": [
+          "pplx-xxx"
+        ],
         "max_results": 5
       },
       "searxng": {
@@ -276,6 +327,13 @@
     },
     "mcp": {
       "enabled": false,
+      "discovery": {
+        "enabled": false,
+        "ttl": 5,
+        "max_search_results": 5,
+        "use_bm25": true,
+        "use_regex": false
+      },
       "servers": {
         "context7": {
           "enabled": false,
