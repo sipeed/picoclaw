@@ -148,7 +148,6 @@ func (mb *MessageBus) Close() {
 			"count": drained,
 		})
 	}
-
 }
 
 func drain[T any](ch <-chan T) int {
