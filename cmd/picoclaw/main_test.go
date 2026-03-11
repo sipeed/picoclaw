@@ -79,4 +79,23 @@ func TestShouldPrintBanner(t *testing.T) {
 		t.Setenv(noBannerEnv, "1")
 		assert.False(t, shouldPrintBanner([]string{"picoclaw", "agent"}, true))
 	})
+
+	t.Run("common truthy env values disable banner", func(t *testing.T) {
+		for _, value := range []string{"true", "yes", "on"} {
+			t.Run(value, func(t *testing.T) {
+				t.Setenv(noBannerEnv, value)
+				assert.False(t, shouldPrintBanner([]string{"picoclaw", "agent"}, true))
+			})
+		}
+	})
+
+	t.Run("root command still prints banner in terminal", func(t *testing.T) {
+		t.Setenv(noBannerEnv, "")
+		assert.True(t, shouldPrintBanner([]string{"picoclaw"}, true))
+	})
+
+	t.Run("unknown subcommand still prints banner in terminal", func(t *testing.T) {
+		t.Setenv(noBannerEnv, "")
+		assert.True(t, shouldPrintBanner([]string{"picoclaw", "unknown"}, true))
+	})
 }
