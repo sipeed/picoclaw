@@ -1,0 +1,53 @@
+# ============================================================
+# Development Dockerfile for PicoClaw
+# Includes additional tools (jq, git, python3, pip, bash)
+# for debugging, scripting, and development scenarios
+# ============================================================
+FROM golang:1.25-alpine AS builder
+
+RUN apk add --no-cache git make
+
+WORKDIR /src
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source and build
+COPY . .
+RUN make build
+
+# ============================================================
+# Development runtime image with additional tools
+# ============================================================
+FROM alpine:3.23
+
+RUN apk add --no-cache \
+  ca-certificates \
+  tzdata \
+  curl \
+  jq \
+  git \
+  python3 \
+  py3-pip \
+  bash
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -q --spider http://localhost:18790/health || exit 1
+
+# Copy binary
+COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
+
+# Create non-root user and group
+RUN addgroup -g 1000 picoclaw && \
+    adduser -D -u 1000 -G picoclaw picoclaw
+
+# Switch to non-root user
+USER picoclaw
+
+# Run onboard to create initial directories and config
+RUN /usr/local/bin/picoclaw onboard
+
+ENTRYPOINT ["picoclaw"]
+CMD ["gateway"]
