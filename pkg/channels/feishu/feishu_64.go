@@ -4,11 +4,10 @@ package feishu
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -201,18 +200,13 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
 	// Get emoji list from config
 	emojiList := c.config.RandomReactionEmoji
+	var chosenEmoji string
 	if len(emojiList) == 0 {
 		// Default to "Pin" if no config
-		emojiList = []string{"Pin"}
-	}
-
-	// Randomly choose one from the list using crypto/rand for better distribution
-	idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(emojiList))))
-	var chosenEmoji string
-	if err != nil {
-		chosenEmoji = emojiList[0]
+		chosenEmoji = "Pin"
 	} else {
-		chosenEmoji = emojiList[idx.Int64()]
+		idx := rand.Intn(len(emojiList))
+		chosenEmoji = emojiList[idx]
 	}
 
 	req := larkim.NewCreateMessageReactionReqBuilder().

@@ -63,6 +63,7 @@ var channelRateConfig = map[string]float64{
 	"slack":    1,
 	"matrix":   2,
 	"line":     10,
+	"qq":       5,
 	"irc":      2,
 }
 

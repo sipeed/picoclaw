@@ -148,19 +148,21 @@ func registerSharedTools(
 			continue
 		}
 
-		// Web tools
 		if cfg.Tools.IsToolEnabled("web") {
 			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
-				BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
+				BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey, cfg.Tools.Web.Brave.APIKeys),
 				BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 				BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-				TavilyAPIKey:         cfg.Tools.Web.Tavily.APIKey,
+				TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey, cfg.Tools.Web.Tavily.APIKeys),
 				TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
 				TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
 				TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
 				DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 				DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
-				PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
+				PerplexityAPIKeys: config.MergeAPIKeys(
+					cfg.Tools.Web.Perplexity.APIKey,
+					cfg.Tools.Web.Perplexity.APIKeys,
+				),
 				PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 				PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 				SearXNGBaseURL:       cfg.Tools.Web.SearXNG.BaseURL,
@@ -263,7 +265,7 @@ func registerSharedTools(
 					}
 				}
 				if cfg.Tools.IsToolEnabled("read_file") {
-					subagentManager.RegisterTool(tools.NewReadFileTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+					subagentManager.RegisterTool(tools.NewReadFileTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace, cfg.Tools.ReadFile.MaxReadFileSize))
 				}
 				if cfg.Tools.IsToolEnabled("write_file") {
 					subagentManager.RegisterTool(tools.NewWriteFileTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace))
@@ -339,7 +341,13 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						}
 
 						mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
-						agent.Tools.Register(mcpTool)
+
+						if al.cfg.Tools.MCP.Discovery.Enabled {
+							agent.Tools.RegisterHidden(mcpTool)
+						} else {
+							agent.Tools.Register(mcpTool)
+						}
+
 						totalRegistrations++
 						logger.DebugCF("agent", "Registered MCP tool",
 							map[string]any{
@@ -358,6 +366,47 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					"total_registrations": totalRegistrations,
 					"agent_count":         agentCount,
 				})
+
+			// Initializes Discovery Tools only if enabled by configuration
+			if al.cfg.Tools.MCP.Enabled && al.cfg.Tools.MCP.Discovery.Enabled {
+				useBM25 := al.cfg.Tools.MCP.Discovery.UseBM25
+				useRegex := al.cfg.Tools.MCP.Discovery.UseRegex
+
+				// Fail fast: If discovery is enabled but no search method is turned on
+				if !useBM25 && !useRegex {
+					return fmt.Errorf(
+						"tool discovery is enabled but neither 'use_bm25' nor 'use_regex' is set to true in the configuration",
+					)
+				}
+
+				ttl := al.cfg.Tools.MCP.Discovery.TTL
+				if ttl <= 0 {
+					ttl = 5 // Default value
+				}
+
+				maxSearchResults := al.cfg.Tools.MCP.Discovery.MaxSearchResults
+				if maxSearchResults <= 0 {
+					maxSearchResults = 5 // Default value
+				}
+
+				logger.InfoCF("agent", "Initializing tool discovery", map[string]any{
+					"bm25": useBM25, "regex": useRegex, "ttl": ttl, "max_results": maxSearchResults,
+				})
+
+				for _, agentID := range agentIDs {
+					agent, ok := al.registry.GetAgent(agentID)
+					if !ok {
+						continue
+					}
+
+					if useRegex {
+						agent.Tools.Register(tools.NewRegexSearchTool(agent.Tools, ttl, maxSearchResults))
+					}
+					if useBM25 {
+						agent.Tools.Register(tools.NewBM25SearchTool(agent.Tools, ttl, maxSearchResults))
+					}
+				}
+			}
 		}
 	}
 
@@ -406,6 +455,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
+
 
 // setCurrentCancel stores the cancel function for the current task.
 func (al *AgentLoop) setCurrentCancel(cancel context.CancelFunc) {
@@ -462,6 +512,13 @@ func (al *AgentLoop) resetTokenStats() {
 	al.tokenStatsMu.Lock()
 	defer al.tokenStatsMu.Unlock()
 	al.tokenStats = nil
+
+
+}
+
+// Close releases resources held by agent session stores. Call after Stop.
+func (al *AgentLoop) Close() {
+	al.registry.Close()
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
@@ -1403,6 +1460,17 @@ func (al *AgentLoop) runLLMIteration(
 			// Save tool result message to session
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
+
+		// Tick down TTL of discovered tools after processing tool results.
+		// Only reached when tool calls were made (the loop continues);
+		// the break on no-tool-call responses skips this.
+		// NOTE: This is safe because processMessage is sequential per agent.
+		// If per-agent concurrency is added, TTL consistency between
+		// ToProviderDefs and Get must be re-evaluated.
+		agent.Tools.TickTTL()
+		logger.DebugCF("agent", "TTL tick after tool execution", map[string]any{
+			"agent_id": agent.ID, "iteration": iteration,
+		})
 	}
 
 	return finalContent, iteration, nil

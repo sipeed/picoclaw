@@ -86,14 +86,14 @@ func (s *JSONLStore) metaPath(key string) string {
 
 // sanitizeKey converts a session key to a safe filename component.
 // Mirrors pkg/session.sanitizeFilename so that migration paths match.
-//
-// Note: this is a lossy mapping — "telegram:123" and "telegram_123"
-// both produce the same filename. This is an intentional tradeoff:
-// keys with colons (e.g. from channels) are by far the common case,
-// and a bidirectional encoding (like URL-encoding) would complicate
-// file listings and debugging.
+// Replaces ':' with '_' (session key separator) and '/' and '\' with '_'
+// so composite IDs (e.g. Telegram forum "chatID/threadID", Slack "channel/thread_ts")
+// do not create subdirectories or break on Windows.
 func sanitizeKey(key string) string {
-	return strings.ReplaceAll(key, ":", "_")
+	s := strings.ReplaceAll(key, ":", "_")
+	s = strings.ReplaceAll(s, "/", "_")
+	s = strings.ReplaceAll(s, "\\", "_")
+	return s
 }
 
 // readMeta loads the metadata file for a session.
