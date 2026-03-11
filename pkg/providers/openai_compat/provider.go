@@ -112,6 +112,8 @@ func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 		httpClient: retryClient.StandardClient(),
 	}
 
+	p.httpClient.Timeout = defaultRequestTimeout
+
 	for _, opt := range opts {
 		if opt != nil {
 			opt(p)
