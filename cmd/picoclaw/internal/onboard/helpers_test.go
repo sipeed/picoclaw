@@ -23,3 +23,20 @@ func TestCopyEmbeddedToTargetUsesAgentsMarkdown(t *testing.T) {
 		t.Fatalf("expected legacy file %s to be absent, got err=%v", legacyPath, err)
 	}
 }
+
+func TestCopyEmbeddedToTargetIncludesToolsMarkdown(t *testing.T) {
+	targetDir := t.TempDir()
+
+	if err := copyEmbeddedToTarget(targetDir); err != nil {
+		t.Fatalf("copyEmbeddedToTarget() error = %v", err)
+	}
+
+	toolsPath := filepath.Join(targetDir, "TOOLS.md")
+	data, err := os.ReadFile(toolsPath)
+	if err != nil {
+		t.Fatalf("expected TOOLS.md to exist: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("TOOLS.md should not be empty")
+	}
+}
