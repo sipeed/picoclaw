@@ -28,6 +28,7 @@ func DefaultConfig() *Config {
 			Defaults: AgentDefaults{
 				Workspace:                 workspacePath,
 				RestrictToWorkspace:       true,
+				AllowReadOutsideWorkspace: false,
 				Provider:                  "",
 				Model:                     "",
 				MaxTokens:                 32768,
@@ -35,6 +36,40 @@ func DefaultConfig() *Config {
 				MaxToolIterations:         50,
 				SummarizeMessageThreshold: 20,
 				SummarizeTokenPercent:     75,
+				Sandbox: AgentSandboxConfig{
+					Mode:            SandboxModeOff,
+					Scope:           SandboxScopeAgent,
+					WorkspaceAccess: WorkspaceAccessNone,
+					WorkspaceRoot:   filepath.Join(homePath, "sandboxes"),
+					Docker: AgentSandboxDockerConfig{
+						Image:           "picoclaw-sandbox:bookworm-slim",
+						ContainerPrefix: "picoclaw-sbx-",
+						Workdir:         "/workspace",
+						ReadOnlyRoot:    true,
+						Tmpfs:           []string{"/tmp", "/var/tmp", "/run"},
+						Network:         "none",
+						User:            "",
+						Env: map[string]string{
+							"LANG": "C.UTF-8",
+						},
+						SetupCommand:    "",
+						PidsLimit:       0,
+						Memory:          "",
+						MemorySwap:      "",
+						Cpus:            0,
+						Ulimits:         map[string]AgentSandboxDockerUlimitValue{},
+						SeccompProfile:  "",
+						ApparmorProfile: "",
+						DNS:             []string{},
+						ExtraHosts:      []string{},
+						CapDrop:         []string{"ALL"},
+						Binds:           []string{},
+					},
+					Prune: AgentSandboxPruneConfig{
+						IdleHours:  intPtr(24),
+						MaxAgeDays: intPtr(7),
+					},
+				},
 			},
 		},
 		Bindings: []AgentBinding{},
@@ -428,6 +463,12 @@ func DefaultConfig() *Config {
 				},
 				EnableDenyPatterns: true,
 				TimeoutSeconds:     60,
+			},
+			Sandbox: SandboxToolsConfig{
+				Tools: SandboxToolPolicyConfig{
+					Allow: []string{"exec", "read_file", "write_file", "list_dir", "edit_file", "append_file"},
+					Deny:  []string{"cron"},
+				},
 			},
 			Skills: SkillsToolsConfig{
 				ToolConfig: ToolConfig{

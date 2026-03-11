@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -47,6 +48,7 @@ type AgentInstance struct {
 	// LightCandidates holds the resolved provider candidates for the light model.
 	// Pre-computed at agent creation to avoid repeated model_list lookups at runtime.
 	LightCandidates []providers.FallbackCandidate
+	SandboxManager  sandbox.Manager
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -69,19 +71,39 @@ func NewAgentInstance(
 	allowReadPaths := compilePatterns(cfg.Tools.AllowReadPaths)
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
 
+	agentID := routing.DefaultAgentID
+	agentName := ""
+	var subagents *config.SubagentsConfig
+	var skillsFilter []string
+	if agentCfg != nil {
+		agentID = routing.NormalizeAgentID(agentCfg.ID)
+		agentName = agentCfg.Name
+		subagents = agentCfg.Subagents
+		skillsFilter = agentCfg.Skills
+	}
+
+	roContainer := isContainerReadOnlySandbox(cfg)
 	toolsRegistry := tools.NewToolRegistry()
 
-	if cfg.Tools.IsToolEnabled("read_file") {
+	sandboxManager := sandbox.NewFromConfigWithAgent(workspace, restrict, cfg, agentID)
+	isToolEnabled := func(toolName string) bool {
+		if cfg != nil && !cfg.Tools.IsToolEnabled(toolName) {
+			return false
+		}
+		return isSandboxModeOff(cfg) || sandbox.IsToolSandboxEnabled(cfg, toolName)
+	}
+
+	if isToolEnabled("read_file") {
 		maxReadFileSize := cfg.Tools.ReadFile.MaxReadFileSize
 		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
 	}
-	if cfg.Tools.IsToolEnabled("write_file") {
+	if !roContainer && isToolEnabled("write_file") {
 		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
 	}
-	if cfg.Tools.IsToolEnabled("list_dir") {
+	if isToolEnabled("list_dir") {
 		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
 	}
-	if cfg.Tools.IsToolEnabled("exec") {
+	if isToolEnabled("exec") {
 		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
 		if err != nil {
 			log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
@@ -89,11 +111,13 @@ func NewAgentInstance(
 		toolsRegistry.Register(execTool)
 	}
 
-	if cfg.Tools.IsToolEnabled("edit_file") {
-		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
-	}
-	if cfg.Tools.IsToolEnabled("append_file") {
-		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	if !roContainer {
+		if isToolEnabled("edit_file") {
+			toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+		}
+		if isToolEnabled("append_file") {
+			toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+		}
 	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
@@ -104,18 +128,6 @@ func NewAgentInstance(
 		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
 		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
 	)
-
-	agentID := routing.DefaultAgentID
-	agentName := ""
-	var subagents *config.SubagentsConfig
-	var skillsFilter []string
-
-	if agentCfg != nil {
-		agentID = routing.NormalizeAgentID(agentCfg.ID)
-		agentName = agentCfg.Name
-		subagents = agentCfg.Subagents
-		skillsFilter = agentCfg.Skills
-	}
 
 	maxIter := defaults.MaxToolIterations
 	if maxIter == 0 {
@@ -236,6 +248,7 @@ func NewAgentInstance(
 		Candidates:                candidates,
 		Router:                    router,
 		LightCandidates:           lightCandidates,
+		SandboxManager:            sandboxManager,
 	}
 }
 
@@ -267,6 +280,21 @@ func resolveAgentFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentD
 		return agentCfg.Model.Fallbacks
 	}
 	return defaults.ModelFallbacks
+}
+
+func isContainerReadOnlySandbox(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.Agents.Defaults.Sandbox.Mode == config.SandboxModeAll &&
+		cfg.Agents.Defaults.Sandbox.WorkspaceAccess == config.WorkspaceAccessRO
+}
+
+func isSandboxModeOff(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.Agents.Defaults.Sandbox.Mode == config.SandboxModeOff
 }
 
 func compilePatterns(patterns []string) []*regexp.Regexp {

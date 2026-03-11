@@ -237,7 +237,16 @@ func setupCronTool(
 	var cronTool *tools.CronTool
 	if cfg.Tools.IsToolEnabled("cron") {
 		var err error
-		cronTool, err = tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
+		cronTool, err = tools.NewCronTool(
+			cronService,
+			agentLoop,
+			msgBus,
+			workspace,
+			restrict,
+			execTimeout,
+			cfg,
+			agentLoop.GetDefaultSandboxManager(),
+		)
 		if err != nil {
 			log.Fatalf("Critical error during CronTool initialization: %v", err)
 		}

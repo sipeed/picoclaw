@@ -2,26 +2,21 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
+	"os"
 	"regexp"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 )
 
 // EditFileTool edits a file by replacing old_text with new_text.
-// The old_text must exist exactly in the file.
 type EditFileTool struct {
-	fs fileSystem
+	allowPaths []*regexp.Regexp
 }
 
-// NewEditFileTool creates a new EditFileTool with optional directory restriction.
 func NewEditFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *EditFileTool {
-	var patterns []*regexp.Regexp
-	if len(allowPaths) > 0 {
-		patterns = allowPaths[0]
-	}
-	return &EditFileTool{fs: buildFs(workspace, restrict, patterns)}
+	return &EditFileTool{allowPaths: firstPatternSet(allowPaths)}
 }
 
 func (t *EditFileTool) Name() string {
@@ -58,33 +53,55 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if !ok {
 		return ErrorResult("path is required")
 	}
-
 	oldText, ok := args["old_text"].(string)
 	if !ok {
 		return ErrorResult("old_text is required")
 	}
-
 	newText, ok := args["new_text"].(string)
 	if !ok {
 		return ErrorResult("new_text is required")
 	}
 
-	if err := editFile(t.fs, path, oldText, newText); err != nil {
+	if hostSandboxFromContext(ctx) != nil && matchesAnyPattern(path, t.allowPaths) {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
+		}
+		newContent, err := replaceEditContent(content, oldText, newText)
+		if err != nil {
+			return ErrorResult(err.Error())
+		}
+		if _, err := writeAllowedHostPath(ctx, path, newContent, t.allowPaths); err != nil {
+			return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
+		}
+		return SilentResult(fmt.Sprintf("File edited: %s", path))
+	}
+
+	sb := sandbox.FromContext(ctx)
+	if sb == nil {
+		return ErrorResult("sandbox environment unavailable")
+	}
+
+	content, err := sb.Fs().ReadFile(ctx, path)
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
+	}
+	newContent, err := replaceEditContent(content, oldText, newText)
+	if err != nil {
 		return ErrorResult(err.Error())
+	}
+	if err := sb.Fs().WriteFile(ctx, path, newContent, true); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 	return SilentResult(fmt.Sprintf("File edited: %s", path))
 }
 
 type AppendFileTool struct {
-	fs fileSystem
+	allowPaths []*regexp.Regexp
 }
 
 func NewAppendFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *AppendFileTool {
-	var patterns []*regexp.Regexp
-	if len(allowPaths) > 0 {
-		patterns = allowPaths[0]
-	}
-	return &AppendFileTool{fs: buildFs(workspace, restrict, patterns)}
+	return &AppendFileTool{allowPaths: firstPatternSet(allowPaths)}
 }
 
 func (t *AppendFileTool) Name() string {
@@ -117,58 +134,45 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *Tool
 	if !ok {
 		return ErrorResult("path is required")
 	}
-
 	content, ok := args["content"].(string)
 	if !ok {
 		return ErrorResult("content is required")
 	}
 
-	if err := appendFile(t.fs, path, content); err != nil {
-		return ErrorResult(err.Error())
+	if hostSandboxFromContext(ctx) != nil && matchesAnyPattern(path, t.allowPaths) {
+		oldContent, err := os.ReadFile(path)
+		if err != nil && !os.IsNotExist(err) {
+			return ErrorResult(fmt.Sprintf("failed to read file for append: %v", err))
+		}
+		if _, err := writeAllowedHostPath(ctx, path, append(oldContent, []byte(content)...), t.allowPaths); err != nil {
+			return ErrorResult(fmt.Sprintf("failed to append (write) to file: %v", err))
+		}
+		return SilentResult(fmt.Sprintf("Appended to %s", path))
+	}
+
+	sb := sandbox.FromContext(ctx)
+	if sb == nil {
+		return ErrorResult("sandbox environment unavailable")
+	}
+
+	oldContent, err := sb.Fs().ReadFile(ctx, path)
+	if err != nil && !os.IsNotExist(err) && !strings.Contains(err.Error(), "not found") {
+		return ErrorResult(fmt.Sprintf("failed to read file for append: %v", err))
+	}
+	if err := sb.Fs().WriteFile(ctx, path, append(oldContent, []byte(content)...), true); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to append (write) to file: %v", err))
 	}
 	return SilentResult(fmt.Sprintf("Appended to %s", path))
 }
 
-// editFile reads the file via sysFs, performs the replacement, and writes back.
-// It uses a fileSystem interface, allowing the same logic for both restricted and unrestricted modes.
-func editFile(sysFs fileSystem, path, oldText, newText string) error {
-	content, err := sysFs.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	newContent, err := replaceEditContent(content, oldText, newText)
-	if err != nil {
-		return err
-	}
-
-	return sysFs.WriteFile(path, newContent)
-}
-
-// appendFile reads the existing content (if any) via sysFs, appends new content, and writes back.
-func appendFile(sysFs fileSystem, path, appendContent string) error {
-	content, err := sysFs.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-
-	newContent := append(content, []byte(appendContent)...)
-	return sysFs.WriteFile(path, newContent)
-}
-
-// replaceEditContent handles the core logic of finding and replacing a single occurrence of oldText.
 func replaceEditContent(content []byte, oldText, newText string) ([]byte, error) {
 	contentStr := string(content)
-
 	if !strings.Contains(contentStr, oldText) {
 		return nil, fmt.Errorf("old_text not found in file. Make sure it matches exactly")
 	}
-
 	count := strings.Count(contentStr, oldText)
 	if count > 1 {
 		return nil, fmt.Errorf("old_text appears %d times. Please provide more context to make it unique", count)
 	}
-
-	newContent := strings.Replace(contentStr, oldText, newText, 1)
-	return []byte(newContent), nil
+	return []byte(strings.Replace(contentStr, oldText, newText, 1)), nil
 }

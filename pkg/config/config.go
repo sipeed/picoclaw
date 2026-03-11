@@ -191,22 +191,23 @@ type RoutingConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace                 string         `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace       bool           `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	AllowReadOutsideWorkspace bool           `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
-	Provider                  string         `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	ModelName                 string         `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
-	Model                     string         `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
-	ModelFallbacks            []string       `json:"model_fallbacks,omitempty"`
-	ImageModel                string         `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
-	ImageModelFallbacks       []string       `json:"image_model_fallbacks,omitempty"`
-	MaxTokens                 int            `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature               *float64       `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations         int            `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
-	SummarizeMessageThreshold int            `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
-	SummarizeTokenPercent     int            `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
-	MaxMediaSize              int            `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
-	Routing                   *RoutingConfig `json:"routing,omitempty"`
+	Workspace                 string             `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace       bool               `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	AllowReadOutsideWorkspace bool               `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
+	Provider                  string             `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	ModelName                 string             `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
+	Model                     string             `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
+	ModelFallbacks            []string           `json:"model_fallbacks,omitempty"`
+	ImageModel                string             `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks       []string           `json:"image_model_fallbacks,omitempty"`
+	MaxTokens                 int                `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature               *float64           `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations         int                `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	SummarizeMessageThreshold int                `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
+	SummarizeTokenPercent     int                `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
+	MaxMediaSize              int                `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
+	Routing                   *RoutingConfig     `json:"routing,omitempty"`
+	Sandbox                   AgentSandboxConfig `json:"sandbox"                         env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX"`
 }
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB
@@ -670,7 +671,127 @@ type ExecConfig struct {
 	EnableDenyPatterns  bool     `                                 env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"  json:"enable_deny_patterns"`
 	CustomDenyPatterns  []string `                                 env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"  json:"custom_deny_patterns"`
 	CustomAllowPatterns []string `                                 env:"PICOCLAW_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS" json:"custom_allow_patterns"`
-	TimeoutSeconds      int      `                                 env:"PICOCLAW_TOOLS_EXEC_TIMEOUT_SECONDS"       json:"timeout_seconds"` // 0 means use default (60s)
+	TimeoutSeconds      int      `                                 env:"PICOCLAW_TOOLS_EXEC_TIMEOUT_SECONDS"       json:"timeout_seconds"`
+}
+
+type AgentSandboxPruneConfig struct {
+	// IdleHours: prune containers idle for this many hours. nil = use default (24).
+	// Set to 0 to disable idle-based pruning.
+	IdleHours *int `json:"idle_hours" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE_IDLE_HOURS"`
+	// MaxAgeDays: prune containers older than this many days. nil = use default (7).
+	// Set to 0 to disable age-based pruning.
+	MaxAgeDays *int `json:"max_age_days" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE_MAX_AGE_DAYS"`
+}
+
+type AgentSandboxDockerUlimitValue struct {
+	Value *int64 `json:"-"`
+	Soft  *int64 `json:"soft,omitempty"`
+	Hard  *int64 `json:"hard,omitempty"`
+}
+
+func (v *AgentSandboxDockerUlimitValue) UnmarshalJSON(data []byte) error {
+	var num int64
+	if err := json.Unmarshal(data, &num); err == nil {
+		v.Value = &num
+		v.Soft = nil
+		v.Hard = nil
+		return nil
+	}
+
+	type raw struct {
+		Soft *int64 `json:"soft"`
+		Hard *int64 `json:"hard"`
+	}
+	var r raw
+	if err := json.Unmarshal(data, &r); err != nil {
+		return err
+	}
+	v.Value = nil
+	v.Soft = r.Soft
+	v.Hard = r.Hard
+	return nil
+}
+
+func (v AgentSandboxDockerUlimitValue) MarshalJSON() ([]byte, error) {
+	if v.Value != nil {
+		return json.Marshal(*v.Value)
+	}
+	type raw struct {
+		Soft *int64 `json:"soft,omitempty"`
+		Hard *int64 `json:"hard,omitempty"`
+	}
+	return json.Marshal(raw{
+		Soft: v.Soft,
+		Hard: v.Hard,
+	})
+}
+
+type AgentSandboxDockerConfig struct {
+	Image           string                                   `json:"image"            env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_IMAGE"`
+	ContainerPrefix string                                   `json:"container_prefix" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_CONTAINER_PREFIX"`
+	Workdir         string                                   `json:"workdir"          env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_WORKDIR"`
+	ReadOnlyRoot    bool                                     `json:"read_only_root"   env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_READ_ONLY_ROOT"`
+	Tmpfs           []string                                 `json:"tmpfs"            env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_TMPFS"`
+	Network         string                                   `json:"network"          env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_NETWORK"`
+	User            string                                   `json:"user"             env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_USER"`
+	CapDrop         []string                                 `json:"cap_drop"         env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_CAP_DROP"`
+	Env             map[string]string                        `json:"env"              env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_ENV"`
+	SetupCommand    string                                   `json:"setup_command"    env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_SETUP_COMMAND"`
+	PidsLimit       int64                                    `json:"pids_limit"       env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_PIDS_LIMIT"`
+	Memory          string                                   `json:"memory"           env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_MEMORY"`
+	MemorySwap      string                                   `json:"memory_swap"      env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_MEMORY_SWAP"`
+	Cpus            float64                                  `json:"cpus"             env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_CPUS"`
+	Ulimits         map[string]AgentSandboxDockerUlimitValue `json:"ulimits"          env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_ULIMITS"`
+	SeccompProfile  string                                   `json:"seccomp_profile"  env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_SECCOMP_PROFILE"`
+	ApparmorProfile string                                   `json:"apparmor_profile" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_APPARMOR_PROFILE"`
+	DNS             []string                                 `json:"dns"              env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_DNS"`
+	ExtraHosts      []string                                 `json:"extra_hosts"      env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_EXTRA_HOSTS"`
+	Binds           []string                                 `json:"binds"            env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_BINDS"`
+}
+
+// SandboxMode defines the operational mode of the agent sandbox.
+type SandboxMode string
+
+const (
+	SandboxModeOff     SandboxMode = "off"      // Sandbox disabled (host execution)
+	SandboxModeNonMain SandboxMode = "non-main" // Sandbox all sessions except main
+	SandboxModeAll     SandboxMode = "all"      // Sandbox all sessions
+)
+
+// SandboxScope defines the isolation scope of the sandbox container.
+type SandboxScope string
+
+const (
+	SandboxScopeSession SandboxScope = "session" // One container per session
+	SandboxScopeAgent   SandboxScope = "agent"   // One container per agent (shared across sessions)
+	SandboxScopeShared  SandboxScope = "shared"  // One container shared by all agents
+)
+
+// WorkspaceAccess defines how the agent workspace is exposed to the sandbox.
+type WorkspaceAccess string
+
+const (
+	WorkspaceAccessNone WorkspaceAccess = "none" // No workspace access
+	WorkspaceAccessRO   WorkspaceAccess = "ro"   // Read-only access
+	WorkspaceAccessRW   WorkspaceAccess = "rw"   // Read-write access
+)
+
+type AgentSandboxConfig struct {
+	Mode            SandboxMode              `json:"mode"             env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_MODE"`
+	Scope           SandboxScope             `json:"scope"            env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_SCOPE"`
+	WorkspaceAccess WorkspaceAccess          `json:"workspace_access" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_WORKSPACE_ACCESS"`
+	WorkspaceRoot   string                   `json:"workspace_root"   env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_WORKSPACE_ROOT"`
+	Docker          AgentSandboxDockerConfig `json:"docker"           env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER"`
+	Prune           AgentSandboxPruneConfig  `json:"prune"            env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE"`
+}
+
+type SandboxToolPolicyConfig struct {
+	Allow []string `json:"allow" env:"PICOCLAW_TOOLS_SANDBOX_TOOLS_ALLOW"`
+	Deny  []string `json:"deny"  env:"PICOCLAW_TOOLS_SANDBOX_TOOLS_DENY"`
+}
+
+type SandboxToolsConfig struct {
+	Tools SandboxToolPolicyConfig `json:"tools" env:"PICOCLAW_TOOLS_SANDBOX_TOOLS"`
 }
 
 type SkillsToolsConfig struct {
@@ -682,8 +803,8 @@ type SkillsToolsConfig struct {
 
 type MediaCleanupConfig struct {
 	ToolConfig `    envPrefix:"PICOCLAW_MEDIA_CLEANUP_"`
-	MaxAge     int `                                    env:"PICOCLAW_MEDIA_CLEANUP_MAX_AGE"  json:"max_age_minutes"`
-	Interval   int `                                    env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL" json:"interval_minutes"`
+	MaxAge     int `                                    json:"max_age_minutes"  env:"PICOCLAW_MEDIA_CLEANUP_MAX_AGE"`
+	Interval   int `                                    json:"interval_minutes" env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL"`
 }
 
 type ReadFileToolConfig struct {
@@ -697,6 +818,7 @@ type ToolsConfig struct {
 	Web             WebToolsConfig     `json:"web"`
 	Cron            CronToolsConfig    `json:"cron"`
 	Exec            ExecConfig         `json:"exec"`
+	Sandbox         SandboxToolsConfig `json:"sandbox"`
 	Skills          SkillsToolsConfig  `json:"skills"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 	MCP             MCPConfig          `json:"mcp"`
@@ -1016,3 +1138,10 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return true
 	}
 }
+
+// IntPtr is a convenience helper that returns a pointer to the provided int value.
+func IntPtr(v int) *int {
+	return &v
+}
+
+func intPtr(v int) *int { return IntPtr(v) }

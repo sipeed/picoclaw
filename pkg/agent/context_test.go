@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -8,6 +9,82 @@ import (
 
 func msg(role, content string) providers.Message {
 	return providers.Message{Role: role, Content: content}
+}
+
+func TestBuildMessages_DynamicWorkspace(t *testing.T) {
+	root := t.TempDir()
+	cb := NewContextBuilder(root)
+
+	// Test host path
+	msgs := cb.BuildMessages(nil, "", "hi", nil, "cli", "chat1", root, SandboxInfo{IsHost: true})
+	if len(msgs) == 0 || msgs[0].Role != "system" {
+		t.Fatal("expected system message")
+	}
+	if !strings.Contains(msgs[0].Content, "Your workspace is at: "+root) {
+		t.Errorf("system prompt missing host workspace path: %s", msgs[0].Content)
+	}
+
+	// Test container path
+	containerPath := "/workspace"
+	msgs = cb.BuildMessages(nil, "", "hi", nil, "cli", "chat1", containerPath, SandboxInfo{IsHost: false})
+	if !strings.Contains(msgs[0].Content, "Your workspace is at: "+containerPath) {
+		t.Errorf("system prompt missing container workspace path: %s", msgs[0].Content)
+	}
+}
+
+func TestBuildMessages_SandboxInfo(t *testing.T) {
+	root := t.TempDir()
+	cb := NewContextBuilder(root)
+
+	// Test with sandbox enabled (container)
+	sb := SandboxInfo{
+		IsHost: false,
+	}
+	msgs := cb.BuildMessages(nil, "", "hi", nil, "cli", "chat1", "/workspace", sb)
+	content := msgs[0].Content
+
+	if !strings.Contains(content, "## Sandbox") {
+		t.Error("expected ## Sandbox section in prompt")
+	}
+	if !strings.Contains(content, "Docker container") {
+		t.Error("expected 'Docker container' description in prompt")
+	}
+	if !strings.Contains(content, "ALWAYS prefer relative paths") {
+		t.Error("expected relative path guidance in prompt")
+	}
+
+	// Test with sandbox disabled (host)
+	sb = SandboxInfo{
+		IsHost: true,
+	}
+	msgs = cb.BuildMessages(nil, "", "hi", nil, "cli", "chat1", root, sb)
+	content = msgs[0].Content
+	if strings.Contains(content, "## Sandbox") {
+		t.Error("did not expect ## Sandbox section in prompt when disabled")
+	}
+}
+
+func TestBuildMessages_CacheIntegrity_SandboxToggle(t *testing.T) {
+	root := t.TempDir()
+	cb := NewContextBuilder(root)
+
+	// 1. Call with Host - should populate cache without sandbox guidance
+	msgs1 := cb.BuildMessages(nil, "", "hi", nil, "cli", "chat1", root, SandboxInfo{IsHost: true})
+	if strings.Contains(msgs1[0].Content, "## Sandbox") {
+		t.Fatal("First call (Host) should not have sandbox guidance")
+	}
+
+	// 2. Call with Container - should use SAME cache but inject guidance
+	msgs2 := cb.BuildMessages(nil, "", "hi", nil, "cli", "chat1", "/workspace", SandboxInfo{IsHost: false})
+	if !strings.Contains(msgs2[0].Content, "## Sandbox") {
+		t.Fatal("Second call (Container) MUST have sandbox guidance via dynamic injection")
+	}
+
+	// 3. Call with Host again - should still be correct (no guidance)
+	msgs3 := cb.BuildMessages(nil, "", "hi", nil, "cli", "chat1", root, SandboxInfo{IsHost: true})
+	if strings.Contains(msgs3[0].Content, "## Sandbox") {
+		t.Fatal("Third call (Host) should not have sandbox guidance (cache must remain clean)")
+	}
 }
 
 func assistantWithTools(toolIDs ...string) providers.Message {

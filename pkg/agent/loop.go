@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/commands"
@@ -793,13 +794,38 @@ func (al *AgentLoop) runAgentLoop(
 		}
 	}
 
-	// 1. Build messages (skip history for heartbeat)
+	// 1. Prepare sandbox context for this run.
+	// Inject the routing session key so sandbox.shouldSandbox() can compare
+	// it against the main session key for non-main mode.
+	ctx = sandbox.WithSessionKey(ctx, opts.SessionKey)
+
+	// Resolve sandbox environment for this run.
+	// We guarantee SandboxManager is non-nil (fallback to host manager) in NewAgentInstance.
+	ctx = sandbox.WithManager(ctx, agent.SandboxManager)
+
+	sb, err := agent.SandboxManager.Resolve(ctx)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to resolve sandbox", map[string]any{"error": err.Error()})
+		return "", fmt.Errorf("failed to resolve sandbox: %w", err)
+	}
+	// Add pre-resolved sandbox to context for thread-safe access in tools
+	ctx = sandbox.WithSandbox(ctx, sb)
+
+	// 2. Build messages (skip history for heartbeat)
 	var history []providers.Message
 	var summary string
 	if !opts.NoHistory {
 		history = agent.Sessions.GetHistory(opts.SessionKey)
 		summary = agent.Sessions.GetSummary(opts.SessionKey)
 	}
+	workspacePath := sb.GetWorkspace(ctx)
+	_, isHost := sb.(*sandbox.HostSandbox)
+
+	sbInfo := SandboxInfo{
+		IsHost:       isHost,
+		WorkspaceDir: workspacePath,
+	}
+
 	messages := agent.ContextBuilder.BuildMessages(
 		history,
 		summary,
@@ -807,6 +833,8 @@ func (al *AgentLoop) runAgentLoop(
 		opts.Media,
 		opts.Channel,
 		opts.ChatID,
+		workspacePath,
+		sbInfo,
 	)
 
 	// Resolve media:// refs to base64 data URLs (streaming)
@@ -816,8 +844,8 @@ func (al *AgentLoop) runAgentLoop(
 	// 2. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
-	// 3. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
+	// 4. Run LLM iteration loop
+	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts, workspacePath, sbInfo)
 	if err != nil {
 		return "", err
 	}
@@ -923,6 +951,8 @@ func (al *AgentLoop) runLLMIteration(
 	agent *AgentInstance,
 	messages []providers.Message,
 	opts processOptions,
+	workspacePath string,
+	sbInfo SandboxInfo,
 ) (string, int, error) {
 	iteration := 0
 	var finalContent string
@@ -1074,7 +1104,8 @@ func (al *AgentLoop) runLLMIteration(
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
 					newHistory, newSummary, "",
-					nil, opts.Channel, opts.ChatID,
+					nil, opts.Channel, opts.ChatID, workspacePath,
+					sbInfo,
 				)
 				continue
 			}
@@ -1431,6 +1462,16 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 		"dropped_msgs": droppedCount,
 		"new_count":    len(newHistory),
 	})
+}
+
+// GetDefaultSandboxManager returns the SandboxManager of the default agent.
+// Returns nil if no default agent is registered.
+func (al *AgentLoop) GetDefaultSandboxManager() sandbox.Manager {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return nil
+	}
+	return agent.SandboxManager
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.

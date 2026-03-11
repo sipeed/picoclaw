@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 )
 
 // TestEditTool_EditFile_Success verifies successful file editing
@@ -17,7 +19,8 @@ func TestEditTool_EditFile_Success(t *testing.T) {
 	os.WriteFile(testFile, []byte("Hello World\nThis is a test"), 0o644)
 
 	tool := NewEditFileTool(tmpDir, true)
-	ctx := context.Background()
+	sb := sandbox.NewHostSandbox(tmpDir, true)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"path":     testFile,
 		"old_text": "World",
@@ -61,7 +64,8 @@ func TestEditTool_EditFile_NotFound(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "nonexistent.txt")
 
 	tool := NewEditFileTool(tmpDir, true)
-	ctx := context.Background()
+	sb := sandbox.NewHostSandbox(tmpDir, true)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"path":     testFile,
 		"old_text": "old",
@@ -75,10 +79,9 @@ func TestEditTool_EditFile_NotFound(t *testing.T) {
 		t.Errorf("Expected error for non-existent file")
 	}
 
-	// Should mention file not found
-	if !strings.Contains(result.ForLLM, "not found") && !strings.Contains(result.ForUser, "not found") {
-		t.Errorf("Expected 'file not found' message, got ForLLM: %s", result.ForLLM)
-	}
+	// Should mention file not found or no such file
+	assert.True(t, strings.Contains(result.ForLLM, "not found") || strings.Contains(result.ForLLM, "no such file"),
+		"Expected 'not found' or 'no such file' message, got ForLLM: %s", result.ForLLM)
 }
 
 // TestEditTool_EditFile_OldTextNotFound verifies error when old_text doesn't exist
@@ -88,7 +91,8 @@ func TestEditTool_EditFile_OldTextNotFound(t *testing.T) {
 	os.WriteFile(testFile, []byte("Hello World"), 0o644)
 
 	tool := NewEditFileTool(tmpDir, true)
-	ctx := context.Background()
+	sb := sandbox.NewHostSandbox(tmpDir, true)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"path":     testFile,
 		"old_text": "Goodbye",
@@ -115,7 +119,8 @@ func TestEditTool_EditFile_MultipleMatches(t *testing.T) {
 	os.WriteFile(testFile, []byte("test test test"), 0o644)
 
 	tool := NewEditFileTool(tmpDir, true)
-	ctx := context.Background()
+	sb := sandbox.NewHostSandbox(tmpDir, true)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"path":     testFile,
 		"old_text": "test",
@@ -143,7 +148,8 @@ func TestEditTool_EditFile_OutsideAllowedDir(t *testing.T) {
 	os.WriteFile(testFile, []byte("content"), 0o644)
 
 	tool := NewEditFileTool(tmpDir, true) // Restrict to tmpDir
-	ctx := context.Background()
+	sb := sandbox.NewHostSandbox(tmpDir, true)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"path":     testFile,
 		"old_text": "content",
@@ -169,8 +175,9 @@ func TestEditTool_EditFile_OutsideAllowedDir(t *testing.T) {
 
 // TestEditTool_EditFile_MissingPath verifies error handling for missing path
 func TestEditTool_EditFile_MissingPath(t *testing.T) {
-	tool := NewEditFileTool("", false)
-	ctx := context.Background()
+	tool := NewEditFileTool("/", false)
+	sb := sandbox.NewHostSandbox("/", false)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"old_text": "old",
 		"new_text": "new",
@@ -186,8 +193,9 @@ func TestEditTool_EditFile_MissingPath(t *testing.T) {
 
 // TestEditTool_EditFile_MissingOldText verifies error handling for missing old_text
 func TestEditTool_EditFile_MissingOldText(t *testing.T) {
-	tool := NewEditFileTool("", false)
-	ctx := context.Background()
+	tool := NewEditFileTool("/", false)
+	sb := sandbox.NewHostSandbox("/", false)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"path":     "/tmp/test.txt",
 		"new_text": "new",
@@ -203,8 +211,9 @@ func TestEditTool_EditFile_MissingOldText(t *testing.T) {
 
 // TestEditTool_EditFile_MissingNewText verifies error handling for missing new_text
 func TestEditTool_EditFile_MissingNewText(t *testing.T) {
-	tool := NewEditFileTool("", false)
-	ctx := context.Background()
+	tool := NewEditFileTool("/", false)
+	sb := sandbox.NewHostSandbox("/", false)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"path":     "/tmp/test.txt",
 		"old_text": "old",
@@ -224,8 +233,9 @@ func TestEditTool_AppendFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("Initial content"), 0o644)
 
-	tool := NewAppendFileTool("", false)
-	ctx := context.Background()
+	tool := NewAppendFileTool("/", false)
+	sb := sandbox.NewHostSandbox("/", false)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"path":    testFile,
 		"content": "\nAppended content",
@@ -264,7 +274,7 @@ func TestEditTool_AppendFile_Success(t *testing.T) {
 
 // TestEditTool_AppendFile_MissingPath verifies error handling for missing path
 func TestEditTool_AppendFile_MissingPath(t *testing.T) {
-	tool := NewAppendFileTool("", false)
+	tool := NewAppendFileTool("/", false)
 	ctx := context.Background()
 	args := map[string]any{
 		"content": "test",
@@ -280,7 +290,7 @@ func TestEditTool_AppendFile_MissingPath(t *testing.T) {
 
 // TestEditTool_AppendFile_MissingContent verifies error handling for missing content
 func TestEditTool_AppendFile_MissingContent(t *testing.T) {
-	tool := NewAppendFileTool("", false)
+	tool := NewAppendFileTool("/", false)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/tmp/test.txt",
@@ -349,7 +359,8 @@ func TestReplaceEditContent(t *testing.T) {
 func TestAppendFileTool_AppendToNonExistent_Restricted(t *testing.T) {
 	workspace := t.TempDir()
 	tool := NewAppendFileTool(workspace, true)
-	ctx := context.Background()
+	sb := sandbox.NewHostSandbox(workspace, true)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 
 	args := map[string]any{
 		"path":    "brand_new_file.txt",
@@ -379,7 +390,8 @@ func TestAppendFileTool_Restricted_Success(t *testing.T) {
 	assert.NoError(t, err)
 
 	tool := NewAppendFileTool(workspace, true)
-	ctx := context.Background()
+	sb := sandbox.NewHostSandbox(workspace, true)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"path":    testFile,
 		"content": " appended",
@@ -403,7 +415,8 @@ func TestEditFileTool_Restricted_InPlaceEdit(t *testing.T) {
 	assert.NoError(t, err)
 
 	tool := NewEditFileTool(workspace, true)
-	ctx := context.Background()
+	sb := sandbox.NewHostSandbox(workspace, true)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"path":     testFile,
 		"old_text": "World",
@@ -424,7 +437,8 @@ func TestEditFileTool_Restricted_InPlaceEdit(t *testing.T) {
 func TestEditFileTool_Restricted_FileNotFound(t *testing.T) {
 	workspace := t.TempDir()
 	tool := NewEditFileTool(workspace, true)
-	ctx := context.Background()
+	sb := sandbox.NewHostSandbox(workspace, true)
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
 		"path":     "no_such_file.txt",
 		"old_text": "old",
@@ -433,5 +447,6 @@ func TestEditFileTool_Restricted_FileNotFound(t *testing.T) {
 
 	result := tool.Execute(ctx, args)
 	assert.True(t, result.IsError)
-	assert.Contains(t, result.ForLLM, "not found")
+	assert.True(t, strings.Contains(result.ForLLM, "not found") || strings.Contains(result.ForLLM, "no such file"),
+		"Expected 'not found' or 'no such file' message, got ForLLM: %s", result.ForLLM)
 }
