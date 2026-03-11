@@ -179,6 +179,26 @@ func TestResolveProviderSelection(t *testing.T) {
 			wantProxy:   "http://127.0.0.1:7890",
 		},
 		{
+			name: "explicit longcat provider uses defaults",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "longcat"
+				cfg.Providers.LongCat.APIKey = "longcat-key"
+				cfg.Providers.LongCat.Proxy = "http://127.0.0.1:7890"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "https://api.longcat.chat/openai",
+			wantProxy:   "http://127.0.0.1:7890",
+		},
+		{
+			name: "longcat model fallback uses longcat base default",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Model = "longcat/LongCat-Flash-Thinking"
+				cfg.Providers.LongCat.APIKey = "longcat-key"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "https://api.longcat.chat/openai",
+		},
+		{
 			name: "missing keys returns model config error",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "custom-model"

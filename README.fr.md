@@ -980,6 +980,7 @@ Cette conception permet également le **support multi-agent** avec une sélectio
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Obtenir Clé](https://cerebras.ai) |
 | **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Obtenir Clé](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Obtenir une clé](https://longcat.chat/platform)                 |
 | **Antigravity** | `antigravity/` | Google Cloud | Custom | OAuth uniquement |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
