@@ -13,9 +13,11 @@ import (
 type SearchCache struct {
 	mu         sync.RWMutex
 	entries    map[string]*cacheEntry
-	order      []string // LRU order: oldest first.
 	maxEntries int
 	ttl        time.Duration
+	// LRU linked list implementation
+	head *cacheEntry // Oldest entry
+	tail *cacheEntry // Newest entry
 }
 
 type cacheEntry struct {
@@ -23,6 +25,9 @@ type cacheEntry struct {
 	trigrams  []uint32
 	results   []SearchResult
 	createdAt time.Time
+	// LRU linked list pointers
+	prev *cacheEntry
+	next *cacheEntry
 }
 
 // similarityThreshold is the minimum trigram Jaccard similarity for a cache hit.
@@ -40,9 +45,10 @@ func NewSearchCache(maxEntries int, ttl time.Duration) *SearchCache {
 	}
 	return &SearchCache{
 		entries:    make(map[string]*cacheEntry),
-		order:      make([]string, 0),
 		maxEntries: maxEntries,
 		ttl:        ttl,
+		head:        nil,
+		tail:        nil,
 	}
 }
 
@@ -60,9 +66,12 @@ func (sc *SearchCache) Get(query string) ([]SearchResult, bool) {
 	// Exact match first.
 	if entry, ok := sc.entries[normalized]; ok {
 		if time.Since(entry.createdAt) < sc.ttl {
-			sc.moveToEndLocked(normalized)
+			sc.moveToTailLocked(entry)
 			return copyResults(entry.results), true
 		}
+		// Remove expired entry
+		sc.removeEntryLocked(entry)
+		delete(sc.entries, normalized)
 	}
 
 	// Similarity match.
@@ -70,8 +79,13 @@ func (sc *SearchCache) Get(query string) ([]SearchResult, bool) {
 	var bestEntry *cacheEntry
 	var bestSim float64
 
-	for _, entry := range sc.entries {
+	for key, entry := range sc.entries {
 		if time.Since(entry.createdAt) >= sc.ttl {
+			// Remove expired entry
+			// Note: In Go, deleting from a map during range iteration is safe
+			// The iteration continues over the remaining elements
+			sc.removeEntryLocked(entry)
+			delete(sc.entries, key)
 			continue // Skip expired.
 		}
 		sim := jaccardSimilarity(queryTrigrams, entry.trigrams)
@@ -82,7 +96,7 @@ func (sc *SearchCache) Get(query string) ([]SearchResult, bool) {
 	}
 
 	if bestSim >= similarityThreshold && bestEntry != nil {
-		sc.moveToEndLocked(bestEntry.query)
+		sc.moveToTailLocked(bestEntry)
 		return copyResults(bestEntry.results), true
 	}
 
@@ -103,33 +117,34 @@ func (sc *SearchCache) Put(query string, results []SearchResult) {
 	sc.evictExpiredLocked()
 
 	// If already exists, update.
-	if _, ok := sc.entries[normalized]; ok {
-		sc.entries[normalized] = &cacheEntry{
-			query:     normalized,
-			trigrams:  buildTrigrams(normalized),
-			results:   copyResults(results),
-			createdAt: time.Now(),
-		}
+	if entry, ok := sc.entries[normalized]; ok {
+		// Update entry
+		entry.trigrams = buildTrigrams(normalized)
+		entry.results = copyResults(results)
+		entry.createdAt = time.Now()
 		// Move to end of LRU order.
-		sc.moveToEndLocked(normalized)
+		sc.moveToTailLocked(entry)
 		return
 	}
 
 	// Evict LRU if at capacity.
-	for len(sc.entries) >= sc.maxEntries && len(sc.order) > 0 {
-		oldest := sc.order[0]
-		sc.order = sc.order[1:]
-		delete(sc.entries, oldest)
+	for len(sc.entries) >= sc.maxEntries && sc.head != nil {
+		oldest := sc.head
+		sc.removeEntryLocked(oldest)
+		delete(sc.entries, oldest.query)
 	}
 
 	// Insert new entry.
-	sc.entries[normalized] = &cacheEntry{
+	newEntry := &cacheEntry{
 		query:     normalized,
 		trigrams:  buildTrigrams(normalized),
 		results:   copyResults(results),
 		createdAt: time.Now(),
+		prev:      nil,
+		next:      nil,
 	}
-	sc.order = append(sc.order, normalized)
+	sc.entries[normalized] = newEntry
+	sc.addToTailLocked(newEntry)
 }
 
 // Len returns the number of entries (for testing).
@@ -143,26 +158,58 @@ func (sc *SearchCache) Len() int {
 
 func (sc *SearchCache) evictExpiredLocked() {
 	now := time.Now()
-	newOrder := make([]string, 0, len(sc.order))
-	for _, key := range sc.order {
-		entry, ok := sc.entries[key]
-		if !ok || now.Sub(entry.createdAt) >= sc.ttl {
-			delete(sc.entries, key)
-			continue
+	current := sc.head
+	for current != nil {
+		next := current.next
+		if now.Sub(current.createdAt) >= sc.ttl {
+			sc.removeEntryLocked(current)
+			delete(sc.entries, current.query)
 		}
-		newOrder = append(newOrder, key)
+		current = next
 	}
-	sc.order = newOrder
 }
 
-func (sc *SearchCache) moveToEndLocked(key string) {
-	for i, k := range sc.order {
-		if k == key {
-			sc.order = append(sc.order[:i], sc.order[i+1:]...)
-			break
-		}
+// addToTailLocked adds an entry to the tail of the LRU list
+func (sc *SearchCache) addToTailLocked(entry *cacheEntry) {
+	if sc.tail == nil {
+		// List is empty
+		sc.head = entry
+		sc.tail = entry
+	} else {
+		// Add to tail
+		sc.tail.next = entry
+		entry.prev = sc.tail
+		sc.tail = entry
 	}
-	sc.order = append(sc.order, key)
+}
+
+// removeEntryLocked removes an entry from the LRU list
+func (sc *SearchCache) removeEntryLocked(entry *cacheEntry) {
+	if entry.prev != nil {
+		entry.prev.next = entry.next
+	} else {
+		// Entry is head
+		sc.head = entry.next
+	}
+
+	if entry.next != nil {
+		entry.next.prev = entry.prev
+	} else {
+		// Entry is tail
+		sc.tail = entry.prev
+	}
+
+	// Clear pointers
+	entry.prev = nil
+	entry.next = nil
+}
+
+// moveToTailLocked moves an entry to the tail of the LRU list
+func (sc *SearchCache) moveToTailLocked(entry *cacheEntry) {
+	// Remove from current position
+	sc.removeEntryLocked(entry)
+	// Add to tail
+	sc.addToTailLocked(entry)
 }
 
 func normalizeQuery(q string) string {
