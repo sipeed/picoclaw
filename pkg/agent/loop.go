@@ -1091,9 +1091,10 @@ func (al *AgentLoop) runLLMIteration(
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
+		effectiveReasoning := response.EffectiveReasoning()
 		go al.handleReasoning(
 			ctx,
-			response.Reasoning,
+			effectiveReasoning,
 			opts.Channel,
 			al.targetReasoningChannelID(opts.Channel),
 		)
@@ -1104,7 +1105,7 @@ func (al *AgentLoop) runLLMIteration(
 				"iteration":      iteration,
 				"content_chars":  len(response.Content),
 				"tool_calls":     len(response.ToolCalls),
-				"reasoning":      response.Reasoning,
+				"reasoning":      effectiveReasoning,
 				"target_channel": al.targetReasoningChannelID(opts.Channel),
 				"channel":        opts.Channel,
 			})

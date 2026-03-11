@@ -34,6 +34,14 @@ type LLMResponse struct {
 	ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
 }
 
+// EffectiveReasoning returns Reasoning if non-empty, otherwise ReasoningContent.
+func (r *LLMResponse) EffectiveReasoning() string {
+	if r.Reasoning != "" {
+		return r.Reasoning
+	}
+	return r.ReasoningContent
+}
+
 type ReasoningDetail struct {
 	Format string `json:"format"`
 	Index  int    `json:"index"`
