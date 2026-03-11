@@ -384,6 +384,13 @@ func DefaultConfig() *Config {
 				Brave: BraveConfig{
 					Enabled:    false,
 					APIKey:     "",
+					APIKeys:    nil,
+					MaxResults: 5,
+				},
+				Tavily: TavilyConfig{
+					Enabled:    false,
+					APIKey:     "",
+					APIKeys:    nil,
 					MaxResults: 5,
 				},
 				DuckDuckGo: DuckDuckGoConfig{
@@ -393,6 +400,7 @@ func DefaultConfig() *Config {
 				Perplexity: PerplexityConfig{
 					Enabled:    false,
 					APIKey:     "",
+					APIKeys:    nil,
 					MaxResults: 5,
 				},
 				SearXNG: SearXNGConfig{
@@ -501,6 +509,12 @@ func DefaultConfig() *Config {
 		Devices: DevicesConfig{
 			Enabled:    false,
 			MonitorUSB: true,
+		},
+		BuildInfo: BuildInfo{
+			Version:   Version,
+			GitCommit: GitCommit,
+			BuildTime: BuildTime,
+			GoVersion: GoVersion,
 		},
 	}
 }

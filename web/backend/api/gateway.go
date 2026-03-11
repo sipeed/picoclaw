@@ -134,6 +134,12 @@ func (h *Handler) startGatewayLocked() (int, error) {
 	execPath := findPicoclawBinary()
 
 	cmd := exec.Command(execPath, "gateway")
+	// Forward the launcher's config path via the environment variable that
+	// GetConfigPath() already reads, so the gateway sub-process uses the same
+	// config file without requiring a --config flag on the gateway subcommand.
+	if h.configPath != "" {
+		cmd.Env = append(os.Environ(), "PICOCLAW_CONFIG="+h.configPath)
+	}
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -530,18 +536,32 @@ func (h *Handler) currentGatewayStatus() string {
 }
 
 // findPicoclawBinary locates the picoclaw executable.
-// Tries the same directory as the current executable first, then falls back to $PATH.
+// Search order:
+//  1. PICOCLAW_BINARY environment variable (explicit override)
+//  2. Same directory as the current executable
+//  3. Falls back to "picoclaw" and relies on $PATH
 func findPicoclawBinary() string {
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		candidate := filepath.Join(dir, "picoclaw")
-		if runtime.GOOS == "windows" {
-			candidate += ".exe"
+	binaryName := "picoclaw"
+	if runtime.GOOS == "windows" {
+		binaryName = "picoclaw.exe"
+	}
+
+	// 1. Explicit override via environment variable
+	if p := os.Getenv("PICOCLAW_BINARY"); p != "" {
+		if info, _ := os.Stat(p); info != nil && !info.IsDir() {
+			return p
 		}
+	}
+
+	// 2. Same directory as the launcher executable
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), binaryName)
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 			return candidate
 		}
 	}
+
+	// 3. Fall back to PATH lookup
 	return "picoclaw"
 }
 

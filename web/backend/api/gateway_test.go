@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -118,5 +119,32 @@ func TestGatewayStatusIncludesStartConditionWhenNotReady(t *testing.T) {
 	}
 	if _, ok := body["gateway_start_reason"].(string); !ok {
 		t.Fatalf("gateway_start_reason missing or not string: %#v", body["gateway_start_reason"])
+	}
+}
+
+func TestFindPicoclawBinary_EnvOverride(t *testing.T) {
+	// Create a temporary file to act as the mock binary
+	tmpDir := t.TempDir()
+	mockBinary := filepath.Join(tmpDir, "picoclaw-mock")
+	if err := os.WriteFile(mockBinary, []byte("mock"), 0o755); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	t.Setenv("PICOCLAW_BINARY", mockBinary)
+
+	got := findPicoclawBinary()
+	if got != mockBinary {
+		t.Errorf("findPicoclawBinary() = %q, want %q", got, mockBinary)
+	}
+}
+
+func TestFindPicoclawBinary_EnvOverride_InvalidPath(t *testing.T) {
+	// When PICOCLAW_BINARY points to a non-existent path, fall through to next strategy
+	t.Setenv("PICOCLAW_BINARY", "/nonexistent/picoclaw-binary")
+
+	got := findPicoclawBinary()
+	// Should not return the invalid path; falls back to "picoclaw" or another found path
+	if got == "/nonexistent/picoclaw-binary" {
+		t.Errorf("findPicoclawBinary() returned invalid env path %q, expected fallback", got)
 	}
 }

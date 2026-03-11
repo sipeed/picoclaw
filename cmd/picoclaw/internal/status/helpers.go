@@ -6,6 +6,7 @@ import (
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/auth"
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func statusCmd() {
@@ -18,8 +19,8 @@ func statusCmd() {
 	configPath := internal.GetConfigPath()
 
 	fmt.Printf("%s picoclaw Status\n", internal.Logo)
-	fmt.Printf("Version: %s\n", internal.FormatVersion())
-	build, _ := internal.FormatBuildInfo()
+	fmt.Printf("Version: %s\n", config.FormatVersion())
+	build, _ := config.FormatBuildInfo()
 	if build != "" {
 		fmt.Printf("Build: %s\n", build)
 	}
