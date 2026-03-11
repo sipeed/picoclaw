@@ -11,6 +11,7 @@ require (
 	github.com/ergochat/irc-go v0.5.0
 	github.com/gdamore/tcell/v2 v2.13.8
 	github.com/google/uuid v1.6.0
+	github.com/gomarkdown/markdown v0.0.0-20260217112301-37c66b85d6ab
 	github.com/gorilla/websocket v1.5.3
 	github.com/h2non/filetype v1.1.3
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
