@@ -192,19 +192,36 @@ func (sl *SkillsLoader) LoadSkillsForContext(skillNames []string) string {
 }
 
 func (sl *SkillsLoader) BuildSkillsSummary() string {
+	return sl.BuildSkillsSummaryFiltered(nil)
+}
+
+// BuildSkillsSummaryFiltered builds the XML skills summary, restricted to
+// allowedNames if non-empty. An empty/nil allowedNames includes all skills.
+func (sl *SkillsLoader) BuildSkillsSummaryFiltered(allowedNames []string) string {
 	allSkills := sl.ListSkills()
 	if len(allSkills) == 0 {
 		return ""
 	}
 
+	var allowed map[string]bool
+	if len(allowedNames) > 0 {
+		allowed = make(map[string]bool, len(allowedNames))
+		for _, n := range allowedNames {
+			allowed[n] = true
+		}
+	}
+
 	var lines []string
 	lines = append(lines, "<skills>")
 	for _, s := range allSkills {
+		if allowed != nil && !allowed[s.Name] {
+			continue
+		}
 		escapedName := escapeXML(s.Name)
 		escapedDesc := escapeXML(s.Description)
 		escapedPath := escapeXML(s.Path)
 
-		lines = append(lines, fmt.Sprintf("  <skill>"))
+		lines = append(lines, "  <skill>")
 		lines = append(lines, fmt.Sprintf("    <name>%s</name>", escapedName))
 		lines = append(lines, fmt.Sprintf("    <description>%s</description>", escapedDesc))
 		lines = append(lines, fmt.Sprintf("    <location>%s</location>", escapedPath))
@@ -213,6 +230,10 @@ func (sl *SkillsLoader) BuildSkillsSummary() string {
 	}
 	lines = append(lines, "</skills>")
 
+	if len(lines) == 2 {
+		// Only open/close tags — filter excluded everything
+		return ""
+	}
 	return strings.Join(lines, "\n")
 }
 
