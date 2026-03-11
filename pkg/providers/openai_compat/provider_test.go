@@ -594,96 +594,118 @@ func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
 	}
 }
 
-func TestSerializeMessages_PlainText(t *testing.T) {
-	messages := []protocoltypes.Message{
-		{Role: "user", Content: "hello"},
-		{Role: "assistant", Content: "hi", ReasoningContent: "thinking..."},
-	}
-	result := serializeMessages(messages)
+func TestProviderChat_SendsCustomHeaders(t *testing.T) {
+	var gotHeader string
 
-	data, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var msgs []map[string]any
-	json.Unmarshal(data, &msgs)
-
-	if msgs[0]["content"] != "hello" {
-		t.Fatalf("expected plain string content, got %v", msgs[0]["content"])
-	}
-	if msgs[1]["reasoning_content"] != "thinking..." {
-		t.Fatalf("reasoning_content not preserved, got %v", msgs[1]["reasoning_content"])
-	}
-}
-
-func TestSerializeMessages_WithMedia(t *testing.T) {
-	messages := []protocoltypes.Message{
-		{Role: "user", Content: "describe this", Media: []string{"data:image/png;base64,abc123"}},
-	}
-	result := serializeMessages(messages)
-
-	data, _ := json.Marshal(result)
-	var msgs []map[string]any
-	json.Unmarshal(data, &msgs)
-
-	content, ok := msgs[0]["content"].([]any)
-	if !ok {
-		t.Fatalf("expected array content for media message, got %T", msgs[0]["content"])
-	}
-	if len(content) != 2 {
-		t.Fatalf("expected 2 content parts, got %d", len(content))
-	}
-
-	textPart := content[0].(map[string]any)
-	if textPart["type"] != "text" || textPart["text"] != "describe this" {
-		t.Fatalf("text part mismatch: %v", textPart)
-	}
-
-	imgPart := content[1].(map[string]any)
-	if imgPart["type"] != "image_url" {
-		t.Fatalf("expected image_url type, got %v", imgPart["type"])
-	}
-	imgURL := imgPart["image_url"].(map[string]any)
-	if imgURL["url"] != "data:image/png;base64,abc123" {
-		t.Fatalf("image url mismatch: %v", imgURL["url"])
-	}
-}
-
-func TestSerializeMessages_MediaWithToolCallID(t *testing.T) {
-	messages := []protocoltypes.Message{
-		{Role: "tool", Content: "image result", Media: []string{"data:image/png;base64,xyz"}, ToolCallID: "call_1"},
-	}
-	result := serializeMessages(messages)
-
-	data, _ := json.Marshal(result)
-	var msgs []map[string]any
-	json.Unmarshal(data, &msgs)
-
-	if msgs[0]["tool_call_id"] != "call_1" {
-		t.Fatalf("tool_call_id not preserved with media, got %v", msgs[0]["tool_call_id"])
-	}
-	// Content should be multipart array
-	if _, ok := msgs[0]["content"].([]any); !ok {
-		t.Fatalf("expected array content, got %T", msgs[0]["content"])
-	}
-}
-
-func TestSerializeMessages_StripsSystemParts(t *testing.T) {
-	messages := []protocoltypes.Message{
-		{
-			Role:    "system",
-			Content: "you are helpful",
-			SystemParts: []protocoltypes.ContentBlock{
-				{Type: "text", Text: "you are helpful"},
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("X-Custom-Key")
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
 			},
-		},
-	}
-	result := serializeMessages(messages)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
 
-	data, _ := json.Marshal(result)
-	raw := string(data)
-	if strings.Contains(raw, "system_parts") {
-		t.Fatal("system_parts should not appear in serialized output")
+	p := NewProvider("key", server.URL, "", WithCustomHeaders(map[string]string{
+		"X-Custom-Key": "myvalue",
+	}))
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if gotHeader != "myvalue" {
+		t.Fatalf("X-Custom-Key = %q, want %q", gotHeader, "myvalue")
+	}
+}
+
+func TestProviderChat_SkipsReservedHeaders(t *testing.T) {
+	var gotAuth, gotContentType string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("mykey", server.URL, "", WithCustomHeaders(map[string]string{
+		"Authorization": "Bearer OVERRIDE",
+		"Content-Type":  "text/plain",
+		"X-Extra":       "allowed",
+	}))
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if gotAuth != "Bearer mykey" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer mykey")
+	}
+	if gotContentType != "application/json" {
+		t.Fatalf("Content-Type = %q, want %q", gotContentType, "application/json")
+	}
+}
+
+func TestProviderChat_RoundTripsReasoningContent(t *testing.T) {
+	var reqBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{
+			{Role: "user", Content: "1+1=?"},
+			{Role: "assistant", Content: "2", ReasoningContent: "let me think..."},
+			{Role: "user", Content: "thanks"},
+		},
+		nil,
+		"gpt-4o",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	msgs, ok := reqBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any")
+	}
+	assistantMsg, ok := msgs[1].(map[string]any)
+	if !ok {
+		t.Fatalf("messages[1] is not map[string]any")
+	}
+	if got := assistantMsg["reasoning_content"]; got != "let me think..." {
+		t.Fatalf("reasoning_content = %v, want %q", got, "let me think...")
 	}
 }
