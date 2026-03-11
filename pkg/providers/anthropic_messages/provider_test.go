@@ -413,26 +413,18 @@ func TestGetDefaultModel(t *testing.T) {
 	}
 }
 
-// Mock HTTP server test for integration testing
+// TestProviderChatErrors tests error handling in Chat.
+// Note: apiBase check removed as it's dead code - normalizeBaseURL() always provides a default.
 func TestProviderChatErrors(t *testing.T) {
 	tests := []struct {
 		name       string
 		apiKey     string
-		apiBase    string
 		messages   []Message
 		wantErrMsg string
 	}{
 		{
-			name:       "missing API base",
-			apiKey:     "test-key",
-			apiBase:    "",
-			messages:   []Message{{Role: "user", Content: "Test"}},
-			wantErrMsg: "API base not configured",
-		},
-		{
 			name:       "missing API key",
 			apiKey:     "",
-			apiBase:    "https://api.example.com",
 			messages:   []Message{{Role: "user", Content: "Test"}},
 			wantErrMsg: "API key not configured",
 		},
@@ -440,11 +432,8 @@ func TestProviderChatErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create provider with empty apiBase to trigger error
-			provider := &Provider{
-				apiKey:  tt.apiKey,
-				apiBase: tt.apiBase,
-			}
+			// Create provider using constructor to ensure proper initialization
+			provider := NewProvider(tt.apiKey, "https://api.example.com")
 
 			_, err := provider.Chat(context.Background(), tt.messages, nil, "test-model", nil)
 			if err == nil {

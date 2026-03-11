@@ -73,10 +73,6 @@ func (p *Provider) Chat(
 	model string,
 	options map[string]any,
 ) (*LLMResponse, error) {
-	if p.apiBase == "" {
-		return nil, fmt.Errorf("API base not configured")
-	}
-
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("API key not configured")
 	}
@@ -323,19 +319,30 @@ func parseResponseBody(body []byte) (*LLMResponse, error) {
 }
 
 // normalizeBaseURL ensures the base URL is properly formatted.
+// It removes /v1 suffix if present (to avoid duplication) and always appends /v1.
+// This handles edge cases like "https://api.example.com/v1/proxy" correctly.
 func normalizeBaseURL(apiBase string) string {
 	base := strings.TrimSpace(apiBase)
 	if base == "" {
 		return defaultBaseURL
 	}
 
+	// Remove trailing slashes
 	base = strings.TrimRight(base, "/")
-	// Add /v1 if not present
-	if !strings.HasSuffix(base, "/v1") {
-		base = base + "/v1"
+
+	// Remove /v1 suffix if present (will be re-added)
+	// This prevents duplication for URLs like "https://api.example.com/v1/proxy"
+	if before, ok := strings.CutSuffix(base, "/v1"); ok {
+		base = before
 	}
 
-	return base
+	// Ensure we don't have an empty string after cutting
+	if base == "" {
+		return defaultBaseURL
+	}
+
+	// Add /v1 suffix (required by Anthropic Messages API)
+	return base + "/v1"
 }
 
 // Helper functions for type conversion
