@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -54,4 +55,28 @@ func TestNewPicoclawCommand(t *testing.T) {
 
 		assert.False(t, subcmd.Hidden)
 	}
+}
+
+func TestShouldPrintBanner(t *testing.T) {
+	t.Run("interactive command prints banner", func(t *testing.T) {
+		t.Setenv(noBannerEnv, "")
+		assert.True(t, shouldPrintBanner([]string{"picoclaw", "agent"}, true))
+	})
+
+	t.Run("redirected stdout suppresses banner", func(t *testing.T) {
+		t.Setenv(noBannerEnv, "")
+		assert.False(t, shouldPrintBanner([]string{"picoclaw", "agent"}, false))
+	})
+
+	t.Run("completion command suppresses banner", func(t *testing.T) {
+		t.Setenv(noBannerEnv, "")
+		assert.False(t, shouldPrintBanner([]string{"picoclaw", "completion", "zsh"}, true))
+		assert.False(t, shouldPrintBanner([]string{"picoclaw", cobra.ShellCompRequestCmd}, true))
+		assert.False(t, shouldPrintBanner([]string{"picoclaw", cobra.ShellCompNoDescRequestCmd}, true))
+	})
+
+	t.Run("env disables banner", func(t *testing.T) {
+		t.Setenv(noBannerEnv, "1")
+		assert.False(t, shouldPrintBanner([]string{"picoclaw", "agent"}, true))
+	})
 }
