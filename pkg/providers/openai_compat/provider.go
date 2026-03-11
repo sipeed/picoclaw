@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -39,6 +40,18 @@ type Provider struct {
 type Option func(*Provider)
 
 const defaultRequestTimeout = 120 * time.Second
+
+var (
+	escapedTagReplacer = strings.NewReplacer(
+		`\u003c`, "<",
+		`\u003e`, ">",
+		`\u003C`, "<",
+		`\u003E`, ">",
+	)
+	reasoningTagPattern         = regexp.MustCompile(`(?is)<(?:think|thinking|thought|reasoning)\b[^>]*>.*?</(?:think|thinking|thought|reasoning)\s*>`)
+	trailingReasoningTagPattern = regexp.MustCompile(`(?is)<(?:think|thinking|thought|reasoning)\b[^>]*>.*$`)
+	finalTagPattern             = regexp.MustCompile(`(?is)</?final\b[^>]*>`)
+)
 
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {
@@ -351,7 +364,7 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 	}
 
 	return &LLMResponse{
-		Content:          choice.Message.Content,
+		Content:          sanitizeAssistantContent(choice.Message.Content),
 		ReasoningContent: choice.Message.ReasoningContent,
 		Reasoning:        choice.Message.Reasoning,
 		ReasoningDetails: choice.Message.ReasoningDetails,
@@ -359,6 +372,19 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 		FinishReason:     choice.FinishReason,
 		Usage:            apiResponse.Usage,
 	}, nil
+}
+
+func sanitizeAssistantContent(content string) string {
+	if content == "" {
+		return ""
+	}
+
+	sanitized := escapedTagReplacer.Replace(content)
+	sanitized = reasoningTagPattern.ReplaceAllString(sanitized, "")
+	sanitized = trailingReasoningTagPattern.ReplaceAllString(sanitized, "")
+	sanitized = finalTagPattern.ReplaceAllString(sanitized, "")
+
+	return strings.TrimSpace(sanitized)
 }
 
 // openaiMessage is the wire-format message for OpenAI-compatible APIs.
