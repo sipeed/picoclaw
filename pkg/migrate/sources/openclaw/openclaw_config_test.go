@@ -290,6 +290,20 @@ func TestConvertToPicoClaw(t *testing.T) {
 	}
 }
 
+func TestToStandardConfig_ExecAllowRemoteDefaultsTrue(t *testing.T) {
+	cfg := (&PicoClawConfig{
+		Tools: ToolsConfig{
+			Exec: ExecConfig{
+				EnableDenyPatterns: true,
+			},
+		},
+	}).ToStandardConfig()
+
+	if !cfg.Tools.Exec.AllowRemote {
+		t.Fatal("ToStandardConfig() should preserve the default tools.exec.allow_remote=true")
+	}
+}
+
 func TestConvertToPicoClawWithQQAndDingTalk(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "openclaw.json")

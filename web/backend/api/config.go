@@ -48,6 +48,9 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
+	if execAllowRemoteOmitted(body) {
+		cfg.Tools.Exec.AllowRemote = config.DefaultConfig().Tools.Exec.AllowRemote
+	}
 
 	if errs := validateConfig(&cfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -66,6 +69,20 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func execAllowRemoteOmitted(body []byte) bool {
+	var raw struct {
+		Tools *struct {
+			Exec *struct {
+				AllowRemote *bool `json:"allow_remote"`
+			} `json:"exec"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return false
+	}
+	return raw.Tools == nil || raw.Tools.Exec == nil || raw.Tools.Exec.AllowRemote == nil
 }
 
 // handlePatchConfig partially updates the system configuration using JSON Merge Patch (RFC 7396).
