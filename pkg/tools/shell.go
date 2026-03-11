@@ -339,12 +339,33 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		matches := absolutePathPattern.FindAllString(cmd, -1)
 
 		for _, raw := range matches {
-			// Skip URL path components that look like they're from URLs.
+			// Skip URL path components that look like they're from web URLs.
 			// When a URL like "https://github.com" is parsed, the regex captures
 			// "//github.com" as a match (the path portion after "https:").
 			// These double-slash prefixes indicate URL paths, not file system paths.
+			// However, we must NOT skip file:// URIs as they could escape the sandbox.
+			// Only skip if preceded by a web URL scheme (http:, https:, ftp:, etc.).
 			if strings.HasPrefix(raw, "//") {
-				continue
+				// Check if this // path is preceded by a web URL scheme
+				// by looking for patterns like "http://", "https://", "ftp://" before the match
+				idx := strings.Index(cmd, raw)
+				if idx > 0 {
+					// Look for the scheme prefix (e.g., "https:") before the //
+					before := cmd[:idx]
+					// Check if it ends with a web URL scheme followed by colon
+					// Web schemes: http, https, ftp, ftps, sftp, ssh, git
+					webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
+					isWebURL := false
+					for _, scheme := range webSchemes {
+						if strings.HasSuffix(before, scheme) {
+							isWebURL = true
+							break
+						}
+					}
+					if isWebURL {
+						continue
+					}
+				}
 			}
 
 			p, err := filepath.Abs(raw)

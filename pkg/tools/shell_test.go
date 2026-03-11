@@ -472,3 +472,46 @@ func TestShellTool_URLsNotBlocked(t *testing.T) {
 		}
 	}
 }
+
+// TestShellTool_FileURISandboxing verifies that file:// URIs that escape the
+// workspace are still blocked, even though other URLs are allowed (issue #1254).
+func TestShellTool_FileURISandboxing(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// These file:// URIs should be blocked if they reference paths outside the workspace.
+	// Unlike web URLs (http://, https://, ftp://), file:// URIs can be used to escape the sandbox.
+	blockedCommands := []string{
+		"cat file:///etc/passwd",
+		"cat file:///etc/hosts",
+		"cat file:///root/.ssh/id_rsa",
+	}
+
+	for _, cmd := range blockedCommands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("file:// URI outside workspace should be blocked: %s", cmd)
+		}
+	}
+
+	// These file:// URIs should be allowed if they reference paths inside the workspace.
+	// Create a test file inside the temp directory
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %s", err)
+	}
+
+	allowedCommands := []string{
+		"cat file://" + testFile,
+	}
+
+	for _, cmd := range allowedCommands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("file:// URI inside workspace should be allowed: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
