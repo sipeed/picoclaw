@@ -1,5 +1,8 @@
+
+import { IconFileText } from "@tabler/icons-react"
 import { IconTrash } from "@tabler/icons-react"
 import { createFileRoute } from "@tanstack/react-router"
+import { Link } from "@tanstack/react-router"
 import { useAtomValue } from "jotai"
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -108,7 +111,17 @@ function LogsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title={t("navigation.logs")} />
+      <PageHeader
+        title={t("navigation.logs")}
+        children={
+          <Button variant="outline" asChild>
+            <Link to="/logs/requests">
+              <IconFileText className="size-4" />
+              {t("navigation.request_logs")}
+            </Link>
+          </Button>
+        }
+      />
 
       <div className="flex flex-1 flex-col overflow-hidden p-4 sm:p-8">
         <div className="mb-4 flex items-start justify-between gap-4">
