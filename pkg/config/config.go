@@ -59,8 +59,14 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
+	Features  FeaturesConfig  `json:"features"`
 	// BuildInfo contains build-time version information
 	BuildInfo BuildInfo `json:"build_info,omitempty"`
+}
+
+// FeaturesConfig holds feature flags that control optional behavior across the system.
+type FeaturesConfig struct {
+	Verbose bool `json:"verbose" env:"PICOCLAW_FEATURES_VERBOSE"`
 }
 
 // BuildInfo contains build-time version information
