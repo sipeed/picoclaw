@@ -1116,3 +1116,75 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
 	}
 }
+
+
+// TestProcessMessage_CommandBeforeRouteError tests that global commands
+// are handled even when routing fails. This is a regression test for
+// https://github.com/sipeed/picoclaw/issues/1298
+func TestProcessMessage_CommandBeforeRouteError(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Session: config.SessionConfig{
+			DMScope: "per-channel-peer",
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &countingMockProvider{response: "LLM reply"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	// Test /help command - this should work even without a valid route
+	// because /help is a global command that doesn't require agent context
+	helpResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/help",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+
+	// /help should return a help message, not an error about routing
+	if helpResp == "" {
+		t.Fatal("/help returned empty response")
+	}
+	if strings.Contains(helpResp, "no agent available") {
+		t.Fatalf("/help should work without valid route, got: %q", helpResp)
+	}
+	// LLM should not be called for /help command
+	if provider.calls != 0 {
+		t.Fatalf("LLM should not be called for /help, calls=%d", provider.calls)
+	}
+
+	// Test /show channel command - also a global command
+	showResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/show channel",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+
+	if showResp != "Current Channel: telegram" {
+		t.Fatalf("unexpected /show channel reply: %q", showResp)
+	}
+}
