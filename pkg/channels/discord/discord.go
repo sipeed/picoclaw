@@ -45,6 +45,14 @@ type DiscordChannel struct {
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
+	discordgo.Logger = logger.NewLogger("discord").
+		WithLevels(map[int]logger.LogLevel{
+			discordgo.LogError:         logger.ERROR,
+			discordgo.LogWarning:       logger.WARN,
+			discordgo.LogInformational: logger.INFO,
+			discordgo.LogDebug:         logger.DEBUG,
+		}).Log
+
 	session, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
