@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -977,6 +978,8 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	result = reTags.ReplaceAllLiteralString(result, "")
 
 	result = strings.TrimSpace(result)
+	result = whitespaceRegex.ReplaceAllString(result, " ")
+	result = newlineRegex.ReplaceAllString(result, "\n\n")
 
 	result = reWhitespace.ReplaceAllString(result, " ")
 	result = reBlankLines.ReplaceAllString(result, "\n\n")
@@ -991,4 +994,19 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	}
 
 	return strings.Join(cleanLines, "\n")
+}
+
+
+
+// removeHTMLTags removes HTML tags but preserves content structure
+func (t *WebFetchTool) removeHTMLTags(s string) string {
+	// For block-level elements, add newlines before removal to preserve structure
+	for _, regex := range blockTagRegexes {
+		s = regex.ReplaceAllString(s, "\n")
+	}
+	
+	// Remove all remaining HTML tags
+	s = allTagsRegex.ReplaceAllLiteralString(s, "")
+
+	return s
 }
