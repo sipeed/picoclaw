@@ -230,6 +230,7 @@ func (d *AgentDefaults) GetModelName() string {
 type ChannelsConfig struct {
 	WhatsApp   WhatsAppConfig   `json:"whatsapp"`
 	Telegram   TelegramConfig   `json:"telegram"`
+	Zalo       ZaloConfig       `json:"zalo"`
 	Feishu     FeishuConfig     `json:"feishu"`
 	Discord    DiscordConfig    `json:"discord"`
 	MaixCam    MaixCamConfig    `json:"maixcam"`
@@ -282,6 +283,16 @@ type TelegramConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+}
+
+type ZaloConfig struct {
+	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_ZALO_ENABLED"`
+	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_ZALO_TOKEN"`
+	SecretToken        string              `json:"secret_token"            env:"PICOCLAW_CHANNELS_ZALO_SECRET_TOKEN"`
+	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_ZALO_WEBHOOK_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_ZALO_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_ZALO_REASONING_CHANNEL_ID"`
 }
 
 type FeishuConfig struct {

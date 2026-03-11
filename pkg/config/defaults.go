@@ -59,6 +59,13 @@ func DefaultConfig() *Config {
 					Text:    "Thinking... 💭",
 				},
 			},
+			Zalo: ZaloConfig{
+				Enabled:     false,
+				Token:       "",
+				SecretToken: "",
+				WebhookPath: "/webhook/zalo",
+				AllowFrom:   FlexibleStringSlice{},
+			},
 			Feishu: FeishuConfig{
 				Enabled:           false,
 				AppID:             "",

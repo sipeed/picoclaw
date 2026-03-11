@@ -59,6 +59,7 @@ type placeholderEntry struct {
 // channelRateConfig maps channel name to per-second rate limit.
 var channelRateConfig = map[string]float64{
 	"telegram": 20,
+	"zalo":     10,
 	"discord":  1,
 	"slack":    1,
 	"matrix":   2,
@@ -211,6 +212,11 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.Telegram.Enabled && m.config.Channels.Telegram.Token != "" {
 		m.initChannel("telegram", "Telegram")
+	}
+
+	if m.config.Channels.Zalo.Enabled && m.config.Channels.Zalo.Token != "" &&
+		m.config.Channels.Zalo.SecretToken != "" {
+		m.initChannel("zalo", "Zalo")
 	}
 
 	if m.config.Channels.WhatsApp.Enabled {
