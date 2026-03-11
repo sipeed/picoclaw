@@ -1,4 +1,4 @@
-import { IconCode } from "@tabler/icons-react"
+import { IconCode, IconFileText } from "@tabler/icons-react"
 import { Link } from "@tanstack/react-router"
 import { useTranslation } from "react-i18next"
 
@@ -318,6 +318,26 @@ export function AdvancedSection() {
           <Link to="/config/raw">
             <IconCode className="size-4" />
             {t("pages.config.open_raw")}
+          </Link>
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+export function LogSettingsSection() {
+  const { t } = useTranslation()
+
+  return (
+    <section className="space-y-3">
+      <p className="text-muted-foreground text-sm">
+        {t("pages.logs.description")}
+      </p>
+      <div>
+        <Button variant="outline" asChild>
+          <Link to="/config/logs">
+            <IconFileText className="size-4" />
+            {t("pages.logs.settings_title")}
           </Link>
         </Button>
       </div>

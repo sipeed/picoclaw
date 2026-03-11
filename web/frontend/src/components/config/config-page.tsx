@@ -17,6 +17,7 @@ import {
   AgentDefaultsSection,
   DevicesSection,
   LauncherSection,
+  LogSettingsSection,
   RuntimeSection,
 } from "@/components/config/config-sections"
 import {
@@ -310,6 +311,10 @@ export function ConfigPage() {
                 }
                 onAutoStartChange={setAutoStartEnabled}
               />
+
+              <Separator />
+
+              <LogSettingsSection />
 
               <Separator />
 

@@ -8,8 +8,10 @@
     "channels_group": "Channels",
     "show_more_channels": "More",
     "show_less_channels": "Less",
+    "stats": "Statistics",
     "config": "Config",
-    "logs": "Logs"
+    "logs": "Logs",
+    "request_logs": "Request Logs"
   },
   "chat": {
     "welcome": "How can I help you today?",
@@ -65,7 +67,8 @@
     "save": "Save",
     "saving": "Saving...",
     "reset": "Reset",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "refresh": "Refresh"
   },
   "labels": {
     "loading": "Loading..."
@@ -324,6 +327,18 @@
     }
   },
   "pages": {
+    "stats": {
+      "title": "Request Statistics",
+      "loading": "Loading...",
+      "error": "Error: {{error}}",
+      "total_requests": "Total Requests",
+      "active_channels": "Active Channels",
+      "days_tracked": "Days Tracked",
+      "top_senders": "Top Senders",
+      "requests_by_channel": "Requests by Channel",
+      "requests_by_day": "Requests by Day",
+      "no_data": "No data available"
+    },
     "config": {
       "load_error": "Failed to load configuration. Please refresh and try again.",
       "workspace": "Workspace Directory",
@@ -387,7 +402,36 @@
       "unsaved_changes": "You have unsaved changes."
     },
     "logs": {
-      "description": "System logs and monitoring."
+      "description": "System logs and monitoring.",
+      "requests_title": "Request Logs",
+      "settings_title": "Log Settings",
+      "all_channels": "All Channels",
+      "no_logs": "No logs found",
+      "timestamp": "Timestamp",
+      "channel": "Channel",
+      "sender": "Sender",
+      "content": "Content",
+      "proc_time": "Proc Time",
+      "showing": "Showing",
+      "previous": "Previous",
+      "next": "Next",
+      "enabled": "Enable Logging",
+      "enabled_hint": "Record incoming requests to log files.",
+      "max_file_size": "Max File Size (MB)",
+      "max_file_size_hint": "Maximum size of each log file before rotation.",
+      "max_files": "Max Files",
+      "max_files_hint": "Maximum number of log files to keep.",
+      "retention_days": "Retention Days",
+      "retention_days_hint": "Number of days to keep log files before archiving.",
+      "archive_interval": "Archive Interval",
+      "archive_interval_hint": "How often to archive old logs (e.g., 24h, 1d).",
+      "compress_archive": "Compress Archives",
+      "compress_archive_hint": "Compress archived log files to save space.",
+      "content_max_length": "Content Max Length",
+      "content_max_length_hint": "Maximum length of logged content (0 for unlimited).",
+      "archive_now": "Archive Now",
+      "archive_success": "Archive completed successfully.",
+      "config_unavailable": "Log configuration not available."
     }
   }
 }

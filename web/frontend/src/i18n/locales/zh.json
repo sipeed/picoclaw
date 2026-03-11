@@ -8,8 +8,10 @@
     "channels_group": "频道",
     "show_more_channels": "更多",
     "show_less_channels": "收起",
+    "stats": "统计",
     "config": "配置",
-    "logs": "日志"
+    "logs": "日志",
+    "request_logs": "请求日志"
   },
   "chat": {
     "welcome": "今天我能为您做些什么？",
@@ -65,7 +67,8 @@
     "save": "保存",
     "saving": "保存中...",
     "reset": "重置",
-    "confirm": "确认"
+    "confirm": "确认",
+    "refresh": "刷新"
   },
   "labels": {
     "loading": "加载中..."
@@ -324,6 +327,18 @@
     }
   },
   "pages": {
+    "stats": {
+      "title": "请求统计",
+      "loading": "加载中...",
+      "error": "错误：{{error}}",
+      "total_requests": "总请求数",
+      "active_channels": "活跃频道",
+      "days_tracked": "统计天数",
+      "top_senders": "活跃用户",
+      "requests_by_channel": "按频道统计",
+      "requests_by_day": "按日期统计",
+      "no_data": "暂无数据"
+    },
     "config": {
       "load_error": "加载配置失败，请刷新后重试。",
       "workspace": "工作目录",
@@ -387,7 +402,36 @@
       "unsaved_changes": "您有未保存的更改。"
     },
     "logs": {
-      "description": "系统日志和监控。"
+      "description": "系统日志和监控。",
+      "requests_title": "请求日志",
+      "settings_title": "日志设置",
+      "all_channels": "所有频道",
+      "no_logs": "暂无日志",
+      "timestamp": "时间",
+      "channel": "频道",
+      "sender": "发送者",
+      "content": "内容",
+      "proc_time": "处理时间",
+      "showing": "显示",
+      "previous": "上一页",
+      "next": "下一页",
+      "enabled": "启用日志",
+      "enabled_hint": "将请求记录到日志文件中。",
+      "max_file_size": "最大文件大小 (MB)",
+      "max_file_size_hint": "日志文件轮转前的最大大小。",
+      "max_files": "最大文件数",
+      "max_files_hint": "保留的最大日志文件数量。",
+      "retention_days": "保留天数",
+      "retention_days_hint": "归档前保留日志文件的天数。",
+      "archive_interval": "归档间隔",
+      "archive_interval_hint": "归档旧日志的频率（如 24h、1d）。",
+      "compress_archive": "压缩归档",
+      "compress_archive_hint": "压缩归档日志文件以节省空间。",
+      "content_max_length": "内容最大长度",
+      "content_max_length_hint": "记录内容的最大长度（0 表示不限制）。",
+      "archive_now": "立即归档",
+      "archive_success": "归档完成。",
+      "config_unavailable": "日志配置不可用。"
     }
   }
 }

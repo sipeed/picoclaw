@@ -9,15 +9,23 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StatsRouteImport } from './routes/stats'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as CredentialsRouteImport } from './routes/credentials'
 import { Route as ConfigRouteImport } from './routes/config'
 import { Route as ChannelsRouteRouteImport } from './routes/channels/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LogsRequestsRouteImport } from './routes/logs.requests'
 import { Route as ConfigRawRouteImport } from './routes/config.raw'
+import { Route as ConfigLogsRouteImport } from './routes/config.logs'
 import { Route as ChannelsNameRouteImport } from './routes/channels/$name'
 
+const StatsRoute = StatsRouteImport.update({
+  id: '/stats',
+  path: '/stats',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ModelsRoute = ModelsRouteImport.update({
   id: '/models',
   path: '/models',
@@ -48,9 +56,19 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LogsRequestsRoute = LogsRequestsRouteImport.update({
+  id: '/requests',
+  path: '/requests',
+  getParentRoute: () => LogsRoute,
+} as any)
 const ConfigRawRoute = ConfigRawRouteImport.update({
   id: '/raw',
   path: '/raw',
+  getParentRoute: () => ConfigRoute,
+} as any)
+const ConfigLogsRoute = ConfigLogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
   getParentRoute: () => ConfigRoute,
 } as any)
 const ChannelsNameRoute = ChannelsNameRouteImport.update({
@@ -64,20 +82,26 @@ export interface FileRoutesByFullPath {
   '/channels': typeof ChannelsRouteRouteWithChildren
   '/config': typeof ConfigRouteWithChildren
   '/credentials': typeof CredentialsRoute
-  '/logs': typeof LogsRoute
+  '/logs': typeof LogsRouteWithChildren
   '/models': typeof ModelsRoute
+  '/stats': typeof StatsRoute
   '/channels/$name': typeof ChannelsNameRoute
+  '/config/logs': typeof ConfigLogsRoute
   '/config/raw': typeof ConfigRawRoute
+  '/logs/requests': typeof LogsRequestsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/channels': typeof ChannelsRouteRouteWithChildren
   '/config': typeof ConfigRouteWithChildren
   '/credentials': typeof CredentialsRoute
-  '/logs': typeof LogsRoute
+  '/logs': typeof LogsRouteWithChildren
   '/models': typeof ModelsRoute
+  '/stats': typeof StatsRoute
   '/channels/$name': typeof ChannelsNameRoute
+  '/config/logs': typeof ConfigLogsRoute
   '/config/raw': typeof ConfigRawRoute
+  '/logs/requests': typeof LogsRequestsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -85,10 +109,13 @@ export interface FileRoutesById {
   '/channels': typeof ChannelsRouteRouteWithChildren
   '/config': typeof ConfigRouteWithChildren
   '/credentials': typeof CredentialsRoute
-  '/logs': typeof LogsRoute
+  '/logs': typeof LogsRouteWithChildren
   '/models': typeof ModelsRoute
+  '/stats': typeof StatsRoute
   '/channels/$name': typeof ChannelsNameRoute
+  '/config/logs': typeof ConfigLogsRoute
   '/config/raw': typeof ConfigRawRoute
+  '/logs/requests': typeof LogsRequestsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -99,8 +126,11 @@ export interface FileRouteTypes {
     | '/credentials'
     | '/logs'
     | '/models'
+    | '/stats'
     | '/channels/$name'
+    | '/config/logs'
     | '/config/raw'
+    | '/logs/requests'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -109,8 +139,11 @@ export interface FileRouteTypes {
     | '/credentials'
     | '/logs'
     | '/models'
+    | '/stats'
     | '/channels/$name'
+    | '/config/logs'
     | '/config/raw'
+    | '/logs/requests'
   id:
     | '__root__'
     | '/'
@@ -119,8 +152,11 @@ export interface FileRouteTypes {
     | '/credentials'
     | '/logs'
     | '/models'
+    | '/stats'
     | '/channels/$name'
+    | '/config/logs'
     | '/config/raw'
+    | '/logs/requests'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -128,12 +164,20 @@ export interface RootRouteChildren {
   ChannelsRouteRoute: typeof ChannelsRouteRouteWithChildren
   ConfigRoute: typeof ConfigRouteWithChildren
   CredentialsRoute: typeof CredentialsRoute
-  LogsRoute: typeof LogsRoute
+  LogsRoute: typeof LogsRouteWithChildren
   ModelsRoute: typeof ModelsRoute
+  StatsRoute: typeof StatsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/stats': {
+      id: '/stats'
+      path: '/stats'
+      fullPath: '/stats'
+      preLoaderRoute: typeof StatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/models': {
       id: '/models'
       path: '/models'
@@ -176,11 +220,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/logs/requests': {
+      id: '/logs/requests'
+      path: '/requests'
+      fullPath: '/logs/requests'
+      preLoaderRoute: typeof LogsRequestsRouteImport
+      parentRoute: typeof LogsRoute
+    }
     '/config/raw': {
       id: '/config/raw'
       path: '/raw'
       fullPath: '/config/raw'
       preLoaderRoute: typeof ConfigRawRouteImport
+      parentRoute: typeof ConfigRoute
+    }
+    '/config/logs': {
+      id: '/config/logs'
+      path: '/logs'
+      fullPath: '/config/logs'
+      preLoaderRoute: typeof ConfigLogsRouteImport
       parentRoute: typeof ConfigRoute
     }
     '/channels/$name': {
@@ -206,23 +264,36 @@ const ChannelsRouteRouteWithChildren = ChannelsRouteRoute._addFileChildren(
 )
 
 interface ConfigRouteChildren {
+  ConfigLogsRoute: typeof ConfigLogsRoute
   ConfigRawRoute: typeof ConfigRawRoute
 }
 
 const ConfigRouteChildren: ConfigRouteChildren = {
+  ConfigLogsRoute: ConfigLogsRoute,
   ConfigRawRoute: ConfigRawRoute,
 }
 
 const ConfigRouteWithChildren =
   ConfigRoute._addFileChildren(ConfigRouteChildren)
 
+interface LogsRouteChildren {
+  LogsRequestsRoute: typeof LogsRequestsRoute
+}
+
+const LogsRouteChildren: LogsRouteChildren = {
+  LogsRequestsRoute: LogsRequestsRoute,
+}
+
+const LogsRouteWithChildren = LogsRoute._addFileChildren(LogsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ChannelsRouteRoute: ChannelsRouteRouteWithChildren,
   ConfigRoute: ConfigRouteWithChildren,
   CredentialsRoute: CredentialsRoute,
-  LogsRoute: LogsRoute,
+  LogsRoute: LogsRouteWithChildren,
   ModelsRoute: ModelsRoute,
+  StatsRoute: StatsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

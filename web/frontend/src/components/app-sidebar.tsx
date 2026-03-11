@@ -1,6 +1,7 @@
 import { IconChevronRight } from "@tabler/icons-react"
 import {
   IconAtom,
+  IconChartBar,
   IconChevronsDown,
   IconChevronsUp,
   IconKey,
@@ -114,6 +115,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       {
         ...baseNavGroups[2],
         items: [
+          {
+            title: "navigation.stats",
+            url: "/stats",
+            icon: IconChartBar,
+            translateTitle: true,
+          },
           {
             title: "navigation.config",
             url: "/config",
