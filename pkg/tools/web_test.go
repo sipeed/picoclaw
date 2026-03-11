@@ -212,6 +212,8 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 }
 
 func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
 	// Create a mock HTTP server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -434,7 +436,8 @@ func TestWebTool_WebFetch_PrivateHostBlocked(t *testing.T) {
 	if !result.IsError {
 		t.Errorf("expected error for private host URL, got success")
 	}
-	if !strings.Contains(result.ForLLM, "private or local network") && !strings.Contains(result.ForUser, "private or local network") {
+	if !strings.Contains(result.ForLLM, "private or local network") &&
+		!strings.Contains(result.ForUser, "private or local network") {
 		t.Errorf("expected private host block message, got %q", result.ForLLM)
 	}
 }
