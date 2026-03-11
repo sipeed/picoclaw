@@ -48,6 +48,14 @@ type AgentLoop struct {
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
 	cmdRegistry    *commands.Registry
+
+	// Task cancellation support
+	currentCancel   context.CancelFunc
+	currentCancelMu sync.Mutex
+
+	// Token statistics for current session
+	tokenStats   *commands.TokenStats
+	tokenStatsMu sync.RWMutex
 }
 
 // processOptions configures how a message is processed
@@ -78,6 +86,26 @@ func NewAgentLoop(
 	msgBus *bus.MessageBus,
 	provider providers.LLMProvider,
 ) *AgentLoop {
+	// Initialize LLM call logger
+	workspace := cfg.WorkspacePath()
+	logger.InitLLMLogger(cfg.Tools.LLMCallLog, workspace)
+
+	// Initialize conversation logger
+	logger.InitConversationLogger(cfg.Tools.ConversationLog, workspace)
+
+	// Initialize sanitizer for sensitive data masking
+	utils.InitGlobalSanitizer(utils.SanitizerConfig{
+		Enabled:        cfg.Tools.Sanitizer.Enabled,
+		Keywords:       convertSanitizerKeywords(cfg.Tools.Sanitizer.Keywords),
+		CustomPatterns: convertSanitizerPatterns(cfg.Tools.Sanitizer.CustomPatterns),
+	})
+
+	// Wrap provider with logging if enabled
+	llmLogger := logger.GetLLMLogger()
+	if llmLogger != nil && llmLogger.IsEnabled() {
+		provider = providers.NewLoggingProvider(provider, llmLogger, cfg.Agents.Defaults.Provider)
+	}
+
 	registry := NewAgentRegistry(cfg, provider)
 
 	// Register shared tools to all agents
@@ -224,6 +252,34 @@ func registerSharedTools(
 			if cfg.Tools.IsToolEnabled("subagent") {
 				subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace)
 				subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+
+				// Register essential tools for subagent execution
+				// These tools allow subagents to perform file operations and execute commands
+				if cfg.Tools.IsToolEnabled("exec") {
+					execTool, err := tools.NewExecTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace)
+					if err != nil {
+						logger.WarnCF("agent", "Failed to create exec tool for subagent",
+							map[string]any{"error": err.Error()})
+					} else {
+						subagentManager.RegisterTool(execTool)
+					}
+				}
+				if cfg.Tools.IsToolEnabled("read_file") {
+					subagentManager.RegisterTool(tools.NewReadFileTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace, cfg.Tools.ReadFile.MaxReadFileSize))
+				}
+				if cfg.Tools.IsToolEnabled("write_file") {
+					subagentManager.RegisterTool(tools.NewWriteFileTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+				}
+				if cfg.Tools.IsToolEnabled("list_dir") {
+					subagentManager.RegisterTool(tools.NewListDirTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+				}
+				if cfg.Tools.IsToolEnabled("append_file") {
+					subagentManager.RegisterTool(tools.NewAppendFileTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+				}
+				if cfg.Tools.IsToolEnabled("edit_file") {
+					subagentManager.RegisterTool(tools.NewEditFileTool(agent.Workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+				}
+
 				spawnTool := tools.NewSpawnTool(subagentManager)
 				currentAgentID := agentID
 				spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
@@ -354,71 +410,42 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		}
 	}
 
-	for al.running.Load() {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
+	// Use a channel to decouple message consumption from message processing.
+	// This allows the main loop to continuously consume messages (including /stop)
+	// while processing happens in separate goroutines.
+	msgChan := make(chan bus.InboundMessage, 16)
+
+	// Start message consumer goroutine
+	go func() {
+		for al.running.Load() {
 			msg, ok := al.bus.ConsumeInbound(ctx)
 			if !ok {
 				continue
 			}
+			select {
+			case msgChan <- msg:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
-			// Process message
-			func() {
-				// TODO: Re-enable media cleanup after inbound media is properly consumed by the agent.
-				// Currently disabled because files are deleted before the LLM can access their content.
-				// defer func() {
-				// 	if al.mediaStore != nil && msg.MediaScope != "" {
-				// 		if releaseErr := al.mediaStore.ReleaseAll(msg.MediaScope); releaseErr != nil {
-				// 			logger.WarnCF("agent", "Failed to release media", map[string]any{
-				// 				"scope": msg.MediaScope,
-				// 				"error": releaseErr.Error(),
-				// 			})
-				// 		}
-				// 	}
-				// }()
+	// Main loop: process messages from channel
+	for al.running.Load() {
+		select {
+		case <-ctx.Done():
+			return nil
+		case msg := <-msgChan:
+			// Check if this is a command - commands are handled asynchronously
+			// so they can interrupt long-running tasks (e.g., /stop)
+			if commands.HasCommandPrefix(msg.Content) {
+				go al.handleCommandAsync(ctx, msg)
+				continue
+			}
 
-				response, err := al.processMessage(ctx, msg)
-				if err != nil {
-					response = fmt.Sprintf("Error processing message: %v", err)
-				}
-
-				if response != "" {
-					// Check if the message tool already sent a response during this round.
-					// If so, skip publishing to avoid duplicate messages to the user.
-					// Use default agent's tools to check (message tool is shared).
-					alreadySent := false
-					defaultAgent := al.registry.GetDefaultAgent()
-					if defaultAgent != nil {
-						if tool, ok := defaultAgent.Tools.Get("message"); ok {
-							if mt, ok := tool.(*tools.MessageTool); ok {
-								alreadySent = mt.HasSentInRound()
-							}
-						}
-					}
-
-					if !alreadySent {
-						al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-							Channel: msg.Channel,
-							ChatID:  msg.ChatID,
-							Content: response,
-						})
-						logger.InfoCF("agent", "Published outbound response",
-							map[string]any{
-								"channel":     msg.Channel,
-								"chat_id":     msg.ChatID,
-								"content_len": len(response),
-							})
-					} else {
-						logger.DebugCF(
-							"agent",
-							"Skipped outbound (message tool already sent)",
-							map[string]any{"channel": msg.Channel},
-						)
-					}
-				}
-			}()
+			// Process non-command message in a goroutine
+			// This allows the main loop to continue consuming messages
+			go al.processMessageAsync(ctx, msg)
 		}
 	}
 
@@ -427,6 +454,66 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+}
+
+
+// setCurrentCancel stores the cancel function for the current task.
+func (al *AgentLoop) setCurrentCancel(cancel context.CancelFunc) {
+	al.currentCancelMu.Lock()
+	defer al.currentCancelMu.Unlock()
+	al.currentCancel = cancel
+}
+
+// clearCurrentCancel clears the cancel function after task completion.
+func (al *AgentLoop) clearCurrentCancel() {
+	al.currentCancelMu.Lock()
+	defer al.currentCancelMu.Unlock()
+	al.currentCancel = nil
+}
+
+// CancelCurrentTask cancels the currently running task, if any.
+// Returns true if a task was cancelled, false if no task was running.
+func (al *AgentLoop) CancelCurrentTask() bool {
+	al.currentCancelMu.Lock()
+	defer al.currentCancelMu.Unlock()
+
+	if al.currentCancel == nil {
+		return false
+	}
+
+	al.currentCancel()
+	al.currentCancel = nil
+	return true
+}
+
+// updateTokenStats updates the token statistics for the current session.
+func (al *AgentLoop) updateTokenStats(model string, promptTokens, completionTokens int) {
+	al.tokenStatsMu.Lock()
+	defer al.tokenStatsMu.Unlock()
+
+	if al.tokenStats == nil {
+		al.tokenStats = &commands.TokenStats{Model: model}
+	}
+	al.tokenStats.PromptTokens += promptTokens
+	al.tokenStats.CompletionTokens += completionTokens
+	al.tokenStats.TotalTokens += promptTokens + completionTokens
+	al.tokenStats.CallCount++
+}
+
+// getTokenStats returns the current session's token statistics.
+func (al *AgentLoop) getTokenStats() *commands.TokenStats {
+	al.tokenStatsMu.RLock()
+	defer al.tokenStatsMu.RUnlock()
+	return al.tokenStats
+}
+
+// resetTokenStats resets the token statistics for a new session.
+func (al *AgentLoop) resetTokenStats() {
+	al.tokenStatsMu.Lock()
+	defer al.tokenStatsMu.Unlock()
+	al.tokenStats = nil
+
+
 }
 
 // Close releases resources held by agent session stores. Call after Stop.
@@ -793,6 +880,23 @@ func (al *AgentLoop) runAgentLoop(
 		}
 	}
 
+	// 0.5. Sanitize user message for sensitive data
+	sanitizedMsg := opts.UserMessage
+	var sanitizerMappings map[string]string
+	if sanitizer := utils.GetGlobalSanitizer(); sanitizer != nil {
+		result := sanitizer.Sanitize(opts.UserMessage)
+		sanitizedMsg = result.Sanitized
+		sanitizerMappings = result.Mappings
+		if len(sanitizerMappings) > 0 {
+			logger.DebugCF("agent", "Sanitized user message",
+				map[string]any{
+					"original_len":  len(opts.UserMessage),
+					"sanitized_len": len(sanitizedMsg),
+					"mappings":      len(sanitizerMappings),
+				})
+		}
+	}
+
 	// 1. Build messages (skip history for heartbeat)
 	var history []providers.Message
 	var summary string
@@ -803,7 +907,7 @@ func (al *AgentLoop) runAgentLoop(
 	messages := agent.ContextBuilder.BuildMessages(
 		history,
 		summary,
-		opts.UserMessage,
+		sanitizedMsg, // Use sanitized message for LLM
 		opts.Media,
 		opts.Channel,
 		opts.ChatID,
@@ -816,9 +920,27 @@ func (al *AgentLoop) runAgentLoop(
 	// 2. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
+	// Log conversation
+	if convLogger := logger.GetConversationLogger(); convLogger != nil && convLogger.IsEnabled() {
+		convLogger.Log(&logger.ConversationRecord{
+			Timestamp:  time.Now().Format(time.RFC3339),
+			SessionKey: opts.SessionKey,
+			Role:       "user",
+			Content:    opts.UserMessage,
+			Channel:    opts.Channel,
+			ChatID:     opts.ChatID,
+		})
+	}
+
 	// 3. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
+		// If task was cancelled, save a placeholder message to session
+		// This prevents the user message from being orphaned without a response
+		if errors.Is(err, context.Canceled) {
+			agent.Sessions.AddMessage(opts.SessionKey, "assistant", "[Task cancelled by user]")
+			agent.Sessions.Save(opts.SessionKey)
+		}
 		return "", err
 	}
 
@@ -830,8 +952,32 @@ func (al *AgentLoop) runAgentLoop(
 		finalContent = opts.DefaultResponse
 	}
 
+	// 4.5. Restore sanitized content in LLM response
+	if len(sanitizerMappings) > 0 {
+		if sanitizer := utils.GetGlobalSanitizer(); sanitizer != nil {
+			finalContent = sanitizer.Restore(finalContent, sanitizerMappings)
+			logger.DebugCF("agent", "Restored sanitized content in response",
+				map[string]any{
+					"mappings": len(sanitizerMappings),
+				})
+		}
+	}
+
 	// 5. Save final assistant message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
+
+	// Log conversation
+	if convLogger := logger.GetConversationLogger(); convLogger != nil && convLogger.IsEnabled() {
+		convLogger.Log(&logger.ConversationRecord{
+			Timestamp:  time.Now().Format(time.RFC3339),
+			SessionKey: opts.SessionKey,
+			Role:       "assistant",
+			Content:    finalContent,
+			Channel:    opts.Channel,
+			ChatID:     opts.ChatID,
+		})
+	}
+
 	agent.Sessions.Save(opts.SessionKey)
 
 	// 6. Optional: summarization
@@ -1108,6 +1254,12 @@ func (al *AgentLoop) runLLMIteration(
 				"target_channel": al.targetReasoningChannelID(opts.Channel),
 				"channel":        opts.Channel,
 			})
+
+		// Update token statistics for current session
+		if response.Usage != nil {
+			al.updateTokenStats(activeModel, response.Usage.PromptTokens, response.Usage.CompletionTokens)
+		}
+
 		// Check if no tool calls - then check reasoning content if any
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
@@ -1742,6 +1894,111 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	return totalChars * 2 / 5
 }
 
+// processMessageAsync processes a non-command message in a goroutine.
+// This allows the main loop to continue consuming messages while processing.
+func (al *AgentLoop) processMessageAsync(ctx context.Context, msg bus.InboundMessage) {
+	// Create cancellable context for this message
+	msgCtx, msgCancel := context.WithCancel(ctx)
+	defer msgCancel()
+
+	// Store cancel function for /stop command
+	al.setCurrentCancel(msgCancel)
+	defer al.clearCurrentCancel()
+
+	response, err := al.processMessage(msgCtx, msg)
+	if err != nil {
+		// Check if the error is due to context cancellation (user issued /stop)
+		if errors.Is(err, context.Canceled) {
+			response = "⏹️ Task stopped."
+		} else {
+			response = fmt.Sprintf("Error processing message: %v", err)
+		}
+	}
+
+	if response != "" {
+		// Check if the message tool already sent a response during this round.
+		// If so, skip publishing to avoid duplicate messages to the user.
+		// Use default agent's tools to check (message tool is shared).
+		alreadySent := false
+		defaultAgent := al.registry.GetDefaultAgent()
+		if defaultAgent != nil {
+			if tool, ok := defaultAgent.Tools.Get("message"); ok {
+				if mt, ok := tool.(*tools.MessageTool); ok {
+					alreadySent = mt.HasSentInRound()
+				}
+			}
+		}
+
+		if !alreadySent {
+			pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer pubCancel()
+			al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+				Channel: msg.Channel,
+				ChatID:  msg.ChatID,
+				Content: response,
+			})
+			logger.InfoCF("agent", "Published outbound response",
+				map[string]any{
+					"channel":     msg.Channel,
+					"chat_id":     msg.ChatID,
+					"content_len": len(response),
+				})
+		} else {
+			logger.DebugCF(
+				"agent",
+				"Skipped outbound (message tool already sent)",
+				map[string]any{"channel": msg.Channel},
+			)
+		}
+	}
+}
+
+// handleCommandAsync handles commands in a separate goroutine so they can
+// interrupt long-running tasks. Commands like /stop need to be processed
+// immediately without waiting for the current message to finish.
+func (al *AgentLoop) handleCommandAsync(ctx context.Context, msg bus.InboundMessage) {
+	logger.InfoCF("agent", "Processing command asynchronously",
+		map[string]any{
+			"channel":   msg.Channel,
+			"chat_id":   msg.ChatID,
+			"sender_id": msg.SenderID,
+			"content":   utils.Truncate(msg.Content, 50),
+		})
+
+	// Get default agent for command handling
+	agent := al.registry.GetDefaultAgent()
+
+	// Build processOptions for commands that need session info (e.g., /clear)
+	opts := &processOptions{
+		SessionKey: msg.SessionKey,
+		Channel:    msg.Channel,
+		ChatID:     msg.ChatID,
+	}
+
+	response, handled := al.handleCommand(ctx, msg, agent, opts)
+	if !handled {
+		// Command not recognized or passed through (e.g., strict command with extra args)
+		// Process as normal message through the agent
+		al.processMessageAsync(ctx, msg)
+		return
+	}
+
+	// Send response if any
+	if response != "" {
+		pubCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+			Channel: msg.Channel,
+			ChatID:  msg.ChatID,
+			Content: response,
+		}); err != nil {
+			logger.WarnCF("agent", "Failed to send command response",
+				map[string]any{"error": err.Error()})
+		}
+	}
+}
+
 func (al *AgentLoop) handleCommand(
 	ctx context.Context,
 	msg bus.InboundMessage,
@@ -1805,6 +2062,8 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 			}
 			return nil
 		},
+		CancelCurrentTask: al.CancelCurrentTask,
+		GetTokenStats:     al.getTokenStats,
 	}
 	if agent != nil {
 		rt.GetModelInfo = func() (string, string) {
@@ -1871,4 +2130,35 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 		return nil
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
+}
+
+// convertSanitizerKeywords converts config keywords to utils keywords
+func convertSanitizerKeywords(keywords []config.SanitizerKeyword) []utils.KeywordRule {
+	if len(keywords) == 0 {
+		return nil
+	}
+	result := make([]utils.KeywordRule, len(keywords))
+	for i, kw := range keywords {
+		result[i] = utils.KeywordRule{
+			Word: kw.Word,
+			Tag:  kw.Tag,
+		}
+	}
+	return result
+}
+
+// convertSanitizerPatterns converts config patterns to utils patterns
+func convertSanitizerPatterns(patterns []config.SanitizerPattern) []utils.CustomPatternRule {
+	if len(patterns) == 0 {
+		return nil
+	}
+	result := make([]utils.CustomPatternRule, len(patterns))
+	for i, p := range patterns {
+		result[i] = utils.CustomPatternRule{
+			Name:    p.Name,
+			Pattern: p.Pattern,
+			Tag:     p.Tag,
+		}
+	}
+	return result
 }

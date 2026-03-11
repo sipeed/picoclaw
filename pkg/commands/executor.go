@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type Outcome int
@@ -54,6 +55,15 @@ func (e *Executor) executeDefinition(ctx context.Context, req Request, def Defin
 	// Ensure Reply is always non-nil so handlers don't need to check.
 	if req.Reply == nil {
 		req.Reply = func(string) error { return nil }
+	}
+
+	// Check if strict command has extra arguments
+	if def.Strict {
+		tokens := strings.Fields(strings.TrimSpace(req.Text))
+		if len(tokens) > 1 {
+			// Strict command with extra arguments - passthrough to agent
+			return ExecuteResult{Outcome: OutcomePassthrough, Command: def.Name}
+		}
 	}
 
 	// Simple command — no sub-commands

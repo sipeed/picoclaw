@@ -243,6 +243,7 @@ type ChannelsConfig struct {
 	WeComApp   WeComAppConfig   `json:"wecom_app"`
 	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
 	Pico       PicoConfig       `json:"pico"`
+	Imessage   ImessageConfig   `json:"imessage"`
 	IRC        IRCConfig        `json:"irc"`
 }
 
@@ -441,6 +442,12 @@ type PicoConfig struct {
 	MaxConnections  int                 `json:"max_connections,omitempty"`
 	AllowFrom       FlexibleStringSlice `json:"allow_from"                  env:"PICOCLAW_CHANNELS_PICO_ALLOW_FROM"`
 	Placeholder     PlaceholderConfig   `json:"placeholder,omitempty"`
+}
+
+type ImessageConfig struct {
+    Enabled         bool                `json:"enabled"    env:"PICOCLAW_CHANNELS_IMESSAGE_ENABLED"`	
+    AllowFrom       FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_IMESSAGE_ALLOW_FROM"`
+	DBPath          string              `json:"db_path"    env:"PICOCLAW_CHANNELS_IMESSAGE_DB_PATH"`
 }
 
 type IRCConfig struct {
@@ -700,6 +707,9 @@ type ToolsConfig struct {
 	Skills          SkillsToolsConfig  `json:"skills"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 	MCP             MCPConfig          `json:"mcp"`
+	LLMCallLog      LLMCallLogConfig   `json:"llm_call_log"`
+	ConversationLog ConversationLogConfig `json:"conversation_log"`
+	Sanitizer       SanitizerConfig    `json:"sanitizer"`
 	AppendFile      ToolConfig         `json:"append_file"                                              envPrefix:"PICOCLAW_TOOLS_APPEND_FILE_"`
 	EditFile        ToolConfig         `json:"edit_file"                                                envPrefix:"PICOCLAW_TOOLS_EDIT_FILE_"`
 	FindSkills      ToolConfig         `json:"find_skills"                                              envPrefix:"PICOCLAW_TOOLS_FIND_SKILLS_"`
@@ -714,6 +724,40 @@ type ToolsConfig struct {
 	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
 	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig         `json:"write_file"                                               envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
+}
+
+// LLMCallLogConfig 配置 LLM 调用日志
+type LLMCallLogConfig struct {
+	Enabled  bool   `json:"enabled"   env:"PICOCLAW_TOOLS_LLM_CALL_LOG_ENABLED"`
+	LogDir   string `json:"log_dir"   env:"PICOCLAW_TOOLS_LLM_CALL_LOG_DIR"`
+	MaxFiles int    `json:"max_files" env:"PICOCLAW_TOOLS_LLM_CALL_LOG_MAX_FILES"`
+}
+
+// ConversationLogConfig 配置对话日志
+type ConversationLogConfig struct {
+	Enabled  bool   `json:"enabled"   env:"PICOCLAW_TOOLS_CONVERSATION_LOG_ENABLED"`
+	LogDir   string `json:"log_dir"   env:"PICOCLAW_TOOLS_CONVERSATION_LOG_DIR"`
+	MaxFiles int    `json:"max_files" env:"PICOCLAW_TOOLS_CONVERSATION_LOG_MAX_FILES"`
+}
+
+// SanitizerConfig 配置敏感信息脱敏
+type SanitizerConfig struct {
+	Enabled        bool                  `json:"enabled"   env:"PICOCLAW_TOOLS_SANITIZER_ENABLED"`
+	Keywords       []SanitizerKeyword    `json:"keywords"`
+	CustomPatterns []SanitizerPattern    `json:"custom_patterns"`
+}
+
+// SanitizerKeyword 关键词脱敏规则
+type SanitizerKeyword struct {
+	Word string `json:"word"`
+	Tag  string `json:"tag"`
+}
+
+// SanitizerPattern 自定义正则脱敏规则
+type SanitizerPattern struct {
+	Name    string `json:"name"`
+	Pattern string `json:"pattern"`
+	Tag     string `json:"tag"`
 }
 
 type SearchCacheConfig struct {

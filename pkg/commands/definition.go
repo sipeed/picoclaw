@@ -27,6 +27,7 @@ type Definition struct {
 	Aliases     []string
 	SubCommands []SubCommand // optional; when set, Executor routes to sub-command handlers
 	Handler     Handler      // for simple commands without sub-commands
+	Strict      bool         // if true, command must match exactly (no extra arguments)
 }
 
 // EffectiveUsage returns the usage string. When SubCommands are present,
