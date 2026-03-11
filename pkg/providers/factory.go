@@ -40,6 +40,10 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 	providerName := strings.ToLower(cfg.Agents.Defaults.Provider)
 	lowerModel := strings.ToLower(model)
 
+	if providerName == "" && model == "" {
+		return providerSelection{}, fmt.Errorf("no model configured: agents.defaults.model is empty")
+	}
+
 	sel := providerSelection{
 		providerType: providerTypeHTTPCompat,
 		model:        model,
@@ -153,6 +157,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = "https://integrate.api.nvidia.com/v1"
 				}
 			}
+		case "vivgrid":
+			if cfg.Providers.Vivgrid.APIKey != "" {
+				sel.apiKey = cfg.Providers.Vivgrid.APIKey
+				sel.apiBase = cfg.Providers.Vivgrid.APIBase
+				sel.proxy = cfg.Providers.Vivgrid.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.vivgrid.com/v1"
+				}
+			}
 		case "claude-cli", "claude-code", "claudecode":
 			workspace := cfg.WorkspacePath()
 			if workspace == "" {
@@ -199,26 +212,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = "https://api.mistral.ai/v1"
 				}
 			}
-		case "opencode":
-			if cfg.Providers.Opencode.APIKey != "" || cfg.Providers.Opencode.APIBase != "" {
-				sel.apiKey = cfg.Providers.Opencode.APIKey
-				sel.apiBase = cfg.Providers.Opencode.APIBase
-				sel.proxy = cfg.Providers.Opencode.Proxy
+		case "minimax":
+			if cfg.Providers.Minimax.APIKey != "" {
+				sel.apiKey = cfg.Providers.Minimax.APIKey
+				sel.apiBase = cfg.Providers.Minimax.APIBase
+				sel.proxy = cfg.Providers.Minimax.Proxy
 				if sel.apiBase == "" {
-					sel.apiBase = "https://opencode.ai/zen/v1"
-				}
-			}
-		case "kimi", "kimi-code", "moonshot":
-			if cfg.Providers.Moonshot.APIKey != "" {
-				sel.apiKey = cfg.Providers.Moonshot.APIKey
-				sel.apiBase = cfg.Providers.Moonshot.APIBase
-				sel.proxy = cfg.Providers.Moonshot.Proxy
-				if sel.apiBase == "" {
-					if providerName == "moonshot" {
-						sel.apiBase = "https://api.moonshot.cn/v1"
-					} else {
-						sel.apiBase = "https://api.kimi.com/coding/v1"
-					}
+					sel.apiBase = "https://api.minimaxi.com/v1"
 				}
 			}
 		case "github_copilot", "copilot":
@@ -241,11 +241,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.apiBase = cfg.Providers.Moonshot.APIBase
 			sel.proxy = cfg.Providers.Moonshot.Proxy
 			if sel.apiBase == "" {
-				if strings.Contains(lowerModel, "moonshot") || strings.HasPrefix(model, "moonshot/") {
-					sel.apiBase = "https://api.moonshot.cn/v1"
-				} else {
-					sel.apiBase = "https://api.kimi.com/coding/v1"
-				}
+				sel.apiBase = "https://api.moonshot.cn/v1"
 			}
 		case strings.HasPrefix(model, "openrouter/") ||
 			strings.HasPrefix(model, "anthropic/") ||
@@ -321,6 +317,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			if sel.apiBase == "" {
 				sel.apiBase = "https://integrate.api.nvidia.com/v1"
 			}
+		case strings.HasPrefix(model, "vivgrid/") && cfg.Providers.Vivgrid.APIKey != "":
+			sel.apiKey = cfg.Providers.Vivgrid.APIKey
+			sel.apiBase = cfg.Providers.Vivgrid.APIBase
+			sel.proxy = cfg.Providers.Vivgrid.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.vivgrid.com/v1"
+			}
 		case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && cfg.Providers.Ollama.APIKey != "":
 			sel.apiKey = cfg.Providers.Ollama.APIKey
 			sel.apiBase = cfg.Providers.Ollama.APIBase
@@ -334,6 +337,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.proxy = cfg.Providers.Mistral.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "https://api.mistral.ai/v1"
+			}
+		case (strings.Contains(lowerModel, "minimax") || strings.HasPrefix(model, "minimax/")) && cfg.Providers.Minimax.APIKey != "":
+			sel.apiKey = cfg.Providers.Minimax.APIKey
+			sel.apiBase = cfg.Providers.Minimax.APIBase
+			sel.proxy = cfg.Providers.Minimax.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.minimaxi.com/v1"
 			}
 		case strings.HasPrefix(model, "avian/") && cfg.Providers.Avian.APIKey != "":
 			sel.apiKey = cfg.Providers.Avian.APIKey

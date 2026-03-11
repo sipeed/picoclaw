@@ -7,6 +7,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 // AgentRegistry manages multiple agent instances and routes messages to them.
@@ -98,6 +99,31 @@ func (r *AgentRegistry) CanSpawnSubagent(parentAgentID, targetAgentID string) bo
 		}
 	}
 	return false
+}
+
+// ForEachTool calls fn for every tool registered under the given name
+// across all agents. This is useful for propagating dependencies (e.g.
+// MediaStore) to tools after registry construction.
+func (r *AgentRegistry) ForEachTool(name string, fn func(tools.Tool)) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, agent := range r.agents {
+		if t, ok := agent.Tools.Get(name); ok {
+			fn(t)
+		}
+	}
+}
+
+// Close releases resources held by all registered agents.
+func (r *AgentRegistry) Close() {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, agent := range r.agents {
+		if err := agent.Close(); err != nil {
+			logger.WarnCF("agent", "Failed to close agent",
+				map[string]any{"agent_id": agent.ID, "error": err.Error()})
+		}
+	}
 }
 
 // GetDefaultAgent returns the default agent instance.

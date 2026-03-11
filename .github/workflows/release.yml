@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: false
+      upload_tos:
+        description: "Upload to Volcengine TOS"
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   create-tag:
@@ -60,6 +65,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        run: corepack enable && corepack prepare pnpm@latest --activate
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -91,6 +104,11 @@ jobs:
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY }}
           GOVERSION: ${{ steps.setup-go.outputs.go-version }}
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Apply release flags
         shell: bash
@@ -100,3 +118,12 @@ jobs:
           gh release edit "${{ inputs.tag }}" \
             --draft=${{ inputs.draft }} \
             --prerelease=${{ inputs.prerelease }}
+
+  upload-tos:
+    name: Upload to TOS
+    needs: release
+    if: ${{ inputs.upload_tos }}
+    uses: ./.github/workflows/upload-tos.yml
+    with:
+      tag: ${{ inputs.tag }}
+    secrets: inherit

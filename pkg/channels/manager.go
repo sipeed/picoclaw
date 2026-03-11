@@ -61,7 +61,10 @@ var channelRateConfig = map[string]float64{
 	"telegram": 20,
 	"discord":  1,
 	"slack":    1,
+	"matrix":   2,
 	"line":     10,
+	"qq":       5,
+	"irc":      2,
 }
 
 type channelWorker struct {
@@ -97,6 +100,27 @@ type asyncTask struct {
 func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
 	key := channel + ":" + chatID
 	m.placeholders.Store(key, placeholderEntry{id: placeholderID, createdAt: time.Now()})
+}
+
+// SendPlaceholder sends a "Thinking…" placeholder for the given channel/chatID
+// and records it for later editing. Returns true if a placeholder was sent.
+func (m *Manager) SendPlaceholder(ctx context.Context, channel, chatID string) bool {
+	m.mu.RLock()
+	ch, ok := m.channels[channel]
+	m.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	pc, ok := ch.(PlaceholderCapable)
+	if !ok {
+		return false
+	}
+	phID, err := pc.SendPlaceholder(ctx, chatID)
+	if err != nil || phID == "" {
+		return false
+	}
+	m.RecordPlaceholder(channel, chatID, phID)
+	return true
 }
 
 // RecordTypingStop registers a typing stop function for later invocation.
@@ -243,6 +267,13 @@ func (m *Manager) initChannels() error {
 		m.initChannel("slack", "Slack")
 	}
 
+	if m.config.Channels.Matrix.Enabled &&
+		m.config.Channels.Matrix.Homeserver != "" &&
+		m.config.Channels.Matrix.UserID != "" &&
+		m.config.Channels.Matrix.AccessToken != "" {
+		m.initChannel("matrix", "Matrix")
+	}
+
 	if m.config.Channels.LINE.Enabled && m.config.Channels.LINE.ChannelAccessToken != "" {
 		m.initChannel("line", "LINE")
 	}
@@ -265,6 +296,10 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.Pico.Enabled && m.config.Channels.Pico.Token != "" {
 		m.initChannel("pico", "Pico")
+	}
+
+	if m.config.Channels.IRC.Enabled && m.config.Channels.IRC.Server != "" {
+		m.initChannel("irc", "IRC")
 	}
 
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
@@ -797,6 +832,39 @@ func (m *Manager) UnregisterChannel(name string) {
 	}
 	delete(m.workers, name)
 	delete(m.channels, name)
+}
+
+// SendMessage sends an outbound message synchronously through the channel
+// worker's rate limiter and retry logic. It blocks until the message is
+// delivered (or all retries are exhausted), which preserves ordering when
+// a subsequent operation depends on the message having been sent.
+func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) error {
+	m.mu.RLock()
+	_, exists := m.channels[msg.Channel]
+	w, wExists := m.workers[msg.Channel]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("channel %s not found", msg.Channel)
+	}
+	if !wExists || w == nil {
+		return fmt.Errorf("channel %s has no active worker", msg.Channel)
+	}
+
+	maxLen := 0
+	if mlp, ok := w.ch.(MessageLengthProvider); ok {
+		maxLen = mlp.MaxMessageLength()
+	}
+	if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
+		for _, chunk := range SplitMessage(msg.Content, maxLen) {
+			chunkMsg := msg
+			chunkMsg.Content = chunk
+			m.sendWithRetry(ctx, msg.Channel, w, chunkMsg)
+		}
+	} else {
+		m.sendWithRetry(ctx, msg.Channel, w, msg)
+	}
+	return nil
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {

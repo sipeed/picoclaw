@@ -155,7 +155,8 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 			ShengSuanYun:  ProviderConfig{APIKey: "key11"},
 			DeepSeek:      ProviderConfig{APIKey: "key12"},
 			Cerebras:      ProviderConfig{APIKey: "key13"},
-			VolcEngine:    ProviderConfig{APIKey: "key14"},
+			Vivgrid:       ProviderConfig{APIKey: "key14"},
+			VolcEngine:    ProviderConfig{APIKey: "key15"},
 			GitHubCopilot: ProviderConfig{ConnectMode: "grpc"},
 			Antigravity:   ProviderConfig{AuthMethod: "oauth"},
 			Qwen:          ProviderConfig{APIKey: "key17"},
@@ -167,9 +168,9 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 
 	result := ConvertProvidersToModelList(cfg)
 
-	// All 21 providers should be converted
-	if len(result) != 21 {
-		t.Errorf("len(result) = %d, want 21", len(result))
+	// All 22 providers should be converted
+	if len(result) != 22 {
+		t.Errorf("len(result) = %d, want 22", len(result))
 	}
 }
 
@@ -578,65 +579,6 @@ func TestBuildModelWithProtocol_DifferentPrefix(t *testing.T) {
 			result,
 			"openrouter/claude-sonnet-4.6",
 		)
-	}
-}
-
-func TestConvertProvidersToModelList_Opencode(t *testing.T) {
-	cfg := &Config{
-		Providers: ProvidersConfig{
-			Opencode: ProviderConfig{
-				APIKey:         "oc-test-key",
-				APIBase:        "https://custom.opencode.ai/v1",
-				Proxy:          "http://proxy:9090",
-				RequestTimeout: 60,
-			},
-		},
-	}
-
-	result := ConvertProvidersToModelList(cfg)
-
-	if len(result) != 1 {
-		t.Fatalf("len(result) = %d, want 1", len(result))
-	}
-
-	mc := result[0]
-	if mc.ModelName != "opencode" {
-		t.Errorf("ModelName = %q, want %q", mc.ModelName, "opencode")
-	}
-	if mc.Model != "opencode/auto" {
-		t.Errorf("Model = %q, want %q", mc.Model, "opencode/auto")
-	}
-	if mc.APIKey != "oc-test-key" {
-		t.Errorf("APIKey = %q, want %q", mc.APIKey, "oc-test-key")
-	}
-	if mc.APIBase != "https://custom.opencode.ai/v1" {
-		t.Errorf("APIBase = %q, want %q", mc.APIBase, "https://custom.opencode.ai/v1")
-	}
-	if mc.Proxy != "http://proxy:9090" {
-		t.Errorf("Proxy = %q, want %q", mc.Proxy, "http://proxy:9090")
-	}
-	if mc.RequestTimeout != 60 {
-		t.Errorf("RequestTimeout = %d, want %d", mc.RequestTimeout, 60)
-	}
-}
-
-func TestConvertProvidersToModelList_Opencode_APIBaseOnly(t *testing.T) {
-	cfg := &Config{
-		Providers: ProvidersConfig{
-			Opencode: ProviderConfig{
-				APIBase: "https://custom.opencode.ai/v1",
-			},
-		},
-	}
-
-	result := ConvertProvidersToModelList(cfg)
-
-	if len(result) != 1 {
-		t.Fatalf("len(result) = %d, want 1 (APIBase-only should create entry)", len(result))
-	}
-
-	if result[0].ModelName != "opencode" {
-		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "opencode")
 	}
 }
 

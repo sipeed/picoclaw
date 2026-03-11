@@ -108,11 +108,11 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"groq", "groq"},
 		{"openrouter", "openrouter"},
 		{"cerebras", "cerebras"},
+		{"vivgrid", "vivgrid"},
 		{"qwen", "qwen"},
 		{"vllm", "vllm"},
 		{"deepseek", "deepseek"},
 		{"ollama", "ollama"},
-		{"opencode", "opencode"},
 	}
 
 	for _, tt := range tests {

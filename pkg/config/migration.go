@@ -225,7 +225,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 			},
 		},
 		{
-			providerNames: []string{"moonshot", "kimi", "kimi-code"},
+			providerNames: []string{"moonshot", "kimi"},
 			protocol:      "moonshot",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
 				if p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" {
@@ -289,6 +289,23 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					APIBase:        p.Cerebras.APIBase,
 					Proxy:          p.Cerebras.Proxy,
 					RequestTimeout: p.Cerebras.RequestTimeout,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"vivgrid"},
+			protocol:      "vivgrid",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Vivgrid.APIKey == "" && p.Vivgrid.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:      "vivgrid",
+					Model:          "vivgrid/auto",
+					APIKey:         p.Vivgrid.APIKey,
+					APIBase:        p.Vivgrid.APIBase,
+					Proxy:          p.Vivgrid.Proxy,
+					RequestTimeout: p.Vivgrid.RequestTimeout,
 				}, true
 			},
 		},

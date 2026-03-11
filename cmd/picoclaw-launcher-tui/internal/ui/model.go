@@ -14,23 +14,7 @@ import (
 )
 
 func (s *appState) modelMenu() tview.Primitive {
-	items := make([]MenuItem, 0, 2+len(s.config.ModelList))
-	items = append(items,
-		MenuItem{Label: "Back", Description: "Return to main menu", Action: func() { s.pop() }},
-		MenuItem{
-			Label:       "Add model",
-			Description: "Append a new model entry",
-			Action: func() {
-				s.addModel(
-					picoclawconfig.ModelConfig{ModelName: "new-model", Model: "openai/gpt-5.2"},
-				)
-				s.push(
-					fmt.Sprintf("model-%d", len(s.config.ModelList)-1),
-					s.modelForm(len(s.config.ModelList)-1),
-				)
-			},
-		},
-	)
+	items := make([]MenuItem, 0, 1+len(s.config.ModelList))
 	currentModel := strings.TrimSpace(s.config.Agents.Defaults.Model)
 	for i := range s.config.ModelList {
 		index := i
@@ -57,6 +41,23 @@ func (s *appState) modelMenu() tview.Primitive {
 			},
 		})
 	}
+	// Add model entry appended at the end so the models map to rows 1..N
+	items = append(items,
+		MenuItem{
+			Label:       "**Add model**",
+			Description: "Append a new model entry",
+			Action: func() {
+				newName := s.nextAvailableModelName("new-model")
+				s.addModel(
+					picoclawconfig.ModelConfig{ModelName: newName, Model: "openai/gpt-5.2"},
+				)
+				s.push(
+					fmt.Sprintf("model-%d", len(s.config.ModelList)-1),
+					s.modelForm(len(s.config.ModelList)-1),
+				)
+			},
+		},
+	)
 
 	menu := NewMenu("Models", items)
 	menu.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -64,14 +65,11 @@ func (s *appState) modelMenu() tview.Primitive {
 			s.pop()
 			return nil
 		}
-		if event.Rune() == 'q' {
-			s.pop()
-			return nil
-		}
+
 		if event.Rune() == ' ' {
 			row, _ := menu.GetSelection()
-			if row > 0 && row <= len(s.config.ModelList) {
-				model := s.config.ModelList[row-1]
+			if row >= 0 && row < len(s.config.ModelList) {
+				model := s.config.ModelList[row]
 				if !isModelValid(model) {
 					s.showMessage(
 						"Invalid model",
@@ -95,12 +93,23 @@ func (s *appState) modelForm(index int) tview.Primitive {
 	model := &s.config.ModelList[index]
 	form := tview.NewForm()
 	form.SetBorder(true).SetTitle(fmt.Sprintf("Model: %s", model.ModelName))
-	form.SetButtonBackgroundColor(tcell.NewRGBColor(80, 250, 123))
-	form.SetButtonTextColor(tcell.NewRGBColor(12, 13, 22))
 
 	addInput(form, "Model Name", model.ModelName, func(value string) {
+		if value == "" {
+			s.showMessage("Invalid model name", "Model Name cannot be empty")
+			return
+		}
+		if s.modelNameExists(value, index) {
+			s.showMessage("Duplicate model name", fmt.Sprintf("Model Name '%s' already exists", value))
+			return
+		}
+		oldName := model.ModelName
 		model.ModelName = value
+		if s.config.Agents.Defaults.Model == oldName {
+			s.config.Agents.Defaults.Model = value
+		}
 		s.dirty = true
+		form.SetTitle(fmt.Sprintf("Model: %s", model.ModelName))
 		refreshMainMenuIfPresent(s)
 		if menu, ok := s.menus["model"]; ok {
 			refreshModelMenuFromState(menu, s)
@@ -158,7 +167,21 @@ func (s *appState) modelForm(index int) tview.Primitive {
 	})
 
 	form.AddButton("Delete", func() {
-		s.deleteModel(index)
+		pageName := "confirm-delete-model"
+		if s.pages.HasPage(pageName) {
+			return
+		}
+		modal := tview.NewModal().
+			SetText("Are you sure you want to delete this model?").
+			AddButtons([]string{"Cancel", "Delete"}).
+			SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+				s.pages.RemovePage(pageName)
+				if buttonLabel == "Delete" {
+					s.deleteModel(index)
+				}
+			})
+		modal.SetTitle("Confirm Delete").SetBorder(true)
+		s.pages.AddPage(pageName, modal, true, true)
 	})
 	form.AddButton("Test", func() {
 		s.testModel(model)
@@ -215,7 +238,7 @@ func modelStatusColor(valid bool, selected bool) *tcell.Color {
 
 func refreshModelMenu(menu *Menu, currentModel string, models []picoclawconfig.ModelConfig) {
 	for i, model := range models {
-		row := i + 1
+		row := i
 		label := fmt.Sprintf("%s (%s)", model.ModelName, model.Model)
 		isValid := isModelValid(model)
 		if model.ModelName == currentModel && currentModel != "" {
@@ -234,23 +257,7 @@ func refreshModelMenu(menu *Menu, currentModel string, models []picoclawconfig.M
 }
 
 func refreshModelMenuFromState(menu *Menu, s *appState) {
-	items := make([]MenuItem, 0, 2+len(s.config.ModelList))
-	items = append(items,
-		MenuItem{Label: "Back", Description: "Return to main menu", Action: func() { s.pop() }},
-		MenuItem{
-			Label:       "Add model",
-			Description: "Append a new model entry",
-			Action: func() {
-				s.addModel(
-					picoclawconfig.ModelConfig{ModelName: "new-model", Model: "openai/gpt-5.2"},
-				)
-				s.push(
-					fmt.Sprintf("model-%d", len(s.config.ModelList)-1),
-					s.modelForm(len(s.config.ModelList)-1),
-				)
-			},
-		},
-	)
+	items := make([]MenuItem, 0, 1+len(s.config.ModelList))
 	currentModel := strings.TrimSpace(s.config.Agents.Defaults.Model)
 	for i := range s.config.ModelList {
 		index := i
@@ -277,6 +284,19 @@ func refreshModelMenuFromState(menu *Menu, s *appState) {
 			},
 		})
 	}
+	items = append(items,
+		MenuItem{
+			Label:       "**Add Model**",
+			Description: "Append a new model entry",
+			Action: func() {
+				newName := s.nextAvailableModelName("new-model")
+				s.addModel(
+					picoclawconfig.ModelConfig{ModelName: newName, Model: "openai/gpt-5.2"},
+				)
+				s.push(fmt.Sprintf("model-%d", len(s.config.ModelList)-1), s.modelForm(len(s.config.ModelList)-1))
+			},
+		},
+	)
 	menu.applyItems(items)
 }
 
@@ -285,6 +305,38 @@ func isModelValid(model picoclawconfig.ModelConfig) bool {
 		strings.TrimSpace(model.AuthMethod) == "oauth"
 	hasModel := strings.TrimSpace(model.Model) != ""
 	return hasKey && hasModel
+}
+
+func (s *appState) modelNameExists(name string, excludeIndex int) bool {
+	target := strings.TrimSpace(name)
+	if target == "" {
+		return false
+	}
+	for i := range s.config.ModelList {
+		if i == excludeIndex {
+			continue
+		}
+		if strings.TrimSpace(s.config.ModelList[i].ModelName) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *appState) nextAvailableModelName(base string) string {
+	name := strings.TrimSpace(base)
+	if name == "" {
+		name = "new-model"
+	}
+	if !s.modelNameExists(name, -1) {
+		return name
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", name, i)
+		if !s.modelNameExists(candidate, -1) {
+			return candidate
+		}
+	}
 }
 
 func (s *appState) testModel(model *picoclawconfig.ModelConfig) {
@@ -335,7 +387,11 @@ func (s *appState) testModel(model *picoclawconfig.ModelConfig) {
 		s.showMessage("Test OK", resp.Status)
 		return
 	}
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	if err != nil {
+		s.showMessage("Test failed", fmt.Sprintf("failed to read response: %v", err))
+		return
+	}
 	s.showMessage(
 		"Test failed",
 		fmt.Sprintf("%s: %s", resp.Status, strings.TrimSpace(string(body))),
