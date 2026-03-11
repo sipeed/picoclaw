@@ -391,6 +391,23 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 			},
 		},
 		{
+			providerNames: []string{"opencode"},
+			protocol:      "opencode",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Opencode.APIKey == "" && p.Opencode.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:      "opencode",
+					Model:          "opencode/auto",
+					APIKey:         p.Opencode.APIKey,
+					APIBase:        p.Opencode.APIBase,
+					Proxy:          p.Opencode.Proxy,
+					RequestTimeout: p.Opencode.RequestTimeout,
+				}, true
+			},
+		},
+		{
 			providerNames: []string{"avian"},
 			protocol:      "avian",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {

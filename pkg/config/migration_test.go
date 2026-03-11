@@ -161,15 +161,16 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 			Antigravity:   ProviderConfig{AuthMethod: "oauth"},
 			Qwen:          ProviderConfig{APIKey: "key17"},
 			Mistral:       ProviderConfig{APIKey: "key18"},
-			Avian:         ProviderConfig{APIKey: "key19"},
+			Opencode:      ProviderConfig{APIKey: "key19"},
+			Avian:         ProviderConfig{APIKey: "key20"},
 		},
 	}
 
 	result := ConvertProvidersToModelList(cfg)
 
-	// All 21 providers should be converted
-	if len(result) != 21 {
-		t.Errorf("len(result) = %d, want 21", len(result))
+	// All 22 providers should be converted
+	if len(result) != 22 {
+		t.Errorf("len(result) = %d, want 22", len(result))
 	}
 }
 

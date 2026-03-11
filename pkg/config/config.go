@@ -498,6 +498,7 @@ type ProvidersConfig struct {
 	Antigravity   ProviderConfig       `json:"antigravity"`
 	Qwen          ProviderConfig       `json:"qwen"`
 	Mistral       ProviderConfig       `json:"mistral"`
+	Opencode      ProviderConfig       `json:"opencode"`
 	Avian         ProviderConfig       `json:"avian"`
 	Minimax       ProviderConfig       `json:"minimax"`
 }
@@ -525,6 +526,7 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
 		p.Qwen.APIKey == "" && p.Qwen.APIBase == "" &&
 		p.Mistral.APIKey == "" && p.Mistral.APIBase == "" &&
+		p.Opencode.APIKey == "" && p.Opencode.APIBase == "" &&
 		p.Avian.APIKey == "" && p.Avian.APIBase == "" &&
 		p.Minimax.APIKey == "" && p.Minimax.APIBase == ""
 }

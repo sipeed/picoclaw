@@ -94,7 +94,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "mistral", "avian",
+		"vivgrid", "volcengine", "vllm", "qwen", "mistral", "opencode", "avian",
 		"minimax":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
@@ -211,6 +211,8 @@ func getDefaultAPIBase(protocol string) string {
 		return "http://localhost:8000/v1"
 	case "mistral":
 		return "https://api.mistral.ai/v1"
+	case "opencode":
+		return "https://opencode.ai/zen/v1"
 	case "avian":
 		return "https://api.avian.io/v1"
 	case "minimax":
