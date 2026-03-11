@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -28,6 +29,21 @@ type (
 	GoogleExtra            = protocoltypes.GoogleExtra
 	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
+
+var vendorPrefixes = map[string]struct{}{
+	"litellm":    {},
+	"moonshot":   {},
+	"nvidia":     {},
+	"groq":       {},
+	"ollama":     {},
+	"deepseek":   {},
+	"google":     {},
+	"openrouter": {},
+	"zhipu":      {},
+	"mistral":    {},
+	"vivgrid":    {},
+	"minimax":    {},
+}
 
 type Provider struct {
 	apiKey         string
@@ -54,26 +70,48 @@ func WithRequestTimeout(timeout time.Duration) Option {
 	}
 }
 
-func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
-	client := &http.Client{
-		Timeout: defaultRequestTimeout,
-	}
-
-	if proxy != "" {
-		parsed, err := url.Parse(proxy)
-		if err == nil {
-			client.Transport = &http.Transport{
-				Proxy: http.ProxyURL(parsed),
+func WithRetry(maxRetries int, minWait, maxWait time.Duration) Option {
+	return func(p *Provider) {
+		if rc, ok := p.httpClient.Transport.(*retryablehttp.RoundTripper); ok {
+			if maxRetries >= 0 {
+				rc.Client.RetryMax = maxRetries
 			}
+			if minWait > 0 {
+				rc.Client.RetryWaitMin = minWait
+			}
+			if maxWait > 0 {
+				rc.Client.RetryWaitMax = maxWait
+			}
+		}
+	}
+}
+
+func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
+
+	retryClient := retryablehttp.NewClient()
+	retryClient.RetryMax = 3
+	retryClient.RetryWaitMin = 1 * time.Second
+	retryClient.RetryWaitMax = 30 * time.Second
+	retryClient.Backoff = retryablehttp.LinearJitterBackoff
+	retryClient.Logger = nil
+
+	transport := &http.Transport{}
+	if proxy != "" {
+
+		if parsed, err := url.Parse(proxy); err == nil {
+			transport.Proxy = http.ProxyURL(parsed)
 		} else {
 			log.Printf("openai_compat: invalid proxy URL %q: %v", proxy, err)
 		}
 	}
 
+	retryClient.HTTPClient.Transport = transport
+	retryClient.HTTPClient.Timeout = defaultRequestTimeout
+
 	p := &Provider{
 		apiKey:     apiKey,
 		apiBase:    strings.TrimRight(apiBase, "/"),
-		httpClient: client,
+		httpClient: retryClient.StandardClient(),
 	}
 
 	for _, opt := range opts {
@@ -126,18 +164,7 @@ func (p *Provider) Chat(
 	}
 
 	if maxTokens, ok := asInt(options["max_tokens"]); ok {
-		// Use configured maxTokensField if specified, otherwise fallback to model-based detection
-		fieldName := p.maxTokensField
-		if fieldName == "" {
-			// Fallback: detect from model name for backward compatibility
-			lowerModel := strings.ToLower(model)
-			if strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "o1") ||
-				strings.Contains(lowerModel, "gpt-5") {
-				fieldName = "max_completion_tokens"
-			} else {
-				fieldName = "max_tokens"
-			}
-		}
+		fieldName := p.resolveMaxTokenField(model)
 		requestBody[fieldName] = maxTokens
 	}
 
@@ -184,6 +211,13 @@ func (p *Provider) Chat(
 	}
 	defer resp.Body.Close()
 
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		// continue processing response
+	}
+
 	contentType := resp.Header.Get("Content-Type")
 
 	// Non-200: read a prefix to tell HTML error page apart from JSON error body.
@@ -202,8 +236,12 @@ func (p *Provider) Chat(
 		)
 	}
 
+	//set response size limit to prevent OOM if server returns a huge response (e.g., an HTML error page instead of JSON)
+	const maxResponseSize = 10 * 1024 * 1024
+
 	// Peek without consuming so the full stream reaches the JSON decoder.
-	reader := bufio.NewReader(resp.Body)
+	safeReader := io.LimitReader(resp.Body, maxResponseSize)
+	reader := bufio.NewReader(safeReader)
 	prefix, err := reader.Peek(256) // io.EOF/ErrBufferFull are normal; only real errors abort
 	if err != nil && err != io.EOF && err != bufio.ErrBufferFull {
 		return nil, fmt.Errorf("failed to inspect response: %w", err)
@@ -214,10 +252,26 @@ func (p *Provider) Chat(
 
 	out, err := parseResponse(reader)
 	if err != nil {
+		// some APIs return 200 with an HTML error page, so check for that before giving up on JSON parsing
+		if looksLikeHTML(prefix, contentType) {
+			return nil, wrapHTMLResponseError(resp.StatusCode, prefix, contentType, p.apiBase)
+		}
 		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
 	return out, nil
+}
+
+func (p *Provider) resolveMaxTokenField(model string) string {
+	if p.maxTokensField != "" {
+		return p.maxTokensField
+	}
+
+	lowerModel := strings.ToLower(model)
+	if strings.Contains(lowerModel, "o1") || strings.Contains(lowerModel, "glm-4") || strings.Contains(lowerModel, "gpt-5") {
+		return "max_completion_tokens"
+	}
+	return "max_tokens"
 }
 
 func wrapHTMLResponseError(statusCode int, body []byte, contentType, apiBase string) error {
@@ -428,23 +482,20 @@ func serializeMessages(messages []Message) []any {
 }
 
 func normalizeModel(model, apiBase string) string {
+	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
+		return model
+	}
+
 	before, after, ok := strings.Cut(model, "/")
 	if !ok {
 		return model
 	}
 
-	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
-		return model
+	if _, exists := vendorPrefixes[strings.ToLower(before)]; exists {
+		return after
 	}
 
-	prefix := strings.ToLower(before)
-	switch prefix {
-	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google",
-		"openrouter", "zhipu", "mistral", "vivgrid", "minimax":
-		return after
-	default:
-		return model
-	}
+	return model
 }
 
 func asInt(v any) (int, bool) {
