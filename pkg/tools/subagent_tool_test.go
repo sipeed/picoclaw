@@ -11,6 +11,7 @@ import (
 // MockLLMProvider is a test implementation of LLMProvider
 type MockLLMProvider struct {
 	lastOptions map[string]any
+	lastModel   string
 }
 
 func (m *MockLLMProvider) Chat(
@@ -21,6 +22,7 @@ func (m *MockLLMProvider) Chat(
 	options map[string]any,
 ) (*providers.LLMResponse, error) {
 	m.lastOptions = options
+	m.lastModel = model
 	// Find the last user message to generate a response
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {
@@ -66,6 +68,34 @@ func TestSubagentManager_SetLLMOptions_AppliesToRunToolLoop(t *testing.T) {
 	}
 	if provider.lastOptions["temperature"] != 0.6 {
 		t.Fatalf("temperature = %v, want %v", provider.lastOptions["temperature"], 0.6)
+	}
+}
+
+func TestSubagentManager_RunTask_UsesResolvedTargetAgentModel(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "caller-model", "/tmp/test")
+	manager.SetAgentModelResolver(func(agentID string) (string, bool) {
+		if agentID == "analyst" {
+			return "target-model", true
+		}
+		return "", false
+	})
+
+	task := &SubagentTask{
+		ID:            "subagent-1",
+		Task:          "Do something",
+		AgentID:       "analyst",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	}
+
+	manager.runTask(context.Background(), task, nil)
+
+	if provider.lastModel != "target-model" {
+		t.Fatalf("lastModel = %q, want %q", provider.lastModel, "target-model")
+	}
+	if task.Status != "completed" {
+		t.Fatalf("task.Status = %q, want %q", task.Status, "completed")
 	}
 }
 

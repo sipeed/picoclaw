@@ -224,6 +224,17 @@ func registerSharedTools(
 			if cfg.Tools.IsToolEnabled("subagent") {
 				subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace)
 				subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+				subagentManager.SetAgentModelResolver(func(targetAgentID string) (string, bool) {
+					target, ok := registry.GetAgent(targetAgentID)
+					if !ok {
+						return "", false
+					}
+					model := strings.TrimSpace(target.Model)
+					if model == "" {
+						return "", false
+					}
+					return model, true
+				})
 				spawnTool := tools.NewSpawnTool(subagentManager)
 				currentAgentID := agentID
 				spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
