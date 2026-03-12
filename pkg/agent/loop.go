@@ -229,7 +229,7 @@ func registerSharedTools(
 		})
 		agent.Tools.Register(spawnTool)
 
-		teamTool := tools.NewTeamTool(subagentManager)
+		teamTool := tools.NewTeamTool(subagentManager, cfg)
 		if cfg.Tools.IsToolEnabled("team") {
 			agent.Tools.Register(teamTool)
 		}

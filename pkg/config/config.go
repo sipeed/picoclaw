@@ -75,21 +75,21 @@ func (f *FlexibleStringSlice) UnmarshalText(text []byte) error {
 }
 
 type TeamModelConfig struct {
-	Name string   `json:"name" yaml:"name"`
-	Tags []string `json:"tags,omitempty" yaml:"tags,omitempty"`
+	Name string   `json:"name"`
+	Tags []string `json:"tags,omitempty"`
 }
 
 type TeamToolsConfig struct {
-	ToolConfig          `                       envPrefix:"PICOCLAW_TOOLS_TEAM_"`
-	MaxMembers          int               `json:"max_members"           env:"PICOCLAW_TOOLS_TEAM_MAX_MEMBERS"`
-	MaxTeamTokens       int               `json:"max_team_tokens"       env:"PICOCLAW_TOOLS_TEAM_MAX_TOKENS"`
-	MaxEvaluatorLoops   int               `json:"max_evaluator_loops"   env:"PICOCLAW_TOOLS_TEAM_MAX_EVALUATOR_LOOPS"`
-	MaxTimeoutMinutes   int               `json:"max_timeout_minutes"   env:"PICOCLAW_TOOLS_TEAM_MAX_TIMEOUT_MINUTES"`
-	MaxContextRunes     int               `json:"max_context_runes"     env:"PICOCLAW_TOOLS_TEAM_MAX_CONTEXT_RUNES"`
-	DisableAutoReviewer bool              `json:"disable_auto_reviewer" env:"PICOCLAW_TOOLS_TEAM_DISABLE_AUTO_REVIEWER"`
-	ReviewerModel       string            `json:"reviewer_model"        env:"PICOCLAW_TOOLS_TEAM_REVIEWER_MODEL"`
-	AllowedStrategies   []string          `json:"allowed_strategies"    env:"PICOCLAW_TOOLS_TEAM_ALLOWED_STRATEGIES"`
-	AllowedModels       []TeamModelConfig `json:"allowed_models"        env:"-"`
+	ToolConfig
+	MaxMembers          int               `json:"max_members"`
+	MaxTeamTokens       int               `json:"max_team_tokens"`
+	MaxEvaluatorLoops   int               `json:"max_evaluator_loops"`
+	MaxTimeoutMinutes   int               `json:"max_timeout_minutes"`
+	MaxContextRunes     int               `json:"max_context_runes"`
+	DisableAutoReviewer bool              `json:"disable_auto_reviewer"`
+	ReviewerModel       string            `json:"reviewer_model"`
+	AllowedStrategies   []string          `json:"allowed_strategies"`
+	AllowedModels       []TeamModelConfig `json:"allowed_models"`
 }
 
 type Config struct {
@@ -607,8 +607,8 @@ type OpenAIProviderConfig struct {
 // Default protocol is "openai" if no prefix is specified.
 type ModelConfig struct {
 	// Required fields
-	ModelName string   `json:"model_name"`     // User-facing alias for the model
-	Model     string   `json:"model"`          // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
+	ModelName string `json:"model_name"` // User-facing alias for the model
+	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
 
 	// HTTP-based providers
 	APIBase string `json:"api_base,omitempty"` // API endpoint URL
@@ -770,7 +770,6 @@ type ToolsConfig struct {
 	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig         `json:"write_file"                                               envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
 }
-
 
 type SearchCacheConfig struct {
 	MaxSize    int `json:"max_size"    env:"PICOCLAW_SKILLS_SEARCH_CACHE_MAX_SIZE"`

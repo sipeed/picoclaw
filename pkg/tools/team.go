@@ -8,12 +8,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 type TeamTool struct {
 	manager       *SubagentManager
+	cfg           *config.Config
 	originChannel string
 	originChatID  string
 }
@@ -27,9 +29,10 @@ type TeamMember struct {
 	Produces  string   // Auto-reviewer: declares artifact type ("code", "data", "document")
 }
 
-func NewTeamTool(manager *SubagentManager) *TeamTool {
+func NewTeamTool(manager *SubagentManager, cfg *config.Config) *TeamTool {
 	return &TeamTool{
 		manager:       manager,
+		cfg:           cfg,
 		originChannel: "cli",
 		originChatID:  "direct",
 	}
@@ -191,6 +194,26 @@ func (t *TeamTool) maybeRunAutoReviewer(
 		reviewerConfig.Model = teamConfig.ReviewerModel
 	}
 
+	cnf, err := t.cfg.GetModelConfig(reviewerConfig.Model)
+
+	if err == nil {
+		provider, model, err := providers.CreateProviderFromConfig(cnf)
+
+		if err == nil {
+			reviewerConfig.Model = model
+			reviewerConfig.Provider = provider
+		}
+	}
+
+	providerName := "unknown"
+	if reviewerConfig.Provider != nil {
+		providerName = reviewerConfig.Provider.GetDefaultModel()
+	}
+
+	logger.InfoCF("team", fmt.Sprintf("reviewer use provider: [%s] and model: [%s]", providerName, reviewerConfig.Model), map[string]any{
+		"model": teamConfig.ReviewerModel,
+	})
+
 	loopResult, err := RunToolLoop(ctx, reviewerConfig, reviewerMessages, t.originChannel, t.originChatID)
 	if err != nil {
 		return fmt.Sprintf("[Auto-Reviewer] Failed to run: %v", err)
@@ -267,7 +290,6 @@ func (t *TeamTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		budget = &atomic.Int64{}
 		budget.Store(effectiveMaxTokens)
 	}
-
 
 	var members []TeamMember
 	for i, mRaw := range membersRaw {
@@ -392,16 +414,51 @@ func upgradeRegistryForConcurrency(original *ToolRegistry) *ToolRegistry {
 
 // buildWorkerConfig creates a ToolLoopConfig for a specific team member,
 // potentially overriding the model based on the member's definition.
-func buildWorkerConfig(baseConfig ToolLoopConfig, registry *ToolRegistry, m TeamMember, manager *SubagentManager) (ToolLoopConfig, error) {
+func (t *TeamTool) buildWorkerConfig(baseConfig ToolLoopConfig, registry *ToolRegistry, m TeamMember) (ToolLoopConfig, error) {
 	cfg := baseConfig
 	cfg.Tools = registry
 	// Heterogeneous Agents: Override model if this team member requested a specific one
 	if m.Model != "" {
-		if !manager.IsModelAllowed(m.Model) {
+		if !t.manager.IsModelAllowed(m.Model) {
 			return cfg, fmt.Errorf("requested model '%s' is not in the allowed fallback candidates list for this agent workspace", m.Model)
 		}
-		cfg.Model = m.Model
+		// Resolve model name from model_list if it's an alias
+		//resolvedModel := m.Model
+		//if t.cfg != nil {
+		//	for _, mc := range t.cfg.ModelList {
+		//		if mc.ModelName == m.Model && mc.Model != "" {
+		//			resolvedModel = mc.Model
+		//			break
+		//		}
+		//	}
+		//}
+
+		cnf, err := t.cfg.GetModelConfig(m.Model)
+
+		if err != nil {
+			return cfg, err
+		}
+
+		provider, model, err := providers.CreateProviderFromConfig(cnf)
+
+		if err != nil {
+			return ToolLoopConfig{}, err
+		}
+
+		cfg.Model = model
+		cfg.Provider = provider
 	}
+
+	providerName := "unknown"
+	if cfg.Provider != nil {
+		providerName = cfg.Provider.GetDefaultModel()
+	}
+
+	logger.InfoCF("team", fmt.Sprintf("[%s] use provider: [%s] and model: [%s]", m.Role, providerName, cfg.Model), map[string]any{
+		"member_index": m.ID,
+		"model":        m.Model,
+	})
+
 	return cfg, nil
 }
 
@@ -423,7 +480,7 @@ func (t *TeamTool) executeSequential(ctx context.Context, baseConfig ToolLoopCon
 			{Role: "user", Content: actualTask},
 		}
 
-		workerConfig, err := buildWorkerConfig(baseConfig, baseConfig.Tools, m, t.manager)
+		workerConfig, err := t.buildWorkerConfig(baseConfig, baseConfig.Tools, m)
 		if err != nil {
 			errStr := fmt.Sprintf("Phase %d (Role: %s) configuration failed: %v", i+1, m.Role, err)
 			finalOutput.WriteString(errStr + "\n")
@@ -474,7 +531,7 @@ func (t *TeamTool) executeParallel(ctx context.Context, baseConfig ToolLoopConfi
 				{Role: "user", Content: member.Task},
 			}
 
-			workerConfig, err := buildWorkerConfig(baseConfig, baseConfig.Tools, member, t.manager)
+			workerConfig, err := t.buildWorkerConfig(baseConfig, baseConfig.Tools, member)
 			if err != nil {
 				resultsChan <- workResult{index: index, role: member.Role, err: err}
 				return
@@ -543,7 +600,6 @@ func (t *TeamTool) executeParallel(ctx context.Context, baseConfig ToolLoopConfi
 	}
 }
 
-
 func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig ToolLoopConfig, members []TeamMember, contextLimit int) *ToolResult {
 	if len(members) != 2 {
 		return ErrorResult("The evaluator_optimizer strategy requires exactly two members: [0] Worker, [1] Evaluator.")
@@ -572,11 +628,11 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig Too
 	}
 
 	// Pre-compute both configs once — they don't change between loop iterations.
-	workerConfig, err := buildWorkerConfig(baseConfig, baseConfig.Tools, worker, t.manager)
+	workerConfig, err := t.buildWorkerConfig(baseConfig, baseConfig.Tools, worker)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("Worker configuration failed: %v", err)).WithError(err)
 	}
-	evalConfig, err := buildWorkerConfig(baseConfig, NewToolRegistry(), evaluator, t.manager)
+	evalConfig, err := t.buildWorkerConfig(baseConfig, NewToolRegistry(), evaluator)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("Evaluator configuration failed: %v", err)).WithError(err)
 	}
@@ -767,7 +823,7 @@ func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, ba
 					{Role: "user", Content: actualTask},
 				}
 
-				workerConfig, err := buildWorkerConfig(baseConfig, baseConfig.Tools, m, t.manager)
+				workerConfig, err := t.buildWorkerConfig(baseConfig, baseConfig.Tools, m)
 				if err != nil {
 					masterErrMu.Lock()
 					if masterErr == nil {
