@@ -5,10 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/sipeed/picoclaw/pkg/media"
-	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/tidwall/gjson"
-	"math/rand"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +13,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/tidwall/gjson"
 
 	"github.com/tencent-connect/botgo"
 	"github.com/tencent-connect/botgo/dto"
@@ -36,8 +37,10 @@ const (
 	dedupInterval = 60 * time.Second
 	dedupMaxSize  = 10000 // hard cap on dedup map entries
 	typingResend  = 8 * time.Second
-	typingSeconds = 10
+	typingSeconds = 20
 )
+
+var emojiRegexp = regexp.MustCompile(`<[^<]*?ext="([^"]+)"[^<]*?faceType=(\d+)[^<]*?>|<[^<]*?faceType=(\d+)[^<]*?ext="([^"]+)"[^<]*?>`)
 
 type QQChannel struct {
 	*channels.BaseChannel
@@ -54,8 +57,8 @@ type QQChannel struct {
 	// Passive reply: store last inbound message ID per chat.
 	lastMsgID sync.Map // chatID → string
 
-	// msg_seq: per-chat atomic counter for multi-part replies.
-	msgSeqCounters sync.Map // chatID → *atomic.Uint32
+	replySeq atomic.Uint32
+	seqLock  sync.Mutex
 
 	// Time-based dedup replacing the unbounded map.
 	dedup   map[string]time.Time
@@ -86,7 +89,6 @@ func (c *QQChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("QQ app_id and app_secret not configured")
 	}
 
-	botgo.SetLogger(logger.NewLogger("botgo"))
 	logger.InfoC("qq", "Starting QQ bot (WebSocket mode)")
 
 	// Reinitialize shutdown signal for clean restart.
@@ -193,14 +195,13 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 
 	chatKind := c.getChatKind(msg.ChatID)
 	textMsg, mdMsg := c.genReplyMsg(ctx, msg, chatKind)
-
-	for _, _v := range []dto.MessageToCreate{mdMsg, textMsg} {
-		var err error
+	var err error
+	for _, replyMsg := range []dto.MessageToCreate{mdMsg, textMsg} {
 		var replyMsgID *dto.Message
 		if chatKind == "group" {
-			replyMsgID, err = c.api.PostGroupMessage(ctx, msg.ChatID, _v)
+			replyMsgID, err = c.api.PostGroupMessage(ctx, msg.ChatID, replyMsg)
 		} else {
-			replyMsgID, err = c.api.PostC2CMessage(ctx, msg.ChatID, _v)
+			replyMsgID, err = c.api.PostC2CMessage(ctx, msg.ChatID, replyMsg)
 		}
 		if err == nil {
 			logger.InfoCF("qq", "Sent message", map[string]any{"postrsp ": replyMsgID})
@@ -214,7 +215,7 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 			})
 		}
 	}
-	return nil
+	return err
 }
 
 func (c *QQChannel) genReplyMsg(ctx context.Context, msg bus.OutboundMessage, chatKind string) (dto.MessageToCreate,
@@ -241,14 +242,15 @@ func (c *QQChannel) getReplyExtInfo(ctx context.Context, chatID string) (replyID
 			replyID = msgID
 		}
 	}
-	// Increment msg_seq atomically for multi-part replies.
-	if counterVal, ok := c.msgSeqCounters.Load(chatID); ok {
-		if counter, ok := counterVal.(*atomic.Uint32); ok {
-			seq = counter.Add(1)
-		}
-	} else {
-		seq = rand.Uint32()
+
+	// Attach msg_seq for active reply.
+	c.seqLock.Lock()
+	defer c.seqLock.Unlock()
+	seq = c.replySeq.Add(1)
+	if seq > math.MaxInt32 {
+		c.replySeq.Store(1)
 	}
+
 	return replyID, seq
 }
 
@@ -449,7 +451,7 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 
 		scope := channels.BuildMediaScope("qq", senderID, data.ID)
 
-		content, mediaPaths := c.decodeMesasge(context.Background(), event, (*dto.Message)(data), scope)
+		content, mediaPaths := c.decodeMessage(context.Background(), event, (*dto.Message)(data), scope)
 		if content == "" {
 			logger.DebugC("qq", "Received empty C2C message, ignoring")
 			return nil
@@ -464,12 +466,7 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		c.chatType.Store(senderID, "direct")
 		c.lastMsgID.Store(senderID, data.ID)
 
-		// Reset msg_seq counter for new inbound message.
-		c.msgSeqCounters.Store(senderID, new(atomic.Uint32))
-
-		metadata := map[string]string{
-			"account_id": senderID,
-		}
+		metadata := map[string]string{}
 
 		sender := bus.SenderInfo{
 			Platform:    "qq",
@@ -514,7 +511,7 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		}
 		scope := channels.BuildMediaScope("qq", data.GroupID, data.ID)
 
-		content, mediaPaths := c.decodeMesasge(context.Background(), event, (*dto.Message)(data), scope)
+		content, mediaPaths := c.decodeMessage(context.Background(), event, (*dto.Message)(data), scope)
 		if content == "" {
 			logger.DebugC("qq", "Received empty group message, ignoring")
 			return nil
@@ -535,9 +532,9 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		// Store chat routing context using GroupID as chatID.
 		c.chatType.Store(data.GroupID, "group")
 		c.lastMsgID.Store(data.GroupID, data.ID)
+
 		metadata := map[string]string{
-			"account_id": senderID,
-			"group_id":   data.GroupID,
+			"group_id": data.GroupID,
 		}
 
 		sender := bus.SenderInfo{
@@ -621,7 +618,8 @@ func (c *QQChannel) dedupJanitor() {
 	}
 }
 
-func (c *QQChannel) decodeMesasge(ctx context.Context, event *dto.WSPayload, data *dto.Message, scope string) (content string, mediaPaths []string) {
+func (c *QQChannel) decodeMessage(ctx context.Context, event *dto.WSPayload, data *dto.Message,
+	scope string) (content string, mediaPaths []string) {
 
 	content = parseEmojiText(data.Content)
 	wavURL, asrReferText := getVoiceInfo(event)
@@ -658,9 +656,8 @@ func (c *QQChannel) decodeMesasge(ctx context.Context, event *dto.WSPayload, dat
 }
 
 // processAttachments processes all attachments in a message
-func (c *QQChannel) processAttachments(ctx context.Context, attachments []MessageAttachment, scope string) ([]string, string) {
-	mediaPaths := []string{}
-	content := ""
+func (c *QQChannel) processAttachments(ctx context.Context, attachments []MessageAttachment,
+	scope string) (mediaPaths []string, content string) {
 
 	// Helper to register a local file with the media store
 	storeMedia := func(localPath, filename string) string {
@@ -672,7 +669,7 @@ func (c *QQChannel) processAttachments(ctx context.Context, attachments []Messag
 			return ""
 		}
 		ref, err := store.Store(localPath, media.MediaMeta{Filename: filename, Source: "qq"}, scope)
-		if err != nil {
+		if err == nil {
 			logger.InfoCF("qq", "Stored media", map[string]any{
 				"scope":     scope,
 				"localPath": localPath,
@@ -680,10 +677,10 @@ func (c *QQChannel) processAttachments(ctx context.Context, attachments []Messag
 			})
 			return ref
 		}
-		logger.ErrorCF("qq", "Stored media", map[string]any{
+		logger.ErrorCF("qq", "Stored media err ", map[string]any{
 			"scope":     scope,
 			"localPath": localPath,
-			"ref":       ref,
+			"err":       err.Error(),
 		})
 		return localPath
 	}
@@ -810,10 +807,8 @@ func parseEmojiText(content string) string {
 	content = strings.ReplaceAll(content, "\\u003e", ">")
 	content = strings.ReplaceAll(content, `\"`, `"`)
 
-	combinedRegexp := regexp.MustCompile(`<[^<]*?ext="([^"]+)"[^<]*?faceType=(\d+)[^<]*?>|<[^<]*?faceType=(\d+)[^<]*?ext="([^"]+)"[^<]*?>`)
-
-	contentParts := combinedRegexp.Split(content, -1)
-	matches := combinedRegexp.FindAllString(content, -1)
+	contentParts := emojiRegexp.Split(content, -1)
+	matches := emojiRegexp.FindAllString(content, -1)
 
 	var result strings.Builder
 	for i, part := range contentParts {
