@@ -575,6 +575,35 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 	}
 }
 
+func TestSelectCandidates_UsesResolvedLightModelID(t *testing.T) {
+	al := &AgentLoop{}
+	agent := &AgentInstance{
+		ID:    "main",
+		Model: "heavy-alias",
+		Router: routing.New(routing.RouterConfig{
+			LightModel: "light-alias",
+			Threshold:  1.0,
+		}),
+		Candidates: []providers.FallbackCandidate{
+			{Provider: "openai", Model: "gpt-4o"},
+		},
+		LightCandidates: []providers.FallbackCandidate{
+			{Provider: "openai", Model: "qwen2.5:3b"},
+		},
+	}
+
+	candidates, model := al.selectCandidates(agent, "hi", nil)
+	if len(candidates) != 1 {
+		t.Fatalf("len(candidates) = %d, want 1", len(candidates))
+	}
+	if candidates[0].Model != "qwen2.5:3b" {
+		t.Fatalf("candidate model = %q, want %q", candidates[0].Model, "qwen2.5:3b")
+	}
+	if model != "qwen2.5:3b" {
+		t.Fatalf("model = %q, want %q", model, "qwen2.5:3b")
+	}
+}
+
 // TestToolResult_SilentToolDoesNotSendUserMessage verifies silent tools don't trigger outbound
 func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
