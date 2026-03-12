@@ -302,10 +302,17 @@ func (c *TelegramChannel) sendChunk(
 	return nil
 }
 
+// maxTypingDuration limits how long the typing indicator can run.
+// Prevents endless typing when the LLM fails/hangs and preSend never invokes cancel.
+// Matches channels.Manager's typingStopTTL (5 min) so behavior is consistent.
+const maxTypingDuration = 5 * time.Minute
+
 // StartTyping implements channels.TypingCapable.
 // It sends ChatAction(typing) immediately and then repeats every 4 seconds
 // (Telegram's typing indicator expires after ~5s) in a background goroutine.
 // The returned stop function is idempotent and cancels the goroutine.
+// The goroutine also exits automatically after maxTypingDuration if cancel is
+// never called (e.g. when the LLM fails or times out without publishing).
 func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
 	cid, threadID, err := parseTelegramChatID(chatID)
 	if err != nil {
@@ -319,12 +326,15 @@ func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(
 	_ = c.bot.SendChatAction(ctx, action)
 
 	typingCtx, cancel := context.WithCancel(ctx)
+	// Cap lifetime so the goroutine cannot run indefinitely if cancel is never called
+	maxCtx, maxCancel := context.WithTimeout(typingCtx, maxTypingDuration)
 	go func() {
+		defer maxCancel()
 		ticker := time.NewTicker(4 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-typingCtx.Done():
+			case <-maxCtx.Done():
 				return
 			case <-ticker.C:
 				a := tu.ChatAction(tu.ID(cid), telego.ChatActionTyping)

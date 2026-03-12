@@ -136,6 +136,19 @@ func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
 	}
 }
 
+// InvokeTypingStop invokes the registered typing stop function for the given channel and chatID.
+// It is safe to call even when no typing indicator is active (no-op).
+// Used by the agent loop to stop typing when processing completes (success, error, or panic),
+// regardless of whether an outbound message is published.
+func (m *Manager) InvokeTypingStop(channel, chatID string) {
+	key := channel + ":" + chatID
+	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
+		if entry, ok := v.(typingEntry); ok {
+			entry.stop()
+		}
+	}
+}
+
 // RecordReactionUndo registers a reaction undo function for later invocation.
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
