@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"io"
 
 	"github.com/gomarkdown/markdown"
 	mdhtml "github.com/gomarkdown/markdown/html"
@@ -726,9 +727,20 @@ func (c *MatrixChannel) downloadMedia(
 	reqCtx, cancel := context.WithTimeout(dlCtx, 20*time.Second)
 	defer cancel()
 
-	data, err := c.client.DownloadBytes(reqCtx, parsed)
+	const maxMediaSize = 100 * 1024 * 1024 // 100MB cap
+	resp, err := c.client.Download(reqCtx, parsed)
 	if err != nil {
 		return "", err
+	}
+	
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, int64(maxMediaSize)+1))
+	if err != nil {
+		return "", fmt.Errorf("read matrix media: %w", err)
+	}
+
+	if len(data) > maxMediaSize {
+    	return "", fmt.Errorf("media exceeds size limit of %d bytes", maxMediaSize)
 	}
 
 	// Encrypted attachments put URL in msgEvt.File and require client-side decryption.
