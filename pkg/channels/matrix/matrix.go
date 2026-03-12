@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"io"
 	"mime"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -726,19 +728,6 @@ func (c *MatrixChannel) downloadMedia(
 	reqCtx, cancel := context.WithTimeout(dlCtx, 20*time.Second)
 	defer cancel()
 
-	data, err := c.client.DownloadBytes(reqCtx, parsed)
-	if err != nil {
-		return "", err
-	}
-
-	// Encrypted attachments put URL in msgEvt.File and require client-side decryption.
-	if msgEvt != nil && msgEvt.File != nil && msgEvt.URL == "" {
-		err = msgEvt.File.DecryptInPlace(data)
-		if err != nil {
-			return "", fmt.Errorf("decrypt matrix media: %w", err)
-		}
-	}
-
 	label := matrixMediaLabel(msgEvt, mediaKind)
 	ext := matrixMediaExt(label, matrixContentType(msgEvt), mediaKind)
 	mediaDir, err := matrixMediaTempDir()
@@ -751,9 +740,38 @@ func (c *MatrixChannel) downloadMedia(
 	}
 	defer tmp.Close()
 
-	if _, err = tmp.Write(data); err != nil {
-		_ = os.Remove(tmp.Name())
-		return "", err
+	// Encrypted attachments require client-side decryption, must read fully into memory.
+	// For encrypted files, fall back to DownloadBytes.
+	isEncrypted := msgEvt != nil && msgEvt.File != nil && msgEvt.URL == ""
+	if isEncrypted {
+		data, err := c.client.DownloadBytes(reqCtx, parsed)
+		if err != nil {
+			return "", err
+		}
+		err = msgEvt.File.DecryptInPlace(data)
+		if err != nil {
+			return "", fmt.Errorf("decrypt matrix media: %w", err)
+		}
+		if _, err = tmp.Write(data); err != nil {
+			_ = os.Remove(tmp.Name())
+			return "", err
+		}
+	} else {
+		// Use streaming download for non-encrypted files to avoid loading entire file into memory.
+		resp, err := c.client.Download(reqCtx, parsed)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("download failed with status: %d", resp.StatusCode)
+		}
+
+		if _, err := io.Copy(tmp, resp.Body); err != nil {
+			_ = os.Remove(tmp.Name())
+			return "", err
+		}
 	}
 
 	return tmp.Name(), nil
