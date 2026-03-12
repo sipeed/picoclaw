@@ -81,6 +81,9 @@ var (
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
 	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
 
+	// urlPattern matches HTTP(S) URLs to exclude them from path safety checks.
+	urlPattern = regexp.MustCompile(`https?://[^\s\"']+`)
+
 	// safePaths are kernel pseudo-devices that are always safe to reference in
 	// commands, regardless of workspace restriction. They contain no user data
 	// and cannot cause destructive writes.
@@ -373,7 +376,11 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		matches := absolutePathPattern.FindAllString(cmd, -1)
+		// Remove URLs from the command before matching paths to avoid false positives.
+		// For example, "agent-browser open https://github.com" should not trigger
+		// a path safety check on the URL's path component.
+		cmdWithoutURLs := urlPattern.ReplaceAllString(cmd, "")
+		matches := absolutePathPattern.FindAllString(cmdWithoutURLs, -1)
 
 		for _, raw := range matches {
 			p, err := filepath.Abs(raw)
