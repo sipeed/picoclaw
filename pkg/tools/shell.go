@@ -336,35 +336,34 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		matches := absolutePathPattern.FindAllString(cmd, -1)
+		// Web URL schemes whose path components (starting with //) should be exempt
+		// from workspace sandbox checks. file: is intentionally excluded so that
+		// file:// URIs are still validated against the workspace boundary.
+		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
 
-		for _, raw := range matches {
+		matchIndices := absolutePathPattern.FindAllStringIndex(cmd, -1)
+
+		for _, loc := range matchIndices {
+			raw := cmd[loc[0]:loc[1]]
+
 			// Skip URL path components that look like they're from web URLs.
 			// When a URL like "https://github.com" is parsed, the regex captures
 			// "//github.com" as a match (the path portion after "https:").
-			// These double-slash prefixes indicate URL paths, not file system paths.
-			// However, we must NOT skip file:// URIs as they could escape the sandbox.
-			// Only skip if preceded by a web URL scheme (http:, https:, ftp:, etc.).
-			if strings.HasPrefix(raw, "//") {
-				// Check if this // path is preceded by a web URL scheme
-				// by looking for patterns like "http://", "https://", "ftp://" before the match
-				idx := strings.Index(cmd, raw)
-				if idx > 0 {
-					// Look for the scheme prefix (e.g., "https:") before the //
-					before := cmd[:idx]
-					// Check if it ends with a web URL scheme followed by colon
-					// Web schemes: http, https, ftp, ftps, sftp, ssh, git
-					webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
-					isWebURL := false
-					for _, scheme := range webSchemes {
-						if strings.HasSuffix(before, scheme) {
-							isWebURL = true
-							break
-						}
+			// Use the exact match position (loc[0]) so that duplicate //path substrings
+			// in the same command are each evaluated at their own position.
+			if strings.HasPrefix(raw, "//") && loc[0] > 0 {
+				before := cmd[:loc[0]]
+				isWebURL := false
+
+				for _, scheme := range webSchemes {
+					if strings.HasSuffix(before, scheme) {
+						isWebURL = true
+						break
 					}
-					if isWebURL {
-						continue
-					}
+				}
+
+				if isWebURL {
+					continue
 				}
 			}
 

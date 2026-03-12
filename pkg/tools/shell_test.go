@@ -515,3 +515,29 @@ func TestShellTool_FileURISandboxing(t *testing.T) {
 		}
 	}
 }
+
+// TestShellTool_URLBypassPrevented verifies that a command cannot bypass the workspace
+// sandbox by smuggling a real path after a URL that contains the same //path substring.
+// e.g. "echo https://etc/passwd && cat //etc/passwd" must still be blocked.
+func TestShellTool_URLBypassPrevented(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// The path //etc/passwd appears twice: once as the host part of an https URL
+	// and once as a real (escaped) absolute path. The guard must block the command
+	// because the second occurrence is a genuine out-of-workspace path.
+	blockedCommands := []string{
+		"echo https://etc/passwd && cat //etc/passwd",
+		"curl https://host/file && ls //etc",
+	}
+
+	for _, cmd := range blockedCommands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("bypass attempt should be blocked: %q\n  got: %s", cmd, result.ForLLM)
+		}
+	}
+}
