@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +18,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 const testToken = "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc"
@@ -38,6 +42,11 @@ func (s *stubCaller) Call(ctx context.Context, url string, data *ta.RequestData)
 // stubConstructor implements ta.RequestConstructor for testing.
 type stubConstructor struct{}
 
+type multipartCall struct {
+	Parameters map[string]string
+	FileSizes  map[string]int
+}
+
 func (s *stubConstructor) JSONRequest(parameters any) (*ta.RequestData, error) {
 	return &ta.RequestData{}, nil
 }
@@ -46,6 +55,36 @@ func (s *stubConstructor) MultipartRequest(
 	parameters map[string]string,
 	files map[string]ta.NamedReader,
 ) (*ta.RequestData, error) {
+	return &ta.RequestData{}, nil
+}
+
+type multipartRecordingConstructor struct {
+	stubConstructor
+	calls []multipartCall
+}
+
+func (s *multipartRecordingConstructor) MultipartRequest(
+	parameters map[string]string,
+	files map[string]ta.NamedReader,
+) (*ta.RequestData, error) {
+	call := multipartCall{
+		Parameters: make(map[string]string, len(parameters)),
+		FileSizes:  make(map[string]int, len(files)),
+	}
+	for k, v := range parameters {
+		call.Parameters[k] = v
+	}
+	for field, file := range files {
+		if file == nil {
+			continue
+		}
+		data, err := io.ReadAll(file)
+		if err != nil {
+			return nil, err
+		}
+		call.FileSizes[field] = len(data)
+	}
+	s.calls = append(s.calls, call)
 	return &ta.RequestData{}, nil
 }
 
@@ -60,11 +99,19 @@ func successResponse(t *testing.T) *ta.Response {
 
 // newTestChannel creates a TelegramChannel with a mocked bot for unit testing.
 func newTestChannel(t *testing.T, caller *stubCaller) *TelegramChannel {
+	return newTestChannelWithConstructor(t, caller, &stubConstructor{})
+}
+
+func newTestChannelWithConstructor(
+	t *testing.T,
+	caller *stubCaller,
+	constructor ta.RequestConstructor,
+) *TelegramChannel {
 	t.Helper()
 
 	bot, err := telego.NewBot(testToken,
 		telego.WithAPICaller(caller),
-		telego.WithRequestConstructor(&stubConstructor{}),
+		telego.WithRequestConstructor(constructor),
 		telego.WithDiscardLogger(),
 	)
 	require.NoError(t, err)
@@ -79,6 +126,92 @@ func newTestChannel(t *testing.T, caller *stubCaller) *TelegramChannel {
 		bot:         bot,
 		chatIDs:     make(map[string]int64),
 	}
+}
+
+func TestSendMedia_ImageFallbacksToDocumentOnInvalidDimensions(t *testing.T) {
+	constructor := &multipartRecordingConstructor{}
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			switch {
+			case strings.Contains(url, "sendPhoto"):
+				return nil, errors.New(`api: 400 "Bad Request: PHOTO_INVALID_DIMENSIONS"`)
+			case strings.Contains(url, "sendDocument"):
+				return successResponse(t), nil
+			default:
+				t.Fatalf("unexpected API call: %s", url)
+				return nil, nil
+			}
+		},
+	}
+	ch := newTestChannelWithConstructor(t, caller, constructor)
+
+	store := media.NewFileMediaStore()
+	ch.SetMediaStore(store)
+
+	tmpDir := t.TempDir()
+	localPath := filepath.Join(tmpDir, "woodstock-en-10s.png")
+	content := []byte("fake-png-content")
+	require.NoError(t, os.WriteFile(localPath, content, 0o644))
+
+	ref, err := store.Store(
+		localPath,
+		media.MediaMeta{Filename: "woodstock-en-10s.png", ContentType: "image/png"},
+		"scope-1",
+	)
+	require.NoError(t, err)
+
+	err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		ChatID: "12345",
+		Parts: []bus.MediaPart{{
+			Type:    "image",
+			Ref:     ref,
+			Caption: "caption",
+		}},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, caller.calls, 2)
+	assert.Contains(t, caller.calls[0].URL, "sendPhoto")
+	assert.Contains(t, caller.calls[1].URL, "sendDocument")
+	require.Len(t, constructor.calls, 2)
+	assert.Equal(t, len(content), constructor.calls[0].FileSizes["photo"])
+	assert.Equal(t, len(content), constructor.calls[1].FileSizes["document"])
+	assert.Equal(t, "caption", constructor.calls[1].Parameters["caption"])
+}
+
+func TestSendMedia_ImageNonDimensionErrorDoesNotFallback(t *testing.T) {
+	constructor := &multipartRecordingConstructor{}
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return nil, errors.New("api: 500 \"server exploded\"")
+		},
+	}
+	ch := newTestChannelWithConstructor(t, caller, constructor)
+
+	store := media.NewFileMediaStore()
+	ch.SetMediaStore(store)
+
+	tmpDir := t.TempDir()
+	localPath := filepath.Join(tmpDir, "image.png")
+	require.NoError(t, os.WriteFile(localPath, []byte("fake-png-content"), 0o644))
+
+	ref, err := store.Store(localPath, media.MediaMeta{Filename: "image.png", ContentType: "image/png"}, "scope-1")
+	require.NoError(t, err)
+
+	err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		ChatID: "12345",
+		Parts: []bus.MediaPart{{
+			Type: "image",
+			Ref:  ref,
+		}},
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, channels.ErrTemporary)
+	require.Len(t, caller.calls, 1)
+	assert.Contains(t, caller.calls[0].URL, "sendPhoto")
+	require.Len(t, constructor.calls, 1)
+	assert.NotContains(t, caller.calls[0].URL, "sendDocument")
 }
 
 func TestSend_EmptyContent(t *testing.T) {

@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -367,6 +368,20 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 				Caption:         part.Caption,
 			}
 			_, err = c.bot.SendPhoto(ctx, params)
+			if err != nil && strings.Contains(err.Error(), "PHOTO_INVALID_DIMENSIONS") {
+				if _, seekErr := file.Seek(0, io.SeekStart); seekErr != nil {
+					file.Close()
+					return fmt.Errorf("telegram rewind media after photo failure: %w", channels.ErrTemporary)
+				}
+
+				docParams := &telego.SendDocumentParams{
+					ChatID:          tu.ID(chatID),
+					MessageThreadID: threadID,
+					Document:        telego.InputFile{File: file},
+					Caption:         part.Caption,
+				}
+				_, err = c.bot.SendDocument(ctx, docParams)
+			}
 		case "audio":
 			params := &telego.SendAudioParams{
 				ChatID:          tu.ID(chatID),
