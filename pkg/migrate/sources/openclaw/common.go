@@ -4,7 +4,6 @@ var migrateableFiles = []string{
 	"AGENTS.md",
 	"SOUL.md",
 	"USER.md",
-	"TOOLS.md",
 	"HEARTBEAT.md",
 }
 
@@ -22,6 +21,7 @@ var supportedChannels = map[string]bool{
 	"qq":        true,
 	"dingtalk":  true,
 	"slack":     true,
+	"matrix":    true,
 	"line":      true,
 	"onebot":    true,
 	"wecom":     true,

@@ -382,3 +382,55 @@ func TestMigrateFromJSON_NonexistentDir(t *testing.T) {
 		t.Errorf("expected 0, got %d", count)
 	}
 }
+
+func TestMigrateFromJSON_SkipsMetaJSONFiles(t *testing.T) {
+	sessionsDir := t.TempDir()
+	store, err := NewJSONLStore(sessionsDir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore: %v", err)
+	}
+	ctx := context.Background()
+
+	if addErr := store.AddMessage(ctx, "agent:main:pico:direct:pico:test", "user", "keep me"); addErr != nil {
+		t.Fatalf("AddMessage: %v", addErr)
+	}
+	if summaryErr := store.SetSummary(ctx, "agent:main:pico:direct:pico:test", "keep summary"); summaryErr != nil {
+		t.Fatalf("SetSummary: %v", summaryErr)
+	}
+
+	metaPath := filepath.Join(sessionsDir, "agent_main_pico_direct_pico_test.meta.json")
+	if _, statErr := os.Stat(metaPath); statErr != nil {
+		t.Fatalf("meta file missing before migration: %v", statErr)
+	}
+
+	count, err := MigrateFromJSON(ctx, sessionsDir, store)
+	if err != nil {
+		t.Fatalf("MigrateFromJSON: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 migrated, got %d", count)
+	}
+
+	history, err := store.GetHistory(ctx, "agent:main:pico:direct:pico:test")
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(history) != 1 || history[0].Content != "keep me" {
+		t.Fatalf("history = %+v, want preserved single message", history)
+	}
+
+	summary, err := store.GetSummary(ctx, "agent:main:pico:direct:pico:test")
+	if err != nil {
+		t.Fatalf("GetSummary: %v", err)
+	}
+	if summary != "keep summary" {
+		t.Fatalf("summary = %q, want %q", summary, "keep summary")
+	}
+
+	if _, statErr := os.Stat(metaPath); statErr != nil {
+		t.Fatalf("meta file should remain in place: %v", statErr)
+	}
+	if _, statErr := os.Stat(metaPath + ".migrated"); !os.IsNotExist(statErr) {
+		t.Fatalf("meta file should not be renamed, stat err = %v", statErr)
+	}
+}

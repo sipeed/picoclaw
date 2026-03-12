@@ -32,7 +32,7 @@ func NewSessionManager(storage string) *SessionManager {
 	}
 
 	if storage != "" {
-		os.MkdirAll(storage, 0o755)
+		os.MkdirAll(storage, 0o700)
 		sm.loadSessions()
 	}
 
@@ -146,12 +146,15 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 }
 
 // sanitizeFilename converts a session key into a cross-platform safe filename.
-// Session keys use "channel:chatID" (e.g. "telegram:123456") but ':' is the
-// volume separator on Windows, so filepath.Base would misinterpret the key.
-// We replace it with '_'. The original key is preserved inside the JSON file,
-// so loadSessions still maps back to the right in-memory key.
+// Replaces ':' with '_' (session key separator) and '/' and '\' with '_' so
+// composite IDs (e.g. Telegram forum "chatID/threadID") do not create
+// subdirectories or break on Windows. The original key is preserved inside
+// the JSON file, so loadSessions still maps back to the right in-memory key.
 func sanitizeFilename(key string) string {
-	return strings.ReplaceAll(key, ":", "_")
+	s := strings.ReplaceAll(key, ":", "_")
+	s = strings.ReplaceAll(s, "/", "_")
+	s = strings.ReplaceAll(s, "\\", "_")
+	return s
 }
 
 func (sm *SessionManager) Save(key string) error {
@@ -162,10 +165,9 @@ func (sm *SessionManager) Save(key string) error {
 	filename := sanitizeFilename(key)
 
 	// filepath.IsLocal rejects empty names, "..", absolute paths, and
-	// OS-reserved device names (NUL, COM1 … on Windows).
-	// The extra checks reject "." and any directory separators so that
-	// the session file is always written directly inside sm.storage.
-	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, `/\`) {
+	// OS-reserved device names (NUL, COM1 … on Windows). sanitizeFilename
+	// already replaced '/' and '\' with '_', so no subdirs are created.
+	if filename == "." || !filepath.IsLocal(filename) {
 		return os.ErrInvalid
 	}
 
@@ -214,7 +216,7 @@ func (sm *SessionManager) Save(key string) error {
 		_ = tmpFile.Close()
 		return err
 	}
-	if err := tmpFile.Chmod(0o644); err != nil {
+	if err := tmpFile.Chmod(0o600); err != nil {
 		_ = tmpFile.Close()
 		return err
 	}
@@ -262,6 +264,12 @@ func (sm *SessionManager) loadSessions() error {
 		sm.sessions[session.Key] = &session
 	}
 
+	return nil
+}
+
+// Close is a no-op for the in-memory SessionManager; it satisfies the
+// SessionStore interface so callers can release resources uniformly.
+func (sm *SessionManager) Close() error {
 	return nil
 }
 

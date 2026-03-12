@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.jpg" alt="PicoClaw" width="512">
+  <img src="assets/logo.webp" alt="PicoClaw" width="512">
 
   <h1>PicoClaw: Ultra-Efficient AI Assistant in Go</h1>
 
@@ -194,6 +194,19 @@ docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
+### Launcher Mode (Web Console)
+
+The `launcher` image includes all three binaries (`picoclaw`, `picoclaw-launcher`, `picoclaw-launcher-tui`) and starts the web console by default, which provides a browser-based UI for configuration and chat.
+
+```bash
+docker compose -f docker/docker-compose.yml --profile launcher up -d
+```
+
+Open http://localhost:18800 in your browser. The launcher manages the gateway process automatically.
+
+> [!WARNING]
+> The web console does not yet support authentication. Avoid exposing it to the public internet.
+
 ### Agent Mode (One-shot)
 
 ```bash
@@ -214,9 +227,7 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 ### 🚀 Quick Start
 
 > [!TIP]
-> Set your API key in `~/.picoclaw/config.json`.
-> Get API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Web Search is **optional** - get free [Tavily API](https://tavily.com) (1000 free queries/month), [SearXNG](https://github.com/searxng/searxng) (free, self-hosted) or [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or use built-in auto fallback.
+> Set your API Key in `~/.picoclaw/config.json`. Get API Keys: [Volcengine (CodingPlan)](https://console.volcengine.com) (LLM) · [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM). Web search is optional — get a free [Tavily API](https://tavily.com) (1000 free queries/month) or [Brave Search API](https://brave.com/search/api) (2000 free queries/month).
 
 **1. Initialize**
 
@@ -231,7 +242,7 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model_name": "gpt4",
+      "model_name": "gpt-5.4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -239,8 +250,13 @@ picoclaw onboard
   },
   "model_list": [
     {
-      "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "your-api-key",
       "request_timeout": 300
     },
@@ -308,7 +324,7 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or WeCom
+Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, or WeCom
 
 > **Note**: All webhook-based channels (LINE, WeCom, etc.) are served on a single shared Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). There are no per-channel ports to configure. Note: Feishu uses WebSocket/SDK mode and does not use the shared HTTP webhook server.
 
@@ -317,6 +333,7 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or We
 | **Telegram** | Easy (just a token)                |
 | **Discord**  | Easy (bot token + intents)         |
 | **WhatsApp** | Easy (native: QR scan; or bridge URL) |
+| **Matrix**   | Medium (homeserver + bot access token) |
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
@@ -526,6 +543,40 @@ picoclaw gateway
 ```bash
 picoclaw gateway
 ```
+</details>
+
+<details>
+<summary><b>Matrix</b></summary>
+
+**1. Prepare bot account**
+
+* Use your preferred homeserver (e.g. `https://matrix.org` or self-hosted)
+* Create a bot user and obtain its access token
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "matrix": {
+      "enabled": true,
+      "homeserver": "https://matrix.org",
+      "user_id": "@your-bot:matrix.org",
+      "access_token": "YOUR_MATRIX_ACCESS_TOKEN",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**3. Run**
+
+```bash
+picoclaw gateway
+```
+
+For full options (`device_id`, `join_on_invite`, `group_trigger`, `placeholder`, `reasoning_channel_id`), see [Matrix Channel Configuration Guide](docs/channels/matrix/README.md).
+
 </details>
 
 <details>
@@ -739,7 +790,6 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 ├── HEARTBEAT.md      # Periodic task prompts (checked every 30 min)
 ├── IDENTITY.md       # Agent identity
 ├── SOUL.md           # Agent soul
-├── TOOLS.md          # Tool descriptions
 └── USER.md           # User preferences
 ```
 
@@ -983,9 +1033,11 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                            |
 | **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
-| **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://console.volcengine.com)                        |
+| **VolcEngine (Doubao)** | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://console.volcengine.com)                        |
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
+| **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Get Key](https://console.volcengine.com)                        |
 | **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
+| **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Get Key](https://longcat.chat/platform)                         |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
 
@@ -995,8 +1047,13 @@ This design also enables **multi-agent support** with flexible provider selectio
 {
   "model_list": [
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-openai-key"
     },
     {
@@ -1012,7 +1069,7 @@ This design also enables **multi-agent support** with flexible provider selectio
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-5.2"
+      "model": "gpt-5.4"
     }
   }
 }
@@ -1024,8 +1081,18 @@ This design also enables **multi-agent support** with flexible provider selectio
 
 ```json
 {
-  "model_name": "gpt-5.2",
-  "model": "openai/gpt-5.2",
+  "model_name": "gpt-5.4",
+  "model": "openai/gpt-5.4",
+  "api_key": "sk-..."
+}
+```
+
+**VolcEngine (Doubao)**
+
+```json
+{
+  "model_name": "ark-code-latest",
+  "model": "volcengine/ark-code-latest",
   "api_key": "sk-..."
 }
 ```
@@ -1104,14 +1171,14 @@ Configure multiple endpoints for the same model name—PicoClaw will automatical
 {
   "model_list": [
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
       "api_key": "sk-key1"
     },
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
       "api_key": "sk-key2"
     }
@@ -1451,8 +1518,16 @@ This happens when another instance of the bot is running. Make sure only one `pi
 | Service          | Free Tier                | Use Case                              |
 | ---------------- | ------------------------ | ------------------------------------- |
 | **OpenRouter**   | 200K tokens/month        | Multiple models (Claude, GPT-4, etc.) |
-| **Zhipu**        | 200K tokens/month        | Best for Chinese users                |
+| **Volcengine CodingPlan** | ¥9.9/first month | Best for Chinese users, multiple SOTA models (Doubao, DeepSeek, etc.) |
+| **Zhipu**        | 200K tokens/month        | Suitable for Chinese users                |
 | **Brave Search** | Paid ($5/1000 queries)   | Web search functionality              |
 | **SearXNG**      | Unlimited (self-hosted)  | Privacy-focused metasearch (70+ engines) |
 | **Groq**         | Free tier available      | Fast inference (Llama, Mixtral)       |
 | **Cerebras**     | Free tier available      | Fast inference (Llama, Qwen, etc.)    |
+| **LongCat**      | Up to 5M tokens/day      | Fast inference (free tier)            |
+
+---
+
+<div align="center">
+  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
+</div>

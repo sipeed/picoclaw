@@ -108,6 +108,55 @@ func TestProviderChat_ParsesToolCalls(t *testing.T) {
 	}
 }
 
+func TestProviderChat_ParsesToolCallsWithObjectArguments(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call_1",
+								"type": "function",
+								"function": map[string]any{
+									"name": "get_weather",
+									"arguments": map[string]any{
+										"city":   "SF",
+										"metric": true,
+									},
+								},
+							},
+						},
+					},
+					"finish_reason": "tool_calls",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "get_weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "get_weather")
+	}
+	if out.ToolCalls[0].Arguments["city"] != "SF" {
+		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want SF", out.ToolCalls[0].Arguments["city"])
+	}
+	if out.ToolCalls[0].Arguments["metric"] != true {
+		t.Fatalf("ToolCalls[0].Arguments[metric] = %v, want true", out.ToolCalls[0].Arguments["metric"])
+	}
+}
+
 func TestProviderChat_ParsesReasoningContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]any{
@@ -666,6 +715,111 @@ func TestSerializeMessages_MediaWithToolCallID(t *testing.T) {
 	// Content should be multipart array
 	if _, ok := msgs[0]["content"].([]any); !ok {
 		t.Fatalf("expected array content, got %T", msgs[0]["content"])
+	}
+}
+
+// chatWithCacheKey sets up a test server, sends a Chat request with prompt_cache_key,
+// and returns the decoded request body for assertion.
+func chatWithCacheKey(t *testing.T, apiBase string) map[string]any {
+	t.Helper()
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	p.apiBase = apiBase
+	p.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.URL, _ = url.Parse(server.URL + r.URL.Path)
+			return http.DefaultTransport.RoundTrip(r)
+		}),
+	}
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"test-model",
+		map[string]any{"prompt_cache_key": "agent-main"},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	return requestBody
+}
+
+func TestProviderChat_PromptCacheKeySentToOpenAI(t *testing.T) {
+	body := chatWithCacheKey(t, "https://api.openai.com/v1")
+	if body["prompt_cache_key"] != "agent-main" {
+		t.Fatalf("prompt_cache_key = %v, want %q", body["prompt_cache_key"], "agent-main")
+	}
+}
+
+func TestProviderChat_PromptCacheKeyOmittedForNonOpenAI(t *testing.T) {
+	tests := []struct {
+		name    string
+		apiBase string
+	}{
+		{"mistral", "https://api.mistral.ai/v1"},
+		{"gemini", "https://generativelanguage.googleapis.com/v1beta"},
+		{"deepseek", "https://api.deepseek.com/v1"},
+		{"groq", "https://api.groq.com/openai/v1"},
+		{"minimax", "https://api.minimaxi.com/v1"},
+		{"ollama_local", "http://localhost:11434/v1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := chatWithCacheKey(t, tt.apiBase)
+			if _, exists := body["prompt_cache_key"]; exists {
+				t.Fatalf("prompt_cache_key should NOT be sent to %s, but was included in request", tt.name)
+			}
+		})
+	}
+}
+
+func TestSupportsPromptCacheKey(t *testing.T) {
+	tests := []struct {
+		apiBase string
+		want    bool
+	}{
+		{"https://api.openai.com/v1", true},
+		{"https://api.openai.com/v1/", true},
+		{"https://myresource.openai.azure.com/openai/deployments/gpt-4", true},
+		{"https://eastus.openai.azure.com/v1", true},
+		{"https://api.mistral.ai/v1", false},
+		{"https://generativelanguage.googleapis.com/v1beta", false},
+		{"https://api.deepseek.com/v1", false},
+		{"https://api.groq.com/openai/v1", false},
+		{"http://localhost:11434/v1", false},
+		{"https://openrouter.ai/api/v1", false},
+		// Edge cases: proxy URLs with openai.com in path should NOT match
+		{"https://my-proxy.com/api.openai.com/v1", false},
+		{"https://proxy.example.com/openai.azure.com/v1", false},
+		// Malformed or empty
+		{"", false},
+		{"not-a-url", false},
+	}
+	for _, tt := range tests {
+		if got := supportsPromptCacheKey(tt.apiBase); got != tt.want {
+			t.Errorf("supportsPromptCacheKey(%q) = %v, want %v", tt.apiBase, got, tt.want)
+		}
 	}
 }
 

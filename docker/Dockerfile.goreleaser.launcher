@@ -1,0 +1,12 @@
+FROM alpine:3.21
+
+ARG TARGETPLATFORM
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY $TARGETPLATFORM/picoclaw /usr/local/bin/picoclaw
+COPY $TARGETPLATFORM/picoclaw-launcher /usr/local/bin/picoclaw-launcher
+COPY $TARGETPLATFORM/picoclaw-launcher-tui /usr/local/bin/picoclaw-launcher-tui
+
+ENTRYPOINT ["picoclaw-launcher"]
+CMD ["-public", "-no-browser"]
