@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"io"
 	"mime"
 	"net/url"
 	"os"
@@ -726,17 +727,23 @@ func (c *MatrixChannel) downloadMedia(
 	reqCtx, cancel := context.WithTimeout(dlCtx, 20*time.Second)
 	defer cancel()
 
-	data, err := c.client.DownloadBytes(reqCtx, parsed)
+	resp, err := c.client.Download(reqCtx, parsed)
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
+
+	reader := resp.Body
+	readerClose := func() error { return nil }
 
 	// Encrypted attachments put URL in msgEvt.File and require client-side decryption.
 	if msgEvt != nil && msgEvt.File != nil && msgEvt.URL == "" {
-		err = msgEvt.File.DecryptInPlace(data)
-		if err != nil {
+		if err = msgEvt.File.PrepareForDecryption(); err != nil {
 			return "", fmt.Errorf("decrypt matrix media: %w", err)
 		}
+		decryptReader := msgEvt.File.DecryptStream(resp.Body)
+		reader = decryptReader
+		readerClose = decryptReader.Close
 	}
 
 	label := matrixMediaLabel(msgEvt, mediaKind)
@@ -749,14 +756,28 @@ func (c *MatrixChannel) downloadMedia(
 	if err != nil {
 		return "", err
 	}
-	defer tmp.Close()
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		_ = tmp.Close()
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
 
-	if _, err = tmp.Write(data); err != nil {
-		_ = os.Remove(tmp.Name())
+	_, err = io.Copy(tmp, reader)
+	if err != nil {
+		return "", err
+	}
+	if err = readerClose(); err != nil {
+		return "", fmt.Errorf("decrypt matrix media: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
 		return "", err
 	}
 
-	return tmp.Name(), nil
+	cleanup = false
+	return tmpPath, nil
 }
 
 func matrixContentType(msgEvt *event.MessageEventContent) string {
