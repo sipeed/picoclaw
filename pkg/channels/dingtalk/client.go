@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -50,6 +51,7 @@ type Client struct {
 
 	expires time.Time
 	client  *http.Client
+	mu      sync.Mutex // protects token and expires
 }
 
 // NewClient creates a new Client instance with the provided client ID, client secret, and optional configurations.
@@ -69,7 +71,10 @@ func NewClient(clientID, clientSecret string, opts ...ClientOption) *Client {
 }
 
 // GetToken retrieves the access token, refreshing it if it has expired.
-func (c *Client) GetToken() (string, error) {
+func (c *Client) GetToken(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if time.Now().Before(c.expires) {
 		return c.token, nil
 	}
@@ -81,7 +86,7 @@ func (c *Client) GetToken() (string, error) {
 		Expires int64  `json:"expireIn"`
 		Token   string `json:"accessToken"`
 	}{}
-	err := c.httpRequest(context.Background(), http.MethodPost, accessToken, data, &resp)
+	err := c.httpRequest(ctx, http.MethodPost, accessToken, data, &resp)
 	if err != nil {
 		return "", err
 	}
@@ -91,24 +96,24 @@ func (c *Client) GetToken() (string, error) {
 }
 
 // BatchSendMessages sends a message to multiple users in a batch.
-func (c *Client) BatchSendMessages(ctx context.Context, msgType MessageType, userIds []string, content string) error {
+func (c *Client) BatchSendMessages(ctx context.Context, msgType MessageType, userIDs []string, content string) error {
 	body := map[string]any{
 		"robotCode": c.robotCode,
 		"msgKey":    msgType,
-		"userIds":   userIds,
+		"userIds":   userIDs,
 		"msgParam":  c.buildSendMessages(msgType, content),
 	}
 	return c.httpRequest(ctx, http.MethodPost, batchSendMessages, body, nil)
 }
 
-// CardStreaming updates the content of a card instance identified by cardInstanceId.
-func (c *Client) CardStreaming(ctx context.Context, cardInstanceId, content string) error {
+// CardStreaming updates the content of a card instance identified by cardInstanceID.
+func (c *Client) CardStreaming(ctx context.Context, cardInstanceID, content string) error {
 	id, err := uuid.NewUUID()
 	if err != nil {
 		return err
 	}
 	body := map[string]any{
-		"outTrackId": cardInstanceId,
+		"outTrackId": cardInstanceID,
 		"guid":       id.String(),
 		"key":        c.cardTemplateContentKey,
 		"content":    content,
@@ -118,7 +123,7 @@ func (c *Client) CardStreaming(ctx context.Context, cardInstanceId, content stri
 }
 
 // CardCreateAndDeliver creates a card instance and delivers it to the user or group.
-// It returns the outTrackId of the created card instance, which can be used for subsequent updates via CardStreaming.
+// It returns the outTrackID of the created card instance, which can be used for subsequent updates via CardStreaming.
 // If the chatbot is in a group conversation, the card will be delivered to the group; otherwise, it will be delivered to the user.
 // <a href="https://open.dingtalk.com/document/development/create-and-deliver-cards">Card Delivery API Documentation</a>
 func (c *Client) CardCreateAndDeliver(ctx context.Context, chatbot *chatbot.BotCallbackDataModel) (string, error) {
@@ -127,7 +132,7 @@ func (c *Client) CardCreateAndDeliver(ctx context.Context, chatbot *chatbot.BotC
 	}
 	var (
 		group                   = chatbot.ConversationType == "2"
-		openSpaceId             = "dtv1.card//IM_ROBOT." + chatbot.SenderStaffId
+		openSpaceID             = "dtv1.card//IM_ROBOT." + chatbot.SenderStaffId
 		imRobotOpenDeliverModel = map[string]any{
 			"spaceType": "IM_ROBOT",
 		}
@@ -138,7 +143,7 @@ func (c *Client) CardCreateAndDeliver(ctx context.Context, chatbot *chatbot.BotC
 			"supportForward": true,
 		}
 		imGroupOpenDeliverModel = map[string]any{
-			"robotCode": c.clientID,
+			"robotCode": c.robotCode,
 		}
 	)
 
@@ -147,16 +152,16 @@ func (c *Client) CardCreateAndDeliver(ctx context.Context, chatbot *chatbot.BotC
 		return "", err
 	}
 	if group {
-		openSpaceId = "dtv1.card//IM_GROUP." + chatbot.ConversationId
+		openSpaceID = "dtv1.card//IM_GROUP." + chatbot.ConversationId
 		imRobotOpenDeliverModel = map[string]any{}
-		imGroupOpenDeliverModel["robotCode"] = c.clientID
+		imGroupOpenDeliverModel["robotCode"] = c.robotCode
 	}
 
 	body := map[string]any{
 		"cardTemplateId":          c.cardTemplateID,
 		"outTrackId":              id.String(),
 		"cardData":                map[string]any{},
-		"openSpaceId":             openSpaceId,
+		"openSpaceId":             openSpaceID,
 		"userIdType":              1,
 		"imGroupOpenDeliverModel": imGroupOpenDeliverModel,
 		"imGroupOpenSpaceModel":   imGroupOpenSpaceModel,
@@ -181,13 +186,13 @@ func (c *Client) CardCreateAndDeliver(ctx context.Context, chatbot *chatbot.BotC
 	resp := struct {
 		Result struct {
 			DeliverResults []struct {
-				SpaceId   string `json:"spaceId"`
+				SpaceID   string `json:"spaceId"`
 				SpaceType string `json:"spaceType"`
 				Success   bool   `json:"success"`
-				CarrierId string `json:"carrierId"`
+				CarrierID string `json:"carrierId"`
 				ErrorMsg  string `json:"errorMsg"`
 			} `json:"deliverResults"`
-			OutTrackId string `json:"outTrackId"`
+			OutTrackID string `json:"outTrackId"`
 		} `json:"result"`
 		Success bool `json:"success"`
 	}{}
@@ -195,17 +200,17 @@ func (c *Client) CardCreateAndDeliver(ctx context.Context, chatbot *chatbot.BotC
 		return "", err
 	}
 	if resp.Success {
-		return resp.Result.OutTrackId, nil
+		return resp.Result.OutTrackID, nil
 	}
 	return "", errors.New("failed to create and deliver card instance")
 }
 
 // PrivateChatMessages sends a message to a user in a private chat.
-func (c *Client) PrivateChatMessages(ctx context.Context, msgType MessageType, openConversationId, content string) error {
+func (c *Client) PrivateChatMessages(ctx context.Context, msgType MessageType, openConversationID, content string) error {
 	body := map[string]any{
 		"msgKey":             msgType,
 		"msgParam":           c.buildSendMessages(msgType, content),
-		"openConversationId": openConversationId,
+		"openConversationId": openConversationID,
 		"robotCode":          c.robotCode,
 	}
 	return c.httpRequest(ctx, http.MethodPost, privateChatMessages, body, nil)
@@ -239,7 +244,7 @@ func (c *Client) httpRequest(ctx context.Context, method, path string, body inte
 	if path == accessToken {
 		token = ""
 	} else {
-		token, err = c.GetToken()
+		token, err = c.GetToken(ctx)
 		if err != nil {
 			return err
 		}
