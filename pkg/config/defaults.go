@@ -461,7 +461,7 @@ func DefaultConfig() *Config {
 			Message: ToolConfig{
 				Enabled: true,
 			},
-			ReadFile: ToolConfig{
+			ReadFile: ReadFileToolConfig{
 				Enabled: true,
 			},
 			Spawn: ToolConfig{
