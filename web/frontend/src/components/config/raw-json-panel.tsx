@@ -147,7 +147,8 @@ export function RawJsonPanel() {
                   setEditorValue(e.target.value)
                   setIsDirty(true)
                 }}
-                className="h-[calc(100vh-20rem)] min-h-[200px] w-full resize-none overflow-auto border-0 bg-transparent px-4 py-3 font-mono text-sm shadow-none focus-visible:ring-0"
+                wrap="off"
+                className="min-h-[200px] resize-none overflow-x-auto border-0 bg-transparent px-4 py-3 font-mono text-sm whitespace-pre shadow-none [overflow-wrap:normal] focus-visible:ring-0"
                 placeholder={t("pages.config.json_placeholder")}
               />
             </div>
