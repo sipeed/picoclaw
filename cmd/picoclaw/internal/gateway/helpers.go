@@ -41,6 +41,16 @@ import (
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
+// gatewayServices holds references to all running services
+type gatewayServices struct {
+	CronService      *cron.CronService
+	HeartbeatService *heartbeat.HeartbeatService
+	MediaStore       media.MediaStore
+	ChannelManager   *channels.Manager
+	DeviceService    *devices.Service
+	HealthServer     *health.Server
+}
+
 func gatewayCmd(debug bool) error {
 	if debug {
 		logger.SetLevel(logger.DEBUG)
@@ -84,71 +94,10 @@ func gatewayCmd(debug bool) error {
 			"skills_available": skillsInfo["available"],
 		})
 
-	// Setup cron tool and service
-	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
-	cronService := setupCronTool(
-		agentLoop,
-		msgBus,
-		cfg.WorkspacePath(),
-		cfg.Agents.Defaults.RestrictToWorkspace,
-		execTimeout,
-		cfg,
-	)
-
-	heartbeatService := heartbeat.NewHeartbeatService(
-		cfg.WorkspacePath(),
-		cfg.Heartbeat.Interval,
-		cfg.Heartbeat.Enabled,
-	)
-	heartbeatService.SetBus(msgBus)
-	heartbeatService.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
-		// Use cli:direct as fallback if no valid channel
-		if channel == "" || chatID == "" {
-			channel, chatID = "cli", "direct"
-		}
-		// Use ProcessHeartbeat - no session history, each heartbeat is independent
-		var response string
-		response, err = agentLoop.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
-		if err != nil {
-			return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
-		}
-		if response == "HEARTBEAT_OK" {
-			return tools.SilentResult("Heartbeat OK")
-		}
-		// For heartbeat, always return silent - the subagent result will be
-		// sent to user via processSystemMessage when the async task completes
-		return tools.SilentResult(response)
-	})
-
-	// Create media store for file lifecycle management with TTL cleanup
-	mediaStore := media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
-		Enabled:  cfg.Tools.MediaCleanup.Enabled,
-		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
-		Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
-	})
-	mediaStore.Start()
-
-	channelManager, err := channels.NewManager(cfg, msgBus, mediaStore)
+	// Setup and start all services
+	services, err := setupAndStartServices(cfg, agentLoop, msgBus)
 	if err != nil {
-		mediaStore.Stop()
-		return fmt.Errorf("error creating channel manager: %w", err)
-	}
-
-	// Inject channel manager and media store into agent loop
-	agentLoop.SetChannelManager(channelManager)
-	agentLoop.SetMediaStore(mediaStore)
-
-	// Wire up voice transcription if a supported provider is configured.
-	if transcriber := voice.DetectTranscriber(cfg); transcriber != nil {
-		agentLoop.SetTranscriber(transcriber)
-		logger.InfoCF("voice", "Transcription enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
-	}
-
-	enabledChannels := channelManager.GetEnabledChannels()
-	if len(enabledChannels) > 0 {
-		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
-	} else {
-		fmt.Println("⚠ Warning: No channels enabled")
+		return err
 	}
 
 	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
@@ -156,40 +105,6 @@ func gatewayCmd(debug bool) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	if err := cronService.Start(); err != nil {
-		fmt.Printf("Error starting cron service: %v\n", err)
-	}
-	fmt.Println("✓ Cron service started")
-
-	if err := heartbeatService.Start(); err != nil {
-		fmt.Printf("Error starting heartbeat service: %v\n", err)
-	}
-	fmt.Println("✓ Heartbeat service started")
-
-	stateManager := state.NewManager(cfg.WorkspacePath())
-	deviceService := devices.NewService(devices.Config{
-		Enabled:    cfg.Devices.Enabled,
-		MonitorUSB: cfg.Devices.MonitorUSB,
-	}, stateManager)
-	deviceService.SetBus(msgBus)
-	if err := deviceService.Start(ctx); err != nil {
-		fmt.Printf("Error starting device service: %v\n", err)
-	} else if cfg.Devices.Enabled {
-		fmt.Println("✓ Device event service started")
-	}
-
-	// Setup shared HTTP server with health endpoints and webhook handlers
-	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
-	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
-	channelManager.SetupHTTPServer(addr, healthServer)
-
-	if err := channelManager.StartAll(ctx); err != nil {
-		fmt.Printf("Error starting channels: %v\n", err)
-		return err
-	}
-
-	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
 
 	go agentLoop.Run(ctx)
 
@@ -205,42 +120,195 @@ func gatewayCmd(debug bool) error {
 		select {
 		case <-sigChan:
 			logger.Info("Shutting down...")
-			if cp, ok := provider.(providers.StatefulProvider); ok {
-				cp.Close()
-			}
-			cancel()
-			msgBus.Close()
-
-			// Use a fresh context with timeout for graceful shutdown,
-			// since the original ctx is already canceled.
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer shutdownCancel()
-
-			channelManager.StopAll(shutdownCtx)
-			deviceService.Stop()
-			heartbeatService.Stop()
-			cronService.Stop()
-			mediaStore.Stop()
-			agentLoop.Stop()
-			agentLoop.Close()
-			logger.Info("✓ Gateway stopped")
-
+			shutdownGateway(services, agentLoop, provider, true)
 			return nil
 
 		case newCfg := <-configReloadChan:
-			handleConfigReload(agentLoop, newCfg, &provider)
+			err := handleConfigReload(ctx, agentLoop, newCfg, &provider, services, msgBus)
+			if err != nil {
+				logger.Errorf("Config reload failed: %v", err)
+			}
 		}
 	}
 }
 
-// handleConfigReload handles config file reload in a dedicated function.
-// Extracting this improves the semantics of context cancellation,
-// avoiding defer in the select-case.
+// setupAndStartServices initializes and starts all services
+func setupAndStartServices(
+	cfg *config.Config,
+	agentLoop *agent.AgentLoop,
+	msgBus *bus.MessageBus,
+) (*gatewayServices, error) {
+	services := &gatewayServices{}
+
+	// Setup cron tool and service
+	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
+	services.CronService = setupCronTool(
+		agentLoop,
+		msgBus,
+		cfg.WorkspacePath(),
+		cfg.Agents.Defaults.RestrictToWorkspace,
+		execTimeout,
+		cfg,
+	)
+	if err := services.CronService.Start(); err != nil {
+		return nil, fmt.Errorf("error starting cron service: %w", err)
+	}
+	fmt.Println("✓ Cron service started")
+
+	// Setup heartbeat service
+	services.HeartbeatService = heartbeat.NewHeartbeatService(
+		cfg.WorkspacePath(),
+		cfg.Heartbeat.Interval,
+		cfg.Heartbeat.Enabled,
+	)
+	services.HeartbeatService.SetBus(msgBus)
+	services.HeartbeatService.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
+		// Use cli:direct as fallback if no valid channel
+		if channel == "" || chatID == "" {
+			channel, chatID = "cli", "direct"
+		}
+		// Use ProcessHeartbeat - no session history, each heartbeat is independent
+		var response string
+		var err error
+		response, err = agentLoop.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
+		if err != nil {
+			return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
+		}
+		if response == "HEARTBEAT_OK" {
+			return tools.SilentResult("Heartbeat OK")
+		}
+		// For heartbeat, always return silent - the subagent result will be
+		// sent to user via processSystemMessage when the async task completes
+		return tools.SilentResult(response)
+	})
+	if err := services.HeartbeatService.Start(); err != nil {
+		return nil, fmt.Errorf("error starting heartbeat service: %w", err)
+	}
+	fmt.Println("✓ Heartbeat service started")
+
+	// Create media store for file lifecycle management with TTL cleanup
+	services.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
+		Enabled:  cfg.Tools.MediaCleanup.Enabled,
+		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
+		Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
+	})
+	// Start the media store if it's a FileMediaStore with cleanup
+	if fms, ok := services.MediaStore.(*media.FileMediaStore); ok {
+		fms.Start()
+	}
+
+	// Create channel manager
+	var err error
+	services.ChannelManager, err = channels.NewManager(cfg, msgBus, services.MediaStore)
+	if err != nil {
+		// Stop the media store if it's a FileMediaStore with cleanup
+		if fms, ok := services.MediaStore.(*media.FileMediaStore); ok {
+			fms.Stop()
+		}
+		return nil, fmt.Errorf("error creating channel manager: %w", err)
+	}
+
+	// Inject channel manager and media store into agent loop
+	agentLoop.SetChannelManager(services.ChannelManager)
+	agentLoop.SetMediaStore(services.MediaStore)
+
+	// Wire up voice transcription if a supported provider is configured.
+	if transcriber := voice.DetectTranscriber(cfg); transcriber != nil {
+		agentLoop.SetTranscriber(transcriber)
+		logger.InfoCF("voice", "Transcription enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
+	}
+
+	enabledChannels := services.ChannelManager.GetEnabledChannels()
+	if len(enabledChannels) > 0 {
+		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
+	} else {
+		fmt.Println("⚠ Warning: No channels enabled")
+	}
+
+	// Setup shared HTTP server with health endpoints and webhook handlers
+	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
+	services.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	services.ChannelManager.SetupHTTPServer(addr, services.HealthServer)
+
+	if err := services.ChannelManager.StartAll(context.Background()); err != nil {
+		return nil, fmt.Errorf("error starting channels: %w", err)
+	}
+
+	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+
+	// Setup state manager and device service
+	stateManager := state.NewManager(cfg.WorkspacePath())
+	services.DeviceService = devices.NewService(devices.Config{
+		Enabled:    cfg.Devices.Enabled,
+		MonitorUSB: cfg.Devices.MonitorUSB,
+	}, stateManager)
+	services.DeviceService.SetBus(msgBus)
+	if err := services.DeviceService.Start(context.Background()); err != nil {
+		logger.ErrorCF("device", "Error starting device service", map[string]any{"error": err.Error()})
+	} else if cfg.Devices.Enabled {
+		fmt.Println("✓ Device event service started")
+	}
+
+	return services, nil
+}
+
+// stopAndCleanupServices stops all services and cleans up resources
+func stopAndCleanupServices(
+	services *gatewayServices,
+	shutdownTimeout time.Duration,
+) {
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer shutdownCancel()
+
+	if services.ChannelManager != nil {
+		services.ChannelManager.StopAll(shutdownCtx)
+	}
+	if services.DeviceService != nil {
+		services.DeviceService.Stop()
+	}
+	if services.HeartbeatService != nil {
+		services.HeartbeatService.Stop()
+	}
+	if services.CronService != nil {
+		services.CronService.Stop()
+	}
+	if services.MediaStore != nil {
+		// Stop the media store if it's a FileMediaStore with cleanup
+		if fms, ok := services.MediaStore.(*media.FileMediaStore); ok {
+			fms.Stop()
+		}
+	}
+}
+
+// shutdownGateway performs a complete gateway shutdown
+func shutdownGateway(
+	services *gatewayServices,
+	agentLoop *agent.AgentLoop,
+	provider providers.LLMProvider,
+	fullShutdown bool,
+) {
+	if cp, ok := provider.(providers.StatefulProvider); ok && fullShutdown {
+		cp.Close()
+	}
+
+	stopAndCleanupServices(services, 15*time.Second)
+
+	agentLoop.Stop()
+	agentLoop.Close()
+
+	logger.Info("✓ Gateway stopped")
+}
+
+// handleConfigReload handles config file reload by stopping all services,
+// reloading the provider and config, and restarting services with the new config.
 func handleConfigReload(
+	ctx context.Context,
 	al *agent.AgentLoop,
 	newCfg *config.Config,
 	providerRef *providers.LLMProvider,
-) {
+	services *gatewayServices,
+	msgBus *bus.MessageBus,
+) error {
 	logger.Info("🔄 Config file changed, reloading...")
 
 	newModel := newCfg.Agents.Defaults.ModelName
@@ -250,13 +318,21 @@ func handleConfigReload(
 
 	logger.Infof(" New model is '%s', recreating provider...", newModel)
 
+	// Stop all services before reloading
+	logger.Info("  Stopping all services...")
+	stopAndCleanupServices(services, 30*time.Second)
+
 	// Create new provider from updated config first to ensure validity
 	// This will use the correct API key and settings from newCfg.ModelList
 	newProvider, newModelID, err := providers.CreateProvider(newCfg)
 	if err != nil {
 		logger.Errorf("  ⚠ Error creating new provider: %v", err)
-		logger.Warn("  Continuing with old provider")
-		return
+		logger.Warn("  Attempting to restart services with old provider and config...")
+		// Try to restart services with old configuration
+		if restartErr := restartServices(ctx, al, services, msgBus); restartErr != nil {
+			logger.Errorf("  ⚠ Failed to restart services: %v", restartErr)
+		}
+		return fmt.Errorf("error creating new provider: %w", err)
 	}
 
 	if newModelID != "" {
@@ -266,26 +342,158 @@ func handleConfigReload(
 	// Use the atomic reload method on AgentLoop to safely swap provider and config.
 	// This handles locking internally to prevent races with in-flight LLM calls
 	// and concurrent reads of registry/config while the swap occurs.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	reloadCtx, reloadCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer reloadCancel()
 
-	if err := al.ReloadProviderAndConfig(ctx, newProvider, newCfg); err != nil {
+	if err := al.ReloadProviderAndConfig(reloadCtx, newProvider, newCfg); err != nil {
 		logger.Errorf("  ⚠ Error reloading agent loop: %v", err)
 		// Close the newly created provider since it wasn't adopted
 		if cp, ok := newProvider.(providers.StatefulProvider); ok {
 			cp.Close()
 		}
-		logger.Warn("  Continuing with old provider and config")
-		return
+		logger.Warn("  Attempting to restart services with old provider and config...")
+		if restartErr := restartServices(ctx, al, services, msgBus); restartErr != nil {
+			logger.Errorf("  ⚠ Failed to restart services: %v", restartErr)
+		}
+		return fmt.Errorf("error reloading agent loop: %w", err)
 	}
 
-	// Update local references only after successful atomic reload
-	if cp, ok := (*providerRef).(providers.StatefulProvider); ok {
-		cp.Close()
-	}
+	// Update local provider reference only after successful atomic reload
 	*providerRef = newProvider
 
-	logger.Info("  ✓ Provider and configuration reloaded successfully (thread-safe)")
+	// Restart all services with new config
+	logger.Info("  Restarting all services with new configuration...")
+	if err := restartServices(ctx, al, services, msgBus); err != nil {
+		logger.Errorf("  ⚠ Error restarting services: %v", err)
+		return fmt.Errorf("error restarting services: %w", err)
+	}
+
+	logger.Info("  ✓ Provider, configuration, and services reloaded successfully (thread-safe)")
+	return nil
+}
+
+// restartServices restarts all services after a config reload
+func restartServices(
+	ctx context.Context,
+	al *agent.AgentLoop,
+	services *gatewayServices,
+	msgBus *bus.MessageBus,
+) error {
+	// Get current config from agent loop (which has been updated if this is a reload)
+	cfg := al.GetConfig()
+
+	// Re-create and start cron service with new config
+	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
+	services.CronService = setupCronTool(
+		al,
+		msgBus,
+		cfg.WorkspacePath(),
+		cfg.Agents.Defaults.RestrictToWorkspace,
+		execTimeout,
+		cfg,
+	)
+	if err := services.CronService.Start(); err != nil {
+		return fmt.Errorf("error restarting cron service: %w", err)
+	}
+	fmt.Println("  ✓ Cron service restarted")
+
+	// Re-create and start heartbeat service with new config
+	services.HeartbeatService = heartbeat.NewHeartbeatService(
+		cfg.WorkspacePath(),
+		cfg.Heartbeat.Interval,
+		cfg.Heartbeat.Enabled,
+	)
+	services.HeartbeatService.SetBus(msgBus)
+	services.HeartbeatService.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
+		if channel == "" || chatID == "" {
+			channel, chatID = "cli", "direct"
+		}
+		var response string
+		var err error
+		response, err = al.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
+		if err != nil {
+			return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
+		}
+		if response == "HEARTBEAT_OK" {
+			return tools.SilentResult("Heartbeat OK")
+		}
+		return tools.SilentResult(response)
+	})
+	if err := services.HeartbeatService.Start(); err != nil {
+		return fmt.Errorf("error restarting heartbeat service: %w", err)
+	}
+	fmt.Println("  ✓ Heartbeat service restarted")
+
+	// Stop the old media store before creating a new one
+	if fms, ok := services.MediaStore.(*media.FileMediaStore); ok {
+		fms.Stop()
+	}
+
+	// Re-create media store with new config
+	services.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
+		Enabled:  cfg.Tools.MediaCleanup.Enabled,
+		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
+		Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
+	})
+	// Start the media store if it's a FileMediaStore with cleanup
+	if fms, ok := services.MediaStore.(*media.FileMediaStore); ok {
+		fms.Start()
+	}
+	al.SetMediaStore(services.MediaStore)
+
+	// Re-create channel manager with new config
+	var err error
+	services.ChannelManager, err = channels.NewManager(cfg, msgBus, services.MediaStore)
+	if err != nil {
+		// Stop the media store if it's a FileMediaStore with cleanup
+		if fms, ok := services.MediaStore.(*media.FileMediaStore); ok {
+			fms.Stop()
+		}
+		return fmt.Errorf("error recreating channel manager: %w", err)
+	}
+	al.SetChannelManager(services.ChannelManager)
+
+	enabledChannels := services.ChannelManager.GetEnabledChannels()
+	if len(enabledChannels) > 0 {
+		fmt.Printf("  ✓ Channels enabled: %s\n", enabledChannels)
+	} else {
+		fmt.Println("  ⚠ Warning: No channels enabled")
+	}
+
+	// Setup HTTP server with new config
+	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
+	services.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	services.ChannelManager.SetupHTTPServer(addr, services.HealthServer)
+
+	if err := services.ChannelManager.StartAll(ctx); err != nil {
+		return fmt.Errorf("error restarting channels: %w", err)
+	}
+	fmt.Printf(
+		"  ✓ Channels restarted, health endpoints at http://%s:%d/health and ready\n",
+		cfg.Gateway.Host,
+		cfg.Gateway.Port,
+	)
+
+	// Re-create device service with new config
+	stateManager := state.NewManager(cfg.WorkspacePath())
+	services.DeviceService = devices.NewService(devices.Config{
+		Enabled:    cfg.Devices.Enabled,
+		MonitorUSB: cfg.Devices.MonitorUSB,
+	}, stateManager)
+	services.DeviceService.SetBus(msgBus)
+	if err := services.DeviceService.Start(ctx); err != nil {
+		logger.WarnCF("device", "Failed to restart device service", map[string]any{"error": err.Error()})
+	} else if cfg.Devices.Enabled {
+		fmt.Println("  ✓ Device event service restarted")
+	}
+
+	// Wire up voice transcription with new config
+	if transcriber := voice.DetectTranscriber(cfg); transcriber != nil {
+		al.SetTranscriber(transcriber)
+		logger.InfoCF("voice", "Transcription enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
+	}
+
+	return nil
 }
 
 // setupConfigWatcherPolling sets up a simple polling-based config file watcher
