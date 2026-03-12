@@ -1,6 +1,7 @@
 package main
 
 import (
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -29,5 +30,18 @@ func TestMissingAssetStays404(t *testing.T) {
 
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+}
+
+func TestRegisterEmbedRoutesRegistersSVGContentType(t *testing.T) {
+	if err := mime.AddExtensionType(".svg", "image/svg"); err != nil {
+		t.Fatalf("AddExtensionType() seed error: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	registerEmbedRoutes(mux)
+
+	if got := mime.TypeByExtension(".svg"); got != "image/svg+xml" {
+		t.Fatalf("TypeByExtension(.svg) = %q, want %q", got, "image/svg+xml")
 	}
 }
