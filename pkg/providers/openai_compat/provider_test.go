@@ -824,6 +824,51 @@ func TestSupportsPromptCacheKey(t *testing.T) {
 	}
 }
 
+func TestSerializeMessages_OmitsContentWhenEmptyAndToolCallsPresent(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{
+			Role:    "assistant",
+			Content: "",
+			ToolCalls: []protocoltypes.ToolCall{
+				{ID: "call_1", Type: "function", Function: &protocoltypes.FunctionCall{Name: "fn", Arguments: "{}"}},
+			},
+		},
+	}
+	result := serializeMessages(messages)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	if _, ok := msgs[0]["content"]; ok {
+		t.Fatalf("content should be omitted when empty and tool_calls present, got %v", msgs[0]["content"])
+	}
+	if msgs[0]["tool_calls"] == nil {
+		t.Fatal("tool_calls should be present")
+	}
+}
+
+func TestSerializeMessages_IncludesContentWhenNonEmptyWithToolCalls(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{
+			Role:    "assistant",
+			Content: "thinking...",
+			ToolCalls: []protocoltypes.ToolCall{
+				{ID: "call_1", Type: "function", Function: &protocoltypes.FunctionCall{Name: "fn", Arguments: "{}"}},
+			},
+		},
+	}
+	result := serializeMessages(messages)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	if msgs[0]["content"] != "thinking..." {
+		t.Fatalf("content should be preserved when non-empty, got %v", msgs[0]["content"])
+	}
+}
+
 func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{
