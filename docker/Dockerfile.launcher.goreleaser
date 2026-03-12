@@ -1,0 +1,14 @@
+FROM alpine:3.21
+
+ARG TARGETPLATFORM
+
+RUN apk add --no-cache ca-certificates tzdata curl
+
+COPY $TARGETPLATFORM/picoclaw-launcher /usr/local/bin/picoclaw-launcher
+COPY docker/entrypoint-launcher.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 8080
+
+ENTRYPOINT ["/entrypoint.sh"]

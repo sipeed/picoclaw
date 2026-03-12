@@ -125,6 +125,23 @@ dockers_v2:
       - linux/arm64
       - linux/riscv64
 
+  - id: picoclaw-launcher
+    dockerfile: docker/Dockerfile.launcher.goreleaser
+    extra_files:
+      - docker/entrypoint-launcher.sh
+    ids:
+      - picoclaw-launcher
+    images:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
+      - '{{ if not (isEnvSet "NIGHTLY_BUILD") }}docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}{{ end }}'
+    tags:
+      - "launcher-{{ .Tag }}"
+      - '{{ if isEnvSet "NIGHTLY_BUILD" }}launcher-nightly{{ else }}launcher{{ end }}'
+    platforms:
+      - linux/amd64
+      - linux/arm64
+      - linux/riscv64
+
 notarize:
   macos:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'

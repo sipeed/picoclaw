@@ -32,3 +32,23 @@ services:
     #  - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/root/.picoclaw
+
+  # ─────────────────────────────────────────────
+  # PicoClaw Launcher (Web Console)
+  #   docker compose -f docker/docker-compose.yml --profile launcher up picoclaw-launcher
+  # ─────────────────────────────────────────────
+  picoclaw-launcher:
+    image: docker.io/sipeed/picoclaw:launcher
+    container_name: picoclaw-launcher
+    restart: on-failure
+    profiles:
+      - launcher
+    ports:
+      - "8080:8080"
+    # Uncomment to access host network; leave commented unless needed.
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/home/picoclaw/.picoclaw
+    environment:
+      - PICOCLAW_HOME=/home/picoclaw/.picoclaw
