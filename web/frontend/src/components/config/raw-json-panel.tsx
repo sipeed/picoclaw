@@ -22,7 +22,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 
 export function RawJsonPanel() {
@@ -142,18 +141,16 @@ export function RawJsonPanel() {
               </div>
             )}
             <div className="bg-muted/30 relative rounded-lg border">
-              <ScrollArea className="h-[calc(100vh-20rem)] min-h-[200px]">
-                <Textarea
-                  value={effectiveEditorValue}
-                  onChange={(e) => {
-                    setEditorValue(e.target.value)
-                    setIsDirty(true)
-                  }}
-                  wrap="off"
-                  className="min-h-[200px] resize-none overflow-x-auto border-0 bg-transparent px-4 py-3 font-mono text-sm whitespace-pre shadow-none [overflow-wrap:normal] focus-visible:ring-0"
-                  placeholder={t("pages.config.json_placeholder")}
-                />
-              </ScrollArea>
+              <Textarea
+                value={effectiveEditorValue}
+                onChange={(e) => {
+                  setEditorValue(e.target.value)
+                  setIsDirty(true)
+                }}
+                wrap="off"
+                className="min-h-[200px] resize-none overflow-x-auto border-0 bg-transparent px-4 py-3 font-mono text-sm whitespace-pre shadow-none [overflow-wrap:normal] focus-visible:ring-0"
+                placeholder={t("pages.config.json_placeholder")}
+              />
             </div>
             <div className="flex justify-end space-x-2">
               <Button

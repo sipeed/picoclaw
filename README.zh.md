@@ -365,7 +365,6 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 ├── HEARTBEAT.md      # 周期性任务提示词 (每 30 分钟检查一次)
 ├── IDENTITY.md       # Agent 身份设定
 ├── SOUL.md           # Agent 灵魂/性格
-├── TOOLS.md          # 工具描述
 └── USER.md           # 用户偏好
 
 ```
@@ -517,6 +516,7 @@ Agent 读取 HEARTBEAT.md
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [获取密钥](https://cerebras.ai)                                   |
 | **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [获取密钥](https://console.volcengine.com)                        |
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                 |
+| **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [获取密钥](https://longcat.chat/platform)                        |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | 自定义    | 仅 OAuth                                                          |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                 |
 
@@ -879,3 +879,4 @@ Discord: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 | **Brave Search** | 2000 次查询/月 | 网络搜索功能 |
 | **Tavily** | 1000 次查询/月 | AI Agent 搜索优化 |
 | **Groq** | 提供免费层级 | 极速推理 (Llama, Mixtral) |
+| **LongCat** | 最多 5M tokens/天 | 推理速度快 (免费额度) |

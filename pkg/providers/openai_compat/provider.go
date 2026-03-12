@@ -156,9 +156,10 @@ func (p *Provider) Chat(
 	// The key is typically the agent ID — stable per agent, shared across requests.
 	// See: https://platform.openai.com/docs/guides/prompt-caching
 	// Prompt caching is only supported by OpenAI-native endpoints.
-	// Gemini and other providers reject unknown fields, so skip for non-OpenAI APIs.
+	// Non-OpenAI providers (Mistral, Gemini, DeepSeek, etc.) reject unknown
+	// fields with 422 errors, so only include it for OpenAI APIs.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
-		if !strings.Contains(p.apiBase, "generativelanguage.googleapis.com") {
+		if supportsPromptCacheKey(p.apiBase) {
 			requestBody["prompt_cache_key"] = cacheKey
 		}
 	}
@@ -283,8 +284,8 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function *struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
+						Name      string          `json:"name"`
+						Arguments json.RawMessage `json:"arguments"`
 					} `json:"function"`
 					ExtraContent *struct {
 						Google *struct {
@@ -323,12 +324,7 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 
 		if tc.Function != nil {
 			name = tc.Function.Name
-			if tc.Function.Arguments != "" {
-				if err := json.Unmarshal([]byte(tc.Function.Arguments), &arguments); err != nil {
-					log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
-					arguments["raw"] = tc.Function.Arguments
-				}
-			}
+			arguments = decodeToolCallArguments(tc.Function.Arguments, name)
 		}
 
 		// Build ToolCall with ExtraContent for Gemini 3 thought_signature persistence
@@ -359,6 +355,39 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 		FinishReason:     choice.FinishReason,
 		Usage:            apiResponse.Usage,
 	}, nil
+}
+
+func decodeToolCallArguments(raw json.RawMessage, name string) map[string]any {
+	arguments := make(map[string]any)
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return arguments
+	}
+
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		log.Printf("openai_compat: failed to decode tool call arguments payload for %q: %v", name, err)
+		arguments["raw"] = string(raw)
+		return arguments
+	}
+
+	switch v := decoded.(type) {
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return arguments
+		}
+		if err := json.Unmarshal([]byte(v), &arguments); err != nil {
+			log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
+			arguments["raw"] = v
+		}
+		return arguments
+	case map[string]any:
+		return v
+	default:
+		log.Printf("openai_compat: unsupported tool call arguments type for %q: %T", name, decoded)
+		arguments["raw"] = string(raw)
+		return arguments
+	}
 }
 
 // openaiMessage is the wire-format message for OpenAI-compatible APIs.
@@ -475,4 +504,17 @@ func asFloat(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// supportsPromptCacheKey reports whether the given API base is known to
+// support the prompt_cache_key request field. Currently only OpenAI's own
+// API and Azure OpenAI support this. All other OpenAI-compatible providers
+// (Mistral, Gemini, DeepSeek, Groq, etc.) reject unknown fields with 422 errors.
+func supportsPromptCacheKey(apiBase string) bool {
+	u, err := url.Parse(apiBase)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
 }

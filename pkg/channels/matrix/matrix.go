@@ -13,6 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gomarkdown/markdown"
+	mdhtml "github.com/gomarkdown/markdown/html"
+	"github.com/gomarkdown/markdown/parser"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -268,6 +271,12 @@ func (c *MatrixChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
+func markdownToHTML(md string) string {
+	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs)
+	renderer := mdhtml.NewRenderer(mdhtml.RendererOptions{Flags: mdhtml.CommonFlags})
+	return strings.TrimSpace(string(markdown.ToHTML([]byte(md), p, renderer)))
+}
+
 func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
@@ -283,14 +292,20 @@ func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return nil
 	}
 
-	_, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, &event.MessageEventContent{
-		MsgType: event.MsgText,
-		Body:    content,
-	})
+	_, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, c.messageContent(content))
 	if err != nil {
 		return fmt.Errorf("matrix send: %w", channels.ErrTemporary)
 	}
 	return nil
+}
+
+func (c *MatrixChannel) messageContent(text string) *event.MessageEventContent {
+	mc := &event.MessageEventContent{MsgType: event.MsgText, Body: text}
+	if c.config.MessageFormat != "plain" {
+		mc.Format = event.FormatHTML
+		mc.FormattedBody = markdownToHTML(text)
+	}
+	return mc
 }
 
 // SendMedia implements channels.MediaSender.
@@ -482,10 +497,7 @@ func (c *MatrixChannel) EditMessage(ctx context.Context, chatID string, messageI
 		return fmt.Errorf("matrix message ID is empty")
 	}
 
-	editContent := &event.MessageEventContent{
-		MsgType: event.MsgText,
-		Body:    content,
-	}
+	editContent := c.messageContent(content)
 	editContent.SetEdit(id.EventID(messageID))
 
 	_, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, editContent)

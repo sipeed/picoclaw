@@ -787,7 +787,6 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 ├── HEARTBEAT.md      # Periodic task prompts (checked every 30 min)
 ├── IDENTITY.md       # Agent identity
 ├── SOUL.md           # Agent soul
-├── TOOLS.md          # Tool descriptions
 └── USER.md           # User preferences
 ```
 
@@ -1034,6 +1033,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://console.volcengine.com)                        |
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
 | **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
+| **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Get Key](https://longcat.chat/platform)                         |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
 
@@ -1504,3 +1504,4 @@ This happens when another instance of the bot is running. Make sure only one `pi
 | **SearXNG**      | Unlimited (self-hosted)  | Privacy-focused metasearch (70+ engines) |
 | **Groq**         | Free tier available      | Fast inference (Llama, Mixtral)       |
 | **Cerebras**     | Free tier available      | Fast inference (Llama, Qwen, etc.)    |
+| **LongCat**      | Up to 5M tokens/day      | Fast inference (free tier)            |

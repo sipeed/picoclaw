@@ -355,6 +355,14 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// LongCat - https://longcat.chat/platform
+			{
+				ModelName: "LongCat-Flash-Thinking",
+				Model:     "longcat/LongCat-Flash-Thinking",
+				APIBase:   "https://api.longcat.chat/openai",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",

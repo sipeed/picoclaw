@@ -645,7 +645,6 @@ O PicoClaw armazena dados no workspace configurado (padrão: `~/.picoclaw/worksp
 ├── HEARTBEAT.md       # Prompts de tarefas periodicas (verificado a cada 30 min)
 ├── IDENTITY.md        # Identidade do Agente
 ├── SOUL.md            # Alma do Agente
-├── TOOLS.md           # Descrição das ferramentas
 └── USER.md            # Preferencias do usuario
 ```
 
@@ -976,6 +975,7 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Obter Chave](https://cerebras.ai) |
 | **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Obter Chave](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Obter Chave](https://longcat.chat/platform)                     |
 | **Antigravity** | `antigravity/` | Google Cloud | Custom | Apenas OAuth |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 

@@ -505,3 +505,119 @@ func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
 		t.Errorf("Workspace path with PICOCLAW_HOME = %q, want %q", cfg.Agents.Defaults.Workspace, want)
 	}
 }
+
+// TestFlexibleStringSlice_UnmarshalText tests UnmarshalText with various comma separators
+func TestFlexibleStringSlice_UnmarshalText(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "English commas only",
+			input:    "123,456,789",
+			expected: []string{"123", "456", "789"},
+		},
+		{
+			name:     "Chinese commas only",
+			input:    "123，456，789",
+			expected: []string{"123", "456", "789"},
+		},
+		{
+			name:     "Mixed English and Chinese commas",
+			input:    "123,456，789",
+			expected: []string{"123", "456", "789"},
+		},
+		{
+			name:     "Single value",
+			input:    "123",
+			expected: []string{"123"},
+		},
+		{
+			name:     "Values with whitespace",
+			input:    " 123 , 456 , 789 ",
+			expected: []string{"123", "456", "789"},
+		},
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: nil,
+		},
+		{
+			name:     "Only commas - English",
+			input:    ",,",
+			expected: []string{},
+		},
+		{
+			name:     "Only commas - Chinese",
+			input:    "，，",
+			expected: []string{},
+		},
+		{
+			name:     "Mixed commas with empty parts",
+			input:    "123,,456，，789",
+			expected: []string{"123", "456", "789"},
+		},
+		{
+			name:     "Complex mixed values",
+			input:    "user1@example.com，user2@test.com, admin@domain.org",
+			expected: []string{"user1@example.com", "user2@test.com", "admin@domain.org"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var f FlexibleStringSlice
+			err := f.UnmarshalText([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("UnmarshalText(%q) error = %v", tt.input, err)
+			}
+
+			if tt.expected == nil {
+				if f != nil {
+					t.Errorf("UnmarshalText(%q) = %v, want nil", tt.input, f)
+				}
+				return
+			}
+
+			if len(f) != len(tt.expected) {
+				t.Errorf("UnmarshalText(%q) length = %d, want %d", tt.input, len(f), len(tt.expected))
+				return
+			}
+
+			for i, v := range tt.expected {
+				if f[i] != v {
+					t.Errorf("UnmarshalText(%q)[%d] = %q, want %q", tt.input, i, f[i], v)
+				}
+			}
+		})
+	}
+}
+
+// TestFlexibleStringSlice_UnmarshalText_EmptySliceConsistency tests nil vs empty slice behavior
+func TestFlexibleStringSlice_UnmarshalText_EmptySliceConsistency(t *testing.T) {
+	t.Run("Empty string returns nil", func(t *testing.T) {
+		var f FlexibleStringSlice
+		err := f.UnmarshalText([]byte(""))
+		if err != nil {
+			t.Fatalf("UnmarshalText error = %v", err)
+		}
+		if f != nil {
+			t.Errorf("Empty string should return nil, got %v", f)
+		}
+	})
+
+	t.Run("Commas only returns empty slice", func(t *testing.T) {
+		var f FlexibleStringSlice
+		err := f.UnmarshalText([]byte(",,,"))
+		if err != nil {
+			t.Fatalf("UnmarshalText error = %v", err)
+		}
+		if f == nil {
+			t.Error("Commas only should return empty slice, not nil")
+		}
+		if len(f) != 0 {
+			t.Errorf("Expected empty slice, got %v", f)
+		}
+	})
+}

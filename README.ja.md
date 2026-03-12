@@ -610,7 +610,6 @@ PicoClaw は設定されたワークスペース（デフォルト: `~/.picoclaw
 ├── HEARTBEAT.md       # 定期タスクプロンプト（30分ごとに確認）
 ├── IDENTITY.md        # エージェントのアイデンティティ
 ├── SOUL.md            # エージェントのソウル
-├── TOOLS.md           # ツールの説明
 └── USER.md            # ユーザー設定
 ```
 
@@ -921,6 +920,7 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [キーを取得](https://cerebras.ai) |
 | **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [キーを取得](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [キーを取得](https://longcat.chat/platform)                      |
 | **Antigravity** | `antigravity/` | Google Cloud | カスタム | OAuthのみ |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
