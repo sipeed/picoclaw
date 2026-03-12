@@ -4,12 +4,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	picoclaw "github.com/sipeed/picoclaw"
 )
 
 func TestCopyEmbeddedToTargetUsesAgentsMarkdown(t *testing.T) {
 	targetDir := t.TempDir()
 
-	if err := copyEmbeddedToTarget(targetDir); err != nil {
+	if err := copyEmbeddedToTarget(picoclaw.EmbeddedWorkspace, targetDir); err != nil {
 		t.Fatalf("copyEmbeddedToTarget() error = %v", err)
 	}
 
