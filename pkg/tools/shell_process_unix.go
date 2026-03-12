@@ -35,7 +35,6 @@ func terminateProcessTree(cmd *exec.Cmd) error {
 
 	// Fallback kill on the shell process itself.
 	_ = cmd.Process.Kill()
-
 	return nil
 }
 

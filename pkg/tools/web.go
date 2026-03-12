@@ -30,7 +30,6 @@ const (
 )
 
 // Pre-compiled regexes for HTML text extraction
-
 var (
 	reScript = regexp.MustCompile(`<script[\s\S]*?</script>`)
 
@@ -39,7 +38,6 @@ var (
 	reTags = regexp.MustCompile(`<[^>]+>`)
 
 	reWhitespace = regexp.MustCompile(`[^\S\n]+`)
-
 	reBlankLines = regexp.MustCompile(`\n{3,}`)
 
 	// DuckDuckGo result extraction
@@ -50,11 +48,9 @@ var (
 )
 
 // createHTTPClient creates an HTTP client with optional proxy support
-
 func createHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
 	client := &http.Client{
 		Timeout: timeout,
-
 		Transport: &http.Transport{
 			MaxIdleConns: 10,
 
@@ -71,26 +67,18 @@ func createHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, err
 		if err != nil {
 			return nil, fmt.Errorf("invalid proxy URL: %w", err)
 		}
-
 		scheme := strings.ToLower(proxy.Scheme)
-
 		switch scheme {
 		case "http", "https", "socks5", "socks5h":
-
 		default:
-
 			return nil, fmt.Errorf(
-
 				"unsupported proxy scheme %q (supported: http, https, socks5, socks5h)",
-
 				proxy.Scheme,
 			)
 		}
-
 		if proxy.Host == "" {
 			return nil, fmt.Errorf("invalid proxy URL: missing host")
 		}
-
 		client.Transport.(*http.Transport).Proxy = http.ProxyURL(proxy)
 	} else {
 		client.Transport.(*http.Transport).Proxy = http.ProxyFromEnvironment
@@ -151,7 +139,6 @@ type BraveSearchProvider struct {
 
 func (p *BraveSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
 	searchURL := fmt.Sprintf("https://api.search.brave.com/res/v1/web/search?q=%s&count=%d",
-
 		url.QueryEscape(query), count)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
@@ -224,7 +211,6 @@ type TavilySearchProvider struct {
 
 func (p *TavilySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
 	searchURL := p.baseURL
-
 	if searchURL == "" {
 		searchURL = "https://api.tavily.com/search"
 	}
@@ -326,7 +312,6 @@ func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, cou
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
@@ -339,15 +324,11 @@ func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, cou
 
 func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query string) (string, error) {
 	// Simple regex based extraction for DDG HTML
-
 	// Strategy: Find all result containers or key anchors directly
 
 	// Try finding the result links directly first, as they are the most critical
-
 	// Pattern: <a class="result__a" href="...">Title</a>
-
 	// The previous regex was a bit strict. Let's make it more flexible for attributes order/content
-
 	matches := reDDGLink.FindAllStringSubmatch(html, count+5)
 
 	if len(matches) == 0 {
@@ -362,17 +343,13 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 
 	for i := range maxItems {
 		urlStr := matches[i][1]
-
 		title := stripTags(matches[i][2])
-
 		title = strings.TrimSpace(title)
 
 		// URL decoding if needed
-
 		if strings.Contains(urlStr, "uddg=") {
 			if u, err := url.QueryUnescape(urlStr); err == nil {
 				_, after, ok := strings.Cut(u, "uddg=")
-
 				if ok {
 					urlStr = after
 				}
@@ -382,7 +359,6 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 		snippet := ""
 
 		// Attempt to attach snippet if available and index aligns
-
 		if i < len(snippetMatches) {
 			snippet = stripTags(snippetMatches[i][1])
 
@@ -447,7 +423,6 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 	req.Header.Set("User-Agent", userAgent)
@@ -456,7 +431,6 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
@@ -569,7 +543,6 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Tavily: %w", err)
 		}
-
 		provider = &TavilySearchProvider{
 			apiKey: opts.TavilyAPIKey,
 
@@ -590,7 +563,6 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for DuckDuckGo: %w", err)
 		}
-
 		provider = &DuckDuckGoSearchProvider{proxy: opts.Proxy, client: client}
 
 		providerName = "duckduckgo"
@@ -622,14 +594,12 @@ func (t *WebSearchTool) Description() string {
 func (t *WebSearchTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
-
 		"properties": map[string]any{
 			"query": map[string]any{
 				"type": "string",
 
 				"description": "Search query",
 			},
-
 			"count": map[string]any{
 				"type": "integer",
 
@@ -640,20 +610,17 @@ func (t *WebSearchTool) Parameters() map[string]any {
 				"maximum": 10.0,
 			},
 		},
-
 		"required": []string{"query"},
 	}
 }
 
 func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	query, ok := args["query"].(string)
-
 	if !ok {
 		return ErrorResult("query is required")
 	}
 
 	count := t.maxResults
-
 	if c, ok := args["count"].(float64); ok {
 		if int(c) > 0 && int(c) <= 10 {
 			count = int(c)
@@ -692,7 +659,6 @@ func NewWebFetchToolWithProxy(maxChars int, proxy string) (*WebFetchTool, error)
 	if maxChars <= 0 {
 		maxChars = defaultMaxChars
 	}
-
 	client, err := createHTTPClient(proxy, fetchTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client for web fetch: %w", err)
@@ -726,14 +692,12 @@ func (t *WebFetchTool) Description() string {
 func (t *WebFetchTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
-
 		"properties": map[string]any{
 			"url": map[string]any{
 				"type": "string",
 
 				"description": "URL to fetch",
 			},
-
 			"maxChars": map[string]any{
 				"type": "integer",
 
@@ -742,14 +706,12 @@ func (t *WebFetchTool) Parameters() map[string]any {
 				"minimum": 100.0,
 			},
 		},
-
 		"required": []string{"url"},
 	}
 }
 
 func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	urlStr, ok := args["url"].(string)
-
 	if !ok {
 		return ErrorResult("url is required")
 	}
@@ -768,7 +730,6 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	maxChars := t.maxChars
-
 	if mc, ok := args["maxChars"].(float64); ok {
 		if int(mc) > 100 {
 			maxChars = int(mc)
@@ -781,7 +742,6 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	req.Header.Set("User-Agent", userAgent)
-
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("request failed: %v", err))
@@ -802,12 +762,9 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	if strings.Contains(contentType, "application/json") {
 		var jsonData any
-
 		if err := json.Unmarshal(body, &jsonData); err == nil {
 			formatted, _ := json.MarshalIndent(jsonData, "", "  ")
-
 			text = string(formatted)
-
 			extractor = "json"
 		} else {
 			text = bodyStr
@@ -827,7 +784,6 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	truncated := len(text) > maxChars
-
 	if truncated {
 		text = text[:maxChars]
 	}
@@ -838,7 +794,6 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		"status": resp.StatusCode,
 
 		"extractor": extractor,
-
 		"truncated": truncated,
 
 		"length": len(text),
@@ -852,13 +807,9 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		ForLLM: fmt.Sprintf(
 
 			"Fetched %d bytes from %s (extractor: %s, truncated: %v)",
-
 			len(text),
-
 			urlStr,
-
 			extractor,
-
 			truncated,
 		),
 
@@ -868,15 +819,12 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 func (t *WebFetchTool) extractText(htmlContent string) string {
 	result := reScript.ReplaceAllLiteralString(htmlContent, "")
-
 	result = reStyle.ReplaceAllLiteralString(result, "")
-
 	result = reTags.ReplaceAllLiteralString(result, "")
 
 	result = strings.TrimSpace(result)
 
 	result = reWhitespace.ReplaceAllString(result, " ")
-
 	result = reBlankLines.ReplaceAllString(result, "\n\n")
 
 	lines := strings.Split(result, "\n")
@@ -885,7 +833,6 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-
 		if line != "" {
 			if sb.Len() > 0 {
 				sb.WriteByte('\n')

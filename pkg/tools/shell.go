@@ -291,27 +291,22 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 
 	if config != nil {
 		execConfig := config.Tools.Exec
-
 		enableDenyPatterns := execConfig.EnableDenyPatterns
 
 		if enableDenyPatterns {
 			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
-
 			if len(execConfig.CustomDenyPatterns) > 0 {
 				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
-
 				for _, pattern := range execConfig.CustomDenyPatterns {
 					re, err := regexp.Compile(pattern)
 					if err != nil {
 						return nil, fmt.Errorf("invalid custom deny pattern %q: %w", pattern, err)
 					}
-
 					denyPatterns = append(denyPatterns, re)
 				}
 			}
 		} else {
 			// If deny patterns are disabled, we won't add any patterns, allowing all commands.
-
 			fmt.Println("Warning: deny patterns are disabled. All commands will be allowed.")
 		}
 	} else {
@@ -350,14 +345,12 @@ func (t *ExecTool) Description() string {
 func (t *ExecTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
-
 		"properties": map[string]any{
 			"command": map[string]any{
 				"type": "string",
 
 				"description": "The shell command to execute",
 			},
-
 			"working_dir": map[string]any{
 				"type": "string",
 
@@ -420,7 +413,6 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 			if err != nil {
 				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
 			}
-
 			cwd = resolvedWD
 		} else {
 			cwd = wd
@@ -429,7 +421,6 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	if cwd == "" {
 		wd, err := os.Getwd()
-
 		if err == nil {
 			cwd = wd
 		}
@@ -450,27 +441,21 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolResult {
 	// timeout == 0 means no timeout
-
 	var cmdCtx context.Context
-
 	var cancel context.CancelFunc
-
 	if t.timeout > 0 {
 		cmdCtx, cancel = context.WithTimeout(ctx, t.timeout)
 	} else {
 		cmdCtx, cancel = context.WithCancel(ctx)
 	}
-
 	defer cancel()
 
 	var cmd *exec.Cmd
-
 	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(cmdCtx, "powershell", "-NoProfile", "-NonInteractive", "-Command", command)
 	} else {
 		cmd = exec.CommandContext(cmdCtx, "sh", "-c", command)
 	}
-
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
@@ -478,9 +463,7 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 	prepareCommandForTermination(cmd)
 
 	var stdout, stderr bytes.Buffer
-
 	cmd.Stdout = &stdout
-
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
@@ -488,29 +471,21 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 	}
 
 	done := make(chan error, 1)
-
 	go func() {
 		done <- cmd.Wait()
 	}()
 
 	var err error
-
 	select {
 	case err = <-done:
-
 	case <-cmdCtx.Done():
-
 		_ = terminateProcessTree(cmd)
-
 		select {
 		case err = <-done:
-
 		case <-time.After(2 * time.Second):
-
 			if cmd.Process != nil {
 				_ = cmd.Process.Kill()
 			}
-
 			err = <-done
 		}
 	}
@@ -528,12 +503,10 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 	if err != nil {
 		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
 			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
-
 			return &ToolResult{
 				ForLLM: msg,
 
 				ForUser: msg,
-
 				IsError: true,
 			}
 		}
@@ -548,7 +521,6 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 	}
 
 	maxLen := 10000
-
 	if len(output) > maxLen {
 		output = output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
 	}
@@ -558,7 +530,6 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 			ForLLM: output,
 
 			ForUser: output,
-
 			IsError: true,
 		}
 	}
@@ -567,7 +538,6 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 		ForLLM: output,
 
 		ForUser: output,
-
 		IsError: false,
 	}
 }
@@ -971,7 +941,6 @@ func (t *ExecTool) Shutdown() {
 
 func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
-
 	lower := strings.ToLower(cmd)
 
 	for _, pattern := range t.denyPatterns {

@@ -81,22 +81,16 @@ type AgentInstance struct {
 }
 
 // NewAgentInstance creates an agent instance from config.
-
 func NewAgentInstance(
 	agentCfg *config.AgentConfig,
-
 	defaults *config.AgentDefaults,
-
 	cfg *config.Config,
-
 	provider providers.LLMProvider,
 ) *AgentInstance {
 	workspace := resolveAgentWorkspace(agentCfg, defaults)
-
 	os.MkdirAll(workspace, 0o755)
 
 	model := resolveAgentModel(agentCfg, defaults)
-
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
 
 	restrict := defaults.RestrictToWorkspace
@@ -154,20 +148,14 @@ func NewAgentInstance(
 	contextBuilder := NewContextBuilder(workspace)
 
 	agentID := routing.DefaultAgentID
-
 	agentName := ""
-
 	var subagents *config.SubagentsConfig
-
 	var skillsFilter []string
 
 	if agentCfg != nil {
 		agentID = routing.NormalizeAgentID(agentCfg.ID)
-
 		agentName = agentCfg.Name
-
 		subagents = agentCfg.Subagents
-
 		skillsFilter = agentCfg.Skills
 	}
 
@@ -182,7 +170,6 @@ func NewAgentInstance(
 	}
 
 	maxIter := defaults.MaxToolIterations
-
 	if maxIter == 0 {
 		maxIter = 20
 	}
@@ -194,42 +181,34 @@ func NewAgentInstance(
 	}
 
 	maxTokens := defaults.MaxTokens
-
 	if maxTokens == 0 {
 		maxTokens = 8192
 	}
 
 	temperature := 0.7
-
 	if defaults.Temperature != nil {
 		temperature = *defaults.Temperature
 	}
 
 	// Resolve fallback candidates
-
 	modelCfg := providers.ModelConfig{
 		Primary: model,
 
 		Fallbacks: fallbacks,
 	}
-
 	resolveFromModelList := func(raw string) (string, bool) {
 		ensureProtocol := func(model string) string {
 			model = strings.TrimSpace(model)
-
 			if model == "" {
 				return ""
 			}
-
 			if strings.Contains(model, "/") {
 				return model
 			}
-
 			return "openai/" + model
 		}
 
 		raw = strings.TrimSpace(raw)
-
 		if raw == "" {
 			return "", false
 		}
@@ -241,17 +220,13 @@ func NewAgentInstance(
 
 			for i := range cfg.ModelList {
 				fullModel := strings.TrimSpace(cfg.ModelList[i].Model)
-
 				if fullModel == "" {
 					continue
 				}
-
 				if fullModel == raw {
 					return ensureProtocol(fullModel), true
 				}
-
 				_, modelID := providers.ExtractProtocol(fullModel)
-
 				if modelID == raw {
 					return ensureProtocol(fullModel), true
 				}
@@ -333,7 +308,6 @@ func NewAgentInstance(
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.
-
 func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
 	if agentCfg != nil && strings.TrimSpace(agentCfg.Workspace) != "" {
 		return expandHome(strings.TrimSpace(agentCfg.Workspace))
@@ -351,22 +325,18 @@ func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentD
 }
 
 // resolveAgentModel resolves the primary model for an agent.
-
 func resolveAgentModel(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
 	if agentCfg != nil && agentCfg.Model != nil && strings.TrimSpace(agentCfg.Model.Primary) != "" {
 		return strings.TrimSpace(agentCfg.Model.Primary)
 	}
-
 	return defaults.GetModelName()
 }
 
 // resolveAgentFallbacks resolves the fallback models for an agent.
-
 func resolveAgentFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) []string {
 	if agentCfg != nil && agentCfg.Model != nil && agentCfg.Model.Fallbacks != nil {
 		return agentCfg.Model.Fallbacks
 	}
-
 	return defaults.ModelFallbacks
 }
 
@@ -507,16 +477,12 @@ func expandHome(path string) string {
 	if path == "" {
 		return path
 	}
-
 	if path[0] == '~' {
 		home, _ := os.UserHomeDir()
-
 		if len(path) > 1 && path[1] == '/' {
 			return home + path[1:]
 		}
-
 		return home
 	}
-
 	return path
 }

@@ -1,11 +1,7 @@
 // PicoClaw - Ultra-lightweight personal AI agent
-
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
-
 // License: MIT
-
 //
-
 // Copyright (c) 2026 PicoClaw contributors
 
 package tools
@@ -22,7 +18,6 @@ import (
 )
 
 // ToolLoopConfig configures the tool execution loop.
-
 type ToolLoopConfig struct {
 	Provider providers.LLMProvider
 
@@ -48,7 +43,6 @@ type ToolLoopConfig struct {
 }
 
 // ToolLoopResult contains the result of running the tool loop.
-
 type ToolLoopResult struct {
 	Content string
 
@@ -60,16 +54,11 @@ type ToolLoopResult struct {
 }
 
 // RunToolLoop executes the LLM + tool call iteration loop.
-
 // This is the core agent logic that can be reused by both main agent and subagents.
-
 func RunToolLoop(
 	ctx context.Context,
-
 	config ToolLoopConfig,
-
 	messages []providers.Message,
-
 	channel, chatID string,
 ) (*ToolLoopResult, error) {
 	reporter := config.Reporter
@@ -90,7 +79,6 @@ func RunToolLoop(
 		iteration++
 
 		logger.DebugCF("toolloop", "LLM iteration",
-
 			map[string]any{
 				"iteration": iteration,
 
@@ -98,17 +86,13 @@ func RunToolLoop(
 			})
 
 		// 1. Build tool definitions
-
 		var providerToolDefs []providers.ToolDefinition
-
 		if config.Tools != nil {
 			providerToolDefs = config.Tools.ToProviderDefs()
 		}
 
 		// 2. Set default LLM options
-
 		llmOpts := config.LLMOptions
-
 		if llmOpts == nil {
 			llmOpts = map[string]any{}
 		}
@@ -120,48 +104,37 @@ func RunToolLoop(
 		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
 		if err != nil {
 			logger.ErrorCF("toolloop", "LLM call failed",
-
 				map[string]any{
 					"iteration": iteration,
 
 					"error": err.Error(),
 				})
-
 			return nil, fmt.Errorf("LLM call failed: %w", err)
 		}
 
 		// 4. If no tool calls, we're done
-
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
-
 			logger.InfoCF("toolloop", "LLM response without tool calls (direct answer)",
-
 				map[string]any{
 					"iteration": iteration,
 
 					"content_chars": len(finalContent),
 				})
-
 			break
 		}
 
 		normalizedToolCalls := make([]providers.ToolCall, 0, len(response.ToolCalls))
-
 		for _, tc := range response.ToolCalls {
 			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
 		}
 
 		// 5. Log tool calls
-
 		toolNames := make([]string, 0, len(normalizedToolCalls))
-
 		for _, tc := range normalizedToolCalls {
 			toolNames = append(toolNames, tc.Name)
 		}
-
 		logger.InfoCF("toolloop", "LLM requested tool calls",
-
 			map[string]any{
 				"tools": toolNames,
 
@@ -171,13 +144,11 @@ func RunToolLoop(
 			})
 
 		// 6. Build assistant message with tool calls
-
 		assistantMsg := providers.Message{
 			Role: "assistant",
 
 			Content: response.Content,
 		}
-
 		for _, tc := range normalizedToolCalls {
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
 				ID: tc.ID,
@@ -187,7 +158,6 @@ func RunToolLoop(
 				Name: tc.Name,
 
 				Arguments: tc.Arguments,
-
 				Function: &providers.FunctionCall{
 					Name: tc.Name,
 
@@ -195,7 +165,6 @@ func RunToolLoop(
 				},
 			})
 		}
-
 		messages = append(messages, assistantMsg)
 
 		// 7. Execute tool calls  (hook: toolcall per tool)

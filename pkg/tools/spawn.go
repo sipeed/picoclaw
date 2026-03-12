@@ -45,20 +45,17 @@ func (t *SpawnTool) Description() string {
 func (t *SpawnTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
-
 		"properties": map[string]any{
 			"task": map[string]any{
 				"type": "string",
 
 				"description": "The task for subagent to complete",
 			},
-
 			"label": map[string]any{
 				"type": "string",
 
 				"description": "Optional short label for the task (for display)",
 			},
-
 			"agent_id": map[string]any{
 				"type": "string",
 
@@ -73,7 +70,6 @@ func (t *SpawnTool) Parameters() map[string]any {
 				"description": "Optional capability tier: scout (explore), analyst (analyze), coder (code), worker (build), coordinator (orchestrate)",
 			},
 		},
-
 		"required": []string{"task"},
 	}
 }
@@ -90,7 +86,6 @@ func (t *SpawnTool) SetAllowlistChecker(check func(targetAgentID string) bool) {
 
 func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
-
 	if !ok || strings.TrimSpace(task) == "" {
 		return ErrorResult(
 
@@ -101,7 +96,6 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResul
 	}
 
 	label, _ := args["label"].(string)
-
 	agentID, _ := args["agent_id"].(string)
 
 	preset, _ := args["preset"].(string)
@@ -141,6 +135,5 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResul
 	}
 
 	// Return AsyncResult since the task runs in background
-
 	return AsyncResult(result)
 }
