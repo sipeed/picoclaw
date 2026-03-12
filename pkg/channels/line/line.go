@@ -163,6 +163,9 @@ func (c *LINEChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.webhookHandler(w, r)
 }
 
+// MaxWebhookBodySize is the maximum allowed size for LINE webhook request body (1MB)
+const MaxWebhookBodySize = 1 << 20 // 1MB
+
 // webhookHandler handles incoming LINE webhook requests.
 func (c *LINEChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -175,7 +178,11 @@ func (c *LINEChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		logger.ErrorCF("line", "Failed to read request body", map[string]any{
 			"error": err.Error(),
 		})
-		http.Error(w, "Bad request", http.StatusBadRequest)
+		if err.Error() == "http: request body too large" {
+			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+		}
 		return
 	}
 	if int64(len(body)) > maxWebhookBodySize {
