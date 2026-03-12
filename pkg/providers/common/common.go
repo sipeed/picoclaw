@@ -46,8 +46,16 @@ func NewHTTPClient(proxy string) *http.Client {
 	if proxy != "" {
 		parsed, err := url.Parse(proxy)
 		if err == nil {
-			client.Transport = &http.Transport{
-				Proxy: http.ProxyURL(parsed),
+			// Preserve http.DefaultTransport settings (TLS, HTTP/2, timeouts, etc.)
+			if base, ok := http.DefaultTransport.(*http.Transport); ok {
+				tr := base.Clone()
+				tr.Proxy = http.ProxyURL(parsed)
+				client.Transport = tr
+			} else {
+				// Fallback: minimal transport if DefaultTransport is not *http.Transport.
+				client.Transport = &http.Transport{
+					Proxy: http.ProxyURL(parsed),
+				}
 			}
 		} else {
 			log.Printf("common: invalid proxy URL %q: %v", proxy, err)
