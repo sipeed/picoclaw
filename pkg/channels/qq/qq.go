@@ -37,7 +37,7 @@ const (
 	dedupInterval = 60 * time.Second
 	dedupMaxSize  = 10000 // hard cap on dedup map entries
 	typingResend  = 8 * time.Second
-	typingSeconds = 10
+	typingSeconds = 20
 )
 
 var emojiRegexp = regexp.MustCompile(`<[^<]*?ext="([^"]+)"[^<]*?faceType=(\d+)[^<]*?>|<[^<]*?faceType=(\d+)[^<]*?ext="([^"]+)"[^<]*?>`)
@@ -253,6 +253,7 @@ func (c *QQChannel) getReplyExtInfo(ctx context.Context, chatID string) (replyID
 		c.replySeq.Store(0)
 		seq = c.replySeq.Add(1)
 	}
+
 	return replyID, seq
 }
 
@@ -538,8 +539,7 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		c.lastMsgID.Store(data.GroupID, data.ID)
 
 		metadata := map[string]string{
-			"account_id": senderID,
-			"group_id":   data.GroupID,
+			"group_id": data.GroupID,
 		}
 
 		sender := bus.SenderInfo{
