@@ -113,6 +113,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"vllm", "vllm"},
 		{"deepseek", "deepseek"},
 		{"ollama", "ollama"},
+		{"longcat", "longcat"},
 	}
 
 	for _, tt := range tests {
@@ -159,6 +160,29 @@ func TestCreateProviderFromConfig_LiteLLM(t *testing.T) {
 	}
 	if modelID != "my-proxy-alias" {
 		t.Errorf("modelID = %q, want %q", modelID, "my-proxy-alias")
+	}
+}
+
+func TestCreateProviderFromConfig_LongCat(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-longcat",
+		Model:     "longcat/LongCat-Flash-Thinking",
+		APIKey:    "test-key",
+		APIBase:   "https://api.longcat.chat/openai",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "LongCat-Flash-Thinking" {
+		t.Errorf("modelID = %q, want %q", modelID, "LongCat-Flash-Thinking")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
 	}
 }
 
