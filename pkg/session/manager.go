@@ -208,7 +208,10 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 // so loadSessions still maps back to the right in-memory key.
 
 func sanitizeFilename(key string) string {
-	return strings.ReplaceAll(key, ":", "_")
+	s := strings.ReplaceAll(key, ":", "_")
+	s = strings.ReplaceAll(s, "/", "_")
+	s = strings.ReplaceAll(s, "\\", "_")
+	return s
 }
 
 func (sm *SessionManager) Save(key string) error {

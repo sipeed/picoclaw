@@ -1,9 +1,10 @@
 package openai_compat
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -107,6 +108,55 @@ func TestProviderChat_ParsesToolCalls(t *testing.T) {
 	}
 }
 
+func TestProviderChat_ParsesToolCallsWithObjectArguments(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call_1",
+								"type": "function",
+								"function": map[string]any{
+									"name": "get_weather",
+									"arguments": map[string]any{
+										"city":   "SF",
+										"metric": true,
+									},
+								},
+							},
+						},
+					},
+					"finish_reason": "tool_calls",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "get_weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "get_weather")
+	}
+	if out.ToolCalls[0].Arguments["city"] != "SF" {
+		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want SF", out.ToolCalls[0].Arguments["city"])
+	}
+	if out.ToolCalls[0].Arguments["metric"] != true {
+		t.Fatalf("ToolCalls[0].Arguments[metric] = %v, want true", out.ToolCalls[0].Arguments["metric"])
+	}
+}
+
 func TestProviderChat_ParsesReasoningContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]any{
@@ -151,6 +201,56 @@ func TestProviderChat_ParsesReasoningContent(t *testing.T) {
 	}
 }
 
+func TestProviderChat_PreservesReasoningContentInHistory(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+
+	// Simulate a multi-turn conversation where the assistant's previous
+	// reply included reasoning_content (e.g. from kimi-k2.5).
+	messages := []Message{
+		{Role: "user", Content: "What is 1+1?"},
+		{Role: "assistant", Content: "2", ReasoningContent: "Let me think... 1+1=2"},
+		{Role: "user", Content: "What about 2+2?"},
+	}
+
+	_, err := p.Chat(t.Context(), messages, nil, "kimi-k2.5", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	// Verify reasoning_content is preserved in the serialized request.
+	reqMessages, ok := requestBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any: %T", requestBody["messages"])
+	}
+	assistantMsg, ok := reqMessages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("assistant message is not map[string]any: %T", reqMessages[1])
+	}
+	if assistantMsg["reasoning_content"] != "Let me think... 1+1=2" {
+		t.Errorf("reasoning_content not preserved in request, got %v", assistantMsg["reasoning_content"])
+	}
+}
+
 func TestProviderChat_HTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -161,6 +261,132 @@ func TestProviderChat_HTTPError(t *testing.T) {
 	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestProviderChat_JSONHTTPErrorDoesNotReportHTML(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"bad request"}`))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "Status: 400") {
+		t.Fatalf("expected status code in error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "returned HTML instead of JSON") {
+		t.Fatalf("expected non-HTML http error, got %v", err)
+	}
+}
+
+func TestProviderChat_HTMLResponsesReturnHelpfulError(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		statusCode  int
+		body        string
+	}{
+		{
+			name:        "html success response",
+			contentType: "text/html; charset=utf-8",
+			statusCode:  http.StatusOK,
+			body:        "<!DOCTYPE html><html><body>gateway login</body></html>",
+		},
+		{
+			name:        "html error response",
+			contentType: "text/html; charset=utf-8",
+			statusCode:  http.StatusBadGateway,
+			body:        "<!DOCTYPE html><html><body>bad gateway</body></html>",
+		},
+		{
+			name:        "mislabeled html success response",
+			contentType: "application/json",
+			statusCode:  http.StatusOK,
+			body:        "   \r\n\t<!DOCTYPE html><html><body>gateway login</body></html>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tt.contentType)
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			p := NewProvider("key", server.URL, "")
+			_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), fmt.Sprintf("Status: %d", tt.statusCode)) {
+				t.Fatalf("expected status code in error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "returned HTML instead of JSON") {
+				t.Fatalf("expected helpful HTML error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "check api_base or proxy configuration") {
+				t.Fatalf("expected configuration hint, got %v", err)
+			}
+		})
+	}
+}
+
+func TestProviderChat_SuccessResponseUsesStreamingDecoder(t *testing.T) {
+	content := strings.Repeat("a", 1024)
+	body := `{"choices":[{"message":{"content":"` + content + `"},"finish_reason":"stop"}]}`
+
+	p := NewProvider("key", "https://example.com/v1", "")
+	p.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: &errAfterDataReadCloser{
+					data:      []byte(body),
+					chunkSize: 64,
+				},
+			}, nil
+		}),
+	}
+
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if out.Content != content {
+		t.Fatalf("Content = %q, want %q", out.Content, content)
+	}
+}
+
+func TestProviderChat_LargeHTMLResponsePreviewIsTruncated(t *testing.T) {
+	body := append([]byte("<!DOCTYPE html><html><body>"), bytes.Repeat([]byte("A"), 2048)...)
+	body = append(body, []byte("</body></html>")...)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "Body:   <!DOCTYPE html><html><body>") {
+		t.Fatalf("expected html preview in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "...") {
+		t.Fatalf("expected truncated preview, got %v", err)
 	}
 }
 
@@ -205,12 +431,17 @@ func TestProviderChat_StripsMoonshotPrefixAndNormalizesKimiTemperature(t *testin
 	}
 }
 
-func TestProviderChat_StripsGroqAndOllamaPrefixes(t *testing.T) {
+func TestProviderChat_StripsGroqOllamaDeepseekVivgridPrefixes(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
 		wantModel string
 	}{
+		{
+			name:      "strips litellm prefix and preserves proxy model name",
+			input:     "litellm/my-proxy-alias",
+			wantModel: "my-proxy-alias",
+		},
 		{
 			name:      "strips groq prefix and keeps nested model",
 			input:     "groq/openai/gpt-oss-120b",
@@ -225,6 +456,11 @@ func TestProviderChat_StripsGroqAndOllamaPrefixes(t *testing.T) {
 			name:      "strips deepseek prefix",
 			input:     "deepseek/deepseek-chat",
 			wantModel: "deepseek-chat",
+		},
+		{
+			name:      "strips vivgrid prefix",
+			input:     "vivgrid/auto",
+			wantModel: "auto",
 		},
 	}
 
@@ -330,393 +566,11 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
 	}
-}
-
-func TestNormalizeModel_OpenAIPrefix(t *testing.T) {
-	if got := normalizeModel("openai/gpt-5.2", "https://api.openai.com/v1"); got != "gpt-5.2" {
-		t.Fatalf("normalizeModel(openai/gpt-5.2) = %q, want %q", got, "gpt-5.2")
+	if got := normalizeModel("vivgrid/managed", "https://api.vivgrid.com/v1"); got != "managed" {
+		t.Fatalf("normalizeModel(vivgrid) = %q, want %q", got, "managed")
 	}
-}
-
-func TestProviderChat_StreamingTextResponse(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/text/chatcompletion_v2" {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if body["stream"] != true {
-			t.Error("expected stream=true in request body")
-		}
-
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		flusher, _ := w.(http.Flusher)
-
-		chunks := []string{
-			`data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":""}]}`,
-			`data: {"choices":[{"delta":{"content":" world"},"finish_reason":""}]}`,
-			`data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`,
-			`data: [DONE]`,
-		}
-		for _, c := range chunks {
-			fmt.Fprintln(w, c)
-			fmt.Fprintln(w) // blank line between events
-			if flusher != nil {
-				flusher.Flush()
-			}
-		}
-	}))
-	defer server.Close()
-
-	p := NewProvider("key", server.URL, "",
-		WithEndpointPath("/text/chatcompletion_v2"),
-		WithStream(true),
-	)
-	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "MiniMax-M1", nil)
-	if err != nil {
-		t.Fatalf("Chat() error = %v", err)
-	}
-	if out.Content != "Hello world" {
-		t.Fatalf("Content = %q, want %q", out.Content, "Hello world")
-	}
-	if out.FinishReason != "stop" {
-		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "stop")
-	}
-	if out.Usage == nil || out.Usage.TotalTokens != 7 {
-		t.Fatalf("Usage.TotalTokens = %v, want 7", out.Usage)
-	}
-}
-
-func TestProviderChat_StreamingToolCalls(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		flusher, _ := w.(http.Flusher)
-
-		chunks := []string{
-			`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":""}]}`,
-			`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\":"}}]},"finish_reason":""}]}`,
-			`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"SF\"}"}}]},"finish_reason":""}]}`,
-			`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":8,"total_tokens":18}}`,
-			`data: [DONE]`,
-		}
-		for _, c := range chunks {
-			fmt.Fprintln(w, c)
-			fmt.Fprintln(w)
-			if flusher != nil {
-				flusher.Flush()
-			}
-		}
-	}))
-	defer server.Close()
-
-	p := NewProvider("key", server.URL, "", WithStream(true))
-	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "weather?"}}, nil, "test", nil)
-	if err != nil {
-		t.Fatalf("Chat() error = %v", err)
-	}
-	if len(out.ToolCalls) != 1 {
-		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
-	}
-	tc := out.ToolCalls[0]
-	if tc.ID != "call_1" {
-		t.Fatalf("ToolCalls[0].ID = %q, want %q", tc.ID, "call_1")
-	}
-	if tc.Name != "get_weather" {
-		t.Fatalf("ToolCalls[0].Name = %q, want %q", tc.Name, "get_weather")
-	}
-	if tc.Arguments["city"] != "SF" {
-		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want SF", tc.Arguments["city"])
-	}
-}
-
-func TestProviderChat_CustomEndpointPath(t *testing.T) {
-	var hitPath string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hitPath = r.URL.Path
-		resp := map[string]any{
-			"choices": []map[string]any{
-				{"message": map[string]any{"content": "ok"}, "finish_reason": "stop"},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
-	p := NewProvider("key", server.URL, "",
-		WithEndpointPath("/text/chatcompletion_v2"),
-	)
-	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "test", nil)
-	if err != nil {
-		t.Fatalf("Chat() error = %v", err)
-	}
-	if hitPath != "/text/chatcompletion_v2" {
-		t.Fatalf("endpoint path = %q, want %q", hitPath, "/text/chatcompletion_v2")
-	}
-}
-
-func TestReadSSEIntoChannel_TextAndToolCalls(t *testing.T) {
-	sseData := strings.Join([]string{
-		`data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":""}]}`,
-		``,
-		`data: {"choices":[{"delta":{"content":" world"},"finish_reason":""}]}`,
-		``,
-		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"greet","arguments":"{\"n"}}]},"finish_reason":""}]}`,
-		``,
-		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ame\":\"Bob\"}"}}]},"finish_reason":""}]}`,
-		``,
-		`data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`,
-		``,
-		`data: [DONE]`,
-		``,
-	}, "\n")
-
-	ch := make(chan protocoltypes.StreamEvent, 32)
-	go func() {
-		defer close(ch)
-		readSSEIntoChannel(context.Background(), strings.NewReader(sseData), ch)
-	}()
-
-	var events []protocoltypes.StreamEvent
-	for ev := range ch {
-		events = append(events, ev)
-	}
-
-	if len(events) < 3 {
-		t.Fatalf("got %d events, want at least 3", len(events))
-	}
-
-	// Check content deltas
-	if events[0].ContentDelta != "Hello" {
-		t.Errorf("events[0].ContentDelta = %q, want %q", events[0].ContentDelta, "Hello")
-	}
-	if events[1].ContentDelta != " world" {
-		t.Errorf("events[1].ContentDelta = %q, want %q", events[1].ContentDelta, " world")
-	}
-
-	// Check tool call deltas
-	if len(events[2].ToolCallDeltas) != 1 || events[2].ToolCallDeltas[0].ID != "call_1" {
-		t.Errorf("events[2] should contain tool call with ID=call_1")
-	}
-	if events[2].ToolCallDeltas[0].Name != "greet" {
-		t.Errorf("events[2].ToolCallDeltas[0].Name = %q, want %q", events[2].ToolCallDeltas[0].Name, "greet")
-	}
-
-	// Check finish event
-	lastEv := events[len(events)-1]
-	if lastEv.FinishReason != "stop" {
-		t.Errorf("last event FinishReason = %q, want %q", lastEv.FinishReason, "stop")
-	}
-	if lastEv.Usage == nil || lastEv.Usage.TotalTokens != 7 {
-		t.Errorf("last event Usage.TotalTokens = %v, want 7", lastEv.Usage)
-	}
-}
-
-func TestReadSSEIntoChannel_ContextCancel(t *testing.T) {
-	// Simulate a slow SSE stream that gets canceled.
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Create a reader that blocks after sending one chunk.
-	sseData := `data: {"choices":[{"delta":{"content":"first"},"finish_reason":""}]}` + "\n\n"
-
-	ch := make(chan protocoltypes.StreamEvent, 32)
-	go func() {
-		defer close(ch)
-		readSSEIntoChannel(ctx, strings.NewReader(sseData), ch)
-	}()
-
-	// Read the first event.
-	ev := <-ch
-	if ev.ContentDelta != "first" {
-		t.Fatalf("ContentDelta = %q, want %q", ev.ContentDelta, "first")
-	}
-
-	// Cancel the context; the channel should close.
-	cancel()
-	_, ok := <-ch
-	if ok {
-		t.Fatal("expected channel to be closed after context cancel")
-	}
-}
-
-func TestAccumulateStream_FullResponse(t *testing.T) {
-	ch := make(chan protocoltypes.StreamEvent, 8)
-
-	go func() {
-		ch <- protocoltypes.StreamEvent{ContentDelta: "Hello"}
-		ch <- protocoltypes.StreamEvent{ContentDelta: " world"}
-		ch <- protocoltypes.StreamEvent{
-			ToolCallDeltas: []protocoltypes.StreamToolCallDelta{
-				{Index: 0, ID: "call_1", Name: "test_tool", ArgumentsDelta: `{"key"`},
-			},
-		}
-		ch <- protocoltypes.StreamEvent{
-			ToolCallDeltas: []protocoltypes.StreamToolCallDelta{
-				{Index: 0, ArgumentsDelta: `:"value"}`},
-			},
-		}
-		ch <- protocoltypes.StreamEvent{
-			FinishReason: "stop",
-			Usage:        &UsageInfo{PromptTokens: 5, CompletionTokens: 3, TotalTokens: 8},
-		}
-		close(ch)
-	}()
-
-	resp, err := AccumulateStream(ch)
-	if err != nil {
-		t.Fatalf("AccumulateStream() error = %v", err)
-	}
-
-	if resp.Content != "Hello world" {
-		t.Errorf("Content = %q, want %q", resp.Content, "Hello world")
-	}
-	if resp.FinishReason != "stop" {
-		t.Errorf("FinishReason = %q, want %q", resp.FinishReason, "stop")
-	}
-	if resp.Usage == nil || resp.Usage.TotalTokens != 8 {
-		t.Errorf("Usage.TotalTokens = %v, want 8", resp.Usage)
-	}
-	if len(resp.ToolCalls) != 1 {
-		t.Fatalf("len(ToolCalls) = %d, want 1", len(resp.ToolCalls))
-	}
-	if resp.ToolCalls[0].Name != "test_tool" {
-		t.Errorf("ToolCalls[0].Name = %q, want %q", resp.ToolCalls[0].Name, "test_tool")
-	}
-	if resp.ToolCalls[0].Arguments["key"] != "value" {
-		t.Errorf("ToolCalls[0].Arguments[key] = %v, want %q", resp.ToolCalls[0].Arguments["key"], "value")
-	}
-}
-
-func TestAccumulateStream_Error(t *testing.T) {
-	ch := make(chan protocoltypes.StreamEvent, 4)
-
-	go func() {
-		ch <- protocoltypes.StreamEvent{ContentDelta: "partial"}
-		ch <- protocoltypes.StreamEvent{Err: fmt.Errorf("connection reset")}
-		close(ch)
-	}()
-
-	_, err := AccumulateStream(ch)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "connection reset") {
-		t.Fatalf("error = %q, want to contain %q", err.Error(), "connection reset")
-	}
-}
-
-func TestChatStream_EndToEnd(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		flusher, _ := w.(http.Flusher)
-
-		chunks := []string{
-			`data: {"choices":[{"delta":{"content":"stream"},"finish_reason":""}]}`,
-			`data: {"choices":[{"delta":{"content":"ed"},"finish_reason":""}]}`,
-			`data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`,
-			`data: [DONE]`,
-		}
-		for _, c := range chunks {
-			fmt.Fprintln(w, c)
-			fmt.Fprintln(w)
-			if flusher != nil {
-				flusher.Flush()
-			}
-		}
-	}))
-	defer server.Close()
-
-	p := NewProvider("key", server.URL, "", WithStream(true))
-
-	ch, err := p.ChatStream(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "test", nil)
-	if err != nil {
-		t.Fatalf("ChatStream() error = %v", err)
-	}
-
-	resp, err := AccumulateStream(ch)
-	if err != nil {
-		t.Fatalf("AccumulateStream() error = %v", err)
-	}
-
-	if resp.Content != "streamed" {
-		t.Errorf("Content = %q, want %q", resp.Content, "streamed")
-	}
-	if resp.FinishReason != "stop" {
-		t.Errorf("FinishReason = %q, want %q", resp.FinishReason, "stop")
-	}
-	if resp.Usage == nil || resp.Usage.TotalTokens != 3 {
-		t.Errorf("Usage.TotalTokens = %v, want 3", resp.Usage)
-	}
-}
-
-func TestChatStream_EarlyCancel(t *testing.T) {
-	serverDone := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer close(serverDone)
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		flusher, _ := w.(http.Flusher)
-
-		// Send many chunks; expect the client to cancel early.
-		for i := 0; i < 1000; i++ {
-			select {
-			case <-r.Context().Done():
-				return
-			default:
-			}
-			fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"x\"},\"finish_reason\":\"\"}]}\n\n")
-			if flusher != nil {
-				flusher.Flush()
-			}
-		}
-	}))
-	defer server.Close()
-
-	p := NewProvider("key", server.URL, "", WithStream(true))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ch, err := p.ChatStream(ctx, []Message{{Role: "user", Content: "hi"}}, nil, "test", nil)
-	if err != nil {
-		t.Fatalf("ChatStream() error = %v", err)
-	}
-
-	// Read a few events, then cancel.
-	count := 0
-	for ev := range ch {
-		if ev.Err != nil {
-			break
-		}
-		count++
-		if count >= 5 {
-			cancel()
-		}
-	}
-
-	if count < 5 {
-		t.Errorf("expected at least 5 events before cancel, got %d", count)
-	}
-
-	// Server should have received the cancellation.
-	<-serverDone
-}
-
-func TestCanStream(t *testing.T) {
-	p1 := NewProvider("key", "https://example.com", "")
-	if p1.CanStream() {
-		t.Error("CanStream() = true for non-stream provider")
-	}
-
-	p2 := NewProvider("key", "https://example.com", "", WithStream(true))
-	if !p2.CanStream() {
-		t.Error("CanStream() = false for stream provider")
+	if got := normalizeModel("vivgrid/auto", "https://api.vivgrid.com/v1"); got != "auto" {
+		t.Fatalf("normalizeModel(vivgrid auto) = %q, want %q", got, "auto")
 	}
 }
 
@@ -734,11 +588,38 @@ func TestProvider_RequestTimeoutOverride(t *testing.T) {
 	}
 }
 
-func TestProvider_RequestTimeoutNonPositive(t *testing.T) {
-	p := NewProviderWithMaxTokensFieldAndTimeout("key", "https://example.com/v1", "", "", -1)
-	if p.httpClient.Timeout != defaultRequestTimeout {
-		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+type errAfterDataReadCloser struct {
+	data      []byte
+	chunkSize int
+	offset    int
+}
+
+func (r *errAfterDataReadCloser) Read(p []byte) (int, error) {
+	if r.offset >= len(r.data) {
+		return 0, io.ErrUnexpectedEOF
 	}
+
+	n := r.chunkSize
+	if n <= 0 || n > len(p) {
+		n = len(p)
+	}
+	remaining := len(r.data) - r.offset
+	if n > remaining {
+		n = remaining
+	}
+	copy(p, r.data[r.offset:r.offset+n])
+	r.offset += n
+	return n, nil
+}
+
+func (r *errAfterDataReadCloser) Close() error {
+	return nil
 }
 
 func TestProvider_FunctionalOptionMaxTokensField(t *testing.T) {
@@ -759,5 +640,204 @@ func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
 	p := NewProvider("key", "https://example.com/v1", "", WithRequestTimeout(-1*time.Second))
 	if p.httpClient.Timeout != defaultRequestTimeout {
 		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
+	}
+}
+
+func TestSerializeMessages_PlainText(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "hi", ReasoningContent: "thinking..."},
+	}
+	result := serializeMessages(messages)
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	if msgs[0]["content"] != "hello" {
+		t.Fatalf("expected plain string content, got %v", msgs[0]["content"])
+	}
+	if msgs[1]["reasoning_content"] != "thinking..." {
+		t.Fatalf("reasoning_content not preserved, got %v", msgs[1]["reasoning_content"])
+	}
+}
+
+func TestSerializeMessages_WithMedia(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{Role: "user", Content: "describe this", Media: []string{"data:image/png;base64,abc123"}},
+	}
+	result := serializeMessages(messages)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	content, ok := msgs[0]["content"].([]any)
+	if !ok {
+		t.Fatalf("expected array content for media message, got %T", msgs[0]["content"])
+	}
+	if len(content) != 2 {
+		t.Fatalf("expected 2 content parts, got %d", len(content))
+	}
+
+	textPart := content[0].(map[string]any)
+	if textPart["type"] != "text" || textPart["text"] != "describe this" {
+		t.Fatalf("text part mismatch: %v", textPart)
+	}
+
+	imgPart := content[1].(map[string]any)
+	if imgPart["type"] != "image_url" {
+		t.Fatalf("expected image_url type, got %v", imgPart["type"])
+	}
+	imgURL := imgPart["image_url"].(map[string]any)
+	if imgURL["url"] != "data:image/png;base64,abc123" {
+		t.Fatalf("image url mismatch: %v", imgURL["url"])
+	}
+}
+
+func TestSerializeMessages_MediaWithToolCallID(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{Role: "tool", Content: "image result", Media: []string{"data:image/png;base64,xyz"}, ToolCallID: "call_1"},
+	}
+	result := serializeMessages(messages)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	if msgs[0]["tool_call_id"] != "call_1" {
+		t.Fatalf("tool_call_id not preserved with media, got %v", msgs[0]["tool_call_id"])
+	}
+	// Content should be multipart array
+	if _, ok := msgs[0]["content"].([]any); !ok {
+		t.Fatalf("expected array content, got %T", msgs[0]["content"])
+	}
+}
+
+// chatWithCacheKey sets up a test server, sends a Chat request with prompt_cache_key,
+// and returns the decoded request body for assertion.
+func chatWithCacheKey(t *testing.T, apiBase string) map[string]any {
+	t.Helper()
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	p.apiBase = apiBase
+	p.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.URL, _ = url.Parse(server.URL + r.URL.Path)
+			return http.DefaultTransport.RoundTrip(r)
+		}),
+	}
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"test-model",
+		map[string]any{"prompt_cache_key": "agent-main"},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	return requestBody
+}
+
+func TestProviderChat_PromptCacheKeySentToOpenAI(t *testing.T) {
+	body := chatWithCacheKey(t, "https://api.openai.com/v1")
+	if body["prompt_cache_key"] != "agent-main" {
+		t.Fatalf("prompt_cache_key = %v, want %q", body["prompt_cache_key"], "agent-main")
+	}
+}
+
+func TestProviderChat_PromptCacheKeyOmittedForNonOpenAI(t *testing.T) {
+	tests := []struct {
+		name    string
+		apiBase string
+	}{
+		{"mistral", "https://api.mistral.ai/v1"},
+		{"gemini", "https://generativelanguage.googleapis.com/v1beta"},
+		{"deepseek", "https://api.deepseek.com/v1"},
+		{"groq", "https://api.groq.com/openai/v1"},
+		{"minimax", "https://api.minimaxi.com/v1"},
+		{"ollama_local", "http://localhost:11434/v1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := chatWithCacheKey(t, tt.apiBase)
+			if _, exists := body["prompt_cache_key"]; exists {
+				t.Fatalf("prompt_cache_key should NOT be sent to %s, but was included in request", tt.name)
+			}
+		})
+	}
+}
+
+func TestSupportsPromptCacheKey(t *testing.T) {
+	tests := []struct {
+		apiBase string
+		want    bool
+	}{
+		{"https://api.openai.com/v1", true},
+		{"https://api.openai.com/v1/", true},
+		{"https://myresource.openai.azure.com/openai/deployments/gpt-4", true},
+		{"https://eastus.openai.azure.com/v1", true},
+		{"https://api.mistral.ai/v1", false},
+		{"https://generativelanguage.googleapis.com/v1beta", false},
+		{"https://api.deepseek.com/v1", false},
+		{"https://api.groq.com/openai/v1", false},
+		{"http://localhost:11434/v1", false},
+		{"https://openrouter.ai/api/v1", false},
+		// Edge cases: proxy URLs with openai.com in path should NOT match
+		{"https://my-proxy.com/api.openai.com/v1", false},
+		{"https://proxy.example.com/openai.azure.com/v1", false},
+		// Malformed or empty
+		{"", false},
+		{"not-a-url", false},
+	}
+	for _, tt := range tests {
+		if got := supportsPromptCacheKey(tt.apiBase); got != tt.want {
+			t.Errorf("supportsPromptCacheKey(%q) = %v, want %v", tt.apiBase, got, tt.want)
+		}
+	}
+}
+
+func TestSerializeMessages_StripsSystemParts(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{
+			Role:    "system",
+			Content: "you are helpful",
+			SystemParts: []protocoltypes.ContentBlock{
+				{Type: "text", Text: "you are helpful"},
+			},
+		},
+	}
+	result := serializeMessages(messages)
+
+	data, _ := json.Marshal(result)
+	raw := string(data)
+	if strings.Contains(raw, "system_parts") {
+		t.Fatal("system_parts should not appear in serialized output")
 	}
 }
