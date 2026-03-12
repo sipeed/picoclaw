@@ -92,8 +92,9 @@ func RunToolLoop(
 					})
 				finalContent = response.Content
 				messages = append(messages, providers.Message{
-					Role:    "assistant",
-					Content: response.Content,
+					Role:             "assistant",
+					Content:          response.Content,
+					ReasoningContent: response.ReasoningContent, // [Fix] Preserve reasoning content to maintain context
 				})
 				messages = append(messages, providers.Message{
 					Role:    "user",
@@ -121,8 +122,9 @@ func RunToolLoop(
 			logger.WarnCF("toolloop", "LLM response was truncated (max_tokens hit), injecting recovery message",
 				map[string]any{"iteration": iteration})
 			messages = append(messages, providers.Message{
-				Role:    "assistant",
-				Content: response.Content,
+				Role:             "assistant",
+				Content:          response.Content,
+				ReasoningContent: response.ReasoningContent, // [Fix] Preserve reasoning content to prevent broken chain of thought
 			})
 			messages = append(messages, providers.Message{
 				Role:    "user",
@@ -134,11 +136,25 @@ func RunToolLoop(
 		// 4. If no tool calls, we're done
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
+			// [Fix] Fallback for models (like Gemini 2.0 Pro Thinking) that put output in reasoning block
+			if finalContent == "" && response.ReasoningContent != "" {
+				finalContent = response.ReasoningContent
+			}
+
 			logger.InfoCF("toolloop", "LLM response without tool calls (direct answer)",
 				map[string]any{
 					"iteration":     iteration,
 					"content_chars": len(finalContent),
 				})
+
+			// [Fix] Append the final answer to the messages array!
+			// Essential for Team's evaluator_optimizer strategy to retain state in the next loop.
+			messages = append(messages, providers.Message{
+				Role:             "assistant",
+				Content:          finalContent,
+				ReasoningContent: response.ReasoningContent,
+			})
+
 			break
 		}
 
@@ -161,20 +177,32 @@ func RunToolLoop(
 
 		// 6. Build assistant message with tool calls
 		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
+			Role:             "assistant",
+			Content:          response.Content,
+			ReasoningContent: response.ReasoningContent, // [Fix] Include ReasoningContent
 		}
 		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
+
+			// [Fix] Preserve ThoughtSignature and ExtraContent for compatibility with models like Gemini 2.0/3.0
+			extraContent := tc.ExtraContent
+			thoughtSignature := ""
+			if tc.Function != nil {
+				thoughtSignature = tc.Function.ThoughtSignature
+			}
+
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
 				ID:        tc.ID,
 				Type:      "function",
 				Name:      tc.Name,
 				Arguments: tc.Arguments,
 				Function: &providers.FunctionCall{
-					Name:      tc.Name,
-					Arguments: string(argumentsJSON),
+					Name:             tc.Name,
+					Arguments:        string(argumentsJSON),
+					ThoughtSignature: thoughtSignature, // [Fix] Preserve thought signature
 				},
+				ExtraContent:     extraContent,     // [Fix] Preserve extra content
+				ThoughtSignature: thoughtSignature, // [Fix] Preserve thought signature
 			})
 		}
 		messages = append(messages, assistantMsg)
