@@ -181,10 +181,8 @@ func buildParams(
 				}
 				for _, tc := range msg.ToolCalls {
 					args := tc.Arguments
-					if args == nil && tc.Function != nil && tc.Function.Arguments != "" {
-						if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-							args = map[string]any{}
-						}
+					if args == nil && tc.Function != nil && len(tc.Function.Arguments) > 0 {
+						args = tc.Function.Arguments
 					}
 					if args == nil {
 						args = map[string]any{}
