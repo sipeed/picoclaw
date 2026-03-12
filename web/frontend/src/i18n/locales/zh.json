@@ -450,7 +450,6 @@
       "unsaved_changes": "您有未保存的更改。"
     },
     "logs": {
-      "description": "系统日志和监控。",
       "clear": "清空日志",
       "empty": "等待日志中..."
     }

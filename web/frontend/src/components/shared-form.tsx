@@ -35,13 +35,13 @@ export function Field({
   if (layout === "setting-row") {
     return (
       <div className="flex flex-col gap-4 py-4 md:grid md:grid-cols-[minmax(0,1fr)_minmax(240px,320px)] md:items-center md:gap-6">
-        <div className="space-y-1">
+        <div className="max-w-full space-y-1 md:max-w-[clamp(18rem,42vw,28rem)]">
           <FieldLabel>
             {label}
             {required && <span className="text-destructive ml-1">*</span>}
           </FieldLabel>
           {hint && (
-            <FieldDescription className="text-xs leading-normal">
+            <FieldDescription className="text-xs leading-normal break-words">
               {hint}
             </FieldDescription>
           )}
@@ -141,10 +141,10 @@ export function SwitchCardField({
   if (layout === "setting-row") {
     return (
       <div className="flex flex-col gap-4 py-4 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-6">
-        <div className="min-w-0">
+        <div className="max-w-full min-w-0 md:max-w-[clamp(18rem,42vw,28rem)]">
           <p className="text-sm font-medium">{label}</p>
           {hint && (
-            <p className="text-muted-foreground mt-0.5 text-xs leading-normal">
+            <p className="text-muted-foreground mt-0.5 text-xs leading-normal break-words">
               {hint}
             </p>
           )}
