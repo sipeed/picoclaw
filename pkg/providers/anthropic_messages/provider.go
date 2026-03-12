@@ -140,15 +140,16 @@ func buildRequestBody(
 	model string,
 	options map[string]any,
 ) (map[string]any, error) {
-	result := map[string]any{
-		"model":      model,
-		"max_tokens": int64(4096),
-		"messages":   []any{},
+	// max_tokens is required and guaranteed by agent loop
+	maxTokens, ok := asInt(options["max_tokens"])
+	if !ok {
+		return nil, fmt.Errorf("max_tokens is required in options")
 	}
 
-	// Set max_tokens from options
-	if mt, ok := asInt(options["max_tokens"]); ok {
-		result["max_tokens"] = int64(mt)
+	result := map[string]any{
+		"model":      model,
+		"max_tokens": int64(maxTokens),
+		"messages":   []any{},
 	}
 
 	// Set temperature from options

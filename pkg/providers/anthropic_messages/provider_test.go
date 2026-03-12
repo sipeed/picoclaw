@@ -27,11 +27,13 @@ func TestBuildRequestBody(t *testing.T) {
 			messages: []Message{
 				{Role: "user", Content: "Hello, world!"},
 			},
-			model:   "test-model",
-			options: map[string]any{},
+			model: "test-model",
+			options: map[string]any{
+				"max_tokens": 8192,
+			},
 			want: map[string]any{
 				"model":      "test-model",
-				"max_tokens": int64(4096),
+				"max_tokens": int64(8192),
 				"messages": []any{
 					map[string]any{
 						"role":    "user",
@@ -46,11 +48,13 @@ func TestBuildRequestBody(t *testing.T) {
 				{Role: "user", Content: "What is 2+2?"},
 				{Role: "assistant", Content: "4"},
 			},
-			model:   "test-model",
-			options: map[string]any{},
+			model: "test-model",
+			options: map[string]any{
+				"max_tokens": 8192,
+			},
 			want: map[string]any{
 				"model":      "test-model",
-				"max_tokens": int64(4096),
+				"max_tokens": int64(8192),
 				"messages": []any{
 					map[string]any{
 						"role":    "user",
@@ -74,11 +78,13 @@ func TestBuildRequestBody(t *testing.T) {
 				{Role: "system", Content: "You are a helpful assistant."},
 				{Role: "user", Content: "Hello"},
 			},
-			model:   "test-model",
-			options: map[string]any{},
+			model: "test-model",
+			options: map[string]any{
+				"max_tokens": 8192,
+			},
 			want: map[string]any{
 				"model":      "test-model",
-				"max_tokens": int64(4096),
+				"max_tokens": int64(8192),
 				"system":     "You are a helpful assistant.",
 				"messages": []any{
 					map[string]any{
@@ -111,6 +117,16 @@ func TestBuildRequestBody(t *testing.T) {
 			},
 		},
 		{
+			name: "missing max_tokens returns error",
+			messages: []Message{
+				{Role: "user", Content: "Test"},
+			},
+			model:   "test-model",
+			options: map[string]any{},
+			want:    nil,
+			wantErr: true,
+		},
+		{
 			name: "with tools",
 			messages: []Message{
 				{Role: "user", Content: "What's the weather?"},
@@ -132,11 +148,13 @@ func TestBuildRequestBody(t *testing.T) {
 					},
 				},
 			},
-			model:   "test-model",
-			options: map[string]any{},
+			model: "test-model",
+			options: map[string]any{
+				"max_tokens": 8192,
+			},
 			want: map[string]any{
 				"model":      "test-model",
-				"max_tokens": int64(4096),
+				"max_tokens": int64(8192),
 				"messages": []any{
 					map[string]any{
 						"role":    "user",
