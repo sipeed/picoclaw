@@ -81,13 +81,15 @@ type TeamModelConfig struct {
 
 type TeamToolsConfig struct {
 	ToolConfig          `                       envPrefix:"PICOCLAW_TOOLS_TEAM_"`
-	MaxMembers          int               `json:"max_members"         env:"PICOCLAW_TOOLS_TEAM_MAX_MEMBERS"`
-	MaxTeamTokens       int               `json:"max_team_tokens"     env:"PICOCLAW_TOOLS_TEAM_MAX_TOKENS"`
-	MaxEvaluatorLoops   int               `json:"max_evaluator_loops" env:"PICOCLAW_TOOLS_TEAM_MAX_EVALUATOR_LOOPS"`
-	MaxTimeoutMinutes   int               `json:"max_timeout_minutes" env:"PICOCLAW_TOOLS_TEAM_MAX_TIMEOUT_MINUTES"`
+	MaxMembers          int               `json:"max_members"           env:"PICOCLAW_TOOLS_TEAM_MAX_MEMBERS"`
+	MaxTeamTokens       int               `json:"max_team_tokens"       env:"PICOCLAW_TOOLS_TEAM_MAX_TOKENS"`
+	MaxEvaluatorLoops   int               `json:"max_evaluator_loops"   env:"PICOCLAW_TOOLS_TEAM_MAX_EVALUATOR_LOOPS"`
+	MaxTimeoutMinutes   int               `json:"max_timeout_minutes"   env:"PICOCLAW_TOOLS_TEAM_MAX_TIMEOUT_MINUTES"`
+	MaxContextRunes     int               `json:"max_context_runes"     env:"PICOCLAW_TOOLS_TEAM_MAX_CONTEXT_RUNES"`
 	DisableAutoReviewer bool              `json:"disable_auto_reviewer" env:"PICOCLAW_TOOLS_TEAM_DISABLE_AUTO_REVIEWER"`
-	AllowedStrategies   []string          `json:"allowed_strategies"  env:"PICOCLAW_TOOLS_TEAM_ALLOWED_STRATEGIES"`
-	AllowedModels       []TeamModelConfig `json:"allowed_models"      env:"-"`
+	ReviewerModel       string            `json:"reviewer_model"        env:"PICOCLAW_TOOLS_TEAM_REVIEWER_MODEL"`
+	AllowedStrategies   []string          `json:"allowed_strategies"    env:"PICOCLAW_TOOLS_TEAM_ALLOWED_STRATEGIES"`
+	AllowedModels       []TeamModelConfig `json:"allowed_models"        env:"-"`
 }
 
 type Config struct {
