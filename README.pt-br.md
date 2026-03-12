@@ -645,7 +645,6 @@ O PicoClaw armazena dados no workspace configurado (padrão: `~/.picoclaw/worksp
 ├── HEARTBEAT.md       # Prompts de tarefas periodicas (verificado a cada 30 min)
 ├── IDENTITY.md        # Identidade do Agente
 ├── SOUL.md            # Alma do Agente
-├── TOOLS.md           # Descrição das ferramentas
 └── USER.md            # Preferencias do usuario
 ```
 
