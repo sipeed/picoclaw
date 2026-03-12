@@ -80,9 +80,9 @@ func TestShouldPrintBanner(t *testing.T) {
 		assert.False(t, shouldPrintBanner([]string{"picoclaw", "agent"}, true))
 	})
 
-	t.Run("common truthy env values disable banner", func(t *testing.T) {
-		for _, value := range []string{"true", "yes", "on"} {
-			t.Run(value, func(t *testing.T) {
+	t.Run("truthy env values disable banner after normalization", func(t *testing.T) {
+		for _, value := range []string{"true", "yes", "on", " TrUe ", "\tON\n"} {
+			t.Run(fmt.Sprintf("%q", value), func(t *testing.T) {
 				t.Setenv(noBannerEnv, value)
 				assert.False(t, shouldPrintBanner([]string{"picoclaw", "agent"}, true))
 			})
