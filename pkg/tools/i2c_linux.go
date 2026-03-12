@@ -112,7 +112,6 @@ func (t *I2CTool) scan(args map[string]any) *ToolResult {
 	}
 
 	var found []deviceEntry
-
 	// Scan 0x08-0x77, skipping I2C reserved addresses 0x00-0x07
 	for addr := 0x08; addr <= 0x77; addr++ {
 		// Set slave address — EBUSY means a kernel driver owns this address
@@ -142,7 +141,6 @@ func (t *I2CTool) scan(args map[string]any) *ToolResult {
 		"devices": found,
 		"count":   len(found),
 	}, "", "  ")
-
 	return SilentResult(fmt.Sprintf("Scan of %s:\n%s", devPath, string(result)))
 }
 
@@ -213,7 +211,6 @@ func (t *I2CTool) readDevice(args map[string]any) *ToolResult {
 		"hex":     hexBytes,
 		"length":  n,
 	}, "", "  ")
-
 	return SilentResult(string(result))
 }
 

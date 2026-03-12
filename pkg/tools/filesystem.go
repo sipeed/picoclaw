@@ -27,7 +27,6 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 	}
 
 	var absPath string
-
 	if filepath.IsAbs(path) {
 		absPath = filepath.Clean(path)
 	} else {
@@ -43,9 +42,7 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 		}
 
 		var resolved string
-
 		workspaceReal := absWorkspace
-
 		if resolved, err = filepath.EvalSymlinks(absWorkspace); err == nil {
 			workspaceReal = resolved
 		}
@@ -56,7 +53,6 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 			}
 		} else if os.IsNotExist(err) {
 			var parentResolved string
-
 			if parentResolved, err = resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
 				if !isWithinWorkspace(parentResolved, workspaceReal) {
 					return "", fmt.Errorf("access denied: symlink resolves outside workspace")
@@ -79,7 +75,6 @@ func resolveExistingAncestor(path string) (string, error) {
 		} else if !os.IsNotExist(err) {
 			return "", err
 		}
-
 		if filepath.Dir(current) == current {
 			return "", os.ErrNotExist
 		}
@@ -88,7 +83,6 @@ func resolveExistingAncestor(path string) (string, error) {
 
 func isWithinWorkspace(candidate, workspace string) bool {
 	rel, err := filepath.Rel(filepath.Clean(workspace), filepath.Clean(candidate))
-
 	return err == nil && filepath.IsLocal(rel)
 }
 
@@ -119,7 +113,6 @@ func (t *ReadFileTool) Description() string {
 func (t *ReadFileTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
-
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type": "string",
@@ -127,14 +120,12 @@ func (t *ReadFileTool) Parameters() map[string]any {
 				"description": "Path to the file to read",
 			},
 		},
-
 		"required": []string{"path"},
 	}
 }
 
 func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
-
 	if !ok {
 		return ErrorResult("path is required")
 	}
@@ -174,34 +165,29 @@ func (t *WriteFileTool) Description() string {
 func (t *WriteFileTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
-
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type": "string",
 
 				"description": "Path to the file to write",
 			},
-
 			"content": map[string]any{
 				"type": "string",
 
 				"description": "Content to write to the file",
 			},
 		},
-
 		"required": []string{"path", "content"},
 	}
 }
 
 func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
-
 	if !ok {
 		return ErrorResult("path is required")
 	}
 
 	content, ok := args["content"].(string)
-
 	if !ok {
 		return ErrorResult("content is required")
 	}
@@ -240,7 +226,6 @@ func (t *ListDirTool) Description() string {
 func (t *ListDirTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
-
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type": "string",
@@ -248,14 +233,12 @@ func (t *ListDirTool) Parameters() map[string]any {
 				"description": "Path to list",
 			},
 		},
-
 		"required": []string{"path"},
 	}
 }
 
 func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
-
 	if !ok {
 		path = "."
 	}
@@ -264,13 +247,11 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
-
 	return formatDirEntries(entries)
 }
 
 func formatDirEntries(entries []os.DirEntry) *ToolResult {
 	var result strings.Builder
-
 	for _, entry := range entries {
 		if entry.IsDir() {
 			result.WriteString("DIR:  ")
@@ -282,24 +263,18 @@ func formatDirEntries(entries []os.DirEntry) *ToolResult {
 
 		result.WriteByte('\n')
 	}
-
 	return NewToolResult(result.String())
 }
 
 // fileSystem abstracts reading, writing, and listing files, allowing both
-
 // unrestricted (host filesystem) and sandbox (os.Root) implementations to share the same polymorphic interface.
-
 type fileSystem interface {
 	ReadFile(path string) ([]byte, error)
-
 	WriteFile(path string, data []byte) error
-
 	ReadDir(path string) ([]os.DirEntry, error)
 }
 
 // hostFs is an unrestricted fileReadWriter that operates directly on the host filesystem.
-
 type hostFs struct{}
 
 func (h *hostFs) ReadFile(path string) ([]byte, error) {
@@ -308,14 +283,11 @@ func (h *hostFs) ReadFile(path string) ([]byte, error) {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("failed to read file: file not found: %w", err)
 		}
-
 		if os.IsPermission(err) {
 			return nil, fmt.Errorf("failed to read file: access denied: %w", err)
 		}
-
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
-
 	return content, nil
 }
 
@@ -330,14 +302,11 @@ func (h *hostFs) ReadDir(path string) ([]os.DirEntry, error) {
 
 func (h *hostFs) WriteFile(path string, data []byte) error {
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
-
 	// Using 0o600 (owner read/write only) for secure default permissions.
-
 	return fileutil.WriteFileAtomic(path, data, 0o600)
 }
 
 // sandboxFs is a sandboxed fileSystem that operates within a strictly defined workspace using os.Root.
-
 type sandboxFs struct {
 	workspace string
 }
@@ -351,7 +320,6 @@ func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) 
 	if err != nil {
 		return fmt.Errorf("failed to open workspace: %w", err)
 	}
-
 	defer root.Close()
 
 	relPath, err := getSafeRelPath(r.workspace, path)
@@ -364,37 +332,28 @@ func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) 
 
 func (r *sandboxFs) ReadFile(path string) ([]byte, error) {
 	var content []byte
-
 	err := r.execute(path, func(root *os.Root, relPath string) error {
 		fileContent, err := root.ReadFile(relPath)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return fmt.Errorf("failed to read file: file not found: %w", err)
 			}
-
 			// os.Root returns "escapes from parent" for paths outside the root
-
 			if os.IsPermission(err) || strings.Contains(err.Error(), "escapes from parent") ||
-
 				strings.Contains(err.Error(), "permission denied") {
 				return fmt.Errorf("failed to read file: access denied: %w", err)
 			}
-
 			return fmt.Errorf("failed to read file: %w", err)
 		}
-
 		content = fileContent
-
 		return nil
 	})
-
 	return content, err
 }
 
 func (r *sandboxFs) WriteFile(path string, data []byte) error {
 	return r.execute(path, func(root *os.Root, relPath string) error {
 		dir := filepath.Dir(relPath)
-
 		if dir != "." && dir != "/" {
 			if err := root.MkdirAll(dir, 0o755); err != nil {
 				return fmt.Errorf("failed to create parent directories: %w", err)
@@ -402,55 +361,42 @@ func (r *sandboxFs) WriteFile(path string, data []byte) error {
 		}
 
 		// Use atomic write pattern with explicit sync for flash storage reliability.
-
 		// Using 0o600 (owner read/write only) for secure default permissions.
-
 		tmpRelPath := fmt.Sprintf(".tmp-%d-%d", os.Getpid(), time.Now().UnixNano())
 
 		tmpFile, err := root.OpenFile(tmpRelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if err != nil {
 			root.Remove(tmpRelPath)
-
 			return fmt.Errorf("failed to open temp file: %w", err)
 		}
 
 		if _, err := tmpFile.Write(data); err != nil {
 			tmpFile.Close()
-
 			root.Remove(tmpRelPath)
-
 			return fmt.Errorf("failed to write temp file: %w", err)
 		}
 
 		// CRITICAL: Force sync to storage medium before rename.
-
 		// This ensures data is physically written to disk, not just cached.
-
 		if err := tmpFile.Sync(); err != nil {
 			tmpFile.Close()
-
 			root.Remove(tmpRelPath)
-
 			return fmt.Errorf("failed to sync temp file: %w", err)
 		}
 
 		if err := tmpFile.Close(); err != nil {
 			root.Remove(tmpRelPath)
-
 			return fmt.Errorf("failed to close temp file: %w", err)
 		}
 
 		if err := root.Rename(tmpRelPath, relPath); err != nil {
 			root.Remove(tmpRelPath)
-
 			return fmt.Errorf("failed to rename temp file over target: %w", err)
 		}
 
 		// Sync directory to ensure rename is durable
-
 		if dirFile, err := root.Open("."); err == nil {
 			_ = dirFile.Sync()
-
 			dirFile.Close()
 		}
 
@@ -460,33 +406,26 @@ func (r *sandboxFs) WriteFile(path string, data []byte) error {
 
 func (r *sandboxFs) ReadDir(path string) ([]os.DirEntry, error) {
 	var entries []os.DirEntry
-
 	err := r.execute(path, func(root *os.Root, relPath string) error {
 		dirEntries, err := fs.ReadDir(root.FS(), relPath)
 		if err != nil {
 			return err
 		}
-
 		entries = dirEntries
-
 		return nil
 	})
-
 	return entries, err
 }
 
 // Helper to get a safe relative path for os.Root usage
-
 func getSafeRelPath(workspace, path string) (string, error) {
 	if workspace == "" {
 		return "", fmt.Errorf("workspace is not defined")
 	}
 
 	rel := filepath.Clean(path)
-
 	if filepath.IsAbs(rel) {
 		var err error
-
 		rel, err = filepath.Rel(workspace, rel)
 		if err != nil {
 			return "", fmt.Errorf("failed to calculate relative path: %w", err)

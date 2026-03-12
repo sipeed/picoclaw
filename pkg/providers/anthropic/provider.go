@@ -329,7 +329,6 @@ func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 		case []string:
 			tool.InputSchema.Required = append([]string(nil), req...)
 		}
-
 		result = append(result, anthropic.ToolUnionParam{OfTool: &tool})
 	}
 	return result

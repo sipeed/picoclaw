@@ -140,7 +140,6 @@ func (t *SPITool) transfer(args map[string]any) *ToolResult {
 		"received": intBytes,
 		"hex":      hexBytes,
 	}, "", "  ")
-
 	return SilentResult(string(result))
 }
 
@@ -196,6 +195,5 @@ func (t *SPITool) readDevice(args map[string]any) *ToolResult {
 		"hex":    hexBytes,
 		"length": len(rxBuf),
 	}, "", "  ")
-
 	return SilentResult(string(result))
 }

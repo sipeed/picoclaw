@@ -63,11 +63,9 @@ func NewSessionManager(storage string) *SessionManager {
 
 func (sm *SessionManager) GetOrCreate(key string) *Session {
 	sm.mu.Lock()
-
 	defer sm.mu.Unlock()
 
 	session, ok := sm.sessions[key]
-
 	if ok {
 		return session
 	}
@@ -81,7 +79,6 @@ func (sm *SessionManager) GetOrCreate(key string) *Session {
 
 		Updated: time.Now(),
 	}
-
 	sm.sessions[key] = session
 
 	return session
@@ -96,16 +93,12 @@ func (sm *SessionManager) AddMessage(sessionKey, role, content string) {
 }
 
 // AddFullMessage adds a complete message with tool calls and tool call ID to the session.
-
 // This is used to save the full conversation flow including tool calls and tool results.
-
 func (sm *SessionManager) AddFullMessage(sessionKey string, msg providers.Message) {
 	sm.mu.Lock()
-
 	defer sm.mu.Unlock()
 
 	session, ok := sm.sessions[sessionKey]
-
 	if !ok {
 		session = &Session{
 			Key: sessionKey,
@@ -114,77 +107,61 @@ func (sm *SessionManager) AddFullMessage(sessionKey string, msg providers.Messag
 
 			Created: time.Now(),
 		}
-
 		sm.sessions[sessionKey] = session
 	}
 
 	session.Messages = append(session.Messages, msg)
-
 	session.Updated = time.Now()
 }
 
 func (sm *SessionManager) GetHistory(key string) []providers.Message {
 	sm.mu.RLock()
-
 	defer sm.mu.RUnlock()
 
 	session, ok := sm.sessions[key]
-
 	if !ok {
 		return []providers.Message{}
 	}
 
 	history := make([]providers.Message, len(session.Messages))
-
 	copy(history, session.Messages)
-
 	return history
 }
 
 func (sm *SessionManager) GetSummary(key string) string {
 	sm.mu.RLock()
-
 	defer sm.mu.RUnlock()
 
 	session, ok := sm.sessions[key]
-
 	if !ok {
 		return ""
 	}
-
 	return session.Summary
 }
 
 func (sm *SessionManager) SetSummary(key string, summary string) {
 	sm.mu.Lock()
-
 	defer sm.mu.Unlock()
 
 	session, ok := sm.sessions[key]
-
 	if ok {
 		session.Summary = summary
-
 		session.Updated = time.Now()
 	}
 }
 
 func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	sm.mu.Lock()
-
 	defer sm.mu.Unlock()
 
 	session, ok := sm.sessions[key]
-
 	if !ok {
 		return
 	}
 
 	if keepLast <= 0 {
 		session.Messages = []providers.Message{}
-
 		session.Updated = time.Now()
-
 		return
 	}
 
@@ -193,7 +170,6 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	}
 
 	session.Messages = session.Messages[len(session.Messages)-keepLast:]
-
 	session.Updated = time.Now()
 }
 
@@ -234,14 +210,10 @@ func (sm *SessionManager) Save(key string) error {
 	}
 
 	// Snapshot under read lock, then perform slow file I/O after unlock.
-
 	sm.mu.RLock()
-
 	stored, ok := sm.sessions[key]
-
 	if !ok {
 		sm.mu.RUnlock()
-
 		return nil
 	}
 
@@ -249,20 +221,15 @@ func (sm *SessionManager) Save(key string) error {
 		Key: stored.Key,
 
 		Summary: stored.Summary,
-
 		Created: stored.Created,
-
 		Updated: stored.Updated,
 	}
-
 	if len(stored.Messages) > 0 {
 		snapshot.Messages = make([]providers.Message, len(stored.Messages))
-
 		copy(snapshot.Messages, stored.Messages)
 	} else {
 		snapshot.Messages = []providers.Message{}
 	}
-
 	sm.mu.RUnlock()
 
 	data, err := json.MarshalIndent(snapshot, "", "  ")
@@ -271,16 +238,13 @@ func (sm *SessionManager) Save(key string) error {
 	}
 
 	sessionPath := filepath.Join(sm.storage, filename+".json")
-
 	tmpFile, err := os.CreateTemp(sm.storage, "session-*.tmp")
 	if err != nil {
 		return err
 	}
 
 	tmpPath := tmpFile.Name()
-
 	cleanup := true
-
 	defer func() {
 		if cleanup {
 			_ = os.Remove(tmpPath)
@@ -289,22 +253,17 @@ func (sm *SessionManager) Save(key string) error {
 
 	if _, err := tmpFile.Write(data); err != nil {
 		_ = tmpFile.Close()
-
 		return err
 	}
 
 	if err := tmpFile.Chmod(0o644); err != nil {
 		_ = tmpFile.Close()
-
 		return err
 	}
-
 	if err := tmpFile.Sync(); err != nil {
 		_ = tmpFile.Close()
-
 		return err
 	}
-
 	if err := tmpFile.Close(); err != nil {
 		return err
 	}
@@ -312,9 +271,7 @@ func (sm *SessionManager) Save(key string) error {
 	if err := os.Rename(tmpPath, sessionPath); err != nil {
 		return err
 	}
-
 	cleanup = false
-
 	return nil
 }
 
@@ -334,14 +291,12 @@ func (sm *SessionManager) loadSessions() error {
 		}
 
 		sessionPath := filepath.Join(sm.storage, file.Name())
-
 		data, err := os.ReadFile(sessionPath)
 		if err != nil {
 			continue
 		}
 
 		var session Session
-
 		if err := json.Unmarshal(data, &session); err != nil {
 			continue
 		}
@@ -459,25 +414,17 @@ func SanitizeHistory(history []providers.Message) ([]providers.Message, int) {
 }
 
 // SetHistory updates the messages of a session.
-
 func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 	sm.mu.Lock()
-
 	defer sm.mu.Unlock()
 
 	session, ok := sm.sessions[key]
-
 	if ok {
 		// Create a deep copy to strictly isolate internal state
-
 		// from the caller's slice.
-
 		msgs := make([]providers.Message, len(history))
-
 		copy(msgs, history)
-
 		session.Messages = msgs
-
 		session.Updated = time.Now()
 	}
 }

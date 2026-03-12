@@ -174,7 +174,6 @@ type SubagentManager struct {
 
 func NewSubagentManager(
 	provider providers.LLMProvider,
-
 	defaultModel, workspace string,
 
 	bus *bus.MessageBus,
@@ -211,30 +210,20 @@ func NewSubagentManager(
 }
 
 // SetLLMOptions sets max tokens and temperature for subagent LLM calls.
-
 func (sm *SubagentManager) SetLLMOptions(maxTokens int, temperature float64) {
 	sm.mu.Lock()
-
 	defer sm.mu.Unlock()
-
 	sm.maxTokens = maxTokens
-
 	sm.hasMaxTokens = true
-
 	sm.temperature = temperature
-
 	sm.hasTemperature = true
 }
 
 // SetTools sets the tool registry for subagent execution.
-
 // If not set, subagent will have access to the provided tools.
-
 func (sm *SubagentManager) SetTools(tools *ToolRegistry) {
 	sm.mu.Lock()
-
 	defer sm.mu.Unlock()
-
 	sm.tools = tools
 }
 
@@ -251,12 +240,9 @@ func (sm *SubagentManager) SetSessionRecorder(r SessionRecorder, conductorSessio
 }
 
 // RegisterTool registers a tool for subagent execution.
-
 func (sm *SubagentManager) RegisterTool(tool Tool) {
 	sm.mu.Lock()
-
 	defer sm.mu.Unlock()
-
 	sm.tools.Register(tool)
 }
 
@@ -268,11 +254,9 @@ func (sm *SubagentManager) Spawn(
 	callback AsyncCallback,
 ) (string, error) {
 	sm.mu.Lock()
-
 	defer sm.mu.Unlock()
 
 	taskID := fmt.Sprintf("subagent-%d", sm.nextID)
-
 	sm.nextID++
 
 	subagentTask := &SubagentTask{
@@ -338,7 +322,6 @@ func (sm *SubagentManager) Spawn(
 	if label != "" {
 		return fmt.Sprintf("Spawned subagent '%s' for task: %s", label, task), nil
 	}
-
 	return fmt.Sprintf("Spawned subagent for task: %s", task), nil
 }
 
@@ -447,9 +430,7 @@ func (sm *SubagentManager) finishTask(
 	callback AsyncCallback,
 ) {
 	sm.mu.Lock()
-
 	var result *ToolResult
-
 	defer func() {
 		sm.mu.Unlock()
 
@@ -460,14 +441,12 @@ func (sm *SubagentManager) finishTask(
 
 	if err != nil {
 		task.Status = "failed"
-
 		task.Result = fmt.Sprintf("Error: %v", err)
 
 		gcReason := "failed"
 
 		if ctx.Err() != nil {
 			task.Status = "canceled"
-
 			task.Result = "Task canceled during execution"
 
 			gcReason = "canceled"
@@ -492,7 +471,6 @@ func (sm *SubagentManager) finishTask(
 		}
 	} else {
 		task.Status = "completed"
-
 		task.Result = loopResult.Content
 
 		task.CompletedAt = time.Now().UnixMilli()
@@ -523,14 +501,12 @@ func (sm *SubagentManager) finishTask(
 				"Subagent '%s' completed (iterations: %d, tool calls: %d): %s",
 
 				task.Label,
-
 				loopResult.Iterations,
 
 				loopResult.ToolCalls,
 
 				loopResult.Content,
 			),
-
 			ForUser: loopResult.Content,
 		}
 	}
@@ -1006,34 +982,25 @@ func (sm *SubagentManager) CancelTask(taskID string) {
 
 func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {
 	sm.mu.RLock()
-
 	defer sm.mu.RUnlock()
-
 	task, ok := sm.tasks[taskID]
-
 	return task, ok
 }
 
 func (sm *SubagentManager) ListTasks() []*SubagentTask {
 	sm.mu.RLock()
-
 	defer sm.mu.RUnlock()
 
 	tasks := make([]*SubagentTask, 0, len(sm.tasks))
-
 	for _, task := range sm.tasks {
 		tasks = append(tasks, task)
 	}
-
 	return tasks
 }
 
 // SubagentTool executes a subagent task synchronously and returns the result.
-
 // Unlike SpawnTool which runs tasks asynchronously, SubagentTool waits for completion
-
 // and returns the result directly in the ToolResult.
-
 type SubagentTool struct {
 	manager *SubagentManager
 
@@ -1063,21 +1030,18 @@ func (t *SubagentTool) Description() string {
 func (t *SubagentTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
-
 		"properties": map[string]any{
 			"task": map[string]any{
 				"type": "string",
 
 				"description": "The task for subagent to complete",
 			},
-
 			"label": map[string]any{
 				"type": "string",
 
 				"description": "Optional short label for the task (for display)",
 			},
 		},
-
 		"required": []string{"task"},
 	}
 }
@@ -1090,7 +1054,6 @@ func (t *SubagentTool) SetContext(channel, chatID string) {
 
 func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
-
 	if !ok {
 		return ErrorResult(
 
@@ -1108,14 +1071,12 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	// Build messages for subagent
-
 	messages := []providers.Message{
 		{
 			Role: "system",
 
 			Content: "You are a subagent. Complete the given task independently and provide a clear, concise result.",
 		},
-
 		{
 			Role: "user",
 
@@ -1124,34 +1085,22 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	// Use RunToolLoop to execute with tools (same as async SpawnTool)
-
 	sm := t.manager
-
 	sm.mu.RLock()
-
 	tools := sm.tools
-
 	maxIter := sm.maxIterations
-
 	maxTokens := sm.maxTokens
-
 	temperature := sm.temperature
-
 	hasMaxTokens := sm.hasMaxTokens
-
 	hasTemperature := sm.hasTemperature
-
 	sm.mu.RUnlock()
 
 	var llmOptions map[string]any
-
 	if hasMaxTokens || hasTemperature {
 		llmOptions = map[string]any{}
-
 		if hasMaxTokens {
 			llmOptions["max_tokens"] = maxTokens
 		}
-
 		if hasTemperature {
 			llmOptions["temperature"] = temperature
 		}
@@ -1173,19 +1122,14 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	// ForUser: Brief summary for user (truncated if too long)
-
 	userContent := loopResult.Content
-
 	maxUserLen := 500
-
 	if len(userContent) > maxUserLen {
 		userContent = userContent[:maxUserLen] + "..."
 	}
 
 	// ForLLM: Full execution details
-
 	labelStr := label
-
 	if labelStr == "" {
 		labelStr = "(unnamed)"
 	}

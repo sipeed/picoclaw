@@ -1,11 +1,7 @@
 // PicoClaw - Ultra-lightweight personal AI agent
-
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
-
 // License: MIT
-
 //
-
 // Copyright (c) 2026 PicoClaw contributors
 
 package agent
@@ -92,7 +88,6 @@ type AgentLoop struct {
 }
 
 // processOptions configures how a message is processed
-
 type processOptions struct {
 	SessionKey string // Session identifier for history/context
 
@@ -123,9 +118,7 @@ const defaultResponse = "I've completed processing but have no response to give.
 
 func NewAgentLoop(
 	cfg *config.Config,
-
 	msgBus *bus.MessageBus,
-
 	provider providers.LLMProvider,
 
 	enableStats ...bool,
@@ -133,17 +126,12 @@ func NewAgentLoop(
 	registry := NewAgentRegistry(cfg, provider)
 
 	// Set up shared fallback chain
-
 	cooldown := providers.NewCooldownTracker()
-
 	fallbackChain := providers.NewFallbackChain(cooldown)
 
 	// Create state manager using default agent's workspace for channel recording
-
 	defaultAgent := registry.GetDefaultAgent()
-
 	var stateManager *state.Manager
-
 	if defaultAgent != nil {
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
@@ -224,21 +212,16 @@ func (al *AgentLoop) SetHeartbeatThreadUpdater(fn func(int)) {
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
-
 func registerSharedTools(
 	cfg *config.Config,
-
 	msgBus *bus.MessageBus,
-
 	registry *AgentRegistry,
-
 	provider providers.LLMProvider,
 
 	al *AgentLoop,
 ) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
-
 		if !ok {
 			continue
 		}
@@ -469,9 +452,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	for al.running.Load() {
 		select {
 		case <-ctx.Done():
-
 			return nil
-
 		default:
 		}
 
@@ -738,41 +719,29 @@ func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 }
 
 // inferMediaType determines the media type ("image", "audio", "video", "file")
-
 // from a filename and MIME content type.
-
 func inferMediaType(filename, contentType string) string {
 	ct := strings.ToLower(contentType)
-
 	fn := strings.ToLower(filename)
 
 	if strings.HasPrefix(ct, "image/") {
 		return "image"
 	}
-
 	if strings.HasPrefix(ct, "audio/") || ct == "application/ogg" {
 		return "audio"
 	}
-
 	if strings.HasPrefix(ct, "video/") {
 		return "video"
 	}
 
 	// Fallback: infer from extension
-
 	ext := filepath.Ext(fn)
-
 	switch ext {
 	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
-
 		return "image"
-
 	case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma", ".opus":
-
 		return "audio"
-
 	case ".mp4", ".avi", ".mov", ".webm", ".mkv":
-
 		return "video"
 	}
 
@@ -780,26 +749,20 @@ func inferMediaType(filename, contentType string) string {
 }
 
 // RecordLastChannel records the last active channel for this workspace.
-
 // This uses the atomic state save mechanism to prevent data loss on crash.
-
 func (al *AgentLoop) RecordLastChannel(channel string) error {
 	if al.state == nil {
 		return nil
 	}
-
 	return al.state.SetLastChannel(channel)
 }
 
 // RecordLastChatID records the last active chat ID for this workspace.
-
 // This uses the atomic state save mechanism to prevent data loss on crash.
-
 func (al *AgentLoop) RecordLastChatID(chatID string) error {
 	if al.state == nil {
 		return nil
 	}
-
 	return al.state.SetLastChatID(chatID)
 }
 
@@ -823,7 +786,6 @@ func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey stri
 
 func (al *AgentLoop) ProcessDirectWithChannel(
 	ctx context.Context,
-
 	content, sessionKey, channel, chatID string,
 ) (string, error) {
 	msg := bus.InboundMessage{
@@ -846,12 +808,10 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 }
 
 // ProcessHeartbeat processes a heartbeat request without session history.
-
 // Each heartbeat is independent and doesn't accumulate context.
 
 func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
 	agent := al.registry.GetDefaultAgent()
-
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for heartbeat")
 	}
@@ -888,9 +848,7 @@ func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, cha
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
 	// Add message preview to log (show full content for error messages)
-
 	var logContent string
-
 	if strings.Contains(msg.Content, "Error:") || strings.Contains(msg.Content, "error") {
 		logContent = msg.Content // Full content for errors
 	} else {
@@ -971,7 +929,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	// Route system messages to processSystemMessage
-
 	if msg.Channel == "system" {
 		return al.processSystemMessage(ctx, msg)
 	}
@@ -1023,11 +980,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	})
 
 	agent, ok := al.registry.GetAgent(route.AgentID)
-
 	if !ok {
 		agent = al.registry.GetDefaultAgent()
 	}
-
 	if agent == nil {
 		return "", fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
 	}
@@ -1385,7 +1340,6 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 		if !constants.IsInternalChannel(opts.Channel) {
 			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
-
 			if err := al.RecordLastChannel(channelKey); err != nil {
 				logger.WarnCF("agent", "Failed to record last channel", map[string]any{"error": err.Error()})
 			}
@@ -1487,12 +1441,9 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 2. Build messages (skip history for heartbeat)
 
 	var history []providers.Message
-
 	var summary string
-
 	if !opts.NoHistory {
 		history = agent.Sessions.GetHistory(opts.SessionKey)
-
 		summary = agent.Sessions.GetSummary(opts.SessionKey)
 
 		// Sanitize history to remove orphaned tool calls (from crashes/session collisions)
@@ -1517,19 +1468,14 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			_ = agent.Sessions.Save(opts.SessionKey)
 		}
 	}
-
 	messages := agent.ContextBuilder.BuildMessages(
-
 		history,
-
 		summary,
-
 		opts.UserMessage,
 
 		nil,
 
 		opts.Channel,
-
 		opts.ChatID,
 	)
 
@@ -1855,9 +1801,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 9. Log response
 
 	responsePreview := utils.Truncate(finalContent, 120)
-
 	logger.InfoCF("agent", fmt.Sprintf("Response: %s", responsePreview),
-
 		map[string]any{
 			"agent_id": agent.ID,
 
@@ -1875,21 +1819,16 @@ func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string
 	if al.channelManager == nil {
 		return ""
 	}
-
 	if ch, ok := al.channelManager.GetChannel(channelName); ok {
 		return ch.ReasoningChannelID()
 	}
-
 	return ""
 }
 
 func (al *AgentLoop) runLLMIteration(
 	ctx context.Context,
-
 	agent *AgentInstance,
-
 	messages []providers.Message,
-
 	opts processOptions,
 
 	task *activeTask,
@@ -1897,7 +1836,6 @@ func (al *AgentLoop) runLLMIteration(
 	planSnapshot string,
 ) (string, int, error) {
 	iteration := 0
-
 	var finalContent string
 
 	lastReminderIdx := -1
@@ -1952,7 +1890,6 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		logger.DebugCF("agent", "LLM iteration",
-
 			map[string]any{
 				"agent_id": agent.ID,
 
@@ -1962,7 +1899,6 @@ func (al *AgentLoop) runLLMIteration(
 			})
 
 		// Build tool definitions
-
 		providerToolDefs := agent.Tools.ToProviderDefs()
 
 		// Interview mode: strip tool definitions the LLM must not use,
@@ -1974,9 +1910,7 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		// Log LLM request details
-
 		logger.DebugCF("agent", "LLM request",
-
 			map[string]any{
 				"agent_id": agent.ID,
 
@@ -1996,9 +1930,7 @@ func (al *AgentLoop) runLLMIteration(
 			})
 
 		// Log full messages (detailed)
-
 		logger.DebugCF("agent", "Full LLM request",
-
 			map[string]any{
 				"iteration": iteration,
 
@@ -2010,7 +1942,6 @@ func (al *AgentLoop) runLLMIteration(
 		// Call LLM with fallback chain if candidates are configured.
 
 		var response *providers.LLMResponse
-
 		var err error
 
 		// Build onChunk callback for streaming preview.
@@ -2169,11 +2100,9 @@ func (al *AgentLoop) runLLMIteration(
 						return doCall(ctx, p, model)
 					},
 				)
-
 				if fbErr != nil {
 					return nil, fbErr
 				}
-
 				if fbResult.Provider != "" && len(fbResult.Attempts) > 0 {
 					logger.InfoCF("agent", fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
 
@@ -2181,7 +2110,6 @@ func (al *AgentLoop) runLLMIteration(
 
 						map[string]any{"agent_id": agent.ID, "iteration": iteration})
 				}
-
 				return fbResult.Response, nil
 			}
 
@@ -2201,12 +2129,9 @@ func (al *AgentLoop) runLLMIteration(
 		al.reporter().ReportStateChange(opts.SessionKey, orch.AgentStateWaiting, "")
 
 		// Retry loop for context/token errors
-
 		maxRetries := 2
-
 		for retry := 0; retry <= maxRetries; retry++ {
 			response, err = callLLM()
-
 			if err == nil {
 				break
 			}
@@ -2214,40 +2139,25 @@ func (al *AgentLoop) runLLMIteration(
 			errMsg := strings.ToLower(err.Error())
 
 			// Check if this is a network/HTTP timeout — not a context window error.
-
 			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
-
 				strings.Contains(errMsg, "deadline exceeded") ||
-
 				strings.Contains(errMsg, "client.timeout") ||
-
 				strings.Contains(errMsg, "timed out") ||
-
 				strings.Contains(errMsg, "timeout exceeded")
 
 			// Detect real context window / token limit errors, excluding network timeouts.
-
 			isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
-
 				strings.Contains(errMsg, "context window") ||
-
 				strings.Contains(errMsg, "maximum context length") ||
-
 				strings.Contains(errMsg, "token limit") ||
-
 				strings.Contains(errMsg, "too many tokens") ||
-
 				strings.Contains(errMsg, "max_tokens") ||
-
 				strings.Contains(errMsg, "invalidparameter") ||
-
 				strings.Contains(errMsg, "prompt is too long") ||
-
 				strings.Contains(errMsg, "request too large"))
 
 			if isTimeoutError && retry < maxRetries {
 				backoff := time.Duration(retry+1) * 5 * time.Second
-
 				logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
 					"error": err.Error(),
 
@@ -2255,9 +2165,7 @@ func (al *AgentLoop) runLLMIteration(
 
 					"backoff": backoff.String(),
 				})
-
 				time.Sleep(backoff)
-
 				continue
 			}
 
@@ -2279,21 +2187,14 @@ func (al *AgentLoop) runLLMIteration(
 				}
 
 				al.forceCompression(agent, opts.SessionKey)
-
 				newHistory := agent.Sessions.GetHistory(opts.SessionKey)
-
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
-
 				messages = agent.ContextBuilder.BuildMessages(
-
 					newHistory, newSummary, "",
-
 					nil, opts.Channel, opts.ChatID,
 				)
-
 				continue
 			}
-
 			break
 		}
 
@@ -2317,7 +2218,6 @@ func (al *AgentLoop) runLLMIteration(
 
 		if err != nil {
 			logger.ErrorCF("agent", "LLM call failed",
-
 				map[string]any{
 					"agent_id": agent.ID,
 
@@ -2325,7 +2225,6 @@ func (al *AgentLoop) runLLMIteration(
 
 					"error": err.Error(),
 				})
-
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
@@ -2347,7 +2246,6 @@ func (al *AgentLoop) runLLMIteration(
 		go al.handleReasoning(ctx, response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
 
 		logger.DebugCF("agent", "LLM response",
-
 			map[string]any{
 				"agent_id": agent.ID,
 
@@ -2504,12 +2402,10 @@ func (al *AgentLoop) runLLMIteration(
 
 					"content_chars": len(finalContent),
 				})
-
 			break
 		}
 
 		normalizedToolCalls := make([]providers.ToolCall, 0, len(response.ToolCalls))
-
 		for _, tc := range response.ToolCalls {
 			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
 		}
@@ -2563,15 +2459,11 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		// Log tool calls
-
 		toolNames := make([]string, 0, len(normalizedToolCalls))
-
 		for _, tc := range normalizedToolCalls {
 			toolNames = append(toolNames, tc.Name)
 		}
-
 		logger.InfoCF("agent", "LLM requested tool calls",
-
 			map[string]any{
 				"agent_id": agent.ID,
 
@@ -2685,7 +2577,6 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		// Build assistant message with tool calls
-
 		assistantMsg := providers.Message{
 			Role: "assistant",
 
@@ -2693,14 +2584,10 @@ func (al *AgentLoop) runLLMIteration(
 
 			ReasoningContent: response.ReasoningContent,
 		}
-
 		for _, tc := range normalizedToolCalls {
 			// Copy ExtraContent to ensure thought_signature is persisted for Gemini 3
-
 			extraContent := tc.ExtraContent
-
 			thoughtSignature := ""
-
 			if tc.Function != nil {
 				thoughtSignature = tc.Function.ThoughtSignature
 			}
@@ -2709,7 +2596,6 @@ func (al *AgentLoop) runLLMIteration(
 				ID: tc.ID,
 
 				Type: "function",
-
 				Name: tc.Name,
 
 				Arguments: tc.Arguments,
@@ -2727,11 +2613,9 @@ func (al *AgentLoop) runLLMIteration(
 				ThoughtSignature: thoughtSignature,
 			})
 		}
-
 		messages = append(messages, assistantMsg)
 
 		// Save assistant message with tool calls to session
-
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
 		// Execute tool calls
@@ -2923,16 +2807,12 @@ func (al *AgentLoop) runLLMIteration(
 					if al.mediaStore != nil {
 						if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
 							part.Filename = meta.Filename
-
 							part.ContentType = meta.ContentType
-
 							part.Type = inferMediaType(meta.Filename, meta.ContentType)
 						}
 					}
-
 					parts = append(parts, part)
 				}
-
 				al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
 					Channel: opts.Channel,
 
@@ -2963,11 +2843,9 @@ func (al *AgentLoop) runLLMIteration(
 
 				ToolCallID: tc.ID,
 			}
-
 			messages = append(messages, toolResultMsg)
 
 			// Save tool result message to session
-
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
 

@@ -32,27 +32,23 @@ func (t *MessageTool) Description() string {
 func (t *MessageTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
-
 		"properties": map[string]any{
 			"content": map[string]any{
 				"type": "string",
 
 				"description": "The message content to send",
 			},
-
 			"channel": map[string]any{
 				"type": "string",
 
 				"description": "Optional: target channel (telegram, whatsapp, etc.)",
 			},
-
 			"chat_id": map[string]any{
 				"type": "string",
 
 				"description": "Optional: target chat/user ID",
 			},
 		},
-
 		"required": []string{"content"},
 	}
 }
@@ -66,7 +62,6 @@ func (t *MessageTool) SetContext(channel, chatID string) {
 }
 
 // HasSentInRound returns true if the message tool sent a message during the current round.
-
 func (t *MessageTool) HasSentInRound() bool {
 	return t.sentInRound
 }
@@ -77,19 +72,16 @@ func (t *MessageTool) SetSendCallback(callback SendCallback) {
 
 func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	content, ok := args["content"].(string)
-
 	if !ok {
 		return &ToolResult{ForLLM: "content is required", IsError: true}
 	}
 
 	channel, _ := args["channel"].(string)
-
 	chatID, _ := args["chat_id"].(string)
 
 	if channel == "" {
 		channel = t.defaultChannel
 	}
-
 	if chatID == "" {
 		chatID = t.defaultChatID
 	}
@@ -115,10 +107,8 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	t.sentInRound = true
 
 	// Silent: user already received the message directly
-
 	return &ToolResult{
 		ForLLM: fmt.Sprintf("Message sent to %s:%s", channel, chatID),
-
 		Silent: true,
 	}
 }
