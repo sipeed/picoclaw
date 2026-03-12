@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"io"
 	"mime"
 	"net/url"
 	"os"
@@ -458,7 +459,7 @@ func (c *MatrixChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 
 	text := strings.TrimSpace(c.config.Placeholder.Text)
 	if text == "" {
-		text = "Thinking... 💭"
+		text = "Thinking..."
 	}
 
 	resp, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, &event.MessageEventContent{
@@ -693,6 +694,9 @@ func (c *MatrixChannel) storeMedia(localPath string, meta media.MediaMeta, scope
 	return localPath
 }
 
+// defaultMaxMediaSize is the default maximum size for downloaded media (10MB).
+const defaultMaxMediaSize = 10 * 1024 * 1024
+
 func (c *MatrixChannel) downloadMedia(
 	ctx context.Context,
 	msgEvt *event.MessageEventContent,
@@ -714,17 +718,16 @@ func (c *MatrixChannel) downloadMedia(
 	reqCtx, cancel := context.WithTimeout(dlCtx, 20*time.Second)
 	defer cancel()
 
-	data, err := c.client.DownloadBytes(reqCtx, parsed)
+	// Use streaming download instead of DownloadBytes to avoid loading large files into memory
+	resp, err := c.client.Download(reqCtx, parsed)
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
 
-	// Encrypted attachments put URL in msgEvt.File and require client-side decryption.
-	if msgEvt != nil && msgEvt.File != nil && msgEvt.URL == "" {
-		err = msgEvt.File.DecryptInPlace(data)
-		if err != nil {
-			return "", fmt.Errorf("decrypt matrix media: %w", err)
-		}
+	// Check Content-Length header if available
+	if resp.ContentLength > defaultMaxMediaSize {
+		return "", fmt.Errorf("media file too large: %d bytes (max %d)", resp.ContentLength, defaultMaxMediaSize)
 	}
 
 	label := matrixMediaLabel(msgEvt, mediaKind)
@@ -739,9 +742,49 @@ func (c *MatrixChannel) downloadMedia(
 	}
 	defer tmp.Close()
 
-	if _, err = tmp.Write(data); err != nil {
-		_ = os.Remove(tmp.Name())
-		return "", err
+	// Stream data to file with size limit
+	var totalBytes int64
+	buf := make([]byte, 32*1024) // 32KB buffer
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			totalBytes += int64(n)
+			if totalBytes > defaultMaxMediaSize {
+				_ = os.Remove(tmp.Name())
+				return "", fmt.Errorf("media file too large (exceeded %d bytes)", defaultMaxMediaSize)
+			}
+			if _, writeErr := tmp.Write(buf[:n]); writeErr != nil {
+				_ = os.Remove(tmp.Name())
+				return "", writeErr
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			_ = os.Remove(tmp.Name())
+			return "", err
+		}
+	}
+
+	// Encrypted attachments put URL in msgEvt.File and require client-side decryption.
+	if msgEvt != nil && msgEvt.File != nil && msgEvt.URL == "" {
+		// For encrypted files, we need to read and decrypt in memory
+		data, err := os.ReadFile(tmp.Name())
+		if err != nil {
+			_ = os.Remove(tmp.Name())
+			return "", fmt.Errorf("read encrypted file: %w", err)
+		}
+		err = msgEvt.File.DecryptInPlace(data)
+		if err != nil {
+			_ = os.Remove(tmp.Name())
+			return "", fmt.Errorf("decrypt matrix media: %w", err)
+		}
+		// Write decrypted data back
+		if err := os.WriteFile(tmp.Name(), data, 0600); err != nil {
+			_ = os.Remove(tmp.Name())
+			return "", fmt.Errorf("write decrypted file: %w", err)
+		}
 	}
 
 	return tmp.Name(), nil
