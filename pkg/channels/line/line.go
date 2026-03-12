@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -45,11 +46,13 @@ type replyTokenEntry struct {
 type LINEChannel struct {
 	*channels.BaseChannel
 	config         config.LINEConfig
-	botUserID      string   // Bot's user ID
-	botBasicID     string   // Bot's basic ID (e.g. @216ru...)
-	botDisplayName string   // Bot's display name for text-based mention detection
-	replyTokens    sync.Map // chatID -> replyTokenEntry
-	quoteTokens    sync.Map // chatID -> quoteToken (string)
+	infoClient     *http.Client // for bot info lookups (short timeout)
+	apiClient      *http.Client // for messaging API calls
+	botUserID      string       // Bot's user ID
+	botBasicID     string       // Bot's basic ID (e.g. @216ru...)
+	botDisplayName string       // Bot's display name for text-based mention detection
+	replyTokens    sync.Map     // chatID -> replyTokenEntry
+	quoteTokens    sync.Map     // chatID -> quoteToken (string)
 	ctx            context.Context
 	cancel         context.CancelFunc
 }
@@ -69,6 +72,8 @@ func NewLINEChannel(cfg config.LINEConfig, messageBus *bus.MessageBus) (*LINECha
 	return &LINEChannel{
 		BaseChannel: base,
 		config:      cfg,
+		infoClient:  &http.Client{Timeout: 10 * time.Second},
+		apiClient:   &http.Client{Timeout: 30 * time.Second},
 	}, nil
 }
 
@@ -104,8 +109,7 @@ func (c *LINEChannel) fetchBotInfo() error {
 	}
 	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken)
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.infoClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -325,7 +329,11 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 			content = "[video]"
 		}
 	case "file":
-		content = "[file]"
+		localPath := c.downloadContent(msg.ID, "file")
+		if localPath != "" {
+			mediaPaths = append(mediaPaths, storeMedia(localPath, "file"))
+			content = "[file]"
+		}
 	case "sticker":
 		content = "[sticker]"
 	default:
@@ -514,9 +522,7 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 }
 
 // SendMedia implements the channels.MediaSender interface.
-// LINE requires media to be accessible via public URL; since we only have local files,
-// we fall back to sending a text message with the filename/caption.
-// For full support, an external file hosting service would be needed.
+// Uploads media to LINE and sends as media messages.
 func (c *LINEChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
@@ -527,20 +533,178 @@ func (c *LINEChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessag
 		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
-	// LINE Messaging API requires publicly accessible URLs for media messages.
-	// Since we only have local file paths, send caption text as fallback.
 	for _, part := range msg.Parts {
-		caption := part.Caption
-		if caption == "" {
-			caption = fmt.Sprintf("[%s: %s]", part.Type, part.Filename)
+		// Resolve local file path
+		localPath, err := store.Resolve(part.Ref)
+		if err != nil {
+			logger.ErrorCF("line", "Failed to resolve media ref", map[string]any{
+				"ref":   part.Ref,
+				"error": err.Error(),
+			})
+			continue
 		}
 
-		if err := c.sendPush(ctx, msg.ChatID, caption, ""); err != nil {
+		// Upload media and send as media message
+		var mediaID string
+		switch part.Type {
+		case "image":
+			id, err := c.uploadMedia(ctx, localPath, "image", part.Filename)
+			if err != nil {
+				logger.ErrorCF("line", "Failed to upload image", map[string]any{
+					"error": err.Error(),
+				})
+				continue
+			}
+			mediaID = id
+		case "video":
+			id, err := c.uploadMedia(ctx, localPath, "video", part.Filename)
+			if err != nil {
+				logger.ErrorCF("line", "Failed to upload video", map[string]any{
+					"error": err.Error(),
+				})
+				continue
+			}
+			mediaID = id
+		case "audio":
+			id, err := c.uploadMedia(ctx, localPath, "audio", part.Filename)
+			if err != nil {
+				logger.ErrorCF("line", "Failed to upload audio", map[string]any{
+					"error": err.Error(),
+				})
+				continue
+			}
+			mediaID = id
+		default:
+			// For unknown types, treat as file
+			id, err := c.uploadMedia(ctx, localPath, "file", part.Filename)
+			if err != nil {
+				logger.ErrorCF("line", "Failed to upload file", map[string]any{
+					"error": err.Error(),
+				})
+				continue
+			}
+			mediaID = id
+		}
+
+		// Build caption
+		caption := part.Caption
+		if caption == "" && part.Filename != "" {
+			caption = part.Filename
+		}
+
+		// Send media message
+		if err := c.sendMediaMessage(ctx, msg.ChatID, part.Type, mediaID, caption); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// uploadMedia uploads media to LINE and returns the media ID.
+func (c *LINEChannel) uploadMedia(ctx context.Context, filePath, mediaType, filename string) (string, error) {
+	// First, get upload URL from LINE
+	uploadURL := lineDataAPIBase + "/bot/message/upload"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uploadURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken)
+
+	resp, err := c.apiClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("get upload URL: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("get upload URL status: %d", resp.StatusCode)
+	}
+
+	var uploadResp struct {
+		UploadURL string `json:"uploadUrl"`
+		ID        string `json:"messageId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&uploadResp); err != nil {
+		return "", fmt.Errorf("parse upload response: %w", err)
+	}
+
+	if uploadResp.UploadURL == "" || uploadResp.ID == "" {
+		return "", fmt.Errorf("empty upload URL or message ID")
+	}
+
+	// Upload the file to the provided URL
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("open file: %w", err)
+	}
+	defer file.Close()
+
+	// Determine content type
+	contentType := "application/octet-stream"
+	switch mediaType {
+	case "image":
+		contentType = "image/jpeg"
+	case "video":
+		contentType = "video/mp4"
+	case "audio":
+		contentType = "audio/mp4"
+	}
+
+	uploadReq, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadResp.UploadURL, file)
+	if err != nil {
+		return "", fmt.Errorf("create upload request: %w", err)
+	}
+	uploadReq.Header.Set("Content-Type", contentType)
+
+	uploadResp2, err := http.DefaultClient.Do(uploadReq)
+	if err != nil {
+		return "", fmt.Errorf("upload media: %w", err)
+	}
+	defer uploadResp2.Body.Close()
+
+	if uploadResp2.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("upload media status: %d", uploadResp2.StatusCode)
+	}
+
+	return uploadResp.ID, nil
+}
+
+// sendMediaMessage sends a media message (image/video/audio/file) to LINE.
+func (c *LINEChannel) sendMediaMessage(ctx context.Context, chatID, mediaType, mediaID, caption string) error {
+	var msgType string
+	switch mediaType {
+	case "image":
+		msgType = "image"
+	case "video":
+		msgType = "video"
+	case "audio":
+		msgType = "audio"
+	case "file":
+		msgType = "file"
+	default:
+		msgType = "file"
+	}
+
+	content := map[string]string{
+		"type": msgType,
+		"id":   mediaID,
+	}
+	if caption != "" {
+		content["originalContentUrl"] = caption // LINE uses this field for caption in media messages
+	}
+
+	payload := map[string]any{
+		"to":       chatID,
+		"messages": []map[string]string{{
+			"type":    msgType,
+			"id":      mediaID,
+			"originalContentUrl": caption,
+		}},
+	}
+
+	return c.callAPI(ctx, linePushEndpoint, payload)
 }
 
 // buildTextMessage creates a text message object, optionally with quoteToken.
@@ -644,8 +808,7 @@ func (c *LINEChannel) callAPI(ctx context.Context, endpoint string, payload any)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken)
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.apiClient.Do(req)
 	if err != nil {
 		return channels.ClassifyNetError(err)
 	}

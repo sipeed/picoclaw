@@ -1,0 +1,1597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🦞 PicoClaw 管理</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2128;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--danger:#f85149;--success:#3fb950;--warn:#d29922}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+a{color:var(--accent);text-decoration:none}
+/* Login */
+#loginPage{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+.login-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:2.5rem;width:360px}
+.login-logo{font-size:2.5rem;text-align:center;margin-bottom:.5rem}
+.login-title{text-align:center;font-size:1.3rem;font-weight:600;margin-bottom:2rem;color:var(--text)}
+/* App layout */
+#app{display:flex;min-height:100vh}
+.sidebar{width:220px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-logo{padding:1.2rem 1rem;border-bottom:1px solid var(--border);font-size:1.1rem;font-weight:600;color:var(--text)}
+.sidebar-logo span{opacity:.6;font-size:.8rem;display:block;margin-top:2px}
+.nav-section{padding:.75rem 1rem .25rem;font-size:.7rem;text-transform:uppercase;color:var(--muted);letter-spacing:.08em}
+.nav-item{display:flex;align-items:center;gap:.6rem;padding:.55rem 1rem;cursor:pointer;border-radius:6px;margin:.1rem .5rem;color:var(--muted);transition:all .15s}
+.nav-item:hover{background:var(--panel2);color:var(--text)}
+.nav-item.active{background:var(--accent);background:rgba(88,166,255,.15);color:var(--accent)}
+.sidebar-footer{margin-top:auto;padding:1rem;border-top:1px solid var(--border)}
+.content{flex:1;padding:1.5rem 2rem;overflow-y:auto;max-height:100vh}
+/* Cards */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:1.25rem}
+.card-header{padding:.9rem 1.2rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-header h3{font-size:.95rem;font-weight:600;color:var(--text)}
+.card-body{padding:1.2rem}
+/* Form */
+.form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin-bottom:1rem}
+.form-group{display:flex;flex-direction:column;gap:.4rem}
+.form-group label{font-size:.8rem;color:var(--muted);font-weight:500}
+.form-group input,.form-group select,.form-group textarea{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;width:100%;font-size:.875rem;transition:border-color .15s}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:var(--accent)}
+.form-group textarea{resize:vertical;min-height:70px}
+/* Buttons */
+.btn{padding:7px 14px;border-radius:6px;border:none;cursor:pointer;font-size:.85rem;font-weight:500;transition:opacity .15s;display:inline-flex;align-items:center;gap:.4rem}
+.btn:hover{opacity:.85}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-success{background:var(--success);color:#000}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-secondary{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
+.btn-sm{padding:4px 10px;font-size:.8rem}
+/* Toggle */
+.toggle{position:relative;display:inline-block;width:40px;height:22px}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:#444;border-radius:22px;cursor:pointer;transition:.25s}
+.toggle-slider:before{content:'';position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s}
+.toggle input:checked+.toggle-slider{background:var(--success)}
+.toggle input:checked+.toggle-slider:before{transform:translateX(18px)}
+/* Table */
+table{width:100%;border-collapse:collapse}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)}
+th{font-size:.8rem;color:var(--muted);font-weight:500;background:var(--panel2)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.badge{padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:500}
+.badge-green{background:rgba(63,185,80,.15);color:var(--success)}
+.badge-red{background:rgba(248,81,73,.15);color:var(--danger)}
+.badge-gray{background:var(--panel2);color:var(--muted)}
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:1000}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;width:560px;max-width:95vw;max-height:85vh;overflow-y:auto}
+.modal-header{padding:1rem 1.2rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-header h3{font-size:1rem;font-weight:600}
+.modal-body{padding:1.2rem}
+.modal-footer{padding:.9rem 1.2rem;border-top:1px solid var(--border);display:flex;gap:.6rem;justify-content:flex-end}
+/* Channel cards */
+.channel-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem}
+.ch-card{background:var(--panel);border:1px solid var(--border);border-radius:8px}
+.ch-card-header{padding:.8rem 1rem;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+.ch-card-header:hover{background:rgba(255,255,255,.02);border-radius:8px 8px 0 0}
+.ch-card-title{display:flex;align-items:center;gap:.6rem;font-weight:500}
+.ch-card-body{padding:1rem;border-top:1px solid var(--border)}
+.ch-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:1rem;background:var(--panel2)}
+/* Misc */
+.page-header{margin-bottom:1.5rem}
+.page-header h2{font-size:1.3rem;font-weight:600;margin-bottom:.25rem}
+.page-header p{color:var(--muted);font-size:.875rem}
+.save-bar{position:sticky;bottom:0;background:var(--panel);border-top:1px solid var(--border);padding:.85rem 2rem;display:flex;align-items:center;gap:1rem;margin:0 -2rem}
+.save-bar .hint{color:var(--muted);font-size:.8rem}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem}
+.stat-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:1.2rem}
+.stat-card .num{font-size:1.8rem;font-weight:700;color:var(--accent)}
+.stat-card .label{color:var(--muted);font-size:.8rem;margin-top:.25rem}
+.toast{position:fixed;bottom:20px;right:20px;padding:.75rem 1.2rem;border-radius:8px;font-size:.875rem;z-index:9999;animation:fadeIn .3s ease;max-width:350px}
+.toast-success{background:#1f4a2a;border:1px solid var(--success);color:var(--success)}
+.toast-error{background:#4a1f1f;border:1px solid var(--danger);color:var(--danger)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.hidden{display:none!important}
+.flex-gap{display:flex;align-items:center;gap:.5rem}
+.tags-input-wrap{display:flex;flex-wrap:wrap;gap:.35rem;background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;min-height:36px;cursor:text}
+.tags-input-wrap:focus-within{border-color:var(--accent)}
+.tag{background:var(--border);color:var(--text);padding:2px 8px;border-radius:12px;font-size:.8rem;display:flex;align-items:center;gap:.3rem}
+.tag .del{cursor:pointer;color:var(--muted);font-size:.9rem}
+.tag .del:hover{color:var(--danger)}
+.tags-input-wrap input{background:transparent;border:none;outline:none;color:var(--text);font-size:.875rem;flex:1;min-width:60px}
+/* Chat */
+.chat-container{display:flex;flex-direction:column;height:calc(100vh-8rem);background:var(--panel2);border-radius:8px;border:1px solid var(--border)}
+.chat-messages{flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.75rem}
+.message{padding:.75rem 1rem;border-radius:6px;max-width:80%;word-wrap:break-word}
+.message.user{align-self:flex-end;background:var(--accent);color:#fff}
+.message.ai{align-self:flex-start;background:var(--panel);border:1px solid var(--border);color:var(--text)}
+.message.system{align-self:center;background:var(--border);color:var(--muted);font-size:.8rem;padding:.5rem .75rem}
+.message .timestamp{font-size:.75rem;opacity:.7;margin-top:.25rem}
+.chat-input-area{padding:1rem;border-top:1px solid var(--border);display:flex;gap:.5rem}
+.chat-input-area input{flex:1;background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:.75rem;border-radius:6px;font-size:.875rem}
+.chat-input-area input:focus{outline:none;border-color:var(--accent)}
+.chat-input-area button{padding:.75rem 1.5rem}
+</style>
+</head>
+<body>
+
+<!-- Login Page -->
+<div id="loginPage">
+  <div class="login-card">
+    <div class="login-logo">🦞</div>
+    <div class="login-title">PicoClaw 管理面板</div>
+    <div class="form-group" style="margin-bottom:.8rem">
+      <label>用户名</label>
+      <input id="loginUser" type="text" placeholder="admin" value="admin">
+    </div>
+    <div class="form-group" style="margin-bottom:1.2rem">
+      <label>密码</label>
+      <input id="loginPass" type="password" placeholder="请输入密码" autocomplete="current-password">
+    </div>
+    <div id="loginErr" class="hidden" style="color:var(--danger);font-size:.85rem;margin-bottom:.8rem"></div>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">登录</button>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app" class="hidden">
+  <div class="sidebar">
+    <div class="sidebar-logo">🦞 PicoClaw<span>管理面板</span></div>
+    <div class="nav-section">导航</div>
+    <div class="nav-item active" data-section="overview" onclick="nav(this)">📊 概览</div>
+    <div class="nav-item" data-section="agent" onclick="nav(this)">🤖 Agent 设置</div>
+    <div class="nav-item" data-section="models" onclick="nav(this)">🧠 AI 模型</div>
+    <div class="nav-item" data-section="channels" onclick="nav(this)">📡 通道配置</div>
+    <div class="nav-item" data-section="tools" onclick="nav(this)">🔧 工具配置</div>
+    <div class="nav-item" data-section="chat" onclick="nav(this)">💬 Web 聊天</div>
+    <div class="nav-item" data-section="skillsmgr" onclick="nav(this)">🎯 技能管理</div>
+    <div class="nav-item" data-section="settings" onclick="nav(this)">⚙️ 系统设置</div>
+    <div class="sidebar-footer">
+      <button class="btn btn-secondary" style="width:100%" onclick="doLogout()">退出登录</button>
+    </div>
+  </div>
+  <div id="mainContent" class="content"></div>
+</div>
+
+<!-- Model Edit Modal -->
+<div id="modelModal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modelModalTitle">添加模型</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('modelModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>模型名称 (model_name) <span style="color:var(--danger)">*</span></label>
+          <input id="m_model_name" placeholder="e.g. gpt-4o">
+        </div>
+        <div class="form-group">
+          <label>模型标识 (model) <span style="color:var(--danger)">*</span></label>
+          <input id="m_model" placeholder="e.g. openai/gpt-4o">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>API Key</label>
+          <input id="m_api_key" placeholder="sk-...">
+        </div>
+        <div class="form-group">
+          <label>API Base URL</label>
+          <input id="m_api_base" placeholder="https://api.openai.com/v1">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>代理 (proxy)</label>
+          <input id="m_proxy" placeholder="http://127.0.0.1:7890">
+        </div>
+        <div class="form-group">
+          <label>认证方式 (auth_method)</label>
+          <select id="m_auth_method">
+            <option value="">无 (API Key)</option>
+            <option value="oauth">OAuth</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>请求速率限制 (rpm)</label>
+          <input id="m_rpm" type="number" placeholder="0 = 不限制">
+        </div>
+        <div class="form-group">
+          <label>请求超时 (request_timeout, 秒)</label>
+          <input id="m_request_timeout" type="number" placeholder="0 = 默认">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modelModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveModel()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== State =====
+let cfg = {};
+let status = {};
+let editModelIdx = -1; // -1 = new
+
+// ===== API =====
+async function api(method, path, body) {
+  try {
+    const res = await fetch(path, {
+      method,
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: body != null ? JSON.stringify(body) : undefined
+    });
+    if (res.status === 401) { showLogin(); return null; }
+    return res.json();
+  } catch(e) { showToast('网络错误: ' + e.message, 'error'); return null; }
+}
+
+// ===== Auth =====
+async function doLogin() {
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value;
+  const loginErr = document.getElementById('loginErr');
+  loginErr.classList.add('hidden');
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify({username: u, password: p})
+    });
+    const r = await res.json();
+    if (r && r.status === 'ok') {
+      await loadAll();
+      showApp();
+    } else {
+      loginErr.textContent = (r && r.error) ? r.error : '用户名或密码错误';
+      loginErr.classList.remove('hidden');
+    }
+  } catch(e) {
+    loginErr.textContent = '网络错误: ' + e.message;
+    loginErr.classList.remove('hidden');
+  }
+}
+
+async function doLogout() {
+  await api('POST', '/api/auth/logout');
+  showLogin();
+}
+
+document.getElementById('loginPass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+function showLogin() {
+  document.getElementById('loginPage').classList.remove('hidden');
+  document.getElementById('app').classList.add('hidden');
+}
+function showApp() {
+  document.getElementById('loginPage').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+}
+
+// ===== Load / Save =====
+async function loadAll() {
+  const [c, s] = await Promise.all([api('GET', '/api/config'), api('GET', '/api/status')]);
+  if (c) cfg = c;
+  if (s) status = s;
+  renderSection();
+  // Load skills count for overview badge (async, won't block UI)
+  fetch('/api/skills', {credentials: 'same-origin'})
+    .then(res => res.ok ? res.json() : null)
+    .then(r => {
+      if (r && r.total !== undefined) {
+        skillsData = r;
+        const el = document.getElementById('overview-skills-count');
+        if (el) el.textContent = r.total;
+      }
+    })
+    .catch(() => {});
+}
+
+async function saveConfig() {
+  const r = await api('PUT', '/api/config', cfg);
+  if (!r) return;
+  if (r.status === 'saved') {
+    const changedSections = r.changed_sections || [];
+    const requiresRestart = r.requires_restart;
+    const affectedModules = r.affected_modules || [];
+    
+    let msg = '';
+    if (requiresRestart) {
+      msg = `✅ 配置已保存 | ${affectedModules.join(', ')} 将在重启后生效`;
+      showToast(msg, 'success');
+      // Show restart reminder modal after 2 seconds
+      setTimeout(() => {
+        showRestartReminder(affectedModules);
+      }, 2000);
+    } else if (changedSections.length > 0) {
+      msg = `✅ 配置已保存并自动生效 | 已更新：${changedSections.join(', ')}`;
+      showToast(msg, 'success');
+    } else {
+      showToast('✅ 配置已保存', 'success');
+    }
+  } else {
+    showToast('❌ 保存失败：' + (r.error||'未知错误'), 'error');
+  }
+}
+
+// ===== Navigation =====
+let currentSection = 'overview';
+function nav(el) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  el.classList.add('active');
+  currentSection = el.dataset.section;
+  renderSection();
+}
+
+function renderSection() {
+  const el = document.getElementById('mainContent');
+  const renders = {
+    overview: renderOverview, agent: renderAgent, models: renderModels,
+    channels: renderChannels, tools: renderTools, chat: renderChat, settings: renderSettings,
+    skillsmgr: renderSkillsMgr
+  };
+  el.innerHTML = (renders[currentSection] || renderOverview)();
+  if (currentSection === 'skillsmgr') loadSkillsData();
+  if (currentSection === 'chat') initChat();
+}
+
+// ===== Toast =====
+function showToast(msg, type='success') {
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// ===== Helpers =====
+function get(path, obj) {
+  return path.split('.').reduce((o,k) => (o||{})[k], obj ?? cfg);
+}
+function set(path, val, obj) {
+  const keys = path.split('.');
+  const last = keys.pop();
+  const target = keys.reduce((o,k) => o[k] = o[k]||{}, obj ?? cfg);
+  if (val === '' || val === null) { target[last] = (typeof target[last] === 'number') ? 0 : val; }
+  else if (typeof target[last] === 'boolean') { 
+    // Ensure boolean value is always a proper boolean
+    target[last] = val === true || val === 'true' || val === 1 || val === '1';
+  }
+  else if (typeof target[last] === 'number' || (!isNaN(val) && val !== '')) { target[last] = Number(val); }
+  else { target[last] = val; }
+}
+
+// Set nested value (similar to set but for any target object)
+function setNestedValue(targetObj, path, value) {
+  const keys = path.split('.');
+  const last = keys.pop();
+  const target = keys.reduce((o,k) => o[k] = o[k]||{}, targetObj);
+  target[last] = value;
+}
+function inp(path, label, type='text', placeholder='', extra='') {
+  const v = get(path) ?? '';
+  const id = 'f_' + path.replace(/\./g,'_');
+  return `<div class="form-group"><label>${label}</label><input id="${id}" type="${type}" value="${escH(v)}" placeholder="${escH(placeholder)}" data-path="${path}" ${extra} onchange="setNestedValue(cfg, '${path}', this.type==='number'?Number(this.value):this.value)"></div>`;
+}
+function chk(path, label) {
+  let v = get(path);
+  // Normalize boolean value: convert 0/1 or '0'/'1' to false/true
+  if (v === 0 || v === '0') v = false;
+  if (v === 1 || v === '1') v = true;
+  const id = 'f_' + path.replace(/\./g,'_');
+  return `<div class="form-group" style="flex-direction:row;align-items:center;gap:.75rem;padding-top:1.25rem"><label class="toggle"><input id="${id}" type="checkbox" ${v?'checked':''} onchange="set('${path}', this.checked)"><span class="toggle-slider"></span></label><label style="color:var(--text);font-size:.875rem;cursor:pointer" onclick="document.getElementById('${id}').click();set('${path}',!${v})">${label}</label></div>`;
+}
+function escH(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function maskKey(k) { if(!k||k.length<8) return k?'***':''; return k.slice(0,4)+'...'+k.slice(-4); }
+function tagsField(path, label, placeholder='输入后按 Enter 添加') {
+  const arr = get(path) || [];
+  const id = 'tags_' + path.replace(/\./g,'_');
+  const tags = arr.map((t,i) => `<span class="tag">${escH(t)}<span class="del" onclick="removeTag('${path}',${i})">×</span></span>`).join('');
+  return `<div class="form-group"><label>${label}</label><div class="tags-input-wrap" onclick="document.getElementById('${id}').focus()">${tags}<input id="${id}" placeholder="${placeholder}" onkeydown="addTag(event,'${path}')"></div></div>`;
+}
+function addTag(e, path) {
+  if (e.key !== 'Enter' && e.key !== ',') return;
+  e.preventDefault();
+  const val = e.target.value.trim();
+  if (!val) return;
+  const arr = get(path) || [];
+  arr.push(val);
+  set(path, arr);
+  e.target.value = '';
+  renderSection();
+}
+function removeTag(path, idx) {
+  const arr = get(path) || [];
+  arr.splice(idx, 1);
+  set(path, arr);
+  renderSection();
+}
+
+// ===== Save Bar =====
+function saveBar() {
+  return `<div class="save-bar"><button class="btn btn-success" onclick="saveConfig()">💾 保存配置</button><span class="hint">大部分配置保存后立即生效，部分配置需重启服务</span></div>`;
+}
+
+// ===== Overview =====
+function renderOverview() {
+  const ch = cfg.channels || {};
+  const ml = cfg.model_list || [];
+  const enabled = Object.values(ch).filter(c => c && c.enabled).length;
+  return `
+<div class="page-header"><h2>📊 系统概览</h2><p>PicoClaw 配置管理面板</p></div>
+<div class="stat-row">
+  <div class="stat-card"><div class="num">${ml.length}</div><div class="label">AI 模型配置</div></div>
+  <div class="stat-card"><div class="num">${enabled}</div><div class="label">已启用通道</div></div>
+  <div class="stat-card"><div class="num" id="overview-skills-count">-</div><div class="label">已安装技能</div></div>
+  <div class="stat-card"><div class="num">${status.hostname||'-'}</div><div class="label">主机名</div></div>
+  <div class="stat-card"><div class="num" style="font-size:1.1rem;color:var(--success)">● 运行中</div><div class="label">服务状态</div></div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>当前 Agent 模型</h3></div>
+  <div class="card-body">
+    <p style="color:var(--muted)">默认模型：<strong style="color:var(--text)">${escH(get('agents.defaults.model_name')||get('agents.defaults.model')||'未配置')}</strong></p>
+    <p style="color:var(--muted);margin-top:.5rem">工作空间：<strong style="color:var(--text)">${escH(get('agents.defaults.workspace')||'')}</strong></p>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>通道状态</h3></div>
+  <div class="card-body">
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+    ${Object.entries(ch).map(([k,v])=>`<span class="badge ${v&&v.enabled?'badge-green':'badge-gray'}">${k}</span>`).join('')}
+    </div>
+  </div>
+</div>`;
+}
+
+// ===== Agent Settings =====
+function renderAgent() {
+  const d = cfg.agents?.defaults || {};
+  return `
+<div class="page-header"><h2>🤖 Agent 设置</h2><p>配置默认 Agent 行为参数</p></div>
+<div class="card">
+  <div class="card-header"><h3>默认参数</h3></div>
+  <div class="card-body">
+    <div class="form-row">
+      ${inp('agents.defaults.model_name','默认模型名称','text','e.g. gpt-4o')}
+      ${inp('agents.defaults.workspace','工作空间路径','text','~/.picoclaw/workspace')}
+    </div>
+    <div class="form-row">
+      ${inp('agents.defaults.max_tokens','Max Tokens','number','8192')}
+      ${inp('agents.defaults.temperature','Temperature','number','0.7')}
+    </div>
+    <div class="form-row">
+      ${inp('agents.defaults.max_tool_iterations','最大工具迭代次数','number','50')}
+      ${chk('agents.defaults.restrict_to_workspace','限制到工作空间')}
+    </div>
+  </div>
+</div>
+${saveBar()}`;
+}
+
+// ===== Models =====
+function renderModels() {
+  const ml = cfg.model_list || [];
+  const rows = ml.map((m,i) => `
+<tr>
+  <td><strong>${escH(m.model_name)}</strong></td>
+  <td><code style="font-size:.8rem;color:var(--accent)">${escH(m.model)}</code></td>
+  <td style="color:var(--muted)">${escH(maskKey(m.api_key))}</td>
+  <td style="color:var(--muted);font-size:.8rem">${escH(m.api_base||'')}</td>
+  <td>${m.auth_method?`<span class="badge badge-gray">${escH(m.auth_method)}</span>`:''}</td>
+  <td>
+    <button class="btn btn-secondary btn-sm" onclick="editModel(${i})">编辑</button>
+    <button class="btn btn-danger btn-sm" style="margin-left:.3rem" onclick="deleteModel(${i})">删除</button>
+  </td>
+</tr>`).join('');
+  return `
+<div class="page-header"><h2>🧠 AI 模型列表</h2><p>管理所有 AI 模型提供商配置（model_list）</p></div>
+<div class="card">
+  <div class="card-header"><h3>模型列表 (${ml.length})</h3><button class="btn btn-primary btn-sm" onclick="openAddModel()">+ 添加模型</button></div>
+  <div class="card-body" style="padding:0">
+    ${ml.length===0?'<div style="padding:2rem;text-align:center;color:var(--muted)">暂无模型，请点击"添加模型"</div>':''}
+    ${ml.length>0?`<table><thead><tr><th>名称</th><th>模型标识</th><th>API Key</th><th>API Base</th><th>认证</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`:''}
+  </div>
+</div>
+${saveBar()}`;
+}
+
+function openAddModel() {
+  editModelIdx = -1;
+  document.getElementById('modelModalTitle').textContent = '添加模型';
+  ['model_name','model','api_key','api_base','proxy','auth_method','rpm','request_timeout'].forEach(k => {
+    const el = document.getElementById('m_'+k);
+    if (el) el.value = '';
+  });
+  document.getElementById('modelModal').classList.remove('hidden');
+}
+
+function editModel(i) {
+  editModelIdx = i;
+  const m = cfg.model_list[i];
+  document.getElementById('modelModalTitle').textContent = '编辑模型';
+  document.getElementById('m_model_name').value = m.model_name||'';
+  document.getElementById('m_model').value = m.model||'';
+  document.getElementById('m_api_key').value = m.api_key||'';
+  document.getElementById('m_api_base').value = m.api_base||'';
+  document.getElementById('m_proxy').value = m.proxy||'';
+  document.getElementById('m_auth_method').value = m.auth_method||'';
+  document.getElementById('m_rpm').value = m.rpm||'';
+  document.getElementById('m_request_timeout').value = m.request_timeout||'';
+  document.getElementById('modelModal').classList.remove('hidden');
+}
+
+function saveModel() {
+  const mn = document.getElementById('m_model_name').value.trim();
+  const mo = document.getElementById('m_model').value.trim();
+  if (!mn || !mo) { showToast('模型名称和模型标识为必填项', 'error'); return; }
+  const m = {
+    model_name: mn, model: mo,
+    api_key: document.getElementById('m_api_key').value,
+    api_base: document.getElementById('m_api_base').value,
+    proxy: document.getElementById('m_proxy').value,
+    auth_method: document.getElementById('m_auth_method').value,
+    rpm: Number(document.getElementById('m_rpm').value)||0,
+    request_timeout: Number(document.getElementById('m_request_timeout').value)||0,
+  };
+  if (!cfg.model_list) cfg.model_list = [];
+  if (editModelIdx === -1) cfg.model_list.push(m);
+  else cfg.model_list[editModelIdx] = m;
+  closeModal('modelModal');
+  renderSection();
+}
+
+function deleteModel(i) {
+  if (!confirm(`确认删除模型 "${cfg.model_list[i].model_name}"？`)) return;
+  cfg.model_list.splice(i, 1);
+  renderSection();
+}
+
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+// ===== Channels =====
+const CH_DEFS = {
+  telegram:{icon:'✈️',label:'Telegram',fields:[{k:'token',l:'Bot Token'},{k:'proxy',l:'代理 URL'}]},
+  discord:{icon:'🎮',label:'Discord',fields:[{k:'token',l:'Bot Token'},{k:'mention_only',l:'仅 @提及响应',type:'bool'}]},
+  feishu:{icon:'🪁',label:'飞书 Feishu',fields:[{k:'app_id',l:'App ID'},{k:'app_secret',l:'App Secret'},{k:'encrypt_key',l:'Encrypt Key'},{k:'verification_token',l:'Verification Token'}]},
+  dingtalk:{icon:'📎',label:'钉钉 DingTalk',fields:[{k:'client_id',l:'Client ID'},{k:'client_secret',l:'Client Secret'}]},
+  slack:{icon:'💬',label:'Slack',fields:[{k:'bot_token',l:'Bot Token'},{k:'app_token',l:'App Token'}]},
+  line:{icon:'🟢',label:'LINE',fields:[{k:'channel_secret',l:'Channel Secret'},{k:'channel_access_token',l:'Access Token'},{k:'webhook_host',l:'Webhook Host'},{k:'webhook_port',l:'Webhook Port',type:'num'},{k:'webhook_path',l:'Webhook Path'}]},
+  onebot:{icon:'🤖',label:'OneBot',fields:[{k:'ws_url',l:'WebSocket URL'},{k:'access_token',l:'Access Token'},{k:'reconnect_interval',l:'重连间隔(秒)',type:'num'}]},
+  wecom:{icon:'💼',label:'企业微信 (智能机器人)',fields:[{k:'token',l:'Token'},{k:'encoding_aes_key',l:'AES Key'},{k:'webhook_url',l:'发送 Webhook URL'},{k:'webhook_host',l:'Webhook Host'},{k:'webhook_port',l:'Webhook Port',type:'num'},{k:'webhook_path',l:'Webhook Path'},{k:'reply_timeout',l:'回复超时(秒)',type:'num'}]},
+  wecom_app:{icon:'🏢',label:'企业微信 (自建应用)',fields:[{k:'corp_id',l:'Corp ID'},{k:'corp_secret',l:'Corp Secret'},{k:'agent_id',l:'Agent ID',type:'num'},{k:'token',l:'Token'},{k:'encoding_aes_key',l:'AES Key'},{k:'webhook_host',l:'Webhook Host'},{k:'webhook_port',l:'Webhook Port',type:'num'},{k:'webhook_path',l:'Webhook Path'},{k:'reply_timeout',l:'回复超时(秒)',type:'num'}]},
+  qq:{icon:'🐧',label:'QQ',fields:[{k:'app_id',l:'App ID'},{k:'app_secret',l:'App Secret'}]},
+  whatsapp:{icon:'📱',label:'WhatsApp',fields:[{k:'bridge_url',l:'Bridge URL'}]},
+  maixcam:{icon:'📷',label:'MaixCam',fields:[{k:'host',l:'Host'},{k:'port',l:'Port',type:'num'}]},
+};
+
+function renderChannels() {
+  const cards = Object.entries(CH_DEFS).map(([key, def]) => {
+    const base = 'channels.' + key;
+    const enabled = get(base+'.enabled');
+    const fields = def.fields.map(f => {
+      const p = base+'.'+f.k;
+      if (f.type === 'bool') return chk(p, f.l);
+      if (f.type === 'num') return inp(p, f.l, 'number');
+      return inp(p, f.l);
+    }).join('');
+    return `
+<div class="ch-card">
+  <div class="ch-card-header" onclick="toggleChCard('${key}')">
+    <div class="ch-card-title"><span class="ch-icon">${def.icon}</span>${def.label}</div>
+    <div class="flex-gap">
+      <span class="badge ${enabled?'badge-green':'badge-gray'}">${enabled?'已启用':'已禁用'}</span>
+      <span id="ch_arrow_${key}" style="color:var(--muted);transition:.2s">▼</span>
+    </div>
+  </div>
+  <div id="ch_body_${key}" class="ch-card-body hidden">
+    ${chk(base+'.enabled', '启用此通道')}
+    <div class="form-row" style="margin-top:.75rem">${fields}</div>
+    <div style="margin-top:.5rem">${tagsField(base+'.allow_from','Allow From（允许的用户/群 ID）')}</div>
+  </div>
+</div>`;
+  }).join('');
+  return `
+<div class="page-header"><h2>📡 通道配置</h2><p>配置各消息通道的连接参数</p></div>
+<div class="channel-grid">${cards}</div>
+${saveBar()}`;
+}
+
+function toggleChCard(key) {
+  const body = document.getElementById('ch_body_'+key);
+  const arrow = document.getElementById('ch_arrow_'+key);
+  body.classList.toggle('hidden');
+  arrow.style.transform = body.classList.contains('hidden') ? '' : 'rotate(180deg)';
+}
+
+// ===== Tools =====
+// Render MCP servers configuration
+function renderMCPServers() {
+  const servers = get('tools.mcp.servers') || {};
+  const names = Object.keys(servers);
+  if (names.length === 0) {
+    return '<div style="color:var(--muted);font-size:.85rem;padding:.5rem 0">暂无配置的 MCP 服务器</div>';
+  }
+  return names.map(name => {
+    const srv = servers[name] || {};
+    return renderMCPServerCard(name, srv);
+  }).join('');
+}
+
+// Render a single MCP server card
+function renderMCPServerCard(name, srv) {
+  return `
+    <div class="mcp-server-card" style="background:var(--panel2);border-radius:8px;padding:1rem;margin-bottom:1rem;border:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <div class="form-group" style="flex:1;margin:0">
+          <label>服务器名称</label>
+          <input type="text" style="font-weight:600" 
+            value="${escH(name)}" placeholder="服务器名称"
+            data-mcp-name="${escH(name)}" onchange="updateMCPServerName(this)">
+        </div>
+        <button class="btn btn-danger btn-sm" style="margin-left:.5rem;margin-top:1.25rem" onclick="removeMCPServer('${escH(name)}')">删除</button>
+      </div>
+      <div class="form-row" style="margin-top:.5rem">
+        ${chk('tools.mcp.servers.' + name + '.enabled', '启用此服务器')}
+        <div class="form-group" style="flex:1;margin:0">
+          <label>服务器类型</label>
+          <select style="width:100%"
+            data-path="tools.mcp.servers.${escH(name)}.type" 
+            onchange="updateMCPServerField(this)">
+            <option value="stdio" ${srv.type === 'stdio' ? 'selected' : ''}>Stdio (本地进程)</option>
+            <option value="sse" ${srv.type === 'sse' ? 'selected' : ''}>SSE (HTTP 长连接)</option>
+            <option value="http" ${srv.type === 'http' ? 'selected' : ''}>HTTP</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        ${inp('tools.mcp.servers.' + name + '.command', '命令 (如 npx, python)', 'text', '如 npx, python')}
+        ${inp('tools.mcp.servers.' + name + '.args', '参数 (空格分隔)', 'text', '如 -y @modelcontextprotocol/server-filesystem /tmp')}
+      </div>
+      <div class="form-row">
+        ${inp('tools.mcp.servers.' + name + '.url', 'URL (用于 SSE/HTTP)', 'text', 'https://...')}
+      </div>
+      <div class="form-row">
+        ${inp('tools.mcp.servers.' + name + '.env_file', '环境变量文件 (.env)', 'text', '.env')}
+      </div>
+    </div>`;
+}
+
+// Add a new MCP server
+function addMCPServer() {
+  let servers = get('tools.mcp.servers') || {};
+  let newName = 'new-server';
+  let counter = 1;
+  while (servers[newName]) {
+    newName = 'new-server-' + counter++;
+  }
+  servers[newName] = { enabled: false, type: 'stdio', command: '', args: [], url: '', env_file: '' };
+  
+  // Use deep set to update config
+  const newCfg = JSON.parse(JSON.stringify(cfg));
+  newCfg.tools = newCfg.tools || {};
+  newCfg.tools.mcp = newCfg.tools.mcp || {};
+  newCfg.tools.mcp.servers = servers;
+  cfg = newCfg;
+  
+  renderSection();
+}
+
+// Remove an MCP server
+function removeMCPServer(name) {
+  if (!confirm('确定要删除 MCP 服务器 "' + name + '" 吗？')) return;
+  
+  let servers = get('tools.mcp.servers') || {};
+  delete servers[name];
+  
+  const newCfg = JSON.parse(JSON.stringify(cfg));
+  newCfg.tools = newCfg.tools || {};
+  newCfg.tools.mcp = newCfg.tools.mcp || {};
+  newCfg.tools.mcp.servers = servers;
+  cfg = newCfg;
+  
+  renderSection();
+}
+
+// Update MCP server field
+function updateMCPServerField(el) {
+  const path = el.dataset.path;
+  const value = el.type === 'checkbox' ? el.checked : el.value;
+  setNestedValue(cfg, path, value);
+}
+
+// Update MCP server name (recreate server entry)
+function updateMCPServerName(el) {
+  const oldName = el.dataset.mcpName;
+  const newName = el.value.trim();
+  if (!newName || oldName === newName) {
+    el.value = oldName;
+    return;
+  }
+  
+  let servers = get('tools.mcp.servers') || {};
+  if (servers[newName]) {
+    alert('服务器名称 "' + newName + '" 已存在');
+    el.value = oldName;
+    return;
+  }
+  
+  servers[newName] = servers[oldName];
+  delete servers[oldName];
+  
+  const newCfg = JSON.parse(JSON.stringify(cfg));
+  newCfg.tools = newCfg.tools || {};
+  newCfg.tools.mcp = newCfg.tools.mcp || {};
+  newCfg.tools.mcp.servers = servers;
+  cfg = newCfg;
+  
+  renderSection();
+}
+
+// Update MCP server args (split by space)
+function updateMCPServerArgs(el) {
+  const path = el.dataset.path;
+  const value = el.value.trim().split(/\s+/).filter(x => x);
+  setNestedValue(cfg, path, value);
+}
+
+// ===== Tools =====
+function renderTools() {
+  return `
+<div class="page-header"><h2>🔧 工具配置</h2><p>配置 Agent 可用的工具选项</p></div>
+<div class="card">
+  <div class="card-header"><h3>🔍 Web 搜索</h3></div>
+  <div class="card-body">
+    <p style="color:var(--muted);margin-bottom:1rem;font-size:.8rem">全局代理</p>
+    <div class="form-row">${inp('tools.web.proxy','Web 工具代理','text','http://127.0.0.1:7890')}</div>
+    <hr style="border-color:var(--border);margin:1rem 0">
+    <p style="font-weight:500;margin-bottom:.75rem">DuckDuckGo</p>
+    <div class="form-row">
+      ${chk('tools.web.duckduckgo.enabled','启用 DuckDuckGo（免费）')}
+      ${inp('tools.web.duckduckgo.max_results','最大结果数','number','5')}
+    </div>
+    <hr style="border-color:var(--border);margin:1rem 0">
+    <p style="font-weight:500;margin-bottom:.75rem">Brave Search</p>
+    <div class="form-row">
+      ${chk('tools.web.brave.enabled','启用 Brave Search')}
+      ${inp('tools.web.brave.api_key','Brave API Key','text','YOUR_BRAVE_API_KEY')}
+      ${inp('tools.web.brave.max_results','最大结果数','number','5')}
+    </div>
+    <hr style="border-color:var(--border);margin:1rem 0">
+    <p style="font-weight:500;margin-bottom:.75rem">Perplexity</p>
+    <div class="form-row">
+      ${chk('tools.web.perplexity.enabled','启用 Perplexity')}
+      ${inp('tools.web.perplexity.api_key','Perplexity API Key','text','pplx-xxx')}
+      ${inp('tools.web.perplexity.max_results','最大结果数','number','5')}
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>⚡ Exec 工具</h3></div>
+  <div class="card-body">
+    <div class="form-row">
+      ${chk('tools.exec.enable_deny_patterns','启用命令拒绝规则')}
+      ${inp('tools.cron.exec_timeout_minutes','Cron 执行超时(分钟)','number','5')}
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>🎯 Skills 技能注册表</h3></div>
+  <div class="card-body">
+    <div class="form-row">
+      ${chk('tools.skills.registries.clawhub.enabled','启用 ClawHub 注册表')}
+      ${inp('tools.skills.registries.clawhub.base_url','ClawHub Base URL','text','https://clawhub.ai')}
+    </div>
+    <div class="form-row">
+      ${inp('tools.skills.registries.clawhub.auth_token','ClawHub Auth Token','text','')}
+      ${inp('tools.skills.max_concurrent_searches','最大并发搜索','number','2')}
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>🔌 MCP 工具</h3></div>
+  <div class="card-body">
+    <div style="background:rgba(63,185,80,.1);border:1px solid var(--success);border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem;color:var(--success);font-size:.85rem">
+      ✅ MCP (Model Context Protocol) 允许 Agent 调用外部工具和服务
+    </div>
+    <div class="form-row">
+      ${chk('tools.mcp.enabled','启用 MCP 工具')}
+    </div>
+    <hr style="border-color:var(--border);margin:1rem 0">
+    <p style="font-weight:500;margin-bottom:.75rem;color:var(--accent)">📦 MCP 服务器配置</p>
+    <div id="mcpServersContainer">
+      ${renderMCPServers()}
+    </div>
+    <button class="btn btn-secondary btn-sm" style="margin-top:1rem" onclick="addMCPServer()">+ 添加 MCP 服务器</button>
+  </div>
+</div>
+${saveBar()}`
+}
+
+// ===== Settings =====
+function renderSettings() {
+  return `<div class="page-header"><h2>⚙️ 系统设置</h2><p>Web 管理界面、心跳、设备等配置</p></div>
+<div class="card">
+  <div class="card-header"><h3>🌐 Web 管理界面</h3></div>
+  <div class="card-body">
+    <div style="background:rgba(63,185,80,.1);border:1px solid var(--success);border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem;color:var(--success);font-size:.85rem">
+      ✅ Web 配置已支持热更新，修改后立即生效无需重启
+    </div>
+    <div class="form-row">
+      ${chk('web.enabled','自动启动 Web 管理界面')}
+      ${inp('web.host','监听地址','text','0.0.0.0')}
+    </div>
+    <div class="form-row">
+      ${inp('web.port','端口','number','18799')}
+      ${inp('web.username','管理员用户名','text','admin')}
+    </div>
+    <div class="form-row">
+      ${inp('web.password','管理员密码','password','')}
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>📡 通道配置</h3></div>
+  <div class="card-body">
+    <div style="background:rgba(210,153,34,.1);border:1px solid var(--warn);border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem;color:var(--warn);font-size:.85rem">
+      ⚠️ 修改通道配置后，受影响的通道将自动重启以加载新配置（无需重启 PicoClaw 服务）
+    </div>
+    <div style="color:var(--muted);font-size:.875rem">支持热更新的配置项：
+      <ul style="margin-top:.5rem;margin-left:1.5rem">
+        <li>启用/禁用通道</li>
+        <li>通道凭证（Token、密钥等）</li>
+        <li>允许列表（allow_from）</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>🧠 AI 模型配置</h3></div>
+  <div class="card-body">
+    <div style="background:rgba(63,185,80,.1);border:1px solid var(--success);border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem;color:var(--success);font-size:.85rem">
+      ✅ 模型配置已支持热更新，修改 API Key、API Base 等后立即生效
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>💬 Web 聊天配置</h3></div>
+  <div class="card-body">
+    <div style="background:rgba(63,185,80,.1);border:1px solid var(--success);border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem;color:var(--success);font-size:.85rem">
+      ✅ 聊天模式配置修改后立即生效，无需重启
+    </div>
+    <div style="color:var(--muted);font-size:.875rem;margin-bottom:1rem">选择 Web 聊天的通信方式：</div>
+    <div class="form-row">
+      ${chk('web.chat.http','启用 HTTP 轮询模式')}
+      ${chk('web.chat.websocket','启用 WebSocket 实时模式')}
+    </div>
+    <div class="form-row">
+      ${inp('web.chat.timeout','响应超时 (秒)','number','10')}
+    </div>
+    <div style="color:var(--muted);font-size:.8rem;margin-top:1rem;padding:.75rem;background:var(--panel2);border-radius:6px;border-left:3px solid var(--accent)">
+      <strong>说明：</strong>
+      <ul style="margin-top:.5rem;margin-left:1.5rem">
+        <li><strong>HTTP 模式</strong>：兼容性好，使用长轮询方式，延迟约 1-5 秒</li>
+        <li><strong>WebSocket 模式</strong>：实时性好，消息延迟 < 100ms，推荐优先启用</li>
+        <li>两种模式都启用时，前端会自动优选 WebSocket，失败时降级到 HTTP</li>
+        <li><strong>语音功能</strong>：支持浏览器原生语音输入输出，也可配置阿里云 TTS</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>🎤 语音配置</h3></div>
+  <div class="card-body">
+    <div style="background:rgba(63,185,80,.1);border:1px solid var(--success);border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem;color:var(--success);font-size:.85rem">
+      ✅ 语音配置修改后需要重启服务生效 | TTS 需要阿里云 DashScope API Key
+    </div>
+    <div class="form-row">
+      ${chk('voice.enabled','启用语音功能')}
+      ${chk('voice.tts.enabled','启用语音合成(TTS)')}
+    </div>
+    <div class="form-row">
+      ${inp('voice.tts.provider','TTS 服务商','text','aliyun')}
+      ${inp('voice.tts.api_key','API Key','text','')}
+    </div>
+    <div class="form-row">
+      ${inp('voice.tts.voice','音色选择','text','xiaoyun')}
+      ${inp('voice.tts.format','音频格式','text','mp3')}
+    </div>
+    <div class="form-row">
+      ${inp('voice.tts.speed','语速(-500~500)','number','0')}
+      ${inp('voice.tts.sample_rate','采样率','number','0')}
+    </div>
+    <div class="form-row">
+      ${inp('voice.tts.volume','音量(-500~500)','number','0')}
+      ${inp('voice.tts.pitch','音调(-500~500)','number','0')}
+    </div>
+    <div style="color:var(--muted);font-size:.8rem;margin-top:1rem;padding:.75rem;background:var(--panel2);border-radius:6px;border-left:3px solid var(--accent)">
+      <strong>可用音色：</strong> xiaoyun(云小希), xiaogang(云小刚), xiaomei(云小美), ruoxi(若兮), ruobing(若冰), aixia(艾夏), aiyu(艾雨), aibin(艾彬), aija(艾佳), aichuan(艾川)
+      <br><br>
+      <strong>TTS 服务商：</strong> aliyun (阿里云 DashScope), openai
+      <br><br>
+      <strong>使用说明：</strong>
+      <ul style="margin-top:.5rem;margin-left:1.5rem">
+        <li><strong>语音输入</strong>：点击聊天框的 🎤 按钮使用浏览器语音识别</li>
+        <li><strong>语音回复</strong>：AI 回复后点击 🔊 按钮播放语音</li>
+        <li>如未配置 TTS，将使用浏览器原生语音合成</li>
+        <li><strong>注意</strong>：部分浏览器可能限制语音功能，推荐使用 Chrome/Edge</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>💓 心跳服务</h3></div>
+  <div class="card-body">
+    <div class="form-row">
+      ${chk('heartbeat.enabled','启用心跳')}
+      ${inp('heartbeat.interval','心跳间隔(分钟)','number','30')}
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>🔌 设备监控</h3></div>
+  <div class="card-body">
+    <div class="form-row">
+      ${chk('devices.enabled','启用设备监控')}
+      ${chk('devices.monitor_usb','监控 USB 设备')}
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>🚪 网关</h3></div>
+  <div class="card-body">
+    <div class="form-row">
+      ${inp('gateway.host','网关监听地址','text','127.0.0.1')}
+      ${inp('gateway.port','网关端口','number','18790')}
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>⚠️ 需要重启的配置</h3></div>
+  <div class="card-body">
+    <div style="color:var(--muted);font-size:.875rem">以下配置修改需要重启 PicoClaw 服务才能生效：
+      <ul style="margin-top:.5rem;margin-left:1.5rem">
+        <li><strong>Agent 定义</strong> (agents.list)</li>
+        <li><strong>路由绑定</strong> (bindings)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+${saveBar()}`;
+}
+
+// ===== Restart Reminder Modal =====
+function showRestartReminder(modules) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'restartReminderModal';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>⚠️ 需要重启服务</h3>
+        <button class="btn btn-secondary btn-sm" onclick="closeRestartReminder()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:1rem">以下模块的配置修改需要重启 PicoClaw 服务才能生效：</p>
+        <ul style="color:var(--accent);margin-left:1.5rem;margin-bottom:1.5rem">
+          ${modules.map(m => `<li>${m}</li>`).join('')}
+        </ul>
+        <p style="color:var(--muted);font-size:.85rem">请手动重启服务以应用所有更改。</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="closeRestartReminder()">我知道了</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function closeRestartReminder() {
+  const modal = document.getElementById('restartReminderModal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+// ===== Skills Management =====
+let skillsData = null;
+
+async function loadSkillsData() {
+  document.getElementById('skillsContent').innerHTML = '<div style="color:var(--muted);padding:2rem">加载中...</div>';
+  const r = await api('GET', '/api/skills');
+  if (!r) return;
+  skillsData = r;
+  renderSkillsContent();
+}
+
+function renderSkillsContent() {
+  if (!skillsData) return;
+  const el = document.getElementById('skillsContent');
+  const { total, dirs, skills: list } = skillsData;
+
+  // Source badge colors
+  const srcColor = { workspace: 'badge-green', global: '--accent', builtin: 'badge-gray' };
+  const srcLabel = { workspace: '工作空间', global: '全局', builtin: '内置' };
+
+  // Directory status cards
+  const dirCards = dirs.map(d => `
+    <div class="stat-card" style="flex:1;min-width:200px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+        <span style="font-weight:600;font-size:.875rem">${escH(srcLabel[d.label]||d.label)}</span>
+        <span class="badge ${d.exists ? 'badge-green' : 'badge-red'}">${d.exists ? '存在' : '不存在'}</span>
+      </div>
+      <div style="color:var(--muted);font-size:.75rem;word-break:break-all">${escH(d.path)}</div>
+    </div>`).join('');
+
+  // Group by source
+  const bySource = {};
+  (list||[]).forEach(s => { (bySource[s.source] = bySource[s.source]||[]).push(s); });
+
+  const rows = (list||[]).map(s => `
+    <tr>
+      <td><strong>${escH(s.name)}</strong></td>
+      <td style="width:600px;color:var(--muted);font-size:.8rem">${escH(s.description||'')}</td>
+      <td style="width:80px"><span class="badge ${s.source==='workspace'?'badge-green':s.source==='global'?'badge-gray':'badge-gray'}">${escH(srcLabel[s.source]||s.source)}</span></td>
+      <td style="color:var(--muted);font-size:.75rem;word-break:break-all;max-width:260px">${escH(s.path)}</td>
+    </tr>`).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem">
+      <div class="stat-card" style="min-width:120px">
+        <div class="num">${total}</div>
+        <div class="label">技能总数</div>
+      </div>
+      ${Object.entries(bySource).map(([k,v]) =>
+        `<div class="stat-card" style="min-width:120px">
+          <div class="num" style="font-size:1.4rem">${v.length}</div>
+          <div class="label">${escH(srcLabel[k]||k)}</div>
+        </div>`).join('')}
+    </div>
+    <div class="card" style="margin-bottom:1.25rem">
+      <div class="card-header"><h3>技能目录</h3></div>
+      <div class="card-body" style="display:flex;flex-wrap:wrap;gap:1rem">${dirCards}</div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h3>技能列表 (${total})</h3>
+        <button class="btn btn-secondary btn-sm" onclick="loadSkillsData()">🔄 刷新</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        ${total === 0
+          ? '<div style="padding:2rem;text-align:center;color:var(--muted)">未找到技能。请检查技能目录是否存在并包含 SKILL.md 文件。</div>'
+          : `<table><thead><tr><th>名称</th><th style="width:600px">描述</th><th style="width:150px">来源</th><th>路径</th></tr></thead><tbody>${rows}</tbody></table>`}
+      </div>
+    </div>`;
+}
+
+function renderSkillsMgr() {
+  return `
+<div class="page-header"><h2>🎯 技能管理</h2><p>查看已安装的 Agent 技能（Skills）</p></div>
+<div id="skillsContent"><div style="color:var(--muted);padding:2rem">加载中...</div></div>`;
+}
+
+// ===== Chat Interface =====
+let chatMessages = [];
+let currentChatID = null;
+let webSocketConnection = null;
+let chatMode = 'auto';
+let webSocketAvailable = false;
+
+// Voice input state
+let voiceRecognition = null;
+let isRecording = false;
+let lastAIContent = ''; // Store last AI response for TTS
+let audioPlayer = null;
+
+// Check if browser supports Web Speech API
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const browserSupportsVoiceInput = !!SpeechRecognition;
+
+// Initialize voice recognition if supported
+function initVoiceRecognition() {
+  if (!browserSupportsVoiceInput) {
+    console.log('Browser does not support voice input');
+    return;
+  }
+  
+  voiceRecognition = new SpeechRecognition();
+  voiceRecognition.continuous = false;
+  voiceRecognition.interimResults = true;
+  voiceRecognition.lang = 'zh-CN';
+  
+  voiceRecognition.onresult = function(event) {
+    const input = document.getElementById('chatInput');
+    let finalTranscript = '';
+    let interimTranscript = '';
+    
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript;
+      } else {
+        interimTranscript += event.results[i][0].transcript;
+      }
+    }
+    
+    if (input) {
+      input.value = finalTranscript || interimTranscript;
+    }
+  };
+  
+  voiceRecognition.onerror = function(event) {
+    console.error('Voice recognition error:', event.error);
+    stopVoiceInput();
+  };
+  
+  voiceRecognition.onend = function() {
+    stopVoiceInput();
+  };
+}
+
+// Toggle voice input
+function toggleVoiceInput() {
+  if (!browserSupportsVoiceInput) {
+    showToast('您的浏览器不支持语音输入', 'error');
+    return;
+  }
+  
+  if (isRecording) {
+    stopVoiceInput();
+  } else {
+    startVoiceInput();
+  }
+}
+
+// Start voice input
+function startVoiceInput() {
+  if (!voiceRecognition) {
+    initVoiceRecognition();
+  }
+  if (!voiceRecognition) {
+    showToast('语音识别初始化失败', 'error');
+    return;
+  }
+  
+  isRecording = true;
+  const btn = document.getElementById('voiceInputBtn');
+  const status = document.getElementById('voiceInputStatus');
+  
+  if (btn) {
+    btn.classList.remove('btn-secondary');
+    btn.classList.add('btn-danger');
+    btn.innerHTML = '⏹️';
+  }
+  if (status) {
+    status.style.display = 'block';
+  }
+  
+  try {
+    voiceRecognition.start();
+  } catch (e) {
+    console.error('Failed to start voice recognition:', e);
+    stopVoiceInput();
+  }
+}
+
+// Stop voice input
+function stopVoiceInput() {
+  isRecording = false;
+  const btn = document.getElementById('voiceInputBtn');
+  const status = document.getElementById('voiceInputStatus');
+  
+  if (btn) {
+    btn.classList.remove('btn-danger');
+    btn.classList.add('btn-secondary');
+    btn.innerHTML = '🎤';
+  }
+  if (status) {
+    status.style.display = 'none';
+  }
+  
+  if (voiceRecognition && voiceRecognition.recording) {
+    try {
+      voiceRecognition.stop();
+    } catch (e) {
+      // Ignore
+    }
+  }
+}
+
+// Play last AI response as speech
+async function playLastResponse() {
+  if (!lastAIContent) {
+    showToast('没有可播放的回复', 'error');
+    return;
+  }
+  
+  // Check if voice is enabled in config
+  const voiceEnabled = get('voice.enabled');
+  const ttsEnabled = get('voice.tts.enabled');
+  
+  if (voiceEnabled && ttsEnabled) {
+    // Use server TTS
+    await playViaServerTTS(lastAIContent);
+  } else {
+    // Use browser TTS
+    playViaBrowserTTS(lastAIContent);
+  }
+}
+
+// Play via server TTS API
+async function playViaServerTTS(text) {
+  showToast('正在生成语音...', 'success');
+  
+  try {
+    const res = await fetch('/api/voice/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ text: text })
+    });
+    
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error || 'TTS failed');
+    }
+    
+    // Decode base64 audio
+    const audioBytes = Uint8Array.from(atob(data.audio), c => c.charCodeAt(0));
+    const blob = new Blob([audioBytes], { type: 'audio/mpeg' });
+    const audioUrl = URL.createObjectURL(blob);
+    
+    if (audioPlayer) {
+      audioPlayer.pause();
+    }
+    
+    audioPlayer = new Audio(audioUrl);
+    audioPlayer.play();
+    showToast('🔊 正在播放...', 'success');
+    
+    audioPlayer.onended = function() {
+      showToast('播放完成', 'success');
+    };
+  } catch (e) {
+    console.error('Server TTS error:', e);
+    showToast('服务器TTS失败，使用浏览器TTS', 'error');
+    playViaBrowserTTS(text);
+  }
+}
+
+// Play via browser native TTS
+function playViaBrowserTTS(text) {
+  if (!window.speechSynthesis) {
+    showToast('您的浏览器不支持语音合成', 'error');
+    return;
+  }
+  
+  // Stop any current playback
+  window.speechSynthesis.cancel();
+  
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'zh-CN';
+  utterance.rate = 1.0;
+  utterance.pitch = 1.0;
+  
+  utterance.onstart = function() {
+    showToast('🔊 正在播放...', 'success');
+  };
+  
+  utterance.onend = function() {
+    showToast('播放完成', 'success');
+  };
+  
+  utterance.onerror = function(e) {
+    console.error('TTS error:', e);
+    showToast('播放失败: ' + e.error, 'error');
+  };
+  
+  window.speechSynthesis.speak(utterance);
+}
+
+// Show TTS play button
+function showTTSButton() {
+  const btn = document.getElementById('ttsPlayBtn');
+  if (btn) {
+    btn.style.display = 'inline-flex';
+  }
+}
+
+// Hide TTS play button
+function hideTTSButton() {
+  const btn = document.getElementById('ttsPlayBtn');
+  if (btn) {
+    btn.style.display = 'none';
+  }
+}
+
+function renderChat() {
+  return `
+<div class="page-header"><h2>💬 Web 聊天</h2><p>直接与 PicoClaw Agent 交互</p></div>
+<div class="chat-container">
+  <div id="chatModeIndicator" style="padding: 0.5rem; font-size: 0.9rem; color: var(--muted); text-align: right;">
+    <span id="modeStatus">连接中...</span>
+  </div>
+  <div id="chatMessages" class="chat-messages"></div>
+  <div class="chat-input-area">
+    <button id="voiceInputBtn" class="btn btn-secondary" onclick="toggleVoiceInput()" title="语音输入（需要 HTTPS 或 localhost）" style="padding: 7px 10px;">🎤</button>
+    <input id="chatInput" type="text" placeholder="输入你的消息..." onkeypress="if(event.key==='Enter') sendMessage()">
+    <button id="ttsPlayBtn" class="btn btn-secondary" onclick="playLastResponse()" title="播放语音回复" style="padding: 7px 10px; display: none;">🔊</button>
+    <button class="btn btn-primary" onclick="sendMessage()">&#x1f4a4 发送</button>
+  </div>
+  <div id="voiceInputStatus" style="display: none; padding: 0.5rem; font-size: 0.85rem; color: var(--accent);">
+    🎤 正在录音... 点击停止
+  </div>
+</div>`;
+}
+
+function initChat() {
+  renderChatMessages();
+  // Check if WebSocket is enabled in config
+  const wsEnabled = get('web.chat.websocket');
+  const httpEnabled = get('web.chat.http');
+  
+  // If WebSocket is enabled, try to connect
+  if (wsEnabled !== false) {
+    initWebSocketChat();
+  } else if (httpEnabled === false) {
+    // If both disabled, show error
+    addChatMessage('❌ 错误: Web 聊天模式均已禁用，请在系统设置中启用', 'system');
+  }
+  
+  setTimeout(() => {
+    const input = document.getElementById('chatInput');
+    if (input) input.focus();
+  }, 100);
+}
+
+function addChatMessage(content, role = 'user') {
+  const msg = {
+    content: content,
+    role: role, // 'user', 'ai', 'system'
+    timestamp: new Date().toLocaleTimeString()
+  };
+  chatMessages.push(msg);
+  renderChatMessages();
+  
+  // Show TTS button if this is an AI message
+  if (role === 'ai' && content) {
+    showTTSButton();
+  }
+}
+
+function renderChatMessages() {
+  const container = document.getElementById('chatMessages');
+  if (!container) return;
+  
+  container.innerHTML = chatMessages.map((msg, i) => `
+    <div class="message ${msg.role}">
+      ${escH(msg.content)}
+      <div class="timestamp">${msg.timestamp}</div>
+    </div>
+  `).join('');
+  
+  // Auto scroll to bottom
+  container.scrollTop = container.scrollHeight;
+}
+
+function initWebSocketChat() {
+  // Check if WebSocket is enabled in config
+  const wsEnabled = get('web.chat.websocket');
+  const httpEnabled = get('web.chat.http');
+  
+  if (wsEnabled === false) {
+    console.log('[WS] WebSocket disabled in config, skipping initialization');
+    if (httpEnabled !== false) {
+      chatMode = 'http';
+      updateModeIndicator();
+    }
+    return;
+  }
+  
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/api/ws/chat`;
+  try {
+    webSocketConnection = new WebSocket(wsUrl);
+    webSocketConnection.onopen = () => {
+      console.log('[WS] WebSocket connected to', wsUrl);
+      webSocketAvailable = true;
+      chatMode = 'ws';
+      updateModeIndicator();
+      addChatMessage('📋 WebSocket 成功連接', 'system');
+    };
+    webSocketConnection.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        console.log('[WS] Raw message received:', msg);
+        handleWebSocketMessage(msg);
+      } catch (e) {
+        console.error('[WS] Parse error:', e, 'raw data:', event.data);
+      }
+    };
+    webSocketConnection.onerror = (error) => {
+      console.error('[WS] WebSocket error:', error);
+      webSocketAvailable = false;
+      // Check if HTTP fallback is enabled
+      if (httpEnabled !== false) {
+        chatMode = 'http';
+        updateModeIndicator();
+        addChatMessage('⚠️ WebSocket 连接失败，已自动切换到 HTTP 模式', 'system');
+      } else {
+        addChatMessage('❌ WebSocket 连接失败，且 HTTP 模式已禁用', 'system');
+      }
+    };
+    webSocketConnection.onclose = () => {
+      console.log('[WS] WebSocket closed, retrying in 5s...');
+      webSocketAvailable = false;
+      // Check if HTTP fallback is enabled
+      const httpEnabled = get('web.chat.http');
+      if (httpEnabled !== false) {
+        chatMode = 'http';
+        updateModeIndicator();
+        // Show reconnecting indicator
+        addChatMessage('🔄 WebSocket 已断开，正在重新连接...', 'system');
+        setTimeout(() => {
+          // Only retry if still on chat page
+          if (currentSection === 'chat') {
+            initWebSocketChat();
+          }
+        }, 5000);
+      } else {
+        addChatMessage('❌ WebSocket 已关闭，且 HTTP 模式已禁用', 'system');
+      }
+    };
+  } catch (e) {
+    console.error('[WS] WebSocket connection failed:', e);
+    webSocketAvailable = false;
+    const httpEnabled = get('web.chat.http');
+    if (httpEnabled !== false) {
+      chatMode = 'http';
+      updateModeIndicator();
+    } else {
+      addChatMessage('❌ 无法建立连接，Web 聊天不可用', 'system');
+    }
+  }
+}
+
+function updateModeIndicator() {
+  const indicator = document.getElementById('modeStatus');
+  if (!indicator) return;
+  if (chatMode === 'ws' && webSocketAvailable) {
+    indicator.innerHTML = '\ud83d\udcf1 WebSocket \u5b9e\u65f6\u6a21\u5f0f';
+    indicator.style.color = '#4CAF50';
+  } else if (chatMode === 'http') {
+    indicator.innerHTML = '\ud83d\udcf6 HTTP \u8f6e\u8be2\u6a21\u5f0f';
+    indicator.style.color = '#FF9800';
+  } else {
+    indicator.innerHTML = '\u23f3 \u8fde\u63a5\u4e2d...';
+    indicator.style.color = 'var(--muted)';
+  }
+}
+
+function handleWebSocketMessage(msg) {
+  console.log('WS received:', msg); // 调试日志
+  if (!msg || !msg.type) {
+    console.warn('Invalid message format:', msg);
+    return;
+  }
+  
+  switch (msg.type) {
+    case 'message':
+      // Assistant message - display as AI
+      if (msg.role === 'assistant' || msg.role === 'assistant') {
+        console.log('Adding AI message:', msg.content);
+        addChatMessage(msg.content, 'ai');
+        // Store AI content for TTS
+        lastAIContent = msg.content;
+      }
+      // User message - display as user (echo back)
+      else if (msg.role === 'user') {
+        console.log('Adding user message:', msg.content);
+        addChatMessage(msg.content, 'user');
+      }
+      break;
+    case 'status':
+      console.log('Status message:', msg.content);
+      addChatMessage(msg.content, 'system');
+      break;
+    case 'error':
+      console.error('Error message:', msg.error);
+      addChatMessage('❌ 错误：' + (msg.error || '未知错误'), 'system');
+      break;
+    default:
+      console.warn('Unknown message type:', msg.type);
+  }
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chatInput');
+  if (!input) return;
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = '';
+  addChatMessage(message, 'user');
+  
+  // Check which mode to use
+  const wsEnabled = get('web.chat.websocket');
+  const httpEnabled = get('web.chat.http');
+  
+  if (webSocketAvailable && webSocketConnection && webSocketConnection.readyState === WebSocket.OPEN && wsEnabled !== false) {
+    sendViaWebSocket(message);
+  } else if (httpEnabled !== false) {
+    sendViaHTTP(message);
+  } else {
+    addChatMessage('❌ 错误: Web 聊天模式均已禁用', 'system');
+  }
+}
+
+function sendViaWebSocket(message) {
+  try {
+    webSocketConnection.send(JSON.stringify({
+      type: 'message',
+      content: message,
+      chat_id: currentChatID || 'web-ws-session'
+    }));
+  } catch (e) {
+    console.error('WS send error:', e);
+    sendViaHTTP(message);
+  }
+}
+
+function sendViaHTTP(message) {
+  // Check if HTTP is enabled
+  const httpEnabled = get('web.chat.http');
+  if (httpEnabled === false) {
+    addChatMessage('❌ 错误：HTTP 模式已禁用', 'system');
+    return;
+  }
+  
+  // Add loading indicator
+  addChatMessage('⏳ 正在处理...', 'system');
+  const loadingIndex = chatMessages.length - 1;
+  
+  api('POST', '/api/chat', {
+    message: message,
+    chat_id: currentChatID || 'web-http-session'
+  }).then(data => {
+    // Remove loading message
+    if (chatMessages[loadingIndex] && chatMessages[loadingIndex].content === '⏳ 正在处理...') {
+      chatMessages.splice(loadingIndex, 1);
+    }
+    
+    if (data && data.success) {
+      if (data.chat_id) currentChatID = data.chat_id;
+      addChatMessage(data.message, 'ai');
+      // Store AI content for TTS
+      lastAIContent = data.message;
+    } else {
+      addChatMessage('错误：' + (data?.error || '未知错误'), 'system');
+    }
+    renderChatMessages();
+  }).catch(e => {
+    // Remove loading message
+    if (chatMessages[loadingIndex] && chatMessages[loadingIndex].content === '⏳ 正在处理...') {
+      chatMessages.splice(loadingIndex, 1);
+    }
+    renderChatMessages();
+    addChatMessage('网络错误：' + e.message, 'system');
+  });
+}
+
+// ===== Init =====
+(async () => {
+  const r = await api('GET', '/api/status');
+  if (r && r.status === 'running') {
+    await loadAll();
+    showApp();
+  }
+  // else stay on login page
+})();
+</script>
+</body>
+</html>

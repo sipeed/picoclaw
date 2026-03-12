@@ -21,6 +21,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -32,13 +33,13 @@ const (
 type WeComAppChannel struct {
 	*channels.BaseChannel
 	config        config.WeComAppConfig
+	client        *http.Client
 	accessToken   string
 	tokenExpiry   time.Time
 	tokenMu       sync.RWMutex
 	ctx           context.Context
 	cancel        context.CancelFunc
-	processedMsgs map[string]bool // Message deduplication: msg_id -> processed
-	msgMu         sync.RWMutex
+	processedMsgs *MessageDeduplicator
 }
 
 // WeComXMLMessage represents the XML message structure from WeCom
@@ -129,10 +130,21 @@ func NewWeComAppChannel(cfg config.WeComAppConfig, messageBus *bus.MessageBus) (
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
 
+	// Client timeout must be >= the configured ReplyTimeout so the
+	// per-request context deadline is always the effective limit.
+	clientTimeout := 30 * time.Second
+	if d := time.Duration(cfg.ReplyTimeout) * time.Second; d > clientTimeout {
+		clientTimeout = d
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
 	return &WeComAppChannel{
 		BaseChannel:   base,
 		config:        cfg,
-		processedMsgs: make(map[string]bool),
+		client:        &http.Client{Timeout: clientTimeout},
+		ctx:           ctx,
+		cancel:        cancel,
+		processedMsgs: NewMessageDeduplicator(wecomMaxProcessedMessages),
 	}, nil
 }
 
@@ -145,6 +157,10 @@ func (c *WeComAppChannel) Name() string {
 func (c *WeComAppChannel) Start(ctx context.Context) error {
 	logger.InfoC("wecom_app", "Starting WeCom App channel...")
 
+	// Cancel the context created in the constructor to avoid a resource leak.
+	if c.cancel != nil {
+		c.cancel()
+	}
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	// Get initial access token
@@ -249,10 +265,16 @@ func (c *WeComAppChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 		}
 
 		// Send media message using the media_id
-		if mediaType == "image" {
+		switch mediaType {
+		case "image":
 			err = c.sendImageMessage(ctx, accessToken, msg.ChatID, mediaID)
-		} else {
-			// For non-image types, send as text fallback with caption
+		case "video":
+			err = c.sendVideoMessage(ctx, accessToken, msg.ChatID, mediaID)
+		case "voice":
+			err = c.sendVoiceMessage(ctx, accessToken, msg.ChatID, mediaID)
+		case "file":
+			err = c.sendFileMessage(ctx, accessToken, msg.ChatID, mediaID, part.Filename)
+		default:
 			caption := part.Caption
 			if caption == "" {
 				caption = fmt.Sprintf("[%s: %s]", part.Type, part.Filename)
@@ -299,8 +321,7 @@ func (c *WeComAppChannel) uploadMedia(ctx context.Context, accessToken, mediaTyp
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return "", channels.ClassifyNetError(err)
 	}
@@ -327,18 +348,11 @@ func (c *WeComAppChannel) uploadMedia(ctx context.Context, accessToken, mediaTyp
 	return result.MediaID, nil
 }
 
-// sendImageMessage sends an image message using a media_id.
-func (c *WeComAppChannel) sendImageMessage(ctx context.Context, accessToken, userID, mediaID string) error {
+// sendWeComMessage marshals payload and POSTs it to the WeCom message API.
+func (c *WeComAppChannel) sendWeComMessage(ctx context.Context, accessToken string, payload any) error {
 	apiURL := fmt.Sprintf("%s/cgi-bin/message/send?access_token=%s", wecomAPIBase, accessToken)
 
-	msg := WeComImageMessage{
-		ToUser:  userID,
-		MsgType: "image",
-		AgentID: c.config.AgentID,
-	}
-	msg.Image.MediaID = mediaID
-
-	jsonData, err := json.Marshal(msg)
+	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
@@ -357,8 +371,7 @@ func (c *WeComAppChannel) sendImageMessage(ctx context.Context, accessToken, use
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return channels.ClassifyNetError(err)
 	}
@@ -384,6 +397,82 @@ func (c *WeComAppChannel) sendImageMessage(ctx context.Context, accessToken, use
 	}
 
 	return nil
+}
+
+// sendImageMessage sends an image message using a media_id.
+func (c *WeComAppChannel) sendImageMessage(ctx context.Context, accessToken, userID, mediaID string) error {
+	msg := WeComImageMessage{
+		ToUser:  userID,
+		MsgType: "image",
+		AgentID: c.config.AgentID,
+	}
+	msg.Image.MediaID = mediaID
+	return c.sendWeComMessage(ctx, accessToken, msg)
+}
+
+// WeComVideoMessage represents video message for sending
+type WeComVideoMessage struct {
+	ToUser  string `json:"touser"`
+	MsgType string `json:"msgtype"`
+	AgentID int64  `json:"agentid"`
+	Video   struct {
+		MediaID string `json:"media_id"`
+		Title   string `json:"title"`
+		Desc    string `json:"description"`
+	} `json:"video"`
+}
+
+// sendVideoMessage sends a video message using a media_id.
+func (c *WeComAppChannel) sendVideoMessage(ctx context.Context, accessToken, userID, mediaID string) error {
+	msg := WeComVideoMessage{
+		ToUser:  userID,
+		MsgType: "video",
+		AgentID: c.config.AgentID,
+	}
+	msg.Video.MediaID = mediaID
+	return c.sendWeComMessage(ctx, accessToken, msg)
+}
+
+// WeComVoiceMessage represents voice message for sending
+type WeComVoiceMessage struct {
+	ToUser  string `json:"touser"`
+	MsgType string `json:"msgtype"`
+	AgentID int64  `json:"agentid"`
+	Voice   struct {
+		MediaID string `json:"media_id"`
+	} `json:"voice"`
+}
+
+// sendVoiceMessage sends a voice message using a media_id.
+func (c *WeComAppChannel) sendVoiceMessage(ctx context.Context, accessToken, userID, mediaID string) error {
+	msg := WeComVoiceMessage{
+		ToUser:  userID,
+		MsgType: "voice",
+		AgentID: c.config.AgentID,
+	}
+	msg.Voice.MediaID = mediaID
+	return c.sendWeComMessage(ctx, accessToken, msg)
+}
+
+// WeComFileMessage represents file message for sending
+type WeComFileMessage struct {
+	ToUser  string `json:"touser"`
+	MsgType string `json:"msgtype"`
+	AgentID int64  `json:"agentid"`
+	File    struct {
+		MediaID string `json:"media_id"`
+	} `json:"file"`
+}
+
+// sendFileMessage sends a file message using a media_id.
+func (c *WeComAppChannel) sendFileMessage(ctx context.Context, accessToken, userID, mediaID, filename string) error {
+	msg := WeComFileMessage{
+		ToUser:  userID,
+		MsgType: "file",
+		AgentID: c.config.AgentID,
+	}
+	msg.File.MediaID = mediaID
+	return c.sendWeComMessage(ctx, accessToken, msg)
 }
 
 // WebhookPath returns the path for registering on the shared HTTP server.
@@ -567,8 +656,9 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 		return
 	}
 
-	// Process the message with context
-	go c.processMessage(ctx, msg)
+	// Process the message with the channel's long-lived context (not the HTTP
+	// request context, which is canceled as soon as we return the response).
+	go c.processMessage(c.ctx, msg)
 
 	// Return success response immediately
 	// WeCom App requires response within configured timeout (default 5 seconds)
@@ -577,8 +667,8 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 
 // processMessage processes the received message
 func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessage) {
-	// Skip non-text messages for now (can be extended)
-	if msg.MsgType != "text" && msg.MsgType != "image" && msg.MsgType != "voice" {
+	// Handle different message types
+	if msg.MsgType != "text" && msg.MsgType != "image" && msg.MsgType != "voice" && msg.MsgType != "video" && msg.MsgType != "file" {
 		logger.DebugCF("wecom_app", "Skipping non-supported message type", map[string]any{
 			"msg_type": msg.MsgType,
 		})
@@ -588,22 +678,11 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 	// Message deduplication: Use msg_id to prevent duplicate processing
 	// As per WeCom documentation, use msg_id for deduplication
 	msgID := fmt.Sprintf("%d", msg.MsgId)
-	c.msgMu.Lock()
-	if c.processedMsgs[msgID] {
-		c.msgMu.Unlock()
+	if !c.processedMsgs.MarkMessageProcessed(msgID) {
 		logger.DebugCF("wecom_app", "Skipping duplicate message", map[string]any{
 			"msg_id": msgID,
 		})
 		return
-	}
-	c.processedMsgs[msgID] = true
-	c.msgMu.Unlock()
-
-	// Clean up old messages periodically (keep last 1000)
-	if len(c.processedMsgs) > 1000 {
-		c.msgMu.Lock()
-		c.processedMsgs = make(map[string]bool)
-		c.msgMu.Unlock()
 	}
 
 	senderID := msg.FromUserName
@@ -625,10 +704,28 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 
 	content := msg.Content
 
+	// Handle media messages (download and store)
+	var mediaRefs []string
+	store := c.GetMediaStore()
+	if store != nil && msg.MediaId != "" {
+		mediaRefs = c.downloadInboundMedia(ctx, msg.MsgType, msg.MediaId, messageID, store)
+	}
+
+	// Append media tags to content
+	if len(mediaRefs) > 0 {
+		mediaTag := c.getMediaTag(msg.MsgType)
+		if content != "" {
+			content += "\n" + mediaTag
+		} else {
+			content = mediaTag
+		}
+	}
+
 	logger.DebugCF("wecom_app", "Received message", map[string]any{
-		"sender_id": senderID,
-		"msg_type":  msg.MsgType,
-		"preview":   utils.Truncate(content, 50),
+		"sender_id":  senderID,
+		"msg_type":   msg.MsgType,
+		"preview":    utils.Truncate(content, 50),
+		"mediaRefs":  len(mediaRefs),
 	})
 
 	// Build sender info
@@ -639,7 +736,7 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 	}
 
 	// Handle the message through the base channel
-	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata, appSender)
+	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaRefs, metadata, appSender)
 }
 
 // tokenRefreshLoop periodically refreshes the access token
@@ -707,64 +804,15 @@ func (c *WeComAppChannel) getAccessToken() string {
 	return c.accessToken
 }
 
-// sendTextMessage sends a text message to a user
+// sendTextMessage sends a text message to a user.
 func (c *WeComAppChannel) sendTextMessage(ctx context.Context, accessToken, userID, content string) error {
-	apiURL := fmt.Sprintf("%s/cgi-bin/message/send?access_token=%s", wecomAPIBase, accessToken)
-
 	msg := WeComTextMessage{
 		ToUser:  userID,
 		MsgType: "text",
 		AgentID: c.config.AgentID,
 	}
 	msg.Text.Content = content
-
-	jsonData, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
-	}
-
-	// Use configurable timeout (default 5 seconds)
-	timeout := c.config.ReplyTimeout
-	if timeout <= 0 {
-		timeout = 5
-	}
-
-	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, apiURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return channels.ClassifyNetError(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("wecom_app API error: %s", string(body)))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	var sendResp WeComSendMessageResponse
-	if err := json.Unmarshal(body, &sendResp); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if sendResp.ErrCode != 0 {
-		return fmt.Errorf("API error: %s (code: %d)", sendResp.ErrMsg, sendResp.ErrCode)
-	}
-
-	return nil
+	return c.sendWeComMessage(ctx, accessToken, msg)
 }
 
 // handleHealth handles health check requests
@@ -777,4 +825,188 @@ func (c *WeComAppChannel) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+// downloadInboundMedia downloads media from inbound messages and stores in MediaStore.
+func (c *WeComAppChannel) downloadInboundMedia(
+	ctx context.Context,
+	msgType, mediaID, messageID string,
+	store media.MediaStore,
+) []string {
+	var refs []string
+	scope := channels.BuildMediaScope("wecom_app", messageID, mediaID)
+
+	// Determine file extension based on message type
+	var ext string
+	switch msgType {
+	case "image":
+		ext = ".jpg"
+	case "voice":
+		ext = ".amr"
+	case "video":
+		ext = ".mp4"
+	case "file":
+		ext = ""
+	default:
+		ext = ""
+	}
+
+	// Download the media file from WeCom server
+	localPath := c.downloadMedia(ctx, mediaID, ext)
+	if localPath == "" {
+		logger.ErrorCF("wecom_app", "Failed to download media", map[string]any{
+			"media_id": mediaID,
+			"msg_type": msgType,
+		})
+		return refs
+	}
+
+	// Determine filename
+	filename := mediaID + ext
+	if msgType == "file" {
+		filename = "file"
+	}
+
+	// Store in media store
+	ref, err := store.Store(localPath, media.MediaMeta{
+		Filename: filename,
+		Source:   "wecom_app",
+	}, scope)
+	if err != nil {
+		logger.ErrorCF("wecom_app", "Failed to store media", map[string]any{
+			"error": err.Error(),
+			"path":  localPath,
+		})
+		return refs
+	}
+
+	refs = append(refs, ref)
+	return refs
+}
+
+// downloadMedia downloads media from WeCom API and saves to local file.
+func (c *WeComAppChannel) downloadMedia(ctx context.Context, mediaID, ext string) string {
+	accessToken := c.getAccessToken()
+	if accessToken == "" {
+		logger.ErrorCF("wecom_app", "No access token available for media download", nil)
+		return ""
+	}
+
+	// WeCom API: GET /cgi-bin/media/get?access_token=ACCESS_TOKEN&media_id=MEDIA_ID
+	apiURL := fmt.Sprintf("%s/cgi-bin/media/get?access_token=%s&media_id=%s",
+		wecomAPIBase, url.QueryEscape(accessToken), url.QueryEscape(mediaID))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		logger.ErrorCF("wecom_app", "Failed to create media download request", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		logger.ErrorCF("wecom_app", "Failed to download media", map[string]any{
+			"error": err.Error(),
+			"media_id": mediaID,
+		})
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		logger.ErrorCF("wecom_app", "Media download failed with status", map[string]any{
+			"status": resp.StatusCode,
+			"media_id": mediaID,
+		})
+		return ""
+	}
+
+	// Check content-type to determine file type
+	contentType := resp.Header.Get("Content-Type")
+
+	// Determine file extension from content-type if not provided
+	if ext == "" {
+		switch {
+		case strings.Contains(contentType, "image/jpeg"):
+			ext = ".jpg"
+		case strings.Contains(contentType, "image/png"):
+			ext = ".png"
+		case strings.Contains(contentType, "image/gif"):
+			ext = ".gif"
+		case strings.Contains(contentType, "audio/amr"):
+			ext = ".amr"
+		case strings.Contains(contentType, "audio/mp3") || strings.Contains(contentType, "audio/mpeg"):
+			ext = ".mp3"
+		case strings.Contains(contentType, "video/mp4"):
+			ext = ".mp4"
+		default:
+			ext = ".bin"
+		}
+	}
+
+	// Generate temp file path
+	tempDir := os.TempDir()
+	mediaDir := filepath.Join(tempDir, "picoclaw_media", "wecom")
+	os.MkdirAll(mediaDir, 0o755)
+
+	localPath := filepath.Join(mediaDir, mediaID+ext)
+
+	// Write to file
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logger.ErrorCF("wecom_app", "Failed to read media body", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	// Check if response is error JSON
+	if len(body) > 0 && body[0] == '{' {
+		var errResp struct {
+			ErrCode int    `json:"errcode"`
+			ErrMsg  string `json:"errmsg"`
+		}
+		if json.Unmarshal(body, &errResp) == nil && errResp.ErrCode != 0 {
+			logger.ErrorCF("wecom_app", "Media download API error", map[string]any{
+				"errcode": errResp.ErrCode,
+				"errmsg": errResp.ErrMsg,
+				"media_id": mediaID,
+			})
+			return ""
+		}
+	}
+
+	err = os.WriteFile(localPath, body, 0o644)
+	if err != nil {
+		logger.ErrorCF("wecom_app", "Failed to write media file", map[string]any{
+			"error": err.Error(),
+			"path":  localPath,
+		})
+		return ""
+	}
+
+	logger.DebugCF("wecom_app", "Media downloaded successfully", map[string]any{
+		"media_id": mediaID,
+		"path":     localPath,
+		"size":    len(body),
+	})
+
+	return localPath
+}
+
+// getMediaTag returns a media tag string for the message type.
+func (c *WeComAppChannel) getMediaTag(msgType string) string {
+	switch msgType {
+	case "image":
+		return "[image]"
+	case "voice":
+		return "[voice message]"
+	case "video":
+		return "[video]"
+	case "file":
+		return "[file]"
+	default:
+		return "[media]"
+	}
 }

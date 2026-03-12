@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -25,10 +24,10 @@ import (
 type WeComBotChannel struct {
 	*channels.BaseChannel
 	config        config.WeComConfig
+	client        *http.Client
 	ctx           context.Context
 	cancel        context.CancelFunc
-	processedMsgs map[string]bool // Message deduplication: msg_id -> processed
-	msgMu         sync.RWMutex
+	processedMsgs *MessageDeduplicator
 }
 
 // WeComBotMessage represents the JSON message structure from WeCom Bot (AIBOT)
@@ -93,10 +92,21 @@ func NewWeComBotChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*We
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
 
+	// Client timeout must be >= the configured ReplyTimeout so the
+	// per-request context deadline is always the effective limit.
+	clientTimeout := 30 * time.Second
+	if d := time.Duration(cfg.ReplyTimeout) * time.Second; d > clientTimeout {
+		clientTimeout = d
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
 	return &WeComBotChannel{
 		BaseChannel:   base,
 		config:        cfg,
-		processedMsgs: make(map[string]bool),
+		client:        &http.Client{Timeout: clientTimeout},
+		ctx:           ctx,
+		cancel:        cancel,
+		processedMsgs: NewMessageDeduplicator(wecomMaxProcessedMessages),
 	}, nil
 }
 
@@ -109,6 +119,10 @@ func (c *WeComBotChannel) Name() string {
 func (c *WeComBotChannel) Start(ctx context.Context) error {
 	logger.InfoC("wecom", "Starting WeCom Bot channel...")
 
+	// Cancel the context created in the constructor to avoid a resource leak.
+	if c.cancel != nil {
+		c.cancel()
+	}
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	c.SetRunning(true)
@@ -292,8 +306,9 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 		return
 	}
 
-	// Process the message asynchronously with context
-	go c.processMessage(ctx, msg)
+	// Process the message with the channel's long-lived context (not the HTTP
+	// request context, which is canceled as soon as we return the response).
+	go c.processMessage(c.ctx, msg)
 
 	// Return success response immediately
 	// WeCom Bot requires response within configured timeout (default 5 seconds)
@@ -313,22 +328,11 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 
 	// Message deduplication: Use msg_id to prevent duplicate processing
 	msgID := msg.MsgID
-	c.msgMu.Lock()
-	if c.processedMsgs[msgID] {
-		c.msgMu.Unlock()
+	if !c.processedMsgs.MarkMessageProcessed(msgID) {
 		logger.DebugCF("wecom", "Skipping duplicate message", map[string]any{
 			"msg_id": msgID,
 		})
 		return
-	}
-	c.processedMsgs[msgID] = true
-	c.msgMu.Unlock()
-
-	// Clean up old messages periodically (keep last 1000)
-	if len(c.processedMsgs) > 1000 {
-		c.msgMu.Lock()
-		c.processedMsgs = make(map[string]bool)
-		c.msgMu.Unlock()
 	}
 
 	senderID := msg.From.UserID
@@ -442,8 +446,7 @@ func (c *WeComBotChannel) sendWebhookReply(ctx context.Context, userID, content 
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return channels.ClassifyNetError(err)
 	}

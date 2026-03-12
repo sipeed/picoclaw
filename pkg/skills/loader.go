@@ -64,6 +64,29 @@ type SkillsLoader struct {
 	builtinSkills   string // builtin skills
 }
 
+// SkillRoots returns all unique skill root directories used by this loader.
+// The order follows resolution priority: workspace > global > builtin.
+func (sl *SkillsLoader) SkillRoots() []string {
+	roots := []string{sl.workspaceSkills, sl.globalSkills, sl.builtinSkills}
+	seen := make(map[string]struct{}, len(roots))
+	out := make([]string, 0, len(roots))
+
+	for _, root := range roots {
+		trimmed := strings.TrimSpace(root)
+		if trimmed == "" {
+			continue
+		}
+		clean := filepath.Clean(trimmed)
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+		out = append(out, clean)
+	}
+
+	return out
+}
+
 func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string) *SkillsLoader {
 	return &SkillsLoader{
 		workspace:       workspace,
@@ -240,7 +263,7 @@ func (sl *SkillsLoader) parseSimpleYAML(content string) map[string]string {
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
 
-	for _, line := range strings.Split(normalized, "\n") {
+	for line := range strings.SplitSeq(normalized, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

@@ -8,11 +8,11 @@ import (
 )
 
 func TestNewSearchSubcommand(t *testing.T) {
-	cmd := newSearchCommand(nil)
+	cmd := newSearchCommand()
 
 	require.NotNil(t, cmd)
 
-	assert.Equal(t, "search", cmd.Use)
+	assert.Equal(t, "search [query]", cmd.Use)
 	assert.Equal(t, "Search available skills", cmd.Short)
 
 	assert.Nil(t, cmd.Run)

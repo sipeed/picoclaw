@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,11 @@ type ContextBuilder struct {
 	// created (didn't exist at cache time, now exist) or deleted (existed at
 	// cache time, now gone) — both of which should trigger a cache rebuild.
 	existedAtCache map[string]bool
+
+	// skillFilesAtCache snapshots the skill tree file set and mtimes at cache
+	// build time. This catches nested file creations/deletions/mtime changes
+	// that may not update the top-level skill root directory mtime.
+	skillFilesAtCache map[string]time.Time
 }
 
 func getGlobalConfigDir() string {
@@ -46,8 +52,11 @@ func getGlobalConfigDir() string {
 func NewContextBuilder(workspace string) *ContextBuilder {
 	// builtin skills: skills directory in current project
 	// Use the skills/ directory under the current working directory
-	wd, _ := os.Getwd()
-	builtinSkillsDir := filepath.Join(wd, "skills")
+	builtinSkillsDir := strings.TrimSpace(os.Getenv("PICOCLAW_BUILTIN_SKILLS"))
+	if builtinSkillsDir == "" {
+		wd, _ := os.Getwd()
+		builtinSkillsDir = filepath.Join(wd, "skills")
+	}
 	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
 
 	return &ContextBuilder{
@@ -57,12 +66,17 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 	}
 }
 
+// Memory returns the memory store for accessing long-term and daily memories.
+func (cb *ContextBuilder) Memory() *MemoryStore {
+	return cb.memory
+}
+
 func (cb *ContextBuilder) getIdentity() string {
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
 
-	return fmt.Sprintf(`# picoclaw 🦞
+	return fmt.Sprintf(`# zhuiai claw 🦞
 
-You are picoclaw, a helpful AI assistant.
+You are zhuiai claw, a helpful AI assistant.
 
 ## Workspace
 Your workspace is at: %s
@@ -76,7 +90,45 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
+3. **Memory Management** - You have dedicated memory tools:
+   - **update_memory**: Save important information immediately
+   - **search_memory**: Find existing memories by keywords
+   
+   ### When to use update_memory:
+   ✅ User mentions personal info (name, job, location)
+   ✅ User expresses preferences (language, timezone, habits)
+   ✅ Important events or deadlines mentioned
+   ✅ Task completions worth remembering
+   
+   ### Examples:
+   - User: "我下周要去北京出差" → Call update_memory with category="important_note"
+   - User: "我对海鲜过敏" → Call update_memory with category="preference"
+   - User: "今天完成了项目部署" → Call update_memory with memory_type="daily_note"
+
+4. **Task Management** - Use **manage_tasks** tool for schedules and reminders:
+   - **add**: Add a new task with due date/time and repeat pattern
+   - **list**: List tasks (scope: all, today, upcoming, completed)
+   - **complete**: Mark a task as completed
+   - **delete**: Delete a task
+   - **get_today**: Quick way to get today's tasks
+   
+   ### When to use manage_tasks:
+   ✅ User mentions schedules, plans, or to-dos
+   ✅ User asks "今天有什么任务" or "我的工作计划是什么"
+   ✅ User wants to track recurring tasks
+   
+   ### Task Parameters:
+   - **due_date**: YYYY-MM-DD format (e.g., "2026-02-03")
+   - **due_weekday**: 1=Monday, 2=Tuesday, ..., 7=Sunday
+   - **repeat**: none, daily, weekly, monthly, weekdays
+   
+   ### Examples:
+   - User: "帮我记一下，周1去吴晓客户那里，周2去小明家吃饭"
+     → Call manage_tasks with action="add", title="去吴晓客户那里", due_weekday=1, repeat="weekly"
+   - User: "今天我要做什么？"
+     → Call manage_tasks with action="get_today"
+   - User: "完成了上面的任务"
+     → Call manage_tasks with action="complete", task_id="[from previous list]"
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
 		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
@@ -147,6 +199,7 @@ func (cb *ContextBuilder) BuildSystemPromptWithCache() string {
 	cb.cachedSystemPrompt = prompt
 	cb.cachedAt = baseline.maxMtime
 	cb.existedAtCache = baseline.existed
+	cb.skillFilesAtCache = baseline.skillFiles
 
 	logger.DebugCF("agent", "System prompt cached",
 		map[string]any{
@@ -166,14 +219,14 @@ func (cb *ContextBuilder) InvalidateCache() {
 	cb.cachedSystemPrompt = ""
 	cb.cachedAt = time.Time{}
 	cb.existedAtCache = nil
+	cb.skillFilesAtCache = nil
 
 	logger.DebugCF("agent", "System prompt cache invalidated", nil)
 }
 
-// sourcePaths returns the workspace source file paths tracked for cache
-// invalidation (bootstrap files + memory). The skills directory is handled
-// separately in sourceFilesChangedLocked because it requires both directory-
-// level and recursive file-level mtime checks.
+// sourcePaths returns non-skill workspace source files tracked for cache
+// invalidation (bootstrap files + memory). Skill roots are handled separately
+// because they require both directory-level and recursive file-level checks.
 func (cb *ContextBuilder) sourcePaths() []string {
 	return []string{
 		filepath.Join(cb.workspace, "AGENTS.md"),
@@ -184,23 +237,39 @@ func (cb *ContextBuilder) sourcePaths() []string {
 	}
 }
 
+// skillRoots returns all skill root directories that can affect
+// BuildSkillsSummary output (workspace/global/builtin).
+func (cb *ContextBuilder) skillRoots() []string {
+	if cb.skillsLoader == nil {
+		return []string{filepath.Join(cb.workspace, "skills")}
+	}
+
+	roots := cb.skillsLoader.SkillRoots()
+	if len(roots) == 0 {
+		return []string{filepath.Join(cb.workspace, "skills")}
+	}
+	return roots
+}
+
 // cacheBaseline holds the file existence snapshot and the latest observed
 // mtime across all tracked paths. Used as the cache reference point.
 type cacheBaseline struct {
-	existed  map[string]bool
-	maxMtime time.Time
+	existed    map[string]bool
+	skillFiles map[string]time.Time
+	maxMtime   time.Time
 }
 
 // buildCacheBaseline records which tracked paths currently exist and computes
 // the latest mtime across all tracked files + skills directory contents.
 // Called under write lock when the cache is built.
 func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
-	skillsDir := filepath.Join(cb.workspace, "skills")
+	skillRoots := cb.skillRoots()
 
-	// All paths whose existence we track: source files + skills dir.
-	allPaths := append(cb.sourcePaths(), skillsDir)
+	// All paths whose existence we track: source files + all skill roots.
+	allPaths := append(cb.sourcePaths(), skillRoots...)
 
 	existed := make(map[string]bool, len(allPaths))
+	skillFiles := make(map[string]time.Time)
 	var maxMtime time.Time
 
 	for _, p := range allPaths {
@@ -211,17 +280,21 @@ func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 		}
 	}
 
-	// Walk skills files to capture their mtimes too.
-	// Use os.Stat (not d.Info) to match the stat method used in
-	// fileChangedSince / skillFilesModifiedSince for consistency.
-	_ = filepath.WalkDir(skillsDir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr == nil && !d.IsDir() {
-			if info, err := os.Stat(path); err == nil && info.ModTime().After(maxMtime) {
-				maxMtime = info.ModTime()
+	// Walk all skill roots recursively to snapshot skill files and mtimes.
+	// Use os.Stat (not d.Info) for consistency with sourceFilesChanged checks.
+	for _, root := range skillRoots {
+		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr == nil && !d.IsDir() {
+				if info, err := os.Stat(path); err == nil {
+					skillFiles[path] = info.ModTime()
+					if info.ModTime().After(maxMtime) {
+						maxMtime = info.ModTime()
+					}
+				}
 			}
-		}
-		return nil
-	})
+			return nil
+		})
+	}
 
 	// If no tracked files exist yet (empty workspace), maxMtime is zero.
 	// Use a very old non-zero time so that:
@@ -233,7 +306,7 @@ func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 		maxMtime = time.Unix(1, 0)
 	}
 
-	return cacheBaseline{existed: existed, maxMtime: maxMtime}
+	return cacheBaseline{existed: existed, skillFiles: skillFiles, maxMtime: maxMtime}
 }
 
 // sourceFilesChangedLocked checks whether any workspace source file has been
@@ -249,27 +322,21 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 	}
 
 	// Check tracked source files (bootstrap + memory).
-	for _, p := range cb.sourcePaths() {
-		if cb.fileChangedSince(p) {
-			return true
-		}
-	}
-
-	// --- Skills directory (handled separately from sourcePaths) ---
-	//
-	// 1. Creation/deletion: tracked via existedAtCache, same as bootstrap files.
-	skillsDir := filepath.Join(cb.workspace, "skills")
-	if cb.fileChangedSince(skillsDir) {
+	if slices.ContainsFunc(cb.sourcePaths(), cb.fileChangedSince) {
 		return true
 	}
 
-	// 2. Structural changes (add/remove entries inside the dir) are reflected
-	//    in the directory's own mtime, which fileChangedSince already checks.
+	// --- Skill roots (workspace/global/builtin) ---
 	//
-	// 3. Content-only edits to files inside skills/ do NOT update the parent
-	//    directory mtime on most filesystems, so we recursively walk to check
-	//    individual file mtimes at any nesting depth.
-	if skillFilesModifiedSince(skillsDir, cb.cachedAt) {
+	// For each root:
+	// 1. Creation/deletion and root directory mtime changes are tracked by fileChangedSince.
+	// 2. Nested file create/delete/mtime changes are tracked by the skill file snapshot.
+	for _, root := range cb.skillRoots() {
+		if cb.fileChangedSince(root) {
+			return true
+		}
+	}
+	if skillFilesChangedSince(cb.skillRoots(), cb.skillFilesAtCache) {
 		return true
 	}
 
@@ -310,28 +377,64 @@ func (cb *ContextBuilder) fileChangedSince(path string) bool {
 // if the callback returned nil when its err parameter is non-nil.
 var errWalkStop = errors.New("walk stop")
 
-// skillFilesModifiedSince recursively walks the skills directory and checks
-// whether any file was modified after t. This catches content-only edits at
-// any nesting depth (e.g. skills/name/docs/extra.md) that don't update
-// parent directory mtimes.
-func skillFilesModifiedSince(skillsDir string, t time.Time) bool {
-	changed := false
-	err := filepath.WalkDir(skillsDir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr == nil && !d.IsDir() {
-			if info, statErr := os.Stat(path); statErr == nil && info.ModTime().After(t) {
-				changed = true
-				return errWalkStop // stop walking
-			}
-		}
-		return nil
-	})
-	// errWalkStop is expected (early exit on first changed file).
-	// os.IsNotExist means the skills dir doesn't exist yet — not an error.
-	// Any other error is unexpected and worth logging.
-	if err != nil && !errors.Is(err, errWalkStop) && !os.IsNotExist(err) {
-		logger.DebugCF("agent", "skills walk error", map[string]any{"error": err.Error()})
+// skillFilesChangedSince compares the current recursive skill file tree
+// against the cache-time snapshot. Any create/delete/mtime drift invalidates
+// the cache.
+func skillFilesChangedSince(skillRoots []string, filesAtCache map[string]time.Time) bool {
+	// Defensive: if the snapshot was never initialized, force rebuild.
+	if filesAtCache == nil {
+		return true
 	}
-	return changed
+
+	// Check cached files still exist and keep the same mtime.
+	for path, cachedMtime := range filesAtCache {
+		info, err := os.Stat(path)
+		if err != nil {
+			// A previously tracked file disappeared (or became inaccessible):
+			// either way, cached skill summary may now be stale.
+			return true
+		}
+		if !info.ModTime().Equal(cachedMtime) {
+			return true
+		}
+	}
+
+	// Check no new files appeared under any skill root.
+	changed := false
+	for _, root := range skillRoots {
+		if strings.TrimSpace(root) == "" {
+			continue
+		}
+
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				// Treat unexpected walk errors as changed to avoid stale cache.
+				if !os.IsNotExist(walkErr) {
+					changed = true
+					return errWalkStop
+				}
+				return nil
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if _, ok := filesAtCache[path]; !ok {
+				changed = true
+				return errWalkStop
+			}
+			return nil
+		})
+
+		if changed {
+			return true
+		}
+		if err != nil && !errors.Is(err, errWalkStop) && !os.IsNotExist(err) {
+			logger.DebugCF("agent", "skills walk error", map[string]any{"error": err.Error()})
+			return true
+		}
+	}
+
+	return false
 }
 
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
@@ -467,10 +570,14 @@ func (cb *ContextBuilder) BuildMessages(
 
 	// Add current user message
 	if strings.TrimSpace(currentMessage) != "" {
-		messages = append(messages, providers.Message{
+		msg := providers.Message{
 			Role:    "user",
 			Content: currentMessage,
-		})
+		}
+		if len(media) > 0 {
+			msg.Media = media
+		}
+		messages = append(messages, msg)
 	}
 
 	return messages

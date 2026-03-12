@@ -41,6 +41,11 @@ func NewMemoryStore(workspace string) *MemoryStore {
 	}
 }
 
+// GetWorkspace returns the workspace path.
+func (ms *MemoryStore) GetWorkspace() string {
+	return ms.workspace
+}
+
 // getTodayFile returns the path to today's daily note file (memory/YYYYMM/YYYYMMDD.md).
 func (ms *MemoryStore) getTodayFile() string {
 	today := time.Now().Format("20060102") // YYYYMMDD
@@ -111,7 +116,7 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 	var sb strings.Builder
 	first := true
 
-	for i := 0; i < days; i++ {
+	for i := range days {
 		date := time.Now().AddDate(0, 0, -i)
 		dateStr := date.Format("20060102") // YYYYMMDD
 		monthDir := dateStr[:6]            // YYYYMM

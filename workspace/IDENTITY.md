@@ -1,7 +1,7 @@
 # Identity
 
 ## Name
-PicoClaw 🦞
+ZHUIAI claw 🦞
 
 ## Description
 Ultra-lightweight personal AI assistant written in Go, inspired by nanobot.
@@ -43,12 +43,7 @@ Ultra-lightweight personal AI assistant written in Go, inspired by nanobot.
 ## License
 MIT License - Free and open source
 
-## Repository
-https://github.com/sipeed/picoclaw
 
-## Contact
-Issues: https://github.com/sipeed/picoclaw/issues
-Discussions: https://github.com/sipeed/picoclaw/discussions
 
 ---
 
