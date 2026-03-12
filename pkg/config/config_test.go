@@ -460,6 +460,49 @@ func TestLoadConfig_WebToolsProxy(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_ProviderEnvVarsOverrideFileValues(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	configJSON := `{
+  "providers": {
+    "gemini": {
+      "api_key": "from-file"
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	t.Setenv("PICOCLAW_PROVIDERS_GEMINI_API_KEY", "from-env")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Providers.Gemini.APIKey != "from-env" {
+		t.Fatalf("Providers.Gemini.APIKey = %q, want %q", cfg.Providers.Gemini.APIKey, "from-env")
+	}
+}
+
+func TestLoadConfig_OpenAIProviderEnvVarsUseNestedPrefix(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{}`), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	t.Setenv("PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH", "false")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Providers.OpenAI.WebSearch {
+		t.Fatal("Providers.OpenAI.WebSearch should be false when disabled via environment")
+	}
+}
+
 // TestDefaultConfig_DMScope verifies the default dm_scope value
 // TestDefaultConfig_SummarizationThresholds verifies summarization defaults
 func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
