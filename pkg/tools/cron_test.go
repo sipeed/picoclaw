@@ -11,6 +11,27 @@ import (
 	"github.com/sipeed/picoclaw/pkg/cron"
 )
 
+type mockCronExecutor struct {
+	response string
+	err      error
+	calls    int
+	lastMsg  string
+	lastSess string
+	lastChan string
+	lastChat string
+}
+
+func (m *mockCronExecutor) ProcessDirectWithChannel(
+	ctx context.Context, content, sessionKey, channel, chatID string,
+) (string, error) {
+	m.calls++
+	m.lastMsg = content
+	m.lastSess = sessionKey
+	m.lastChan = channel
+	m.lastChat = chatID
+	return m.response, m.err
+}
+
 func newTestCronTool(t *testing.T) *CronTool {
 	t.Helper()
 	storePath := filepath.Join(t.TempDir(), "cron.json")
@@ -112,5 +133,78 @@ func TestCronTool_NonCommandJobAllowedFromRemoteChannel(t *testing.T) {
 
 	if result.IsError {
 		t.Fatalf("expected non-command reminder to succeed from remote channel, got: %s", result.ForLLM)
+	}
+}
+
+func TestCronTool_ExecuteJob_DeliverFalsePublishesAgentResponse(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "cron.json")
+	cronService := cron.NewCronService(storePath, nil)
+	msgBus := bus.NewMessageBus()
+	executor := &mockCronExecutor{response: "agent reply"}
+	cfg := config.DefaultConfig()
+	tool, err := NewCronTool(cronService, executor, msgBus, t.TempDir(), true, 0, cfg)
+	if err != nil {
+		t.Fatalf("NewCronTool() error: %v", err)
+	}
+
+	job := &cron.CronJob{
+		ID: "job-1",
+		Payload: cron.CronPayload{
+			Message: "summarize status",
+			Deliver: false,
+			Channel: "telegram",
+			To:      "chat-42",
+		},
+	}
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+	if executor.calls != 1 {
+		t.Fatalf("executor calls = %d, want 1", executor.calls)
+	}
+	if executor.lastSess != "cron-job-1" {
+		t.Fatalf("sessionKey = %q, want %q", executor.lastSess, "cron-job-1")
+	}
+
+	msg, ok := msgBus.SubscribeOutbound(context.Background())
+	if !ok {
+		t.Fatal("expected outbound message")
+	}
+	if msg.Content != "agent reply" {
+		t.Fatalf("outbound content = %q, want %q", msg.Content, "agent reply")
+	}
+	if msg.Channel != "telegram" || msg.ChatID != "chat-42" {
+		t.Fatalf("unexpected destination: %+v", msg)
+	}
+}
+
+func TestCronTool_ExecuteJob_DeliverFalseSkipsEmptyAgentResponse(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "cron.json")
+	cronService := cron.NewCronService(storePath, nil)
+	msgBus := bus.NewMessageBus()
+	executor := &mockCronExecutor{response: "   "}
+	cfg := config.DefaultConfig()
+	tool, err := NewCronTool(cronService, executor, msgBus, t.TempDir(), true, 0, cfg)
+	if err != nil {
+		t.Fatalf("NewCronTool() error: %v", err)
+	}
+
+	job := &cron.CronJob{
+		ID: "job-2",
+		Payload: cron.CronPayload{
+			Message: "noop",
+			Deliver: false,
+		},
+	}
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, ok := msgBus.SubscribeOutbound(ctx); ok {
+		t.Fatal("did not expect outbound message for empty response")
 	}
 }
