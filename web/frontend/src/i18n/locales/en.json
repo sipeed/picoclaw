@@ -4,6 +4,9 @@
     "model_group": "Models",
     "models": "Models",
     "credentials": "Credentials",
+    "agent_group": "Agent",
+    "skills": "Skills",
+    "tools": "Tools",
     "services": "Services",
     "channels_group": "Channels",
     "show_more_channels": "More",
@@ -25,6 +28,8 @@
     },
     "history": "History",
     "noHistory": "No chat history yet",
+    "historyLoadFailed": "Failed to load chat history",
+    "historyOpenFailed": "Failed to open this chat history",
     "loadingMore": "Loading more...",
     "deleteSession": "Delete session",
     "messagesCount": "{{count}} messages",
@@ -324,12 +329,108 @@
     }
   },
   "pages": {
+    "agent": {
+      "load_error": "Failed to load agent support information.",
+      "stats": {
+        "workspace": "Workspace",
+        "workspace_hint": "The default agent workspace used for runtime files and workspace skills.",
+        "skills": "Available Skills",
+        "skills_hint": "Skills discovered from workspace, global, and builtin roots.",
+        "tools": "Enabled Tools",
+        "tools_hint": "{{blocked}} blocked by missing dependencies."
+      },
+      "skills": {
+        "title": "Skills",
+        "description": "Skills are loaded from the workspace, global PicoClaw home, and builtin directories.",
+        "hero_title": "Skill Library",
+        "hero_description": "Browse every capability package the agent can load, then drill straight into the effective SKILL.md without leaving the page.",
+        "stats": {
+          "total": "Total Skills",
+          "workspace": "Workspace",
+          "shared": "Shared"
+        },
+        "empty": "No skills are currently available.",
+        "import": "Import Skill",
+        "import_title": "Import Skill",
+        "import_description": "Create a workspace skill by uploading a markdown file as the new SKILL.md.",
+        "import_name": "Skill Name",
+        "import_name_placeholder": "e.g. my-workflow",
+        "import_file": "Markdown File",
+        "import_file_hint": "Upload a .md file. The backend stores it as workspace/skills/<name>/SKILL.md.",
+        "import_confirm": "Import Skill",
+        "import_success": "Skill imported.",
+        "import_error": "Failed to import skill.",
+        "view": "View",
+        "delete": "Delete",
+        "delete_title": "Delete Skill?",
+        "delete_description": "\"{{name}}\" will be removed from workspace skills.",
+        "delete_confirm": "Delete",
+        "delete_success": "Skill deleted.",
+        "delete_error": "Failed to delete skill.",
+        "viewer_title": "Skill Content",
+        "viewer_description": "Read the current effective SKILL.md content here.",
+        "loading_detail": "Loading skill content...",
+        "load_detail_error": "Failed to load skill content.",
+        "source": "Source",
+        "path": "Skill Path",
+        "no_description": "No description provided.",
+        "sources": {
+          "workspace": "Workspace",
+          "global": "Global",
+          "builtin": "Builtin"
+        },
+        "errors": {
+          "file_required": "Please choose a markdown file to import."
+        }
+      },
+      "tools": {
+        "title": "Tools",
+        "description": "This view reflects whether each agent tool is enabled, disabled, or blocked by a missing prerequisite.",
+        "hero_title": "Tool Surface",
+        "hero_description": "Inspect what the agent can actually call right now, which capabilities are blocked, and where each tool is controlled in config.",
+        "stats": {
+          "enabled": "Enabled",
+          "blocked": "Blocked",
+          "categories": "Categories"
+        },
+        "empty": "No tools are available.",
+        "enable": "Enable",
+        "disable": "Disable",
+        "enable_success": "Tool enabled.",
+        "disable_success": "Tool disabled.",
+        "toggle_error": "Failed to update tool state.",
+        "config_key": "Controlled by tools.{{key}}",
+        "status": {
+          "enabled": "Enabled",
+          "disabled": "Disabled",
+          "blocked": "Blocked"
+        },
+        "categories": {
+          "automation": "Automation",
+          "filesystem": "Filesystem",
+          "web": "Web",
+          "communication": "Communication",
+          "skills": "Skills",
+          "agents": "Agents",
+          "hardware": "Hardware",
+          "discovery": "Discovery"
+        },
+        "reasons": {
+          "requires_linux": "This tool only works on Linux hosts with the required device files exposed.",
+          "requires_skills": "Enable `tools.skills` before this skill-registry tool can be used.",
+          "requires_subagent": "Enable `tools.subagent` before the spawn tool can delegate work.",
+          "requires_mcp_discovery": "Enable `tools.mcp.discovery` before MCP discovery tools become available."
+        }
+      }
+    },
     "config": {
       "load_error": "Failed to load configuration. Please refresh and try again.",
       "workspace": "Workspace Directory",
       "workspace_hint": "Base directory for agent file operations.",
       "restrict_workspace": "Restrict to Workspace",
       "restrict_workspace_hint": "Only allow file operations inside workspace.",
+      "allow_remote": "Allow Remote Shell Execution",
+      "allow_remote_hint": "When enabled, shell commands can also run for remote sessions or non-local contexts. When disabled, shell execution stays limited to local safe contexts.",
       "max_tokens": "Max Tokens",
       "max_tokens_hint": "Upper token limit per model response.",
       "max_tool_iterations": "Max Tool Iterations",
@@ -387,7 +488,9 @@
       "unsaved_changes": "You have unsaved changes."
     },
     "logs": {
-      "description": "System logs and monitoring."
+      "description": "System logs and monitoring.",
+      "clear": "Clear logs",
+      "empty": "Waiting for logs..."
     }
   }
 }

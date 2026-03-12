@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -17,36 +16,11 @@ func (h *Handler) registerConfigRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/config", h.handlePatchConfig)
 }
 
-// loadFilteredConfig loads the configuration and filters out default placeholder credentials
-// (like API limits/keys) if the configuration file has not been created yet by the user.
-func (h *Handler) loadFilteredConfig() (*config.Config, error) {
-	cfg, err := config.LoadConfig(h.configPath)
-	if err != nil {
-		return nil, err
-	}
-
-	configExists := false
-	if h.configPath != "" {
-		if _, err := os.Stat(h.configPath); err == nil {
-			configExists = true
-		}
-	}
-
-	if !configExists {
-		for i := range cfg.ModelList {
-			cfg.ModelList[i].APIKey = ""
-			cfg.ModelList[i].AuthMethod = ""
-		}
-	}
-
-	return cfg, nil
-}
-
 // handleGetConfig returns the complete system configuration.
 //
 //	GET /api/config
 func (h *Handler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
-	cfg, err := h.loadFilteredConfig()
+	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
@@ -74,6 +48,9 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
+	if execAllowRemoteOmitted(body) {
+		cfg.Tools.Exec.AllowRemote = config.DefaultConfig().Tools.Exec.AllowRemote
+	}
 
 	if errs := validateConfig(&cfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -92,6 +69,20 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func execAllowRemoteOmitted(body []byte) bool {
+	var raw struct {
+		Tools *struct {
+			Exec *struct {
+				AllowRemote *bool `json:"allow_remote"`
+			} `json:"exec"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return false
+	}
+	return raw.Tools == nil || raw.Tools.Exec == nil || raw.Tools.Exec.AllowRemote == nil
 }
 
 // handlePatchConfig partially updates the system configuration using JSON Merge Patch (RFC 7396).

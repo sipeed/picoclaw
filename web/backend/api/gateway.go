@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/web/backend/utils"
 )
 
 // gateway holds the state for the managed gateway process.
@@ -36,6 +36,7 @@ var gateway = struct {
 func (h *Handler) registerGatewayRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gateway/status", h.handleGatewayStatus)
 	mux.HandleFunc("GET /api/gateway/events", h.handleGatewayEvents)
+	mux.HandleFunc("POST /api/gateway/logs/clear", h.handleGatewayClearLogs)
 	mux.HandleFunc("POST /api/gateway/start", h.handleGatewayStart)
 	mux.HandleFunc("POST /api/gateway/stop", h.handleGatewayStop)
 	mux.HandleFunc("POST /api/gateway/restart", h.handleGatewayRestart)
@@ -89,10 +90,11 @@ func (h *Handler) gatewayStartReady() (bool, string, error) {
 		return false, fmt.Sprintf("default model %q is invalid", modelName), nil
 	}
 
-	hasCredential := strings.TrimSpace(modelCfg.APIKey) != "" ||
-		strings.TrimSpace(modelCfg.AuthMethod) != ""
-	if !hasCredential {
+	if !hasModelConfiguration(*modelCfg) {
 		return false, fmt.Sprintf("default model %q has no credentials configured", modelName), nil
+	}
+	if requiresRuntimeProbe(*modelCfg) && !probeLocalModelAvailability(*modelCfg) {
+		return false, fmt.Sprintf("default model %q is not reachable", modelName), nil
 	}
 
 	return true, "", nil
@@ -131,9 +133,19 @@ func isCmdProcessAliveLocked(cmd *exec.Cmd) bool {
 
 func (h *Handler) startGatewayLocked() (int, error) {
 	// Locate the picoclaw executable
-	execPath := findPicoclawBinary()
+	execPath := utils.FindPicoclawBinary()
 
 	cmd := exec.Command(execPath, "gateway")
+	cmd.Env = os.Environ()
+	// Forward the launcher's config path via the environment variable that
+	// GetConfigPath() already reads, so the gateway sub-process uses the same
+	// config file without requiring a --config flag on the gateway subcommand.
+	if h.configPath != "" {
+		cmd.Env = append(cmd.Env, "PICOCLAW_CONFIG="+h.configPath)
+	}
+	if host := h.gatewayHostOverride(); host != "" {
+		cmd.Env = append(cmd.Env, "PICOCLAW_GATEWAY_HOST="+host)
+	}
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -201,10 +213,7 @@ func (h *Handler) startGatewayLocked() (int, error) {
 			if err != nil {
 				continue
 			}
-			healthHost := "127.0.0.1"
-			if cfg.Gateway.Host != "" && cfg.Gateway.Host != "0.0.0.0" {
-				healthHost = cfg.Gateway.Host
-			}
+			healthHost := gatewayProbeHost(h.effectiveGatewayBindHost(cfg))
 			healthPort := cfg.Gateway.Port
 			if healthPort == 0 {
 				healthPort = 18790
@@ -347,6 +356,20 @@ func (h *Handler) handleGatewayRestart(w http.ResponseWriter, r *http.Request) {
 	h.handleGatewayStart(w, r)
 }
 
+// handleGatewayClearLogs clears the in-memory gateway log buffer.
+//
+//	POST /api/gateway/logs/clear
+func (h *Handler) handleGatewayClearLogs(w http.ResponseWriter, r *http.Request) {
+	gateway.logs.Clear()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status":     "cleared",
+		"log_total":  0,
+		"log_run_id": gateway.logs.RunID(),
+	})
+}
+
 // handleGatewayStatus returns the gateway run status, health info, and logs.
 //
 //	GET /api/gateway/status
@@ -369,9 +392,7 @@ func (h *Handler) handleGatewayStatus(w http.ResponseWriter, r *http.Request) {
 		host := "127.0.0.1"
 		port := 18790
 		if err == nil && cfg != nil {
-			if cfg.Gateway.Host != "" && cfg.Gateway.Host != "0.0.0.0" {
-				host = cfg.Gateway.Host
-			}
+			host = gatewayProbeHost(h.effectiveGatewayBindHost(cfg))
 			if cfg.Gateway.Port != 0 {
 				port = cfg.Gateway.Port
 			}
@@ -527,22 +548,6 @@ func (h *Handler) currentGatewayStatus() string {
 
 	encoded, _ := json.Marshal(data)
 	return string(encoded)
-}
-
-// findPicoclawBinary locates the picoclaw executable.
-// Tries the same directory as the current executable first, then falls back to $PATH.
-func findPicoclawBinary() string {
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		candidate := filepath.Join(dir, "picoclaw")
-		if runtime.GOOS == "windows" {
-			candidate += ".exe"
-		}
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
-	}
-	return "picoclaw"
 }
 
 // scanPipe reads lines from r and appends them to buf. Returns when r reaches EOF.

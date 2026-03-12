@@ -194,6 +194,19 @@ docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
+### Launcher Mode (Web Console)
+
+The `launcher` image includes all three binaries (`picoclaw`, `picoclaw-launcher`, `picoclaw-launcher-tui`) and starts the web console by default, which provides a browser-based UI for configuration and chat.
+
+```bash
+docker compose -f docker/docker-compose.yml --profile launcher up -d
+```
+
+Open http://localhost:18800 in your browser. The launcher manages the gateway process automatically.
+
+> [!WARNING]
+> The web console does not yet support authentication. Avoid exposing it to the public internet.
+
 ### Agent Mode (One-shot)
 
 ```bash
@@ -774,7 +787,6 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 ├── HEARTBEAT.md      # Periodic task prompts (checked every 30 min)
 ├── IDENTITY.md       # Agent identity
 ├── SOUL.md           # Agent soul
-├── TOOLS.md          # Tool descriptions
 └── USER.md           # User preferences
 ```
 
@@ -1021,6 +1033,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://console.volcengine.com)                        |
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
 | **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
+| **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Get Key](https://longcat.chat/platform)                         |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
 
@@ -1491,3 +1504,4 @@ This happens when another instance of the bot is running. Make sure only one `pi
 | **SearXNG**      | Unlimited (self-hosted)  | Privacy-focused metasearch (70+ engines) |
 | **Groq**         | Free tier available      | Fast inference (Llama, Mixtral)       |
 | **Cerebras**     | Free tier available      | Fast inference (Llama, Qwen, etc.)    |
+| **LongCat**      | Up to 5M tokens/day      | Fast inference (free tier)            |

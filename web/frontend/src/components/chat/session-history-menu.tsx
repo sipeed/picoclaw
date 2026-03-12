@@ -17,6 +17,8 @@ interface SessionHistoryMenuProps {
   sessions: SessionSummary[]
   activeSessionId: string
   hasMore: boolean
+  loadError: boolean
+  loadErrorMessage: string
   observerRef: RefObject<HTMLDivElement | null>
   onOpenChange: (open: boolean) => void
   onSwitchSession: (sessionId: string) => void
@@ -27,6 +29,8 @@ export function SessionHistoryMenu({
   sessions,
   activeSessionId,
   hasMore,
+  loadError,
+  loadErrorMessage,
   observerRef,
   onOpenChange,
   onSwitchSession,
@@ -44,7 +48,14 @@ export function SessionHistoryMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
         <ScrollArea className="max-h-[300px]">
-          {sessions.length === 0 ? (
+          {loadError && (
+            <DropdownMenuItem disabled>
+              <span className="text-destructive text-xs">
+                {loadErrorMessage}
+              </span>
+            </DropdownMenuItem>
+          )}
+          {sessions.length === 0 && !loadError ? (
             <DropdownMenuItem disabled>
               <span className="text-muted-foreground text-xs">
                 {t("chat.noHistory")}
@@ -60,7 +71,7 @@ export function SessionHistoryMenu({
                 onClick={() => onSwitchSession(session.id)}
               >
                 <span className="line-clamp-1 text-sm font-medium">
-                  {session.preview}
+                  {session.title || session.preview}
                 </span>
                 <span className="text-muted-foreground text-xs">
                   {t("chat.messagesCount", {

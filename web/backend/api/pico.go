@@ -5,9 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -30,7 +28,7 @@ func (h *Handler) handleGetPicoToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wsURL := buildWsURL(r, cfg)
+	wsURL := h.buildWsURL(r, cfg)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
@@ -58,7 +56,7 @@ func (h *Handler) handleRegenPicoToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wsURL := fmt.Sprintf("ws://%s/pico/ws", net.JoinHostPort(cfg.Gateway.Host, strconv.Itoa(cfg.Gateway.Port)))
+	wsURL := h.buildWsURL(r, cfg)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
@@ -123,7 +121,7 @@ func (h *Handler) handlePicoSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wsURL := buildWsURL(r, cfg)
+	wsURL := h.buildWsURL(r, cfg)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
@@ -132,22 +130,6 @@ func (h *Handler) handlePicoSetup(w http.ResponseWriter, r *http.Request) {
 		"enabled": true,
 		"changed": changed,
 	})
-}
-
-// buildWsURL creates a WebSocket URL for the Pico Channel.
-// When the gateway host is "0.0.0.0" or empty, it uses the hostname from the
-// incoming HTTP request so the browser gets a connectable address.
-func buildWsURL(r *http.Request, cfg *config.Config) string {
-	host := cfg.Gateway.Host
-	if host == "" || host == "0.0.0.0" {
-		// Use the hostname the browser used to reach this backend
-		reqHost, _, err := net.SplitHostPort(r.Host)
-		if err != nil {
-			reqHost = r.Host // r.Host might not have a port
-		}
-		host = reqHost
-	}
-	return "ws://" + net.JoinHostPort(host, strconv.Itoa(cfg.Gateway.Port)) + "/pico/ws"
 }
 
 // generateSecureToken creates a random 32-character hex string.

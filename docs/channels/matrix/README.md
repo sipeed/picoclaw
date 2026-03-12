@@ -22,7 +22,8 @@ Add this to `config.json`:
         "enabled": true,
         "text": "Thinking..."
       },
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "message_format": "richtext"
     }
   }
 }
@@ -42,10 +43,12 @@ Add this to `config.json`:
 | group_trigger        | object   | No       | Group trigger strategy (`mention_only` / `prefixes`) |
 | placeholder          | object   | No       | Placeholder message config |
 | reasoning_channel_id | string   | No       | Target channel for reasoning output |
+| message_format       | string   | No       | Output format: `"richtext"` (default) renders markdown as HTML; `"plain"` sends plain text only |
 
 ## 3. Currently Supported
 
-- Text message send/receive
+- Text message send/receive with markdown rendering (bold, italic, headers, code blocks, etc.)
+- Configurable message format (`richtext` / `plain`)
 - Incoming image/audio/video/file download (MediaStore first, local path fallback)
 - Incoming audio normalization into existing transcription flow (`[audio: ...]`)
 - Outgoing image/audio/video/file upload and send

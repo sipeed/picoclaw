@@ -189,8 +189,7 @@ func TestWeComBotVerifySignature(t *testing.T) {
 		}
 	})
 
-	t.Run("empty token skips verification", func(t *testing.T) {
-		// Create a channel manually with empty token to test the behavior
+	t.Run("empty token rejects verification (fail-closed)", func(t *testing.T) {
 		cfgEmpty := config.WeComConfig{
 			Token:      "",
 			WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
@@ -199,8 +198,8 @@ func TestWeComBotVerifySignature(t *testing.T) {
 			config: cfgEmpty,
 		}
 
-		if !verifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {
-			t.Error("empty token should skip verification and return true")
+		if verifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {
+			t.Error("empty token should reject verification (fail-closed)")
 		}
 	})
 }
