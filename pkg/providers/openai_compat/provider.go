@@ -164,6 +164,10 @@ func (p *Provider) Chat(
 		}
 	}
 
+	if strings.Contains(p.apiBase, "api.minimaxi.com") {
+		requestBody["reasoning_split"] = true
+	}
+
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
