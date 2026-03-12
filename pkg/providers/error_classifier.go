@@ -48,6 +48,14 @@ var (
 		substr("timed out"),
 		substr("deadline exceeded"),
 		substr("context deadline exceeded"),
+		substr("connection refused"),
+		substr("connection reset by peer"),
+		substr("connect: cannot assign requested address"),
+		substr("no route to host"),
+		substr("network is unreachable"),
+		substr("server closed idle connection"),
+		substr("unexpected eof"),
+		substr("eof"),
 	}
 
 	billingPatterns = []errorPattern{

@@ -12,6 +12,41 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
+// CreateProviderForModelRef resolves a model alias or full provider/model reference
+// against config.model_list and creates a provider instance for that specific entry.
+func CreateProviderForModelRef(appCfg *config.Config, modelRef string) (LLMProvider, string, error) {
+	if appCfg == nil {
+		return nil, "", fmt.Errorf("config is nil")
+	}
+
+	ref := strings.TrimSpace(modelRef)
+	if ref == "" {
+		return nil, "", fmt.Errorf("model reference is empty")
+	}
+
+	if mc, err := appCfg.GetModelConfig(ref); err == nil && mc != nil {
+		return CreateProviderFromConfig(mc)
+	}
+
+	refProvider, refModel := ExtractProtocol(ref)
+	for i := range appCfg.ModelList {
+		modelCfg := &appCfg.ModelList[i]
+		candidate := strings.TrimSpace(modelCfg.Model)
+		if candidate == "" {
+			continue
+		}
+		if candidate == ref {
+			return CreateProviderFromConfig(modelCfg)
+		}
+		candidateProvider, candidateModel := ExtractProtocol(candidate)
+		if candidateProvider == refProvider && candidateModel == refModel {
+			return CreateProviderFromConfig(modelCfg)
+		}
+	}
+
+	return nil, "", fmt.Errorf("model %q not found in model_list", modelRef)
+}
+
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
 func createClaudeAuthProvider() (LLMProvider, error) {
 	cred, err := getCredential("anthropic")

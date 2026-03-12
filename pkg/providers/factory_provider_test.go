@@ -235,6 +235,79 @@ func TestCreateProviderFromConfig_CodexCLI(t *testing.T) {
 	}
 }
 
+func TestCreateProviderForModelRef_ResolvesAliasAndFullRef(t *testing.T) {
+	aliasServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("alias request path = %q, want %q", r.URL.Path, "/chat/completions")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"alias"},"finish_reason":"stop"}]}`))
+	}))
+	defer aliasServer.Close()
+
+	openrouterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("openrouter request path = %q, want %q", r.URL.Path, "/chat/completions")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"openrouter"},"finish_reason":"stop"}]}`))
+	}))
+	defer openrouterServer.Close()
+
+	cfg := &config.Config{
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "lmstudio-qwen",
+				Model:     "openai/qwen/qwen3.5-9b",
+				APIKey:    "lm-studio",
+				APIBase:   aliasServer.URL,
+			},
+			{
+				ModelName: "openrouter-auto",
+				Model:     "openrouter/auto",
+				APIKey:    "sk-or-v1-test",
+				APIBase:   openrouterServer.URL,
+			},
+		},
+	}
+
+	provider, modelID, err := CreateProviderForModelRef(cfg, "lmstudio-qwen")
+	if err != nil {
+		t.Fatalf("CreateProviderForModelRef(alias) error = %v", err)
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("CreateProviderForModelRef(alias) provider = %T, want *HTTPProvider", provider)
+	}
+	if modelID != "qwen/qwen3.5-9b" {
+		t.Fatalf("alias modelID = %q, want %q", modelID, "qwen/qwen3.5-9b")
+	}
+	resp, err := provider.Chat(t.Context(), []Message{{Role: "user", Content: "ping"}}, nil, modelID, nil)
+	if err != nil {
+		t.Fatalf("alias Chat() error = %v", err)
+	}
+	if resp.Content != "alias" {
+		t.Fatalf("alias response = %q, want %q", resp.Content, "alias")
+	}
+
+	provider, modelID, err = CreateProviderForModelRef(cfg, "openrouter/auto")
+	if err != nil {
+		t.Fatalf("CreateProviderForModelRef(full ref) error = %v", err)
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("CreateProviderForModelRef(full ref) provider = %T, want *HTTPProvider", provider)
+	}
+	if modelID != "auto" {
+		t.Fatalf("full ref modelID = %q, want %q", modelID, "auto")
+	}
+	resp, err = provider.Chat(t.Context(), []Message{{Role: "user", Content: "ping"}}, nil, modelID, nil)
+	if err != nil {
+		t.Fatalf("full ref Chat() error = %v", err)
+	}
+	if resp.Content != "openrouter" {
+		t.Fatalf("full ref response = %q, want %q", resp.Content, "openrouter")
+	}
+}
+
 func TestCreateProviderFromConfig_MissingAPIKey(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-no-key",

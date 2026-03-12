@@ -139,6 +139,9 @@ func TestClassifyError_TimeoutPatterns(t *testing.T) {
 		"connection timed out",
 		"deadline exceeded",
 		"context deadline exceeded",
+		`Post "http://192.168.178.66:1234/v1/chat/completions": dial tcp 192.168.178.66:1234: connect: connection refused`,
+		"read tcp 10.0.0.2:1234->10.0.0.3:443: read: connection reset by peer",
+		"dial tcp 10.0.0.9:1234: connect: no route to host",
 	}
 
 	for _, msg := range patterns {

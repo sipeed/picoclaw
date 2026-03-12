@@ -1044,7 +1044,12 @@ func (al *AgentLoop) runLLMIteration(
 					ctx,
 					activeCandidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
+						modelRef := provider + "/" + model
+						candidateProvider, candidateModel, err := providers.CreateProviderForModelRef(al.cfg, modelRef)
+						if err != nil {
+							return nil, err
+						}
+						return candidateProvider.Chat(ctx, messages, providerToolDefs, candidateModel, llmOpts)
 					},
 				)
 				if fbErr != nil {
