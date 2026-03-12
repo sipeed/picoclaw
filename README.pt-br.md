@@ -1,5 +1,5 @@
 <div align="center">
-<img src="assets/logo.jpg" alt="PicoClaw" width="512">
+<img src="assets/logo.webp" alt="PicoClaw" width="512">
 
 <h1>PicoClaw: Assistente de IA Ultra-Eficiente em Go</h1>
 
@@ -207,9 +207,7 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 ### 🚀 Início Rápido
 
 > [!TIP]
-> Configure sua API key em `~/.picoclaw/config.json`.
-> Obtenha API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Busca web e **opcional** — obtenha a [Brave Search API](https://brave.com/search/api) gratuita (2000 consultas grátis/mês) ou use o fallback automático integrado.
+> Configure sua API key em `~/.picoclaw/config.json`. Obtenha API keys: [Volcengine (CodingPlan)](https://console.volcengine.com) (LLM) · [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM). Busca web é **opcional** — obtenha a [API Tavily](https://tavily.com) gratuita (1000 consultas grátis/mês) ou a [Brave Search API](https://brave.com/search/api) (2000 consultas grátis/mês).
 
 **1. Inicializar**
 
@@ -223,8 +221,13 @@ picoclaw onboard
 {
   "model_list": [
     {
-      "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-openai-key",
       "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
@@ -232,7 +235,7 @@ picoclaw onboard
   ],
   "agents": {
     "defaults": {
-      "model_name": "gpt4"
+      "model_name": "gpt-5.4"
     }
   },
   "tools": {
@@ -973,8 +976,9 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 | **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [Obter Chave](https://openrouter.ai/keys) |
 | **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | Local |
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Obter Chave](https://cerebras.ai) |
-| **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Obter Chave](https://console.volcengine.com) |
+| **VolcEngine (Doubao)** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Obter Chave](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Obter Chave](https://console.volcengine.com)                    |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Obter Chave](https://longcat.chat/platform)                     |
 | **Antigravity** | `antigravity/` | Google Cloud | Custom | Apenas OAuth |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
@@ -985,8 +989,13 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 {
   "model_list": [
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-openai-key"
     },
     {
@@ -1002,7 +1011,7 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-5.2"
+      "model": "gpt-5.4"
     }
   }
 }
@@ -1013,8 +1022,17 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 **OpenAI**
 ```json
 {
-  "model_name": "gpt-5.2",
-  "model": "openai/gpt-5.2",
+  "model_name": "gpt-5.4",
+  "model": "openai/gpt-5.4",
+  "api_key": "sk-..."
+}
+```
+
+**VolcEngine (Doubao)**
+```json
+{
+  "model_name": "ark-code-latest",
+  "model": "volcengine/ark-code-latest",
   "api_key": "sk-..."
 }
 ```
@@ -1057,14 +1075,14 @@ Configure vários endpoints para o mesmo nome de modelo—PicoClaw fará round-r
 {
   "model_list": [
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
       "api_key": "sk-key1"
     },
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
       "api_key": "sk-key2"
     }
@@ -1196,7 +1214,14 @@ Isso acontece quando outra instância do bot está em execução. Certifique-se 
 | Serviço | Plano Gratuito | Caso de Uso |
 | --- | --- | --- |
 | **OpenRouter** | 200K tokens/mês | Múltiplos modelos (Claude, GPT-4, etc.) |
-| **Zhipu** | 200K tokens/mês | Melhor para usuários chineses |
+| **Volcengine CodingPlan** | ¥9,9/primeiro mês | Ideal para usuários chineses, múltiplos modelos SOTA (Doubao, DeepSeek, etc.) |
+| **Zhipu** | 200K tokens/mês | Adequado para usuários chineses |
 | **Brave Search** | 2000 consultas/mês | Funcionalidade de busca web |
 | **Groq** | Plano gratuito disponível | Inferência ultra-rápida (Llama, Mixtral) |
 | **Cerebras** | Plano gratuito disponível | Inferência ultra-rápida (Llama 3.3 70B) |
+
+---
+
+<div align="center">
+  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
+</div>

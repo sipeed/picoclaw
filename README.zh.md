@@ -1,5 +1,5 @@
 <div align="center">
-<img src="assets/logo.jpg" alt="PicoClaw" width="512">
+<img src="assets/logo.webp" alt="PicoClaw" width="512">
 
 <h1>PicoClaw: 基于Go语言的超高效 AI 助手</h1>
 
@@ -208,9 +208,7 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 ### 🚀 快速开始
 
 > [!TIP]
-> 在 `~/.picoclaw/config.json` 中设置您的 API Key。
-> 获取 API Key: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu (智谱)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> 网络搜索是 **可选的** - 获取免费的 [Tavily API](https://tavily.com) (每月 1000 次免费查询) 或 [Brave Search API](https://brave.com/search/api) (每月 2000 次免费查询)
+> 在 `~/.picoclaw/config.json` 中设置您的 API Key。获取 API Key: [火山引擎 (CodingPlan)](https://console.volcengine.com) (LLM) · [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu (智谱)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)。网络搜索是 **可选的** — 获取免费的 [Tavily API](https://tavily.com) (每月 1000 次免费查询) 或 [Brave Search API](https://brave.com/search/api) (每月 2000 次免费查询)。
 
 **1. 初始化 (Initialize)**
 
@@ -226,7 +224,7 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model_name": "gpt4",
+      "model_name": "gpt-5.4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -234,8 +232,13 @@ picoclaw onboard
   },
   "model_list": [
     {
-      "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "your-api-key",
       "request_timeout": 300
     },
@@ -514,8 +517,9 @@ Agent 读取 HEARTBEAT.md
 | **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [获取密钥](https://openrouter.ai/keys)                            |
 | **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | 本地                                                              |
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [获取密钥](https://cerebras.ai)                                   |
-| **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [获取密钥](https://console.volcengine.com)                        |
+| **火山引擎（Doubao）**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [获取密钥](https://console.volcengine.com)                        |
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                 |
+| **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [获取密钥](https://console.volcengine.com)                        |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [获取密钥](https://longcat.chat/platform)                        |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | 自定义    | 仅 OAuth                                                          |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                 |
@@ -526,8 +530,13 @@ Agent 读取 HEARTBEAT.md
 {
   "model_list": [
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-openai-key"
     },
     {
@@ -543,7 +552,7 @@ Agent 读取 HEARTBEAT.md
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-5.2"
+      "model": "gpt-5.4"
     }
   }
 }
@@ -555,8 +564,18 @@ Agent 读取 HEARTBEAT.md
 
 ```json
 {
-  "model_name": "gpt-5.2",
-  "model": "openai/gpt-5.2",
+  "model_name": "gpt-5.4",
+  "model": "openai/gpt-5.4",
+  "api_key": "sk-..."
+}
+```
+
+**火山引擎（Doubao）**
+
+```json
+{
+  "model_name": "ark-code-latest",
+  "model": "volcengine/ark-code-latest",
   "api_key": "sk-..."
 }
 ```
@@ -622,14 +641,14 @@ Agent 读取 HEARTBEAT.md
 {
   "model_list": [
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
       "api_key": "sk-key1"
     },
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
       "api_key": "sk-key2"
     }
@@ -875,8 +894,15 @@ Discord: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 | 服务 | 免费层级 | 适用场景 |
 | --- | --- | --- |
 | **OpenRouter** | 200K tokens/月 | 多模型聚合 (Claude, GPT-4 等) |
-| **智谱 (Zhipu)** | 200K tokens/月 | 最适合中国用户 |
+| **火山引擎 CodingPlan** | 9.9 元/首月 | 最适合国内用户，多种 SOTA 模型（豆包、DeepSeek 等） |
+| **智谱 (Zhipu)** | 200K tokens/月 | 适合中国用户 |
 | **Brave Search** | 2000 次查询/月 | 网络搜索功能 |
 | **Tavily** | 1000 次查询/月 | AI Agent 搜索优化 |
 | **Groq** | 提供免费层级 | 极速推理 (Llama, Mixtral) |
 | **LongCat** | 最多 5M tokens/天 | 推理速度快 (免费额度) |
+
+---
+
+<div align="center">
+  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
+</div>
