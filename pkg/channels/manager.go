@@ -276,6 +276,9 @@ func (m *Manager) initChannels() error {
 		m.initChannel("pico", "Pico")
 	}
 
+	if m.config.Channels.API.Enabled && m.config.Channels.API.Token != "" {
+		m.initChannel("api", "API")
+	}
 
 	if m.config.Channels.Imessage.Enabled {
 		m.initChannel("imessage", "Imessage")

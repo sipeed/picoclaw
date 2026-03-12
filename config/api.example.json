@@ -1,0 +1,21 @@
+{
+  "channels": {
+    "api": {
+      "enabled": true,
+      "token": "your-secret-token-here",
+      "allow_origins": ["*"],
+      "ping_interval": 30,
+      "read_timeout": 60,
+      "max_connections": 100,
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
+      "streaming": true
+    }
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 8080
+  }
+}
