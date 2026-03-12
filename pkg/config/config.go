@@ -29,6 +29,13 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
+	// Accept a single string so config patch APIs can submit comma-separated values.
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*f = parseFlexibleStringSlice(s)
+		return nil
+	}
+
 	// Try []interface{} to handle mixed types
 	var raw []any
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -57,21 +64,22 @@ func (f *FlexibleStringSlice) UnmarshalText(text []byte) error {
 		*f = nil
 		return nil
 	}
+	*f = parseFlexibleStringSlice(string(text))
+	return nil
+}
 
-	s := string(text)
-	// Replace Chinese comma with English comma, then split
+func parseFlexibleStringSlice(s string) FlexibleStringSlice {
 	s = strings.ReplaceAll(s, "，", ",")
 	parts := strings.Split(s, ",")
 
-	result := make([]string, 0, len(parts))
+	result := make(FlexibleStringSlice, 0, len(parts))
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			result = append(result, part)
 		}
 	}
-	*f = result
-	return nil
+	return result
 }
 
 type Config struct {

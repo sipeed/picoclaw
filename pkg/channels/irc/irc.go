@@ -32,6 +32,7 @@ func NewIRCChannel(cfg config.IRCConfig, messageBus *bus.MessageBus) (*IRCChanne
 	if cfg.Nick == "" {
 		return nil, fmt.Errorf("irc nick is required")
 	}
+	cfg.Channels = normalizeIRCChannels(cfg.Channels)
 
 	base := channels.NewBaseChannel("irc", cfg, messageBus, cfg.AllowFrom,
 		channels.WithMaxMessageLength(400),
@@ -191,4 +192,25 @@ func extractHost(server string) string {
 		return host
 	}
 	return server
+}
+
+func normalizeIRCChannels(channels config.FlexibleStringSlice) config.FlexibleStringSlice {
+	if len(channels) == 0 {
+		return channels
+	}
+
+	normalized := make(config.FlexibleStringSlice, 0, len(channels))
+	for _, channel := range channels {
+		channel = strings.TrimSpace(channel)
+		if channel == "" {
+			continue
+		}
+		switch channel[0] {
+		case '#', '&', '+', '!':
+			normalized = append(normalized, channel)
+		default:
+			normalized = append(normalized, "#"+channel)
+		}
+	}
+	return normalized
 }
