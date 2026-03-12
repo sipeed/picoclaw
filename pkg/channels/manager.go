@@ -127,7 +127,12 @@ func (m *Manager) SendPlaceholder(ctx context.Context, channel, chatID string) b
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
 	key := channel + ":" + chatID
-	m.typingStops.Store(key, typingEntry{stop: stop, createdAt: time.Now()})
+	entry := typingEntry{stop: stop, createdAt: time.Now()}
+	if previous, loaded := m.typingStops.Swap(key, entry); loaded {
+		if oldEntry, ok := previous.(typingEntry); ok && oldEntry.stop != nil {
+			oldEntry.stop()
+		}
+	}
 }
 
 // RecordReactionUndo registers a reaction undo function for later invocation.
