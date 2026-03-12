@@ -243,6 +243,7 @@ type ChannelsConfig struct {
 	WeComApp   WeComAppConfig   `json:"wecom_app"`
 	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
 	Pico       PicoConfig       `json:"pico"`
+	API        APIConfig        `json:"api"`
 	Imessage   ImessageConfig   `json:"imessage"`
 	IRC        IRCConfig        `json:"irc"`
 }
@@ -442,6 +443,21 @@ type PicoConfig struct {
 	MaxConnections  int                 `json:"max_connections,omitempty"`
 	AllowFrom       FlexibleStringSlice `json:"allow_from"                  env:"PICOCLAW_CHANNELS_PICO_ALLOW_FROM"`
 	Placeholder     PlaceholderConfig   `json:"placeholder,omitempty"`
+}
+
+// APIConfig configures the API channel for Flutter app integration.
+type APIConfig struct {
+	Enabled         bool                `json:"enabled"                     env:"PICOCLAW_CHANNELS_API_ENABLED"`
+	Token           string              `json:"token"                       env:"PICOCLAW_CHANNELS_API_TOKEN"`
+	AllowTokenQuery bool                `json:"allow_token_query,omitempty"`
+	AllowOrigins    []string            `json:"allow_origins,omitempty"`
+	PingInterval    int                 `json:"ping_interval,omitempty"`
+	ReadTimeout     int                 `json:"read_timeout,omitempty"`
+	WriteTimeout    int                 `json:"write_timeout,omitempty"`
+	MaxConnections  int                 `json:"max_connections,omitempty"`
+	AllowFrom       FlexibleStringSlice `json:"allow_from"                  env:"PICOCLAW_CHANNELS_API_ALLOW_FROM"`
+	Placeholder     PlaceholderConfig   `json:"placeholder,omitempty"`
+	Streaming       bool                `json:"streaming,omitempty"`        // Enable streaming responses
 }
 
 type ImessageConfig struct {
