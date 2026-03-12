@@ -350,9 +350,16 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 		toolCalls = append(toolCalls, toolCall)
 	}
 
+	// Extract thinking content from content if present (for models like MiniMax)
+	content := choice.Message.Content
+	reasoningContent := choice.Message.ReasoningContent
+	if reasoningContent == "" {
+		content, reasoningContent = extractThinkingTags(content)
+	}
+
 	return &LLMResponse{
-		Content:          choice.Message.Content,
-		ReasoningContent: choice.Message.ReasoningContent,
+		Content:          content,
+		ReasoningContent: reasoningContent,
 		Reasoning:        choice.Message.Reasoning,
 		ReasoningDetails: choice.Message.ReasoningDetails,
 		ToolCalls:        toolCalls,
@@ -360,8 +367,42 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 		Usage:            apiResponse.Usage,
 	}, nil
 }
+// extractThinkingTags extracts content between
+// and from the content string.
+// Returns the content with thinking tags removed and the extracted thinking content.
+func extractThinkingTags(content string) (string, string) {
+	const thinkOpen = "<think>"
+	const thinkClose = "</think>"
 
-// openaiMessage is the wire-format message for OpenAI-compatible APIs.
+	// Check if content contains thinking tags
+	if !strings.Contains(content, thinkOpen) {
+		return content, ""
+	}
+
+	// Extract thinking content
+	start := strings.Index(content, thinkOpen)
+	end := strings.Index(content, thinkClose)
+	if end <= start {
+		return content, ""
+	}
+
+	thinkingContent := content[start+len(thinkOpen) : end]
+
+	// Remove thinking tags from content
+	var result strings.Builder
+	result.Grow(len(content))
+
+	// Add content before thinking tags
+	result.WriteString(content[:start])
+
+	// Add content after thinking tags
+	if end+len(thinkClose) < len(content) {
+		result.WriteString(content[end+len(thinkClose):])
+	}
+
+	return result.String(), thinkingContent
+}
+
 // It mirrors protocoltypes.Message but omits SystemParts, which is an
 // internal field that would be unknown to third-party endpoints.
 type openaiMessage struct {
