@@ -610,7 +610,6 @@ PicoClaw は設定されたワークスペース（デフォルト: `~/.picoclaw
 ├── HEARTBEAT.md       # 定期タスクプロンプト（30分ごとに確認）
 ├── IDENTITY.md        # エージェントのアイデンティティ
 ├── SOUL.md            # エージェントのソウル
-├── TOOLS.md           # ツールの説明
 └── USER.md            # ユーザー設定
 ```
 
