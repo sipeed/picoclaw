@@ -56,8 +56,10 @@ type Client struct {
 
 // NewClient creates a new Client instance with the provided client ID, client secret, and optional configurations.
 func NewClient(clientID, clientSecret string, opts ...ClientOption) *Client {
-	client := &Client{clientID: clientID, clientSecret: clientSecret,
-		client: &http.Client{Timeout: time.Second * 30}}
+	client := &Client{
+		clientID: clientID, clientSecret: clientSecret,
+		client: &http.Client{Timeout: time.Second * 30},
+	}
 	for _, opt := range opts {
 		opt(client)
 	}
@@ -206,7 +208,11 @@ func (c *Client) CardCreateAndDeliver(ctx context.Context, chatbot *chatbot.BotC
 }
 
 // PrivateChatMessages sends a message to a user in a private chat.
-func (c *Client) PrivateChatMessages(ctx context.Context, msgType MessageType, openConversationID, content string) error {
+func (c *Client) PrivateChatMessages(
+	ctx context.Context,
+	msgType MessageType,
+	openConversationID, content string,
+) error {
 	body := map[string]any{
 		"msgKey":             msgType,
 		"msgParam":           c.buildSendMessages(msgType, content),
@@ -233,7 +239,7 @@ func (c *Client) buildSendMessages(msgType MessageType, content string) string {
 	return string(msg)
 }
 
-func (c *Client) httpRequest(ctx context.Context, method, path string, body interface{}, resp interface{}) error {
+func (c *Client) httpRequest(ctx context.Context, method, path string, body any, resp any) error {
 	var (
 		err   error
 		token string
@@ -261,7 +267,7 @@ func (c *Client) httpRequest(ctx context.Context, method, path string, body inte
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
-		req.Header.Set("x-acs-dingtalk-access-token", token)
+		req.Header.Set("X-Acs-Dingtalk-Access-Token", token)
 	}
 	res, err = hc.Do(req)
 	if err != nil {

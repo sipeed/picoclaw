@@ -363,9 +363,9 @@ type DingTalkConfig struct {
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_DINGTALK_REASONING_CHANNEL_ID"`
 
-	RobotCode              string `json:"robot_code,omitempty"    env:"PICOCLAW_CHANNELS_DINGTALK_ROBOT_CODE"`
-	CardTemplateID         string `json:"card_template_id,omitempty"    env:"PICOCLAW_CHANNELS_DINGTALK_CARD_TEMPLATE_ID"`
-	CardTemplateContentKey string `json:"card_template_content_key,omitempty"    env:"PICOCLAW_CHANNELS_DINGTALK_CARD_TEMPLATE_CONTENT_KEY"`
+	RobotCode              string `json:"robot_code,omitempty"                env:"PICOCLAW_CHANNELS_DINGTALK_ROBOT_CODE"`
+	CardTemplateID         string `json:"card_template_id,omitempty"          env:"PICOCLAW_CHANNELS_DINGTALK_CARD_TEMPLATE_ID"`
+	CardTemplateContentKey string `json:"card_template_content_key,omitempty" env:"PICOCLAW_CHANNELS_DINGTALK_CARD_TEMPLATE_CONTENT_KEY"`
 }
 
 type SlackConfig struct {

@@ -255,7 +255,11 @@ func (c *DingTalkChannel) SendCardReply(ctx context.Context, cardInstanceID, con
 	return c.client.CardStreaming(ctx, cardInstanceID, content)
 }
 
-func (c *DingTalkChannel) tryCardCreateAndDeliver(ctx context.Context, chatID string, data *chatbot.BotCallbackDataModel) error {
+func (c *DingTalkChannel) tryCardCreateAndDeliver(
+	ctx context.Context,
+	chatID string,
+	data *chatbot.BotCallbackDataModel,
+) error {
 	if c.config.CardTemplateID == "" {
 		return nil
 	}
