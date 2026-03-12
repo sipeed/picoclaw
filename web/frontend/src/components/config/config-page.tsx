@@ -13,7 +13,6 @@ import {
   setLauncherConfig as updateLauncherConfig,
 } from "@/api/system"
 import {
-  AdvancedSection,
   AgentDefaultsSection,
   DevicesSection,
   LauncherSection,
@@ -30,7 +29,6 @@ import {
 } from "@/components/config/form-model"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 
 export function ConfigPage() {
   const { t } = useTranslation()
@@ -56,11 +54,7 @@ export function ConfigPage() {
     },
   })
 
-  const {
-    data: launcherConfig,
-    isLoading: isLauncherLoading,
-    error: launcherError,
-  } = useQuery({
+  const { data: launcherConfig, isLoading: isLauncherLoading } = useQuery({
     queryKey: ["system", "launcher-config"],
     queryFn: getLauncherConfig,
   })
@@ -110,10 +104,6 @@ export function ConfigPage() {
     : !autoStartSupported
       ? t("pages.config.autostart_unsupported")
       : t("pages.config.autostart_hint")
-
-  const launcherHint = launcherError
-    ? t("pages.config.launcher_load_error")
-    : t("pages.config.launcher_restart_hint")
 
   const updateField = <K extends keyof CoreConfigForm>(
     key: K,
@@ -287,20 +277,13 @@ export function ConfigPage() {
 
               <AgentDefaultsSection form={form} onFieldChange={updateField} />
 
-              <Separator />
-
               <RuntimeSection form={form} onFieldChange={updateField} />
-
-              <Separator />
 
               <LauncherSection
                 launcherForm={launcherForm}
                 onFieldChange={updateLauncherField}
-                launcherHint={launcherHint}
                 disabled={saving || isLauncherLoading}
               />
-
-              <Separator />
 
               <DevicesSection
                 form={form}
@@ -315,10 +298,6 @@ export function ConfigPage() {
                 }
                 onAutoStartChange={setAutoStartEnabled}
               />
-
-              <Separator />
-
-              <AdvancedSection />
 
               <div className="flex justify-end gap-2">
                 <Button

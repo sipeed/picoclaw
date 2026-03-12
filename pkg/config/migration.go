@@ -61,7 +61,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}
 				return ModelConfig{
 					ModelName:      "openai",
-					Model:          "openai/gpt-5.2",
+					Model:          "openai/gpt-5.4",
 					APIKey:         p.OpenAI.APIKey,
 					APIBase:        p.OpenAI.APIBase,
 					Proxy:          p.OpenAI.Proxy,
@@ -335,7 +335,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}
 				return ModelConfig{
 					ModelName:   "github-copilot",
-					Model:       "github-copilot/gpt-5.2",
+					Model:       "github-copilot/gpt-5.4",
 					APIBase:     p.GitHubCopilot.APIBase,
 					ConnectMode: p.GitHubCopilot.ConnectMode,
 				}, true

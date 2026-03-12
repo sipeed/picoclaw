@@ -331,33 +331,10 @@
   "pages": {
     "agent": {
       "load_error": "加载 Agent 支持信息失败。",
-      "stats": {
-        "workspace": "工作目录",
-        "workspace_hint": "默认 Agent 运行时使用的工作目录，也用于加载工作区技能。",
-        "skills": "可用技能数",
-        "skills_hint": "从工作区、全局目录和内置目录发现的技能。",
-        "tools": "已启用工具",
-        "tools_hint": "其中 {{blocked}} 个因依赖未满足而不可用。"
-      },
       "skills": {
-        "title": "技能",
         "description": "技能会从工作区、PicoClaw 全局目录和内置目录中加载。",
-        "hero_title": "技能库",
-        "hero_description": "在这里查看 Agent 当前可加载的能力包，并且不离开页面就能直接阅读生效后的 SKILL.md。",
-        "stats": {
-          "total": "技能总数",
-          "workspace": "工作区技能",
-          "shared": "共享技能"
-        },
         "empty": "当前没有可用技能。",
         "import": "导入技能",
-        "import_title": "导入技能",
-        "import_description": "通过上传 Markdown 文件创建工作区技能，文件会保存为新的 SKILL.md。",
-        "import_name": "技能名称",
-        "import_name_placeholder": "例如 my-workflow",
-        "import_file": "Markdown 文件",
-        "import_file_hint": "上传一个 .md 文件。后端会保存到 workspace/skills/<name>/SKILL.md。",
-        "import_confirm": "导入技能",
         "import_success": "技能导入成功。",
         "import_error": "导入技能失败。",
         "view": "查看",
@@ -371,28 +348,11 @@
         "viewer_description": "这里展示当前生效的 SKILL.md 内容。",
         "loading_detail": "正在加载技能内容...",
         "load_detail_error": "加载技能内容失败。",
-        "source": "来源",
         "path": "技能路径",
-        "no_description": "未提供描述。",
-        "sources": {
-          "workspace": "工作区",
-          "global": "全局",
-          "builtin": "内置"
-        },
-        "errors": {
-          "file_required": "请先选择要导入的 Markdown 文件。"
-        }
+        "no_description": "未提供描述。"
       },
       "tools": {
-        "title": "工具",
         "description": "这里展示每个 Agent 工具当前是已启用、已禁用，还是被依赖条件阻塞。",
-        "hero_title": "工具面板",
-        "hero_description": "集中查看 Agent 现在真正可调用的工具、被阻塞的能力，以及它们分别受哪项配置控制。",
-        "stats": {
-          "enabled": "已启用",
-          "blocked": "被阻塞",
-          "categories": "分类数"
-        },
         "empty": "当前没有可用工具。",
         "enable": "启用",
         "disable": "禁用",
@@ -465,16 +425,18 @@
       "server_port_hint": "PicoClaw Web 的 HTTP 监听端口。",
       "lan_access": "启用局域网访问",
       "lan_access_hint": "允许局域网中的其他设备访问当前服务。",
-      "allowed_cidrs": "允许访问网段（CIDR）",
+      "allowed_cidrs": "允许访问网段",
       "allowed_cidrs_hint": "仅允许这些 CIDR 网段的客户端访问服务。可按行或逗号分隔；留空表示允许所有来源。",
       "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
-      "launcher_load_error": "加载服务参数失败。",
-      "launcher_restart_hint": "服务参数变更需重启 PicoClaw Web 后生效。",
-      "advanced_desc": "可打开原始 JSON 页面直接编辑全部字段。",
+      "sections": {
+        "agent": "智能体",
+        "runtime": "运行时",
+        "launcher": "服务参数",
+        "devices": "设备"
+      },
       "open_raw": "原始配置",
       "back_to_visual": "可视化配置",
       "raw_json_title": "原始 JSON 配置",
-      "raw_json_desc": "高级用户可以直接编辑下方的原始 JSON 配置。",
       "json_placeholder": "请输入有效的 JSON 配置...",
       "save_success": "配置保存成功。",
       "save_error": "配置保存失败。",
