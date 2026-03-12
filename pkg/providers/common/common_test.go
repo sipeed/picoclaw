@@ -2,7 +2,6 @@ package common
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -532,10 +531,4 @@ func TestParseResponse_WithThoughtSignature(t *testing.T) {
 		t.Errorf("ExtraContent.Google.ThoughtSignature = %q, want %q",
 			out.ToolCalls[0].ExtraContent.Google.ThoughtSignature, "sig123")
 	}
-}
-
-// helper to discard response body
-func init() {
-	// suppress log output during tests
-	_ = io.Discard
 }
