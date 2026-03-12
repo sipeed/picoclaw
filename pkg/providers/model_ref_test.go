@@ -123,3 +123,16 @@ func TestParseModelRef_DefaultProviderNormalization(t *testing.T) {
 		t.Errorf("provider = %q, want openai (normalized from GPT)", ref.Provider)
 	}
 }
+
+func TestParseModelRef_CloudflareModelPathUsesDefaultProvider(t *testing.T) {
+	ref := ParseModelRef("@cf/qwen/qwen1.5-0.5b-chat", "openai")
+	if ref == nil {
+		t.Fatal("expected non-nil ref")
+	}
+	if ref.Provider != "openai" {
+		t.Fatalf("provider = %q, want openai", ref.Provider)
+	}
+	if ref.Model != "@cf/qwen/qwen1.5-0.5b-chat" {
+		t.Fatalf("model = %q, want %q", ref.Model, "@cf/qwen/qwen1.5-0.5b-chat")
+	}
+}
