@@ -266,30 +266,34 @@ func (c *WeComAIBotWSChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 	}
 
 	// msg.ChatID carries the inbound req_id (set by dispatchWSAgentTask).
+	// For cron-triggered messages, msg.ChatID is the real WeCom chat/user ID
+	// and there will be no matching entry in reqStates; fall through to proactive push.
 	task, route, ok := c.getReqState(msg.ChatID)
 	if !ok {
-		logger.DebugCF("wecom_aibot", "Send: no active task/route for req_id (may be stale)",
-			map[string]any{"req_id": msg.ChatID})
+		// No req_id record found — this is a cron/scheduler-originated message.
+		// Send it as a proactive markdown push using the chat ID directly.
+		logger.InfoCF("wecom_aibot", "Send: no req_id state, delivering via proactive push (cron/scheduler)",
+			map[string]any{"chat_id": msg.ChatID})
+		if err := c.wsSendActivePush(msg.ChatID, 0, msg.Content); err != nil {
+			logger.WarnCF("wecom_aibot", "Proactive push failed",
+				map[string]any{"chat_id": msg.ChatID, "error": err.Error()})
+			return fmt.Errorf("websocket delivery failed: %w", channels.ErrSendFailed)
+		}
 		return nil
 	}
 
 	if task == nil {
-		if !ok {
-			logger.DebugCF("wecom_aibot", "Send: no active task/route for req_id (may be stale)",
-				map[string]any{"req_id": msg.ChatID})
-			return nil
-		}
 		if time.Now().Before(route.ReadyAt) {
 			// Keep using aibot_respond_msg within stream window; do not proactively
 			// push unless wsStreamMaxDuration has elapsed.
-			logger.DebugCF("wecom_aibot", "Send: stream window still open, skip proactive push",
+			logger.WarnCF("wecom_aibot", "Send: stream window still open, skip proactive push",
 				map[string]any{"req_id": msg.ChatID, "ready_at": route.ReadyAt.Format(time.RFC3339)})
 			return nil
 		}
 
 		if err := c.wsSendActivePush(route.ChatID, route.ChatType, msg.Content); err != nil {
 			logger.WarnCF("wecom_aibot", "Late reply proactive push failed",
-				map[string]any{"req_id": msg.ChatID, "chat_id": route.ChatID, "error": err})
+				map[string]any{"req_id": msg.ChatID, "chat_id": route.ChatID, "error": err.Error()})
 			return fmt.Errorf("websocket delivery failed: %w", channels.ErrSendFailed)
 		}
 		logger.InfoCF("wecom_aibot", "Late reply delivered via proactive push",
@@ -337,7 +341,7 @@ func (c *WeComAIBotWSChannel) connectLoop() {
 				return
 			default:
 				logger.WarnCF("wecom_aibot", "WebSocket connection lost, reconnecting",
-					map[string]any{"error": err, "backoff": backoff.String()})
+					map[string]any{"error": err.Error(), "backoff": backoff.String()})
 				select {
 				case <-time.After(backoff):
 				case <-c.ctx.Done():
@@ -492,7 +496,7 @@ func (c *WeComAIBotWSChannel) heartbeatLoop(conn *websocket.Conn) {
 			err := conn.WriteMessage(websocket.TextMessage, data)
 			c.connMu.Unlock()
 			if err != nil {
-				logger.WarnCF("wecom_aibot", "Heartbeat write failed", map[string]any{"error": err})
+				logger.WarnCF("wecom_aibot", "Heartbeat write failed", map[string]any{"error": err.Error()})
 				return
 			}
 			logger.DebugCF("wecom_aibot", "Heartbeat sent", map[string]any{"req_id": reqID})
@@ -519,7 +523,7 @@ func (c *WeComAIBotWSChannel) readLoop(conn *websocket.Conn) error {
 		var env wsEnvelope
 		if err := json.Unmarshal(raw, &env); err != nil {
 			logger.WarnCF("wecom_aibot", "Failed to parse WebSocket message",
-				map[string]any{"error": err, "raw": string(raw)})
+				map[string]any{"error": err.Error(), "raw": string(raw)})
 			continue
 		}
 
@@ -564,7 +568,7 @@ func (c *WeComAIBotWSChannel) handleMsgCallback(env wsEnvelope) {
 	var msg WeComAIBotWSMessage
 	if err := json.Unmarshal(env.Body, &msg); err != nil {
 		logger.WarnCF("wecom_aibot", "Failed to parse msg callback body",
-			map[string]any{"error": err})
+			map[string]any{"error": err.Error()})
 		return
 	}
 
@@ -591,7 +595,7 @@ func (c *WeComAIBotWSChannel) handleEventCallback(env wsEnvelope) {
 	var msg WeComAIBotWSMessage
 	if err := json.Unmarshal(env.Body, &msg); err != nil {
 		logger.WarnCF("wecom_aibot", "Failed to parse event callback body",
-			map[string]any{"error": err})
+			map[string]any{"error": err.Error()})
 		return
 	}
 
@@ -649,7 +653,7 @@ func (c *WeComAIBotWSChannel) handleWSImageMessage(reqID string, msg WeComAIBotW
 	ref, err := c.storeWSImage(ctx, chatID, msg.MsgID, msg.Image.URL, msg.Image.AESKey)
 	if err != nil {
 		logger.WarnCF("wecom_aibot", "Failed to download/store WS image",
-			map[string]any{"error": err, "url": msg.Image.URL})
+			map[string]any{"error": err.Error(), "url": msg.Image.URL})
 	} else {
 		mediaRefs = append(mediaRefs, ref)
 	}
@@ -689,7 +693,7 @@ func (c *WeComAIBotWSChannel) handleWSMixedMessage(reqID string, msg WeComAIBotW
 					msg.MsgID+"-"+wsGenerateID(), item.Image.URL, item.Image.AESKey)
 				if err != nil {
 					logger.WarnCF("wecom_aibot", "Failed to download/store mixed image",
-						map[string]any{"error": err})
+						map[string]any{"error": err.Error()})
 				} else {
 					mediaRefs = append(mediaRefs, ref)
 				}
@@ -912,7 +916,7 @@ func (c *WeComAIBotWSChannel) wsSendWelcomeMsg(reqID, content string) {
 	}
 	if err := c.writeWSAndWait(cmd, wsRespondMsgTimeout); err != nil {
 		logger.WarnCF("wecom_aibot", "Welcome message ack failed",
-			map[string]any{"req_id": reqID, "error": err})
+			map[string]any{"req_id": reqID, "error": err.Error()})
 	}
 }
 
