@@ -126,6 +126,23 @@ func TestSingleSystemMessage(t *testing.T) {
 	}
 }
 
+func TestBuildSystemPrompt_IncludesToolsBootstrapFile(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"TOOLS.md": "# Tools\nUse the local helper first.",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	prompt := cb.BuildSystemPromptWithCache()
+
+	if !strings.Contains(prompt, "## TOOLS.md") {
+		t.Fatal("expected TOOLS.md heading in system prompt")
+	}
+	if !strings.Contains(prompt, "Use the local helper first.") {
+		t.Fatal("expected TOOLS.md content in system prompt")
+	}
+}
+
 // TestMtimeAutoInvalidation verifies that the cache detects source file changes
 // via mtime without requiring explicit InvalidateCache().
 // Fix: original implementation had no auto-invalidation — edits to bootstrap files,
@@ -151,6 +168,13 @@ func TestMtimeAutoInvalidation(t *testing.T) {
 			contentV1:  "# Memory\nUser likes Go.",
 			contentV2:  "# Memory\nUser likes Rust.",
 			checkField: "User likes Rust",
+		},
+		{
+			name:       "tools bootstrap change",
+			file:       "TOOLS.md",
+			contentV1:  "# Tools\nUse tool A.",
+			contentV2:  "# Tools\nUse tool B.",
+			checkField: "Use tool B",
 		},
 	}
 
