@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
@@ -140,16 +141,6 @@ type AgentConfig struct {
 	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
 }
 
-type SubagentsConfig struct {
-	Enabled     bool              `json:"enabled,omitempty"`
-	AllowAgents []string          `json:"allow_agents,omitempty"`
-	Model       *AgentModelConfig `json:"model,omitempty"`
-}
-
-type PeerMatch struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
-}
 
 type BindingMatch struct {
 	Channel   string     `json:"channel"`
