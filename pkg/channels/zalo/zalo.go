@@ -15,6 +15,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
+	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const zaloAPIBase = "https://bot-api.zaloplatforms.com/bot"
@@ -53,9 +55,13 @@ func NewZaloChannel(cfg *config.Config, messageBus *bus.MessageBus) (*ZaloChanne
 
 func (c *ZaloChannel) Start(ctx context.Context) error {
 	if _, err := c.getMe(ctx); err != nil {
+		logger.ErrorCF("zalo", "Failed to start channel", map[string]any{
+			"error": err.Error(),
+		})
 		return err
 	}
 	c.SetRunning(true)
+	logger.InfoC("zalo", "Zalo channel started successfully")
 	return nil
 }
 
@@ -82,32 +88,40 @@ func (c *ZaloChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		logger.ErrorCF("zalo", "Failed to read request body", map[string]any{
+			"error": err.Error(),
+		})
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
 	secret := r.Header.Get("X-Bot-Api-Secret-Token")
 	if subtle.ConstantTimeCompare([]byte(secret), []byte(c.cfg.SecretToken)) != 1 {
+		logger.WarnC("zalo", "Invalid webhook secret token")
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
 	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err != nil {
+		logger.ErrorCF("zalo", "Failed to parse webhook payload", map[string]any{
+			"error": err.Error(),
+		})
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	go func() {
-		defer cancel()
-		c.processPayload(ctx, payload)
+		c.processPayload(context.Background(), payload)
 	}()
 }
 
 func (c *ZaloChannel) processPayload(ctx context.Context, payload map[string]any) {
+	logger.DebugCF("zalo", "Processing webhook payload", map[string]any{
+		"has_result": payload["result"] != nil,
+	})
 	if v, ok := payload["result"]; ok {
 		if arr, ok := v.([]any); ok {
 			for _, item := range arr {
@@ -175,10 +189,24 @@ func (c *ZaloChannel) processUpdate(ctx context.Context, upd map[string]any) {
 		CanonicalID: identity.BuildCanonicalID("zalo", senderID),
 	}
 
+	if !c.IsAllowedSender(sender) {
+		logger.DebugCF("zalo", "Message from disallowed sender", map[string]any{
+			"sender_id": senderID,
+		})
+		return
+	}
+
 	peer := bus.Peer{
 		Kind: peerKind,
 		ID:   chatID,
 	}
+
+	logger.DebugCF("zalo", "Received message", map[string]any{
+		"sender_id": senderID,
+		"chat_id":   chatID,
+		"peer_kind": peerKind,
+		"preview":   utils.Truncate(content, 50),
+	})
 
 	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, nil, sender)
 }
@@ -268,24 +296,56 @@ func (c *ZaloChannel) doPOST(ctx context.Context, method string, payload any) (i
 func (c *ZaloChannel) getMe(ctx context.Context) (map[string]any, error) {
 	_, data, err := c.doPOST(ctx, "getMe", map[string]any{})
 	if err != nil {
+		logger.ErrorCF("zalo", "Failed to call getMe API", map[string]any{
+			"error": err.Error(),
+		})
 		return nil, err
 	}
 	var out map[string]any
 	if err := json.Unmarshal(data, &out); err != nil {
+		logger.ErrorCF("zalo", "Failed to parse getMe response", map[string]any{
+			"error": err.Error(),
+		})
 		return nil, err
 	}
 	if ok, _ := out["ok"].(bool); !ok {
-		return out, fmt.Errorf("zalo getMe returned ok=false")
+		err := fmt.Errorf("zalo getMe returned ok=false")
+		logger.ErrorCF("zalo", "getMe API returned error", map[string]any{
+			"response": out,
+		})
+		return out, err
 	}
 	return out, nil
 }
 
 func (c *ZaloChannel) sendMessage(ctx context.Context, chatID, text string) error {
-	_, _, err := c.doPOST(ctx, "sendMessage", map[string]any{
+	_, data, err := c.doPOST(ctx, "sendMessage", map[string]any{
 		"chat_id": chatID,
 		"text":    text,
 	})
-	return err
+	if err != nil {
+		logger.ErrorCF("zalo", "Failed to send message", map[string]any{
+			"chat_id": chatID,
+			"error":   err.Error(),
+		})
+		return err
+	}
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil {
+		logger.ErrorCF("zalo", "Failed to parse sendMessage response", map[string]any{
+			"error": err.Error(),
+		})
+		return err
+	}
+	if ok, _ := out["ok"].(bool); !ok {
+		err := fmt.Errorf("zalo sendMessage returned ok=false")
+		logger.ErrorCF("zalo", "sendMessage API returned error", map[string]any{
+			"chat_id":  chatID,
+			"response": out,
+		})
+		return err
+	}
+	return nil
 }
 
 func (c *ZaloChannel) sendPhoto(ctx context.Context, chatID, photoURL, caption string) error {
