@@ -204,3 +204,29 @@ func TestProvider_AzureNewProviderWithTimeout(t *testing.T) {
 		t.Errorf("timeout = %v, want %v", p.httpClient.Timeout, 180*time.Second)
 	}
 }
+
+func TestProviderChat_AzureDeploymentNameEscaped(t *testing.T) {
+	var capturedPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.RawPath // use RawPath to see percent-encoding
+		if capturedPath == "" {
+			capturedPath = r.URL.Path
+		}
+		writeValidResponse(w)
+	}))
+	defer server.Close()
+
+	p := NewProvider("test-key", server.URL, "")
+
+	// Deployment name with characters that could cause path injection
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "my deploy/../../admin", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	// The slash and special chars in the deployment name must be escaped, not treated as path separators
+	if capturedPath == "/openai/deployments/my deploy/../../admin/chat/completions" {
+		t.Fatal("deployment name was interpolated without escaping — path injection possible")
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -87,9 +88,13 @@ func (p *Provider) Chat(
 	// model is the deployment name for Azure OpenAI
 	deployment := model
 
-	// Build Azure-specific URL: {base}/openai/deployments/{deployment}/chat/completions?api-version=...
-	requestURL := fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
-		p.apiBase, deployment, azureAPIVersion)
+	// Build Azure-specific URL safely using url.JoinPath and query encoding
+	// to prevent path traversal or query injection via deployment names.
+	base, err := url.JoinPath(p.apiBase, "openai/deployments", deployment, "chat/completions")
+	if err != nil {
+		return nil, fmt.Errorf("failed to build Azure request URL: %w", err)
+	}
+	requestURL := base + "?api-version=" + azureAPIVersion
 
 	// Build request body — no "model" field (Azure infers from deployment URL)
 	requestBody := map[string]any{
