@@ -505,29 +505,29 @@ type VoiceConfig struct {
 }
 
 type ProvidersConfig struct {
-	Anthropic     ProviderConfig       `json:"anthropic"`
-	OpenAI        OpenAIProviderConfig `json:"openai"`
-	LiteLLM       ProviderConfig       `json:"litellm"`
-	OpenRouter    ProviderConfig       `json:"openrouter"`
-	Groq          ProviderConfig       `json:"groq"`
-	Zhipu         ProviderConfig       `json:"zhipu"`
-	VLLM          ProviderConfig       `json:"vllm"`
-	Gemini        ProviderConfig       `json:"gemini"`
-	Nvidia        ProviderConfig       `json:"nvidia"`
-	Ollama        ProviderConfig       `json:"ollama"`
-	Moonshot      ProviderConfig       `json:"moonshot"`
-	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
-	DeepSeek      ProviderConfig       `json:"deepseek"`
-	Cerebras      ProviderConfig       `json:"cerebras"`
-	Vivgrid       ProviderConfig       `json:"vivgrid"`
-	VolcEngine    ProviderConfig       `json:"volcengine"`
-	GitHubCopilot ProviderConfig       `json:"github_copilot"`
-	Antigravity   ProviderConfig       `json:"antigravity"`
-	Qwen          ProviderConfig       `json:"qwen"`
-	Mistral       ProviderConfig       `json:"mistral"`
-	Avian         ProviderConfig       `json:"avian"`
-	Minimax       ProviderConfig       `json:"minimax"`
-	LongCat       ProviderConfig       `json:"longcat"`
+	Anthropic     ProviderConfig       `json:"anthropic"      envPrefix:"PICOCLAW_PROVIDERS_ANTHROPIC_"`
+	OpenAI        OpenAIProviderConfig `json:"openai"         envPrefix:"PICOCLAW_PROVIDERS_OPENAI_"`
+	LiteLLM       ProviderConfig       `json:"litellm"        envPrefix:"PICOCLAW_PROVIDERS_LITELLM_"`
+	OpenRouter    ProviderConfig       `json:"openrouter"     envPrefix:"PICOCLAW_PROVIDERS_OPENROUTER_"`
+	Groq          ProviderConfig       `json:"groq"           envPrefix:"PICOCLAW_PROVIDERS_GROQ_"`
+	Zhipu         ProviderConfig       `json:"zhipu"          envPrefix:"PICOCLAW_PROVIDERS_ZHIPU_"`
+	VLLM          ProviderConfig       `json:"vllm"           envPrefix:"PICOCLAW_PROVIDERS_VLLM_"`
+	Gemini        ProviderConfig       `json:"gemini"         envPrefix:"PICOCLAW_PROVIDERS_GEMINI_"`
+	Nvidia        ProviderConfig       `json:"nvidia"         envPrefix:"PICOCLAW_PROVIDERS_NVIDIA_"`
+	Ollama        ProviderConfig       `json:"ollama"         envPrefix:"PICOCLAW_PROVIDERS_OLLAMA_"`
+	Moonshot      ProviderConfig       `json:"moonshot"       envPrefix:"PICOCLAW_PROVIDERS_MOONSHOT_"`
+	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"   envPrefix:"PICOCLAW_PROVIDERS_SHENGSUANYUN_"`
+	DeepSeek      ProviderConfig       `json:"deepseek"       envPrefix:"PICOCLAW_PROVIDERS_DEEPSEEK_"`
+	Cerebras      ProviderConfig       `json:"cerebras"       envPrefix:"PICOCLAW_PROVIDERS_CEREBRAS_"`
+	Vivgrid       ProviderConfig       `json:"vivgrid"        envPrefix:"PICOCLAW_PROVIDERS_VIVGRID_"`
+	VolcEngine    ProviderConfig       `json:"volcengine"     envPrefix:"PICOCLAW_PROVIDERS_VOLCENGINE_"`
+	GitHubCopilot ProviderConfig       `json:"github_copilot" envPrefix:"PICOCLAW_PROVIDERS_GITHUB_COPILOT_"`
+	Antigravity   ProviderConfig       `json:"antigravity"    envPrefix:"PICOCLAW_PROVIDERS_ANTIGRAVITY_"`
+	Qwen          ProviderConfig       `json:"qwen"           envPrefix:"PICOCLAW_PROVIDERS_QWEN_"`
+	Mistral       ProviderConfig       `json:"mistral"        envPrefix:"PICOCLAW_PROVIDERS_MISTRAL_"`
+	Avian         ProviderConfig       `json:"avian"          envPrefix:"PICOCLAW_PROVIDERS_AVIAN_"`
+	Minimax       ProviderConfig       `json:"minimax"        envPrefix:"PICOCLAW_PROVIDERS_MINIMAX_"`
+	LongCat       ProviderConfig       `json:"longcat"        envPrefix:"PICOCLAW_PROVIDERS_LONGCAT_"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -569,17 +569,17 @@ func (p ProvidersConfig) MarshalJSON() ([]byte, error) {
 }
 
 type ProviderConfig struct {
-	APIKey         string `json:"api_key"                   env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase        string `json:"api_base"                  env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy          string `json:"proxy,omitempty"           env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	RequestTimeout int    `json:"request_timeout,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_REQUEST_TIMEOUT"`
-	AuthMethod     string `json:"auth_method,omitempty"     env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	ConnectMode    string `json:"connect_mode,omitempty"    env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
+	APIKey         string `json:"api_key"                   env:"API_KEY"`
+	APIBase        string `json:"api_base"                  env:"API_BASE"`
+	Proxy          string `json:"proxy,omitempty"           env:"PROXY"`
+	RequestTimeout int    `json:"request_timeout,omitempty" env:"REQUEST_TIMEOUT"`
+	AuthMethod     string `json:"auth_method,omitempty"     env:"AUTH_METHOD"`
+	ConnectMode    string `json:"connect_mode,omitempty"    env:"CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
 }
 
 type OpenAIProviderConfig struct {
 	ProviderConfig
-	WebSearch bool `json:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
+	WebSearch bool `json:"web_search" env:"WEB_SEARCH"`
 }
 
 // ModelConfig represents a model-centric provider configuration.
