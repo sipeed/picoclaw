@@ -395,10 +395,22 @@ func decodeToolCallArguments(raw json.RawMessage, name string) map[string]any {
 // internal field that would be unknown to third-party endpoints.
 type openaiMessage struct {
 	Role             string     `json:"role"`
-	Content          string     `json:"content"`
+	Content          *string    `json:"content,omitempty"`
 	ReasoningContent string     `json:"reasoning_content,omitempty"`
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string     `json:"tool_call_id,omitempty"`
+}
+
+// msgContent returns the content pointer for an outbound message.
+// When content is empty and tool_calls are present, nil is returned so the
+// field is omitted entirely. The OpenAI spec allows content to be absent (or
+// null) when tool_calls is set, and some strict providers reject "" in that
+// position, causing intermittent failures.
+func msgContent(content string, toolCalls []ToolCall) *string {
+	if content == "" && len(toolCalls) > 0 {
+		return nil
+	}
+	return &content
 }
 
 // serializeMessages converts internal Message structs to the OpenAI wire format.
@@ -411,7 +423,7 @@ func serializeMessages(messages []Message) []any {
 		if len(m.Media) == 0 {
 			out = append(out, openaiMessage{
 				Role:             m.Role,
-				Content:          m.Content,
+				Content:          msgContent(m.Content, m.ToolCalls),
 				ReasoningContent: m.ReasoningContent,
 				ToolCalls:        m.ToolCalls,
 				ToolCallID:       m.ToolCallID,
