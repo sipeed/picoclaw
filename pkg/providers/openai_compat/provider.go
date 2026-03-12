@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -54,20 +57,46 @@ func WithRequestTimeout(timeout time.Duration) Option {
 	}
 }
 
-func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
-	client := &http.Client{
-		Timeout: defaultRequestTimeout,
+// buildCertPool returns the system cert pool supplemented with CA bundles from
+// well-known Termux paths. On Android/Termux, Go's x509.SystemCertPool returns
+// an empty pool because it does not probe Termux-specific locations, causing
+// TLS handshakes to fail with "certificate signed by unknown authority".
+// InsecureSkipVerify is never set.
+func buildCertPool() *x509.CertPool {
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
 	}
+	for _, p := range []string{
+		"/data/data/com.termux/files/usr/etc/tls/cert.pem",
+		"/data/data/com.termux/files/usr/etc/ssl/certs/ca-bundle.crt",
+		"/data/data/com.termux/files/usr/etc/ssl/certs/ca-certificates.crt",
+	} {
+		if pem, e := os.ReadFile(p); e == nil {
+			pool.AppendCertsFromPEM(pem)
+		}
+	}
+	return pool
+}
+
+func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
+	// Clone preserves all http.DefaultTransport defaults (connection pooling,
+	// dial/TLS handshake timeouts, HTTP/2, env proxy). We only patch RootCAs.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: buildCertPool()}
 
 	if proxy != "" {
 		parsed, err := url.Parse(proxy)
 		if err == nil {
-			client.Transport = &http.Transport{
-				Proxy: http.ProxyURL(parsed),
-			}
+			transport.Proxy = http.ProxyURL(parsed)
 		} else {
 			log.Printf("openai_compat: invalid proxy URL %q: %v", proxy, err)
 		}
+	}
+
+	client := &http.Client{
+		Timeout:   defaultRequestTimeout,
+		Transport: transport,
 	}
 
 	p := &Provider{
