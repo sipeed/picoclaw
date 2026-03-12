@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.jpg" alt="PicoClaw" width="512">
+  <img src="assets/logo.webp" alt="PicoClaw" width="512">
 
   <h1>PicoClaw : Assistant IA Ultra-Efficace en Go</h1>
 
@@ -1203,3 +1203,9 @@ Cela se produit lorsqu'une autre instance du bot est en cours d'exécution. Assu
 | **Zhipu**        | 200K tokens/mois     | Idéal pour les utilisateurs chinois   |
 | **Brave Search** | 2000 requêtes/mois   | Fonctionnalité de recherche web       |
 | **Groq**         | Offre gratuite dispo | Inférence ultra-rapide (Llama, Mixtral) |
+
+---
+
+<div align="center">
+  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
+</div>

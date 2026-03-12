@@ -1,5 +1,5 @@
 <div align="center">
-<img src="assets/logo.jpg" alt="PicoClaw" width="512">
+<img src="assets/logo.webp" alt="PicoClaw" width="512">
 
 <h1>PicoClaw: Assistente de IA Ultra-Eficiente em Go</h1>
 
@@ -1200,3 +1200,9 @@ Isso acontece quando outra instância do bot está em execução. Certifique-se 
 | **Brave Search** | 2000 consultas/mês | Funcionalidade de busca web |
 | **Groq** | Plano gratuito disponível | Inferência ultra-rápida (Llama, Mixtral) |
 | **Cerebras** | Plano gratuito disponível | Inferência ultra-rápida (Llama 3.3 70B) |
+
+---
+
+<div align="center">
+  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
+</div>

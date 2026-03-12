@@ -1,5 +1,5 @@
 <div align="center">
-<img src="assets/logo.jpg" alt="PicoClaw" width="512">
+<img src="assets/logo.webp" alt="PicoClaw" width="512">
 
 <h1>PicoClaw: Trợ lý AI Siêu Nhẹ viết bằng Go</h1>
 
@@ -1168,3 +1168,9 @@ Một số nhà cung cấp (như Zhipu) có bộ lọc nội dung nghiêm ngặt
 | **Zhipu** | 200K tokens/tháng | Tốt nhất cho người dùng Trung Quốc |
 | **Brave Search** | 2000 truy vấn/tháng | Chức năng tìm kiếm web |
 | **Groq** | Có gói miễn phí | Suy luận siêu nhanh (Llama, Mixtral) |
+
+---
+
+<div align="center">
+  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
+</div>

@@ -1,5 +1,5 @@
 <div align="center">
-<img src="assets/logo.jpg" alt="PicoClaw" width="512">
+<img src="assets/logo.webp" alt="PicoClaw" width="512">
 
 <h1>PicoClaw: Go で書かれた超効率 AI アシスタント</h1>
 
@@ -1126,3 +1126,9 @@ Web 検索を有効にするには：
 | **Tavily** | 月 1000 クエリ | AI エージェント検索最適化 |
 | **Groq** | 無料枠あり | 高速推論（Llama, Mixtral） |
 | **Cerebras** | 無料枠あり | 高速推論（Llama, Qwen など） |
+
+---
+
+<div align="center">
+  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
+</div>

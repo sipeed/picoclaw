@@ -1,5 +1,5 @@
 <div align="center">
-<img src="assets/logo.jpg" alt="PicoClaw" width="512">
+<img src="assets/logo.webp" alt="PicoClaw" width="512">
 
 <h1>PicoClaw: 基于Go语言的超高效 AI 助手</h1>
 
@@ -880,3 +880,9 @@ Discord: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 | **Tavily** | 1000 次查询/月 | AI Agent 搜索优化 |
 | **Groq** | 提供免费层级 | 极速推理 (Llama, Mixtral) |
 | **LongCat** | 最多 5M tokens/天 | 推理速度快 (免费额度) |
+
+---
+
+<div align="center">
+  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
+</div>
