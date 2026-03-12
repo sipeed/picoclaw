@@ -450,7 +450,6 @@
       "unsaved_changes": "You have unsaved changes."
     },
     "logs": {
-      "description": "System logs and monitoring.",
       "clear": "Clear logs",
       "empty": "Waiting for logs..."
     }
