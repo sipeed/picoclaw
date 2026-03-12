@@ -32,6 +32,10 @@ const (
 	lineBotInfoEndpoint  = lineAPIBase + "/info"
 	lineLoadingEndpoint  = lineAPIBase + "/chat/loading/start"
 	lineReplyTokenMaxAge = 25 * time.Second
+
+	// Limit request body to prevent memory exhaustion (DoS).
+	// LINE webhook payloads are typically a few KB; 1 MiB is generous.
+	maxWebhookBodySize = 1 << 20 // 1 MiB
 )
 
 type replyTokenEntry struct {
@@ -166,9 +170,6 @@ func (c *LINEChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limit request body to prevent memory exhaustion (DoS).
-	// LINE webhook payloads are typically a few KB; 1 MB is generous.
-	const maxWebhookBodySize = 1 << 20 // 1 MB
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBodySize+1))
 	if err != nil {
 		logger.ErrorCF("line", "Failed to read request body", map[string]any{
