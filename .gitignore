@@ -48,3 +48,10 @@ dist/
 # Windows Application Icon/Resource
 *.syso
 docker/data/workspace/cron/jobs.json
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

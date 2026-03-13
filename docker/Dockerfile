@@ -16,11 +16,26 @@ COPY . .
 RUN make build
 
 # ============================================================
-# Stage 2: Minimal runtime image
+# Stage 2: Runtime with Node.js for Playwright browser automation
 # ============================================================
-FROM alpine:3.23
+FROM node:20-slim
 
-RUN apk add --no-cache ca-certificates tzdata curl
+# Install Chromium system dependencies + utilities
+# Using Playwright's recommended deps for Debian/Ubuntu
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates tzdata wget \
+    # Chromium dependencies
+    libasound2 libatk-bridge2.0-0 libatk1.0-0 libcairo2 libcups2 \
+    libdbus-1-3 libdrm2 libexpat1 libgbm1 libglib2.0-0 libnspr4 \
+    libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 \
+    libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
+    libatspi2.0-0 libwayland-client0 \
+    # Fonts
+    fonts-liberation fonts-noto-color-emoji \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Playwright and Chromium browser
+RUN npx -y playwright@1.58.2 install chromium
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
@@ -30,8 +45,13 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
 
 # Create non-root user and group
-RUN addgroup -g 1000 picoclaw && \
-    adduser -D -u 1000 -G picoclaw picoclaw
+RUN userdel -r node 2>/dev/null || true && \
+    groupadd --gid 1000 picoclaw && \
+    useradd --create-home --uid 1000 --gid 1000 picoclaw && \
+    # Copy Playwright browsers to picoclaw user
+    mkdir -p /home/picoclaw/.cache && \
+    cp -r /root/.cache/ms-playwright /home/picoclaw/.cache/ms-playwright 2>/dev/null || true && \
+    chown -R picoclaw:picoclaw /home/picoclaw
 
 # Switch to non-root user
 USER picoclaw
