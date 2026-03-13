@@ -94,8 +94,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "mistral", "avian",
-		"minimax", "longcat":
+		"vivgrid", "volcengine", "vllm", "qwen", "mistral", "avian":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -110,6 +109,24 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+		), modelID, nil
+
+	case "minimax":
+		// MiniMax supports reasoning_split parameter for M2 models
+		if cfg.APIKey == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase(protocol)
+		}
+		return NewHTTPProviderWithOptions(
+			cfg.APIKey,
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
+			cfg.ReasoningSplit,
 		), modelID, nil
 
 	case "anthropic":
@@ -215,8 +232,6 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://api.avian.io/v1"
 	case "minimax":
 		return "https://api.minimaxi.com/v1"
-	case "longcat":
-		return "https://api.longcat.chat/openai"
 	default:
 		return ""
 	}

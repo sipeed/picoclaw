@@ -61,7 +61,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}
 				return ModelConfig{
 					ModelName:      "openai",
-					Model:          "openai/gpt-5.4",
+					Model:          "openai/gpt-5.2",
 					APIKey:         p.OpenAI.APIKey,
 					APIBase:        p.OpenAI.APIBase,
 					Proxy:          p.OpenAI.Proxy,
@@ -335,7 +335,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}
 				return ModelConfig{
 					ModelName:   "github-copilot",
-					Model:       "github-copilot/gpt-5.4",
+					Model:       "github-copilot/gpt-5.2",
 					APIBase:     p.GitHubCopilot.APIBase,
 					ConnectMode: p.GitHubCopilot.ConnectMode,
 				}, true
@@ -408,19 +408,19 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 			},
 		},
 		{
-			providerNames: []string{"longcat"},
-			protocol:      "longcat",
+			providerNames: []string{"minimax"},
+			protocol:      "minimax",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.LongCat.APIKey == "" && p.LongCat.APIBase == "" {
+				if p.Minimax.APIKey == "" && p.Minimax.APIBase == "" {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName:      "longcat",
-					Model:          "longcat/LongCat-Flash-Thinking",
-					APIKey:         p.LongCat.APIKey,
-					APIBase:        p.LongCat.APIBase,
-					Proxy:          p.LongCat.Proxy,
-					RequestTimeout: p.LongCat.RequestTimeout,
+					ModelName:      "minimax",
+					Model:          "minimax/MiniMax-M2.5",
+					APIKey:         p.Minimax.APIKey,
+					APIBase:        p.Minimax.APIBase,
+					Proxy:          p.Minimax.Proxy,
+					RequestTimeout: p.Minimax.RequestTimeout,
 				}, true
 			},
 		},
