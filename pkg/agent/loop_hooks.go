@@ -16,9 +16,9 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
-// iterationHooks contains optional callbacks that extend the core LLM
-// iteration loop.  Each hook is nil when the corresponding fork feature
-// is inactive, keeping the core loop close to upstream's structure.
+// iterationHooks contains callbacks that extend the core LLM iteration loop.
+// All fields are initialized to no-op defaults by buildHooks, so callers
+// never need nil checks.
 type iterationHooks struct {
 	// OnIterationStart is called at the top of each iteration.
 	// Returns an optional user-role message to inject (e.g. user intervention).
@@ -30,7 +30,6 @@ type iterationHooks struct {
 
 	// SetupStreaming is called before each LLM call to set up streaming
 	// preview.  Returns an onChunk callback and a cleanup function.
-	// Both may be nil if streaming is not applicable.
 	SetupStreaming func() (onChunk func(accumulated, reasoning string), cleanup func())
 
 	// SelectModel overrides the model and candidates for this call.
@@ -46,7 +45,6 @@ type iterationHooks struct {
 
 	// FilterToolCalls is called after normalizing tool calls, before execution.
 	// Returns the filtered calls and an optional rejection message.
-	// If all calls are filtered out, the loop continues with the rejection message.
 	FilterToolCalls func(calls []providers.ToolCall) (filtered []providers.ToolCall, rejectionMsg string)
 
 	// OnPreToolExec is called before each tool execution.
@@ -57,8 +55,7 @@ type iterationHooks struct {
 	OnToolExecDone func(tc providers.ToolCall, result *tools.ToolResult, duration time.Duration)
 
 	// OnToolsProcessed is called after all tool calls in an iteration
-	// have been logged and their results built.  Receives the tool call
-	// list for status publishing and session-touch recording.
+	// have been logged and their results built.
 	OnToolsProcessed func(ctx context.Context, iteration int, toolCalls []providers.ToolCall)
 
 	// InjectReminders is called at the end of each iteration to append
@@ -70,6 +67,24 @@ type iterationHooks struct {
 	RefreshSystemPrompt func(messages []providers.Message)
 }
 
+// defaultHooks returns an iterationHooks with all fields set to no-ops.
+func defaultHooks() iterationHooks {
+	return iterationHooks{
+		OnIterationStart: func(int) string { return "" },
+		FilterTools:      func(d []providers.ToolDefinition) []providers.ToolDefinition { return d },
+		SetupStreaming:    func() (func(string, string), func()) { return nil, nil },
+		SelectModel:      func() (string, []providers.FallbackCandidate) { return "", nil },
+		OnPreLLMCall:     func() {},
+		OnNoToolCalls:    func(string, int) (string, bool) { return "", false },
+		FilterToolCalls:  func(c []providers.ToolCall) ([]providers.ToolCall, string) { return c, "" },
+		OnPreToolExec:    func(context.Context, providers.ToolCall) tools.AsyncCallback { return nil },
+		OnToolExecDone:   func(providers.ToolCall, *tools.ToolResult, time.Duration) {},
+		OnToolsProcessed: func(context.Context, int, []providers.ToolCall) {},
+		InjectReminders:  func(int, *[]providers.Message, string) {},
+		RefreshSystemPrompt: func([]providers.Message) {},
+	}
+}
+
 // buildHooks constructs the hook set based on the current agent state.
 // All fork-specific logic is wired here; the core loop only calls hooks.
 func (al *AgentLoop) buildHooks(
@@ -78,7 +93,7 @@ func (al *AgentLoop) buildHooks(
 	task *activeTask,
 	planSnapshot string,
 ) iterationHooks {
-	h := iterationHooks{}
+	h := defaultHooks()
 	isBackground := opts.TaskID != ""
 
 	// ── Task tracking ──
