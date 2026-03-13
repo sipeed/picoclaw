@@ -85,6 +85,18 @@ var (
 		substr("invalid request format"),
 	}
 
+	contextLengthPatterns = []errorPattern{
+		substr("context_length_exceeded"),
+		substr("context window"),
+		substr("maximum context length"),
+		substr("token limit"),
+		substr("too many tokens"),
+		substr("max_tokens"),
+		substr("invalidparameter"),
+		substr("prompt is too long"),
+		substr("request too large"),
+	}
+
 	imageDimensionPatterns = []errorPattern{
 		rxp(`image dimensions exceed max`),
 	}
@@ -200,6 +212,9 @@ func classifyByMessage(msg string) FailoverReason {
 	}
 	if matchesAny(msg, formatPatterns) {
 		return FailoverFormat
+	}
+	if matchesAny(msg, contextLengthPatterns) {
+		return FailoverContextLength
 	}
 	return ""
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"jane/pkg/bus"
@@ -77,25 +76,27 @@ func (al *AgentLoop) executeLLMWithRetry(
 			break
 		}
 
-		errMsg := strings.ToLower(err.Error())
+		isTimeoutError := false
+		isContextError := false
 
-		// Check if this is a network/HTTP timeout — not a context window error.
-		isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
-			strings.Contains(errMsg, "deadline exceeded") ||
-			strings.Contains(errMsg, "client.timeout") ||
-			strings.Contains(errMsg, "timed out") ||
-			strings.Contains(errMsg, "timeout exceeded")
-
-		// Detect real context window / token limit errors, excluding network timeouts.
-		isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
-			strings.Contains(errMsg, "context window") ||
-			strings.Contains(errMsg, "maximum context length") ||
-			strings.Contains(errMsg, "token limit") ||
-			strings.Contains(errMsg, "too many tokens") ||
-			strings.Contains(errMsg, "max_tokens") ||
-			strings.Contains(errMsg, "invalidparameter") ||
-			strings.Contains(errMsg, "prompt is too long") ||
-			strings.Contains(errMsg, "request too large"))
+		var failErr *providers.FailoverError
+		if errors.As(err, &failErr) {
+			if failErr.Reason == providers.FailoverTimeout {
+				isTimeoutError = true
+			} else if failErr.Reason == providers.FailoverContextLength {
+				isContextError = true
+			}
+		} else {
+			// If not a fallback error, check directly using ClassifyError
+			// The provider might not be wrapped if no fallback chain is active
+			if directFailErr := providers.ClassifyError(err, "", ""); directFailErr != nil {
+				if directFailErr.Reason == providers.FailoverTimeout {
+					isTimeoutError = true
+				} else if directFailErr.Reason == providers.FailoverContextLength {
+					isContextError = true
+				}
+			}
+		}
 
 		if isTimeoutError && retry < maxRetries {
 			// Exponential backoff: 2s, 4s, 8s
