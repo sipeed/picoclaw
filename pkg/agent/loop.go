@@ -922,130 +922,15 @@ func (al *AgentLoop) runLLMIteration(
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		// Call LLM with fallback chain if multiple candidates are configured.
-		var response *providers.LLMResponse
-		var err error
-
-		llmOpts := map[string]any{
-			"max_tokens":       agent.MaxTokens,
-			"temperature":      agent.Temperature,
-			"prompt_cache_key": agent.ID,
-		}
-		// parseThinkingLevel guarantees ThinkingOff for empty/unknown values,
-		// so checking != ThinkingOff is sufficient.
-		if agent.ThinkingLevel != ThinkingOff {
-			if tc, ok := agent.Provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
-				llmOpts["thinking_level"] = string(agent.ThinkingLevel)
-			} else {
-				logger.WarnCF("agent", "thinking_level is set but current provider does not support it, ignoring",
-					map[string]any{"agent_id": agent.ID, "thinking_level": string(agent.ThinkingLevel)})
-			}
-		}
-
-		callLLM := func() (*providers.LLMResponse, error) {
-			if len(activeCandidates) > 1 && al.fallback != nil {
-				fbResult, fbErr := al.fallback.Execute(
-					ctx,
-					activeCandidates,
-					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
-					},
-				)
-				if fbErr != nil {
-					return nil, fbErr
-				}
-				if fbResult.Provider != "" && len(fbResult.Attempts) > 0 {
-					logger.InfoCF(
-						"agent",
-						fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
-							fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
-						map[string]any{"agent_id": agent.ID, "iteration": iteration},
-					)
-				}
-				return fbResult.Response, nil
-			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, activeModel, llmOpts)
-		}
-
-		// Retry loop for context/token errors
-		maxRetries := 2
-		for retry := 0; retry <= maxRetries; retry++ {
-			response, err = callLLM()
-			if err == nil {
-				break
-			}
-
-			errMsg := strings.ToLower(err.Error())
-
-			// Check if this is a network/HTTP timeout — not a context window error.
-			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
-				strings.Contains(errMsg, "deadline exceeded") ||
-				strings.Contains(errMsg, "client.timeout") ||
-				strings.Contains(errMsg, "timed out") ||
-				strings.Contains(errMsg, "timeout exceeded")
-
-			// Detect real context window / token limit errors, excluding network timeouts.
-			isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
-				strings.Contains(errMsg, "context window") ||
-				strings.Contains(errMsg, "maximum context length") ||
-				strings.Contains(errMsg, "token limit") ||
-				strings.Contains(errMsg, "too many tokens") ||
-				strings.Contains(errMsg, "max_tokens") ||
-				strings.Contains(errMsg, "invalidparameter") ||
-				strings.Contains(errMsg, "prompt is too long") ||
-				strings.Contains(errMsg, "request too large"))
-
-			if isTimeoutError && retry < maxRetries {
-				backoff := time.Duration(retry+1) * 5 * time.Second
-				logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
-					"error":   err.Error(),
-					"retry":   retry,
-					"backoff": backoff.String(),
-				})
-				time.Sleep(backoff)
-				continue
-			}
-
-			if isContextError && retry < maxRetries {
-				logger.WarnCF(
-					"agent",
-					"Context window error detected, attempting compression",
-					map[string]any{
-						"error": err.Error(),
-						"retry": retry,
-					},
-				)
-
-				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
-					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-						Channel: opts.Channel,
-						ChatID:  opts.ChatID,
-						Content: "Context window exceeded. Compressing history and retrying...",
-					})
-				}
-
-				al.forceCompression(agent, opts.SessionKey)
-				newHistory := agent.Sessions.GetHistory(opts.SessionKey)
-				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
-				messages = agent.ContextBuilder.BuildMessages(
-					newHistory, newSummary, "",
-					nil, opts.Channel, opts.ChatID,
-				)
-				continue
-			}
-			break
-		}
-
+		// Call LLM with fallback chain and retry logic
+		response, err := al.executeLLMWithRetry(
+			ctx, agent, opts, &messages,
+			providerToolDefs, activeCandidates,
+			activeModel, iteration,
+		)
 		if err != nil {
-			logger.ErrorCF("agent", "LLM call failed",
-				map[string]any{
-					"agent_id":  agent.ID,
-					"iteration": iteration,
-					"error":     err.Error(),
-				})
-			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
+			return "", iteration, err
 		}
-
 		go al.handleReasoning(
 			ctx,
 			response.Reasoning,
@@ -1130,85 +1015,7 @@ func (al *AgentLoop) runLLMIteration(
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
 		// Execute tool calls in parallel
-		type indexedAgentResult struct {
-			result *tools.ToolResult
-			tc     providers.ToolCall
-		}
-
-		agentResults := make([]indexedAgentResult, len(normalizedToolCalls))
-		var wg sync.WaitGroup
-
-		for i, tc := range normalizedToolCalls {
-			agentResults[i].tc = tc
-
-			wg.Add(1)
-			go func(idx int, tc providers.ToolCall) {
-				defer wg.Done()
-
-				argsJSON, _ := json.Marshal(tc.Arguments)
-				argsPreview := utils.Truncate(string(argsJSON), 200)
-				logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-					map[string]any{
-						"agent_id":  agent.ID,
-						"tool":      tc.Name,
-						"iteration": iteration,
-					})
-
-				// Create async callback for tools that implement AsyncExecutor.
-				// When the background work completes, this publishes the result
-				// as an inbound system message so processSystemMessage routes it
-				// back to the user via the normal agent loop.
-				asyncCallback := func(_ context.Context, result *tools.ToolResult) {
-					// Send ForUser content directly to the user (immediate feedback),
-					// mirroring the synchronous tool execution path.
-					if !result.Silent && result.ForUser != "" {
-						outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
-						defer outCancel()
-						_ = al.bus.PublishOutbound(outCtx, bus.OutboundMessage{
-							Channel: opts.Channel,
-							ChatID:  opts.ChatID,
-							Content: result.ForUser,
-						})
-					}
-
-					// Determine content for the agent loop (ForLLM or error).
-					content := result.ForLLM
-					if content == "" && result.Err != nil {
-						content = result.Err.Error()
-					}
-					if content == "" {
-						return
-					}
-
-					logger.InfoCF("agent", "Async tool completed, publishing result",
-						map[string]any{
-							"tool":        tc.Name,
-							"content_len": len(content),
-							"channel":     opts.Channel,
-						})
-
-					pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer pubCancel()
-					_ = al.bus.PublishInbound(pubCtx, bus.InboundMessage{
-						Channel:  "system",
-						SenderID: fmt.Sprintf("async:%s", tc.Name),
-						ChatID:   fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID),
-						Content:  content,
-					})
-				}
-
-				toolResult := agent.Tools.ExecuteWithContext(
-					ctx,
-					tc.Name,
-					tc.Arguments,
-					opts.Channel,
-					opts.ChatID,
-					asyncCallback,
-				)
-				agentResults[idx].result = toolResult
-			}(i, tc)
-		}
-		wg.Wait()
+		agentResults := al.executeToolBatch(ctx, agent, opts, normalizedToolCalls, iteration)
 
 		// Process results in original order (send to user, save to session)
 		for _, r := range agentResults {
