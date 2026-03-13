@@ -154,6 +154,37 @@ func TestClassifyError_TimeoutPatterns(t *testing.T) {
 	}
 }
 
+func TestClassifyError_TransportErrorPatterns(t *testing.T) {
+	patterns := []string{
+		"connection reset by peer",
+		"connection refused",
+		"no route to host",
+		"unexpected eof",
+		"broken pipe",
+		"network is unreachable",
+		"connection closed",
+		"tls handshake error",
+		"read tcp 192.168.1.1:12345: connection reset by peer",
+		"write tcp connection refused",
+	}
+
+	for _, msg := range patterns {
+		err := errors.New(msg)
+		result := ClassifyError(err, "openrouter", "stepfun/step-3.5-flash")
+		if result == nil {
+			t.Errorf("pattern %q: expected non-nil", msg)
+			continue
+		}
+		// Transport errors are treated as timeout (retriable)
+		if result.Reason != FailoverTimeout {
+			t.Errorf("pattern %q: reason = %q, want timeout", msg, result.Reason)
+		}
+		if !result.IsRetriable() {
+			t.Errorf("pattern %q: should be retriable", msg)
+		}
+	}
+}
+
 func TestClassifyError_AuthPatterns(t *testing.T) {
 	patterns := []string{
 		"invalid api key",
