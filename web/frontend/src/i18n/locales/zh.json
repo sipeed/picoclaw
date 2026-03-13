@@ -81,6 +81,19 @@
   "credentials": {
     "description": "管理已支持服务商的 OAuth 与 Token 凭据。",
     "loading": "正在加载凭据...",
+    "passphrase": {
+      "title": "加密密码",
+      "description": "用于解密配置中的 enc:// API Key，仅存储在内存中，不会写入磁盘。",
+      "statusSet": "密码已加载",
+      "statusNotSet": "未设置密码",
+      "placeholder": "输入密码",
+      "save": "解锁",
+      "saving": "解锁中...",
+      "successMessage": "密码已存储，网关正在启动...",
+      "errorEmpty": "密码不能为空。",
+      "errorSave": "存储密码失败。",
+      "errorWrongPassphrase": "密码错误，网关启动失败，请重试。"
+    },
     "providers": {
       "openai": {
         "description": "支持浏览器 OAuth、设备码和 Token 登录。"
