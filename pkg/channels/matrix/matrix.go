@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gomarkdown/markdown"
+	mdast "github.com/gomarkdown/markdown/ast"
 	mdhtml "github.com/gomarkdown/markdown/html"
 	"github.com/gomarkdown/markdown/parser"
 	"maunium.net/go/mautrix"
@@ -40,6 +41,36 @@ const (
 )
 
 var matrixMentionHrefRegexp = regexp.MustCompile(`(?i)<a[^>]+href=["']([^"']+)["']`)
+
+// matrixHTMLRenderer wraps the standard gomarkdown HTML renderer and suppresses <p>
+// wrappers throughout the document. Matrix clients apply default browser paragraph
+// margins to <p> elements, which stack with the margins of surrounding block elements
+// (lists, code blocks, headings) and produce excessive vertical spacing. Instead we
+// emit a single <br> between consecutive paragraphs for visual separation; adjacent
+// block-level elements already carry their own CSS margin.
+type matrixHTMLRenderer struct {
+	*mdhtml.Renderer
+}
+
+func (r *matrixHTMLRenderer) RenderNode(w io.Writer, node mdast.Node, entering bool) mdast.WalkStatus {
+	if _, ok := node.(*mdast.Paragraph); ok {
+		if !entering {
+			// Between consecutive paragraphs emit a line break for separation.
+			// Before block siblings (lists, headings, code blocks) their own margin suffices.
+			siblings := node.GetParent().GetChildren()
+			for i, child := range siblings {
+				if child == node && i+1 < len(siblings) {
+					if _, ok := siblings[i+1].(*mdast.Paragraph); ok {
+						io.WriteString(w, "<br>") //nolint:errcheck
+					}
+					break
+				}
+			}
+		}
+		return mdast.GoToNext
+	}
+	return r.Renderer.RenderNode(w, node, entering)
+}
 
 type roomKindCacheEntry struct {
 	isGroup   bool
@@ -273,8 +304,9 @@ func (c *MatrixChannel) Stop(ctx context.Context) error {
 }
 
 func markdownToHTML(md string) string {
-	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs)
-	renderer := mdhtml.NewRenderer(mdhtml.RendererOptions{Flags: mdhtml.CommonFlags})
+	extensions := (parser.CommonExtensions | parser.AutoHeadingIDs) &^ parser.DefinitionLists
+	p := parser.NewWithExtensions(extensions)
+	renderer := &matrixHTMLRenderer{mdhtml.NewRenderer(mdhtml.RendererOptions{Flags: mdhtml.CommonFlags})}
 	return strings.TrimSpace(string(markdown.ToHTML([]byte(md), p, renderer)))
 }
 
