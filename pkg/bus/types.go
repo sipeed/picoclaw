@@ -30,14 +30,15 @@ type InboundMessage struct {
 }
 
 type OutboundMessage struct {
-	Channel         string `json:"channel"`
-	ChatID          string `json:"chat_id"`
-	Content         string `json:"content"`
-	IsStatus        bool   `json:"is_status,omitempty"`
-	IsTaskStatus    bool   `json:"is_task_status,omitempty"`
-	TaskID          string `json:"task_id,omitempty"`
-	Final           bool   `json:"final,omitempty"` // Finalize: send as permanent message, not draft
-	SkipPlaceholder bool   `json:"skip_placeholder,omitempty"`
+	Channel          string `json:"channel"`
+	ChatID           string `json:"chat_id"`
+	Content          string `json:"content"`
+	ReplyToMessageID string `json:"reply_to_message_id,omitempty"`
+	IsStatus         bool   `json:"is_status,omitempty"`
+	IsTaskStatus     bool   `json:"is_task_status,omitempty"`
+	TaskID           string `json:"task_id,omitempty"`
+	Final            bool   `json:"final,omitempty"` // Finalize: send as permanent message, not draft
+	SkipPlaceholder  bool   `json:"skip_placeholder,omitempty"`
 }
 
 // MediaPart describes a single media attachment to send.

@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -21,18 +21,9 @@ type JobExecutor interface {
 // CronTool provides scheduling capabilities for the agent
 type CronTool struct {
 	cronService *cron.CronService
-
-	executor JobExecutor
-
-	msgBus *bus.MessageBus
-
-	execTool *ExecTool
-
-	channel string
-
-	chatID string
-
-	mu sync.RWMutex
+	executor    JobExecutor
+	msgBus      *bus.MessageBus
+	execTool    *ExecTool
 }
 
 // NewCronTool creates a new CronTool
@@ -49,12 +40,9 @@ func NewCronTool(
 	execTool.SetTimeout(execTimeout)
 	return &CronTool{
 		cronService: cronService,
-
-		executor: executor,
-
-		msgBus: msgBus,
-
-		execTool: execTool,
+		executor:    executor,
+		msgBus:      msgBus,
+		execTool:    execTool,
 	}, nil
 }
 
@@ -74,63 +62,45 @@ func (t *CronTool) Parameters() map[string]any {
 		"type": "object",
 		"properties": map[string]any{
 			"action": map[string]any{
-				"type": "string",
-
-				"enum": []string{"add", "list", "remove", "enable", "disable"},
-
+				"type":        "string",
+				"enum":        []string{"add", "list", "remove", "enable", "disable"},
 				"description": "Action to perform. Use 'add' when user wants to schedule a reminder or task.",
 			},
 			"message": map[string]any{
-				"type": "string",
-
+				"type":        "string",
 				"description": "The reminder/task message to display when triggered. If 'command' is used, this describes what the command does.",
 			},
 			"command": map[string]any{
-				"type": "string",
-
+				"type":        "string",
 				"description": "Optional: Shell command to execute directly (e.g., 'df -h'). If set, the agent will run this command and report output instead of just showing the message. 'deliver' will be forced to false for commands.",
 			},
-
+			"command_confirm": map[string]any{
+				"type":        "boolean",
+				"description": "Required when using command=true. Must be true to explicitly confirm scheduling a shell command.",
+			},
 			"at_seconds": map[string]any{
-				"type": "integer",
-
+				"type":        "integer",
 				"description": "One-time reminder: seconds from now when to trigger (e.g., 600 for 10 minutes later). Use this for one-time reminders like 'remind me in 10 minutes'.",
 			},
 			"every_seconds": map[string]any{
-				"type": "integer",
-
+				"type":        "integer",
 				"description": "Recurring interval in seconds (e.g., 3600 for every hour). Use this ONLY for recurring tasks like 'every 2 hours' or 'daily reminder'.",
 			},
 			"cron_expr": map[string]any{
-				"type": "string",
-
+				"type":        "string",
 				"description": "Cron expression for complex recurring schedules (e.g., '0 9 * * *' for daily at 9am). Use this for complex recurring schedules.",
 			},
 			"job_id": map[string]any{
-				"type": "string",
-
+				"type":        "string",
 				"description": "Job ID (for remove/enable/disable)",
 			},
 			"deliver": map[string]any{
-				"type": "boolean",
-
+				"type":        "boolean",
 				"description": "If true, send message directly to channel. If false, let agent process message (for complex tasks). Default: true",
 			},
 		},
 		"required": []string{"action"},
 	}
-}
-
-// SetContext sets the current session context for job creation
-
-func (t *CronTool) SetContext(channel, chatID string) {
-	t.mu.Lock()
-
-	defer t.mu.Unlock()
-
-	t.channel = channel
-
-	t.chatID = chatID
 }
 
 // Execute runs the tool with the given arguments
@@ -142,9 +112,7 @@ func (t *CronTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	switch action {
 	case "add":
-
-		return t.addJob(args)
-
+		return t.addJob(ctx, args)
 	case "list":
 		return t.listJobs()
 	case "remove":
@@ -158,14 +126,9 @@ func (t *CronTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	}
 }
 
-func (t *CronTool) addJob(args map[string]any) *ToolResult {
-	t.mu.RLock()
-
-	channel := t.channel
-
-	chatID := t.chatID
-
-	t.mu.RUnlock()
+func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult {
+	channel := ToolChannel(ctx)
+	chatID := ToolChatID(ctx)
 
 	if channel == "" || chatID == "" {
 		return ErrorResult("no session context (channel/chat_id not set). Use this tool in an active conversation.")
@@ -183,6 +146,12 @@ func (t *CronTool) addJob(args map[string]any) *ToolResult {
 	everySeconds, hasEvery := args["every_seconds"].(float64)
 	cronExpr, hasCron := args["cron_expr"].(string)
 
+	// Fix: type assertions return true for zero values, need additional validity checks
+	// This prevents LLMs that fill unused optional parameters with defaults (0) from triggering wrong type
+	hasAt = hasAt && atSeconds > 0
+	hasEvery = hasEvery && everySeconds > 0
+	hasCron = hasCron && cronExpr != ""
+
 	// Priority: at_seconds > every_seconds > cron_expr
 	if hasAt {
 		atMS := time.Now().UnixMilli() + int64(atSeconds)*1000
@@ -193,8 +162,7 @@ func (t *CronTool) addJob(args map[string]any) *ToolResult {
 	} else if hasEvery {
 		everyMS := int64(everySeconds) * 1000
 		schedule = cron.CronSchedule{
-			Kind: "every",
-
+			Kind:    "every",
 			EveryMS: &everyMS,
 		}
 	} else if hasCron {
@@ -212,17 +180,17 @@ func (t *CronTool) addJob(args map[string]any) *ToolResult {
 		deliver = d
 	}
 
+	// GHSA-pv8c-p6jf-3fpp: command scheduling requires internal channel + explicit confirm.
+	// Non-command reminders (plain messages) remain open to all channels.
 	command, _ := args["command"].(string)
-
+	commandConfirm, _ := args["command_confirm"].(bool)
 	if command != "" {
-		// Commands must be processed by agent/exec tool, so deliver must be false (or handled specifically)
-
-		// Actually, let's keep deliver=false to let the system know it's not a simple chat message
-
-		// But for our new logic in ExecuteJob, we can handle it regardless of deliver flag if Payload.Command is set.
-
-		// However, logically, it's not "delivered" to chat directly as is.
-
+		if !constants.IsInternalChannel(channel) {
+			return ErrorResult("scheduling command execution is restricted to internal channels")
+		}
+		if !commandConfirm {
+			return ErrorResult("command_confirm=true is required to schedule command execution")
+		}
 		deliver = false
 	}
 
@@ -257,10 +225,8 @@ func (t *CronTool) listJobs() *ToolResult {
 		return SilentResult("No scheduled jobs")
 	}
 
-	var sb strings.Builder
-
-	sb.WriteString("Scheduled jobs:\n")
-
+	var result strings.Builder
+	result.WriteString("Scheduled jobs:\n")
 	for _, j := range jobs {
 		var scheduleInfo string
 		if j.Schedule.Kind == "every" && j.Schedule.EveryMS != nil {
@@ -272,11 +238,10 @@ func (t *CronTool) listJobs() *ToolResult {
 		} else {
 			scheduleInfo = "unknown"
 		}
-
-		fmt.Fprintf(&sb, "- %s (id: %s, %s)\n", j.Name, j.ID, scheduleInfo)
+		result.WriteString(fmt.Sprintf("- %s (id: %s, %s)\n", j.Name, j.ID, scheduleInfo))
 	}
 
-	return SilentResult(sb.String())
+	return SilentResult(result.String())
 }
 
 func (t *CronTool) removeJob(args map[string]any) *ToolResult {
@@ -326,7 +291,9 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 	// Execute command if present
 	if job.Payload.Command != "" {
 		args := map[string]any{
-			"command": job.Payload.Command,
+			"command":   job.Payload.Command,
+			"__channel": channel,
+			"__chat_id": chatID,
 		}
 
 		result := t.execTool.Execute(ctx, args)
@@ -341,9 +308,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		defer pubCancel()
 		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 			Channel: channel,
-
-			ChatID: chatID,
-
+			ChatID:  chatID,
 			Content: output,
 		})
 		return "ok"
@@ -355,9 +320,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		defer pubCancel()
 		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 			Channel: channel,
-
-			ChatID: chatID,
-
+			ChatID:  chatID,
 			Content: job.Payload.Message,
 		})
 		return "ok"
