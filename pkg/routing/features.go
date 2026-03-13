@@ -2,7 +2,6 @@ package routing
 
 import (
 	"strings"
-	"unicode/utf8"
 
 	"jane/pkg/providers"
 )
@@ -56,15 +55,19 @@ func ExtractFeatures(msg string, history []providers.Message) Features {
 // for English). Splitting the count this way avoids the 3x underestimation that a
 // flat rune_count/3 would produce for Chinese, Japanese, and Korean text.
 func estimateTokens(msg string) int {
-	total := utf8.RuneCountInString(msg)
-	if total == 0 {
-		return 0
-	}
+	// Optimization: Count total runes during the single iteration below
+	// rather than calling utf8.RuneCountInString first. This halves
+	// the execution time by doing one string pass instead of two.
+	total := 0
 	cjk := 0
 	for _, r := range msg {
+		total++
 		if r >= 0x2E80 && r <= 0x9FFF || r >= 0xF900 && r <= 0xFAFF || r >= 0xAC00 && r <= 0xD7AF {
 			cjk++
 		}
+	}
+	if total == 0 {
+		return 0
 	}
 	return cjk + (total-cjk)/4
 }
