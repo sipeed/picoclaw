@@ -16,6 +16,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend deps
+        run: cd pkg/miniapp/frontend && bun install
+
       - name: Run go generate
         run: go generate ./...
 
@@ -54,6 +60,12 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend deps
+        run: cd pkg/miniapp/frontend && bun install
 
       - name: Run go generate
         run: go generate ./...
