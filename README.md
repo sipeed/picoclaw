@@ -310,7 +310,7 @@ picoclaw onboard
   * [Tavily](https://tavily.com) - Optimized for AI Agents (1000 requests/month)
   * DuckDuckGo - Built-in fallback (no API key required)
 
-> **Note**: See `config.example.json` for a complete configuration template.
+> **Note**: See [config/config.example.json](config/config.example.json) for a complete template, and [docs/configuration.md](docs/configuration.md) for multi-agent, routing, session, channel, and tool-limit reference notes.
 
 **4. Chat**
 
@@ -750,6 +750,8 @@ Connect Picoclaw to the Agent Social Network simply by sending a single message 
 
 Config file: `~/.picoclaw/config.json`
 
+Start from [config/config.example.json](config/config.example.json). For advanced fields that are easy to miss, see [docs/configuration.md](docs/configuration.md) and [docs/tools_configuration.md](docs/tools_configuration.md).
+
 ### Environment Variables
 
 You can override default paths using environment variables. This is useful for portable installations, containerized deployments, or running picoclaw as a system service. These variables are independent and control different paths.
@@ -1015,6 +1017,59 @@ This design also enables **multi-agent support** with flexible provider selectio
 - **Model fallbacks**: Configure primary and fallback models for resilience
 - **Load balancing**: Distribute requests across multiple endpoints
 - **Centralized configuration**: Manage all providers in one place
+
+#### Multi-Agent and Bindings
+
+Use `agents.list` as an array of agent definitions, then route specific traffic with top-level `bindings`:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model_name": "gpt-5.4",
+      "routing": {
+        "enabled": true,
+        "light_model": "deepseek",
+        "threshold": 0.35
+      }
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true,
+        "model": "gpt-5.4",
+        "subagents": {
+          "allow_agents": ["coder"]
+        }
+      },
+      {
+        "id": "coder",
+        "workspace": "~/.picoclaw/workspace/code",
+        "model": {
+          "primary": "claude-sonnet-4.6",
+          "fallbacks": ["gpt-5.4"]
+        },
+        "skills": ["Code", "git-essentials"]
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "agent_id": "coder",
+      "match": {
+        "channel": "telegram",
+        "account_id": "*",
+        "peer": {
+          "kind": "direct",
+          "id": "123456789"
+        }
+      }
+    }
+  ]
+}
+```
+
+The `skills` field limits which skills are visible to that agent. Tool permissions still come from the global `tools` section. For `dm_scope`, `identity_links`, binding priority, Pico/IRC channel blocks, and tool hard limits such as `web.fetch_limit_bytes`, see [docs/configuration.md](docs/configuration.md).
 
 #### 📋 All Supported Vendors
 
@@ -1306,12 +1361,14 @@ picoclaw agent -m "Hello"
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model": "openrouter/anthropic/claude-sonnet-4.6"
     }
   },
   "session": {
     "dm_scope": "per-channel-peer",
-    "backlog_limit": 20
+    "identity_links": {
+      "me": ["telegram:123456789", "discord:me#1234"]
+    }
   },
   "providers": {
     "openrouter": {
