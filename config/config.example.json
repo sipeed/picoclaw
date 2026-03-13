@@ -26,6 +26,13 @@
       "thinking_level": "high"
     },
     {
+      "_comment": "Anthropic Messages API - use native format for direct Anthropic API access",
+      "model_name": "claude-opus-4-6",
+      "model": "anthropic-messages/claude-opus-4-6",
+      "api_key": "sk-ant-your-key",
+      "api_base": "https://api.anthropic.com"
+    },
+    {
       "model_name": "gemini",
       "model": "antigravity/gemini-2.0-flash",
       "auth_method": "oauth"

@@ -1131,6 +1131,26 @@ This design also enables **multi-agent support** with flexible provider selectio
 
 > Run `picoclaw auth login --provider anthropic` to paste your API token.
 
+**Anthropic Messages API (native format)**
+
+For direct Anthropic API access or custom endpoints that only support Anthropic's native message format:
+
+```json
+{
+  "model_name": "claude-opus-4-6",
+  "model": "anthropic-messages/claude-opus-4-6",
+  "api_key": "sk-ant-your-key",
+  "api_base": "https://api.anthropic.com"
+}
+```
+
+> Use `anthropic-messages` protocol when:
+> - Using third-party proxies that only support Anthropic's native `/v1/messages` endpoint (not OpenAI-compatible `/v1/chat/completions`)
+> - Connecting to services like MiniMax, Synthetic that require Anthropic's native message format
+> - The existing `anthropic` protocol returns 404 errors (indicating the endpoint doesn't support OpenAI-compatible format)
+>
+> **Note:** The `anthropic` protocol uses OpenAI-compatible format (`/v1/chat/completions`), while `anthropic-messages` uses Anthropic's native format (`/v1/messages`). Choose based on your endpoint's supported format.
+
 **Ollama (local)**
 
 ```json
