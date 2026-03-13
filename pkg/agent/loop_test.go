@@ -796,11 +796,7 @@ func TestProcessDirectWithChannel_TriggersMCPInitialization(t *testing.T) {
 				ToolConfig: config.ToolConfig{
 					Enabled: true,
 				},
-				Servers: map[string]config.MCPServerConfig{
-					"test-server": {
-						Enabled: true,
-					},
-				},
+				// No servers configured - manager should not be initialized
 			},
 		},
 	}
@@ -825,8 +821,9 @@ func TestProcessDirectWithChannel_TriggersMCPInitialization(t *testing.T) {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
 
-	if !al.mcp.hasManager() {
-		t.Fatal("expected MCP manager to be initialized in direct agent mode")
+	// Manager should not be initialized when no servers are configured
+	if al.mcp.hasManager() {
+		t.Fatal("expected MCP manager to be nil when no servers are configured")
 	}
 }
 
