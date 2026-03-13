@@ -342,8 +342,8 @@ func TestSaveConfig_IncludesEmptyLegacyModelField(t *testing.T) {
 		t.Fatalf("ReadFile failed: %v", err)
 	}
 
-	if !strings.Contains(string(data), `"model": ""`) {
-		t.Fatalf("saved config should include empty legacy model field, got: %s", string(data))
+	if !strings.Contains(string(data), `"model_name": ""`) {
+		t.Fatalf("saved config should include empty legacy model_name field, got: %s", string(data))
 	}
 }
 
