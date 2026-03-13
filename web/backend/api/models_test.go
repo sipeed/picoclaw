@@ -62,7 +62,7 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 	cfg.ModelList = []config.ModelConfig{
 		{
 			ModelName:  "openai-oauth",
-			Model:      "openai/gpt-5.2",
+			Model:      "openai/gpt-5.4",
 			AuthMethod: "oauth",
 		},
 		{
@@ -81,8 +81,8 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 			APIKey:    "remote-key",
 		},
 		{
-			ModelName:  "copilot-gpt-5.2",
-			Model:      "github-copilot/gpt-5.2",
+			ModelName:  "copilot-gpt-5.4",
+			Model:      "github-copilot/gpt-5.4",
 			APIBase:    "http://127.0.0.1:4321",
 			AuthMethod: "oauth",
 		},
@@ -128,7 +128,7 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 	if !got["vllm-remote"] {
 		t.Fatalf("remote vllm model configured = false, want true with api_key")
 	}
-	if !got["copilot-gpt-5.2"] {
+	if !got["copilot-gpt-5.4"] {
 		t.Fatalf("copilot model configured = false, want true when local bridge probe succeeds")
 	}
 	if len(openAIProbes) != 1 || openAIProbes[0] != "http://127.0.0.1:8000/v1|custom-model" {

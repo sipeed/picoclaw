@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	codexDefaultModel        = "gpt-5.2"
+	codexDefaultModel        = "gpt-5.3-codex"
 	codexDefaultInstructions = "You are Codex, a coding assistant."
 )
 

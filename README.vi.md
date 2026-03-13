@@ -1,5 +1,5 @@
 <div align="center">
-<img src="assets/logo.jpg" alt="PicoClaw" width="512">
+<img src="assets/logo.webp" alt="PicoClaw" width="512">
 
 <h1>PicoClaw: Trợ lý AI Siêu Nhẹ viết bằng Go</h1>
 
@@ -187,9 +187,7 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 ### 🚀 Bắt đầu nhanh
 
 > [!TIP]
-> Thiết lập API key trong `~/.picoclaw/config.json`.
-> Lấy API key: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Tìm kiếm web là **tùy chọn** — lấy [Brave Search API](https://brave.com/search/api) miễn phí (2000 truy vấn/tháng) hoặc dùng tính năng auto fallback tích hợp sẵn.
+> Thiết lập API key trong `~/.picoclaw/config.json`. Lấy API key: [Volcengine (CodingPlan)](https://console.volcengine.com) (LLM) · [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM). Tìm kiếm web là **tùy chọn** — lấy [Tavily API](https://tavily.com) miễn phí (1000 truy vấn/tháng) hoặc [Brave Search API](https://brave.com/search/api) (2000 truy vấn/tháng).
 
 **1. Khởi tạo**
 
@@ -203,8 +201,13 @@ picoclaw onboard
 {
   "model_list": [
     {
-      "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-openai-key",
       "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
@@ -942,8 +945,9 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
 | **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [Lấy Khóa](https://openrouter.ai/keys) |
 | **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | Local |
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Lấy Khóa](https://cerebras.ai) |
-| **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Lấy Khóa](https://console.volcengine.com) |
+| **VolcEngine (Doubao)** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Lấy Khóa](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Lấy Khóa](https://console.volcengine.com)                      |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Lấy Key](https://longcat.chat/platform)                        |
 | **Antigravity** | `antigravity/` | Google Cloud | Tùy chỉnh | Chỉ OAuth |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
@@ -954,8 +958,13 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
 {
   "model_list": [
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-openai-key"
     },
     {
@@ -971,7 +980,7 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-5.2"
+      "model": "gpt-5.4"
     }
   }
 }
@@ -982,8 +991,17 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
 **OpenAI**
 ```json
 {
-  "model_name": "gpt-5.2",
-  "model": "openai/gpt-5.2",
+  "model_name": "gpt-5.4",
+  "model": "openai/gpt-5.4",
+  "api_key": "sk-..."
+}
+```
+
+**VolcEngine (Doubao)**
+```json
+{
+  "model_name": "ark-code-latest",
+  "model": "volcengine/ark-code-latest",
   "api_key": "sk-..."
 }
 ```
@@ -1026,14 +1044,14 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
 {
   "model_list": [
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
       "api_key": "sk-key1"
     },
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
       "api_key": "sk-key2"
     }
@@ -1165,6 +1183,13 @@ Một số nhà cung cấp (như Zhipu) có bộ lọc nội dung nghiêm ngặt
 | Dịch vụ | Gói miễn phí | Trường hợp sử dụng |
 | --- | --- | --- |
 | **OpenRouter** | 200K tokens/tháng | Đa model (Claude, GPT-4, v.v.) |
-| **Zhipu** | 200K tokens/tháng | Tốt nhất cho người dùng Trung Quốc |
+| **Volcengine CodingPlan** | ¥9.9/tháng đầu | Tốt nhất cho người dùng Trung Quốc, nhiều mô hình SOTA (Doubao, DeepSeek, v.v.) |
+| **Zhipu** | 200K tokens/tháng | Phù hợp cho người dùng Trung Quốc |
 | **Brave Search** | 2000 truy vấn/tháng | Chức năng tìm kiếm web |
 | **Groq** | Có gói miễn phí | Suy luận siêu nhanh (Llama, Mixtral) |
+
+---
+
+<div align="center">
+  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
+</div>
