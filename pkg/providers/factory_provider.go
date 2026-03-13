@@ -43,19 +43,26 @@ func createCodexAuthProvider() (LLMProvider, error) {
 //   - "openai/gpt-4o" -> ("openai", "gpt-4o")
 //   - "anthropic/claude-sonnet-4.6" -> ("anthropic", "claude-sonnet-4.6")
 //   - "gpt-4o" -> ("openai", "gpt-4o")  // default protocol
+//   - "kimi-for-coding" -> ("kimi-code", "kimi-for-coding")  // special case
 func ExtractProtocol(model string) (protocol, modelID string) {
 	model = strings.TrimSpace(model)
 	protocol, modelID, found := strings.Cut(model, "/")
-	if !found {
+	if found {
+		return protocol, modelID
+	}
+
+	// No prefix found - check for special cases, otherwise default to "openai"
+	switch model {
+	case "kimi-for-coding":
+		return "kimi-code", model
+	default:
 		return "openai", model
 	}
-	return protocol, modelID
 }
 
-// CreateProviderFromConfig creates a provider based on the ModelConfig.
-// It uses the protocol prefix in the Model field to determine which provider to create.
+// CreateProviderFromConfig creates a provider based on the Model field to determine which provider to create.
 // Supported protocols: openai, litellm, anthropic, anthropic-messages, antigravity,
-// claude-cli, codex-cli, github-copilot
+// claude-cli, codex-cli, github-copilot, kimi-code
 // Returns the provider, the model ID (without protocol prefix), and any error.
 func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, error) {
 	if cfg == nil {
@@ -82,6 +89,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}
+
 		apiBase := cfg.APIBase
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
@@ -111,6 +119,22 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			cfg.RequestTimeout,
+		), modelID, nil
+
+	case "kimi-code":
+		// Kimi For Coding - OpenAI-compatible API with Coding Agent User-Agent
+		if cfg.APIKey == "" {
+			return nil, "", fmt.Errorf("api_key is required for kimi protocol (model: %s)", cfg.Model)
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = KimiCodeDefaultBaseURL
+		}
+		return NewKimiCodeProviderWithTimeout(
+			cfg.APIKey,
+			apiBase,
+			cfg.Proxy,
 			cfg.RequestTimeout,
 		), modelID, nil
 
