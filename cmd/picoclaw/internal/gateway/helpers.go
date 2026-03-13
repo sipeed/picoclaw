@@ -25,7 +25,6 @@ import (
 	_ "jane/pkg/channels/qq"
 	_ "jane/pkg/channels/slack"
 	_ "jane/pkg/channels/telegram"
-	_ "jane/pkg/channels/wecom"
 	_ "jane/pkg/channels/whatsapp"
 	_ "jane/pkg/channels/whatsapp_native"
 	"jane/pkg/config"

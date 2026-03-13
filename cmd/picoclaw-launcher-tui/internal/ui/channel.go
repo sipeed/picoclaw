@@ -78,18 +78,6 @@ func (s *appState) buildChannelMenuItems() []MenuItem {
 			s.config.Channels.OneBot.Enabled,
 			func() { s.push("channel-onebot", s.onebotForm()) },
 		),
-		channelItem(
-			"WeCom",
-			"WeCom bot settings",
-			s.config.Channels.WeCom.Enabled,
-			func() { s.push("channel-wecom", s.wecomForm()) },
-		),
-		channelItem(
-			"WeCom App",
-			"WeCom App settings",
-			s.config.Channels.WeComApp.Enabled,
-			func() { s.push("channel-wecomapp", s.wecomAppForm()) },
-		),
 	}
 }
 
@@ -281,68 +269,6 @@ func (s *appState) onebotForm() tview.Primitive {
 		},
 	)
 	addAllowFromField(form, &cfg.AllowFrom)
-	return wrapWithBack(form, s)
-}
-
-func (s *appState) wecomForm() tview.Primitive {
-	cfg := &s.config.Channels.WeCom
-	form := baseChannelForm("WeCom", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
-	form.AddInputField("Token", cfg.Token, 128, nil, func(text string) {
-		cfg.Token = strings.TrimSpace(text)
-	})
-	form.AddInputField("Encoding AES Key", cfg.EncodingAESKey, 128, nil, func(text string) {
-		cfg.EncodingAESKey = strings.TrimSpace(text)
-	})
-	form.AddInputField("Webhook URL", cfg.WebhookURL, 128, nil, func(text string) {
-		cfg.WebhookURL = strings.TrimSpace(text)
-	})
-	form.AddInputField("Webhook Host", cfg.WebhookHost, 64, nil, func(text string) {
-		cfg.WebhookHost = strings.TrimSpace(text)
-	})
-	addIntField(form, "Webhook Port", cfg.WebhookPort, func(value int) { cfg.WebhookPort = value })
-	form.AddInputField("Webhook Path", cfg.WebhookPath, 64, nil, func(text string) {
-		cfg.WebhookPath = strings.TrimSpace(text)
-	})
-	addAllowFromField(form, &cfg.AllowFrom)
-	addIntField(
-		form,
-		"Reply Timeout",
-		cfg.ReplyTimeout,
-		func(value int) { cfg.ReplyTimeout = value },
-	)
-	return wrapWithBack(form, s)
-}
-
-func (s *appState) wecomAppForm() tview.Primitive {
-	cfg := &s.config.Channels.WeComApp
-	form := baseChannelForm("WeCom App", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
-	form.AddInputField("Corp ID", cfg.CorpID, 64, nil, func(text string) {
-		cfg.CorpID = strings.TrimSpace(text)
-	})
-	form.AddInputField("Corp Secret", cfg.CorpSecret, 128, nil, func(text string) {
-		cfg.CorpSecret = strings.TrimSpace(text)
-	})
-	addInt64Field(form, "Agent ID", cfg.AgentID, func(value int64) { cfg.AgentID = value })
-	form.AddInputField("Token", cfg.Token, 128, nil, func(text string) {
-		cfg.Token = strings.TrimSpace(text)
-	})
-	form.AddInputField("Encoding AES Key", cfg.EncodingAESKey, 128, nil, func(text string) {
-		cfg.EncodingAESKey = strings.TrimSpace(text)
-	})
-	form.AddInputField("Webhook Host", cfg.WebhookHost, 64, nil, func(text string) {
-		cfg.WebhookHost = strings.TrimSpace(text)
-	})
-	addIntField(form, "Webhook Port", cfg.WebhookPort, func(value int) { cfg.WebhookPort = value })
-	form.AddInputField("Webhook Path", cfg.WebhookPath, 64, nil, func(text string) {
-		cfg.WebhookPath = strings.TrimSpace(text)
-	})
-	addAllowFromField(form, &cfg.AllowFrom)
-	addIntField(
-		form,
-		"Reply Timeout",
-		cfg.ReplyTimeout,
-		func(value int) { cfg.ReplyTimeout = value },
-	)
 	return wrapWithBack(form, s)
 }
 

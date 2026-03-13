@@ -259,7 +259,6 @@ Trò chuyện với PicoClaw qua Telegram, Discord, DingTalk, LINE hoặc WeCom.
 | **QQ** | Dễ (AppID + AppSecret) |
 | **DingTalk** | Trung bình (app credentials) |
 | **LINE** | Trung bình (credentials + webhook URL) |
-| **WeCom AI Bot** | Trung bình (Token + khóa AES) |
 
 <details>
 <summary><b>Telegram</b> (Khuyên dùng)</summary>
@@ -457,118 +456,6 @@ picoclaw gateway
 
 </details>
 
-<details>
-<summary><b>WeCom (WeChat Work)</b></summary>
-
-PicoClaw hỗ trợ ba loại tích hợp WeCom:
-
-**Tùy chọn 1: WeCom Bot (Robot)** - Thiết lập dễ dàng hơn, hỗ trợ chat nhóm
-**Tùy chọn 2: WeCom App (Ứng dụng Tùy chỉnh)** - Nhiều tính năng hơn, nhắn tin chủ động, chỉ chat riêng tư
-**Tùy chọn 3: WeCom AI Bot (Bot Thông Minh)** - Bot AI chính thức, phản hồi streaming, hỗ trợ nhóm và riêng tư
-
-Xem [Hướng dẫn Cấu hình WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) để biết hướng dẫn chi tiết.
-
-**Thiết lập Nhanh - WeCom Bot:**
-
-**1. Tạo bot**
-
-* Truy cập Bảng điều khiển Quản trị WeCom → Chat Nhóm → Thêm Bot Nhóm
-* Sao chép URL webhook (định dạng: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
-
-**2. Cấu hình**
-
-```json
-{
-  "channels": {
-    "wecom": {
-      "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_path": "/webhook/wecom",
-      "allow_from": []
-    }
-  }
-}
-```
-
-> **Lưu ý:** Các endpoint webhook của WeCom Bot được phục vụ bởi máy chủ Gateway HTTP dùng chung (mặc định 127.0.0.1:18790). Nếu bạn cần truy cập từ bên ngoài, hãy cấu hình reverse proxy hoặc mở cổng Gateway tương ứng.
-
-**Thiết lập Nhanh - WeCom App:**
-
-**1. Tạo ứng dụng**
-
-* Truy cập Bảng điều khiển Quản trị WeCom → Quản lý Ứng dụng → Tạo Ứng dụng
-* Sao chép **AgentId** và **Secret**
-* Truy cập trang "Công ty của tôi", sao chép **CorpID**
-
-**2. Cấu hình nhận tin nhắn**
-
-* Trong chi tiết ứng dụng, nhấp vào "Nhận Tin nhắn" → "Thiết lập API"
-* Đặt URL thành `http://your-server:18790/webhook/wecom-app`
-* Tạo **Token** và **EncodingAESKey**
-
-**3. Cấu hình**
-
-```json
-{
-  "channels": {
-    "wecom_app": {
-      "enabled": true,
-      "corp_id": "wwxxxxxxxxxxxxxxxx",
-      "corp_secret": "YOUR_CORP_SECRET",
-      "agent_id": 1000002,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-app",
-      "allow_from": []
-    }
-  }
-}
-```
-
-**4. Chạy**
-
-```bash
-picoclaw gateway
-```
-
-> **Lưu ý**: WeCom App callback webhook được phục vụ bởi Gateway HTTP chung (mặc định 127.0.0.1:18790). Sử dụng proxy ngược để cung cấp HTTPS trong môi trường production nếu cần.
-
-**Thiết lập Nhanh - WeCom AI Bot:**
-
-**1. Tạo AI Bot**
-
-* Truy cập Bảng điều khiển Quản trị WeCom → Quản lý Ứng dụng → AI Bot
-* Cấu hình URL callback: `http://your-server:18791/webhook/wecom-aibot`
-* Sao chép **Token** và tạo **EncodingAESKey**
-
-**2. Cấu hình**
-
-```json
-{
-  "channels": {
-    "wecom_aibot": {
-      "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-aibot",
-      "allow_from": [],
-      "welcome_message": "Xin chào! Tôi có thể giúp gì cho bạn?"
-    }
-  }
-}
-```
-
-**3. Chạy**
-
-```bash
-picoclaw gateway
-```
-
-> **Lưu ý**: WeCom AI Bot sử dụng giao thức pull streaming — không lo timeout phản hồi. Tác vụ dài (>5,5 phút) tự động chuyển sang gửi qua `response_url`.
-
-</details>
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Tham gia Mạng xã hội Agent
 

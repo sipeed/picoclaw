@@ -142,14 +142,6 @@ function isConfigured(
       )
     case "onebot":
       return asString(config.ws_url) !== ""
-    case "wecom":
-      return asString(config.token) !== ""
-    case "wecom_app":
-      return (
-        asString(config.corp_id) !== "" && asString(config.corp_secret) !== ""
-      )
-    case "wecom_aibot":
-      return asString(config.token) !== ""
     case "whatsapp":
       return asString(config.bridge_url) !== ""
     case "whatsapp_native":
@@ -189,12 +181,6 @@ function getRequiredFieldKeys(channelName: string): string[] {
       return ["app_id", "app_secret"]
     case "onebot":
       return ["ws_url"]
-    case "wecom":
-      return ["token"]
-    case "wecom_app":
-      return ["corp_id", "corp_secret"]
-    case "wecom_aibot":
-      return ["token"]
     case "whatsapp":
       return ["bridge_url"]
     case "pico":
@@ -229,7 +215,6 @@ function getChannelDocSlug(channelName: string): string {
 
 const CHANNELS_WITHOUT_DOCS = new Set([
   "pico",
-  "wecom",
   "matrix",
   "irc",
   "whatsapp",

@@ -854,8 +854,6 @@ func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 		"slack":     "rid-slack",
 		"line":      "rid-line",
 		"onebot":    "rid-onebot",
-		"wecom":     "rid-wecom",
-		"wecom_app": "rid-wecom-app",
 	} {
 		chManager.RegisterChannel(name, &fakeChannel{id: id})
 	}
@@ -874,8 +872,6 @@ func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 		{channel: "slack", wantID: "rid-slack"},
 		{channel: "line", wantID: "rid-line"},
 		{channel: "onebot", wantID: "rid-onebot"},
-		{channel: "wecom", wantID: "rid-wecom"},
-		{channel: "wecom_app", wantID: "rid-wecom-app"},
 		{channel: "unknown", wantID: ""},
 	}
 

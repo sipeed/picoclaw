@@ -144,8 +144,6 @@ func (s *appState) countChannels() (enabled int, total int) {
 		c.Matrix.Enabled,
 		c.LINE.Enabled,
 		c.OneBot.Enabled,
-		c.WeCom.Enabled,
-		c.WeComApp.Enabled,
 	}
 	total = len(entries)
 	for _, v := range entries {
@@ -439,7 +437,7 @@ func (s *appState) hasEnabledChannel() bool {
 	c := s.config.Channels
 	return c.Telegram.Enabled || c.Discord.Enabled || c.QQ.Enabled || c.MaixCam.Enabled ||
 		c.WhatsApp.Enabled || c.Feishu.Enabled || c.DingTalk.Enabled || c.Slack.Enabled ||
-		c.Matrix.Enabled || c.LINE.Enabled || c.OneBot.Enabled || c.WeCom.Enabled || c.WeComApp.Enabled
+		c.Matrix.Enabled || c.LINE.Enabled || c.OneBot.Enabled
 }
 
 func (s *appState) confirmApplyOrDiscard(onApply func(), onDiscard func()) {

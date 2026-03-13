@@ -285,7 +285,6 @@ Converse com seu PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom.
 | **QQ** | Fácil (AppID + AppSecret) |
 | **DingTalk** | Médio (credenciais do app) |
 | **LINE** | Médio (credenciais + webhook URL) |
-| **WeCom AI Bot** | Médio (Token + chave AES) |
 
 <details>
 <summary><b>Telegram</b> (Recomendado)</summary>
@@ -485,118 +484,6 @@ picoclaw gateway
 
 </details>
 
-<details>
-<summary><b>WeCom (WeChat Work)</b></summary>
-
-O PicoClaw suporta três tipos de integração WeCom:
-
-**Opção 1: WeCom Bot (Robô)** - Configuração mais fácil, suporta chats em grupo
-**Opção 2: WeCom App (Aplicativo Personalizado)** - Mais recursos, mensagens proativas, somente chat privado
-**Opção 3: WeCom AI Bot (Robô Inteligente)** - Bot IA oficial, respostas em streaming, suporta grupo e privado
-
-Veja o [Guia de Configuração WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) para instruções detalhadas.
-
-**Configuração Rápida - WeCom Bot:**
-
-**1. Criar um bot**
-
-* Acesse o Console de Administração WeCom → Chat em Grupo → Adicionar Bot de Grupo
-* Copie a URL do webhook (formato: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
-
-**2. Configurar**
-
-```json
-{
-  "channels": {
-    "wecom": {
-      "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_path": "/webhook/wecom",
-      "allow_from": []
-    }
-  }
-}
-```
-
-> **Nota**: O webhook do WeCom Bot é atendido pelo Gateway compartilhado (padrão 127.0.0.1:18790). Use um proxy reverso/HTTPS ou túnel para expor o Gateway em produção.
-
-**Configuração Rápida - WeCom App:**
-
-**1. Criar um aplicativo**
-
-* Acesse o Console de Administração WeCom → Gerenciamento de Aplicativos → Criar Aplicativo
-* Copie o **AgentId** e o **Secret**
-* Acesse a página "Minha Empresa", copie o **CorpID**
-
-**2. Configurar recebimento de mensagens**
-
-* Nos detalhes do aplicativo, clique em "Receber Mensagens" → "Configurar API"
-* Defina a URL como `http://your-server:18790/webhook/wecom-app`
-* Gere o **Token** e o **EncodingAESKey**
-
-**3. Configurar**
-
-```json
-{
-  "channels": {
-    "wecom_app": {
-      "enabled": true,
-      "corp_id": "wwxxxxxxxxxxxxxxxx",
-      "corp_secret": "YOUR_CORP_SECRET",
-      "agent_id": 1000002,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-app",
-      "allow_from": []
-    }
-  }
-}
-```
-
-**4. Executar**
-
-```bash
-picoclaw gateway
-```
-
-> **Nota**: O WeCom App (callbacks de webhook) é servido pelo Gateway compartilhado (padrão 127.0.0.1:18790). Em produção use um proxy reverso HTTPS para expor a porta do Gateway, ou atualize `PICOCLAW_GATEWAY_HOST` para `0.0.0.0` se necessário.
-
-**Configuração Rápida - WeCom AI Bot:**
-
-**1. Criar um AI Bot**
-
-* Acesse o Console de Administração WeCom → Gerenciamento de Aplicativos → AI Bot
-* Configure a URL de callback: `http://your-server:18791/webhook/wecom-aibot`
-* Copie o **Token** e gere o **EncodingAESKey**
-
-**2. Configurar**
-
-```json
-{
-  "channels": {
-    "wecom_aibot": {
-      "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-aibot",
-      "allow_from": [],
-      "welcome_message": "Olá! Como posso ajudá-lo?"
-    }
-  }
-}
-```
-
-**3. Executar**
-
-```bash
-picoclaw gateway
-```
-
-> **Nota**: O WeCom AI Bot usa protocolo de pull em streaming — sem preocupações com timeout de resposta. Tarefas longas (>5,5 min) alternam automaticamente para entrega via `response_url`.
-
-</details>
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Junte-se a Rede Social de Agentes
 
