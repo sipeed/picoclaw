@@ -692,7 +692,8 @@ func TestIsOverContextBudget_RealisticSession(t *testing.T) {
 	currentUser := msgUser("follow up question")
 
 	// Assemble as BuildMessages would.
-	messages := []providers.Message{systemMsg}
+	messages := make([]providers.Message, 0, 1+len(sessionHistory)+1)
+	messages = append(messages, systemMsg)
 	messages = append(messages, sessionHistory...)
 	messages = append(messages, currentUser)
 
