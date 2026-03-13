@@ -8,12 +8,576 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
+
+func TestProviderChat_PrefersResponsesWhenConfigured(t *testing.T) {
+	var paths []string
+	var responsesBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+
+		switch r.URL.Path {
+		case "/responses":
+			if err := json.NewDecoder(r.Body).Decode(&responsesBody); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			resp := map[string]any{
+				"status": "completed",
+				"output": []map[string]any{
+					{
+						"type": "message",
+						"content": []map[string]any{
+							{"type": "output_text", "text": "from responses"},
+						},
+					},
+				},
+				"usage": map[string]any{
+					"input_tokens":  12,
+					"output_tokens": 3,
+					"total_tokens":  15,
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		case "/chat/completions":
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "from chat completions"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "", WithResponsesPreferred())
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-4o",
+		map[string]any{"max_tokens": 256},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.Content != "from responses" {
+		t.Fatalf("Content = %q, want %q", out.Content, "from responses")
+	}
+	if !reflect.DeepEqual(paths, []string{"/responses"}) {
+		t.Fatalf("paths = %v, want [/responses]", paths)
+	}
+	if responsesBody["model"] != "gpt-4o" {
+		t.Fatalf("model = %v, want gpt-4o", responsesBody["model"])
+	}
+	if _, ok := responsesBody["input"]; !ok {
+		t.Fatalf("expected responses request body to contain input")
+	}
+	if _, ok := responsesBody["messages"]; ok {
+		t.Fatalf("did not expect messages in responses request body")
+	}
+	if responsesBody["max_output_tokens"] != float64(256) {
+		t.Fatalf("max_output_tokens = %v, want 256", responsesBody["max_output_tokens"])
+	}
+}
+
+func TestProviderChat_FallsBackToChatCompletionsWhenResponsesFails(t *testing.T) {
+	var paths []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+
+		switch r.URL.Path {
+		case "/responses":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"responses not supported"}`))
+		case "/chat/completions":
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "fallback chat completion"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-5.2",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.Content != "fallback chat completion" {
+		t.Fatalf("Content = %q, want %q", out.Content, "fallback chat completion")
+	}
+	if !reflect.DeepEqual(paths, []string{"/responses", "/chat/completions"}) {
+		t.Fatalf("paths = %v, want [/responses /chat/completions]", paths)
+	}
+}
+
+func TestProviderChat_ParsesToolCallsFromResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/responses":
+			resp := map[string]any{
+				"status": "completed",
+				"output": []map[string]any{
+					{
+						"type":      "function_call",
+						"id":        "fc_1",
+						"call_id":   "call_1",
+						"name":      "get_weather",
+						"arguments": "{\"city\":\"SF\"}",
+					},
+				},
+				"usage": map[string]any{
+					"input_tokens":  9,
+					"output_tokens": 4,
+					"total_tokens":  13,
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		case "/chat/completions":
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "from chat completions"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "weather?"}},
+		[]ToolDefinition{{
+			Type: "function",
+			Function: ToolFunctionDefinition{
+				Name:        "get_weather",
+				Description: "Get weather",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"city": map[string]any{"type": "string"},
+					},
+				},
+			},
+		}},
+		"gpt-5.2",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want tool_calls", out.FinishReason)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].ID != "call_1" {
+		t.Fatalf("ToolCalls[0].ID = %q, want call_1", out.ToolCalls[0].ID)
+	}
+	if out.ToolCalls[0].Name != "get_weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want get_weather", out.ToolCalls[0].Name)
+	}
+	if out.ToolCalls[0].Arguments["city"] != "SF" {
+		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want SF", out.ToolCalls[0].Arguments["city"])
+	}
+}
+
+func TestProviderChat_FallsBackWhenResponsesStatusFailed(t *testing.T) {
+	var paths []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+
+		switch r.URL.Path {
+		case "/responses":
+			resp := map[string]any{
+				"status": "failed",
+				"error": map[string]any{
+					"message": "responses failed",
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		case "/chat/completions":
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "fallback after failed status"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-5.2",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.Content != "fallback after failed status" {
+		t.Fatalf("Content = %q, want %q", out.Content, "fallback after failed status")
+	}
+	if !reflect.DeepEqual(paths, []string{"/responses", "/chat/completions"}) {
+		t.Fatalf("paths = %v, want [/responses /chat/completions]", paths)
+	}
+}
+
+func TestProviderChat_ParsesReasoningContentFromResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/responses":
+			resp := map[string]any{
+				"status": "completed",
+				"output": []map[string]any{
+					{
+						"type": "reasoning",
+						"summary": []map[string]any{
+							{"type": "summary_text", "text": "brief reasoning"},
+						},
+						"content": []map[string]any{
+							{"type": "reasoning_text", "text": "step by step"},
+						},
+					},
+					{
+						"type": "message",
+						"content": []map[string]any{
+							{"type": "output_text", "text": "final answer"},
+						},
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		case "/chat/completions":
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "chat fallback"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "why?"}},
+		nil,
+		"gpt-5.2",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.Content != "final answer" {
+		t.Fatalf("Content = %q, want %q", out.Content, "final answer")
+	}
+	if out.Reasoning != "brief reasoning" {
+		t.Fatalf("Reasoning = %q, want %q", out.Reasoning, "brief reasoning")
+	}
+	if out.ReasoningContent != "step by step" {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "step by step")
+	}
+}
+
+func TestProviderChat_FallsBackWhenResponsesReturnsUnexpected200Body(t *testing.T) {
+	var paths []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+
+		switch r.URL.Path {
+		case "/responses":
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "wrong envelope"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		case "/chat/completions":
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "fallback after invalid responses body"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-5.2",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.Content != "fallback after invalid responses body" {
+		t.Fatalf("Content = %q, want %q", out.Content, "fallback after invalid responses body")
+	}
+	if !reflect.DeepEqual(paths, []string{"/responses", "/chat/completions"}) {
+		t.Fatalf("paths = %v, want [/responses /chat/completions]", paths)
+	}
+}
+
+func TestProviderChat_SkipsResponsesWhenHistoryHasReasoningContent(t *testing.T) {
+	var paths []string
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+
+		switch r.URL.Path {
+		case "/responses":
+			resp := map[string]any{
+				"status": "completed",
+				"output": []map[string]any{{
+					"type":    "message",
+					"content": []map[string]any{{"type": "output_text", "text": "responses path"}},
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		case "/chat/completions":
+			if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "chat path"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{
+			{Role: "user", Content: "1+1?"},
+			{Role: "assistant", Content: "2", ReasoningContent: "internal reasoning"},
+			{Role: "user", Content: "2+2?"},
+		},
+		nil,
+		"gpt-5.2",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.Content != "chat path" {
+		t.Fatalf("Content = %q, want %q", out.Content, "chat path")
+	}
+	if !reflect.DeepEqual(paths, []string{"/chat/completions"}) {
+		t.Fatalf("paths = %v, want [/chat/completions]", paths)
+	}
+
+	reqMessages, ok := requestBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any: %T", requestBody["messages"])
+	}
+	assistantMsg, ok := reqMessages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("assistant message is not map[string]any: %T", reqMessages[1])
+	}
+	if assistantMsg["reasoning_content"] != "internal reasoning" {
+		t.Fatalf("reasoning_content = %v, want internal reasoning", assistantMsg["reasoning_content"])
+	}
+}
+
+func TestProviderChat_DoesNotPreferResponsesForNestedOpenAINamespace(t *testing.T) {
+	var paths []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+
+		switch r.URL.Path {
+		case "/responses":
+			resp := map[string]any{
+				"status": "completed",
+				"output": []map[string]any{{
+					"type":    "message",
+					"content": []map[string]any{{"type": "output_text", "text": "responses path"}},
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		case "/chat/completions":
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "chat path"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"openai/gpt-oss-120b",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.Content != "chat path" {
+		t.Fatalf("Content = %q, want %q", out.Content, "chat path")
+	}
+	if !reflect.DeepEqual(paths, []string{"/chat/completions"}) {
+		t.Fatalf("paths = %v, want [/chat/completions]", paths)
+	}
+}
+
+func TestProviderChat_ParsesRefusalFromResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/responses":
+			resp := map[string]any{
+				"status": "completed",
+				"output": []map[string]any{{
+					"type":    "message",
+					"content": []map[string]any{{"type": "refusal", "refusal": "I can't help with that."}},
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		case "/chat/completions":
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "chat fallback"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "unsafe request"}},
+		nil,
+		"gpt-5.2",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.Content != "I can't help with that." {
+		t.Fatalf("Content = %q, want %q", out.Content, "I can't help with that.")
+	}
+}
+
+func TestParseResponsesResponse_FailedStatusUsesServerMessage(t *testing.T) {
+	_, err := parseResponsesResponse(strings.NewReader(`{"status":" failed ","error":{"message":"responses failed"}}`))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if err.Error() != "responses failed" {
+		t.Fatalf("error = %q, want %q", err.Error(), "responses failed")
+	}
+}
+
+func TestParseResponsesResponse_UsesNormalizedIncompleteStatus(t *testing.T) {
+	out, err := parseResponsesResponse(strings.NewReader(`{"status":" incomplete ","output":[{"type":"message","content":[{"type":"output_text","text":"partial answer"}]}],"incomplete_details":{"reason":"content_filter"}}`))
+	if err != nil {
+		t.Fatalf("parseResponsesResponse() error = %v", err)
+	}
+	if out.Content != "partial answer" {
+		t.Fatalf("Content = %q, want %q", out.Content, "partial answer")
+	}
+	if out.FinishReason != "content_filter" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "content_filter")
+	}
+}
 
 func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 	var requestBody map[string]any

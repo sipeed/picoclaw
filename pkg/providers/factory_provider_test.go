@@ -8,6 +8,7 @@ package providers
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -96,6 +97,56 @@ func TestCreateProviderFromConfig_OpenAI(t *testing.T) {
 	}
 	if modelID != "gpt-4o" {
 		t.Errorf("modelID = %q, want %q", modelID, "gpt-4o")
+	}
+}
+
+func TestCreateProviderFromConfig_OpenAIUsesResponsesFirst(t *testing.T) {
+	var paths []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+
+		switch r.URL.Path {
+		case "/responses":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"from responses"}]}]}`))
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"from chat completions"},"finish_reason":"stop"}]}`))
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cfg := &config.ModelConfig{
+		ModelName: "test-openai",
+		Model:     "openai/gpt-4o",
+		APIKey:    "test-key",
+		APIBase:   server.URL,
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+
+	out, err := provider.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		modelID,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.Content != "from responses" {
+		t.Fatalf("Content = %q, want %q", out.Content, "from responses")
+	}
+	if !reflect.DeepEqual(paths, []string{"/responses"}) {
+		t.Fatalf("paths = %v, want [/responses]", paths)
 	}
 }
 

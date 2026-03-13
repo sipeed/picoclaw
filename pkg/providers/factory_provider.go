@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/providers/openai_compat"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -84,12 +85,16 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
+		// The factory strips the outer protocol prefix before calling the HTTP
+		// provider, so pass an explicit hint to preserve the requested
+		// OpenAI-specific /responses-first behavior.
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey,
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			openai_compat.WithResponsesPreferred(),
 		), modelID, nil
 
 	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",

@@ -17,9 +17,11 @@ type HTTPProvider struct {
 	delegate *openai_compat.Provider
 }
 
-func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
+// NewHTTPProvider forwards optional provider-specific compatibility flags
+// without changing the shared HTTP provider interface.
+func NewHTTPProvider(apiKey, apiBase, proxy string, opts ...openai_compat.Option) *HTTPProvider {
 	return &HTTPProvider{
-		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy),
+		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy, opts...),
 	}
 }
 
@@ -30,15 +32,18 @@ func NewHTTPProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField st
 func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 	apiKey, apiBase, proxy, maxTokensField string,
 	requestTimeoutSeconds int,
+	opts ...openai_compat.Option,
 ) *HTTPProvider {
+	// Apply the legacy defaults first, then append any protocol-specific
+	// behavior switches such as OpenAI's /responses preference.
+	providerOpts := []openai_compat.Option{
+		openai_compat.WithMaxTokensField(maxTokensField),
+		openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds) * time.Second),
+	}
+	providerOpts = append(providerOpts, opts...)
+
 	return &HTTPProvider{
-		delegate: openai_compat.NewProvider(
-			apiKey,
-			apiBase,
-			proxy,
-			openai_compat.WithMaxTokensField(maxTokensField),
-			openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
-		),
+		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy, providerOpts...),
 	}
 }
 
