@@ -198,6 +198,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	for al.running.Load() {
 		select {
 		case <-ctx.Done():
+			al.wg.Wait()
 			return nil
 		default:
 			msg, ok := al.bus.ConsumeInbound(ctx)
@@ -205,8 +206,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				continue
 			}
 
+			al.wg.Add(1)
 			// Process message
-			func() {
+			go func(msg bus.InboundMessage) {
+				defer al.wg.Done()
 				// TODO: Re-enable media cleanup after inbound media is properly consumed by the agent.
 				// Currently disabled because files are deleted before the LLM can access their content.
 				// defer func() {
@@ -259,10 +262,11 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						)
 					}
 				}
-			}()
+			}(msg)
 		}
 	}
 
+	al.wg.Wait()
 	return nil
 }
 

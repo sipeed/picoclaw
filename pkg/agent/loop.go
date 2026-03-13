@@ -27,6 +27,7 @@ type AgentLoop struct {
 	state          *state.Manager
 	running        atomic.Bool
 	summarizing    sync.Map
+	wg             sync.WaitGroup
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore

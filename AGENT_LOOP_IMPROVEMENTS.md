@@ -13,7 +13,7 @@ This document outlines a series of tasks to improve the main loop of the agentic
 - [ ] **Granular Error Classification:** Update `LLMProvider` interfaces to return structured, typed errors (e.g., `providers.ErrContextLengthExceeded`) instead of relying on fragile string matching.
 
 ## Phase 3: Performance & Latency
-- [ ] **Concurrent Message Processing:** Evaluate introducing a worker pool or goroutines to process independent user requests concurrently without blocking the entire agent instance.
+- [x] **Concurrent Message Processing:** Evaluate introducing a worker pool or goroutines to process independent user requests concurrently without blocking the entire agent instance.
 - [ ] **Background Summarization:** Offload `maybeSummarize` and context compression to a background worker to unblock the main thread and respond to the user faster.
 - [ ] **Streaming Responses:** Implement streaming LLM token generation directly to the `bus.PublishOutbound` instead of waiting for full generation.
 
