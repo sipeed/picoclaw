@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -32,9 +31,6 @@ func init() {
 	}
 	uniqueIDPrefix = hex.EncodeToString(b[:])
 }
-
-// audioAnnotationRe matches audio/voice annotations injected by channels (e.g. [voice], [audio: file.ogg]).
-var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
 
 // uniqueID generates a process-unique ID using a random prefix and an atomic counter.
 // This ID is intended for internal correlation (e.g. media scope keys) and is NOT
@@ -237,6 +233,20 @@ func (c *BaseChannel) HandleMessage(
 	metadata map[string]string,
 	senderOpts ...bus.SenderInfo,
 ) {
+	c.HandleMessageWithChannelName(ctx, peer, messageID, senderID, chatID, content, media, "", metadata, senderOpts...)
+}
+
+// HandleMessageWithChannelName handles an incoming message with an optional human-readable channel name.
+// The channelName parameter is used for platforms like Discord where the channel has a user-friendly name.
+func (c *BaseChannel) HandleMessageWithChannelName(
+	ctx context.Context,
+	peer bus.Peer,
+	messageID, senderID, chatID, content string,
+	media []string,
+	channelName string,
+	metadata map[string]string,
+	senderOpts ...bus.SenderInfo,
+) {
 	// Use SenderInfo-based allow check when available, else fall back to string
 	var sender bus.SenderInfo
 	if len(senderOpts) > 0 {
@@ -261,16 +271,17 @@ func (c *BaseChannel) HandleMessage(
 	scope := BuildMediaScope(c.name, chatID, messageID)
 
 	msg := bus.InboundMessage{
-		Channel:    c.name,
-		SenderID:   resolvedSenderID,
-		Sender:     sender,
-		ChatID:     chatID,
-		Content:    content,
-		Media:      media,
-		Peer:       peer,
-		MessageID:  messageID,
-		MediaScope: scope,
-		Metadata:   metadata,
+		Channel:     c.name,
+		ChannelName: channelName,
+		SenderID:    resolvedSenderID,
+		Sender:      sender,
+		ChatID:      chatID,
+		Content:     content,
+		Media:       media,
+		Peer:        peer,
+		MessageID:   messageID,
+		MediaScope:  scope,
+		Metadata:    metadata,
 	}
 
 	// Auto-trigger typing indicator, message reaction, and placeholder before publishing.
@@ -288,15 +299,10 @@ func (c *BaseChannel) HandleMessage(
 				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, undo)
 			}
 		}
-		// Placeholder — independent pipeline.
-		// Skip when the message contains audio: the agent will send the
-		// placeholder after transcription completes, so the user sees
-		// "Thinking…" only once the voice has been processed.
-		if !audioAnnotationRe.MatchString(content) {
-			if pc, ok := c.owner.(PlaceholderCapable); ok {
-				if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
-					c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
-				}
+		// Placeholder — independent pipeline
+		if pc, ok := c.owner.(PlaceholderCapable); ok {
+			if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
+				c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
 			}
 		}
 	}
