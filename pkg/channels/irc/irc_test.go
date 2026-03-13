@@ -1,6 +1,7 @@
 package irc
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -41,6 +42,23 @@ func TestNewIRCChannel(t *testing.T) {
 		}
 		if ch.IsRunning() {
 			t.Error("new channel should not be running")
+		}
+	})
+
+	t.Run("normalizes auto join channels", func(t *testing.T) {
+		cfg := config.IRCConfig{
+			Server:   "irc.example.com:6667",
+			Nick:     "testbot",
+			Channels: []string{" general ", "#already", "&ops", "+local", "!safe", "", "news"},
+		}
+		ch, err := NewIRCChannel(cfg, msgBus)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		want := config.FlexibleStringSlice{"#general", "#already", "&ops", "+local", "!safe", "#news"}
+		if !reflect.DeepEqual(ch.config.Channels, want) {
+			t.Fatalf("Channels = %#v, want %#v", ch.config.Channels, want)
 		}
 	})
 }
