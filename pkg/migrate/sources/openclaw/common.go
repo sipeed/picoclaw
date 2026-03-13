@@ -23,6 +23,4 @@ var supportedChannels = map[string]bool{
 	"matrix":    true,
 	"line":      true,
 	"onebot":    true,
-	"wecom":     true,
-	"wecom_app": true,
 }
