@@ -2,10 +2,11 @@ package tools
 
 import (
 	"context"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/orch"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/orch"
 )
 
 func TestSubagentTool_SetContext(t *testing.T) {
@@ -16,7 +17,6 @@ func TestSubagentTool_SetContext(t *testing.T) {
 	tool := NewSubagentTool(manager)
 
 	tool.SetContext("test-channel", "test-chat")
-
 }
 
 func TestFormatToolStats(t *testing.T) {

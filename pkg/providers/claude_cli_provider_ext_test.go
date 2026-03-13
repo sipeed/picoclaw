@@ -82,7 +82,6 @@ Done.`
 }
 
 func TestExtractXMLToolCalls_MismatchedCloseTag(t *testing.T) {
-
 	text := `<minimax:toolcall>
 <invoke name="readfile">
 <parameter name="path">/home/user/project/pyproject.toml</parameter>
@@ -102,7 +101,7 @@ func TestExtractXMLToolCalls_MismatchedCloseTag(t *testing.T) {
 }
 
 func TestStripXMLToolCalls_MismatchedCloseTag(t *testing.T) {
-	text := `今テスト走らせるね。` +
+	text := `今テスト走らせるね。` + //nolint:gosmopolitan
 		`
 <minimax:toolcall>
 <invoke name="exec">
@@ -114,13 +113,12 @@ func TestStripXMLToolCalls_MismatchedCloseTag(t *testing.T) {
 	if strings.Contains(got, "toolcall") || strings.Contains(got, "tool_call") {
 		t.Errorf("should remove XML block, got %q", got)
 	}
-	if !strings.Contains(got, "今テスト走らせるね。") {
+	if !strings.Contains(got, "今テスト走らせるね。") { //nolint:gosmopolitan
 		t.Errorf("should keep text before, got %q", got)
 	}
 }
 
 func TestExtractXMLToolCalls_UnderscoreOpenTag(t *testing.T) {
-
 	text := `<minimax:tool_call>
 <invoke name="exec">
 <parameter name="command">ls -la</parameter>
@@ -140,7 +138,6 @@ func TestExtractXMLToolCalls_UnderscoreOpenTag(t *testing.T) {
 }
 
 func TestExtractXMLToolCalls_HyphenTag(t *testing.T) {
-
 	text := `<vendor:Tool-Call>
 <invoke name="read_file">
 <parameter name="path">/etc/hosts</parameter>
@@ -178,8 +175,11 @@ Finished.`
 }
 
 func TestExtractXMLToolCalls_OrphanedClosingTag(t *testing.T) {
-
-	text := "了解！確認するね。\n[TOOLCALL]\n<invoke name=\"listdir\">\n<parameter name=\"path\">/home/user/workspace</parameter>\n</invoke>\n</minimax:tool_call>"
+	//nolint:gosmopolitan // intentional CJK test fixture
+	text := "了解！確認するね。\n[TOOLCALL]\n" +
+		"<invoke name=\"listdir\">\n" +
+		"<parameter name=\"path\">/home/user/workspace</parameter>\n" +
+		"</invoke>\n</minimax:tool_call>"
 
 	calls := extractXMLToolCalls(text)
 	if len(calls) != 1 {
@@ -194,12 +194,16 @@ func TestExtractXMLToolCalls_OrphanedClosingTag(t *testing.T) {
 }
 
 func TestStripXMLToolCalls_OrphanedClosingTag(t *testing.T) {
-	text := "了解！確認するね。\n[TOOLCALL]\n<invoke name=\"listdir\">\n<parameter name=\"path\">/home/user</parameter>\n</invoke>\n</minimax:tool_call>"
+	//nolint:gosmopolitan // intentional CJK test fixture
+	text := "了解！確認するね。\n[TOOLCALL]\n" +
+		"<invoke name=\"listdir\">\n" +
+		"<parameter name=\"path\">/home/user</parameter>\n" +
+		"</invoke>\n</minimax:tool_call>"
 	got := stripXMLToolCalls(text)
 	if strings.Contains(got, "invoke") || strings.Contains(got, "TOOLCALL") || strings.Contains(got, "minimax") {
 		t.Errorf("should remove orphaned closing tag block, got %q", got)
 	}
-	if !strings.Contains(got, "了解") {
+	if !strings.Contains(got, "了解") { //nolint:gosmopolitan
 		t.Errorf("should keep user-facing text, got %q", got)
 	}
 }
@@ -256,7 +260,6 @@ func TestLevenshtein(t *testing.T) {
 }
 
 func TestIsToolCallTag(t *testing.T) {
-
 	for _, name := range []string{"toolcall", "tool_call", "tool-call", "ToolCall", "Toolcall", "toolCall", "TOOLCALL"} {
 		if !isToolCallTag(name) {
 			t.Errorf("isToolCallTag(%q) = false, want true", name)

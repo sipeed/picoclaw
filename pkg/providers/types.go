@@ -2,13 +2,11 @@ package providers
 
 import (
 	"context"
-	"fmt"
-
 	"encoding/json"
+	"fmt"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
-
 
 type (
 	ToolCall               = protocoltypes.ToolCall
@@ -97,7 +95,13 @@ type ModelConfig struct {
 type StreamingProvider interface {
 	LLMProvider
 	CanStream() bool
-	ChatStream(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any) (<-chan protocoltypes.StreamEvent, error)
+	ChatStream(
+		ctx context.Context,
+		messages []Message,
+		tools []ToolDefinition,
+		model string,
+		options map[string]any,
+	) (<-chan protocoltypes.StreamEvent, error)
 }
 
 // UnmarshalArguments is a helper to parse FunctionCall.Arguments from json.RawMessage.

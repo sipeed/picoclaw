@@ -33,8 +33,8 @@ func TestSpawnTool_Execute_EmptyTask(t *testing.T) {
 			if !result.IsError {
 				t.Error("Expected error for invalid task parameter")
 			}
-			if !strings.Contains(result.ForLLM, "task is required") {
-				t.Errorf("Error message should mention 'task is required', got: %s", result.ForLLM)
+			if !strings.Contains(result.ForLLM, `Required parameter "task"`) {
+				t.Errorf("Error message should mention required task param, got: %s", result.ForLLM)
 			}
 		})
 	}
@@ -73,7 +73,7 @@ func TestSpawnTool_Execute_NilManager(t *testing.T) {
 	if !result.IsError {
 		t.Error("Expected error for nil manager")
 	}
-	if !strings.Contains(result.ForLLM, "Subagent manager not configured") {
-		t.Errorf("Error message should mention manager not configured, got: %s", result.ForLLM)
+	if !strings.Contains(result.ForLLM, "not available") {
+		t.Errorf("Error message should mention 'not available', got: %s", result.ForLLM)
 	}
 }

@@ -181,12 +181,12 @@ func (ms *MemoryStore) ClearLongTerm() error {
 // ---------- Plan state query methods ----------
 
 var (
-	reActivePlan = regexp.MustCompile(`(?m)^# Active Plan`)
-	reStatus     = regexp.MustCompile(`(?m)^> Status:\s*(.+)`)
-	rePhase      = regexp.MustCompile(`(?m)^> Phase:\s*(\d+)`)
+	reActivePlan  = regexp.MustCompile(`(?m)^# Active Plan`)
+	reStatus      = regexp.MustCompile(`(?m)^> Status:\s*(.+)`)
+	rePhase       = regexp.MustCompile(`(?m)^> Phase:\s*(\d+)`)
 	rePhaseHeader = regexp.MustCompile(`(?m)^## Phase (\d+):\s*(.*)`)
-	reWorkDir    = regexp.MustCompile(`(?m)^> WorkDir:\s*(.+)`)
-	reTaskLine   = regexp.MustCompile(`(?m)^> Task:\s*(.+)`)
+	reWorkDir     = regexp.MustCompile(`(?m)^> WorkDir:\s*(.+)`)
+	reTaskLine    = regexp.MustCompile(`(?m)^> Task:\s*(.+)`)
 )
 
 // HasActivePlan returns true if MEMORY.md contains an active plan.
@@ -481,12 +481,22 @@ func (ms *MemoryStore) getInterviewContextFrom(content string) string {
 	sb.WriteString("- Tooling preferences (test framework, linter, formatter, CI)\n")
 	sb.WriteString("- Key commands the user already runs (build, test, deploy)\n")
 	sb.WriteString("\n### Rules\n")
-	sb.WriteString("- NEVER remove or overwrite the header block (`# Active Plan`, `> Task:`, `> Status:`, `> Phase:` lines). The system parses these to track state.\n")
-	sb.WriteString("- After each answer, use edit_file to append findings to the ## Context section of memory/MEMORY.md.\n")
-	sb.WriteString("- When you have enough information, use edit_file to add ## Phase, ## Commands, and ## Context sections BELOW the header block.\n")
-	sb.WriteString("- Each step MUST use checkbox syntax: `- [ ] description`. The system parses checkboxes to track progress.\n")
+	sb.WriteString(
+		"- NEVER remove or overwrite the header block (`# Active Plan`, `> Task:`, `> Status:`, `> Phase:` lines). The system parses these to track state.\n",
+	)
+	sb.WriteString(
+		"- After each answer, use edit_file to append findings to the ## Context section of memory/MEMORY.md.\n",
+	)
+	sb.WriteString(
+		"- When you have enough information, use edit_file to add ## Phase, ## Commands, and ## Context sections BELOW the header block.\n",
+	)
+	sb.WriteString(
+		"- Each step MUST use checkbox syntax: `- [ ] description`. The system parses checkboxes to track progress.\n",
+	)
 	sb.WriteString("- Organize into 2-5 phases with 3-5 steps each.\n")
-	sb.WriteString("- After writing Phases, change `> Status: interviewing` to `> Status: review` via edit_file. The user must approve with /plan start before execution begins.\n")
+	sb.WriteString(
+		"- After writing Phases, change `> Status: interviewing` to `> Status: review` via edit_file. The user must approve with /plan start before execution begins.\n",
+	)
 	sb.WriteString("\n### Target Format (MANDATORY — system parses this exact structure)\n\n")
 	sb.WriteString("# Active Plan\n")
 	sb.WriteString("> Task: <description>\n")

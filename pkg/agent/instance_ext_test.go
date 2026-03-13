@@ -1,9 +1,10 @@
 package agent
 
 import (
-	"github.com/sipeed/picoclaw/pkg/config"
 	"os"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestNewAgentInstance_ResolveCandidatesFromModelListAliasWithoutProtocol(t *testing.T) {

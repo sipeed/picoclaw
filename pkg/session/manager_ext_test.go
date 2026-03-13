@@ -1,8 +1,9 @@
 package session
 
 import (
-	"github.com/sipeed/picoclaw/pkg/providers"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 func TestSanitizeHistory_OrphanedToolCall(t *testing.T) {
@@ -30,7 +31,6 @@ func TestSanitizeHistory_OrphanedToolCall(t *testing.T) {
 }
 
 func TestSanitizeHistory_InterleavedMessages(t *testing.T) {
-
 	history := []providers.Message{
 		{Role: "user", Content: "first"},
 
