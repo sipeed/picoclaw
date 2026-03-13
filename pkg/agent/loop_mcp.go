@@ -63,6 +63,22 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 		return nil
 	}
 
+	if al.cfg.Tools.MCP.Servers == nil || len(al.cfg.Tools.MCP.Servers) == 0 {
+		logger.WarnCF("agent", "MCP is enabled but no servers are configured, skipping MCP initialization", nil)
+		return nil
+	}
+
+	findValidServer := false
+	for _, serverCfg := range al.cfg.Tools.MCP.Servers {
+		if serverCfg.Enabled {
+			findValidServer = true
+		}
+	}
+	if !findValidServer {
+		logger.WarnCF("agent", "MCP is enabled but no valid servers are configured, skipping MCP initialization", nil)
+		return nil
+	}
+
 	al.mcp.initOnce.Do(func() {
 		mcpManager := mcp.NewManager()
 
