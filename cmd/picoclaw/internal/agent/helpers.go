@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/chzyer/readline"
+	"github.com/ergochat/readline"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/agent"
