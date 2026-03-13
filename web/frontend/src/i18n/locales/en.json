@@ -397,7 +397,7 @@
       "max_tokens": "Max Tokens",
       "max_tokens_hint": "Upper token limit per model response.",
       "context_window": "Context Window",
-      "context_window_hint": "Model input context capacity in tokens. Leave empty to auto-detect (default: 4x max tokens).",
+      "context_window_hint": "Model input context capacity in tokens. Leave empty to use the default (4x max tokens).",
       "max_tool_iterations": "Max Tool Iterations",
       "max_tool_iterations_hint": "Maximum tool-call loops in a single task.",
       "summarize_threshold": "Summarize Message Threshold",

@@ -95,10 +95,14 @@ func estimateMessageTokens(msg providers.Message) int {
 	}
 
 	for _, tc := range msg.ToolCalls {
-		// Count tool call metadata: ID, type, function name
-		chars += len(tc.ID) + len(tc.Type) + len(tc.Name)
+		chars += len(tc.ID) + len(tc.Type)
 		if tc.Function != nil {
+			// Count function name + arguments (the wire format for most providers).
+			// tc.Name mirrors tc.Function.Name — count only once to avoid double-counting.
 			chars += len(tc.Function.Name) + len(tc.Function.Arguments)
+		} else {
+			// Fallback: some provider formats use top-level Name without Function.
+			chars += len(tc.Name)
 		}
 	}
 
@@ -106,17 +110,20 @@ func estimateMessageTokens(msg providers.Message) int {
 		chars += len(msg.ToolCallID)
 	}
 
-	// Media items (images, files) are serialized by provider adapters into
-	// multipart or image_url payloads. Use a fixed per-item estimate since
-	// actual token cost depends on resolution and provider tokenization.
-	const mediaTokensPerItem = 256
-	chars += len(msg.Media) * mediaTokensPerItem
-
 	// Per-message overhead for role label, JSON structure, separators.
 	const messageOverhead = 12
 	chars += messageOverhead
 
-	return chars * 2 / 5
+	tokens := chars * 2 / 5
+
+	// Media items (images, files) are serialized by provider adapters into
+	// multipart or image_url payloads. Add a fixed per-item token estimate
+	// directly (not through the chars heuristic) since actual cost depends
+	// on resolution and provider-specific image tokenization.
+	const mediaTokensPerItem = 256
+	tokens += len(msg.Media) * mediaTokensPerItem
+
+	return tokens
 }
 
 // estimateToolDefsTokens estimates the total token cost of tool definitions
