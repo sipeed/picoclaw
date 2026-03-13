@@ -351,10 +351,10 @@ func TestFindSafeBoundary_SingleTurnReturnsZero(t *testing.T) {
 	// is at index 0; cutting anywhere else would split the Turn's tool
 	// sequence. findSafeBoundary must return 0 so callers skip compression.
 	history := []providers.Message{
-		msgUser("do everything"),    // 0 ← only Turn boundary
-		msgAssistantTC("tc1"),       // 1
-		msgTool("tc1", "result"),    // 2
-		msgAssistant("all done"),    // 3
+		msgUser("do everything"), // 0 ← only Turn boundary
+		msgAssistantTC("tc1"),    // 1
+		msgTool("tc1", "result"), // 2
+		msgAssistant("all done"), // 3
 	}
 
 	got := findSafeBoundary(history, 2)
