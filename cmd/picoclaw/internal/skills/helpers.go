@@ -22,6 +22,7 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 
 	if len(allSkills) == 0 {
 		fmt.Println("No skills installed.")
+		printSkillSearchRoots(loader)
 		return
 	}
 
@@ -33,6 +34,19 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 			fmt.Printf("    %s\n", skill.Description)
 		}
 	}
+}
+
+func printSkillSearchRoots(loader *skills.SkillsLoader) {
+	roots := loader.SkillRoots()
+	if len(roots) == 0 {
+		return
+	}
+
+	fmt.Println("Scanned skill roots:")
+	for i, root := range roots {
+		fmt.Printf("  %d. %s\n", i+1, root)
+	}
+	fmt.Printf("Install local skills under %s/<skill-name>/SKILL.md\n", roots[0])
 }
 
 func skillsInstallCmd(installer *skills.SkillInstaller, repo string) error {
