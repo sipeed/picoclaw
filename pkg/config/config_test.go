@@ -886,8 +886,8 @@ func TestLoadConfig_MixedKeys_NoPassphrase(t *testing.T) {
 	if err == nil {
 		t.Fatal("LoadConfig should fail when enc:// key is present and no passphrase is set")
 	}
-	if !strings.Contains(err.Error(), "PICOCLAW_KEY_PASSPHRASE") {
-		t.Errorf("error should mention PICOCLAW_KEY_PASSPHRASE, got: %v", err)
+	if !strings.Contains(err.Error(), "passphrase required") {
+		t.Errorf("error should mention passphrase required, got: %v", err)
 	}
 }
 

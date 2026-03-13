@@ -1,6 +1,7 @@
 package credential
 
 import (
+	"sync"
 	"testing"
 )
 
@@ -51,15 +52,30 @@ func TestSecureStore_EmptyPassphrase(t *testing.T) {
 	}
 }
 
-func TestSecureStore_GetReturnsCopy(t *testing.T) {
+func TestSecureStore_ConcurrentSetGet(t *testing.T) {
 	s := NewSecureStore()
-	s.SetString("abc")
+	const goroutines = 10
+	const iterations = 1000
 
-	// Mutating the returned string bytes (not possible in Go, but we verify
-	// that a second Get() is not affected by the first).
-	got1 := s.Get()
-	got2 := s.Get()
-	if got1 != got2 {
-		t.Errorf("successive Get() calls returned different values: %q vs %q", got1, got2)
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				if id%2 == 0 {
+					s.SetString("even")
+				} else {
+					s.SetString("odd")
+				}
+				_ = s.Get()
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	final := s.Get()
+	if final != "" && final != "even" && final != "odd" {
+		t.Errorf("Get() returned unexpected value %q after concurrent Set/Get", final)
 	}
 }

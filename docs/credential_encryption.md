@@ -13,11 +13,14 @@ Encrypted keys are stored as `enc://<base64>` strings and decrypted automaticall
 export PICOCLAW_KEY_PASSPHRASE="your-passphrase"
 ```
 
-**2. Encrypt an API key** (using the built-in CLI subcommand, or Go API)
+**2. Encrypt an API key**
 
-```bash
-picoclaw encrypt sk-your-openai-key
-# outputs: enc://AAAA...base64...
+Run `picoclaw onboard` — it prompts for your passphrase and generates the SSH key,
+then automatically re-encrypts any plaintext `api_key` entries in your config on
+the next `SaveConfig` call. The resulting `enc://` value will look like:
+
+```
+enc://AAAA...base64...
 ```
 
 **3. Paste the output into your config**

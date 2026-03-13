@@ -58,9 +58,9 @@ var PassphraseProvider func() string = func() string {
 }
 
 // ErrPassphraseRequired is returned when an enc:// credential is encountered but
-// PICOCLAW_KEY_PASSPHRASE is not set. Callers can detect this with errors.Is to
-// distinguish a missing-passphrase condition from other credential errors.
-var ErrPassphraseRequired = errors.New("credential: enc:// key requires " + PassphraseEnvVar + " env var")
+// no passphrase is available from PassphraseProvider. Callers can detect this
+// with errors.Is to distinguish a missing-passphrase condition from other errors.
+var ErrPassphraseRequired = errors.New("credential: enc:// passphrase required")
 
 // ErrDecryptionFailed is returned when an enc:// credential cannot be decrypted,
 // indicating a wrong passphrase or SSH key. Callers can detect this with errors.Is.
@@ -79,13 +79,20 @@ const (
 // Resolver resolves raw credential strings for model_list api_key fields.
 // File references are resolved relative to the directory of the config file.
 type Resolver struct {
-	configDir string
+	configDir         string
+	resolvedConfigDir string // symlink-resolved form of configDir
 }
 
 // NewResolver returns a Resolver that resolves file:// references relative to
 // configDir (typically filepath.Dir of the config file path).
 func NewResolver(configDir string) *Resolver {
-	return &Resolver{configDir: configDir}
+	resolved := configDir
+	if configDir != "" {
+		if real, err := filepath.EvalSymlinks(configDir); err == nil {
+			resolved = real
+		}
+	}
+	return &Resolver{configDir: configDir, resolvedConfigDir: resolved}
 }
 
 // Resolve returns the actual credential value for raw:
@@ -104,19 +111,27 @@ func (r *Resolver) Resolve(raw string) (string, error) {
 			return "", fmt.Errorf("credential: file:// reference has no filename")
 		}
 
-		keyPath := filepath.Join(r.configDir, fileName)
-		// Prevent path traversal: "../../etc/passwd" or "/abs/path" must not escape configDir.
-		if !isWithinDir(keyPath, r.configDir) {
+		baseDir := r.resolvedConfigDir
+		if baseDir == "" {
+			baseDir = r.configDir
+		}
+		keyPath := filepath.Join(baseDir, fileName)
+		// Resolve symlinks before enforcing containment to prevent escaping via symlinks.
+		realKeyPath, err := filepath.EvalSymlinks(keyPath)
+		if err != nil {
+			return "", fmt.Errorf("credential: failed to resolve credential file path %q: %w", keyPath, err)
+		}
+		if !isWithinDir(realKeyPath, baseDir) {
 			return "", fmt.Errorf("credential: file:// path escapes config directory")
 		}
-		data, err := os.ReadFile(keyPath)
+		data, err := os.ReadFile(realKeyPath)
 		if err != nil {
-			return "", fmt.Errorf("credential: failed to read credential file %q: %w", keyPath, err)
+			return "", fmt.Errorf("credential: failed to read credential file %q: %w", realKeyPath, err)
 		}
 
 		value := strings.TrimSpace(string(data))
 		if value == "" {
-			return "", fmt.Errorf("credential: credential file %q is empty", keyPath)
+			return "", fmt.Errorf("credential: credential file %q is empty", realKeyPath)
 		}
 
 		return value, nil
