@@ -503,6 +503,13 @@ func TestEstimateMessageTokens_MediaItems(t *testing.T) {
 		t.Errorf("message with Media (%d tokens) should exceed plain message (%d tokens)",
 			mediaTokens, plainTokens)
 	}
+
+	// Each media item should add exactly 256 tokens (not run through chars*2/5).
+	expectedDelta := 256 * 2
+	actualDelta := mediaTokens - plainTokens
+	if actualDelta != expectedDelta {
+		t.Errorf("2 media items should add %d tokens, got delta %d", expectedDelta, actualDelta)
+	}
 }
 
 // --- estimateToolDefsTokens tests ---
