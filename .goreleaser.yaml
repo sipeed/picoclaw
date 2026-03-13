@@ -65,6 +65,7 @@ builds:
       - windows
       - darwin
       - freebsd
+      - netbsd
     goarch:
       - amd64
       - arm64
@@ -82,6 +83,12 @@ builds:
     ignore:
       - goos: windows
         goarch: arm
+      - goos: netbsd
+        goarch: s390x
+      - goos: netbsd
+        goarch: mips64
+      - goos: netbsd
+        goarch: arm
 
   - id: picoclaw-launcher-tui
     binary: picoclaw-launcher-tui
@@ -96,6 +103,7 @@ builds:
       - windows
       - darwin
       - freebsd
+      - netbsd
     goarch:
       - amd64
       - arm64
@@ -112,6 +120,12 @@ builds:
     main: ./cmd/picoclaw-launcher-tui
     ignore:
       - goos: windows
+        goarch: arm
+      - goos: netbsd
+        goarch: s390x
+      - goos: netbsd
+        goarch: mips64
+      - goos: netbsd
         goarch: arm
 
 dockers_v2:
