@@ -20,6 +20,7 @@ export function ChatPage() {
   const { t } = useTranslation()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
+  const [hasScrolled, setHasScrolled] = useState(false)
   const [input, setInput] = useState("")
 
   const {
@@ -56,14 +57,22 @@ export function ChatPage() {
     onDeletedActiveSession: newChat,
   })
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
+  const syncScrollState = (element: HTMLDivElement) => {
+    const { scrollTop, scrollHeight, clientHeight } = element
+    setHasScrolled(scrollTop > 0)
     setIsAtBottom(scrollHeight - scrollTop <= clientHeight + 10)
   }
 
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    syncScrollState(e.currentTarget)
+  }
+
   useEffect(() => {
-    if (isAtBottom && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    if (scrollRef.current) {
+      if (isAtBottom) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      }
+      syncScrollState(scrollRef.current)
     }
   }, [messages, isTyping, isAtBottom])
 
@@ -77,6 +86,9 @@ export function ChatPage() {
     <div className="bg-background/95 flex h-full flex-col">
       <PageHeader
         title={t("navigation.chat")}
+        className={`transition-shadow ${
+          hasScrolled ? "shadow-sm" : "shadow-none"
+        }`}
         titleExtra={
           hasConfiguredModels && (
             <ModelSelector
@@ -90,7 +102,7 @@ export function ChatPage() {
         }
       >
         <Button
-          variant="outline"
+          variant="secondary"
           size="sm"
           onClick={newChat}
           className="h-9 gap-2"

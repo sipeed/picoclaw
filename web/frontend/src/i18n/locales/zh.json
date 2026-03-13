@@ -58,11 +58,14 @@
       },
       "action": {
         "start": "启动服务",
-        "stop": "停止服务"
+        "stop": "停止服务",
+        "restart": "重启服务"
       },
       "status": {
-        "starting": "服务启动中..."
-      }
+        "starting": "服务启动中...",
+        "restarting": "服务重启中..."
+      },
+      "restartRequired": "切换默认模型后需要重启服务才能生效。"
     }
   },
   "common": {
