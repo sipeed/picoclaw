@@ -21,7 +21,7 @@ This document outlines a series of tasks to improve the main loop of the agentic
 ## Phase 3: Performance & Latency
 
 * [x] **Concurrent Message Processing:** Evaluate introducing a worker pool or goroutines to process independent user requests concurrently without blocking the entire agent instance.
-* [ ] **Background Summarization:** Offload `maybeSummarize` and context compression to an asynchronous worker. Instead of blocking the main thread, the worker outputs its execution trace and compressed context to a structured `/logs/{session}/{subagent}/` directory to provide a persistent audit trail while keeping the loop responsive.
+* [x] **Background Summarization:** Offload `maybeSummarize` and context compression to an asynchronous worker. Instead of blocking the main thread, the worker outputs its execution trace and compressed context to a structured `/logs/{session}/{subagent}/` directory to provide a persistent audit trail while keeping the loop responsive.
 * [ ] **Streaming Responses:** Implement streaming LLM token generation directly to the `bus.PublishOutbound` instead of waiting for full generation.
 
 ## Phase 4: Features

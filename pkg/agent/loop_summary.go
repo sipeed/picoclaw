@@ -8,7 +8,10 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -26,11 +29,15 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 	if len(newHistory) > agent.SummarizeMessageThreshold || tokenEstimate > threshold {
 		summarizeKey := agent.ID + ":" + sessionKey
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
-			go func() {
-				defer al.summarizing.Delete(summarizeKey)
-				logger.Debug("Memory threshold reached. Optimizing conversation history...")
-				al.summarizeSession(agent, sessionKey)
-			}()
+			// Send to background worker queue
+			select {
+			case al.summaryJobs <- summaryJob{agent: agent, sessionKey: sessionKey}:
+				// job accepted
+			default:
+				// Worker queue is full, delete from map so it can be retried later
+				logger.WarnCF("agent", "Summarization worker queue is full, skipping summarization", map[string]any{"session_key": sessionKey})
+				al.summarizing.Delete(summarizeKey)
+			}
 		}
 	}
 }
@@ -41,6 +48,23 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	history := agent.Sessions.GetHistory(sessionKey)
 	if len(history) <= 4 {
 		return
+	}
+
+	// Create logging directory: /logs/{session_id}/summarizer/
+	logDir := filepath.Join("logs", sessionKey, "summarizer")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		logger.WarnCF("agent", "Failed to create summarizer log directory", map[string]any{"error": err.Error()})
+	}
+
+	// Dump input context
+	if b, err := json.MarshalIndent(history, "", "  "); err == nil {
+		_ = os.WriteFile(filepath.Join(logDir, "input_context.json"), b, 0644)
+	}
+
+	traceFile, _ := os.OpenFile(filepath.Join(logDir, "trace.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if traceFile != nil {
+		defer traceFile.Close()
+		fmt.Fprintf(traceFile, "[%s] Starting summarization for session: %s\n", time.Now().Format(time.RFC3339), sessionKey)
 	}
 
 	// Keep system prompt (usually [0]) and the very last message (user's trigger)
@@ -101,6 +125,23 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 		return
 	}
 
+	// Create logging directory: /logs/{session_id}/summarizer/
+	logDir := filepath.Join("logs", sessionKey, "summarizer")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		logger.WarnCF("agent", "Failed to create summarizer log directory", map[string]any{"error": err.Error()})
+	}
+
+	// Dump input context
+	if b, err := json.MarshalIndent(history, "", "  "); err == nil {
+		_ = os.WriteFile(filepath.Join(logDir, "input_context.json"), b, 0644)
+	}
+
+	traceFile, _ := os.OpenFile(filepath.Join(logDir, "trace.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if traceFile != nil {
+		defer traceFile.Close()
+		fmt.Fprintf(traceFile, "[%s] Starting summarization for session: %s\n", time.Now().Format(time.RFC3339), sessionKey)
+	}
+
 	toSummarize := history[:len(history)-4]
 
 	// Oversized Message Guard
@@ -115,12 +156,18 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 		msgTokens := len(m.Content) / 2
 		if msgTokens > maxMessageTokens {
 			omitted = true
+			if traceFile != nil {
+				fmt.Fprintf(traceFile, "[%s] Omitting oversized message from %s (length: %d)\n", time.Now().Format(time.RFC3339), m.Role, len(m.Content))
+			}
 			continue
 		}
 		validMessages = append(validMessages, m)
 	}
 
 	if len(validMessages) == 0 {
+		if traceFile != nil {
+			fmt.Fprintf(traceFile, "[%s] No valid messages to summarize.\n", time.Now().Format(time.RFC3339))
+		}
 		return
 	}
 
@@ -150,13 +197,23 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 			s2,
 		)
 
+		if traceFile != nil {
+			fmt.Fprintf(traceFile, "[%s] Merging multi-part summaries...\n", time.Now().Format(time.RFC3339))
+		}
+
 		resp, err := al.retryLLMCall(ctx, agent, mergePrompt, llmMaxRetries)
 		if err == nil && resp.Content != "" {
 			finalSummary = resp.Content
 		} else {
+			if traceFile != nil {
+				fmt.Fprintf(traceFile, "[%s] LLM merge failed: %v. Falling back to concatenation.\n", time.Now().Format(time.RFC3339), err)
+			}
 			finalSummary = s1 + " " + s2
 		}
 	} else {
+		if traceFile != nil {
+			fmt.Fprintf(traceFile, "[%s] Summarizing single batch...\n", time.Now().Format(time.RFC3339))
+		}
 		finalSummary, _ = al.summarizeBatch(ctx, agent, validMessages, summary)
 	}
 
@@ -165,9 +222,18 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	}
 
 	if finalSummary != "" {
+		if traceFile != nil {
+			fmt.Fprintf(traceFile, "[%s] Summarization complete. Saving session.\n", time.Now().Format(time.RFC3339))
+		}
+		_ = os.WriteFile(filepath.Join(logDir, "result_summary.md"), []byte(finalSummary), 0644)
+
 		agent.Sessions.SetSummary(sessionKey, finalSummary)
 		agent.Sessions.TruncateHistory(sessionKey, 4)
 		agent.Sessions.Save(sessionKey)
+	} else {
+		if traceFile != nil {
+			fmt.Fprintf(traceFile, "[%s] Final summary is empty, skipping save.\n", time.Now().Format(time.RFC3339))
+		}
 	}
 }
 

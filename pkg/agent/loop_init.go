@@ -52,6 +52,7 @@ func NewAgentLoop(
 		registry:    registry,
 		state:       stateManager,
 		summarizing: sync.Map{},
+		summaryJobs: make(chan summaryJob, 100),
 		fallback:    fallbackChain,
 		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
 	}
@@ -194,6 +195,25 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	if err := al.ensureMCPInitialized(ctx); err != nil {
 		return err
 	}
+
+	// Start background summarization worker
+	al.wg.Add(1)
+	go func() {
+		defer al.wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case job, ok := <-al.summaryJobs:
+				if !ok {
+					return
+				}
+				logger.Debug("Memory threshold reached. Optimizing conversation history...")
+				al.summarizeSession(job.agent, job.sessionKey)
+				al.summarizing.Delete(job.agent.ID + ":" + job.sessionKey)
+			}
+		}
+	}()
 
 	for al.running.Load() {
 		select {

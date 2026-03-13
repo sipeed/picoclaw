@@ -27,6 +27,7 @@ type AgentLoop struct {
 	state          *state.Manager
 	running        atomic.Bool
 	summarizing    sync.Map
+	summaryJobs    chan summaryJob
 	wg             sync.WaitGroup
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
@@ -37,6 +38,11 @@ type AgentLoop struct {
 }
 
 // processOptions configures how a message is processed
+type summaryJob struct {
+	agent      *AgentInstance
+	sessionKey string
+}
+
 type processOptions struct {
 	SessionKey      string   // Session identifier for history/context
 	Channel         string   // Target channel for tool execution
