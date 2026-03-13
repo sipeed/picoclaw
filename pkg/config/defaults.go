@@ -369,6 +369,14 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// ModelScope (魔搭社区) - https://modelscope.cn/my/tokens
+			{
+				ModelName: "modelscope-qwen",
+				Model:     "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+				APIBase:   "https://api-inference.modelscope.cn/v1",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",
