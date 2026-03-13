@@ -8,10 +8,8 @@ package providers
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/providers/openai_compat"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -86,33 +84,18 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy,
-			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
-			openai_compat.WithStream(boolDefault(cfg.Stream, false)),
-			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
-			openai_compat.WithMinInterval(rpmToMinInterval(cfg.RPM)),
-		), modelID, nil
-
-	case "minimax":
-		// MiniMax uses a non-standard endpoint path and defaults to SSE streaming.
-		if cfg.APIKey == "" && cfg.APIBase == "" {
-			return nil, "", fmt.Errorf("api_key or api_base is required for minimax protocol")
-		}
-		apiBase := cfg.APIBase
-		if apiBase == "" {
-			apiBase = getDefaultAPIBase(protocol)
-		}
-		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy,
-			openai_compat.WithEndpointPath("/text/chatcompletion_v2"),
-			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
-			openai_compat.WithStream(boolDefault(cfg.Stream, true)),
-			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
-			openai_compat.WithMinInterval(rpmToMinInterval(cfg.RPM)),
+		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+			cfg.APIKey,
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
 		), modelID, nil
 
 	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "mistral", "avian":
+		"vivgrid", "volcengine", "vllm", "qwen", "mistral", "avian",
+		"minimax", "longcat":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -121,11 +104,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy,
-			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
-			openai_compat.WithStream(boolDefault(cfg.Stream, false)),
-			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
-			openai_compat.WithMinInterval(rpmToMinInterval(cfg.RPM)),
+		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+			cfg.APIKey,
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
 		), modelID, nil
 
 	case "anthropic":
@@ -145,10 +129,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy,
-			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
-			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
-			openai_compat.WithMinInterval(rpmToMinInterval(cfg.RPM)),
+		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+			cfg.APIKey,
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
 		), modelID, nil
 
 	case "antigravity":
@@ -188,6 +174,93 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 }
 
+// CreateProviderByName creates a provider from the legacy ProvidersConfig by
+// provider name (case-insensitive).  It builds a ModelConfig from the named
+// provider and delegates to CreateProviderFromConfig.
+func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) {
+	name = strings.ToLower(name)
+	p := cfg.Providers
+
+	var pc config.ProviderConfig
+	protocol := name
+
+	switch name {
+	case "openai", "gpt":
+		pc = config.ProviderConfig{
+			APIKey:         p.OpenAI.APIKey,
+			APIBase:        p.OpenAI.APIBase,
+			Proxy:          p.OpenAI.Proxy,
+			RequestTimeout: p.OpenAI.RequestTimeout,
+			AuthMethod:     p.OpenAI.AuthMethod,
+		}
+		protocol = "openai"
+	case "anthropic", "claude":
+		pc = p.Anthropic
+		protocol = "anthropic"
+	case "litellm":
+		pc = p.LiteLLM
+	case "openrouter":
+		pc = p.OpenRouter
+	case "groq":
+		pc = p.Groq
+	case "zhipu":
+		pc = p.Zhipu
+	case "vllm":
+		pc = p.VLLM
+	case "gemini":
+		pc = p.Gemini
+	case "nvidia":
+		pc = p.Nvidia
+	case "ollama":
+		pc = p.Ollama
+	case "moonshot":
+		pc = p.Moonshot
+	case "shengsuanyun":
+		pc = p.ShengSuanYun
+	case "deepseek":
+		pc = p.DeepSeek
+	case "cerebras":
+		pc = p.Cerebras
+	case "vivgrid":
+		pc = p.Vivgrid
+	case "volcengine":
+		pc = p.VolcEngine
+	case "github-copilot", "copilot":
+		pc = p.GitHubCopilot
+		protocol = "github-copilot"
+	case "antigravity":
+		pc = p.Antigravity
+	case "qwen":
+		pc = p.Qwen
+	case "mistral":
+		pc = p.Mistral
+	case "avian":
+		pc = p.Avian
+	case "minimax":
+		pc = p.Minimax
+	case "longcat":
+		pc = p.LongCat
+	default:
+		return nil, fmt.Errorf("unknown provider %q", name)
+	}
+
+	mc := &config.ModelConfig{
+		ModelName:      name,
+		Model:          protocol + "/default",
+		APIKey:         pc.APIKey,
+		APIBase:        pc.APIBase,
+		Proxy:          pc.Proxy,
+		RequestTimeout: pc.RequestTimeout,
+		AuthMethod:     pc.AuthMethod,
+	}
+
+	provider, _, err := CreateProviderFromConfig(mc)
+	if err != nil {
+		return nil, err
+	}
+	return provider, nil
+}
+
 // getDefaultAPIBase returns the default API base URL for a given protocol.
 func getDefaultAPIBase(protocol string) string {
 	switch protocol {
@@ -223,30 +296,15 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://dashscope.aliyuncs.com/compatible-mode/v1"
 	case "vllm":
 		return "http://localhost:8000/v1"
-	case "minimax":
-		return "https://api.minimax.io/v1"
 	case "mistral":
 		return "https://api.mistral.ai/v1"
 	case "avian":
 		return "https://api.avian.io/v1"
+	case "minimax":
+		return "https://api.minimaxi.com/v1"
+	case "longcat":
+		return "https://api.longcat.chat/openai"
 	default:
 		return ""
 	}
-}
-
-// rpmToMinInterval converts a requests-per-minute limit to a minimum interval
-// between consecutive requests. Returns 0 (no throttle) when rpm <= 0.
-func rpmToMinInterval(rpm int) time.Duration {
-	if rpm <= 0 {
-		return 0
-	}
-	return time.Minute / time.Duration(rpm)
-}
-
-// boolDefault dereferences a *bool, returning def when nil.
-func boolDefault(p *bool, def bool) bool {
-	if p != nil {
-		return *p
-	}
-	return def
 }

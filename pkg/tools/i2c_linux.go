@@ -97,12 +97,10 @@ func (t *I2CTool) scan(args map[string]any) *ToolResult {
 
 	hasQuick := funcs&i2cFuncSmbusQuick != 0
 	hasReadByte := funcs&i2cFuncSmbusReadByte != 0
+
 	if !hasQuick && !hasReadByte {
 		return ErrorResult(
-			fmt.Sprintf(
-				"I2C adapter %s supports neither SMBus Quick nor Read Byte — cannot probe safely",
-				devPath,
-			),
+			fmt.Sprintf("I2C adapter %s supports neither SMBus Quick nor Read Byte — cannot probe safely", devPath),
 		)
 	}
 
@@ -112,7 +110,6 @@ func (t *I2CTool) scan(args map[string]any) *ToolResult {
 	}
 
 	var found []deviceEntry
-
 	// Scan 0x08-0x77, skipping I2C reserved addresses 0x00-0x07
 	for addr := 0x08; addr <= 0x77; addr++ {
 		// Set slave address — EBUSY means a kernel driver owns this address
@@ -126,6 +123,7 @@ func (t *I2CTool) scan(args map[string]any) *ToolResult {
 			}
 			continue
 		}
+
 		if smbusProbe(fd, addr, hasQuick) {
 			found = append(found, deviceEntry{
 				Address: fmt.Sprintf("0x%02x", addr),
@@ -142,11 +140,10 @@ func (t *I2CTool) scan(args map[string]any) *ToolResult {
 		"devices": found,
 		"count":   len(found),
 	}, "", "  ")
-
 	return SilentResult(fmt.Sprintf("Scan of %s:\n%s", devPath, string(result)))
 }
 
-// readDevice reads bytes from an I2C device, optionally at a specific register.
+// readDevice reads bytes from an I2C device, optionally at a specific register
 func (t *I2CTool) readDevice(args map[string]any) *ToolResult {
 	bus, errResult := parseI2CBus(args)
 	if errResult != nil {
@@ -213,18 +210,15 @@ func (t *I2CTool) readDevice(args map[string]any) *ToolResult {
 		"hex":     hexBytes,
 		"length":  n,
 	}, "", "  ")
-
 	return SilentResult(string(result))
 }
 
-// writeDevice writes bytes to an I2C device, optionally at a specific register.
+// writeDevice writes bytes to an I2C device, optionally at a specific register
 func (t *I2CTool) writeDevice(args map[string]any) *ToolResult {
 	confirm, _ := args["confirm"].(bool)
 	if !confirm {
 		return ErrorResult(
-			"write operations require confirm: true." +
-				" Please confirm with the user before writing to I2C devices," +
-				" as incorrect writes can misconfigure hardware.",
+			"write operations require confirm: true. Please confirm with the user before writing to I2C devices, as incorrect writes can misconfigure hardware.",
 		)
 	}
 

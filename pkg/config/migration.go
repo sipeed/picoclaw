@@ -45,7 +45,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 
 	p := cfg.Providers
 
-	result := make([]ModelConfig, 0, 20)
+	var result []ModelConfig
 
 	// Track if we've applied the legacy model name fix (only for first provider)
 	legacyModelNameApplied := false
@@ -61,7 +61,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}
 				return ModelConfig{
 					ModelName:      "openai",
-					Model:          "openai/gpt-5.2",
+					Model:          "openai/gpt-5.4",
 					APIKey:         p.OpenAI.APIKey,
 					APIBase:        p.OpenAI.APIBase,
 					Proxy:          p.OpenAI.Proxy,
@@ -335,7 +335,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}
 				return ModelConfig{
 					ModelName:   "github-copilot",
-					Model:       "github-copilot/gpt-5.2",
+					Model:       "github-copilot/gpt-5.4",
 					APIBase:     p.GitHubCopilot.APIBase,
 					ConnectMode: p.GitHubCopilot.ConnectMode,
 				}, true
@@ -404,6 +404,23 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					APIBase:        p.Avian.APIBase,
 					Proxy:          p.Avian.Proxy,
 					RequestTimeout: p.Avian.RequestTimeout,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"longcat"},
+			protocol:      "longcat",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.LongCat.APIKey == "" && p.LongCat.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:      "longcat",
+					Model:          "longcat/LongCat-Flash-Thinking",
+					APIKey:         p.LongCat.APIKey,
+					APIBase:        p.LongCat.APIBase,
+					Proxy:          p.LongCat.Proxy,
+					RequestTimeout: p.LongCat.RequestTimeout,
 				}, true
 			},
 		},

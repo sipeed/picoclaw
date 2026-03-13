@@ -42,11 +42,6 @@ func BuildAgentMainSessionKey(agentID string) string {
 	return fmt.Sprintf("agent:%s:%s", NormalizeAgentID(agentID), DefaultMainKey)
 }
 
-// BuildSubagentSessionKey returns "subagent:<taskID>" for subagent sessions.
-func BuildSubagentSessionKey(taskID string) string {
-	return fmt.Sprintf("subagent:%s", taskID)
-}
-
 // BuildAgentPeerSessionKey constructs a session key based on agent, channel, peer, and DM scope.
 func BuildAgentPeerSessionKey(params SessionKeyParams) string {
 	agentID := NormalizeAgentID(params.AgentID)

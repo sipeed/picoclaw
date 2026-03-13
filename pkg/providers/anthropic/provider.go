@@ -181,10 +181,8 @@ func buildParams(
 				}
 				for _, tc := range msg.ToolCalls {
 					args := tc.Arguments
-					if args == nil && tc.Function != nil && tc.Function.Arguments != "" {
-						if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-							args = map[string]any{}
-						}
+					if args == nil && tc.Function != nil && len(tc.Function.Arguments) > 0 {
+						args = tc.Function.Arguments
 					}
 					if args == nil {
 						args = map[string]any{}
@@ -318,9 +316,7 @@ func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 		if desc := t.Function.Description; desc != "" {
 			tool.Description = anthropic.String(desc)
 		}
-
-		switch req := params["required"].(type) {
-		case []any:
+		if req, ok := params["required"].([]any); ok {
 			required := make([]string, 0, len(req))
 			for _, r := range req {
 				if s, ok := r.(string); ok {
@@ -328,10 +324,7 @@ func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 				}
 			}
 			tool.InputSchema.Required = required
-		case []string:
-			tool.InputSchema.Required = append([]string(nil), req...)
 		}
-
 		result = append(result, anthropic.ToolUnionParam{OfTool: &tool})
 	}
 	return result

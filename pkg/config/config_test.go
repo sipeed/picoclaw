@@ -296,7 +296,7 @@ func TestDefaultConfig_WebTools(t *testing.T) {
 	if cfg.Tools.Web.Brave.MaxResults != 5 {
 		t.Error("Expected Brave MaxResults 5, got ", cfg.Tools.Web.Brave.MaxResults)
 	}
-	if cfg.Tools.Web.Brave.APIKey != "" {
+	if len(cfg.Tools.Web.Brave.APIKeys) != 0 {
 		t.Error("Brave API key should be empty by default")
 	}
 	if cfg.Tools.Web.DuckDuckGo.MaxResults != 5 {
@@ -384,6 +384,13 @@ func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ExecAllowRemoteEnabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Tools.Exec.AllowRemote {
+		t.Fatal("DefaultConfig().Tools.Exec.AllowRemote should be true")
+	}
+}
+
 func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
@@ -397,6 +404,22 @@ func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 	}
 	if !cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("OpenAI codex web search should remain true when unset in config file")
+	}
+}
+
+func TestLoadConfig_ExecAllowRemoteDefaultsTrueWhenUnset(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"tools":{"exec":{"enable_deny_patterns":true}}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if !cfg.Tools.Exec.AllowRemote {
+		t.Fatal("tools.exec.allow_remote should remain true when unset in config file")
 	}
 }
 
@@ -416,133 +439,12 @@ func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	}
 }
 
-func TestAgentDefaults_PlanModel_StringParse(t *testing.T) {
-	jsonData := `{
-		"agents": {
-			"defaults": {
-				"workspace": "~/.picoclaw/workspace",
-				"model": "glm-4.7",
-				"plan_model": "anthropic/claude-sonnet-4-6",
-				"plan_model_fallbacks": ["openai/gpt-4o"],
-				"max_tokens": 8192,
-				"max_tool_iterations": 20
-			}
-		}
-	}`
-
-	cfg := DefaultConfig()
-	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if cfg.Agents.Defaults.PlanModel != "anthropic/claude-sonnet-4-6" {
-		t.Errorf("PlanModel = %q, want 'anthropic/claude-sonnet-4-6'", cfg.Agents.Defaults.PlanModel)
-	}
-	if len(cfg.Agents.Defaults.PlanModelFallbacks) != 1 ||
-		cfg.Agents.Defaults.PlanModelFallbacks[0] != "openai/gpt-4o" {
-		t.Errorf("PlanModelFallbacks = %v, want [openai/gpt-4o]", cfg.Agents.Defaults.PlanModelFallbacks)
-	}
-}
-
-func TestAgentConfig_PlanModel_ObjectParse(t *testing.T) {
-	jsonData := `{
-		"agents": {
-			"defaults": {
-				"workspace": "~/.picoclaw/workspace",
-				"model": "glm-4.7",
-				"max_tokens": 8192,
-				"max_tool_iterations": 20
-			},
-			"list": [
-				{
-					"id": "main",
-					"plan_model": "anthropic/claude-sonnet-4-6"
-				},
-				{
-					"id": "advanced",
-					"plan_model": {
-						"primary": "anthropic/claude-opus-4",
-						"fallbacks": ["anthropic/claude-sonnet-4-6"]
-					}
-				}
-			]
-		}
-	}`
-
-	cfg := DefaultConfig()
-	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if len(cfg.Agents.List) != 2 {
-		t.Fatalf("agents.list len = %d, want 2", len(cfg.Agents.List))
-	}
-
-	// String form
-	main := cfg.Agents.List[0]
-	if main.PlanModel == nil || main.PlanModel.Primary != "anthropic/claude-sonnet-4-6" {
-		t.Errorf("main.PlanModel = %+v, want primary 'anthropic/claude-sonnet-4-6'", main.PlanModel)
-	}
-
-	// Object form with fallbacks
-	adv := cfg.Agents.List[1]
-	if adv.PlanModel == nil || adv.PlanModel.Primary != "anthropic/claude-opus-4" {
-		t.Errorf("advanced.PlanModel = %+v, want primary 'anthropic/claude-opus-4'", adv.PlanModel)
-	}
-	if len(adv.PlanModel.Fallbacks) != 1 || adv.PlanModel.Fallbacks[0] != "anthropic/claude-sonnet-4-6" {
-		t.Errorf("advanced.PlanModel.Fallbacks = %v", adv.PlanModel.Fallbacks)
-	}
-}
-
-func TestAgentConfig_PlanModel_OverridesDefaults(t *testing.T) {
-	jsonData := `{
-		"agents": {
-			"defaults": {
-				"workspace": "~/.picoclaw/workspace",
-				"model": "glm-4.7",
-				"plan_model": "default-plan-model",
-				"plan_model_fallbacks": ["default-fallback"],
-				"max_tokens": 8192,
-				"max_tool_iterations": 20
-			},
-			"list": [
-				{
-					"id": "custom",
-					"plan_model": {
-						"primary": "custom-plan-model",
-						"fallbacks": ["custom-fallback"]
-					}
-				}
-			]
-		}
-	}`
-
-	cfg := DefaultConfig()
-	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	// Agent-level plan_model should override defaults
-	custom := cfg.Agents.List[0]
-	if custom.PlanModel == nil || custom.PlanModel.Primary != "custom-plan-model" {
-		t.Errorf("custom.PlanModel.Primary = %v, want 'custom-plan-model'", custom.PlanModel)
-	}
-	if len(custom.PlanModel.Fallbacks) != 1 || custom.PlanModel.Fallbacks[0] != "custom-fallback" {
-		t.Errorf("custom.PlanModel.Fallbacks = %v, want [custom-fallback]", custom.PlanModel.Fallbacks)
-	}
-
-	// Defaults should still be intact
-	if cfg.Agents.Defaults.PlanModel != "default-plan-model" {
-		t.Errorf("defaults.PlanModel = %q, want 'default-plan-model'", cfg.Agents.Defaults.PlanModel)
-	}
-}
-
 func TestLoadConfig_WebToolsProxy(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.json")
 	configJSON := `{
   "agents": {"defaults":{"workspace":"./workspace","model":"gpt4","max_tokens":8192,"max_tool_iterations":20}},
-  "model_list": [{"model_name":"gpt4","model":"openai/gpt-5.2","api_key":"x"}],
+  "model_list": [{"model_name":"gpt4","model":"openai/gpt-5.4","api_key":"x"}],
   "tools": {"web":{"proxy":"http://127.0.0.1:7890"}}
 }`
 	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
@@ -602,4 +504,120 @@ func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
 	if cfg.Agents.Defaults.Workspace != want {
 		t.Errorf("Workspace path with PICOCLAW_HOME = %q, want %q", cfg.Agents.Defaults.Workspace, want)
 	}
+}
+
+// TestFlexibleStringSlice_UnmarshalText tests UnmarshalText with various comma separators
+func TestFlexibleStringSlice_UnmarshalText(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "English commas only",
+			input:    "123,456,789",
+			expected: []string{"123", "456", "789"},
+		},
+		{
+			name:     "Chinese commas only",
+			input:    "123，456，789",
+			expected: []string{"123", "456", "789"},
+		},
+		{
+			name:     "Mixed English and Chinese commas",
+			input:    "123,456，789",
+			expected: []string{"123", "456", "789"},
+		},
+		{
+			name:     "Single value",
+			input:    "123",
+			expected: []string{"123"},
+		},
+		{
+			name:     "Values with whitespace",
+			input:    " 123 , 456 , 789 ",
+			expected: []string{"123", "456", "789"},
+		},
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: nil,
+		},
+		{
+			name:     "Only commas - English",
+			input:    ",,",
+			expected: []string{},
+		},
+		{
+			name:     "Only commas - Chinese",
+			input:    "，，",
+			expected: []string{},
+		},
+		{
+			name:     "Mixed commas with empty parts",
+			input:    "123,,456，，789",
+			expected: []string{"123", "456", "789"},
+		},
+		{
+			name:     "Complex mixed values",
+			input:    "user1@example.com，user2@test.com, admin@domain.org",
+			expected: []string{"user1@example.com", "user2@test.com", "admin@domain.org"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var f FlexibleStringSlice
+			err := f.UnmarshalText([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("UnmarshalText(%q) error = %v", tt.input, err)
+			}
+
+			if tt.expected == nil {
+				if f != nil {
+					t.Errorf("UnmarshalText(%q) = %v, want nil", tt.input, f)
+				}
+				return
+			}
+
+			if len(f) != len(tt.expected) {
+				t.Errorf("UnmarshalText(%q) length = %d, want %d", tt.input, len(f), len(tt.expected))
+				return
+			}
+
+			for i, v := range tt.expected {
+				if f[i] != v {
+					t.Errorf("UnmarshalText(%q)[%d] = %q, want %q", tt.input, i, f[i], v)
+				}
+			}
+		})
+	}
+}
+
+// TestFlexibleStringSlice_UnmarshalText_EmptySliceConsistency tests nil vs empty slice behavior
+func TestFlexibleStringSlice_UnmarshalText_EmptySliceConsistency(t *testing.T) {
+	t.Run("Empty string returns nil", func(t *testing.T) {
+		var f FlexibleStringSlice
+		err := f.UnmarshalText([]byte(""))
+		if err != nil {
+			t.Fatalf("UnmarshalText error = %v", err)
+		}
+		if f != nil {
+			t.Errorf("Empty string should return nil, got %v", f)
+		}
+	})
+
+	t.Run("Commas only returns empty slice", func(t *testing.T) {
+		var f FlexibleStringSlice
+		err := f.UnmarshalText([]byte(",,,"))
+		if err != nil {
+			t.Fatalf("UnmarshalText error = %v", err)
+		}
+		if f == nil {
+			t.Error("Commas only should return empty slice, not nil")
+		}
+		if len(f) != 0 {
+			t.Errorf("Expected empty slice, got %v", f)
+		}
+	})
 }

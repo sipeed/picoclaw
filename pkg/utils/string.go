@@ -1,98 +1,17 @@
 package utils
 
 import (
-	"regexp"
 	"strings"
+	"sync/atomic"
 	"unicode"
 )
 
-// Repetition detection constants.
-const (
-	repetitionSampleSize      = 2000 // runes to sample from the tail
-	repetitionNgramSize       = 10   // sliding window length
-	repetitionUniqueThreshold = 0.1  // unique ratio below this → repetition
-)
+// Global variable to disable truncation
+var disableTruncation atomic.Bool
 
-var (
-	thinkBlockClosedRe = regexp.MustCompile(`(?is)<think>.*?</think>`)
-	thinkBlockOpenRe   = regexp.MustCompile(`(?is)<think>.*$`)
-)
-
-// StripThinkBlocks removes <think>…</think> blocks (including unclosed ones)
-// from s and returns the trimmed result.
-func StripThinkBlocks(s string) string {
-	s = thinkBlockClosedRe.ReplaceAllString(s, "")
-	s = thinkBlockOpenRe.ReplaceAllString(s, "")
-	return strings.TrimSpace(s)
-}
-
-// TailPad returns a fixed-height block of n visual lines built from the
-// tail of s.  Long lines are wrapped at wrapWidth runes so the result
-// never exceeds the chat bubble width.  If fewer than n visual lines
-// exist, Braille-blank lines (\u2800) are prepended as padding.
-func TailPad(s string, n, wrapWidth int) string {
-	// Wrap each raw line into visual lines respecting wrapWidth.
-	var visual []string
-	for _, raw := range strings.Split(s, "\n") {
-		visual = append(visual, wrapLine(raw, wrapWidth)...)
-	}
-	if len(visual) > n {
-		visual = visual[len(visual)-n:]
-	}
-	for len(visual) < n {
-		visual = append([]string{"\u2800"}, visual...)
-	}
-	return strings.Join(visual, "\n")
-}
-
-// wrapLine splits a single line into segments of at most width runes.
-// An empty line produces one empty string (preserving blank lines).
-func wrapLine(line string, width int) []string {
-	// ASCII fast path: byte length == rune length for pure ASCII
-	if len(line) <= width {
-		return []string{line}
-	}
-	runes := []rune(line)
-	if len(runes) <= width {
-		return []string{line}
-	}
-	var segs []string
-	for len(runes) > 0 {
-		end := width
-		if end > len(runes) {
-			end = len(runes)
-		}
-		segs = append(segs, string(runes[:end]))
-		runes = runes[end:]
-	}
-	return segs
-}
-
-// DetectRepetitionLoop checks if text contains degenerate repetition
-// by computing the unique N-gram ratio on the last repetitionSampleSize runes.
-// Returns true if the ratio of unique N-grams to total N-grams
-// falls below repetitionUniqueThreshold (i.e., 90%+ are duplicates).
-func DetectRepetitionLoop(text string) bool {
-	runes := []rune(text)
-
-	// Sample the tail
-	if len(runes) > repetitionSampleSize {
-		runes = runes[len(runes)-repetitionSampleSize:]
-	}
-
-	total := len(runes) - repetitionNgramSize + 1
-	if total <= 0 {
-		return false
-	}
-
-	unique := make(map[string]struct{}, total/repetitionNgramSize)
-	for i := 0; i < total; i++ {
-		ng := string(runes[i : i+repetitionNgramSize])
-		unique[ng] = struct{}{}
-	}
-
-	ratio := float64(len(unique)) / float64(total)
-	return ratio < repetitionUniqueThreshold
+// SetDisableTruncation globally enables or disables string truncation
+func SetDisableTruncation(enabled bool) {
+	disableTruncation.Store(enabled)
 }
 
 // SanitizeMessageContent removes Unicode control characters, format characters (RTL overrides,
@@ -100,9 +19,14 @@ func DetectRepetitionLoop(text string) bool {
 // or cause display issues in the agent UI.
 func SanitizeMessageContent(input string) string {
 	var sb strings.Builder
+	// Pre-allocate memory to avoid multiple allocations
 	sb.Grow(len(input))
 
 	for _, r := range input {
+		// unicode.IsGraphic returns true if the rune is a Unicode graphic character.
+		// This includes letters, marks, numbers, punctuation, and symbols.
+		// It excludes control characters (Cc), format characters (Cf),
+		// surrogates (Cs), and private use (Co).
 		if unicode.IsGraphic(r) || r == '\n' || r == '\r' || r == '\t' {
 			sb.WriteRune(r)
 		}
@@ -115,12 +39,12 @@ func SanitizeMessageContent(input string) string {
 // Handles multi-byte Unicode characters properly.
 // If the string is truncated, "..." is appended to indicate truncation.
 func Truncate(s string, maxLen int) string {
+	// If the no-truncate flag is active, it returns the full string
+	if disableTruncation.Load() {
+		return s
+	}
 	if maxLen <= 0 {
 		return ""
-	}
-	// ASCII fast path: byte length == rune length for pure ASCII
-	if len(s) <= maxLen {
-		return s
 	}
 	runes := []rune(s)
 	if len(runes) <= maxLen {

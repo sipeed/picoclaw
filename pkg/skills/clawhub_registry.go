@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -112,7 +111,7 @@ func (c *ClawHubRegistry) Search(ctx context.Context, query string, limit int) (
 	q := u.Query()
 	q.Set("q", query)
 	if limit > 0 {
-		q.Set("limit", strconv.Itoa(limit))
+		q.Set("limit", fmt.Sprintf("%d", limit))
 	}
 	u.RawQuery = q.Encode()
 

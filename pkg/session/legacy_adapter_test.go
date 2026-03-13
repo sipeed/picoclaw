@@ -33,7 +33,7 @@ type sessionBackend interface { //nolint:interfacebloat // test helper mirrors S
 
 	Save(key string) error
 
-	Close()
+	Close() error
 }
 
 func backends(t *testing.T) map[string]sessionBackend {

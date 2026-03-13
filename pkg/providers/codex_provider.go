@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	codexDefaultModel        = "gpt-5.2"
+	codexDefaultModel        = "gpt-5.3-codex"
 	codexDefaultInstructions = "You are Codex, a coding assistant."
 )
 
@@ -317,19 +317,23 @@ func resolveCodexToolCall(tc ToolCall) (name string, arguments string, ok bool) 
 		return "", "", false
 	}
 
-	args := tc.Arguments
-	if len(args) == 0 && tc.Function != nil {
-		args = tc.Function.Arguments
-	}
-	if len(args) == 0 {
-		return name, "{}", true
+	if len(tc.Arguments) > 0 {
+		argsJSON, err := json.Marshal(tc.Arguments)
+		if err != nil {
+			return "", "", false
+		}
+		return name, string(argsJSON), true
 	}
 
-	argsJSON, err := json.Marshal(args)
-	if err != nil {
-		return "", "", false
+	if tc.Function != nil && len(tc.Function.Arguments) > 0 {
+		argsJSON, err := json.Marshal(tc.Function.Arguments)
+		if err != nil {
+			return "", "", false
+		}
+		return name, string(argsJSON), true
 	}
-	return name, string(argsJSON), true
+
+	return name, "{}", true
 }
 
 func translateToolsForCodex(tools []ToolDefinition, enableWebSearch bool) []responses.ToolUnionParam {
@@ -345,13 +349,9 @@ func translateToolsForCodex(tools []ToolDefinition, enableWebSearch bool) []resp
 		if enableWebSearch && strings.EqualFold(t.Function.Name, "web_search") {
 			continue
 		}
-		params := t.Function.ParametersMap()
-		if params == nil {
-			params = map[string]any{}
-		}
 		ft := responses.FunctionToolParam{
 			Name:       t.Function.Name,
-			Parameters: params,
+			Parameters: t.Function.ParametersMap(),
 			Strict:     openai.Opt(false),
 		}
 		if t.Function.Description != "" {
@@ -386,10 +386,6 @@ func parseCodexResponse(resp *responses.Response) *LLMResponse {
 				ID:        item.CallID,
 				Name:      item.Name,
 				Arguments: args,
-				Function: &FunctionCall{
-					Name:      item.Name,
-					Arguments: cloneToolArgs(args),
-				},
 			})
 		}
 	}

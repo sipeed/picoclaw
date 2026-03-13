@@ -340,11 +340,12 @@ func normalizeStoredToolCall(tc ToolCall) (string, map[string]any, string) {
 		thoughtSignature = tc.Function.ThoughtSignature
 	}
 
-	if len(args) == 0 && tc.Function != nil && len(tc.Function.Arguments) > 0 {
-		args = cloneToolArgs(tc.Function.Arguments)
-	}
 	if args == nil {
 		args = map[string]any{}
+	}
+
+	if len(args) == 0 && tc.Function != nil && len(tc.Function.Arguments) > 0 {
+		args = tc.Function.Arguments
 	}
 
 	return name, args, thoughtSignature

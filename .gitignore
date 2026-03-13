@@ -47,14 +47,12 @@ docs/plans/
 
 # Added by goreleaser init:
 dist/
-!pkg/miniapp/static/dist/
-!pkg/miniapp/static/dist/**
+*.vite/
 
 # Windows Application Icon/Resource
 *.syso
 
-
-# Frontend dependencies
-node_modules/
-
-
+# Keep embedded backend dist directory placeholder in VCS
+!web/backend/dist/
+web/backend/dist/*
+!web/backend/dist/.gitkeep

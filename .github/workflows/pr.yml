@@ -1,7 +1,7 @@
 name: PR
 
 on:
-  pull_request: {}
+  pull_request: { }
 
 jobs:
   lint:
@@ -18,6 +18,9 @@ jobs:
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend deps
+        run: cd pkg/miniapp/frontend && bun install
 
       - name: Run go generate
         run: go generate ./...
@@ -61,23 +64,11 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
+      - name: Install frontend deps
+        run: cd pkg/miniapp/frontend && bun install
 
       - name: Run go generate
         run: go generate ./...
-
-      - name: Run frontend tests
-        run: |
-          pnpm --dir pkg/miniapp/frontend install --frozen-lockfile
-          pnpm --dir pkg/miniapp/frontend test
 
       - name: Run go test
         run: go test ./...

@@ -77,7 +77,7 @@ func TestParseJSONLEvents_ToolCallExtraction(t *testing.T) {
 		t.Errorf("ToolCalls[0].ID = %q, want %q", resp.ToolCalls[0].ID, "call_1")
 	}
 	if resp.ToolCalls[0].Function.Arguments["path"] != "/tmp/test.txt" {
-		t.Errorf("ToolCalls[0].Function.Arguments[path] = %v", resp.ToolCalls[0].Function.Arguments["path"])
+		t.Errorf("ToolCalls[0].Function.Arguments = %v", resp.ToolCalls[0].Function.Arguments)
 	}
 	// Content should have the tool call JSON stripped
 	if strings.Contains(resp.Content, "tool_calls") {
@@ -292,12 +292,7 @@ func TestBuildPrompt_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get current weather",
-				Parameters: MustMarshalParameters(map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"city": map[string]any{"type": "string"},
-					},
-				}),
+				Parameters:  json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
 			},
 		},
 	}
@@ -490,7 +485,7 @@ echo '{"type":"turn.completed"}'`
 	}
 
 	messages := []Message{{Role: "user", Content: "test"}}
-	_, err := p.Chat(context.Background(), messages, nil, "gpt-5.2-codex", nil)
+	_, err := p.Chat(context.Background(), messages, nil, "gpt-5.3-codex", nil)
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}
@@ -502,7 +497,7 @@ echo '{"type":"turn.completed"}'`
 	}
 	args := string(argsData)
 
-	if !strings.Contains(args, "-m gpt-5.2-codex") {
+	if !strings.Contains(args, "-m gpt-5.3-codex") {
 		t.Errorf("args should contain model flag, got: %s", args)
 	}
 	if !strings.Contains(args, "-C /tmp/test-workspace") {

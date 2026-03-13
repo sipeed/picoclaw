@@ -114,12 +114,7 @@ func TestBuildCodexParams_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather",
-				Parameters: MustMarshalParameters(map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"city": map[string]any{"type": "string"},
-					},
-				}),
+				Parameters:  json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
 			},
 		},
 	}
@@ -166,9 +161,7 @@ func TestBuildCodexParams_WebSearchFunctionReplacedWithBuiltin(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "web_search",
 				Description: "local web search",
-				Parameters: MustMarshalParameters(map[string]any{
-					"type": "object",
-				}),
+				Parameters:  json.RawMessage(`{"type":"object"}`),
 			},
 		},
 		{
@@ -176,9 +169,7 @@ func TestBuildCodexParams_WebSearchFunctionReplacedWithBuiltin(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "read_file",
 				Description: "read file",
-				Parameters: MustMarshalParameters(map[string]any{
-					"type": "object",
-				}),
+				Parameters:  json.RawMessage(`{"type":"object"}`),
 			},
 		},
 	}
@@ -568,7 +559,7 @@ func TestCodexProvider_ChatRoundTrip_ModelFallbackFromUnsupported(t *testing.T) 
 	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
 
 	messages := []Message{{Role: "user", Content: "Hello"}}
-	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-5.2", nil)
+	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-5.3-codex", nil)
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}
@@ -599,7 +590,7 @@ func TestResolveCodexModel(t *testing.T) {
 			wantFallback: true,
 		},
 		{name: "non-openai prefixed", input: "glm-4.7", wantModel: codexDefaultModel, wantFallback: true},
-		{name: "openai prefix", input: "openai/gpt-5.2", wantModel: "gpt-5.2", wantFallback: false},
+		{name: "openai prefix", input: "openai/gpt-5.3-codex", wantModel: "gpt-5.3-codex", wantFallback: false},
 		{name: "direct gpt", input: "gpt-4o", wantModel: "gpt-4o", wantFallback: false},
 	}
 

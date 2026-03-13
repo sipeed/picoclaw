@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -215,34 +216,31 @@ func TestNewManager_EmptyWorkspace(t *testing.T) {
 	}
 }
 
-func TestHeartbeatTargetsPersistence(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "state-test-*")
+func TestNewManager_MkdirFailureDoesNotCrash(t *testing.T) {
+	if os.Getenv("BE_CRASHER") == "1" {
+		tmpDir := os.Getenv("CRASH_DIR")
+
+		statePath := filepath.Join(tmpDir, "state")
+		if err := os.WriteFile(statePath, []byte("I'm a file, not a folder"), 0o644); err != nil {
+			fmt.Printf("setup failed: %v", err)
+			os.Exit(0)
+		}
+
+		NewManager(tmpDir)
+		os.Exit(0)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "state-crash-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	sm := NewManager(tmpDir)
+	cmd := exec.Command(os.Args[0], "-test.run=TestNewManager_MkdirFailureDoesNotCrash")
+	cmd.Env = append(os.Environ(), "BE_CRASHER=1", "CRASH_DIR="+tmpDir)
 
-	if err := sm.SetLastHeartbeatTarget("telegram:-100123"); err != nil {
-		t.Fatalf("SetLastHeartbeatTarget failed: %v", err)
-	}
-	if err := sm.SetHeartbeatTarget("telegram:-100123/42"); err != nil {
-		t.Fatalf("SetHeartbeatTarget failed: %v", err)
-	}
-
-	if got := sm.GetLastHeartbeatTarget(); got != "telegram:-100123" {
-		t.Fatalf("GetLastHeartbeatTarget = %q, want %q", got, "telegram:-100123")
-	}
-	if got := sm.GetHeartbeatTarget(); got != "telegram:-100123/42" {
-		t.Fatalf("GetHeartbeatTarget = %q, want %q", got, "telegram:-100123/42")
-	}
-
-	sm2 := NewManager(tmpDir)
-	if got := sm2.GetLastHeartbeatTarget(); got != "telegram:-100123" {
-		t.Fatalf("persistent GetLastHeartbeatTarget = %q, want %q", got, "telegram:-100123")
-	}
-	if got := sm2.GetHeartbeatTarget(); got != "telegram:-100123/42" {
-		t.Fatalf("persistent GetHeartbeatTarget = %q, want %q", got, "telegram:-100123/42")
+	err = cmd.Run()
+	if err != nil {
+		t.Fatalf("NewManager should not crash when state dir creation fails, got: %v", err)
 	}
 }

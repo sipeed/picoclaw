@@ -26,12 +26,6 @@ type ReactionCapable interface {
 	ReactToMessage(ctx context.Context, chatID, messageID string) (undo func(), err error)
 }
 
-// MessageSenderWithID — channels that can send a message and return its platform-specific ID.
-// Used by Manager to track status/task messages for later editing.
-type MessageSenderWithID interface {
-	SendWithID(ctx context.Context, chatID string, content string) (messageID string, err error)
-}
-
 // PlaceholderCapable — channels that can send a placeholder message
 // (e.g. "Thinking... 💭") that will later be edited to the actual response.
 // The channel MUST also implement MessageEditor for the placeholder to be useful.
@@ -39,13 +33,6 @@ type MessageSenderWithID interface {
 // Manager.preSend can later edit it via MessageEditor.EditMessage.
 type PlaceholderCapable interface {
 	SendPlaceholder(ctx context.Context, chatID string) (messageID string, err error)
-}
-
-// DraftSender — channels that can send progressive draft messages.
-// Used for streaming LLM output without the "edited" indicator.
-// draftID must be non-zero and consistent across updates for the same draft.
-type DraftSender interface {
-	SendDraft(ctx context.Context, chatID string, draftID int, content string) error
 }
 
 // PlaceholderRecorder is injected into channels by Manager.
