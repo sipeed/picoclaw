@@ -20,10 +20,8 @@ import (
 // so all registries configured in config are available for installation.
 type InstallSkillTool struct {
 	registryMgr *skills.RegistryManager
-
-	workspace string
-
-	mu sync.Mutex
+	workspace   string
+	mu          sync.Mutex
 }
 
 // NewInstallSkillTool creates a new InstallSkillTool.
@@ -32,10 +30,8 @@ type InstallSkillTool struct {
 func NewInstallSkillTool(registryMgr *skills.RegistryManager, workspace string) *InstallSkillTool {
 	return &InstallSkillTool{
 		registryMgr: registryMgr,
-
-		workspace: workspace,
-
-		mu: sync.Mutex{},
+		workspace:   workspace,
+		mu:          sync.Mutex{},
 	}
 }
 
@@ -52,23 +48,19 @@ func (t *InstallSkillTool) Parameters() map[string]any {
 		"type": "object",
 		"properties": map[string]any{
 			"slug": map[string]any{
-				"type": "string",
-
+				"type":        "string",
 				"description": "The unique slug of the skill to install (e.g., 'github', 'docker-compose')",
 			},
 			"version": map[string]any{
-				"type": "string",
-
+				"type":        "string",
 				"description": "Specific version to install (optional, defaults to latest)",
 			},
 			"registry": map[string]any{
-				"type": "string",
-
+				"type":        "string",
 				"description": "Registry to install from (required, e.g., 'clawhub')",
 			},
 			"force": map[string]any{
-				"type": "boolean",
-
+				"type":        "boolean",
 				"description": "Force reinstall if skill already exists (default false)",
 			},
 		},
@@ -131,11 +123,9 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 		if rmErr != nil {
 			logger.ErrorCF("tool", "Failed to remove partial install",
 				map[string]any{
-					"tool": "install_skill",
-
+					"tool":       "install_skill",
 					"target_dir": targetDir,
-
-					"error": rmErr.Error(),
+					"error":      rmErr.Error(),
 				})
 		}
 		return ErrorResult(fmt.Sprintf("failed to install %q: %v", slug, err))
@@ -147,11 +137,9 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 		if rmErr != nil {
 			logger.ErrorCF("tool", "Failed to remove partial install",
 				map[string]any{
-					"tool": "install_skill",
-
+					"tool":       "install_skill",
 					"target_dir": targetDir,
-
-					"error": rmErr.Error(),
+					"error":      rmErr.Error(),
 				})
 		}
 		return ErrorResult(fmt.Sprintf("skill %q is flagged as malicious and cannot be installed", slug))
@@ -161,17 +149,12 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 	if err := writeOriginMeta(targetDir, registry.Name(), slug, result.Version); err != nil {
 		logger.ErrorCF("tool", "Failed to write origin metadata",
 			map[string]any{
-				"tool": "install_skill",
-
-				"error": err.Error(),
-
-				"target": targetDir,
-
+				"tool":     "install_skill",
+				"error":    err.Error(),
+				"target":   targetDir,
 				"registry": registry.Name(),
-
-				"slug": slug,
-
-				"version": result.Version,
+				"slug":     slug,
+				"version":  result.Version,
 			})
 		_ = err
 	}
@@ -194,28 +177,20 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 
 // originMeta tracks which registry a skill was installed from.
 type originMeta struct {
-	Version int `json:"version"`
-
-	Registry string `json:"registry"`
-
-	Slug string `json:"slug"`
-
+	Version          int    `json:"version"`
+	Registry         string `json:"registry"`
+	Slug             string `json:"slug"`
 	InstalledVersion string `json:"installed_version"`
-
-	InstalledAt int64 `json:"installed_at"`
+	InstalledAt      int64  `json:"installed_at"`
 }
 
 func writeOriginMeta(targetDir, registryName, slug, version string) error {
 	meta := originMeta{
-		Version: 1,
-
-		Registry: registryName,
-
-		Slug: slug,
-
+		Version:          1,
+		Registry:         registryName,
+		Slug:             slug,
 		InstalledVersion: version,
-
-		InstalledAt: time.Now().UnixMilli(),
+		InstalledAt:      time.Now().UnixMilli(),
 	}
 
 	data, err := json.MarshalIndent(meta, "", "  ")

@@ -29,42 +29,33 @@ func (t *I2CTool) Parameters() map[string]any {
 		"type": "object",
 		"properties": map[string]any{
 			"action": map[string]any{
-				"type": "string",
-
-				"enum": []string{"detect", "scan", "read", "write"},
-
+				"type":        "string",
+				"enum":        []string{"detect", "scan", "read", "write"},
 				"description": "Action to perform: detect (list available I2C buses), scan (find devices on a bus), read (read bytes from a device), write (send bytes to a device)",
 			},
 			"bus": map[string]any{
-				"type": "string",
-
+				"type":        "string",
 				"description": "I2C bus number (e.g. \"1\" for /dev/i2c-1). Required for scan/read/write.",
 			},
 			"address": map[string]any{
-				"type": "integer",
-
+				"type":        "integer",
 				"description": "7-bit I2C device address (0x03-0x77). Required for read/write.",
 			},
 			"register": map[string]any{
-				"type": "integer",
-
+				"type":        "integer",
 				"description": "Register address to read from or write to. If set, sends register byte before read/write.",
 			},
 			"data": map[string]any{
-				"type": "array",
-
-				"items": map[string]any{"type": "integer"},
-
+				"type":        "array",
+				"items":       map[string]any{"type": "integer"},
 				"description": "Bytes to write (0-255 each). Required for write action.",
 			},
 			"length": map[string]any{
-				"type": "integer",
-
+				"type":        "integer",
 				"description": "Number of bytes to read (1-256). Default: 1. Used with read action.",
 			},
 			"confirm": map[string]any{
-				"type": "boolean",
-
+				"type":        "boolean",
 				"description": "Must be true for write operations. Safety guard to prevent accidental writes.",
 			},
 		},
@@ -111,8 +102,7 @@ func (t *I2CTool) detect() *ToolResult {
 
 	type busInfo struct {
 		Path string `json:"path"`
-
-		Bus string `json:"bus"`
+		Bus  string `json:"bus"`
 	}
 
 	buses := make([]busInfo, 0, len(matches))

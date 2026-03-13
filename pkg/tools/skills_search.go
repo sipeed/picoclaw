@@ -11,8 +11,7 @@ import (
 // FindSkillsTool allows the LLM agent to search for installable skills from registries.
 type FindSkillsTool struct {
 	registryMgr *skills.RegistryManager
-
-	cache *skills.SearchCache
+	cache       *skills.SearchCache
 }
 
 // NewFindSkillsTool creates a new FindSkillsTool.
@@ -21,8 +20,7 @@ type FindSkillsTool struct {
 func NewFindSkillsTool(registryMgr *skills.RegistryManager, cache *skills.SearchCache) *FindSkillsTool {
 	return &FindSkillsTool{
 		registryMgr: registryMgr,
-
-		cache: cache,
+		cache:       cache,
 	}
 }
 
@@ -39,18 +37,14 @@ func (t *FindSkillsTool) Parameters() map[string]any {
 		"type": "object",
 		"properties": map[string]any{
 			"query": map[string]any{
-				"type": "string",
-
+				"type":        "string",
 				"description": "Search query describing the desired skill capability (e.g., 'github integration', 'database management')",
 			},
 			"limit": map[string]any{
-				"type": "integer",
-
+				"type":        "integer",
 				"description": "Maximum number of results to return (1-20, default 5)",
-
-				"minimum": 1.0,
-
-				"maximum": 20.0,
+				"minimum":     1.0,
+				"maximum":     20.0,
 			},
 		},
 		"required": []string{"query"},
