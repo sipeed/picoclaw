@@ -18,7 +18,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-func agentCmd(message, sessionKey, model string, debug, orchestrationEnabled bool) error {
+func agentCmd(message, sessionKey, model string, debug bool) error {
 	if sessionKey == "" {
 		sessionKey = "cli:default"
 	}
@@ -37,10 +37,6 @@ func agentCmd(message, sessionKey, model string, debug, orchestrationEnabled boo
 		cfg.Agents.Defaults.ModelName = model
 	}
 
-	if orchestrationEnabled {
-		cfg.Agents.Defaults.Orchestration = true
-	}
-
 	provider, modelID, err := providers.CreateProvider(cfg)
 	if err != nil {
 		return fmt.Errorf("error creating provider: %w", err)
@@ -54,6 +50,7 @@ func agentCmd(message, sessionKey, model string, debug, orchestrationEnabled boo
 	msgBus := bus.NewMessageBus()
 	defer msgBus.Close()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	defer agentLoop.Close()
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()

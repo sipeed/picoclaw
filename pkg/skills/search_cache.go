@@ -39,8 +39,8 @@ func NewSearchCache(maxEntries int, ttl time.Duration) *SearchCache {
 		ttl = 5 * time.Minute
 	}
 	return &SearchCache{
-		entries:    make(map[string]*cacheEntry, maxEntries),
-		order:      make([]string, 0, maxEntries),
+		entries:    make(map[string]*cacheEntry),
+		order:      make([]string, 0),
 		maxEntries: maxEntries,
 		ttl:        ttl,
 	}

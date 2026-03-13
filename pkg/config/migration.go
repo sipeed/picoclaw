@@ -407,6 +407,23 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}, true
 			},
 		},
+		{
+			providerNames: []string{"longcat"},
+			protocol:      "longcat",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.LongCat.APIKey == "" && p.LongCat.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:      "longcat",
+					Model:          "longcat/LongCat-Flash-Thinking",
+					APIKey:         p.LongCat.APIKey,
+					APIBase:        p.LongCat.APIBase,
+					Proxy:          p.LongCat.Proxy,
+					RequestTimeout: p.LongCat.RequestTimeout,
+				}, true
+			},
+		},
 	}
 
 	// Process each provider migration
