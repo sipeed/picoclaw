@@ -31,6 +31,7 @@
     "historyLoadFailed": "加载历史记录失败",
     "historyOpenFailed": "打开该历史会话失败",
     "loadingMore": "加载更多...",
+    "loading": "加载中...",
     "deleteSession": "删除会话",
     "messagesCount": "{{count}} 条消息",
     "noModel": "选择模型",

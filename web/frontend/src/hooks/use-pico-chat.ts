@@ -108,8 +108,8 @@ export function usePicoChat() {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("disconnected")
   const [isTyping, setIsTyping] = useState(false)
-  const [activeSessionId, setActiveSessionId] =
-    useState<string>(generateSessionId)
+  const [activeSessionId, setActiveSessionId] = useState<string>("")
+  const [isLoadingSession, setIsLoadingSession] = useState(true)
 
   const wsRef = useRef<WebSocket | null>(null)
   const isConnectingRef = useRef(false)
@@ -290,6 +290,39 @@ export function usePicoChat() {
     return () => disconnect()
   }, [disconnect])
 
+  // Load most recent session on initial mount
+  useEffect(() => {
+    const loadRecentSession = async () => {
+      try {
+        const sessions = await getSessions(0, 1)
+        if (sessions.length > 0) {
+          const recentSession = sessions[0]
+          const detail = await getSessionHistory(recentSession.id)
+          const fallbackTime = detail.updated
+          const historyMessages = detail.messages.map((m, i) => ({
+            id: `hist-${i}-${Date.now()}`,
+            role: m.role as "user" | "assistant",
+            content: m.content,
+            timestamp: fallbackTime,
+          }))
+          setActiveSessionId(recentSession.id)
+          setMessages(historyMessages)
+        } else {
+          // No existing sessions, create a new one
+          setActiveSessionId(generateSessionId())
+        }
+      } catch (err) {
+        console.error("Failed to load recent session:", err)
+        // Fall back to new session on error
+        setActiveSessionId(generateSessionId())
+      } finally {
+        setIsLoadingSession(false)
+      }
+    }
+
+    void loadRecentSession()
+  }, [])
+
   const sendMessage = useCallback((content: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       console.warn("WebSocket not connected")
@@ -379,6 +412,7 @@ export function usePicoChat() {
     connectionState,
     isTyping,
     activeSessionId,
+    isLoadingSession,
     sendMessage,
     switchSession,
     newChat,
