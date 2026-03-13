@@ -166,12 +166,18 @@ func (c *LINEChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	// Limit request body to 4 MB to prevent memory exhaustion (DoS).
+	const maxBodySize = 4 << 20 // 4 MB
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodySize+1))
 	if err != nil {
 		logger.ErrorCF("line", "Failed to read request body", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	if len(body) > maxBodySize {
+		http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 
