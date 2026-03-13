@@ -1,6 +1,8 @@
 package providers
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -265,6 +267,37 @@ func TestCreateProviderReturnsHTTPProviderForOpenRouter(t *testing.T) {
 
 	if _, ok := provider.(*HTTPProvider); !ok {
 		t.Fatalf("provider type = %T, want *HTTPProvider", provider)
+	}
+}
+
+func TestCreateProviderWithLegacyGeminiProvidersConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	configJSON := `{
+  "providers": {
+    "gemini": {
+      "api_key": "gemini-test-key"
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	provider, modelID, err := CreateProvider(cfg)
+	if err != nil {
+		t.Fatalf("CreateProvider() error = %v", err)
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("provider type = %T, want *HTTPProvider", provider)
+	}
+	if modelID != "gemini-pro" {
+		t.Fatalf("modelID = %q, want %q", modelID, "gemini-pro")
 	}
 }
 
