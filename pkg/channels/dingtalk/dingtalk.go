@@ -117,7 +117,7 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return channels.ErrNotRunning
 	}
 	// Check if we have a card instance ID for this chat (indicating we can send a card reply)
-	cardInstanceIDRaw, ok := c.cardInstanceIDs.Load(msg.ChatID)
+	cardInstanceIDRaw, ok := c.cardInstanceIDs.LoadAndDelete(msg.ChatID)
 	if !ok {
 		return c.SendDirectReply(ctx, msg)
 	}
@@ -199,15 +199,15 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 
 	// Try to create and deliver card (optional feature)
 	// If it fails, log the error but continue with normal message handling
-	if err := c.tryCardCreateAndDeliver(ctx, chatID, data); err != nil {
-		logger.WarnCF("dingtalk", "Failed to create or deliver card, falling back to direct reply", map[string]any{
-			"error":     err.Error(),
-			"chat_id":   chatID,
-			"sender_id": senderID,
-		})
+	if cardID, err := c.tryCardCreateAndDeliver(ctx, data); err != nil {
+		logger.WarnC("dingtalk", "Failed to create or deliver card, falling back to direct reply")
+		// Store the session webhook for this chat so we can reply later
+		c.sessionWebhooks.Store(chatID, data.SessionWebhook)
+	} else {
+		chatID = data.MsgId
+		c.cardInstanceIDs.Store(chatID, cardID)
 	}
-	// Store the session webhook for this chat so we can reply later
-	c.sessionWebhooks.Store(chatID, data.SessionWebhook)
+
 	// Handle the message through the base channel
 	c.HandleMessage(ctx, peer, "", senderID, chatID, content, nil, metadata, sender)
 
@@ -257,16 +257,10 @@ func (c *DingTalkChannel) SendCardReply(ctx context.Context, cardInstanceID, con
 
 func (c *DingTalkChannel) tryCardCreateAndDeliver(
 	ctx context.Context,
-	chatID string,
 	data *chatbot.BotCallbackDataModel,
-) error {
+) (string, error) {
 	if c.config.CardTemplateID == "" {
-		return nil
+		return "", fmt.Errorf("card_template_id is not configured, cannot create card")
 	}
-	cardInstanceID, err := c.client.CardCreateAndDeliver(ctx, data)
-	if err != nil {
-		return err
-	}
-	c.cardInstanceIDs.Store(chatID, cardInstanceID)
-	return nil
+	return c.client.CardCreateAndDeliver(ctx, data)
 }
