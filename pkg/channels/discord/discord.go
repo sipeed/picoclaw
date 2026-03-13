@@ -451,12 +451,19 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 
 	peer := bus.Peer{Kind: peerKind, ID: peerID}
 
+	// Get channel name from Discord state (with API fallback on cache miss)
+	channelName := ""
+	if channel, err := c.session.State.Channel(m.ChannelID); err == nil && channel != nil {
+		channelName = channel.Name
+	}
+
 	metadata := map[string]string{
 		"user_id":      senderID,
 		"username":     m.Author.Username,
 		"display_name": sender.DisplayName,
 		"guild_id":     m.GuildID,
 		"channel_id":   m.ChannelID,
+		"channel_name": channelName,
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
 	}
 
