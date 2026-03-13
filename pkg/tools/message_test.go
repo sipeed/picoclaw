@@ -252,3 +252,29 @@ func TestMessageTool_Parameters(t *testing.T) {
 		t.Error("Expected chat_id type to be 'string'")
 	}
 }
+
+func TestMessageTool_ResetSentInRound(t *testing.T) {
+	tool := NewMessageTool()
+	tool.SetSendCallback(func(channel, chatID, content string) error {
+		return nil
+	})
+
+	ctx := WithToolContext(context.Background(), "ch", "cid")
+
+	// First round: tool sends a message
+	tool.Execute(ctx, map[string]any{"content": "hello"})
+	if !tool.HasSentInRound() {
+		t.Fatal("expected sentInRound=true after Execute")
+	}
+
+	// Reset for second round
+	tool.ResetSentInRound()
+	if tool.HasSentInRound() {
+		t.Fatal("expected sentInRound=false after ResetSentInRound")
+	}
+
+	// Second round: tool is NOT used (direct answer) → flag stays false
+	if tool.HasSentInRound() {
+		t.Error("expected sentInRound=false when tool was not used in this round")
+	}
+}
