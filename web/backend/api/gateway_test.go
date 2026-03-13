@@ -707,6 +707,79 @@ func TestGatewayRestartReturnsErrorStatusWhenReplacementFailsToStart(t *testing.
 	}
 }
 
+func TestGatewayStatusExcludesLogsFields(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if _, ok := body["logs"]; ok {
+		t.Fatalf("logs unexpectedly present in status response: %#v", body["logs"])
+	}
+	if _, ok := body["log_total"]; ok {
+		t.Fatalf("log_total unexpectedly present in status response: %#v", body["log_total"])
+	}
+	if _, ok := body["log_run_id"]; ok {
+		t.Fatalf("log_run_id unexpectedly present in status response: %#v", body["log_run_id"])
+	}
+}
+
+func TestGatewayLogsReturnsIncrementalHistory(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	gateway.logs.Clear()
+	gateway.logs.Append("first line")
+	gateway.logs.Append("second line")
+	runID := gateway.logs.RunID()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/gateway/logs?log_offset=1&log_run_id="+strconv.Itoa(runID),
+		nil,
+	)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logs status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal logs response: %v", err)
+	}
+
+	logs, ok := body["logs"].([]any)
+	if !ok {
+		t.Fatalf("logs missing or not array: %#v", body["logs"])
+	}
+	if len(logs) != 1 || logs[0] != "second line" {
+		t.Fatalf("logs = %#v, want [\"second line\"]", logs)
+	}
+	if got := body["log_total"]; got != float64(2) {
+		t.Fatalf("log_total = %#v, want 2", got)
+	}
+	if got := body["log_run_id"]; got != float64(runID) {
+		t.Fatalf("log_run_id = %#v, want %d", got, runID)
+	}
+}
+
 func TestGatewayClearLogsResetsBufferedHistory(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
@@ -743,32 +816,35 @@ func TestGatewayClearLogsResetsBufferedHistory(t *testing.T) {
 		t.Fatalf("log_run_id = %d, want > %d", int(clearRunID), previousRunID)
 	}
 
-	statusRec := httptest.NewRecorder()
-	statusReq := httptest.NewRequest(
+	logsRec := httptest.NewRecorder()
+	logsReq := httptest.NewRequest(
 		http.MethodGet,
-		"/api/gateway/status?log_offset=0&log_run_id="+strconv.Itoa(previousRunID),
+		"/api/gateway/logs?log_offset=0&log_run_id="+strconv.Itoa(previousRunID),
 		nil,
 	)
-	mux.ServeHTTP(statusRec, statusReq)
+	mux.ServeHTTP(logsRec, logsReq)
 
-	if statusRec.Code != http.StatusOK {
-		t.Fatalf("status code = %d, want %d", statusRec.Code, http.StatusOK)
+	if logsRec.Code != http.StatusOK {
+		t.Fatalf("logs code = %d, want %d", logsRec.Code, http.StatusOK)
 	}
 
-	var statusBody map[string]any
-	if err := json.Unmarshal(statusRec.Body.Bytes(), &statusBody); err != nil {
-		t.Fatalf("unmarshal status response: %v", err)
+	var logsBody map[string]any
+	if err := json.Unmarshal(logsRec.Body.Bytes(), &logsBody); err != nil {
+		t.Fatalf("unmarshal logs response: %v", err)
 	}
 
-	logs, ok := statusBody["logs"].([]any)
+	logs, ok := logsBody["logs"].([]any)
 	if !ok {
-		t.Fatalf("logs missing or not array: %#v", statusBody["logs"])
+		t.Fatalf("logs missing or not array: %#v", logsBody["logs"])
 	}
 	if len(logs) != 0 {
 		t.Fatalf("logs len = %d, want 0", len(logs))
 	}
-	if got := statusBody["log_total"]; got != float64(0) {
+	if got := logsBody["log_total"]; got != float64(0) {
 		t.Fatalf("log_total = %#v, want 0", got)
+	}
+	if got := logsBody["log_run_id"]; got != clearBody["log_run_id"] {
+		t.Fatalf("log_run_id = %#v, want %#v", got, clearBody["log_run_id"])
 	}
 }
 

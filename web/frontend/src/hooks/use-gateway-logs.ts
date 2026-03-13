@@ -1,7 +1,7 @@
 import { useAtomValue } from "jotai"
 import { useEffect, useRef, useState } from "react"
 
-import { clearGatewayLogs, getGatewayStatus } from "@/api/gateway"
+import { clearGatewayLogs, getGatewayLogs } from "@/api/gateway"
 import { gatewayAtom } from "@/store/gateway"
 
 export function useGatewayLogs() {
@@ -49,7 +49,7 @@ export function useGatewayLogs() {
         const requestToken = syncTokenRef.current
         const requestOffset = logOffsetRef.current
         const requestRunId = logRunIdRef.current
-        const data = await getGatewayStatus({
+        const data = await getGatewayLogs({
           log_offset: requestOffset,
           log_run_id: requestRunId,
         })

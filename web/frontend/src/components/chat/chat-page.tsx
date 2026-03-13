@@ -15,6 +15,7 @@ import { useChatModels } from "@/hooks/use-chat-models"
 import { useGateway } from "@/hooks/use-gateway"
 import { usePicoChat } from "@/hooks/use-pico-chat"
 import { useSessionHistory } from "@/hooks/use-session-history"
+import { hydrateActiveSession } from "@/lib/pico-chat-controller"
 
 export function ChatPage() {
   const { t } = useTranslation()
@@ -66,6 +67,10 @@ export function ChatPage() {
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     syncScrollState(e.currentTarget)
   }
+
+  useEffect(() => {
+    void hydrateActiveSession()
+  }, [])
 
   useEffect(() => {
     if (scrollRef.current) {
