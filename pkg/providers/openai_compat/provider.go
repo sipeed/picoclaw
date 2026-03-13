@@ -33,6 +33,7 @@ type Provider struct {
 	apiKey         string
 	apiBase        string
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	strictCompat   bool   // Strip non-standard fields for strict OpenAI-compatible endpoints
 	httpClient     *http.Client
 }
 
@@ -51,6 +52,12 @@ func WithRequestTimeout(timeout time.Duration) Option {
 		if timeout > 0 {
 			p.httpClient.Timeout = timeout
 		}
+	}
+}
+
+func WithStrictCompat(v bool) Option {
+	return func(p *Provider) {
+		p.strictCompat = v
 	}
 }
 
@@ -117,7 +124,7 @@ func (p *Provider) Chat(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": serializeMessages(messages),
+		"messages": serializeMessages(messages, p.strictCompat),
 	}
 
 	if len(tools) > 0 {
@@ -417,15 +424,37 @@ func msgContent(content string, toolCalls []ToolCall) *string {
 // - Strips SystemParts (unknown to third-party endpoints)
 // - Converts messages with Media to multipart content format (text + image_url parts)
 // - Preserves ToolCallID, ToolCalls, and ReasoningContent for all messages
-func serializeMessages(messages []Message) []any {
+// - When strictCompat is true, strips non-standard fields (reasoning_content, extra_content,
+//   thought_signature) that some strict OpenAI-compatible providers reject
+func serializeMessages(messages []Message, strictCompat bool) []any {
 	out := make([]any, 0, len(messages))
 	for _, m := range messages {
+		toolCalls := m.ToolCalls
+		reasoningContent := m.ReasoningContent
+
+		if strictCompat {
+			reasoningContent = ""
+			if len(toolCalls) > 0 {
+				sanitized := make([]ToolCall, len(toolCalls))
+				for i, tc := range toolCalls {
+					sanitized[i] = tc
+					sanitized[i].ExtraContent = nil
+					if tc.Function != nil {
+						fnCopy := *tc.Function
+						fnCopy.ThoughtSignature = ""
+						sanitized[i].Function = &fnCopy
+					}
+				}
+				toolCalls = sanitized
+			}
+		}
+
 		if len(m.Media) == 0 {
 			out = append(out, openaiMessage{
 				Role:             m.Role,
-				Content:          msgContent(m.Content, m.ToolCalls),
-				ReasoningContent: m.ReasoningContent,
-				ToolCalls:        m.ToolCalls,
+				Content:          msgContent(m.Content, toolCalls),
+				ReasoningContent: reasoningContent,
+				ToolCalls:        toolCalls,
 				ToolCallID:       m.ToolCallID,
 			})
 			continue
@@ -457,11 +486,11 @@ func serializeMessages(messages []Message) []any {
 		if m.ToolCallID != "" {
 			msg["tool_call_id"] = m.ToolCallID
 		}
-		if len(m.ToolCalls) > 0 {
-			msg["tool_calls"] = m.ToolCalls
+		if len(toolCalls) > 0 {
+			msg["tool_calls"] = toolCalls
 		}
-		if m.ReasoningContent != "" {
-			msg["reasoning_content"] = m.ReasoningContent
+		if reasoningContent != "" {
+			msg["reasoning_content"] = reasoningContent
 		}
 		out = append(out, msg)
 	}
