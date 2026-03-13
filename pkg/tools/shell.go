@@ -373,9 +373,37 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		matches := absolutePathPattern.FindAllString(cmd, -1)
+		// Web URL schemes whose path components (starting with //) should be exempt
+		// from workspace sandbox checks. file: is intentionally excluded so that
+		// file:// URIs are still validated against the workspace boundary.
+		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
 
-		for _, raw := range matches {
+		matchIndices := absolutePathPattern.FindAllStringIndex(cmd, -1)
+
+		for _, loc := range matchIndices {
+			raw := cmd[loc[0]:loc[1]]
+
+			// Skip URL path components that look like they're from web URLs.
+			// When a URL like "https://github.com" is parsed, the regex captures
+			// "//github.com" as a match (the path portion after "https:").
+			// Use the exact match position (loc[0]) so that duplicate //path substrings
+			// in the same command are each evaluated at their own position.
+			if strings.HasPrefix(raw, "//") && loc[0] > 0 {
+				before := cmd[:loc[0]]
+				isWebURL := false
+
+				for _, scheme := range webSchemes {
+					if strings.HasSuffix(before, scheme) {
+						isWebURL = true
+						break
+					}
+				}
+
+				if isWebURL {
+					continue
+				}
+			}
+
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue

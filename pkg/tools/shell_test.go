@@ -522,3 +522,101 @@ func TestShellTool_CustomAllowPatterns(t *testing.T) {
 		t.Errorf("'git push upstream main' should still be blocked by deny pattern")
 	}
 }
+
+// TestShellTool_URLsNotBlocked verifies that commands containing URLs are not
+// incorrectly blocked by the workspace restriction safety guard (issue #1203).
+func TestShellTool_URLsNotBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// These commands contain URLs and should NOT be blocked by workspace restriction.
+	// The URL path components (e.g., "//github.com") should be recognized as URLs,
+	// not as file system paths.
+	commands := []string{
+		"agent-browser open https://github.com",
+		"curl https://api.example.com/data",
+		"wget http://example.com/file",
+		"browser open https://github.com/user/repo",
+		"fetch ftp://ftp.example.com/file.txt",
+		"git clone https://github.com/sipeed/picoclaw.git",
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("command with URL should not be blocked by workspace check: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_FileURISandboxing verifies that file:// URIs that escape the
+// workspace are still blocked, even though other URLs are allowed (issue #1254).
+func TestShellTool_FileURISandboxing(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// These file:// URIs should be blocked if they reference paths outside the workspace.
+	// Unlike web URLs (http://, https://, ftp://), file:// URIs can be used to escape the sandbox.
+	blockedCommands := []string{
+		"cat file:///etc/passwd",
+		"cat file:///etc/hosts",
+		"cat file:///root/.ssh/id_rsa",
+	}
+
+	for _, cmd := range blockedCommands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("file:// URI outside workspace should be blocked: %s", cmd)
+		}
+	}
+
+	// These file:// URIs should be allowed if they reference paths inside the workspace.
+	// Create a test file inside the temp directory
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %s", err)
+	}
+
+	allowedCommands := []string{
+		"cat file://" + testFile,
+	}
+
+	for _, cmd := range allowedCommands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("file:// URI inside workspace should be allowed: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_URLBypassPrevented verifies that a command cannot bypass the workspace
+// sandbox by smuggling a real path after a URL that contains the same //path substring.
+// e.g. "echo https://etc/passwd && cat //etc/passwd" must still be blocked.
+func TestShellTool_URLBypassPrevented(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// The path //etc/passwd appears twice: once as the host part of an https URL
+	// and once as a real (escaped) absolute path. The guard must block the command
+	// because the second occurrence is a genuine out-of-workspace path.
+	blockedCommands := []string{
+		"echo https://etc/passwd && cat //etc/passwd",
+		"curl https://host/file && ls //etc",
+	}
+
+	for _, cmd := range blockedCommands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("bypass attempt should be blocked: %q\n  got: %s", cmd, result.ForLLM)
+		}
+	}
+}
