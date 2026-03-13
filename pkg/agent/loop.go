@@ -584,6 +584,16 @@ func (al *AgentLoop) llmWorker(ctx context.Context, queue <-chan bus.InboundMess
 			return
 		}
 
+		// Reset per-round message-tool state so a previous round's
+		// tool-sent flag does not suppress this round's response.
+		if defaultAgent := al.registry.GetDefaultAgent(); defaultAgent != nil {
+			if tool, ok := defaultAgent.Tools.Get("message"); ok {
+				if mt, ok := tool.(*tools.MessageTool); ok {
+					mt.ResetSentInRound()
+				}
+			}
+		}
+
 		response, err := al.processMessage(ctx, msg)
 		if err != nil {
 			response = fmt.Sprintf("Error processing message: %v", err)
