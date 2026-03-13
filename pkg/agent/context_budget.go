@@ -12,14 +12,26 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-// isSafeBoundary reports whether index is a valid position to split a message
-// history for truncation or compression. Splitting at index means:
-//   - history[:index] is dropped or summarized
-//   - history[index:] is kept
+// parseTurnBoundaries returns the starting index of each Turn in the history.
+// A Turn is a complete "user input → LLM iterations → final response" cycle
+// (as defined in #1316). Each Turn begins at a user message and extends
+// through all subsequent assistant/tool messages until the next user message.
 //
-// A boundary is safe when the kept portion begins at a "user" message,
-// ensuring no tool-call sequence (assistant+ToolCalls → tool results)
-// is torn apart across the split.
+// Cutting at a Turn boundary guarantees that no tool-call sequence
+// (assistant+ToolCalls → tool results) is split across the cut.
+func parseTurnBoundaries(history []providers.Message) []int {
+	var starts []int
+	for i, msg := range history {
+		if msg.Role == "user" {
+			starts = append(starts, i)
+		}
+	}
+	return starts
+}
+
+// isSafeBoundary reports whether index is a valid Turn boundary — i.e.,
+// a position where the kept portion (history[index:]) begins at a user
+// message, so no tool-call sequence is torn apart.
 func isSafeBoundary(history []providers.Message, index int) bool {
 	if index <= 0 || index >= len(history) {
 		return true
@@ -27,9 +39,10 @@ func isSafeBoundary(history []providers.Message, index int) bool {
 	return history[index].Role == "user"
 }
 
-// findSafeBoundary locates the nearest safe split point to targetIndex.
-// It scans backward first (preserving more context), then forward.
-// Returns targetIndex unchanged only when no safe boundary exists.
+// findSafeBoundary locates the nearest Turn boundary to targetIndex.
+// It prefers the boundary at or before targetIndex (preserving more recent
+// context). Falls back to the nearest boundary after targetIndex, and
+// returns targetIndex unchanged only when no Turn boundary exists at all.
 func findSafeBoundary(history []providers.Message, targetIndex int) int {
 	if len(history) == 0 {
 		return 0
@@ -41,21 +54,28 @@ func findSafeBoundary(history []providers.Message, targetIndex int) int {
 		return len(history)
 	}
 
-	if isSafeBoundary(history, targetIndex) {
+	turns := parseTurnBoundaries(history)
+	if len(turns) == 0 {
 		return targetIndex
 	}
 
-	// Backward scan: prefer keeping more messages.
-	for i := targetIndex - 1; i > 0; i-- {
-		if isSafeBoundary(history, i) {
-			return i
+	// Find the last Turn boundary at or before targetIndex.
+	// Prefer backward: keeps more recent messages.
+	backward := -1
+	for _, t := range turns {
+		if t <= targetIndex {
+			backward = t
 		}
 	}
+	if backward > 0 {
+		return backward
+	}
 
-	// Forward scan: fall back to keeping fewer messages.
-	for i := targetIndex + 1; i < len(history); i++ {
-		if isSafeBoundary(history, i) {
-			return i
+	// No valid Turn boundary before target (or only at index 0 which
+	// would keep everything). Use the first Turn after targetIndex.
+	for _, t := range turns {
+		if t > targetIndex {
+			return t
 		}
 	}
 

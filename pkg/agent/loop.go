@@ -1353,8 +1353,8 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 }
 
 // forceCompression aggressively reduces context when the limit is hit.
-// It drops the oldest ~50% of messages, aligning the split to a safe
-// boundary so tool-call sequences stay intact.
+// It drops the oldest ~50% of Turns (a Turn is a complete user→LLM→response
+// cycle, as defined in #1316), so tool-call sequences are never split.
 //
 // Session history contains only user/assistant/tool messages — the system
 // prompt is built dynamically by BuildMessages and is NOT stored here.
@@ -1366,8 +1366,18 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 		return
 	}
 
-	// Find a safe mid-point that does not split a tool-call sequence.
-	mid := findSafeBoundary(history, len(history)/2)
+	// Split at a Turn boundary so no tool-call sequence is torn apart.
+	// parseTurnBoundaries gives us the start of each Turn; we drop the
+	// oldest half of Turns and keep the most recent ones.
+	turns := parseTurnBoundaries(history)
+	var mid int
+	if len(turns) >= 2 {
+		mid = turns[len(turns)/2]
+	} else {
+		// Fewer than 2 Turns — fall back to message-level midpoint
+		// aligned to the nearest Turn boundary.
+		mid = findSafeBoundary(history, len(history)/2)
+	}
 	if mid <= 0 {
 		return
 	}
@@ -1492,7 +1502,7 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	history := agent.Sessions.GetHistory(sessionKey)
 	summary := agent.Sessions.GetSummary(sessionKey)
 
-	// Keep last few messages for continuity, aligned to a safe boundary
+	// Keep the most recent Turns for continuity, aligned to a Turn boundary
 	// so that no tool-call sequence is split.
 	if len(history) <= 4 {
 		return

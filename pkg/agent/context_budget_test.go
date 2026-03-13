@@ -40,6 +40,88 @@ func msgTool(callID, content string) providers.Message {
 	return providers.Message{Role: "tool", ToolCallID: callID, Content: content}
 }
 
+func TestParseTurnBoundaries(t *testing.T) {
+	tests := []struct {
+		name    string
+		history []providers.Message
+		want    []int
+	}{
+		{
+			name:    "empty history",
+			history: nil,
+			want:    nil,
+		},
+		{
+			name: "simple exchange",
+			history: []providers.Message{
+				msgUser("q1"),
+				msgAssistant("a1"),
+				msgUser("q2"),
+				msgAssistant("a2"),
+			},
+			want: []int{0, 2},
+		},
+		{
+			name: "tool-call Turn",
+			history: []providers.Message{
+				msgUser("search"),
+				msgAssistantTC("tc1"),
+				msgTool("tc1", "result"),
+				msgAssistant("found it"),
+				msgUser("thanks"),
+				msgAssistant("welcome"),
+			},
+			want: []int{0, 4},
+		},
+		{
+			name: "chained tool calls in single Turn",
+			history: []providers.Message{
+				msgUser("save and notify"),
+				msgAssistantTC("tc_save"),
+				msgTool("tc_save", "saved"),
+				msgAssistantTC("tc_notify"),
+				msgTool("tc_notify", "notified"),
+				msgAssistant("done"),
+			},
+			want: []int{0},
+		},
+		{
+			name: "no user messages",
+			history: []providers.Message{
+				msgAssistant("a1"),
+				msgAssistant("a2"),
+			},
+			want: nil,
+		},
+		{
+			name: "leading non-user messages",
+			history: []providers.Message{
+				msgAssistantTC("tc1"),
+				msgTool("tc1", "r1"),
+				msgAssistant("greeting"),
+				msgUser("hello"),
+				msgAssistant("hi"),
+			},
+			want: []int{3},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseTurnBoundaries(tt.history)
+			if len(got) != len(tt.want) {
+				t.Errorf("parseTurnBoundaries() = %v, want %v", got, tt.want)
+				return
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("parseTurnBoundaries()[%d] = %d, want %d", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestIsSafeBoundary(t *testing.T) {
 	tests := []struct {
 		name    string
