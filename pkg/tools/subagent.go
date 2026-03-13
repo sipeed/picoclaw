@@ -172,8 +172,10 @@ After completing the task, provide a clear summary of what was done.`
 	var result *ToolResult
 	defer func() {
 		sm.mu.Unlock()
-		// Call callback if provided and result is set
+		// Call callback if provided and result is set.
+		// Sanitize before callback — this path bypasses ExecuteWithContext.
 		if callback != nil && result != nil {
+			SanitizeResult(result)
 			callback(ctx, result)
 		}
 	}()
