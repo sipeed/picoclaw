@@ -247,7 +247,7 @@ func TestGatewayStartReady_OAuthModelRequiresStoredCredential(t *testing.T) {
 	}
 	cfg.ModelList = []config.ModelConfig{{
 		ModelName:  "openai-oauth",
-		Model:      "openai/gpt-5.2",
+		Model:      "openai/gpt-5.4",
 		AuthMethod: "oauth",
 	}}
 	cfg.Agents.Defaults.ModelName = "openai-oauth"

@@ -168,8 +168,8 @@ func TestOAuthLogoutClearsCredentialAndConfig(t *testing.T) {
 	}
 	cfg.Providers.OpenAI.AuthMethod = "oauth"
 	cfg.ModelList = append(cfg.ModelList, config.ModelConfig{
-		ModelName:  "gpt-5.2",
-		Model:      "openai/gpt-5.2",
+		ModelName:  "gpt-5.4",
+		Model:      "openai/gpt-5.4",
 		AuthMethod: "oauth",
 	})
 	if err = config.SaveConfig(configPath, cfg); err != nil {

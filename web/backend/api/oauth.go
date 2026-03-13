@@ -791,8 +791,8 @@ func defaultModelConfigForProvider(provider, authMethod string) config.ModelConf
 	switch provider {
 	case oauthProviderOpenAI:
 		return config.ModelConfig{
-			ModelName:  "gpt-5.2",
-			Model:      "openai/gpt-5.2",
+			ModelName:  "gpt-5.4",
+			Model:      "openai/gpt-5.4",
 			AuthMethod: authMethod,
 		}
 	case oauthProviderAnthropic:
