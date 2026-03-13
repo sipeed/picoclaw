@@ -37,6 +37,7 @@ coverage.html
 ralph/
 .ralph/
 tasks/
+.agent-team/
 
 # Plans
 docs/plans/
