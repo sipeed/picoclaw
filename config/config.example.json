@@ -8,7 +8,11 @@
       "temperature": 0.7,
       "max_tool_iterations": 20,
       "summarize_message_threshold": 20,
-      "summarize_token_percent": 75
+      "summarize_token_percent": 75,
+      "tool_feedback": {
+        "enabled": false,
+        "max_args_length": 300
+      }
     }
   },
   "model_list": [

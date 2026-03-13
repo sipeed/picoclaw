@@ -35,6 +35,10 @@ func DefaultConfig() *Config {
 				MaxToolIterations:         50,
 				SummarizeMessageThreshold: 20,
 				SummarizeTokenPercent:     75,
+				ToolFeedback: ToolFeedbackConfig{
+					Enabled:       true,
+					MaxArgsLength: 300,
+				},
 			},
 		},
 		Bindings: []AgentBinding{},
