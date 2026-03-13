@@ -48,6 +48,12 @@ var (
 		substr("timed out"),
 		substr("deadline exceeded"),
 		substr("context deadline exceeded"),
+		substr("failed to send request"),
+		substr("connection reset by peer"),
+		substr("connection refused"),
+		substr("no route to host"),
+		substr("unexpected eof"),
+		substr("tls handshake timeout"),
 	}
 
 	billingPatterns = []errorPattern{
