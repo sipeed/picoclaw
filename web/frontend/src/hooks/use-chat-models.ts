@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { type ModelInfo, getModels, setDefaultModel } from "@/api/models"
 
@@ -20,6 +20,7 @@ function isLocalModel(model: ModelInfo): boolean {
 export function useChatModels({ isConnected }: UseChatModelsOptions) {
   const [modelList, setModelList] = useState<ModelInfo[]>([])
   const [defaultModelName, setDefaultModelName] = useState("")
+  const setDefaultRequestIdRef = useRef(0)
 
   const loadModels = useCallback(async () => {
     try {
@@ -41,17 +42,28 @@ export function useChatModels({ isConnected }: UseChatModelsOptions) {
     return () => clearTimeout(timerId)
   }, [isConnected, loadModels])
 
-  const handleSetDefault = useCallback(async (modelName: string) => {
-    try {
-      await setDefaultModel(modelName)
-      setDefaultModelName(modelName)
-      setModelList((prev) =>
-        prev.map((m) => ({ ...m, is_default: m.model_name === modelName })),
-      )
-    } catch (err) {
-      console.error("Failed to set default model:", err)
-    }
-  }, [])
+  const handleSetDefault = useCallback(
+    async (modelName: string) => {
+      if (modelName === defaultModelName) return
+      const requestId = ++setDefaultRequestIdRef.current
+
+      try {
+        await setDefaultModel(modelName)
+        const data = await getModels()
+        if (requestId !== setDefaultRequestIdRef.current) {
+          return
+        }
+
+        setModelList(data.models)
+        if (data.models.some((m) => m.model_name === data.default_model)) {
+          setDefaultModelName(data.default_model)
+        }
+      } catch (err) {
+        console.error("Failed to set default model:", err)
+      }
+    },
+    [defaultModelName],
+  )
 
   const hasConfiguredModels = useMemo(
     () => modelList.some((m) => m.configured),
