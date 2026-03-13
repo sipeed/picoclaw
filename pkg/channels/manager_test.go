@@ -616,6 +616,37 @@ func TestRecordTypingStop_ConcurrentSafe(t *testing.T) {
 	wg.Wait()
 }
 
+func TestRecordTypingStop_ReplacesExistingStop(t *testing.T) {
+	m := newTestManager()
+	var oldStopCalls int
+	var newStopCalls int
+
+	m.RecordTypingStop("test", "123", func() {
+		oldStopCalls++
+	})
+
+	m.RecordTypingStop("test", "123", func() {
+		newStopCalls++
+	})
+
+	if oldStopCalls != 1 {
+		t.Fatalf("expected previous typing stop to be called once when replaced, got %d", oldStopCalls)
+	}
+	if newStopCalls != 0 {
+		t.Fatalf("expected replacement typing stop to stay active until preSend, got %d calls", newStopCalls)
+	}
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	m.preSend(context.Background(), "test", msg, &mockChannel{})
+
+	if newStopCalls != 1 {
+		t.Fatalf("expected replacement typing stop to be called by preSend, got %d", newStopCalls)
+	}
+	if oldStopCalls != 1 {
+		t.Fatalf("expected previous typing stop to not be called again, got %d", oldStopCalls)
+	}
+}
+
 func TestSendWithRetry_PreSendEditsPlaceholder(t *testing.T) {
 	m := newTestManager()
 	var sendCalled bool

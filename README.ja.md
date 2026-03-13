@@ -1,5 +1,5 @@
 <div align="center">
-<img src="assets/logo.jpg" alt="PicoClaw" width="512">
+<img src="assets/logo.webp" alt="PicoClaw" width="512">
 
 <h1>PicoClaw: Go で書かれた超効率 AI アシスタント</h1>
 
@@ -168,9 +168,7 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 ### 🚀 クイックスタート（ネイティブ）
 
 > [!TIP]
-> `~/.picoclaw/config.json` に API キーを設定してください。
-> API キーの取得先: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Web 検索は **任意** です - 無料の [Tavily API](https://tavily.com) (月 1000 クエリ無料) または [Brave Search API](https://brave.com/search/api) (月 2000 クエリ無料)
+> `~/.picoclaw/config.json` に API キーを設定してください。API キーの取得先: [Volcengine (CodingPlan)](https://console.volcengine.com) (LLM) · [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)。Web 検索は **任意** です — 無料の [Tavily API](https://tavily.com) (月 1000 クエリ無料) または [Brave Search API](https://brave.com/search/api) (月 2000 クエリ無料)。
 
 **1. 初期化**
 
@@ -184,8 +182,13 @@ picoclaw onboard
 {
   "model_list": [
     {
-      "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-openai-key",
       "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
@@ -193,7 +196,7 @@ picoclaw onboard
   ],
   "agents": {
     "defaults": {
-      "model_name": "gpt4"
+      "model_name": "gpt-5.4"
     }
   },
   "channels": {
@@ -918,8 +921,9 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 | **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [キーを取得](https://openrouter.ai/keys) |
 | **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | ローカル |
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [キーを取得](https://cerebras.ai) |
-| **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [キーを取得](https://console.volcengine.com) |
+| **VolcEngine (Doubao)** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [キーを取得](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [キーを取得](https://console.volcengine.com)                     |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [キーを取得](https://longcat.chat/platform)                      |
 | **Antigravity** | `antigravity/` | Google Cloud | カスタム | OAuthのみ |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
@@ -930,8 +934,13 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 {
   "model_list": [
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-openai-key"
     },
     {
@@ -947,7 +956,7 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-5.2"
+      "model": "gpt-5.4"
     }
   }
 }
@@ -958,8 +967,17 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 **OpenAI**
 ```json
 {
-  "model_name": "gpt-5.2",
-  "model": "openai/gpt-5.2",
+  "model_name": "gpt-5.4",
+  "model": "openai/gpt-5.4",
+  "api_key": "sk-..."
+}
+```
+
+**VolcEngine (Doubao)**
+```json
+{
+  "model_name": "ark-code-latest",
+  "model": "volcengine/ark-code-latest",
   "api_key": "sk-..."
 }
 ```
@@ -1002,14 +1020,14 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 {
   "model_list": [
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
       "api_key": "sk-key1"
     },
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
       "api_key": "sk-key2"
     }
@@ -1120,9 +1138,16 @@ Web 検索を有効にするには：
 | サービス | 無料枠 | ユースケース |
 |---------|--------|------------|
 | **OpenRouter** | 月 200K トークン | 複数モデル（Claude, GPT-4 など） |
-| **Zhipu** | 月 200K トークン | 中国ユーザー向け最適 |
+| **Volcengine CodingPlan** | 9.9元/初月 | 中国ユーザーに最適、複数のSOTAモデル（Doubao、DeepSeek等） |
+| **Zhipu** | 月 200K トークン | 中国ユーザーに適している |
 | **Qwen** | 無料枠あり | 通義千問 (Qwen) |
 | **Brave Search** | 月 2000 クエリ | Web 検索機能 |
 | **Tavily** | 月 1000 クエリ | AI エージェント検索最適化 |
 | **Groq** | 無料枠あり | 高速推論（Llama, Mixtral） |
 | **Cerebras** | 無料枠あり | 高速推論（Llama, Qwen など） |
+
+---
+
+<div align="center">
+  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
+</div>
