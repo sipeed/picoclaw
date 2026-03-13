@@ -1409,6 +1409,20 @@ PicoClaw supports scheduled reminders and recurring tasks through the `cron` too
 * **Recurring tasks**: "Remind me every 2 hours" → triggers every 2 hours
 * **Cron expressions**: "Remind me at 9am daily" → uses cron expression
 
+To view your scheduled tasks:
+
+```bash
+picoclaw cron list
+```
+
+Useful follow-up commands:
+
+```bash
+picoclaw cron disable 1   # pause job 1
+picoclaw cron enable 1    # resume job 1
+picoclaw cron remove 1    # delete job 1
+```
+
 Jobs are stored in `~/.picoclaw/workspace/cron/` and processed automatically.
 
 ## 🤝 Contribute & Roadmap
