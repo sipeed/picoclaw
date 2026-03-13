@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -19,23 +18,41 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/web/backend/utils"
 )
 
 // gateway holds the state for the managed gateway process.
 var gateway = struct {
-	mu     sync.Mutex
-	cmd    *exec.Cmd
-	logs   *LogBuffer
-	events *EventBroadcaster
+	mu               sync.Mutex
+	cmd              *exec.Cmd
+	bootDefaultModel string
+	runtimeStatus    string
+	startupDeadline  time.Time
+	logs             *LogBuffer
+	events           *EventBroadcaster
 }{
-	logs:   NewLogBuffer(200),
-	events: NewEventBroadcaster(),
+	runtimeStatus: "stopped",
+	logs:          NewLogBuffer(200),
+	events:        NewEventBroadcaster(),
+}
+
+var (
+	gatewayStartupWindow          = 15 * time.Second
+	gatewayRestartGracePeriod     = 5 * time.Second
+	gatewayRestartForceKillWindow = 3 * time.Second
+	gatewayRestartPollInterval    = 100 * time.Millisecond
+)
+
+var gatewayHealthGet = func(url string, timeout time.Duration) (*http.Response, error) {
+	client := http.Client{Timeout: timeout}
+	return client.Get(url)
 }
 
 // registerGatewayRoutes binds gateway lifecycle endpoints to the ServeMux.
 func (h *Handler) registerGatewayRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gateway/status", h.handleGatewayStatus)
 	mux.HandleFunc("GET /api/gateway/events", h.handleGatewayEvents)
+	mux.HandleFunc("POST /api/gateway/logs/clear", h.handleGatewayClearLogs)
 	mux.HandleFunc("POST /api/gateway/start", h.handleGatewayStart)
 	mux.HandleFunc("POST /api/gateway/stop", h.handleGatewayStop)
 	mux.HandleFunc("POST /api/gateway/restart", h.handleGatewayRestart)
@@ -64,7 +81,7 @@ func (h *Handler) TryAutoStartGateway() {
 		return
 	}
 
-	pid, err := h.startGatewayLocked()
+	pid, err := h.startGatewayLocked("starting")
 	if err != nil {
 		log.Printf("Failed to auto-start gateway: %v", err)
 		return
@@ -89,10 +106,11 @@ func (h *Handler) gatewayStartReady() (bool, string, error) {
 		return false, fmt.Sprintf("default model %q is invalid", modelName), nil
 	}
 
-	hasCredential := strings.TrimSpace(modelCfg.APIKey) != "" ||
-		strings.TrimSpace(modelCfg.AuthMethod) != ""
-	if !hasCredential {
+	if !hasModelConfiguration(*modelCfg) {
 		return false, fmt.Sprintf("default model %q has no credentials configured", modelName), nil
+	}
+	if requiresRuntimeProbe(*modelCfg) && !probeLocalModelAvailability(*modelCfg) {
+		return false, fmt.Sprintf("default model %q is not reachable", modelName), nil
 	}
 
 	return true, "", nil
@@ -129,11 +147,124 @@ func isCmdProcessAliveLocked(cmd *exec.Cmd) bool {
 	return cmd.Process.Signal(syscall.Signal(0)) == nil
 }
 
-func (h *Handler) startGatewayLocked() (int, error) {
+func setGatewayRuntimeStatusLocked(status string) {
+	gateway.runtimeStatus = status
+	if status == "starting" || status == "restarting" {
+		gateway.startupDeadline = time.Now().Add(gatewayStartupWindow)
+		return
+	}
+	gateway.startupDeadline = time.Time{}
+}
+
+func gatewayStatusOnHealthFailureLocked() string {
+	if gateway.runtimeStatus == "starting" || gateway.runtimeStatus == "restarting" {
+		if gateway.startupDeadline.IsZero() || time.Now().Before(gateway.startupDeadline) {
+			return gateway.runtimeStatus
+		}
+		return "error"
+	}
+	if gateway.runtimeStatus == "running" {
+		return "running"
+	}
+	if gateway.runtimeStatus == "error" {
+		return "error"
+	}
+	return "error"
+}
+
+func currentGatewayStatusLocked(processAlive bool) string {
+	if !processAlive {
+		if gateway.runtimeStatus == "restarting" {
+			if gateway.startupDeadline.IsZero() || time.Now().Before(gateway.startupDeadline) {
+				return "restarting"
+			}
+			return "error"
+		}
+		if gateway.runtimeStatus == "error" {
+			return "error"
+		}
+		return "stopped"
+	}
+	return gatewayStatusOnHealthFailureLocked()
+}
+
+func waitForGatewayProcessExit(cmd *exec.Cmd, timeout time.Duration) bool {
+	if cmd == nil || cmd.Process == nil {
+		return true
+	}
+
+	deadline := time.Now().Add(timeout)
+	for {
+		if !isCmdProcessAliveLocked(cmd) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(gatewayRestartPollInterval)
+	}
+}
+
+func stopGatewayProcessForRestart(cmd *exec.Cmd) error {
+	if cmd == nil || cmd.Process == nil || !isCmdProcessAliveLocked(cmd) {
+		return nil
+	}
+
+	var stopErr error
+	if runtime.GOOS == "windows" {
+		stopErr = cmd.Process.Kill()
+	} else {
+		stopErr = cmd.Process.Signal(syscall.SIGTERM)
+	}
+	if stopErr != nil && isCmdProcessAliveLocked(cmd) {
+		return fmt.Errorf("failed to stop existing gateway: %w", stopErr)
+	}
+
+	if waitForGatewayProcessExit(cmd, gatewayRestartGracePeriod) {
+		return nil
+	}
+
+	if runtime.GOOS != "windows" {
+		killErr := cmd.Process.Signal(syscall.SIGKILL)
+		if killErr != nil && isCmdProcessAliveLocked(cmd) {
+			return fmt.Errorf("failed to force-stop existing gateway: %w", killErr)
+		}
+		if waitForGatewayProcessExit(cmd, gatewayRestartForceKillWindow) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("existing gateway did not exit before restart")
+}
+
+func gatewayRestartRequired(status, bootDefaultModel, configDefaultModel string) bool {
+	return status == "running" &&
+		bootDefaultModel != "" &&
+		configDefaultModel != "" &&
+		bootDefaultModel != configDefaultModel
+}
+
+func (h *Handler) startGatewayLocked(initialStatus string) (int, error) {
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to load config: %w", err)
+	}
+	defaultModelName := strings.TrimSpace(cfg.Agents.Defaults.GetModelName())
+
 	// Locate the picoclaw executable
-	execPath := findPicoclawBinary()
+	execPath := utils.FindPicoclawBinary()
 
 	cmd := exec.Command(execPath, "gateway")
+	cmd.Env = os.Environ()
+	// Forward the launcher's config path via the environment variable that
+	// GetConfigPath() already reads, so the gateway sub-process uses the same
+	// config file without requiring a --config flag on the gateway subcommand.
+	if h.configPath != "" {
+		cmd.Env = append(cmd.Env, "PICOCLAW_CONFIG="+h.configPath)
+	}
+	if host := h.gatewayHostOverride(); host != "" {
+		cmd.Env = append(cmd.Env, "PICOCLAW_GATEWAY_HOST="+host)
+	}
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -159,11 +290,19 @@ func (h *Handler) startGatewayLocked() (int, error) {
 	}
 
 	gateway.cmd = cmd
+	gateway.bootDefaultModel = defaultModelName
+	setGatewayRuntimeStatusLocked(initialStatus)
 	pid := cmd.Process.Pid
 	log.Printf("Started picoclaw gateway (PID: %d) from %s", pid, execPath)
 
-	// Broadcast starting event
-	gateway.events.Broadcast(GatewayEvent{Status: "starting", PID: pid})
+	// Broadcast the launch state immediately so clients can reflect it without polling.
+	gateway.events.Broadcast(GatewayEvent{
+		Status:             initialStatus,
+		PID:                pid,
+		BootDefaultModel:   defaultModelName,
+		ConfigDefaultModel: defaultModelName,
+		RestartRequired:    false,
+	})
 
 	// Capture stdout/stderr in background
 	go scanPipe(stdoutPipe, gateway.logs)
@@ -178,13 +317,23 @@ func (h *Handler) startGatewayLocked() (int, error) {
 		}
 
 		gateway.mu.Lock()
+		shouldBroadcastStopped := false
 		if gateway.cmd == cmd {
 			gateway.cmd = nil
+			gateway.bootDefaultModel = ""
+			if gateway.runtimeStatus != "restarting" {
+				setGatewayRuntimeStatusLocked("stopped")
+				shouldBroadcastStopped = true
+			}
 		}
 		gateway.mu.Unlock()
 
-		// Broadcast stopped event
-		gateway.events.Broadcast(GatewayEvent{Status: "stopped"})
+		if shouldBroadcastStopped {
+			gateway.events.Broadcast(GatewayEvent{
+				Status:          "stopped",
+				RestartRequired: false,
+			})
+		}
 	}()
 
 	// Start a goroutine to probe health and broadcast "running" once ready
@@ -201,21 +350,28 @@ func (h *Handler) startGatewayLocked() (int, error) {
 			if err != nil {
 				continue
 			}
-			healthHost := "127.0.0.1"
-			if cfg.Gateway.Host != "" && cfg.Gateway.Host != "0.0.0.0" {
-				healthHost = cfg.Gateway.Host
-			}
+			healthHost := gatewayProbeHost(h.effectiveGatewayBindHost(cfg))
 			healthPort := cfg.Gateway.Port
 			if healthPort == 0 {
 				healthPort = 18790
 			}
 			healthURL := fmt.Sprintf("http://%s/health", net.JoinHostPort(healthHost, strconv.Itoa(healthPort)))
-			client := http.Client{Timeout: 1 * time.Second}
-			resp, err := client.Get(healthURL)
+			resp, err := gatewayHealthGet(healthURL, 1*time.Second)
 			if err == nil {
 				resp.Body.Close()
 				if resp.StatusCode == http.StatusOK {
-					gateway.events.Broadcast(GatewayEvent{Status: "running", PID: pid})
+					gateway.mu.Lock()
+					if gateway.cmd == cmd {
+						setGatewayRuntimeStatusLocked("running")
+					}
+					gateway.mu.Unlock()
+					gateway.events.Broadcast(GatewayEvent{
+						Status:             "running",
+						PID:                pid,
+						BootDefaultModel:   defaultModelName,
+						ConfigDefaultModel: defaultModelName,
+						RestartRequired:    false,
+					})
 					return
 				}
 			}
@@ -244,6 +400,7 @@ func (h *Handler) handleGatewayStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if gateway.cmd != nil && gateway.cmd.Process != nil {
 		gateway.cmd = nil
+		setGatewayRuntimeStatusLocked("stopped")
 	}
 
 	ready, reason, err := h.gatewayStartReady()
@@ -265,7 +422,7 @@ func (h *Handler) handleGatewayStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pid, err := h.startGatewayLocked()
+	pid, err := h.startGatewayLocked("starting")
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to start gateway: %v", err), http.StatusInternalServerError)
 		return
@@ -321,78 +478,162 @@ func (h *Handler) handleGatewayStop(w http.ResponseWriter, r *http.Request) {
 //
 //	POST /api/gateway/restart
 func (h *Handler) handleGatewayRestart(w http.ResponseWriter, r *http.Request) {
-	gateway.mu.Lock()
-
-	// Stop existing process if running
-	if gateway.cmd != nil && gateway.cmd.Process != nil {
-		if isCmdProcessAliveLocked(gateway.cmd) {
-			// Process is alive, send SIGTERM
-			if runtime.GOOS == "windows" {
-				gateway.cmd.Process.Kill()
-			} else {
-				gateway.cmd.Process.Signal(syscall.SIGTERM)
-			}
-
-			// Wait briefly for it to exit
-			gateway.mu.Unlock()
-			time.Sleep(2 * time.Second)
-			gateway.mu.Lock()
-		}
-		gateway.cmd = nil
+	ready, reason, err := h.gatewayStartReady()
+	if err != nil {
+		http.Error(
+			w,
+			fmt.Sprintf("Failed to validate gateway start conditions: %v", err),
+			http.StatusInternalServerError,
+		)
+		return
+	}
+	if !ready {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":  "precondition_failed",
+			"message": reason,
+		})
+		return
 	}
 
+	gateway.mu.Lock()
+	previousCmd := gateway.cmd
+	setGatewayRuntimeStatusLocked("restarting")
+	gateway.events.Broadcast(GatewayEvent{
+		Status:          "restarting",
+		RestartRequired: false,
+	})
 	gateway.mu.Unlock()
 
-	// Start fresh via the existing handler
-	h.handleGatewayStart(w, r)
+	if err = stopGatewayProcessForRestart(previousCmd); err != nil {
+		gateway.mu.Lock()
+		if gateway.cmd == previousCmd {
+			if isCmdProcessAliveLocked(previousCmd) {
+				setGatewayRuntimeStatusLocked("running")
+			} else {
+				gateway.cmd = nil
+				gateway.bootDefaultModel = ""
+				setGatewayRuntimeStatusLocked("error")
+			}
+		}
+		gateway.mu.Unlock()
+		http.Error(w, fmt.Sprintf("Failed to restart gateway: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	gateway.mu.Lock()
+	if gateway.cmd == previousCmd {
+		gateway.cmd = nil
+		gateway.bootDefaultModel = ""
+	}
+	pid, err := h.startGatewayLocked("restarting")
+	if err != nil {
+		gateway.cmd = nil
+		gateway.bootDefaultModel = ""
+		setGatewayRuntimeStatusLocked("error")
+	}
+	gateway.mu.Unlock()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to restart gateway: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status": "ok",
+		"pid":    pid,
+	})
+}
+
+// handleGatewayClearLogs clears the in-memory gateway log buffer.
+//
+//	POST /api/gateway/logs/clear
+func (h *Handler) handleGatewayClearLogs(w http.ResponseWriter, r *http.Request) {
+	gateway.logs.Clear()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status":     "cleared",
+		"log_total":  0,
+		"log_run_id": gateway.logs.RunID(),
+	})
 }
 
 // handleGatewayStatus returns the gateway run status, health info, and logs.
 //
 //	GET /api/gateway/status
 func (h *Handler) handleGatewayStatus(w http.ResponseWriter, r *http.Request) {
+	data := h.gatewayStatusData(r, true)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+func (h *Handler) gatewayStatusData(r *http.Request, includeLogs bool) map[string]any {
 	data := map[string]any{}
+	cfg, cfgErr := config.LoadConfig(h.configPath)
+	configDefaultModel := ""
+	if cfgErr == nil && cfg != nil {
+		configDefaultModel = strings.TrimSpace(cfg.Agents.Defaults.GetModelName())
+		if configDefaultModel != "" {
+			data["config_default_model"] = configDefaultModel
+		}
+	}
 
 	// Check process state
 	gateway.mu.Lock()
 	processAlive := isGatewayProcessAliveLocked()
+	bootDefaultModel := ""
 	if processAlive {
 		data["pid"] = gateway.cmd.Process.Pid
+		if gateway.bootDefaultModel != "" {
+			data["boot_default_model"] = gateway.bootDefaultModel
+			bootDefaultModel = gateway.bootDefaultModel
+		}
 	}
 	gateway.mu.Unlock()
 
 	if !processAlive {
-		data["gateway_status"] = "stopped"
+		gateway.mu.Lock()
+		data["gateway_status"] = currentGatewayStatusLocked(false)
+		gateway.mu.Unlock()
 	} else {
 		// Process is alive — probe its health endpoint
-		cfg, err := config.LoadConfig(h.configPath)
 		host := "127.0.0.1"
 		port := 18790
-		if err == nil && cfg != nil {
-			if cfg.Gateway.Host != "" && cfg.Gateway.Host != "0.0.0.0" {
-				host = cfg.Gateway.Host
-			}
+		if cfgErr == nil && cfg != nil {
+			host = gatewayProbeHost(h.effectiveGatewayBindHost(cfg))
 			if cfg.Gateway.Port != 0 {
 				port = cfg.Gateway.Port
 			}
 		}
 
 		url := fmt.Sprintf("http://%s/health", net.JoinHostPort(host, strconv.Itoa(port)))
-		client := http.Client{Timeout: 2 * time.Second}
-		resp, err := client.Get(url)
+		resp, err := gatewayHealthGet(url, 2*time.Second)
 
 		if err != nil {
-			data["gateway_status"] = "starting"
+			gateway.mu.Lock()
+			data["gateway_status"] = currentGatewayStatusLocked(true)
+			gateway.mu.Unlock()
 		} else {
 			defer resp.Body.Close()
 			if resp.StatusCode != http.StatusOK {
+				gateway.mu.Lock()
+				setGatewayRuntimeStatusLocked("error")
+				gateway.mu.Unlock()
 				data["gateway_status"] = "error"
 				data["status_code"] = resp.StatusCode
 			} else {
 				var healthData map[string]any
 				if decErr := json.NewDecoder(resp.Body).Decode(&healthData); decErr != nil {
+					gateway.mu.Lock()
+					setGatewayRuntimeStatusLocked("error")
+					gateway.mu.Unlock()
 					data["gateway_status"] = "error"
 				} else {
+					gateway.mu.Lock()
+					setGatewayRuntimeStatusLocked("running")
+					gateway.mu.Unlock()
 					for k, v := range healthData {
 						data[k] = v
 					}
@@ -401,6 +642,13 @@ func (h *Handler) handleGatewayStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	status, _ := data["gateway_status"].(string)
+	data["gateway_restart_required"] = gatewayRestartRequired(
+		status,
+		bootDefaultModel,
+		configDefaultModel,
+	)
 
 	ready, reason, readyErr := h.gatewayStartReady()
 	if readyErr != nil {
@@ -413,11 +661,11 @@ func (h *Handler) handleGatewayStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Append incremental log data
-	appendGatewayLogs(r, data)
+	if includeLogs {
+		appendGatewayLogs(r, data)
+	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	return data
 }
 
 // appendGatewayLogs reads log_offset and log_run_id query params from the request
@@ -503,46 +751,9 @@ func (h *Handler) handleGatewayEvents(w http.ResponseWriter, r *http.Request) {
 
 // currentGatewayStatus returns the current gateway status as a JSON string.
 func (h *Handler) currentGatewayStatus() string {
-	gateway.mu.Lock()
-	defer gateway.mu.Unlock()
-
-	data := map[string]any{
-		"gateway_status": "stopped",
-	}
-	if isGatewayProcessAliveLocked() {
-		data["gateway_status"] = "running"
-		data["pid"] = gateway.cmd.Process.Pid
-	}
-
-	ready, reason, readyErr := h.gatewayStartReady()
-	if readyErr != nil {
-		data["gateway_start_allowed"] = false
-		data["gateway_start_reason"] = readyErr.Error()
-	} else {
-		data["gateway_start_allowed"] = ready
-		if !ready {
-			data["gateway_start_reason"] = reason
-		}
-	}
-
+	data := h.gatewayStatusData(nil, false)
 	encoded, _ := json.Marshal(data)
 	return string(encoded)
-}
-
-// findPicoclawBinary locates the picoclaw executable.
-// Tries the same directory as the current executable first, then falls back to $PATH.
-func findPicoclawBinary() string {
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		candidate := filepath.Join(dir, "picoclaw")
-		if runtime.GOOS == "windows" {
-			candidate += ".exe"
-		}
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
-	}
-	return "picoclaw"
 }
 
 // scanPipe reads lines from r and appends them to buf. Returns when r reaches EOF.

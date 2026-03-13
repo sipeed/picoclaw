@@ -14,7 +14,7 @@ import (
 func TestGetLauncherConfigUsesRuntimeFallback(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
-	h.SetServerOptions(19999, true, []string{"192.168.1.0/24"})
+	h.SetServerOptions(19999, true, false, []string{"192.168.1.0/24"})
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)

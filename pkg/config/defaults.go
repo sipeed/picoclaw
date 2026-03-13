@@ -194,8 +194,8 @@ func DefaultConfig() *Config {
 
 			// OpenAI - https://platform.openai.com/api-keys
 			{
-				ModelName: "gpt-5.2",
-				Model:     "openai/gpt-5.2",
+				ModelName: "gpt-5.4",
+				Model:     "openai/gpt-5.4",
 				APIBase:   "https://api.openai.com/v1",
 				APIKey:    "",
 			},
@@ -256,8 +256,8 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 			{
-				ModelName: "openrouter-gpt-5.2",
-				Model:     "openrouter/openai/gpt-5.2",
+				ModelName: "openrouter-gpt-5.4",
+				Model:     "openrouter/openai/gpt-5.4",
 				APIBase:   "https://openrouter.ai/api/v1",
 				APIKey:    "",
 			},
@@ -288,6 +288,12 @@ func DefaultConfig() *Config {
 
 			// Volcengine (火山引擎) - https://console.volcengine.com/ark
 			{
+				ModelName: "ark-code-latest",
+				Model:     "volcengine/ark-code-latest",
+				APIBase:   "https://ark.cn-beijing.volces.com/api/v3",
+				APIKey:    "",
+			},
+			{
 				ModelName: "doubao-pro",
 				Model:     "volcengine/doubao-pro-32k",
 				APIBase:   "https://ark.cn-beijing.volces.com/api/v3",
@@ -311,8 +317,8 @@ func DefaultConfig() *Config {
 
 			// GitHub Copilot - https://github.com/settings/tokens
 			{
-				ModelName:  "copilot-gpt-5.2",
-				Model:      "github-copilot/gpt-5.2",
+				ModelName:  "copilot-gpt-5.4",
+				Model:      "github-copilot/gpt-5.4",
 				APIBase:    "http://localhost:4321",
 				AuthMethod: "oauth",
 			},
@@ -352,6 +358,22 @@ func DefaultConfig() *Config {
 				ModelName: "MiniMax-M2.5",
 				Model:     "minimax/MiniMax-M2.5",
 				APIBase:   "https://api.minimaxi.com/v1",
+				APIKey:    "",
+			},
+
+			// LongCat - https://longcat.chat/platform
+			{
+				ModelName: "LongCat-Flash-Thinking",
+				Model:     "longcat/LongCat-Flash-Thinking",
+				APIBase:   "https://api.longcat.chat/openai",
+				APIKey:    "",
+			},
+
+			// ModelScope (魔搭社区) - https://modelscope.cn/my/tokens
+			{
+				ModelName: "modelscope-qwen",
+				Model:     "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+				APIBase:   "https://api-inference.modelscope.cn/v1",
 				APIKey:    "",
 			},
 
@@ -427,6 +449,7 @@ func DefaultConfig() *Config {
 					Enabled: true,
 				},
 				EnableDenyPatterns: true,
+				AllowRemote:        true,
 				TimeoutSeconds:     60,
 			},
 			Skills: SkillsToolsConfig{
@@ -509,6 +532,9 @@ func DefaultConfig() *Config {
 		Devices: DevicesConfig{
 			Enabled:    false,
 			MonitorUSB: true,
+		},
+		Voice: VoiceConfig{
+			EchoTranscription: false,
 		},
 		BuildInfo: BuildInfo{
 			Version:   Version,

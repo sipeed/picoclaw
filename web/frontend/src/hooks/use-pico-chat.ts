@@ -1,6 +1,14 @@
 import dayjs from "dayjs"
 import { useAtomValue } from "jotai"
-import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
+import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import { getPicoToken } from "@/api/pico"
 import { getSessionHistory } from "@/api/sessions"
@@ -23,6 +31,22 @@ export interface ChatMessage {
 }
 
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error"
+
+const LAST_SESSION_STORAGE_KEY = "picoclaw:last-session-id"
+
+function readStoredSessionId(): string {
+  const value = localStorage.getItem(LAST_SESSION_STORAGE_KEY)?.trim()
+  return value || ""
+}
+
+function writeStoredSessionId(sessionId: string) {
+  if (sessionId) {
+    localStorage.setItem(LAST_SESSION_STORAGE_KEY, sessionId)
+    return
+  }
+
+  localStorage.removeItem(LAST_SESSION_STORAGE_KEY)
+}
 
 function generateSessionId(): string {
   const webCrypto = globalThis.crypto
@@ -100,82 +124,164 @@ export function formatMessageTime(dateRaw: number | string | Date): string {
 }
 
 export function usePicoChat() {
+  const { t } = useTranslation()
   const { status: gatewayState } = useAtomValue(gatewayAtom)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("disconnected")
   const [isTyping, setIsTyping] = useState(false)
-  const [activeSessionId, setActiveSessionId] =
-    useState<string>(generateSessionId)
+  const [activeSessionId, setActiveSessionId] = useState<string>(
+    () => readStoredSessionId() || generateSessionId(),
+  )
 
   const wsRef = useRef<WebSocket | null>(null)
   const isConnectingRef = useRef(false)
   const msgIdCounter = useRef(0)
   const activeSessionIdRef = useRef(activeSessionId)
+  const messagesRevisionRef = useRef(0)
+
+  const setTrackedMessages = useCallback(
+    (nextState: SetStateAction<ChatMessage[]>) => {
+      setMessages((prev) => {
+        const next =
+          typeof nextState === "function"
+            ? (nextState as (prevState: ChatMessage[]) => ChatMessage[])(prev)
+            : nextState
+
+        if (next !== prev) {
+          messagesRevisionRef.current += 1
+        }
+
+        return next
+      })
+    },
+    [],
+  )
 
   // Keep ref in sync
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId
+    writeStoredSessionId(activeSessionId)
   }, [activeSessionId])
 
-  const handlePicoMessage = useCallback((msg: PicoMessage) => {
-    const payload = msg.payload || {}
+  const loadSessionMessages = useCallback(async (sessionId: string) => {
+    const detail = await getSessionHistory(sessionId)
+    const fallbackTime = detail.updated
 
-    switch (msg.type) {
-      case "message.create": {
-        const content = (payload.content as string) || ""
-        const messageId = (payload.message_id as string) || `pico-${Date.now()}`
-        // Use provided timestamp or current time
-        const timestampRaw =
-          msg.timestamp !== undefined && Number.isFinite(Number(msg.timestamp))
-            ? normalizeUnixTimestamp(Number(msg.timestamp))
-            : Date.now()
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: messageId,
-            role: "assistant",
-            content,
-            timestamp: timestampRaw,
-          },
-        ])
-        setIsTyping(false)
-        break
-      }
-
-      case "message.update": {
-        const content = (payload.content as string) || ""
-        const messageId = payload.message_id as string
-        if (!messageId) break
-
-        setMessages((prev) =>
-          prev.map((m) => (m.id === messageId ? { ...m, content } : m)),
-        )
-        break
-      }
-
-      case "typing.start":
-        setIsTyping(true)
-        break
-
-      case "typing.stop":
-        setIsTyping(false)
-        break
-
-      case "error":
-        console.error("Pico error:", payload)
-        setIsTyping(false)
-        break
-
-      case "pong":
-        // heartbeat response, ignore
-        break
-
-      default:
-        console.log("Unknown pico message type:", msg.type)
-    }
+    return detail.messages.map((m, i) => ({
+      id: `hist-${i}-${Date.now()}`,
+      role: m.role as "user" | "assistant",
+      content: m.content,
+      timestamp: fallbackTime,
+    }))
   }, [])
+
+  useEffect(() => {
+    const storedSessionId = readStoredSessionId()
+    if (!storedSessionId) {
+      return
+    }
+
+    const restoreRevision = messagesRevisionRef.current
+    let cancelled = false
+    void loadSessionMessages(storedSessionId)
+      .then((historyMessages) => {
+        if (cancelled) {
+          return
+        }
+        if (activeSessionIdRef.current !== storedSessionId) {
+          return
+        }
+        if (messagesRevisionRef.current !== restoreRevision) {
+          return
+        }
+        setTrackedMessages(historyMessages)
+        setIsTyping(false)
+      })
+      .catch((err) => {
+        console.error("Failed to restore last session history:", err)
+        if (cancelled) {
+          return
+        }
+        if (activeSessionIdRef.current !== storedSessionId) {
+          return
+        }
+        if (messagesRevisionRef.current !== restoreRevision) {
+          return
+        }
+        localStorage.removeItem(LAST_SESSION_STORAGE_KEY)
+        setTrackedMessages([])
+        setIsTyping(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [loadSessionMessages, setTrackedMessages])
+
+  const handlePicoMessage = useCallback(
+    (msg: PicoMessage) => {
+      const payload = msg.payload || {}
+
+      switch (msg.type) {
+        case "message.create": {
+          const content = (payload.content as string) || ""
+          const messageId =
+            (payload.message_id as string) || `pico-${Date.now()}`
+          // Use provided timestamp or current time
+          const timestampRaw =
+            msg.timestamp !== undefined &&
+            Number.isFinite(Number(msg.timestamp))
+              ? normalizeUnixTimestamp(Number(msg.timestamp))
+              : Date.now()
+
+          setTrackedMessages((prev) => [
+            ...prev,
+            {
+              id: messageId,
+              role: "assistant",
+              content,
+              timestamp: timestampRaw,
+            },
+          ])
+          setIsTyping(false)
+          break
+        }
+
+        case "message.update": {
+          const content = (payload.content as string) || ""
+          const messageId = payload.message_id as string
+          if (!messageId) break
+
+          setTrackedMessages((prev) =>
+            prev.map((m) => (m.id === messageId ? { ...m, content } : m)),
+          )
+          break
+        }
+
+        case "typing.start":
+          setIsTyping(true)
+          break
+
+        case "typing.stop":
+          setIsTyping(false)
+          break
+
+        case "error":
+          console.error("Pico error:", payload)
+          setIsTyping(false)
+          break
+
+        case "pong":
+          // heartbeat response, ignore
+          break
+
+        default:
+          console.log("Unknown pico message type:", msg.type)
+      }
+    },
+    [setTrackedMessages],
+  )
 
   const connect = useCallback(async () => {
     if (
@@ -287,73 +393,71 @@ export function usePicoChat() {
     return () => disconnect()
   }, [disconnect])
 
-  const sendMessage = useCallback((content: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn("WebSocket not connected")
-      return
-    }
+  const sendMessage = useCallback(
+    (content: string) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        console.warn("WebSocket not connected")
+        return
+      }
 
-    const id = `msg-${++msgIdCounter.current}-${Date.now()}`
-    const timestampRaw = Date.now()
+      const id = `msg-${++msgIdCounter.current}-${Date.now()}`
+      const timestampRaw = Date.now()
 
-    // Add user message to local state
-    setMessages((prev) => [
-      ...prev,
-      { id, role: "user", content, timestamp: timestampRaw },
-    ])
+      // Add user message to local state
+      setTrackedMessages((prev) => [
+        ...prev,
+        { id, role: "user", content, timestamp: timestampRaw },
+      ])
 
-    // Show typing indicator immediately
-    setIsTyping(true)
+      // Show typing indicator immediately
+      setIsTyping(true)
 
-    // Send via Pico Protocol
-    const picoMsg: PicoMessage = {
-      type: "message.send",
-      id,
-      payload: { content },
-    }
-    wsRef.current.send(JSON.stringify(picoMsg))
-  }, [])
+      // Send via Pico Protocol
+      const picoMsg: PicoMessage = {
+        type: "message.send",
+        id,
+        payload: { content },
+      }
+      wsRef.current.send(JSON.stringify(picoMsg))
+    },
+    [setTrackedMessages],
+  )
 
   // Switch to a historical session
   const switchSession = useCallback(
     async (sessionId: string) => {
-      // Disconnect current WebSocket
-      disconnect()
-
-      // Set new session ID
-      setActiveSessionId(sessionId)
-      setIsTyping(false)
-
-      // Load history from backend
-      try {
-        const detail = await getSessionHistory(sessionId)
-        // Set all history messages timestamp from the session updated time as fallback,
-        // since currently the backend doesn't return per-message timestamp in the history API.
-        // We'll use the session's updated time for now.
-        const fallbackTime = detail.updated
-
-        setMessages(
-          detail.messages.map((m, i) => ({
-            id: `hist-${i}-${Date.now()}`,
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            timestamp: fallbackTime,
-          })),
-        )
-      } catch (err) {
-        console.error("Failed to load session history:", err)
-        setMessages([])
+      if (sessionId === activeSessionIdRef.current) {
+        return
       }
 
-      // Reconnect with new session ID (will use the updated ref)
-      // Small delay to ensure state has settled
+      try {
+        const historyMessages = await loadSessionMessages(sessionId)
+
+        // Only switch the active websocket session after history has loaded successfully.
+        disconnect()
+        setActiveSessionId(sessionId)
+        setIsTyping(false)
+        setTrackedMessages(historyMessages)
+      } catch (err) {
+        console.error("Failed to load session history:", err)
+        toast.error(t("chat.historyOpenFailed"))
+        return
+      }
+
       setTimeout(() => {
         if (gatewayState === "running") {
           connect()
         }
       }, 100)
     },
-    [disconnect, connect, gatewayState],
+    [
+      connect,
+      disconnect,
+      gatewayState,
+      loadSessionMessages,
+      setTrackedMessages,
+      t,
+    ],
   )
 
   // Start a new empty chat
@@ -365,7 +469,7 @@ export function usePicoChat() {
     disconnect()
     const newId = generateSessionId()
     setActiveSessionId(newId)
-    setMessages([])
+    setTrackedMessages([])
     setIsTyping(false)
 
     // Reconnect with the fresh session
@@ -374,7 +478,7 @@ export function usePicoChat() {
         connect()
       }
     }, 100)
-  }, [disconnect, connect, gatewayState, messages.length])
+  }, [disconnect, connect, gatewayState, messages.length, setTrackedMessages])
 
   return {
     messages,

@@ -209,7 +209,7 @@ func TestWeComAppVerifySignature(t *testing.T) {
 		}
 	})
 
-	t.Run("empty token skips verification", func(t *testing.T) {
+	t.Run("empty token rejects verification (fail-closed)", func(t *testing.T) {
 		cfgEmpty := config.WeComAppConfig{
 			CorpID:     "test_corp_id",
 			CorpSecret: "test_secret",
@@ -218,8 +218,8 @@ func TestWeComAppVerifySignature(t *testing.T) {
 		}
 		chEmpty, _ := NewWeComAppChannel(cfgEmpty, msgBus)
 
-		if !verifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {
-			t.Error("empty token should skip verification and return true")
+		if verifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {
+			t.Error("empty token should reject verification (fail-closed)")
 		}
 	})
 }

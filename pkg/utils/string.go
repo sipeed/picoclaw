@@ -2,8 +2,17 @@ package utils
 
 import (
 	"strings"
+	"sync/atomic"
 	"unicode"
 )
+
+// Global variable to disable truncation
+var disableTruncation atomic.Bool
+
+// SetDisableTruncation globally enables or disables string truncation
+func SetDisableTruncation(enabled bool) {
+	disableTruncation.Store(enabled)
+}
 
 // SanitizeMessageContent removes Unicode control characters, format characters (RTL overrides,
 // zero-width characters), and other non-graphic characters that could confuse an LLM
@@ -30,6 +39,10 @@ func SanitizeMessageContent(input string) string {
 // Handles multi-byte Unicode characters properly.
 // If the string is truncated, "..." is appended to indicate truncation.
 func Truncate(s string, maxLen int) string {
+	// If the no-truncate flag is active, it returns the full string
+	if disableTruncation.Load() {
+		return s
+	}
 	if maxLen <= 0 {
 		return ""
 	}

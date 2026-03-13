@@ -1,8 +1,11 @@
+import { IconAdjustments } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { PageHeader } from "@/components/page-header"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,17 +18,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 
-export function RawJsonPanel() {
+export function RawConfigPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
 
@@ -124,81 +119,89 @@ export function RawJsonPanel() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("pages.config.raw_json_title")}</CardTitle>
-        <CardDescription>{t("pages.config.raw_json_desc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="flex h-64 items-center justify-center">
-            <p>{t("labels.loading")}</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {isDirty && (
-              <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-2 text-sm text-yellow-700">
-                {t("pages.config.unsaved_changes")}
-              </div>
-            )}
-            <div className="bg-muted/30 relative rounded-lg border">
-              <ScrollArea className="h-[calc(100vh-20rem)] min-h-[200px]">
+    <div className="flex h-full flex-col">
+      <PageHeader title={t("pages.config.raw_json_title")}>
+        <Button variant="outline" asChild>
+          <Link to="/config">
+            <IconAdjustments className="size-4" />
+            {t("pages.config.back_to_visual")}
+          </Link>
+        </Button>
+      </PageHeader>
+
+      <div className="flex min-h-0 flex-1 flex-col p-1 lg:p-3 lg:p-6">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1000px] flex-col">
+          {isLoading ? (
+            <div className="flex flex-1 items-center justify-center">
+              <p>{t("labels.loading")}</p>
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              {isDirty && (
+                <div className="shrink-0 rounded-lg border border-yellow-200 bg-yellow-50 p-2 text-sm text-yellow-700">
+                  {t("pages.config.unsaved_changes")}
+                </div>
+              )}
+              <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border shadow-sm">
                 <Textarea
                   value={effectiveEditorValue}
                   onChange={(e) => {
                     setEditorValue(e.target.value)
                     setIsDirty(true)
                   }}
-                  className="min-h-[200px] resize-none border-0 bg-transparent px-4 py-3 font-mono text-sm shadow-none focus-visible:ring-0"
+                  wrap="off"
+                  className="h-full min-h-0 resize-none overflow-auto border-0 bg-transparent px-4 py-3 font-mono text-sm [overflow-wrap:normal] whitespace-pre shadow-none focus-visible:ring-0"
                   placeholder={t("pages.config.json_placeholder")}
                 />
-              </ScrollArea>
+              </div>
+              <div className="flex shrink-0 justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleFormat}
+                  disabled={mutation.isPending}
+                >
+                  {t("pages.config.format")}
+                </Button>
+                <AlertDialog
+                  open={showResetDialog}
+                  onOpenChange={setShowResetDialog}
+                >
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      disabled={!isDirty}
+                      onClick={() => setShowResetDialog(true)}
+                    >
+                      {t("common.reset")}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        {t("pages.config.reset_confirm_title")}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {t("pages.config.reset_confirm_desc")}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>
+                        {t("common.cancel")}
+                      </AlertDialogCancel>
+                      <AlertDialogAction onClick={confirmReset}>
+                        {t("common.confirm")}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                <Button onClick={handleSave} disabled={mutation.isPending}>
+                  {mutation.isPending ? t("common.saving") : t("common.save")}
+                </Button>
+              </div>
             </div>
-            <div className="flex justify-end space-x-2">
-              <Button
-                variant="outline"
-                onClick={handleFormat}
-                disabled={mutation.isPending}
-              >
-                {t("pages.config.format")}
-              </Button>
-              <AlertDialog
-                open={showResetDialog}
-                onOpenChange={setShowResetDialog}
-              >
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    disabled={!isDirty}
-                    onClick={() => setShowResetDialog(true)}
-                  >
-                    {t("common.reset")}
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      {t("pages.config.reset_confirm_title")}
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {t("pages.config.reset_confirm_desc")}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-                    <AlertDialogAction onClick={confirmReset}>
-                      {t("common.confirm")}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-              <Button onClick={handleSave} disabled={mutation.isPending}>
-                {mutation.isPending ? t("common.saving") : t("common.save")}
-              </Button>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }

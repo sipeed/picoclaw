@@ -524,7 +524,7 @@ func TestCodexCliProvider_MockCLI_WithModel(t *testing.T) {
 	}
 
 	messages := []Message{{Role: "user", Content: "test"}}
-	_, err := p.Chat(context.Background(), messages, nil, "gpt-5.2-codex", nil)
+	_, err := p.Chat(context.Background(), messages, nil, "gpt-5.3-codex", nil)
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestCodexCliProvider_MockCLI_WithModel(t *testing.T) {
 	}
 	args := string(argsData)
 
-	if !strings.Contains(args, "-m gpt-5.2-codex") {
+	if !strings.Contains(args, "-m gpt-5.3-codex") {
 		t.Errorf("args should contain model flag, got: %s", args)
 	}
 	if !strings.Contains(args, "--json") {

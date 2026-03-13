@@ -4,6 +4,9 @@
     "model_group": "Models",
     "models": "Models",
     "credentials": "Credentials",
+    "agent_group": "Agent",
+    "skills": "Skills",
+    "tools": "Tools",
     "services": "Services",
     "channels_group": "Channels",
     "show_more_channels": "More",
@@ -25,6 +28,8 @@
     },
     "history": "History",
     "noHistory": "No chat history yet",
+    "historyLoadFailed": "Failed to load chat history",
+    "historyOpenFailed": "Failed to open this chat history",
     "loadingMore": "Loading more...",
     "deleteSession": "Delete session",
     "messagesCount": "{{count}} messages",
@@ -53,11 +58,14 @@
       },
       "action": {
         "start": "Start Gateway",
-        "stop": "Stop Gateway"
+        "stop": "Stop Gateway",
+        "restart": "Restart Gateway"
       },
       "status": {
-        "starting": "Starting Gateway..."
-      }
+        "starting": "Starting Gateway...",
+        "restarting": "Restarting Gateway..."
+      },
+      "restartRequired": "Model changes require a gateway restart to take effect."
     }
   },
   "common": {
@@ -324,12 +332,68 @@
     }
   },
   "pages": {
+    "agent": {
+      "load_error": "Failed to load agent support information.",
+      "skills": {
+        "description": "Skills are loaded from the workspace, global PicoClaw home, and builtin directories.",
+        "empty": "No skills are currently available.",
+        "import": "Import Skill",
+        "import_success": "Skill imported.",
+        "import_error": "Failed to import skill.",
+        "view": "View",
+        "delete": "Delete",
+        "delete_title": "Delete Skill?",
+        "delete_description": "\"{{name}}\" will be removed from workspace skills.",
+        "delete_confirm": "Delete",
+        "delete_success": "Skill deleted.",
+        "delete_error": "Failed to delete skill.",
+        "viewer_title": "Skill Content",
+        "viewer_description": "Read the current effective SKILL.md content here.",
+        "loading_detail": "Loading skill content...",
+        "load_detail_error": "Failed to load skill content.",
+        "path": "Skill Path",
+        "no_description": "No description provided."
+      },
+      "tools": {
+        "description": "This view reflects whether each agent tool is enabled, disabled, or blocked by a missing prerequisite.",
+        "empty": "No tools are available.",
+        "enable": "Enable",
+        "disable": "Disable",
+        "enable_success": "Tool enabled.",
+        "disable_success": "Tool disabled.",
+        "toggle_error": "Failed to update tool state.",
+        "config_key": "Controlled by tools.{{key}}",
+        "status": {
+          "enabled": "Enabled",
+          "disabled": "Disabled",
+          "blocked": "Blocked"
+        },
+        "categories": {
+          "automation": "Automation",
+          "filesystem": "Filesystem",
+          "web": "Web",
+          "communication": "Communication",
+          "skills": "Skills",
+          "agents": "Agents",
+          "hardware": "Hardware",
+          "discovery": "Discovery"
+        },
+        "reasons": {
+          "requires_linux": "This tool only works on Linux hosts with the required device files exposed.",
+          "requires_skills": "Enable `tools.skills` before this skill-registry tool can be used.",
+          "requires_subagent": "Enable `tools.subagent` before the spawn tool can delegate work.",
+          "requires_mcp_discovery": "Enable `tools.mcp.discovery` before MCP discovery tools become available."
+        }
+      }
+    },
     "config": {
       "load_error": "Failed to load configuration. Please refresh and try again.",
       "workspace": "Workspace Directory",
       "workspace_hint": "Base directory for agent file operations.",
       "restrict_workspace": "Restrict to Workspace",
       "restrict_workspace_hint": "Only allow file operations inside workspace.",
+      "allow_remote": "Allow Remote Shell Execution",
+      "allow_remote_hint": "When enabled, shell commands can also run for remote sessions or non-local contexts. When disabled, shell execution stays limited to local safe contexts.",
       "max_tokens": "Max Tokens",
       "max_tokens_hint": "Upper token limit per model response.",
       "max_tool_iterations": "Max Tool Iterations",
@@ -367,13 +431,15 @@
       "allowed_cidrs": "Allowed Network CIDRs",
       "allowed_cidrs_hint": "Only clients from these CIDR ranges can access the service. One per line or comma-separated. Leave empty to allow all.",
       "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
-      "launcher_load_error": "Failed to load service parameters.",
-      "launcher_restart_hint": "Service parameter changes apply after restarting PicoClaw Web.",
-      "advanced_desc": "Open the raw JSON page to edit every field directly.",
+      "sections": {
+        "agent": "Agent",
+        "runtime": "Runtime",
+        "launcher": "Service",
+        "devices": "Devices"
+      },
       "open_raw": "Raw Config",
       "back_to_visual": "Visual Config",
       "raw_json_title": "Raw JSON Configuration",
-      "raw_json_desc": "Advanced users can directly edit the raw JSON configuration below.",
       "json_placeholder": "Enter valid JSON configuration...",
       "save_success": "Configuration saved successfully.",
       "save_error": "Failed to save configuration.",
@@ -387,7 +453,8 @@
       "unsaved_changes": "You have unsaved changes."
     },
     "logs": {
-      "description": "System logs and monitoring."
+      "clear": "Clear logs",
+      "empty": "Waiting for logs..."
     }
   }
 }

@@ -1,24 +1,24 @@
 package logger
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
-	"time"
+
+	"github.com/rs/zerolog"
 )
 
-type LogLevel int
+type LogLevel = zerolog.Level
 
 const (
-	DEBUG LogLevel = iota
-	INFO
-	WARN
-	ERROR
-	FATAL
+	DEBUG = zerolog.DebugLevel
+	INFO  = zerolog.InfoLevel
+	WARN  = zerolog.WarnLevel
+	ERROR = zerolog.ErrorLevel
+	FATAL = zerolog.FatalLevel
 )
 
 var (
@@ -31,27 +31,24 @@ var (
 	}
 
 	currentLevel = INFO
-	logger       *Logger
+	logger       zerolog.Logger
+	fileLogger   zerolog.Logger
+	logFile      *os.File
 	once         sync.Once
 	mu           sync.RWMutex
 )
 
-type Logger struct {
-	file *os.File
-}
-
-type LogEntry struct {
-	Level     string         `json:"level"`
-	Timestamp string         `json:"timestamp"`
-	Component string         `json:"component,omitempty"`
-	Message   string         `json:"message"`
-	Fields    map[string]any `json:"fields,omitempty"`
-	Caller    string         `json:"caller,omitempty"`
-}
-
 func init() {
 	once.Do(func() {
-		logger = &Logger{}
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+
+		consoleWriter := zerolog.ConsoleWriter{
+			Out:        os.Stdout,
+			TimeFormat: "15:04:05", // TODO: make it configurable???
+		}
+
+		logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
+		fileLogger = zerolog.Logger{}
 	})
 }
 
@@ -59,6 +56,7 @@ func SetLevel(level LogLevel) {
 	mu.Lock()
 	defer mu.Unlock()
 	currentLevel = level
+	zerolog.SetGlobalLevel(level)
 }
 
 func GetLevel() LogLevel {
@@ -71,17 +69,22 @@ func EnableFileLogging(filePath string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	newFile, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
 
-	if logger.file != nil {
-		logger.file.Close()
+	// Close old file if exists
+	if logFile != nil {
+		logFile.Close()
 	}
 
-	logger.file = file
-	log.Println("File logging enabled:", filePath)
+	logFile = newFile
+	fileLogger = zerolog.New(logFile).With().Timestamp().Caller().Logger()
 	return nil
 }
 
@@ -89,10 +92,58 @@ func DisableFileLogging() {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if logger.file != nil {
-		logger.file.Close()
-		logger.file = nil
-		log.Println("File logging disabled")
+	if logFile != nil {
+		logFile.Close()
+		logFile = nil
+	}
+	fileLogger = zerolog.Logger{}
+}
+
+func getCallerInfo() (string, int, string) {
+	for i := 2; i < 15; i++ {
+		pc, file, line, ok := runtime.Caller(i)
+		if !ok {
+			continue
+		}
+
+		fn := runtime.FuncForPC(pc)
+		if fn == nil {
+			continue
+		}
+
+		// bypass common loggers
+		if strings.HasSuffix(file, "/logger.go") ||
+			strings.HasSuffix(file, "/logger_3rd_party.go") ||
+			strings.HasSuffix(file, "/log.go") {
+			continue
+		}
+
+		funcName := fn.Name()
+		if strings.HasPrefix(funcName, "runtime.") {
+			continue
+		}
+
+		return filepath.Base(file), line, filepath.Base(funcName)
+	}
+
+	return "???", 0, "???"
+}
+
+//nolint:zerologlint
+func getEvent(logger zerolog.Logger, level LogLevel) *zerolog.Event {
+	switch level {
+	case zerolog.DebugLevel:
+		return logger.Debug()
+	case zerolog.InfoLevel:
+		return logger.Info()
+	case zerolog.WarnLevel:
+		return logger.Warn()
+	case zerolog.ErrorLevel:
+		return logger.Error()
+	case zerolog.FatalLevel:
+		return logger.Fatal()
+	default:
+		return logger.Info()
 	}
 }
 
@@ -101,63 +152,39 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		return
 	}
 
-	entry := LogEntry{
-		Level:     logLevelNames[level],
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Component: component,
-		Message:   message,
-		Fields:    fields,
-	}
+	callerFile, callerLine, callerFunc := getCallerInfo()
 
-	if pc, file, line, ok := runtime.Caller(2); ok {
-		fn := runtime.FuncForPC(pc)
-		if fn != nil {
-			entry.Caller = fmt.Sprintf("%s:%d (%s)", file, line, fn.Name())
-		}
-	}
+	event := getEvent(logger, level)
 
-	if logger.file != nil {
-		jsonData, err := json.Marshal(entry)
-		if err == nil {
-			logger.file.Write(append(jsonData, '\n'))
-		}
-	}
-
-	var fieldStr string
-	if len(fields) > 0 {
-		fieldStr = " " + formatFields(fields)
+	// Build combined field with component and caller
+	if component != "" {
+		event.Str("caller", fmt.Sprintf("%-6s %s:%d (%s)", component, callerFile, callerLine, callerFunc))
 	} else {
-		fieldStr = ""
+		event.Str("caller", fmt.Sprintf("<none> %s:%d (%s)", callerFile, callerLine, callerFunc))
 	}
 
-	logLine := fmt.Sprintf("[%s] [%s]%s %s%s",
-		entry.Timestamp,
-		logLevelNames[level],
-		formatComponent(component),
-		message,
-		fieldStr,
-	)
+	for k, v := range fields {
+		event.Interface(k, v)
+	}
 
-	log.Println(logLine)
+	event.Msg(message)
+
+	// Also log to file if enabled
+	if fileLogger.GetLevel() != zerolog.NoLevel {
+		fileEvent := getEvent(fileLogger, level)
+
+		if component != "" {
+			fileEvent.Str("component", component)
+		}
+		for k, v := range fields {
+			fileEvent.Interface(k, v)
+		}
+		fileEvent.Msg(message)
+	}
 
 	if level == FATAL {
 		os.Exit(1)
 	}
-}
-
-func formatComponent(component string) string {
-	if component == "" {
-		return ""
-	}
-	return fmt.Sprintf(" %s:", component)
-}
-
-func formatFields(fields map[string]any) string {
-	parts := make([]string, 0, len(fields))
-	for k, v := range fields {
-		parts = append(parts, fmt.Sprintf("%s=%v", k, v))
-	}
-	return fmt.Sprintf("{%s}", strings.Join(parts, ", "))
 }
 
 func Debug(message string) {
@@ -166,6 +193,10 @@ func Debug(message string) {
 
 func DebugC(component string, message string) {
 	logMessage(DEBUG, component, message, nil)
+}
+
+func Debugf(message string, ss ...any) {
+	logMessage(DEBUG, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func DebugF(message string, fields map[string]any) {
@@ -186,6 +217,10 @@ func InfoC(component string, message string) {
 
 func InfoF(message string, fields map[string]any) {
 	logMessage(INFO, "", message, fields)
+}
+
+func Infof(message string, ss ...any) {
+	logMessage(INFO, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func InfoCF(component string, message string, fields map[string]any) {
@@ -216,6 +251,10 @@ func ErrorC(component string, message string) {
 	logMessage(ERROR, component, message, nil)
 }
 
+func Errorf(message string, ss ...any) {
+	logMessage(ERROR, "", fmt.Sprintf(message, ss...), nil)
+}
+
 func ErrorF(message string, fields map[string]any) {
 	logMessage(ERROR, "", message, fields)
 }
@@ -230,6 +269,10 @@ func Fatal(message string) {
 
 func FatalC(component string, message string) {
 	logMessage(FATAL, component, message, nil)
+}
+
+func Fatalf(message string, ss ...any) {
+	logMessage(FATAL, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func FatalF(message string, fields map[string]any) {

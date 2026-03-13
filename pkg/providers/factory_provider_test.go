@@ -120,6 +120,8 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"deepseek", "deepseek"},
 		{"ollama", "ollama"},
 		{"siliconflow", "siliconflow"},
+		{"longcat", "longcat"},
+		{"modelscope", "modelscope"},
 	}
 
 	for _, tt := range tests {
@@ -172,6 +174,58 @@ func TestCreateProviderFromConfig_LiteLLM(t *testing.T) {
 	}
 	if modelID != "my-proxy-alias" {
 		t.Errorf("modelID = %q, want %q", modelID, "my-proxy-alias")
+	}
+}
+
+func TestCreateProviderFromConfig_LongCat(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-longcat",
+		Model:     "longcat/LongCat-Flash-Thinking",
+		APIKey:    "test-key",
+		APIBase:   "https://api.longcat.chat/openai",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "LongCat-Flash-Thinking" {
+		t.Errorf("modelID = %q, want %q", modelID, "LongCat-Flash-Thinking")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_ModelScope(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-modelscope",
+		Model:     "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+		APIKey:    "test-key",
+		APIBase:   "https://api-inference.modelscope.cn/v1",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "Qwen/Qwen3-235B-A22B-Instruct-2507" {
+		t.Errorf("modelID = %q, want %q", modelID, "Qwen/Qwen3-235B-A22B-Instruct-2507")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestGetDefaultAPIBase_ModelScope(t *testing.T) {
+	if got := getDefaultAPIBase("modelscope"); got != "https://api-inference.modelscope.cn/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "modelscope", got, "https://api-inference.modelscope.cn/v1")
 	}
 }
 

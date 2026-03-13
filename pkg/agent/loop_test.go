@@ -788,6 +788,63 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	}
 }
 
+// TestProcessDirectWithChannel_TriggersMCPInitialization verifies that
+// ProcessDirectWithChannel triggers MCP initialization when MCP is enabled.
+// Note: Manager is only initialized when at least one MCP server is configured
+// and successfully connected.
+func TestProcessDirectWithChannel_TriggersMCPInitialization(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Test with MCP enabled but no servers - should not initialize manager
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				ToolConfig: config.ToolConfig{
+					Enabled: true,
+				},
+				// No servers configured - manager should not be initialized
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	defer al.Close()
+
+	if al.mcp.hasManager() {
+		t.Fatal("expected MCP manager to be nil before first direct processing")
+	}
+
+	_, err = al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"session-1",
+		"cli",
+		"direct",
+	)
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+
+	// Manager should not be initialized when no servers are configured
+	if al.mcp.hasManager() {
+		t.Fatal("expected MCP manager to be nil when no servers are configured")
+	}
+}
+
 func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {

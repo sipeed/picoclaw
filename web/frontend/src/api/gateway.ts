@@ -1,10 +1,13 @@
 // API client for gateway process management.
 
 interface GatewayStatusResponse {
-  gateway_status: "running" | "starting" | "stopped" | "error"
+  gateway_status: "running" | "starting" | "restarting" | "stopped" | "error"
   gateway_start_allowed?: boolean
   gateway_start_reason?: string
+  gateway_restart_required?: boolean
   pid?: number
+  boot_default_model?: string
+  config_default_model?: string
   logs?: string[]
   log_total?: number
   log_run_id?: number
@@ -14,6 +17,8 @@ interface GatewayStatusResponse {
 interface GatewayActionResponse {
   status: string
   pid?: number
+  log_total?: number
+  log_run_id?: number
 }
 
 const BASE_URL = ""
@@ -55,6 +60,12 @@ export async function stopGateway(): Promise<GatewayActionResponse> {
 
 export async function restartGateway(): Promise<GatewayActionResponse> {
   return request<GatewayActionResponse>("/api/gateway/restart", {
+    method: "POST",
+  })
+}
+
+export async function clearGatewayLogs(): Promise<GatewayActionResponse> {
+  return request<GatewayActionResponse>("/api/gateway/logs/clear", {
     method: "POST",
   })
 }
