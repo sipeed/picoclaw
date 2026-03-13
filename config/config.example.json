@@ -41,6 +41,12 @@
       "api_key": "your-longcat-api-key"
     },
     {
+      "model_name": "modelscope-qwen",
+      "model": "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "api_key": "your-modelscope-access-token",
+      "api_base": "https://api-inference.modelscope.cn/v1"
+    },
+    {
       "model_name": "loadbalanced-gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_key": "sk-key1",
@@ -283,6 +289,10 @@
     "longcat": {
       "api_key": "",
       "api_base": "https://api.longcat.chat/openai"
+    },
+    "modelscope": {
+      "api_key": "",
+      "api_base": "https://api-inference.modelscope.cn/v1"
     }
   },
   "tools": {
