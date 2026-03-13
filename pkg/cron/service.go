@@ -61,6 +61,7 @@ type JobHandler func(job *CronJob) (string, error)
 type CronService struct {
 	storePath string
 	store     *CronStore
+	jobIndex  map[string]int
 	onJob     JobHandler
 	mu        sync.RWMutex
 	running   bool
@@ -179,13 +180,9 @@ func (cs *CronService) executeJobByID(jobID string) {
 
 	cs.mu.RLock()
 	var callbackJob *CronJob
-	for i := range cs.store.Jobs {
-		job := &cs.store.Jobs[i]
-		if job.ID == jobID {
-			jobCopy := *job
-			callbackJob = &jobCopy
-			break
-		}
+	if idx, ok := cs.jobIndex[jobID]; ok && idx >= 0 && idx < len(cs.store.Jobs) && cs.store.Jobs[idx].ID == jobID {
+		jobCopy := cs.store.Jobs[idx]
+		callbackJob = &jobCopy
 	}
 	cs.mu.RUnlock()
 
@@ -209,14 +206,8 @@ func (cs *CronService) executeJobByID(jobID string) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
-	var job *CronJob
-	for i := range cs.store.Jobs {
-		if cs.store.Jobs[i].ID == jobID {
-			job = &cs.store.Jobs[i]
-			break
-		}
-	}
-	if job == nil {
+	job, ok := cs.getJobUnsafe(jobID)
+	if !ok {
 		log.Printf("[cron] job %s disappeared before state update", jobID)
 		return
 	}
@@ -338,6 +329,7 @@ func (cs *CronService) loadStore() error {
 		Version: 1,
 		Jobs:    []CronJob{},
 	}
+	cs.jobIndex = make(map[string]int)
 
 	data, err := os.ReadFile(cs.storePath)
 	if err != nil {
@@ -347,7 +339,34 @@ func (cs *CronService) loadStore() error {
 		return err
 	}
 
-	return json.Unmarshal(data, cs.store)
+	if err := json.Unmarshal(data, cs.store); err != nil {
+		return err
+	}
+
+	cs.rebuildJobIndexUnsafe()
+	return nil
+}
+
+func (cs *CronService) rebuildJobIndexUnsafe() {
+	cs.jobIndex = make(map[string]int, len(cs.store.Jobs))
+	for i := range cs.store.Jobs {
+		cs.jobIndex[cs.store.Jobs[i].ID] = i
+	}
+}
+
+func (cs *CronService) getJobUnsafe(jobID string) (*CronJob, bool) {
+	idx, ok := cs.jobIndex[jobID]
+	if !ok || idx < 0 || idx >= len(cs.store.Jobs) {
+		return nil, false
+	}
+	if cs.store.Jobs[idx].ID != jobID {
+		cs.rebuildJobIndexUnsafe()
+		idx, ok = cs.jobIndex[jobID]
+		if !ok || idx < 0 || idx >= len(cs.store.Jobs) {
+			return nil, false
+		}
+	}
+	return &cs.store.Jobs[idx], true
 }
 
 func (cs *CronService) saveStoreUnsafe() error {
@@ -396,6 +415,7 @@ func (cs *CronService) AddJob(
 	}
 
 	cs.store.Jobs = append(cs.store.Jobs, job)
+	cs.jobIndex[job.ID] = len(cs.store.Jobs) - 1
 	if err := cs.saveStoreUnsafe(); err != nil {
 		return nil, err
 	}
@@ -407,14 +427,14 @@ func (cs *CronService) UpdateJob(job *CronJob) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
-	for i := range cs.store.Jobs {
-		if cs.store.Jobs[i].ID == job.ID {
-			cs.store.Jobs[i] = *job
-			cs.store.Jobs[i].UpdatedAtMS = time.Now().UnixMilli()
-			return cs.saveStoreUnsafe()
-		}
+	storedJob, ok := cs.getJobUnsafe(job.ID)
+	if !ok {
+		return fmt.Errorf("job not found")
 	}
-	return fmt.Errorf("job not found")
+
+	*storedJob = *job
+	storedJob.UpdatedAtMS = time.Now().UnixMilli()
+	return cs.saveStoreUnsafe()
 }
 
 func (cs *CronService) RemoveJob(jobID string) bool {
@@ -425,49 +445,53 @@ func (cs *CronService) RemoveJob(jobID string) bool {
 }
 
 func (cs *CronService) removeJobUnsafe(jobID string) bool {
-	before := len(cs.store.Jobs)
-	var jobs []CronJob
-	for _, job := range cs.store.Jobs {
-		if job.ID != jobID {
-			jobs = append(jobs, job)
-		}
+	idx, ok := cs.jobIndex[jobID]
+	if !ok || idx < 0 || idx >= len(cs.store.Jobs) {
+		return false
 	}
-	cs.store.Jobs = jobs
-	removed := len(cs.store.Jobs) < before
 
-	if removed {
-		if err := cs.saveStoreUnsafe(); err != nil {
-			log.Printf("[cron] failed to save store after remove: %v", err)
+	if cs.store.Jobs[idx].ID != jobID {
+		cs.rebuildJobIndexUnsafe()
+		idx, ok = cs.jobIndex[jobID]
+		if !ok || idx < 0 || idx >= len(cs.store.Jobs) {
+			return false
 		}
 	}
 
-	return removed
+	copy(cs.store.Jobs[idx:], cs.store.Jobs[idx+1:])
+	cs.store.Jobs = cs.store.Jobs[:len(cs.store.Jobs)-1]
+	cs.rebuildJobIndexUnsafe()
+
+	if err := cs.saveStoreUnsafe(); err != nil {
+		log.Printf("[cron] failed to save store after remove: %v", err)
+	}
+
+	return true
 }
 
 func (cs *CronService) EnableJob(jobID string, enabled bool) *CronJob {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
-	for i := range cs.store.Jobs {
-		job := &cs.store.Jobs[i]
-		if job.ID == jobID {
-			job.Enabled = enabled
-			job.UpdatedAtMS = time.Now().UnixMilli()
-
-			if enabled {
-				job.State.NextRunAtMS = cs.computeNextRun(&job.Schedule, time.Now().UnixMilli())
-			} else {
-				job.State.NextRunAtMS = nil
-			}
-
-			if err := cs.saveStoreUnsafe(); err != nil {
-				log.Printf("[cron] failed to save store after enable: %v", err)
-			}
-			return job
-		}
+	job, ok := cs.getJobUnsafe(jobID)
+	if !ok {
+		return nil
 	}
 
-	return nil
+	job.Enabled = enabled
+	job.UpdatedAtMS = time.Now().UnixMilli()
+
+	if enabled {
+		job.State.NextRunAtMS = cs.computeNextRun(&job.Schedule, time.Now().UnixMilli())
+	} else {
+		job.State.NextRunAtMS = nil
+	}
+
+	if err := cs.saveStoreUnsafe(); err != nil {
+		log.Printf("[cron] failed to save store after enable: %v", err)
+	}
+
+	return job
 }
 
 func (cs *CronService) ListJobs(includeDisabled bool) []CronJob {
