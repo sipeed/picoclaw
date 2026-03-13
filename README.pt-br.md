@@ -981,6 +981,7 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
 | **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Obter Chave](https://www.byteplus.com)                    |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Obter Chave](https://longcat.chat/platform)                     |
+| **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [Obter Token](https://modelscope.cn/my/tokens)                   |
 | **Antigravity** | `antigravity/` | Google Cloud | Custom | Apenas OAuth |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
@@ -1220,6 +1221,7 @@ Isso acontece quando outra instância do bot está em execução. Certifique-se 
 | **Brave Search** | 2000 consultas/mês | Funcionalidade de busca web |
 | **Groq** | Plano gratuito disponível | Inferência ultra-rápida (Llama, Mixtral) |
 | **Cerebras** | Plano gratuito disponível | Inferência ultra-rápida (Llama 3.3 70B) |
+| **ModelScope** | 2000 requisições/dia | Inferência gratuita (Qwen, GLM, DeepSeek, etc.) |
 
 ---
 

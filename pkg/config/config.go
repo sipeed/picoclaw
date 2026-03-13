@@ -528,6 +528,7 @@ type ProvidersConfig struct {
 	Avian         ProviderConfig       `json:"avian"`
 	Minimax       ProviderConfig       `json:"minimax"`
 	LongCat       ProviderConfig       `json:"longcat"`
+	ModelScope    ProviderConfig       `json:"modelscope"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -555,7 +556,8 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.Mistral.APIKey == "" && p.Mistral.APIBase == "" &&
 		p.Avian.APIKey == "" && p.Avian.APIBase == "" &&
 		p.Minimax.APIKey == "" && p.Minimax.APIBase == "" &&
-		p.LongCat.APIKey == "" && p.LongCat.APIBase == ""
+		p.LongCat.APIKey == "" && p.LongCat.APIBase == "" &&
+		p.ModelScope.APIKey == "" && p.ModelScope.APIBase == ""
 }
 
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig

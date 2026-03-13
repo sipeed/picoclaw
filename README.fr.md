@@ -985,6 +985,7 @@ Cette conception permet également le **support multi-agent** avec une sélectio
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
 | **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Obtenir Clé](https://www.byteplus.com/)                    |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Obtenir une clé](https://longcat.chat/platform)                 |
+| **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [Obtenir un Token](https://modelscope.cn/my/tokens)              |
 | **Antigravity** | `antigravity/` | Google Cloud | Custom | OAuth uniquement |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
@@ -1223,6 +1224,7 @@ Cela se produit lorsqu'une autre instance du bot est en cours d'exécution. Assu
 | **Zhipu**        | 200K tokens/mois     | Convient aux utilisateurs chinois   |
 | **Brave Search** | 2000 requêtes/mois   | Fonctionnalité de recherche web       |
 | **Groq**         | Offre gratuite dispo | Inférence ultra-rapide (Llama, Mixtral) |
+| **ModelScope**   | 2000 requêtes/jour   | Inférence gratuite (Qwen, GLM, DeepSeek, etc.) |
 
 ---
 
