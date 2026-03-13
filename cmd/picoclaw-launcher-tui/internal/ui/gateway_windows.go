@@ -5,12 +5,14 @@ package ui
 
 import "os/exec"
 
+var execCommand = exec.Command
+
 func isGatewayProcessRunning() bool {
-	cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq picoclaw.exe")
+	cmd := execCommand("tasklist", "/FI", "IMAGENAME eq picoclaw.exe")
 	return cmd.Run() == nil
 }
 
 func stopGatewayProcess() error {
-	cmd := exec.Command("taskkill", "/F", "/IM", "picoclaw.exe")
+	cmd := execCommand("taskkill", "/F", "/IM", "picoclaw.exe")
 	return cmd.Run()
 }
