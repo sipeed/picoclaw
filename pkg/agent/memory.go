@@ -25,8 +25,8 @@ type MemoryStore struct {
 	memoryDir  string
 	memoryFile string
 
-	cacheMu        sync.RWMutex
-	longTermCache  longTermFileCache
+	cacheMu         sync.RWMutex
+	longTermCache   longTermFileCache
 	parsedPlanCache parsedPlanStateCache
 }
 

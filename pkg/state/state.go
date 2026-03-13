@@ -26,6 +26,7 @@ type State struct {
 	// Format: "channel:chatID[/thread]".
 	HeartbeatTarget string `json:"heartbeat_target,omitempty"`
 
+
 	// LastChatID is the last chat ID used for communication
 	LastChatID string `json:"last_chat_id,omitempty"`
 
@@ -173,6 +174,7 @@ func (sm *Manager) load() error {
 
 	return nil
 }
+
 
 // SetLastHeartbeatTarget atomically updates the last heartbeat target and saves the state.
 func (sm *Manager) SetLastHeartbeatTarget(target string) error {
