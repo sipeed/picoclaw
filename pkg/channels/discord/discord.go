@@ -578,6 +578,11 @@ func (c *DiscordChannel) resolveDiscordRefs(s *discordgo.Session, text string, g
 
 	// 2. Expand Discord message links (max 3, same guild only)
 	matches := msgLinkRe.FindAllStringSubmatch(text, 3)
+	if len(matches) == 0 {
+		return text
+	}
+	var sb strings.Builder
+	sb.WriteString(text)
 	for _, m := range matches {
 		if len(m) < 4 {
 			continue
@@ -595,10 +600,10 @@ func (c *DiscordChannel) resolveDiscordRefs(s *discordgo.Session, text string, g
 		if msg.Author != nil {
 			author = msg.Author.Username
 		}
-		text += fmt.Sprintf("\n[linked message from %s]: %s", author, msg.Content)
+		fmt.Fprintf(&sb, "\n[linked message from %s]: %s", author, msg.Content)
 	}
 
-	return text
+	return sb.String()
 }
 
 // stripBotMention removes the bot mention from the message content.
