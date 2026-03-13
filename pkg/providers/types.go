@@ -2,8 +2,9 @@ package providers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+
+	"encoding/json"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
@@ -18,8 +19,6 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
-	StreamEvent            = protocoltypes.StreamEvent
-	StreamToolCallDelta    = protocoltypes.StreamToolCallDelta
 	ContentBlock           = protocoltypes.ContentBlock
 	CacheControl           = protocoltypes.CacheControl
 )
@@ -84,6 +83,12 @@ func (e *FailoverError) IsRetriable() bool {
 	return e.Reason != FailoverFormat
 }
 
+// ModelConfig holds primary model and fallback list.
+type ModelConfig struct {
+	Primary   string
+	Fallbacks []string
+}
+
 // StreamingProvider extends LLMProvider with SSE channel-based streaming.
 // Use a type assertion to check if a provider supports streaming:
 //
@@ -91,21 +96,23 @@ func (e *FailoverError) IsRetriable() bool {
 type StreamingProvider interface {
 	LLMProvider
 	CanStream() bool
-	ChatStream(
-		ctx context.Context,
-		messages []Message,
-		tools []ToolDefinition,
-		model string,
-		options map[string]any,
-	) (<-chan StreamEvent, error)
+	ChatStream(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any) (<-chan StreamEvent, error)
 }
 
-// ModelConfig holds primary model and fallback list.
-type ModelConfig struct {
-	Primary   string
-	Fallbacks []string
+// FallbackCandidate represents a model that can be tried if the primary model fails.
+type FallbackCandidate struct {
+	ModelName string
+	Model     string
+	Protocol  string
+	Provider  LLMProvider
+	Options   map[string]any
 }
 
-func MustMarshalParameters(params map[string]any) json.RawMessage {
-	return protocoltypes.MustMarshalParameters(params)
+// UnmarshalArguments is a helper to parse FunctionCall.Arguments from json.RawMessage.
+func UnmarshalArguments(raw json.RawMessage) (map[string]any, error) {
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }

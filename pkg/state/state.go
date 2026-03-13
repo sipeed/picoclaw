@@ -99,36 +99,6 @@ func (sm *Manager) SetLastChannel(channel string) error {
 	return nil
 }
 
-// SetLastHeartbeatTarget atomically updates the last heartbeat target and saves the state.
-func (sm *Manager) SetLastHeartbeatTarget(target string) error {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	sm.state.LastHeartbeatTarget = target
-	sm.state.Timestamp = time.Now()
-
-	if err := sm.saveAtomic(); err != nil {
-		return fmt.Errorf("failed to save state atomically: %w", err)
-	}
-
-	return nil
-}
-
-// SetHeartbeatTarget atomically updates the explicit heartbeat target and saves the state.
-func (sm *Manager) SetHeartbeatTarget(target string) error {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	sm.state.HeartbeatTarget = target
-	sm.state.Timestamp = time.Now()
-
-	if err := sm.saveAtomic(); err != nil {
-		return fmt.Errorf("failed to save state atomically: %w", err)
-	}
-
-	return nil
-}
-
 // SetLastChatID atomically updates the last chat ID and saves the state.
 func (sm *Manager) SetLastChatID(chatID string) error {
 	sm.mu.Lock()
@@ -151,20 +121,6 @@ func (sm *Manager) GetLastChannel() string {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	return sm.state.LastChannel
-}
-
-// GetLastHeartbeatTarget returns the last heartbeat target from the state.
-func (sm *Manager) GetLastHeartbeatTarget() string {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-	return sm.state.LastHeartbeatTarget
-}
-
-// GetHeartbeatTarget returns the explicit heartbeat target from the state.
-func (sm *Manager) GetHeartbeatTarget() string {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-	return sm.state.HeartbeatTarget
 }
 
 // GetLastChatID returns the last chat ID from the state.
@@ -216,4 +172,48 @@ func (sm *Manager) load() error {
 	}
 
 	return nil
+}
+
+// SetLastHeartbeatTarget atomically updates the last heartbeat target and saves the state.
+func (sm *Manager) SetLastHeartbeatTarget(target string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.state.LastHeartbeatTarget = target
+	sm.state.Timestamp = time.Now()
+
+	if err := sm.saveAtomic(); err != nil {
+		return fmt.Errorf("failed to save state atomically: %w", err)
+	}
+
+	return nil
+}
+
+// SetHeartbeatTarget atomically updates the explicit heartbeat target and saves the state.
+func (sm *Manager) SetHeartbeatTarget(target string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.state.HeartbeatTarget = target
+	sm.state.Timestamp = time.Now()
+
+	if err := sm.saveAtomic(); err != nil {
+		return fmt.Errorf("failed to save state atomically: %w", err)
+	}
+
+	return nil
+}
+
+// GetLastHeartbeatTarget returns the last heartbeat target from the state.
+func (sm *Manager) GetLastHeartbeatTarget() string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.state.LastHeartbeatTarget
+}
+
+// GetHeartbeatTarget returns the explicit heartbeat target from the state.
+func (sm *Manager) GetHeartbeatTarget() string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.state.HeartbeatTarget
 }

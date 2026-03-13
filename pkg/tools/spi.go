@@ -29,47 +29,37 @@ func (t *SPITool) Parameters() map[string]any {
 		"type": "object",
 		"properties": map[string]any{
 			"action": map[string]any{
-				"type": "string",
-
-				"enum": []string{"list", "transfer", "read"},
-
+				"type":        "string",
+				"enum":        []string{"list", "transfer", "read"},
 				"description": "Action to perform: list (find available SPI devices), transfer (full-duplex send/receive), read (receive bytes by sending zeros)",
 			},
 			"device": map[string]any{
-				"type": "string",
-
+				"type":        "string",
 				"description": "SPI device identifier (e.g. \"2.0\" for /dev/spidev2.0). Required for transfer/read.",
 			},
 			"speed": map[string]any{
-				"type": "integer",
-
+				"type":        "integer",
 				"description": "SPI clock speed in Hz. Default: 1000000 (1 MHz).",
 			},
 			"mode": map[string]any{
-				"type": "integer",
-
+				"type":        "integer",
 				"description": "SPI mode (0-3). Default: 0. Mode sets CPOL and CPHA: 0=0,0 1=0,1 2=1,0 3=1,1.",
 			},
 			"bits": map[string]any{
-				"type": "integer",
-
+				"type":        "integer",
 				"description": "Bits per word. Default: 8.",
 			},
 			"data": map[string]any{
-				"type": "array",
-
-				"items": map[string]any{"type": "integer"},
-
+				"type":        "array",
+				"items":       map[string]any{"type": "integer"},
 				"description": "Bytes to send (0-255 each). Required for transfer action.",
 			},
 			"length": map[string]any{
-				"type": "integer",
-
+				"type":        "integer",
 				"description": "Number of bytes to read (1-4096). Required for read action.",
 			},
 			"confirm": map[string]any{
-				"type": "boolean",
-
+				"type":        "boolean",
 				"description": "Must be true for transfer operations. Safety guard to prevent accidental writes.",
 			},
 		},
@@ -113,8 +103,7 @@ func (t *SPITool) list() *ToolResult {
 	}
 
 	type devInfo struct {
-		Path string `json:"path"`
-
+		Path   string `json:"path"`
 		Device string `json:"device"`
 	}
 

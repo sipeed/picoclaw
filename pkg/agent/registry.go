@@ -12,11 +12,9 @@ import (
 
 // AgentRegistry manages multiple agent instances and routes messages to them.
 type AgentRegistry struct {
-	agents map[string]*AgentInstance
-
+	agents   map[string]*AgentInstance
 	resolver *routing.RouteResolver
-
-	mu sync.RWMutex
+	mu       sync.RWMutex
 }
 
 // NewAgentRegistry creates a registry from config, instantiating all agents.
@@ -25,16 +23,14 @@ func NewAgentRegistry(
 	provider providers.LLMProvider,
 ) *AgentRegistry {
 	registry := &AgentRegistry{
-		agents: make(map[string]*AgentInstance),
-
+		agents:   make(map[string]*AgentInstance),
 		resolver: routing.NewRouteResolver(cfg),
 	}
 
 	agentConfigs := cfg.Agents.List
 	if len(agentConfigs) == 0 {
 		implicitAgent := &config.AgentConfig{
-			ID: "main",
-
+			ID:      "main",
 			Default: true,
 		}
 		instance := NewAgentInstance(implicitAgent, &cfg.Agents.Defaults, cfg, provider)
@@ -48,13 +44,10 @@ func NewAgentRegistry(
 			registry.agents[id] = instance
 			logger.InfoCF("agent", "Registered agent",
 				map[string]any{
-					"agent_id": id,
-
-					"name": ac.Name,
-
+					"agent_id":  id,
+					"name":      ac.Name,
 					"workspace": instance.Workspace,
-
-					"model": instance.Model,
+					"model":     instance.Model,
 				})
 		}
 	}
@@ -117,6 +110,18 @@ func (r *AgentRegistry) ForEachTool(name string, fn func(tools.Tool)) {
 	for _, agent := range r.agents {
 		if t, ok := agent.Tools.Get(name); ok {
 			fn(t)
+		}
+	}
+}
+
+// Close releases resources held by all registered agents.
+func (r *AgentRegistry) Close() {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, agent := range r.agents {
+		if err := agent.Close(); err != nil {
+			logger.WarnCF("agent", "Failed to close agent",
+				map[string]any{"agent_id": agent.ID, "error": err.Error()})
 		}
 	}
 }

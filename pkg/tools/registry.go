@@ -2,10 +2,8 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,20 +11,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
-
-// NormalizeToolName keeps only lowercase ASCII letters.
-// "read_file" → "readfile", "ReadFile" → "readfile", "read-file" → "readfile".
-func NormalizeToolName(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if r >= 'A' && r <= 'Z' {
-			b.WriteRune(r + 32)
-		} else if r >= 'a' && r <= 'z' {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
 
 type ToolEntry struct {
 	Tool   Tool
@@ -155,28 +139,15 @@ func (r *ToolRegistry) SnapshotHiddenTools() HiddenToolSnapshot {
 func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
-	// Exact match first
-	if entry, ok := r.tools[name]; ok {
-		// Hidden tools with expired TTL are not callable.
-		if !entry.IsCore && entry.TTL <= 0 {
-			return nil, false
-		}
-		return entry.Tool, true
+	entry, ok := r.tools[name]
+	if !ok {
+		return nil, false
 	}
-
-	// Fork extension: fuzzy fallback — normalize and compare
-	// (handles "readfile" → "read_file" etc.)
-	norm := NormalizeToolName(name)
-	for _, entry := range r.tools {
-		if entry.IsCore || entry.TTL > 0 {
-			if NormalizeToolName(entry.Tool.Name()) == norm {
-				return entry.Tool, true
-			}
-		}
+	// Hidden tools with expired TTL are not callable.
+	if !entry.IsCore && entry.TTL <= 0 {
+		return nil, false
 	}
-
-	return nil, false
+	return entry.Tool, true
 }
 
 func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]any) *ToolResult {
@@ -213,11 +184,6 @@ func (r *ToolRegistry) ExecuteWithContext(
 	// Always inject — tools validate what they require.
 	ctx = WithToolContext(ctx, channel, chatID)
 
-	// Legacy ContextualTool support (fork-only, prefer ctx-based injection above)
-	if contextualTool, ok := tool.(ContextualTool); ok && channel != "" && chatID != "" {
-		contextualTool.SetContext(channel, chatID)
-	}
-
 	// If tool implements AsyncExecutor and callback is provided, use ExecuteAsync.
 	// The callback is a call parameter, not mutable state on the tool instance.
 	var result *ToolResult
@@ -228,14 +194,6 @@ func (r *ToolRegistry) ExecuteWithContext(
 				"tool": name,
 			})
 		result = asyncExec.ExecuteAsync(ctx, args, asyncCallback)
-	} else if asyncTool, ok := tool.(AsyncTool); ok && asyncCallback != nil {
-		// Legacy AsyncTool support (fork-only, prefer AsyncExecutor above)
-		asyncTool.SetCallback(asyncCallback)
-		logger.DebugCF("tool", "Async callback injected (legacy)",
-			map[string]any{
-				"tool": name,
-			})
-		result = tool.Execute(ctx, args)
 	} else {
 		result = tool.Execute(ctx, args)
 	}
@@ -293,7 +251,7 @@ func (r *ToolRegistry) GetDefinitions() []map[string]any {
 			continue
 		}
 
-		definitions = append(definitions, ToolToSchema(entry.Tool))
+		definitions = append(definitions, ToolToSchema(r.tools[name].Tool))
 	}
 	return definitions
 }
@@ -325,19 +283,12 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 		desc, _ := fn["description"].(string)
 		params, _ := fn["parameters"].(map[string]any)
 
-		paramsRaw := json.RawMessage(`{}`)
-		if len(params) > 0 {
-			if payload, err := json.Marshal(params); err == nil {
-				paramsRaw = payload
-			}
-		}
-
 		definitions = append(definitions, providers.ToolDefinition{
 			Type: "function",
 			Function: providers.ToolFunctionDefinition{
 				Name:        name,
 				Description: desc,
-				Parameters:  paramsRaw,
+				Parameters:  params,
 			},
 		})
 	}
@@ -374,8 +325,7 @@ func (r *ToolRegistry) GetSummaries() []string {
 			continue
 		}
 
-		hint := buildParamHint(entry.Tool.Parameters())
-		summaries = append(summaries, fmt.Sprintf("- `%s`%s - %s", entry.Tool.Name(), hint, entry.Tool.Description()))
+		summaries = append(summaries, fmt.Sprintf("- `%s` - %s", entry.Tool.Name(), entry.Tool.Description()))
 	}
 	return summaries
 }

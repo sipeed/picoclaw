@@ -122,7 +122,11 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		slack.MsgOptionText(msg.Content, false),
 	}
 
-	if threadTS != "" {
+	if msg.ReplyToMessageID != "" && threadTS == "" {
+		// Answer to the message by creating a Thread under it
+		opts = append(opts, slack.MsgOptionTS(msg.ReplyToMessageID))
+	} else if threadTS != "" {
+		// If we are already in a thread, continue in the thread
 		opts = append(opts, slack.MsgOptionTS(threadTS))
 	}
 
@@ -183,7 +187,7 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 			title = filename
 		}
 
-		_, err = c.api.UploadFileContext(ctx, slack.UploadFileParameters{
+		_, err = c.api.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
 			Channel:  channelID,
 			File:     localPath,
 			Filename: filename,
@@ -303,17 +307,16 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		Timestamp: messageTS,
 	})
 
-	var contentBuf strings.Builder
-	contentBuf.WriteString(c.stripBotMention(ev.Text))
+	content := ev.Text
+	content = c.stripBotMention(content)
 
 	// In non-DM channels, apply group trigger filtering
 	if !strings.HasPrefix(channelID, "D") {
-		respond, cleaned := c.ShouldRespondInGroup(false, contentBuf.String())
+		respond, cleaned := c.ShouldRespondInGroup(false, content)
 		if !respond {
 			return
 		}
-		contentBuf.Reset()
-		contentBuf.WriteString(cleaned)
+		content = cleaned
 	}
 
 	var mediaPaths []string
@@ -341,11 +344,10 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 				continue
 			}
 			mediaPaths = append(mediaPaths, storeMedia(localPath, file.Name))
-			fmt.Fprintf(&contentBuf, "\n[file: %s]", file.Name)
+			content += fmt.Sprintf("\n[file: %s]", file.Name)
 		}
 	}
 
-	content := contentBuf.String()
 	if strings.TrimSpace(content) == "" {
 		return
 	}
