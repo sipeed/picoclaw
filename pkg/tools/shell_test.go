@@ -411,6 +411,98 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 	}
 }
 
+// TestShellTool_RestrictToWorkspace_AllowsHTTPURLs verifies that HTTP(S) URLs
+// are not mistaken for absolute filesystem paths when workspace restriction is active.
+func TestShellTool_RestrictToWorkspace_AllowsHTTPURLs(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	commands := []string{
+		`echo "http://example.com"`,
+		`echo "https://test"`,
+		`echo "https://example.com/path/../still-a-url"`,
+		`echo "https://example.com?a=1&b=/still-a-url"`,
+		`echo 'https://example.com;/bin/sh'`,
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError {
+			t.Fatalf("expected HTTP(S) URL to be allowed, command=%q error=%s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_RestrictToWorkspace_URLDoesNotBypassPathChecks verifies that
+// URLs do not hide real paths that should still be blocked by the workspace guard.
+func TestShellTool_RestrictToWorkspace_URLDoesNotBypassPathChecks(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	commands := []string{
+		`echo https://example.com /etc/passwd`,
+		`echo https://x;/bin/sh -c whoami`,
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "blocked") {
+			t.Fatalf("expected command to stay blocked, command=%q output=%s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_RestrictToWorkspace_URLDoesNotMaskQuotedPaths verifies that a
+// URL inside a quoted argument does not hide a later absolute path in the same argument.
+func TestShellTool_RestrictToWorkspace_URLDoesNotMaskQuotedPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	commands := []string{
+		`python3 -c "print('https://x,' + open('/etc/passwd').read())"`,
+		`python3 -c "print('https://x,'+open('/etc/passwd').read())"`,
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "blocked") {
+			t.Fatalf("expected quoted path access to stay blocked, command=%q output=%s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_RestrictToWorkspace_URLDoesNotMaskShellScriptPaths verifies that
+// URLs inside quoted shell script arguments do not hide later absolute paths
+// behind shell control operators such as ';' or '&&'.
+func TestShellTool_RestrictToWorkspace_URLDoesNotMaskShellScriptPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	commands := []string{
+		`sh -c "https://x;/bin/sh -c true"`,
+		`sh -c "https://x&&/bin/sh -c true"`,
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "blocked") {
+			t.Fatalf("expected shell-script path access to stay blocked, command=%q output=%s", cmd, result.ForLLM)
+		}
+	}
+}
+
 // TestShellTool_DevNullAllowed verifies that /dev/null redirections are not blocked (issue #964).
 func TestShellTool_DevNullAllowed(t *testing.T) {
 	tmpDir := t.TempDir()
