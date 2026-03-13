@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -459,4 +460,83 @@ func TestHandleMessage_ReplyThread_NonForum_NoIsolation(t *testing.T) {
 	// No parent peer metadata
 	assert.Empty(t, inbound.Metadata["parent_peer_kind"])
 	assert.Empty(t, inbound.Metadata["parent_peer_id"])
+}
+
+type fakeTelegramBotHandler struct {
+	start func() error
+	stop  func(context.Context) error
+}
+
+func (f *fakeTelegramBotHandler) Start() error {
+	if f.start != nil {
+		return f.start()
+	}
+	return nil
+}
+
+func (f *fakeTelegramBotHandler) StopWithContext(ctx context.Context) error {
+	if f.stop != nil {
+		return f.stop(ctx)
+	}
+	return nil
+}
+
+func TestRunPollingLoop_RestartsAfterHandlerStops(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	started := make(chan string, 2)
+	first := &fakeTelegramBotHandler{
+		start: func() error {
+			started <- "first"
+			return nil
+		},
+	}
+	second := &fakeTelegramBotHandler{
+		start: func() error {
+			started <- "second"
+			<-ctx.Done()
+			return io.EOF
+		},
+	}
+
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, nil, nil),
+		sleepFunc: func(ctx context.Context, _ time.Duration) bool {
+			return ctx.Err() == nil
+		},
+	}
+
+	startPollingCalls := 0
+	ch.startPollingFunc = func(context.Context) (<-chan telego.Update, error) {
+		startPollingCalls++
+		return make(chan telego.Update), nil
+	}
+	ch.newHandlerFunc = func(<-chan telego.Update) (telegramBotHandler, error) {
+		return second, nil
+	}
+
+	done := make(chan struct{})
+	go func() {
+		ch.runPollingLoop(ctx, first)
+		close(done)
+	}()
+
+	if got := <-started; got != "first" {
+		t.Fatalf("first start = %q, want %q", got, "first")
+	}
+	if got := <-started; got != "second" {
+		t.Fatalf("second start = %q, want %q", got, "second")
+	}
+	if startPollingCalls != 1 {
+		t.Fatalf("startPollingCalls = %d, want %d", startPollingCalls, 1)
+	}
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("runPollingLoop did not stop after context cancellation")
+	}
 }
