@@ -1,9 +1,10 @@
 package providers
 
 import (
+	"testing"
+
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
-	"testing"
 )
 
 func TestCreateProviderByName_OpenAI_OAuth(t *testing.T) {

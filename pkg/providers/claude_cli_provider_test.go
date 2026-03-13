@@ -620,7 +620,7 @@ func TestBuildSystemPrompt_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather for a location",
-				Parameters: json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}}}`),
+				Parameters:  json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}}}`),
 			},
 		},
 	}

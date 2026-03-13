@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-
 type ToolCall struct {
 	ID               string         `json:"id"`
 	Type             string         `json:"type,omitempty"`

@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
 func TestProviderChat_StripsGroqAndOllamaPrefixes(t *testing.T) {
@@ -34,7 +35,7 @@ func TestProviderChat_StripsGroqAndOllamaPrefixes(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range tests { //nolint:dupl
 		t.Run(tt.name, func(t *testing.T) {
 			var requestBody map[string]any
 
@@ -253,7 +254,6 @@ func TestReadSSEIntoChannel_TextAndToolCalls(t *testing.T) {
 }
 
 func TestReadSSEIntoChannel_ContextCancel(t *testing.T) {
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sseData := `data: {"choices":[{"delta":{"content":"first"},"finish_reason":""}]}` + "\n\n"

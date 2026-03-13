@@ -3,17 +3,18 @@ package agent
 import (
 	"context"
 	"fmt"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
-	"github.com/sipeed/picoclaw/pkg/tools"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 func TestRecordLastHeartbeatTarget(t *testing.T) {
@@ -55,16 +56,10 @@ func TestRecordLastHeartbeatTarget(t *testing.T) {
 	}
 }
 
-type mockContextualTool struct {
-	lastChannel string
-
-	lastChatID string
-}
-
-func (m *mockContextualTool) SetContext(channel, chatID string) {
-	m.lastChannel = channel
-
-	m.lastChatID = chatID
+func newTestAgentLoopSimple(t *testing.T) (*AgentLoop, func()) {
+	t.Helper()
+	al, _, _, _, cleanup := newTestAgentLoop(t) //nolint:dogsled
+	return al, cleanup
 }
 
 func TestShouldInjectReminder(t *testing.T) {
@@ -336,7 +331,6 @@ func TestSlashCommandResponseSkipsPlaceholder(t *testing.T) {
 }
 
 func TestBuildTaskReminder_Truncation(t *testing.T) {
-
 	longMsg := strings.Repeat("あ", 1000)
 
 	longBlocker := strings.Repeat("X", 500)
@@ -407,7 +401,7 @@ func TestBuildPlanReminder(t *testing.T) {
 }
 
 func TestPlanCommand_ShowNoPlan(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -466,7 +460,7 @@ func TestSplitChatAndThread(t *testing.T) {
 }
 
 func TestHeartbeatCommandThreadHerePersistsConfig(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -522,7 +516,7 @@ func TestHeartbeatCommandThreadHerePersistsConfig(t *testing.T) {
 }
 
 func TestHeartbeatCommandThreadOff(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -550,7 +544,7 @@ func TestHeartbeatCommandThreadOff(t *testing.T) {
 }
 
 func TestPlanCommand_StartNewPlan(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -588,7 +582,7 @@ func TestPlanCommand_StartNewPlan(t *testing.T) {
 }
 
 func TestPlanCommand_StartBlockedByExisting(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -606,7 +600,7 @@ func TestPlanCommand_StartBlockedByExisting(t *testing.T) {
 }
 
 func TestPlanCommand_Clear(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -626,7 +620,7 @@ func TestPlanCommand_Clear(t *testing.T) {
 }
 
 func TestPlanCommand_ClearNoPlan(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -638,7 +632,7 @@ func TestPlanCommand_ClearNoPlan(t *testing.T) {
 }
 
 func TestPlanCommand_Start(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -664,7 +658,7 @@ func TestPlanCommand_Start(t *testing.T) {
 }
 
 func TestPlanCommand_StartFromReview(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -690,7 +684,7 @@ func TestPlanCommand_StartFromReview(t *testing.T) {
 }
 
 func TestPlanCommand_StartNoPhases(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -714,7 +708,7 @@ func TestPlanCommand_StartNoPhases(t *testing.T) {
 }
 
 func TestPlanCommand_StartAlreadyExecuting(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -740,7 +734,7 @@ func TestPlanCommand_StartAlreadyExecuting(t *testing.T) {
 }
 
 func TestPlanCommand_Done(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -782,7 +776,7 @@ Test context
 }
 
 func TestPlanCommand_DoneInvalidStep(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -796,7 +790,7 @@ func TestPlanCommand_DoneInvalidStep(t *testing.T) {
 }
 
 func TestPlanCommand_Add(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -842,7 +836,7 @@ Test context
 }
 
 func TestPlanCommand_Next(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -892,7 +886,7 @@ Test
 }
 
 func TestPlanCommand_ShowActivePlan(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -1111,7 +1105,6 @@ func TestIsToolAllowedDuringInterview_FuzzyNames(t *testing.T) {
 
 		want bool
 	}{
-
 		{"read_file", nil, true},
 
 		{"list_dir", nil, true},
@@ -1447,7 +1440,6 @@ func TestBuildRichStatus(t *testing.T) {
 }
 
 func TestBuildRichStatus_ProjectDir(t *testing.T) {
-
 	task := &activeTask{
 		Iteration: 1,
 
@@ -1600,7 +1592,6 @@ func TestCommonDirPrefix(t *testing.T) {
 }
 
 func TestDisplayProjectDir(t *testing.T) {
-
 	task1 := &activeTask{projectDir: "my-app", fileCommonDir: "projects/other"}
 
 	if got := displayProjectDir(task1); got != "my-app" {
@@ -1627,7 +1618,6 @@ func TestDisplayProjectDir(t *testing.T) {
 }
 
 func TestBuildRichStatus_FixedHeight(t *testing.T) {
-
 	countLines := func(s string) int {
 		return strings.Count(s, "\n")
 	}
@@ -1680,7 +1670,6 @@ func TestBuildRichStatus_FixedHeight(t *testing.T) {
 }
 
 func TestBuildRichStatus_StickyError(t *testing.T) {
-
 	errEntry := toolLogEntry{
 		Name: "[2] exec", ArgsSnip: "pytest", Result: "✗ 3.2s",
 
@@ -1763,7 +1752,6 @@ func TestBuildRichStatus_LatestEntryNoInlineResult(t *testing.T) {
 }
 
 func TestSanitizeHistoryForProvider_MultiToolCall(t *testing.T) {
-
 	history := []providers.Message{
 		{Role: "user", Content: "hello"},
 
@@ -1805,13 +1793,16 @@ func TestSanitizeHistoryForProvider_MultiToolCall(t *testing.T) {
 	}
 }
 
-func TestPlanNudge_ForegroundExecution(t *testing.T) {
+func setupPlanNudgeTest(
+	t *testing.T,
+	plan, content, sessionKey string,
+) (*countingMockProvider, func()) {
+	t.Helper()
+
 	tmpDir, err := os.MkdirTemp("", "agent-nudge-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-
-	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
@@ -1839,13 +1830,11 @@ func TestPlanNudge_ForegroundExecution(t *testing.T) {
 		t.Fatal("no default agent")
 	}
 
-	plan := "# Active Plan\n\n> Task: Test\n> Status: executing\n> Phase: 1\n\n## Phase 1: Setup\n- [ ] Step one\n- [ ] Step two\n\n## Context\n"
-
 	agent.ContextBuilder.WriteMemory(plan)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-
-	defer cancel()
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 5*time.Second,
+	)
 
 	msg := bus.InboundMessage{
 		Channel: "test",
@@ -1854,82 +1843,62 @@ func TestPlanNudge_ForegroundExecution(t *testing.T) {
 
 		ChatID: "chat1",
 
-		Content: "continue working",
+		Content: content,
 
-		SessionKey: "nudge-test",
+		SessionKey: sessionKey,
 	}
 
 	_, err = al.processMessage(ctx, msg)
+
+	cancel()
+
 	if err != nil {
+		os.RemoveAll(tmpDir)
 		t.Fatalf("processMessage failed: %v", err)
 	}
 
+	return provider, func() { os.RemoveAll(tmpDir) }
+}
+
+func TestPlanNudge_ForegroundExecution(t *testing.T) {
+	plan := "# Active Plan\n\n> Task: Test\n" +
+		"> Status: executing\n> Phase: 1\n\n" +
+		"## Phase 1: Setup\n- [ ] Step one\n" +
+		"- [ ] Step two\n\n## Context\n"
+
+	provider, cleanup := setupPlanNudgeTest(
+		t, plan, "continue working", "nudge-test",
+	)
+
+	defer cleanup()
+
 	if provider.calls < 2 {
-		t.Errorf("expected at least 2 provider calls (nudge should trigger continuation), got %d", provider.calls)
+		t.Errorf(
+			"expected at least 2 provider calls"+
+				" (nudge should trigger continuation),"+
+				" got %d", provider.calls,
+		)
 	}
 }
 
 func TestPlanNudge_NoNudgeWhenAllStepsComplete(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "agent-nudge-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
+	plan := "# Active Plan\n\n> Task: Test\n" +
+		"> Status: executing\n> Phase: 1\n\n" +
+		"## Phase 1: Setup\n- [x] Step one\n" +
+		"- [x] Step two\n\n## Context\n"
 
-	defer os.RemoveAll(tmpDir)
+	provider, cleanup := setupPlanNudgeTest(
+		t, plan, "all done", "nudge-test-complete",
+	)
 
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace: tmpDir,
-
-				Model: "test-model",
-
-				MaxTokens: 4096,
-
-				MaxToolIterations: 10,
-			},
-		},
-	}
-
-	provider := &countingMockProvider{}
-
-	msgBus := bus.NewMessageBus()
-
-	al := NewAgentLoop(cfg, msgBus, provider)
-
-	agent := al.registry.GetDefaultAgent()
-
-	if agent == nil {
-		t.Fatal("no default agent")
-	}
-
-	plan := "# Active Plan\n\n> Task: Test\n> Status: executing\n> Phase: 1\n\n## Phase 1: Setup\n- [x] Step one\n- [x] Step two\n\n## Context\n"
-
-	agent.ContextBuilder.WriteMemory(plan)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-
-	defer cancel()
-
-	msg := bus.InboundMessage{
-		Channel: "test",
-
-		SenderID: "user1",
-
-		ChatID: "chat1",
-
-		Content: "all done",
-
-		SessionKey: "nudge-test-complete",
-	}
-
-	_, err = al.processMessage(ctx, msg)
-	if err != nil {
-		t.Fatalf("processMessage failed: %v", err)
-	}
+	defer cleanup()
 
 	if provider.calls != 1 {
-		t.Errorf("expected exactly 1 provider call (no nudge needed), got %d", provider.calls)
+		t.Errorf(
+			"expected exactly 1 provider call"+
+				" (no nudge needed), got %d",
+			provider.calls,
+		)
 	}
 }
 
@@ -1958,7 +1927,6 @@ func TestPlanNudge_ProgressMessage(t *testing.T) {
 	var nudgeContent string
 
 	provider := &nudgeCaptureMockProvider{onSecondCall: func(msgs []providers.Message) {
-
 		for i := len(msgs) - 1; i >= 0; i-- {
 			if msgs[i].Role == "user" {
 				nudgeContent = msgs[i].Content
@@ -2108,7 +2076,6 @@ func TestConsumeStream_DetectsRepetition(t *testing.T) {
 	repeatedChunk := strings.Repeat("abcdefghij", 50)
 
 	go func() {
-
 		for i := 0; i < 6; i++ {
 			ch <- protocoltypes.StreamEvent{ContentDelta: repeatedChunk}
 		}
@@ -2350,13 +2317,16 @@ func (m *modelCapturingMockProvider) GetDefaultModel() string {
 	return "model-capturing-mock"
 }
 
-func TestAgentLoop_PlanModel_UsedDuringInterviewing(t *testing.T) {
+func setupPlanModelTest(
+	t *testing.T,
+	response, memoryContent, userMsg, sessionKey string,
+) (*modelCapturingMockProvider, func()) {
+	t.Helper()
+
 	tmpDir, err := os.MkdirTemp("", "agent-test-planmodel-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-
-	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
@@ -2376,7 +2346,7 @@ func TestAgentLoop_PlanModel_UsedDuringInterviewing(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 
-	provider := &modelCapturingMockProvider{response: "Plan interview response"}
+	provider := &modelCapturingMockProvider{response: response}
 
 	al := NewAgentLoop(cfg, msgBus, provider)
 
@@ -2392,27 +2362,39 @@ func TestAgentLoop_PlanModel_UsedDuringInterviewing(t *testing.T) {
 
 	memoryPath := filepath.Join(memoryDir, "MEMORY.md")
 
-	memoryContent := "# Active Plan\n\n> Task: Test plan model\n> Status: interviewing\n> Phase: 1\n"
-
-	if wErr := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); wErr != nil {
+	if wErr := os.WriteFile(
+		memoryPath, []byte(memoryContent), 0o644,
+	); wErr != nil {
+		os.RemoveAll(tmpDir)
 		t.Fatalf("Failed to write MEMORY.md: %v", wErr)
 	}
 
 	_, err = al.ProcessDirectWithChannel(
-
 		context.Background(),
-
-		"Hello, plan model test",
-
-		"test-plan-session",
-
+		userMsg,
+		sessionKey,
 		"test",
-
 		"test-chat",
 	)
 	if err != nil {
+		os.RemoveAll(tmpDir)
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
+
+	return provider, func() { os.RemoveAll(tmpDir) }
+}
+
+func TestAgentLoop_PlanModel_UsedDuringInterviewing(t *testing.T) {
+	mem := "# Active Plan\n\n" +
+		"> Task: Test plan model\n" +
+		"> Status: interviewing\n> Phase: 1\n"
+
+	provider, cleanup := setupPlanModelTest(
+		t, "Plan interview response", mem,
+		"Hello, plan model test", "test-plan-session",
+	)
+
+	defer cleanup()
 
 	provider.mu.Lock()
 
@@ -2423,89 +2405,26 @@ func TestAgentLoop_PlanModel_UsedDuringInterviewing(t *testing.T) {
 	}
 
 	if provider.models[0] != "plan-model" {
-		t.Errorf("Expected plan model 'plan-model' during interviewing, got %q", provider.models[0])
+		t.Errorf(
+			"Expected plan model 'plan-model'"+
+				" during interviewing, got %q",
+			provider.models[0],
+		)
 	}
 }
 
 func TestAgentLoop_PlanModel_NotUsedDuringExecuting(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "agent-test-planmodel-exec-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
+	mem := "# Active Plan\n\n\n\n" +
+		"> Task: Test plan model\n\n" +
+		"> Status: executing\n\n> Phase: 1\n\n\n\n" +
+		"## Phase 1: Build\n\n- [ ] Run build\n\n"
 
-	defer os.RemoveAll(tmpDir)
-
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace: tmpDir,
-
-				Model: "normal-model",
-
-				PlanModel: "plan-model",
-
-				MaxTokens: 4096,
-
-				MaxToolIterations: 2,
-			},
-		},
-	}
-
-	msgBus := bus.NewMessageBus()
-
-	provider := &modelCapturingMockProvider{response: "Executing response"}
-
-	al := NewAgentLoop(cfg, msgBus, provider)
-
-	defaultAgent := al.registry.GetDefaultAgent()
-
-	if defaultAgent == nil {
-		t.Fatal("No default agent found")
-	}
-
-	memoryDir := filepath.Join(tmpDir, "memory")
-
-	os.MkdirAll(memoryDir, 0o755)
-
-	memoryPath := filepath.Join(memoryDir, "MEMORY.md")
-
-	memoryContent := `# Active Plan
-
-
-
-> Task: Test plan model
-
-> Status: executing
-
-> Phase: 1
-
-
-
-## Phase 1: Build
-
-- [ ] Run build
-
-`
-
-	if wErr := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); wErr != nil {
-		t.Fatalf("Failed to write MEMORY.md: %v", wErr)
-	}
-
-	_, err = al.ProcessDirectWithChannel(
-
-		context.Background(),
-
-		"Hello, executing test",
-
-		"test-exec-session",
-
-		"test",
-
-		"test-chat",
+	provider, cleanup := setupPlanModelTest(
+		t, "Executing response", mem,
+		"Hello, executing test", "test-exec-session",
 	)
-	if err != nil {
-		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
-	}
+
+	defer cleanup()
 
 	provider.mu.Lock()
 
@@ -2516,7 +2435,11 @@ func TestAgentLoop_PlanModel_NotUsedDuringExecuting(t *testing.T) {
 	}
 
 	if provider.models[0] != "normal-model" {
-		t.Errorf("Expected normal model 'normal-model' during executing, got %q", provider.models[0])
+		t.Errorf(
+			"Expected normal model 'normal-model'"+
+				" during executing, got %q",
+			provider.models[0],
+		)
 	}
 }
 
@@ -2606,7 +2529,7 @@ func TestAgentLoop_PlanModel_ResolvesProviderForSingleCandidate(t *testing.T) {
 }
 
 func TestPlanCommand_StartClear(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 
@@ -2672,7 +2595,7 @@ func TestPlanCommand_StartClear(t *testing.T) {
 }
 
 func TestPlanCommand_StartWithoutClear_PreservesHistory(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cleanup := newTestAgentLoopSimple(t)
 
 	defer cleanup()
 

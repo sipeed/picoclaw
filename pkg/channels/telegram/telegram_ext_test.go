@@ -31,7 +31,14 @@ func TestParseTelegramChatID(t *testing.T) {
 				t.Fatalf("parseTelegramChatID(%q) unexpected error: %v", tc.input, err)
 			}
 			if gotCID != tc.wantCID || gotTID != tc.wantTID {
-				t.Fatalf("parseTelegramChatID(%q) = (%d, %d), want (%d, %d)", tc.input, gotCID, gotTID, tc.wantCID, tc.wantTID)
+				t.Fatalf(
+					"parseTelegramChatID(%q) = (%d, %d), want (%d, %d)",
+					tc.input,
+					gotCID,
+					gotTID,
+					tc.wantCID,
+					tc.wantTID,
+				)
 			}
 		})
 	}

@@ -292,7 +292,7 @@ func TestBuildPrompt_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get current weather",
-				Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
+				Parameters:  json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
 			},
 		},
 	}

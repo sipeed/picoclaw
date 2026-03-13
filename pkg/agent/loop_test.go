@@ -482,7 +482,7 @@ func TestProcessMessage_CommandOutcomes(t *testing.T) {
 		Content:  "/show channel",
 		Peer:     baseMsg.Peer,
 	})
-	if showResp != "Current Channel: whatsapp" {
+	if showResp != "Current channel: whatsapp" {
 		t.Fatalf("unexpected /show reply: %q", showResp)
 	}
 	if provider.calls != 0 {
@@ -566,7 +566,7 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 			ID:   "user1",
 		},
 	})
-	if !strings.Contains(showResp, "Current Model: after-switch (Provider: openai)") {
+	if !strings.Contains(showResp, "Current model: after-switch") {
 		t.Fatalf("unexpected /show model reply after switch: %q", showResp)
 	}
 

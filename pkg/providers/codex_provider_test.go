@@ -114,7 +114,7 @@ func TestBuildCodexParams_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather",
-				Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
+				Parameters:  json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
 			},
 		},
 	}
@@ -161,7 +161,7 @@ func TestBuildCodexParams_WebSearchFunctionReplacedWithBuiltin(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "web_search",
 				Description: "local web search",
-				Parameters: json.RawMessage(`{"type":"object"}`),
+				Parameters:  json.RawMessage(`{"type":"object"}`),
 			},
 		},
 		{
@@ -169,7 +169,7 @@ func TestBuildCodexParams_WebSearchFunctionReplacedWithBuiltin(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "read_file",
 				Description: "read file",
-				Parameters: json.RawMessage(`{"type":"object"}`),
+				Parameters:  json.RawMessage(`{"type":"object"}`),
 			},
 		},
 	}

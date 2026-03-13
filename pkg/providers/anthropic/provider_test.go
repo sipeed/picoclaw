@@ -84,7 +84,9 @@ func TestBuildParams_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather for a city",
-				Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
+				Parameters: json.RawMessage(
+					`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`,
+				),
 			},
 		},
 	}

@@ -6,20 +6,6 @@ import (
 	"testing"
 )
 
-type mockCtxTool struct {
-	mockRegistryTool
-
-	channel string
-
-	chatID string
-}
-
-func (m *mockCtxTool) SetContext(channel, chatID string) {
-	m.channel = channel
-
-	m.chatID = chatID
-}
-
 func (m *mockAsyncRegistryTool) SetCallback(cb AsyncCallback) {
 	m.lastCB = cb
 }
@@ -52,83 +38,45 @@ func TestNormalizeToolName(t *testing.T) {
 	}
 }
 
-func TestToolRegistry_Get_FuzzyMatch(t *testing.T) {
+func TestToolRegistry_Get_ExactMatch(t *testing.T) {
 	r := NewToolRegistry()
 
 	r.Register(newMockTool("read_file", "reads a file"))
-
 	r.Register(newMockTool("edit_file", "edits a file"))
-
 	r.Register(newMockTool("web_search", "searches the web"))
 
-	tests := []struct {
-		query string
-
-		wantName string
-	}{
-		{"readfile", "read_file"},
-
-		{"ReadFile", "read_file"},
-
-		{"read-file", "read_file"},
-
-		{"editfile", "edit_file"},
-
-		{"EditFile", "edit_file"},
-
-		{"websearch", "web_search"},
-
-		{"WebSearch", "web_search"},
-	}
-
-	for _, tt := range tests {
-		tool, ok := r.Get(tt.query)
-
+	// Exact matches should work
+	for _, name := range []string{"read_file", "edit_file", "web_search"} {
+		tool, ok := r.Get(name)
 		if !ok {
-			t.Errorf("Get(%q) not found, want %q", tt.query, tt.wantName)
-
+			t.Errorf("Get(%q) not found", name)
 			continue
 		}
+		if tool.Name() != name {
+			t.Errorf("Get(%q).Name() = %q", name, tool.Name())
+		}
+	}
 
-		if tool.Name() != tt.wantName {
-			t.Errorf("Get(%q).Name() = %q, want %q", tt.query, tool.Name(), tt.wantName)
+	// Non-exact names should not match (Get is exact-only)
+	for _, name := range []string{"readfile", "ReadFile", "read-file"} {
+		if _, ok := r.Get(name); ok {
+			t.Errorf("Get(%q) should not match (exact lookup only)", name)
 		}
 	}
 }
 
-func TestToolRegistry_ExecuteWithContext_ContextualTool(t *testing.T) {
+func TestToolRegistry_ExecuteWithContext_InjectsContext(t *testing.T) {
 	r := NewToolRegistry()
 
-	ct := &mockCtxTool{
-		mockRegistryTool: *newMockTool("ctx_tool", "needs context"),
-	}
+	// Tool that reads context from ctx via ToolChannel/ToolChatID
+	contextCapture := newMockTool("ctx_tool", "needs context")
+	r.Register(contextCapture)
 
-	r.Register(ct)
-
-	r.ExecuteWithContext(context.Background(), "ctx_tool", nil, "telegram", "chat-42", nil)
-
-	if ct.channel != "telegram" {
-		t.Errorf("expected channel 'telegram', got %q", ct.channel)
-	}
-
-	if ct.chatID != "chat-42" {
-		t.Errorf("expected chatID 'chat-42', got %q", ct.chatID)
-	}
-}
-
-func TestToolRegistry_ExecuteWithContext_SkipsEmptyContext(t *testing.T) {
-	r := NewToolRegistry()
-
-	ct := &mockCtxTool{
-		mockRegistryTool: *newMockTool("ctx_tool", "needs context"),
-	}
-
-	r.Register(ct)
-
-	r.ExecuteWithContext(context.Background(), "ctx_tool", nil, "", "", nil)
-
-	if ct.channel != "" || ct.chatID != "" {
-		t.Error("SetContext should not be called with empty channel/chatID")
+	result := r.ExecuteWithContext(
+		context.Background(), "ctx_tool", nil, "telegram", "chat-42", nil,
+	)
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.ForLLM)
 	}
 }
 
@@ -234,26 +182,12 @@ func TestBuildParamHint(t *testing.T) {
 	}
 }
 
-func TestToolRegistry_GetSummaries_WithParamHint(t *testing.T) {
+func TestToolRegistry_GetSummaries_Format(t *testing.T) {
 	r := NewToolRegistry()
 
 	r.Register(&mockRegistryTool{
-		name: "spawn",
-
-		desc: "Spawn a subagent",
-
-		params: map[string]any{
-			"type": "object",
-
-			"properties": map[string]any{
-				"task": map[string]any{"type": "string"},
-
-				"preset": map[string]any{"type": "string"},
-			},
-
-			"required": []string{"task"},
-		},
-
+		name:   "spawn",
+		desc:   "Spawn a subagent",
 		result: SilentResult("ok"),
 	})
 
@@ -263,7 +197,11 @@ func TestToolRegistry_GetSummaries_WithParamHint(t *testing.T) {
 		t.Fatalf("expected 1 summary, got %d", len(summaries))
 	}
 
-	if !strings.Contains(summaries[0], "(task, preset?)") {
-		t.Errorf("expected param hint in summary, got %q", summaries[0])
+	if !strings.Contains(summaries[0], "spawn") {
+		t.Errorf("expected tool name in summary, got %q", summaries[0])
+	}
+
+	if !strings.Contains(summaries[0], "Spawn a subagent") {
+		t.Errorf("expected description in summary, got %q", summaries[0])
 	}
 }

@@ -3,11 +3,13 @@ package channels
 import (
 	"context"
 	"fmt"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"golang.org/x/time/rate"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/time/rate"
+
+	"github.com/sipeed/picoclaw/pkg/bus"
 )
 
 // mockEditorWithSendID implements MessageEditor and MessageSenderWithID.
@@ -15,6 +17,12 @@ type mockEditorWithSendID struct {
 	mockChannel
 	editFn     func(ctx context.Context, chatID, messageID, content string) error
 	sendWithID func(ctx context.Context, chatID, content string) (string, error)
+}
+
+func (m *mockEditorWithSendID) EditMessage(
+	ctx context.Context, chatID, messageID, content string,
+) error {
+	return m.editFn(ctx, chatID, messageID, content)
 }
 
 func (m *mockEditorWithSendID) SendWithID(ctx context.Context, chatID, content string) (string, error) {
@@ -382,6 +390,12 @@ type mockDraftSender struct {
 	draftFn    func(ctx context.Context, chatID string, draftID int, content string) error
 	editFn     func(ctx context.Context, chatID, messageID, content string) error
 	sendWithID func(ctx context.Context, chatID, content string) (string, error)
+}
+
+func (m *mockDraftSender) EditMessage(
+	ctx context.Context, chatID, messageID, content string,
+) error {
+	return m.editFn(ctx, chatID, messageID, content)
 }
 
 func (m *mockDraftSender) SendDraft(ctx context.Context, chatID string, draftID int, content string) error {

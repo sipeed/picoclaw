@@ -54,8 +54,7 @@ func TestStripThinkBlocks_ClosedThenUnclosed(t *testing.T) {
 }
 
 func TestDetectRepetitionLoop_HighRepetition(t *testing.T) {
-
-	phrase := "結構本格的なコード"
+	phrase := "結構本格的なコード" //nolint:gosmopolitan
 	repeated := strings.Repeat(phrase, 300)
 	if !DetectRepetitionLoop(repeated) {
 		t.Fatal("DetectRepetitionLoop should return true for highly repetitive text")
@@ -63,7 +62,6 @@ func TestDetectRepetitionLoop_HighRepetition(t *testing.T) {
 }
 
 func TestDetectRepetitionLoop_NormalText(t *testing.T) {
-
 	normal := "The quick brown fox jumps over the lazy dog. " +
 		"Pack my box with five dozen liquor jugs. " +
 		"How vexingly quick daft zebras jump. " +
@@ -80,7 +78,6 @@ func TestDetectRepetitionLoop_NormalText(t *testing.T) {
 }
 
 func TestDetectRepetitionLoop_ShortText(t *testing.T) {
-
 	if DetectRepetitionLoop("short") {
 		t.Fatal("DetectRepetitionLoop should return false for short text")
 	}
@@ -93,7 +90,6 @@ func TestDetectRepetitionLoop_EmptyString(t *testing.T) {
 }
 
 func TestDetectRepetitionLoop_SingleCharRepeat(t *testing.T) {
-
 	repeated := strings.Repeat("あ", 2500)
 	if !DetectRepetitionLoop(repeated) {
 		t.Fatal("DetectRepetitionLoop should return true for single-char repetition")
@@ -101,7 +97,6 @@ func TestDetectRepetitionLoop_SingleCharRepeat(t *testing.T) {
 }
 
 func TestDetectRepetitionLoop_BelowSampleSize(t *testing.T) {
-
 	phrase := "abcdefghij"
 	repeated := strings.Repeat(phrase, 50)
 	if !DetectRepetitionLoop(repeated) {
@@ -158,7 +153,6 @@ func TestTailPad_Empty(t *testing.T) {
 }
 
 func TestTailPad_LongLineWraps(t *testing.T) {
-
 	got := TailPad("abcdefghij", 4, 5)
 	lines := strings.Split(got, "\n")
 	if len(lines) != 4 {
@@ -171,7 +165,6 @@ func TestTailPad_LongLineWraps(t *testing.T) {
 }
 
 func TestTailPad_WrapPushesOldLines(t *testing.T) {
-
 	got := TailPad("short\nabcdefghij", 2, 5)
 	if got != "abcde\nfghij" {
 		t.Fatalf("TailPad wrap push = %q, want %q", got, "abcde\nfghij")

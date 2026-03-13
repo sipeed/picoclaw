@@ -1,10 +1,11 @@
 package heartbeat
 
 import (
-	"github.com/sipeed/picoclaw/pkg/tools"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 // TestExecuteHeartbeat_NoSendResponse verifies that heartbeat results

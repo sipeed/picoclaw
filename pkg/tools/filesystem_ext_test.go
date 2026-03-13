@@ -1,11 +1,12 @@
 package tools
 
 import (
-	"github.com/stretchr/testify/assert"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestHostFs_Read_PermissionDenied(t *testing.T) {
@@ -118,7 +119,7 @@ func TestHostFs_Write(t *testing.T) {
 	assert.Equal(t, newData, content)
 }
 
-func TestSandboxFs_Write(t *testing.T) {
+func TestSandboxFs_Write(t *testing.T) { //nolint:dupl
 	tmpDir := t.TempDir()
 
 	relPath := "atomic_root_test.txt"

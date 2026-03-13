@@ -179,7 +179,7 @@ type AgentConfig struct {
 }
 
 type SubagentsConfig struct {
-	Enabled     bool              `json:"enabled,omitempty"`      // Fork-only: gate orchestration
+	Enabled     bool              `json:"enabled,omitempty"` // Fork-only: gate orchestration
 	AllowAgents []string          `json:"allow_agents,omitempty"`
 	Model       *AgentModelConfig `json:"model,omitempty"`
 }
@@ -306,16 +306,16 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	BaseURL            string              `json:"base_url"                env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
-	Proxy              string              `json:"proxy"                   env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled"                       env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Token              string              `json:"token"                         env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	BaseURL            string              `json:"base_url"                      env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
+	Proxy              string              `json:"proxy"                         env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"                    env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
-	WebAppURL          string              `json:"web_app_url"             env:"PICOCLAW_CHANNELS_TELEGRAM_WEB_APP_URL"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"          env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+	WebAppURL          string              `json:"web_app_url"                   env:"PICOCLAW_CHANNELS_TELEGRAM_WEB_APP_URL"`
 	SubagentThreadID   int                 `json:"subagent_thread_id,omitempty"  env:"PICOCLAW_CHANNELS_TELEGRAM_SUBAGENT_THREAD_ID"`
 	HeartbeatThreadID  int                 `json:"heartbeat_thread_id,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_HEARTBEAT_THREAD_ID"`
 }
@@ -616,7 +616,7 @@ type ModelConfig struct {
 	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
 	RequestTimeout int    `json:"request_timeout,omitempty"`
 	ThinkingLevel  string `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
-	Stream         *bool  `json:"stream,omitempty"`           // Use SSE streaming (default: protocol-dependent)
+	Stream         *bool  `json:"stream,omitempty"`         // Use SSE streaming (default: protocol-dependent)
 }
 
 // Validate checks if the ModelConfig has all required fields.

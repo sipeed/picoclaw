@@ -452,7 +452,7 @@ func TestHostRW_Write(t *testing.T) {
 }
 
 // TestRootRW_Write verifies the rootRW.Write helper function
-func TestRootRW_Write(t *testing.T) {
+func TestRootRW_Write(t *testing.T) { //nolint:dupl
 	tmpDir := t.TempDir()
 
 	relPath := "atomic_root_test.txt"

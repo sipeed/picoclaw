@@ -137,15 +137,15 @@ Maintain these sections in MEMORY.md under ## Orchestration:
 - **Decisions**: Key architectural/implementation decisions made during orchestration`
 
 type ContextBuilder struct {
-	workspace          string
-	workDir            string // session-specific working directory (worktree or project subdir)
-	skillsLoader       *skills.SkillsLoader
-	memory             *MemoryStore
-	tools              *tools.ToolRegistry // Direct reference to tool registry
-	peerNote           string              // set per-call from loop.go for peer session awareness
-	orchestrationEnabled bool              // set from AgentLoop when --orchestration flag is used
-	toolDiscoveryBM25  bool
-	toolDiscoveryRegex bool
+	workspace            string
+	workDir              string // session-specific working directory (worktree or project subdir)
+	skillsLoader         *skills.SkillsLoader
+	memory               *MemoryStore
+	tools                *tools.ToolRegistry // Direct reference to tool registry
+	peerNote             string              // set per-call from loop.go for peer session awareness
+	orchestrationEnabled bool                // set from AgentLoop when --orchestration flag is used
+	toolDiscoveryBM25    bool
+	toolDiscoveryRegex   bool
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.

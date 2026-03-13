@@ -70,17 +70,17 @@ type iterationHooks struct {
 // defaultHooks returns an iterationHooks with all fields set to no-ops.
 func defaultHooks() iterationHooks {
 	return iterationHooks{
-		OnIterationStart: func(int) string { return "" },
-		FilterTools:      func(d []providers.ToolDefinition) []providers.ToolDefinition { return d },
-		SetupStreaming:    func() (func(string, string), func()) { return nil, nil },
-		SelectModel:      func() (string, []providers.FallbackCandidate) { return "", nil },
-		OnPreLLMCall:     func() {},
-		OnNoToolCalls:    func(string, int) (string, bool) { return "", false },
-		FilterToolCalls:  func(c []providers.ToolCall) ([]providers.ToolCall, string) { return c, "" },
-		OnPreToolExec:    func(context.Context, providers.ToolCall) tools.AsyncCallback { return nil },
-		OnToolExecDone:   func(providers.ToolCall, *tools.ToolResult, time.Duration) {},
-		OnToolsProcessed: func(context.Context, int, []providers.ToolCall) {},
-		InjectReminders:  func(int, *[]providers.Message, string) {},
+		OnIterationStart:    func(int) string { return "" },
+		FilterTools:         func(d []providers.ToolDefinition) []providers.ToolDefinition { return d },
+		SetupStreaming:      func() (func(string, string), func()) { return nil, nil },
+		SelectModel:         func() (string, []providers.FallbackCandidate) { return "", nil },
+		OnPreLLMCall:        func() {},
+		OnNoToolCalls:       func(string, int) (string, bool) { return "", false },
+		FilterToolCalls:     func(c []providers.ToolCall) ([]providers.ToolCall, string) { return c, "" },
+		OnPreToolExec:       func(context.Context, providers.ToolCall) tools.AsyncCallback { return nil },
+		OnToolExecDone:      func(providers.ToolCall, *tools.ToolResult, time.Duration) {},
+		OnToolsProcessed:    func(context.Context, int, []providers.ToolCall) {},
+		InjectReminders:     func(int, *[]providers.Message, string) {},
 		RefreshSystemPrompt: func([]providers.Message) {},
 	}
 }
@@ -495,7 +495,9 @@ func (al *AgentLoop) buildReminderInjector(
 				case "plan_review":
 					content = fmt.Sprintf(
 						"[Subagent %s submitted a plan for review]:\n%s\nRespond using the review_subagent_plan tool with task_id=%q.",
-						q.TaskID, q.Content, q.TaskID,
+						q.TaskID,
+						q.Content,
+						q.TaskID,
 					)
 				default:
 					content = fmt.Sprintf(
