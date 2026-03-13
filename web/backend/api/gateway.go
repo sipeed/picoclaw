@@ -52,6 +52,7 @@ var gatewayHealthGet = func(url string, timeout time.Duration) (*http.Response, 
 func (h *Handler) registerGatewayRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gateway/status", h.handleGatewayStatus)
 	mux.HandleFunc("GET /api/gateway/events", h.handleGatewayEvents)
+	mux.HandleFunc("GET /api/gateway/logs", h.handleGatewayLogs)
 	mux.HandleFunc("POST /api/gateway/logs/clear", h.handleGatewayClearLogs)
 	mux.HandleFunc("POST /api/gateway/start", h.handleGatewayStart)
 	mux.HandleFunc("POST /api/gateway/stop", h.handleGatewayStop)
@@ -560,16 +561,16 @@ func (h *Handler) handleGatewayClearLogs(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// handleGatewayStatus returns the gateway run status, health info, and logs.
+// handleGatewayStatus returns the gateway run status and health info.
 //
 //	GET /api/gateway/status
 func (h *Handler) handleGatewayStatus(w http.ResponseWriter, r *http.Request) {
-	data := h.gatewayStatusData(r, true)
+	data := h.gatewayStatusData()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(data)
 }
 
-func (h *Handler) gatewayStatusData(r *http.Request, includeLogs bool) map[string]any {
+func (h *Handler) gatewayStatusData() map[string]any {
 	data := map[string]any{}
 	cfg, cfgErr := config.LoadConfig(h.configPath)
 	configDefaultModel := ""
@@ -661,16 +662,22 @@ func (h *Handler) gatewayStatusData(r *http.Request, includeLogs bool) map[strin
 		}
 	}
 
-	if includeLogs {
-		appendGatewayLogs(r, data)
-	}
-
 	return data
 }
 
-// appendGatewayLogs reads log_offset and log_run_id query params from the request
-// and populates the response data map with incremental log lines.
-func appendGatewayLogs(r *http.Request, data map[string]any) {
+// handleGatewayLogs returns buffered gateway logs, optionally incrementally.
+//
+//	GET /api/gateway/logs
+func (h *Handler) handleGatewayLogs(w http.ResponseWriter, r *http.Request) {
+	data := gatewayLogsData(r)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+// gatewayLogsData reads log_offset and log_run_id query params from the request
+// and returns incremental log lines.
+func gatewayLogsData(r *http.Request) map[string]any {
+	data := map[string]any{}
 	clientOffset := 0
 	clientRunID := -1
 
@@ -692,7 +699,7 @@ func appendGatewayLogs(r *http.Request, data map[string]any) {
 		data["logs"] = []string{}
 		data["log_total"] = 0
 		data["log_run_id"] = 0
-		return
+		return data
 	}
 
 	// If runID changed, reset offset to get all logs from new run
@@ -709,6 +716,7 @@ func appendGatewayLogs(r *http.Request, data map[string]any) {
 	data["logs"] = lines
 	data["log_total"] = total
 	data["log_run_id"] = runID
+	return data
 }
 
 // handleGatewayEvents serves an SSE stream of gateway state change events.
@@ -751,7 +759,7 @@ func (h *Handler) handleGatewayEvents(w http.ResponseWriter, r *http.Request) {
 
 // currentGatewayStatus returns the current gateway status as a JSON string.
 func (h *Handler) currentGatewayStatus() string {
-	data := h.gatewayStatusData(nil, false)
+	data := h.gatewayStatusData()
 	encoded, _ := json.Marshal(data)
 	return string(encoded)
 }
