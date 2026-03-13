@@ -95,7 +95,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "mistral", "avian",
-		"minimax":
+		"minimax", "siliconflow":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -170,6 +170,15 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return provider, modelID, nil
 
 	default:
+		if strings.TrimSpace(cfg.APIBase) != "" {
+			return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+				cfg.APIKey,
+				cfg.APIBase,
+				cfg.Proxy,
+				cfg.MaxTokensField,
+				cfg.RequestTimeout,
+			), cfg.Model, nil
+		}
 		return nil, "", fmt.Errorf("unknown protocol %q in model %q", protocol, cfg.Model)
 	}
 }
@@ -215,6 +224,8 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://api.avian.io/v1"
 	case "minimax":
 		return "https://api.minimaxi.com/v1"
+	case "siliconflow":
+		return "https://api.siliconflow.cn/v1"
 	default:
 		return ""
 	}

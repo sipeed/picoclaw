@@ -490,6 +490,8 @@ Agent 读取 HEARTBEAT.md
 ### 模型配置 (model_list)
 
 > **新功能！** PicoClaw 现在采用**以模型为中心**的配置方式。只需使用 `厂商/模型` 格式（如 `zhipu/glm-4.7`）即可添加新的 provider——**无需修改任何代码！**
+>
+> **OpenAI 兼容回退：** 如果你已经知道上游的 `api_base`，也可以直接填写上游原始模型名（例如 `Pro/zai-org/GLM-4.7`）。当设置了 `api_base` 时，未知前缀会自动按通用 OpenAI-compatible HTTP 后端处理，而不是因为协议识别失败而报错。
 
 该设计同时支持**多 Agent 场景**，提供灵活的 Provider 选择：
 
@@ -513,6 +515,7 @@ Agent 读取 HEARTBEAT.md
 | **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [获取密钥](https://build.nvidia.com)                              |
 | **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | 本地（无需密钥）                                                  |
 | **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [获取密钥](https://openrouter.ai/keys)                            |
+| **SiliconFlow**     | `siliconflow/`    | `https://api.siliconflow.cn/v1`                     | OpenAI    | [获取密钥](https://cloud.siliconflow.cn)                          |
 | **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | 本地                                                              |
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [获取密钥](https://cerebras.ai)                                   |
 | **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [获取密钥](https://console.volcengine.com)                        |
@@ -636,7 +639,7 @@ Agent 读取 HEARTBEAT.md
   ]
 }
 ```
-
+如果上游模型 ID 本身就带有 `/`，可以直接保留完整模型字符串，并通过 `api_base` 指定路由：
 #### 从旧的 `providers` 配置迁移
 
 旧的 `providers` 配置格式**已弃用**，但为向后兼容仍支持。
@@ -661,7 +664,7 @@ Agent 读取 HEARTBEAT.md
 ```
 
 **新配置（推荐）：**
-
+如果你更喜欢显式协议前缀，也可以使用内置别名：
 ```json
 {
   "model_list": [

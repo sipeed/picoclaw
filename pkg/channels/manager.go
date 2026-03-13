@@ -208,6 +208,24 @@ func (m *Manager) initChannel(name, displayName string) {
 
 func (m *Manager) initChannels() error {
 	logger.InfoC("channels", "Initializing channel manager")
+	logger.InfoCF("channels", "Channel enablement snapshot", map[string]any{
+		"telegram_enabled":     m.config.Channels.Telegram.Enabled,
+		"whatsapp_enabled":     m.config.Channels.WhatsApp.Enabled,
+		"feishu_enabled":       m.config.Channels.Feishu.Enabled,
+		"discord_enabled":      m.config.Channels.Discord.Enabled,
+		"maixcam_enabled":      m.config.Channels.MaixCam.Enabled,
+		"qq_enabled":           m.config.Channels.QQ.Enabled,
+		"dingtalk_enabled":     m.config.Channels.DingTalk.Enabled,
+		"slack_enabled":        m.config.Channels.Slack.Enabled,
+		"matrix_enabled":       m.config.Channels.Matrix.Enabled,
+		"line_enabled":         m.config.Channels.LINE.Enabled,
+		"onebot_enabled":       m.config.Channels.OneBot.Enabled,
+		"wecom_enabled":        m.config.Channels.WeCom.Enabled,
+		"wecom_app_enabled":    m.config.Channels.WeComApp.Enabled,
+		"wecom_aibot_enabled":  m.config.Channels.WeComAIBot.Enabled,
+		"pico_enabled":         m.config.Channels.Pico.Enabled,
+		"irc_enabled":          m.config.Channels.IRC.Enabled,
+	})
 
 	if m.config.Channels.Telegram.Enabled && m.config.Channels.Telegram.Token != "" {
 		m.initChannel("telegram", "Telegram")
@@ -284,7 +302,17 @@ func (m *Manager) initChannels() error {
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})
-
+	if len(m.channels) == 0 {
+		logger.WarnCF("channels", "No channels enabled after initialization", map[string]any{
+			"telegram_ready": m.config.Channels.Telegram.Enabled && m.config.Channels.Telegram.Token != "",
+			"whatsapp_ready": m.config.Channels.WhatsApp.Enabled && (m.config.Channels.WhatsApp.UseNative || m.config.Channels.WhatsApp.BridgeURL != ""),
+			"feishu_ready":   m.config.Channels.Feishu.Enabled,
+			"discord_ready":  m.config.Channels.Discord.Enabled && m.config.Channels.Discord.Token != "",
+			"matrix_ready":   m.config.Channels.Matrix.Enabled && m.config.Channels.Matrix.Homeserver != "" && m.config.Channels.Matrix.UserID != "" && m.config.Channels.Matrix.AccessToken != "",
+			"line_ready":     m.config.Channels.LINE.Enabled && m.config.Channels.LINE.ChannelAccessToken != "",
+		})
+		return fmt.Errorf("no channels enabled")
+	}
 	return nil
 }
 
@@ -765,8 +793,8 @@ func (m *Manager) runTTLJanitor(ctx context.Context) {
 func (m *Manager) GetChannel(name string) (Channel, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	channel, ok := m.channels[name]
-	return channel, ok
+	ch, ok := m.channels[name]
+	return ch, ok
 }
 
 func (m *Manager) GetStatus() map[string]any {

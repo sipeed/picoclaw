@@ -64,6 +64,12 @@ func TestExtractProtocol(t *testing.T) {
 			wantProtocol: "nvidia",
 			wantModelID:  "meta/llama-3.1-8b",
 		},
+		{
+			name:         "siliconflow with nested model path",
+			model:        "siliconflow/Pro/zai-org/GLM-4.7",
+			wantProtocol: "siliconflow",
+			wantModelID:  "Pro/zai-org/GLM-4.7",
+		},
 	}
 
 	for _, tt := range tests {
@@ -113,6 +119,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"vllm", "vllm"},
 		{"deepseek", "deepseek"},
 		{"ollama", "ollama"},
+		{"siliconflow", "siliconflow"},
 	}
 
 	for _, tt := range tests {
@@ -139,6 +146,12 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 func TestGetDefaultAPIBase_LiteLLM(t *testing.T) {
 	if got := getDefaultAPIBase("litellm"); got != "http://localhost:4000/v1" {
 		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "litellm", got, "http://localhost:4000/v1")
+	}
+}
+
+func TestGetDefaultAPIBase_SiliconFlow(t *testing.T) {
+	if got := getDefaultAPIBase("siliconflow"); got != "https://api.siliconflow.cn/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "siliconflow", got, "https://api.siliconflow.cn/v1")
 	}
 }
 
@@ -256,7 +269,30 @@ func TestCreateProviderFromConfig_UnknownProtocol(t *testing.T) {
 
 	_, _, err := CreateProviderFromConfig(cfg)
 	if err == nil {
-		t.Fatal("CreateProviderFromConfig() expected error for unknown protocol")
+		t.Fatal("CreateProviderFromConfig() expected error for unknown protocol without api_base")
+	}
+}
+
+func TestCreateProviderFromConfig_UnknownProtocolWithAPIBaseFallsBackToHTTP(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-unknown-fallback",
+		Model:     "Pro/zai-org/GLM-4.7",
+		APIKey:    "test-key",
+		APIBase:   "https://api.siliconflow.cn/v1",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+	if modelID != "Pro/zai-org/GLM-4.7" {
+		t.Errorf("modelID = %q, want %q", modelID, "Pro/zai-org/GLM-4.7")
 	}
 }
 
@@ -315,5 +351,27 @@ func TestCreateProviderFromConfig_RequestTimeoutPropagation(t *testing.T) {
 	errMsg := err.Error()
 	if !strings.Contains(errMsg, "context deadline exceeded") && !strings.Contains(errMsg, "Client.Timeout exceeded") {
 		t.Fatalf("Chat() error = %q, want timeout-related error", errMsg)
+	}
+}
+
+func TestCreateProviderFromConfig_SiliconFlowNestedModelPath(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-siliconflow",
+		Model:     "siliconflow/Pro/zai-org/GLM-4.7",
+		APIKey:    "test-key",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+	if modelID != "Pro/zai-org/GLM-4.7" {
+		t.Errorf("modelID = %q, want %q", modelID, "Pro/zai-org/GLM-4.7")
 	}
 }

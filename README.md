@@ -1005,6 +1005,8 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 ### Model Configuration (model_list)
 
 > **What's New?** PicoClaw now uses a **model-centric** configuration approach. Simply specify `vendor/model` format (e.g., `zhipu/glm-4.7`) to add new providers—**zero code changes required!**
+>
+> **OpenAI-compatible fallback:** if you already know the upstream `api_base`, you can also use the raw upstream model identifier directly (for example `Pro/zai-org/GLM-4.7`). When `api_base` is set, unknown prefixes are treated as a generic OpenAI-compatible HTTP backend instead of failing protocol detection.
 
 This design also enables **multi-agent support** with flexible provider selection:
 
@@ -1036,7 +1038,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
-
+| **SiliconFlow**     | `siliconflow/`    | `https://api.siliconflow.cn/v1`                     | OpenAI    | [Get Key](https://cloud.siliconflow.cn)                           |
 #### Basic Configuration
 
 ```json
@@ -1131,7 +1133,18 @@ This design also enables **multi-agent support** with flexible provider selectio
 }
 ```
 
-**LiteLLM Proxy**
+If your upstream uses model IDs that already contain slashes, you can keep the full model string and rely on `api_base` for routing:
+
+```json
+{
+  "model_name": "siliconflow-glm47",
+  "model": "Pro/zai-org/GLM-4.7",
+  "api_base": "https://api.siliconflow.cn/v1",
+  "api_key": "sk-..."
+}
+```
+
+You can also use the explicit built-in alias:
 
 ```json
 {
@@ -1345,7 +1358,7 @@ picoclaw agent -m "Hello"
   }
 }
 ```
-
+If a third-party backend is OpenAI-compatible but not listed above, set `api_base` and keep the provider-specific model string as-is. PicoClaw will route it through the generic HTTP-compatible path.
 </details>
 
 ## CLI Reference
@@ -1504,3 +1517,4 @@ This happens when another instance of the bot is running. Make sure only one `pi
 | **SearXNG**      | Unlimited (self-hosted)  | Privacy-focused metasearch (70+ engines) |
 | **Groq**         | Free tier available      | Fast inference (Llama, Mixtral)       |
 | **Cerebras**     | Free tier available      | Fast inference (Llama, Qwen, etc.)    |
+

@@ -117,7 +117,7 @@ func (p *Provider) Chat(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": serializeMessages(messages),
+		"messages": serializeMessagesForProvider(messages, p.apiBase, model),
 	}
 
 	if len(tools) > 0 {
@@ -150,6 +150,11 @@ func (p *Provider) Chat(
 			requestBody["temperature"] = temperature
 		}
 	}
+	if strings.Contains(strings.ToLower(model), "glm-4.6v") {
+		if level, _ := options["thinking_level"].(string); strings.TrimSpace(level) != "" && strings.ToLower(level) != "off" {
+			requestBody["thinking"] = map[string]any{"type": "enabled"}
+		}
+	}
 
 	// Prompt caching: pass a stable cache key so OpenAI can bucket requests
 	// with the same key and reuse prefix KV cache across calls.
@@ -172,6 +177,11 @@ func (p *Provider) Chat(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	requestCtx := requestErrorContext{
+		APIBase: p.apiBase,
+		Model:   model,
+		Path:    req.URL.Path,
+	}
 
 	req.Header.Set("Content-Type", "application/json")
 	if p.apiKey != "" {
@@ -193,13 +203,9 @@ func (p *Provider) Chat(
 			return nil, fmt.Errorf("failed to read response: %w", readErr)
 		}
 		if looksLikeHTML(body, contentType) {
-			return nil, wrapHTMLResponseError(resp.StatusCode, body, contentType, p.apiBase)
+			return nil, wrapHTMLResponseError(resp.StatusCode, body, contentType, requestCtx)
 		}
-		return nil, fmt.Errorf(
-			"API request failed:\n  Status: %d\n  Body:   %s",
-			resp.StatusCode,
-			responsePreview(body, 128),
-		)
+		return nil, formatAPIError(resp.StatusCode, body, requestCtx)
 	}
 
 	// Peek without consuming so the full stream reaches the JSON decoder.
@@ -209,7 +215,7 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("failed to inspect response: %w", err)
 	}
 	if looksLikeHTML(prefix, contentType) {
-		return nil, wrapHTMLResponseError(resp.StatusCode, prefix, contentType, p.apiBase)
+		return nil, wrapHTMLResponseError(resp.StatusCode, prefix, contentType, requestCtx)
 	}
 
 	out, err := parseResponse(reader)
@@ -220,15 +226,128 @@ func (p *Provider) Chat(
 	return out, nil
 }
 
-func wrapHTMLResponseError(statusCode int, body []byte, contentType, apiBase string) error {
+type requestErrorContext struct {
+	APIBase string
+	Model   string
+	Path    string
+}
+
+func wrapHTMLResponseError(statusCode int, body []byte, contentType string, requestCtx requestErrorContext) error {
 	respPreview := responsePreview(body, 128)
 	return fmt.Errorf(
-		"API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  Body:   %s",
-		apiBase,
+		"API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  API Base: %s\n  Model:   %s\n  Path:    %s\n  Body:    %s",
+		requestCtx.APIBase,
 		contentType,
 		statusCode,
+		requestCtx.APIBase,
+		requestCtx.Model,
+		requestCtx.Path,
 		respPreview,
 	)
+}
+
+func formatAPIError(statusCode int, body []byte, requestCtx requestErrorContext) error {
+	if details, ok := extractStructuredAPIError(body); ok {
+		if details.Code != "" {
+			return fmt.Errorf(
+				"API request failed:\n  Status: %d\n  API Base: %s\n  Model:   %s\n  Path:    %s\n  Message: %s\n  Code:    %s\n  Body:    %s",
+				statusCode,
+				requestCtx.APIBase,
+				requestCtx.Model,
+				requestCtx.Path,
+				details.Message,
+				details.Code,
+				responsePreview(body, 128),
+			)
+		}
+		return fmt.Errorf(
+			"API request failed:\n  Status: %d\n  API Base: %s\n  Model:   %s\n  Path:    %s\n  Message: %s\n  Body:    %s",
+			statusCode,
+			requestCtx.APIBase,
+			requestCtx.Model,
+			requestCtx.Path,
+			details.Message,
+			responsePreview(body, 128),
+		)
+	}
+	return fmt.Errorf(
+		"API request failed:\n  Status: %d\n  API Base: %s\n  Model:   %s\n  Path:    %s\n  Body:    %s",
+		statusCode,
+		requestCtx.APIBase,
+		requestCtx.Model,
+		requestCtx.Path,
+		responsePreview(body, 128),
+	)
+}
+
+type structuredAPIError struct {
+	Message string
+	Code    string
+}
+
+func extractStructuredAPIError(body []byte) (structuredAPIError, bool) {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return structuredAPIError{}, false
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(trimmed, &payload); err != nil {
+		return structuredAPIError{}, false
+	}
+
+	details := structuredAPIError{}
+	if msg := stringifyErrorField(payload["message"]); msg != "" {
+		details.Message = msg
+	}
+	if code := stringifyErrorField(payload["code"]); code != "" {
+		details.Code = code
+	}
+
+	if errField, ok := payload["error"]; ok {
+		switch e := errField.(type) {
+		case string:
+			if details.Message == "" {
+				details.Message = e
+			}
+		case map[string]any:
+			if details.Message == "" {
+				details.Message = stringifyErrorField(e["message"])
+			}
+			if details.Code == "" {
+				details.Code = stringifyErrorField(e["code"])
+			}
+			if details.Message == "" {
+				details.Message = stringifyErrorField(e["type"])
+			}
+		}
+	}
+
+	if details.Message == "" {
+		return structuredAPIError{}, false
+	}
+	return details, true
+}
+
+func stringifyErrorField(v any) string {
+	switch val := v.(type) {
+	case string:
+		return strings.TrimSpace(val)
+	case json.Number:
+		return val.String()
+	case float64:
+		return strings.TrimSpace(fmt.Sprintf("%.0f", val))
+	case float32:
+		return strings.TrimSpace(fmt.Sprintf("%.0f", val))
+	case int:
+		return fmt.Sprintf("%d", val)
+	case int64:
+		return fmt.Sprintf("%d", val)
+	case int32:
+		return fmt.Sprintf("%d", val)
+	default:
+		return ""
+	}
 }
 
 func looksLikeHTML(body []byte, contentType string) bool {
@@ -377,6 +496,12 @@ type openaiMessage struct {
 // - Converts messages with Media to multipart content format (text + image_url parts)
 // - Preserves ToolCallID, ToolCalls, and ReasoningContent for all messages
 func serializeMessages(messages []Message) []any {
+	return serializeMessagesForProvider(messages, "", "")
+}
+
+func serializeMessagesForProvider(messages []Message, apiBase, model string) []any {
+	useObjectImageURL := usesObjectImageURL(apiBase, model)
+	preferImageFirst := usesImageFirstOrdering(apiBase, model)
 	out := make([]any, 0, len(messages))
 	for _, m := range messages {
 		if len(m.Media) == 0 {
@@ -390,29 +515,35 @@ func serializeMessages(messages []Message) []any {
 			continue
 		}
 
-		// Multipart content format for messages with media
 		parts := make([]map[string]any, 0, 1+len(m.Media))
-		if m.Content != "" {
-			parts = append(parts, map[string]any{
-				"type": "text",
-				"text": m.Content,
-			})
-		}
-		for _, mediaURL := range m.Media {
-			if strings.HasPrefix(mediaURL, "data:image/") {
-				parts = append(parts, map[string]any{
-					"type": "image_url",
-					"image_url": map[string]any{
-						"url": mediaURL,
-					},
-				})
+		appendImageParts := func() {
+			for _, mediaURL := range m.Media {
+				if !strings.HasPrefix(mediaURL, "data:image/") && !strings.HasPrefix(mediaURL, "http://") && !strings.HasPrefix(mediaURL, "https://") {
+					continue
+				}
+				part := map[string]any{"type": "image_url"}
+				if useObjectImageURL {
+					part["image_url"] = map[string]any{"url": mediaURL}
+				} else {
+					part["image_url"] = mediaURL
+				}
+				parts = append(parts, part)
 			}
 		}
-
-		msg := map[string]any{
-			"role":    m.Role,
-			"content": parts,
+		appendTextPart := func() {
+			if m.Content != "" {
+				parts = append(parts, map[string]any{"type": "text", "text": m.Content})
+			}
 		}
+		if preferImageFirst {
+			appendImageParts()
+			appendTextPart()
+		} else {
+			appendTextPart()
+			appendImageParts()
+		}
+
+		msg := map[string]any{"role": m.Role, "content": parts}
 		if m.ToolCallID != "" {
 			msg["tool_call_id"] = m.ToolCallID
 		}
@@ -425,6 +556,18 @@ func serializeMessages(messages []Message) []any {
 		out = append(out, msg)
 	}
 	return out
+}
+
+func usesImageFirstOrdering(apiBase, model string) bool {
+	base := strings.ToLower(strings.TrimSpace(apiBase))
+	m := strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(base, "bigmodel.cn") || strings.Contains(base, "zhipu") || strings.Contains(m, "glm-4.6v")
+}
+
+func usesObjectImageURL(apiBase, model string) bool {
+	base := strings.ToLower(strings.TrimSpace(apiBase))
+	m := strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(base, "bigmodel.cn") || strings.Contains(base, "zhipu") || strings.Contains(m, "glm")
 }
 
 func normalizeModel(model, apiBase string) string {

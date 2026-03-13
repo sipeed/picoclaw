@@ -30,6 +30,24 @@ func (f *fakeChannel) IsAllowed(string) bool                                   {
 func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool              { return true }
 func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
 
+type fakeFeishuRemoteChannel struct{ fakeChannel }
+
+func (f *fakeFeishuRemoteChannel) GetMessage(ctx context.Context, messageID string) (any, error) {
+	return map[string]any{"message_id": messageID}, nil
+}
+func (f *fakeFeishuRemoteChannel) ListMessages(ctx context.Context, containerID, containerType string, pageSize int, pageToken string) (any, error) {
+	return map[string]any{"container_id": containerID}, nil
+}
+func (f *fakeFeishuRemoteChannel) GetUserInfo(ctx context.Context, userID string) (any, error) {
+	return map[string]any{"user_id": userID}, nil
+}
+func (f *fakeFeishuRemoteChannel) GetGroupInfo(ctx context.Context, chatID string) (any, error) {
+	return map[string]any{"chat_id": chatID}, nil
+}
+func (f *fakeFeishuRemoteChannel) GetDriveFile(ctx context.Context, fileToken string) (any, error) {
+	return map[string]any{"file_token": fileToken}, nil
+}
+
 func newTestAgentLoop(
 	t *testing.T,
 ) (al *AgentLoop, cfg *config.Config, msgBus *bus.MessageBus, provider *mockProvider, cleanup func()) {
@@ -1116,3 +1134,41 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
 	}
 }
+
+func TestSetChannelManager_RegistersFeishuRemoteTool(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-feishu-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	cfg.Tools.Enabled = []string{"feishu_parse", "feishu_remote"}
+
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	chManager, err := channels.NewManager(&config.Config{}, bus.NewMessageBus(), nil)
+	if err != nil {
+		t.Fatalf("Failed to create channel manager: %v", err)
+	}
+	chManager.RegisterChannel("feishu", &fakeFeishuRemoteChannel{fakeChannel{id: "rid-feishu"}})
+
+	al.SetChannelManager(chManager)
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+	if _, ok := defaultAgent.Tools.Get("feishu_remote"); !ok {
+		t.Fatal("expected feishu_remote to be registered after channel manager injection")
+	}
+}
+

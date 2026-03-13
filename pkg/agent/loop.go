@@ -444,6 +444,22 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+	if cm == nil {
+		return
+	}
+	feishuCh, ok := cm.GetChannel("feishu")
+	if !ok || feishuCh == nil {
+		return
+	}
+	adapter := tools.NewFeishuChannelAdapter(feishuCh)
+	if !adapter.Ready() {
+		return
+	}
+	for _, agentID := range al.registry.ListAgentIDs() {
+		if agent, ok := al.registry.GetAgent(agentID); ok {
+			tools.RegisterFeishuToolsWithClient(agent.Tools, al.cfg, adapter)
+		}
+	}
 }
 
 // SetMediaStore injects a MediaStore for media lifecycle management.

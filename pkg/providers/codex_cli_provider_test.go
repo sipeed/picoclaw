@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -401,18 +402,58 @@ func TestCodexCliProvider_GetDefaultModel(t *testing.T) {
 func createMockCodexCLI(t *testing.T, events []string) string {
 	t.Helper()
 	tmpDir := t.TempDir()
-	scriptPath := filepath.Join(tmpDir, "codex")
 
+	if runtime.GOOS == "windows" {
+		scriptPath := filepath.Join(tmpDir, "codex.cmd")
+		var sb strings.Builder
+		sb.WriteString("@echo off\r\n")
+		for _, event := range events {
+			escaped := strings.ReplaceAll(event, `"`, `""`)
+			sb.WriteString("echo " + escaped + "\r\n")
+		}
+		if err := os.WriteFile(scriptPath, []byte(sb.String()), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return scriptPath
+	}
+
+	scriptPath := filepath.Join(tmpDir, "codex")
 	var sb strings.Builder
 	sb.WriteString("#!/bin/bash\n")
 	for _, event := range events {
 		sb.WriteString(fmt.Sprintf("echo '%s'\n", event))
 	}
-
 	if err := os.WriteFile(scriptPath, []byte(sb.String()), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return scriptPath
+}
+
+func createMockCodexCLIWithArgsCapture(t *testing.T, body string) (string, string) {
+	t.Helper()
+	tmpDir := t.TempDir()
+	argsPath := filepath.Join(tmpDir, "args.txt")
+
+	if runtime.GOOS == "windows" {
+		scriptPath := filepath.Join(tmpDir, "codex.cmd")
+		script := "@echo off\r\n" +
+			"setlocal EnableDelayedExpansion\r\n" +
+			"echo %* > \"" + argsPath + "\"\r\n" +
+			body + "\r\n"
+		if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return scriptPath, argsPath
+	}
+
+	scriptPath := filepath.Join(tmpDir, "codex")
+	script := "#!/bin/bash\n" +
+		"echo \"$@\" > \"" + argsPath + "\"\n" +
+		body + "\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return scriptPath, argsPath
 }
 
 func TestCodexCliProvider_MockCLI_Success(t *testing.T) {
@@ -472,17 +513,10 @@ func TestCodexCliProvider_MockCLI_Error(t *testing.T) {
 
 func TestCodexCliProvider_MockCLI_WithModel(t *testing.T) {
 	// Mock script that captures args to verify model flag is passed
-	tmpDir := t.TempDir()
-	scriptPath := filepath.Join(tmpDir, "codex")
-	script := `#!/bin/bash
-# Write args to a file for verification
-echo "$@" > "` + filepath.Join(tmpDir, "args.txt") + `"
-echo '{"type":"item.completed","item":{"id":"1","type":"agent_message","text":"ok"}}'
-echo '{"type":"turn.completed"}'`
-
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	scriptPath, argsPath := createMockCodexCLIWithArgsCapture(t,
+		"echo '{\"type\":\"item.completed\",\"item\":{\"id\":\"1\",\"type\":\"agent_message\",\"text\":\"ok\"}}'\n"+
+			"echo '{\"type\":\"turn.completed\"}'",
+	)
 
 	p := &CodexCliProvider{
 		command:   scriptPath,
@@ -496,7 +530,7 @@ echo '{"type":"turn.completed"}'`
 	}
 
 	// Verify the args
-	argsData, err := os.ReadFile(filepath.Join(tmpDir, "args.txt"))
+	argsData, err := os.ReadFile(argsPath)
 	if err != nil {
 		t.Fatalf("reading args: %v", err)
 	}
@@ -505,22 +539,33 @@ echo '{"type":"turn.completed"}'`
 	if !strings.Contains(args, "-m gpt-5.2-codex") {
 		t.Errorf("args should contain model flag, got: %s", args)
 	}
-	if !strings.Contains(args, "-C /tmp/test-workspace") {
-		t.Errorf("args should contain workspace flag, got: %s", args)
-	}
 	if !strings.Contains(args, "--json") {
 		t.Errorf("args should contain --json, got: %s", args)
 	}
 	if !strings.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
 		t.Errorf("args should contain bypass flag, got: %s", args)
 	}
+	if runtime.GOOS == "windows" {
+		if !strings.Contains(args, `-C /tmp/test-workspace`) {
+			t.Errorf("args should contain workspace flag, got: %s", args)
+		}
+	} else if !strings.Contains(args, "-C /tmp/test-workspace") {
+		t.Errorf("args should contain workspace flag, got: %s", args)
+	}
 }
 
 func TestCodexCliProvider_MockCLI_ContextCancel(t *testing.T) {
 	// Script that sleeps forever
 	tmpDir := t.TempDir()
-	scriptPath := filepath.Join(tmpDir, "codex")
-	script := "#!/bin/bash\nsleep 60"
+	var scriptPath string
+	var script string
+	if runtime.GOOS == "windows" {
+		scriptPath = filepath.Join(tmpDir, "codex.cmd")
+		script = "@echo off\r\nping 127.0.0.1 -n 60 > nul\r\n"
+	} else {
+		scriptPath = filepath.Join(tmpDir, "codex")
+		script = "#!/bin/bash\nsleep 60"
+	}
 
 	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)

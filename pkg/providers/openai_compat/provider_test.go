@@ -228,11 +228,109 @@ func TestProviderChat_JSONHTTPErrorDoesNotReportHTML(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "Status: 400") {
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "Status: 400") {
 		t.Fatalf("expected status code in error, got %v", err)
 	}
-	if strings.Contains(err.Error(), "returned HTML instead of JSON") {
+	if !strings.Contains(errMsg, "API Base: "+server.URL) {
+		t.Fatalf("expected api base in error, got %v", err)
+	}
+	if !strings.Contains(errMsg, "Model:   gpt-4o") {
+		t.Fatalf("expected model in error, got %v", err)
+	}
+	if !strings.Contains(errMsg, "Path:    /chat/completions") {
+		t.Fatalf("expected request path in error, got %v", err)
+	}
+	if !strings.Contains(errMsg, "Message: bad request") {
+		t.Fatalf("expected parsed message in error, got %v", err)
+	}
+	if strings.Contains(errMsg, "returned HTML instead of JSON") {
 		t.Fatalf("expected non-HTML http error, got %v", err)
+	}
+}
+
+func TestProviderChat_JSONHTTPErrorIncludesFlatCodeAndMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":20012,"message":"Model does not exist. Please check it carefully."}`))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "Message: Model does not exist. Please check it carefully.") {
+		t.Fatalf("expected upstream message in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Code:    20012") {
+		t.Fatalf("expected upstream code in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Model:   gpt-4o") {
+		t.Fatalf("expected model context in error, got %v", err)
+	}
+}
+
+func TestProviderChat_JSONHTTPErrorIncludesNestedOpenAIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"code":"invalid_api_key","message":"The provided API key is invalid."}}`))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "Status: 400") {
+		t.Fatalf("expected status code in error, got %v", err)
+	}
+	if !strings.Contains(errMsg, "API Base: "+server.URL) {
+		t.Fatalf("expected api base in error, got %v", err)
+	}
+	if !strings.Contains(errMsg, "Model:   gpt-4o") {
+		t.Fatalf("expected model in error, got %v", err)
+	}
+	if !strings.Contains(errMsg, "Path:    /chat/completions") {
+		t.Fatalf("expected request path in error, got %v", err)
+	}
+	if !strings.Contains(errMsg, "Message: The provided API key is invalid.") {
+		t.Fatalf("expected parsed message in error, got %v", err)
+	}
+	if !strings.Contains(errMsg, "Code:    invalid_api_key") {
+		t.Fatalf("expected nested error code in error, got %v", err)
+	}
+	if !strings.Contains(errMsg, "Path:    /chat/completions") {
+		t.Fatalf("expected request path in error, got %v", err)
+	}
+}
+
+func TestProviderChat_MalformedJSONHTTPErrorFallsBackToBodyPreview(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"message":"unterminated`))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "Body:    {\"message\":\"unterminated") {
+		t.Fatalf("expected raw body preview fallback, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "API Base: "+server.URL) {
+		t.Fatalf("expected api base context in fallback error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "Message:") {
+		t.Fatalf("expected no parsed message for malformed json, got %v", err)
 	}
 }
 
@@ -282,6 +380,15 @@ func TestProviderChat_HTMLResponsesReturnHelpfulError(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "returned HTML instead of JSON") {
 				t.Fatalf("expected helpful HTML error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "API Base: "+server.URL) {
+				t.Fatalf("expected api base context, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "Model:   gpt-4o") {
+				t.Fatalf("expected model context, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "Path:    /chat/completions") {
+				t.Fatalf("expected request path context, got %v", err)
 			}
 			if !strings.Contains(err.Error(), "check api_base or proxy configuration") {
 				t.Fatalf("expected configuration hint, got %v", err)
@@ -333,7 +440,7 @@ func TestProviderChat_LargeHTMLResponsePreviewIsTruncated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "Body:   <!DOCTYPE html><html><body>") {
+	if !strings.Contains(err.Error(), "Body:    <!DOCTYPE html><html><body>") {
 		t.Fatalf("expected html preview in error, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "...") {
@@ -644,9 +751,37 @@ func TestSerializeMessages_WithMedia(t *testing.T) {
 	if imgPart["type"] != "image_url" {
 		t.Fatalf("expected image_url type, got %v", imgPart["type"])
 	}
-	imgURL := imgPart["image_url"].(map[string]any)
+	if imgPart["image_url"] != "data:image/png;base64,abc123" {
+		t.Fatalf("image url mismatch: %v", imgPart["image_url"])
+	}
+}
+
+func TestSerializeMessages_WithMediaForGLM(t *testing.T) {
+	messages := []protocoltypes.Message{{Role: "user", Content: "describe this", Media: []string{"data:image/png;base64,abc123"}}}
+	result := serializeMessagesForProvider(messages, "https://open.bigmodel.cn/api/paas/v4", "glm-4.6v-flash")
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	content := msgs[0]["content"].([]any)
+	if len(content) != 2 {
+		t.Fatalf("expected 2 content parts, got %d", len(content))
+	}
+	first := content[0].(map[string]any)
+	second := content[1].(map[string]any)
+	if first["type"] != "image_url" {
+		t.Fatalf("expected image first for glm, got first=%v second=%v", first, second)
+	}
+	imgURL, ok := first["image_url"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected object-form image_url for glm, got %T (%v)", first["image_url"], first["image_url"])
+	}
 	if imgURL["url"] != "data:image/png;base64,abc123" {
-		t.Fatalf("image url mismatch: %v", imgURL["url"])
+		t.Fatalf("glm image url mismatch: %v", imgURL["url"])
+	}
+	if second["type"] != "text" || second["text"] != "describe this" {
+		t.Fatalf("glm text part mismatch: %v", second)
 	}
 }
 

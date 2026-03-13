@@ -1,7 +1,6 @@
 //go:build amd64 || arm64 || riscv64 || mips64 || ppc64
 
 package feishu
-
 import (
 	"context"
 	"encoding/json"
@@ -11,9 +10,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
-
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkdispatcher "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
@@ -282,32 +281,67 @@ func (c *FeishuChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 	return nil
 }
 
-// sendMediaPart resolves and sends a single media part.
-func (c *FeishuChannel) sendMediaPart(
-	ctx context.Context,
-	chatID string,
-	part bus.MediaPart,
-	store media.MediaStore,
-) error {
-	localPath, err := store.Resolve(part.Ref)
-	if err != nil {
-		logger.ErrorCF("feishu", "Failed to resolve media ref", map[string]any{
-			"ref":   part.Ref,
-			"error": err.Error(),
-		})
-		return nil // skip this part
+func (c *FeishuChannel) SendImageMessage(ctx context.Context, chatID string, data []byte, fileName string) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
 	}
-
-	file, err := os.Open(localPath)
+	if strings.TrimSpace(chatID) == "" {
+		return fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("image data is empty: %w", channels.ErrSendFailed)
+	}
+	path, err := writeTempFeishuMediaFile(data, fileName, ".img")
 	if err != nil {
-		logger.ErrorCF("feishu", "Failed to open media file", map[string]any{
-			"path":  localPath,
-			"error": err.Error(),
-		})
-		return nil // skip this part
+		return fmt.Errorf("feishu image temp file: %w", err)
+	}
+	defer os.Remove(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("feishu image open temp file: %w", err)
 	}
 	defer file.Close()
+	return c.sendImage(ctx, chatID, file)
+}
 
+func (c *FeishuChannel) SendFileMessage(ctx context.Context, chatID string, data []byte, fileName, fileType string) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+	if strings.TrimSpace(chatID) == "" {
+		return fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("file data is empty: %w", channels.ErrSendFailed)
+	}
+	if strings.TrimSpace(fileName) == "" {
+		fileName = "file"
+	}
+	path, err := writeTempFeishuMediaFile(data, fileName, ".bin")
+	if err != nil {
+		return fmt.Errorf("feishu file temp file: %w", err)
+	}
+	defer os.Remove(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("feishu file open temp file: %w", err)
+	}
+	defer file.Close()
+	return c.sendFile(ctx, chatID, file, fileName, fileType)
+}
+
+func (c *FeishuChannel) sendMediaPart(ctx context.Context, chatID string, part bus.MediaPart, store media.MediaStore) error {
+	localPath, err := store.Resolve(part.Ref)
+	if err != nil {
+		logger.ErrorCF("feishu", "Failed to resolve media ref", map[string]any{"ref": part.Ref, "error": err.Error()})
+		return nil
+	}
+	file, err := os.Open(localPath)
+	if err != nil {
+		logger.ErrorCF("feishu", "Failed to open media file", map[string]any{"path": localPath, "error": err.Error()})
+		return nil
+	}
+	defer file.Close()
 	switch part.Type {
 	case "image":
 		err = c.sendImage(ctx, chatID, file)
@@ -318,15 +352,38 @@ func (c *FeishuChannel) sendMediaPart(
 		}
 		err = c.sendFile(ctx, chatID, file, filename, part.Type)
 	}
-
 	if err != nil {
-		logger.ErrorCF("feishu", "Failed to send media", map[string]any{
-			"type":  part.Type,
-			"error": err.Error(),
-		})
+		logger.ErrorCF("feishu", "Failed to send media", map[string]any{"type": part.Type, "error": err.Error()})
 		return fmt.Errorf("feishu send media: %w", channels.ErrTemporary)
 	}
 	return nil
+}
+
+func writeTempFeishuMediaFile(data []byte, fileName, fallbackExt string) (string, error) {
+	name := strings.TrimSpace(fileName)
+	if name == "" {
+		name = "media"
+	}
+	ext := filepath.Ext(name)
+	if ext == "" {
+		ext = fallbackExt
+	}
+	pattern := "feishu-media-*" + ext
+	f, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", err
+	}
+	path := f.Name()
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(path)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return "", err
+	}
+	return path, nil
 }
 
 // --- Inbound message handling ---
@@ -504,15 +561,16 @@ func extractContent(messageType, rawContent string) string {
 		return rawContent
 
 	case larkim.MsgTypePost:
-		// Pass raw JSON to LLM — structured rich text is more informative than flattened plain text
+		texts := extractAllJSONStringFields(rawContent, "text")
+		if len(texts) > 0 {
+			return strings.TrimSpace(strings.Join(texts, "\n"))
+		}
 		return rawContent
 
 	case larkim.MsgTypeImage:
-		// Image messages don't have text content
 		return ""
 
 	case larkim.MsgTypeFile, larkim.MsgTypeAudio, larkim.MsgTypeMedia:
-		// File/audio/video messages may have a filename
 		name := extractFileName(rawContent)
 		if name != "" {
 			return name
@@ -535,21 +593,28 @@ func (c *FeishuChannel) downloadInboundMedia(
 
 	switch messageType {
 	case larkim.MsgTypeImage:
-		imageKey := extractImageKey(rawContent)
-		if imageKey == "" {
-			return nil
+		for _, imageKey := range extractImageKeys(rawContent) {
+			ref := c.downloadResource(ctx, messageID, imageKey, "image", ".jpg", store, scope)
+			if ref != "" {
+				refs = append(refs, ref)
+			}
 		}
-		ref := c.downloadResource(ctx, messageID, imageKey, "image", ".jpg", store, scope)
-		if ref != "" {
-			refs = append(refs, ref)
+
+	case larkim.MsgTypePost:
+		for _, imageKey := range extractImageKeys(rawContent) {
+			ref := c.downloadResource(ctx, messageID, imageKey, "image", ".jpg", store, scope)
+			if ref != "" {
+				refs = append(refs, ref)
+			}
+		}
+		for _, fileKey := range extractFileKeys(rawContent) {
+			ref := c.downloadResource(ctx, messageID, fileKey, "file", "", store, scope)
+			if ref != "" {
+				refs = append(refs, ref)
+			}
 		}
 
 	case larkim.MsgTypeFile, larkim.MsgTypeAudio, larkim.MsgTypeMedia:
-		fileKey := extractFileKey(rawContent)
-		if fileKey == "" {
-			return nil
-		}
-		// Derive a fallback extension from the message type.
 		var ext string
 		switch messageType {
 		case larkim.MsgTypeAudio:
@@ -557,11 +622,13 @@ func (c *FeishuChannel) downloadInboundMedia(
 		case larkim.MsgTypeMedia:
 			ext = ".mp4"
 		default:
-			ext = "" // generic file — rely on resp.FileName
+			ext = ""
 		}
-		ref := c.downloadResource(ctx, messageID, fileKey, "file", ext, store, scope)
-		if ref != "" {
-			refs = append(refs, ref)
+		for _, fileKey := range extractFileKeys(rawContent) {
+			ref := c.downloadResource(ctx, messageID, fileKey, "file", ext, store, scope)
+			if ref != "" {
+				refs = append(refs, ref)
+			}
 		}
 	}
 
@@ -812,6 +879,7 @@ func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.Fi
 	}
 	return nil
 }
+
 
 func extractFeishuSenderID(sender *larkim.EventSender) string {
 	if sender == nil || sender.SenderId == nil {

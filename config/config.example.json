@@ -36,6 +36,17 @@
       "api_key": "sk-your-deepseek-key"
     },
     {
+      "model_name": "siliconflow-glm47",
+      "model": "siliconflow/Pro/zai-org/GLM-4.7",
+      "api_key": "sk-your-siliconflow-key"
+    },
+    {
+      "model_name": "siliconflow-raw-model",
+      "model": "Pro/zai-org/GLM-4.7",
+      "api_base": "https://api.siliconflow.cn/v1",
+      "api_key": "sk-your-siliconflow-key"
+    },
+    {
       "model_name": "loadbalanced-gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-key1",

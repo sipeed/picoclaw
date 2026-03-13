@@ -43,31 +43,64 @@ func buildMarkdownCard(content string) (string, error) {
 // extractJSONStringField unmarshals content as JSON and returns the value of the given string field.
 // Returns "" if the content is invalid JSON or the field is missing/empty.
 func extractJSONStringField(content, field string) string {
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(content), &m); err != nil {
+	all := extractAllJSONStringFields(content, field)
+	if len(all) == 0 {
 		return ""
 	}
-	raw, ok := m[field]
-	if !ok {
-		return ""
-	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return ""
-	}
-	return s
+	return all[0]
 }
 
-// extractImageKey extracts the image_key from a Feishu image message content JSON.
-// Format: {"image_key": "img_xxx"}
+func extractAllJSONStringFields(content, field string) []string {
+	var decoded any
+	if err := json.Unmarshal([]byte(content), &decoded); err != nil {
+		return nil
+	}
+	return collectJSONStringFields(decoded, field)
+}
+
+func collectJSONStringFields(v any, field string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0)
+	var walk func(any)
+	walk = func(node any) {
+		switch vv := node.(type) {
+		case map[string]any:
+			if value, ok := vv[field].(string); ok {
+				value = strings.TrimSpace(value)
+				if value != "" {
+					if _, exists := seen[value]; !exists {
+						seen[value] = struct{}{}
+						result = append(result, value)
+					}
+				}
+			}
+			for _, nested := range vv {
+				walk(nested)
+			}
+		case []any:
+			for _, nested := range vv {
+				walk(nested)
+			}
+		}
+	}
+	walk(v)
+	return result
+}
+
+// extractImageKey extracts the first image_key from a Feishu image message content JSON.
 func extractImageKey(content string) string { return extractJSONStringField(content, "image_key") }
 
-// extractFileKey extracts the file_key from a Feishu file/audio message content JSON.
-// Format: {"file_key": "file_xxx", "file_name": "...", ...}
+func extractImageKeys(content string) []string { return extractAllJSONStringFields(content, "image_key") }
+
+// extractFileKey extracts the first file_key from a Feishu file/audio message content JSON.
 func extractFileKey(content string) string { return extractJSONStringField(content, "file_key") }
+
+func extractFileKeys(content string) []string { return extractAllJSONStringFields(content, "file_key") }
 
 // extractFileName extracts the file_name from a Feishu file message content JSON.
 func extractFileName(content string) string { return extractJSONStringField(content, "file_name") }
+
+func extractFileNames(content string) []string { return extractAllJSONStringFields(content, "file_name") }
 
 // stripMentionPlaceholders removes @_user_N placeholders from the text content.
 // These are inserted by Feishu when users @mention someone in a message.

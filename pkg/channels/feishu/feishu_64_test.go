@@ -3,9 +3,11 @@
 package feishu
 
 import (
+	"errors"
 	"testing"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	"github.com/sipeed/picoclaw/pkg/channels"
 )
 
 func TestExtractContent(t *testing.T) {
@@ -252,5 +254,59 @@ func TestExtractFeishuSenderID(t *testing.T) {
 				t.Errorf("extractFeishuSenderID() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSendImageMessageValidation(t *testing.T) {
+	base := channels.NewBaseChannel("feishu", nil, nil, nil)
+	ch := &FeishuChannel{BaseChannel: base}
+	if err := ch.SendImageMessage(t.Context(), "oc_1", []byte("x"), "demo.png"); !errors.Is(err, channels.ErrNotRunning) {
+		t.Fatalf("expected ErrNotRunning, got: %v", err)
+	}
+
+	base = channels.NewBaseChannel("feishu", nil, nil, nil)
+	ch = &FeishuChannel{BaseChannel: base}
+	ch.SetRunning(true)
+	if err := ch.SendImageMessage(t.Context(), "", []byte("x"), "demo.png"); !errors.Is(err, channels.ErrSendFailed) {
+		t.Fatalf("expected ErrSendFailed for empty chat ID, got: %v", err)
+	}
+	if err := ch.SendImageMessage(t.Context(), "oc_1", nil, "demo.png"); !errors.Is(err, channels.ErrSendFailed) {
+		t.Fatalf("expected ErrSendFailed for empty image data, got: %v", err)
+	}
+}
+
+func TestSendFileMessageValidation(t *testing.T) {
+	base := channels.NewBaseChannel("feishu", nil, nil, nil)
+	ch := &FeishuChannel{BaseChannel: base}
+	if err := ch.SendFileMessage(t.Context(), "oc_1", []byte("x"), "demo.txt", "stream"); !errors.Is(err, channels.ErrNotRunning) {
+		t.Fatalf("expected ErrNotRunning, got: %v", err)
+	}
+
+	base = channels.NewBaseChannel("feishu", nil, nil, nil)
+	ch = &FeishuChannel{BaseChannel: base}
+	ch.SetRunning(true)
+	if err := ch.SendFileMessage(t.Context(), "", []byte("x"), "demo.txt", "stream"); !errors.Is(err, channels.ErrSendFailed) {
+		t.Fatalf("expected ErrSendFailed for empty chat ID, got: %v", err)
+	}
+	if err := ch.SendFileMessage(t.Context(), "oc_1", nil, "demo.txt", "stream"); !errors.Is(err, channels.ErrSendFailed) {
+		t.Fatalf("expected ErrSendFailed for empty file data, got: %v", err)
+	}
+}
+
+func TestExtractAllMediaKeys(t *testing.T) {
+	imagePayload := `{"title":"","content":[[{"tag":"text","text":"你看到了什么","style":[]}],[{"tag":"img","image_key":"img_1","width":800,"height":800},{"tag":"img","image_key":"img_2"}],[{"tag":"img","image_key":"img_1"}]]}`
+	images := extractImageKeys(imagePayload)
+	if len(images) != 2 || images[0] != "img_1" || images[1] != "img_2" {
+		t.Fatalf("unexpected image keys: %#v", images)
+	}
+
+	filePayload := `{"content":[[{"tag":"file","file_key":"file_1","file_name":"a.pdf"}],[{"tag":"file","file_key":"file_2","file_name":"b.pdf"}],[{"tag":"file","file_key":"file_1","file_name":"a.pdf"}]]}`
+	files := extractFileKeys(filePayload)
+	if len(files) != 2 || files[0] != "file_1" || files[1] != "file_2" {
+		t.Fatalf("unexpected file keys: %#v", files)
+	}
+	fileNames := extractFileNames(filePayload)
+	if len(fileNames) != 2 || fileNames[0] != "a.pdf" || fileNames[1] != "b.pdf" {
+		t.Fatalf("unexpected file names: %#v", fileNames)
 	}
 }
