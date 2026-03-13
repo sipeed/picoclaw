@@ -12,7 +12,6 @@ import (
 
 func (s *appState) buildChannelMenuItems() []MenuItem {
 	return []MenuItem{
-		{Label: "Back", Description: "Return to main menu", Action: func() { s.pop() }},
 		channelItem(
 			"Telegram",
 			"Telegram bot settings",
@@ -98,10 +97,6 @@ func (s *appState) channelMenu() tview.Primitive {
 	menu := NewMenu("Channels", s.buildChannelMenuItems())
 	menu.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEsc {
-			s.pop()
-			return nil
-		}
-		if event.Rune() == 'q' {
 			s.pop()
 			return nil
 		}

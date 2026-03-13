@@ -227,18 +227,18 @@ type AgentDefaults struct {
 	ModelName                 string         `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
 	Model                     string         `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
 	ModelFallbacks            []string       `json:"model_fallbacks,omitempty"`
-	ImageModel                string         `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
-	ImageModelFallbacks       []string       `json:"image_model_fallbacks,omitempty"`
 	PlanModel                 string         `json:"plan_model,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_PLAN_MODEL"`
 	PlanModelFallbacks        []string       `json:"plan_model_fallbacks,omitempty"`
+	ImageModel                string         `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks       []string       `json:"image_model_fallbacks,omitempty"`
 	MaxTokens                 int            `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature               *float64       `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations         int            `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
-	TaskReminderInterval      int            `json:"task_reminder_interval"          env:"PICOCLAW_AGENTS_DEFAULTS_TASK_REMINDER_INTERVAL"`
-	Orchestration             bool           `json:"orchestration,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_ORCHESTRATION"`
 	SummarizeMessageThreshold int            `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
 	SummarizeTokenPercent     int            `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
 	MaxMediaSize              int            `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
+	TaskReminderInterval      int            `json:"task_reminder_interval"          env:"PICOCLAW_AGENTS_DEFAULTS_TASK_REMINDER_INTERVAL"`
+	Orchestration             bool           `json:"orchestration,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_ORCHESTRATION"`
 	Routing                   *RoutingConfig `json:"routing,omitempty"`
 }
 
@@ -304,19 +304,20 @@ type WhatsAppConfig struct {
 	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
 	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_WHATSAPP_REASONING_CHANNEL_ID"`
 }
+
 type TelegramConfig struct {
 	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
 	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
 	BaseURL            string              `json:"base_url"                env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
 	Proxy              string              `json:"proxy"                   env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	WebAppURL          string              `json:"web_app_url"             env:"PICOCLAW_CHANNELS_TELEGRAM_WEB_APP_URL"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+	WebAppURL          string              `json:"web_app_url"             env:"PICOCLAW_CHANNELS_TELEGRAM_WEB_APP_URL"`
 	SubagentThreadID   int                 `json:"subagent_thread_id,omitempty"  env:"PICOCLAW_CHANNELS_TELEGRAM_SUBAGENT_THREAD_ID"`
 	HeartbeatThreadID  int                 `json:"heartbeat_thread_id,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_HEARTBEAT_THREAD_ID"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
 }
 
 type FeishuConfig struct {
@@ -394,7 +395,7 @@ type MatrixConfig struct {
 	AllowFrom          FlexibleStringSlice `json:"allow_from"               env:"PICOCLAW_CHANNELS_MATRIX_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
 }
 
 type LINEConfig struct {
@@ -609,12 +610,13 @@ type ModelConfig struct {
 	AuthMethod  string `json:"auth_method,omitempty"`  // Authentication method: oauth, token
 	ConnectMode string `json:"connect_mode,omitempty"` // Connection mode: stdio, grpc
 	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
+
 	// Optional optimizations
 	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
 	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
-	Stream         *bool  `json:"stream,omitempty"`           // Use SSE streaming (default: protocol-dependent)
 	RequestTimeout int    `json:"request_timeout,omitempty"`
 	ThinkingLevel  string `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
+	Stream         *bool  `json:"stream,omitempty"`           // Use SSE streaming (default: protocol-dependent)
 }
 
 // Validate checks if the ModelConfig has all required fields.

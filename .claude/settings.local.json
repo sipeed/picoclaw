@@ -34,7 +34,9 @@
       "WebFetch(domain:core.telegram.org)",
       "Bash(go doc:*)",
       "Bash(go install:*)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(bash /tmp/measure_conflicts.sh 2>&1 | grep -E '\\(Conflict|Top 10|^\\\\s+\\\\d\\)')",
+      "Bash(bash /tmp/measure_conflicts.sh 2>&1 | tail -12)"
     ]
   },
   "remote": {

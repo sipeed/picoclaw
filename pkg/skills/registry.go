@@ -180,7 +180,7 @@ func (rm *RegistryManager) SearchAll(ctx context.Context, query string, limit in
 		close(resultsCh)
 	}()
 
-	merged := make([]SearchResult, 0, len(regs)*limit)
+	var merged []SearchResult
 	var lastErr error
 
 	var anyRegistrySucceeded bool
