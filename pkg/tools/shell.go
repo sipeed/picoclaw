@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
@@ -78,7 +80,8 @@ var (
 		regexp.MustCompile(`\bsource\s+.*\.sh\b`),
 	}
 
-	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
+	// absolutePathPattern matches path-like substrings in commands (Unix and Windows).
+	// A separate boundary check is applied before treating a match as a filesystem path.
 	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
 
 	// safePaths are kernel pseudo-devices that are always safe to reference in
@@ -373,7 +376,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		matches := absolutePathPattern.FindAllString(cmd, -1)
+		matches := findAbsolutePathMatches(cmd)
 
 		for _, raw := range matches {
 			p, err := filepath.Abs(raw)
@@ -397,6 +400,37 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	return ""
+}
+
+func findAbsolutePathMatches(command string) []string {
+	indexes := absolutePathPattern.FindAllStringIndex(command, -1)
+	if len(indexes) == 0 {
+		return nil
+	}
+
+	matches := make([]string, 0, len(indexes))
+	for _, idx := range indexes {
+		start := idx[0]
+		if !isPathBoundary(command, start) {
+			continue
+		}
+		matches = append(matches, command[start:idx[1]])
+	}
+
+	return matches
+}
+
+func isPathBoundary(command string, start int) bool {
+	if start <= 0 {
+		return true
+	}
+
+	r, _ := utf8.DecodeLastRuneInString(command[:start])
+	if unicode.IsSpace(r) {
+		return true
+	}
+
+	return strings.ContainsRune(`"'=<>|&;()[]{},`, r)
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {

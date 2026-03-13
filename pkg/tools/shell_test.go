@@ -489,6 +489,50 @@ func TestShellTool_SafePathsInWorkspaceRestriction(t *testing.T) {
 	}
 }
 
+func TestShellTool_GuardCommand_IgnoresURLPathSegments(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	commands := []string{
+		`curl -s "wttr.in/Beijing?T"`,
+		`curl -s https://example.com/api/v1/weather`,
+	}
+
+	for _, cmd := range commands {
+		if got := tool.guardCommand(cmd, tmpDir); got != "" {
+			t.Fatalf("guardCommand(%q) = %q, want empty", cmd, got)
+		}
+	}
+}
+
+func TestShellTool_GuardCommand_BlocksAbsolutePathOutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	outsideDir := filepath.Join(root, "outside")
+	outsideFile := filepath.Join(outsideDir, "secret.txt")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatalf("failed to create outside dir: %v", err)
+	}
+	if err := os.WriteFile(outsideFile, []byte("secret"), 0o644); err != nil {
+		t.Fatalf("failed to create outside file: %v", err)
+	}
+
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	if got := tool.guardCommand(`cat "`+outsideFile+`"`, workspace); !strings.Contains(got, "path outside working dir") {
+		t.Fatalf("guardCommand should block outside path, got %q", got)
+	}
+}
+
 // TestShellTool_CustomAllowPatterns verifies that custom allow patterns exempt
 // commands from deny pattern checks.
 func TestShellTool_CustomAllowPatterns(t *testing.T) {
