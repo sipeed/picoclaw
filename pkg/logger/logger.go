@@ -30,9 +30,10 @@ var (
 		FATAL: "FATAL",
 	}
 
-	currentLevel = INFO
-	logger       zerolog.Logger
-	fileLogger   zerolog.Logger
+	currentLevel      = INFO
+	currentTimeFormat = "15:04:05"
+	logger            zerolog.Logger
+	fileLogger        zerolog.Logger
 	logFile      *os.File
 	once         sync.Once
 	mu           sync.RWMutex
@@ -44,12 +45,25 @@ func init() {
 
 		consoleWriter := zerolog.ConsoleWriter{
 			Out:        os.Stdout,
-			TimeFormat: "15:04:05", // TODO: make it configurable???
+			TimeFormat: currentTimeFormat,
 		}
 
 		logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
 		fileLogger = zerolog.Logger{}
 	})
+}
+
+func SetTimeFormat(format string) {
+	mu.Lock()
+	defer mu.Unlock()
+	currentTimeFormat = format
+
+	consoleWriter := zerolog.ConsoleWriter{
+		Out:        os.Stdout,
+		TimeFormat: currentTimeFormat,
+	}
+
+	logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
 }
 
 func SetLevel(level LogLevel) {

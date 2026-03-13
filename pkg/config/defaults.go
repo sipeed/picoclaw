@@ -342,6 +342,9 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 		},
+		Logger: LoggerConfig{
+			TimeFormat: "15:04:05",
+		},
 		Gateway: GatewayConfig{
 			Host: "127.0.0.1",
 			Port: 18790,

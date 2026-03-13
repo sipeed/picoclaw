@@ -137,3 +137,15 @@ func TestLoggerHelperFunctions(t *testing.T) {
 	DebugC("test", "Debug with component")
 	WarnF("Warning with fields", map[string]any{"key": "value"})
 }
+
+func TestSetTimeFormat(t *testing.T) {
+	// This test just ensures that calling SetTimeFormat doesn't panic
+	// and updates the internal state. Since the logger is global and
+	// writes to stdout, we don't easily capture the output here without
+	// more complex mocking.
+	SetTimeFormat("2006-01-02 15:04:05")
+	Info("Testing time format change")
+
+	// Restore default
+	SetTimeFormat("15:04:05")
+}

@@ -50,6 +50,10 @@ func gatewayCmd(debug bool) error {
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
+	if cfg.Logger.TimeFormat != "" {
+		logger.SetTimeFormat(cfg.Logger.TimeFormat)
+	}
+
 	provider, modelID, err := providers.CreateProvider(cfg)
 	if err != nil {
 		return fmt.Errorf("error creating provider: %w", err)

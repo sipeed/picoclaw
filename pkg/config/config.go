@@ -81,6 +81,7 @@ type Config struct {
 	Channels  ChannelsConfig  `json:"channels"`
 	Providers ProvidersConfig `json:"providers,omitempty"`
 	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
+	Logger    LoggerConfig    `json:"logger"`
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
@@ -559,6 +560,10 @@ func (c *ModelConfig) Validate() error {
 		return fmt.Errorf("model is required")
 	}
 	return nil
+}
+
+type LoggerConfig struct {
+	TimeFormat string `json:"time_format" env:"PICOCLAW_LOGGER_TIME_FORMAT"`
 }
 
 type GatewayConfig struct {
