@@ -3,7 +3,10 @@ package qq
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tencent-connect/botgo"

@@ -7,6 +7,7 @@
 package heartbeat
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
