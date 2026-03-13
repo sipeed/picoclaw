@@ -1128,8 +1128,9 @@ func (al *AgentLoop) runLLMIteration(
 			return agent.Provider.Chat(ctx, messages, providerToolDefs, activeModel, llmOpts)
 		}
 
-		// Retry loop for context/token errors
+		// Retry loop for context/token errors and transient single-provider failures.
 		maxRetries := 2
+		singleCandidate := len(activeCandidates) == 1
 		for retry := 0; retry <= maxRetries; retry++ {
 			response, err = callLLM()
 			if err == nil {
@@ -1137,6 +1138,10 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			errMsg := strings.ToLower(err.Error())
+			var classifiedErr *providers.FailoverError
+			if singleCandidate {
+				classifiedErr = providers.ClassifyError(err, activeCandidates[0].Provider, activeModel)
+			}
 
 			// Check if this is a network/HTTP timeout — not a context window error.
 			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
@@ -1144,9 +1149,10 @@ func (al *AgentLoop) runLLMIteration(
 				strings.Contains(errMsg, "client.timeout") ||
 				strings.Contains(errMsg, "timed out") ||
 				strings.Contains(errMsg, "timeout exceeded")
+			isTransientProviderError := classifiedErr != nil && classifiedErr.Reason == providers.FailoverTimeout
 
 			// Detect real context window / token limit errors, excluding network timeouts.
-			isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
+			isContextError := !isTimeoutError && !isTransientProviderError && (strings.Contains(errMsg, "context_length_exceeded") ||
 				strings.Contains(errMsg, "context window") ||
 				strings.Contains(errMsg, "maximum context length") ||
 				strings.Contains(errMsg, "token limit") ||
@@ -1156,9 +1162,9 @@ func (al *AgentLoop) runLLMIteration(
 				strings.Contains(errMsg, "prompt is too long") ||
 				strings.Contains(errMsg, "request too large"))
 
-			if isTimeoutError && retry < maxRetries {
+			if (isTimeoutError || isTransientProviderError) && retry < maxRetries {
 				backoff := time.Duration(retry+1) * 5 * time.Second
-				logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
+				logger.WarnCF("agent", "Transient provider error, retrying after backoff", map[string]any{
 					"error":   err.Error(),
 					"retry":   retry,
 					"backoff": backoff.String(),
