@@ -577,3 +577,143 @@ func TestIsOverContextBudget(t *testing.T) {
 		})
 	}
 }
+
+// --- Tests reflecting actual session data shape ---
+// Session history never contains system messages. The system prompt is
+// built dynamically by BuildMessages. These tests use realistic history
+// shapes: user/assistant/tool only, with tool chains and reasoning content.
+
+func TestFindSafeBoundary_SessionHistoryNoSystem(t *testing.T) {
+	// Real session history starts with a user message, not a system message.
+	history := []providers.Message{
+		msgUser("hello"),               // 0
+		msgAssistant("hi there"),       // 1
+		msgUser("search for X"),        // 2
+		msgAssistantTC("tc1"),          // 3
+		msgTool("tc1", "found X"),      // 4
+		msgAssistant("here is X"),      // 5
+		msgUser("thanks"),              // 6
+		msgAssistant("you're welcome"), // 7
+	}
+
+	// Mid-point is 4 (tool result). Should snap backward to 2 (user).
+	got := findSafeBoundary(history, 4)
+	if got != 2 {
+		t.Errorf("findSafeBoundary(session_history, 4) = %d, want 2", got)
+	}
+}
+
+func TestFindSafeBoundary_SessionWithChainedTools(t *testing.T) {
+	// Session with chained tool calls (save then notify).
+	history := []providers.Message{
+		msgUser("save and notify"),       // 0
+		msgAssistantTC("tc_save"),        // 1
+		msgTool("tc_save", "saved"),      // 2
+		msgAssistantTC("tc_notify"),      // 3
+		msgTool("tc_notify", "notified"), // 4
+		msgAssistant("done"),             // 5
+		msgUser("check status"),          // 6
+		msgAssistant("all good"),         // 7
+	}
+
+	// Target at 3 (inside chain). Should find user at 0, but backward
+	// scan stops at i>0, so forward scan finds user at 6.
+	// Actually: backward from 3: 2=tool (no), 1=assistantTC (no). Forward: 4=tool, 5=asst, 6=user ✓
+	got := findSafeBoundary(history, 3)
+	if got != 6 {
+		t.Errorf("findSafeBoundary(chained_tools, 3) = %d, want 6", got)
+	}
+}
+
+func TestEstimateMessageTokens_WithReasoningAndMedia(t *testing.T) {
+	// Message with all fields populated — mirrors what AddFullMessage stores.
+	msg := providers.Message{
+		Role:             "assistant",
+		Content:          "Here is the analysis.",
+		ReasoningContent: strings.Repeat("Let me think about this carefully. ", 50),
+		ToolCalls: []providers.ToolCall{
+			{
+				ID:   "call_1",
+				Type: "function",
+				Name: "analyze",
+				Function: &providers.FunctionCall{
+					Name:      "analyze",
+					Arguments: `{"data":"sample","depth":3}`,
+				},
+			},
+		},
+	}
+
+	tokens := estimateMessageTokens(msg)
+
+	// ReasoningContent alone is ~1700 chars → ~680 tokens.
+	// Content + TC + overhead adds more. Should be well above 500.
+	if tokens < 500 {
+		t.Errorf("message with reasoning+toolcalls should have significant tokens, got %d", tokens)
+	}
+
+	// Compare without reasoning to ensure it's counted.
+	msgNoReasoning := msg
+	msgNoReasoning.ReasoningContent = ""
+	tokensNoReasoning := estimateMessageTokens(msgNoReasoning)
+
+	if tokens <= tokensNoReasoning {
+		t.Errorf("reasoning content should add tokens: with=%d, without=%d", tokens, tokensNoReasoning)
+	}
+}
+
+func TestIsOverContextBudget_RealisticSession(t *testing.T) {
+	// Simulate what BuildMessages produces: system + session history + current user.
+	// System message is built by BuildMessages, not stored in session.
+	systemMsg := providers.Message{
+		Role:    "system",
+		Content: strings.Repeat("system prompt content ", 100),
+	}
+	sessionHistory := []providers.Message{
+		msgUser("first question"),
+		msgAssistant("first answer"),
+		msgUser("use tool X"),
+		{
+			Role:    "assistant",
+			Content: "I'll use tool X",
+			ToolCalls: []providers.ToolCall{
+				{
+					ID: "tc1", Type: "function", Name: "tool_x",
+					Function: &providers.FunctionCall{
+						Name:      "tool_x",
+						Arguments: `{"query":"test","verbose":true}`,
+					},
+				},
+			},
+		},
+		{Role: "tool", Content: strings.Repeat("result data ", 200), ToolCallID: "tc1"},
+		msgAssistant("Here are the results from tool X."),
+	}
+	currentUser := msgUser("follow up question")
+
+	// Assemble as BuildMessages would.
+	messages := []providers.Message{systemMsg}
+	messages = append(messages, sessionHistory...)
+	messages = append(messages, currentUser)
+
+	tools := []providers.ToolDefinition{
+		{
+			Type: "function",
+			Function: providers.ToolFunctionDefinition{
+				Name:        "tool_x",
+				Description: "A useful tool",
+				Parameters:  map[string]any{"type": "object"},
+			},
+		},
+	}
+
+	// With a large context window, should be within budget.
+	if isOverContextBudget(131072, messages, tools, 32768) {
+		t.Error("realistic session should be within 131072 context window")
+	}
+
+	// With a tiny context window, should exceed budget.
+	if !isOverContextBudget(500, messages, tools, 32768) {
+		t.Error("realistic session should exceed 500 context window")
+	}
+}
