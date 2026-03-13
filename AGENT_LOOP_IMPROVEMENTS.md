@@ -30,20 +30,68 @@ This document outlines a series of tasks to improve the main loop of the agentic
 * [ ] **Background / Long-Running Tasks:** Implement tools that allow the LLM to run slow operations in the background, releasing the main loop and notifying the user asynchronously upon completion.
 * [ ] **Multi-Agent Orchestration:** Create a Supervisor Loop where an agent can delegate tasks to other `AgentInstance`s and synthesize their results.
 
+## Phase 5: Observability & Logging Dashboard
+
+* [ ] **Session Replay:** Capture the full "Chain of Thought" (CoT), including tool-call inputs/outputs, and state transitions to facilitate deep-dive session reviews.
+* [ ] **Error Categorization:** Distinguish between Model Failures (hallucinations/refusals), Infrastructure Failures (API timeouts), and Logic Failures (code execution errors).
+* [ ] **Real-time Visuals:** Implement a lightweight UI/Dashboard using a Go-compatible framework like a custom Bubble Tea TUI to monitor the agent's health.
+
 ---
 
 ### Implementation Note: Subagent Logging Structure
 
-To ensure observability for Phase 3's background tasks, the following directory convention is recommended:
+To ensure observability for Phase 3's background tasks and Phase 5's dashboard, the following directory convention is recommended:
 
 ```text
 /logs
 └── {session_id}/
-    └── summarizer/
-        ├── trace.log          # Real-time workflow steps
-        ├── input_context.json  # Snapshot of data before compression
-        └── result_summary.md  # Final output to be injected into main state
+    ├── summarizer/
+    │   ├── trace.log          # Real-time workflow steps
+    │   ├── input_context.json  # Snapshot of data before compression
+    │   └── result_summary.md  # Final output to be injected into main state
+    └── events/
+        └── {timestamp}_event.json # Structured logs for session replay
+```
 
+#### JSON Schema for Observability Logs
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["cot", "tool_call", "tool_result", "state_transition", "error"]
+    },
+    "details": {
+      "type": "object",
+      "properties": {
+        "cot_text": { "type": "string" },
+        "tool_name": { "type": "string" },
+        "inputs": { "type": "object" },
+        "outputs": { "type": "object" },
+        "from_state": { "type": "string" },
+        "to_state": { "type": "string" }
+      }
+    },
+    "error_category": {
+      "type": "string",
+      "enum": ["model_failure", "infrastructure_failure", "logic_failure", "none"]
+    },
+    "error_message": {
+      "type": "string"
+    }
+  },
+  "required": ["timestamp", "session_id", "event_type"]
+}
 ```
 
 ---
