@@ -86,7 +86,7 @@ func TestMigrateFromJSON_WithToolCalls(t *testing.T) {
 						Type: "function",
 						Function: &providers.FunctionCall{
 							Name:      "web_search",
-							Arguments: `{"q":"test"}`,
+							Arguments: map[string]any{"q": "test"},
 						},
 					},
 				},

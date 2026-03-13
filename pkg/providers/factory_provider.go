@@ -174,6 +174,93 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 }
 
+// CreateProviderByName creates a provider from the legacy ProvidersConfig by
+// provider name (case-insensitive).  It builds a ModelConfig from the named
+// provider and delegates to CreateProviderFromConfig.
+func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) {
+	name = strings.ToLower(name)
+	p := cfg.Providers
+
+	var pc config.ProviderConfig
+	protocol := name
+
+	switch name {
+	case "openai", "gpt":
+		pc = config.ProviderConfig{
+			APIKey:         p.OpenAI.APIKey,
+			APIBase:        p.OpenAI.APIBase,
+			Proxy:          p.OpenAI.Proxy,
+			RequestTimeout: p.OpenAI.RequestTimeout,
+			AuthMethod:     p.OpenAI.AuthMethod,
+		}
+		protocol = "openai"
+	case "anthropic", "claude":
+		pc = p.Anthropic
+		protocol = "anthropic"
+	case "litellm":
+		pc = p.LiteLLM
+	case "openrouter":
+		pc = p.OpenRouter
+	case "groq":
+		pc = p.Groq
+	case "zhipu":
+		pc = p.Zhipu
+	case "vllm":
+		pc = p.VLLM
+	case "gemini":
+		pc = p.Gemini
+	case "nvidia":
+		pc = p.Nvidia
+	case "ollama":
+		pc = p.Ollama
+	case "moonshot":
+		pc = p.Moonshot
+	case "shengsuanyun":
+		pc = p.ShengSuanYun
+	case "deepseek":
+		pc = p.DeepSeek
+	case "cerebras":
+		pc = p.Cerebras
+	case "vivgrid":
+		pc = p.Vivgrid
+	case "volcengine":
+		pc = p.VolcEngine
+	case "github-copilot", "copilot":
+		pc = p.GitHubCopilot
+		protocol = "github-copilot"
+	case "antigravity":
+		pc = p.Antigravity
+	case "qwen":
+		pc = p.Qwen
+	case "mistral":
+		pc = p.Mistral
+	case "avian":
+		pc = p.Avian
+	case "minimax":
+		pc = p.Minimax
+	case "longcat":
+		pc = p.LongCat
+	default:
+		return nil, fmt.Errorf("unknown provider %q", name)
+	}
+
+	mc := &config.ModelConfig{
+		ModelName:      name,
+		Model:          protocol + "/default",
+		APIKey:         pc.APIKey,
+		APIBase:        pc.APIBase,
+		Proxy:          pc.Proxy,
+		RequestTimeout: pc.RequestTimeout,
+		AuthMethod:     pc.AuthMethod,
+	}
+
+	provider, _, err := CreateProviderFromConfig(mc)
+	if err != nil {
+		return nil, err
+	}
+	return provider, nil
+}
+
 // getDefaultAPIBase returns the default API base URL for a given protocol.
 func getDefaultAPIBase(protocol string) string {
 	switch protocol {

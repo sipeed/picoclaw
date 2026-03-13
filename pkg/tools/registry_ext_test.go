@@ -21,7 +21,7 @@ func (m *mockCtxTool) SetContext(channel, chatID string) {
 }
 
 func (m *mockAsyncRegistryTool) SetCallback(cb AsyncCallback) {
-	m.cb = cb
+	m.lastCB = cb
 }
 
 func TestNormalizeToolName(t *testing.T) {

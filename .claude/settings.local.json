@@ -36,7 +36,16 @@
       "Bash(go install:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(bash /tmp/measure_conflicts.sh 2>&1 | grep -E '\\(Conflict|Top 10|^\\\\s+\\\\d\\)')",
-      "Bash(bash /tmp/measure_conflicts.sh 2>&1 | tail -12)"
+      "Bash(bash /tmp/measure_conflicts.sh 2>&1 | tail -12)",
+      "Bash(bash /tmp/measure_conflicts.sh 2>&1 | grep '^\\\\s' | sort -rn)",
+      "Bash(bash /tmp/measure_conflicts.sh 2>&1)",
+      "Bash(bash /tmp/measure_conflicts.sh upstream/main 2>&1)",
+      "Bash(while read:*)",
+      "Bash(do echo:*)",
+      "Bash(done)",
+      "Bash(export PATH=$PATH:/home/exe/go/bin && echo \"=== loop.go ===\" && gocyclo -top 15 pkg/agent/loop.go && echo \"\" && echo \"=== loop_hooks.go ===\" && gocyclo -top 10 pkg/agent/loop_hooks.go)",
+      "Bash(git merge:*)",
+      "Bash(git checkout:*k)"
     ]
   },
   "remote": {

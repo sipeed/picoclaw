@@ -325,8 +325,12 @@ func resolveCodexToolCall(tc ToolCall) (name string, arguments string, ok bool) 
 		return name, string(argsJSON), true
 	}
 
-	if tc.Function != nil && tc.Function.Arguments != "" {
-		return name, tc.Function.Arguments, true
+	if tc.Function != nil && len(tc.Function.Arguments) > 0 {
+		argsJSON, err := json.Marshal(tc.Function.Arguments)
+		if err != nil {
+			return "", "", false
+		}
+		return name, string(argsJSON), true
 	}
 
 	return name, "{}", true
@@ -347,7 +351,7 @@ func translateToolsForCodex(tools []ToolDefinition, enableWebSearch bool) []resp
 		}
 		ft := responses.FunctionToolParam{
 			Name:       t.Function.Name,
-			Parameters: t.Function.Parameters,
+			Parameters: t.Function.ParametersMap(),
 			Strict:     openai.Opt(false),
 		}
 		if t.Function.Description != "" {

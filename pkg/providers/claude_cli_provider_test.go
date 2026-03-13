@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -619,12 +620,7 @@ func TestBuildSystemPrompt_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather for a location",
-				Parameters: map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"location": map[string]any{"type": "string"},
-					},
-				},
+				Parameters: json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}}}`),
 			},
 		},
 	}
@@ -918,8 +914,8 @@ func TestExtractToolCalls_ToolCallArgumentsParsing(t *testing.T) {
 		t.Errorf("Arguments[name] = %v, want test", got[0].Arguments["name"])
 	}
 	// Verify raw arguments string is preserved in FunctionCall
-	if got[0].Function.Arguments == "" {
-		t.Error("Function.Arguments should contain raw JSON string")
+	if len(got[0].Function.Arguments) == 0 {
+		t.Error("Function.Arguments should contain parsed arguments")
 	}
 }
 

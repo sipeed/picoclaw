@@ -297,7 +297,7 @@ func (p *AntigravityProvider) buildRequest(
 			if t.Type != "function" {
 				continue
 			}
-			params := sanitizeSchemaForGemini(t.Function.Parameters)
+			params := sanitizeSchemaForGemini(t.Function.ParametersMap())
 			funcDecls = append(funcDecls, antigravityFuncDecl{
 				Name:        t.Function.Name,
 				Description: t.Function.Description,
@@ -344,11 +344,8 @@ func normalizeStoredToolCall(tc ToolCall) (string, map[string]any, string) {
 		args = map[string]any{}
 	}
 
-	if len(args) == 0 && tc.Function != nil && tc.Function.Arguments != "" {
-		var parsed map[string]any
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &parsed); err == nil && parsed != nil {
-			args = parsed
-		}
+	if len(args) == 0 && tc.Function != nil && len(tc.Function.Arguments) > 0 {
+		args = tc.Function.Arguments
 	}
 
 	return name, args, thoughtSignature
@@ -436,14 +433,13 @@ func (p *AntigravityProvider) parseSSEResponse(body string) (*LLMResponse, error
 					contentParts = append(contentParts, part.Text)
 				}
 				if part.FunctionCall != nil {
-					argumentsJSON, _ := json.Marshal(part.FunctionCall.Args)
-					toolCalls = append(toolCalls, ToolCall{
+						toolCalls = append(toolCalls, ToolCall{
 						ID:        fmt.Sprintf("call_%s_%d", part.FunctionCall.Name, time.Now().UnixNano()),
 						Name:      part.FunctionCall.Name,
 						Arguments: part.FunctionCall.Args,
 						Function: &FunctionCall{
 							Name:      part.FunctionCall.Name,
-							Arguments: string(argumentsJSON),
+							Arguments: cloneToolArgs(part.FunctionCall.Args),
 							ThoughtSignature: extractPartThoughtSignature(
 								part.ThoughtSignature,
 								part.ThoughtSignatureSnake,

@@ -8,7 +8,7 @@ import (
 
 func TestSpawnTool_Execute_EmptyTask(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil, nil, WebSearchToolOptions{})
 	tool := NewSpawnTool(manager)
 
 	ctx := context.Background()
@@ -42,7 +42,7 @@ func TestSpawnTool_Execute_EmptyTask(t *testing.T) {
 
 func TestSpawnTool_Execute_ValidTask(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil, nil, WebSearchToolOptions{})
 	tool := NewSpawnTool(manager)
 
 	ctx := context.Background()

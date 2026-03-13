@@ -72,3 +72,16 @@ func stripToolCallsFromText(text string) string {
 
 	return strings.TrimSpace(text[:start] + text[end:])
 }
+
+// cloneToolArgs returns a shallow copy of the given map so that
+// ToolCall.Arguments and FunctionCall.Arguments do not alias.
+func cloneToolArgs(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}

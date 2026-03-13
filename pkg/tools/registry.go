@@ -2,8 +2,10 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -283,16 +285,34 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 		desc, _ := fn["description"].(string)
 		params, _ := fn["parameters"].(map[string]any)
 
+		var paramsRaw json.RawMessage
+		if params != nil {
+			paramsRaw, _ = json.Marshal(params)
+		}
+
 		definitions = append(definitions, providers.ToolDefinition{
 			Type: "function",
 			Function: providers.ToolFunctionDefinition{
 				Name:        name,
 				Description: desc,
-				Parameters:  params,
+				Parameters:  paramsRaw,
 			},
 		})
 	}
 	return definitions
+}
+
+// NormalizeToolName lowercases the name and strips underscores/hyphens so that
+// "read_file", "ReadFile", and "read-file" all map to "readfile".
+func NormalizeToolName(name string) string {
+	var b strings.Builder
+	b.Grow(len(name))
+	for _, r := range strings.ToLower(name) {
+		if r != '_' && r != '-' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // List returns a list of all registered tool names.

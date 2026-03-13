@@ -97,16 +97,7 @@ type ModelConfig struct {
 type StreamingProvider interface {
 	LLMProvider
 	CanStream() bool
-	ChatStream(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any) (<-chan StreamEvent, error)
-}
-
-// FallbackCandidate represents a model that can be tried if the primary model fails.
-type FallbackCandidate struct {
-	ModelName string
-	Model     string
-	Protocol  string
-	Provider  LLMProvider
-	Options   map[string]any
+	ChatStream(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any) (<-chan protocoltypes.StreamEvent, error)
 }
 
 // UnmarshalArguments is a helper to parse FunctionCall.Arguments from json.RawMessage.

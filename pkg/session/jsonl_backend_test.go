@@ -11,8 +11,8 @@ import (
 
 // Compile-time interface satisfaction checks.
 var (
-	_ session.SessionStore = (*session.SessionManager)(nil)
-	_ session.SessionStore = (*session.JSONLBackend)(nil)
+	_ session.LegacyStore = (*session.SessionManager)(nil)
+	_ session.LegacyStore = (*session.JSONLBackend)(nil)
 )
 
 func newBackend(t *testing.T) *session.JSONLBackend {
@@ -50,7 +50,7 @@ func TestJSONLBackend_AddFullMessage(t *testing.T) {
 		Role:    "assistant",
 		Content: "done",
 		ToolCalls: []providers.ToolCall{
-			{ID: "tc1", Function: &providers.FunctionCall{Name: "read_file", Arguments: `{"path":"x"}`}},
+			{ID: "tc1", Function: &providers.FunctionCall{Name: "read_file", Arguments: map[string]any{"path": "x"}}},
 		},
 	}
 	b.AddFullMessage("s1", msg)

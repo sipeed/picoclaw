@@ -60,19 +60,15 @@ func NormalizeToolCall(tc ToolCall) ToolCall {
 	}
 
 	// Parse Arguments from Function.Arguments if not already set
-	if len(normalized.Arguments) == 0 && normalized.Function != nil && normalized.Function.Arguments != "" {
-		var parsed map[string]any
-		if err := json.Unmarshal([]byte(normalized.Function.Arguments), &parsed); err == nil && parsed != nil {
-			normalized.Arguments = parsed
-		}
+	if len(normalized.Arguments) == 0 && normalized.Function != nil && len(normalized.Function.Arguments) > 0 {
+		normalized.Arguments = cloneToolArgs(normalized.Function.Arguments)
 	}
 
 	// Ensure Function is populated with consistent values
-	argsJSON, _ := json.Marshal(normalized.Arguments)
 	if normalized.Function == nil {
 		normalized.Function = &FunctionCall{
 			Name:      normalized.Name,
-			Arguments: string(argsJSON),
+			Arguments: cloneToolArgs(normalized.Arguments),
 		}
 	} else {
 		if normalized.Function.Name == "" {
@@ -81,8 +77,8 @@ func NormalizeToolCall(tc ToolCall) ToolCall {
 		if normalized.Name == "" {
 			normalized.Name = normalized.Function.Name
 		}
-		if normalized.Function.Arguments == "" {
-			normalized.Function.Arguments = string(argsJSON)
+		if len(normalized.Function.Arguments) == 0 {
+			normalized.Function.Arguments = cloneToolArgs(normalized.Arguments)
 		}
 	}
 
