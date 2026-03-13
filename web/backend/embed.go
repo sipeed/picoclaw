@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"path"
 	"strings"
@@ -14,6 +15,13 @@ var frontendFS embed.FS
 
 // registerEmbedRoutes sets up the HTTP handler to serve the embedded frontend files
 func registerEmbedRoutes(mux *http.ServeMux) {
+	// Register correct MIME type for SVG files
+	// Go's built-in mime.TypeByExtension returns "image/svg" which is incorrect
+	// The correct MIME type per RFC 6838 is "image/svg+xml"
+	if err := mime.AddExtensionType(".svg", "image/svg+xml"); err != nil {
+		log.Printf("Warning: failed to register SVG MIME type: %v", err)
+	}
+
 	// Attempt to get the subdirectory 'dist' where Vite usually builds
 	subFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
