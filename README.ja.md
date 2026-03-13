@@ -926,6 +926,7 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
 | **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [キーを取得](https://www.byteplus.com)                     |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [キーを取得](https://longcat.chat/platform)                      |
+| **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [トークンを取得](https://modelscope.cn/my/tokens)                 |
 | **Antigravity** | `antigravity/` | Google Cloud | カスタム | OAuthのみ |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
@@ -1146,6 +1147,7 @@ Web 検索を有効にするには：
 | **Tavily** | 月 1000 クエリ | AI エージェント検索最適化 |
 | **Groq** | 無料枠あり | 高速推論（Llama, Mixtral） |
 | **Cerebras** | 無料枠あり | 高速推論（Llama, Qwen など） |
+| **ModelScope** | 1 日 2000 リクエスト | 無料推論（Qwen, GLM, DeepSeek など） |
 
 ---
 
