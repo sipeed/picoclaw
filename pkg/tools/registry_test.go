@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -240,12 +241,13 @@ func TestToolRegistry_ToProviderDefs(t *testing.T) {
 		t.Fatalf("expected 1 provider def, got %d", len(defs))
 	}
 
+	paramsRaw, _ := json.Marshal(params)
 	want := providers.ToolDefinition{
 		Type: "function",
 		Function: providers.ToolFunctionDefinition{
 			Name:        "beta",
 			Description: "tool B",
-			Parameters:  params,
+			Parameters:  paramsRaw,
 		},
 	}
 	got := defs[0]

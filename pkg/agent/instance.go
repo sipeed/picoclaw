@@ -65,6 +65,15 @@ type AgentInstance struct {
 	worktreeMu sync.RWMutex
 }
 
+// Close releases resources held by the agent instance.
+// If the provider implements StatefulProvider, its Close method is called.
+func (ai *AgentInstance) Close() error {
+	if sp, ok := ai.Provider.(providers.StatefulProvider); ok {
+		sp.Close()
+	}
+	return nil
+}
+
 // NewAgentInstance creates an agent instance from config.
 func NewAgentInstance(
 	agentCfg *config.AgentConfig,

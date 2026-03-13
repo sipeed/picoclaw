@@ -407,7 +407,7 @@ func TestBuildPlanReminder(t *testing.T) {
 }
 
 func TestPlanCommand_ShowNoPlan(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -466,7 +466,7 @@ func TestSplitChatAndThread(t *testing.T) {
 }
 
 func TestHeartbeatCommandThreadHerePersistsConfig(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -522,7 +522,7 @@ func TestHeartbeatCommandThreadHerePersistsConfig(t *testing.T) {
 }
 
 func TestHeartbeatCommandThreadOff(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -550,7 +550,7 @@ func TestHeartbeatCommandThreadOff(t *testing.T) {
 }
 
 func TestPlanCommand_StartNewPlan(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -588,7 +588,7 @@ func TestPlanCommand_StartNewPlan(t *testing.T) {
 }
 
 func TestPlanCommand_StartBlockedByExisting(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -606,7 +606,7 @@ func TestPlanCommand_StartBlockedByExisting(t *testing.T) {
 }
 
 func TestPlanCommand_Clear(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -626,7 +626,7 @@ func TestPlanCommand_Clear(t *testing.T) {
 }
 
 func TestPlanCommand_ClearNoPlan(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -638,7 +638,7 @@ func TestPlanCommand_ClearNoPlan(t *testing.T) {
 }
 
 func TestPlanCommand_Start(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -664,7 +664,7 @@ func TestPlanCommand_Start(t *testing.T) {
 }
 
 func TestPlanCommand_StartFromReview(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -690,7 +690,7 @@ func TestPlanCommand_StartFromReview(t *testing.T) {
 }
 
 func TestPlanCommand_StartNoPhases(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -714,7 +714,7 @@ func TestPlanCommand_StartNoPhases(t *testing.T) {
 }
 
 func TestPlanCommand_StartAlreadyExecuting(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -740,7 +740,7 @@ func TestPlanCommand_StartAlreadyExecuting(t *testing.T) {
 }
 
 func TestPlanCommand_Done(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -782,7 +782,7 @@ Test context
 }
 
 func TestPlanCommand_DoneInvalidStep(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -796,7 +796,7 @@ func TestPlanCommand_DoneInvalidStep(t *testing.T) {
 }
 
 func TestPlanCommand_Add(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -842,7 +842,7 @@ Test context
 }
 
 func TestPlanCommand_Next(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -892,7 +892,7 @@ Test
 }
 
 func TestPlanCommand_ShowActivePlan(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -1864,8 +1864,8 @@ func TestPlanNudge_ForegroundExecution(t *testing.T) {
 		t.Fatalf("processMessage failed: %v", err)
 	}
 
-	if provider.callCount < 2 {
-		t.Errorf("expected at least 2 provider calls (nudge should trigger continuation), got %d", provider.callCount)
+	if provider.calls < 2 {
+		t.Errorf("expected at least 2 provider calls (nudge should trigger continuation), got %d", provider.calls)
 	}
 }
 
@@ -1928,8 +1928,8 @@ func TestPlanNudge_NoNudgeWhenAllStepsComplete(t *testing.T) {
 		t.Fatalf("processMessage failed: %v", err)
 	}
 
-	if provider.callCount != 1 {
-		t.Errorf("expected exactly 1 provider call (no nudge needed), got %d", provider.callCount)
+	if provider.calls != 1 {
+		t.Errorf("expected exactly 1 provider call (no nudge needed), got %d", provider.calls)
 	}
 }
 
@@ -2019,11 +2019,32 @@ func TestPlanNudge_ProgressMessage(t *testing.T) {
 }
 
 type nudgeCaptureMockProvider struct {
-	callCount int
+	calls int
 
 	onFirstCall func()
 
 	onSecondCall func([]providers.Message)
+}
+
+func (m *nudgeCaptureMockProvider) Chat(
+	_ context.Context,
+	messages []providers.Message,
+	_ []providers.ToolDefinition,
+	_ string,
+	_ map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 && m.onFirstCall != nil {
+		m.onFirstCall()
+	}
+	if m.calls == 2 && m.onSecondCall != nil {
+		m.onSecondCall(messages)
+	}
+	return &providers.LLMResponse{Content: "ok"}, nil
+}
+
+func (m *nudgeCaptureMockProvider) GetDefaultModel() string {
+	return "nudge-mock"
 }
 
 func TestConsumeStream_NormalCompletion(t *testing.T) {
@@ -2308,6 +2329,27 @@ type modelCapturingMockProvider struct {
 	response string
 }
 
+func (m *modelCapturingMockProvider) Chat(
+	_ context.Context,
+	_ []providers.Message,
+	_ []providers.ToolDefinition,
+	model string,
+	_ map[string]any,
+) (*providers.LLMResponse, error) {
+	m.mu.Lock()
+	m.models = append(m.models, model)
+	m.mu.Unlock()
+	resp := m.response
+	if resp == "" {
+		resp = "ok"
+	}
+	return &providers.LLMResponse{Content: resp}, nil
+}
+
+func (m *modelCapturingMockProvider) GetDefaultModel() string {
+	return "model-capturing-mock"
+}
+
 func TestAgentLoop_PlanModel_UsedDuringInterviewing(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-planmodel-*")
 	if err != nil {
@@ -2564,7 +2606,7 @@ func TestAgentLoop_PlanModel_ResolvesProviderForSingleCandidate(t *testing.T) {
 }
 
 func TestPlanCommand_StartClear(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 
@@ -2630,7 +2672,7 @@ func TestPlanCommand_StartClear(t *testing.T) {
 }
 
 func TestPlanCommand_StartWithoutClear_PreservesHistory(t *testing.T) {
-	al, cleanup := newTestAgentLoop(t)
+	al, _, _, _, cleanup := newTestAgentLoop(t)
 
 	defer cleanup()
 

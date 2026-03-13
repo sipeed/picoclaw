@@ -489,6 +489,19 @@ func formatDirEntries(entries []os.DirEntry) *ToolResult {
 	return NewToolResult(result.String())
 }
 
+// buildFs returns the appropriate fileSystem implementation based on the
+// restrict flag and optional allow-path patterns.
+func buildFs(workspace string, restrict bool, patterns []*regexp.Regexp) fileSystem {
+	if !restrict {
+		return &hostFs{}
+	}
+	sb := &sandboxFs{workspace: workspace}
+	if len(patterns) > 0 {
+		return &whitelistFs{sandbox: sb, patterns: patterns}
+	}
+	return sb
+}
+
 // fileSystem abstracts reading, writing, and listing files, allowing both
 // unrestricted (host filesystem) and sandbox (os.Root) implementations to share the same polymorphic interface.
 type fileSystem interface {

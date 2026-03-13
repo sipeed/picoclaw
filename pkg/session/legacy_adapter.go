@@ -598,11 +598,11 @@ func (la *LegacyAdapter) AdvanceStored(key string, delta int) {
 
 // Close stops the background flush loop and persists all dirty sessions.
 
-func (la *LegacyAdapter) Close() {
+func (la *LegacyAdapter) Close() error {
 	select {
 	case <-la.done:
 
-		return // already closed
+		return nil // already closed
 
 	default:
 	}
@@ -611,7 +611,7 @@ func (la *LegacyAdapter) Close() {
 
 	la.FlushDirty()
 
-	la.store.Close()
+	return la.store.Close()
 }
 
 func (la *LegacyAdapter) flushLoop() {

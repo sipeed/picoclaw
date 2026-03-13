@@ -12,6 +12,8 @@ import (
 func NewGatewayCommand() *cobra.Command {
 	var debug bool
 	var noTruncate bool
+	var orchestration bool
+	var enableStats bool
 
 	cmd := &cobra.Command{
 		Use:     "gateway",
@@ -31,12 +33,14 @@ func NewGatewayCommand() *cobra.Command {
 			return nil
 		},
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return gatewayCmd(debug)
+			return gatewayCmd(debug, orchestration, enableStats)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&debug, "debug", "d", false, "Enable debug logging")
 	cmd.Flags().BoolVarP(&noTruncate, "no-truncate", "T", false, "Disable string truncation in debug logs")
+	cmd.Flags().BoolVar(&orchestration, "orchestration", false, "Enable subagent orchestration")
+	cmd.Flags().BoolVar(&enableStats, "stats", false, "Enable stats collection")
 
 	return cmd
 }
