@@ -197,6 +197,7 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 ### Launcher Mode (Web Console)
 
 The `launcher` image includes all three binaries (`picoclaw`, `picoclaw-launcher`, `picoclaw-launcher-tui`) and starts the web console by default, which provides a browser-based UI for configuration and chat.
+It also ships with a Node.js runtime so npm-based MCP servers and scripts can run inside the launcher container without rebuilding the image.
 
 ```bash
 docker compose -f docker/docker-compose.yml --profile launcher up -d
