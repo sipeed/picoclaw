@@ -1046,6 +1046,8 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **Azure OpenAI**    | `azure/`          | `https://{resource}.openai.azure.com`               | Azure     | [Get Key](https://portal.azure.com)                              |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
+| **Claude CLI**      | `claude-cli/`     | Local (`claude` binary in PATH)                     | CLI       | Uses existing `claude` CLI session                               |
+| **Codex CLI**       | `codex-cli/`      | Local (`codex` binary in PATH)                     | CLI       | Uses existing `codex` CLI session                                |
 
 #### Basic Configuration
 
@@ -1161,6 +1163,30 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 {
   "model_name": "llama3",
   "model": "ollama/llama3"
+}
+```
+
+**Claude CLI (subscription-based, no API key required)**
+
+Uses the locally installed `claude` CLI binary, authenticating with your existing Claude subscription (Pro, Teams, or Enterprise). No API key is needed.
+
+```json
+{
+  "model_name": "claude-code",
+  "model": "claude-cli/claude-code"
+}
+```
+
+> The model ID `claude-code` is a special sentinel that tells PicoClaw **not** to pass a `--model` flag, letting the CLI use whichever model it is currently configured with. Using any other model ID (e.g. `claude-cli/claude-sonnet-4-5`) will pass `--model <id>` to the CLI.
+
+**Codex CLI (subscription-based, no API key required)**
+
+Uses the locally installed `codex` CLI binary with your existing OpenAI subscription.
+
+```json
+{
+  "model_name": "codex",
+  "model": "codex-cli/codex"
 }
 ```
 
