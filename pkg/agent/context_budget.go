@@ -63,10 +63,16 @@ func findSafeBoundary(history []providers.Message, targetIndex int) int {
 }
 
 // estimateMessageTokens estimates the token count for a single message,
-// including Content, ToolCalls arguments, and ToolCallID metadata.
-// Uses a heuristic of 2.5 characters per token.
+// including Content, ReasoningContent, ToolCalls arguments, ToolCallID
+// metadata, and Media items. Uses a heuristic of 2.5 characters per token.
 func estimateMessageTokens(msg providers.Message) int {
 	chars := utf8.RuneCountInString(msg.Content)
+
+	// ReasoningContent (extended thinking / chain-of-thought) can be
+	// substantial and is stored in session history via AddFullMessage.
+	if msg.ReasoningContent != "" {
+		chars += utf8.RuneCountInString(msg.ReasoningContent)
+	}
 
 	for _, tc := range msg.ToolCalls {
 		// Count tool call metadata: ID, type, function name
@@ -79,6 +85,12 @@ func estimateMessageTokens(msg providers.Message) int {
 	if msg.ToolCallID != "" {
 		chars += len(msg.ToolCallID)
 	}
+
+	// Media items (images, files) are serialized by provider adapters into
+	// multipart or image_url payloads. Use a fixed per-item estimate since
+	// actual token cost depends on resolution and provider tokenization.
+	const mediaTokensPerItem = 256
+	chars += len(msg.Media) * mediaTokensPerItem
 
 	// Per-message overhead for role label, JSON structure, separators.
 	const messageOverhead = 12

@@ -389,6 +389,40 @@ func TestEstimateMessageTokens_LargeArguments(t *testing.T) {
 	}
 }
 
+func TestEstimateMessageTokens_ReasoningContent(t *testing.T) {
+	plain := msgAssistant("result")
+	withReasoning := providers.Message{
+		Role:             "assistant",
+		Content:          "result",
+		ReasoningContent: strings.Repeat("thinking step ", 200),
+	}
+
+	plainTokens := estimateMessageTokens(plain)
+	reasoningTokens := estimateMessageTokens(withReasoning)
+
+	if reasoningTokens <= plainTokens {
+		t.Errorf("message with ReasoningContent (%d tokens) should exceed plain message (%d tokens)",
+			reasoningTokens, plainTokens)
+	}
+}
+
+func TestEstimateMessageTokens_MediaItems(t *testing.T) {
+	plain := msgUser("describe this")
+	withMedia := providers.Message{
+		Role:    "user",
+		Content: "describe this",
+		Media:   []string{"media://img1.png", "media://img2.png"},
+	}
+
+	plainTokens := estimateMessageTokens(plain)
+	mediaTokens := estimateMessageTokens(withMedia)
+
+	if mediaTokens <= plainTokens {
+		t.Errorf("message with Media (%d tokens) should exceed plain message (%d tokens)",
+			mediaTokens, plainTokens)
+	}
+}
+
 // --- estimateToolDefsTokens tests ---
 
 func TestEstimateToolDefsTokens(t *testing.T) {
