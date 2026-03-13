@@ -59,6 +59,9 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 		}
 	}
 
+	// Keep track of explicit username format
+	isAtUsername := strings.HasPrefix(allowed, "@")
+
 	// Strip leading "@" for username matching
 	trimmed := strings.TrimPrefix(allowed, "@")
 
@@ -75,11 +78,9 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 		return true
 	}
 
-	// Match against Username
-	if sender.Username != "" {
-		if sender.Username == trimmed || sender.Username == allowedUser {
-			return true
-		}
+	// Match against Username only when explicitly requested via "@username"
+	if isAtUsername && sender.Username != "" && sender.Username == trimmed {
+		return true
 	}
 
 	// Match compound sender format against allowed parts
