@@ -32,6 +32,12 @@ services:
     #  - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/root/.picoclaw
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:18790/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
 
   # ─────────────────────────────────────────────
   # PicoClaw Launcher (Web Console + Gateway)
