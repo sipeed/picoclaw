@@ -48,4 +48,4 @@ To ensure observability for Phase 3's background tasks, the following directory 
 
 ---
 
-**Would you like me to focus on the Go implementation for the `BackgroundSummarizer` or the `Granular Error Classification` next?**
+**Proceed with the next availible TODO, When completed mark the TODO task item as completed.**
