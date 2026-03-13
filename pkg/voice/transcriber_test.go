@@ -35,15 +35,6 @@ func TestDetectTranscriber(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			name: "groq provider key",
-			cfg: &config.Config{
-				Providers: config.ProvidersConfig{
-					Groq: config.ProviderConfig{APIKey: "sk-groq-direct"},
-				},
-			},
-			wantName: "groq",
-		},
-		{
 			name: "groq via model list",
 			cfg: &config.Config{
 				ModelList: []config.ModelConfig{
@@ -65,9 +56,6 @@ func TestDetectTranscriber(t *testing.T) {
 		{
 			name: "provider key takes priority over model list",
 			cfg: &config.Config{
-				Providers: config.ProvidersConfig{
-					Groq: config.ProviderConfig{APIKey: "sk-groq-direct"},
-				},
 				ModelList: []config.ModelConfig{
 					{Model: "groq/llama-3.3-70b", APIKey: "sk-groq-model"},
 				},

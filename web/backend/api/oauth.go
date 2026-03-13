@@ -744,17 +744,6 @@ func (h *Handler) syncProviderAuthMethod(provider, authMethod string) error {
 		return err
 	}
 
-	switch provider {
-	case oauthProviderOpenAI:
-		cfg.Providers.OpenAI.AuthMethod = authMethod
-	case oauthProviderAnthropic:
-		cfg.Providers.Anthropic.AuthMethod = authMethod
-	case oauthProviderGoogleAntigravity:
-		cfg.Providers.Antigravity.AuthMethod = authMethod
-	default:
-		return fmt.Errorf("unsupported provider %q", provider)
-	}
-
 	found := false
 	for i := range cfg.ModelList {
 		if modelBelongsToProvider(provider, cfg.ModelList[i].Model) {

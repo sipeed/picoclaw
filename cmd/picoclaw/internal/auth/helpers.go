@@ -56,9 +56,6 @@ func authLoginOpenAI(useDeviceCode bool) error {
 
 	appCfg, err := internal.LoadConfig()
 	if err == nil {
-		// Update Providers (legacy format)
-		appCfg.Providers.OpenAI.AuthMethod = "oauth"
-
 		// Update or add openai in ModelList
 		foundOpenAI := false
 		for i := range appCfg.ModelList {
@@ -130,9 +127,6 @@ func authLoginGoogleAntigravity() error {
 
 	appCfg, err := internal.LoadConfig()
 	if err == nil {
-		// Update Providers (legacy format, for backward compatibility)
-		appCfg.Providers.Antigravity.AuthMethod = "oauth"
-
 		// Update or add antigravity in ModelList
 		foundAntigravity := false
 		for i := range appCfg.ModelList {
@@ -210,8 +204,6 @@ func authLoginAnthropicSetupToken() error {
 
 	appCfg, err := internal.LoadConfig()
 	if err == nil {
-		appCfg.Providers.Anthropic.AuthMethod = "oauth"
-
 		found := false
 		for i := range appCfg.ModelList {
 			if isAnthropicModel(appCfg.ModelList[i].Model) {
@@ -287,7 +279,6 @@ func authLoginPasteToken(provider string) error {
 	if err == nil {
 		switch provider {
 		case "anthropic":
-			appCfg.Providers.Anthropic.AuthMethod = "token"
 			// Update ModelList
 			found := false
 			for i := range appCfg.ModelList {
@@ -306,7 +297,6 @@ func authLoginPasteToken(provider string) error {
 				appCfg.Agents.Defaults.ModelName = defaultAnthropicModel
 			}
 		case "openai":
-			appCfg.Providers.OpenAI.AuthMethod = "token"
 			// Update ModelList
 			found := false
 			for i := range appCfg.ModelList {
@@ -365,15 +355,6 @@ func authLogoutCmd(provider string) error {
 					}
 				}
 			}
-			// Clear AuthMethod in Providers (legacy)
-			switch provider {
-			case "openai":
-				appCfg.Providers.OpenAI.AuthMethod = ""
-			case "anthropic":
-				appCfg.Providers.Anthropic.AuthMethod = ""
-			case "google-antigravity", "antigravity":
-				appCfg.Providers.Antigravity.AuthMethod = ""
-			}
 			config.SaveConfig(internal.GetConfigPath(), appCfg)
 		}
 
@@ -392,10 +373,6 @@ func authLogoutCmd(provider string) error {
 		for i := range appCfg.ModelList {
 			appCfg.ModelList[i].AuthMethod = ""
 		}
-		// Clear all AuthMethods in Providers (legacy)
-		appCfg.Providers.OpenAI.AuthMethod = ""
-		appCfg.Providers.Anthropic.AuthMethod = ""
-		appCfg.Providers.Antigravity.AuthMethod = ""
 		config.SaveConfig(internal.GetConfigPath(), appCfg)
 	}
 

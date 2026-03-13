@@ -11,7 +11,7 @@ import (
 )
 
 func TestConvertProvidersToModelList_OpenAI(t *testing.T) {
-	cfg := &Config{
+	cfg := &configV0{
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{
 				ProviderConfig: ProviderConfig{
@@ -22,7 +22,7 @@ func TestConvertProvidersToModelList_OpenAI(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -40,7 +40,7 @@ func TestConvertProvidersToModelList_OpenAI(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_Anthropic(t *testing.T) {
-	cfg := &Config{
+	cfg := &configV0{
 		Providers: ProvidersConfig{
 			Anthropic: ProviderConfig{
 				APIKey:  "ant-key",
@@ -49,7 +49,7 @@ func TestConvertProvidersToModelList_Anthropic(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -64,7 +64,7 @@ func TestConvertProvidersToModelList_Anthropic(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_LiteLLM(t *testing.T) {
-	cfg := &Config{
+	cfg := &configV0{
 		Providers: ProvidersConfig{
 			LiteLLM: ProviderConfig{
 				APIKey:  "litellm-key",
@@ -73,7 +73,7 @@ func TestConvertProvidersToModelList_LiteLLM(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -91,7 +91,7 @@ func TestConvertProvidersToModelList_LiteLLM(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_Multiple(t *testing.T) {
-	cfg := &Config{
+	cfg := &configV0{
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{ProviderConfig: ProviderConfig{APIKey: "openai-key"}},
 			Groq:   ProviderConfig{APIKey: "groq-key"},
@@ -99,7 +99,7 @@ func TestConvertProvidersToModelList_Multiple(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 3 {
 		t.Fatalf("len(result) = %d, want 3", len(result))
@@ -119,11 +119,11 @@ func TestConvertProvidersToModelList_Multiple(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_Empty(t *testing.T) {
-	cfg := &Config{
+	cfg := &configV0{
 		Providers: ProvidersConfig{},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 0 {
 		t.Errorf("len(result) = %d, want 0", len(result))
@@ -131,7 +131,7 @@ func TestConvertProvidersToModelList_Empty(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_Nil(t *testing.T) {
-	result := ConvertProvidersToModelList(nil)
+	result := v0ConvertProvidersToModelList(nil)
 
 	if result != nil {
 		t.Errorf("result = %v, want nil", result)
@@ -139,7 +139,7 @@ func TestConvertProvidersToModelList_Nil(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
-	cfg := &Config{
+	cfg := &configV0{
 		Providers: ProvidersConfig{
 			OpenAI:        OpenAIProviderConfig{ProviderConfig: ProviderConfig{APIKey: "key1"}},
 			LiteLLM:       ProviderConfig{APIKey: "key-litellm", APIBase: "http://localhost:4000/v1"},
@@ -166,7 +166,7 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	// All 22 providers should be converted
 	if len(result) != 22 {
@@ -175,7 +175,7 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_Proxy(t *testing.T) {
-	cfg := &Config{
+	cfg := &configV0{
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{
 				ProviderConfig: ProviderConfig{
@@ -186,7 +186,7 @@ func TestConvertProvidersToModelList_Proxy(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -198,7 +198,7 @@ func TestConvertProvidersToModelList_Proxy(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_RequestTimeout(t *testing.T) {
-	cfg := &Config{
+	cfg := &configV0{
 		Providers: ProvidersConfig{
 			Ollama: ProviderConfig{
 				APIKey:         "ollama-key",
@@ -207,7 +207,7 @@ func TestConvertProvidersToModelList_RequestTimeout(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -219,7 +219,7 @@ func TestConvertProvidersToModelList_RequestTimeout(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_AuthMethod(t *testing.T) {
-	cfg := &Config{
+	cfg := &configV0{
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{
 				ProviderConfig: ProviderConfig{
@@ -229,7 +229,7 @@ func TestConvertProvidersToModelList_AuthMethod(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 0 {
 		t.Errorf("len(result) = %d, want 0 (AuthMethod alone should not create entry)", len(result))
@@ -239,9 +239,9 @@ func TestConvertProvidersToModelList_AuthMethod(t *testing.T) {
 // Tests for preserving user's configured model during migration
 
 func TestConvertProvidersToModelList_PreservesUserModel_DeepSeek(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "deepseek",
 				Model:    "deepseek-reasoner",
 			},
@@ -251,7 +251,7 @@ func TestConvertProvidersToModelList_PreservesUserModel_DeepSeek(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -264,9 +264,9 @@ func TestConvertProvidersToModelList_PreservesUserModel_DeepSeek(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_PreservesUserModel_OpenAI(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "openai",
 				Model:    "gpt-4-turbo",
 			},
@@ -276,7 +276,7 @@ func TestConvertProvidersToModelList_PreservesUserModel_OpenAI(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -288,9 +288,9 @@ func TestConvertProvidersToModelList_PreservesUserModel_OpenAI(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_PreservesUserModel_Anthropic(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "claude", // alternative name
 				Model:    "claude-opus-4-20250514",
 			},
@@ -300,7 +300,7 @@ func TestConvertProvidersToModelList_PreservesUserModel_Anthropic(t *testing.T) 
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -312,9 +312,9 @@ func TestConvertProvidersToModelList_PreservesUserModel_Anthropic(t *testing.T) 
 }
 
 func TestConvertProvidersToModelList_PreservesUserModel_Qwen(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "qwen",
 				Model:    "qwen-plus",
 			},
@@ -324,7 +324,7 @@ func TestConvertProvidersToModelList_PreservesUserModel_Qwen(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -336,9 +336,9 @@ func TestConvertProvidersToModelList_PreservesUserModel_Qwen(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_UsesDefaultWhenNoUserModel(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "deepseek",
 				Model:    "", // no model specified
 			},
@@ -348,7 +348,7 @@ func TestConvertProvidersToModelList_UsesDefaultWhenNoUserModel(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -361,9 +361,9 @@ func TestConvertProvidersToModelList_UsesDefaultWhenNoUserModel(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_MultipleProviders_PreservesUserModel(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "deepseek",
 				Model:    "deepseek-reasoner",
 			},
@@ -374,7 +374,7 @@ func TestConvertProvidersToModelList_MultipleProviders_PreservesUserModel(t *tes
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 2 {
 		t.Fatalf("len(result) = %d, want 2", len(result))
@@ -410,9 +410,9 @@ func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.providerAlias, func(t *testing.T) {
-			cfg := &Config{
-				Agents: AgentsConfig{
-					Defaults: AgentDefaults{
+			cfg := &configV0{
+				Agents: agentsConfigV0{
+					Defaults: agentDefaultsV0{
 						Provider: tt.providerAlias,
 						Model: strings.TrimPrefix(
 							tt.expectedModel,
@@ -443,7 +443,7 @@ func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
 				tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1],
 			)
 
-			result := ConvertProvidersToModelList(cfg)
+			result := v0ConvertProvidersToModelList(cfg)
 			if len(result) != 1 {
 				t.Fatalf("len(result) = %d, want 1", len(result))
 			}
@@ -465,9 +465,9 @@ func TestConvertProvidersToModelList_NoProviderField_SingleProvider(t *testing.T
 	// - No provider field set
 	// - model = "glm-4.7"
 	// - Only zhipu has API key configured
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "", // Not set
 				Model:    "glm-4.7",
 			},
@@ -477,7 +477,7 @@ func TestConvertProvidersToModelList_NoProviderField_SingleProvider(t *testing.T
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -498,9 +498,9 @@ func TestConvertProvidersToModelList_NoProviderField_MultipleProviders(t *testin
 	// When multiple providers are configured but no provider field is set,
 	// the FIRST provider (in migration order) will use userModel as ModelName
 	// for backward compatibility with legacy implicit provider selection
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "", // Not set
 				Model:    "some-model",
 			},
@@ -511,7 +511,7 @@ func TestConvertProvidersToModelList_NoProviderField_MultipleProviders(t *testin
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 2 {
 		t.Fatalf("len(result) = %d, want 2", len(result))
@@ -531,9 +531,9 @@ func TestConvertProvidersToModelList_NoProviderField_MultipleProviders(t *testin
 
 func TestConvertProvidersToModelList_NoProviderField_NoModel(t *testing.T) {
 	// Edge case: no provider, no model
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "",
 				Model:    "",
 			},
@@ -543,7 +543,7 @@ func TestConvertProvidersToModelList_NoProviderField_NoModel(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -584,9 +584,9 @@ func TestBuildModelWithProtocol_DifferentPrefix(t *testing.T) {
 
 // Test for legacy config with protocol prefix in model name
 func TestConvertProvidersToModelList_LegacyModelWithProtocolPrefix(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "",                // No explicit provider
 				Model:    "openrouter/auto", // Model already has protocol prefix
 			},
@@ -596,7 +596,7 @@ func TestConvertProvidersToModelList_LegacyModelWithProtocolPrefix(t *testing.T)
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) < 1 {
 		t.Fatalf("len(result) = %d, want at least 1", len(result))

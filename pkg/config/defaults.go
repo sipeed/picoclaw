@@ -8,6 +8,8 @@ package config
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/sipeed/picoclaw/pkg"
 )
 
 // DefaultConfig returns the default configuration for PicoClaw.
@@ -15,21 +17,21 @@ func DefaultConfig() *Config {
 	// Determine the base path for the workspace.
 	// Priority: $PICOCLAW_HOME > ~/.picoclaw
 	var homePath string
-	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
+	if picoclawHome := os.Getenv(pkg.PicoClawHome); picoclawHome != "" {
 		homePath = picoclawHome
 	} else {
 		userHome, _ := os.UserHomeDir()
-		homePath = filepath.Join(userHome, ".picoclaw")
+		homePath = filepath.Join(userHome, pkg.DefaultPicoClawHome)
 	}
-	workspacePath := filepath.Join(homePath, "workspace")
+	workspacePath := filepath.Join(homePath, pkg.WorkspaceName)
 
 	return &Config{
+		Version: CurrentVersion,
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:                 workspacePath,
 				RestrictToWorkspace:       true,
 				Provider:                  "",
-				Model:                     "",
 				MaxTokens:                 32768,
 				Temperature:               nil, // nil means use provider default
 				MaxToolIterations:         50,
@@ -175,9 +177,6 @@ func DefaultConfig() *Config {
 				MaxConnections: 100,
 				AllowFrom:      FlexibleStringSlice{},
 			},
-		},
-		Providers: ProvidersConfig{
-			OpenAI: OpenAIProviderConfig{WebSearch: true},
 		},
 		ModelList: []ModelConfig{
 			// ============================================

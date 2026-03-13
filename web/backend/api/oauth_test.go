@@ -166,7 +166,6 @@ func TestOAuthLogoutClearsCredentialAndConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig error: %v", err)
 	}
-	cfg.Providers.OpenAI.AuthMethod = "oauth"
 	cfg.ModelList = append(cfg.ModelList, config.ModelConfig{
 		ModelName:  "gpt-5.4",
 		Model:      "openai/gpt-5.4",
@@ -207,9 +206,6 @@ func TestOAuthLogoutClearsCredentialAndConfig(t *testing.T) {
 	updated, err := config.LoadConfig(configPath)
 	if err != nil {
 		t.Fatalf("LoadConfig error: %v", err)
-	}
-	if updated.Providers.OpenAI.AuthMethod != "" {
-		t.Fatalf("providers.openai.auth_method = %q, want empty", updated.Providers.OpenAI.AuthMethod)
 	}
 	for _, m := range updated.ModelList {
 		if strings.HasPrefix(m.Model, "openai/") && m.AuthMethod != "" {

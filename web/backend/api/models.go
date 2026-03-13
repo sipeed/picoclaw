@@ -224,9 +224,6 @@ func (h *Handler) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
 	if cfg.Agents.Defaults.ModelName == deletedModelName {
 		cfg.Agents.Defaults.ModelName = ""
 	}
-	if cfg.Agents.Defaults.Model == deletedModelName {
-		cfg.Agents.Defaults.Model = ""
-	}
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)

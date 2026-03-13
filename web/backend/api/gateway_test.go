@@ -34,7 +34,7 @@ func TestGatewayStartReady_NoDefaultModel(t *testing.T) {
 func TestGatewayStartReady_InvalidDefaultModel(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Model = "missing-model"
+	cfg.Agents.Defaults.ModelName = "missing-model"
 	err := config.SaveConfig(configPath, cfg)
 	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)

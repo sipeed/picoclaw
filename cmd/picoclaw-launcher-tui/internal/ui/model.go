@@ -15,7 +15,7 @@ import (
 
 func (s *appState) modelMenu() tview.Primitive {
 	items := make([]MenuItem, 0, 1+len(s.config.ModelList))
-	currentModel := strings.TrimSpace(s.config.Agents.Defaults.Model)
+	currentModel := strings.TrimSpace(s.config.Agents.Defaults.ModelName)
 	for i := range s.config.ModelList {
 		index := i
 		model := s.config.ModelList[i]
@@ -77,9 +77,9 @@ func (s *appState) modelMenu() tview.Primitive {
 					)
 					return nil
 				}
-				s.config.Agents.Defaults.Model = model.ModelName
+				s.config.Agents.Defaults.ModelName = model.ModelName
 				s.dirty = true
-				refreshModelMenu(menu, s.config.Agents.Defaults.Model, s.config.ModelList)
+				refreshModelMenu(menu, s.config.Agents.Defaults.GetModelName(), s.config.ModelList)
 				refreshMainMenuIfPresent(s)
 			}
 			return nil
@@ -105,8 +105,8 @@ func (s *appState) modelForm(index int) tview.Primitive {
 		}
 		oldName := model.ModelName
 		model.ModelName = value
-		if s.config.Agents.Defaults.Model == oldName {
-			s.config.Agents.Defaults.Model = value
+		if s.config.Agents.Defaults.ModelName == oldName {
+			s.config.Agents.Defaults.ModelName = value
 		}
 		s.dirty = true
 		form.SetTitle(fmt.Sprintf("Model: %s", model.ModelName))
@@ -258,7 +258,7 @@ func refreshModelMenu(menu *Menu, currentModel string, models []picoclawconfig.M
 
 func refreshModelMenuFromState(menu *Menu, s *appState) {
 	items := make([]MenuItem, 0, 1+len(s.config.ModelList))
-	currentModel := strings.TrimSpace(s.config.Agents.Defaults.Model)
+	currentModel := strings.TrimSpace(s.config.Agents.Defaults.ModelName)
 	for i := range s.config.ModelList {
 		index := i
 		model := s.config.ModelList[i]

@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -207,15 +206,6 @@ func TestDefaultConfig_WorkspacePath(t *testing.T) {
 	}
 }
 
-// TestDefaultConfig_Model verifies model is set
-func TestDefaultConfig_Model(t *testing.T) {
-	cfg := DefaultConfig()
-
-	if cfg.Agents.Defaults.Model != "" {
-		t.Error("Model should be empty")
-	}
-}
-
 // TestDefaultConfig_MaxTokens verifies max tokens has default value
 func TestDefaultConfig_MaxTokens(t *testing.T) {
 	cfg := DefaultConfig()
@@ -252,21 +242,6 @@ func TestDefaultConfig_Gateway(t *testing.T) {
 	}
 	if cfg.Gateway.Port == 0 {
 		t.Error("Gateway port should have default value")
-	}
-}
-
-// TestDefaultConfig_Providers verifies provider structure
-func TestDefaultConfig_Providers(t *testing.T) {
-	cfg := DefaultConfig()
-
-	if cfg.Providers.Anthropic.APIKey != "" {
-		t.Error("Anthropic API key should be empty by default")
-	}
-	if cfg.Providers.OpenAI.APIKey != "" {
-		t.Error("OpenAI API key should be empty by default")
-	}
-	if cfg.Providers.OpenRouter.APIKey != "" {
-		t.Error("OpenRouter API key should be empty by default")
 	}
 }
 
@@ -328,34 +303,12 @@ func TestSaveConfig_FilePermissions(t *testing.T) {
 	}
 }
 
-func TestSaveConfig_IncludesEmptyLegacyModelField(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "config.json")
-
-	cfg := DefaultConfig()
-	if err := SaveConfig(path, cfg); err != nil {
-		t.Fatalf("SaveConfig failed: %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile failed: %v", err)
-	}
-
-	if !strings.Contains(string(data), `"model": ""`) {
-		t.Fatalf("saved config should include empty legacy model field, got: %s", string(data))
-	}
-}
-
 // TestConfig_Complete verifies all config fields are set
 func TestConfig_Complete(t *testing.T) {
 	cfg := DefaultConfig()
 
 	if cfg.Agents.Defaults.Workspace == "" {
 		t.Error("Workspace should not be empty")
-	}
-	if cfg.Agents.Defaults.Model != "" {
-		t.Error("Model should be empty")
 	}
 	if cfg.Agents.Defaults.Temperature != nil {
 		t.Error("Temperature should be nil when not provided")
@@ -375,12 +328,8 @@ func TestConfig_Complete(t *testing.T) {
 	if !cfg.Heartbeat.Enabled {
 		t.Error("Heartbeat should be enabled by default")
 	}
-}
-
-func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
-	cfg := DefaultConfig()
-	if !cfg.Providers.OpenAI.WebSearch {
-		t.Fatal("DefaultConfig().Providers.OpenAI.WebSearch should be true")
+	if !cfg.Tools.Exec.AllowRemote {
+		t.Error("Exec.AllowRemote should be true by default")
 	}
 }
 
@@ -391,26 +340,11 @@ func TestDefaultConfig_ExecAllowRemoteEnabled(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"api_base":""}}}`), 0o600); err != nil {
-		t.Fatalf("WriteFile() error: %v", err)
-	}
-
-	cfg, err := LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error: %v", err)
-	}
-	if !cfg.Providers.OpenAI.WebSearch {
-		t.Fatal("OpenAI codex web search should remain true when unset in config file")
-	}
-}
-
 func TestLoadConfig_ExecAllowRemoteDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"tools":{"exec":{"enable_deny_patterns":true}}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"version":1,"tools":{"exec":{"enable_deny_patterns":true}}}`),
+		0o600); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -420,22 +354,6 @@ func TestLoadConfig_ExecAllowRemoteDefaultsTrueWhenUnset(t *testing.T) {
 	}
 	if !cfg.Tools.Exec.AllowRemote {
 		t.Fatal("tools.exec.allow_remote should remain true when unset in config file")
-	}
-}
-
-func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"web_search":false}}}`), 0o600); err != nil {
-		t.Fatalf("WriteFile() error: %v", err)
-	}
-
-	cfg, err := LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error: %v", err)
-	}
-	if cfg.Providers.OpenAI.WebSearch {
-		t.Fatal("OpenAI codex web search should be false when disabled in config file")
 	}
 }
 

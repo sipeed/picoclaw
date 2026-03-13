@@ -6,9 +6,14 @@
 package config
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 )
+
+type migratable interface {
+	Migrate() (*Config, error)
+}
 
 // buildModelWithProtocol constructs a model string with protocol prefix.
 // If the model already contains a "/" (indicating it has a protocol prefix), it is returned as-is.
@@ -21,22 +26,22 @@ func buildModelWithProtocol(protocol, model string) string {
 	return protocol + "/" + model
 }
 
-// providerMigrationConfig defines how to migrate a provider from old config to new format.
-type providerMigrationConfig struct {
-	// providerNames are the possible names used in agents.defaults.provider
-	providerNames []string
-	// protocol is the protocol prefix for the model field
-	protocol string
-	// buildConfig creates the ModelConfig from ProviderConfig
-	buildConfig func(p ProvidersConfig) (ModelConfig, bool)
-}
-
-// ConvertProvidersToModelList converts the old ProvidersConfig to a slice of ModelConfig.
+// v0ConvertProvidersToModelList converts the old ProvidersConfig to a slice of ModelConfig.
 // This enables backward compatibility with existing configurations.
 // It preserves the user's configured model from agents.defaults.model when possible.
-func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
+func v0ConvertProvidersToModelList(cfg *configV0) []ModelConfig {
 	if cfg == nil {
 		return nil
+	}
+
+	// providerMigrationConfig defines how to migrate a provider from old config to new format.
+	type providerMigrationConfig struct {
+		// providerNames are the possible names used in agents.defaults.provider
+		providerNames []string
+		// protocol is the protocol prefix for the model field
+		protocol string
+		// buildConfig creates the ModelConfig from ProviderConfig
+		buildConfig func(p ProvidersConfig) (ModelConfig, bool)
 	}
 
 	// Get user's configured provider and model
@@ -450,4 +455,45 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 	}
 
 	return result
+}
+
+// loadConfigV0 loads a legacy config (no version field)
+func loadConfigV0(data []byte) (migratable, error) {
+	var v0 configV0
+	if err := json.Unmarshal(data, &v0); err != nil {
+		return nil, err
+	}
+
+	v0.migrateChannelConfigs()
+
+	// Auto-migrate: if only legacy providers config exists, convert to model_list
+	if len(v0.ModelList) == 0 && !v0.Providers.IsEmpty() {
+		v0.ModelList = v0ConvertProvidersToModelList(&v0)
+	}
+
+	return &v0, nil
+}
+
+// loadConfigV1 loads a version 1 config (current schema)
+func loadConfig(data []byte) (*Config, error) {
+	cfg := DefaultConfig()
+
+	// Pre-scan the JSON to check how many model_list entries the user provided.
+	// Go's JSON decoder reuses existing slice backing-array elements rather than
+	// zero-initializing them, so fields absent from the user's JSON (e.g. api_base)
+	// would silently inherit values from the DefaultConfig template at the same
+	// index position. We only reset cfg.ModelList when the user actually provides
+	// entries; when count is 0 we keep DefaultConfig's built-in list as fallback.
+	var tmp Config
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return nil, err
+	}
+	if len(tmp.ModelList) > 0 {
+		cfg.ModelList = nil
+	}
+
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
