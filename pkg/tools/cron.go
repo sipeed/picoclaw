@@ -146,7 +146,7 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 	everySeconds, hasEvery := args["every_seconds"].(float64)
 	cronExpr, hasCron := args["cron_expr"].(string)
 
-	// Fix: type assertions return true for zero values, need additional validity checks
+	// Rationale: type assertions return true for zero values, need additional validity checks
 	// This prevents LLMs that fill unused optional parameters with defaults (0) from triggering wrong type
 	hasAt = hasAt && atSeconds > 0
 	hasEvery = hasEvery && everySeconds > 0
