@@ -1173,3 +1173,38 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
 	}
 }
+
+
+func TestProcessMessage_NewCommandResetsSession(t *testing.T) {
+	al, _, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("no default agent")
+	}
+
+	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
+	agent.Sessions.AddMessage(sessionKey, "user", "old message")
+	agent.Sessions.SetSummary(sessionKey, "old summary")
+
+	resp, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel: "webchat",
+		ChatID:  "chat1",
+		Content: "/new",
+	})
+	if err != nil {
+		t.Fatalf("processMessage error: %v", err)
+	}
+	if !strings.Contains(resp, "Started a new conversation") {
+		t.Fatalf("unexpected response: %q", resp)
+	}
+
+	history := agent.Sessions.GetHistory(sessionKey)
+	if len(history) != 0 {
+		t.Fatalf("expected session history to be cleared, got %d messages", len(history))
+	}
+	if summary := agent.Sessions.GetSummary(sessionKey); summary != "" {
+		t.Fatalf("expected summary to be cleared, got %q", summary)
+	}
+}

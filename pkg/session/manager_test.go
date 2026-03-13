@@ -83,3 +83,35 @@ func TestSave_RejectsPathTraversal(t *testing.T) {
 		t.Errorf("expected foo_bar.json in storage (sanitized from foo/bar)")
 	}
 }
+
+func TestResetSession_ClearsHistoryAndSummary(t *testing.T) {
+	tmpDir := t.TempDir()
+	sm := NewSessionManager(tmpDir)
+	key := "telegram:123456"
+
+	sm.AddMessage(key, "user", "hello")
+	sm.SetSummary(key, "old summary")
+
+	sm.ResetSession(key)
+
+	history := sm.GetHistory(key)
+	if len(history) != 0 {
+		t.Fatalf("expected empty history after reset, got %d", len(history))
+	}
+	if got := sm.GetSummary(key); got != "" {
+		t.Fatalf("expected empty summary after reset, got %q", got)
+	}
+}
+
+func TestResetSession_CreatesSessionIfMissing(t *testing.T) {
+	tmpDir := t.TempDir()
+	sm := NewSessionManager(tmpDir)
+	key := "discord:abc"
+
+	sm.ResetSession(key)
+
+	history := sm.GetHistory(key)
+	if len(history) != 0 {
+		t.Fatalf("expected empty history for new reset session, got %d", len(history))
+	}
+}

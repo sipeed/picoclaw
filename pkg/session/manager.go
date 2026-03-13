@@ -288,3 +288,26 @@ func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 		session.Updated = time.Now()
 	}
 }
+
+// ResetSession clears the conversation history and summary for a session key
+// while preserving the same session identity.
+func (sm *SessionManager) ResetSession(key string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, ok := sm.sessions[key]
+	if !ok {
+		session = &Session{
+			Key:      key,
+			Messages: []providers.Message{},
+			Created:  time.Now(),
+			Updated:  time.Now(),
+		}
+		sm.sessions[key] = session
+		return
+	}
+
+	session.Messages = []providers.Message{}
+	session.Summary = ""
+	session.Updated = time.Now()
+}
