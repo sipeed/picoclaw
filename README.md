@@ -1038,6 +1038,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Get Key](https://console.volcengine.com)                        |
 | **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Get Key](https://longcat.chat/platform)                         |
+| **Azure OpenAI**    | `openai/`         | `https://{resource}.openai.azure.com/openai/deployments/{deployment}` | OpenAI | [Get Key](https://portal.azure.com)                        |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
 
