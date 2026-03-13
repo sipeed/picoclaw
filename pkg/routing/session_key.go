@@ -190,8 +190,3 @@ func resolveLinkedPeerID(identityLinks map[string][]string, channel, peerID stri
 	}
 	return ""
 }
-
-// BuildSubagentSessionKey returns "subagent:<taskID>" for subagent sessions.
-func BuildSubagentSessionKey(taskID string) string {
-	return fmt.Sprintf("subagent:%s", taskID)
-}
