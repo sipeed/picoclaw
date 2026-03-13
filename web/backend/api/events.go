@@ -7,8 +7,11 @@ import (
 
 // GatewayEvent represents a state change event for the gateway process.
 type GatewayEvent struct {
-	Status string `json:"gateway_status"` // "running", "starting", "stopped", "error"
-	PID    int    `json:"pid,omitempty"`
+	Status             string `json:"gateway_status"` // "running", "starting", "restarting", "stopped", "error"
+	PID                int    `json:"pid,omitempty"`
+	BootDefaultModel   string `json:"boot_default_model,omitempty"`
+	ConfigDefaultModel string `json:"config_default_model,omitempty"`
+	RestartRequired    bool   `json:"gateway_restart_required,omitempty"`
 }
 
 // EventBroadcaster manages SSE client subscriptions and broadcasts events.
