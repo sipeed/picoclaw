@@ -1830,273 +1830,112 @@ func (al *AgentLoop) runLLMIteration(
 	agent *AgentInstance,
 	messages []providers.Message,
 	opts processOptions,
-
 	task *activeTask,
-
 	planSnapshot string,
 ) (string, int, error) {
+	hooks := al.buildHooks(agent, opts, task, planSnapshot)
+
 	iteration := 0
 	var finalContent string
 
-	lastReminderIdx := -1
-
-	planMarkNudged := false // true after we've already nudged once for [x] marking
-
-	maxIter := agent.MaxIterations
-
-	// Snapshot unchecked step count before tool loop so we can detect progress.
-
-	preUnchecked := -1 // -1 = not tracking
-
-	if planSnapshot == "executing" {
-		preUnchecked = strings.Count(agent.ContextBuilder.ReadMemory(), "- [ ]")
-	}
-
-	// Determine if this is a background task (cron, heartbeat, etc.)
-
-	isBackground := opts.TaskID != ""
-
-	for iteration < maxIter {
+	for iteration < agent.MaxIterations {
 		iteration++
 
-		// Update active task iteration
-
-		if task != nil {
-			task.mu.Lock()
-
-			task.Iteration = iteration
-
-			task.mu.Unlock()
-		}
-
-		// Check for user intervention via interrupt channel
-
-		if task != nil {
-			select {
-			case msg := <-task.interrupt:
-
-				messages = append(messages, providers.Message{
-					Role: "user",
-
-					Content: "[User Intervention] " + msg,
-				})
-
-				logger.InfoCF("agent", "User intervention injected",
-
-					map[string]any{"agent_id": agent.ID, "iteration": iteration})
-
-			default:
+		// Hook: iteration start (task tracking, user intervention)
+		if hooks.OnIterationStart != nil {
+			if msg := hooks.OnIterationStart(iteration); msg != "" {
+				messages = append(messages, providers.Message{Role: "user", Content: msg})
 			}
 		}
 
 		logger.DebugCF("agent", "LLM iteration",
 			map[string]any{
-				"agent_id": agent.ID,
-
+				"agent_id":  agent.ID,
 				"iteration": iteration,
-
-				"max": maxIter,
+				"max":       agent.MaxIterations,
 			})
 
 		// Build tool definitions
 		providerToolDefs := agent.Tools.ToProviderDefs()
 
-		// Interview mode: strip tool definitions the LLM must not use,
+		// Hook: tool filtering (interview mode)
+		if hooks.FilterTools != nil {
+			providerToolDefs = hooks.FilterTools(providerToolDefs)
+		}
 
-		// reducing token cost and preventing wasted reject-retry cycles.
-
-		if isPlanPreExecution(planSnapshot) {
-			providerToolDefs = filterInterviewTools(providerToolDefs)
+		// Resolve model and candidates for this call
+		candidates := agent.Candidates
+		activeModel := agent.Model
+		if hooks.SelectModel != nil {
+			if m, c := hooks.SelectModel(); m != "" {
+				activeModel = m
+				candidates = c
+			}
 		}
 
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",
 			map[string]any{
-				"agent_id": agent.ID,
-
-				"iteration": iteration,
-
-				"model": agent.Model,
-
-				"messages_count": len(messages),
-
-				"tools_count": len(providerToolDefs),
-
-				"max_tokens": agent.MaxTokens,
-
-				"temperature": agent.Temperature,
-
+				"agent_id":          agent.ID,
+				"iteration":         iteration,
+				"model":             activeModel,
+				"messages_count":    len(messages),
+				"tools_count":       len(providerToolDefs),
+				"max_tokens":        agent.MaxTokens,
+				"temperature":       agent.Temperature,
 				"system_prompt_len": len(messages[0].Content),
 			})
 
 		// Log full messages (detailed)
 		logger.DebugCF("agent", "Full LLM request",
 			map[string]any{
-				"iteration": iteration,
-
+				"iteration":     iteration,
 				"messages_json": formatMessagesForLog(messages),
-
-				"tools_json": formatToolsForLog(providerToolDefs),
+				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		// Call LLM with fallback chain if candidates are configured.
+		// Hook: streaming setup
+		var onChunk func(string, string)
+		var streamCleanup func()
+		if hooks.SetupStreaming != nil {
+			onChunk, streamCleanup = hooks.SetupStreaming()
+		}
 
+		// Build LLM call functions
 		var response *providers.LLMResponse
 		var err error
 
-		// Build onChunk callback for streaming preview.
-
-		// Instead of a fixed-interval throttle, use a Go channel with
-
-		// latest-value semantics: a consumer goroutine publishes status
-
-		// updates as fast as the bus → manager → channel pipeline allows.
-
-		// Backpressure is provided naturally by the per-channel rate limiter
-
-		// (e.g. 20 msg/s for Telegram's SendDraft, 1 msg/s for Discord's EditMessage).
-
-		type streamUpdate struct{ accumulated, reasoning string }
-
-		var onChunk func(string, string)
-
-		var streamCh chan streamUpdate
-
-		var streamDone chan struct{}
-
-		if !constants.IsInternalChannel(opts.Channel) {
-			streamCh = make(chan streamUpdate, 1)
-
-			streamDone = make(chan struct{})
-
-			go func() {
-				defer close(streamDone)
-
-				for up := range streamCh {
-					display := buildStreamingDisplay(up.accumulated, up.reasoning)
-
-					outMsg := bus.OutboundMessage{
-						Channel: opts.Channel,
-
-						ChatID: opts.ChatID,
-
-						Content: display,
-					}
-
-					// For background tasks, publish streaming preview as
-
-					// IsTaskStatus so it shares the same bubble as task
-
-					// progress/completion (avoids a second bubble).
-
-					if opts.Background && opts.TaskID != "" {
-						outMsg.IsTaskStatus = true
-
-						outMsg.TaskID = opts.TaskID
-					} else {
-						outMsg.IsStatus = true
-					}
-
-					_ = al.bus.PublishOutbound(ctx, outMsg)
-				}
-			}()
-
-			onChunk = func(accumulated, reasoning string) {
-				if task != nil {
-					task.streamedChunks = true
-				}
-
-				up := streamUpdate{accumulated, reasoning}
-
-				// Non-blocking latest-value send: if the consumer hasn't
-
-				// drained the previous update, replace it with the latest.
-
-				select {
-				case streamCh <- up:
-
-				default:
-
-					// Channel full — drain stale value, then send latest.
-
-					select {
-					case <-streamCh:
-
-					default:
-					}
-
-					select {
-					case streamCh <- up:
-
-					default:
-					}
-				}
-			}
-		}
-
-		// doCall invokes a single LLM provider, using streaming with
-
-		// early repetition detection when the provider supports it.
-
-		opts_ := map[string]any{
-			"max_tokens": agent.MaxTokens,
-
-			"temperature": agent.Temperature,
-
+		llmOpts := map[string]any{
+			"max_tokens":       agent.MaxTokens,
+			"temperature":      agent.Temperature,
 			"prompt_cache_key": agent.ID,
 		}
 
 		doCall := func(ctx context.Context, p providers.LLMProvider, model string) (*providers.LLMResponse, error) {
 			if sp, ok := p.(providers.StreamingProvider); ok && sp.CanStream() {
 				streamCtx, streamCancel := context.WithCancel(ctx)
-
 				defer streamCancel()
-
-				ch, sErr := sp.ChatStream(streamCtx, messages, providerToolDefs, model, opts_)
-
+				ch, sErr := sp.ChatStream(streamCtx, messages, providerToolDefs, model, llmOpts)
 				if sErr != nil {
 					return nil, sErr
 				}
-
 				resp, repetition, sErr := consumeStreamWithRepetitionDetection(ch, streamCancel, 1000, onChunk)
-
 				if sErr != nil {
 					return nil, sErr
 				}
-
 				if repetition {
 					resp.FinishReason = "repetition_detected"
 				}
-
 				return resp, nil
 			}
-
-			return p.Chat(ctx, messages, providerToolDefs, model, opts_)
+			return p.Chat(ctx, messages, providerToolDefs, model, llmOpts)
 		}
 
 		callLLM := func() (*providers.LLMResponse, error) {
-			// Plan model switching: use plan model during interviewing/review phases
-
-			candidates := agent.Candidates
-
-			primaryModel := agent.Model
-
-			if isPlanPreExecution(planSnapshot) && agent.PlanModel != "" {
-				candidates = agent.PlanCandidates
-
-				primaryModel = agent.PlanModel
-
-				logger.InfoCF("agent", "Using plan model",
-
-					map[string]any{"agent_id": agent.ID, "plan_model": agent.PlanModel})
-			}
-
 			if len(candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(ctx, candidates,
-
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						p := al.resolveProvider(provider, model, agent.Provider)
-
 						return doCall(ctx, p, model)
 					},
 				)
@@ -2105,9 +1944,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				if fbResult.Provider != "" && len(fbResult.Attempts) > 0 {
 					logger.InfoCF("agent", fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
-
 						fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
-
 						map[string]any{"agent_id": agent.ID, "iteration": iteration})
 				}
 				return fbResult.Response, nil
@@ -2115,18 +1952,17 @@ func (al *AgentLoop) runLLMIteration(
 
 			if len(candidates) > 0 {
 				c := candidates[0]
-
 				p := al.resolveProvider(c.Provider, c.Model, agent.Provider)
-
 				return doCall(ctx, p, c.Model)
 			}
 
-			return doCall(ctx, agent.Provider, primaryModel)
+			return doCall(ctx, agent.Provider, activeModel)
 		}
 
-		// Report waiting state to canvas before each LLM call.
-
-		al.reporter().ReportStateChange(opts.SessionKey, orch.AgentStateWaiting, "")
+		// Hook: pre-LLM state reporting
+		if hooks.OnPreLLMCall != nil {
+			hooks.OnPreLLMCall()
+		}
 
 		// Retry loop for context/token errors
 		maxRetries := 2
@@ -2159,10 +1995,8 @@ func (al *AgentLoop) runLLMIteration(
 			if isTimeoutError && retry < maxRetries {
 				backoff := time.Duration(retry+1) * 5 * time.Second
 				logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
-					"error": err.Error(),
-
-					"retry": retry,
-
+					"error":   err.Error(),
+					"retry":   retry,
 					"backoff": backoff.String(),
 				})
 				time.Sleep(backoff)
@@ -2172,16 +2006,13 @@ func (al *AgentLoop) runLLMIteration(
 			if isContextError && retry < maxRetries {
 				logger.WarnCF("agent", "Context window error detected, attempting compression", map[string]any{
 					"error": err.Error(),
-
 					"retry": retry,
 				})
 
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
 					_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 						Channel: opts.Channel,
-
-						ChatID: opts.ChatID,
-
+						ChatID:  opts.ChatID,
 						Content: "Context window exceeded. Compressing history and retrying...",
 					})
 				}
@@ -2198,208 +2029,108 @@ func (al *AgentLoop) runLLMIteration(
 			break
 		}
 
-		// Streaming finished — close the stream goroutine so it flushes
-
-		// the last update and exits cleanly before we process the response.
-
-		if streamDone != nil {
-			// onChunk is captured by doCall closures; nil it to avoid
-
-			// writes after the channel is closed during retries.
-
-			onChunk = nil
-
-			close(streamCh)
-
-			<-streamDone
-
-			streamDone = nil
+		// Streaming cleanup
+		if streamCleanup != nil {
+			onChunk = nil // prevent writes after close
+			streamCleanup()
+			streamCleanup = nil
 		}
 
 		if err != nil {
 			logger.ErrorCF("agent", "LLM call failed",
 				map[string]any{
-					"agent_id": agent.ID,
-
+					"agent_id":  agent.ID,
 					"iteration": iteration,
-
-					"error": err.Error(),
+					"error":     err.Error(),
 				})
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
 		// Record token usage
-
 		if response.Usage != nil && al.stats != nil {
 			al.stats.RecordUsage(
-
 				response.Usage.PromptTokens,
-
 				response.Usage.CompletionTokens,
-
 				response.Usage.TotalTokens,
 			)
 		}
 
 		// Handle reasoning output (best-effort, non-blocking)
-
 		go al.handleReasoning(ctx, response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
 
 		logger.DebugCF("agent", "LLM response",
 			map[string]any{
-				"agent_id": agent.ID,
-
-				"iteration": iteration,
-
-				"content_chars": len(response.Content),
-
-				"tool_calls": len(response.ToolCalls),
-
-				"reasoning": response.Reasoning,
-
+				"agent_id":       agent.ID,
+				"iteration":      iteration,
+				"content_chars":  len(response.Content),
+				"tool_calls":     len(response.ToolCalls),
+				"reasoning":      response.Reasoning,
 				"target_channel": al.targetReasoningChannelID(opts.Channel),
-
-				"channel": opts.Channel,
+				"channel":        opts.Channel,
 			})
 
-		// Detect repetition loop on raw text (before stripping think
-
-		// blocks so loops inside <think> are caught).  Skip when the
-
-		// provider already returned native tool calls.
-
-		// Streaming providers may have already flagged repetition via
-
-		// FinishReason="repetition_detected" — honor that too.
-
+		// Detect repetition loop
 		if response.FinishReason == "repetition_detected" ||
-
 			(len(response.ToolCalls) == 0 && utils.DetectRepetitionLoop(response.Content)) {
 			logger.WarnCF("agent", "Repetition loop detected in LLM response, retrying",
-
 				map[string]any{
-					"agent_id": agent.ID,
-
-					"iteration": iteration,
-
-					"finish_reason": response.FinishReason,
-
+					"agent_id":       agent.ID,
+					"iteration":      iteration,
+					"finish_reason":  response.FinishReason,
 					"content_length": len(response.Content),
 				})
 
-			// Retry once: inject nudge message and re-call
-
 			savedMsgs := messages
-
 			messages = append(append([]providers.Message(nil), messages...),
-
 				providers.Message{
-					Role: "user",
-
+					Role:    "user",
 					Content: "[System] Your previous response contained degenerate repetition and was discarded. Please respond normally without repeating yourself.",
 				})
 
 			response, err = callLLM()
-
-			messages = savedMsgs // restore original messages
+			messages = savedMsgs
 
 			if err != nil {
 				return "", iteration, fmt.Errorf("LLM retry after repetition failed: %w", err)
 			}
 
-			// Re-check on raw text; if still repeating give up
-
 			if utils.DetectRepetitionLoop(response.Content) {
 				logger.ErrorCF("agent", "Repetition persists after retry, returning empty",
-
 					map[string]any{"agent_id": agent.ID})
-
 				response.Content = ""
 			}
 		}
 
-		// Strip think blocks before extracting XML tool calls so
-
-		// extraction operates on clean content.
-
+		// Strip think blocks and extract XML tool calls
 		response.Content = utils.StripThinkBlocks(response.Content)
-
-		// Recover XML tool calls emitted as plain text by some providers.
-
 		if len(response.ToolCalls) == 0 {
 			if xmlCalls := providers.ExtractXMLToolCalls(response.Content); len(xmlCalls) > 0 {
 				response.ToolCalls = xmlCalls
 			}
 		}
-
 		response.Content = providers.StripXMLToolCalls(response.Content)
 
-		// Check if no tool calls - we're done
-
+		// Check if no tool calls
 		if len(response.ToolCalls) == 0 {
-			// Plan continuation: if unchecked steps remain, nudge the LLM to
-
-			// either mark completed steps or continue working on them.
-
-			// This fires for both foreground and background plan execution,
-
-			// ensuring the loop doesn't exit prematurely after marking a step.
-
-			curUnchecked := 0
-
-			if preUnchecked > 0 {
-				curUnchecked = strings.Count(agent.ContextBuilder.ReadMemory(), "- [ ]")
-			}
-
-			if curUnchecked > 0 && !planMarkNudged &&
-
-				planSnapshot == "executing" {
-				planMarkNudged = true
-
-				messages = append(messages, providers.Message{
-					Role: "assistant",
-
-					Content: response.Content,
-				})
-
-				var nudgeMsg string
-
-				if curUnchecked == preUnchecked {
-					nudgeMsg = fmt.Sprintf("[System] %d unchecked steps remain in MEMORY.md and "+
-
-						"none were marked [x] during this session. "+
-
-						"If you completed any steps, use edit_file to mark them [x] now. "+
-
-						"If steps are still in progress, continue working on them.", curUnchecked)
-				} else {
-					nudgeMsg = fmt.Sprintf("[System] Progress recorded. %d unchecked steps remain. "+
-
-						"Continue working on the next step.", curUnchecked)
+			// Hook: plan continuation nudge
+			if hooks.OnNoToolCalls != nil {
+				if nudge, cont := hooks.OnNoToolCalls(response.Content, iteration); cont {
+					messages = append(messages,
+						providers.Message{Role: "assistant", Content: response.Content},
+						providers.Message{Role: "user", Content: nudge},
+					)
+					continue
 				}
-
-				messages = append(messages, providers.Message{
-					Role: "user",
-
-					Content: nudgeMsg,
-				})
-
-				logger.InfoCF("agent", "Nudging plan execution: continue plan steps",
-
-					map[string]any{"agent_id": agent.ID, "iteration": iteration, "unchecked": curUnchecked})
-
-				continue
 			}
 
 			finalContent = response.Content
-
+			if finalContent == "" && response.ReasoningContent != "" {
+				finalContent = response.ReasoningContent
+			}
 			logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
-
 				map[string]any{
-					"agent_id": agent.ID,
-
-					"iteration": iteration,
-
+					"agent_id":      agent.ID,
+					"iteration":     iteration,
 					"content_chars": len(finalContent),
 				})
 			break
@@ -2410,49 +2141,13 @@ func (al *AgentLoop) runLLMIteration(
 			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
 		}
 
-		// --- Interview mode: reject disallowed tool calls before they
-
-		// enter messages or session history.  Rejected calls are stripped
-
-		// from normalizedToolCalls so they never reach the assistant
-
-		// message, the tool-result list, or the session store.
-
-		// A single compact rejection message is injected instead.
-
-		var interviewRejected []string
-
-		if isPlanPreExecution(planSnapshot) {
-			allowed := normalizedToolCalls[:0] // reuse backing array
-
-			for _, tc := range normalizedToolCalls {
-				if isToolAllowedDuringInterview(tc.Name, tc.Arguments) {
-					allowed = append(allowed, tc)
-				} else {
-					interviewRejected = append(interviewRejected, tc.Name)
-				}
+		// Hook: interview rejection
+		if hooks.FilterToolCalls != nil {
+			filtered, rejMsg := hooks.FilterToolCalls(normalizedToolCalls)
+			if len(filtered) < len(normalizedToolCalls) && rejMsg != "" {
+				messages = append(messages, providers.Message{Role: "user", Content: rejMsg})
 			}
-
-			normalizedToolCalls = allowed
-
-			if len(interviewRejected) > 0 {
-				logger.InfoCF("agent", "Interview mode: rejected tool calls",
-
-					map[string]any{
-						"agent_id": agent.ID,
-
-						"rejected": interviewRejected,
-					})
-
-				messages = append(messages, providers.Message{
-					Role: "user",
-
-					Content: interviewRejectMessage,
-				})
-			}
-
-			// If all tool calls were rejected, skip to next iteration.
-
+			normalizedToolCalls = filtered
 			if len(normalizedToolCalls) == 0 {
 				continue
 			}
@@ -2465,151 +2160,40 @@ func (al *AgentLoop) runLLMIteration(
 		}
 		logger.InfoCF("agent", "LLM requested tool calls",
 			map[string]any{
-				"agent_id": agent.ID,
-
-				"tools": toolNames,
-
-				"count": len(normalizedToolCalls),
-
+				"agent_id":  agent.ID,
+				"tools":     toolNames,
+				"count":     len(normalizedToolCalls),
 				"iteration": iteration,
 			})
 
-		// Publish rich status update
-
-		if !constants.IsInternalChannel(opts.Channel) && task != nil {
-			// Add pending entries to tool log for the current tool calls
-
-			task.mu.Lock()
-
-			for _, tc := range normalizedToolCalls {
-				task.toolLog = append(task.toolLog, toolLogEntry{
-					Name: fmt.Sprintf("[%d] %s", iteration, tc.Name),
-
-					ArgsSnip: buildArgsSnippet(tc.Name, tc.Arguments, agent.Workspace),
-
-					Result: "\u23F3",
-				})
-
-				// Detect project directory
-
-				if task.projectDir == "" && tc.Name == "exec" {
-					task.projectDir = extractExecProjectDir(tc.Arguments)
-				}
-
-				switch tc.Name {
-				case "read_file", "write_file", "edit_file", "append_file", "list_dir":
-
-					if p, _ := tc.Arguments["path"].(string); p != "" {
-						if rel := fileParentRelDir(p, agent.Workspace); rel != "" {
-							if task.fileCommonDir == "" {
-								task.fileCommonDir = rel
-							} else {
-								task.fileCommonDir = commonDirPrefix(task.fileCommonDir, rel)
-							}
-						}
-					}
-				}
-			}
-
-			task.mu.Unlock()
-
-			statusContent := buildRichStatus(task, isBackground, agent.Workspace)
-
-			if isBackground {
-				_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-					Channel: opts.Channel,
-
-					ChatID: opts.ChatID,
-
-					Content: statusContent,
-
-					IsTaskStatus: true,
-
-					TaskID: opts.TaskID,
-				})
-			} else {
-				_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-					Channel: opts.Channel,
-
-					ChatID: opts.ChatID,
-
-					Content: statusContent,
-
-					IsStatus: true,
-				})
-			}
-		}
-
-		// Record session activity for heartbeat/plan coordination
-
-		for _, tc := range normalizedToolCalls {
-			var detectedDir string
-
-			if tc.Name == "exec" {
-				detectedDir = extractExecProjectDir(tc.Arguments)
-			}
-
-			if detectedDir == "" {
-				switch tc.Name {
-				case "read_file", "write_file", "edit_file", "append_file", "list_dir":
-
-					if p, _ := tc.Arguments["path"].(string); p != "" {
-						detectedDir = fileParentRelDir(p, agent.Workspace)
-					}
-				}
-			}
-
-			if detectedDir != "" {
-				meta := &TouchMeta{
-					ProjectPath: agent.ContextBuilder.GetPlanWorkDir(),
-
-					Purpose: utils.Truncate(opts.UserMessage, 80),
-
-					Branch: agent.GetWorktreeBranch(opts.SessionKey),
-				}
-
-				if meta.ProjectPath == "" {
-					meta.ProjectPath = agent.Workspace
-				}
-
-				al.sessions.Touch(opts.SessionKey, opts.Channel, opts.ChatID, detectedDir, meta)
-			}
+		// Hook: publish tool status and record session touches
+		if hooks.OnToolsProcessed != nil {
+			hooks.OnToolsProcessed(ctx, iteration, normalizedToolCalls)
 		}
 
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
-			Role: "assistant",
-
-			Content: response.Content,
-
+			Role:             "assistant",
+			Content:          response.Content,
 			ReasoningContent: response.ReasoningContent,
 		}
 		for _, tc := range normalizedToolCalls {
-			// Copy ExtraContent to ensure thought_signature is persisted for Gemini 3
 			extraContent := tc.ExtraContent
 			thoughtSignature := ""
 			if tc.Function != nil {
 				thoughtSignature = tc.Function.ThoughtSignature
 			}
-
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID: tc.ID,
-
-				Type: "function",
-				Name: tc.Name,
-
-				Arguments: tc.Arguments,
-
+				ID:               tc.ID,
+				Type:             "function",
+				Name:             tc.Name,
+				Arguments:        tc.Arguments,
 				Function: &providers.FunctionCall{
-					Name: tc.Name,
-
-					Arguments: tc.Arguments,
-
+					Name:             tc.Name,
+					Arguments:        tc.Arguments,
 					ThoughtSignature: thoughtSignature,
 				},
-
-				ExtraContent: extraContent,
-
+				ExtraContent:     extraContent,
 				ThoughtSignature: thoughtSignature,
 			})
 		}
@@ -2619,193 +2203,68 @@ func (al *AgentLoop) runLLMIteration(
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
 		// Execute tool calls
-
 		var lastBlocker string
-
-		for tcIdx, tc := range normalizedToolCalls {
+		for _, tc := range normalizedToolCalls {
 			argsJSON, _ := json.Marshal(tc.Arguments)
-
 			argsPreview := utils.Truncate(string(argsJSON), 200)
-
 			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-
 				map[string]any{
-					"agent_id": agent.ID,
-
-					"tool": tc.Name,
-
+					"agent_id":  agent.ID,
+					"tool":      tc.Name,
 					"iteration": iteration,
 				})
 
 			// Heartbeat lazy worktree: create worktree on first write-tool call
-
 			if opts.Background && isWriteTool(tc.Name) && !agent.IsInWorktree(opts.SessionKey) {
 				taskName := "heartbeat-" + time.Now().Format("20060102")
-
 				hbDir := agent.ContextBuilder.GetPlanWorkDir()
-
-				if wt, err := agent.ActivateWorktree(opts.SessionKey, taskName, hbDir); err == nil {
+				if wt, wtErr := agent.ActivateWorktree(opts.SessionKey, taskName, hbDir); wtErr == nil {
 					logger.InfoCF("agent", "Heartbeat worktree created", map[string]any{"branch": wt.Branch})
 				}
 			}
 
-			// Create async callback for tools that implement AsyncTool.
-
-			// The callback publishes a system inbound message so processSystemMessage
-
-			// injects the result into the conductor's session history. The conductor
-
-			// sees it on its next turn and decides whether to notify the user.
-
-			toolName := tc.Name // capture for goroutine
-
-			asyncCallback := func(callbackCtx context.Context, result *tools.ToolResult) {
-				content := result.ForLLM
-
-				if content == "" {
-					content = result.ForUser
-				}
-
-				if content == "" {
-					return
-				}
-
-				logger.InfoCF("agent", "Async tool completed, publishing to conductor",
-
-					map[string]any{
-						"tool": toolName,
-
-						"content_len": len(content),
-
-						"is_error": result.IsError,
-					})
-
-				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
-
-				defer pubCancel()
-
-				_ = al.bus.PublishInbound(pubCtx, bus.InboundMessage{
-					Channel: "system",
-
-					SenderID: fmt.Sprintf("async:%s", toolName),
-
-					ChatID: fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID),
-
-					Content: fmt.Sprintf("Async tool '%s' completed.\n\nResult:\n%s", toolName, content),
-				})
+			// Hook: pre-tool execution (async callback, orch state)
+			var asyncCallback tools.AsyncCallback
+			if hooks.OnPreToolExec != nil {
+				asyncCallback = hooks.OnPreToolExec(ctx, tc)
 			}
 
-			// Report toolcall state to canvas.
-
-			al.reporter().ReportStateChange(opts.SessionKey, orch.AgentStateToolCall, tc.Name)
-
 			toolStart := time.Now()
-
 			toolCtx := ctx
-
 			if wt := agent.GetWorktree(opts.SessionKey); wt != nil {
 				toolCtx = tools.WithWorkspaceOverride(toolCtx, wt.Path)
-
 				toolCtx = tools.WithWorktreeInfo(toolCtx, wt)
 			}
 
 			toolResult := agent.Tools.ExecuteWithContext(
-
-				toolCtx,
-
-				tc.Name,
-
-				tc.Arguments,
-
-				opts.Channel,
-
-				opts.ChatID,
-
-				asyncCallback,
+				toolCtx, tc.Name, tc.Arguments,
+				opts.Channel, opts.ChatID, asyncCallback,
 			)
-
 			toolDuration := time.Since(toolStart)
 
-			// Update tool log entry with result
-
-			if task != nil {
-				task.mu.Lock()
-
-				// Find the matching pending entry (added earlier in this iteration)
-
-				logIdx := len(task.toolLog) - len(normalizedToolCalls) + tcIdx
-
-				if logIdx >= 0 && logIdx < len(task.toolLog) {
-					if toolResult.IsError || toolResult.Err != nil {
-						task.toolLog[logIdx].Result = fmt.Sprintf("\u2717 %.1fs", toolDuration.Seconds())
-
-						// Extract error detail for block display
-
-						if toolResult.Err != nil {
-							task.toolLog[logIdx].ErrDetail = utils.Truncate(toolResult.Err.Error(), 300)
-						} else if toolResult.ForLLM != "" {
-							// exec returns IsError with exit info in ForLLM, not Err
-
-							// Show last few lines (stderr / exit code)
-
-							lines := strings.Split(strings.TrimSpace(toolResult.ForLLM), "\n")
-
-							start := len(lines) - 3
-
-							if start < 0 {
-								start = 0
-							}
-
-							task.toolLog[logIdx].ErrDetail = utils.Truncate(
-
-								strings.Join(lines[start:], "\n"), 300)
-						}
-
-						// Sticky error: remember most recent error for persistent display
-
-						entry := task.toolLog[logIdx]
-
-						task.lastError = &entry
-					} else {
-						task.toolLog[logIdx].Result = fmt.Sprintf("\u2713 %.1fs", toolDuration.Seconds())
-					}
-				}
-
-				task.mu.Unlock()
+			// Hook: post-tool execution (task log update)
+			if hooks.OnToolExecDone != nil {
+				hooks.OnToolExecDone(tc, toolResult, toolDuration)
 			}
 
 			// Send ForUser content to user immediately if not Silent
-
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
 				_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 					Channel: opts.Channel,
-
-					ChatID: opts.ChatID,
-
+					ChatID:  opts.ChatID,
 					Content: toolResult.ForUser,
 				})
-
 				logger.DebugCF("agent", "Sent tool result to user",
-
-					map[string]any{
-						"tool": tc.Name,
-
-						"content_len": len(toolResult.ForUser),
-					})
+					map[string]any{"tool": tc.Name, "content_len": len(toolResult.ForUser)})
 			}
 
 			// If tool returned media refs, publish them as outbound media
-
 			if len(toolResult.Media) > 0 && opts.SendResponse {
 				parts := make([]bus.MediaPart, 0, len(toolResult.Media))
-
 				for _, ref := range toolResult.Media {
 					part := bus.MediaPart{Ref: ref}
-
-					// Populate metadata from MediaStore when available
-
 					if al.mediaStore != nil {
-						if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
+						if _, meta, mErr := al.mediaStore.ResolveWithMeta(ref); mErr == nil {
 							part.Filename = meta.Filename
 							part.ContentType = meta.ContentType
 							part.Type = inferMediaType(meta.Filename, meta.ContentType)
@@ -2815,32 +2274,25 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
 					Channel: opts.Channel,
-
-					ChatID: opts.ChatID,
-
-					Parts: parts,
+					ChatID:  opts.ChatID,
+					Parts:   parts,
 				})
 			}
 
 			// Determine content for LLM based on tool result
-
 			contentForLLM := toolResult.ForLLM
-
 			if contentForLLM == "" && toolResult.Err != nil {
 				contentForLLM = toolResult.Err.Error()
 			}
 
 			// Track blockers for task reminder
-
 			if toolResult.IsError || toolResult.Err != nil {
 				lastBlocker = contentForLLM
 			}
 
 			toolResultMsg := providers.Message{
-				Role: "tool",
-
-				Content: contentForLLM,
-
+				Role:       "tool",
+				Content:    contentForLLM,
 				ToolCallID: tc.ID,
 			}
 			messages = append(messages, toolResultMsg)
@@ -2849,166 +2301,38 @@ func (al *AgentLoop) runLLMIteration(
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
 
-		// Trim tool log sliding window to prevent unbounded growth
-
-		if task != nil {
-			task.mu.Lock()
-
-			if len(task.toolLog) > maxToolLogEntries {
-				task.toolLog = task.toolLog[len(task.toolLog)-maxToolLogEntries:]
-			}
-
-			task.mu.Unlock()
+		// Hook: inject reminders and trim tool log
+		if hooks.InjectReminders != nil {
+			hooks.InjectReminders(iteration, &messages, lastBlocker)
 		}
 
-		// Inject ephemeral task reminder to prevent focus drift.
-
-		// Remove previous reminder and re-append at the tail so it stays
-
-		// close to the LLM's attention window.
-
-		if shouldInjectReminder(iteration, agent.TaskReminderInterval) && !opts.NoHistory {
-			if lastReminderIdx >= 0 && lastReminderIdx < len(messages) {
-				messages = append(messages[:lastReminderIdx], messages[lastReminderIdx+1:]...)
-			}
-
-			reminderMsg := buildTaskReminder(opts.UserMessage, lastBlocker)
-
-			messages = append(messages, reminderMsg)
-
-			lastReminderIdx = len(messages) - 1
-
-			logger.DebugCF("agent", "Injected task reminder",
-
-				map[string]any{
-					"agent_id": agent.ID,
-
-					"iteration": iteration,
-
-					"has_blocker": lastBlocker != "",
-				})
-		}
-
-		// Inject plan-mode reminder to keep AI focused on interview/review workflow.
-
-		if iteration > 1 && isPlanPreExecution(planSnapshot) {
-			if reminder, ok := buildPlanReminder(planSnapshot); ok {
-				messages = append(messages, reminder)
-
-				logger.DebugCF("agent", "Injected plan reminder",
-
-					map[string]any{
-						"agent_id": agent.ID,
-
-						"iteration": iteration,
-
-						"plan_status": planSnapshot,
-					})
-			}
-		}
-
-		// Inject orchestration nudge during plan execution to encourage spawn usage.
-
-		if planSnapshot == "executing" && agent.Subagents != nil && agent.Subagents.Enabled {
-			if reminder, ok := buildOrchReminder(iteration); ok {
-				messages = append(messages, reminder)
-
-				logger.DebugCF("agent", "Injected orchestration nudge",
-
-					map[string]any{
-						"agent_id": agent.ID,
-
-						"iteration": iteration,
-					})
-			}
-		}
-
-		// Inject pending subagent questions/plan reviews for the conductor to answer.
-
-		if agent.SubagentMgr != nil {
-			for _, q := range agent.SubagentMgr.PendingQuestions() {
-				var content string
-
-				switch q.Type {
-				case "plan_review":
-
-					content = fmt.Sprintf(
-						"[Subagent %s submitted a plan for review]:\n%s\nRespond using the review_subagent_plan tool with task_id=%q.",
-						q.TaskID,
-						q.Content,
-						q.TaskID,
-					)
-
-				default:
-
-					content = fmt.Sprintf(
-						"[Subagent %s asks]: %s\nRespond using the answer_subagent tool with task_id=%q.",
-						q.TaskID,
-						q.Content,
-						q.TaskID,
-					)
-				}
-
-				messages = append(messages, providers.Message{
-					Role: "user",
-
-					Content: content,
-				})
-			}
-		}
-
-		// Refresh system prompt: tool execution may have changed workDir,
-
-		// memory, plan status, etc.  Update messages[0] so the next LLM
-
-		// call sees the current state.
-
-		if touchDir := al.sessions.GetTouchDir(opts.SessionKey); touchDir != "" {
-			agent.ContextBuilder.SetWorkDir(filepath.Join(agent.Workspace, touchDir))
-		}
-
-		if newPrompt := agent.ContextBuilder.BuildSystemPrompt(); len(messages) > 0 &&
-
-			messages[0].Content != newPrompt {
-			messages[0].Content = newPrompt
-
-			al.lastSystemPrompt.Store(newPrompt)
-
-			al.promptDirty.Store(false)
+		// Hook: refresh system prompt
+		if hooks.RefreshSystemPrompt != nil {
+			hooks.RefreshSystemPrompt(messages)
 		}
 	}
 
 	// If max iterations exhausted with tool calls still pending,
-
 	// make one final LLM call without tools to force a text response.
-
-	if finalContent == "" && iteration >= maxIter {
+	if finalContent == "" && iteration >= agent.MaxIterations {
 		logger.WarnCF("agent", "Max iterations reached, forcing final response without tools",
-
 			map[string]any{
-				"agent_id": agent.ID,
-
+				"agent_id":  agent.ID,
 				"iteration": iteration,
 			})
 
 		forceResp, forceErr := agent.Provider.Chat(ctx, messages, nil, agent.Model, map[string]any{
-			"max_tokens": agent.MaxTokens,
-
-			"temperature": agent.Temperature,
-
+			"max_tokens":       agent.MaxTokens,
+			"temperature":      agent.Temperature,
 			"prompt_cache_key": agent.ID,
 		})
 
 		if forceErr == nil && forceResp.Content != "" {
 			finalContent = utils.StripThinkBlocks(forceResp.Content)
-
 			if forceResp.Usage != nil && al.stats != nil {
 				al.stats.RecordUsage(
-
 					forceResp.Usage.PromptTokens,
-
 					forceResp.Usage.CompletionTokens,
-
 					forceResp.Usage.TotalTokens,
 				)
 			}
