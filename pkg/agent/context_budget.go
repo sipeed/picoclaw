@@ -79,7 +79,11 @@ func findSafeBoundary(history []providers.Message, targetIndex int) int {
 		}
 	}
 
-	return targetIndex
+	// No Turn boundary after targetIndex either. The only boundary is at
+	// index 0, meaning the entire history is a single Turn. Return 0 to
+	// signal that safe compression is not possible — callers check for
+	// mid <= 0 and skip compression in that case.
+	return 0
 }
 
 // estimateMessageTokens estimates the token count for a single message,

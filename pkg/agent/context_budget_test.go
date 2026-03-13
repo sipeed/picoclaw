@@ -346,6 +346,23 @@ func TestFindSafeBoundary(t *testing.T) {
 	}
 }
 
+func TestFindSafeBoundary_SingleTurnReturnsZero(t *testing.T) {
+	// A single Turn with no subsequent user message. The only Turn boundary
+	// is at index 0; cutting anywhere else would split the Turn's tool
+	// sequence. findSafeBoundary must return 0 so callers skip compression.
+	history := []providers.Message{
+		msgUser("do everything"),    // 0 ← only Turn boundary
+		msgAssistantTC("tc1"),       // 1
+		msgTool("tc1", "result"),    // 2
+		msgAssistant("all done"),    // 3
+	}
+
+	got := findSafeBoundary(history, 2)
+	if got != 0 {
+		t.Errorf("findSafeBoundary(single_turn, 2) = %d, want 0 (cannot split single Turn)", got)
+	}
+}
+
 func TestFindSafeBoundary_BackwardScanSkipsToolSequence(t *testing.T) {
 	// A long tool-call chain: user → assistant+TC → tool → tool → ... → assistant → user
 	// Target is inside the chain; boundary should skip the entire chain backward.
