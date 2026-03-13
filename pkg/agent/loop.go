@@ -39,6 +39,8 @@ import (
 )
 
 type AgentLoop struct {
+	loopExt // fork-specific fields (see loop_ext.go)
+
 	bus *bus.MessageBus
 
 	cfg *config.Config
@@ -46,8 +48,6 @@ type AgentLoop struct {
 	registry *AgentRegistry
 
 	state *state.Manager
-
-	stats *stats.Tracker // nil when --stats not passed
 
 	running atomic.Bool
 
@@ -67,16 +67,6 @@ type AgentLoop struct {
 
 	providerCache map[string]providers.LLMProvider
 
-	planStartPending bool // set by /plan start to trigger LLM execution
-
-	planClearHistory bool // set by /plan start clear to wipe history on transition
-
-	sessionLocks sync.Map // sessionKey → *sessionSemaphore
-
-	activeTasks sync.Map // sessionKey → *activeTask
-
-	sessions *SessionTracker
-
 	lastSystemPrompt atomic.Value // string — last system prompt sent to LLM
 
 	promptDirty atomic.Bool // true = rebuild needed on next GetSystemPrompt read
@@ -84,16 +74,6 @@ type AgentLoop struct {
 	OnStateChange func() // called on plan/session/skills mutations
 
 	OnUserMessage func() // called when a real user message is processed
-
-	saveConfig func(*config.Config) error
-
-	onHeartbeatThreadUpdate func(int)
-
-	orchBroadcaster *orch.Broadcaster // nil when --orchestration not set
-
-	orchReporter orch.AgentReporter // always non-nil (Noop when disabled)
-
-	done chan struct{} // closed by Close() to stop background goroutines
 }
 
 // processOptions configures how a message is processed
@@ -186,6 +166,14 @@ func NewAgentLoop(
 	}
 
 	al := &AgentLoop{
+		loopExt: loopExt{
+			stats:           statsTracker,
+			sessions:        NewSessionTracker(),
+			orchBroadcaster: orchBroadcaster,
+			orchReporter:    orchReporter,
+			done:            make(chan struct{}),
+		},
+
 		bus: msgBus,
 
 		cfg: cfg,
@@ -194,21 +182,11 @@ func NewAgentLoop(
 
 		state: stateManager,
 
-		stats: statsTracker,
-
 		summarizing: sync.Map{},
 
 		fallback: fallbackChain,
 
 		providerCache: providerCache,
-
-		sessions: NewSessionTracker(),
-
-		orchBroadcaster: orchBroadcaster,
-
-		orchReporter: orchReporter,
-
-		done: make(chan struct{}),
 
 		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
 	}
@@ -220,16 +198,6 @@ func NewAgentLoop(
 	go al.gcLoop()
 
 	return al
-}
-
-func (al *AgentLoop) SetConfigSaver(fn func(*config.Config) error) {
-	al.saveConfig = fn
-}
-
-// SetHeartbeatThreadUpdater registers a callback to apply runtime heartbeat thread updates.
-
-func (al *AgentLoop) SetHeartbeatThreadUpdater(fn func(int)) {
-	al.onHeartbeatThreadUpdate = fn
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
