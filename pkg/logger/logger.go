@@ -113,6 +113,7 @@ func getCallerInfo() (string, int, string) {
 
 		// bypass common loggers
 		if strings.HasSuffix(file, "/logger.go") ||
+			strings.HasSuffix(file, "/logger_3rd_party.go") ||
 			strings.HasSuffix(file, "/log.go") {
 			continue
 		}
