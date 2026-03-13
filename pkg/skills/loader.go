@@ -10,6 +10,11 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gomarkdown/markdown"
+	"github.com/gomarkdown/markdown/ast"
+	"github.com/gomarkdown/markdown/parser"
+	"gopkg.in/yaml.v3"
+
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
