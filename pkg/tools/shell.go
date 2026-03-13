@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/constants"
 )
 
 const (
@@ -170,9 +171,13 @@ type ExecTool struct {
 
 	allowRules [][]string // pre-split command prefix allowlist
 
+	customAllowPatterns []*regexp.Regexp
+
 	restrictToWorkspace bool
 
 	localNetOnly bool // restrict curl/wget to localhost + RFC 1918
+
+	allowRemote bool
 
 	// Background process management
 
@@ -187,100 +192,115 @@ type ExecTool struct {
 	bgCtx context.Context
 }
 
-var defaultDenyPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
+var (
+	defaultDenyPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
 
-	regexp.MustCompile(`\bdel\s+/[fq]\b`),
+		regexp.MustCompile(`\bdel\s+/[fq]\b`),
 
-	regexp.MustCompile(`\brmdir\s+/s\b`),
+		regexp.MustCompile(`\brmdir\s+/s\b`),
 
-	// Match disk wiping commands (must be followed by space/args)
+		// Match disk wiping commands (must be followed by space/args)
 
-	regexp.MustCompile(
+		regexp.MustCompile(
+			`\b(format|mkfs|diskpart)\b\s`,
+		),
 
-		`\b(format|mkfs|diskpart)\b\s`,
-	),
+		regexp.MustCompile(`\bdd\s+if=`),
 
-	regexp.MustCompile(`\bdd\s+if=`),
+		// Block writes to block devices (all common naming schemes).
+		regexp.MustCompile(
+			`>\s*/dev/(sd[a-z]|hd[a-z]|vd[a-z]|xvd[a-z]|nvme\d|mmcblk\d|loop\d|dm-\d|md\d|sr\d|nbd\d)`,
+		),
 
-	regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
+		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
 
-	regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
+		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
 
-	regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
+		regexp.MustCompile(`\$\([^)]+\)`),
 
-	regexp.MustCompile(`\$\([^)]+\)`),
+		regexp.MustCompile(`\$\{[^}]+\}`),
 
-	regexp.MustCompile(`\$\{[^}]+\}`),
+		regexp.MustCompile("`[^`]+`"),
 
-	regexp.MustCompile("`[^`]+`"),
+		regexp.MustCompile(`\|\s*sh\b`),
 
-	regexp.MustCompile(`\|\s*sh\b`),
+		regexp.MustCompile(`\|\s*bash\b`),
 
-	regexp.MustCompile(`\|\s*bash\b`),
+		regexp.MustCompile(`;\s*rm\s+-[rf]`),
 
-	regexp.MustCompile(`;\s*rm\s+-[rf]`),
+		regexp.MustCompile(`&&\s*rm\s+-[rf]`),
 
-	regexp.MustCompile(`&&\s*rm\s+-[rf]`),
+		regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
 
-	regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
+		regexp.MustCompile(`<<\s*EOF`),
 
-	regexp.MustCompile(`>\s*/dev/null\s*>&?\s*\d?`),
+		regexp.MustCompile(`\$\(\s*cat\s+`),
 
-	regexp.MustCompile(`<<\s*EOF`),
+		regexp.MustCompile(`\$\(\s*curl\s+`),
 
-	regexp.MustCompile(`\$\(\s*cat\s+`),
+		regexp.MustCompile(`\$\(\s*wget\s+`),
 
-	regexp.MustCompile(`\$\(\s*curl\s+`),
+		regexp.MustCompile(`\$\(\s*which\s+`),
 
-	regexp.MustCompile(`\$\(\s*wget\s+`),
+		regexp.MustCompile(`\bsudo\b`),
 
-	regexp.MustCompile(`\$\(\s*which\s+`),
+		regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
 
-	regexp.MustCompile(`\bsudo\b`),
+		regexp.MustCompile(`\bchown\b`),
 
-	regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
+		regexp.MustCompile(`\bpkill\b`),
 
-	regexp.MustCompile(`\bchown\b`),
+		regexp.MustCompile(`\bkillall\b`),
 
-	regexp.MustCompile(`\bpkill\b`),
+		regexp.MustCompile(`\bkill\b`),
 
-	regexp.MustCompile(`\bkillall\b`),
+		regexp.MustCompile(`\bcurl\b.*\|\s*(sh|bash)`),
 
-	regexp.MustCompile(`\bkill\s+-[9]\b`),
+		regexp.MustCompile(`\bwget\b.*\|\s*(sh|bash)`),
 
-	regexp.MustCompile(`\bcurl\b.*\|\s*(sh|bash)`),
+		regexp.MustCompile(`\bnpm\s+install\s+-g\b`),
 
-	regexp.MustCompile(`\bwget\b.*\|\s*(sh|bash)`),
+		regexp.MustCompile(`\bpip\s+install\s+--user\b`),
 
-	regexp.MustCompile(`\bnpm\s+install\s+-g\b`),
+		regexp.MustCompile(`\bapt\s+(install|remove|purge)\b`),
 
-	regexp.MustCompile(`\bpip\s+install\s+--user\b`),
+		regexp.MustCompile(`\byum\s+(install|remove)\b`),
 
-	regexp.MustCompile(`\bapt\s+(install|remove|purge)\b`),
+		regexp.MustCompile(`\bdnf\s+(install|remove)\b`),
 
-	regexp.MustCompile(`\byum\s+(install|remove)\b`),
+		regexp.MustCompile(`\bdocker\s+run\b`),
 
-	regexp.MustCompile(`\bdnf\s+(install|remove)\b`),
+		regexp.MustCompile(`\bdocker\s+exec\b`),
 
-	regexp.MustCompile(`\bdocker\s+run\b`),
+		regexp.MustCompile(`\bgit\s+push\b`),
 
-	regexp.MustCompile(`\bdocker\s+exec\b`),
+		regexp.MustCompile(`\bgit\s+force\b`),
 
-	regexp.MustCompile(`\bgit\s+push\b`),
+		regexp.MustCompile(`\bgit\s+checkout\b`),
 
-	regexp.MustCompile(`\bgit\s+force\b`),
+		regexp.MustCompile(`\bgit\s+switch\b`),
 
-	regexp.MustCompile(`\bgit\s+checkout\b`),
+		regexp.MustCompile(`\bssh\b.*@`),
 
-	regexp.MustCompile(`\bgit\s+switch\b`),
+		regexp.MustCompile(`\beval\b`),
 
-	regexp.MustCompile(`\bssh\b.*@`),
+		regexp.MustCompile(`\bsource\s+.*\.sh\b`),
+	}
 
-	regexp.MustCompile(`\beval\b`),
-
-	regexp.MustCompile(`\bsource\s+.*\.sh\b`),
-}
+	// safePaths are kernel pseudo-devices that are always safe to reference in
+	// commands, regardless of workspace restriction. They contain no user data
+	// and cannot cause destructive writes.
+	safePaths = map[string]bool{
+		"/dev/null":    true,
+		"/dev/zero":    true,
+		"/dev/random":  true,
+		"/dev/urandom": true,
+		"/dev/stdin":   true,
+		"/dev/stdout":  true,
+		"/dev/stderr":  true,
+	}
+)
 
 func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
 	return NewExecToolWithConfig(workingDir, restrict, nil)
@@ -288,34 +308,44 @@ func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
 
 func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
+	customAllowPatterns := make([]*regexp.Regexp, 0)
+	allowRemote := true
 
 	if config != nil {
 		execConfig := config.Tools.Exec
-
 		enableDenyPatterns := execConfig.EnableDenyPatterns
+		allowRemote = execConfig.AllowRemote
 
 		if enableDenyPatterns {
 			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
-
 			if len(execConfig.CustomDenyPatterns) > 0 {
 				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
-
 				for _, pattern := range execConfig.CustomDenyPatterns {
 					re, err := regexp.Compile(pattern)
 					if err != nil {
 						return nil, fmt.Errorf("invalid custom deny pattern %q: %w", pattern, err)
 					}
-
 					denyPatterns = append(denyPatterns, re)
 				}
 			}
 		} else {
 			// If deny patterns are disabled, we won't add any patterns, allowing all commands.
-
 			fmt.Println("Warning: deny patterns are disabled. All commands will be allowed.")
+		}
+		for _, pattern := range execConfig.CustomAllowPatterns {
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return nil, fmt.Errorf("invalid custom allow pattern %q: %w", pattern, err)
+			}
+			customAllowPatterns = append(customAllowPatterns, re)
 		}
 	} else {
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
+	}
+
+	timeout := 5 * time.Minute
+	if config != nil && config.Tools.Exec.TimeoutSeconds > 0 {
+		timeout = time.Duration(config.Tools.Exec.TimeoutSeconds) * time.Second
 	}
 
 	bgCtx, bgCancel := context.WithCancel(context.Background())
@@ -323,13 +353,17 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 	return &ExecTool{
 		workingDir: workingDir,
 
-		timeout: 5 * time.Minute,
+		timeout: timeout,
 
 		denyPatterns: denyPatterns,
 
 		allowRules: nil,
 
+		customAllowPatterns: customAllowPatterns,
+
 		restrictToWorkspace: restrict,
+
+		allowRemote: allowRemote,
 
 		bgProcesses: make(map[string]*bgProcess),
 
@@ -350,14 +384,12 @@ func (t *ExecTool) Description() string {
 func (t *ExecTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
-
 		"properties": map[string]any{
 			"command": map[string]any{
 				"type": "string",
 
 				"description": "The shell command to execute",
 			},
-
 			"working_dir": map[string]any{
 				"type": "string",
 
@@ -408,6 +440,19 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		return ErrorResult("command is required")
 	}
 
+	// GHSA-pv8c-p6jf-3fpp: block exec from remote channels (e.g. Telegram webhooks)
+	// unless explicitly opted-in via config. Fail-closed: empty channel = blocked.
+	if !t.allowRemote {
+		channel := ToolChannel(ctx)
+		if channel == "" {
+			channel, _ = args["__channel"].(string)
+		}
+		channel = strings.TrimSpace(channel)
+		if channel == "" || !constants.IsInternalChannel(channel) {
+			return ErrorResult("exec is restricted to internal channels")
+		}
+	}
+
 	cwd := t.workingDir
 
 	if override := WorkspaceOverrideFromCtx(ctx); override != "" {
@@ -420,7 +465,6 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 			if err != nil {
 				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
 			}
-
 			cwd = resolvedWD
 		} else {
 			cwd = wd
@@ -429,7 +473,6 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	if cwd == "" {
 		wd, err := os.Getwd()
-
 		if err == nil {
 			cwd = wd
 		}
@@ -437,6 +480,25 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	if guardError := t.guardCommand(command, cwd); guardError != "" {
 		return ErrorResult(guardError)
+	}
+
+	// Re-resolve symlinks immediately before execution to shrink the TOCTOU window
+	// between validation and cmd.Dir assignment.
+	if t.restrictToWorkspace && t.workingDir != "" && cwd != t.workingDir {
+		resolved, err := filepath.EvalSymlinks(cwd)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("Command blocked by safety guard (path resolution failed: %v)", err))
+		}
+		absWorkspace, _ := filepath.Abs(t.workingDir)
+		wsResolved, _ := filepath.EvalSymlinks(absWorkspace)
+		if wsResolved == "" {
+			wsResolved = absWorkspace
+		}
+		rel, err := filepath.Rel(wsResolved, resolved)
+		if err != nil || !filepath.IsLocal(rel) {
+			return ErrorResult("Command blocked by safety guard (working directory escaped workspace)")
+		}
+		cwd = resolved
 	}
 
 	if bg {
@@ -450,27 +512,21 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolResult {
 	// timeout == 0 means no timeout
-
 	var cmdCtx context.Context
-
 	var cancel context.CancelFunc
-
 	if t.timeout > 0 {
 		cmdCtx, cancel = context.WithTimeout(ctx, t.timeout)
 	} else {
 		cmdCtx, cancel = context.WithCancel(ctx)
 	}
-
 	defer cancel()
 
 	var cmd *exec.Cmd
-
 	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(cmdCtx, "powershell", "-NoProfile", "-NonInteractive", "-Command", command)
 	} else {
 		cmd = exec.CommandContext(cmdCtx, "sh", "-c", command)
 	}
-
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
@@ -478,9 +534,7 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 	prepareCommandForTermination(cmd)
 
 	var stdout, stderr bytes.Buffer
-
 	cmd.Stdout = &stdout
-
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
@@ -488,29 +542,21 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 	}
 
 	done := make(chan error, 1)
-
 	go func() {
 		done <- cmd.Wait()
 	}()
 
 	var err error
-
 	select {
 	case err = <-done:
-
 	case <-cmdCtx.Done():
-
 		_ = terminateProcessTree(cmd)
-
 		select {
 		case err = <-done:
-
 		case <-time.After(2 * time.Second):
-
 			if cmd.Process != nil {
 				_ = cmd.Process.Kill()
 			}
-
 			err = <-done
 		}
 	}
@@ -528,12 +574,10 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 	if err != nil {
 		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
 			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
-
 			return &ToolResult{
 				ForLLM: msg,
 
 				ForUser: msg,
-
 				IsError: true,
 			}
 		}
@@ -548,7 +592,6 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 	}
 
 	maxLen := 10000
-
 	if len(output) > maxLen {
 		output = output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
 	}
@@ -558,7 +601,6 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 			ForLLM: output,
 
 			ForUser: output,
-
 			IsError: true,
 		}
 	}
@@ -567,7 +609,6 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 		ForLLM: output,
 
 		ForUser: output,
-
 		IsError: false,
 	}
 }
@@ -971,12 +1012,22 @@ func (t *ExecTool) Shutdown() {
 
 func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
-
 	lower := strings.ToLower(cmd)
 
-	for _, pattern := range t.denyPatterns {
+	// Custom allow patterns exempt a command from deny checks.
+	explicitlyAllowed := false
+	for _, pattern := range t.customAllowPatterns {
 		if pattern.MatchString(lower) {
-			return fmt.Sprintf("Command blocked: deny pattern %s", pattern.String())
+			explicitlyAllowed = true
+			break
+		}
+	}
+
+	if !explicitlyAllowed {
+		for _, pattern := range t.denyPatterns {
+			if pattern.MatchString(lower) {
+				return "Command blocked by safety guard (dangerous pattern detected)"
+			}
 		}
 	}
 
@@ -1050,6 +1101,10 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			}
 
 			p := filepath.Clean(token)
+
+			if safePaths[p] {
+				continue
+			}
 
 			rel, err := filepath.Rel(cwdPath, p)
 			if err != nil {

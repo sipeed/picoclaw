@@ -96,7 +96,7 @@ func TestAddFullMessage_WithToolCalls(t *testing.T) {
 				Type: "function",
 				Function: &providers.FunctionCall{
 					Name:      "web_search",
-					Arguments: `{"q":"golang jsonl"}`,
+					Arguments: map[string]any{"q": "golang jsonl"},
 				},
 			},
 		},

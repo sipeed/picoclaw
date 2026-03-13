@@ -150,26 +150,6 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	return c.broadcastToSession(msg.ChatID, outMsg)
 }
 
-// SendWithID implements channels.MessageSenderWithID.
-// It sends a message and returns a generated message ID.
-func (c *PicoChannel) SendWithID(ctx context.Context, chatID string, content string) (string, error) {
-	if !c.IsRunning() {
-		return "", channels.ErrNotRunning
-	}
-
-	msgID := uuid.New().String()
-	outMsg := newMessage(TypeMessageCreate, map[string]any{
-		"content":    content,
-		"message_id": msgID,
-	})
-
-	if err := c.broadcastToSession(chatID, outMsg); err != nil {
-		return "", err
-	}
-
-	return msgID, nil
-}
-
 // EditMessage implements channels.MessageEditor.
 func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	outMsg := newMessage(TypeMessageUpdate, map[string]any{

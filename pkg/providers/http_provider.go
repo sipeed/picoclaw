@@ -42,12 +42,6 @@ func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 	}
 }
 
-func NewHTTPProviderWithOptions(apiKey, apiBase, proxy string, opts ...openai_compat.Option) *HTTPProvider {
-	return &HTTPProvider{
-		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy, opts...),
-	}
-}
-
 func (p *HTTPProvider) Chat(
 	ctx context.Context,
 	messages []Message,
@@ -55,38 +49,9 @@ func (p *HTTPProvider) Chat(
 	model string,
 	options map[string]any,
 ) (*LLMResponse, error) {
-	resp, err := p.delegate.Chat(ctx, messages, tools, model, options)
-	if err != nil {
-		return nil, err
-	}
-	// If provider returned no structured tool_calls but Content has XML
-	// tool call blocks (e.g. <ns:toolcall>), parse them as a fallback.
-	if len(resp.ToolCalls) == 0 {
-		if xmlCalls := extractXMLToolCalls(resp.Content); len(xmlCalls) > 0 {
-			resp.ToolCalls = xmlCalls
-		}
-	}
-	// Strip XML tool call artifacts from Content regardless.
-	resp.Content = stripXMLToolCalls(resp.Content)
-	return resp, nil
+	return p.delegate.Chat(ctx, messages, tools, model, options)
 }
 
 func (p *HTTPProvider) GetDefaultModel() string {
 	return ""
-}
-
-// CanStream returns true when the underlying provider uses SSE streaming.
-func (p *HTTPProvider) CanStream() bool {
-	return p.delegate.CanStream()
-}
-
-// ChatStream opens an SSE stream and returns a channel of StreamEvent.
-func (p *HTTPProvider) ChatStream(
-	ctx context.Context,
-	messages []Message,
-	tools []ToolDefinition,
-	model string,
-	options map[string]any,
-) (<-chan StreamEvent, error) {
-	return p.delegate.ChatStream(ctx, messages, tools, model, options)
 }

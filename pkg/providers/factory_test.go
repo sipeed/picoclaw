@@ -179,6 +179,26 @@ func TestResolveProviderSelection(t *testing.T) {
 			wantProxy:   "http://127.0.0.1:7890",
 		},
 		{
+			name: "explicit longcat provider uses defaults",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "longcat"
+				cfg.Providers.LongCat.APIKey = "longcat-key"
+				cfg.Providers.LongCat.Proxy = "http://127.0.0.1:7890"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "https://api.longcat.chat/openai",
+			wantProxy:   "http://127.0.0.1:7890",
+		},
+		{
+			name: "longcat model fallback uses longcat base default",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Model = "longcat/LongCat-Flash-Thinking"
+				cfg.Providers.LongCat.APIKey = "longcat-key"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "https://api.longcat.chat/openai",
+		},
+		{
 			name: "missing keys returns model config error",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "custom-model"
@@ -328,70 +348,4 @@ func TestCreateProviderReturnsCodexProviderForOpenAIOAuth(t *testing.T) {
 	// TODO: This test requires openai protocol to support auth_method: "oauth"
 	// which is not yet implemented in the new factory_provider.go
 	t.Skip("OpenAI OAuth via model_list not yet implemented")
-}
-
-func TestCreateProviderByName_OpenAI_OAuth(t *testing.T) {
-	originalGetCredential := getCredential
-	t.Cleanup(func() { getCredential = originalGetCredential })
-
-	getCredential = func(provider string) (*auth.AuthCredential, error) {
-		if provider != "openai" {
-			t.Fatalf("provider = %q, want openai", provider)
-		}
-		return &auth.AuthCredential{
-			AccessToken: "openai-token",
-			AccountID:   "acct_test",
-		}, nil
-	}
-
-	cfg := config.DefaultConfig()
-	cfg.Providers.OpenAI.AuthMethod = "oauth"
-
-	provider, err := CreateProviderByName(cfg, "openai")
-	if err != nil {
-		t.Fatalf("CreateProviderByName() error = %v", err)
-	}
-
-	if _, ok := provider.(*CodexProvider); !ok {
-		t.Fatalf("provider type = %T, want *CodexProvider", provider)
-	}
-}
-
-func TestCreateProviderByName_VLLM(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.Providers.VLLM.APIKey = "test-vllm-key"
-	cfg.Providers.VLLM.APIBase = "https://api.example.com/v1"
-
-	provider, err := CreateProviderByName(cfg, "vllm")
-	if err != nil {
-		t.Fatalf("CreateProviderByName() error = %v", err)
-	}
-
-	if _, ok := provider.(*HTTPProvider); !ok {
-		t.Fatalf("provider type = %T, want *HTTPProvider", provider)
-	}
-}
-
-func TestCreateProviderByName_Unknown(t *testing.T) {
-	cfg := config.DefaultConfig()
-
-	_, err := CreateProviderByName(cfg, "nonexistent-provider")
-	if err == nil {
-		t.Fatal("expected error for unknown provider, got nil")
-	}
-}
-
-func TestCreateProviderByName_CaseInsensitive(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.Providers.VLLM.APIKey = "test-key"
-	cfg.Providers.VLLM.APIBase = "https://example.com/v1"
-
-	provider, err := CreateProviderByName(cfg, "VLLM")
-	if err != nil {
-		t.Fatalf("CreateProviderByName() error = %v", err)
-	}
-
-	if _, ok := provider.(*HTTPProvider); !ok {
-		t.Fatalf("provider type = %T, want *HTTPProvider", provider)
-	}
 }

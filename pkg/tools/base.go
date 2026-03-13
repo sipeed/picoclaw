@@ -81,13 +81,6 @@ type AsyncExecutor interface {
 	ExecuteAsync(ctx context.Context, args map[string]any, cb AsyncCallback) *ToolResult
 }
 
-// StatusProvider is an optional interface that tools can implement
-// to inject runtime status information into the system prompt.
-// Return an empty string to inject nothing.
-type StatusProvider interface {
-	RuntimeStatus() string
-}
-
 func ToolToSchema(tool Tool) map[string]any {
 	return map[string]any{
 		"type": "function",
@@ -97,4 +90,28 @@ func ToolToSchema(tool Tool) map[string]any {
 			"parameters":  tool.Parameters(),
 		},
 	}
+}
+
+// --- Fork-only extensions below ---
+
+// ContextualTool is an optional interface for tools that need to know
+// which channel/chatID they are executing in. Prefer using ToolChannel(ctx)
+// and ToolChatID(ctx) instead — this interface exists for backward compatibility.
+type ContextualTool interface {
+	Tool
+	SetContext(channel, chatID string)
+}
+
+// AsyncTool is the legacy async interface. Prefer AsyncExecutor instead —
+// it passes the callback as a parameter to avoid data races on shared instances.
+type AsyncTool interface {
+	Tool
+	SetCallback(cb AsyncCallback)
+}
+
+// StatusProvider is an optional interface that tools can implement
+// to inject runtime status information into the system prompt.
+// Return an empty string to inject nothing.
+type StatusProvider interface {
+	RuntimeStatus() string
 }
