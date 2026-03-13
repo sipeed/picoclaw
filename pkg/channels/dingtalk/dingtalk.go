@@ -183,7 +183,7 @@ func (c *DingTalkChannel) recoverConnection() {
 	for {
 		select {
 		case <-c.ctx.Done():
-			logger.InfoC("dingtalk", "Recovery aborted: context cancelled")
+			logger.InfoC("dingtalk", "Recovery aborted: context canceled")
 			return
 		default:
 		}

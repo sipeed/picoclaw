@@ -73,7 +73,7 @@ func (c *DingTalkChannel) sendRobotAPIRequest(
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-acs-dingtalk-access-token", accessToken)
+	req.Header.Set("X-Acs-Dingtalk-Access-Token", accessToken)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
