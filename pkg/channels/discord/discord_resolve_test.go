@@ -2,6 +2,8 @@ package discord
 
 import (
 	"testing"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 func TestChannelRefRegex(t *testing.T) {
@@ -94,5 +96,26 @@ func TestMsgLinkRegex_MultipleMatches(t *testing.T) {
 	// Verify the 3rd match is 7/8/9 (not 10/11/12)
 	if matches[2][1] != "7" || matches[2][2] != "8" || matches[2][3] != "9" {
 		t.Errorf("3rd match = %v, want guild=7 chan=8 msg=9", matches[2])
+	}
+}
+
+func TestResolveDiscordChannelName_FromState(t *testing.T) {
+	session, err := discordgo.New("Bot test-token")
+	if err != nil {
+		t.Fatalf("discordgo.New() error = %v", err)
+	}
+
+	session.StateEnabled = true
+	session.State = discordgo.NewState()
+	session.State.GuildAdd(&discordgo.Guild{ID: "guild-1"})
+	session.State.ChannelAdd(&discordgo.Channel{
+		ID:   "123",
+		Name: "general",
+		Type: discordgo.ChannelTypeGuildText,
+		GuildID: "guild-1",
+	})
+
+	if got := resolveDiscordChannelName(session, "123"); got != "#general" {
+		t.Fatalf("resolveDiscordChannelName() = %q, want %q", got, "#general")
 	}
 }

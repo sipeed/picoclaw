@@ -889,6 +889,16 @@ func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 	}
 }
 
+func TestDisplayChatID_AppendsChatName(t *testing.T) {
+	if got := displayChatID("123456789012345678", "#general"); got != "123456789012345678 (#general)" {
+		t.Fatalf("displayChatID() = %q, want %q", got, "123456789012345678 (#general)")
+	}
+
+	if got := displayChatID("123456789012345678", ""); got != "123456789012345678" {
+		t.Fatalf("displayChatID() without chatName = %q, want %q", got, "123456789012345678")
+	}
+}
+
 func TestHandleReasoning(t *testing.T) {
 	newLoop := func(t *testing.T) (*AgentLoop, *bus.MessageBus) {
 		t.Helper()
