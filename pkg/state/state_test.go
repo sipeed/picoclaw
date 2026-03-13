@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -135,7 +136,7 @@ func TestConcurrentAccess(t *testing.T) {
 
 	// Test concurrent writes
 	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		go func(idx int) {
 			channel := fmt.Sprintf("channel-%d", idx)
 			sm.SetLastChannel(channel)
@@ -144,7 +145,7 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 
@@ -212,5 +213,34 @@ func TestNewManager_EmptyWorkspace(t *testing.T) {
 
 	if !sm.GetTimestamp().IsZero() {
 		t.Error("Expected zero timestamp for new state")
+	}
+}
+
+func TestNewManager_MkdirFailureDoesNotCrash(t *testing.T) {
+	if os.Getenv("BE_CRASHER") == "1" {
+		tmpDir := os.Getenv("CRASH_DIR")
+
+		statePath := filepath.Join(tmpDir, "state")
+		if err := os.WriteFile(statePath, []byte("I'm a file, not a folder"), 0o644); err != nil {
+			fmt.Printf("setup failed: %v", err)
+			os.Exit(0)
+		}
+
+		NewManager(tmpDir)
+		os.Exit(0)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "state-crash-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestNewManager_MkdirFailureDoesNotCrash")
+	cmd.Env = append(os.Environ(), "BE_CRASHER=1", "CRASH_DIR="+tmpDir)
+
+	err = cmd.Run()
+	if err != nil {
+		t.Fatalf("NewManager should not crash when state dir creation fails, got: %v", err)
 	}
 }

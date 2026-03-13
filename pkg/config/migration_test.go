@@ -31,8 +31,8 @@ func TestConvertProvidersToModelList_OpenAI(t *testing.T) {
 	if result[0].ModelName != "openai" {
 		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "openai")
 	}
-	if result[0].Model != "openai/gpt-5.2" {
-		t.Errorf("Model = %q, want %q", result[0].Model, "openai/gpt-5.2")
+	if result[0].Model != "openai/gpt-5.4" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "openai/gpt-5.4")
 	}
 	if result[0].APIKey != "sk-test-key" {
 		t.Errorf("APIKey = %q, want %q", result[0].APIKey, "sk-test-key")
@@ -60,6 +60,33 @@ func TestConvertProvidersToModelList_Anthropic(t *testing.T) {
 	}
 	if result[0].Model != "anthropic/claude-sonnet-4.6" {
 		t.Errorf("Model = %q, want %q", result[0].Model, "anthropic/claude-sonnet-4.6")
+	}
+}
+
+func TestConvertProvidersToModelList_LiteLLM(t *testing.T) {
+	cfg := &Config{
+		Providers: ProvidersConfig{
+			LiteLLM: ProviderConfig{
+				APIKey:  "litellm-key",
+				APIBase: "http://localhost:4000/v1",
+			},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	if result[0].ModelName != "litellm" {
+		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "litellm")
+	}
+	if result[0].Model != "litellm/auto" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "litellm/auto")
+	}
+	if result[0].APIBase != "http://localhost:4000/v1" {
+		t.Errorf("APIBase = %q, want %q", result[0].APIBase, "http://localhost:4000/v1")
 	}
 }
 
@@ -115,6 +142,7 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 	cfg := &Config{
 		Providers: ProvidersConfig{
 			OpenAI:        OpenAIProviderConfig{ProviderConfig: ProviderConfig{APIKey: "key1"}},
+			LiteLLM:       ProviderConfig{APIKey: "key-litellm", APIBase: "http://localhost:4000/v1"},
 			Anthropic:     ProviderConfig{APIKey: "key2"},
 			OpenRouter:    ProviderConfig{APIKey: "key3"},
 			Groq:          ProviderConfig{APIKey: "key4"},
@@ -127,19 +155,23 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 			ShengSuanYun:  ProviderConfig{APIKey: "key11"},
 			DeepSeek:      ProviderConfig{APIKey: "key12"},
 			Cerebras:      ProviderConfig{APIKey: "key13"},
-			VolcEngine:    ProviderConfig{APIKey: "key14"},
+			Vivgrid:       ProviderConfig{APIKey: "key14"},
+			VolcEngine:    ProviderConfig{APIKey: "key15"},
 			GitHubCopilot: ProviderConfig{ConnectMode: "grpc"},
 			Antigravity:   ProviderConfig{AuthMethod: "oauth"},
 			Qwen:          ProviderConfig{APIKey: "key17"},
 			Mistral:       ProviderConfig{APIKey: "key18"},
+			Avian:         ProviderConfig{APIKey: "key19"},
+			LongCat:       ProviderConfig{APIKey: "key-longcat"},
+			ModelScope:    ProviderConfig{APIKey: "key-modelscope"},
 		},
 	}
 
 	result := ConvertProvidersToModelList(cfg)
 
-	// All 18 providers should be converted
-	if len(result) != 18 {
-		t.Errorf("len(result) = %d, want 18", len(result))
+	// All 23 providers should be converted
+	if len(result) != 23 {
+		t.Errorf("len(result) = %d, want 23", len(result))
 	}
 }
 
@@ -353,8 +385,8 @@ func TestConvertProvidersToModelList_MultipleProviders_PreservesUserModel(t *tes
 	for _, mc := range result {
 		switch mc.ModelName {
 		case "openai":
-			if mc.Model != "openai/gpt-5.2" {
-				t.Errorf("OpenAI Model = %q, want %q (default)", mc.Model, "openai/gpt-5.2")
+			if mc.Model != "openai/gpt-5.4" {
+				t.Errorf("OpenAI Model = %q, want %q (default)", mc.Model, "openai/gpt-5.4")
 			}
 		case "deepseek":
 			if mc.Model != "deepseek/deepseek-reasoner" {
@@ -527,9 +559,9 @@ func TestConvertProvidersToModelList_NoProviderField_NoModel(t *testing.T) {
 // Tests for buildModelWithProtocol helper function
 
 func TestBuildModelWithProtocol_NoPrefix(t *testing.T) {
-	result := buildModelWithProtocol("openai", "gpt-5.2")
-	if result != "openai/gpt-5.2" {
-		t.Errorf("buildModelWithProtocol(openai, gpt-5.2) = %q, want %q", result, "openai/gpt-5.2")
+	result := buildModelWithProtocol("openai", "gpt-5.4")
+	if result != "openai/gpt-5.4" {
+		t.Errorf("buildModelWithProtocol(openai, gpt-5.4) = %q, want %q", result, "openai/gpt-5.4")
 	}
 }
 

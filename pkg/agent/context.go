@@ -7,19 +7,24 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type ContextBuilder struct {
-	workspace    string
-	skillsLoader *skills.SkillsLoader
-	memory       *MemoryStore
+	workspace          string
+	skillsLoader       *skills.SkillsLoader
+	memory             *MemoryStore
+	toolDiscoveryBM25  bool
+	toolDiscoveryRegex bool
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -33,9 +38,23 @@ type ContextBuilder struct {
 	// created (didn't exist at cache time, now exist) or deleted (existed at
 	// cache time, now gone) — both of which should trigger a cache rebuild.
 	existedAtCache map[string]bool
+
+	// skillFilesAtCache snapshots the skill tree file set and mtimes at cache
+	// build time. This catches nested file creations/deletions/mtime changes
+	// that may not update the top-level skill root directory mtime.
+	skillFilesAtCache map[string]time.Time
+}
+
+func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuilder {
+	cb.toolDiscoveryBM25 = useBM25
+	cb.toolDiscoveryRegex = useRegex
+	return cb
 }
 
 func getGlobalConfigDir() string {
+	if home := os.Getenv("PICOCLAW_HOME"); home != "" {
+		return home
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
@@ -46,8 +65,11 @@ func getGlobalConfigDir() string {
 func NewContextBuilder(workspace string) *ContextBuilder {
 	// builtin skills: skills directory in current project
 	// Use the skills/ directory under the current working directory
-	wd, _ := os.Getwd()
-	builtinSkillsDir := filepath.Join(wd, "skills")
+	builtinSkillsDir := strings.TrimSpace(os.Getenv("PICOCLAW_BUILTIN_SKILLS"))
+	if builtinSkillsDir == "" {
+		wd, _ := os.Getwd()
+		builtinSkillsDir = filepath.Join(wd, "skills")
+	}
 	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
 
 	return &ContextBuilder{
@@ -59,8 +81,11 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 
 func (cb *ContextBuilder) getIdentity() string {
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
+	toolDiscovery := cb.getDiscoveryRule()
+	version := config.FormatVersion()
 
-	return fmt.Sprintf(`# picoclaw 🦞
+	return fmt.Sprintf(
+		`# picoclaw 🦞 (%s)
 
 You are picoclaw, a helpful AI assistant.
 
@@ -78,8 +103,29 @@ Your workspace is at: %s
 
 3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
 
-4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
-		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
+4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
+
+%s`,
+		version, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
+}
+
+func (cb *ContextBuilder) getDiscoveryRule() string {
+	if !cb.toolDiscoveryBM25 && !cb.toolDiscoveryRegex {
+		return ""
+	}
+
+	var toolNames []string
+	if cb.toolDiscoveryBM25 {
+		toolNames = append(toolNames, `"tool_search_tool_bm25"`)
+	}
+	if cb.toolDiscoveryRegex {
+		toolNames = append(toolNames, `"tool_search_tool_regex"`)
+	}
+
+	return fmt.Sprintf(
+		`5. **Tool Discovery** - Your visible tools are limited to save memory, but a vast hidden library exists. If you lack the right tool for a task, BEFORE giving up, you MUST search using the %s tool. Do not refuse a request unless the search returns nothing. Found tools will temporarily unlock for your next turn.`,
+		strings.Join(toolNames, " or "),
+	)
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
@@ -147,6 +193,7 @@ func (cb *ContextBuilder) BuildSystemPromptWithCache() string {
 	cb.cachedSystemPrompt = prompt
 	cb.cachedAt = baseline.maxMtime
 	cb.existedAtCache = baseline.existed
+	cb.skillFilesAtCache = baseline.skillFiles
 
 	logger.DebugCF("agent", "System prompt cached",
 		map[string]any{
@@ -166,14 +213,14 @@ func (cb *ContextBuilder) InvalidateCache() {
 	cb.cachedSystemPrompt = ""
 	cb.cachedAt = time.Time{}
 	cb.existedAtCache = nil
+	cb.skillFilesAtCache = nil
 
 	logger.DebugCF("agent", "System prompt cache invalidated", nil)
 }
 
-// sourcePaths returns the workspace source file paths tracked for cache
-// invalidation (bootstrap files + memory). The skills directory is handled
-// separately in sourceFilesChangedLocked because it requires both directory-
-// level and recursive file-level mtime checks.
+// sourcePaths returns non-skill workspace source files tracked for cache
+// invalidation (bootstrap files + memory). Skill roots are handled separately
+// because they require both directory-level and recursive file-level checks.
 func (cb *ContextBuilder) sourcePaths() []string {
 	return []string{
 		filepath.Join(cb.workspace, "AGENTS.md"),
@@ -184,23 +231,39 @@ func (cb *ContextBuilder) sourcePaths() []string {
 	}
 }
 
+// skillRoots returns all skill root directories that can affect
+// BuildSkillsSummary output (workspace/global/builtin).
+func (cb *ContextBuilder) skillRoots() []string {
+	if cb.skillsLoader == nil {
+		return []string{filepath.Join(cb.workspace, "skills")}
+	}
+
+	roots := cb.skillsLoader.SkillRoots()
+	if len(roots) == 0 {
+		return []string{filepath.Join(cb.workspace, "skills")}
+	}
+	return roots
+}
+
 // cacheBaseline holds the file existence snapshot and the latest observed
 // mtime across all tracked paths. Used as the cache reference point.
 type cacheBaseline struct {
-	existed  map[string]bool
-	maxMtime time.Time
+	existed    map[string]bool
+	skillFiles map[string]time.Time
+	maxMtime   time.Time
 }
 
 // buildCacheBaseline records which tracked paths currently exist and computes
 // the latest mtime across all tracked files + skills directory contents.
 // Called under write lock when the cache is built.
 func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
-	skillsDir := filepath.Join(cb.workspace, "skills")
+	skillRoots := cb.skillRoots()
 
-	// All paths whose existence we track: source files + skills dir.
-	allPaths := append(cb.sourcePaths(), skillsDir)
+	// All paths whose existence we track: source files + all skill roots.
+	allPaths := append(cb.sourcePaths(), skillRoots...)
 
 	existed := make(map[string]bool, len(allPaths))
+	skillFiles := make(map[string]time.Time)
 	var maxMtime time.Time
 
 	for _, p := range allPaths {
@@ -211,17 +274,21 @@ func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 		}
 	}
 
-	// Walk skills files to capture their mtimes too.
-	// Use os.Stat (not d.Info) to match the stat method used in
-	// fileChangedSince / skillFilesModifiedSince for consistency.
-	_ = filepath.WalkDir(skillsDir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr == nil && !d.IsDir() {
-			if info, err := os.Stat(path); err == nil && info.ModTime().After(maxMtime) {
-				maxMtime = info.ModTime()
+	// Walk all skill roots recursively to snapshot skill files and mtimes.
+	// Use os.Stat (not d.Info) for consistency with sourceFilesChanged checks.
+	for _, root := range skillRoots {
+		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr == nil && !d.IsDir() {
+				if info, err := os.Stat(path); err == nil {
+					skillFiles[path] = info.ModTime()
+					if info.ModTime().After(maxMtime) {
+						maxMtime = info.ModTime()
+					}
+				}
 			}
-		}
-		return nil
-	})
+			return nil
+		})
+	}
 
 	// If no tracked files exist yet (empty workspace), maxMtime is zero.
 	// Use a very old non-zero time so that:
@@ -233,7 +300,7 @@ func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 		maxMtime = time.Unix(1, 0)
 	}
 
-	return cacheBaseline{existed: existed, maxMtime: maxMtime}
+	return cacheBaseline{existed: existed, skillFiles: skillFiles, maxMtime: maxMtime}
 }
 
 // sourceFilesChangedLocked checks whether any workspace source file has been
@@ -249,27 +316,21 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 	}
 
 	// Check tracked source files (bootstrap + memory).
-	for _, p := range cb.sourcePaths() {
-		if cb.fileChangedSince(p) {
-			return true
-		}
-	}
-
-	// --- Skills directory (handled separately from sourcePaths) ---
-	//
-	// 1. Creation/deletion: tracked via existedAtCache, same as bootstrap files.
-	skillsDir := filepath.Join(cb.workspace, "skills")
-	if cb.fileChangedSince(skillsDir) {
+	if slices.ContainsFunc(cb.sourcePaths(), cb.fileChangedSince) {
 		return true
 	}
 
-	// 2. Structural changes (add/remove entries inside the dir) are reflected
-	//    in the directory's own mtime, which fileChangedSince already checks.
+	// --- Skill roots (workspace/global/builtin) ---
 	//
-	// 3. Content-only edits to files inside skills/ do NOT update the parent
-	//    directory mtime on most filesystems, so we recursively walk to check
-	//    individual file mtimes at any nesting depth.
-	if skillFilesModifiedSince(skillsDir, cb.cachedAt) {
+	// For each root:
+	// 1. Creation/deletion and root directory mtime changes are tracked by fileChangedSince.
+	// 2. Nested file create/delete/mtime changes are tracked by the skill file snapshot.
+	for _, root := range cb.skillRoots() {
+		if cb.fileChangedSince(root) {
+			return true
+		}
+	}
+	if skillFilesChangedSince(cb.skillRoots(), cb.skillFilesAtCache) {
 		return true
 	}
 
@@ -310,28 +371,64 @@ func (cb *ContextBuilder) fileChangedSince(path string) bool {
 // if the callback returned nil when its err parameter is non-nil.
 var errWalkStop = errors.New("walk stop")
 
-// skillFilesModifiedSince recursively walks the skills directory and checks
-// whether any file was modified after t. This catches content-only edits at
-// any nesting depth (e.g. skills/name/docs/extra.md) that don't update
-// parent directory mtimes.
-func skillFilesModifiedSince(skillsDir string, t time.Time) bool {
-	changed := false
-	err := filepath.WalkDir(skillsDir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr == nil && !d.IsDir() {
-			if info, statErr := os.Stat(path); statErr == nil && info.ModTime().After(t) {
-				changed = true
-				return errWalkStop // stop walking
-			}
-		}
-		return nil
-	})
-	// errWalkStop is expected (early exit on first changed file).
-	// os.IsNotExist means the skills dir doesn't exist yet — not an error.
-	// Any other error is unexpected and worth logging.
-	if err != nil && !errors.Is(err, errWalkStop) && !os.IsNotExist(err) {
-		logger.DebugCF("agent", "skills walk error", map[string]any{"error": err.Error()})
+// skillFilesChangedSince compares the current recursive skill file tree
+// against the cache-time snapshot. Any create/delete/mtime drift invalidates
+// the cache.
+func skillFilesChangedSince(skillRoots []string, filesAtCache map[string]time.Time) bool {
+	// Defensive: if the snapshot was never initialized, force rebuild.
+	if filesAtCache == nil {
+		return true
 	}
-	return changed
+
+	// Check cached files still exist and keep the same mtime.
+	for path, cachedMtime := range filesAtCache {
+		info, err := os.Stat(path)
+		if err != nil {
+			// A previously tracked file disappeared (or became inaccessible):
+			// either way, cached skill summary may now be stale.
+			return true
+		}
+		if !info.ModTime().Equal(cachedMtime) {
+			return true
+		}
+	}
+
+	// Check no new files appeared under any skill root.
+	changed := false
+	for _, root := range skillRoots {
+		if strings.TrimSpace(root) == "" {
+			continue
+		}
+
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				// Treat unexpected walk errors as changed to avoid stale cache.
+				if !os.IsNotExist(walkErr) {
+					changed = true
+					return errWalkStop
+				}
+				return nil
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if _, ok := filesAtCache[path]; !ok {
+				changed = true
+				return errWalkStop
+			}
+			return nil
+		})
+
+		if changed {
+			return true
+		}
+		if err != nil && !errors.Is(err, errWalkStop) && !os.IsNotExist(err) {
+			logger.DebugCF("agent", "skills walk error", map[string]any{"error": err.Error()})
+			return true
+		}
+	}
+
+	return false
 }
 
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
@@ -442,10 +539,7 @@ func (cb *ContextBuilder) BuildMessages(
 		})
 
 	// Log preview of system prompt (avoid logging huge content)
-	preview := fullSystemPrompt
-	if len(preview) > 500 {
-		preview = preview[:500] + "... (truncated)"
-	}
+	preview := utils.Truncate(fullSystemPrompt, 500)
 	logger.DebugCF("agent", "System prompt preview",
 		map[string]any{
 			"preview": preview,
@@ -467,10 +561,14 @@ func (cb *ContextBuilder) BuildMessages(
 
 	// Add current user message
 	if strings.TrimSpace(currentMessage) != "" {
-		messages = append(messages, providers.Message{
+		msg := providers.Message{
 			Role:    "user",
 			Content: currentMessage,
-		})
+		}
+		if len(media) > 0 {
+			msg.Media = media
+		}
+		messages = append(messages, msg)
 	}
 
 	return messages
@@ -538,7 +636,60 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 		}
 	}
 
-	return sanitized
+	// Second pass: ensure every assistant message with tool_calls has matching
+	// tool result messages following it. This is required by strict providers
+	// like DeepSeek that enforce: "An assistant message with 'tool_calls' must
+	// be followed by tool messages responding to each 'tool_call_id'."
+	final := make([]providers.Message, 0, len(sanitized))
+	for i := 0; i < len(sanitized); i++ {
+		msg := sanitized[i]
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			// Collect expected tool_call IDs
+			expected := make(map[string]bool, len(msg.ToolCalls))
+			for _, tc := range msg.ToolCalls {
+				expected[tc.ID] = false
+			}
+
+			// Check following messages for matching tool results
+			toolMsgCount := 0
+			for j := i + 1; j < len(sanitized); j++ {
+				if sanitized[j].Role != "tool" {
+					break
+				}
+				toolMsgCount++
+				if _, exists := expected[sanitized[j].ToolCallID]; exists {
+					expected[sanitized[j].ToolCallID] = true
+				}
+			}
+
+			// If any tool_call_id is missing, drop this assistant message and its partial tool messages
+			allFound := true
+			for toolCallID, found := range expected {
+				if !found {
+					allFound = false
+					logger.DebugCF(
+						"agent",
+						"Dropping assistant message with incomplete tool results",
+						map[string]any{
+							"missing_tool_call_id": toolCallID,
+							"expected_count":       len(expected),
+							"found_count":          toolMsgCount,
+						},
+					)
+					break
+				}
+			}
+
+			if !allFound {
+				// Skip this assistant message and its tool messages
+				i += toolMsgCount
+				continue
+			}
+		}
+		final = append(final, msg)
+	}
+
+	return final
 }
 
 func (cb *ContextBuilder) AddToolResult(

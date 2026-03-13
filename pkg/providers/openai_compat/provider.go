@@ -1,6 +1,7 @@
 package openai_compat
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -25,6 +26,7 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
+	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
 
 type Provider struct {
@@ -115,7 +117,7 @@ func (p *Provider) Chat(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": stripSystemParts(messages),
+		"messages": serializeMessages(messages),
 	}
 
 	if len(tools) > 0 {
@@ -154,9 +156,10 @@ func (p *Provider) Chat(
 	// The key is typically the agent ID — stable per agent, shared across requests.
 	// See: https://platform.openai.com/docs/guides/prompt-caching
 	// Prompt caching is only supported by OpenAI-native endpoints.
-	// Gemini and other providers reject unknown fields, so skip for non-OpenAI APIs.
+	// Non-OpenAI providers (Mistral, Gemini, DeepSeek, etc.) reject unknown
+	// fields with 422 errors, so only include it for OpenAI APIs.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
-		if !strings.Contains(p.apiBase, "generativelanguage.googleapis.com") {
+		if supportsPromptCacheKey(p.apiBase) {
 			requestBody["prompt_cache_key"] = cacheKey
 		}
 	}
@@ -182,30 +185,107 @@ func (p *Provider) Chat(
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
+	contentType := resp.Header.Get("Content-Type")
 
+	// Non-200: read a prefix to tell HTML error page apart from JSON error body.
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 256))
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read response: %w", readErr)
+		}
+		if looksLikeHTML(body, contentType) {
+			return nil, wrapHTMLResponseError(resp.StatusCode, body, contentType, p.apiBase)
+		}
+		return nil, fmt.Errorf(
+			"API request failed:\n  Status: %d\n  Body:   %s",
+			resp.StatusCode,
+			responsePreview(body, 128),
+		)
 	}
 
-	return parseResponse(body)
+	// Peek without consuming so the full stream reaches the JSON decoder.
+	reader := bufio.NewReader(resp.Body)
+	prefix, err := reader.Peek(256) // io.EOF/ErrBufferFull are normal; only real errors abort
+	if err != nil && err != io.EOF && err != bufio.ErrBufferFull {
+		return nil, fmt.Errorf("failed to inspect response: %w", err)
+	}
+	if looksLikeHTML(prefix, contentType) {
+		return nil, wrapHTMLResponseError(resp.StatusCode, prefix, contentType, p.apiBase)
+	}
+
+	out, err := parseResponse(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
+	}
+
+	return out, nil
 }
 
-func parseResponse(body []byte) (*LLMResponse, error) {
+func wrapHTMLResponseError(statusCode int, body []byte, contentType, apiBase string) error {
+	respPreview := responsePreview(body, 128)
+	return fmt.Errorf(
+		"API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  Body:   %s",
+		apiBase,
+		contentType,
+		statusCode,
+		respPreview,
+	)
+}
+
+func looksLikeHTML(body []byte, contentType string) bool {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "application/xhtml+xml") {
+		return true
+	}
+	prefix := bytes.ToLower(leadingTrimmedPrefix(body, 128))
+	return bytes.HasPrefix(prefix, []byte("<!doctype html")) ||
+		bytes.HasPrefix(prefix, []byte("<html")) ||
+		bytes.HasPrefix(prefix, []byte("<head")) ||
+		bytes.HasPrefix(prefix, []byte("<body"))
+}
+
+func leadingTrimmedPrefix(body []byte, maxLen int) []byte {
+	i := 0
+	for i < len(body) {
+		switch body[i] {
+		case ' ', '\t', '\n', '\r', '\f', '\v':
+			i++
+		default:
+			end := i + maxLen
+			if end > len(body) {
+				end = len(body)
+			}
+			return body[i:end]
+		}
+	}
+	return nil
+}
+
+func responsePreview(body []byte, maxLen int) string {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return "<empty>"
+	}
+	if len(trimmed) <= maxLen {
+		return string(trimmed)
+	}
+	return string(trimmed[:maxLen]) + "..."
+}
+
+func parseResponse(body io.Reader) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
-				Content          string `json:"content"`
-				ReasoningContent string `json:"reasoning_content"`
+				Content          string            `json:"content"`
+				ReasoningContent string            `json:"reasoning_content"`
+				Reasoning        string            `json:"reasoning"`
+				ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
 				ToolCalls        []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function *struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
+						Name      string          `json:"name"`
+						Arguments json.RawMessage `json:"arguments"`
 					} `json:"function"`
 					ExtraContent *struct {
 						Google *struct {
@@ -219,8 +299,8 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		Usage *UsageInfo `json:"usage"`
 	}
 
-	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	if err := json.NewDecoder(body).Decode(&apiResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if len(apiResponse.Choices) == 0 {
@@ -244,12 +324,7 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 
 		if tc.Function != nil {
 			name = tc.Function.Name
-			if tc.Function.Arguments != "" {
-				if err := json.Unmarshal([]byte(tc.Function.Arguments), &arguments); err != nil {
-					log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
-					arguments["raw"] = tc.Function.Arguments
-				}
-			}
+			arguments = decodeToolCallArguments(tc.Function.Arguments, name)
 		}
 
 		// Build ToolCall with ExtraContent for Gemini 3 thought_signature persistence
@@ -274,41 +349,116 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	return &LLMResponse{
 		Content:          choice.Message.Content,
 		ReasoningContent: choice.Message.ReasoningContent,
+		Reasoning:        choice.Message.Reasoning,
+		ReasoningDetails: choice.Message.ReasoningDetails,
 		ToolCalls:        toolCalls,
 		FinishReason:     choice.FinishReason,
 		Usage:            apiResponse.Usage,
 	}, nil
 }
 
+func decodeToolCallArguments(raw json.RawMessage, name string) map[string]any {
+	arguments := make(map[string]any)
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return arguments
+	}
+
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		log.Printf("openai_compat: failed to decode tool call arguments payload for %q: %v", name, err)
+		arguments["raw"] = string(raw)
+		return arguments
+	}
+
+	switch v := decoded.(type) {
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return arguments
+		}
+		if err := json.Unmarshal([]byte(v), &arguments); err != nil {
+			log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
+			arguments["raw"] = v
+		}
+		return arguments
+	case map[string]any:
+		return v
+	default:
+		log.Printf("openai_compat: unsupported tool call arguments type for %q: %T", name, decoded)
+		arguments["raw"] = string(raw)
+		return arguments
+	}
+}
+
 // openaiMessage is the wire-format message for OpenAI-compatible APIs.
 // It mirrors protocoltypes.Message but omits SystemParts, which is an
 // internal field that would be unknown to third-party endpoints.
 type openaiMessage struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
 }
 
-// stripSystemParts converts []Message to []openaiMessage, dropping the
-// SystemParts field so it doesn't leak into the JSON payload sent to
-// OpenAI-compatible APIs (some strict endpoints reject unknown fields).
-func stripSystemParts(messages []Message) []openaiMessage {
-	out := make([]openaiMessage, len(messages))
-	for i, m := range messages {
-		out[i] = openaiMessage{
-			Role:       m.Role,
-			Content:    m.Content,
-			ToolCalls:  m.ToolCalls,
-			ToolCallID: m.ToolCallID,
+// serializeMessages converts internal Message structs to the OpenAI wire format.
+// - Strips SystemParts (unknown to third-party endpoints)
+// - Converts messages with Media to multipart content format (text + image_url parts)
+// - Preserves ToolCallID, ToolCalls, and ReasoningContent for all messages
+func serializeMessages(messages []Message) []any {
+	out := make([]any, 0, len(messages))
+	for _, m := range messages {
+		if len(m.Media) == 0 {
+			out = append(out, openaiMessage{
+				Role:             m.Role,
+				Content:          m.Content,
+				ReasoningContent: m.ReasoningContent,
+				ToolCalls:        m.ToolCalls,
+				ToolCallID:       m.ToolCallID,
+			})
+			continue
 		}
+
+		// Multipart content format for messages with media
+		parts := make([]map[string]any, 0, 1+len(m.Media))
+		if m.Content != "" {
+			parts = append(parts, map[string]any{
+				"type": "text",
+				"text": m.Content,
+			})
+		}
+		for _, mediaURL := range m.Media {
+			if strings.HasPrefix(mediaURL, "data:image/") {
+				parts = append(parts, map[string]any{
+					"type": "image_url",
+					"image_url": map[string]any{
+						"url": mediaURL,
+					},
+				})
+			}
+		}
+
+		msg := map[string]any{
+			"role":    m.Role,
+			"content": parts,
+		}
+		if m.ToolCallID != "" {
+			msg["tool_call_id"] = m.ToolCallID
+		}
+		if len(m.ToolCalls) > 0 {
+			msg["tool_calls"] = m.ToolCalls
+		}
+		if m.ReasoningContent != "" {
+			msg["reasoning_content"] = m.ReasoningContent
+		}
+		out = append(out, msg)
 	}
 	return out
 }
 
 func normalizeModel(model, apiBase string) string {
-	idx := strings.Index(model, "/")
-	if idx == -1 {
+	before, after, ok := strings.Cut(model, "/")
+	if !ok {
 		return model
 	}
 
@@ -320,10 +470,11 @@ func normalizeModel(model, apiBase string) string {
 		return model
 	}
 
-	prefix := strings.ToLower(model[:idx])
+	prefix := strings.ToLower(before)
 	switch prefix {
-	case "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu", "mistral":
-		return model[idx+1:]
+	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google",
+		"openrouter", "zhipu", "mistral", "vivgrid", "minimax":
+		return after
 	default:
 		return model
 	}
@@ -357,4 +508,17 @@ func asFloat(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// supportsPromptCacheKey reports whether the given API base is known to
+// support the prompt_cache_key request field. Currently only OpenAI's own
+// API and Azure OpenAI support this. All other OpenAI-compatible providers
+// (Mistral, Gemini, DeepSeek, Groq, etc.) reject unknown fields with 422 errors.
+func supportsPromptCacheKey(apiBase string) bool {
+	u, err := url.Parse(apiBase)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
 }

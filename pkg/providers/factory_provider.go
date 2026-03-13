@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	anthropicmessages "github.com/sipeed/picoclaw/pkg/providers/anthropic_messages"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -53,7 +54,8 @@ func ExtractProtocol(model string) (protocol, modelID string) {
 
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
-// Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot
+// Supported protocols: openai, litellm, anthropic, anthropic-messages, antigravity,
+// claude-cli, codex-cli, github-copilot
 // Returns the provider, the model ID (without protocol prefix), and any error.
 func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, error) {
 	if cfg == nil {
@@ -92,9 +94,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.RequestTimeout,
 		), modelID, nil
 
-	case "openrouter", "groq", "zhipu", "gemini", "nvidia",
+	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"volcengine", "vllm", "qwen", "mistral":
+		"vivgrid", "volcengine", "vllm", "qwen", "mistral", "avian",
+		"minimax", "longcat", "modelscope":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -133,6 +136,21 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			cfg.RequestTimeout,
+		), modelID, nil
+
+	case "anthropic-messages":
+		// Anthropic Messages API with native format (HTTP-based, no SDK)
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = "https://api.anthropic.com/v1"
+		}
+		if cfg.APIKey == "" {
+			return nil, "", fmt.Errorf("api_key is required for anthropic-messages protocol (model: %s)", cfg.Model)
+		}
+		return anthropicmessages.NewProviderWithTimeout(
+			cfg.APIKey,
+			apiBase,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -180,6 +198,8 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://api.openai.com/v1"
 	case "openrouter":
 		return "https://openrouter.ai/api/v1"
+	case "litellm":
+		return "http://localhost:4000/v1"
 	case "groq":
 		return "https://api.groq.com/openai/v1"
 	case "zhipu":
@@ -198,6 +218,8 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://api.deepseek.com/v1"
 	case "cerebras":
 		return "https://api.cerebras.ai/v1"
+	case "vivgrid":
+		return "https://api.vivgrid.com/v1"
 	case "volcengine":
 		return "https://ark.cn-beijing.volces.com/api/v3"
 	case "qwen":
@@ -206,6 +228,14 @@ func getDefaultAPIBase(protocol string) string {
 		return "http://localhost:8000/v1"
 	case "mistral":
 		return "https://api.mistral.ai/v1"
+	case "avian":
+		return "https://api.avian.io/v1"
+	case "minimax":
+		return "https://api.minimaxi.com/v1"
+	case "longcat":
+		return "https://api.longcat.chat/openai"
+	case "modelscope":
+		return "https://api-inference.modelscope.cn/v1"
 	default:
 		return ""
 	}

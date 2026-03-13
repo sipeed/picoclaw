@@ -5,18 +5,36 @@
 
 package config
 
+import (
+	"os"
+	"path/filepath"
+)
+
 // DefaultConfig returns the default configuration for PicoClaw.
 func DefaultConfig() *Config {
+	// Determine the base path for the workspace.
+	// Priority: $PICOCLAW_HOME > ~/.picoclaw
+	var homePath string
+	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
+		homePath = picoclawHome
+	} else {
+		userHome, _ := os.UserHomeDir()
+		homePath = filepath.Join(userHome, ".picoclaw")
+	}
+	workspacePath := filepath.Join(homePath, "workspace")
+
 	return &Config{
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
-				Workspace:           "~/.picoclaw/workspace",
-				RestrictToWorkspace: true,
-				Provider:            "",
-				Model:               "glm-4.7",
-				MaxTokens:           8192,
-				Temperature:         nil, // nil means use provider default
-				MaxToolIterations:   20,
+				Workspace:                 workspacePath,
+				RestrictToWorkspace:       true,
+				Provider:                  "",
+				Model:                     "",
+				MaxTokens:                 32768,
+				Temperature:               nil, // nil means use provider default
+				MaxToolIterations:         50,
+				SummarizeMessageThreshold: 20,
+				SummarizeTokenPercent:     75,
 			},
 		},
 		Bindings: []AgentBinding{},
@@ -25,14 +43,21 @@ func DefaultConfig() *Config {
 		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{
-				Enabled:   false,
-				BridgeURL: "ws://localhost:3001",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:          false,
+				BridgeURL:        "ws://localhost:3001",
+				UseNative:        false,
+				SessionStorePath: "",
+				AllowFrom:        FlexibleStringSlice{},
 			},
 			Telegram: TelegramConfig{
 				Enabled:   false,
 				Token:     "",
 				AllowFrom: FlexibleStringSlice{},
+				Typing:    TypingConfig{Enabled: true},
+				Placeholder: PlaceholderConfig{
+					Enabled: true,
+					Text:    "Thinking... 💭",
+				},
 			},
 			Feishu: FeishuConfig{
 				Enabled:           false,
@@ -55,10 +80,11 @@ func DefaultConfig() *Config {
 				AllowFrom: FlexibleStringSlice{},
 			},
 			QQ: QQConfig{
-				Enabled:   false,
-				AppID:     "",
-				AppSecret: "",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:          false,
+				AppID:            "",
+				AppSecret:        "",
+				AllowFrom:        FlexibleStringSlice{},
+				MaxMessageLength: 2000,
 			},
 			DingTalk: DingTalkConfig{
 				Enabled:      false,
@@ -72,6 +98,22 @@ func DefaultConfig() *Config {
 				AppToken:  "",
 				AllowFrom: FlexibleStringSlice{},
 			},
+			Matrix: MatrixConfig{
+				Enabled:      false,
+				Homeserver:   "https://matrix.org",
+				UserID:       "",
+				AccessToken:  "",
+				DeviceID:     "",
+				JoinOnInvite: true,
+				AllowFrom:    FlexibleStringSlice{},
+				GroupTrigger: GroupTriggerConfig{
+					MentionOnly: true,
+				},
+				Placeholder: PlaceholderConfig{
+					Enabled: true,
+					Text:    "Thinking... 💭",
+				},
+			},
 			LINE: LINEConfig{
 				Enabled:            false,
 				ChannelSecret:      "",
@@ -80,6 +122,7 @@ func DefaultConfig() *Config {
 				WebhookPort:        18791,
 				WebhookPath:        "/webhook/line",
 				AllowFrom:          FlexibleStringSlice{},
+				GroupTrigger:       GroupTriggerConfig{MentionOnly: true},
 			},
 			OneBot: OneBotConfig{
 				Enabled:            false,
@@ -113,6 +156,25 @@ func DefaultConfig() *Config {
 				AllowFrom:      FlexibleStringSlice{},
 				ReplyTimeout:   5,
 			},
+			WeComAIBot: WeComAIBotConfig{
+				Enabled:        false,
+				Token:          "",
+				EncodingAESKey: "",
+				WebhookPath:    "/webhook/wecom-aibot",
+				AllowFrom:      FlexibleStringSlice{},
+				ReplyTimeout:   5,
+				MaxSteps:       10,
+				WelcomeMessage: "Hello! I'm your AI assistant. How can I help you today?",
+			},
+			Pico: PicoConfig{
+				Enabled:        false,
+				Token:          "",
+				PingInterval:   30,
+				ReadTimeout:    60,
+				WriteTimeout:   10,
+				MaxConnections: 100,
+				AllowFrom:      FlexibleStringSlice{},
+			},
 		},
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{WebSearch: true},
@@ -132,8 +194,8 @@ func DefaultConfig() *Config {
 
 			// OpenAI - https://platform.openai.com/api-keys
 			{
-				ModelName: "gpt-5.2",
-				Model:     "openai/gpt-5.2",
+				ModelName: "gpt-5.4",
+				Model:     "openai/gpt-5.4",
 				APIBase:   "https://api.openai.com/v1",
 				APIKey:    "",
 			},
@@ -194,8 +256,8 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 			{
-				ModelName: "openrouter-gpt-5.2",
-				Model:     "openrouter/openai/gpt-5.2",
+				ModelName: "openrouter-gpt-5.4",
+				Model:     "openrouter/openai/gpt-5.4",
 				APIBase:   "https://openrouter.ai/api/v1",
 				APIKey:    "",
 			},
@@ -216,7 +278,21 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// Vivgrid - https://vivgrid.com
+			{
+				ModelName: "vivgrid-auto",
+				Model:     "vivgrid/auto",
+				APIBase:   "https://api.vivgrid.com/v1",
+				APIKey:    "",
+			},
+
 			// Volcengine (火山引擎) - https://console.volcengine.com/ark
+			{
+				ModelName: "ark-code-latest",
+				Model:     "volcengine/ark-code-latest",
+				APIBase:   "https://ark.cn-beijing.volces.com/api/v3",
+				APIKey:    "",
+			},
 			{
 				ModelName: "doubao-pro",
 				Model:     "volcengine/doubao-pro-32k",
@@ -241,8 +317,8 @@ func DefaultConfig() *Config {
 
 			// GitHub Copilot - https://github.com/settings/tokens
 			{
-				ModelName:  "copilot-gpt-5.2",
-				Model:      "github-copilot/gpt-5.2",
+				ModelName:  "copilot-gpt-5.4",
+				Model:      "github-copilot/gpt-5.4",
 				APIBase:    "http://localhost:4321",
 				AuthMethod: "oauth",
 			},
@@ -263,6 +339,44 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// Avian - https://avian.io
+			{
+				ModelName: "deepseek-v3.2",
+				Model:     "avian/deepseek/deepseek-v3.2",
+				APIBase:   "https://api.avian.io/v1",
+				APIKey:    "",
+			},
+			{
+				ModelName: "kimi-k2.5",
+				Model:     "avian/moonshotai/kimi-k2.5",
+				APIBase:   "https://api.avian.io/v1",
+				APIKey:    "",
+			},
+
+			// Minimax - https://api.minimaxi.com/
+			{
+				ModelName: "MiniMax-M2.5",
+				Model:     "minimax/MiniMax-M2.5",
+				APIBase:   "https://api.minimaxi.com/v1",
+				APIKey:    "",
+			},
+
+			// LongCat - https://longcat.chat/platform
+			{
+				ModelName: "LongCat-Flash-Thinking",
+				Model:     "longcat/LongCat-Flash-Thinking",
+				APIBase:   "https://api.longcat.chat/openai",
+				APIKey:    "",
+			},
+
+			// ModelScope (魔搭社区) - https://modelscope.cn/my/tokens
+			{
+				ModelName: "modelscope-qwen",
+				Model:     "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+				APIBase:   "https://api-inference.modelscope.cn/v1",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",
@@ -276,11 +390,29 @@ func DefaultConfig() *Config {
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
+			MediaCleanup: MediaCleanupConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
+				MaxAge:   30,
+				Interval: 5,
+			},
 			Web: WebToolsConfig{
-				Proxy: "",
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
+				Proxy:           "",
+				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
 				Brave: BraveConfig{
 					Enabled:    false,
 					APIKey:     "",
+					APIKeys:    nil,
+					MaxResults: 5,
+				},
+				Tavily: TavilyConfig{
+					Enabled:    false,
+					APIKey:     "",
+					APIKeys:    nil,
 					MaxResults: 5,
 				},
 				DuckDuckGo: DuckDuckGoConfig{
@@ -290,16 +422,40 @@ func DefaultConfig() *Config {
 				Perplexity: PerplexityConfig{
 					Enabled:    false,
 					APIKey:     "",
+					APIKeys:    nil,
 					MaxResults: 5,
+				},
+				SearXNG: SearXNGConfig{
+					Enabled:    false,
+					BaseURL:    "",
+					MaxResults: 5,
+				},
+				GLMSearch: GLMSearchConfig{
+					Enabled:      false,
+					APIKey:       "",
+					BaseURL:      "https://open.bigmodel.cn/api/paas/v4/web_search",
+					SearchEngine: "search_std",
+					MaxResults:   5,
 				},
 			},
 			Cron: CronToolsConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
 				ExecTimeoutMinutes: 5,
 			},
 			Exec: ExecConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
 				EnableDenyPatterns: true,
+				AllowRemote:        true,
+				TimeoutSeconds:     60,
 			},
 			Skills: SkillsToolsConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
 				Registries: SkillsRegistriesConfig{
 					ClawHub: ClawHubRegistryConfig{
 						Enabled: true,
@@ -312,6 +468,62 @@ func DefaultConfig() *Config {
 					TTLSeconds: 300,
 				},
 			},
+			SendFile: ToolConfig{
+				Enabled: true,
+			},
+			MCP: MCPConfig{
+				ToolConfig: ToolConfig{
+					Enabled: false,
+				},
+				Discovery: ToolDiscoveryConfig{
+					Enabled:          false,
+					TTL:              5,
+					MaxSearchResults: 5,
+					UseBM25:          true,
+					UseRegex:         false,
+				},
+				Servers: map[string]MCPServerConfig{},
+			},
+			AppendFile: ToolConfig{
+				Enabled: true,
+			},
+			EditFile: ToolConfig{
+				Enabled: true,
+			},
+			FindSkills: ToolConfig{
+				Enabled: true,
+			},
+			I2C: ToolConfig{
+				Enabled: false, // Hardware tool - Linux only
+			},
+			InstallSkill: ToolConfig{
+				Enabled: true,
+			},
+			ListDir: ToolConfig{
+				Enabled: true,
+			},
+			Message: ToolConfig{
+				Enabled: true,
+			},
+			ReadFile: ReadFileToolConfig{
+				Enabled:         true,
+				MaxReadFileSize: 64 * 1024, // 64KB
+			},
+			Spawn: ToolConfig{
+				Enabled: true,
+			},
+			SPI: ToolConfig{
+				Enabled: false, // Hardware tool - Linux only
+			},
+			Subagent: ToolConfig{
+				Enabled: true,
+			},
+			WebFetch: ToolConfig{
+				Enabled: true,
+			},
+			WriteFile: ToolConfig{
+				Enabled: true,
+			},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
@@ -320,6 +532,15 @@ func DefaultConfig() *Config {
 		Devices: DevicesConfig{
 			Enabled:    false,
 			MonitorUSB: true,
+		},
+		Voice: VoiceConfig{
+			EchoTranscription: false,
+		},
+		BuildInfo: BuildInfo{
+			Version:   Version,
+			GitCommit: GitCommit,
+			BuildTime: BuildTime,
+			GoVersion: GoVersion,
 		},
 	}
 }
