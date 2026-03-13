@@ -113,6 +113,7 @@ func getCallerInfo() (string, int, string) {
 
 		// bypass common loggers
 		if strings.HasSuffix(file, "/logger.go") ||
+			strings.HasSuffix(file, "/logger_3rd_party.go") ||
 			strings.HasSuffix(file, "/log.go") {
 			continue
 		}
@@ -194,6 +195,10 @@ func DebugC(component string, message string) {
 	logMessage(DEBUG, component, message, nil)
 }
 
+func Debugf(message string, ss ...any) {
+	logMessage(DEBUG, "", fmt.Sprintf(message, ss...), nil)
+}
+
 func DebugF(message string, fields map[string]any) {
 	logMessage(DEBUG, "", message, fields)
 }
@@ -212,6 +217,10 @@ func InfoC(component string, message string) {
 
 func InfoF(message string, fields map[string]any) {
 	logMessage(INFO, "", message, fields)
+}
+
+func Infof(message string, ss ...any) {
+	logMessage(INFO, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func InfoCF(component string, message string, fields map[string]any) {
@@ -240,6 +249,10 @@ func Error(message string) {
 
 func ErrorC(component string, message string) {
 	logMessage(ERROR, component, message, nil)
+}
+
+func Errorf(message string, ss ...any) {
+	logMessage(ERROR, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func ErrorF(message string, fields map[string]any) {
