@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"path"
 	"strings"
@@ -11,6 +12,12 @@ import (
 
 //go:embed all:dist
 var frontendFS embed.FS
+
+func init() {
+	// Register correct MIME type for SVG files
+	// Go's mime package doesn't register .svg with the correct type by default
+	mime.AddExtensionType(".svg", "image/svg+xml")
+}
 
 // registerEmbedRoutes sets up the HTTP handler to serve the embedded frontend files
 func registerEmbedRoutes(mux *http.ServeMux) {
