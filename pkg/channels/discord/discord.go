@@ -45,14 +45,6 @@ type DiscordChannel struct {
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
-	discordgo.Logger = logger.NewLogger("discord").
-		WithLevels(map[int]logger.LogLevel{
-			discordgo.LogError:         logger.ERROR,
-			discordgo.LogWarning:       logger.WARN,
-			discordgo.LogInformational: logger.INFO,
-			discordgo.LogDebug:         logger.DEBUG,
-		}).Log
-
 	session, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
@@ -142,7 +134,7 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 		return nil
 	}
 
-	return c.sendChunk(ctx, channelID, msg.Content, msg.ReplyToMessageID)
+	return c.sendChunk(ctx, channelID, msg.Content)
 }
 
 // SendMedia implements the channels.MediaSender interface.
@@ -267,29 +259,14 @@ func (c *DiscordChannel) SendPlaceholder(ctx context.Context, chatID string) (st
 	return msg.ID, nil
 }
 
-func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content, replyToID string) error {
+func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content string) error {
 	// Use the passed ctx for timeout control
 	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 
 	done := make(chan error, 1)
 	go func() {
-		var err error
-
-		// If we have an ID, we send the message as "Reply"
-		if replyToID != "" {
-			_, err = c.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-				Content: content,
-				Reference: &discordgo.MessageReference{
-					MessageID: replyToID,
-					ChannelID: channelID,
-				},
-			})
-		} else {
-			// Otherwise, we send a normal message
-			_, err = c.session.ChannelMessageSend(channelID, content)
-		}
-
+		_, err := c.session.ChannelMessageSend(channelID, content)
 		done <- err
 	}()
 
@@ -460,7 +437,17 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
 	}
 
-	c.HandleMessage(c.ctx, peer, m.ID, senderID, m.ChannelID, content, mediaPaths, metadata, sender)
+	// Get channel name for context (not available in DMs)
+	channelName := ""
+	if m.GuildID != "" {
+		if ch, err := s.State.Channel(m.ChannelID); err == nil && ch != nil {
+			channelName = ch.Name
+		} else if ch, err := c.session.Channel(m.ChannelID); err == nil && ch != nil {
+			channelName = ch.Name
+		}
+	}
+
+	c.HandleMessageWithChannelName(c.ctx, peer, m.ID, senderID, m.ChannelID, content, mediaPaths, channelName, metadata, sender)
 }
 
 // startTyping starts a continuous typing indicator loop for the given chatID.

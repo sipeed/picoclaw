@@ -25,6 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -47,13 +48,13 @@ type AgentLoop struct {
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
 	cmdRegistry    *commands.Registry
-	mcp            mcpRuntime
 }
 
 // processOptions configures how a message is processed
 type processOptions struct {
 	SessionKey      string   // Session identifier for history/context
 	Channel         string   // Target channel for tool execution
+	ChannelName     string   // Human-readable channel name (e.g., Discord channel name)
 	ChatID          string   // Target chat ID for tool execution
 	UserMessage     string   // User message content (may include prefix)
 	Media           []string // media:// refs from inbound message
@@ -224,6 +225,13 @@ func registerSharedTools(
 			if cfg.Tools.IsToolEnabled("subagent") {
 				subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace)
 				subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+				// Set up model resolver to use target agent's configured model
+				subagentManager.SetModelResolver(func(targetAgentID string) string {
+					if targetAgent, ok := registry.GetAgent(targetAgentID); ok {
+						return targetAgent.Model
+					}
+					return ""
+				})
 				spawnTool := tools.NewSpawnTool(subagentManager)
 				currentAgentID := agentID
 				spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
@@ -239,8 +247,119 @@ func registerSharedTools(
 
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
-	if err := al.ensureMCPInitialized(ctx); err != nil {
-		return err
+
+	// Initialize MCP servers for all agents
+	if al.cfg.Tools.IsToolEnabled("mcp") {
+		mcpManager := mcp.NewManager()
+		// Ensure MCP connections are cleaned up on exit, regardless of initialization success
+		// This fixes resource leak when LoadFromMCPConfig partially succeeds then fails
+		defer func() {
+			if err := mcpManager.Close(); err != nil {
+				logger.ErrorCF("agent", "Failed to close MCP manager",
+					map[string]any{
+						"error": err.Error(),
+					})
+			}
+		}()
+
+		defaultAgent := al.registry.GetDefaultAgent()
+		var workspacePath string
+		if defaultAgent != nil && defaultAgent.Workspace != "" {
+			workspacePath = defaultAgent.Workspace
+		} else {
+			workspacePath = al.cfg.WorkspacePath()
+		}
+
+		if err := mcpManager.LoadFromMCPConfig(ctx, al.cfg.Tools.MCP, workspacePath); err != nil {
+			logger.WarnCF("agent", "Failed to load MCP servers, MCP tools will not be available",
+				map[string]any{
+					"error": err.Error(),
+				})
+		} else {
+			// Register MCP tools for all agents
+			servers := mcpManager.GetServers()
+			uniqueTools := 0
+			totalRegistrations := 0
+			agentIDs := al.registry.ListAgentIDs()
+			agentCount := len(agentIDs)
+
+			for serverName, conn := range servers {
+				uniqueTools += len(conn.Tools)
+				for _, tool := range conn.Tools {
+					for _, agentID := range agentIDs {
+						agent, ok := al.registry.GetAgent(agentID)
+						if !ok {
+							continue
+						}
+
+						mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
+
+						if al.cfg.Tools.MCP.Discovery.Enabled {
+							agent.Tools.RegisterHidden(mcpTool)
+						} else {
+							agent.Tools.Register(mcpTool)
+						}
+
+						totalRegistrations++
+						logger.DebugCF("agent", "Registered MCP tool",
+							map[string]any{
+								"agent_id": agentID,
+								"server":   serverName,
+								"tool":     tool.Name,
+								"name":     mcpTool.Name(),
+							})
+					}
+				}
+			}
+			logger.InfoCF("agent", "MCP tools registered successfully",
+				map[string]any{
+					"server_count":        len(servers),
+					"unique_tools":        uniqueTools,
+					"total_registrations": totalRegistrations,
+					"agent_count":         agentCount,
+				})
+
+			// Initializes Discovery Tools only if enabled by configuration
+			if al.cfg.Tools.MCP.Enabled && al.cfg.Tools.MCP.Discovery.Enabled {
+				useBM25 := al.cfg.Tools.MCP.Discovery.UseBM25
+				useRegex := al.cfg.Tools.MCP.Discovery.UseRegex
+
+				// Fail fast: If discovery is enabled but no search method is turned on
+				if !useBM25 && !useRegex {
+					return fmt.Errorf(
+						"tool discovery is enabled but neither 'use_bm25' nor 'use_regex' is set to true in the configuration",
+					)
+				}
+
+				ttl := al.cfg.Tools.MCP.Discovery.TTL
+				if ttl <= 0 {
+					ttl = 5 // Default value
+				}
+
+				maxSearchResults := al.cfg.Tools.MCP.Discovery.MaxSearchResults
+				if maxSearchResults <= 0 {
+					maxSearchResults = 5 // Default value
+				}
+
+				logger.InfoCF("agent", "Initializing tool discovery", map[string]any{
+					"bm25": useBM25, "regex": useRegex, "ttl": ttl, "max_results": maxSearchResults,
+				})
+
+				for _, agentID := range agentIDs {
+					agent, ok := al.registry.GetAgent(agentID)
+					if !ok {
+						continue
+					}
+
+					if useRegex {
+						agent.Tools.Register(tools.NewRegexSearchTool(agent.Tools, ttl, maxSearchResults))
+					}
+					if useBM25 {
+						agent.Tools.Register(tools.NewBM25SearchTool(agent.Tools, ttl, maxSearchResults))
+					}
+				}
+			}
+		}
 	}
 
 	for al.running.Load() {
@@ -320,17 +439,6 @@ func (al *AgentLoop) Stop() {
 
 // Close releases resources held by agent session stores. Call after Stop.
 func (al *AgentLoop) Close() {
-	mcpManager := al.mcp.takeManager()
-
-	if mcpManager != nil {
-		if err := mcpManager.Close(); err != nil {
-			logger.ErrorCF("agent", "Failed to close MCP manager",
-				map[string]any{
-					"error": err.Error(),
-				})
-		}
-	}
-
 	al.registry.Close()
 }
 
@@ -367,10 +475,9 @@ var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
 
 // transcribeAudioInMessage resolves audio media refs, transcribes them, and
 // replaces audio annotations in msg.Content with the transcribed text.
-// Returns the (possibly modified) message and true if audio was transcribed.
-func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.InboundMessage) (bus.InboundMessage, bool) {
+func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.InboundMessage) bus.InboundMessage {
 	if al.transcriber == nil || al.mediaStore == nil || len(msg.Media) == 0 {
-		return msg, false
+		return msg
 	}
 
 	// Transcribe each audio media ref in order.
@@ -394,10 +501,8 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	}
 
 	if len(transcriptions) == 0 {
-		return msg, false
+		return msg
 	}
-
-	al.sendTranscriptionFeedback(ctx, msg.Channel, msg.ChatID, msg.MessageID, transcriptions)
 
 	// Replace audio annotations sequentially with transcriptions.
 	idx := 0
@@ -416,48 +521,7 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	}
 
 	msg.Content = newContent
-	return msg, true
-}
-
-// sendTranscriptionFeedback sends feedback to the user with the result of
-// audio transcription if the option is enabled. It uses Manager.SendMessage
-// which executes synchronously (rate limiting, splitting, retry) so that
-// ordering with the subsequent placeholder is guaranteed.
-func (al *AgentLoop) sendTranscriptionFeedback(
-	ctx context.Context,
-	channel, chatID, messageID string,
-	validTexts []string,
-) {
-	if !al.cfg.Voice.EchoTranscription {
-		return
-	}
-	if al.channelManager == nil {
-		return
-	}
-
-	var nonEmpty []string
-	for _, t := range validTexts {
-		if t != "" {
-			nonEmpty = append(nonEmpty, t)
-		}
-	}
-
-	var feedbackMsg string
-	if len(nonEmpty) > 0 {
-		feedbackMsg = "Transcript: " + strings.Join(nonEmpty, "\n")
-	} else {
-		feedbackMsg = "No voice detected in the audio"
-	}
-
-	err := al.channelManager.SendMessage(ctx, bus.OutboundMessage{
-		Channel:          channel,
-		ChatID:           chatID,
-		Content:          feedbackMsg,
-		ReplyToMessageID: messageID,
-	})
-	if err != nil {
-		logger.WarnCF("voice", "Failed to send transcription feedback", map[string]any{"error": err.Error()})
-	}
+	return msg
 }
 
 // inferMediaType determines the media type ("image", "audio", "video", "file")
@@ -519,10 +583,6 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 	ctx context.Context,
 	content, sessionKey, channel, chatID string,
 ) (string, error) {
-	if err := al.ensureMCPInitialized(ctx); err != nil {
-		return "", err
-	}
-
 	msg := bus.InboundMessage{
 		Channel:    channel,
 		SenderID:   "cron",
@@ -575,14 +635,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		},
 	)
 
-	var hadAudio bool
-	msg, hadAudio = al.transcribeAudioInMessage(ctx, msg)
-
-	// For audio messages the placeholder was deferred by the channel.
-	// Now that transcription (and optional feedback) is done, send it.
-	if hadAudio && al.channelManager != nil {
-		al.channelManager.SendPlaceholder(ctx, msg.Channel, msg.ChatID)
-	}
+	msg = al.transcribeAudioInMessage(ctx, msg)
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
@@ -618,6 +671,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	opts := processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
+		ChannelName:     msg.ChannelName,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
 		Media:           msg.Media,
@@ -761,6 +815,7 @@ func (al *AgentLoop) runAgentLoop(
 		opts.UserMessage,
 		opts.Media,
 		opts.Channel,
+		opts.ChannelName,
 		opts.ChatID,
 	)
 
@@ -1029,7 +1084,7 @@ func (al *AgentLoop) runLLMIteration(
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
 					newHistory, newSummary, "",
-					nil, opts.Channel, opts.ChatID,
+					nil, opts.Channel, opts.ChannelName, opts.ChatID,
 				)
 				continue
 			}
