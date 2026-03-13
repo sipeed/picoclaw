@@ -55,6 +55,7 @@ type processOptions struct {
 	SessionKey      string   // Session identifier for history/context
 	Channel         string   // Target channel for tool execution
 	ChatID          string   // Target chat ID for tool execution
+	ChatName        string   // Optional human-readable chat/channel name
 	UserMessage     string   // User message content (may include prefix)
 	Media           []string // media:// refs from inbound message
 	DefaultResponse string   // Response when LLM returns empty
@@ -67,6 +68,7 @@ const (
 	defaultResponse           = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
 	sessionKeyAgentPrefix     = "agent:"
 	metadataKeyAccountID      = "account_id"
+	metadataKeyChatName       = "chat_name"
 	metadataKeyGuildID        = "guild_id"
 	metadataKeyTeamID         = "team_id"
 	metadataKeyParentPeerKind = "parent_peer_kind"
@@ -619,6 +621,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
+		ChatName:        inboundMetadata(msg, metadataKeyChatName),
 		UserMessage:     msg.Content,
 		Media:           msg.Media,
 		DefaultResponse: defaultResponse,
@@ -762,6 +765,7 @@ func (al *AgentLoop) runAgentLoop(
 		opts.Media,
 		opts.Channel,
 		opts.ChatID,
+		opts.ChatName,
 	)
 
 	// Resolve media:// refs to base64 data URLs (streaming)
@@ -1029,7 +1033,7 @@ func (al *AgentLoop) runLLMIteration(
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
 					newHistory, newSummary, "",
-					nil, opts.Channel, opts.ChatID,
+					nil, opts.Channel, opts.ChatID, opts.ChatName,
 				)
 				continue
 			}

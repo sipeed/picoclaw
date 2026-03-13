@@ -451,8 +451,26 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		"channel_id":   m.ChannelID,
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
 	}
+	if channelName := c.resolveChannelName(m.ChannelID); channelName != "" {
+		metadata["chat_name"] = channelName
+	}
 
 	c.HandleMessage(c.ctx, peer, m.ID, senderID, m.ChannelID, content, mediaPaths, metadata, sender)
+}
+
+func (c *DiscordChannel) resolveChannelName(channelID string) string {
+	if c == nil || c.session == nil || strings.TrimSpace(channelID) == "" {
+		return ""
+	}
+	if c.session.State != nil {
+		if ch, err := c.session.State.Channel(channelID); err == nil && ch != nil && strings.TrimSpace(ch.Name) != "" {
+			return strings.TrimSpace(ch.Name)
+		}
+	}
+	if ch, err := c.session.Channel(channelID); err == nil && ch != nil && strings.TrimSpace(ch.Name) != "" {
+		return strings.TrimSpace(ch.Name)
+	}
+	return ""
 }
 
 // startTyping starts a continuous typing indicator loop for the given chatID.
