@@ -12,17 +12,17 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/agent"
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/auth"
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cron"
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/gateway"
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/migrate"
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/onboard"
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/skills"
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/status"
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/version"
-	"github.com/sipeed/picoclaw/pkg/config"
+	"jane/cmd/picoclaw/internal"
+	"jane/cmd/picoclaw/internal/agent"
+	"jane/cmd/picoclaw/internal/auth"
+	"jane/cmd/picoclaw/internal/cron"
+	"jane/cmd/picoclaw/internal/gateway"
+	"jane/cmd/picoclaw/internal/migrate"
+	"jane/cmd/picoclaw/internal/onboard"
+	"jane/cmd/picoclaw/internal/skills"
+	"jane/cmd/picoclaw/internal/status"
+	"jane/cmd/picoclaw/internal/version"
+	"jane/pkg/config"
 )
 
 func NewPicoclawCommand() *cobra.Command {

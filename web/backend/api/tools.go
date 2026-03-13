@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"runtime"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"jane/pkg/config"
 )
 
 type toolCatalogEntry struct {

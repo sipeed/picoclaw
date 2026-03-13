@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/sipeed/picoclaw/pkg/providers"
+	"jane/pkg/providers"
 )
 
 // lookbackWindow is the number of recent history entries scanned for tool calls.

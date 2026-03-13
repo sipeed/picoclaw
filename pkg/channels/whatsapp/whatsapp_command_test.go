@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/config"
+	"jane/pkg/bus"
+	"jane/pkg/channels"
+	"jane/pkg/config"
 )
 
 func TestHandleIncomingMessage_DoesNotConsumeGenericCommandsLocally(t *testing.T) {

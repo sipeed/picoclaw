@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"jane/pkg/config"
 )
 
 type OpenClawConfig struct {

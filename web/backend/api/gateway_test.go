@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/auth"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/web/backend/utils"
+	"jane/pkg/auth"
+	"jane/pkg/config"
+	"jane/web/backend/utils"
 )
 
 func TestGatewayStartReady_NoDefaultModel(t *testing.T) {

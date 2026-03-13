@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/providers"
+	"jane/pkg/providers"
 )
 
 // jsonSession mirrors pkg/session.Session for migration purposes.

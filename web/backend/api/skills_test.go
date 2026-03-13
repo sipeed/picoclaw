@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"jane/pkg/config"
 )
 
 func TestHandleListSkills(t *testing.T) {

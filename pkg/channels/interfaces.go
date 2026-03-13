@@ -3,7 +3,7 @@ package channels
 import (
 	"context"
 
-	"github.com/sipeed/picoclaw/pkg/commands"
+	"jane/pkg/commands"
 )
 
 // TypingCapable — channels that can show a typing/thinking indicator.

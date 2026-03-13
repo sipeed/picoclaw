@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/skills"
+	"jane/pkg/config"
+	"jane/pkg/skills"
 )
 
 type skillSupportResponse struct {

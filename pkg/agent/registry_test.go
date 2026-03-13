@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/providers"
+	"jane/pkg/config"
+	"jane/pkg/providers"
 )
 
 type mockRegistryProvider struct{}

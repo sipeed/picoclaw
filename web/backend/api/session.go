@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/providers"
+	"jane/pkg/config"
+	"jane/pkg/providers"
 )
 
 // registerSessionRoutes binds session list and detail endpoints to the ServeMux.

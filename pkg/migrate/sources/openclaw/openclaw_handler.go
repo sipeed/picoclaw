@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/migrate/internal"
+	"jane/pkg/config"
+	"jane/pkg/migrate/internal"
 )
 
 var providerMapping = map[string]string{

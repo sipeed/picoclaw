@@ -3,7 +3,7 @@ package skills
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/sipeed/picoclaw/pkg/skills"
+	"jane/pkg/skills"
 )
 
 func newShowCommand(loaderFn func() (*skills.SkillsLoader, error)) *cobra.Command {

@@ -11,11 +11,11 @@ import (
 
 	"github.com/chzyer/readline"
 
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
-	"github.com/sipeed/picoclaw/pkg/agent"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
+	"jane/cmd/picoclaw/internal"
+	"jane/pkg/agent"
+	"jane/pkg/bus"
+	"jane/pkg/logger"
+	"jane/pkg/providers"
 )
 
 func agentCmd(message, sessionKey, model string, debug bool) error {

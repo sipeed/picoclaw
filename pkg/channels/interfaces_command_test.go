@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/commands"
+	"jane/pkg/commands"
 )
 
 type mockRegistrar struct{}

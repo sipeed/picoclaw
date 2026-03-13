@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/mcp"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"jane/pkg/logger"
+	"jane/pkg/mcp"
+	"jane/pkg/tools"
 )
 
 type mcpRuntime struct {

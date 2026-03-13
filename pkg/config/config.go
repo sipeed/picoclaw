@@ -9,7 +9,7 @@ import (
 
 	"github.com/caarlos0/env/v11"
 
-	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"jane/pkg/fileutil"
 )
 
 // rrCounter is a global counter for round-robin load balancing across models.
@@ -727,6 +727,7 @@ type ReadFileToolConfig struct {
 }
 
 type ToolsConfig struct {
+	Alpaca          AlpacaConfig       `json:"alpaca,omitempty"`
 	AllowReadPaths  []string           `json:"allow_read_paths"  env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
 	AllowWritePaths []string           `json:"allow_write_paths" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
 	Web             WebToolsConfig     `json:"web"`
@@ -1050,4 +1051,10 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 	default:
 		return true
 	}
+}
+
+type AlpacaConfig struct {
+	KeyID     string `json:"key_id,omitempty"`
+	SecretKey string `json:"secret_key,omitempty"`
+	BaseURL   string `json:"base_url,omitempty"`
 }

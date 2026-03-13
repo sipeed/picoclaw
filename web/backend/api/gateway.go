@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/web/backend/utils"
+	"jane/pkg/config"
+	"jane/web/backend/utils"
 )
 
 // gateway holds the state for the managed gateway process.

@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/skills"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"jane/pkg/config"
+	"jane/pkg/logger"
+	"jane/pkg/providers"
+	"jane/pkg/skills"
+	"jane/pkg/utils"
 )
 
 type ContextBuilder struct {

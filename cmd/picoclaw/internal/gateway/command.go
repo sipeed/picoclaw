@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"jane/pkg/logger"
+	"jane/pkg/utils"
 )
 
 func NewGatewayCommand() *cobra.Command {

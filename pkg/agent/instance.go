@@ -9,12 +9,13 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/memory"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/routing"
-	"github.com/sipeed/picoclaw/pkg/session"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"jane/pkg/config"
+	"jane/pkg/memory"
+	"jane/pkg/providers"
+	"jane/pkg/routing"
+	"jane/pkg/session"
+	"jane/pkg/tools"
+	"jane/pkg/tools/alpaca"
 )
 
 // AgentInstance represents a fully configured agent with its own workspace,
@@ -94,6 +95,14 @@ func NewAgentInstance(
 	}
 	if cfg.Tools.IsToolEnabled("append_file") {
 		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+
+		if cfg.Tools.IsToolEnabled("alpaca_finance") {
+			toolsRegistry.Register(alpaca.NewAlpacaTool(
+				cfg.Tools.Alpaca.KeyID,
+				cfg.Tools.Alpaca.SecretKey,
+				cfg.Tools.Alpaca.BaseURL,
+			))
+		}
 	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")

@@ -22,10 +22,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sipeed/picoclaw/web/backend/api"
-	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
-	"github.com/sipeed/picoclaw/web/backend/middleware"
-	"github.com/sipeed/picoclaw/web/backend/utils"
+	"jane/web/backend/api"
+	"jane/web/backend/launcherconfig"
+	"jane/web/backend/middleware"
+	"jane/web/backend/utils"
 )
 
 func main() {

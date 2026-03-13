@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"jane/pkg/logger"
 )
 
 const testFetchLimit = int64(10 * 1024 * 1024)

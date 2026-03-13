@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
-	"github.com/sipeed/picoclaw/pkg/config"
+	"jane/cmd/picoclaw/internal"
+	"jane/pkg/config"
 )
 
 func NewVersionCommand() *cobra.Command {

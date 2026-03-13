@@ -3,11 +3,11 @@ package agent
 import (
 	"sync"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/routing"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"jane/pkg/config"
+	"jane/pkg/logger"
+	"jane/pkg/providers"
+	"jane/pkg/routing"
+	"jane/pkg/tools"
 )
 
 // AgentRegistry manages multiple agent instances and routes messages to them.

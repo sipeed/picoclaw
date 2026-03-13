@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	picoclawconfig "github.com/sipeed/picoclaw/pkg/config"
+	picoclawconfig "jane/pkg/config"
 )
 
 const (
