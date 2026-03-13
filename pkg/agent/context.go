@@ -16,136 +16,17 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
-	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
-const orchestrationGuidance = `## Orchestration
-
-
-
-You are the conductor, not the performer. **Your primary job is to delegate, not to implement.**
-
-
-
-### spawn (non-blocking) — DEFAULT choice
-
-Returns immediately. Use for any task that can run independently.
-
-Call the spawn tool with JSON arguments like this:
-
-
-
-Tool: spawn
-
-Arguments: {"task": "Examine pkg/auth/ and report middleware pattern", "preset": "scout", "label": "auth-scout"}
-
-
-
-Tool: spawn
-
-Arguments: {"task": "Implement rate limiter in pkg/ratelimit/ with tests", "preset": "coder", "label": "rate-limiter"}
-
-
-
-### subagent (blocking) — only when you need the answer NOW
-
-Blocks until the subagent finishes. Use only when you cannot proceed without the result.
-
-Does not take a preset — it runs with default tools.
-
-
-
-Tool: subagent
-
-Arguments: {"task": "Read pkg/config/config.go and list all SubagentsConfig fields", "label": "config-check"}
-
-
-
-### When to use which
-
-- spawn: parallel tasks, independent work, implementation, long analysis, >2 tool calls
-
-- subagent: you need the result before your next decision
-
-- inline: single quick tool call where delegation overhead is wasteful
-
-
-
-### Presets (for spawn only)
-
-| preset | role | can write | can exec |
-
-|--------|------|-----------|----------|
-
-| scout | explore, investigate | no | no |
-
-| analyst | analyze, run tests | no | go test/vet, git |
-
-| coder | implement + verify | yes (sandbox) | test/lint/fmt |
-
-| worker | build + install | yes (sandbox) | build/package mgr |
-
-| coordinator | orchestrate others | yes (sandbox) | general + spawn |
-
-
-
-### Parallel spawning
-
-Spawn multiple independent tasks at once — do NOT wait between them:
-
-
-
-Tool: spawn
-
-Arguments: {"task": "Analyze error handling patterns in pkg/providers/", "preset": "analyst", "label": "error-patterns"}
-
-
-
-Tool: spawn
-
-Arguments: {"task": "List all HTTP endpoints in pkg/miniapp/", "preset": "scout", "label": "endpoints"}
-
-
-
-After spawning, record the assignment in ## Orchestration > Delegated in MEMORY.md.
-
-When results come back, synthesize findings and decide the next fork.
-
-
-
-### Subagent escalation
-
-Deliberate subagents (coder/worker/coordinator) may ask you questions or submit plans for review.
-
-When a subagent question appears, respond with the appropriate tool:
-
-- answer_subagent: Answer a subagent's clarifying question
-
-- review_subagent_plan: Approve or reject a subagent's execution plan (decision: "approved" or rejection feedback)
-
-
-
-### Orchestration Memory
-
-Maintain these sections in MEMORY.md under ## Orchestration:
-
-- **Delegated**: Active subagent assignments (task ID, preset, description)
-
-- **Findings**: Synthesized results from completed subagents
-
-- **Decisions**: Key architectural/implementation decisions made during orchestration`
-
 type ContextBuilder struct {
-	workspace            string
-	workDir              string // session-specific working directory (worktree or project subdir)
-	skillsLoader         *skills.SkillsLoader
-	memory               *MemoryStore
-	tools                *tools.ToolRegistry // Direct reference to tool registry
-	peerNote             string              // set per-call from loop.go for peer session awareness
-	orchestrationEnabled bool                // set from AgentLoop when --orchestration flag is used
-	toolDiscoveryBM25    bool
-	toolDiscoveryRegex   bool
+	contextBuilderExt // fork-specific fields (see context_ext.go)
+
+	workspace          string
+	skillsLoader       *skills.SkillsLoader
+	memory             *MemoryStore
+	toolDiscoveryBM25  bool
+	toolDiscoveryRegex bool
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -198,27 +79,6 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
 		memory:       NewMemoryStore(workspace),
 	}
-}
-
-// SetToolsRegistry sets the tools registry for dynamic tool summary generation.
-func (cb *ContextBuilder) SetToolsRegistry(registry *tools.ToolRegistry) {
-	cb.tools = registry
-}
-
-// SetWorkDir sets the session-specific working directory (e.g., worktree path
-// or project subdirectory). Bootstrap files found here take priority over workspace.
-func (cb *ContextBuilder) SetWorkDir(dir string) {
-	cb.workDir = dir
-}
-
-// SetPeerNote sets the peer session awareness note for the current call.
-func (cb *ContextBuilder) SetPeerNote(note string) {
-	cb.peerNote = note
-}
-
-// SetOrchestrationEnabled sets whether orchestration is enabled.
-func (cb *ContextBuilder) SetOrchestrationEnabled(enabled bool) {
-	cb.orchestrationEnabled = enabled
 }
 
 func (cb *ContextBuilder) getIdentity() string {
@@ -1055,115 +915,4 @@ func (cb *ContextBuilder) LoadSkill(name string) (string, bool) {
 // ListSkills returns all available skills from all tiers.
 func (cb *ContextBuilder) ListSkills() []skills.SkillInfo {
 	return cb.skillsLoader.ListSkills()
-}
-
-// Memory returns the underlying MemoryStore for direct plan queries.
-func (cb *ContextBuilder) Memory() *MemoryStore {
-	return cb.memory
-}
-
-// ---------- Plan passthrough methods ----------
-
-// ReadMemory reads the long-term memory (MEMORY.md).
-func (cb *ContextBuilder) ReadMemory() string {
-	return cb.memory.ReadLongTerm()
-}
-
-// WriteMemory writes content to the long-term memory file.
-func (cb *ContextBuilder) WriteMemory(content string) error {
-	return cb.memory.WriteLongTerm(content)
-}
-
-// ClearMemory removes the long-term memory file.
-func (cb *ContextBuilder) ClearMemory() error {
-	return cb.memory.ClearLongTerm()
-}
-
-// HasActivePlan returns true if MEMORY.md contains an active plan.
-func (cb *ContextBuilder) HasActivePlan() bool {
-	return cb.memory.HasActivePlan()
-}
-
-// GetPlanStatus returns the plan status: "interviewing", "executing", or "".
-func (cb *ContextBuilder) GetPlanStatus() string {
-	return cb.memory.GetPlanStatus()
-}
-
-// IsPlanComplete returns true if all steps in all phases are [x].
-func (cb *ContextBuilder) IsPlanComplete() bool {
-	return cb.memory.IsPlanComplete()
-}
-
-// IsCurrentPhaseComplete returns true if all steps in the current phase are [x].
-func (cb *ContextBuilder) IsCurrentPhaseComplete() bool {
-	return cb.memory.IsCurrentPhaseComplete()
-}
-
-// AdvancePhase increments the current phase number by 1.
-func (cb *ContextBuilder) AdvancePhase() error {
-	return cb.memory.AdvancePhase()
-}
-
-// SetCurrentPhase sets the current phase number to n.
-func (cb *ContextBuilder) SetCurrentPhase(n int) error {
-	return cb.memory.SetPhase(n)
-}
-
-// GetCurrentPhase returns the current phase number.
-func (cb *ContextBuilder) GetCurrentPhase() int {
-	return cb.memory.GetCurrentPhase()
-}
-
-// GetTotalPhases returns the total number of phases in the plan.
-func (cb *ContextBuilder) GetTotalPhases() int {
-	return cb.memory.GetTotalPhases()
-}
-
-// FormatPlanDisplay returns a user-facing display of the full plan.
-func (cb *ContextBuilder) FormatPlanDisplay() string {
-	return cb.memory.FormatPlanDisplay()
-}
-
-// MarkStep marks a step as done in the specified phase.
-func (cb *ContextBuilder) MarkStep(phase, step int) error {
-	return cb.memory.MarkStep(phase, step)
-}
-
-// AddStep appends a new step to the given phase.
-func (cb *ContextBuilder) AddStep(phase int, desc string) error {
-	return cb.memory.AddStep(phase, desc)
-}
-
-// ValidatePlanStructure validates plan structure for interview->review transition.
-func (cb *ContextBuilder) ValidatePlanStructure() error {
-	return cb.memory.ValidatePlanStructure()
-}
-
-// SetPlanStatus sets the plan status.
-func (cb *ContextBuilder) SetPlanStatus(status string) error {
-	return cb.memory.SetStatus(status)
-}
-
-// GetPlanWorkDir returns the WorkDir from the plan metadata, or "".
-func (cb *ContextBuilder) GetPlanWorkDir() string {
-	return cb.memory.GetPlanWorkDir()
-}
-
-// GetPlanTaskName returns the task description from the plan metadata, or "".
-func (cb *ContextBuilder) GetPlanTaskName() string {
-	return cb.memory.GetPlanTaskName()
-}
-
-// GetSkillsInfo returns information about loaded skills.
-func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
-	allSkills := cb.skillsLoader.ListSkills()
-	skillNames := make([]string, 0, len(allSkills))
-	for _, s := range allSkills {
-		skillNames = append(skillNames, s.Name)
-	}
-	return map[string]any{
-		"total":     len(allSkills),
-		"available": len(allSkills),
-		"names":     skillNames,
-	}
 }
