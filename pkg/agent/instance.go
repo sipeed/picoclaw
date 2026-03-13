@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -17,66 +18,50 @@ import (
 )
 
 // AgentInstance represents a fully configured agent with its own workspace,
-
 // session manager, context builder, and tool registry.
-
 type AgentInstance struct {
-	ID string
+	ID                        string
+	Name                      string
+	Model                     string
+	Fallbacks                 []string
+	Workspace                 string
+	MaxIterations             int
+	TaskReminderInterval      int
+	MaxTokens                 int
+	Temperature               float64
+	ThinkingLevel             ThinkingLevel
+	ContextWindow             int
+	SummarizeMessageThreshold int
+	SummarizeTokenPercent     int
+	Provider                  providers.LLMProvider
+	Sessions                  *session.LegacyAdapter
+	ContextBuilder            *ContextBuilder
+	Tools                     *tools.ToolRegistry
+	Subagents                 *config.SubagentsConfig
+	SkillsFilter              []string
+	Candidates                []providers.FallbackCandidate
+	PlanModel                 string
+	PlanFallbacks             []string
+	PlanCandidates            []providers.FallbackCandidate
 
-	Name string
-
-	Model string
-
-	Fallbacks []string
-
-	Workspace string
-
-	MaxIterations int
-
-	TaskReminderInterval int
-
-	MaxTokens int
-
-	Temperature float64
-
-	ContextWindow int
-
-	Provider providers.LLMProvider
-
-	Sessions *session.LegacyAdapter
-
-	ContextBuilder *ContextBuilder
-
-	Tools *tools.ToolRegistry
-
-	Subagents *config.SubagentsConfig
-
-	SkillsFilter []string
-
-	Candidates []providers.FallbackCandidate
-
-	PlanModel string
-
-	PlanFallbacks []string
-
-	PlanCandidates []providers.FallbackCandidate
+	// Router is non-nil when model routing is configured and the light model
+	// was successfully resolved. It scores each incoming message and decides
+	// whether to route to LightCandidates or stay with Candidates.
+	Router *routing.Router
+	// LightCandidates holds the resolved provider candidates for the light model.
+	// Pre-computed at agent creation to avoid repeated model_list lookups at runtime.
+	LightCandidates []providers.FallbackCandidate
 
 	// SubagentMgr is set during registerSharedTools when orchestration is enabled.
-
 	// Used by runAgentLoop to wait for spawned subagents before worktree cleanup.
-
 	SubagentMgr *tools.SubagentManager
 
 	// Interview staleness tracking: consecutive turns where MEMORY.md was not updated.
-
 	interviewStaleCount int
-
-	interviewMemoryLen int
+	interviewMemoryLen  int
 
 	// Per-session worktree isolation
-
-	worktrees map[string]*git.WorktreeInfo // sessionKey → worktree
-
+	worktrees  map[string]*git.WorktreeInfo // sessionKey → worktree
 	worktreeMu sync.RWMutex
 }
 
@@ -94,43 +79,50 @@ func NewAgentInstance(
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
 
 	restrict := defaults.RestrictToWorkspace
+	readRestrict := restrict && !defaults.AllowReadOutsideWorkspace
+
+	// Compile path whitelist patterns from config.
+	allowReadPaths := compilePatterns(cfg.Tools.AllowReadPaths)
+	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
 
 	toolsRegistry := tools.NewToolRegistry()
 
-	toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
-
-	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
-
-	toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
-
-	execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
-	if err != nil {
-		log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
+	if cfg.Tools.IsToolEnabled("read_file") {
+		maxReadFileSize := cfg.Tools.ReadFile.MaxReadFileSize
+		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("write_file") {
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("list_dir") {
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("exec") {
+		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+		if err != nil {
+			log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
+		}
+		toolsRegistry.Register(execTool)
 	}
 
-	toolsRegistry.Register(execTool)
-
-	toolsRegistry.Register(tools.NewBgMonitorTool(execTool))
-
-	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
-
-	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
+	if cfg.Tools.IsToolEnabled("edit_file") {
+		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("append_file") {
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	}
 
 	toolsRegistry.Register(tools.NewLogsTool())
-
 	toolsRegistry.Register(tools.NewGitPushTool())
-
 	toolsRegistry.Register(tools.NewCreatePRTool())
 
 	dbPath := filepath.Join(workspace, "sessions.db")
-
 	store, err := session.OpenSQLiteStore(dbPath)
 	if err != nil {
 		log.Fatalf("open session store: %v", err)
 	}
 
 	jsonDir := filepath.Join(workspace, "sessions")
-
 	if n, merr := session.MigrateJSONSessions(jsonDir, store); merr != nil {
 		log.Printf("session migration: %d migrated, error: %v", n, merr)
 	} else if n > 0 {
@@ -145,7 +137,11 @@ func NewAgentInstance(
 
 	sessionsManager := session.NewLegacyAdapter(store)
 
-	contextBuilder := NewContextBuilder(workspace)
+	mcpDiscoveryActive := cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled
+	contextBuilder := NewContextBuilder(workspace).WithToolDiscovery(
+		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
+		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
+	)
 
 	agentID := routing.DefaultAgentID
 	agentName := ""
@@ -160,7 +156,6 @@ func NewAgentInstance(
 	}
 
 	// Apply defaults.Orchestration: if the flag is set, ensure orchestration is enabled.
-
 	if defaults.Orchestration {
 		if subagents == nil {
 			subagents = &config.SubagentsConfig{Enabled: true}
@@ -175,7 +170,6 @@ func NewAgentInstance(
 	}
 
 	reminderInterval := defaults.TaskReminderInterval
-
 	if reminderInterval == 0 {
 		reminderInterval = 5
 	}
@@ -190,10 +184,25 @@ func NewAgentInstance(
 		temperature = *defaults.Temperature
 	}
 
+	var thinkingLevelStr string
+	if mc, err := cfg.GetModelConfig(model); err == nil {
+		thinkingLevelStr = mc.ThinkingLevel
+	}
+	thinkingLevel := parseThinkingLevel(thinkingLevelStr)
+
+	summarizeMessageThreshold := defaults.SummarizeMessageThreshold
+	if summarizeMessageThreshold == 0 {
+		summarizeMessageThreshold = 20
+	}
+
+	summarizeTokenPercent := defaults.SummarizeTokenPercent
+	if summarizeTokenPercent == 0 {
+		summarizeTokenPercent = 75
+	}
+
 	// Resolve fallback candidates
 	modelCfg := providers.ModelConfig{
-		Primary: model,
-
+		Primary:   model,
 		Fallbacks: fallbacks,
 	}
 	resolveFromModelList := func(raw string) (string, bool) {
@@ -239,71 +248,69 @@ func NewAgentInstance(
 	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
 	// Resolve plan model (for interviewing/review phases)
-
 	planModel := resolvePlanModel(agentCfg, defaults)
-
 	planFallbacks := resolvePlanFallbacks(agentCfg, defaults)
 
 	var planCandidates []providers.FallbackCandidate
-
 	if planModel != "" {
 		planModelCfg := providers.ModelConfig{
-			Primary: planModel,
-
+			Primary:   planModel,
 			Fallbacks: planFallbacks,
 		}
-
 		planCandidates = providers.ResolveCandidates(planModelCfg, defaults.Provider)
 	}
 
+	// Model routing setup: pre-resolve light model candidates at creation time
+	// to avoid repeated model_list lookups on every incoming message.
+	var router *routing.Router
+	var lightCandidates []providers.FallbackCandidate
+	if rc := defaults.Routing; rc != nil && rc.Enabled && rc.LightModel != "" {
+		lightModelCfg := providers.ModelConfig{Primary: rc.LightModel}
+		resolved := providers.ResolveCandidatesWithLookup(lightModelCfg, defaults.Provider, resolveFromModelList)
+		if len(resolved) > 0 {
+			router = routing.New(routing.RouterConfig{
+				LightModel: rc.LightModel,
+				Threshold:  rc.Threshold,
+			})
+			lightCandidates = resolved
+		} else {
+			log.Printf("routing: light_model %q not found in model_list — routing disabled for agent %q",
+				rc.LightModel, agentID)
+		}
+	}
+
 	// Startup cleanup: prune orphaned worktrees
-
 	worktreesDir := filepath.Join(workspace, ".worktrees")
-
 	if repoRoot := git.FindRepoRoot(workspace); repoRoot != "" {
 		git.PruneOrphaned(repoRoot, worktreesDir)
 	}
 
 	return &AgentInstance{
-		ID: agentID,
-
-		Name: agentName,
-
-		Model: model,
-
-		Fallbacks: fallbacks,
-
-		Workspace: workspace,
-
-		MaxIterations: maxIter,
-
-		TaskReminderInterval: reminderInterval,
-
-		MaxTokens: maxTokens,
-
-		Temperature: temperature,
-
-		ContextWindow: maxTokens,
-
-		Provider: provider,
-
-		Sessions: sessionsManager,
-
-		ContextBuilder: contextBuilder,
-
-		Tools: toolsRegistry,
-
-		Subagents: subagents,
-
-		SkillsFilter: skillsFilter,
-
-		Candidates: candidates,
-
-		PlanModel: planModel,
-
-		PlanFallbacks: planFallbacks,
-
-		PlanCandidates: planCandidates,
+		ID:                        agentID,
+		Name:                      agentName,
+		Model:                     model,
+		Fallbacks:                 fallbacks,
+		Workspace:                 workspace,
+		MaxIterations:             maxIter,
+		TaskReminderInterval:      reminderInterval,
+		MaxTokens:                 maxTokens,
+		Temperature:               temperature,
+		ThinkingLevel:             thinkingLevel,
+		ContextWindow:             maxTokens,
+		SummarizeMessageThreshold: summarizeMessageThreshold,
+		SummarizeTokenPercent:     summarizeTokenPercent,
+		Provider:                  provider,
+		Sessions:                  sessionsManager,
+		ContextBuilder:            contextBuilder,
+		Tools:                     toolsRegistry,
+		Subagents:                 subagents,
+		SkillsFilter:              skillsFilter,
+		Candidates:                candidates,
+		PlanModel:                 planModel,
+		PlanFallbacks:             planFallbacks,
+		PlanCandidates:            planCandidates,
+		Router:                    router,
+		LightCandidates:           lightCandidates,
 	}
 }
 
@@ -318,9 +325,7 @@ func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentD
 	}
 
 	home, _ := os.UserHomeDir()
-
 	id := routing.NormalizeAgentID(agentCfg.ID)
-
 	return filepath.Join(home, ".picoclaw", "workspace-"+id)
 }
 
@@ -341,48 +346,37 @@ func resolveAgentFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentD
 }
 
 // resolvePlanModel resolves the plan model for an agent (used during interviewing/review phases).
-
 func resolvePlanModel(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
 	if agentCfg != nil && agentCfg.PlanModel != nil && strings.TrimSpace(agentCfg.PlanModel.Primary) != "" {
 		return strings.TrimSpace(agentCfg.PlanModel.Primary)
 	}
-
 	return defaults.PlanModel
 }
 
 // resolvePlanFallbacks resolves the plan model fallbacks for an agent.
-
 func resolvePlanFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) []string {
 	if agentCfg != nil && agentCfg.PlanModel != nil && agentCfg.PlanModel.Fallbacks != nil {
 		return agentCfg.PlanModel.Fallbacks
 	}
-
 	return defaults.PlanModelFallbacks
 }
 
 // ActivateWorktree creates a worktree for a session.
-
 // projectDir is the git repository to create the worktree in.
-
 // If empty, falls back to ai.Workspace.
-
 // Worktree path: <workspace>/.worktrees/<branch-basename>/
-
 func (ai *AgentInstance) ActivateWorktree(sessionKey, taskName, projectDir string) (*git.WorktreeInfo, error) {
 	if projectDir == "" {
 		projectDir = ai.Workspace
 	}
 
 	repoRoot := git.FindRepoRoot(projectDir)
-
 	if repoRoot == "" {
 		return nil, fmt.Errorf("directory is not a git repository: %s", projectDir)
 	}
 
 	branchName := git.SanitizeBranchName(taskName)
-
 	baseName := git.BranchBaseName(branchName)
-
 	wtPath := filepath.Join(ai.Workspace, ".worktrees", baseName)
 
 	wt, err := git.CreateWorktree(repoRoot, wtPath, branchName)
@@ -391,29 +385,22 @@ func (ai *AgentInstance) ActivateWorktree(sessionKey, taskName, projectDir strin
 	}
 
 	ai.worktreeMu.Lock()
-
 	if ai.worktrees == nil {
 		ai.worktrees = make(map[string]*git.WorktreeInfo)
 	}
-
 	ai.worktrees[sessionKey] = wt
-
 	ai.worktreeMu.Unlock()
 
 	return wt, nil
 }
 
 // DeactivateWorktree safe-disposes the session's worktree.
-
 func (ai *AgentInstance) DeactivateWorktree(sessionKey, commitMsg string, discard bool) (*git.DisposeResult, error) {
 	ai.worktreeMu.Lock()
-
 	wt, ok := ai.worktrees[sessionKey]
-
 	if ok {
 		delete(ai.worktrees, sessionKey)
 	}
-
 	ai.worktreeMu.Unlock()
 
 	if !ok || wt == nil {
@@ -421,56 +408,58 @@ func (ai *AgentInstance) DeactivateWorktree(sessionKey, commitMsg string, discar
 	}
 
 	repoRoot := git.FindRepoRoot(ai.Workspace)
-
 	if repoRoot == "" {
 		return nil, fmt.Errorf("workspace is not a git repository")
 	}
 
 	// Even on discard, SafeDispose auto-commits first for safety
-
 	if commitMsg != "" && git.HasUncommittedChanges(wt.Path) {
 		_ = git.AutoCommit(wt.Path, commitMsg)
 	}
 
 	result := git.SafeDispose(repoRoot, wt)
-
 	return &result, nil
 }
 
 // GetWorktree returns the session's active worktree, or nil.
-
 func (ai *AgentInstance) GetWorktree(sessionKey string) *git.WorktreeInfo {
 	ai.worktreeMu.RLock()
-
 	defer ai.worktreeMu.RUnlock()
-
 	return ai.worktrees[sessionKey]
 }
 
 // IsInWorktree returns true if the session has an active worktree.
-
 func (ai *AgentInstance) IsInWorktree(sessionKey string) bool {
 	return ai.GetWorktree(sessionKey) != nil
 }
 
 // EffectiveWorkspace returns worktree path for session, or original Workspace.
-
 func (ai *AgentInstance) EffectiveWorkspace(sessionKey string) string {
 	if wt := ai.GetWorktree(sessionKey); wt != nil {
 		return wt.Path
 	}
-
 	return ai.Workspace
 }
 
 // GetWorktreeBranch returns the branch name for the session's worktree, or "".
-
 func (ai *AgentInstance) GetWorktreeBranch(sessionKey string) string {
 	if wt := ai.GetWorktree(sessionKey); wt != nil {
 		return wt.Branch
 	}
-
 	return ""
+}
+
+func compilePatterns(patterns []string) []*regexp.Regexp {
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, p := range patterns {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			fmt.Printf("Warning: invalid path pattern %q: %v\n", p, err)
+			continue
+		}
+		compiled = append(compiled, re)
+	}
+	return compiled
 }
 
 func expandHome(path string) string {

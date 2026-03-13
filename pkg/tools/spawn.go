@@ -18,6 +18,9 @@ type SpawnTool struct {
 	callback AsyncCallback // For async completion notification
 }
 
+// Compile-time check: SpawnTool implements AsyncExecutor.
+var _ AsyncExecutor = (*SpawnTool)(nil)
+
 func NewSpawnTool(manager *SubagentManager) *SpawnTool {
 	return &SpawnTool{
 		manager: manager,
@@ -85,6 +88,16 @@ func (t *SpawnTool) SetAllowlistChecker(check func(targetAgentID string) bool) {
 }
 
 func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+	return t.execute(ctx, args, t.callback)
+}
+
+// ExecuteAsync implements AsyncExecutor. The callback is passed through to the
+// subagent manager as a call parameter — never stored on the SpawnTool instance.
+func (t *SpawnTool) ExecuteAsync(ctx context.Context, args map[string]any, cb AsyncCallback) *ToolResult {
+	return t.execute(ctx, args, cb)
+}
+
+func (t *SpawnTool) execute(ctx context.Context, args map[string]any, cb AsyncCallback) *ToolResult {
 	task, ok := args["task"].(string)
 	if !ok || strings.TrimSpace(task) == "" {
 		return ErrorResult(
@@ -129,7 +142,7 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResul
 
 	// Pass callback to manager for async completion notification
 
-	result, err := t.manager.Spawn(ctx, task, label, agentID, t.originChannel, t.originChatID, preset, t.callback)
+	result, err := t.manager.Spawn(ctx, task, label, agentID, t.originChannel, t.originChatID, preset, cb)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to spawn subagent: %v", err))
 	}

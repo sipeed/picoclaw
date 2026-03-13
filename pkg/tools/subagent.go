@@ -759,7 +759,7 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string, 
 	// Register read_file and list_dir with restrict=true
 
 	if config.AllowedTools["read_file"] {
-		registry.Register(NewReadFileTool(readRoot, true))
+		registry.Register(NewReadFileTool(readRoot, true, 0))
 	}
 
 	if config.AllowedTools["list_dir"] {
@@ -830,7 +830,9 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string, 
 	}
 
 	if config.AllowedTools["web_fetch"] {
-		registry.Register(NewWebFetchTool(50000))
+		if fetchTool, err := NewWebFetchTool(50000); err == nil {
+			registry.Register(fetchTool)
+		}
 	}
 
 	// Register message tool (always available)

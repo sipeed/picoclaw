@@ -71,13 +71,10 @@ func (sm *SessionManager) GetOrCreate(key string) *Session {
 	}
 
 	session = &Session{
-		Key: key,
-
+		Key:      key,
 		Messages: []providers.Message{},
-
-		Created: time.Now(),
-
-		Updated: time.Now(),
+		Created:  time.Now(),
+		Updated:  time.Now(),
 	}
 	sm.sessions[key] = session
 
@@ -86,8 +83,7 @@ func (sm *SessionManager) GetOrCreate(key string) *Session {
 
 func (sm *SessionManager) AddMessage(sessionKey, role, content string) {
 	sm.AddFullMessage(sessionKey, providers.Message{
-		Role: role,
-
+		Role:    role,
 		Content: content,
 	})
 }
@@ -174,15 +170,10 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 }
 
 // sanitizeFilename converts a session key into a cross-platform safe filename.
-
-// Session keys use "channel:chatID" (e.g. "telegram:123456") but ':' is the
-
-// volume separator on Windows, so filepath.Base would misinterpret the key.
-
-// We replace it with '_'. The original key is preserved inside the JSON file,
-
-// so loadSessions still maps back to the right in-memory key.
-
+// Replaces ':' with '_' (session key separator) and '/' and '\' with '_' so
+// composite IDs (e.g. Telegram forum "chatID/threadID") do not create
+// subdirectories or break on Windows. The original key is preserved inside
+// the JSON file, so loadSessions still maps back to the right in-memory key.
 func sanitizeFilename(key string) string {
 	s := strings.ReplaceAll(key, ":", "_")
 	s = strings.ReplaceAll(s, "/", "_")
@@ -198,13 +189,8 @@ func (sm *SessionManager) Save(key string) error {
 	filename := sanitizeFilename(key)
 
 	// filepath.IsLocal rejects empty names, "..", absolute paths, and
-
-	// OS-reserved device names (NUL, COM1 … on Windows).
-
-	// The extra checks reject "." and any directory separators so that
-
-	// the session file is always written directly inside sm.storage.
-
+	// OS-reserved device names (NUL, COM1 ... on Windows). sanitizeFilename
+	// already replaced '/' and '\' with '_', so no subdirs are created.
 	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, `/\`) {
 		return os.ErrInvalid
 	}
@@ -218,8 +204,7 @@ func (sm *SessionManager) Save(key string) error {
 	}
 
 	snapshot := Session{
-		Key: stored.Key,
-
+		Key:     stored.Key,
 		Summary: stored.Summary,
 		Created: stored.Created,
 		Updated: stored.Updated,
@@ -255,7 +240,6 @@ func (sm *SessionManager) Save(key string) error {
 		_ = tmpFile.Close()
 		return err
 	}
-
 	if err := tmpFile.Chmod(0o644); err != nil {
 		_ = tmpFile.Close()
 		return err
@@ -463,11 +447,11 @@ func (sm *SessionManager) FlushDirty() {
 
 // Close stops the background flush goroutine and writes all dirty sessions.
 
-func (sm *SessionManager) Close() {
+func (sm *SessionManager) Close() error {
 	select {
 	case <-sm.done:
 
-		return // already closed
+		return nil // already closed
 
 	default:
 	}
@@ -475,6 +459,7 @@ func (sm *SessionManager) Close() {
 	close(sm.done)
 
 	sm.FlushDirty()
+	return nil
 }
 
 func (sm *SessionManager) flushLoop() {
