@@ -36,6 +36,13 @@ func DefaultConfig() *Config {
 				SummarizeMessageThreshold: 20,
 				SummarizeTokenPercent:     75,
 			},
+			List: []AgentConfig{
+				{
+					ID:        "the-clinician",
+					Name:      "Medical Persona",
+					Workspace: filepath.Join(homePath, "Obsidian_Vault", "Patients"),
+				},
+			},
 		},
 		Bindings: []AgentBinding{},
 		Session: SessionConfig{

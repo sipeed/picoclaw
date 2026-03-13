@@ -136,6 +136,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		SendResponse:    false,
 	}
 
+	// Medical Persona specific routing interception
+	if agent != nil && agent.ID == "the-clinician" {
+		return al.processMedicalRequest(ctx, agent, opts)
+	}
+
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
 	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {

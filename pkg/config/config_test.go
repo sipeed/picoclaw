@@ -181,8 +181,8 @@ func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if len(cfg.Agents.List) != 0 {
-		t.Errorf("agents.list should be empty for backward compat, got %d", len(cfg.Agents.List))
+	if len(cfg.Agents.List) != 1 {
+		t.Errorf("agents.list should have default clinician agent for backward compat, got %d", len(cfg.Agents.List))
 	}
 	if len(cfg.Bindings) != 0 {
 		t.Errorf("bindings should be empty, got %d", len(cfg.Bindings))
