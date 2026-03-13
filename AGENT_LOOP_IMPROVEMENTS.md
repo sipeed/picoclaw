@@ -16,7 +16,7 @@ This document outlines a series of tasks to improve the main loop of the agentic
 
 * [x] **Graceful Recovery on Tool Panic:** Add `defer recover()` inside the parallel tool execution goroutines to prevent a panicked tool from crashing the entire `AgentLoop`. Return the panic as an error string to the LLM.
 * [x] **Exponential Backoff:** Replace the linear backoff in LLM retries (`time.Duration(retry+1) * 5 * time.Second`) with exponential backoff and jitter to better handle rate limits.
-* [ ] **Granular Error Classification:** Update `LLMProvider` interfaces to return structured, typed errors (e.g., `providers.ErrContextLengthExceeded`) instead of relying on fragile string matching.
+* [x] **Granular Error Classification:** Update `LLMProvider` interfaces to return structured, typed errors (e.g., `providers.ErrContextLengthExceeded`) instead of relying on fragile string matching.
 
 ## Phase 3: Performance & Latency
 
