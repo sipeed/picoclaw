@@ -437,6 +437,10 @@
           "max_response_size": 0
         }
       },
+      "github": {
+        "proxy": "http://127.0.0.1:7891",
+        "token": ""
+      },
       "max_concurrent_searches": 2,
       "search_cache": {
         "max_size": 50,
