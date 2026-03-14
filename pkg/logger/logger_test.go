@@ -141,3 +141,52 @@ func TestLoggerHelperFunctions(t *testing.T) {
 	Debugf("test from %v", "Debugf")
 	WarnF("Warning with fields", map[string]any{"key": "value"})
 }
+
+func TestParseLevel(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantLevel LogLevel
+		wantOk    bool
+	}{
+		// Valid cases - uppercase
+		{"DEBUG uppercase", "DEBUG", DEBUG, true},
+		{"INFO uppercase", "INFO", INFO, true},
+		{"WARN uppercase", "WARN", WARN, true},
+		{"WARNING uppercase", "WARNING", WARN, true},
+		{"ERROR uppercase", "ERROR", ERROR, true},
+		{"FATAL uppercase", "FATAL", FATAL, true},
+
+		// Valid cases - lowercase
+		{"DEBUG lowercase", "debug", DEBUG, true},
+		{"INFO lowercase", "info", INFO, true},
+		{"WARN lowercase", "warn", WARN, true},
+		{"WARNING lowercase", "warning", WARN, true},
+		{"ERROR lowercase", "error", ERROR, true},
+		{"FATAL lowercase", "fatal", FATAL, true},
+
+		// Valid cases - mixed case
+		{"Debug mixed case", "Debug", DEBUG, true},
+		{"Info mixed case", "InFo", INFO, true},
+		{"Warn mixed case", "WaRn", WARN, true},
+		{"Error mixed case", "ErRoR", ERROR, true},
+
+		// Invalid cases
+		{"empty string", "", INFO, false},
+		{"unknown value", "TRACE", INFO, false},
+		{"unknown value 2", "VERBOSE", INFO, false},
+		{"invalid value", "invalid", INFO, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			level, ok := parseLevel(tt.input)
+			if ok != tt.wantOk {
+				t.Errorf("parseLevel(%q) ok = %v, want %v", tt.input, ok, tt.wantOk)
+			}
+			if level != tt.wantLevel {
+				t.Errorf("parseLevel(%q) level = %v, want %v", tt.input, level, tt.wantLevel)
+			}
+		})
+	}
+}

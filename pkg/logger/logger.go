@@ -50,6 +50,29 @@ func init() {
 		logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
 		fileLogger = zerolog.Logger{}
 	})
+
+	// Support PICOCLAW_LOG_LEVEL environment variable
+	if levelStr := os.Getenv("PICOCLAW_LOG_LEVEL"); levelStr != "" {
+		if level, ok := parseLevel(levelStr); ok {
+			SetLevel(level)
+		}
+	}
+}
+
+func parseLevel(s string) (LogLevel, bool) {
+	switch strings.ToUpper(s) {
+	case "DEBUG":
+		return DEBUG, true
+	case "INFO":
+		return INFO, true
+	case "WARN", "WARNING":
+		return WARN, true
+	case "ERROR":
+		return ERROR, true
+	case "FATAL":
+		return FATAL, true
+	}
+	return INFO, false
 }
 
 func SetLevel(level LogLevel) {
