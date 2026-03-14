@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -45,11 +46,45 @@ func init() {
 		consoleWriter := zerolog.ConsoleWriter{
 			Out:        os.Stdout,
 			TimeFormat: "15:04:05", // TODO: make it configurable???
+
+			// Custom formatter to handle multiline strings and JSON objects
+			FormatFieldValue: formatFieldValue,
 		}
 
 		logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
 		fileLogger = zerolog.Logger{}
 	})
+}
+
+func formatFieldValue(i any) string {
+	var s string
+
+	switch val := i.(type) {
+	case string:
+		s = val
+	case []byte:
+		s = string(val)
+	default:
+		return fmt.Sprintf("%v", i)
+	}
+
+	if unquoted, err := strconv.Unquote(s); err == nil {
+		s = unquoted
+	}
+
+	if strings.Contains(s, "\n") {
+		return fmt.Sprintf("\n%s", s)
+	}
+
+	if strings.Contains(s, " ") {
+		if (strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")) ||
+			(strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]")) {
+			return s
+		}
+		return fmt.Sprintf("%q", s)
+	}
+
+	return s
 }
 
 func SetLevel(level LogLevel) {
@@ -163,10 +198,7 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		event.Str("caller", fmt.Sprintf("<none> %s:%d (%s)", callerFile, callerLine, callerFunc))
 	}
 
-	for k, v := range fields {
-		event.Interface(k, v)
-	}
-
+	appendFields(event, fields)
 	event.Msg(message)
 
 	// Also log to file if enabled
@@ -176,14 +208,33 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		if component != "" {
 			fileEvent.Str("component", component)
 		}
-		for k, v := range fields {
-			fileEvent.Interface(k, v)
-		}
+
+		appendFields(event, fields)
 		fileEvent.Msg(message)
 	}
 
 	if level == FATAL {
 		os.Exit(1)
+	}
+}
+
+func appendFields(event *zerolog.Event, fields map[string]any) {
+	for k, v := range fields {
+		// Type switch to avoid double JSON serialization of strings
+		switch val := v.(type) {
+		case string:
+			event.Str(k, val)
+		case int:
+			event.Int(k, val)
+		case int64:
+			event.Int64(k, val)
+		case float64:
+			event.Float64(k, val)
+		case bool:
+			event.Bool(k, val)
+		default:
+			event.Interface(k, v) // Fallback for struct, slice and maps
+		}
 	}
 }
 
