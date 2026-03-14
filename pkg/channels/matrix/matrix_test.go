@@ -340,23 +340,82 @@ func TestMatrixOutboundContent(t *testing.T) {
 }
 
 func TestMarkdownToHTML(t *testing.T) {
-	tests := []struct {
+	cases := []struct {
 		name     string
-		input    string
-		contains string
+		md       string
+		rendered string
 	}{
-		{"bold", "**hello**", "<strong>hello</strong>"},
-		{"italic", "_world_", "<em>world</em>"},
-		{"header", "### Title", "<h3"},
-		{"code block", "```\nfoo()\n```", "<code>"},
-		{"inline code", "`x`", "<code>x</code>"},
-		{"plain text", "just text", "just text"},
+		{
+			name:     "bold",
+			md:       "**hello**",
+			rendered: `<strong>hello</strong>`,
+		},
+		{
+			name:     "italic",
+			md:       "_world_",
+			rendered: `<em>world</em>`,
+		},
+		{
+			name:     "heading",
+			md:       "### Title",
+			rendered: `<h3 id="title">Title</h3>`,
+		},
+		{
+			name:     "fenced code block",
+			md:       "```\nfoo()\n```",
+			rendered: "<pre><code>foo()\n</code></pre>",
+		},
+		{
+			name:     "inline code",
+			md:       "`x`",
+			rendered: `<code>x</code>`,
+		},
+		{
+			name:     "plain text has no block wrapper",
+			md:       "just text",
+			rendered: `just text`,
+		},
+		{
+			name: "loose list has no <p> wrapper around items",
+			md:   "- Item one\n\n- Item two\n",
+			rendered: `<ul>
+<li>Item one</li>
+
+<li>Item two</li>
+</ul>`,
+		},
+		{
+			name: "list item with nested sublist has no <p> wrapper",
+			md:   "1. Steps overview:\n\n   - Step A\n   - Step B\n",
+			rendered: `<ol>
+<li>Steps overview:
+<ul>
+<li>Step A</li>
+<li>Step B</li>
+</ul></li>
+</ol>`,
+		},
+		{
+			name: "tight list has no <p> wrapper",
+			md:   "- Alpha\n- Beta\n",
+			rendered: `<ul>
+<li>Alpha</li>
+<li>Beta</li>
+</ul>`,
+		},
+		{
+			name: "paragraph before list has no <p> wrapper",
+			md:   "Introduction text.\n\n- Point one\n",
+			rendered: `Introduction text.<ul>
+<li>Point one</li>
+</ul>`,
+		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := markdownToHTML(tt.input)
-			if !strings.Contains(got, tt.contains) {
-				t.Fatalf("markdownToHTML(%q) = %q, want it to contain %q", tt.input, got, tt.contains)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := markdownToHTML(tc.md); got != tc.rendered {
+				t.Fatalf("markdownToHTML(%q)\n got: %q\nwant: %q", tc.md, got, tc.rendered)
 			}
 		})
 	}
