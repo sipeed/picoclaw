@@ -362,6 +362,7 @@ type DingTalkConfig struct {
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_DINGTALK_REASONING_CHANNEL_ID"`
+	ProactiveSend      bool                `json:"proactive_send"          env:"PICOCLAW_CHANNELS_DINGTALK_PROACTIVE_SEND"`
 }
 
 type SlackConfig struct {
