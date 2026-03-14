@@ -49,6 +49,7 @@ func NewServer(host string, port int) *Server {
 		ReadTimeout:       5 * time.Second,
 		ReadHeaderTimeout: 3 * time.Second,
 		WriteTimeout:      5 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	return s

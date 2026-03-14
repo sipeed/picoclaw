@@ -333,6 +333,7 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 }
 

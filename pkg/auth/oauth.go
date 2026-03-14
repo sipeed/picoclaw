@@ -123,6 +123,7 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	go server.Serve(listener)
 	defer func() {
