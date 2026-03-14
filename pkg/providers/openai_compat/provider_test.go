@@ -841,3 +841,31 @@ func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 		t.Fatal("system_parts should not appear in serialized output")
 	}
 }
+
+// TestNewProvider_TLSTransportNeverInsecure ensures every provider — whether
+// configured with a proxy or not — has an explicit TLS transport that never
+// sets InsecureSkipVerify. This is the security guard for issue #1375.
+func TestNewProvider_TLSTransportNeverInsecure(t *testing.T) {
+	tests := []struct {
+		name  string
+		proxy string
+	}{
+		{name: "no proxy", proxy: ""},
+		{name: "with proxy", proxy: "http://127.0.0.1:8080"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewProvider("key", "https://example.com", tt.proxy)
+			tr, ok := p.httpClient.Transport.(*http.Transport)
+			if !ok || tr == nil {
+				t.Fatalf("Transport = %T, want *http.Transport", p.httpClient.Transport)
+			}
+			if tr.TLSClientConfig == nil {
+				t.Fatal("TLSClientConfig is nil")
+			}
+			if tr.TLSClientConfig.InsecureSkipVerify {
+				t.Fatal("InsecureSkipVerify must never be true")
+			}
+		})
+	}
+}
