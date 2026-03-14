@@ -22,6 +22,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/requestlog"
 	"github.com/sipeed/picoclaw/web/backend/api"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 	"github.com/sipeed/picoclaw/web/backend/middleware"
@@ -114,7 +117,31 @@ func main() {
 
 	// API Routes (e.g. /api/status)
 	apiHandler := api.NewHandler(absPath)
+
 	apiHandler.SetServerOptions(portNum, effectivePublic, explicitPublic, launcherCfg.AllowedCIDRs)
+
+	// Initialize requestlog Reader for stats API
+	if cfg, err := config.LoadConfig(absPath); err == nil {
+		workspacePath := cfg.WorkspacePath()
+		logDir := filepath.Join(workspacePath, "logs", "requests")
+		// Ensure log directory exists
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			log.Printf("Warning: failed to create request log directory: %v", err)
+		}
+		reader := requestlog.NewReader(logDir, 100)
+		apiHandler.SetRequestLogReader(reader)
+		apiHandler.SetWorkspacePath(workspacePath)
+
+		// Enable file logging
+		appLogDir := filepath.Join(workspacePath, "logs")
+		if err := os.MkdirAll(appLogDir, 0755); err == nil {
+			logFile := filepath.Join(appLogDir, "launcher.log")
+			if err := logger.EnableFileLogging(logFile); err != nil {
+				log.Printf("Warning: failed to enable file logging: %v", err)
+			}
+		}
+	}
+
 	apiHandler.RegisterRoutes(mux)
 
 	// Frontend Embedded Assets

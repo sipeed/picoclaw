@@ -44,7 +44,7 @@ func init() {
 
 		consoleWriter := zerolog.ConsoleWriter{
 			Out:        os.Stdout,
-			TimeFormat: "15:04:05", // TODO: make it configurable???
+			TimeFormat: "15:04:05",
 		}
 
 		logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
@@ -78,7 +78,6 @@ func EnableFileLogging(filePath string) error {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
 
-	// Close old file if exists
 	if logFile != nil {
 		logFile.Close()
 	}
@@ -111,7 +110,6 @@ func getCallerInfo() (string, int, string) {
 			continue
 		}
 
-		// bypass common loggers
 		if strings.HasSuffix(file, "/logger.go") ||
 			strings.HasSuffix(file, "/logger_3rd_party.go") ||
 			strings.HasSuffix(file, "/log.go") {
@@ -156,7 +154,6 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 
 	event := getEvent(logger, level)
 
-	// Build combined field with component and caller
 	if component != "" {
 		event.Str("caller", fmt.Sprintf("%-6s %s:%d (%s)", component, callerFile, callerLine, callerFunc))
 	} else {
@@ -169,7 +166,6 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 
 	event.Msg(message)
 
-	// Also log to file if enabled
 	if fileLogger.GetLevel() != zerolog.NoLevel {
 		fileEvent := getEvent(fileLogger, level)
 
