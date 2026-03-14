@@ -57,6 +57,8 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 	if err != nil {
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
 	}
+	// Enable MESSAGE_CONTENT intent to read message content (PR #181)
+	session.Identify.Intents |= discordgo.IntentMessageContent
 
 	if err := applyDiscordProxy(session, cfg.Proxy); err != nil {
 		return nil, err

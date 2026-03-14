@@ -54,6 +54,13 @@
       "api_base": "https://api-inference.modelscope.cn/v1"
     },
     {
+      "_comment": "MiniMax - https://api.minimaxi.com/ (PR #154)",
+      "model_name": "minimax",
+      "model": "minimax/MiniMax-M2.5",
+      "api_key": "your-minimax-api-key",
+      "api_base": "https://api.minimaxi.com/v1"
+    },
+    {
       "model_name": "loadbalanced-gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_key": "sk-key1",

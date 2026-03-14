@@ -103,9 +103,11 @@ func RunToolLoop(
 			})
 
 		// 6. Build assistant message with tool calls
+		// Preserve ReasoningContent for thinking models (e.g., GLM-Z1, Kimi K2.5) in multi-turn
 		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
+			Role:             "assistant",
+			Content:          response.Content,
+			ReasoningContent: response.ReasoningContent,
 		}
 		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
