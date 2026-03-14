@@ -2,6 +2,8 @@ package feishu
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -289,4 +291,487 @@ func TestStripMentionPlaceholders(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSplitContentByTableCount(t *testing.T) {
+	tests := []struct {
+		name      string
+		content   string
+		wantParts []string // Expected content of each part
+	}{
+		{
+			name:    "no tables - single part",
+			content: "Just some text without tables",
+			wantParts: []string{
+				"Just some text without tables",
+			},
+		},
+		{
+			name: "single table - single part",
+			content: `| Col1 | Col2 |
+|------|------|
+| Data | Data |`,
+			wantParts: []string{
+				`| Col1 | Col2 |
+|------|------|
+| Data | Data |`,
+			},
+		},
+		{
+			name:      "exactly 5 tables - single part",
+			content:   generateTableContent(1, 5),
+			wantParts: []string{generateTableContent(1, 5)},
+		},
+		{
+			name:      "6 tables - split into 2 parts",
+			content:   generateTableContent(1, 6),
+			wantParts: []string{generateTableContent(1, 5), generateTableContent(6, 6)},
+		},
+		{
+			name: "text before and between tables",
+			content: `Intro text
+
+| T1C1 | T1C2 |
+|------|------|
+| Data | Data |
+
+Middle text
+
+| T2C1 | T2C2 |
+|------|------|
+| Data | Data |
+
+| T3C1 | T3C2 |
+|------|------|
+| Data | Data |
+
+| T4C1 | T4C2 |
+|------|------|
+| Data | Data |
+
+| T5C1 | T5C2 |
+|------|------|
+| Data | Data |
+
+| T6C1 | T6C2 |
+|------|------|
+| Data | Data |
+
+Outro text`,
+			wantParts: []string{
+				`Intro text
+
+| T1C1 | T1C2 |
+|------|------|
+| Data | Data |
+
+Middle text
+
+| T2C1 | T2C2 |
+|------|------|
+| Data | Data |
+
+| T3C1 | T3C2 |
+|------|------|
+| Data | Data |
+
+| T4C1 | T4C2 |
+|------|------|
+| Data | Data |
+
+| T5C1 | T5C2 |
+|------|------|
+| Data | Data |`,
+				`| T6C1 | T6C2 |
+|------|------|
+| Data | Data |
+
+Outro text`,
+			},
+		},
+		{
+			name:    "10 tables - split into 2 parts",
+			content: generateTableContent(1, 10),
+			wantParts: []string{
+				generateTableContent(1, 5),
+				generateTableContent(6, 10),
+			},
+		},
+		{
+			name:    "11 tables - split into 3 parts",
+			content: generateTableContent(1, 11),
+			wantParts: []string{
+				generateTableContent(1, 5),
+				generateTableContent(6, 10),
+				generateTableContent(11, 11),
+			},
+		},
+		{
+			name: "6 tables - verify tables are not truncated at split boundary",
+			content: `| T1C1 | T1C2 |
+|------|------|
+| D1 | D1 |
+
+| T2C1 | T2C2 |
+|------|------|
+| D2 | D2 |
+
+| T3C1 | T3C2 |
+|------|------|
+| D3 | D3 |
+
+| T4C1 | T4C2 |
+|------|------|
+| D4 | D4 |
+
+| T5C1 | T5C2 |
+|------|------|
+| D5 | D5 |
+
+| T6C1 | T6C2 |
+|------|------|
+| D6 | D6 |`,
+			wantParts: []string{
+				`| T1C1 | T1C2 |
+|------|------|
+| D1 | D1 |
+
+| T2C1 | T2C2 |
+|------|------|
+| D2 | D2 |
+
+| T3C1 | T3C2 |
+|------|------|
+| D3 | D3 |
+
+| T4C1 | T4C2 |
+|------|------|
+| D4 | D4 |
+
+| T5C1 | T5C2 |
+|------|------|
+| D5 | D5 |`,
+				`| T6C1 | T6C2 |
+|------|------|
+| D6 | D6 |`,
+			},
+		},
+		{
+			name: "consecutive tables without blank line between them",
+			content: `| T1C1 | T1C2 |
+|------|------|
+| D1 | D1 |
+| T2C1 | T2C2 |
+|------|------|
+| D2 | D2 |
+| T3C1 | T3C2 |
+|------|------|
+| D3 | D3 |
+| T4C1 | T4C2 |
+|------|------|
+| D4 | D4 |
+| T5C1 | T5C2 |
+|------|------|
+| D5 | D5 |
+| T6C1 | T6C2 |
+|------|------|
+| D6 | D6 |`,
+			wantParts: []string{
+				`| T1C1 | T1C2 |
+|------|------|
+| D1 | D1 |
+| T2C1 | T2C2 |
+|------|------|
+| D2 | D2 |
+| T3C1 | T3C2 |
+|------|------|
+| D3 | D3 |
+| T4C1 | T4C2 |
+|------|------|
+| D4 | D4 |
+| T5C1 | T5C2 |
+|------|------|
+| D5 | D5 |`,
+				`| T6C1 | T6C2 |
+|------|------|
+| D6 | D6 |`,
+			},
+		},
+		{
+			name: "content ends with table (no trailing newline or blank line)",
+			content: `| T1C1 | T1C2 |
+|------|------|
+| D1 | D1 |
+
+| T2C1 | T2C2 |
+|------|------|
+| D2 | D2 |
+
+| T3C1 | T3C2 |
+|------|------|
+| D3 | D3 |
+
+| T4C1 | T4C2 |
+|------|------|
+| D4 | D4 |
+
+| T5C1 | T5C2 |
+|------|------|
+| D5 | D5 |
+
+| T6C1 | T6C2 |
+|------|------|
+| D6 | D6 |`,
+			wantParts: []string{
+				`| T1C1 | T1C2 |
+|------|------|
+| D1 | D1 |
+
+| T2C1 | T2C2 |
+|------|------|
+| D2 | D2 |
+
+| T3C1 | T3C2 |
+|------|------|
+| D3 | D3 |
+
+| T4C1 | T4C2 |
+|------|------|
+| D4 | D4 |
+
+| T5C1 | T5C2 |
+|------|------|
+| D5 | D5 |`,
+				`| T6C1 | T6C2 |
+|------|------|
+| D6 | D6 |`,
+			},
+		},
+		{
+			name: "table followed by text without blank line",
+			content: `| T1C1 | T1C2 |
+|------|------|
+| D1 | D1 |
+Some text immediately after table
+
+| T2C1 | T2C2 |
+|------|------|
+| D2 | D2 |
+
+| T3C1 | T3C2 |
+|------|------|
+| D3 | D3 |
+
+| T4C1 | T4C2 |
+|------|------|
+| D4 | D4 |
+
+| T5C1 | T5C2 |
+|------|------|
+| D5 | D5 |
+
+| T6C1 | T6C2 |
+|------|------|
+| D6 | D6 |`,
+			wantParts: []string{
+				`| T1C1 | T1C2 |
+|------|------|
+| D1 | D1 |
+Some text immediately after table
+
+| T2C1 | T2C2 |
+|------|------|
+| D2 | D2 |
+
+| T3C1 | T3C2 |
+|------|------|
+| D3 | D3 |
+
+| T4C1 | T4C2 |
+|------|------|
+| D4 | D4 |
+
+| T5C1 | T5C2 |
+|------|------|
+| D5 | D5 |`,
+				`| T6C1 | T6C2 |
+|------|------|
+| D6 | D6 |`,
+			},
+		},
+		{
+			name: "text before 6th table goes to part 1",
+			content: `| T1 | T2 |
+|----|----|
+| D1 | D1 |
+
+| T1 | T2 |
+|----|----|
+| D2 | D2 |
+
+| T1 | T2 |
+|----|----|
+| D3 | D3 |
+
+| T1 | T2 |
+|----|----|
+| D4 | D4 |
+
+| T1 | T2 |
+|----|----|
+| D5 | D5 |
+
+Intro text for table 6
+
+| T1 | T2 |
+|----|----|
+| D6 | D6 |`,
+			wantParts: []string{
+				`| T1 | T2 |
+|----|----|
+| D1 | D1 |
+
+| T1 | T2 |
+|----|----|
+| D2 | D2 |
+
+| T1 | T2 |
+|----|----|
+| D3 | D3 |
+
+| T1 | T2 |
+|----|----|
+| D4 | D4 |
+
+| T1 | T2 |
+|----|----|
+| D5 | D5 |
+
+Intro text for table 6`,
+				`| T1 | T2 |
+|----|----|
+| D6 | D6 |`,
+			},
+		},
+		{
+			name: "single row table (header only, no data rows)",
+			content: `| T1C1 | T1C2 |
+|------|------|
+
+| T2C1 | T2C2 |
+|------|------|
+
+| T3C1 | T3C2 |
+|------|------|
+
+| T4C1 | T4C2 |
+|------|------|
+
+| T5C1 | T5C2 |
+|------|------|
+
+| T6C1 | T6C2 |
+|------|------|`,
+			wantParts: []string{
+				`| T1C1 | T1C2 |
+|------|------|
+
+| T2C1 | T2C2 |
+|------|------|
+
+| T3C1 | T3C2 |
+|------|------|
+
+| T4C1 | T4C2 |
+|------|------|
+
+| T5C1 | T5C2 |
+|------|------|`,
+				`| T6C1 | T6C2 |
+|------|------|`,
+			},
+		},
+		{
+			name: "table with alignment colons in separator",
+			content: `| Left | Center | Right |
+|:-----|:------:|------:|
+| L1 | C1 | R1 |
+
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L2 | C2 | R2 |
+
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L3 | C3 | R3 |
+
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L4 | C4 | R4 |
+
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L5 | C5 | R5 |
+
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L6 | C6 | R6 |`,
+			wantParts: []string{
+				`| Left | Center | Right |
+|:-----|:------:|------:|
+| L1 | C1 | R1 |
+
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L2 | C2 | R2 |
+
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L3 | C3 | R3 |
+
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L4 | C4 | R4 |
+
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L5 | C5 | R5 |`,
+				`| Left | Center | Right |
+|:-----|:------:|------:|
+| L6 | C6 | R6 |`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitContentByTableCount(tt.content)
+
+			// Verify number of parts
+			if len(got) != len(tt.wantParts) {
+				t.Errorf("splitContentByTableCount() returned %d parts, want %d", len(got), len(tt.wantParts))
+			}
+
+			// Verify content matches exactly
+			for i, expected := range tt.wantParts {
+				if got[i] != expected {
+					t.Errorf("Part %d mismatch:\ngot:\n%q\nwant:\n%q", i+1, got[i], expected)
+				}
+			}
+		})
+	}
+}
+
+// Helper function to generate content with tables from start to end (inclusive)
+func generateTableContent(start, end int) string {
+	var sb strings.Builder
+	for i := start; i <= end; i++ {
+		sb.WriteString(fmt.Sprintf("| T%dC1 | T%dC2 |\n", i, i))
+		sb.WriteString("|------|------|\n")
+		sb.WriteString("| Data | Data |")
+		if i < end {
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
 }

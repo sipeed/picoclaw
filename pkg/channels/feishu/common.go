@@ -8,8 +8,35 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
+// maxTablesPerMessage is the maximum number of tables allowed per message
+const maxTablesPerMessage = 5
+
 // mentionPlaceholderRegex matches @_user_N placeholders inserted by Feishu for mentions.
 var mentionPlaceholderRegex = regexp.MustCompile(`@_user_\d+`)
+
+// isTableSeparator checks if a line is a markdown table separator row (|---|---| etc.)
+func isTableSeparator(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "|") || !strings.HasSuffix(trimmed, "|") {
+		return false
+	}
+	// Remove leading and trailing |
+	trimmed = strings.Trim(trimmed, "|")
+
+	// Check if all remaining characters are -, |, : or space
+	hasDash := false
+	for _, c := range trimmed {
+		if c != '-' && c != '|' && c != ' ' && c != ':' {
+			return false
+		}
+		if c == '-' {
+			hasDash = true
+		}
+	}
+
+	// A separator must have at least one dash character
+	return hasDash
+}
 
 // stringValue safely dereferences a *string pointer.
 func stringValue(v *string) string {
@@ -68,6 +95,52 @@ func extractFileKey(content string) string { return extractJSONStringField(conte
 
 // extractFileName extracts the file_name from a Feishu file message content JSON.
 func extractFileName(content string) string { return extractJSONStringField(content, "file_name") }
+
+// splitContentByTableCount splits the content into multiple parts if it contains too many tables.
+// Each part will have at most maxTablesPerMessage tables.
+func splitContentByTableCount(content string) []string {
+	var parts []string
+	lines := strings.Split(content, "\n")
+
+	var currentPart strings.Builder
+	var currentTableCount int
+	var inTable bool
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Check if this line starts with | and is not a separator
+		if strings.HasPrefix(trimmed, "|") && !isTableSeparator(trimmed) {
+			// Check if next line is a separator to confirm it's a table header
+			isTableHeader := i+1 < len(lines) && isTableSeparator(strings.TrimSpace(lines[i+1]))
+
+			if isTableHeader {
+				// Starting a new table (inTable may already be true for consecutive tables)
+				inTable = true
+				// Check if we need to start a new part
+				if currentTableCount >= maxTablesPerMessage && currentPart.Len() > 0 {
+					parts = append(parts, strings.TrimSpace(currentPart.String()))
+					currentPart.Reset()
+					currentTableCount = 0
+				}
+				currentTableCount++
+			}
+		} else if inTable && !strings.HasPrefix(trimmed, "|") {
+			// Non-table line ends a table
+			inTable = false
+		}
+
+		currentPart.WriteString(line)
+		currentPart.WriteString("\n")
+	}
+
+	// Add the last part
+	if currentPart.Len() > 0 {
+		parts = append(parts, strings.TrimSpace(currentPart.String()))
+	}
+
+	return parts
+}
 
 // stripMentionPlaceholders removes @_user_N placeholders from the text content.
 // These are inserted by Feishu when users @mention someone in a message.
