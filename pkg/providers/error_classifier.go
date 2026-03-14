@@ -50,6 +50,21 @@ var (
 		substr("context deadline exceeded"),
 	}
 
+	// Transport layer error patterns that should trigger fallback.
+	transportPatterns = []errorPattern{
+		substr("connection reset by peer"),
+		substr("connection refused"),
+		substr("no route to host"),
+		substr("unexpected eof"),
+		substr("broken pipe"),
+		substr("connection closed"),
+		substr("connection reset"),
+		substr("eof"),
+		substr("network is unreachable"),
+		substr("temporary failure in name resolution"),
+		substr("dial tcp"),
+	}
+
 	billingPatterns = []errorPattern{
 		rxp(`\b402\b`),
 		substr("payment required"),
@@ -194,6 +209,9 @@ func classifyByMessage(msg string) FailoverReason {
 	}
 	if matchesAny(msg, timeoutPatterns) {
 		return FailoverTimeout
+	}
+	if matchesAny(msg, transportPatterns) {
+		return FailoverTimeout // Transport errors treated as timeout (retriable)
 	}
 	if matchesAny(msg, authPatterns) {
 		return FailoverAuth
