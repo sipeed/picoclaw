@@ -510,6 +510,9 @@
   "voice": {
     "echo_transcription": false
   },
+  "logger": {
+    "time_format": "15:04:05"
+  },
   "gateway": {
     "host": "127.0.0.1",
     "port": 18790
