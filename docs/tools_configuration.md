@@ -1,6 +1,14 @@
 # Tools Configuration
 
-PicoClaw's tools configuration is located in the `tools` field of `config.json`.
+PicoClaw's tools configuration lives under the `tools` field in `config.json`.
+For agent/session/channel fields outside the tool system, see [configuration.md](configuration.md).
+
+## Top-Level Tool Gates
+
+| Config | Type | Default | Description |
+| --- | --- | --- | --- |
+| `allow_read_paths` | array or null | `null` | Regex allow-list layered on top of the workspace sandbox for read-only tools |
+| `allow_write_paths` | array or null | `null` | Regex allow-list for write-capable tools |
 
 ## Directory Structure
 
@@ -30,6 +38,14 @@ PicoClaw's tools configuration is located in the `tools` field of `config.json`.
 
 Web tools are used for web search and fetching.
 
+### Global Web Config
+
+| Config | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | bool | true | Enable/disable the entire web tool family |
+| `proxy` | string | `""` | Optional proxy URL for web search/fetch |
+| `fetch_limit_bytes` | int | `10485760` | Maximum response size fetched by web tools before truncation/refusal |
+
 ### Brave
 
 | Config        | Type   | Default | Description               |
@@ -53,19 +69,53 @@ Web tools are used for web search and fetching.
 | `api_key`     | string | -       | Perplexity API key        |
 | `max_results` | int    | 5       | Maximum number of results |
 
+### Tavily
+
+| Config        | Type   | Default | Description               |
+|---------------|--------|---------|---------------------------|
+| `enabled`     | bool   | false   | Enable Tavily search      |
+| `api_key`     | string | -       | Tavily API key            |
+| `base_url`    | string | `""`    | Optional Tavily-compatible endpoint |
+| `max_results` | int    | 5       | Maximum number of results |
+
+### SearXNG
+
+| Config        | Type   | Default | Description                  |
+|---------------|--------|---------|------------------------------|
+| `enabled`     | bool   | false   | Enable SearXNG search        |
+| `base_url`    | string | `""`    | Base URL of your SearXNG instance |
+| `max_results` | int    | 5       | Maximum number of results    |
+
+### GLM Search
+
+| Config          | Type   | Default | Description |
+|-----------------|--------|---------|-------------|
+| `enabled`       | bool   | false   | Enable Zhipu GLM web search |
+| `api_key`       | string | -       | GLM API key |
+| `base_url`      | string | `https://open.bigmodel.cn/api/paas/v4/web_search` | Search endpoint |
+| `search_engine` | string | `search_std` | Backend name such as `search_std`, `search_pro`, `search_pro_sogou`, `search_pro_quark` |
+| `max_results`   | int    | 5       | Maximum number of results |
+
 ## Exec Tool
 
 The exec tool is used to execute shell commands.
 
 | Config                 | Type  | Default | Description                                |
 |------------------------|-------|---------|--------------------------------------------|
+| `enabled`              | bool  | true    | Enable/disable the exec tool               |
 | `enable_deny_patterns` | bool  | true    | Enable default dangerous command blocking  |
+| `allow_remote`         | bool  | true    | Allow exec calls from remote channels      |
+| `timeout_seconds`      | int   | 60      | Per-command timeout (`0` uses the built-in default) |
 | `custom_deny_patterns` | array | []      | Custom deny patterns (regular expressions) |
+| `custom_allow_patterns` | array | []     | Regex allow-list checked before deny rules |
 
 ### Functionality
 
 - **`enable_deny_patterns`**: Set to `false` to completely disable the default dangerous command blocking patterns
+- **`allow_remote`**: Set to `false` to require an internal/local channel context before exec may run
+- **`timeout_seconds`**: Set to `0` to fall back to the compiled default timeout
 - **`custom_deny_patterns`**: Add custom deny regex patterns; commands matching these will be blocked
+- **`custom_allow_patterns`**: Explicit allow regexes that are evaluated before deny rules
 
 ### Default Blocked Command Patterns
 
@@ -106,7 +156,47 @@ The cron tool is used for scheduling periodic tasks.
 
 | Config                 | Type | Default | Description                                    |
 |------------------------|------|---------|------------------------------------------------|
+| `enabled`              | bool | true    | Enable/disable the cron tool                   |
 | `exec_timeout_minutes` | int  | 5       | Execution timeout in minutes, 0 means no limit |
+
+## Skills Tool
+
+The skills tool controls skill search, installation, and registry lookup.
+
+| Config | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | bool | true | Enable skill-related tools |
+| `max_concurrent_searches` | int | 2 | Max concurrent skill search/download lookups |
+| `github.proxy` | string | `""` | Optional proxy for GitHub-backed skill downloads |
+| `github.token` | string | `""` | GitHub token for higher rate limits/private repos |
+| `search_cache.max_size` | int | 50 | Number of cached skill-search results |
+| `search_cache.ttl_seconds` | int | 300 | Skill-search cache TTL |
+| `registries.clawhub.enabled` | bool | true | Enable the default ClawHub registry |
+| `registries.clawhub.base_url` | string | `https://clawhub.ai` | Registry base URL |
+| `registries.clawhub.auth_token` | string | `""` | Optional registry auth token |
+| `registries.clawhub.search_path` | string | `""` | Override search endpoint path |
+| `registries.clawhub.skills_path` | string | `""` | Override skill metadata endpoint path |
+| `registries.clawhub.download_path` | string | `""` | Override download endpoint path |
+| `registries.clawhub.timeout` | int | `0` | Custom timeout override (`0` means use default) |
+| `registries.clawhub.max_zip_size` | int | `0` | Custom zip size cap (`0` means use default) |
+| `registries.clawhub.max_response_size` | int | `0` | Custom response size cap (`0` means use default) |
+
+## Media Cleanup Tool
+
+Media cleanup deletes temporary media artifacts created during channel/tool use.
+
+| Config | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | bool | true | Enable background cleanup |
+| `max_age_minutes` | int | 30 | Delete media older than this |
+| `interval_minutes` | int | 5 | Cleanup sweep cadence |
+
+## Read File Tool
+
+| Config | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | bool | true | Enable the read-file tool |
+| `max_read_file_size` | int | 65536 | Maximum bytes returned by a single read |
 
 ## MCP Tool
 
