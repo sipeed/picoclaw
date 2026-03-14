@@ -50,6 +50,12 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 		return ErrorResult("Subagent manager not configured")
 	}
 
+	// Derive the calling conversation's identity so we can scope results to the
+	// current chat only — preventing cross-conversation task leakage in
+	// multi-user deployments.
+	callerChannel := ToolChannel(ctx)
+	callerChatID := ToolChatID(ctx)
+
 	taskID, _ := args["task_id"].(string)
 	taskID = strings.TrimSpace(taskID)
 
@@ -58,21 +64,63 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 		if !ok {
 			return ErrorResult(fmt.Sprintf("No subagent found with task ID: %s", taskID))
 		}
-		return NewToolResult(spawnStatusFormatTask(task))
+
+		// Snapshot before formatting to avoid racing with the subagent goroutine.
+		taskCopy := *task
+
+		// Restrict lookup to tasks that belong to this conversation.
+		if callerChannel != "" && taskCopy.OriginChannel != "" && taskCopy.OriginChannel != callerChannel {
+			return ErrorResult(fmt.Sprintf("No subagent found with task ID: %s", taskID))
+		}
+		if callerChatID != "" && taskCopy.OriginChatID != "" && taskCopy.OriginChatID != callerChatID {
+			return ErrorResult(fmt.Sprintf("No subagent found with task ID: %s", taskID))
+		}
+
+		return NewToolResult(spawnStatusFormatTask(&taskCopy))
 	}
 
-	tasks := t.manager.ListTasks()
+	origTasks := t.manager.ListTasks()
+	if len(origTasks) == 0 {
+		return NewToolResult("No subagents have been spawned yet.")
+	}
+
+	// Snapshot each task to avoid reading concurrently mutated state via shared
+	// pointers once the manager lock is released.
+	tasks := make([]*SubagentTask, 0, len(origTasks))
+	for _, task := range origTasks {
+		if task == nil {
+			continue
+		}
+		cpy := *task
+
+		// Filter to tasks that originate from the current conversation only.
+		if callerChannel != "" && cpy.OriginChannel != "" && cpy.OriginChannel != callerChannel {
+			continue
+		}
+		if callerChatID != "" && cpy.OriginChatID != "" && cpy.OriginChatID != callerChatID {
+			continue
+		}
+
+		tasks = append(tasks, &cpy)
+	}
+
 	if len(tasks) == 0 {
 		return NewToolResult("No subagents have been spawned yet.")
 	}
 
 	// Deterministic ordering: sort by ID string (e.g. "subagent-1" < "subagent-2").
 	sort.Slice(tasks, func(i, j int) bool {
+		if tasks[i] == nil || tasks[j] == nil {
+			return false
+		}
 		return tasks[i].ID < tasks[j].ID
 	})
 
 	counts := map[string]int{}
 	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
 		counts[task.Status]++
 	}
 
@@ -87,6 +135,9 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 	sb.WriteString("\n")
 
 	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
 		sb.WriteString(spawnStatusFormatTask(task))
 		sb.WriteString("\n\n")
 	}
@@ -117,8 +168,9 @@ func spawnStatusFormatTask(task *SubagentTask) string {
 	if task.Result != "" {
 		result := task.Result
 		const maxResultLen = 300
-		if len(result) > maxResultLen {
-			result = result[:maxResultLen] + "…"
+		runes := []rune(result)
+		if len(runes) > maxResultLen {
+			result = string(runes[:maxResultLen]) + "…"
 		}
 		sb.WriteString(fmt.Sprintf("\n  result: %s", result))
 	}
