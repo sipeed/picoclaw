@@ -86,12 +86,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		return NewHTTPProviderWithOptions(
 			cfg.APIKey,
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			cfg.InsecureSkipVerify,
 		), modelID, nil
 
 	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
@@ -106,12 +107,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		return NewHTTPProviderWithOptions(
 			cfg.APIKey,
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			cfg.InsecureSkipVerify,
 		), modelID, nil
 
 	case "anthropic":
@@ -131,12 +133,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		return NewHTTPProviderWithOptions(
 			cfg.APIKey,
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			cfg.InsecureSkipVerify,
 		), modelID, nil
 
 	case "anthropic-messages":
