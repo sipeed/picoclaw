@@ -134,6 +134,93 @@ func TestExtractFileKey(t *testing.T) {
 	}
 }
 
+func TestExtractPostImageKeys(t *testing.T) {
+	tests := []struct {
+		name       string
+		rawContent string
+		want       []string
+	}{
+		{
+			name:       "text and image",
+			rawContent: `{"title":"","content":[[{"tag":"img","image_key":"img_v3_abc","width":100,"height":100}],[{"tag":"text","text":"hello","style":[]}]]}`,
+			want:       []string{"img_v3_abc"},
+		},
+		{
+			name:       "multiple images",
+			rawContent: `{"title":"","content":[[{"tag":"img","image_key":"img_1","width":100,"height":100},{"tag":"img","image_key":"img_2","width":100,"height":100}]]}`,
+			want:       []string{"img_1", "img_2"},
+		},
+		{
+			name:       "no images",
+			rawContent: `{"title":"","content":[[{"tag":"text","text":"hello","style":[]}]]}`,
+			want:       nil,
+		},
+		{
+			name:       "invalid JSON",
+			rawContent: `not json`,
+			want:       nil,
+		},
+		{
+			name:       "empty content",
+			rawContent: `{"title":"","content":[]}`,
+			want:       nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractPostImageKeys(tt.rawContent)
+			if len(got) != len(tt.want) {
+				t.Errorf("extractPostImageKeys() = %v, want %v", got, tt.want)
+				return
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("extractPostImageKeys()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestExtractPostText(t *testing.T) {
+	tests := []struct {
+		name       string
+		rawContent string
+		want       string
+	}{
+		{
+			name:       "text and image",
+			rawContent: `{"title":"","content":[[{"tag":"img","image_key":"img_v3_abc","width":100,"height":100}],[{"tag":"text","text":"图里有啥","style":[]}]]}`,
+			want:       "图里有啥",
+		},
+		{
+			name:       "with title",
+			rawContent: `{"title":"My Post","content":[[{"tag":"text","text":"body text","style":[]}]]}`,
+			want:       "My Post\nbody text",
+		},
+		{
+			name:       "only images returns empty",
+			rawContent: `{"title":"","content":[[{"tag":"img","image_key":"img_v3_abc","width":100,"height":100}]]}`,
+			want:       "",
+		},
+		{
+			name:       "invalid JSON returns raw",
+			rawContent: `not json`,
+			want:       "not json",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractPostText(tt.rawContent)
+			if got != tt.want {
+				t.Errorf("extractPostText(%q) = %q, want %q", tt.rawContent, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestExtractFileName(t *testing.T) {
 	tests := []struct {
 		name    string

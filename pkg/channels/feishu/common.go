@@ -62,6 +62,61 @@ func extractJSONStringField(content, field string) string {
 // Format: {"image_key": "img_xxx"}
 func extractImageKey(content string) string { return extractJSONStringField(content, "image_key") }
 
+// extractPostImageKeys extracts all image_key values from a Feishu post (rich text) message.
+// Post content format: {"title":"...","content":[[{"tag":"img","image_key":"..."},...],...]}.
+func extractPostImageKeys(rawContent string) []string {
+	var post struct {
+		Content [][]struct {
+			Tag      string `json:"tag"`
+			ImageKey string `json:"image_key"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(rawContent), &post); err != nil {
+		return nil
+	}
+
+	var keys []string
+	for _, paragraph := range post.Content {
+		for _, elem := range paragraph {
+			if elem.Tag == "img" && elem.ImageKey != "" {
+				keys = append(keys, elem.ImageKey)
+			}
+		}
+	}
+	return keys
+}
+
+// extractPostText extracts plain text from a Feishu post (rich text) message.
+// Returns title and text elements joined by newlines. Falls back to rawContent on parse error.
+func extractPostText(rawContent string) string {
+	var post struct {
+		Title   string `json:"title"`
+		Content [][]struct {
+			Tag  string `json:"tag"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(rawContent), &post); err != nil {
+		return rawContent
+	}
+
+	var parts []string
+	if post.Title != "" {
+		parts = append(parts, post.Title)
+	}
+	for _, paragraph := range post.Content {
+		for _, elem := range paragraph {
+			if elem.Tag == "text" && elem.Text != "" {
+				parts = append(parts, elem.Text)
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "\n")
+}
+
 // extractFileKey extracts the file_key from a Feishu file/audio message content JSON.
 // Format: {"file_key": "file_xxx", "file_name": "...", ...}
 func extractFileKey(content string) string { return extractJSONStringField(content, "file_key") }

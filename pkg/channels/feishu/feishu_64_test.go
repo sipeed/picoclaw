@@ -28,10 +28,22 @@ func TestExtractContent(t *testing.T) {
 			want:        "not json",
 		},
 		{
-			name:        "post message returns raw JSON",
+			name:        "post message extracts text",
 			messageType: "post",
-			rawContent:  `{"title": "test post"}`,
-			want:        `{"title": "test post"}`,
+			rawContent:  `{"title":"","content":[[{"tag":"img","image_key":"img_v3_xxx","width":100,"height":100}],[{"tag":"text","text":"图里有啥","style":[]}]]}`,
+			want:        "图里有啥",
+		},
+		{
+			name:        "post message with title",
+			messageType: "post",
+			rawContent:  `{"title":"test post","content":[[{"tag":"text","text":"hello","style":[]}]]}`,
+			want:        "test post\nhello",
+		},
+		{
+			name:        "post message only images returns empty",
+			messageType: "post",
+			rawContent:  `{"title":"","content":[[{"tag":"img","image_key":"img_v3_xxx","width":100,"height":100}]]}`,
+			want:        "",
 		},
 		{
 			name:        "image message returns empty",
@@ -143,6 +155,20 @@ func TestAppendMediaTags(t *testing.T) {
 			messageType: "file",
 			mediaRefs:   []string{"ref1"},
 			want:        "report.pdf [file]",
+		},
+		{
+			name:        "post with image refs",
+			content:     "图里有啥",
+			messageType: "post",
+			mediaRefs:   []string{"ref1"},
+			want:        "图里有啥 [image: photo]",
+		},
+		{
+			name:        "post empty content with image refs",
+			content:     "",
+			messageType: "post",
+			mediaRefs:   []string{"ref1"},
+			want:        "[image: photo]",
 		},
 		{
 			name:        "unknown type",
