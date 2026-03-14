@@ -462,6 +462,10 @@ func normalizeModel(model, apiBase string) string {
 		return model
 	}
 
+	if strings.HasPrefix(strings.ToLower(model), "openrouter/") {
+		return model
+	}
+
 	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
 		return model
 	}

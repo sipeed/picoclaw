@@ -566,6 +566,9 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
 	}
+	if got := normalizeModel("openrouter/free", "https://gateway.example.com/v1"); got != "openrouter/free" {
+		t.Fatalf("normalizeModel(openrouter custom api_base) = %q, want %q", got, "openrouter/free")
+	}
 	if got := normalizeModel("vivgrid/managed", "https://api.vivgrid.com/v1"); got != "managed" {
 		t.Fatalf("normalizeModel(vivgrid) = %q, want %q", got, "managed")
 	}
