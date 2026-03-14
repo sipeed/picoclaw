@@ -65,24 +65,14 @@ func (h *Handler) handleRegenPicoToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// defaultPicoOrigins is a restricted set of localhost origins used when the
-// user hasn't configured any explicit allow_origins. This covers the common
-// local-dev scenarios (Vite on 5173, launcher on 18800) without opening the
-// WebSocket to arbitrary cross-origin pages.
-var defaultPicoOrigins = []string{
-	"http://localhost:5173",
-	"http://127.0.0.1:5173",
-	"http://localhost:18800",
-	"http://127.0.0.1:18800",
-}
-
-// ensurePicoChannel checks if the Pico Channel is properly configured and
-// enables it with minimal secure defaults if not. Returns true if config was changed.
+// ensurePicoChannel enables the Pico channel with sane defaults if it isn't
+// already configured. Returns true when the config was modified.
 //
-// Setup only enables the channel and creates a token. It deliberately does not
-// turn on allow_token_query (prefer header-based auth) or set wildcard origins
-// (prefer a restricted localhost allowlist).
-func (h *Handler) ensurePicoChannel() (bool, error) {
+// callerOrigin is the Origin header from the setup request. If non-empty and
+// no origins are configured yet, it's written as the allowed origin so the
+// WebSocket handshake works for whatever host the caller is on (LAN, custom
+// port, etc.). Pass "" when there's no request context.
+func (h *Handler) ensurePicoChannel(callerOrigin string) (bool, error) {
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to load config: %w", err)
@@ -100,10 +90,9 @@ func (h *Handler) ensurePicoChannel() (bool, error) {
 		changed = true
 	}
 
-	// Only populate origins when the user hasn't configured any. Use a
-	// restricted localhost allowlist instead of "*" to limit the attack surface.
-	if len(cfg.Channels.Pico.AllowOrigins) == 0 {
-		cfg.Channels.Pico.AllowOrigins = defaultPicoOrigins
+	// Seed origins from the request instead of hardcoding ports.
+	if len(cfg.Channels.Pico.AllowOrigins) == 0 && callerOrigin != "" {
+		cfg.Channels.Pico.AllowOrigins = []string{callerOrigin}
 		changed = true
 	}
 
@@ -120,7 +109,7 @@ func (h *Handler) ensurePicoChannel() (bool, error) {
 //
 //	POST /api/pico/setup
 func (h *Handler) handlePicoSetup(w http.ResponseWriter, r *http.Request) {
-	changed, err := h.ensurePicoChannel()
+	changed, err := h.ensurePicoChannel(r.Header.Get("Origin"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

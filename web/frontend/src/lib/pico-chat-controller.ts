@@ -166,8 +166,7 @@ export async function connectChat() {
     }
 
     const url = `${finalWsUrl}?session_id=${encodeURIComponent(activeSessionIdRef)}`
-    // Pass the token via the Sec-WebSocket-Protocol header instead of a query
-    // parameter to avoid leaking it in logs, browser history, and proxies.
+    // Send token as a subprotocol so it doesn't end up in the URL.
     const socket = new WebSocket(url, [`token.${token}`])
 
     if (generation !== connectionGeneration) {
