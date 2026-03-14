@@ -3,11 +3,36 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
+
+// ModelTag constants define the recognized capability labels for models in config.json.
+// These are set via `"tags": ["vision", "code"]` under each model in the model list.
+const (
+	ModelTagVision      = "vision"       // Supports image/screenshot input (multimodal)
+	ModelTagImageGen    = "image-gen"    // Supports image generation output (e.g. DALL-E, Stable Diffusion)
+	ModelTagCode        = "code"         // Specialized for code generation and analysis
+	ModelTagFast        = "fast"         // Low-latency model, suited for lightweight tasks
+	ModelTagLongContext = "long-context" // Supports very long context windows (>100k tokens)
+	ModelTagReasoning   = "reasoning"    // Strong logical/math reasoning (e.g., o1, deepseek-r1)
+)
+
+// modelTagDescriptions provides LLM-readable explanations of each known tag,
+// injected at runtime into the tool description to guide model selection.
+var modelTagDescriptions = map[string]string{
+	ModelTagVision:      "can analyze images and screenshots (multimodal input)",
+	ModelTagImageGen:    "can generate images from text descriptions (e.g. DALL-E, Stable Diffusion)",
+	ModelTagCode:        "specialized in code generation and debugging",
+	ModelTagFast:        "fast and lightweight, ideal for simple or high-frequency tasks",
+	ModelTagLongContext: "handles very long inputs (>100k tokens)",
+	ModelTagReasoning:   "excels at logical reasoning, math, and multi-step planning",
+}
 
 type SubagentTask struct {
 	ID            string
@@ -26,8 +51,11 @@ type SubagentManager struct {
 	mu             sync.RWMutex
 	provider       providers.LLMProvider
 	defaultModel   string
+	allowedModels  []providers.FallbackCandidate
+	bus            *bus.MessageBus
 	workspace      string
 	tools          *ToolRegistry
+	teamConfig     config.TeamToolsConfig
 	maxIterations  int
 	maxTokens      int
 	temperature    float64
@@ -38,17 +66,83 @@ type SubagentManager struct {
 
 func NewSubagentManager(
 	provider providers.LLMProvider,
-	defaultModel, workspace string,
+	defaultModel string,
+	candidates []providers.FallbackCandidate,
+	workspace string,
+	teamConfig config.TeamToolsConfig,
+	bus *bus.MessageBus,
 ) *SubagentManager {
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,
 		defaultModel:  defaultModel,
+		allowedModels: candidates,
+		teamConfig:    teamConfig,
+		bus:           bus,
 		workspace:     workspace,
 		tools:         NewToolRegistry(),
 		maxIterations: 10,
 		nextID:        1,
 	}
+}
+
+// IsModelAllowed checks if a specific requested model exists in the permitted candidates list.
+func (sm *SubagentManager) IsModelAllowed(model string) bool {
+	// If the user requested the default model directly, that's automatically allowed
+	if model == sm.defaultModel {
+		return true
+	}
+
+	// 1. Check against explicitly allowed models in team config
+	for _, cand := range sm.teamConfig.AllowedModels {
+		if cand.Name == model {
+			return true
+		}
+	}
+
+	// 2. Otherwise, check against the resolved candidates (primary + fallbacks + explicitly configured)
+	// If teamConfig.AllowedModels is set, we strictly enforce it and DO NOT fall back to candidates
+	// unless the candidate model has tags that overlap with AllowedTags. But since AllowedTags
+	// was not implemented yet, just check fallback for backwards compatibility if teamConfig is empty.
+	if len(sm.teamConfig.AllowedModels) > 0 {
+		return false
+	}
+
+	for _, cand := range sm.allowedModels {
+		if cand.Model == model {
+			return true
+		}
+	}
+	return false
+}
+
+// ModelCapabilityHint generates a human-readable summary of allowed models and their tags.
+// This is injected into the coordinator's tool descriptions so the LLM can make better routing decisions.
+func (sm *SubagentManager) ModelCapabilityHint() string {
+	if len(sm.allowedModels) == 0 {
+		return ""
+	}
+
+	var modelLines []string
+	for _, cand := range sm.allowedModels {
+		modelLines = append(modelLines, fmt.Sprintf("  - %s (general purpose)", cand.Model))
+	}
+
+	hint := "When selecting a 'model' for sub-agents, use ONLY these configured models:\n"
+	if len(sm.teamConfig.AllowedModels) > 0 {
+		for _, cand := range sm.teamConfig.AllowedModels {
+			tagsStr := ""
+			if len(cand.Tags) > 0 {
+				tagsStr = fmt.Sprintf(" [%s]", strings.Join(cand.Tags, ", "))
+			}
+			hint += fmt.Sprintf("  - %s%s\n", cand.Name, tagsStr)
+		}
+	} else {
+		hint += strings.Join(modelLines, "\n")
+	}
+
+	hint += "\nIf a task requires vision/image analysis, you MUST select a model with the 'vision' tag. If no suitable model is available, omit the 'model' field to use the default."
+	return hint
 }
 
 // SetLLMOptions sets max tokens and temperature for subagent LLM calls.
@@ -228,6 +322,31 @@ func (sm *SubagentManager) ListTasks() []*SubagentTask {
 		tasks = append(tasks, task)
 	}
 	return tasks
+}
+
+// BuildBaseWorkerConfig returns a base ToolLoopConfig that can be customized for isolated workers.
+func (sm *SubagentManager) BuildBaseWorkerConfig(ctx context.Context) ToolLoopConfig {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	var llmOptions map[string]any
+	if sm.hasMaxTokens || sm.hasTemperature {
+		llmOptions = map[string]any{}
+		if sm.hasMaxTokens {
+			llmOptions["max_tokens"] = sm.maxTokens
+		}
+		if sm.hasTemperature {
+			llmOptions["temperature"] = sm.temperature
+		}
+	}
+
+	return ToolLoopConfig{
+		Provider:      sm.provider,
+		Model:         sm.defaultModel,
+		Tools:         sm.tools, // Note: Caller should replace this for isolated registry
+		MaxIterations: sm.maxIterations,
+		LLMOptions:    llmOptions,
+	}
 }
 
 // SubagentTool executes a subagent task synchronously and returns the result.

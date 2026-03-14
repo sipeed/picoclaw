@@ -74,6 +74,24 @@ func (f *FlexibleStringSlice) UnmarshalText(text []byte) error {
 	return nil
 }
 
+type TeamModelConfig struct {
+	Name string   `json:"name"`
+	Tags []string `json:"tags,omitempty"`
+}
+
+type TeamToolsConfig struct {
+	ToolConfig
+	MaxMembers          int               `json:"max_members"`
+	MaxTeamTokens       int               `json:"max_team_tokens"`
+	MaxEvaluatorLoops   int               `json:"max_evaluator_loops"`
+	MaxTimeoutMinutes   int               `json:"max_timeout_minutes"`
+	MaxContextRunes     int               `json:"max_context_runes"`
+	DisableAutoReviewer bool              `json:"disable_auto_reviewer"`
+	ReviewerModel       string            `json:"reviewer_model"`
+	AllowedStrategies   []string          `json:"allowed_strategies"`
+	AllowedModels       []TeamModelConfig `json:"allowed_models"`
+}
+
 type Config struct {
 	Agents    AgentsConfig    `json:"agents"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
@@ -750,6 +768,8 @@ type ToolsConfig struct {
 	Spawn           ToolConfig         `json:"spawn"                                                    envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
 	SPI             ToolConfig         `json:"spi"                                                      envPrefix:"PICOCLAW_TOOLS_SPI_"`
 	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
+	SpawnSubAgent   ToolConfig         `json:"spawn_sub_agent"                                          envPrefix:"PICOCLAW_TOOLS_SPAWN_SUB_AGENT_"`
+	Team            TeamToolsConfig    `json:"team"                                                     envPrefix:"PICOCLAW_TOOLS_TEAM_"`
 	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig         `json:"write_file"                                               envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
 }

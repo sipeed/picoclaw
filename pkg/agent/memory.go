@@ -130,9 +130,10 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 }
 
 // GetMemoryContext returns formatted memory context for the agent prompt.
-// Includes long-term memory and recent daily notes.
+// It loads the full MEMORY.md.
 func (ms *MemoryStore) GetMemoryContext() string {
 	longTerm := ms.ReadLongTerm()
+
 	recentNotes := ms.GetRecentDailyNotes(3)
 
 	if longTerm == "" && recentNotes == "" {
