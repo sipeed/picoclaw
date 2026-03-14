@@ -211,6 +211,36 @@ func TestSpawnStatusTool_ResultTruncation(t *testing.T) {
 	}
 }
 
+func TestSpawnStatusTool_ResultTruncation_Unicode(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+
+	// Each "字" is 3 bytes; 400 runes = 1200 bytes — well over the 300-rune limit.
+	longResult := strings.Repeat("字", 400)
+	manager.mu.Lock()
+	manager.tasks["subagent-1"] = &SubagentTask{
+		ID:     "subagent-1",
+		Task:   "Unicode task",
+		Status: "completed",
+		Result: longResult,
+	}
+	manager.mu.Unlock()
+
+	tool := NewSpawnStatusTool(manager)
+	result := tool.Execute(context.Background(), map[string]any{"task_id": "subagent-1"})
+
+	if result.IsError {
+		t.Fatalf("Unexpected error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "…") {
+		t.Errorf("Expected truncation indicator in output")
+	}
+	// The truncated result must be valid UTF-8 (no split rune boundaries).
+	if !strings.Contains(result.ForLLM, "字") {
+		t.Errorf("Expected CJK runes to appear intact in output")
+	}
+}
+
 func TestSpawnStatusTool_StatusCounts(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
@@ -233,5 +263,83 @@ func TestSpawnStatusTool_StatusCounts(t *testing.T) {
 		if !strings.Contains(result.ForLLM, want) {
 			t.Errorf("Expected %q in summary, got:\n%s", want, result.ForLLM)
 		}
+	}
+}
+
+func TestSpawnStatusTool_ChannelFiltering_ListAll(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+
+	manager.mu.Lock()
+	manager.tasks["subagent-1"] = &SubagentTask{
+		ID: "subagent-1", Task: "mine", Status: "running",
+		OriginChannel: "telegram", OriginChatID: "chat-A",
+	}
+	manager.tasks["subagent-2"] = &SubagentTask{
+		ID: "subagent-2", Task: "other user", Status: "running",
+		OriginChannel: "telegram", OriginChatID: "chat-B",
+	}
+	manager.mu.Unlock()
+
+	tool := NewSpawnStatusTool(manager)
+
+	// Caller is chat-A — should only see subagent-1.
+	ctx := WithToolContext(context.Background(), "telegram", "chat-A")
+	result := tool.Execute(ctx, map[string]any{})
+
+	if result.IsError {
+		t.Fatalf("Unexpected error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "subagent-1") {
+		t.Errorf("Expected own task in output, got:\n%s", result.ForLLM)
+	}
+	if strings.Contains(result.ForLLM, "subagent-2") {
+		t.Errorf("Should NOT see other chat's task, got:\n%s", result.ForLLM)
+	}
+}
+
+func TestSpawnStatusTool_ChannelFiltering_GetByID(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+
+	manager.mu.Lock()
+	manager.tasks["subagent-99"] = &SubagentTask{
+		ID: "subagent-99", Task: "secret", Status: "completed", Result: "private data",
+		OriginChannel: "slack", OriginChatID: "room-Z",
+	}
+	manager.mu.Unlock()
+
+	tool := NewSpawnStatusTool(manager)
+
+	// Different chat trying to look up subagent-99 by ID.
+	ctx := WithToolContext(context.Background(), "slack", "room-OTHER")
+	result := tool.Execute(ctx, map[string]any{"task_id": "subagent-99"})
+
+	if !result.IsError {
+		t.Errorf("Expected error (cross-chat lookup blocked), got: %s", result.ForLLM)
+	}
+}
+
+func TestSpawnStatusTool_ChannelFiltering_NoContext(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+
+	manager.mu.Lock()
+	manager.tasks["subagent-1"] = &SubagentTask{
+		ID: "subagent-1", Task: "t", Status: "completed",
+		OriginChannel: "telegram", OriginChatID: "chat-A",
+	}
+	manager.mu.Unlock()
+
+	tool := NewSpawnStatusTool(manager)
+
+	// No tool context (e.g. CLI) — callerChannel and callerChatID are both "".
+	// The filter conditions require a non-empty caller value, so all tasks pass through.
+	result := tool.Execute(context.Background(), map[string]any{})
+	if result.IsError {
+		t.Fatalf("Unexpected error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "subagent-1") {
+		t.Errorf("Expected task visible from no-context caller, got:\n%s", result.ForLLM)
 	}
 }
