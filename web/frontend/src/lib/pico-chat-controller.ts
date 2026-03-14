@@ -165,8 +165,9 @@ export async function connectChat() {
       console.warn("Could not parse ws_url:", error)
     }
 
-    const url = `${finalWsUrl}?token=${encodeURIComponent(token)}&session_id=${encodeURIComponent(activeSessionIdRef)}`
-    const socket = new WebSocket(url)
+    const url = `${finalWsUrl}?session_id=${encodeURIComponent(activeSessionIdRef)}`
+    // Send token as a subprotocol so it doesn't end up in the URL.
+    const socket = new WebSocket(url, [`token.${token}`])
 
     if (generation !== connectionGeneration) {
       socket.close()
