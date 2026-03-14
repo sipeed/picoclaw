@@ -9,8 +9,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/agent"
@@ -64,8 +66,37 @@ const (
 		"\033[0m\r\n"
 )
 
+const noBannerEnv = "PICOCLAW_NO_BANNER"
+
+func bannerDisabledByEnv() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(noBannerEnv)))
+	switch value {
+	case "", "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
+}
+
+func shouldPrintBanner(args []string, stdoutIsTerminal bool) bool {
+	if bannerDisabledByEnv() || !stdoutIsTerminal {
+		return false
+	}
+
+	if len(args) > 1 {
+		switch args[1] {
+		case "completion", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
+			return false
+		}
+	}
+
+	return true
+}
+
 func main() {
-	fmt.Printf("%s", banner)
+	if shouldPrintBanner(os.Args, term.IsTerminal(int(os.Stdout.Fd()))) {
+		fmt.Printf("%s", banner)
+	}
 	cmd := NewPicoclawCommand()
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
