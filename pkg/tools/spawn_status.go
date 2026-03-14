@@ -56,17 +56,22 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 	callerChannel := ToolChannel(ctx)
 	callerChatID := ToolChatID(ctx)
 
-	taskID, _ := args["task_id"].(string)
-	taskID = strings.TrimSpace(taskID)
+	var taskID string
+	if rawTaskID, ok := args["task_id"]; ok && rawTaskID != nil {
+		taskIDStr, ok := rawTaskID.(string)
+		if !ok {
+			return ErrorResult("task_id must be a string")
+		}
+		taskID = strings.TrimSpace(taskIDStr)
+	}
 
 	if taskID != "" {
-		task, ok := t.manager.GetTask(taskID)
+		// GetTaskCopy returns a consistent snapshot under the manager lock,
+		// eliminating any data race with the concurrent subagent goroutine.
+		taskCopy, ok := t.manager.GetTaskCopy(taskID)
 		if !ok {
 			return ErrorResult(fmt.Sprintf("No subagent found with task ID: %s", taskID))
 		}
-
-		// Snapshot before formatting to avoid racing with the subagent goroutine.
-		taskCopy := *task
 
 		// Restrict lookup to tasks that belong to this conversation.
 		if callerChannel != "" && taskCopy.OriginChannel != "" && taskCopy.OriginChannel != callerChannel {
@@ -79,19 +84,15 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 		return NewToolResult(spawnStatusFormatTask(&taskCopy))
 	}
 
-	origTasks := t.manager.ListTasks()
+	// ListTaskCopies returns consistent snapshots under the manager lock.
+	origTasks := t.manager.ListTaskCopies()
 	if len(origTasks) == 0 {
 		return NewToolResult("No subagents have been spawned yet.")
 	}
 
-	// Snapshot each task to avoid reading concurrently mutated state via shared
-	// pointers once the manager lock is released.
 	tasks := make([]*SubagentTask, 0, len(origTasks))
-	for _, task := range origTasks {
-		if task == nil {
-			continue
-		}
-		cpy := *task
+	for i := range origTasks {
+		cpy := &origTasks[i]
 
 		// Filter to tasks that originate from the current conversation only.
 		if callerChannel != "" && cpy.OriginChannel != "" && cpy.OriginChannel != callerChannel {
@@ -101,26 +102,24 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 			continue
 		}
 
-		tasks = append(tasks, &cpy)
+		tasks = append(tasks, cpy)
 	}
 
 	if len(tasks) == 0 {
 		return NewToolResult("No subagents have been spawned yet.")
 	}
 
-	// Deterministic ordering: sort by ID string (e.g. "subagent-1" < "subagent-2").
+	// Order by creation time (ascending) so spawning order is preserved.
+	// Fall back to ID string for tasks created in the same millisecond.
 	sort.Slice(tasks, func(i, j int) bool {
-		if tasks[i] == nil || tasks[j] == nil {
-			return false
+		if tasks[i].Created != tasks[j].Created {
+			return tasks[i].Created < tasks[j].Created
 		}
 		return tasks[i].ID < tasks[j].ID
 	})
 
 	counts := map[string]int{}
 	for _, task := range tasks {
-		if task == nil {
-			continue
-		}
 		counts[task.Status]++
 	}
 
@@ -135,9 +134,6 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 	sb.WriteString("\n")
 
 	for _, task := range tasks {
-		if task == nil {
-			continue
-		}
 		sb.WriteString(spawnStatusFormatTask(task))
 		sb.WriteString("\n\n")
 	}

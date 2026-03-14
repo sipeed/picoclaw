@@ -182,6 +182,22 @@ func TestSpawnStatusTool_GetByID_NotFound(t *testing.T) {
 	}
 }
 
+func TestSpawnStatusTool_TaskID_NonString(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	tool := NewSpawnStatusTool(manager)
+
+	for _, badVal := range []any{42, 3.14, true, map[string]any{"x": 1}, []string{"a"}} {
+		result := tool.Execute(context.Background(), map[string]any{"task_id": badVal})
+		if !result.IsError {
+			t.Errorf("Expected error for task_id=%T(%v), got success: %s", badVal, badVal, result.ForLLM)
+		}
+		if !strings.Contains(result.ForLLM, "task_id must be a string") {
+			t.Errorf("Expected type-error message, got: %s", result.ForLLM)
+		}
+	}
+}
+
 func TestSpawnStatusTool_ResultTruncation(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
@@ -263,6 +279,41 @@ func TestSpawnStatusTool_StatusCounts(t *testing.T) {
 		if !strings.Contains(result.ForLLM, want) {
 			t.Errorf("Expected %q in summary, got:\n%s", want, result.ForLLM)
 		}
+	}
+}
+
+func TestSpawnStatusTool_SortByCreatedTimestamp(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+
+	now := time.Now().UnixMilli()
+	manager.mu.Lock()
+	// Intentionally insert with out-of-order IDs and timestamps that reflect
+	// true spawn order: subagent-2 was spawned first, subagent-10 second.
+	manager.tasks["subagent-10"] = &SubagentTask{
+		ID: "subagent-10", Task: "second", Status: "running",
+		Created: now + 1,
+	}
+	manager.tasks["subagent-2"] = &SubagentTask{
+		ID: "subagent-2", Task: "first", Status: "running",
+		Created: now,
+	}
+	manager.mu.Unlock()
+
+	tool := NewSpawnStatusTool(manager)
+	result := tool.Execute(context.Background(), map[string]any{})
+
+	if result.IsError {
+		t.Fatalf("Unexpected error: %s", result.ForLLM)
+	}
+
+	pos2 := strings.Index(result.ForLLM, "subagent-2")
+	pos10 := strings.Index(result.ForLLM, "subagent-10")
+	if pos2 < 0 || pos10 < 0 {
+		t.Fatalf("Both task IDs should appear in output:\n%s", result.ForLLM)
+	}
+	if pos2 > pos10 {
+		t.Errorf("Expected subagent-2 (created first) to appear before subagent-10, but got:\n%s", result.ForLLM)
 	}
 }
 
