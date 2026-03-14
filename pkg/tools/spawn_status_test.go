@@ -384,7 +384,11 @@ func TestSpawnStatusTool_ChannelFiltering_NoContext(t *testing.T) {
 
 	tool := NewSpawnStatusTool(manager)
 
-	// No tool context (e.g. CLI) — callerChannel and callerChatID are both "".
+	// No ToolContext injected (e.g. a direct programmatic call that bypasses
+	// WithToolContext entirely) — callerChannel and callerChatID are both "".
+	// Note: the normal CLI path uses ProcessDirectWithChannel("cli", "direct"),
+	// which *does* inject a non-empty context; this test covers the case where
+	// no context injection happens at all.
 	// The filter conditions require a non-empty caller value, so all tasks pass through.
 	result := tool.Execute(context.Background(), map[string]any{})
 	if result.IsError {

@@ -111,7 +111,6 @@ func (sm *SubagentManager) Spawn(
 func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, callback AsyncCallback) {
 	sm.mu.Lock()
 	task.Status = "running"
-	task.Created = time.Now().UnixMilli()
 	sm.mu.Unlock()
 
 	// Build system prompt for subagent
