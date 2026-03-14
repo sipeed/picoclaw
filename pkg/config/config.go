@@ -269,6 +269,7 @@ type ChannelsConfig struct {
 	WeCom      WeComConfig      `json:"wecom"`
 	WeComApp   WeComAppConfig   `json:"wecom_app"`
 	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
+	WeComWS    WeComWSConfig    `json:"wecom_ws"`
 	Pico       PicoConfig       `json:"pico"`
 	IRC        IRCConfig        `json:"irc"`
 }
@@ -457,6 +458,32 @@ type WeComAIBotConfig struct {
 	MaxSteps           int                 `json:"max_steps"            env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"`       // Maximum streaming steps
 	WelcomeMessage     string              `json:"welcome_message"      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"` // Sent on enter_chat event; empty = no welcome
 	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
+}
+
+type WeComWSConfig struct {
+	Enabled              bool                         `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_WS_ENABLED"`
+	BotID                string                       `json:"bot_id"                  env:"PICOCLAW_CHANNELS_WECOM_WS_BOT_ID"`
+	Secret               string                       `json:"secret"                  env:"PICOCLAW_CHANNELS_WECOM_WS_SECRET"`
+	WSURL                string                       `json:"ws_url"                  env:"PICOCLAW_CHANNELS_WECOM_WS_WS_URL"`
+	ReconnectInterval    int                          `json:"reconnect_interval"      env:"PICOCLAW_CHANNELS_WECOM_WS_RECONNECT_INTERVAL"`
+	HeartbeatInterval    int                          `json:"heartbeat_interval"      env:"PICOCLAW_CHANNELS_WECOM_WS_HEARTBEAT_INTERVAL"`
+	ReplyTimeout         int                          `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_WS_REPLY_TIMEOUT"`
+	MaxReconnectAttempts int                          `json:"max_reconnect_attempts"  env:"PICOCLAW_CHANNELS_WECOM_WS_MAX_RECONNECT_ATTEMPTS"`
+	AllowFrom            FlexibleStringSlice          `json:"allow_from"              env:"PICOCLAW_CHANNELS_WECOM_WS_ALLOW_FROM"`
+	GroupTrigger         GroupTriggerConfig           `json:"group_trigger,omitempty"`
+	GroupPolicies        map[string]GroupPolicyConfig `json:"group_policies,omitempty"`
+	SendThinkingMessage  bool                         `json:"send_thinking_message"   env:"PICOCLAW_CHANNELS_WECOM_WS_SEND_THINKING_MESSAGE"`
+	ReasoningChannelID   string                       `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_WS_REASONING_CHANNEL_ID"`
+	MediaMaxSize         int                          `json:"media_max_size"          env:"PICOCLAW_CHANNELS_WECOM_WS_MEDIA_MAX_SIZE"`
+	MediaCachePath       string                       `json:"media_cache_path"        env:"PICOCLAW_CHANNELS_WECOM_WS_MEDIA_CACHE_PATH"`
+	EnableMediaDownload  bool                         `json:"enable_media_download"   env:"PICOCLAW_CHANNELS_WECOM_WS_ENABLE_MEDIA_DOWNLOAD"`
+	PersistencePath      string                       `json:"persistence_path"        env:"PICOCLAW_CHANNELS_WECOM_WS_PERSISTENCE_PATH"`
+}
+
+type GroupPolicyConfig struct {
+	AllowFrom   []string `json:"allow_from"`
+	MentionOnly bool     `json:"mention_only"`
+	Prefixes    []string `json:"prefixes"`
 }
 
 type PicoConfig struct {
