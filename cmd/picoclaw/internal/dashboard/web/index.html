@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PicoClaw Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased">
+    <div x-data="dashboard" class="h-screen flex flex-col" x-cloak>
+        <!-- Top Navigation -->
+        <header class="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-10">
+            <div class="flex items-center space-x-3">
+                <span class="text-3xl filter drop-shadow-sm">🦞</span>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight text-slate-800">PicoClaw</h1>
+                    <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">AI Agent Controller</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div x-show="configUpdated" class="text-xs text-amber-600 font-medium bg-amber-50 px-2 py-1 rounded border border-amber-100 animate-pulse">
+                    Unsaved Changes
+                </div>
+                <button @click="saveConfig" :disabled="saving" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-sm shadow-indigo-200 disabled:opacity-50 flex items-center">
+                    <template x-if="saving">
+                        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </template>
+                    <span x-text="saving ? 'Saving...' : 'Deploy Config'"></span>
+                </button>
+            </div>
+        </header>
+
+        <div class="flex-1 flex overflow-hidden">
+            <!-- Sidebar Navigation -->
+            <nav class="w-64 bg-white border-r border-slate-200 flex-shrink-0 flex flex-col shadow-sm z-0">
+                <div class="flex-1 overflow-y-auto py-6 px-4 space-y-8">
+                    <template x-for="group in menuGroups" :key="group.title">
+                        <div>
+                            <h3 class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3" x-text="group.title"></h3>
+                            <div class="space-y-1">
+                                <template x-for="item in group.items" :key="item.id">
+                                    <button @click="activeTab = item.id"
+                                            :class="activeTab === item.id ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
+                                            class="w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-all flex items-center group">
+                                        <span class="mr-3 opacity-70 group-hover:opacity-100" x-text="item.icon"></span>
+                                        <span x-text="item.label"></span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <div class="p-4 border-t border-slate-100 bg-slate-50/50">
+                    <div class="flex items-center text-xs text-slate-500">
+                        <div class="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                        Connected to Local Engine
+                    </div>
+                </div>
+            </nav>
+
+            <!-- Main Workspace -->
+            <main class="flex-1 overflow-y-auto relative bg-slate-50/50">
+                <!-- Notifications Overlay -->
+                <div class="fixed top-20 right-8 z-50 w-80 space-y-3">
+                    <template x-if="notification">
+                        <div x-transition:enter="transition ease-out duration-300"
+                             x-transition:enter-start="opacity-0 transform translate-x-8"
+                             x-transition:enter-end="opacity-100 transform translate-x-0"
+                             :class="notification?.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'"
+                             class="p-4 rounded-xl border shadow-lg flex items-start justify-between">
+                            <div class="flex">
+                                <span class="mr-3" x-text="notification?.type === 'success' ? '✅' : '❌'"></span>
+                                <p class="text-sm font-medium" x-text="notification?.message"></p>
+                            </div>
+                            <button @click="notification = null" class="text-slate-400 hover:text-slate-600 ml-2">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="max-w-5xl mx-auto py-10 px-8">
+                    <!-- Tab: General -->
+                    <section x-show="activeTab === 'general'" class="space-y-8">
+                        <div class="border-b border-slate-200 pb-5">
+                            <h2 class="text-2xl font-bold text-slate-800">General Settings</h2>
+                            <p class="text-slate-500 mt-1">Configure your agent's core behavior and identity.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="bg-white shadow-sm border border-slate-200 rounded-2xl p-6 space-y-5">
+                                <h3 class="font-bold text-sm text-slate-400 uppercase tracking-wider flex items-center">
+                                    <span class="mr-2">📂</span> Paths & Security
+                                </h3>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-1">Workspace Directory</label>
+                                    <input type="text" x-model="config.agents.defaults.workspace" class="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
+                                    <p class="mt-1.5 text-[11px] text-slate-400 italic">Default storage for logs, memory, and state.</p>
+                                </div>
+                                <div class="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                    <div>
+                                        <span class="block text-sm font-semibold text-slate-700">Strict Workspace Restriction</span>
+                                        <span class="text-[11px] text-slate-400">Prevent agent from accessing files outside workspace.</span>
+                                    </div>
+                                    <div class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" x-model="config.agents.defaults.restrict_to_workspace" class="sr-only peer">
+                                        <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-white shadow-sm border border-slate-200 rounded-2xl p-6 space-y-5">
+                                <h3 class="font-bold text-sm text-slate-400 uppercase tracking-wider flex items-center">
+                                    <span class="mr-2">🧠</span> Model Inference
+                                </h3>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-1">Provider</label>
+                                    <input type="text" x-model="config.agents.defaults.provider" placeholder="e.g. openai" class="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-1">Default Model Name</label>
+                                    <select x-model="config.agents.defaults.model" class="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none appearance-none bg-no-repeat bg-[right_1rem_center] bg-[length:1em_1em]" style="background-image: url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22 fill=%22none%22 viewBox=%220 0 20 20%22%3E%3Cpath stroke=%22%236b7280%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%221.5%22 d=%22m6 8 4 4 4-4%22%2F%3E%3C%2Fsvg%3E');">
+                                        <template x-for="model in (config.model_list || [])" :key="model.model_name">
+                                            <option :value="model.model_name" x-text="model.model_name" :selected="config.agents.defaults.model === model.model_name"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-semibold text-slate-700 mb-1">Max Tokens</label>
+                                        <input type="number" x-model.number="config.agents.defaults.max_tokens" class="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-semibold text-slate-700 mb-1">Tool Iterations</label>
+                                        <input type="number" x-model.number="config.agents.defaults.max_tool_iterations" class="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white shadow-sm border border-slate-200 rounded-2xl p-6">
+                            <h3 class="font-bold text-sm text-slate-400 uppercase tracking-wider flex items-center mb-5">
+                                <span class="mr-2">⚙️</span> Engine Settings
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-1">Session DM Scope</label>
+                                    <input type="text" x-model="config.session.dm_scope" class="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                </div>
+                                <div class="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                    <div>
+                                        <span class="block text-sm font-semibold text-slate-700">Heartbeat Monitor</span>
+                                        <span class="text-[11px] text-slate-400">Enable periodic background tasks.</span>
+                                    </div>
+                                    <div class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" x-model="config.heartbeat.enabled" class="sr-only peer">
+                                        <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Tab: Models -->
+                    <section x-show="activeTab === 'models'" class="space-y-8">
+                        <div class="flex items-center justify-between border-b border-slate-200 pb-5">
+                            <div>
+                                <h2 class="text-2xl font-bold text-slate-800">Model Registry</h2>
+                                <p class="text-slate-500 mt-1">Manage all available LLM endpoints and providers.</p>
+                            </div>
+                            <button @click="addModel" class="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center">
+                                <span class="mr-2">＋</span> Add Model
+                            </button>
+                        </div>
+
+                        <div class="space-y-4">
+                            <template x-for="(model, index) in (config.model_list || [])" :key="index">
+                                <div class="bg-white shadow-sm border border-slate-200 rounded-2xl p-6 group relative transition-all hover:border-indigo-200 hover:shadow-md">
+                                    <button @click="removeModel(index)" class="absolute top-4 right-4 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100">
+                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    </button>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Friendly Name</label>
+                                            <input type="text" x-model="model.model_name" class="w-full border border-slate-100 bg-slate-50/50 rounded-lg px-3 py-2 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="e.g. gpt4">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Provider Identifier</label>
+                                            <input type="text" x-model="model.model" class="w-full border border-slate-100 bg-slate-50/50 rounded-lg px-3 py-2 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="e.g. openai/gpt-4o">
+                                        </div>
+                                        <div class="md:col-span-2">
+                                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">API Authentication Token</label>
+                                            <input type="password" x-model="model.api_key" class="w-full border border-slate-100 bg-slate-50/50 rounded-lg px-3 py-2 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="sk-...">
+                                        </div>
+                                        <div class="md:col-span-2">
+                                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Custom API Base Endpoint (Optional)</label>
+                                            <input type="text" x-model="model.api_base" class="w-full border border-slate-100 bg-slate-50/50 rounded-lg px-3 py-2 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="https://api.openai.com/v1">
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </section>
+
+                    <!-- Tab: Channels -->
+                    <section x-show="activeTab === 'channels'" class="space-y-8">
+                        <div class="border-b border-slate-200 pb-5">
+                            <h2 class="text-2xl font-bold text-slate-800">Communication Channels</h2>
+                            <p class="text-slate-500 mt-1">Connect your agent to messaging platforms and IoT devices.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <template x-for="(channel, name) in config.channels" :key="name">
+                                <div class="bg-white shadow-sm border border-slate-200 rounded-2xl p-6 transition-all hover:border-indigo-100">
+                                    <div class="flex items-center justify-between mb-6">
+                                        <div class="flex items-center">
+                                            <span class="w-10 h-10 flex items-center justify-center bg-slate-50 rounded-xl mr-3 border border-slate-100" x-text="getChannelIcon(name)"></span>
+                                            <h3 class="font-bold text-slate-800 capitalize" x-text="name.replace('_', ' ')"></h3>
+                                        </div>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" x-model="channel.enabled" class="sr-only peer">
+                                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                        </label>
+                                    </div>
+
+                                    <div x-show="channel.enabled" class="space-y-4">
+                                        <template x-for="(val, key) in channel" :key="key">
+                                            <div x-show="key !== 'enabled'">
+                                                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1" x-text="key.replace('_', ' ')"></label>
+
+                                                <template x-if="typeof val === 'string'">
+                                                    <input :type="key.includes('token') || key.includes('secret') ? 'password' : 'text'" x-model="channel[key]" class="w-full border border-slate-100 bg-slate-50/50 rounded-lg px-3 py-2 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                                                </template>
+
+                                                <template x-if="typeof val === 'number'">
+                                                    <input type="number" x-model.number="channel[key]" class="w-full border border-slate-100 bg-slate-50/50 rounded-lg px-3 py-2 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                                                </template>
+
+                                                <!-- Structured allow_from list -->
+                                                <template x-if="key === 'allow_from' && Array.isArray(val)">
+                                                    <div class="space-y-2">
+                                                        <template x-for="(item, idx) in channel[key]" :key="idx">
+                                                            <div class="flex items-center space-x-2">
+                                                                <input type="text" x-model="channel[key][idx]" class="flex-1 border border-slate-100 bg-slate-50/50 rounded-lg px-3 py-1.5 text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                                                                <button @click="channel[key].splice(idx, 1)" class="text-slate-300 hover:text-rose-500">
+                                                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                                                </button>
+                                                            </div>
+                                                        </template>
+                                                        <button @click="channel[key].push('')" class="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center">
+                                                            <span class="mr-1">＋</span> Add Allowed ID
+                                                        </button>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="key !== 'allow_from' && Array.isArray(val)">
+                                                    <input type="text" :value="(channel[key] || []).join(', ')" @input="channel[key] = $event.target.value.split(',').map(s => s.trim()).filter(s => s !== '')" class="w-full border border-slate-100 bg-slate-50/50 rounded-lg px-3 py-2 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                                                </template>
+
+                                                <template x-if="typeof val === 'boolean'">
+                                                    <div class="flex items-center">
+                                                        <input type="checkbox" x-model="channel[key]" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500">
+                                                        <span class="ml-2 text-sm text-slate-600">Enable <span x-text="key"></span></span>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </section>
+
+                    <!-- Tab: Tools -->
+                    <section x-show="activeTab === 'tools'" class="space-y-8">
+                        <div class="border-b border-slate-200 pb-5">
+                            <h2 class="text-2xl font-bold text-slate-800">Capability Tools</h2>
+                            <p class="text-slate-500 mt-1">Configure external tools and search engines your agent can use.</p>
+                        </div>
+
+                        <div class="bg-white shadow-sm border border-slate-200 rounded-2xl p-8 space-y-10">
+                            <!-- Web Search -->
+                            <div>
+                                <h3 class="font-bold text-slate-800 flex items-center mb-6">
+                                    <span class="mr-3 text-xl text-blue-500">🌐</span> Web Intelligence
+                                </h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <template x-for="(search, name) in (config.tools?.web || {})" :key="name">
+                                        <div x-show="name !== 'proxy'" class="p-5 border border-slate-100 bg-slate-50 rounded-2xl">
+                                            <div class="flex items-center justify-between mb-4">
+                                                <span class="font-bold text-sm text-slate-700 capitalize" x-text="name"></span>
+                                                <label class="relative inline-flex items-center cursor-pointer">
+                                                    <input type="checkbox" x-model="search.enabled" class="sr-only peer">
+                                                    <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                                                </label>
+                                            </div>
+                                            <div x-show="search.enabled" class="space-y-3">
+                                                <template x-if="'api_key' in search">
+                                                    <input type="password" x-model="search.api_key" placeholder="API Key" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+                                                </template>
+                                                <template x-if="'max_results' in search">
+                                                    <div class="flex items-center justify-between">
+                                                        <span class="text-[10px] font-bold text-slate-400">MAX RESULTS</span>
+                                                        <input type="number" x-model.number="search.max_results" class="w-16 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="mt-6 pt-6 border-t border-slate-100">
+                                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Global Web Proxy</label>
+                                    <input type="text" x-model="config.tools.web.proxy" placeholder="e.g. socks5://127.0.0.1:7890" class="w-full border border-slate-100 bg-slate-50 rounded-lg px-4 py-2 text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                                </div>
+                            </div>
+
+                            <hr class="border-slate-100">
+
+                            <!-- Execution & Cron -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+                                <div class="space-y-6">
+                                    <h3 class="font-bold text-slate-800 flex items-center">
+                                        <span class="mr-3 text-xl text-amber-500">⚡</span> Execution Safety
+                                    </h3>
+                                    <div class="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                        <span class="text-sm font-semibold text-slate-700">Enable Deny Patterns</span>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" x-model="config.tools.exec.enable_deny_patterns" class="sr-only peer">
+                                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                                        </label>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Custom Blocklist</label>
+                                        <textarea x-model="customDenyPatternsText" placeholder="One pattern per line" class="w-full h-24 border border-slate-100 bg-slate-50 rounded-xl p-3 text-xs font-mono focus:bg-white focus:ring-2 focus:ring-amber-500 outline-none"></textarea>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-6">
+                                    <h3 class="font-bold text-slate-800 flex items-center">
+                                        <span class="mr-3 text-xl text-emerald-500">🕒</span> Task Scheduler
+                                    </h3>
+                                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-4">
+                                        <div>
+                                            <label class="block text-sm font-semibold text-slate-700 mb-1">Job Execution Timeout</label>
+                                            <div class="flex items-center">
+                                                <input type="number" x-model.number="config.tools.cron.exec_timeout_minutes" class="w-20 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                                                <span class="ml-3 text-sm text-slate-500">minutes</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-semibold text-slate-700 mb-1">Check Interval</label>
+                                            <div class="flex items-center">
+                                                <input type="number" x-model.number="config.heartbeat.interval" class="w-20 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                                                <span class="ml-3 text-sm text-slate-500">minutes</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Tab: Skills -->
+                    <section x-show="activeTab === 'skills'" class="space-y-8">
+                        <div class="border-b border-slate-200 pb-5">
+                            <h2 class="text-2xl font-bold text-slate-800">Skills & Knowledge</h2>
+                            <p class="text-slate-500 mt-1">Configure skill registries and discovery mechanisms.</p>
+                        </div>
+
+                        <div class="bg-white shadow-sm border border-slate-200 rounded-2xl p-8 space-y-8">
+                            <div>
+                                <h3 class="font-bold text-slate-800 flex items-center mb-6 text-sm uppercase tracking-widest text-slate-400">
+                                    Registries
+                                </h3>
+                                <template x-for="(registry, name) in (config.tools?.skills?.registries || {})" :key="name">
+                                    <div class="p-6 border border-indigo-50 bg-indigo-50/20 rounded-2xl space-y-4">
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex items-center">
+                                                <span class="text-xl mr-3">🔌</span>
+                                                <h4 class="font-bold text-slate-700 capitalize" x-text="name"></h4>
+                                            </div>
+                                            <label class="relative inline-flex items-center cursor-pointer">
+                                                <input type="checkbox" x-model="registry.enabled" class="sr-only peer">
+                                                <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                            </label>
+                                        </div>
+                                        <div x-show="registry.enabled" class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                                            <div class="md:col-span-2">
+                                                <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">Base URL</label>
+                                                <input type="text" x-model="registry.base_url" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                            </div>
+                                            <div>
+                                                <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">Auth Token</label>
+                                                <input type="password" x-model="registry.auth_token" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                            </div>
+                                            <div>
+                                                <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">Timeout (s)</label>
+                                                <input type="number" x-model.number="registry.timeout" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                            </div>
+
+                                            <template x-if="name === 'clawhub'">
+                                                <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">Search Path</label>
+                                                        <input type="text" x-model="registry.search_path" placeholder="/api/v1/search" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">Skills Path</label>
+                                                        <input type="text" x-model="registry.skills_path" placeholder="/api/v1/skills" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">Download Path</label>
+                                                        <input type="text" x-model="registry.download_path" placeholder="/api/v1/download" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">Max Zip Size (bytes)</label>
+                                                        <input type="number" x-model.number="registry.max_zip_size" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">Max Response Size (bytes)</label>
+                                                        <input type="number" x-model.number="registry.max_response_size" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <div class="pt-6 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div>
+                                    <h3 class="font-bold text-slate-800 mb-4 flex items-center">
+                                        <span class="mr-2">⚡</span> Performance
+                                    </h3>
+                                    <div class="space-y-3">
+                                        <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                                            <span class="text-sm text-slate-600 font-medium">Max Concurrent Searches</span>
+                                            <input type="number" x-model.number="config.tools.skills.max_concurrent_searches" class="w-16 border border-slate-200 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h3 class="font-bold text-slate-800 mb-4 flex items-center">
+                                        <span class="mr-2">💾</span> Knowledge Cache
+                                    </h3>
+                                    <div class="space-y-3">
+                                        <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                                            <span class="text-sm text-slate-600 font-medium">Cache Max Size</span>
+                                            <input type="number" x-model.number="config.tools.skills.search_cache.max_size" class="w-16 border border-slate-200 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                        </div>
+                                        <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                                            <span class="text-sm text-slate-600 font-medium">Cache TTL (Seconds)</span>
+                                            <input type="number" x-model.number="config.tools.skills.search_cache.ttl_seconds" class="w-16 border border-slate-200 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Tab: Workspace (Markdown Editor) -->
+                    <section x-show="activeTab === 'workspace'" class="h-[calc(100vh-12rem)] flex flex-col space-y-6">
+                        <div class="border-b border-slate-200 pb-5 shrink-0">
+                            <h2 class="text-2xl font-bold text-slate-800">Workspace Files</h2>
+                            <p class="text-slate-500 mt-1">Directly edit your agent's soul, memory, and identity files.</p>
+                        </div>
+
+                        <div class="flex-1 min-h-0 flex space-x-6 overflow-hidden">
+                            <!-- File List -->
+                            <div class="w-64 shrink-0 bg-white border border-slate-200 rounded-2xl overflow-y-auto p-4 shadow-sm">
+                                <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 px-2">Knowledge Base</h3>
+                                <div class="space-y-1">
+                                    <template x-for="file in workspaceFiles" :key="file">
+                                        <button @click="loadFile(file)"
+                                                :class="currentFile === file ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100' : 'text-slate-600 hover:bg-slate-50'"
+                                                class="w-full text-left px-3 py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center overflow-hidden">
+                                            <span class="mr-2 text-indigo-400">📄</span>
+                                            <span class="truncate" x-text="file"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                                <div x-show="workspaceFiles.length === 0" class="text-center py-10">
+                                    <p class="text-xs text-slate-400 italic px-4">No markdown files found in workspace.</p>
+                                </div>
+                            </div>
+
+                            <!-- Editor -->
+                            <div class="flex-1 bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col shadow-sm relative">
+                                <div x-show="!currentFile" class="absolute inset-0 flex items-center justify-center bg-slate-50/50 z-10">
+                                    <div class="text-center">
+                                        <span class="text-4xl mb-4 block">👈</span>
+                                        <p class="text-sm text-slate-500 font-medium">Select a file from the list to start editing.</p>
+                                    </div>
+                                </div>
+
+                                <div class="h-12 bg-slate-50 border-b border-slate-200 px-6 flex items-center justify-between shrink-0">
+                                    <div class="flex items-center">
+                                        <span class="text-xs font-bold text-slate-600 truncate max-w-xs" x-text="currentFile || 'No file selected'"></span>
+                                        <span x-show="fileDirty" class="ml-3 text-[9px] bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold uppercase tracking-wider animate-pulse">Modified</span>
+                                    </div>
+                                    <button @click="saveFile" :disabled="!currentFile || savingFile" class="text-indigo-600 hover:text-indigo-800 disabled:opacity-30 flex items-center text-xs font-bold transition-colors">
+                                        <span x-text="savingFile ? 'Saving...' : 'Save File'"></span>
+                                    </button>
+                                </div>
+                                <div class="flex-1 relative">
+                                    <textarea x-model="fileContent"
+                                              @input="fileDirty = true"
+                                              class="absolute inset-0 w-full h-full p-8 font-mono text-sm resize-none focus:outline-none bg-white text-slate-800 leading-relaxed"
+                                              placeholder="Write your agent's instructions here..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Tab: Advanced -->
+                    <section x-show="activeTab === 'advanced'" class="h-[calc(100vh-12rem)] flex flex-col space-y-6">
+                        <div class="border-b border-slate-200 pb-5 shrink-0">
+                            <h2 class="text-2xl font-bold text-slate-800">Raw Configuration</h2>
+                            <p class="text-slate-500 mt-1">Directly manipulate the `config.json` for advanced tuning.</p>
+                        </div>
+                        <div class="flex-1 min-h-0 bg-slate-900 rounded-2xl shadow-xl overflow-hidden flex flex-col">
+                            <div class="h-10 bg-slate-800 flex items-center px-6 justify-between border-b border-slate-700">
+                                <div class="flex space-x-1.5">
+                                    <div class="w-3 h-3 rounded-full bg-rose-500/50"></div>
+                                    <div class="w-3 h-3 rounded-full bg-amber-500/50"></div>
+                                    <div class="w-3 h-3 rounded-full bg-emerald-500/50"></div>
+                                </div>
+                                <button @click="applyRawConfig" class="text-xs text-indigo-400 font-bold hover:text-indigo-300 transition-colors">Apply Changes to Forms</button>
+                            </div>
+                            <textarea x-model="rawConfig" @input="configUpdated = true" class="flex-1 w-full bg-slate-900 text-indigo-300 p-8 font-mono text-xs resize-none outline-none leading-relaxed" spellcheck="false"></textarea>
+                        </div>
+                    </section>
+
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('dashboard', () => ({
+                activeTab: 'general',
+                config: null,
+                rawConfig: '',
+                saving: false,
+                configUpdated: false,
+                notification: null,
+
+                // Workspace files
+                workspaceFiles: [],
+                currentFile: null,
+                fileContent: '',
+                fileDirty: false,
+                savingFile: false,
+
+                customDenyPatternsText: '',
+
+                menuGroups: [
+                    {
+                        title: 'Setup',
+                        items: [
+                            { id: 'general', label: 'General', icon: '⚙️' },
+                            { id: 'models', label: 'Models', icon: '🧠' },
+                        ]
+                    },
+                    {
+                        title: 'Capabilities',
+                        items: [
+                            { id: 'channels', label: 'Channels', icon: '💬' },
+                            { id: 'tools', label: 'Tools', icon: '🛠️' },
+                            { id: 'skills', label: 'Skills', icon: '🧩' },
+                        ]
+                    },
+                    {
+                        title: 'Environment',
+                        items: [
+                            { id: 'workspace', label: 'Workspace', icon: '📂' },
+                            { id: 'advanced', label: 'Advanced', icon: '📄' },
+                        ]
+                    }
+                ],
+
+                async init() {
+                    await this.fetchConfig();
+                    await this.fetchWorkspaceFiles();
+
+                    this.$watch('customDenyPatternsText', value => {
+                        if (this.config) {
+                            this.config.tools.exec.custom_deny_patterns = value.split('\n').map(s => s.trim()).filter(s => s !== '');
+                            this.configUpdated = true;
+                        }
+                    });
+
+                    // Sync dirty state when config object changes
+                    this.$watch('config', (val, old) => {
+                        if (old !== null) this.configUpdated = true;
+                    }, { deep: true });
+                },
+
+                async fetchConfig() {
+                    try {
+                        const response = await fetch('/api/config');
+                        const data = await response.json();
+
+                        // Ensure nested structures exist
+                        if (!data.agents) data.agents = { defaults: {} };
+                        if (!data.channels) data.channels = {};
+                        if (!data.tools) data.tools = { web: {}, cron: {}, exec: {}, skills: { registries: {} } };
+                        if (!data.tools.skills.search_cache) data.tools.skills.search_cache = {};
+                        if (!data.heartbeat) data.heartbeat = {};
+                        if (!data.session) data.session = {};
+
+                        // Ensure allow_from is an array for all channels
+                        Object.values(data.channels).forEach(c => {
+                            if (!c.allow_from) c.allow_from = [];
+                        });
+
+                        this.config = data;
+                        this.rawConfig = JSON.stringify(this.config, null, 2);
+                        this.customDenyPatternsText = (this.config.tools.exec.custom_deny_patterns || []).join('\n');
+                        this.$nextTick(() => this.configUpdated = false);
+                    } catch (err) {
+                        this.showNotification('error', 'Failed to load configuration');
+                    }
+                },
+
+                async saveConfig() {
+                    this.saving = true;
+                    try {
+                        this.rawConfig = JSON.stringify(this.config, null, 2);
+                        const response = await fetch('/api/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: this.rawConfig
+                        });
+
+                        if (response.ok) {
+                            this.showNotification('success', 'Configuration successfully deployed');
+                            this.configUpdated = false;
+                        } else {
+                            const error = await response.text();
+                            this.showNotification('error', 'Deployment failed: ' + error);
+                        }
+                    } catch (err) {
+                        this.showNotification('error', 'Network error during deployment');
+                    } finally {
+                        this.saving = false;
+                    }
+                },
+
+                async fetchWorkspaceFiles() {
+                    try {
+                        const response = await fetch('/api/workspace/files');
+                        this.workspaceFiles = await response.json();
+                    } catch (err) {
+                        console.error('Failed to fetch workspace files', err);
+                    }
+                },
+
+                async loadFile(path) {
+                    try {
+                        const response = await fetch(`/api/workspace/files?path=${encodeURIComponent(path)}`);
+                        this.fileContent = await response.text();
+                        this.currentFile = path;
+                        this.fileDirty = false;
+                    } catch (err) {
+                        this.showNotification('error', 'Failed to load file');
+                    }
+                },
+
+                async saveFile() {
+                    if (!this.currentFile) return;
+                    this.savingFile = true;
+                    try {
+                        const response = await fetch(`/api/workspace/files?path=${encodeURIComponent(this.currentFile)}`, {
+                            method: 'POST',
+                            body: this.fileContent
+                        });
+
+                        if (response.ok) {
+                            this.showNotification('success', 'File saved successfully');
+                            this.fileDirty = false;
+                        } else {
+                            this.showNotification('error', 'Failed to save file');
+                        }
+                    } catch (err) {
+                        this.showNotification('error', 'Network error while saving file');
+                    } finally {
+                        this.savingFile = false;
+                    }
+                },
+
+                applyRawConfig() {
+                    try {
+                        this.config = JSON.parse(this.rawConfig);
+                        this.customDenyPatternsText = (this.config.tools.exec.custom_deny_patterns || []).join('\n');
+
+                        // Ensure allow_from is an array for all channels
+                        Object.values(this.config.channels).forEach(c => {
+                            if (!c.allow_from) c.allow_from = [];
+                        });
+
+                        this.showNotification('success', 'Raw JSON applied to forms');
+                        this.configUpdated = true;
+                    } catch (err) {
+                        this.showNotification('error', 'Invalid JSON syntax: ' + err.message);
+                    }
+                },
+
+                showNotification(type, message) {
+                    this.notification = { type, message };
+                    setTimeout(() => {
+                        if (this.notification?.message === message) {
+                            this.notification = null;
+                        }
+                    }, 5000);
+                },
+
+                addModel() {
+                    if (!this.config.model_list) this.config.model_list = [];
+                    this.config.model_list.push({
+                        model_name: '',
+                        model: '',
+                        api_key: '',
+                        api_base: ''
+                    });
+                },
+
+                removeModel(index) {
+                    this.config.model_list.splice(index, 1);
+                },
+
+                getChannelIcon(name) {
+                    const icons = {
+                        telegram: '✈️',
+                        discord: '👾',
+                        whatsapp: '📱',
+                        feishu: '🐦',
+                        maixcam: '📷',
+                        qq: '🐧',
+                        dingtalk: '📌',
+                        slack: '🌈',
+                        line: '🟢',
+                        onebot: '🤖',
+                        wecom: '🏢',
+                        wecom_app: '💼'
+                    };
+                    return icons[name] || '💬';
+                }
+            }));
+        });
+    </script>
+</body>
+</html>
