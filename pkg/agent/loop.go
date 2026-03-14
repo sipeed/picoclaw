@@ -881,7 +881,7 @@ func (al *AgentLoop) runAgentLoop(
 		opts.ChatID,
 	)
 
-	// Resolve media:// refs to base64 data URLs (streaming)
+	// Resolve media:// refs: images→base64 data URLs, non-images→local paths in content
 	cfg := al.GetConfig()
 	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)

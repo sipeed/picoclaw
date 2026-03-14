@@ -234,7 +234,8 @@ picoclaw onboard
     {
       "model_name": "ark-code-latest",
       "model": "volcengine/ark-code-latest",
-      "api_key": "sk-your-api-key"
+      "api_key": "sk-your-api-key",
+      "api_base":"https://ark.cn-beijing.volces.com/api/coding/v3"
     },
     {
       "model_name": "gpt-5.4",
