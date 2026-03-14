@@ -416,7 +416,7 @@ func supportsExtraContent(apiBase string) bool {
 // - Preserves ToolCallID, ToolCalls, and ReasoningContent for all messages
 func serializeMessages(messages []Message, apiBase string) []any {
 	supportsExtra := supportsExtraContent(apiBase)
-	
+
 	out := make([]any, 0, len(messages))
 	for _, m := range messages {
 		if len(m.ToolCalls) > 0 && !supportsExtra {
