@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/signal"
@@ -522,9 +523,7 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 	go func() {
 		defer wg.Done()
 
-		// Get initial file info
-		lastModTime := getFileModTime(configPath)
-		lastSize := getFileSize(configPath)
+		lastFingerprint := getFileFingerprint(configPath)
 
 		ticker := time.NewTicker(2 * time.Second) // Check every 2 seconds
 		defer ticker.Stop()
@@ -532,11 +531,12 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 		for {
 			select {
 			case <-ticker.C:
-				currentModTime := getFileModTime(configPath)
-				currentSize := getFileSize(configPath)
+				currentFingerprint := getFileFingerprint(configPath)
 
-				// Check if file changed (modification time or size changed)
-				if currentModTime.After(lastModTime) || currentSize != lastSize {
+				// Detect changes by file fingerprint instead of mtime/size alone.
+				// This avoids missing edits that land within the same filesystem
+				// timestamp granularity window and keep the same file size.
+				if currentFingerprint != lastFingerprint {
 					if debug {
 						logger.Debugf("🔍 Config file change detected")
 					}
@@ -562,8 +562,7 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 					logger.Info("✓ Config file validated and loaded")
 
 					// Update last known state
-					lastModTime = currentModTime
-					lastSize = currentSize
+					lastFingerprint = currentFingerprint
 
 					// Send new config to main loop (non-blocking)
 					select {
@@ -588,22 +587,34 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 	return configChan, stopFunc
 }
 
-// getFileModTime returns the modification time of a file, or zero time if file doesn't exist
-func getFileModTime(path string) time.Time {
-	info, err := os.Stat(path)
-	if err != nil {
-		return time.Time{}
-	}
-	return info.ModTime()
+type fileFingerprint struct {
+	ModTime time.Time
+	Size    int64
+	Hash    [32]byte
 }
 
-// getFileSize returns the size of a file, or 0 if file doesn't exist
-func getFileSize(path string) int64 {
+// getFileFingerprint returns a stable fingerprint for config change detection.
+// Hashing the content closes the gap where mtime granularity and unchanged size
+// would otherwise hide rapid successive edits from the polling watcher.
+func getFileFingerprint(path string) fileFingerprint {
 	info, err := os.Stat(path)
 	if err != nil {
-		return 0
+		return fileFingerprint{}
 	}
-	return info.Size()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fileFingerprint{
+			ModTime: info.ModTime(),
+			Size:    info.Size(),
+		}
+	}
+
+	return fileFingerprint{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		Hash:    sha256.Sum256(data),
+	}
 }
 
 func setupCronTool(
