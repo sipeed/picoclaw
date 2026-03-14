@@ -1,14 +1,17 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
 
+	"github.com/sipeed/picoclaw/pkg/credential"
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
@@ -837,7 +840,19 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	if passphrase := credential.PassphraseProvider(); passphrase != "" {
+		for _, m := range cfg.ModelList {
+			if m.APIKey != "" && !strings.HasPrefix(m.APIKey, "enc://") && !strings.HasPrefix(m.APIKey, "file://") {
+				fmt.Fprintf(os.Stderr, "picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n", m.ModelName)
+			}
+		}
+	}
+
 	if err := env.Parse(cfg); err != nil {
+		return nil, err
+	}
+
+	if err := resolveAPIKeys(cfg.ModelList, filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 
@@ -855,6 +870,46 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// encryptPlaintextAPIKeys rewrites plaintext api_key values in raw JSON using
+// the entries already parsed into models. Returns the rewritten bytes when at
+// least one key was sealed, or nil when nothing changed.
+func encryptPlaintextAPIKeys(models []ModelConfig, passphrase string, raw []byte) []byte {
+	result := raw
+	changed := false
+	for _, m := range models {
+		if m.APIKey == "" || strings.HasPrefix(m.APIKey, "enc://") || strings.HasPrefix(m.APIKey, "file://") {
+			continue
+		}
+		encrypted, err := credential.Encrypt(passphrase, "", m.APIKey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "picoclaw: warning: cannot seal api_key in config: %v\n", err)
+			continue
+		}
+		oldJSON, _ := json.Marshal(m.APIKey)
+		newJSON, _ := json.Marshal(encrypted)
+		result = bytes.Replace(result, oldJSON, newJSON, 1)
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return result
+}
+
+// resolveAPIKeys decrypts or dereferences each api_key in models in-place.
+// Supports plaintext (no-op), file:// (read from configDir), and enc:// (AES-GCM decrypt).
+func resolveAPIKeys(models []ModelConfig, configDir string) error {
+	cr := credential.NewResolver(configDir)
+	for i := range models {
+		resolved, err := cr.Resolve(models[i].APIKey)
+		if err != nil {
+			return fmt.Errorf("model_list[%d] (%s): %w", i, models[i].ModelName, err)
+		}
+		models[i].APIKey = resolved
+	}
+	return nil
 }
 
 func (c *Config) migrateChannelConfigs() {
@@ -876,7 +931,12 @@ func SaveConfig(path string, cfg *Config) error {
 		return err
 	}
 
-	// Use unified atomic write utility with explicit sync for flash storage reliability.
+	if passphrase := credential.PassphraseProvider(); passphrase != "" {
+		if sealed := encryptPlaintextAPIKeys(cfg.ModelList, passphrase, data); sealed != nil {
+			data = sealed
+		}
+	}
+
 	return fileutil.WriteFileAtomic(path, data, 0o600)
 }
 
