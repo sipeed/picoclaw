@@ -677,8 +677,15 @@ func (c *FeishuChannel) downloadResource(
 }
 
 // appendMediaTags appends media type tags to content (like Telegram's "[image: photo]").
+// For interactive cards, media tags are not appended because content is raw JSON
+// and appending would produce invalid JSON format.
 func appendMediaTags(content, messageType string, mediaRefs []string) string {
 	if len(mediaRefs) == 0 {
+		return content
+	}
+
+	// Don't append tags to JSON content (interactive cards) - would produce invalid JSON
+	if messageType == larkim.MsgTypeInteractive {
 		return content
 	}
 

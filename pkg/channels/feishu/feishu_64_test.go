@@ -169,6 +169,13 @@ func TestAppendMediaTags(t *testing.T) {
 			mediaRefs:   []string{"ref1"},
 			want:        "something [attachment]",
 		},
+		{
+			name:        "interactive card with images returns content unchanged",
+			content:     `{"schema":"2.0","body":{"elements":[{"tag":"img","img_key":"img_123"}]}}`,
+			messageType: "interactive",
+			mediaRefs:   []string{"ref1"},
+			want:        `{"schema":"2.0","body":{"elements":[{"tag":"img","img_key":"img_123"}]}}`,
+		},
 	}
 
 	for _, tt := range tests {
