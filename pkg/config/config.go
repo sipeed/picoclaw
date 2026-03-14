@@ -832,6 +832,16 @@ func LoadConfig(path string) (*Config, error) {
 	if len(tmp.ModelList) > 0 {
 		cfg.ModelList = nil
 	}
+	if len(tmp.ModelList) == 0 && tmp.HasProvidersConfig() {
+		// Legacy provider-only configs should not inherit the template
+		// model_list or template default model selection. Clear both so the
+		// old provider block can be migrated into an explicit model_list below.
+		cfg.ModelList = nil
+		if tmp.Agents.Defaults.ModelName == "" && tmp.Agents.Defaults.Model == "" {
+			cfg.Agents.Defaults.ModelName = ""
+			cfg.Agents.Defaults.Model = ""
+		}
+	}
 
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
@@ -847,6 +857,10 @@ func LoadConfig(path string) (*Config, error) {
 	// Auto-migrate: if only legacy providers config exists, convert to model_list
 	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
+		if cfg.Agents.Defaults.GetModelName() == "" && len(cfg.ModelList) > 0 {
+			cfg.Agents.Defaults.ModelName = cfg.ModelList[0].ModelName
+			cfg.Agents.Defaults.Model = ""
+		}
 	}
 
 	// Validate model_list for uniqueness and required fields
