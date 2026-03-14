@@ -17,6 +17,7 @@ import (
 	"jane/cmd/picoclaw/internal/auth"
 	"jane/cmd/picoclaw/internal/cron"
 	"jane/cmd/picoclaw/internal/gateway"
+	"jane/cmd/picoclaw/internal/jules"
 	"jane/cmd/picoclaw/internal/migrate"
 	"jane/cmd/picoclaw/internal/onboard"
 	"jane/cmd/picoclaw/internal/skills"
@@ -41,6 +42,7 @@ func NewPicoclawCommand() *cobra.Command {
 		gateway.NewGatewayCommand(),
 		status.NewStatusCommand(),
 		cron.NewCronCommand(),
+		jules.NewJulesCommand(),
 		migrate.NewMigrateCommand(),
 		skills.NewSkillsCommand(),
 		version.NewVersionCommand(),

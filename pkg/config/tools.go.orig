@@ -96,11 +96,6 @@ type MediaCleanupConfig struct {
 	Interval   int `                                    env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL" json:"interval_minutes"`
 }
 
-type JulesConfig struct {
-	ToolConfig `envPrefix:"PICOCLAW_TOOLS_JULES_"`
-	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_JULES_API_KEY"`
-}
-
 type ReadFileToolConfig struct {
 	Enabled         bool `json:"enabled"`
 	MaxReadFileSize int  `json:"max_read_file_size"`
@@ -111,7 +106,6 @@ type ToolsConfig struct {
 	AllowReadPaths  []string           `json:"allow_read_paths"  env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
 	AllowWritePaths []string           `json:"allow_write_paths" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
 	Web             WebToolsConfig     `json:"web"`
-	Jules           JulesConfig        `json:"jules"`
 	Cron            CronToolsConfig    `json:"cron"`
 	Exec            ExecConfig         `json:"exec"`
 	Skills          SkillsToolsConfig  `json:"skills"`
@@ -188,8 +182,6 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 	switch name {
 	case "web":
 		return t.Web.Enabled
-	case "jules":
-		return t.Jules.Enabled
 	case "cron":
 		return t.Cron.Enabled
 	case "exec":

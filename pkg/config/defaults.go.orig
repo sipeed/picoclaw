@@ -404,12 +404,6 @@ func DefaultConfig() *Config {
 				},
 				ExecTimeoutMinutes: 5,
 			},
-			Jules: JulesConfig{
-				ToolConfig: ToolConfig{
-					Enabled: true,
-				},
-				APIKey: "",
-			},
 			Exec: ExecConfig{
 				ToolConfig: ToolConfig{
 					Enabled: true,
