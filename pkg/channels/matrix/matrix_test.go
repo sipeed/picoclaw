@@ -340,23 +340,85 @@ func TestMatrixOutboundContent(t *testing.T) {
 }
 
 func TestMarkdownToHTML(t *testing.T) {
-	tests := []struct {
+	cases := []struct {
 		name     string
-		input    string
-		contains string
+		md       string
+		rendered string
 	}{
-		{"bold", "**hello**", "<strong>hello</strong>"},
-		{"italic", "_world_", "<em>world</em>"},
-		{"header", "### Title", "<h3"},
-		{"code block", "```\nfoo()\n```", "<code>"},
-		{"inline code", "`x`", "<code>x</code>"},
-		{"plain text", "just text", "just text"},
+		{
+			name:     "bold",
+			md:       "**hello**",
+			rendered: `<strong>hello</strong>`,
+		},
+		{
+			name:     "italic",
+			md:       "_world_",
+			rendered: `<em>world</em>`,
+		},
+		{
+			name:     "heading",
+			md:       "### Title",
+			rendered: `<h3 id="title">Title</h3>`,
+		},
+		{
+			name:     "fenced code block",
+			md:       "```\nfoo()\n```",
+			rendered: "<pre><code>foo()\n</code></pre>",
+		},
+		{
+			name:     "inline code",
+			md:       "`x`",
+			rendered: `<code>x</code>`,
+		},
+		{
+			name:     "plain text has no block wrapper",
+			md:       "just text",
+			rendered: `just text`,
+		},
+		{
+			name: "loose list has no <p> wrapper around items",
+			md:   "- Item one\n\n- Item two\n",
+			rendered: `<ul>
+<li>Item one</li>
+
+<li>Item two</li>
+</ul>`,
+		},
+		{
+			name: "list item with nested sublist has no <p> wrapper",
+			md:   "1. Steps overview:\n\n   - Step A\n   - Step B\n",
+			rendered: `<ol>
+<li>Steps overview:
+<ul>
+<li>Step A</li>
+<li>Step B</li>
+</ul></li>
+</ol>`,
+		},
+		{
+			name: "tight list has no <p> wrapper",
+			md:   "- Alpha\n- Beta\n",
+			rendered: `<ul>
+<li>Alpha</li>
+<li>Beta</li>
+</ul>`,
+		},
+		{
+			name:     "paragraph before list",
+			md:       "Introduction text.\n\n- Point one\n",
+			rendered: "<p>Introduction text.</p>\n\n<ul>\n<li>Point one</li>\n</ul>",
+		},
+		{
+			name:     "comprehensive document with headings, paragraphs, list, and code block",
+			md:       "# Overview\n\nThis is a sample document designed to demonstrate various Markdown elements in a single block of text.\n\nThe first paragraph introduces the concept of structured data.\n\n## Details\n\nThe following is a list:\n\n*   First\n*   Second\n*   Third\n\nThe second paragraph focuses on details. Below is a generic code snippet:\n\n```python\ndef calculate_area(radius):\n    import math\n    return math.pi * (radius ** 2)\n```\n\nThis concludes the generic sample text.\n",
+			rendered: "<h1 id=\"overview\">Overview</h1>\n\n<p>This is a sample document designed to demonstrate various Markdown elements in a single block of text.</p>\n\n<p>The first paragraph introduces the concept of structured data.</p>\n\n<h2 id=\"details\">Details</h2>\n\n<p>The following is a list:</p>\n\n<ul>\n<li>First</li>\n<li>Second</li>\n<li>Third</li>\n</ul>\n\n<p>The second paragraph focuses on details. Below is a generic code snippet:</p>\n\n<pre><code class=\"language-python\">def calculate_area(radius):\n    import math\n    return math.pi * (radius ** 2)\n</code></pre>\n\n<p>This concludes the generic sample text.</p>",
+		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := markdownToHTML(tt.input)
-			if !strings.Contains(got, tt.contains) {
-				t.Fatalf("markdownToHTML(%q) = %q, want it to contain %q", tt.input, got, tt.contains)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := markdownToHTML(tc.md); got != tc.rendered {
+				t.Fatalf("markdownToHTML(%q)\n got: %q\nwant: %q", tc.md, got, tc.rendered)
 			}
 		})
 	}

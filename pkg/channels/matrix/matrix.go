@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gomarkdown/markdown"
+	mdast "github.com/gomarkdown/markdown/ast"
 	mdhtml "github.com/gomarkdown/markdown/html"
 	"github.com/gomarkdown/markdown/parser"
 	"maunium.net/go/mautrix"
@@ -40,6 +41,36 @@ const (
 )
 
 var matrixMentionHrefRegexp = regexp.MustCompile(`(?i)<a[^>]+href=["']([^"']+)["']`)
+
+// matrixHTMLRenderer wraps the standard gomarkdown HTML renderer and adjusts
+// paragraph and code-block rendering for Matrix clients.
+//
+// Paragraph <p> wrappers are suppressed when the paragraph is the only child
+// of its parent (plain messages) or when it lives inside a list item (to avoid
+// margin stacking). Code-block content is dedented so that incidentally
+// indented snippets render flush-left.
+type matrixHTMLRenderer struct {
+	*mdhtml.Renderer
+}
+
+func (r *matrixHTMLRenderer) RenderNode(w io.Writer, node mdast.Node, entering bool) mdast.WalkStatus {
+	if p, ok := node.(*mdast.Paragraph); ok && matrixSuppressParagraph(p) {
+		return mdast.GoToNext
+	}
+	return r.Renderer.RenderNode(w, node, entering)
+}
+
+func matrixSuppressParagraph(p *mdast.Paragraph) bool {
+	parent := p.GetParent()
+	if parent == nil {
+		return true
+	}
+	if _, ok := parent.(*mdast.ListItem); ok {
+		return true
+	}
+	return len(parent.GetChildren()) <= 1
+}
+
 
 type roomKindCacheEntry struct {
 	isGroup   bool
@@ -273,8 +304,9 @@ func (c *MatrixChannel) Stop(ctx context.Context) error {
 }
 
 func markdownToHTML(md string) string {
-	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs)
-	renderer := mdhtml.NewRenderer(mdhtml.RendererOptions{Flags: mdhtml.CommonFlags})
+	extensions := (parser.CommonExtensions | parser.AutoHeadingIDs) &^ parser.DefinitionLists
+	p := parser.NewWithExtensions(extensions)
+	renderer := &matrixHTMLRenderer{mdhtml.NewRenderer(mdhtml.RendererOptions{Flags: mdhtml.CommonFlags})}
 	return strings.TrimSpace(string(markdown.ToHTML([]byte(md), p, renderer)))
 }
 
