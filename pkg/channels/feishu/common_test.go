@@ -347,6 +347,16 @@ func TestExtractCardImageKeys(t *testing.T) {
 			content: `{"header":{"title":{"content":"Title"}},"elements":[{"tag":"div","text":{"content":"Description"}},{"tag":"img","img_key":"img_main"}]}`,
 			want:    []string{"img_main"},
 		},
+		{
+			name:    "external URL in src is filtered out",
+			content: `{"elements":[{"tag":"img","src":"https://example.com/image.png"}]}`,
+			want:    nil,
+		},
+		{
+			name:    "mixed Feishu keys and external URLs",
+			content: `{"elements":[{"tag":"img","img_key":"img_feishu"},{"tag":"img","src":"https://cdn.example.com/external.jpg"},{"tag":"img","src":"img_another"}]}`,
+			want:    []string{"img_feishu", "img_another"},
+		},
 	}
 
 	for _, tt := range tests {

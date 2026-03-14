@@ -87,6 +87,7 @@ func stripMentionPlaceholders(content string, mentions []*larkim.MentionEvent) s
 
 // extractCardImageKeys recursively extracts all image keys from a Feishu interactive card.
 // Image keys are used to download images from Feishu API.
+// Only Feishu-hosted keys are returned (img_xxx, icon_xxx); external URLs are filtered out.
 func extractCardImageKeys(rawContent string) []string {
 	if rawContent == "" {
 		return nil
@@ -102,7 +103,21 @@ func extractCardImageKeys(rawContent string) []string {
 	return keys
 }
 
+// isFeishuImageKey returns true if the string is a Feishu-hosted image key
+// (not an external URL). Feishu keys typically start with img_, icon_, or file_.
+func isFeishuImageKey(s string) bool {
+	if s == "" {
+		return false
+	}
+	// Filter out external URLs
+	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+		return false
+	}
+	return true
+}
+
 // extractImageKeysRecursive traverses card structure to find all image keys.
+// Only Feishu-hosted keys are collected; external URLs are skipped.
 func extractImageKeysRecursive(v any, keys *[]string) {
 	switch val := v.(type) {
 	case map[string]any:
@@ -110,12 +125,12 @@ func extractImageKeysRecursive(v any, keys *[]string) {
 		if tag, ok := val["tag"].(string); ok {
 			switch tag {
 			case "img":
-				// Try img_key first (most common)
+				// Try img_key first (most common, always Feishu-hosted)
 				if imgKey, ok := val["img_key"].(string); ok && imgKey != "" {
 					*keys = append(*keys, imgKey)
 				}
-				// Also try src (alternative format)
-				if src, ok := val["src"].(string); ok && src != "" {
+				// Also try src, but only if it's a Feishu-hosted key (not external URL)
+				if src, ok := val["src"].(string); ok && src != "" && isFeishuImageKey(src) {
 					*keys = append(*keys, src)
 				}
 			case "icon":
