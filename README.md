@@ -23,9 +23,14 @@
 
 ---
 
-🦐 PicoClaw is an ultra-lightweight personal AI Assistant inspired by [nanobot](https://github.com/HKUDS/nanobot), refactored from the ground up in Go through a self-bootstrapping process, where the AI agent itself drove the entire architectural migration and code optimization.
+PicoClaw is a small Go runtime for running tool-using AI assistants on low-end Linux hardware. It is designed around one self-contained binary, a local workspace, configurable model providers, and chat-channel integrations.
 
-⚡️ Runs on $10 hardware with <10MB RAM: That's 99% less memory than OpenClaw and 98% cheaper than a Mac mini!
+The project is best understood as an execution-oriented agent runtime rather than just a prompt wrapper:
+
+- it receives work from Telegram, WhatsApp Native, CLI, and other channels
+- it routes each turn through models, tools, files, and APIs
+- it keeps per-agent or per-user workspace state on disk
+- it can run on low-cost boards, including RISC-V, ARM, MIPS, and x86 Linux systems
 
 <table align="center">
   <tr align="center">
@@ -52,26 +57,35 @@
 > * **Warning:** picoclaw is in early development now and may have unresolved network security issues. Do not deploy to production environments before the v1.0 release.
 > * **Note:** picoclaw has recently merged a lot of PRs, which may result in a larger memory footprint (10–20MB) in the latest versions. We plan to prioritize resource optimization as soon as the current feature set reaches a stable state.
 
-## 📢 News
+## 📌 What PicoClaw Is
 
-2026-02-16 🎉 PicoClaw hit 12K stars in one week! Thank you all for your support! PicoClaw is growing faster than we ever imagined. Given the high volume of PRs, we urgently need community maintainers. Our volunteer roles and roadmap are officially posted [here](ROADMAP.md) —we can’t wait to have you on board!
+PicoClaw aims to provide:
 
-2026-02-13 🎉 PicoClaw hit 5000 stars in 4days! Thank you for the community! There are so many PRs & issues coming in (during Chinese New Year holidays), we are finalizing the Project Roadmap and setting up the Developer Group to accelerate PicoClaw's development.  
-🚀 Call to Action: Please submit your feature requests in GitHub Discussions. We will review and prioritize them during our upcoming weekly meeting.
+- a small standalone agent runtime in Go
+- multi-provider model routing for text, images, and voice
+- local tool execution for files, shell, previews, scheduling, and integrations
+- deployment portability across low-resource Linux devices
+- a practical path to run conversational automation close to the device instead of only in a cloud dashboard
 
-2026-02-09 🎉 PicoClaw Launched! Built in 1 day to bring AI Agents to $10 hardware with <10MB RAM. 🦐 PicoClaw，Let's Go！
+## 📍 Current Status
 
-## ✨ Features
+Right now PicoClaw is suitable for experimentation, prototyping, and personal automation on trusted machines.
 
-🪶 **Ultra-Lightweight**: <10MB Memory footprint — 99% smaller than Clawdbot - core functionality.
+It is not yet a polished production platform. The project still has rough edges around:
 
-💰 **Minimal Cost**: Efficient enough to run on $10 Hardware — 98% cheaper than a Mac mini.
+- tool-call reliability
+- restart continuity for long jobs
+- guardrails for command execution
+- consistency between docs and live behavior
+- branch hygiene while the codebase is evolving quickly
 
-⚡️ **Lightning Fast**: 400X Faster startup time, boot in 1 second even in 0.6GHz single core.
+## ✨ Key Properties
 
-🌍 **True Portability**: Single self-contained binary across RISC-V, ARM, MIPS, and x86, One-click to Go!
-
-🤖 **AI-Bootstrapped**: Autonomous Go-native implementation — 95% Agent-generated core with human-in-the-loop refinement.
+- **Small runtime**: intended to stay lightweight enough for low-end boards
+- **Low-cost deployment**: can run on inexpensive Linux hardware instead of requiring a high-end local box
+- **Fast startup**: optimized for a compact Go binary instead of a heavier Node or Python stack
+- **Portable build target**: supports RISC-V, ARM, MIPS, and x86 Linux targets
+- **Execution-first design**: built around tools, workspaces, and real task execution rather than only chat responses
 
 |                               | OpenClaw      | NanoBot                  | **PicoClaw**                              |
 | ----------------------------- | ------------- | ------------------------ | ----------------------------------------- |
@@ -81,6 +95,83 @@
 | **Cost**                      | Mac Mini 599$ | Most Linux SBC </br>~50$ | **Any Linux Board**</br>**As low as 10$** |
 
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
+
+## 🔌 Provider Matrix
+
+The stack is provider-agnostic, but a practical low-cost deployment can split work by capability instead of forcing one model to do everything.
+
+### Example deployment matrix (Orange Pi / RISC-V)
+
+| Capability | Provider / API | Model / Path | Notes |
+| ---------- | -------------- | ------------ | ----- |
+| Chat / main conversation | OpenRouter | `openrouter/free` | Default text model path |
+| Text fallback 1 | OpenRouter | `openai/gpt-oss-20b:free` | Free text fallback |
+| Text fallback 2 | DeepSeek API | `deepseek-chat` | Extra text fallback |
+| Text fallback 3 | Gemini API | `gemini-2.5-flash` | Last text fallback |
+| Image understanding | Gemini API | `gemini-2.5-flash` | Used for photo / image turns |
+| Voice transcription | ElevenLabs | `scribe_v1` | First speech-to-text provider |
+| Voice transcription fallback 1 | Gemini API | `gemini-2.5-flash` | Speech understanding fallback |
+| Voice transcription fallback 2 | Groq API | Whisper-compatible STT | Final transcription fallback |
+| Voice reply synthesis | ElevenLabs | TTS API | Primary voice-note output |
+| Voice reply synthesis fallback | Gemini API | `gemini-2.5-flash-preview-tts` | Fallback speech output |
+| Gmail / Calendar / Drive actions | Google Workspace APIs via `gws` CLI | Gmail, Calendar, Drive | Executed as tool calls, not normal chat completions |
+| Telegram transport | Telegram Bot API | Bot token | Messaging channel |
+| WhatsApp transport | WhatsApp native (`whatsmeow`) | local session store | Not Meta Cloud API |
+| Preview hosting | Built-in preview server | `http://<host>:3002/preview/site/` | One stable preview URL can be reused across site updates |
+
+### Why split providers by capability?
+
+- Text chat can stay on cheap or free routing.
+- Image turns can go directly to a vision-capable model.
+- Voice can use STT/TTS providers that are better than a general-purpose chat model.
+- Workspace actions like Gmail or Drive are usually better handled as tool/API calls than as LLM-only reasoning.
+
+## ⚙️ How It Works
+
+At a high level, PicoClaw is a small Go runtime that sits between chat channels, tools, and model providers:
+
+1. A message arrives from Telegram, WhatsApp Native, CLI, or another enabled channel.
+2. PicoClaw resolves the active agent, workspace, conversation scope, and available tools.
+3. The agent picks the right provider path for the turn:
+   - text -> main chat model chain
+   - image -> image model chain
+   - voice -> STT / TTS chain
+   - actions -> local tools or external APIs
+4. Tool calls run locally in the workspace or through configured APIs such as Google Workspace.
+5. Results are fed back into the agent loop until the task is done, then a final reply is sent back through the original channel.
+
+This means PicoClaw is not only a chat wrapper around one LLM. It is closer to a small execution runtime:
+
+- channels handle transport
+- agent loop handles routing, memory, retries, and tool orchestration
+- providers handle model calls
+- tools handle real work such as shell, file I/O, web fetch, previews, scheduling, and integrations
+- workspace state keeps per-user or per-agent context on disk
+
+## 🧭 Practical Operating Model
+
+In a real deployment, PicoClaw works best when each capability is given the cheapest reliable path instead of forcing everything through one provider:
+
+- conversation stays on a low-cost text model
+- image understanding is routed directly to a vision-capable model
+- voice uses dedicated speech providers for transcription and synthesis
+- Gmail, Drive, and Calendar are handled through explicit tool/API calls
+- previews are served locally from the built-in preview server instead of an external platform
+
+That design keeps the runtime portable enough for low-end hardware, including RISC-V boards, while still allowing richer multi-modal behavior.
+
+## 🔧 What Still Needs Improving
+
+PicoClaw is useful today, but the front page should be honest about where the system still needs work:
+
+- Tool-call robustness: malformed or partially emitted tool arguments still happen and recovery is not perfect.
+- Long-running task continuity: multi-minute jobs need better checkpointing and recovery across restarts.
+- Preview workflow polish: stable preview URLs now exist, but site build flows still need better automatic follow-up and status reporting.
+- Safer default behavior: command execution, git operations, and external fetches need tighter default guardrails for shared or production environments.
+- Provider ergonomics: model aliasing, fallback transparency, and capability-specific routing should be easier to understand from config alone.
+- Event-driven integrations: inbox watching, reminders, and notification workflows still rely too much on polling or inferred tool usage.
+- Docs consistency: feature docs, migration docs, and live deployment docs need to stay closer to the actual shipped behavior.
+- Worktree hygiene: active development branches can accumulate large dirty states; release-ready branches and cleaner change isolation need improvement.
 
 ## 🦾 Demonstration
 
