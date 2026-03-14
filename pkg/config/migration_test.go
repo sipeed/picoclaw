@@ -283,6 +283,10 @@ func TestConvertProvidersToModelList_PreservesUserModel_OpenAI(t *testing.T) {
 		t.Fatalf("len(result) = %d, want 1", len(result))
 	}
 
+	if result[0].ModelName != "gpt-4-turbo" {
+		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "gpt-4-turbo")
+	}
+
 	if result[0].Model != "openai/gpt-4-turbo" {
 		t.Errorf("Model = %q, want %q", result[0].Model, "openai/gpt-4-turbo")
 	}
@@ -331,8 +335,40 @@ func TestConvertProvidersToModelList_PreservesUserModel_Qwen(t *testing.T) {
 		t.Fatalf("len(result) = %d, want 1", len(result))
 	}
 
+	if result[0].ModelName != "qwen-plus" {
+		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "qwen-plus")
+	}
+
 	if result[0].Model != "qwen/qwen-plus" {
 		t.Errorf("Model = %q, want %q", result[0].Model, "qwen/qwen-plus")
+	}
+}
+
+func TestConvertProvidersToModelList_PreservesUserModelName_Ollama(t *testing.T) {
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "ollama",
+				Model:    "llama3.2",
+			},
+		},
+		Providers: ProvidersConfig{
+			Ollama: ProviderConfig{
+				APIBase: "http://localhost:11434/v1",
+			},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+	if result[0].ModelName != "llama3.2" {
+		t.Fatalf("ModelName = %q, want %q", result[0].ModelName, "llama3.2")
+	}
+	if result[0].Model != "ollama/llama3.2" {
+		t.Fatalf("Model = %q, want %q", result[0].Model, "ollama/llama3.2")
 	}
 }
 
