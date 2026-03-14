@@ -55,6 +55,12 @@ jobs:
       - name: Setup pnpm
         run: corepack enable && corepack prepare pnpm@latest --activate
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install miniapp frontend deps
+        run: cd pkg/miniapp/frontend && bun install
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 

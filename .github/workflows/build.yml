@@ -16,5 +16,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        run: cd pkg/miniapp/frontend && bun install --frozen-lockfile
+
       - name: Build
         run: make build-all
