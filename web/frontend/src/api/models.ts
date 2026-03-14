@@ -84,7 +84,7 @@ export async function setDefaultModel(
     body: JSON.stringify({ model_name: modelName }),
   })
 
-  void refreshGatewayState()
+  await refreshGatewayState()
   return response
 }
 

@@ -7,8 +7,8 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.22.1
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/caarlos0/env/v11 v11.3.1
-	github.com/chzyer/readline v1.5.1
 	github.com/ergochat/irc-go v0.5.0
+	github.com/ergochat/readline v0.1.3
 	github.com/gdamore/tcell/v2 v2.13.8
 	github.com/gomarkdown/markdown v0.0.0-20260217112301-37c66b85d6ab
 	github.com/google/uuid v1.6.0

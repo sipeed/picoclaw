@@ -26,6 +26,13 @@
       "thinking_level": "high"
     },
     {
+      "_comment": "Anthropic Messages API - use native format for direct Anthropic API access",
+      "model_name": "claude-opus-4-6",
+      "model": "anthropic-messages/claude-opus-4-6",
+      "api_key": "sk-ant-your-key",
+      "api_base": "https://api.anthropic.com"
+    },
+    {
       "model_name": "gemini",
       "model": "antigravity/gemini-2.0-flash",
       "auth_method": "oauth"
@@ -39,6 +46,12 @@
       "model_name": "longcat",
       "model": "longcat/LongCat-Flash-Thinking",
       "api_key": "your-longcat-api-key"
+    },
+    {
+      "model_name": "modelscope-qwen",
+      "model": "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "api_key": "your-modelscope-access-token",
+      "api_base": "https://api-inference.modelscope.cn/v1"
     },
     {
       "model_name": "loadbalanced-gpt-5.4",
@@ -283,6 +296,10 @@
     "longcat": {
       "api_key": "",
       "api_base": "https://api.longcat.chat/openai"
+    },
+    "modelscope": {
+      "api_key": "",
+      "api_base": "https://api-inference.modelscope.cn/v1"
     }
   },
   "tools": {
@@ -426,6 +443,10 @@
           "max_zip_size": 0,
           "max_response_size": 0
         }
+      },
+      "github": {
+        "proxy": "http://127.0.0.1:7891",
+        "token": ""
       },
       "max_concurrent_searches": 2,
       "search_cache": {

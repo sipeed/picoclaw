@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
@@ -739,7 +741,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 
 	// Priority: Perplexity > Brave > SearXNG > Tavily > DuckDuckGo > GLM Search
 	if opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0 {
-		client, err := createHTTPClient(opts.Proxy, perplexityTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Perplexity: %w", err)
 		}
@@ -755,7 +757,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.PerplexityMaxResults
 		}
 	} else if opts.BraveEnabled && len(opts.BraveAPIKeys) > 0 {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Brave: %w", err)
 		}
@@ -775,7 +777,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.SearXNGMaxResults
 		}
 	} else if opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0 {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Tavily: %w", err)
 		}
@@ -794,7 +796,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.TavilyMaxResults
 		}
 	} else if opts.DuckDuckGoEnabled {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for DuckDuckGo: %w", err)
 		}
@@ -806,7 +808,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.DuckDuckGoMaxResults
 		}
 	} else if opts.GLMSearchEnabled && opts.GLMSearchAPIKey != "" {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for GLM Search: %w", err)
 		}
@@ -924,7 +926,7 @@ func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64)
 	if maxChars <= 0 {
 		maxChars = defaultMaxChars
 	}
-	client, err := createHTTPClient(proxy, fetchTimeout)
+	client, err := utils.CreateHTTPClient(proxy, fetchTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client for web fetch: %w", err)
 	}

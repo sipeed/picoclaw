@@ -424,6 +424,23 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}, true
 			},
 		},
+		{
+			providerNames: []string{"modelscope"},
+			protocol:      "modelscope",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.ModelScope.APIKey == "" && p.ModelScope.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:      "modelscope",
+					Model:          "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+					APIKey:         p.ModelScope.APIKey,
+					APIBase:        p.ModelScope.APIBase,
+					Proxy:          p.ModelScope.Proxy,
+					RequestTimeout: p.ModelScope.RequestTimeout,
+				}, true
+			},
+		},
 	}
 
 	// Process each provider migration

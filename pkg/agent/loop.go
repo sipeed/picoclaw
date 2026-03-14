@@ -65,6 +65,10 @@ type AgentLoop struct {
 
 	mcp mcpRuntime
 
+	mu sync.RWMutex
+	// Track active requests for safe provider cleanup
+	activeRequests sync.WaitGroup
+
 	providerCache map[string]providers.LLMProvider
 
 	lastSystemPrompt atomic.Value // string — last system prompt sent to LLM
@@ -658,18 +662,20 @@ func (al *AgentLoop) Close() {
 		al.stats.Close()
 	}
 
-	for _, agentID := range al.registry.ListAgentIDs() {
-		if agent, ok := al.registry.GetAgent(agentID); ok {
+	registry := al.GetRegistry()
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
 			agent.Sessions.Close()
 		}
 	}
 
-	al.registry.Close()
+	registry.Close()
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
-	for _, agentID := range al.registry.ListAgentIDs() {
-		if agent, ok := al.registry.GetAgent(agentID); ok {
+	registry := al.GetRegistry()
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
 			agent.Tools.Register(tool)
 		}
 	}
@@ -680,16 +686,11 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 }
 
 // resolveProvider returns the LLMProvider for the given provider/model pair.
-
 // It caches created providers by "provider/model" key so each combination is
-
 // only resolved once. Looks up model_list first (new format), then falls back
-
 // to the legacy providers section via CreateProviderByName.
-
 func (al *AgentLoop) resolveProvider(
 	providerName, modelName string,
-
 	fallback providers.LLMProvider,
 ) providers.LLMProvider {
 	key := strings.ToLower(providerName + "/" + modelName)
@@ -703,35 +704,137 @@ func (al *AgentLoop) resolveProvider(
 	}
 
 	// Try model_list first (new config format).
-
 	if mc := al.cfg.FindModelConfigByRef(providerName, modelName); mc != nil {
 		p, _, err := providers.CreateProviderFromConfig(mc)
-
 		if err == nil {
 			al.providerCache[key] = p
-
 			return p
 		}
 
 		logger.WarnCF("agent", "Failed to create provider from model_list, trying legacy",
-
 			map[string]any{"provider": providerName, "model": modelName, "error": err.Error()})
 	}
 
 	// Fall back to legacy providers section.
-
 	p, err := providers.CreateProviderByName(al.cfg, providerName)
 	if err != nil {
 		logger.WarnCF("agent", "Failed to create provider for fallback, using primary",
-
 			map[string]any{"provider": providerName, "error": err.Error()})
-
 		return fallback
 	}
 
 	al.providerCache[key] = p
-
 	return p
+}
+
+// ReloadProviderAndConfig atomically swaps the provider and config with proper synchronization.
+// It uses a context to allow timeout control from the caller.
+// Returns an error if the reload fails or context is canceled.
+func (al *AgentLoop) ReloadProviderAndConfig(
+	ctx context.Context,
+	provider providers.LLMProvider,
+	cfg *config.Config,
+) error {
+	// Validate inputs
+	if provider == nil {
+		return fmt.Errorf("provider cannot be nil")
+	}
+	if cfg == nil {
+		return fmt.Errorf("config cannot be nil")
+	}
+
+	// Create new registry with updated config and provider
+	// Wrap in defer/recover to handle any panics gracefully
+	var registry *AgentRegistry
+	var panicErr error
+	done := make(chan struct{}, 1)
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicErr = fmt.Errorf("panic during registry creation: %v", r)
+				logger.ErrorCF("agent", "Panic during registry creation",
+					map[string]any{"panic": r})
+			}
+			close(done)
+		}()
+
+		registry = NewAgentRegistry(cfg, provider)
+	}()
+
+	// Wait for completion or context cancellation
+	select {
+	case <-done:
+		if registry == nil {
+			if panicErr != nil {
+				return fmt.Errorf("registry creation failed: %w", panicErr)
+			}
+			return fmt.Errorf("registry creation failed (nil result)")
+		}
+	case <-ctx.Done():
+		return fmt.Errorf("context canceled during registry creation: %w", ctx.Err())
+	}
+
+	// Check context again before proceeding
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context canceled after registry creation: %w", err)
+	}
+
+	// Ensure shared tools are re-registered on the new registry
+	registerSharedTools(cfg, al.bus, registry, provider, al)
+
+	// Atomically swap the config and registry under write lock
+	// This ensures readers see a consistent pair
+	al.mu.Lock()
+	oldRegistry := al.registry
+
+	// Store new values
+	al.cfg = cfg
+	al.registry = registry
+
+	// Also update fallback chain with new config
+	al.fallback = providers.NewFallbackChain(providers.NewCooldownTracker())
+
+	al.mu.Unlock()
+
+	// Close old provider after releasing the lock
+	// This prevents blocking readers while closing
+	if oldProvider, ok := extractProvider(oldRegistry); ok {
+		if stateful, ok := oldProvider.(providers.StatefulProvider); ok {
+			// Give in-flight requests a moment to complete
+			// Use a reasonable timeout that balances cleanup vs resource usage
+			select {
+			case <-time.After(100 * time.Millisecond):
+				stateful.Close()
+			case <-ctx.Done():
+				// Context canceled, close immediately but log warning
+				logger.WarnCF("agent", "Context canceled during provider cleanup, forcing close",
+					map[string]any{"error": ctx.Err()})
+				stateful.Close()
+			}
+		}
+	}
+
+	logger.InfoCF("agent", "Provider and config reloaded successfully",
+		map[string]any{
+			"model": cfg.Agents.Defaults.GetModelName(),
+		})
+
+	return nil
+}
+
+// GetRegistry returns the current registry (thread-safe)
+func (al *AgentLoop) GetRegistry() *AgentRegistry {
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+	return al.registry
+}
+
+// GetConfig returns the current config (thread-safe)
+func (al *AgentLoop) GetConfig() *config.Config {
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+	return al.cfg
 }
 
 // SetMediaStore injects a MediaStore for media lifecycle management.
@@ -740,7 +843,8 @@ func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
 
 	// Propagate store to send_file tools in all agents.
-	al.registry.ForEachTool("send_file", func(t tools.Tool) {
+	registry := al.GetRegistry()
+	registry.ForEachTool("send_file", func(t tools.Tool) {
 		if sf, ok := t.(*tools.SendFileTool); ok {
 			sf.SetMediaStore(s)
 		}
@@ -944,9 +1048,8 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 
 // ProcessHeartbeat processes a heartbeat request without session history.
 // Each heartbeat is independent and doesn't accumulate context.
-
 func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
-	agent := al.registry.GetDefaultAgent()
+	agent := al.GetRegistry().GetDefaultAgent()
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for heartbeat")
 	}
@@ -1110,7 +1213,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	// Route to determine agent and session key
 
-	route := al.registry.ResolveRoute(routing.RouteInput{
+	registry := al.GetRegistry()
+	route := registry.ResolveRoute(routing.RouteInput{
 		Channel: msg.Channel,
 
 		AccountID: msg.Metadata["account_id"],
@@ -1124,9 +1228,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		TeamID: msg.Metadata["team_id"],
 	})
 
-	agent, ok := al.registry.GetAgent(route.AgentID)
+	agent, ok := registry.GetAgent(route.AgentID)
 	if !ok {
-		agent = al.registry.GetDefaultAgent()
+		agent = registry.GetDefaultAgent()
 	}
 	if agent == nil {
 		return "", fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
@@ -1626,8 +1730,9 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		opts.ChatID,
 	)
 
-	// Resolve media:// refs to base64 data URLs (streaming)
-	maxMediaSize := al.cfg.Agents.Defaults.GetMaxMediaSize()
+	// Resolve media:// refs: images→base64 data URLs, non-images→local paths in content
+	cfg := al.GetConfig()
+	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 
 	// 2b. Interview staleness nudge: if MEMORY.md hasn't been updated for
@@ -2053,6 +2158,7 @@ func (al *AgentLoop) runLLMIteration(
 				map[string]any{
 					"agent_id":  agent.ID,
 					"iteration": iteration,
+					"model":     activeModel,
 					"error":     err.Error(),
 				})
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
@@ -2155,6 +2261,69 @@ func (al *AgentLoop) runLLMIteration(
 	}
 
 	return finalContent, iteration, nil
+}
+
+// selectCandidates returns the model candidates and resolved model name to use
+// for a conversation turn. When model routing is configured and the incoming
+// message scores below the complexity threshold, it returns the light model
+// candidates instead of the primary ones.
+//
+// The returned (candidates, model) pair is used for all LLM calls within one
+// turn — tool follow-up iterations use the same tier as the initial call so
+// that a multi-step tool chain doesn't switch models mid-way.
+func (al *AgentLoop) selectCandidates(
+	agent *AgentInstance,
+	userMsg string,
+	history []providers.Message,
+) (candidates []providers.FallbackCandidate, model string) {
+	if agent.Router == nil || len(agent.LightCandidates) == 0 {
+		return agent.Candidates, agent.Model
+	}
+
+	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
+	if !usedLight {
+		logger.DebugCF("agent", "Model routing: primary model selected",
+			map[string]any{
+				"agent_id":  agent.ID,
+				"score":     score,
+				"threshold": agent.Router.Threshold(),
+			})
+		return agent.Candidates, agent.Model
+	}
+
+	logger.InfoCF("agent", "Model routing: light model selected",
+		map[string]any{
+			"agent_id":    agent.ID,
+			"light_model": agent.Router.LightModel(),
+			"score":       score,
+			"threshold":   agent.Router.Threshold(),
+		})
+	return agent.LightCandidates, agent.Router.LightModel()
+}
+
+// findNearestUserMessage finds the nearest user message to the given index.
+// It searches backward first, then forward if no user message is found.
+func (al *AgentLoop) findNearestUserMessage(messages []providers.Message, mid int) int {
+	originalMid := mid
+
+	for mid > 0 && messages[mid].Role != "user" {
+		mid--
+	}
+
+	if messages[mid].Role == "user" {
+		return mid
+	}
+
+	mid = originalMid
+	for mid < len(messages) && messages[mid].Role != "user" {
+		mid++
+	}
+
+	if mid < len(messages) {
+		return mid
+	}
+
+	return originalMid
 }
 
 // callLLMWithRetry calls the LLM with streaming support, fallback chain,
@@ -2488,6 +2657,42 @@ func (al *AgentLoop) publishToolMedia(ctx context.Context, result *tools.ToolRes
 	})
 }
 
+func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOptions) *commands.Runtime {
+	registry := al.GetRegistry()
+	cfg := al.GetConfig()
+	rt := &commands.Runtime{
+		Config:          cfg,
+		ListAgentIDs:    registry.ListAgentIDs,
+		ListDefinitions: al.cmdRegistry.Definitions,
+		GetEnabledChannels: func() []string {
+			if al.channelManager == nil {
+				return nil
+			}
+			return al.channelManager.GetEnabledChannels()
+		},
+		SwitchChannel: func(value string) error {
+			if al.channelManager == nil {
+				return fmt.Errorf("channel manager not initialized")
+			}
+			if _, exists := al.channelManager.GetChannel(value); !exists && value != "cli" {
+				return fmt.Errorf("channel '%s' not found or not enabled", value)
+			}
+			return nil
+		},
+	}
+	if agent != nil {
+		rt.GetModelInfo = func() (string, string) {
+			return agent.Model, cfg.Agents.Defaults.Provider
+		}
+		rt.SwitchModel = func(value string) (string, error) {
+			oldModel := agent.Model
+			agent.Model = value
+			return oldModel, nil
+		}
+	}
+	return rt
+}
+
 // forceTextResponse makes a final LLM call without tools when max iterations
 // are exhausted, forcing a text response.
 func (al *AgentLoop) forceTextResponse(ctx context.Context, agent *AgentInstance, messages []providers.Message) string {
@@ -2535,4 +2740,17 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 			st.SetContext(channel, chatID)
 		}
 	}
+}
+
+// Helper to extract provider from registry for cleanup
+func extractProvider(registry *AgentRegistry) (providers.LLMProvider, bool) {
+	if registry == nil {
+		return nil, false
+	}
+	// Get any agent to access the provider
+	defaultAgent := registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		return nil, false
+	}
+	return defaultAgent.Provider, true
 }
