@@ -114,7 +114,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.RequestTimeout,
 		), modelID, nil
 
-	case "anthropic":
+	case "anthropic", "claude":
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
 			// Use OAuth credentials from auth store
 			provider, err := createClaudeAuthProvider()
@@ -131,13 +131,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
-			cfg.APIKey,
-			apiBase,
-			cfg.Proxy,
-			cfg.MaxTokensField,
-			cfg.RequestTimeout,
-		), modelID, nil
+		return NewClaudeProviderWithBaseURL(cfg.APIKey, apiBase), modelID, nil
 
 	case "anthropic-messages":
 		// Anthropic Messages API with native format (HTTP-based, no SDK)
