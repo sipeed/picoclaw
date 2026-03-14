@@ -114,6 +114,18 @@ func DefaultConfig() *Config {
 					Text:    "Thinking... 💭",
 				},
 			},
+			Mattermost: MattermostConfig{
+				Enabled:       false,
+				URL:           "",
+				Token:         "",
+				Username:      "",
+				AllowFrom:     FlexibleStringSlice{},
+				ReplyInThread: true,
+				Placeholder: PlaceholderConfig{
+					Enabled: true,
+					Text:    "Thinking... 💭",
+				},
+			},
 			LINE: LINEConfig{
 				Enabled:            false,
 				ChannelSecret:      "",
