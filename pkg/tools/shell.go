@@ -409,7 +409,15 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				continue
 			}
 
+			// Skip kernel pseudo-devices that are always safe.
 			if safePaths[p] {
+				continue
+			}
+
+			// Only validate paths that actually exist on the filesystem.
+			// This prevents false positives from regex capturing non-path strings
+			// like escaped newlines (\n -> /n) or repo arguments (gh --repo owner/repo).
+			if _, err := os.Stat(p); os.IsNotExist(err) {
 				continue
 			}
 
