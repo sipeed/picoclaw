@@ -116,6 +116,9 @@ func registerSharedTools(
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
 ) {
+	// Apply global settings that affect tool behavior.
+	tools.SetAllowPrivateWebFetchHosts(cfg.Tools.Web.AllowPrivateHosts)
+
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
 		if !ok {

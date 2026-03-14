@@ -403,6 +403,7 @@ func DefaultConfig() *Config {
 				},
 				Proxy:           "",
 				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
+				AllowPrivateHosts: false,
 				Brave: BraveConfig{
 					Enabled:    false,
 					APIKey:     "",
