@@ -814,6 +814,8 @@ For advanced/test setups, you can override the builtin skills root with:
 export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 ```
 
+For a concrete example of a skill that executes a local script, see [workspace/skills/python-script/SKILL.md](workspace/skills/python-script/SKILL.md). It shows the recommended pattern for calling an existing `python3` script through the `exec` tool and returning structured output.
+
 ### Unified Command Execution Policy
 
 - Generic slash commands are executed through a single path in `pkg/agent/loop.go` via `commands.Executor`.
