@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -864,30 +863,32 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// encryptPlaintextAPIKeys rewrites plaintext api_key values in raw JSON using
-// the entries already parsed into models. Returns the rewritten bytes when at
-// least one key was sealed, or nil when nothing changed.
-func encryptPlaintextAPIKeys(models []ModelConfig, passphrase string, raw []byte) []byte {
-	result := raw
+// encryptPlaintextAPIKeys returns a copy of models with plaintext api_key values
+// encrypted. Returns (nil, nil) when nothing changed (all keys already sealed or
+// empty). Returns (nil, error) if any key fails to encrypt — callers must treat
+// this as a hard failure to prevent a mixed plaintext/ciphertext state on disk.
+// Symmetric counterpart of resolveAPIKeys: both operate purely on []ModelConfig
+// and leave JSON marshaling to the caller.
+func encryptPlaintextAPIKeys(models []ModelConfig, passphrase string) ([]ModelConfig, error) {
+	sealed := make([]ModelConfig, len(models))
+	copy(sealed, models)
 	changed := false
-	for _, m := range models {
+	for i := range sealed {
+		m := &sealed[i]
 		if m.APIKey == "" || strings.HasPrefix(m.APIKey, "enc://") || strings.HasPrefix(m.APIKey, "file://") {
 			continue
 		}
 		encrypted, err := credential.Encrypt(passphrase, "", m.APIKey)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "picoclaw: warning: cannot seal api_key in config: %v\n", err)
-			continue
+			return nil, fmt.Errorf("cannot seal api_key for model %q: %w", m.ModelName, err)
 		}
-		oldJSON, _ := json.Marshal(m.APIKey)
-		newJSON, _ := json.Marshal(encrypted)
-		result = bytes.Replace(result, oldJSON, newJSON, 1)
+		m.APIKey = encrypted
 		changed = true
 	}
 	if !changed {
-		return nil
+		return nil, nil
 	}
-	return result
+	return sealed, nil
 }
 
 // resolveAPIKeys decrypts or dereferences each api_key in models in-place.
@@ -918,17 +919,22 @@ func (c *Config) migrateChannelConfigs() {
 }
 
 func SaveConfig(path string, cfg *Config) error {
+	if passphrase := credential.PassphraseProvider(); passphrase != "" {
+		sealed, err := encryptPlaintextAPIKeys(cfg.ModelList, passphrase)
+		if err != nil {
+			return err
+		}
+		if sealed != nil {
+			tmp := *cfg
+			tmp.ModelList = sealed
+			cfg = &tmp
+		}
+	}
+
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-
-	if passphrase := credential.PassphraseProvider(); passphrase != "" {
-		if sealed := encryptPlaintextAPIKeys(cfg.ModelList, passphrase, data); sealed != nil {
-			data = sealed
-		}
-	}
-
 	return fileutil.WriteFileAtomic(path, data, 0o600)
 }
 
