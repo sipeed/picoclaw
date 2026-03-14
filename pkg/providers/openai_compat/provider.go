@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -346,8 +347,11 @@ func parseResponse(body io.Reader) (*LLMResponse, error) {
 		toolCalls = append(toolCalls, toolCall)
 	}
 
+	// Strip any leaked thinking/reasoning tags from content
+	cleanedContent := stripThinkingTags(choice.Message.Content)
+
 	return &LLMResponse{
-		Content:          choice.Message.Content,
+		Content:          cleanedContent,
 		ReasoningContent: choice.Message.ReasoningContent,
 		Reasoning:        choice.Message.Reasoning,
 		ReasoningDetails: choice.Message.ReasoningDetails,
@@ -517,4 +521,61 @@ func supportsPromptCacheKey(apiBase string) bool {
 	}
 	host := u.Hostname()
 	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+}
+
+// stripThinkingTags removes chain-of-thought tags from content that may be
+// leaked by some OpenAI-compatible providers (e.g., MiniMax-style responses).
+// Handles both normal tags and escaped Unicode forms.
+// Tags removed: </think>, <thinking>, <thought>, <reasoning>, <final>
+func stripThinkingTags(content string) string {
+	if content == "" {
+		return content
+	}
+
+	// First, handle escaped forms like \u003cthink\u003e...\u003c/think\u003e
+	// These appear as literal backslash-u-sequences in the string
+	content = strings.ReplaceAll(content, `\u003c`, "<")
+	content = strings.ReplaceAll(content, `\u003e`, ">")
+	content = strings.ReplaceAll(content, `\\u003c`, "<")
+	content = strings.ReplaceAll(content, `\\u003e`, ">")
+
+	// Remove </think> tags and content (case-insensitive, multiline)
+	content = regexp.MustCompile(`(?is)<think\b[^>]*>.*?
+
+
+
+
+
+
+
+
+
+
+`).ReplaceAllString(content, "")
+
+	// Remove <thinking> tags and content
+	content = regexp.MustCompile(`(?is)<thinking\b[^>]*>.*?</thinking>`).ReplaceAllString(content, "")
+
+	// Remove <thought> tags and content
+	content = regexp.MustCompile(`(?is)<thought\b[^>]*>.*?</thought>`).ReplaceAllString(content, "")
+
+	// Remove <reasoning> tags and content
+	content = regexp.MustCompile(`(?is)<reasoning\b[^>]*>.*?</reasoning>`).ReplaceAllString(content, "")
+
+	// For <final> tags, remove the tags but keep the inner content
+	// Handle both <final/> and <final>content</final>
+	content = regexp.MustCompile(`(?i)<final\b[^>]*/>`).ReplaceAllString(content, "")
+	content = regexp.MustCompile(`(?is)<final\b[^>]*>(.*?)</final>`).ReplaceAllString(content, "$1")
+
+	// Clean up any whitespace-only lines left after removing blocks
+	lines := strings.Split(content, "\n")
+	var cleaned []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			cleaned = append(cleaned, line)
+		}
+	}
+
+	return strings.Join(cleaned, "\n")
 }
