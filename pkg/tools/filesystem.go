@@ -20,8 +20,7 @@ import (
 
 const MaxReadFileSize = 64 * 1024 // 64KB limit to avoid context overflow
 
-// validatePath ensures the given path is within the workspace if restrict is true.
-func validatePath(path, workspace string, restrict bool) (string, error) {
+func validatePathWithAllowPaths(path, workspace string, restrict bool, patterns []*regexp.Regexp) (string, error) {
 	if workspace == "" {
 		return path, fmt.Errorf("workspace is not defined")
 	}
@@ -42,6 +41,10 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 	}
 
 	if restrict {
+		if isAllowedPath(absPath, patterns) {
+			return absPath, nil
+		}
+
 		if !isWithinWorkspace(absPath, absWorkspace) {
 			return "", fmt.Errorf("access denied: path is outside the workspace")
 		}
@@ -71,6 +74,39 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 	}
 
 	return absPath, nil
+}
+
+func isAllowedPath(path string, patterns []*regexp.Regexp) bool {
+	if len(patterns) == 0 {
+		return false
+	}
+
+	cleaned := filepath.Clean(path)
+	if !matchesAllowedPath(cleaned, patterns) {
+		return false
+	}
+
+	resolved, err := filepath.EvalSymlinks(cleaned)
+	if err == nil {
+		return matchesAllowedPath(resolved, patterns)
+	}
+	if os.IsNotExist(err) {
+		parentResolved, parentErr := resolveExistingAncestor(filepath.Dir(cleaned))
+		if parentErr == nil {
+			return matchesAllowedPath(parentResolved, patterns)
+		}
+	}
+
+	return false
+}
+
+func matchesAllowedPath(path string, patterns []*regexp.Regexp) bool {
+	for _, pattern := range patterns {
+		if pattern.MatchString(path) {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveExistingAncestor(path string) (string, error) {
@@ -625,12 +661,7 @@ type whitelistFs struct {
 }
 
 func (w *whitelistFs) matches(path string) bool {
-	for _, p := range w.patterns {
-		if p.MatchString(path) {
-			return true
-		}
-	}
-	return false
+	return matchesAllowedPath(path, w.patterns)
 }
 
 func (w *whitelistFs) ReadFile(path string) ([]byte, error) {
