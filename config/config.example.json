@@ -201,6 +201,25 @@
       "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
       "reasoning_channel_id": ""
     },
+    "pico": {
+      "enabled": false,
+      "token": "YOUR_PICO_TOKEN",
+      "allow_token_query": false,
+      "allow_origins": [],
+      "ping_interval": 30,
+      "read_timeout": 60,
+      "max_connections": 100,
+      "allow_from": []
+    },
+    "pico_client": {
+      "enabled": false,
+      "url": "wss://remote-pico-server/pico/ws",
+      "token": "YOUR_PICO_TOKEN",
+      "session_id": "",
+      "ping_interval": 30,
+      "read_timeout": 60,
+      "allow_from": []
+    },
     "irc": {
       "enabled": false,
       "server": "irc.libera.chat:6697",

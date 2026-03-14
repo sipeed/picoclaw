@@ -303,6 +303,10 @@ func (m *Manager) initChannels() error {
 		m.initChannel("pico", "Pico")
 	}
 
+	if m.config.Channels.PicoClient.Enabled && m.config.Channels.PicoClient.URL != "" {
+		m.initChannel("pico_client", "Pico Client")
+	}
+
 	if m.config.Channels.IRC.Enabled && m.config.Channels.IRC.Server != "" {
 		m.initChannel("irc", "IRC")
 	}
