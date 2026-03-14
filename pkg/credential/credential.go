@@ -12,15 +12,15 @@
 //   - Empty:       ""                   → returned as-is (auth_method=oauth etc.)
 //
 // Encryption uses AES-256-GCM with HKDF-SHA256 key derivation (< 1ms, safe for embedded Linux).
+// An SSH private key is required for both encryption and decryption.
 // Key derivation:
 //
-//	With SSH key:  HKDF-SHA256(ikm=HMAC-SHA256(SHA256(sshKeyBytes), passphrase), salt, info)
-//	Without:       HKDF-SHA256(ikm=SHA256(passphrase), salt, info)
+//	HKDF-SHA256(ikm=HMAC-SHA256(SHA256(sshKeyBytes), passphrase), salt, info)
 //
 // SSH key path resolution priority:
 //
 //  1. sshKeyPath argument to Encrypt (explicit)
-//  2. PICOCLAW_SSH_KEY_PATH env var (set to "" to disable auto-detection)
+//  2. PICOCLAW_SSH_KEY_PATH env var
 //  3. ~/.ssh/picoclaw_ed25519.key (os.UserHomeDir is cross-platform)
 package credential
 
@@ -190,9 +190,9 @@ func resolveEncrypted(raw string) (string, error) {
 // Encrypt encrypts plaintext and returns an enc:// credential string.
 //
 // passphrase is required (PICOCLAW_KEY_PASSPHRASE value).
-// sshKeyPath is the SSH private key file to incorporate; pass "" to use
-// PICOCLAW_SSH_KEY_PATH env var or ~/.ssh/ auto-detection, or set
-// PICOCLAW_SSH_KEY_PATH="" before calling to force passphrase-only mode.
+// sshKeyPath is the SSH private key file to use; pass "" to auto-detect via
+// PICOCLAW_SSH_KEY_PATH env var or ~/.ssh/picoclaw_ed25519.key.
+// An SSH private key must be resolvable or Encrypt returns an error.
 func Encrypt(passphrase, sshKeyPath, plaintext string) (string, error) {
 	if passphrase == "" {
 		return "", fmt.Errorf("credential: passphrase must not be empty")
@@ -271,29 +271,26 @@ func allowedSSHKeyPath(path string) bool {
 	return false
 }
 
-// deriveKey derives a 32-byte AES-256 key from passphrase and optional SSH key.
+// deriveKey derives a 32-byte AES-256 key from passphrase and SSH private key.
 //
-// With SSH key:  ikm = HMAC-SHA256(key=SHA256(sshKeyBytes), msg=passphrase)
-// Without:       ikm = SHA256(passphrase)
-// Final key:     HKDF-SHA256(ikm, salt, info="picoclaw-credential-v1", 32 bytes)
+// ikm = HMAC-SHA256(key=SHA256(sshKeyBytes), msg=passphrase)
+// Final key: HKDF-SHA256(ikm, salt, info="picoclaw-credential-v1", 32 bytes)
+// sshKeyPath must be non-empty; returns an error otherwise.
 func deriveKey(passphrase, sshKeyPath string, salt []byte) ([]byte, error) {
-	var ikm []byte
-	if sshKeyPath != "" {
-		if !allowedSSHKeyPath(sshKeyPath) {
-			return nil, fmt.Errorf("credential: SSH key path %q is not in an allowed location (PICOCLAW_SSH_KEY_PATH, PICOCLAW_HOME, or ~/.ssh/)", sshKeyPath)
-		}
-		sshBytes, err := os.ReadFile(sshKeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("credential: cannot read SSH key %q: %w", sshKeyPath, err)
-		}
-		sshHash := sha256.Sum256(sshBytes)
-		mac := hmac.New(sha256.New, sshHash[:])
-		mac.Write([]byte(passphrase))
-		ikm = mac.Sum(nil)
-	} else {
-		h := sha256.Sum256([]byte(passphrase))
-		ikm = h[:]
+	if sshKeyPath == "" {
+		return nil, fmt.Errorf("credential: SSH private key is required but not found (set PICOCLAW_SSH_KEY_PATH or place key at ~/.ssh/picoclaw_ed25519.key)")
 	}
+	if !allowedSSHKeyPath(sshKeyPath) {
+		return nil, fmt.Errorf("credential: SSH key path %q is not in an allowed location (PICOCLAW_SSH_KEY_PATH, PICOCLAW_HOME, or ~/.ssh/)", sshKeyPath)
+	}
+	sshBytes, err := os.ReadFile(sshKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("credential: cannot read SSH key %q: %w", sshKeyPath, err)
+	}
+	sshHash := sha256.Sum256(sshBytes)
+	mac := hmac.New(sha256.New, sshHash[:])
+	mac.Write([]byte(passphrase))
+	ikm := mac.Sum(nil)
 
 	key, err := hkdf.Key(sha256.New, ikm, salt, hkdfInfo, keyLen)
 	if err != nil {
@@ -306,11 +303,10 @@ func deriveKey(passphrase, sshKeyPath string, salt []byte) ([]byte, error) {
 //
 // Priority:
 //  1. override (non-empty explicit argument)
-//  2. PICOCLAW_SSH_KEY_PATH env var — if the variable is set (even to ""), auto-detection
-//     is skipped; set it to "" to force passphrase-only mode
+//  2. PICOCLAW_SSH_KEY_PATH env var
 //  3. ~/.ssh/picoclaw_ed25519.key (auto-detection)
 //
-// Returns "" when no key is found (passphrase-only mode).
+// Returns "" when no key is found; deriveKey will return an error in that case.
 func pickSSHKeyPath(override string) string {
 	if override != "" {
 		return override

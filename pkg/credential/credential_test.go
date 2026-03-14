@@ -58,13 +58,18 @@ func TestResolve_FileKey_Empty(t *testing.T) {
 	}
 }
 
-// TestResolve_EncKey_PassphraseOnly tests encryption/decryption with passphrase alone.
-// PICOCLAW_SSH_KEY_PATH is set to "" to disable auto-detection and force passphrase-only mode.
-func TestResolve_EncKey_PassphraseOnly(t *testing.T) {
+// TestResolve_EncKey_RoundTrip tests basic encryption/decryption round-trip with an SSH key.
+func TestResolve_EncKey_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	sshKeyPath := filepath.Join(dir, "picoclaw_ed25519.key")
+	if err := os.WriteFile(sshKeyPath, []byte("fake-ssh-key-material\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
 	const passphrase = "test-passphrase-32bytes-long-ok!"
 	const plaintext = "sk-encrypted-secret"
 
-	t.Setenv("PICOCLAW_SSH_KEY_PATH", "") // disable SSH key auto-detection
+	t.Setenv("PICOCLAW_SSH_KEY_PATH", sshKeyPath)
 
 	enc, err := credential.Encrypt(passphrase, "", plaintext)
 	if err != nil {
@@ -114,7 +119,12 @@ func TestResolve_EncKey_WithSSHKey(t *testing.T) {
 }
 
 func TestResolve_EncKey_NoPassphrase(t *testing.T) {
-	t.Setenv("PICOCLAW_SSH_KEY_PATH", "")
+	dir := t.TempDir()
+	sshKeyPath := filepath.Join(dir, "picoclaw_ed25519.key")
+	if err := os.WriteFile(sshKeyPath, []byte("fake-ssh-key\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	t.Setenv("PICOCLAW_SSH_KEY_PATH", sshKeyPath)
 
 	enc, err := credential.Encrypt("some-passphrase", "", "sk-secret")
 	if err != nil {
@@ -155,7 +165,12 @@ func TestResolve_EncKey_PayloadTooShort(t *testing.T) {
 }
 
 func TestResolve_EncKey_WrongPassphrase(t *testing.T) {
-	t.Setenv("PICOCLAW_SSH_KEY_PATH", "")
+	dir := t.TempDir()
+	sshKeyPath := filepath.Join(dir, "picoclaw_ed25519.key")
+	if err := os.WriteFile(sshKeyPath, []byte("fake-ssh-key\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	t.Setenv("PICOCLAW_SSH_KEY_PATH", sshKeyPath)
 
 	enc, err := credential.Encrypt("correct-passphrase", "", "sk-secret")
 	if err != nil {
