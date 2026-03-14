@@ -41,6 +41,9 @@ tasks/
 # Plans
 docs/plans/
 
+# Claude Code (local settings are per-user)
+.claude/settings.local.json
+
 # Editors
 .vscode/
 .idea/
