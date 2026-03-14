@@ -80,6 +80,55 @@ func TestGetModelConfig_RoundRobin(t *testing.T) {
 	}
 }
 
+func TestGetModelConfig_RoundRobinSequence(t *testing.T) {
+	cfg := &Config{
+		ModelList: []ModelConfig{
+			{ModelName: "seq-model", Model: "openai/model-a", APIKey: "key1"},
+			{ModelName: "seq-model", Model: "openai/model-b", APIKey: "key2"},
+			{ModelName: "seq-model", Model: "openai/model-c", APIKey: "key3"},
+		},
+	}
+
+	// Three consecutive calls must produce three distinct models,
+	// proving that every entry is reachable within one full cycle.
+	seen := make(map[string]bool)
+	for range 3 {
+		result, err := cfg.GetModelConfig("seq-model")
+		if err != nil {
+			t.Fatalf("GetModelConfig() error = %v", err)
+		}
+		seen[result.Model] = true
+	}
+
+	if len(seen) != 3 {
+		t.Errorf("Expected all 3 models within one cycle, got %d distinct: %v", len(seen), seen)
+	}
+}
+
+func TestGetModelConfig_TwoEntries_BothReachable(t *testing.T) {
+	cfg := &Config{
+		ModelList: []ModelConfig{
+			{ModelName: "pair", Model: "openai/first", APIKey: "key1"},
+			{ModelName: "pair", Model: "openai/second", APIKey: "key2"},
+		},
+	}
+
+	// Two calls must hit both entries — the old off-by-one bug caused the
+	// first entry to be skipped on every other pair of calls.
+	seen := make(map[string]bool)
+	for range 2 {
+		result, err := cfg.GetModelConfig("pair")
+		if err != nil {
+			t.Fatalf("GetModelConfig() error = %v", err)
+		}
+		seen[result.Model] = true
+	}
+
+	if !seen["openai/first"] || !seen["openai/second"] {
+		t.Errorf("Both entries should be reachable within 2 calls, got: %v", seen)
+	}
+}
+
 func TestGetModelConfig_Concurrent(t *testing.T) {
 	cfg := &Config{
 		ModelList: []ModelConfig{
