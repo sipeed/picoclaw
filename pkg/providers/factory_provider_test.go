@@ -19,6 +19,7 @@ func TestExtractProtocol(t *testing.T) {
 	tests := []struct {
 		name         string
 		model        string
+		apiBase      string
 		wantProtocol string
 		wantModelID  string
 	}{
@@ -64,11 +65,18 @@ func TestExtractProtocol(t *testing.T) {
 			wantProtocol: "nvidia",
 			wantModelID:  "meta/llama-3.1-8b",
 		},
+		{
+			name:         "open router model",
+			model:        "openrouter/llama-3.1-8b",
+			wantProtocol: "openrouter",
+			wantModelID:  "openrouter/llama-3.1-8b",
+			apiBase:      "https://openrouter.ai/api/v1",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			protocol, modelID := ExtractProtocol(tt.model)
+			protocol, modelID := ExtractProtocol(tt.model, tt.apiBase)
 			if protocol != tt.wantProtocol {
 				t.Errorf("ExtractProtocol(%q) protocol = %q, want %q", tt.model, protocol, tt.wantProtocol)
 			}
@@ -96,6 +104,27 @@ func TestCreateProviderFromConfig_OpenAI(t *testing.T) {
 	}
 	if modelID != "gpt-4o" {
 		t.Errorf("modelID = %q, want %q", modelID, "gpt-4o")
+	}
+}
+
+func TestCreateProviderFromConfig_OpenRouter(t *testing.T) {
+	target := "openai/gpt-4o"
+	cfg := &config.ModelConfig{
+		ModelName: "test-openai",
+		Model:     target,
+		APIKey:    "test-key",
+		APIBase:   "https://openrouter.ai/api/v1",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != target {
+		t.Errorf("modelID = %q, want %q", modelID, target)
 	}
 }
 
