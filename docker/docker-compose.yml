@@ -50,3 +50,22 @@ services:
       - "127.0.0.1:18790:18790"
     volumes:
       - ./data:/root/.picoclaw
+
+  # ─────────────────────────────────────────────
+  # PicoClaw Gateway (Development build with extra tools)
+  # Includes: jq, git, python3, pip, bash
+  #   docker compose -f docker/docker-compose.yml --profile dev up picoclaw-gateway-dev
+  # ─────────────────────────────────────────────
+  picoclaw-gateway-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    container_name: picoclaw-gateway-dev
+    restart: on-failure
+    profiles:
+      - dev
+    # Uncomment to access host network; leave commented unless needed.
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/root/.picoclaw
