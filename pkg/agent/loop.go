@@ -1431,12 +1431,13 @@ func (al *AgentLoop) selectCandidates(
 
 	logger.InfoCF("agent", "Model routing: light model selected",
 		map[string]any{
-			"agent_id":    agent.ID,
-			"light_model": agent.Router.LightModel(),
-			"score":       score,
-			"threshold":   agent.Router.Threshold(),
+			"agent_id":             agent.ID,
+			"light_model":          agent.Router.LightModel(),
+			"resolved_light_model": agent.LightCandidates[0].Model,
+			"score":                score,
+			"threshold":            agent.Router.Threshold(),
 		})
-	return agent.LightCandidates, agent.Router.LightModel()
+	return agent.LightCandidates, agent.LightCandidates[0].Model
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
