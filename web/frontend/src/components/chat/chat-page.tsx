@@ -33,7 +33,7 @@ export function ChatPage() {
     newChat,
   } = usePicoChat()
 
-  const { state: gwState } = useGateway()
+  const { state: gwState, startReason, passphraseState } = useGateway()
   const isConnected = gwState === "running"
 
   const {
@@ -144,6 +144,8 @@ export function ChatPage() {
               hasConfiguredModels={hasConfiguredModels}
               defaultModelName={defaultModelName}
               isConnected={isConnected}
+              gatewayStartReason={startReason}
+              passphraseState={passphraseState}
             />
           )}
 

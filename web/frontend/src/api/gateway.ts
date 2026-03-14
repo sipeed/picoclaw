@@ -4,6 +4,7 @@ interface GatewayStatusResponse {
   gateway_status: "running" | "starting" | "restarting" | "stopped" | "error"
   gateway_start_allowed?: boolean
   gateway_start_reason?: string
+  passphrase_state?: "" | "pending" | "failed"
   gateway_restart_required?: boolean
   pid?: number
   boot_default_model?: string

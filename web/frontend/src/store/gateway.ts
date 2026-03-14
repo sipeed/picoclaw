@@ -13,6 +13,8 @@ export type GatewayState =
 export interface GatewayStoreState {
   status: GatewayState
   canStart: boolean
+  startReason: string
+  passphraseState: "" | "pending" | "failed"
   restartRequired: boolean
 }
 
@@ -21,6 +23,8 @@ type GatewayStorePatch = Partial<GatewayStoreState>
 const DEFAULT_GATEWAY_STATE: GatewayStoreState = {
   status: "unknown",
   canStart: true,
+  startReason: "",
+  passphraseState: "",
   restartRequired: false,
 }
 
@@ -49,13 +53,19 @@ export function applyGatewayStatusToStore(
   data: Partial<
     Pick<
       GatewayStatusResponse,
-      "gateway_status" | "gateway_start_allowed" | "gateway_restart_required"
+      | "gateway_status"
+      | "gateway_start_allowed"
+      | "gateway_start_reason"
+      | "gateway_restart_required"
+      | "passphrase_state"
     >
   >,
 ) {
   updateGatewayStore((prev) => ({
     status: data.gateway_status ?? prev.status,
     canStart: data.gateway_start_allowed ?? prev.canStart,
+    startReason: data.gateway_start_reason ?? prev.startReason,
+    passphraseState: data.passphrase_state ?? prev.passphraseState,
     restartRequired:
       data.gateway_restart_required ??
       (data.gateway_status && data.gateway_status !== "running"
