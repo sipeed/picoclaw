@@ -14,6 +14,8 @@ func TestNewCronCommand(t *testing.T) {
 	require.NotNil(t, cmd)
 
 	assert.Equal(t, "Manage scheduled tasks", cmd.Short)
+	assert.Contains(t, cmd.Long, "picoclaw cron list")
+	assert.Contains(t, cmd.Example, "picoclaw cron list")
 
 	assert.Len(t, cmd.Aliases, 1)
 	assert.True(t, cmd.HasAlias("c"))
@@ -46,6 +48,9 @@ func TestNewCronCommand(t *testing.T) {
 
 		assert.Len(t, subcmd.Aliases, 0)
 		assert.False(t, subcmd.Hidden)
+		if subcmd.Name() == "list" {
+			assert.Contains(t, subcmd.Example, "picoclaw cron list")
+		}
 
 		assert.False(t, subcmd.HasSubCommands())
 
