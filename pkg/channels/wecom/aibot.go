@@ -793,7 +793,7 @@ func (c *WeComAIBotChannel) sendViaResponseURL(responseURL, content string) erro
 		return nil
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return fmt.Errorf("reading response_url body: %w: %w", channels.ErrTemporary, err)
 	}

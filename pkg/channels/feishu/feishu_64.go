@@ -636,11 +636,21 @@ func (c *FeishuChannel) downloadResource(
 		return ""
 	}
 
-	if _, copyErr := io.Copy(out, resp.File); copyErr != nil {
+	maxSize := int64(utils.MaxMediaDownloadSize)
+	written, copyErr := io.CopyN(out, resp.File, maxSize)
+	if copyErr != nil && copyErr != io.EOF {
 		out.Close()
 		os.Remove(localPath)
 		logger.ErrorCF("feishu", "Failed to write resource to file", map[string]any{
 			"error": copyErr.Error(),
+		})
+		return ""
+	}
+	if written >= maxSize {
+		out.Close()
+		os.Remove(localPath)
+		logger.ErrorCF("feishu", "Resource exceeds size limit, download aborted", map[string]any{
+			"limit_mb": maxSize / (1 << 20),
 		})
 		return ""
 	}

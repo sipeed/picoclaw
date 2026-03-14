@@ -48,12 +48,17 @@ func SanitizeFilename(filename string) string {
 	return base
 }
 
+// MaxMediaDownloadSize is the upper bound for media file downloads (50 MB).
+// Prevents disk exhaustion from oversized or malicious attachments.
+const MaxMediaDownloadSize = 50 << 20
+
 // DownloadOptions holds optional parameters for downloading files
 type DownloadOptions struct {
 	Timeout      time.Duration
 	ExtraHeaders map[string]string
 	LoggerPrefix string
 	ProxyURL     string
+	MaxSize      int64 // 0 = use MaxMediaDownloadSize default
 }
 
 // DownloadFile downloads a file from URL to a local temp directory.
@@ -134,11 +139,24 @@ func DownloadFile(urlStr, filename string, opts DownloadOptions) string {
 	}
 	defer out.Close()
 
-	if _, err := io.Copy(out, resp.Body); err != nil {
+	maxSize := opts.MaxSize
+	if maxSize <= 0 {
+		maxSize = MaxMediaDownloadSize
+	}
+	written, err := io.CopyN(out, resp.Body, maxSize)
+	if err != nil && err != io.EOF {
 		out.Close()
 		os.Remove(localPath)
 		logger.ErrorCF(opts.LoggerPrefix, "Failed to write file", map[string]any{
 			"error": err.Error(),
+		})
+		return ""
+	}
+	if written >= maxSize {
+		out.Close()
+		os.Remove(localPath)
+		logger.ErrorCF(opts.LoggerPrefix, "File exceeds size limit, download aborted", map[string]any{
+			"limit_mb": maxSize / (1 << 20),
 		})
 		return ""
 	}
