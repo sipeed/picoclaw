@@ -548,6 +548,16 @@ func (c *FeishuChannel) downloadInboundMedia(
 			refs = append(refs, ref)
 		}
 
+	case larkim.MsgTypeInteractive:
+		// Extract and download images embedded in interactive cards
+		imageKeys := extractCardImageKeys(rawContent)
+		for _, imageKey := range imageKeys {
+			ref := c.downloadResource(ctx, messageID, imageKey, "image", ".jpg", store, scope)
+			if ref != "" {
+				refs = append(refs, ref)
+			}
+		}
+
 	case larkim.MsgTypeFile, larkim.MsgTypeAudio, larkim.MsgTypeMedia:
 		fileKey := extractFileKey(rawContent)
 		if fileKey == "" {

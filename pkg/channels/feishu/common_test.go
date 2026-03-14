@@ -400,3 +400,77 @@ func TestExtractCardText(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractCardImageKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{
+			name:    "empty content",
+			content: "",
+			want:    nil,
+		},
+		{
+			name:    "invalid JSON",
+			content: "not json",
+			want:    nil,
+		},
+		{
+			name:    "card with no images",
+			content: `{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"text"}]}}`,
+			want:    nil,
+		},
+		{
+			name:    "single image with img_key",
+			content: `{"elements":[{"tag":"img","img_key":"img_abc123"}]}`,
+			want:    []string{"img_abc123"},
+		},
+		{
+			name:    "single image with src",
+			content: `{"elements":[{"tag":"img","src":"img_xyz789"}]}`,
+			want:    []string{"img_xyz789"},
+		},
+		{
+			name:    "multiple images",
+			content: `{"elements":[{"tag":"img","img_key":"img_1"},{"tag":"div","text":{"content":"text"}},{"tag":"img","img_key":"img_2"}]}`,
+			want:    []string{"img_1", "img_2"},
+		},
+		{
+			name:    "nested image in columns",
+			content: `{"elements":[{"tag":"div","columns":[{"tag":"img","img_key":"img_col1"},{"tag":"img","img_key":"img_col2"}]}]}`,
+			want:    []string{"img_col1", "img_col2"},
+		},
+		{
+			name:    "image in action",
+			content: `{"elements":[{"tag":"action","actions":[{"tag":"img","img_key":"img_action"}]}]}`,
+			want:    []string{"img_action"},
+		},
+		{
+			name:    "icon element",
+			content: `{"elements":[{"tag":"icon","icon_key":"icon_123"}]}`,
+			want:    []string{"icon_123"},
+		},
+		{
+			name:    "complex card with text and images",
+			content: `{"header":{"title":{"content":"Title"}},"elements":[{"tag":"div","text":{"content":"Description"}},{"tag":"img","img_key":"img_main"}]}`,
+			want:    []string{"img_main"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractCardImageKeys(tt.content)
+			if len(got) != len(tt.want) {
+				t.Errorf("extractCardImageKeys() = %v, want %v", got, tt.want)
+				return
+			}
+			for i, v := range got {
+				if v != tt.want[i] {
+					t.Errorf("extractCardImageKeys()[%d] = %q, want %q", i, v, tt.want[i])
+				}
+			}
+		})
+	}
+}
