@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mymmrac/telego"
@@ -41,7 +42,8 @@ var (
 type TelegramChannel struct {
 	*channels.BaseChannel
 	bot     *telego.Bot
-	bh      *th.BotHandler
+	bh      telegramBotHandler
+	bhMu    sync.Mutex
 	config  *config.Config
 	chatIDs map[string]int64
 	ctx     context.Context
@@ -49,6 +51,14 @@ type TelegramChannel struct {
 
 	registerFunc     func(context.Context, []commands.Definition) error
 	commandRegCancel context.CancelFunc
+	startPollingFunc func(context.Context) (<-chan telego.Update, error)
+	newHandlerFunc   func(<-chan telego.Update) (telegramBotHandler, error)
+	sleepFunc        func(context.Context, time.Duration) bool
+}
+
+type telegramBotHandler interface {
+	Start() error
+	StopWithContext(context.Context) error
 }
 
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
@@ -107,24 +117,18 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	updates, err := c.bot.UpdatesViaLongPolling(c.ctx, &telego.GetUpdatesParams{
-		Timeout: 30,
-	})
+	updates, err := c.startLongPolling(c.ctx)
 	if err != nil {
 		c.cancel()
 		return fmt.Errorf("failed to start long polling: %w", err)
 	}
 
-	bh, err := th.NewBotHandler(c.bot, updates)
+	bh, err := c.newBotHandler(updates)
 	if err != nil {
 		c.cancel()
 		return fmt.Errorf("failed to create bot handler: %w", err)
 	}
-	c.bh = bh
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.handleMessage(ctx, &message)
-	}, th.AnyMessage())
+	c.setBotHandler(bh)
 
 	c.SetRunning(true)
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]any{
@@ -133,13 +137,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 
 	c.startCommandRegistration(c.ctx, commands.BuiltinDefinitions())
 
-	go func() {
-		if err = bh.Start(); err != nil {
-			logger.ErrorCF("telegram", "Bot handler failed", map[string]any{
-				"error": err.Error(),
-			})
-		}
-	}()
+	go c.runPollingLoop(c.ctx, bh)
 
 	return nil
 }
@@ -149,8 +147,8 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	c.SetRunning(false)
 
 	// Stop the bot handler
-	if c.bh != nil {
-		_ = c.bh.StopWithContext(ctx)
+	if bh := c.currentBotHandler(); bh != nil {
+		_ = bh.StopWithContext(ctx)
 	}
 
 	// Cancel our context (stops long polling)
@@ -162,6 +160,118 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (c *TelegramChannel) startLongPolling(ctx context.Context) (<-chan telego.Update, error) {
+	if c.startPollingFunc != nil {
+		return c.startPollingFunc(ctx)
+	}
+	return c.bot.UpdatesViaLongPolling(ctx, &telego.GetUpdatesParams{
+		Timeout: 30,
+	})
+}
+
+func (c *TelegramChannel) newBotHandler(updates <-chan telego.Update) (telegramBotHandler, error) {
+	if c.newHandlerFunc != nil {
+		return c.newHandlerFunc(updates)
+	}
+
+	bh, err := th.NewBotHandler(c.bot, updates)
+	if err != nil {
+		return nil, err
+	}
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.handleMessage(ctx, &message)
+	}, th.AnyMessage())
+	return bh, nil
+}
+
+func (c *TelegramChannel) setBotHandler(bh telegramBotHandler) {
+	c.bhMu.Lock()
+	defer c.bhMu.Unlock()
+	c.bh = bh
+}
+
+func (c *TelegramChannel) currentBotHandler() telegramBotHandler {
+	c.bhMu.Lock()
+	defer c.bhMu.Unlock()
+	return c.bh
+}
+
+func (c *TelegramChannel) sleep(ctx context.Context, delay time.Duration) bool {
+	if c.sleepFunc != nil {
+		return c.sleepFunc(ctx, delay)
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func (c *TelegramChannel) runPollingLoop(ctx context.Context, bh telegramBotHandler) {
+	backoff := time.Second
+	for {
+		if err := bh.Start(); err != nil && ctx.Err() == nil {
+			logger.ErrorCF("telegram", "Bot handler failed", map[string]any{
+				"error": err.Error(),
+			})
+		}
+		if ctx.Err() != nil {
+			return
+		}
+
+		logger.WarnC("telegram", "Updates channel closed, restarting long polling")
+		if !c.sleep(ctx, backoff) {
+			return
+		}
+
+		for {
+			updates, err := c.startLongPolling(ctx)
+			if err != nil {
+				logger.ErrorCF("telegram", "Failed to restart long polling", map[string]any{
+					"error":       err.Error(),
+					"retry_after": backoff.String(),
+				})
+				if backoff < 30*time.Second {
+					backoff *= 2
+					if backoff > 30*time.Second {
+						backoff = 30 * time.Second
+					}
+				}
+				if !c.sleep(ctx, backoff) {
+					return
+				}
+				continue
+			}
+
+			nextHandler, err := c.newBotHandler(updates)
+			if err != nil {
+				logger.ErrorCF("telegram", "Failed to recreate bot handler", map[string]any{
+					"error":       err.Error(),
+					"retry_after": backoff.String(),
+				})
+				if backoff < 30*time.Second {
+					backoff *= 2
+					if backoff > 30*time.Second {
+						backoff = 30 * time.Second
+					}
+				}
+				if !c.sleep(ctx, backoff) {
+					return
+				}
+				continue
+			}
+
+			c.setBotHandler(nextHandler)
+			bh = nextHandler
+			backoff = time.Second
+			break
+		}
+	}
 }
 
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
