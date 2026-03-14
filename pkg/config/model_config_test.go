@@ -54,6 +54,8 @@ func TestGetModelConfig_EmptyList(t *testing.T) {
 }
 
 func TestGetModelConfig_RoundRobin(t *testing.T) {
+	rrCounter.Store(0)
+
 	cfg := &Config{
 		ModelList: []ModelConfig{
 			{ModelName: "lb-model", Model: "openai/gpt-4o-1", APIKey: "key1"},
@@ -62,20 +64,22 @@ func TestGetModelConfig_RoundRobin(t *testing.T) {
 		},
 	}
 
-	// Test round-robin distribution
-	results := make(map[string]int)
-	for range 30 {
+	want := []string{
+		"openai/gpt-4o-1",
+		"openai/gpt-4o-2",
+		"openai/gpt-4o-3",
+		"openai/gpt-4o-1",
+		"openai/gpt-4o-2",
+		"openai/gpt-4o-3",
+	}
+
+	for i, wantModel := range want {
 		result, err := cfg.GetModelConfig("lb-model")
 		if err != nil {
 			t.Fatalf("GetModelConfig() error = %v", err)
 		}
-		results[result.Model]++
-	}
-
-	// Each model should appear roughly 10 times (30 calls / 3 models)
-	for model, count := range results {
-		if count < 5 || count > 15 {
-			t.Errorf("Model %s appeared %d times, expected ~10", model, count)
+		if result.Model != wantModel {
+			t.Fatalf("call %d selected %q, want %q", i+1, result.Model, wantModel)
 		}
 	}
 }
