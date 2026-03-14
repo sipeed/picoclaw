@@ -125,6 +125,13 @@ func registerSharedTools(
 			agent.Tools.Register(goEvalTool)
 		}
 
+		if cfg.Tools.IsToolEnabled("mcp2cli") {
+			// We can initialize an empty MCP manager for mcp2cli if it's the only one,
+			// or share the existing MCP manager if one exists
+			mcp2CliTool := tools.NewMCP2CliTool(nil) // It will init its own manager or use a global one later if needed
+			agent.Tools.Register(mcp2CliTool)
+		}
+
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		if cfg.Tools.IsToolEnabled("i2c") {
 			agent.Tools.Register(tools.NewI2CTool())
