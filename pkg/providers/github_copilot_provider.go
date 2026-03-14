@@ -9,6 +9,10 @@ import (
 	copilot "github.com/github/copilot-sdk/go"
 )
 
+// GitHubCopilotProvider provides LLM capabilities via the GitHub Copilot SDK.
+// It supports two connection modes:
+//   - "stdio": spawns a local Copilot CLI process and communicates via stdin/stdout (default SDK behavior)
+//   - "grpc": connects to an external Copilot CLI server over TCP
 type GitHubCopilotProvider struct {
 	uri         string
 	connectMode string // "stdio" or "grpc"
@@ -19,45 +23,57 @@ type GitHubCopilotProvider struct {
 	mu sync.Mutex
 }
 
+// NewGitHubCopilotProvider creates a new GitHub Copilot provider.
+//
+// Parameters:
+//   - uri: for "grpc" mode, the address of an external CLI server (e.g. "localhost:4321");
+//     for "stdio" mode, the path to the Copilot CLI binary (empty string uses the default "copilot" from PATH)
+//   - connectMode: "stdio" or "grpc" (defaults to "grpc" if empty)
+//   - model: the model identifier to use for the session
 func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*GitHubCopilotProvider, error) {
 	if connectMode == "" {
 		connectMode = "grpc"
 	}
 
+	var client *copilot.Client
+
 	switch connectMode {
 	case "stdio":
-		// TODO: Implement stdio mode for GitHub Copilot provider
-		// See https://github.com/github/copilot-sdk/blob/main/docs/getting-started.md for details
-		return nil, fmt.Errorf("stdio mode not implemented for GitHub Copilot provider; please use 'grpc' mode instead")
+		opts := &copilot.ClientOptions{}
+		if uri != "" {
+			opts.CLIPath = uri
+		}
+		client = copilot.NewClient(opts)
 	case "grpc":
-		client := copilot.NewClient(&copilot.ClientOptions{
+		client = copilot.NewClient(&copilot.ClientOptions{
 			CLIUrl: uri,
 		})
-		if err := client.Start(context.Background()); err != nil {
-			return nil, fmt.Errorf(
-				"can't connect to Github Copilot: %w; `https://github.com/github/copilot-sdk/blob/main/docs/getting-started.md#connecting-to-an-external-cli-server` for details",
-				err,
-			)
-		}
-
-		session, err := client.CreateSession(context.Background(), &copilot.SessionConfig{
-			Model: model,
-			Hooks: &copilot.SessionHooks{},
-		})
-		if err != nil {
-			client.Stop()
-			return nil, fmt.Errorf("create session failed: %w", err)
-		}
-
-		return &GitHubCopilotProvider{
-			uri:         uri,
-			connectMode: connectMode,
-			client:      client,
-			session:     session,
-		}, nil
 	default:
 		return nil, fmt.Errorf("unknown connect mode: %s", connectMode)
 	}
+
+	if err := client.Start(context.Background()); err != nil {
+		return nil, fmt.Errorf(
+			"can't connect to GitHub Copilot (%s mode): %w",
+			connectMode, err,
+		)
+	}
+
+	session, err := client.CreateSession(context.Background(), &copilot.SessionConfig{
+		Model: model,
+		Hooks: &copilot.SessionHooks{},
+	})
+	if err != nil {
+		client.Stop()
+		return nil, fmt.Errorf("create session failed: %w", err)
+	}
+
+	return &GitHubCopilotProvider{
+		uri:         uri,
+		connectMode: connectMode,
+		client:      client,
+		session:     session,
+	}, nil
 }
 
 func (p *GitHubCopilotProvider) Close() {
