@@ -19,7 +19,7 @@ let sseInitialized = false
 
 export function useGateway() {
   const gateway = useAtomValue(gatewayAtom)
-  const { status: state, canStart, restartRequired } = gateway
+  const { status: state, canStart, startReason, passphraseState, restartRequired } = gateway
   const [loading, setLoading] = useState(false)
 
   const applyGatewayStatus = useCallback((data: GatewayStatusResponse) => {
@@ -37,6 +37,8 @@ export function useGateway() {
         updateGatewayStore({
           status: "unknown",
           canStart: true,
+          startReason: "",
+          passphraseState: "",
           restartRequired: false,
         })
       })
@@ -144,5 +146,5 @@ export function useGateway() {
     }
   }, [applyGatewayStatus, canStart, restartRequired, state])
 
-  return { state, loading, canStart, restartRequired, start, stop, restart }
+  return { state, loading, canStart, startReason, passphraseState, restartRequired, start, stop, restart }
 }

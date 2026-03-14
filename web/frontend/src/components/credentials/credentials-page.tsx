@@ -9,6 +9,7 @@ import { AntigravityCredentialCard } from "./antigravity-credential-card"
 import { DeviceCodeSheet } from "./device-code-sheet"
 import { LogoutConfirmDialog } from "./logout-confirm-dialog"
 import { OpenAICredentialCard } from "./openai-credential-card"
+import { PassphraseCard } from "./passphrase-card"
 
 export function CredentialsPage() {
   const { t } = useTranslation()
@@ -49,6 +50,11 @@ export function CredentialsPage() {
           <p className="text-muted-foreground text-sm">
             {t("credentials.description")}
           </p>
+        </div>
+
+        {/* Passphrase card is always visible — independent of OAuth loading state */}
+        <div className="pt-5">
+          <PassphraseCard />
         </div>
 
         {error && (

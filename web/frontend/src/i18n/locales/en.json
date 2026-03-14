@@ -81,6 +81,19 @@
   "credentials": {
     "description": "Manage OAuth and token-based credentials for supported providers.",
     "loading": "Loading credentials...",
+    "passphrase": {
+      "title": "Encryption Passphrase",
+      "description": "Required to decrypt enc:// API keys in your config. Stored only in memory — never written to disk.",
+      "statusSet": "Passphrase loaded",
+      "statusNotSet": "No passphrase set",
+      "placeholder": "Enter passphrase",
+      "save": "Unlock",
+      "saving": "Unlocking...",
+      "successMessage": "Passphrase stored. Gateway is starting...",
+      "errorEmpty": "Passphrase must not be empty.",
+      "errorSave": "Failed to store passphrase.",
+      "errorWrongPassphrase": "Wrong passphrase — gateway failed to start. Please try again."
+    },
     "providers": {
       "openai": {
         "description": "Supports browser OAuth, device code, and token login."
