@@ -89,3 +89,26 @@ func TestApplyDiscordProxy_InvalidProxyURL(t *testing.T) {
 		t.Fatal("applyDiscordProxy() expected error for invalid proxy URL, got nil")
 	}
 }
+
+func TestResolveChannelName_FromState(t *testing.T) {
+	session, err := discordgo.New("Bot test-token")
+	if err != nil {
+		t.Fatalf("discordgo.New() error: %v", err)
+	}
+	session.State = discordgo.NewState()
+	if err := session.State.GuildAdd(&discordgo.Guild{ID: "guild-1"}); err != nil {
+		t.Fatalf("GuildAdd() error: %v", err)
+	}
+	if err := session.State.ChannelAdd(&discordgo.Channel{
+		ID:      "123",
+		GuildID: "guild-1",
+		Name:    "general",
+	}); err != nil {
+		t.Fatalf("ChannelAdd() error: %v", err)
+	}
+
+	ch := &DiscordChannel{session: session}
+	if got := ch.resolveChannelName("123"); got != "general" {
+		t.Fatalf("resolveChannelName() = %q, want %q", got, "general")
+	}
+}
