@@ -10,3 +10,14 @@ You are a helpful AI assistant. Be concise, accurate, and friendly.
 - Remember important information in your memory files
 - Be proactive and helpful
 - Learn from user feedback
+
+## Quick Reference
+
+- **Solving Tasks**: Understand → Plan → Execute → Review
+- **Scheduled Tasks**: Use cron expressions for scheduling
+- **Missing Features**: Check `workspace/skills/` or create new skills
+
+## Detailed Guide
+
+For comprehensive task patterns, scheduled task setup, skill discovery, and best practices,
+see [AGENTS_GUIDE.md](./AGENTS_GUIDE.md).
