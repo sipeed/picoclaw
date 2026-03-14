@@ -126,7 +126,7 @@ func (p *Provider) Chat(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": serializeMessages(messages),
+		"messages": serializeMessages(messages, p.apiBase),
 	}
 
 	if len(tools) > 0 {
@@ -415,13 +415,33 @@ type openaiMessage struct {
 	ToolCallID       string     `json:"tool_call_id,omitempty"`
 }
 
+func supportsExtraContent(apiBase string) bool {
+	u, err := url.Parse(apiBase)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return strings.HasPrefix(host, "generativelanguage") || strings.HasSuffix(host, ".googleapis.com")
+}
+
 // serializeMessages converts internal Message structs to the OpenAI wire format.
 // - Strips SystemParts (unknown to third-party endpoints)
 // - Converts messages with Media to multipart content format (text + image_url parts)
 // - Preserves ToolCallID, ToolCalls, and ReasoningContent for all messages
-func serializeMessages(messages []Message) []any {
+func serializeMessages(messages []Message, apiBase string) []any {
+	supportsExtra := supportsExtraContent(apiBase)
+
 	out := make([]any, 0, len(messages))
 	for _, m := range messages {
+		if len(m.ToolCalls) > 0 && !supportsExtra {
+			cleanCalls := make([]ToolCall, len(m.ToolCalls))
+			for i, tc := range m.ToolCalls {
+				tc.ExtraContent = nil
+				cleanCalls[i] = tc
+			}
+			m.ToolCalls = cleanCalls
+		}
+
 		if len(m.Media) == 0 {
 			out = append(out, openaiMessage{
 				Role:             m.Role,
