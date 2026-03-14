@@ -114,3 +114,25 @@ func TestCronTool_NonCommandJobAllowedFromRemoteChannel(t *testing.T) {
 		t.Fatalf("expected non-command reminder to succeed from remote channel, got: %s", result.ForLLM)
 	}
 }
+
+func TestCronTool_NonCommandJobDefaultsDeliverToFalse(t *testing.T) {
+	tool := newTestCronTool(t)
+	ctx := WithToolContext(context.Background(), "telegram", "chat-1")
+	result := tool.Execute(ctx, map[string]any{
+		"action":     "add",
+		"message":    "send me a poem",
+		"at_seconds": float64(600),
+	})
+
+	if result.IsError {
+		t.Fatalf("expected non-command reminder to succeed, got: %s", result.ForLLM)
+	}
+
+	jobs := tool.cronService.ListJobs(false)
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	if jobs[0].Payload.Deliver {
+		t.Fatal("expected deliver=false by default for non-command jobs")
+	}
+}
