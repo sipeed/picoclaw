@@ -16,7 +16,14 @@ func NewCronCommand() *cobra.Command {
 		Use:     "cron",
 		Aliases: []string{"c"},
 		Short:   "Manage scheduled tasks",
-		Args:    cobra.NoArgs,
+		Long: `Manage scheduled tasks.
+
+Use 'picoclaw cron list' to view all jobs currently scheduled in your workspace.`,
+		Example: `picoclaw cron list
+picoclaw cron add "Daily standup" "0 9 * * 1-5"
+picoclaw cron disable 1
+picoclaw cron remove 1`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
