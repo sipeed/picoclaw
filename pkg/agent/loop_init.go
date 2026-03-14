@@ -115,6 +115,16 @@ func registerSharedTools(
 			}
 		}
 
+		if cfg.Tools.IsToolEnabled("browser_action") {
+			browserActionTool := tools.NewBrowserActionTool()
+			agent.Tools.Register(browserActionTool)
+		}
+
+		if cfg.Tools.IsToolEnabled("go_eval") {
+			goEvalTool := tools.NewGoEvalTool(agent.Workspace)
+			agent.Tools.Register(goEvalTool)
+		}
+
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		if cfg.Tools.IsToolEnabled("i2c") {
 			agent.Tools.Register(tools.NewI2CTool())
