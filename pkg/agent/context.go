@@ -25,6 +25,7 @@ type ContextBuilder struct {
 	memory             *MemoryStore
 	toolDiscoveryBM25  bool
 	toolDiscoveryRegex bool
+	skillsFilter       []string
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -48,6 +49,13 @@ type ContextBuilder struct {
 func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuilder {
 	cb.toolDiscoveryBM25 = useBM25
 	cb.toolDiscoveryRegex = useRegex
+	return cb
+}
+
+// WithSkillsFilter restricts which skills appear in the system prompt to the
+// named list. An empty or nil filter means all available skills are included.
+func (cb *ContextBuilder) WithSkillsFilter(filter []string) *ContextBuilder {
+	cb.skillsFilter = filter
 	return cb
 }
 
@@ -141,7 +149,7 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 	}
 
 	// Skills - show summary, AI can read full content with read_file tool
-	skillsSummary := cb.skillsLoader.BuildSkillsSummary()
+	skillsSummary := cb.skillsLoader.BuildSkillsSummaryFiltered(cb.skillsFilter)
 	if skillsSummary != "" {
 		parts = append(parts, fmt.Sprintf(`# Skills
 
@@ -718,16 +726,27 @@ func (cb *ContextBuilder) AddAssistantMessage(
 	return messages
 }
 
-// GetSkillsInfo returns information about loaded skills.
+// GetSkillsInfo returns information about loaded skills, respecting any active filter.
 func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
 	allSkills := cb.skillsLoader.ListSkills()
+
+	var allowed map[string]bool
+	if len(cb.skillsFilter) > 0 {
+		allowed = make(map[string]bool, len(cb.skillsFilter))
+		for _, n := range cb.skillsFilter {
+			allowed[n] = true
+		}
+	}
+
 	skillNames := make([]string, 0, len(allSkills))
 	for _, s := range allSkills {
-		skillNames = append(skillNames, s.Name)
+		if allowed == nil || allowed[s.Name] {
+			skillNames = append(skillNames, s.Name)
+		}
 	}
 	return map[string]any{
 		"total":     len(allSkills),
-		"available": len(allSkills),
+		"available": len(skillNames),
 		"names":     skillNames,
 	}
 }

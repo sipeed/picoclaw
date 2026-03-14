@@ -117,6 +117,8 @@ func NewAgentInstance(
 		skillsFilter = agentCfg.Skills
 	}
 
+	contextBuilder.WithSkillsFilter(skillsFilter)
+
 	maxIter := defaults.MaxToolIterations
 	if maxIter == 0 {
 		maxIter = 20
