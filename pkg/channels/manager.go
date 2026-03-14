@@ -665,7 +665,9 @@ func (m *Manager) PublishPreview(root, entry, slug string) (string, string, stri
 	if existing, ok := m.previews[slug]; ok {
 		createdAt = existing.CreatedAt
 	}
-	m.previews[slug] = previewMount{Root: absRoot, Entry: entry, CreatedAt: createdAt, UpdatedAt: now}
+	m.previews = map[string]previewMount{
+		slug: {Root: absRoot, Entry: entry, CreatedAt: createdAt, UpdatedAt: now},
+	}
 	m.mu.Unlock()
 
 	tailscaleBase, localBase := m.previewBases()

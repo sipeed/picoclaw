@@ -2979,11 +2979,12 @@ func (al *AgentLoop) shouldRecallRecentPreview(lower string, agent *AgentInstanc
 	wantsURL := strings.Contains(lower, "url") || strings.Contains(lower, "urls") || strings.Contains(lower, "link") || strings.Contains(lower, "links")
 	wantsRecent := strings.Contains(lower, "recent") || strings.Contains(lower, "latest") || strings.Contains(lower, "most recent") || strings.Contains(lower, "current")
 	wantsHost := strings.Contains(lower, "host") || strings.Contains(lower, "serve") || strings.Contains(lower, "open")
-	if !wantsURL && !(wantsRecent && wantsHost) {
+	wantsPreview := strings.Contains(lower, "preview") || strings.Contains(lower, "site") || strings.Contains(lower, "website") || strings.Contains(lower, "app") || strings.Contains(lower, "build")
+	wantsStatus := strings.Contains(lower, "status") || strings.Contains(lower, "going") || strings.Contains(lower, "howd") || strings.Contains(lower, "hows") || strings.Contains(lower, "how's")
+	if !wantsPreview {
 		return false
 	}
-	wantsPreview := strings.Contains(lower, "preview") || strings.Contains(lower, "site") || strings.Contains(lower, "website") || strings.Contains(lower, "app") || strings.Contains(lower, "build")
-	if !wantsPreview {
+	if !wantsURL && !(wantsRecent && wantsHost) && !wantsStatus {
 		return false
 	}
 	return len(al.recentPreviewInfos(agent)) > 0
@@ -2996,10 +2997,12 @@ func (al *AgentLoop) shouldRecallRecentPreviewFromConversation(lower string, age
 	wantsURL := strings.Contains(lower, "url") || strings.Contains(lower, "urls") || strings.Contains(lower, "link") || strings.Contains(lower, "links")
 	wantsRecent := strings.Contains(lower, "recent") || strings.Contains(lower, "latest") || strings.Contains(lower, "most recent") || strings.Contains(lower, "current")
 	wantsHost := strings.Contains(lower, "host") || strings.Contains(lower, "serve") || strings.Contains(lower, "open")
-	if !wantsURL && !(wantsRecent && wantsHost) {
+	wantsPreview := strings.Contains(lower, "preview") || strings.Contains(lower, "site") || strings.Contains(lower, "website") || strings.Contains(lower, "app") || strings.Contains(lower, "build")
+	wantsStatus := wantsPreview && (strings.Contains(lower, "status") || strings.Contains(lower, "going") || strings.Contains(lower, "howd") || strings.Contains(lower, "hows") || strings.Contains(lower, "how's"))
+	if !wantsURL && !(wantsRecent && wantsHost) && !wantsStatus {
 		return false
 	}
-	hints := strings.Contains(lower, "talked") || strings.Contains(lower, "previous") || strings.Contains(lower, "built") || strings.Contains(lower, "that site") || strings.Contains(lower, "that website") || wantsRecent
+	hints := strings.Contains(lower, "talked") || strings.Contains(lower, "previous") || strings.Contains(lower, "built") || strings.Contains(lower, "that site") || strings.Contains(lower, "that website") || wantsRecent || wantsStatus
 	if !hints {
 		return false
 	}

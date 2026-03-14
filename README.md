@@ -82,6 +82,36 @@
 
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
 
+## 🔌 Provider Matrix
+
+The stack is provider-agnostic, but a practical low-cost deployment can split work by capability instead of forcing one model to do everything.
+
+### Example deployment matrix (Orange Pi / RISC-V)
+
+| Capability | Provider / API | Model / Path | Notes |
+| ---------- | -------------- | ------------ | ----- |
+| Chat / main conversation | OpenRouter | `openrouter/free` | Default text model path |
+| Text fallback 1 | OpenRouter | `openai/gpt-oss-20b:free` | Free text fallback |
+| Text fallback 2 | DeepSeek API | `deepseek-chat` | Extra text fallback |
+| Text fallback 3 | Gemini API | `gemini-2.5-flash` | Last text fallback |
+| Image understanding | Gemini API | `gemini-2.5-flash` | Used for photo / image turns |
+| Voice transcription | ElevenLabs | `scribe_v1` | First speech-to-text provider |
+| Voice transcription fallback 1 | Gemini API | `gemini-2.5-flash` | Speech understanding fallback |
+| Voice transcription fallback 2 | Groq API | Whisper-compatible STT | Final transcription fallback |
+| Voice reply synthesis | ElevenLabs | TTS API | Primary voice-note output |
+| Voice reply synthesis fallback | Gemini API | `gemini-2.5-flash-preview-tts` | Fallback speech output |
+| Gmail / Calendar / Drive actions | Google Workspace APIs via `gws` CLI | Gmail, Calendar, Drive | Executed as tool calls, not normal chat completions |
+| Telegram transport | Telegram Bot API | Bot token | Messaging channel |
+| WhatsApp transport | WhatsApp native (`whatsmeow`) | local session store | Not Meta Cloud API |
+| Preview hosting | Built-in preview server | `http://<host>:3002/preview/site/` | One stable preview URL can be reused across site updates |
+
+### Why split providers by capability?
+
+- Text chat can stay on cheap or free routing.
+- Image turns can go directly to a vision-capable model.
+- Voice can use STT/TTS providers that are better than a general-purpose chat model.
+- Workspace actions like Gmail or Drive are usually better handled as tool/API calls than as LLM-only reasoning.
+
 ## 🦾 Demonstration
 
 ### 🛠️ Standard Assistant Workflows

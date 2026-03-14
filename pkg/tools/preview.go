@@ -31,6 +31,7 @@ type HostPreviewTool struct {
 }
 
 const recentPreviewsStatePath = "state/recent_previews.json"
+const defaultHostedPreviewSlug = "site"
 
 func NewHostPreviewTool(workspace string, restrict bool, publish PreviewPublisher) *HostPreviewTool {
 	return &HostPreviewTool{workspace: workspace, restrict: restrict, publish: publish}
@@ -41,7 +42,7 @@ func (t *HostPreviewTool) Name() string {
 }
 
 func (t *HostPreviewTool) Description() string {
-	return "Host a local site/app directory on the built-in preview server and return Tailscale/local URLs for review."
+	return "Host a local site/app directory on the built-in preview server and return one stable Tailscale/local preview URL for review."
 }
 
 func (t *HostPreviewTool) Parameters() map[string]any {
@@ -90,6 +91,9 @@ func (t *HostPreviewTool) Execute(ctx context.Context, args map[string]any) *Too
 	entry = strings.TrimSpace(entry)
 	slug, _ := args["slug"].(string)
 	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		slug = defaultHostedPreviewSlug
+	}
 
 	root := resolved
 	if info.IsDir() {
@@ -106,6 +110,10 @@ func (t *HostPreviewTool) Execute(ctx context.Context, args map[string]any) *Too
 			entry = "index.html"
 		}
 	} else {
+		ext := strings.ToLower(filepath.Ext(resolved))
+		if ext != ".html" && ext != ".htm" {
+			return ErrorResult("path must be a site directory or an HTML entry file")
+		}
 		root = filepath.Dir(resolved)
 		if entry == "" {
 			entry = filepath.Base(resolved)
@@ -172,21 +180,7 @@ func SaveRecentPreview(workspace string, preview *HostedPreview) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	previews, err := LoadRecentPreviews(workspace)
-	if err != nil {
-		return err
-	}
-	updated := make([]HostedPreview, 0, len(previews)+1)
-	updated = append(updated, *preview)
-	for _, item := range previews {
-		if strings.TrimSpace(item.Slug) == strings.TrimSpace(preview.Slug) {
-			continue
-		}
-		updated = append(updated, item)
-		if len(updated) >= 8 {
-			break
-		}
-	}
+	updated := []HostedPreview{*preview}
 	data, err := json.MarshalIndent(updated, "", "  ")
 	if err != nil {
 		return err
