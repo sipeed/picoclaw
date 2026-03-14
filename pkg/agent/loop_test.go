@@ -439,6 +439,59 @@ func TestProcessMessage_UsesRouteSessionKey(t *testing.T) {
 	}
 }
 
+func TestProcessDirectWithChannel_PreservesExplicitSessionKey(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "ok"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	const sessionKey = "custom-session"
+	response, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		sessionKey,
+		"cli",
+		"direct",
+	)
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel() error = %v", err)
+	}
+	if response != "ok" {
+		t.Fatalf("response = %q, want %q", response, "ok")
+	}
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 2 {
+		t.Fatalf("history len = %d, want 2", len(history))
+	}
+	if history[0].Role != "user" || history[0].Content != "hello" {
+		t.Fatalf("unexpected user message: %+v", history[0])
+	}
+	if history[1].Role != "assistant" || history[1].Content != "ok" {
+		t.Fatalf("unexpected assistant message: %+v", history[1])
+	}
+}
+
 func TestProcessMessage_CommandOutcomes(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
