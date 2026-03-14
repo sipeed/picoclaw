@@ -725,13 +725,15 @@ func (c *MatrixChannel) downloadMedia(
 	reqCtx, cancel := context.WithTimeout(dlCtx, 20*time.Second)
 	defer cancel()
 
+	const maxMediaSize = 50 << 20 // 50 MB (PR #1535: prevent disk exhaustion)
 	resp, err := c.client.Download(reqCtx, parsed)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
-	reader := resp.Body
+	limitedBody := io.LimitReader(resp.Body, maxMediaSize)
+	reader := limitedBody
 	readerClose := func() error { return nil }
 
 	// Encrypted attachments put URL in msgEvt.File and require client-side decryption.
@@ -739,7 +741,7 @@ func (c *MatrixChannel) downloadMedia(
 		if err = msgEvt.File.PrepareForDecryption(); err != nil {
 			return "", fmt.Errorf("decrypt matrix media: %w", err)
 		}
-		decryptReader := msgEvt.File.DecryptStream(resp.Body)
+		decryptReader := msgEvt.File.DecryptStream(limitedBody)
 		reader = decryptReader
 		readerClose = decryptReader.Close
 	}
