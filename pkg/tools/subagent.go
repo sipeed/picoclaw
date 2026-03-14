@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ type SubagentManager struct {
 	mu             sync.RWMutex
 	provider       providers.LLMProvider
 	defaultModel   string
+	agentModelFor  func(string) (string, bool)
 	workspace      string
 	tools          *ToolRegistry
 	maxIterations  int
@@ -59,6 +61,13 @@ func (sm *SubagentManager) SetLLMOptions(maxTokens int, temperature float64) {
 	sm.hasMaxTokens = true
 	sm.temperature = temperature
 	sm.hasTemperature = true
+}
+
+// SetAgentModelResolver resolves the effective model for a targeted subagent.
+func (sm *SubagentManager) SetAgentModelResolver(resolve func(string) (string, bool)) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.agentModelFor = resolve
 }
 
 // SetTools sets the tool registry for subagent execution.
@@ -142,12 +151,20 @@ After completing the task, provide a clear summary of what was done.`
 	// Run tool loop with access to tools
 	sm.mu.RLock()
 	tools := sm.tools
+	model := sm.defaultModel
+	agentModelFor := sm.agentModelFor
 	maxIter := sm.maxIterations
 	maxTokens := sm.maxTokens
 	temperature := sm.temperature
 	hasMaxTokens := sm.hasMaxTokens
 	hasTemperature := sm.hasTemperature
 	sm.mu.RUnlock()
+
+	if task.AgentID != "" && agentModelFor != nil {
+		if resolvedModel, ok := agentModelFor(task.AgentID); ok && strings.TrimSpace(resolvedModel) != "" {
+			model = strings.TrimSpace(resolvedModel)
+		}
+	}
 
 	var llmOptions map[string]any
 	if hasMaxTokens || hasTemperature {
@@ -162,7 +179,7 @@ After completing the task, provide a clear summary of what was done.`
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
 		Provider:      sm.provider,
-		Model:         sm.defaultModel,
+		Model:         model,
 		Tools:         tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
