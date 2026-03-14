@@ -201,6 +201,63 @@ func TestProviderChat_ParsesReasoningContent(t *testing.T) {
 	}
 }
 
+func TestParseResponse_StripsThinkingAndFinalTags(t *testing.T) {
+	body := strings.NewReader(`{
+		"choices": [{
+			"message": {
+				"content": "<think>internal reasoning</think><final>The answer is 2</final>"
+			},
+			"finish_reason": "stop"
+		}]
+	}`)
+
+	out, err := parseResponse(body)
+	if err != nil {
+		t.Fatalf("parseResponse() error = %v", err)
+	}
+	if out.Content != "The answer is 2" {
+		t.Fatalf("Content = %q, want %q", out.Content, "The answer is 2")
+	}
+}
+
+func TestParseResponse_StripsEscapedThinkingTags(t *testing.T) {
+	body := strings.NewReader(`{
+		"choices": [{
+			"message": {
+				"content": "\\u003cthink\\u003einternal\\u003c/think\\u003e\\u003cfinal\\u003eOK\\u003c/final\\u003e"
+			},
+			"finish_reason": "stop"
+		}]
+	}`)
+
+	out, err := parseResponse(body)
+	if err != nil {
+		t.Fatalf("parseResponse() error = %v", err)
+	}
+	if out.Content != "OK" {
+		t.Fatalf("Content = %q, want %q", out.Content, "OK")
+	}
+}
+
+func TestParseResponse_DropsUnclosedThinkingBlock(t *testing.T) {
+	body := strings.NewReader(`{
+		"choices": [{
+			"message": {
+				"content": "Visible<think>hidden reasoning"
+			},
+			"finish_reason": "stop"
+		}]
+	}`)
+
+	out, err := parseResponse(body)
+	if err != nil {
+		t.Fatalf("parseResponse() error = %v", err)
+	}
+	if out.Content != "Visible" {
+		t.Fatalf("Content = %q, want %q", out.Content, "Visible")
+	}
+}
+
 func TestProviderChat_PreservesReasoningContentInHistory(t *testing.T) {
 	var requestBody map[string]any
 
