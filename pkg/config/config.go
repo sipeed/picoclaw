@@ -10,6 +10,7 @@ import (
 	"github.com/caarlos0/env/v11"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // rrCounter is a global counter for round-robin load balancing across models.
@@ -74,6 +75,10 @@ func (f *FlexibleStringSlice) UnmarshalText(text []byte) error {
 	return nil
 }
 
+type LoggerConfig struct {
+	TimeFormat string `json:"time_format,omitempty"`
+}
+
 type Config struct {
 	Agents    AgentsConfig    `json:"agents"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
@@ -86,6 +91,7 @@ type Config struct {
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
 	Voice     VoiceConfig     `json:"voice"`
+	Logger    LoggerConfig    `json:"logger,omitempty"`
 	// BuildInfo contains build-time version information
 	BuildInfo BuildInfo `json:"build_info,omitempty"`
 }
@@ -852,6 +858,11 @@ func LoadConfig(path string) (*Config, error) {
 	// Validate model_list for uniqueness and required fields
 	if err := cfg.ValidateModelList(); err != nil {
 		return nil, err
+	}
+
+	// Apply logger configuration if present
+	if cfg.Logger.TimeFormat != "" {
+		logger.SetTimeFormat(cfg.Logger.TimeFormat)
 	}
 
 	return cfg, nil

@@ -44,12 +44,29 @@ func init() {
 
 		consoleWriter := zerolog.ConsoleWriter{
 			Out:        os.Stdout,
-			TimeFormat: "15:04:05", // TODO: make it configurable???
+			TimeFormat: "15:04:05",
 		}
 
 		logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
 		fileLogger = zerolog.Logger{}
 	})
+}
+
+// SetTimeFormat updates the logger's time format dynamically at runtime for both console and file.
+func SetTimeFormat(format string) {
+	if format == "" {
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	
+	// Apply format to zerolog's global JSON timestamp for file output
+	zerolog.TimeFieldFormat = format
+
+	logger = zerolog.New(zerolog.ConsoleWriter{
+		Out:        os.Stdout,
+		TimeFormat: format,
+	}).With().Timestamp().Logger()
 }
 
 func SetLevel(level LogLevel) {
