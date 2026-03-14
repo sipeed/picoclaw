@@ -464,6 +464,8 @@ func normalizeModel(model, apiBase string) string {
 
 	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
 		return model
+	} else if strings.Contains(strings.ToLower(apiBase), "api-inference.modelscope.cn") {
+		return model
 	}
 
 	prefix := strings.ToLower(before)
