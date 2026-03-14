@@ -325,13 +325,14 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, or WeCom
+Talk to your picoclaw through Telegram, Zalo, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, or WeCom
 
 > **Note**: All webhook-based channels (LINE, WeCom, etc.) are served on a single shared Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). There are no per-channel ports to configure. Note: Feishu uses WebSocket/SDK mode and does not use the shared HTTP webhook server.
 
 | Channel      | Setup                              |
 | ------------ | ---------------------------------- |
 | **Telegram** | Easy (just a token)                |
+| **Zalo**     | Medium (token + secret_token + webhook URL) |
 | **Discord**  | Easy (bot token + intents)         |
 | **WhatsApp** | Easy (native: QR scan; or bridge URL) |
 | **Matrix**   | Medium (homeserver + bot access token) |
@@ -377,6 +378,66 @@ PicoClaw now keeps command definitions in one shared registry. On startup, Teleg
 Telegram command menu registration remains channel-local discovery UX; generic command execution is handled centrally in the agent loop via the commands executor.
 
 If command registration fails (network/API transient errors), the channel still starts and PicoClaw retries registration in the background.
+
+</details>
+
+<details>
+<summary><b>Zalo</b> (Webhook)</summary>
+
+PicoClaw integrates with Zalo Bot via the official Zalo Bot API webhook flow.
+
+**1. Create a Zalo Bot**
+
+* Create a bot in Zalo Developer / Bot console
+* Copy your **Bot Token** (`BOT_TOKEN`)
+* Choose a strong `secret_token` (8–256 chars). This is your own secret and will be sent back by Zalo in the `X-Bot-Api-Secret-Token` header.
+* For full webhook options, see Zalo’s official [`setWebhook` docs](https://bot.zapps.me/docs/apis/setWebhook/).
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "zalo": {
+      "enabled": true,
+      "token": "YOUR_ZALO_BOT_TOKEN",
+      "secret_token": "YOUR_SECRET_TOKEN",
+      "webhook_path": "/webhook/zalo",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**3. Run the Gateway**
+
+```bash
+picoclaw gateway
+```
+
+**4. Expose HTTPS locally (ngrok)**
+
+Zalo requires an HTTPS webhook URL. For local development you can use ngrok:
+
+```bash
+ngrok http 18790
+```
+
+Then your webhook URL becomes:
+
+`https://<your-ngrok-domain>/webhook/zalo`
+
+**5. Register the webhook with Zalo**
+
+Call Zalo `setWebhook` with your HTTPS URL and the same `secret_token` you configured above:
+
+```bash
+curl -X POST "https://bot-api.zaloplatforms.com/bot${BOT_TOKEN}/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://<your-ngrok-domain>/webhook/zalo","secret_token":"YOUR_SECRET_TOKEN"}'
+```
+
+After that, send a message to your bot on Zalo and PicoClaw will reply.
 
 </details>
 

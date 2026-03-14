@@ -277,11 +277,12 @@ Pronto! Você tem um assistente de IA funcionando em 2 minutos.
 
 ## 💬 Integração com Apps de Chat
 
-Converse com seu PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom.
+Converse com seu PicoClaw via Telegram, Zalo, Discord, DingTalk, LINE ou WeCom.
 
 | Canal | Nível de Configuração |
 | --- | --- |
 | **Telegram** | Fácil (apenas um token) |
+| **Zalo** | Médio (token + secret_token + webhook URL) |
 | **Discord** | Fácil (bot token + intents) |
 | **QQ** | Fácil (AppID + AppSecret) |
 | **DingTalk** | Médio (credenciais do app) |
@@ -317,6 +318,55 @@ Converse com seu PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom.
 
 ```bash
 picoclaw gateway
+```
+
+</details>
+
+<details>
+<summary><b>Zalo</b> (Webhook)</summary>
+
+**1. Preparar**
+
+* Pegue seu `BOT_TOKEN` do Zalo
+* Defina um `secret_token` (8–256 chars). O Zalo enviará esse valor no header `X-Bot-Api-Secret-Token`.
+* Para mais detalhes de webhook, veja a documentação oficial [`setWebhook`](https://bot.zapps.me/docs/apis/setWebhook/).
+
+**2. Configurar**
+
+```json
+{
+  "channels": {
+    "zalo": {
+      "enabled": true,
+      "token": "YOUR_ZALO_BOT_TOKEN",
+      "secret_token": "YOUR_SECRET_TOKEN",
+      "webhook_path": "/webhook/zalo",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**3. Executar**
+
+```bash
+picoclaw gateway
+```
+
+**4. HTTPS local (ngrok)**
+
+```bash
+ngrok http 18790
+```
+
+Webhook URL: `https://<ngrok-domain>/webhook/zalo`
+
+**5. Registrar webhook**
+
+```bash
+curl -X POST "https://bot-api.zaloplatforms.com/bot${BOT_TOKEN}/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://<ngrok-domain>/webhook/zalo","secret_token":"YOUR_SECRET_TOKEN"}'
 ```
 
 </details>
