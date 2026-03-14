@@ -39,15 +39,20 @@ func createCodexAuthProvider() (LLMProvider, error) {
 
 // ExtractProtocol extracts the protocol prefix and model identifier from a model string.
 // If no prefix is specified, it defaults to "openai".
+// If the model is from OpenRouter, it returns the model as is.
 // Examples:
-//   - "openai/gpt-4o" -> ("openai", "gpt-4o")
-//   - "anthropic/claude-sonnet-4.6" -> ("anthropic", "claude-sonnet-4.6")
-//   - "gpt-4o" -> ("openai", "gpt-4o")  // default protocol
-func ExtractProtocol(model string) (protocol, modelID string) {
+//   - "openai/gpt-4o", "https://openrouter.ai/api/v1" -> ("openai", "gpt-4o")
+//   - "anthropic/claude-sonnet-4.6", "https://api.anthropic.com/v1" -> ("anthropic", "claude-sonnet-4.6")
+//   - "gpt-4o", "https://api.openai.com/v1" -> ("openai", "gpt-4o")  // default protocol
+//   - "openrouter/gpt-4o", "https://openrouter.ai/api/v1" -> ("openrouter", "openrouter/gpt-4o")
+func ExtractProtocol(model string, url string) (protocol, modelID string) {
 	model = strings.TrimSpace(model)
 	protocol, modelID, found := strings.Cut(model, "/")
 	if !found {
 		return "openai", model
+	}
+	if strings.Contains(strings.ToLower(url), "openrouter.ai") {
+		return protocol, model
 	}
 	return protocol, modelID
 }
@@ -66,7 +71,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return nil, "", fmt.Errorf("model is required")
 	}
 
-	protocol, modelID := ExtractProtocol(cfg.Model)
+	protocol, modelID := ExtractProtocol(cfg.Model, cfg.APIBase)
 
 	switch protocol {
 	case "openai":

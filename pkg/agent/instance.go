@@ -183,7 +183,7 @@ func NewAgentInstance(
 				if fullModel == raw {
 					return ensureProtocol(fullModel), true
 				}
-				_, modelID := providers.ExtractProtocol(fullModel)
+				_, modelID := providers.ExtractProtocol(fullModel, cfg.GetAPIBase())
 				if modelID == raw {
 					return ensureProtocol(fullModel), true
 				}
