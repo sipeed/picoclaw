@@ -58,6 +58,7 @@ func DefaultConfig() *Config {
 					Enabled: true,
 					Text:    "Thinking... 💭",
 				},
+				UseMarkdownV2: false,
 			},
 			Feishu: FeishuConfig{
 				Enabled:           false,

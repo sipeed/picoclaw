@@ -787,7 +787,8 @@ picoclaw agent -m "你好"
     "telegram": {
       "enabled": true,
       "token": "123456:ABC...",
-      "allow_from": ["123456789"]
+      "allow_from": ["123456789"],
+      "use_markdown_v2": false
     },
     "discord": {
       "enabled": true,

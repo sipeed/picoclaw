@@ -357,13 +357,15 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk,
     "telegram": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"],
+      "use_markdown_v2": false
     }
   }
 }
 ```
 
 > Get your user ID from `@userinfobot` on Telegram.
+> Set `use_markdown_v2` to true could improve message formatting.
 
 **3. Run**
 
@@ -1326,7 +1328,8 @@ picoclaw agent -m "Hello"
     "telegram": {
       "enabled": true,
       "token": "123456:ABC...",
-      "allow_from": ["123456789"]
+      "allow_from": ["123456789"],
+      "use_markdown_v2": false
     },
     "discord": {
       "enabled": true,

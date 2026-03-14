@@ -223,7 +223,8 @@ picoclaw onboard
     "telegram": {
       "enabled": true,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
-      "allow_from": []
+      "allow_from": [],
+      "use_markdown_v2": false
     }
   }
 }
@@ -279,7 +280,8 @@ Trò chuyện với PicoClaw qua Telegram, Discord, DingTalk, LINE hoặc WeCom.
     "telegram": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"],
+      "use_markdown_v2": false
     }
   }
 }
@@ -872,7 +874,8 @@ picoclaw agent -m "Xin chào"
     "telegram": {
       "enabled": true,
       "token": "123456:ABC...",
-      "allow_from": ["123456789"]
+      "allow_from": ["123456789"],
+      "use_markdown_v2": false
     },
     "discord": {
       "enabled": true,
