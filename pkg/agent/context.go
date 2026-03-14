@@ -227,6 +227,7 @@ func (cb *ContextBuilder) sourcePaths() []string {
 		filepath.Join(cb.workspace, "SOUL.md"),
 		filepath.Join(cb.workspace, "USER.md"),
 		filepath.Join(cb.workspace, "IDENTITY.md"),
+		filepath.Join(cb.workspace, "TOOLS.md"),
 		filepath.Join(cb.workspace, "memory", "MEMORY.md"),
 	}
 }
@@ -437,6 +438,7 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 		"SOUL.md",
 		"USER.md",
 		"IDENTITY.md",
+		"TOOLS.md",
 	}
 
 	var sb strings.Builder
