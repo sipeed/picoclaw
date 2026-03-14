@@ -719,11 +719,11 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 
 	al := NewAgentLoop(cfg, msgBus, provider)
 
-	// Inject some history to simulate a full context
+	// Inject some history to simulate a full context.
+	// Session history only stores user/assistant/tool messages — the system
+	// prompt is built dynamically by BuildMessages and is NOT stored here.
 	sessionKey := "test-session-context"
-	// Create dummy history
 	history := []providers.Message{
-		{Role: "system", Content: "System prompt"},
 		{Role: "user", Content: "Old message 1"},
 		{Role: "assistant", Content: "Old response 1"},
 		{Role: "user", Content: "Old message 2"},
@@ -761,12 +761,11 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Check final history length
 	finalHistory := defaultAgent.Sessions.GetHistory(sessionKey)
 	// We verify that the history has been modified (compressed)
-	// Original length: 6
-	// Expected behavior: compression drops ~50% of history (mid slice)
-	// We can assert that the length is NOT what it would be without compression.
-	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
-	if len(finalHistory) >= 8 {
-		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	// Original length: 5
+	// Expected behavior: compression drops ~50% of Turns
+	// Without compression: 5 + 1 (new user msg) + 1 (assistant msg) = 7
+	if len(finalHistory) >= 7 {
+		t.Errorf("Expected history to be compressed (len < 7), got %d", len(finalHistory))
 	}
 }
 

@@ -17,7 +17,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -886,6 +885,24 @@ func (al *AgentLoop) runAgentLoop(
 	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 
+	// 1.5. Proactive context budget check: compress before LLM call
+	// rather than waiting for a 400 context-length error.
+	if !opts.NoHistory {
+		toolDefs := agent.Tools.ToProviderDefs()
+		if isOverContextBudget(agent.ContextWindow, messages, toolDefs, agent.MaxTokens) {
+			logger.WarnCF("agent", "Proactive compression: context budget exceeded before LLM call",
+				map[string]any{"session_key": opts.SessionKey})
+			al.forceCompression(agent, opts.SessionKey)
+			newHistory := agent.Sessions.GetHistory(opts.SessionKey)
+			newSummary := agent.Sessions.GetSummary(opts.SessionKey)
+			messages = agent.ContextBuilder.BuildMessages(
+				newHistory, newSummary, opts.UserMessage,
+				opts.Media, opts.Channel, opts.ChatID,
+			)
+			messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
+		}
+	}
+
 	// 2. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
@@ -1458,55 +1475,57 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 }
 
 // forceCompression aggressively reduces context when the limit is hit.
-// It drops the oldest 50% of messages (keeping system prompt and last user message).
+// It drops the oldest ~50% of Turns (a Turn is a complete user→LLM→response
+// cycle, as defined in #1316), so tool-call sequences are never split.
+//
+// Session history contains only user/assistant/tool messages — the system
+// prompt is built dynamically by BuildMessages and is NOT stored here.
+// The compression note is recorded in the session summary so that
+// BuildMessages can include it in the next system prompt.
 func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	history := agent.Sessions.GetHistory(sessionKey)
-	if len(history) <= 4 {
+	if len(history) <= 2 {
 		return
 	}
 
-	// Keep system prompt (usually [0]) and the very last message (user's trigger)
-	// We want to drop the oldest half of the *conversation*
-	// Assuming [0] is system, [1:] is conversation
-	conversation := history[1 : len(history)-1]
-	if len(conversation) == 0 {
+	// Split at a Turn boundary so no tool-call sequence is torn apart.
+	// parseTurnBoundaries gives us the start of each Turn; we drop the
+	// oldest half of Turns and keep the most recent ones.
+	turns := parseTurnBoundaries(history)
+	var mid int
+	if len(turns) >= 2 {
+		mid = turns[len(turns)/2]
+	} else {
+		// Fewer than 2 Turns — fall back to message-level midpoint
+		// aligned to the nearest Turn boundary.
+		mid = findSafeBoundary(history, len(history)/2)
+	}
+	if mid <= 0 {
 		return
 	}
-
-	// Helper to find the mid-point of the conversation
-	mid := len(conversation) / 2
-
-	// New history structure:
-	// 1. System Prompt (with compression note appended)
-	// 2. Second half of conversation
-	// 3. Last message
 
 	droppedCount := mid
-	keptConversation := conversation[mid:]
+	keptHistory := history[mid:]
 
-	newHistory := make([]providers.Message, 0, 1+len(keptConversation)+1)
-
-	// Append compression note to the original system prompt instead of adding a new system message
-	// This avoids having two consecutive system messages which some APIs (like Zhipu) reject
+	// Record compression in the session summary so BuildMessages includes it
+	// in the system prompt. We do not modify history messages themselves.
+	existingSummary := agent.Sessions.GetSummary(sessionKey)
 	compressionNote := fmt.Sprintf(
-		"\n\n[System Note: Emergency compression dropped %d oldest messages due to context limit]",
+		"[Emergency compression dropped %d oldest messages due to context limit]",
 		droppedCount,
 	)
-	enhancedSystemPrompt := history[0]
-	enhancedSystemPrompt.Content = enhancedSystemPrompt.Content + compressionNote
-	newHistory = append(newHistory, enhancedSystemPrompt)
+	if existingSummary != "" {
+		compressionNote = existingSummary + "\n\n" + compressionNote
+	}
+	agent.Sessions.SetSummary(sessionKey, compressionNote)
 
-	newHistory = append(newHistory, keptConversation...)
-	newHistory = append(newHistory, history[len(history)-1]) // Last message
-
-	// Update session
-	agent.Sessions.SetHistory(sessionKey, newHistory)
+	agent.Sessions.SetHistory(sessionKey, keptHistory)
 	agent.Sessions.Save(sessionKey)
 
 	logger.WarnCF("agent", "Forced compression executed", map[string]any{
 		"session_key":  sessionKey,
 		"dropped_msgs": droppedCount,
-		"new_count":    len(newHistory),
+		"new_count":    len(keptHistory),
 	})
 }
 
@@ -1606,12 +1625,18 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	history := agent.Sessions.GetHistory(sessionKey)
 	summary := agent.Sessions.GetSummary(sessionKey)
 
-	// Keep last 4 messages for continuity
+	// Keep the most recent Turns for continuity, aligned to a Turn boundary
+	// so that no tool-call sequence is split.
 	if len(history) <= 4 {
 		return
 	}
 
-	toSummarize := history[:len(history)-4]
+	safeCut := findSafeBoundary(history, len(history)-4)
+	if safeCut <= 0 {
+		return
+	}
+	keepCount := len(history) - safeCut
+	toSummarize := history[:safeCut]
 
 	// Oversized Message Guard
 	maxMessageTokens := agent.ContextWindow / 2
@@ -1676,7 +1701,7 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 
 	if finalSummary != "" {
 		agent.Sessions.SetSummary(sessionKey, finalSummary)
-		agent.Sessions.TruncateHistory(sessionKey, 4)
+		agent.Sessions.TruncateHistory(sessionKey, keepCount)
 		agent.Sessions.Save(sessionKey)
 	}
 }
@@ -1814,15 +1839,14 @@ func (al *AgentLoop) summarizeBatch(
 }
 
 // estimateTokens estimates the number of tokens in a message list.
-// Uses a safe heuristic of 2.5 characters per token to account for CJK and other
-// overheads better than the previous 3 chars/token.
+// Counts Content, ToolCalls arguments, and ToolCallID metadata so that
+// tool-heavy conversations are not systematically undercounted.
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
-	totalChars := 0
+	total := 0
 	for _, m := range messages {
-		totalChars += utf8.RuneCountInString(m.Content)
+		total += estimateMessageTokens(m)
 	}
-	// 2.5 chars per token = totalChars * 2 / 5
-	return totalChars * 2 / 5
+	return total
 }
 
 func (al *AgentLoop) handleCommand(
