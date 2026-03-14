@@ -178,3 +178,54 @@ func extractTextFromElement(elem any) string {
 
 	return ""
 }
+
+// extractCardImageKeys recursively extracts all image keys from a Feishu interactive card.
+// Image keys are used to download images from Feishu API.
+func extractCardImageKeys(rawContent string) []string {
+	if rawContent == "" {
+		return nil
+	}
+
+	var card map[string]any
+	if err := json.Unmarshal([]byte(rawContent), &card); err != nil {
+		return nil
+	}
+
+	var keys []string
+	extractImageKeysRecursive(card, &keys)
+	return keys
+}
+
+// extractImageKeysRecursive traverses card structure to find all image keys.
+func extractImageKeysRecursive(v any, keys *[]string) {
+	switch val := v.(type) {
+	case map[string]any:
+		// Check if this is an img element
+		if tag, ok := val["tag"].(string); ok {
+			switch tag {
+			case "img":
+				// Try img_key first (most common)
+				if imgKey, ok := val["img_key"].(string); ok && imgKey != "" {
+					*keys = append(*keys, imgKey)
+				}
+				// Also try src (alternative format)
+				if src, ok := val["src"].(string); ok && src != "" {
+					*keys = append(*keys, src)
+				}
+			case "icon":
+				// Icon elements use icon_key
+				if iconKey, ok := val["icon_key"].(string); ok && iconKey != "" {
+					*keys = append(*keys, iconKey)
+				}
+			}
+		}
+		// Recurse into all nested structures
+		for _, child := range val {
+			extractImageKeysRecursive(child, keys)
+		}
+	case []any:
+		for _, item := range val {
+			extractImageKeysRecursive(item, keys)
+		}
+	}
+}
