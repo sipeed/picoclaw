@@ -397,7 +397,7 @@ func (m *Manager) StartAll(ctx context.Context) error {
 				"addr": m.httpServer.Addr,
 			})
 			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.ErrorCF("channels", "Shared HTTP server error", map[string]any{
+				logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
 					"error": err.Error(),
 				})
 			}
