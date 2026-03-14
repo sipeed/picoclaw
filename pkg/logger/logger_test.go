@@ -123,17 +123,21 @@ func TestLoggerHelperFunctions(t *testing.T) {
 	SetLevel(INFO)
 
 	Debug("This should not log")
+	Debugf("this should not log")
 	Info("This should log")
 	Warn("This should log")
 	Error("This should log")
 
 	InfoC("test", "Component message")
 	InfoF("Fields message", map[string]any{"key": "value"})
+	Infof("test from %v", "Infof")
 
 	WarnC("test", "Warning with component")
 	ErrorF("Error with fields", map[string]any{"error": "test"})
+	Errorf("test from %v", "Errorf")
 
 	SetLevel(DEBUG)
 	DebugC("test", "Debug with component")
+	Debugf("test from %v", "Debugf")
 	WarnF("Warning with fields", map[string]any{"key": "value"})
 }

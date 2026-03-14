@@ -58,11 +58,14 @@
       },
       "action": {
         "start": "Start Gateway",
-        "stop": "Stop Gateway"
+        "stop": "Stop Gateway",
+        "restart": "Restart Gateway"
       },
       "status": {
-        "starting": "Starting Gateway..."
-      }
+        "starting": "Starting Gateway...",
+        "restarting": "Restarting Gateway..."
+      },
+      "restartRequired": "Model changes require a gateway restart to take effect."
     }
   },
   "common": {

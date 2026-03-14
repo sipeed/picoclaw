@@ -4,14 +4,18 @@
 <h1>PicoClaw: Assistente de IA Ultra-Eficiente em Go</h1>
 
 <h3>Hardware de $10 · 10MB de RAM · Boot em 1s · 皮皮虾，我们走！</h3>
-
   <p>
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
     <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V-blue" alt="Hardware">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
     <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
+    <a href="https://docs.picoclaw.io/"><img src="https://img.shields.io/badge/Docs-Official-007acc?style=flat&logo=read-the-docs&logoColor=white" alt="Docs"></a>
+    <a href="https://deepwiki.com/sipeed/picoclaw"><img src="https://img.shields.io/badge/Wiki-DeepWiki-FFA500?style=flat&logo=wikipedia&logoColor=white" alt="Wiki"></a>
+    <br>
     <a href="https://x.com/SipeedIO"><img src="https://img.shields.io/badge/X_(Twitter)-SipeedIO-black?style=flat&logo=x&logoColor=white" alt="Twitter"></a>
+    <a href="./assets/wechat.png"><img src="https://img.shields.io/badge/WeChat-Group-41d56b?style=flat&logo=wechat&logoColor=white"></a>
+    <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
  [中文](README.zh.md) | [日本語](README.ja.md) | **Português** | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [English](README.md)
@@ -223,7 +227,8 @@ picoclaw onboard
     {
       "model_name": "ark-code-latest",
       "model": "volcengine/ark-code-latest",
-      "api_key": "sk-your-api-key"
+      "api_key": "sk-your-api-key",
+      "api_base":"https://ark.cn-beijing.volces.com/api/coding/v3"
     },
     {
       "model_name": "gpt-5.4",
@@ -981,6 +986,7 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
 | **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Obter Chave](https://www.byteplus.com)                    |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Obter Chave](https://longcat.chat/platform)                     |
+| **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [Obter Token](https://modelscope.cn/my/tokens)                   |
 | **Antigravity** | `antigravity/` | Google Cloud | Custom | Apenas OAuth |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
@@ -1220,6 +1226,7 @@ Isso acontece quando outra instância do bot está em execução. Certifique-se 
 | **Brave Search** | 2000 consultas/mês | Funcionalidade de busca web |
 | **Groq** | Plano gratuito disponível | Inferência ultra-rápida (Llama, Mixtral) |
 | **Cerebras** | Plano gratuito disponível | Inferência ultra-rápida (Llama 3.3 70B) |
+| **ModelScope** | 2000 requisições/dia | Inferência gratuita (Qwen, GLM, DeepSeek, etc.) |
 
 ---
 

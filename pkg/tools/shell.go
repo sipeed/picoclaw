@@ -533,13 +533,47 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 
 		// before blocking.
 
+		// Web URL schemes whose path components (starting with //) should be exempt
+		// from workspace sandbox checks. file: is intentionally excluded so that
+		// file:// URIs are still validated against the workspace boundary.
+		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
+
 		agentCLI := isAgentCLICommand(cmd)
 
-		for _, token := range strings.Fields(cmd) {
+		fields := strings.Fields(cmd)
+		for i, token := range fields {
 			token = strings.Trim(token, "\"'")
 
-			if !filepath.IsAbs(token) {
+			// Handle file:// URIs: extract the path and validate it.
+			if strings.HasPrefix(token, "file://") {
+				token = strings.TrimPrefix(token, "file://")
+				if !filepath.IsAbs(token) {
+					continue
+				}
+			} else if !filepath.IsAbs(token) {
 				continue
+			}
+
+			// Skip URL path components that look like they're from web URLs.
+			// When a URL like "https://github.com/repo" is tokenised, the path
+			// portion may appear absolute. Check whether the previous token is
+			// a complete web URL containing this path component.
+			if strings.HasPrefix(token, "//") {
+				// Check if the previous non-operator token ends with a web scheme
+				// that makes this token part of a URL rather than a real path.
+				isPartOfURL := false
+				if i > 0 {
+					prev := strings.Trim(fields[i-1], "\"'")
+					for _, scheme := range webSchemes {
+						if strings.HasSuffix(prev, scheme) || strings.Contains(prev, scheme+"//") {
+							isPartOfURL = true
+							break
+						}
+					}
+				}
+				if isPartOfURL {
+					continue
+				}
 			}
 
 			p := filepath.Clean(token)
