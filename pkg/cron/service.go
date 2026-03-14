@@ -15,6 +15,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
+const defaultTimezone = "UTC"
+
 type CronSchedule struct {
 	Kind    string `json:"kind"`
 	AtMS    *int64 `json:"atMs,omitempty"`
@@ -66,6 +68,7 @@ type CronService struct {
 	running   bool
 	stopChan  chan struct{}
 	gronx     *gronx.Gronx
+	defaultTZ string // default timezone for cron expressions
 }
 
 func NewCronService(storePath string, onJob JobHandler) *CronService {
@@ -286,6 +289,19 @@ func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int6
 
 		// Use gronx to calculate next run time
 		now := time.UnixMilli(nowMS)
+		// Apply timezone: schedule.TZ > service default > UTC
+		tz := schedule.TZ
+		if tz == "" {
+			tz = cs.defaultTZ
+		}
+		if tz == "" {
+			tz = defaultTimezone
+		}
+		if loc, err := time.LoadLocation(tz); err == nil {
+			now = now.In(loc)
+		} else {
+			log.Printf("[cron] warning: failed to load timezone '%s': %v, using UTC", tz, err)
+		}
 		nextTime, err := gronx.NextTickAfter(schedule.Expr, now, false)
 		if err != nil {
 			log.Printf("[cron] failed to compute next run for expr '%s': %v", schedule.Expr, err)
@@ -331,6 +347,14 @@ func (cs *CronService) SetOnJob(handler JobHandler) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.onJob = handler
+}
+
+// SetDefaultTimezone sets the default timezone for cron expressions.
+// If empty, falls back to UTC.
+func (cs *CronService) SetDefaultTimezone(tz string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.defaultTZ = tz
 }
 
 func (cs *CronService) loadStore() error {
