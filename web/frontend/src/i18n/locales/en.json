@@ -32,6 +32,7 @@
     "historyOpenFailed": "Failed to open this chat history",
     "loadingMore": "Loading more...",
     "deleteSession": "Delete session",
+    "renameSession": "Rename session",
     "messagesCount": "{{count}} messages",
     "noModel": "Select model",
     "empty": {
