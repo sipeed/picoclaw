@@ -478,6 +478,7 @@ func (cb *ContextBuilder) BuildMessages(
 	currentMessage string,
 	media []string,
 	channel, chatID string,
+	skillContext ...string,
 ) []providers.Message {
 	messages := []providers.Message{}
 
@@ -518,6 +519,15 @@ func (cb *ContextBuilder) BuildMessages(
 			summary)
 		stringParts = append(stringParts, summaryText)
 		contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: summaryText})
+	}
+
+	if len(skillContext) > 0 && skillContext[0] != "" {
+		skillBlock := "# Active Skill Instructions\n\n" +
+			"The user's message references the following skill(s). " +
+			"Follow these instructions to fulfill the request.\n\n" +
+			skillContext[0]
+		stringParts = append(stringParts, skillBlock)
+		contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: skillBlock})
 	}
 
 	fullSystemPrompt := strings.Join(stringParts, "\n\n---\n\n")
@@ -730,4 +740,81 @@ func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
 		"available": len(allSkills),
 		"names":     skillNames,
 	}
+}
+
+// MatchSkillsInMessage returns the names of installed skills that are
+// referenced in the user message. Matching is case-insensitive and looks
+// for the skill name as a whole word (bounded by non-alphanumeric/hyphen
+// characters or string edges) to avoid false positives from partial
+// matches inside unrelated words.
+func (cb *ContextBuilder) MatchSkillsInMessage(message string) []string {
+	if cb.skillsLoader == nil {
+		return nil
+	}
+
+	allSkills := cb.skillsLoader.ListSkills()
+	if len(allSkills) == 0 {
+		return nil
+	}
+
+	lowerMsg := strings.ToLower(message)
+	var matched []string
+
+	for _, s := range allSkills {
+		lowerName := strings.ToLower(s.Name)
+		idx := 0
+		for {
+			pos := strings.Index(lowerMsg[idx:], lowerName)
+			if pos < 0 {
+				break
+			}
+			absPos := idx + pos
+			endPos := absPos + len(lowerName)
+
+			beforeOK := absPos == 0 || !isSkillNameChar(lowerMsg[absPos-1])
+			afterOK := endPos == len(lowerMsg) || !isSkillNameChar(lowerMsg[endPos])
+
+			if beforeOK && afterOK {
+				matched = append(matched, s.Name)
+				break
+			}
+			idx = endPos
+		}
+	}
+
+	return matched
+}
+
+// LoadSkillContext loads the full SKILL.md content for the given skill names
+// via the underlying SkillsLoader. It resolves frontmatter names to directory
+// names so that skills whose metadata name differs from the directory name
+// are loaded correctly.
+func (cb *ContextBuilder) LoadSkillContext(skillNames []string) string {
+	if cb.skillsLoader == nil || len(skillNames) == 0 {
+		return ""
+	}
+
+	allSkills := cb.skillsLoader.ListSkills()
+	nameToDir := make(map[string]string, len(allSkills))
+	for _, s := range allSkills {
+		dirName := filepath.Base(filepath.Dir(s.Path))
+		nameToDir[strings.ToLower(s.Name)] = dirName
+	}
+
+	resolved := make([]string, 0, len(skillNames))
+	for _, name := range skillNames {
+		if dir, ok := nameToDir[strings.ToLower(name)]; ok {
+			resolved = append(resolved, dir)
+		} else {
+			resolved = append(resolved, name)
+		}
+	}
+
+	return cb.skillsLoader.LoadSkillsForContext(resolved)
+}
+
+// isSkillNameChar returns true for characters that can appear inside a skill
+// name (alphanumeric and hyphen). Used for whole-word boundary detection.
+func isSkillNameChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-'
 }
