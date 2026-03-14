@@ -1,6 +1,7 @@
 package session
 
 import (
+	"math"
 	"sync"
 	"time"
 
@@ -397,7 +398,7 @@ func (la *LegacyAdapter) Save(key string) error {
 	if replaced {
 		// Full rewrite: compact all existing turns then write the whole history
 
-		if err := la.store.Compact(key, 1<<31, ""); err != nil {
+		if err := la.store.Compact(key, math.MaxInt, ""); err != nil {
 			return err
 		}
 
