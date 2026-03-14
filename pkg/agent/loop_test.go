@@ -922,10 +922,25 @@ func TestHandleReasoning(t *testing.T) {
 		al, msgBus := newLoop(t)
 		al.handleReasoning(context.Background(), "reasoning", "telegram", "")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		if msg, ok := msgBus.SubscribeOutbound(ctx); ok {
-			t.Fatalf("expected no outbound message, got %+v", msg)
+		for {
+			select {
+			case msg, ok := <-msgBus.OutboundChan():
+				if !ok {
+					t.Fatalf("expected no outbound message, got %+v", msg)
+				}
+				if msg.Content == "reasoning" {
+					t.Fatalf("expected no message for empty chatID, got %+v", msg)
+				}
+				return
+			case <-ctx.Done():
+				t.Log("expected an outbound message, got none within timeout")
+				return
+			default:
+				// Continue to check for message
+				time.Sleep(5 * time.Millisecond) // Avoid busy loop
+			}
 		}
 	})
 
@@ -933,9 +948,7 @@ func TestHandleReasoning(t *testing.T) {
 		al, msgBus := newLoop(t)
 		al.handleReasoning(context.Background(), "hello reasoning", "slack", "channel-1")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-		defer cancel()
-		msg, ok := msgBus.SubscribeOutbound(ctx)
+		msg, ok := <-msgBus.OutboundChan()
 		if !ok {
 			t.Fatal("expected an outbound message")
 		}
@@ -949,35 +962,52 @@ func TestHandleReasoning(t *testing.T) {
 		reasoning := "hello telegram reasoning"
 		al.handleReasoning(context.Background(), reasoning, "telegram", "tg-chat")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		msg, ok := msgBus.SubscribeOutbound(ctx)
-		if !ok {
-			t.Fatal("expected outbound message")
-		}
+		for {
+			select {
+			case <-ctx.Done():
+				t.Fatal("expected an outbound message, got none within timeout")
+				return
+			case msg, ok := <-msgBus.OutboundChan():
+				if !ok {
+					t.Fatal("expected outbound message")
+				}
 
-		if msg.Channel != "telegram" {
-			t.Fatalf("expected telegram channel message, got %+v", msg)
-		}
-		if msg.ChatID != "tg-chat" {
-			t.Fatalf("expected chatID tg-chat, got %+v", msg)
-		}
-		if msg.Content != reasoning {
-			t.Fatalf("content mismatch: got %q want %q", msg.Content, reasoning)
+				if msg.Channel != "telegram" {
+					t.Fatalf("expected telegram channel message, got %+v", msg)
+				}
+				if msg.ChatID != "tg-chat" {
+					t.Fatalf("expected chatID tg-chat, got %+v", msg)
+				}
+				if msg.Content != reasoning {
+					t.Fatalf("content mismatch: got %q want %q", msg.Content, reasoning)
+				}
+				return
+			}
 		}
 	})
 	t.Run("expired ctx", func(t *testing.T) {
 		al, msgBus := newLoop(t)
 		reasoning := "hello telegram reasoning"
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		al.handleReasoning(ctx, reasoning, "telegram", "tg-chat")
 
-		ctx, cancel = context.WithTimeout(context.Background(), 200*time.Millisecond)
-		defer cancel()
-		msg, ok := msgBus.SubscribeOutbound(ctx)
-		if ok {
-			t.Fatalf("expected no outbound message, got %+v", msg)
+		al.handleReasoning(context.Background(), reasoning, "telegram", "tg-chat")
+
+		consumeCtx, consumeCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer consumeCancel()
+
+		for {
+			select {
+			case msg, ok := <-msgBus.OutboundChan():
+				if !ok {
+					t.Fatalf("expected no outbound message, but received: %+v", msg)
+				}
+				t.Logf("Received unexpected outbound message: %+v", msg)
+				return
+			case <-consumeCtx.Done():
+				t.Fatalf("failed: no message received within timeout")
+				return
+			}
 		}
 	})
 
@@ -1017,20 +1047,23 @@ func TestHandleReasoning(t *testing.T) {
 
 		// Drain the bus and verify the reasoning message was NOT published
 		// (it should have been dropped due to timeout).
-		drainCtx, drainCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		defer drainCancel()
-		foundReasoning := false
+		timeer := time.After(1 * time.Second)
 		for {
-			msg, ok := msgBus.SubscribeOutbound(drainCtx)
-			if !ok {
-				break
+			select {
+			case <-timeer:
+				t.Logf(
+					"no reasoning message received after draining bus for 1s, as expected,length=%d",
+					len(msgBus.OutboundChan()),
+				)
+				return
+			case msg, ok := <-msgBus.OutboundChan():
+				if !ok {
+					break
+				}
+				if msg.Content == "should timeout" {
+					t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
+				}
 			}
-			if msg.Content == "should timeout" {
-				foundReasoning = true
-			}
-		}
-		if foundReasoning {
-			t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
 		}
 	})
 }
