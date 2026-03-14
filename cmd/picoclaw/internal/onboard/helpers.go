@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	picoclaw "github.com/sipeed/picoclaw"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -47,20 +48,20 @@ func onboard() {
 }
 
 func createWorkspaceTemplates(workspace string) {
-	err := copyEmbeddedToTarget(workspace)
+	err := copyEmbeddedToTarget(picoclaw.EmbeddedWorkspace, workspace)
 	if err != nil {
 		fmt.Printf("Error copying workspace templates: %v\n", err)
 	}
 }
 
-func copyEmbeddedToTarget(targetDir string) error {
+func copyEmbeddedToTarget(source fs.FS, targetDir string) error {
 	// Ensure target directory exists
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return fmt.Errorf("Failed to create target directory: %w", err)
 	}
 
 	// Walk through all files in embed.FS
-	err := fs.WalkDir(embeddedFiles, "workspace", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(source, "workspace", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -71,7 +72,7 @@ func copyEmbeddedToTarget(targetDir string) error {
 		}
 
 		// Read embedded file
-		data, err := embeddedFiles.ReadFile(path)
+		data, err := fs.ReadFile(source, path)
 		if err != nil {
 			return fmt.Errorf("Failed to read embedded file %s: %w", path, err)
 		}
