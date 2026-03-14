@@ -87,66 +87,61 @@ func stripMentionPlaceholders(content string, mentions []*larkim.MentionEvent) s
 
 // extractCardImageKeys recursively extracts all image keys from a Feishu interactive card.
 // Image keys are used to download images from Feishu API.
-// Only Feishu-hosted keys are returned (img_xxx, icon_xxx); external URLs are filtered out.
-func extractCardImageKeys(rawContent string) []string {
+// Returns two slices: Feishu-hosted keys and external URLs.
+func extractCardImageKeys(rawContent string) (feishuKeys []string, externalURLs []string) {
 	if rawContent == "" {
-		return nil
+		return nil, nil
 	}
 
 	var card map[string]any
 	if err := json.Unmarshal([]byte(rawContent), &card); err != nil {
-		return nil
+		return nil, nil
 	}
 
-	var keys []string
-	extractImageKeysRecursive(card, &keys)
-	return keys
+	extractImageKeysRecursive(card, &feishuKeys, &externalURLs)
+	return feishuKeys, externalURLs
 }
 
-// isFeishuImageKey returns true if the string is a Feishu-hosted image key
-// (not an external URL). Feishu keys typically start with img_, icon_, or file_.
-func isFeishuImageKey(s string) bool {
-	if s == "" {
-		return false
-	}
-	// Filter out external URLs
-	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
-		return false
-	}
-	return true
+// isExternalURL returns true if the string is an external HTTP/HTTPS URL.
+func isExternalURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
 // extractImageKeysRecursive traverses card structure to find all image keys.
-// Only Feishu-hosted keys are collected; external URLs are skipped.
-func extractImageKeysRecursive(v any, keys *[]string) {
+// Collects both Feishu-hosted keys and external URLs separately.
+func extractImageKeysRecursive(v any, feishuKeys, externalURLs *[]string) {
 	switch val := v.(type) {
 	case map[string]any:
 		// Check if this is an img element
 		if tag, ok := val["tag"].(string); ok {
 			switch tag {
 			case "img":
-				// Try img_key first (most common, always Feishu-hosted)
+				// Try img_key first (always Feishu-hosted)
 				if imgKey, ok := val["img_key"].(string); ok && imgKey != "" {
-					*keys = append(*keys, imgKey)
+					*feishuKeys = append(*feishuKeys, imgKey)
 				}
-				// Also try src, but only if it's a Feishu-hosted key (not external URL)
-				if src, ok := val["src"].(string); ok && src != "" && isFeishuImageKey(src) {
-					*keys = append(*keys, src)
+				// Check src - could be Feishu key or external URL
+				if src, ok := val["src"].(string); ok && src != "" {
+					if isExternalURL(src) {
+						*externalURLs = append(*externalURLs, src)
+					} else {
+						*feishuKeys = append(*feishuKeys, src)
+					}
 				}
 			case "icon":
 				// Icon elements use icon_key
 				if iconKey, ok := val["icon_key"].(string); ok && iconKey != "" {
-					*keys = append(*keys, iconKey)
+					*feishuKeys = append(*feishuKeys, iconKey)
 				}
 			}
 		}
 		// Recurse into all nested structures
 		for _, child := range val {
-			extractImageKeysRecursive(child, keys)
+			extractImageKeysRecursive(child, feishuKeys, externalURLs)
 		}
 	case []any:
 		for _, item := range val {
-			extractImageKeysRecursive(item, keys)
+			extractImageKeysRecursive(item, feishuKeys, externalURLs)
 		}
 	}
 }
