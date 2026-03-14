@@ -384,6 +384,15 @@ func DefaultConfig() *Config {
 				APIBase:   "http://localhost:8000/v1",
 				APIKey:    "",
 			},
+
+			// Azure OpenAI - https://portal.azure.com
+			// model_name is a user-friendly alias; the model field's path after "azure/" is your deployment name
+			{
+				ModelName: "azure-gpt5",
+				Model:     "azure/my-gpt5-deployment",
+				APIBase:   "https://your-resource.openai.azure.com",
+				APIKey:    "",
+			},
 		},
 		Gateway: GatewayConfig{
 			Host: "127.0.0.1",

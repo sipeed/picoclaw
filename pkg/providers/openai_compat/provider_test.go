@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -648,7 +649,7 @@ func TestSerializeMessages_PlainText(t *testing.T) {
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", Content: "hi", ReasoningContent: "thinking..."},
 	}
-	result := serializeMessages(messages)
+	result := common.SerializeMessages(messages)
 
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -670,7 +671,7 @@ func TestSerializeMessages_WithMedia(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{Role: "user", Content: "describe this", Media: []string{"data:image/png;base64,abc123"}},
 	}
-	result := serializeMessages(messages)
+	result := common.SerializeMessages(messages)
 
 	data, _ := json.Marshal(result)
 	var msgs []map[string]any
@@ -703,7 +704,7 @@ func TestSerializeMessages_MediaWithToolCallID(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{Role: "tool", Content: "image result", Media: []string{"data:image/png;base64,xyz"}, ToolCallID: "call_1"},
 	}
-	result := serializeMessages(messages)
+	result := common.SerializeMessages(messages)
 
 	data, _ := json.Marshal(result)
 	var msgs []map[string]any
@@ -833,7 +834,7 @@ func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 			},
 		},
 	}
-	result := serializeMessages(messages)
+	result := common.SerializeMessages(messages)
 
 	data, _ := json.Marshal(result)
 	raw := string(data)

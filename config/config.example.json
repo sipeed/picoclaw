@@ -54,6 +54,12 @@
       "api_base": "https://api-inference.modelscope.cn/v1"
     },
     {
+      "model_name": "azure-gpt5",
+      "model": "azure/my-gpt5-deployment",
+      "api_key": "your-azure-api-key",
+      "api_base": "https://your-resource.openai.azure.com"
+    },
+    {
       "model_name": "loadbalanced-gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_key": "sk-key1",
