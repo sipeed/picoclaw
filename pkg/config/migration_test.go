@@ -613,3 +613,42 @@ func TestConvertProvidersToModelList_LegacyModelWithProtocolPrefix(t *testing.T)
 		t.Errorf("Model = %q, want %q (should not duplicate prefix)", result[0].Model, "openrouter/auto")
 	}
 }
+
+func TestConvertProvidersToModelList_UserModelWithProvider(t *testing.T) {
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "ollama",
+				Model:    "llama3.2",
+			},
+		},
+		Providers: ProvidersConfig{
+			Ollama: ProviderConfig{
+				APIBase: "http://localhost:11434/v1",
+			},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	// Find the ollama entry
+	var found *ModelConfig
+	for i := range result {
+		if strings.Contains(result[i].Model, "ollama/") {
+			found = &result[i]
+			break
+		}
+	}
+
+	if found == nil {
+		t.Fatalf("expected an ollama entry in result, got %d entries: %+v", len(result), result)
+	}
+
+	if found.ModelName != "llama3.2" {
+		t.Errorf("ModelName = %q, want %q", found.ModelName, "llama3.2")
+	}
+
+	if found.Model != "ollama/llama3.2" {
+		t.Errorf("Model = %q, want %q", found.Model, "ollama/llama3.2")
+	}
+}
