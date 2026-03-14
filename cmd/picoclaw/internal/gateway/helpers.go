@@ -36,6 +36,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/requestlog"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/voice"
@@ -82,6 +83,14 @@ func gatewayCmd(debug bool) error {
 	}
 
 	msgBus := bus.NewMessageBus()
+
+	// Initialize request logger
+	requestLogger := requestlog.NewLogger(requestlog.DefaultConfig(), msgBus, cfg.WorkspacePath())
+	fmt.Printf("  • Request log dir: %s\n", requestLogger.LogDir())
+	if err := requestLogger.Start(); err != nil {
+		fmt.Printf("  ⚠️ Failed to start request logger: %v\n", err)
+	}
+
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
 	// Print agent startup info
