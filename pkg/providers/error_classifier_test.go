@@ -154,6 +154,28 @@ func TestClassifyError_TimeoutPatterns(t *testing.T) {
 	}
 }
 
+func TestClassifyError_TransportSendPatterns(t *testing.T) {
+	patterns := []string{
+		`failed to send request: Post "https://openrouter.ai/api/v1/chat/completions": read tcp 127.0.0.1:1->127.0.0.1:2: read: connection reset by peer`,
+		`failed to send request: dial tcp 127.0.0.1:443: connect: connection refused`,
+		`failed to send request: dial tcp 127.0.0.1:443: connect: no route to host`,
+		`failed to send request: Post "https://openrouter.ai/api/v1/chat/completions": unexpected EOF`,
+		`failed to send request: tls handshake timeout`,
+	}
+
+	for _, msg := range patterns {
+		err := errors.New(msg)
+		result := ClassifyError(err, "openrouter", "stepfun/step-3.5-flash")
+		if result == nil {
+			t.Errorf("pattern %q: expected non-nil", msg)
+			continue
+		}
+		if result.Reason != FailoverTimeout {
+			t.Errorf("pattern %q: reason = %q, want timeout", msg, result.Reason)
+		}
+	}
+}
+
 func TestClassifyError_AuthPatterns(t *testing.T) {
 	patterns := []string{
 		"invalid api key",
