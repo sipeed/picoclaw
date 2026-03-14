@@ -165,8 +165,10 @@ export async function connectChat() {
       console.warn("Could not parse ws_url:", error)
     }
 
-    const url = `${finalWsUrl}?token=${encodeURIComponent(token)}&session_id=${encodeURIComponent(activeSessionIdRef)}`
-    const socket = new WebSocket(url)
+    const url = `${finalWsUrl}?session_id=${encodeURIComponent(activeSessionIdRef)}`
+    // Pass the token via the Sec-WebSocket-Protocol header instead of a query
+    // parameter to avoid leaking it in logs, browser history, and proxies.
+    const socket = new WebSocket(url, [`token.${token}`])
 
     if (generation !== connectionGeneration) {
       socket.close()

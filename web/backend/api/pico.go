@@ -65,8 +65,23 @@ func (h *Handler) handleRegenPicoToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// defaultPicoOrigins is a restricted set of localhost origins used when the
+// user hasn't configured any explicit allow_origins. This covers the common
+// local-dev scenarios (Vite on 5173, launcher on 18800) without opening the
+// WebSocket to arbitrary cross-origin pages.
+var defaultPicoOrigins = []string{
+	"http://localhost:5173",
+	"http://127.0.0.1:5173",
+	"http://localhost:18800",
+	"http://127.0.0.1:18800",
+}
+
 // ensurePicoChannel checks if the Pico Channel is properly configured and
-// enables it with sensible defaults if not. Returns true if config was changed.
+// enables it with minimal secure defaults if not. Returns true if config was changed.
+//
+// Setup only enables the channel and creates a token. It deliberately does not
+// turn on allow_token_query (prefer header-based auth) or set wildcard origins
+// (prefer a restricted localhost allowlist).
 func (h *Handler) ensurePicoChannel() (bool, error) {
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
@@ -85,14 +100,10 @@ func (h *Handler) ensurePicoChannel() (bool, error) {
 		changed = true
 	}
 
-	if !cfg.Channels.Pico.AllowTokenQuery {
-		cfg.Channels.Pico.AllowTokenQuery = true
-		changed = true
-	}
-
-	// Make sure origins are allowed (frontend might be running on a different port like 5173 during dev)
+	// Only populate origins when the user hasn't configured any. Use a
+	// restricted localhost allowlist instead of "*" to limit the attack surface.
 	if len(cfg.Channels.Pico.AllowOrigins) == 0 {
-		cfg.Channels.Pico.AllowOrigins = []string{"*"}
+		cfg.Channels.Pico.AllowOrigins = defaultPicoOrigins
 		changed = true
 	}
 

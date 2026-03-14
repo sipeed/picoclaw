@@ -251,7 +251,14 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := c.upgrader.Upgrade(w, r, nil)
+	// If the client authenticated via a subprotocol (e.g. "token.xxx"), echo
+	// it back in the upgrade response so the browser accepts the connection.
+	var responseHeader http.Header
+	if proto := c.matchedSubprotocol(r); proto != "" {
+		responseHeader = http.Header{"Sec-WebSocket-Protocol": {proto}}
+	}
+
+	conn, err := c.upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		logger.ErrorCF("pico", "WebSocket upgrade failed", map[string]any{
 			"error": err.Error(),
@@ -282,8 +289,11 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	go c.readLoop(pc)
 }
 
-// authenticate checks the Bearer token from the Authorization header.
-// Query parameter authentication is only allowed when AllowTokenQuery is explicitly enabled.
+// authenticate checks for a valid token in the following order:
+//  1. Authorization: Bearer <token> header (preferred)
+//  2. Sec-WebSocket-Protocol subprotocol with prefix "token." — this lets
+//     browser-based clients pass the token without putting it in the URL
+//  3. Query parameter "token" — only when AllowTokenQuery is explicitly on
 func (c *PicoChannel) authenticate(r *http.Request) bool {
 	token := c.config.Token
 	if token == "" {
@@ -298,6 +308,11 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 		}
 	}
 
+	// Check Sec-WebSocket-Protocol subprotocol ("token.<value>")
+	if c.matchedSubprotocol(r) != "" {
+		return true
+	}
+
 	// Check query parameter only when explicitly allowed
 	if c.config.AllowTokenQuery {
 		if r.URL.Query().Get("token") == token {
@@ -306,6 +321,18 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 	}
 
 	return false
+}
+
+// matchedSubprotocol returns the first Sec-WebSocket-Protocol value that
+// carries a valid token (format: "token.<value>"), or "" if none match.
+func (c *PicoChannel) matchedSubprotocol(r *http.Request) string {
+	token := c.config.Token
+	for _, proto := range websocket.Subprotocols(r) {
+		if after, ok := strings.CutPrefix(proto, "token."); ok && after == token {
+			return proto
+		}
+	}
+	return ""
 }
 
 // readLoop reads messages from a WebSocket connection.
