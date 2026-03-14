@@ -64,6 +64,12 @@ func TestExtractProtocol(t *testing.T) {
 			wantProtocol: "nvidia",
 			wantModelID:  "meta/llama-3.1-8b",
 		},
+		{
+			name:         "azure with prefix",
+			model:        "azure/my-gpt5-deployment",
+			wantProtocol: "azure",
+			wantModelID:  "my-gpt5-deployment",
+		},
 	}
 
 	for _, tt := range tests {
@@ -369,5 +375,71 @@ func TestCreateProviderFromConfig_RequestTimeoutPropagation(t *testing.T) {
 	errMsg := err.Error()
 	if !strings.Contains(errMsg, "context deadline exceeded") && !strings.Contains(errMsg, "Client.Timeout exceeded") {
 		t.Fatalf("Chat() error = %q, want timeout-related error", errMsg)
+	}
+}
+
+func TestCreateProviderFromConfig_Azure(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "azure-gpt5",
+		Model:     "azure/my-gpt5-deployment",
+		APIKey:    "test-azure-key",
+		APIBase:   "https://my-resource.openai.azure.com",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "my-gpt5-deployment" {
+		t.Errorf("modelID = %q, want %q", modelID, "my-gpt5-deployment")
+	}
+}
+
+func TestCreateProviderFromConfig_AzureOpenAIAlias(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "azure-gpt4",
+		Model:     "azure-openai/my-deployment",
+		APIKey:    "test-azure-key",
+		APIBase:   "https://my-resource.openai.azure.com",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "my-deployment" {
+		t.Errorf("modelID = %q, want %q", modelID, "my-deployment")
+	}
+}
+
+func TestCreateProviderFromConfig_AzureMissingAPIKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "azure-gpt5",
+		Model:     "azure/my-gpt5-deployment",
+		APIBase:   "https://my-resource.openai.azure.com",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("CreateProviderFromConfig() expected error for missing API key")
+	}
+}
+
+func TestCreateProviderFromConfig_AzureMissingAPIBase(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "azure-gpt5",
+		Model:     "azure/my-gpt5-deployment",
+		APIKey:    "test-azure-key",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("CreateProviderFromConfig() expected error for missing API base")
 	}
 }

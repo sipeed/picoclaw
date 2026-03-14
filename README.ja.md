@@ -935,6 +935,7 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 | **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [キーを取得](https://www.byteplus.com)                     |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [キーを取得](https://longcat.chat/platform)                      |
 | **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [トークンを取得](https://modelscope.cn/my/tokens)                 |
+| **Azure OpenAI**    | `azure/`          | `https://{resource}.openai.azure.com`               | Azure     | [キーを取得](https://portal.azure.com)                            |
 | **Antigravity** | `antigravity/` | Google Cloud | カスタム | OAuthのみ |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
