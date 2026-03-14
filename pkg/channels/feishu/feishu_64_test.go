@@ -75,6 +75,24 @@ func TestExtractContent(t *testing.T) {
 			rawContent:  "",
 			want:        "",
 		},
+		{
+			name:        "interactive card with markdown content",
+			messageType: "interactive",
+			rawContent:  `{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"Hello from card"}]}}`,
+			want:        "Hello from card",
+		},
+		{
+			name:        "interactive card with header and body",
+			messageType: "interactive",
+			rawContent:  `{"header":{"title":{"tag":"plain_text","content":"Title"}},"elements":[{"tag":"div","text":{"tag":"lark_md","content":"Card content"}}]}`,
+			want:        "Title\nCard content",
+		},
+		{
+			name:        "interactive card invalid JSON returns empty",
+			messageType: "interactive",
+			rawContent:  `not valid json`,
+			want:        "",
+		},
 	}
 
 	for _, tt := range tests {

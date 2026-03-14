@@ -290,3 +290,113 @@ func TestStripMentionPlaceholders(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractCardText(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "empty content",
+			content: "",
+			want:    "",
+		},
+		{
+			name:    "invalid JSON",
+			content: "not json",
+			want:    "",
+		},
+		{
+			name: "JSON 2.0 schema with markdown element",
+			content: `{
+				"schema": "2.0",
+				"body": {
+					"elements": [
+						{"tag": "markdown", "content": "Hello **world**"}
+					]
+				}
+			}`,
+			want: "Hello **world**",
+		},
+		{
+			name: "JSON 2.0 schema with multiple elements",
+			content: `{
+				"schema": "2.0",
+				"header": {
+					"title": {"tag": "plain_text", "content": "Card Title"}
+				},
+				"body": {
+					"elements": [
+						{"tag": "markdown", "content": "First paragraph"},
+						{"tag": "markdown", "content": "Second paragraph"}
+					]
+				}
+			}`,
+			want: "Card Title\nFirst paragraph\nSecond paragraph",
+		},
+		{
+			name: "JSON 1.0 legacy format with div and lark_md",
+			content: `{
+				"elements": [
+					{
+						"tag": "div",
+						"text": {"tag": "lark_md", "content": "Content with **bold**"}
+					}
+				]
+			}`,
+			want: "Content with **bold**",
+		},
+		{
+			name: "nested elements in columns",
+			content: `{
+				"elements": [
+					{
+						"tag": "div",
+						"columns": [
+							{"text": {"tag": "plain_text", "content": "Column 1"}},
+							{"text": {"tag": "plain_text", "content": "Column 2"}}
+						]
+					}
+				]
+			}`,
+			want: "Column 1\nColumn 2",
+		},
+		{
+			name: "action with buttons",
+			content: `{
+				"elements": [
+					{
+						"tag": "action",
+						"actions": [
+							{"tag": "button", "text": {"tag": "plain_text", "content": "OK"}},
+							{"tag": "button", "text": {"tag": "plain_text", "content": "Cancel"}}
+						]
+					}
+				]
+			}`,
+			want: "OK\nCancel",
+		},
+		{
+			name: "card with no text content",
+			content: `{
+				"schema": "2.0",
+				"body": {
+					"elements": [
+						{"tag": "hr"}
+					]
+				}
+			}`,
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractCardText(tt.content)
+			if got != tt.want {
+				t.Errorf("extractCardText() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
