@@ -34,6 +34,9 @@ type SubagentManager struct {
 	hasMaxTokens   bool
 	hasTemperature bool
 	nextID         int
+	// modelResolver resolves agentID to model name.
+	// Returns empty string if agent not found (falls back to defaultModel).
+	modelResolver func(agentID string) string
 }
 
 func NewSubagentManager(
@@ -59,6 +62,16 @@ func (sm *SubagentManager) SetLLMOptions(maxTokens int, temperature float64) {
 	sm.hasMaxTokens = true
 	sm.temperature = temperature
 	sm.hasTemperature = true
+}
+
+// SetModelResolver sets a function to resolve agentID to model name.
+// When spawn is called with agent_id, this resolver is used to get the
+// target agent's configured model. If the resolver returns empty string
+// or is not set, falls back to the defaultModel.
+func (sm *SubagentManager) SetModelResolver(resolver func(agentID string) string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.modelResolver = resolver
 }
 
 // SetTools sets the tool registry for subagent execution.
@@ -147,7 +160,17 @@ After completing the task, provide a clear summary of what was done.`
 	temperature := sm.temperature
 	hasMaxTokens := sm.hasMaxTokens
 	hasTemperature := sm.hasTemperature
+	modelResolver := sm.modelResolver
+	defaultModel := sm.defaultModel
 	sm.mu.RUnlock()
+
+	// Resolve target agent model if agentID is specified
+	model := defaultModel
+	if task.AgentID != "" && modelResolver != nil {
+		if resolvedModel := modelResolver(task.AgentID); resolvedModel != "" {
+			model = resolvedModel
+		}
+	}
 
 	var llmOptions map[string]any
 	if hasMaxTokens || hasTemperature {
@@ -162,7 +185,7 @@ After completing the task, provide a clear summary of what was done.`
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
 		Provider:      sm.provider,
-		Model:         sm.defaultModel,
+		Model:         model,
 		Tools:         tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
