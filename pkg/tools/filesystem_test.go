@@ -521,6 +521,55 @@ func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
 	}
 }
 
+func TestWhitelistFs_BlocksSymlinkEscapeInAllowedDir(t *testing.T) {
+	workspace := t.TempDir()
+	allowedDir := t.TempDir()
+	secretDir := t.TempDir()
+	secretFile := filepath.Join(secretDir, "secret.txt")
+	if err := os.WriteFile(secretFile, []byte("top secret"), 0o644); err != nil {
+		t.Fatalf("WriteFile(secretFile) error = %v", err)
+	}
+
+	linkPath := filepath.Join(allowedDir, "link_out")
+	if err := os.Symlink(secretDir, linkPath); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(allowedDir))}
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
+
+	result := tool.Execute(context.Background(), map[string]any{"path": filepath.Join(linkPath, "secret.txt")})
+	if !result.IsError {
+		t.Fatalf("expected symlink escape from allowed dir to be blocked, got: %s", result.ForLLM)
+	}
+}
+
+func TestWhitelistFs_WriteAllowsNewFileUnderAllowedDir(t *testing.T) {
+	workspace := t.TempDir()
+	rootDir := t.TempDir()
+	allowedDir := filepath.Join(rootDir, "allowed")
+	targetFile := filepath.Join(allowedDir, "nested", "file.txt")
+
+	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(allowedDir))}
+	tool := NewWriteFileTool(workspace, true, patterns)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    targetFile,
+		"content": "outside write",
+	})
+	if result.IsError {
+		t.Fatalf("expected whitelisted write to succeed, got: %s", result.ForLLM)
+	}
+
+	data, err := os.ReadFile(targetFile)
+	if err != nil {
+		t.Fatalf("ReadFile(targetFile) error = %v", err)
+	}
+	if string(data) != "outside write" {
+		t.Fatalf("target file content = %q, want %q", string(data), "outside write")
+	}
+}
+
 // TestReadFileTool_ChunkedReading verifies the pagination logic of the tool
 // by reading a file in multiple chunks using 'offset' and 'length'.
 func TestReadFileTool_ChunkedReading(t *testing.T) {

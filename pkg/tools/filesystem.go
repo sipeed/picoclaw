@@ -20,8 +20,7 @@ import (
 
 const MaxReadFileSize = 64 * 1024 // 64KB limit to avoid context overflow
 
-// validatePath ensures the given path is within the workspace if restrict is true.
-func validatePath(path, workspace string, restrict bool) (string, error) {
+func validatePathWithAllowPaths(path, workspace string, restrict bool, patterns []*regexp.Regexp) (string, error) {
 	if workspace == "" {
 		return path, fmt.Errorf("workspace is not defined")
 	}
@@ -42,6 +41,10 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 	}
 
 	if restrict {
+		if isAllowedPath(absPath, patterns) {
+			return absPath, nil
+		}
+
 		if !isWithinWorkspace(absPath, absWorkspace) {
 			return "", fmt.Errorf("access denied: path is outside the workspace")
 		}
@@ -73,11 +76,64 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 	return absPath, nil
 }
 
+func isAllowedPath(path string, patterns []*regexp.Regexp) bool {
+	if len(patterns) == 0 {
+		return false
+	}
+
+	cleaned := filepath.Clean(path)
+	if !filepath.IsAbs(cleaned) {
+		return false
+	}
+	if !matchesAllowedPath(cleaned, patterns) {
+		return false
+	}
+
+	resolved, err := resolvePathAgainstExistingAncestor(cleaned)
+	if err != nil {
+		return false
+	}
+
+	return matchesAllowedPath(resolved, patterns)
+}
+
+func matchesAllowedPath(path string, patterns []*regexp.Regexp) bool {
+	for _, pattern := range patterns {
+		if pattern.MatchString(path) {
+			return true
+		}
+	}
+	return false
+}
+
 func resolveExistingAncestor(path string) (string, error) {
 	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
 		if resolved, err := filepath.EvalSymlinks(current); err == nil {
 			return resolved, nil
 		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		if filepath.Dir(current) == current {
+			return "", os.ErrNotExist
+		}
+	}
+}
+
+func resolvePathAgainstExistingAncestor(path string) (string, error) {
+	cleaned := filepath.Clean(path)
+	for current := cleaned; ; current = filepath.Dir(current) {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			suffix, relErr := filepath.Rel(current, cleaned)
+			if relErr != nil {
+				return "", relErr
+			}
+			if suffix == "." {
+				return filepath.Clean(resolved), nil
+			}
+			return filepath.Clean(filepath.Join(resolved, suffix)), nil
+		}
+		if !os.IsNotExist(err) {
 			return "", err
 		}
 		if filepath.Dir(current) == current {
@@ -625,12 +681,7 @@ type whitelistFs struct {
 }
 
 func (w *whitelistFs) matches(path string) bool {
-	for _, p := range w.patterns {
-		if p.MatchString(path) {
-			return true
-		}
-	}
-	return false
+	return isAllowedPath(path, w.patterns)
 }
 
 func (w *whitelistFs) ReadFile(path string) ([]byte, error) {
