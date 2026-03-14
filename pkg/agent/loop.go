@@ -66,8 +66,6 @@ type AgentLoop struct {
 	mcp mcpRuntime
 
 	mu sync.RWMutex
-	// Track active requests for safe provider cleanup
-	activeRequests sync.WaitGroup
 
 	providerCache map[string]providers.LLMProvider
 
@@ -2263,69 +2261,6 @@ func (al *AgentLoop) runLLMIteration(
 	return finalContent, iteration, nil
 }
 
-// selectCandidates returns the model candidates and resolved model name to use
-// for a conversation turn. When model routing is configured and the incoming
-// message scores below the complexity threshold, it returns the light model
-// candidates instead of the primary ones.
-//
-// The returned (candidates, model) pair is used for all LLM calls within one
-// turn — tool follow-up iterations use the same tier as the initial call so
-// that a multi-step tool chain doesn't switch models mid-way.
-func (al *AgentLoop) selectCandidates(
-	agent *AgentInstance,
-	userMsg string,
-	history []providers.Message,
-) (candidates []providers.FallbackCandidate, model string) {
-	if agent.Router == nil || len(agent.LightCandidates) == 0 {
-		return agent.Candidates, agent.Model
-	}
-
-	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
-	if !usedLight {
-		logger.DebugCF("agent", "Model routing: primary model selected",
-			map[string]any{
-				"agent_id":  agent.ID,
-				"score":     score,
-				"threshold": agent.Router.Threshold(),
-			})
-		return agent.Candidates, agent.Model
-	}
-
-	logger.InfoCF("agent", "Model routing: light model selected",
-		map[string]any{
-			"agent_id":    agent.ID,
-			"light_model": agent.Router.LightModel(),
-			"score":       score,
-			"threshold":   agent.Router.Threshold(),
-		})
-	return agent.LightCandidates, agent.Router.LightModel()
-}
-
-// findNearestUserMessage finds the nearest user message to the given index.
-// It searches backward first, then forward if no user message is found.
-func (al *AgentLoop) findNearestUserMessage(messages []providers.Message, mid int) int {
-	originalMid := mid
-
-	for mid > 0 && messages[mid].Role != "user" {
-		mid--
-	}
-
-	if messages[mid].Role == "user" {
-		return mid
-	}
-
-	mid = originalMid
-	for mid < len(messages) && messages[mid].Role != "user" {
-		mid++
-	}
-
-	if mid < len(messages) {
-		return mid
-	}
-
-	return originalMid
-}
-
 // callLLMWithRetry calls the LLM with streaming support, fallback chain,
 // and retry logic for timeout and context window errors.
 func (al *AgentLoop) callLLMWithRetry(
@@ -2655,42 +2590,6 @@ func (al *AgentLoop) publishToolMedia(ctx context.Context, result *tools.ToolRes
 		ChatID:  opts.ChatID,
 		Parts:   parts,
 	})
-}
-
-func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOptions) *commands.Runtime {
-	registry := al.GetRegistry()
-	cfg := al.GetConfig()
-	rt := &commands.Runtime{
-		Config:          cfg,
-		ListAgentIDs:    registry.ListAgentIDs,
-		ListDefinitions: al.cmdRegistry.Definitions,
-		GetEnabledChannels: func() []string {
-			if al.channelManager == nil {
-				return nil
-			}
-			return al.channelManager.GetEnabledChannels()
-		},
-		SwitchChannel: func(value string) error {
-			if al.channelManager == nil {
-				return fmt.Errorf("channel manager not initialized")
-			}
-			if _, exists := al.channelManager.GetChannel(value); !exists && value != "cli" {
-				return fmt.Errorf("channel '%s' not found or not enabled", value)
-			}
-			return nil
-		},
-	}
-	if agent != nil {
-		rt.GetModelInfo = func() (string, string) {
-			return agent.Model, cfg.Agents.Defaults.Provider
-		}
-		rt.SwitchModel = func(value string) (string, error) {
-			oldModel := agent.Model
-			agent.Model = value
-			return oldModel, nil
-		}
-	}
-	return rt
 }
 
 // forceTextResponse makes a final LLM call without tools when max iterations

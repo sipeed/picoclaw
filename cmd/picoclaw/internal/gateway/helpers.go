@@ -295,7 +295,8 @@ func setupAndStartServices(
 		if strings.HasPrefix(webAppURL, "https://") {
 			hostname, tsErr := tailscale.DetectHostname()
 			if tsErr != nil {
-				logger.ErrorCF("miniapp", "HTTPS URL configured but Tailscale not available", map[string]any{"error": tsErr.Error()})
+				logger.ErrorCF("miniapp", "HTTPS URL configured but Tailscale not available",
+					map[string]any{"error": tsErr.Error()})
 			} else {
 				certDir := filepath.Join(cfg.WorkspacePath(), "state", "certs")
 				certFile, keyFile, certErr := tailscale.FetchCert(hostname, certDir)

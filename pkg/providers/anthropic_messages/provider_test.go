@@ -137,7 +137,9 @@ func TestBuildRequestBody(t *testing.T) {
 					Function: ToolFunctionDefinition{
 						Name:        "get_weather",
 						Description: "Get current weather",
-						Parameters: json.RawMessage(`{"type":"object","properties":{"location":{"type":"string","description":"City name"}}}`),
+						Parameters: json.RawMessage(
+							`{"type":"object","properties":{"location":{"type":"string","description":"City name"}}}`,
+						),
 					},
 				},
 			},

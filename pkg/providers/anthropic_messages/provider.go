@@ -270,7 +270,7 @@ func buildRequestBody(
 func buildTools(tools []ToolDefinition) []any {
 	result := make([]any, len(tools))
 	for i, tool := range tools {
-		// Unmarshal Parameters (json.RawMessage) into map so it serialises
+		// Unmarshal Parameters (json.RawMessage) into map so it serializes
 		// correctly as a nested JSON object rather than a raw byte string.
 		var schema any
 		if len(tool.Function.Parameters) > 0 {
