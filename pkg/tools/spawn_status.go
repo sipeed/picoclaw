@@ -25,11 +25,12 @@ func (t *SpawnStatusTool) Name() string {
 }
 
 func (t *SpawnStatusTool) Description() string {
-	return "Get the status of spawned subagents associated with the current tool context " +
-		"(for example, the current channel or chat). Returns a list of all such subagents " +
-		"and their current state (running, completed, failed, or canceled), or retrieves " +
-		"details for a specific subagent task when task_id is provided. If the tool is " +
-		"invoked without any associated context, the result will be empty."
+	return "Get the status of spawned subagents. " +
+		"Returns a list of all subagents and their current state " +
+		"(running, completed, failed, or canceled), or retrieves details " +
+		"for a specific subagent task when task_id is provided. " +
+		"Results are scoped to the current conversation when a channel/chat " +
+		"context is available; without context (e.g. CLI), all tasks are listed."
 }
 
 func (t *SpawnStatusTool) Parameters() map[string]any {
@@ -39,8 +40,7 @@ func (t *SpawnStatusTool) Parameters() map[string]any {
 			"task_id": map[string]any{
 				"type": "string",
 				"description": "Optional task ID (e.g. \"subagent-1\") to inspect a specific " +
-					"subagent. When omitted, all known subagents in the current tool context " +
-					"are listed; if the tool has no associated context, the result will be empty.",
+					"subagent. When omitted, all visible subagents are listed.",
 			},
 		},
 		"required": []string{},
