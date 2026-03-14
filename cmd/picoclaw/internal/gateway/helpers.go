@@ -274,7 +274,7 @@ func setupAndStartServices(
 	if cfg.Channels.Telegram.Enabled {
 		webAppURL := cfg.Channels.Telegram.WebAppURL
 		if webAppURL == "" {
-			// Auto-detect Tailscale hostname and fetch TLS cert
+			// Auto-detect Tailscale hostname and build the WebAppURL
 			hostname, tsErr := tailscale.DetectHostname()
 			if tsErr != nil {
 				logger.InfoCF(
@@ -283,14 +283,25 @@ func setupAndStartServices(
 					map[string]any{"error": tsErr.Error()},
 				)
 			} else {
+				hostPort := net.JoinHostPort(hostname, strconv.Itoa(cfg.Gateway.Port))
+				webAppURL = "https://" + hostPort + "/miniapp"
+				cfg.Channels.Telegram.WebAppURL = webAppURL
+			}
+		}
+
+		// When the URL is HTTPS, fetch a TLS certificate from Tailscale so
+		// the server can actually serve over TLS. This covers both the
+		// auto-detected case above and a manually configured https:// URL.
+		if strings.HasPrefix(webAppURL, "https://") {
+			hostname, tsErr := tailscale.DetectHostname()
+			if tsErr != nil {
+				logger.ErrorCF("miniapp", "HTTPS URL configured but Tailscale not available", map[string]any{"error": tsErr.Error()})
+			} else {
 				certDir := filepath.Join(cfg.WorkspacePath(), "state", "certs")
 				certFile, keyFile, certErr := tailscale.FetchCert(hostname, certDir)
 				if certErr != nil {
 					logger.ErrorCF("miniapp", "Failed to fetch TLS cert", map[string]any{"error": certErr.Error()})
 				} else {
-					hostPort := net.JoinHostPort(hostname, strconv.Itoa(cfg.Gateway.Port))
-					webAppURL = "https://" + hostPort + "/miniapp"
-					cfg.Channels.Telegram.WebAppURL = webAppURL
 					tlsCert, tlsKey = certFile, keyFile
 					useTLS = true
 				}
