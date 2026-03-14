@@ -507,6 +507,10 @@ func extractContent(messageType, rawContent string) string {
 		// Pass raw JSON to LLM — structured rich text is more informative than flattened plain text
 		return rawContent
 
+	case larkim.MsgTypeInteractive:
+		// Pass raw JSON to LLM — structured card is more informative than flattened text
+		return rawContent
+
 	case larkim.MsgTypeImage:
 		// Image messages don't have text content
 		return ""
@@ -542,6 +546,24 @@ func (c *FeishuChannel) downloadInboundMedia(
 		ref := c.downloadResource(ctx, messageID, imageKey, "image", ".jpg", store, scope)
 		if ref != "" {
 			refs = append(refs, ref)
+		}
+
+	case larkim.MsgTypeInteractive:
+		// Extract and download images embedded in interactive cards
+		feishuKeys, externalURLs := extractCardImageKeys(rawContent)
+		// Download Feishu-hosted images via API
+		for _, imageKey := range feishuKeys {
+			ref := c.downloadResource(ctx, messageID, imageKey, "image", ".jpg", store, scope)
+			if ref != "" {
+				refs = append(refs, ref)
+			}
+		}
+		// Download external images via HTTP
+		for _, imageURL := range externalURLs {
+			ref := c.downloadExternalImage(ctx, imageURL, store, scope)
+			if ref != "" {
+				refs = append(refs, ref)
+			}
 		}
 
 	case larkim.MsgTypeFile, larkim.MsgTypeAudio, larkim.MsgTypeMedia:
@@ -662,9 +684,110 @@ func (c *FeishuChannel) downloadResource(
 	return ref
 }
 
+// downloadExternalImage downloads an image from an external URL and stores it in MediaStore.
+// Returns the media reference on success, or empty string on failure.
+func (c *FeishuChannel) downloadExternalImage(
+	ctx context.Context,
+	imageURL string,
+	store media.MediaStore,
+	scope string,
+) string {
+	// Create HTTP request with context
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		logger.ErrorCF("feishu", "Failed to create request for external image", map[string]any{
+			"url":   imageURL,
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	// Download image
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		logger.ErrorCF("feishu", "Failed to download external image", map[string]any{
+			"url":   imageURL,
+			"error": err.Error(),
+		})
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		logger.ErrorCF("feishu", "External image download failed with status", map[string]any{
+			"url":    imageURL,
+			"status": resp.StatusCode,
+		})
+		return ""
+	}
+
+	// Determine filename from URL path
+	filename := filepath.Base(imageURL)
+	if filename == "" || filename == "." || filename == "/" {
+		filename = "external_image"
+	}
+	// Ensure we have an extension for images
+	if filepath.Ext(filename) == "" {
+		filename += ".jpg"
+	}
+
+	// Write to the shared picoclaw_media directory using a unique name to avoid collisions.
+	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	if mkdirErr := os.MkdirAll(mediaDir, 0o700); mkdirErr != nil {
+		logger.ErrorCF("feishu", "Failed to create media directory", map[string]any{
+			"error": mkdirErr.Error(),
+		})
+		return ""
+	}
+	ext := filepath.Ext(filename)
+	localPath := filepath.Join(mediaDir, utils.SanitizeFilename(fmt.Sprintf("ext_%d%s", rand.Int63(), ext)))
+
+	out, err := os.Create(localPath)
+	if err != nil {
+		logger.ErrorCF("feishu", "Failed to create temp file for external image", map[string]any{
+			"path":  localPath,
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		out.Close()
+		os.Remove(localPath)
+		logger.ErrorCF("feishu", "Failed to write external image to file", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+	out.Close()
+
+	// Store in MediaStore
+	ref, err := store.Store(localPath, media.MediaMeta{
+		Filename: filename,
+		Source:   "feishu_external",
+	}, scope)
+	if err != nil {
+		logger.ErrorCF("feishu", "Failed to store external image", map[string]any{
+			"url":   imageURL,
+			"error": err.Error(),
+		})
+		os.Remove(localPath)
+		return ""
+	}
+
+	return ref
+}
+
 // appendMediaTags appends media type tags to content (like Telegram's "[image: photo]").
+// For interactive cards, media tags are not appended because content is raw JSON
+// and appending would produce invalid JSON format.
 func appendMediaTags(content, messageType string, mediaRefs []string) string {
 	if len(mediaRefs) == 0 {
+		return content
+	}
+
+	// Don't append tags to JSON content (interactive cards) - would produce invalid JSON
+	if messageType == larkim.MsgTypeInteractive {
 		return content
 	}
 
