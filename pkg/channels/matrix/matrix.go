@@ -42,35 +42,35 @@ const (
 
 var matrixMentionHrefRegexp = regexp.MustCompile(`(?i)<a[^>]+href=["']([^"']+)["']`)
 
-// matrixHTMLRenderer wraps the standard gomarkdown HTML renderer and suppresses <p>
-// wrappers throughout the document. Matrix clients apply default browser paragraph
-// margins to <p> elements, which stack with the margins of surrounding block elements
-// (lists, code blocks, headings) and produce excessive vertical spacing. Instead we
-// emit a single <br> between consecutive paragraphs for visual separation; adjacent
-// block-level elements already carry their own CSS margin.
+// matrixHTMLRenderer wraps the standard gomarkdown HTML renderer and adjusts
+// paragraph and code-block rendering for Matrix clients.
+//
+// Paragraph <p> wrappers are suppressed when the paragraph is the only child
+// of its parent (plain messages) or when it lives inside a list item (to avoid
+// margin stacking). Code-block content is dedented so that incidentally
+// indented snippets render flush-left.
 type matrixHTMLRenderer struct {
 	*mdhtml.Renderer
 }
 
 func (r *matrixHTMLRenderer) RenderNode(w io.Writer, node mdast.Node, entering bool) mdast.WalkStatus {
-	if _, ok := node.(*mdast.Paragraph); ok {
-		if !entering {
-			// Between consecutive paragraphs emit a line break for separation.
-			// Before block siblings (lists, headings, code blocks) their own margin suffices.
-			siblings := node.GetParent().GetChildren()
-			for i, child := range siblings {
-				if child == node && i+1 < len(siblings) {
-					if _, ok := siblings[i+1].(*mdast.Paragraph); ok {
-						io.WriteString(w, "<br>") //nolint:errcheck
-					}
-					break
-				}
-			}
-		}
+	if p, ok := node.(*mdast.Paragraph); ok && matrixSuppressParagraph(p) {
 		return mdast.GoToNext
 	}
 	return r.Renderer.RenderNode(w, node, entering)
 }
+
+func matrixSuppressParagraph(p *mdast.Paragraph) bool {
+	parent := p.GetParent()
+	if parent == nil {
+		return true
+	}
+	if _, ok := parent.(*mdast.ListItem); ok {
+		return true
+	}
+	return len(parent.GetChildren()) <= 1
+}
+
 
 type roomKindCacheEntry struct {
 	isGroup   bool

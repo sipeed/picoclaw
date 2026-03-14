@@ -404,11 +404,14 @@ func TestMarkdownToHTML(t *testing.T) {
 </ul>`,
 		},
 		{
-			name: "paragraph before list has no <p> wrapper",
-			md:   "Introduction text.\n\n- Point one\n",
-			rendered: `Introduction text.<ul>
-<li>Point one</li>
-</ul>`,
+			name:     "paragraph before list",
+			md:       "Introduction text.\n\n- Point one\n",
+			rendered: "<p>Introduction text.</p>\n\n<ul>\n<li>Point one</li>\n</ul>",
+		},
+		{
+			name:     "comprehensive document with headings, paragraphs, list, and code block",
+			md:       "# Overview\n\nThis is a sample document designed to demonstrate various Markdown elements in a single block of text.\n\nThe first paragraph introduces the concept of structured data.\n\n## Details\n\nThe following is a list:\n\n*   First\n*   Second\n*   Third\n\nThe second paragraph focuses on details. Below is a generic code snippet:\n\n```python\ndef calculate_area(radius):\n    import math\n    return math.pi * (radius ** 2)\n```\n\nThis concludes the generic sample text.\n",
+			rendered: "<h1 id=\"overview\">Overview</h1>\n\n<p>This is a sample document designed to demonstrate various Markdown elements in a single block of text.</p>\n\n<p>The first paragraph introduces the concept of structured data.</p>\n\n<h2 id=\"details\">Details</h2>\n\n<p>The following is a list:</p>\n\n<ul>\n<li>First</li>\n<li>Second</li>\n<li>Third</li>\n</ul>\n\n<p>The second paragraph focuses on details. Below is a generic code snippet:</p>\n\n<pre><code class=\"language-python\">def calculate_area(radius):\n    import math\n    return math.pi * (radius ** 2)\n</code></pre>\n\n<p>This concludes the generic sample text.</p>",
 		},
 	}
 
