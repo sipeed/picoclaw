@@ -391,6 +391,14 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	if chatType != "" {
 		metadata["chat_type"] = chatType
 	}
+	rootID := stringValue(message.RootId)
+	parentID := stringValue(message.ParentId)
+	if rootID != "" {
+		metadata["root_id"] = rootID
+	}
+	if parentID != "" {
+		metadata["parent_id"] = parentID
+	}
 	if sender != nil && sender.TenantKey != nil {
 		metadata["tenant_key"] = *sender.TenantKey
 	}
@@ -417,6 +425,13 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		content = cleaned
 	}
 
+	// Prepend quoted (parent) message content so the LLM sees the reply context.
+	if parentID != "" {
+		if quoted := c.fetchQuotedContent(ctx, parentID); quoted != "" {
+			content = fmt.Sprintf("[quoted message]: %s\n\n%s", quoted, content)
+		}
+	}
+
 	logger.InfoCF("feishu", "Feishu message received", map[string]any{
 		"sender_id":  senderID,
 		"chat_id":    chatID,
@@ -429,6 +444,45 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 }
 
 // --- Internal helpers ---
+
+// fetchQuotedContent retrieves the text content of the parent (quoted) message via API.
+// Returns empty string on any failure so the caller can silently skip.
+func (c *FeishuChannel) fetchQuotedContent(ctx context.Context, parentMsgID string) string {
+	req := larkim.NewGetMessageReqBuilder().
+		MessageId(parentMsgID).
+		Build()
+
+	resp, err := c.client.Im.V1.Message.Get(ctx, req)
+	if err != nil {
+		logger.DebugCF("feishu", "Failed to fetch quoted message", map[string]any{
+			"parent_id": parentMsgID,
+			"error":     err.Error(),
+		})
+		return ""
+	}
+	if !resp.Success() {
+		logger.DebugCF("feishu", "Quoted message API error", map[string]any{
+			"parent_id": parentMsgID,
+			"code":      resp.Code,
+			"msg":       resp.Msg,
+		})
+		return ""
+	}
+
+	if resp.Data == nil || len(resp.Data.Items) == 0 {
+		return ""
+	}
+
+	msg := resp.Data.Items[0]
+	msgType := stringValue(msg.MsgType)
+	bodyContent := ""
+	if msg.Body != nil {
+		bodyContent = stringValue(msg.Body.Content)
+	}
+
+	text := extractContent(msgType, bodyContent)
+	return utils.Truncate(text, 200)
+}
 
 // fetchBotOpenID calls the Feishu bot info API to retrieve and store the bot's open_id.
 func (c *FeishuChannel) fetchBotOpenID(ctx context.Context) error {
