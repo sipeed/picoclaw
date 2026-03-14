@@ -472,6 +472,90 @@ func (cb *ContextBuilder) buildDynamicContext(channel, chatID string) string {
 	return sb.String()
 }
 
+
+func safePathSegment(v string) (string, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" || v == "." || v == ".." {
+		return "", false
+	}
+	if strings.ContainsAny(v, `/\`) {
+		return "", false
+	}
+	return v, true
+}
+
+// loadUserMemoryContext loads optional per-user memory content.
+// Supported lookup roots (in order):
+// 1) <workspace>/users/<channel>/<chatID>
+// 2) <workspace>/users/<chatID>
+//
+// For each root, it reads:
+// - MEMORY.md or memory/MEMORY.md (long-term)
+// - memory/YYYYMM/YYYYMMDD.md for recent daily notes (last 3 days)
+func (cb *ContextBuilder) loadUserMemoryContext(channel, chatID string) string {
+	channelSeg, okChannel := safePathSegment(channel)
+	chatSeg, okChat := safePathSegment(chatID)
+	if !okChat {
+		return ""
+	}
+
+	roots := []string{}
+	if okChannel {
+		roots = append(roots, filepath.Join(cb.workspace, "users", channelSeg, chatSeg))
+	}
+	roots = append(roots, filepath.Join(cb.workspace, "users", chatSeg))
+
+	for _, root := range roots {
+		longTerm := ""
+		for _, longTermPath := range []string{filepath.Join(root, "MEMORY.md"), filepath.Join(root, "memory", "MEMORY.md")} {
+			if data, err := os.ReadFile(longTermPath); err == nil {
+				text := strings.TrimSpace(string(data))
+				if text != "" {
+					longTerm = text
+					break
+				}
+			}
+		}
+
+		recentNotes := ""
+		memoryDir := filepath.Join(root, "memory")
+		for i := range 3 {
+			date := time.Now().AddDate(0, 0, -i).Format("20060102")
+			notePath := filepath.Join(memoryDir, date[:6], date+".md")
+			if data, err := os.ReadFile(notePath); err == nil {
+				text := strings.TrimSpace(string(data))
+				if text != "" {
+					if recentNotes != "" {
+						recentNotes += "\n\n---\n\n"
+					}
+					recentNotes += text
+				}
+			}
+		}
+
+		if longTerm == "" && recentNotes == "" {
+			continue
+		}
+
+		var sb strings.Builder
+		sb.WriteString("## User-specific Memory\n\n")
+		if longTerm != "" {
+			sb.WriteString("### Long-term Memory\n\n")
+			sb.WriteString(longTerm)
+		}
+		if recentNotes != "" {
+			if longTerm != "" {
+				sb.WriteString("\n\n")
+			}
+			sb.WriteString("### Recent Daily Notes\n\n")
+			sb.WriteString(recentNotes)
+		}
+		return sb.String()
+	}
+
+	return ""
+}
+
 func (cb *ContextBuilder) BuildMessages(
 	history []providers.Message,
 	summary string,
@@ -494,6 +578,7 @@ func (cb *ContextBuilder) BuildMessages(
 
 	// Build short dynamic context (time, runtime, session) — changes per request
 	dynamicCtx := cb.buildDynamicContext(channel, chatID)
+	userMemoryCtx := cb.loadUserMemoryContext(channel, chatID)
 
 	// Compose a single system message: static (cached) + dynamic + optional summary.
 	// Keeping all system content in one message ensures every provider adapter can
@@ -509,6 +594,11 @@ func (cb *ContextBuilder) BuildMessages(
 	contentBlocks := []providers.ContentBlock{
 		{Type: "text", Text: staticPrompt, CacheControl: &providers.CacheControl{Type: "ephemeral"}},
 		{Type: "text", Text: dynamicCtx},
+	}
+
+	if userMemoryCtx != "" {
+		stringParts = append(stringParts, userMemoryCtx)
+		contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: userMemoryCtx})
 	}
 
 	if summary != "" {
