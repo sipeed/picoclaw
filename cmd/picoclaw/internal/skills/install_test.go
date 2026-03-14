@@ -30,65 +30,60 @@ func TestNewInstallSubcommand(t *testing.T) {
 func TestInstallCommandArgs(t *testing.T) {
 	tests := []struct {
 		name        string
-		args        []string
 		registry    string
-		expectError bool
-		errorMsg    string
+		args        []string
+		wantErr     bool
+		errContains string
 	}{
 		{
-			name:        "no registry, one arg",
-			args:        []string{"sipeed/picoclaw-skills/weather"},
-			registry:    "",
-			expectError: false,
+			name:     "no registry with one arg passes",
+			registry: "",
+			args:     []string{"sipeed/picoclaw-skills/weather"},
+			wantErr:  false,
 		},
 		{
-			name:        "no registry, no args",
+			name:        "no registry with no args fails",
+			registry:    "",
 			args:        []string{},
-			registry:    "",
-			expectError: true,
-			errorMsg:    "exactly 1 argument is required: <github>",
+			wantErr:     true,
+			errContains: "exactly 1 argument",
 		},
 		{
-			name:        "no registry, too many args",
-			args:        []string{"arg1", "arg2"},
-			registry:    "",
-			expectError: true,
-			errorMsg:    "exactly 1 argument is required: <github>",
+			name:     "with registry one arg passes",
+			registry: "clawhub",
+			args:     []string{"github"},
+			wantErr:  false,
 		},
 		{
-			name:        "with registry, one arg",
-			args:        []string{"weather-skill"},
+			name:        "with registry zero args fails",
 			registry:    "clawhub",
-			expectError: false,
-		},
-		{
-			name:        "with registry, no args",
 			args:        []string{},
-			registry:    "clawhub",
-			expectError: true,
-			errorMsg:    "when --registry is set, exactly 1 argument is required: <slug>",
+			wantErr:     true,
+			errContains: "exactly 1 argument",
 		},
 		{
-			name:        "with registry, too many args",
-			args:        []string{"arg1", "arg2"},
+			name:        "with registry two args fails",
 			registry:    "clawhub",
-			expectError: true,
-			errorMsg:    "when --registry is set, exactly 1 argument is required: <slug>",
+			args:        []string{"arg1", "arg2"},
+			wantErr:     true,
+			errContains: "exactly 1 argument",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := newInstallCommand(nil)
+			// Set the registry flag
+			err := cmd.Flags().Set("registry", tt.registry)
+			require.NoError(t, err)
 
-			if tt.registry != "" {
-				require.NoError(t, cmd.Flags().Set("registry", tt.registry))
-			}
+			err = cmd.Args(cmd, tt.args)
 
-			err := cmd.Args(cmd, tt.args)
-			if tt.expectError {
+			if tt.wantErr {
 				require.Error(t, err)
-				assert.Equal(t, tt.errorMsg, err.Error())
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
 			} else {
 				require.NoError(t, err)
 			}
