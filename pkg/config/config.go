@@ -271,6 +271,7 @@ type ChannelsConfig struct {
 	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
 	Pico       PicoConfig       `json:"pico"`
 	IRC        IRCConfig        `json:"irc"`
+	Signal     SignalConfig     `json:"signal"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
@@ -488,6 +489,15 @@ type IRCConfig struct {
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_IRC_REASONING_CHANNEL_ID"`
+}
+
+type SignalConfig struct {
+	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_SIGNAL_ENABLED"`
+	Account            string              `json:"account"                 env:"PICOCLAW_CHANNELS_SIGNAL_ACCOUNT"`
+	SignalCLIURL       string              `json:"signal_cli_url"          env:"PICOCLAW_CHANNELS_SIGNAL_CLI_URL"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_SIGNAL_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_SIGNAL_REASONING_CHANNEL_ID"`
 }
 
 type HeartbeatConfig struct {
