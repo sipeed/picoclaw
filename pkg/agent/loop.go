@@ -68,7 +68,6 @@ type processOptions struct {
 
 const (
 	defaultResponse           = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
-	sessionKeyAgentPrefix     = "agent:"
 	metadataKeyAccountID      = "account_id"
 	metadataKeyGuildID        = "guild_id"
 	metadataKeyTeamID         = "team_id"
@@ -774,7 +773,7 @@ func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.Resolv
 }
 
 func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
-	if msgSessionKey != "" && strings.HasPrefix(msgSessionKey, sessionKeyAgentPrefix) {
+	if msgSessionKey != "" {
 		return msgSessionKey
 	}
 	return route.SessionKey
