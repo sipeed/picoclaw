@@ -43,18 +43,6 @@ func (pc *picoConn) addSession(sessionID string) {
 	pc.sessions[sessionID] = struct{}{}
 }
 
-// removeSession removes a session ID from this connection.
-func (pc *picoConn) removeSession(sessionID string) {
-	if sessionID == "" || sessionID == pc.sessionID {
-		return
-	}
-
-	pc.sessionsMu.Lock()
-	defer pc.sessionsMu.Unlock()
-
-	delete(pc.sessions, sessionID)
-}
-
 // hasSession checks if this connection belongs to a session.
 func (pc *picoConn) hasSession(sessionID string) bool {
 	if sessionID == "" {
