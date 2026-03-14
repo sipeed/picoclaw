@@ -12,6 +12,9 @@ services:
     #extra_hosts:
     #  - "host.docker.internal:host-gateway"
     volumes:
+      # Persistent PicoClaw home. Custom local skills should be placed under
+      # ./data/workspace/skills on the host so they appear at
+      # /root/.picoclaw/workspace/skills inside the container.
       - ./data:/root/.picoclaw
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
@@ -31,6 +34,9 @@ services:
     #extra_hosts:
     #  - "host.docker.internal:host-gateway"
     volumes:
+      # Persistent PicoClaw home. Custom local skills should be placed under
+      # ./data/workspace/skills on the host so they appear at
+      # /root/.picoclaw/workspace/skills inside the container.
       - ./data:/root/.picoclaw
 
   # ─────────────────────────────────────────────
@@ -49,4 +55,7 @@ services:
       - "127.0.0.1:18800:18800"
       - "127.0.0.1:18790:18790"
     volumes:
+      # Persistent PicoClaw home. Custom local skills should be placed under
+      # ./data/workspace/skills on the host so they appear at
+      # /root/.picoclaw/workspace/skills inside the container.
       - ./data:/root/.picoclaw
