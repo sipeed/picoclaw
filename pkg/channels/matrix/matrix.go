@@ -726,9 +726,17 @@ func (c *MatrixChannel) downloadMedia(
 	reqCtx, cancel := context.WithTimeout(dlCtx, 20*time.Second)
 	defer cancel()
 
+	// Reject oversized media after download. The mautrix SDK only exposes
+	// DownloadBytes (no streaming variant), so we cannot prevent the initial
+	// allocation. The 20s context timeout bounds the practical damage, and
+	// this check ensures oversized payloads are not persisted to disk.
+	const maxMediaSize = 50 << 20 // 50 MB
 	data, err := c.client.DownloadBytes(reqCtx, parsed)
 	if err != nil {
 		return "", err
+	}
+	if len(data) > maxMediaSize {
+		return "", fmt.Errorf("matrix media exceeds %d MB size limit", maxMediaSize/(1<<20))
 	}
 
 	// Encrypted attachments put URL in msgEvt.File and require client-side decryption.
