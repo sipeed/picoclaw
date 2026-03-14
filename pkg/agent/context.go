@@ -472,6 +472,47 @@ func (cb *ContextBuilder) buildDynamicContext(channel, chatID string) string {
 	return sb.String()
 }
 
+
+func safePathSegment(v string) (string, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" || v == "." || v == ".." {
+		return "", false
+	}
+	if strings.ContainsAny(v, `/\`) {
+		return "", false
+	}
+	return v, true
+}
+
+// loadUserMemoryContext loads optional per-user memory content.
+// Supported lookup order:
+// 1) <workspace>/users/<channel>/<chatID>/MEMORY.md
+// 2) <workspace>/users/<chatID>/MEMORY.md
+func (cb *ContextBuilder) loadUserMemoryContext(channel, chatID string) string {
+	channelSeg, okChannel := safePathSegment(channel)
+	chatSeg, okChat := safePathSegment(chatID)
+	if !okChat {
+		return ""
+	}
+
+	candidates := []string{}
+	if okChannel {
+		candidates = append(candidates, filepath.Join(cb.workspace, "users", channelSeg, chatSeg, "MEMORY.md"))
+	}
+	candidates = append(candidates, filepath.Join(cb.workspace, "users", chatSeg, "MEMORY.md"))
+
+	for _, p := range candidates {
+		if data, err := os.ReadFile(p); err == nil {
+			text := strings.TrimSpace(string(data))
+			if text != "" {
+				return "## User-specific Memory\n\n" + text
+			}
+		}
+	}
+
+	return ""
+}
+
 func (cb *ContextBuilder) BuildMessages(
 	history []providers.Message,
 	summary string,
@@ -494,6 +535,7 @@ func (cb *ContextBuilder) BuildMessages(
 
 	// Build short dynamic context (time, runtime, session) — changes per request
 	dynamicCtx := cb.buildDynamicContext(channel, chatID)
+	userMemoryCtx := cb.loadUserMemoryContext(channel, chatID)
 
 	// Compose a single system message: static (cached) + dynamic + optional summary.
 	// Keeping all system content in one message ensures every provider adapter can
@@ -509,6 +551,11 @@ func (cb *ContextBuilder) BuildMessages(
 	contentBlocks := []providers.ContentBlock{
 		{Type: "text", Text: staticPrompt, CacheControl: &providers.CacheControl{Type: "ephemeral"}},
 		{Type: "text", Text: dynamicCtx},
+	}
+
+	if userMemoryCtx != "" {
+		stringParts = append(stringParts, userMemoryCtx)
+		contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: userMemoryCtx})
 	}
 
 	if summary != "" {
