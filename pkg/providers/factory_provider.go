@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/providers/azure"
 	anthropicmessages "github.com/sipeed/picoclaw/pkg/providers/anthropic_messages"
+	"github.com/sipeed/picoclaw/pkg/providers/azure"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -102,7 +102,9 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			return nil, "", fmt.Errorf("api_key is required for azure protocol")
 		}
 		if cfg.APIBase == "" {
-			return nil, "", fmt.Errorf("api_base is required for azure protocol (e.g., https://your-resource.openai.azure.com)")
+			return nil, "", fmt.Errorf(
+				"api_base is required for azure protocol (e.g., https://your-resource.openai.azure.com)",
+			)
 		}
 		return azure.NewProviderWithTimeout(
 			cfg.APIKey,

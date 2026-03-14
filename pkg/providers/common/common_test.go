@@ -262,8 +262,12 @@ func TestHandleErrorResponse_JSONError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	resp, _ := http.Get(server.URL)
-	err := HandleErrorResponse(resp, server.URL)
+	resp, err := http.Get(server.URL)
+	if err != nil {
+		t.Fatalf("http.Get() error = %v", err)
+	}
+	defer resp.Body.Close()
+	err = HandleErrorResponse(resp, server.URL)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -283,8 +287,12 @@ func TestHandleErrorResponse_HTMLError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	resp, _ := http.Get(server.URL)
-	err := HandleErrorResponse(resp, server.URL)
+	resp, err := http.Get(server.URL)
+	if err != nil {
+		t.Fatalf("http.Get() error = %v", err)
+	}
+	defer resp.Body.Close()
+	err = HandleErrorResponse(resp, server.URL)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -302,7 +310,11 @@ func TestReadAndParseResponse_ValidJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	resp, _ := http.Get(server.URL)
+	resp, err := http.Get(server.URL)
+	if err != nil {
+		t.Fatalf("http.Get() error = %v", err)
+	}
+	defer resp.Body.Close()
 	out, err := ReadAndParseResponse(resp, server.URL)
 	if err != nil {
 		t.Fatalf("ReadAndParseResponse() error = %v", err)
@@ -319,8 +331,12 @@ func TestReadAndParseResponse_HTMLResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	resp, _ := http.Get(server.URL)
-	_, err := ReadAndParseResponse(resp, server.URL)
+	resp, err := http.Get(server.URL)
+	if err != nil {
+		t.Fatalf("http.Get() error = %v", err)
+	}
+	defer resp.Body.Close()
+	_, err = ReadAndParseResponse(resp, server.URL)
 	if err == nil {
 		t.Fatal("expected error for HTML response")
 	}
@@ -484,8 +500,12 @@ func TestHandleErrorResponse_EmptyBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	resp, _ := http.Get(server.URL)
-	err := HandleErrorResponse(resp, server.URL)
+	resp, err := http.Get(server.URL)
+	if err != nil {
+		t.Fatalf("http.Get() error = %v", err)
+	}
+	defer resp.Body.Close()
+	err = HandleErrorResponse(resp, server.URL)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -503,8 +523,12 @@ func TestReadAndParseResponse_InvalidJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	resp, _ := http.Get(server.URL)
-	_, err := ReadAndParseResponse(resp, server.URL)
+	resp, err := http.Get(server.URL)
+	if err != nil {
+		t.Fatalf("http.Get() error = %v", err)
+	}
+	defer resp.Body.Close()
+	_, err = ReadAndParseResponse(resp, server.URL)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
