@@ -76,22 +76,22 @@ func TestExtractContent(t *testing.T) {
 			want:        "",
 		},
 		{
-			name:        "interactive card with markdown content",
+			name:        "interactive card returns raw JSON",
 			messageType: "interactive",
 			rawContent:  `{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"Hello from card"}]}}`,
-			want:        "Hello from card",
+			want:        `{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"Hello from card"}]}}`,
 		},
 		{
-			name:        "interactive card with header and body",
+			name:        "interactive card with complex structure returns raw JSON",
 			messageType: "interactive",
 			rawContent:  `{"header":{"title":{"tag":"plain_text","content":"Title"}},"elements":[{"tag":"div","text":{"tag":"lark_md","content":"Card content"}}]}`,
-			want:        "Title\nCard content",
+			want:        `{"header":{"title":{"tag":"plain_text","content":"Title"}},"elements":[{"tag":"div","text":{"tag":"lark_md","content":"Card content"}}]}`,
 		},
 		{
-			name:        "interactive card invalid JSON returns empty",
+			name:        "interactive card invalid JSON returns as-is",
 			messageType: "interactive",
 			rawContent:  `not valid json`,
-			want:        "",
+			want:        `not valid json`,
 		},
 	}
 
