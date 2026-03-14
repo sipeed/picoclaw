@@ -23,9 +23,14 @@
 
 ---
 
-🦐 PicoClaw is an ultra-lightweight personal AI Assistant inspired by [nanobot](https://github.com/HKUDS/nanobot), refactored from the ground up in Go through a self-bootstrapping process, where the AI agent itself drove the entire architectural migration and code optimization.
+PicoClaw is a small Go runtime for running tool-using AI assistants on low-end Linux hardware. It is designed around one self-contained binary, a local workspace, configurable model providers, and chat-channel integrations.
 
-⚡️ Runs on $10 hardware with <10MB RAM: That's 99% less memory than OpenClaw and 98% cheaper than a Mac mini!
+The project is best understood as an execution-oriented agent runtime rather than just a prompt wrapper:
+
+- it receives work from Telegram, WhatsApp Native, CLI, and other channels
+- it routes each turn through models, tools, files, and APIs
+- it keeps per-agent or per-user workspace state on disk
+- it can run on low-cost boards, including RISC-V, ARM, MIPS, and x86 Linux systems
 
 <table align="center">
   <tr align="center">
@@ -52,26 +57,35 @@
 > * **Warning:** picoclaw is in early development now and may have unresolved network security issues. Do not deploy to production environments before the v1.0 release.
 > * **Note:** picoclaw has recently merged a lot of PRs, which may result in a larger memory footprint (10–20MB) in the latest versions. We plan to prioritize resource optimization as soon as the current feature set reaches a stable state.
 
-## 📢 News
+## 📌 What PicoClaw Is
 
-2026-02-16 🎉 PicoClaw hit 12K stars in one week! Thank you all for your support! PicoClaw is growing faster than we ever imagined. Given the high volume of PRs, we urgently need community maintainers. Our volunteer roles and roadmap are officially posted [here](ROADMAP.md) —we can’t wait to have you on board!
+PicoClaw aims to provide:
 
-2026-02-13 🎉 PicoClaw hit 5000 stars in 4days! Thank you for the community! There are so many PRs & issues coming in (during Chinese New Year holidays), we are finalizing the Project Roadmap and setting up the Developer Group to accelerate PicoClaw's development.  
-🚀 Call to Action: Please submit your feature requests in GitHub Discussions. We will review and prioritize them during our upcoming weekly meeting.
+- a small standalone agent runtime in Go
+- multi-provider model routing for text, images, and voice
+- local tool execution for files, shell, previews, scheduling, and integrations
+- deployment portability across low-resource Linux devices
+- a practical path to run conversational automation close to the device instead of only in a cloud dashboard
 
-2026-02-09 🎉 PicoClaw Launched! Built in 1 day to bring AI Agents to $10 hardware with <10MB RAM. 🦐 PicoClaw，Let's Go！
+## 📍 Current Status
 
-## ✨ Features
+Right now PicoClaw is suitable for experimentation, prototyping, and personal automation on trusted machines.
 
-🪶 **Ultra-Lightweight**: <10MB Memory footprint — 99% smaller than Clawdbot - core functionality.
+It is not yet a polished production platform. The project still has rough edges around:
 
-💰 **Minimal Cost**: Efficient enough to run on $10 Hardware — 98% cheaper than a Mac mini.
+- tool-call reliability
+- restart continuity for long jobs
+- guardrails for command execution
+- consistency between docs and live behavior
+- branch hygiene while the codebase is evolving quickly
 
-⚡️ **Lightning Fast**: 400X Faster startup time, boot in 1 second even in 0.6GHz single core.
+## ✨ Key Properties
 
-🌍 **True Portability**: Single self-contained binary across RISC-V, ARM, MIPS, and x86, One-click to Go!
-
-🤖 **AI-Bootstrapped**: Autonomous Go-native implementation — 95% Agent-generated core with human-in-the-loop refinement.
+- **Small runtime**: intended to stay lightweight enough for low-end boards
+- **Low-cost deployment**: can run on inexpensive Linux hardware instead of requiring a high-end local box
+- **Fast startup**: optimized for a compact Go binary instead of a heavier Node or Python stack
+- **Portable build target**: supports RISC-V, ARM, MIPS, and x86 Linux targets
+- **Execution-first design**: built around tools, workspaces, and real task execution rather than only chat responses
 
 |                               | OpenClaw      | NanoBot                  | **PicoClaw**                              |
 | ----------------------------- | ------------- | ------------------------ | ----------------------------------------- |
