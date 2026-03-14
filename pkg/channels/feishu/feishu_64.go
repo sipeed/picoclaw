@@ -508,8 +508,8 @@ func extractContent(messageType, rawContent string) string {
 		return rawContent
 
 	case larkim.MsgTypeInteractive:
-		// Extract text content from interactive card messages
-		return extractCardText(rawContent)
+		// Pass raw JSON to LLM — structured card is more informative than flattened text
+		return rawContent
 
 	case larkim.MsgTypeImage:
 		// Image messages don't have text content
