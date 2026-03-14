@@ -179,18 +179,22 @@ Identify protocol via prefix in `model` field:
     "defaults": {
       "model": "deepseek-chat"
     },
-    "coder": {
-      "model": "gpt-5.4",
-      "system_prompt": "You are a coding assistant..."
-    },
-    "translator": {
-      "model": "claude-sonnet-4.6"
-    }
+    "list": [
+      {
+        "id": "coder",
+        "default": true,
+        "model": "gpt-5.4"
+      },
+      {
+        "id": "translator",
+        "model": "claude-sonnet-4.6"
+      }
+    ]
   }
 }
 ```
 
-Each Agent only needs to specify `model` (corresponds to `model_name` in `model_list`).
+Each agent only needs to specify `model` (corresponds to `model_name` in `model_list`).
 
 ### 3.3 Industry Comparison
 

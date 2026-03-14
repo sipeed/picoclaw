@@ -3,12 +3,85 @@
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
+      "allow_read_outside_workspace": false,
       "model_name": "gpt-5.4",
+      "model_fallbacks": [
+        "claude-sonnet-4.6"
+      ],
+      "image_model": "gpt-5.4",
+      "image_model_fallbacks": [],
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20,
       "summarize_message_threshold": 20,
-      "summarize_token_percent": 75
+      "summarize_token_percent": 75,
+      "max_media_size": 20971520,
+      "routing": {
+        "enabled": false,
+        "light_model": "deepseek",
+        "threshold": 0.35
+      }
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true,
+        "name": "Main Assistant",
+        "model": "gpt-5.4",
+        "subagents": {
+          "allow_agents": [
+            "coder"
+          ]
+        }
+      },
+      {
+        "id": "coder",
+        "name": "Code Agent",
+        "workspace": "~/.picoclaw/workspace/code",
+        "model": {
+          "primary": "claude-sonnet-4.6",
+          "fallbacks": [
+            "gpt-5.4"
+          ]
+        },
+        "skills": [
+          "Code",
+          "git-essentials"
+        ],
+        "subagents": {
+          "allow_agents": [
+            "main"
+          ],
+          "model": {
+            "primary": "claude-sonnet-4.6",
+            "fallbacks": [
+              "gpt-5.4"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "agent_id": "coder",
+      "match": {
+        "channel": "telegram",
+        "account_id": "*",
+        "peer": {
+          "kind": "direct",
+          "id": "YOUR_TELEGRAM_USER_ID"
+        }
+      }
+    }
+  ],
+  "session": {
+    "dm_scope": "per-channel-peer",
+    "identity_links": {
+      "duomi": [
+        "telegram:YOUR_TELEGRAM_USER_ID",
+        "discord:YOUR_DISCORD_USER_ID"
+      ]
     }
   },
   "model_list": [
@@ -75,6 +148,13 @@
       "allow_from": [
         "YOUR_USER_ID"
       ],
+      "typing": {
+        "enabled": true
+      },
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
       "reasoning_channel_id": ""
     },
     "discord": {
@@ -85,6 +165,13 @@
       "group_trigger": {
         "mention_only": false
       },
+      "typing": {
+        "enabled": true
+      },
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
       "reasoning_channel_id": ""
     },
     "qq": {
@@ -92,6 +179,11 @@
       "app_id": "YOUR_QQ_APP_ID",
       "app_secret": "YOUR_QQ_APP_SECRET",
       "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "max_message_length": 2000,
+      "send_markdown": false,
       "reasoning_channel_id": ""
     },
     "maixcam": {
@@ -124,6 +216,9 @@
       "client_id": "YOUR_CLIENT_ID",
       "client_secret": "YOUR_CLIENT_SECRET",
       "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
       "reasoning_channel_id": ""
     },
     "slack": {
@@ -131,6 +226,16 @@
       "bot_token": "xoxb-YOUR-BOT-TOKEN",
       "app_token": "xapp-YOUR-APP-TOKEN",
       "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "typing": {
+        "enabled": true
+      },
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
       "reasoning_channel_id": ""
     },
     "matrix": {
@@ -154,8 +259,20 @@
       "enabled": false,
       "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
       "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "typing": {
+        "enabled": true
+      },
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
       "reasoning_channel_id": ""
     },
     "onebot": {
@@ -165,6 +282,18 @@
       "reconnect_interval": 5,
       "group_trigger_prefix": [],
       "allow_from": [],
+      "group_trigger": {
+        "prefixes": [
+          "!pico"
+        ]
+      },
+      "typing": {
+        "enabled": false
+      },
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
       "reasoning_channel_id": ""
     },
     "wecom": {
@@ -176,6 +305,9 @@
       "webhook_path": "/webhook/wecom",
       "allow_from": [],
       "reply_timeout": 5,
+      "group_trigger": {
+        "mention_only": true
+      },
       "reasoning_channel_id": ""
     },
     "wecom_app": {
@@ -189,6 +321,9 @@
       "webhook_path": "/webhook/wecom-app",
       "allow_from": [],
       "reply_timeout": 5,
+      "group_trigger": {
+        "mention_only": true
+      },
       "reasoning_channel_id": ""
     },
     "wecom_aibot": {
@@ -200,6 +335,21 @@
       "max_steps": 10,
       "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
       "reasoning_channel_id": ""
+    },
+    "pico": {
+      "enabled": false,
+      "token": "YOUR_PICO_CHANNEL_TOKEN",
+      "allow_token_query": false,
+      "allow_origins": [],
+      "ping_interval": 30,
+      "read_timeout": 60,
+      "write_timeout": 10,
+      "max_connections": 100,
+      "allow_from": [],
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      }
     },
     "irc": {
       "enabled": false,
@@ -307,6 +457,7 @@
     "allow_write_paths": null,
     "web": {
       "enabled": true,
+      "proxy": "",
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
@@ -426,8 +577,10 @@
     "exec": {
       "enabled": true,
       "enable_deny_patterns": true,
+      "allow_remote": true,
       "custom_deny_patterns": null,
-      "custom_allow_patterns": null
+      "custom_allow_patterns": null,
+      "timeout_seconds": 60
     },
     "skills": {
       "enabled": true,
@@ -481,7 +634,8 @@
       "enabled": true
     },
     "read_file": {
-      "enabled": true
+      "enabled": true,
+      "max_read_file_size": 65536
     },
     "spawn": {
       "enabled": true
