@@ -64,6 +64,12 @@ func TestExtractProtocol(t *testing.T) {
 			wantProtocol: "nvidia",
 			wantModelID:  "meta/llama-3.1-8b",
 		},
+		{
+			name:         "kimi-for-coding without prefix - special case",
+			model:        "kimi-for-coding",
+			wantProtocol: "kimi-code",
+			wantModelID:  "kimi-for-coding",
+		},
 	}
 
 	for _, tt := range tests {

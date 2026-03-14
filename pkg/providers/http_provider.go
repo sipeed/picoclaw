@@ -31,6 +31,18 @@ func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 	apiKey, apiBase, proxy, maxTokensField string,
 	requestTimeoutSeconds int,
 ) *HTTPProvider {
+	return NewHTTPProviderWithMaxTokensFieldAndRequestTimeoutAndHeaders(
+		apiKey, apiBase, proxy, maxTokensField, requestTimeoutSeconds, nil,
+	)
+}
+
+// NewHTTPProviderWithMaxTokensFieldAndRequestTimeoutAndHeaders creates a provider with custom headers.
+// This is useful for services like Kimi For Coding that require specific User-Agent headers.
+func NewHTTPProviderWithMaxTokensFieldAndRequestTimeoutAndHeaders(
+	apiKey, apiBase, proxy, maxTokensField string,
+	requestTimeoutSeconds int,
+	headers map[string]string,
+) *HTTPProvider {
 	return &HTTPProvider{
 		delegate: openai_compat.NewProvider(
 			apiKey,
@@ -38,6 +50,7 @@ func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			proxy,
 			openai_compat.WithMaxTokensField(maxTokensField),
 			openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
+			openai_compat.WithHeaders(headers),
 		),
 	}
 }
