@@ -21,6 +21,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -650,10 +651,28 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 
 	content := msg.Content
 
+	// Handle media messages (download and store)
+	var mediaRefs []string
+	store := c.GetMediaStore()
+	if store != nil && msg.MediaId != "" {
+		mediaRefs = c.downloadInboundMedia(ctx, msg.MsgType, msg.MediaId, messageID, store)
+	}
+
+	// Append media tags to content
+	if len(mediaRefs) > 0 {
+		mediaTag := c.getMediaTag(msg.MsgType)
+		if content != "" {
+			content += "\n" + mediaTag
+		} else {
+			content = mediaTag
+		}
+	}
+
 	logger.DebugCF("wecom_app", "Received message", map[string]any{
 		"sender_id": senderID,
 		"msg_type":  msg.MsgType,
 		"preview":   utils.Truncate(content, 50),
+		"mediaRefs": len(mediaRefs),
 	})
 
 	// Build sender info
@@ -664,7 +683,7 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 	}
 
 	// Handle the message through the base channel
-	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata, appSender)
+	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaRefs, metadata, appSender)
 }
 
 // tokenRefreshLoop periodically refreshes the access token
@@ -753,4 +772,188 @@ func (c *WeComAppChannel) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+// downloadInboundMedia downloads media from inbound messages and stores in MediaStore.
+func (c *WeComAppChannel) downloadInboundMedia(
+	ctx context.Context,
+	msgType, mediaID, messageID string,
+	store media.MediaStore,
+) []string {
+	var refs []string
+	scope := channels.BuildMediaScope("wecom_app", messageID, mediaID)
+
+	// Determine file extension based on message type
+	var ext string
+	switch msgType {
+	case "image":
+		ext = ".jpg"
+	case "voice":
+		ext = ".amr"
+	case "video":
+		ext = ".mp4"
+	case "file":
+		ext = ""
+	default:
+		ext = ""
+	}
+
+	// Download the media file from WeCom server
+	localPath := c.downloadMedia(ctx, mediaID, ext)
+	if localPath == "" {
+		logger.ErrorCF("wecom_app", "Failed to download media", map[string]any{
+			"media_id": mediaID,
+			"msg_type": msgType,
+		})
+		return refs
+	}
+
+	// Determine filename
+	filename := mediaID + ext
+	if msgType == "file" {
+		filename = "file"
+	}
+
+	// Store in media store
+	ref, err := store.Store(localPath, media.MediaMeta{
+		Filename: filename,
+		Source:   "wecom_app",
+	}, scope)
+	if err != nil {
+		logger.ErrorCF("wecom_app", "Failed to store media", map[string]any{
+			"error": err.Error(),
+			"path":  localPath,
+		})
+		return refs
+	}
+
+	refs = append(refs, ref)
+	return refs
+}
+
+// downloadMedia downloads media from WeCom API and saves to local file.
+func (c *WeComAppChannel) downloadMedia(ctx context.Context, mediaID, ext string) string {
+	accessToken := c.getAccessToken()
+	if accessToken == "" {
+		logger.ErrorCF("wecom_app", "No access token available for media download", nil)
+		return ""
+	}
+
+	// WeCom API: GET /cgi-bin/media/get?access_token=ACCESS_TOKEN&media_id=MEDIA_ID
+	apiURL := fmt.Sprintf("%s/cgi-bin/media/get?access_token=%s&media_id=%s",
+		wecomAPIBase, url.QueryEscape(accessToken), url.QueryEscape(mediaID))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		logger.ErrorCF("wecom_app", "Failed to create media download request", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		logger.ErrorCF("wecom_app", "Failed to download media", map[string]any{
+			"error":    err.Error(),
+			"media_id": mediaID,
+		})
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		logger.ErrorCF("wecom_app", "Media download failed with status", map[string]any{
+			"status":   resp.StatusCode,
+			"media_id": mediaID,
+		})
+		return ""
+	}
+
+	// Check content-type to determine file type
+	contentType := resp.Header.Get("Content-Type")
+
+	// Determine file extension from content-type if not provided
+	if ext == "" {
+		switch {
+		case strings.Contains(contentType, "image/jpeg"):
+			ext = ".jpg"
+		case strings.Contains(contentType, "image/png"):
+			ext = ".png"
+		case strings.Contains(contentType, "image/gif"):
+			ext = ".gif"
+		case strings.Contains(contentType, "audio/amr"):
+			ext = ".amr"
+		case strings.Contains(contentType, "audio/mp3") || strings.Contains(contentType, "audio/mpeg"):
+			ext = ".mp3"
+		case strings.Contains(contentType, "video/mp4"):
+			ext = ".mp4"
+		default:
+			ext = ".bin"
+		}
+	}
+
+	// Generate temp file path
+	tempDir := os.TempDir()
+	mediaDir := filepath.Join(tempDir, "picoclaw_media", "wecom")
+	os.MkdirAll(mediaDir, 0o755)
+
+	localPath := filepath.Join(mediaDir, mediaID+ext)
+
+	// Write to file
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logger.ErrorCF("wecom_app", "Failed to read media body", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	// Check if response is error JSON
+	if len(body) > 0 && body[0] == '{' {
+		var errResp struct {
+			ErrCode int    `json:"errcode"`
+			ErrMsg  string `json:"errmsg"`
+		}
+		if json.Unmarshal(body, &errResp) == nil && errResp.ErrCode != 0 {
+			logger.ErrorCF("wecom_app", "Media download API error", map[string]any{
+				"errcode": errResp.ErrCode,
+				"errmsg": errResp.ErrMsg,
+				"media_id": mediaID,
+			})
+			return ""
+		}
+	}
+
+	err = os.WriteFile(localPath, body, 0o644)
+	if err != nil {
+		logger.ErrorCF("wecom_app", "Failed to write media file", map[string]any{
+			"error": err.Error(),
+			"path":  localPath,
+		})
+		return ""
+	}
+
+	logger.DebugCF("wecom_app", "Media downloaded successfully", map[string]any{
+		"media_id": mediaID,
+		"path":     localPath,
+		"size":    len(body),
+	})
+
+	return localPath
+}
+
+// getMediaTag returns a media tag string for the message type.
+func (c *WeComAppChannel) getMediaTag(msgType string) string {
+	switch msgType {
+	case "image":
+		return "[image]"
+	case "voice":
+		return "[voice message]"
+	case "video":
+		return "[video]"
+	case "file":
+		return "[file]"
+	default:
+		return "[media]"
+	}
 }
