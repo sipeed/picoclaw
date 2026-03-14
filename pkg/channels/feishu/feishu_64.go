@@ -37,8 +37,9 @@ type FeishuChannel struct {
 
 	botOpenID atomic.Value // stores string; populated lazily for @mention detection
 
-	mu     sync.Mutex
-	cancel context.CancelFunc
+	mu        sync.Mutex
+	cancel    context.CancelFunc
+	threadMap map[string]string // compositeChatID -> parentMessageID for topic replies
 }
 
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
@@ -51,6 +52,7 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 		BaseChannel: base,
 		config:      cfg,
 		client:      lark.NewClient(cfg.AppID, cfg.AppSecret),
+		threadMap:   make(map[string]string),
 	}
 	ch.SetOwner(ch)
 	return ch, nil
@@ -121,12 +123,24 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
 	}
 
+	// Parse composite chatID (chatID/threadID format for topic groups)
+	chatID, threadID := parseFeishuChatID(msg.ChatID)
+
 	// Build interactive card with markdown content
 	cardContent, err := buildMarkdownCard(msg.Content)
 	if err != nil {
 		return fmt.Errorf("feishu send: card build failed: %w", err)
 	}
-	return c.sendCard(ctx, msg.ChatID, cardContent)
+
+	// If we have a threadID, use ReplyMessage with ReplyInThread to reply in the topic
+	// Use internal map to look up parent message ID (avoids modifying public bus types)
+	if threadID != "" {
+		if parentMsgID := c.getParentMessageID(msg.ChatID); parentMsgID != "" {
+			return c.replyInThread(ctx, parentMsgID, cardContent)
+		}
+	}
+
+	return c.sendCard(ctx, chatID, cardContent)
 }
 
 // EditMessage implements channels.MessageEditor.
@@ -172,10 +186,22 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 		return "", fmt.Errorf("feishu placeholder: card build failed: %w", err)
 	}
 
+	// Parse composite chatID to check if we're in a topic
+	realChatID, threadID := parseFeishuChatID(chatID)
+
+	// If in a topic, we cannot use placeholder properly as we don't have the parent message ID yet
+	// So we skip placeholder for topic messages for now
+	if threadID != "" {
+		logger.DebugCF("feishu", "Skipping placeholder for topic messages", map[string]any{
+			"chat_id": chatID,
+		})
+		return "", nil
+	}
+
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
-			ReceiveId(chatID).
+			ReceiveId(realChatID).
 			MsgType(larkim.MsgTypeInteractive).
 			Content(cardContent).
 			Build()).
@@ -273,8 +299,11 @@ func (c *FeishuChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
+	// Parse composite chatID
+	chatID, _ := parseFeishuChatID(msg.ChatID)
+
 	for _, part := range msg.Parts {
-		if err := c.sendMediaPart(ctx, msg.ChatID, part, store); err != nil {
+		if err := c.sendMediaPart(ctx, chatID, part, store); err != nil {
 			return err
 		}
 	}
@@ -352,6 +381,7 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	messageType := stringValue(message.MessageType)
 	messageID := stringValue(message.MessageId)
 	rawContent := stringValue(message.Content)
+	threadID := stringValue(message.ThreadId)
 
 	// Check allowlist early to avoid downloading media for rejected senders.
 	// BaseChannel.HandleMessage will check again, but this avoids wasted network I/O.
@@ -394,12 +424,23 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	if sender != nil && sender.TenantKey != nil {
 		metadata["tenant_key"] = *sender.TenantKey
 	}
+	if threadID != "" {
+		metadata["thread_id"] = threadID
+	}
 
 	var peer bus.Peer
+	// For topic groups, combine chatID with threadID to ensure replies go to the correct topic
+	compositeChatID := chatID
+	if threadID != "" {
+		compositeChatID = chatID + "/" + threadID
+		// Store mapping for thread replies (parent message ID needed for ReplyInThread)
+		c.setParentMessageID(compositeChatID, messageID)
+	}
+
 	if chatType == "p2p" {
 		peer = bus.Peer{Kind: "direct", ID: senderID}
 	} else {
-		peer = bus.Peer{Kind: "group", ID: chatID}
+		peer = bus.Peer{Kind: "group", ID: compositeChatID}
 
 		// Check if bot was mentioned
 		isMentioned := c.isBotMentioned(message)
@@ -424,7 +465,7 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		"preview":    utils.Truncate(content, 80),
 	})
 
-	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaRefs, metadata, senderInfo)
+	c.HandleMessage(ctx, peer, messageID, senderID, compositeChatID, content, mediaRefs, metadata, senderInfo)
 	return nil
 }
 
@@ -715,6 +756,34 @@ func (c *FeishuChannel) sendCard(ctx context.Context, chatID, cardContent string
 	return nil
 }
 
+// replyInThread replies to a message in a topic/thread using ReplyMessage API.
+func (c *FeishuChannel) replyInThread(ctx context.Context, messageID, cardContent string) error {
+	replyInThread := true
+	req := larkim.NewReplyMessageReqBuilder().
+		MessageId(messageID).
+		Body(larkim.NewReplyMessageReqBodyBuilder().
+			MsgType(larkim.MsgTypeInteractive).
+			Content(cardContent).
+			ReplyInThread(replyInThread).
+			Build()).
+		Build()
+
+	resp, err := c.client.Im.V1.Message.Reply(ctx, req)
+	if err != nil {
+		return fmt.Errorf("feishu reply in thread: %w", channels.ErrTemporary)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("feishu reply api error (code=%d msg=%s): %w", resp.Code, resp.Msg, channels.ErrTemporary)
+	}
+
+	logger.DebugCF("feishu", "Feishu message replied in thread", map[string]any{
+		"message_id": messageID,
+	})
+
+	return nil
+}
+
 // sendImage uploads an image and sends it as a message.
 func (c *FeishuChannel) sendImage(ctx context.Context, chatID string, file *os.File) error {
 	// Upload image to get image_key
@@ -829,4 +898,18 @@ func extractFeishuSenderID(sender *larkim.EventSender) string {
 	}
 
 	return ""
+}
+
+// setParentMessageID stores the parent message ID for a composite chat ID (used for thread replies).
+func (c *FeishuChannel) setParentMessageID(compositeChatID, messageID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.threadMap[compositeChatID] = messageID
+}
+
+// getParentMessageID retrieves the parent message ID for a composite chat ID.
+func (c *FeishuChannel) getParentMessageID(compositeChatID string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.threadMap[compositeChatID]
 }

@@ -84,3 +84,13 @@ func stripMentionPlaceholders(content string, mentions []*larkim.MentionEvent) s
 	content = mentionPlaceholderRegex.ReplaceAllString(content, "")
 	return strings.TrimSpace(content)
 }
+
+// parseFeishuChatID splits "chatID/threadID" into its components.
+// Returns threadID="" when no "/" is present (non-topic messages).
+func parseFeishuChatID(chatID string) (string, string) {
+	idx := strings.Index(chatID, "/")
+	if idx == -1 {
+		return chatID, ""
+	}
+	return chatID[:idx], chatID[idx+1:]
+}

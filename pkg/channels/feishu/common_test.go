@@ -290,3 +290,55 @@ func TestStripMentionPlaceholders(t *testing.T) {
 		})
 	}
 }
+
+func TestParseFeishuChatID(t *testing.T) {
+	tests := []struct {
+		name         string
+		chatID       string
+		wantChatID   string
+		wantThreadID string
+	}{
+		{
+			name:         "plain chat ID without thread",
+			chatID:       "oc_1234567890",
+			wantChatID:   "oc_1234567890",
+			wantThreadID: "",
+		},
+		{
+			name:         "composite chat ID with thread",
+			chatID:       "oc_1234567890/thread_abc123",
+			wantChatID:   "oc_1234567890",
+			wantThreadID: "thread_abc123",
+		},
+		{
+			name:         "chat ID with multiple slashes",
+			chatID:       "oc_123/456/thread_abc",
+			wantChatID:   "oc_123",
+			wantThreadID: "456/thread_abc",
+		},
+		{
+			name:         "empty string",
+			chatID:       "",
+			wantChatID:   "",
+			wantThreadID: "",
+		},
+		{
+			name:         "trailing slash",
+			chatID:       "oc_123/",
+			wantChatID:   "oc_123",
+			wantThreadID: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotChatID, gotThreadID := parseFeishuChatID(tt.chatID)
+			if gotChatID != tt.wantChatID {
+				t.Errorf("parseFeishuChatID(%q) chatID = %q, want %q", tt.chatID, gotChatID, tt.wantChatID)
+			}
+			if gotThreadID != tt.wantThreadID {
+				t.Errorf("parseFeishuChatID(%q) threadID = %q, want %q", tt.chatID, gotThreadID, tt.wantThreadID)
+			}
+		})
+	}
+}
