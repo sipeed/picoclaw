@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -770,14 +771,54 @@ func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.Fi
 		feishuFileType = "mp4"
 	}
 
+	// For video files, extract metadata (thumbnail and duration) before upload
+	var durationPtr *int
+	var imageKey string
+	if fileType == "video" {
+		// Get actual file path from the *os.File object
+		videoPath := file.Name()
+		if videoPath != "" {
+			// Get video metadata (thumbnail and duration)
+			durationSec, thumbKey, err := c.prepareVideoMetadata(ctx, videoPath)
+			if err != nil {
+				logger.ErrorCF("feishu", "Failed to extract video metadata", map[string]any{
+					"error": err.Error(),
+				})
+				// Continue without metadata, durationPtr remains nil
+			} else {
+				// Convert duration to milliseconds for Feishu API
+				durationMs := int(durationSec * 1000)
+				durationPtr = &durationMs
+				imageKey = thumbKey
+				logger.InfoCF("feishu", "Extracted video metadata", map[string]any{
+					"duration_ms": durationMs,
+					"has_thumbnail": imageKey != "",
+				})
+			}
+		} else {
+			logger.ErrorCF("feishu", "Failed to get video file path", nil)
+		}
+	}
+
 	// Upload file to get file_key
-	uploadReq := larkim.NewCreateFileReqBuilder().
+	uploadReqBuilder := larkim.NewCreateFileReqBuilder().
 		Body(larkim.NewCreateFileReqBodyBuilder().
 			FileType(feishuFileType).
 			FileName(filename).
 			File(file).
-			Build()).
-		Build()
+			Build())
+
+	// Set duration for video/audio files if available
+	if durationPtr != nil && *durationPtr > 0 {
+		uploadReqBuilder = uploadReqBuilder.Body(larkim.NewCreateFileReqBodyBuilder().
+			FileType(feishuFileType).
+			FileName(filename).
+			File(file).
+			Duration(*durationPtr).
+			Build())
+	}
+
+	uploadReq := uploadReqBuilder.Build()
 
 	uploadResp, err := c.client.Im.V1.File.Create(ctx, uploadReq)
 	if err != nil {
@@ -792,13 +833,33 @@ func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.Fi
 
 	fileKey := *uploadResp.Data.FileKey
 
-	// Send file message
-	content, _ := json.Marshal(map[string]string{"file_key": fileKey})
+	// Send file message with appropriate message type
+	var msgType string
+	switch fileType {
+	case "audio":
+		msgType = larkim.MsgTypeAudio
+	case "video":
+		msgType = larkim.MsgTypeMedia
+	default:
+		msgType = larkim.MsgTypeFile
+	}
+
+	var content []byte
+	// For video messages, include image_key if thumbnail was extracted
+	if fileType == "video" && imageKey != "" {
+		content, _ = json.Marshal(map[string]string{
+			"file_key":  fileKey,
+			"image_key": imageKey,
+		})
+	} else {
+		content, _ = json.Marshal(map[string]string{"file_key": fileKey})
+	}
+
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			ReceiveId(chatID).
-			MsgType(larkim.MsgTypeFile).
+			MsgType(msgType).
 			Content(string(content)).
 			Build()).
 		Build()
@@ -811,6 +872,76 @@ func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.Fi
 		return fmt.Errorf("feishu file send api error (code=%d msg=%s)", resp.Code, resp.Msg)
 	}
 	return nil
+}
+
+// prepareVideoMetadata extracts a thumbnail from video, uploads it, and gets duration.
+// Returns duration (in seconds), image_key, and any error.
+func (c *FeishuChannel) prepareVideoMetadata(ctx context.Context, videoPath string) (int64, string, error) {
+	// Check if video file exists
+	if _, err := os.Stat(videoPath); os.IsNotExist(err) {
+		return 0, "", fmt.Errorf("video file does not exist: %s", videoPath)
+	}
+
+	// Extract thumbnail from video (first frame at 0.5 seconds)
+	thumbPath := videoPath + ".thumb.jpg"
+	defer func() {
+		os.Remove(thumbPath)
+	}()
+
+	// Use ffmpeg to extract thumbnail
+	cmd := exec.Command("ffmpeg", "-i", videoPath, "-ss", "0.5", "-vframes", "1", "-q:v", "2", "-y", thumbPath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return 0, "", fmt.Errorf("ffmpeg thumbnail extraction failed: %w, output: %s", err, string(output))
+	}
+
+	// Verify thumbnail was created
+	if _, err := os.Stat(thumbPath); os.IsNotExist(err) {
+		return 0, "", fmt.Errorf("thumbnail file was not created: %s", thumbPath)
+	}
+
+	// Open thumbnail file for upload
+	thumbFile, err := os.Open(thumbPath)
+	if err != nil {
+		return 0, "", fmt.Errorf("open thumbnail: %w", err)
+	}
+	defer thumbFile.Close()
+
+	// Upload thumbnail to get image_key
+	uploadReq := larkim.NewCreateImageReqBuilder().
+		Body(larkim.NewCreateImageReqBodyBuilder().
+			ImageType("message").
+			Image(thumbFile).
+			Build()).
+		Build()
+
+	uploadResp, err := c.client.Im.V1.Image.Create(ctx, uploadReq)
+	if err != nil {
+		return 0, "", fmt.Errorf("thumbnail upload: %w", err)
+	}
+	if !uploadResp.Success() {
+		return 0, "", fmt.Errorf("thumbnail upload api error (code=%d msg=%s)", uploadResp.Code, uploadResp.Msg)
+	}
+	if uploadResp.Data == nil || uploadResp.Data.ImageKey == nil {
+		return 0, "", fmt.Errorf("no image_key returned")
+	}
+	imageKey := *uploadResp.Data.ImageKey
+
+	// Get video duration using ffprobe (in seconds as float)
+	cmd = exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", videoPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, imageKey, fmt.Errorf("ffprobe duration failed: %w, output: %s", err, string(output))
+	}
+
+	// Parse duration (float in seconds)
+	var duration float64
+	if _, err := fmt.Sscanf(string(output), "%f", &duration); err != nil {
+		return 0, imageKey, fmt.Errorf("parse duration: %w", err)
+	}
+
+	// Return duration in seconds (will be converted to milliseconds in sendFile)
+	durationSec := int64(duration)
+	return durationSec, imageKey, nil
 }
 
 func extractFeishuSenderID(sender *larkim.EventSender) string {
