@@ -344,6 +344,24 @@ func TestCreateProviderReturnsClaudeProviderForAnthropicOAuth(t *testing.T) {
 	// TODO: Test custom APIBase when createClaudeAuthProvider supports it
 }
 
+func TestCreateProvider_LegacyOllamaProviderUsesUserModelAlias(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Provider = "ollama"
+	cfg.Agents.Defaults.Model = "llama3.2"
+	cfg.Providers.Ollama.APIBase = "http://localhost:11434/v1"
+
+	provider, modelID, err := CreateProvider(cfg)
+	if err != nil {
+		t.Fatalf("CreateProvider() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProvider() returned nil provider")
+	}
+	if modelID != "llama3.2" {
+		t.Fatalf("modelID = %q, want %q", modelID, "llama3.2")
+	}
+}
+
 func TestCreateProviderReturnsCodexProviderForOpenAIOAuth(t *testing.T) {
 	// TODO: This test requires openai protocol to support auth_method: "oauth"
 	// which is not yet implemented in the new factory_provider.go
