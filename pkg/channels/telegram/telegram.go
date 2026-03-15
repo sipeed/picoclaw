@@ -58,7 +58,7 @@ type TelegramChannel struct {
 
 type telegramBotHandler interface {
 	Start() error
-	StopWithContext(context.Context) error
+	StopWithContext(ctx context.Context) error
 }
 
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
