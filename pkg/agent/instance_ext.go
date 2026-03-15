@@ -18,9 +18,6 @@ type instanceExt struct {
 	// Used by runAgentLoop to wait for spawned subagents before worktree cleanup.
 	SubagentMgr *tools.SubagentManager
 
-	Subagents    *config.SubagentsConfig
-	SkillsFilter []string
-
 	// Interview staleness tracking: consecutive turns where MEMORY.md was not updated.
 	interviewStaleCount int
 	interviewMemoryLen  int

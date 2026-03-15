@@ -157,29 +157,6 @@ Your workspace is at: %s
 		toolsSection, executingRule, toolDiscovery)
 }
 
-func (cb *ContextBuilder) buildToolsSection() string {
-	if cb.tools == nil {
-		return ""
-	}
-
-	summaries := cb.tools.GetSummaries()
-	if len(summaries) == 0 {
-		return ""
-	}
-
-	var sb strings.Builder
-	sb.WriteString("## Available Tools\n\n")
-	sb.WriteString(
-		"**CRITICAL**: You MUST use tools to perform actions. Do NOT pretend to execute commands or schedule tasks.\n\n",
-	)
-	sb.WriteString("You have access to the following tools:\n\n")
-	for _, s := range summaries {
-		sb.WriteString(s)
-		sb.WriteString("\n")
-	}
-	return sb.String()
-}
-
 func (cb *ContextBuilder) getDiscoveryRule() string {
 	if !cb.toolDiscoveryBM25 && !cb.toolDiscoveryRegex {
 		return ""

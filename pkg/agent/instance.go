@@ -37,6 +37,8 @@ type AgentInstance struct {
 	Sessions                  *session.LegacyAdapter
 	ContextBuilder            *ContextBuilder
 	Tools                     *tools.ToolRegistry
+	Subagents                 *config.SubagentsConfig
+	SkillsFilter              []string
 	Candidates                []providers.FallbackCandidate
 	PlanModel                 string
 	PlanFallbacks             []string

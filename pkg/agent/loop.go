@@ -155,8 +155,11 @@ func NewAgentLoop(
 	// Initialize fork-specific fields (stats, sessions, orchestration, gcLoop).
 	al.initLoopExt(cfg, registry, len(enableStats) > 0 && enableStats[0])
 
-	// Register shared tools to all agents (needs al for reporter injection).
-	registerSharedTools(cfg, msgBus, registry, provider, al)
+	// Register shared tools to all agents.
+	registerSharedTools(cfg, msgBus, registry, provider)
+
+	// Register fork-specific orchestration tools (needs al for reporter injection).
+	al.registerAllOrchestrationTools(cfg, registry, provider, msgBus)
 
 	return al
 }
@@ -167,8 +170,6 @@ func registerSharedTools(
 	msgBus *bus.MessageBus,
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
-
-	al *AgentLoop,
 ) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
@@ -297,9 +298,6 @@ func registerSharedTools(
 				agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
 			}
 		}
-
-		// Orchestration tools (spawn, subagent, answer, review_plan)
-		registerOrchestrationTools(cfg, agent, agentID, registry, provider, msgBus, al)
 
 		// Update context builder with the complete tools registry
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
@@ -644,7 +642,8 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	}
 
 	// Ensure shared tools are re-registered on the new registry
-	registerSharedTools(cfg, al.bus, registry, provider, al)
+	registerSharedTools(cfg, al.bus, registry, provider)
+	al.registerAllOrchestrationTools(cfg, registry, provider, al.bus)
 
 	// Atomically swap the config and registry under write lock
 	// This ensures readers see a consistent pair
