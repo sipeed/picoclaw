@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/dashboard"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -44,6 +45,15 @@ func onboard() {
 	fmt.Println("     See README.md for 17+ supported providers.")
 	fmt.Println("")
 	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
+
+	fmt.Print("\nWould you like to open the web dashboard for further configuration? (y/n): ")
+	var openDash string
+	fmt.Scanln(&openDash)
+	if openDash == "y" {
+		if err := dashboard.RunDashboard("127.0.0.1", 18795, true); err != nil {
+			fmt.Printf("Error starting dashboard: %v\n", err)
+		}
+	}
 }
 
 func createWorkspaceTemplates(workspace string) {
