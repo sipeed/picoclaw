@@ -323,8 +323,12 @@ func (al *AgentLoop) summarizeBatch(
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\nCONVERSATION:\n")
+	// Bolt: Avoiding fmt.Fprintf overhead inside a hot loop by directly calling strings.Builder methods
 	for _, m := range batch {
-		fmt.Fprintf(&sb, "%s: %s\n", m.Role, m.Content)
+		sb.WriteString(m.Role)
+		sb.WriteString(": ")
+		sb.WriteString(m.Content)
+		sb.WriteString("\n")
 	}
 	prompt := sb.String()
 
@@ -359,7 +363,11 @@ func (al *AgentLoop) summarizeBatch(
 		if keepLength < len(runes) {
 			content += "..."
 		}
-		fallback.WriteString(fmt.Sprintf("%s: %s", m.Role, content))
+
+		// Bolt: Using multiple direct WriteString calls instead of fmt.Sprintf to avoid formatting overhead
+		fallback.WriteString(m.Role)
+		fallback.WriteString(": ")
+		fallback.WriteString(content)
 	}
 	return fallback.String(), nil
 }
