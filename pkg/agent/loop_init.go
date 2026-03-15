@@ -22,6 +22,7 @@ import (
 	"jane/pkg/skills"
 	"jane/pkg/state"
 	"jane/pkg/tools"
+	"jane/pkg/tools/web"
 	"jane/pkg/voice"
 )
 
@@ -74,7 +75,7 @@ func registerSharedTools(
 		}
 
 		if cfg.Tools.IsToolEnabled("web") {
-			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
+			searchTool, err := web.NewWebSearchTool(web.WebSearchToolOptions{
 				BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey, cfg.Tools.Web.Brave.APIKeys),
 				BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 				BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
@@ -107,7 +108,7 @@ func registerSharedTools(
 			}
 		}
 		if cfg.Tools.IsToolEnabled("web_fetch") {
-			fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
+			fetchTool, err := web.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
 			if err != nil {
 				logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 			} else {
