@@ -1,6 +1,7 @@
-package tools
+package web
 
 import (
+	"jane/pkg/tools"
 	"context"
 	"encoding/json"
 	"errors"
@@ -86,30 +87,30 @@ func (t *WebFetchTool) Parameters() map[string]any {
 	}
 }
 
-func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
 	urlStr, ok := args["url"].(string)
 	if !ok {
-		return ErrorResult("url is required")
+		return tools.ErrorResult("url is required")
 	}
 
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
-		return ErrorResult(fmt.Sprintf("invalid URL: %v", err))
+		return tools.ErrorResult(fmt.Sprintf("invalid URL: %v", err))
 	}
 
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return ErrorResult("only http/https URLs are allowed")
+		return tools.ErrorResult("only http/https URLs are allowed")
 	}
 
 	if parsedURL.Host == "" {
-		return ErrorResult("missing domain in URL")
+		return tools.ErrorResult("missing domain in URL")
 	}
 
 	// Lightweight pre-flight: block obvious localhost/literal-IP without DNS resolution.
 	// The real SSRF guard is newSafeDialContext at connect time.
 	hostname := parsedURL.Hostname()
 	if isObviousPrivateHost(hostname) {
-		return ErrorResult("fetching private or local network hosts is not allowed")
+		return tools.ErrorResult("fetching private or local network hosts is not allowed")
 	}
 
 	maxChars := t.maxChars
@@ -121,13 +122,13 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to create request: %v", err))
+		return tools.ErrorResult(fmt.Sprintf("failed to create request: %v", err))
 	}
 
 	req.Header.Set("User-Agent", userAgent)
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return ErrorResult(fmt.Sprintf("request failed: %v", err))
+		return tools.ErrorResult(fmt.Sprintf("request failed: %v", err))
 	}
 
 	resp.Body = http.MaxBytesReader(nil, resp.Body, t.fetchLimitBytes)
@@ -138,9 +139,9 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			return ErrorResult(fmt.Sprintf("failed to read response: size exceeded %d bytes limit", t.fetchLimitBytes))
+			return tools.ErrorResult(fmt.Sprintf("failed to read response: size exceeded %d bytes limit", t.fetchLimitBytes))
 		}
-		return ErrorResult(fmt.Sprintf("failed to read response: %v", err))
+		return tools.ErrorResult(fmt.Sprintf("failed to read response: %v", err))
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -182,7 +183,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	resultJSON, _ := json.MarshalIndent(result, "", "  ")
 
-	return &ToolResult{
+	return &tools.ToolResult{
 		ForLLM: string(resultJSON),
 		ForUser: fmt.Sprintf(
 			"Fetched %d bytes from %s (extractor: %s, truncated: %v)",

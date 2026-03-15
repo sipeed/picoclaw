@@ -1,6 +1,7 @@
-package tools
+package web
 
 import (
+	"jane/pkg/tools"
 	"context"
 	"fmt"
 )
@@ -144,10 +145,10 @@ func (t *WebSearchTool) Parameters() map[string]any {
 	}
 }
 
-func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
 	query, ok := args["query"].(string)
 	if !ok {
-		return ErrorResult("query is required")
+		return tools.ErrorResult("query is required")
 	}
 
 	count := t.maxResults
@@ -159,10 +160,10 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolR
 
 	result, err := t.provider.Search(ctx, query, count)
 	if err != nil {
-		return ErrorResult(fmt.Sprintf("search failed: %v", err))
+		return tools.ErrorResult(fmt.Sprintf("search failed: %v", err))
 	}
 
-	return &ToolResult{
+	return &tools.ToolResult{
 		ForLLM:  result,
 		ForUser: result,
 	}

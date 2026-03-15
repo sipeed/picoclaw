@@ -1,4 +1,4 @@
-package tools
+package web
 
 import (
 	"bytes"
@@ -213,7 +213,7 @@ func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
 	result := tool.Execute(ctx, args)
 
 	if result == nil {
-		t.Fatal("expected a ToolResult, got nil")
+		t.Fatal("expected a tools.ToolResult, got nil")
 	}
 
 	expectedErrorMsg := fmt.Sprintf("size exceeded %d bytes limit", testFetchLimit)
