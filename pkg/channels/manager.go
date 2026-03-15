@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -192,6 +193,22 @@ func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.Medi
 	return m, nil
 }
 
+// injectChannelDependencies injects optional dependencies (MediaStore, PlaceholderRecorder,
+// Owner) into a channel if it implements the corresponding setter interfaces.
+func (m *Manager) injectChannelDependencies(ch Channel) {
+	if m.mediaStore != nil {
+		if setter, ok := ch.(interface{ SetMediaStore(s media.MediaStore) }); ok {
+			setter.SetMediaStore(m.mediaStore)
+		}
+	}
+	if setter, ok := ch.(interface{ SetPlaceholderRecorder(r PlaceholderRecorder) }); ok {
+		setter.SetPlaceholderRecorder(m)
+	}
+	if setter, ok := ch.(interface{ SetOwner(ch Channel) }); ok {
+		setter.SetOwner(ch)
+	}
+}
+
 // initChannel is a helper that looks up a factory by name and creates the channel.
 func (m *Manager) initChannel(name, displayName string) {
 	f, ok := getFactory(name)
@@ -211,20 +228,7 @@ func (m *Manager) initChannel(name, displayName string) {
 			"error":   err.Error(),
 		})
 	} else {
-		// Inject MediaStore if channel supports it
-		if m.mediaStore != nil {
-			if setter, ok := ch.(interface{ SetMediaStore(s media.MediaStore) }); ok {
-				setter.SetMediaStore(m.mediaStore)
-			}
-		}
-		// Inject PlaceholderRecorder if channel supports it
-		if setter, ok := ch.(interface{ SetPlaceholderRecorder(r PlaceholderRecorder) }); ok {
-			setter.SetPlaceholderRecorder(m)
-		}
-		// Inject owner reference so BaseChannel.HandleMessage can auto-trigger typing/reaction
-		if setter, ok := ch.(interface{ SetOwner(ch Channel) }); ok {
-			setter.SetOwner(ch)
-		}
+		m.injectChannelDependencies(ch)
 		m.channels[name] = ch
 		logger.InfoCF("channels", "Channel enabled successfully", map[string]any{
 			"channel": displayName,
@@ -232,11 +236,57 @@ func (m *Manager) initChannel(name, displayName string) {
 	}
 }
 
+// initTelegramBot initializes a single named Telegram bot and registers it as a channel.
+func (m *Manager) initTelegramBot(bot config.TelegramBotConfig) {
+	channelName := bot.ChannelName()
+	displayName := "Telegram"
+	if bot.ID != "" && bot.ID != "default" {
+		displayName = "Telegram (" + bot.ID + ")"
+	}
+
+	logger.DebugCF("channels", "Attempting to initialize channel", map[string]any{
+		"channel": displayName,
+	})
+
+	f, ok := getTelegramBotFactory()
+	if !ok {
+		logger.WarnCF("channels", "Telegram bot factory not registered", map[string]any{
+			"channel": displayName,
+		})
+		return
+	}
+
+	ch, err := f(bot, channelName, m.bus)
+	if err != nil {
+		logger.ErrorCF("channels", "Failed to initialize channel", map[string]any{
+			"channel": displayName,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	m.injectChannelDependencies(ch)
+
+	if _, exists := m.channels[channelName]; exists {
+		logger.ErrorCF("channels", "Duplicate channel name — skipping bot", map[string]any{
+			"channel": displayName,
+			"name":    channelName,
+		})
+		return
+	}
+	m.channels[channelName] = ch
+	logger.InfoCF("channels", "Channel enabled successfully", map[string]any{
+		"channel": displayName,
+	})
+}
+
 func (m *Manager) initChannels() error {
 	logger.InfoC("channels", "Initializing channel manager")
 
-	if m.config.Channels.Telegram.Enabled && m.config.Channels.Telegram.Token != "" {
-		m.initChannel("telegram", "Telegram")
+	for _, bot := range m.config.Channels.TelegramBots {
+		if bot.Enabled && bot.Token != "" {
+			m.initTelegramBot(bot)
+		}
 	}
 
 	if m.config.Channels.WhatsApp.Enabled {
@@ -478,6 +528,14 @@ func newChannelWorker(name string, ch Channel) *channelWorker {
 	rateVal := float64(defaultRateLimit)
 	if r, ok := channelRateConfig[name]; ok {
 		rateVal = r
+	} else {
+		// Named channel variants (e.g. "telegram-amber") inherit the base channel's rate.
+		for prefix, r := range channelRateConfig {
+			if strings.HasPrefix(name, prefix+"-") {
+				rateVal = r
+				break
+			}
+		}
 	}
 	burst := int(math.Max(1, math.Ceil(rateVal/2)))
 
