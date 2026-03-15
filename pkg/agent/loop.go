@@ -1111,64 +1111,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	// Handle reply-based intervention for active tasks
-
-	if taskID, ok := msg.Metadata["task_id"]; ok && taskID != "" {
-		if val, found := al.activeTasks.Load(taskID); found {
-			task := val.(*activeTask)
-
-			content := strings.TrimSpace(msg.Content)
-
-			lower := strings.ToLower(content)
-
-			// Check for stop keywords
-
-			stopKeywords := []string{
-				"stop", "cancel", "abort",
-
-				"停止", "中止", "やめて", //nolint:gosmopolitan // intentional CJK stop words
-
-			}
-
-			isStop := false
-
-			for _, kw := range stopKeywords {
-				if lower == kw {
-					isStop = true
-
-					break
-				}
-			}
-
-			if isStop {
-				task.cancel()
-
-				logger.InfoCF("agent", "Task canceled by user intervention",
-
-					map[string]any{"task_id": taskID})
-
-				return "Task canceled.", nil
-			}
-
-			// Inject message into interrupt channel for the tool loop
-
-			select {
-			case task.interrupt <- content:
-
-				logger.InfoCF("agent", "User intervention queued",
-
-					map[string]any{"task_id": taskID, "content": utils.Truncate(content, 80)})
-
-			default:
-
-				logger.WarnCF("agent", "Interrupt channel full, message dropped",
-
-					map[string]any{"task_id": taskID})
-			}
-
-			return "Intervention sent to running task.", nil
-		}
-
-		// Task not found — fall through to normal processing
+	if response, handled := al.handleTaskIntervention(msg); handled {
+		return response, nil
 	}
 
 	// Route system messages to processSystemMessage
@@ -1182,23 +1126,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		al.OnUserMessage()
 	}
 
-	// Expand /skill command: inject SKILL.md content into message, then continue to LLM
-
-	var expansionCompact string
-
-	if expanded, compact, ok := al.expandSkillCommand(msg); ok {
-		msg.Content = expanded
-
-		expansionCompact = compact
-	}
-
-	// Expand /plan <task>: write interview seed, rewrite for LLM interview
-
-	if expanded, compact, ok := al.expandPlanCommand(msg); ok {
-		msg.Content = expanded
-
-		expansionCompact = compact
-	}
+	// Expand fork-specific /skill and /plan commands
+	expansionCompact := al.expandForkCommands(&msg)
 
 	// Check for commands
 

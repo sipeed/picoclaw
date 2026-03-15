@@ -1,11 +1,15 @@
 package agent
 
 import (
+	"strings"
 	"sync"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/stats"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // loopExt holds fork-specific fields for AgentLoop.
@@ -43,4 +47,71 @@ func (al *AgentLoop) SetConfigSaver(fn func(*config.Config) error) {
 // SetHeartbeatThreadUpdater registers a callback to apply runtime heartbeat thread updates.
 func (al *AgentLoop) SetHeartbeatThreadUpdater(fn func(int)) {
 	al.onHeartbeatThreadUpdate = fn
+}
+
+// handleTaskIntervention checks if a message is a reply to an active task and
+// either cancels the task or injects a user intervention. Returns (response, handled).
+func (al *AgentLoop) handleTaskIntervention(msg bus.InboundMessage) (string, bool) {
+	taskID, ok := msg.Metadata["task_id"]
+	if !ok || taskID == "" {
+		return "", false
+	}
+
+	val, found := al.activeTasks.Load(taskID)
+	if !found {
+		// Task not found — fall through to normal processing
+		return "", false
+	}
+
+	task := val.(*activeTask)
+
+	content := strings.TrimSpace(msg.Content)
+	lower := strings.ToLower(content)
+
+	// Check for stop keywords
+	stopKeywords := []string{
+		"stop", "cancel", "abort",
+		"停止", "中止", "やめて", //nolint:gosmopolitan // intentional CJK stop words
+	}
+
+	for _, kw := range stopKeywords {
+		if lower == kw {
+			task.cancel()
+
+			logger.InfoCF("agent", "Task canceled by user intervention",
+				map[string]any{"task_id": taskID})
+
+			return "Task canceled.", true
+		}
+	}
+
+	// Inject message into interrupt channel for the tool loop
+	select {
+	case task.interrupt <- content:
+		logger.InfoCF("agent", "User intervention queued",
+			map[string]any{"task_id": taskID, "content": utils.Truncate(content, 80)})
+	default:
+		logger.WarnCF("agent", "Interrupt channel full, message dropped",
+			map[string]any{"task_id": taskID})
+	}
+
+	return "Intervention sent to running task.", true
+}
+
+// expandForkCommands expands fork-specific /skill and /plan commands in the message.
+// Returns the modified message and the compact form for history.
+func (al *AgentLoop) expandForkCommands(msg *bus.InboundMessage) string {
+	var expansionCompact string
+
+	if expanded, compact, ok := al.expandSkillCommand(*msg); ok {
+		msg.Content = expanded
+		expansionCompact = compact
+	}
+
+	if expanded, compact, ok := al.expandPlanCommand(*msg); ok {
+		msg.Content = expanded
+		expansionCompact = compact
+	}
+
+	return expansionCompact
 }
