@@ -926,8 +926,22 @@ func applyModelEnvOverrides(cfg *Config) {
 		"ollama":              "OLLAMA_API_KEY",
 	}
 	for i, m := range cfg.ModelList {
+		// Resolve ${VAR} references in sensitive/configurable fields first.
+		// This supports custom providers and private endpoints without hardcoding secrets.
+		if resolved := resolveEnvRef(m.APIKey); resolved != m.APIKey {
+			cfg.ModelList[i].APIKey = resolved
+			m.APIKey = resolved
+		}
+		if resolved := resolveEnvRef(m.APIBase); resolved != m.APIBase {
+			cfg.ModelList[i].APIBase = resolved
+		}
+		if resolved := resolveEnvRef(m.Proxy); resolved != m.Proxy {
+			cfg.ModelList[i].Proxy = resolved
+		}
+
+		// Fall back to well-known provider env var if api_key is still empty.
 		if m.APIKey != "" {
-			continue // already set in config.json, don't override
+			continue
 		}
 		provider, _, ok := strings.Cut(m.Model, "/")
 		if !ok {

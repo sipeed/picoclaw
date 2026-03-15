@@ -398,3 +398,85 @@ func TestModelConfig_RequestTimeoutDefaultZeroValue(t *testing.T) {
 		t.Fatalf("RequestTimeout = %d, want 0", cfg.RequestTimeout)
 	}
 }
+
+func TestApplyModelEnvOverrides_ExplicitVarRef_APIKey(t *testing.T) {
+	t.Setenv("MY_CUSTOM_API_KEY", "sk-custom-resolved")
+
+	cfg := &Config{
+		ModelList: []ModelConfig{
+			{ModelName: "custom", Model: "myhost/my-model", APIKey: "${MY_CUSTOM_API_KEY}"},
+		},
+	}
+
+	applyModelEnvOverrides(cfg)
+
+	if got := cfg.ModelList[0].APIKey; got != "sk-custom-resolved" {
+		t.Errorf("APIKey = %q, want %q", got, "sk-custom-resolved")
+	}
+}
+
+func TestApplyModelEnvOverrides_ExplicitVarRef_APIBase(t *testing.T) {
+	t.Setenv("MY_PRIVATE_ENDPOINT", "https://private.example.com/v1")
+
+	cfg := &Config{
+		ModelList: []ModelConfig{
+			{ModelName: "local", Model: "openai/gpt-4o", APIKey: "key", APIBase: "${MY_PRIVATE_ENDPOINT}"},
+		},
+	}
+
+	applyModelEnvOverrides(cfg)
+
+	if got := cfg.ModelList[0].APIBase; got != "https://private.example.com/v1" {
+		t.Errorf("APIBase = %q, want %q", got, "https://private.example.com/v1")
+	}
+}
+
+func TestApplyModelEnvOverrides_ExplicitVarRef_Proxy(t *testing.T) {
+	t.Setenv("MY_PROXY", "http://proxy.example.com:8080")
+
+	cfg := &Config{
+		ModelList: []ModelConfig{
+			{ModelName: "proxied", Model: "openai/gpt-4o", APIKey: "key", Proxy: "${MY_PROXY}"},
+		},
+	}
+
+	applyModelEnvOverrides(cfg)
+
+	if got := cfg.ModelList[0].Proxy; got != "http://proxy.example.com:8080" {
+		t.Errorf("Proxy = %q, want %q", got, "http://proxy.example.com:8080")
+	}
+}
+
+func TestApplyModelEnvOverrides_VarRef_ThenProviderFallback(t *testing.T) {
+	// ${VAR} on api_key resolves to empty (unset) → provider fallback should still apply
+	t.Setenv("OPENAI_API_KEY", "sk-from-provider-map")
+
+	cfg := &Config{
+		ModelList: []ModelConfig{
+			// api_key is empty — should be filled by provider map fallback
+			{ModelName: "gpt4", Model: "openai/gpt-4o", APIKey: ""},
+		},
+	}
+
+	applyModelEnvOverrides(cfg)
+
+	if got := cfg.ModelList[0].APIKey; got != "sk-from-provider-map" {
+		t.Errorf("APIKey = %q, want %q (provider fallback should apply)", got, "sk-from-provider-map")
+	}
+}
+
+func TestApplyModelEnvOverrides_HardcodedAPIKey_NotOverridden(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "sk-from-env")
+
+	cfg := &Config{
+		ModelList: []ModelConfig{
+			{ModelName: "gpt4", Model: "openai/gpt-4o", APIKey: "sk-hardcoded"},
+		},
+	}
+
+	applyModelEnvOverrides(cfg)
+
+	if got := cfg.ModelList[0].APIKey; got != "sk-hardcoded" {
+		t.Errorf("APIKey = %q, want %q (hardcoded value must not be overridden)", got, "sk-hardcoded")
+	}
+}
