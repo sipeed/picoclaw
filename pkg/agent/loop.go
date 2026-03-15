@@ -2511,10 +2511,11 @@ func (al *AgentLoop) executeToolCalls(
 			})
 
 		// Heartbeat lazy worktree: create worktree on first write-tool call
+		// Always use ai.Workspace (not GetPlanWorkDir) to avoid creating worktrees
+		// against stale project paths from previous plans.
 		if opts.Background && isWriteTool(tc.Name) && !agent.IsInWorktree(opts.SessionKey) {
 			taskName := "heartbeat-" + time.Now().Format("20060102")
-			hbDir := agent.ContextBuilder.GetPlanWorkDir()
-			if wt, wtErr := agent.ActivateWorktree(opts.SessionKey, taskName, hbDir); wtErr == nil {
+			if wt, wtErr := agent.ActivateWorktree(opts.SessionKey, taskName, agent.Workspace); wtErr == nil {
 				logger.InfoCF("agent", "Heartbeat worktree created", map[string]any{"branch": wt.Branch})
 			}
 		}

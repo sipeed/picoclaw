@@ -61,6 +61,16 @@ func resolveFS(ctx context.Context, fs fileSystem, path string) fileSystem {
 		return fs
 	}
 
+	// Absolute paths under the original workspace use original fs
+	// (e.g. heartbeat reading workspace files while in a worktree)
+	if filepath.IsAbs(path) {
+		if sfs, ok := fs.(*sandboxFs); ok {
+			if strings.HasPrefix(path, sfs.workspace+"/") || path == sfs.workspace {
+				return fs
+			}
+		}
+	}
+
 	// Only sandboxFs supports workspace override
 
 	if sfs, ok := fs.(*sandboxFs); ok {
