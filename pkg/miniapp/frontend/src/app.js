@@ -15,7 +15,7 @@ if (!window.ORCH_ENABLED) {
   var orchPanel  = document.getElementById('orch');
   if (orchTabBtn) orchTabBtn.style.display = 'none';
   if (orchPanel)  orchPanel.style.display  = 'none';
-  document.documentElement.style.setProperty('--tab-count', '6');
+  document.documentElement.style.setProperty('--tab-count', '7');
 }
 
 // Tab switching — re-fetch data unless SSE delivered recently
@@ -42,6 +42,7 @@ tabs.forEach((tab, index) => {
     if (p === 'plan' && !fresh) loadPlan();
     if (p === 'skills' && !fresh) loadSkills();
     if (p === 'session' && !fresh) loadSession();
+    if (p === 'research') loadResearch();
     if (p === 'git') loadGit();
     if (p === 'dev' && !fresh) loadDev();
     if (p === 'config') connectLogsWs();
@@ -1336,6 +1337,197 @@ window.startPlan = startPlan;
 window.toggleSystemPrompt = toggleSystemPrompt;
 window.loadGit = loadGit;
 window.saveLogSnapshot = saveLogSnapshot;
+
+// ── Research ──
+
+var researchCurrentTaskId = null;
+
+const STATUS_COLORS = {
+  pending:   { bg: 'rgba(234,179,8,0.15)',  text: '#ca8a04' },
+  active:    { bg: 'rgba(59,130,246,0.15)', text: '#2563eb' },
+  completed: { bg: 'rgba(34,197,94,0.15)',  text: '#16a34a' },
+  failed:    { bg: 'rgba(239,68,68,0.15)',  text: '#dc2626' },
+  canceled:  { bg: 'rgba(107,114,128,0.15)', text: '#6b7280' },
+};
+
+async function loadResearch() {
+  var el = document.getElementById('research-tasks');
+  var loading = document.getElementById('research-loading');
+  loading.classList.remove('hidden');
+  el.innerHTML = '';
+  try {
+    var resp = await fetch(
+      API_BASE + '/miniapp/api/research?initData=' + encodeURIComponent(initData)
+    );
+    var tasks = await resp.json();
+    loading.classList.add('hidden');
+    if (!tasks || tasks.length === 0) {
+      el.innerHTML = '<div class="empty-state">No research tasks yet.</div>';
+      return;
+    }
+    el.innerHTML = tasks.map(function(t) {
+      var sc = STATUS_COLORS[t.status] || STATUS_COLORS.pending;
+      return '<div class="card glass glass-interactive" style="cursor:pointer;padding:14px" onclick="openResearchTask(\'' + t.id + '\')">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+          '<span style="font-weight:600;font-size:15px">' + esc(t.title) + '</span>' +
+          '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:' +
+            sc.bg + ';color:' + sc.text + '">' + t.status + '</span>' +
+        '</div>' +
+        (t.description ? '<div style="color:var(--hint);font-size:13px;margin-top:4px;line-height:1.4">' + esc(t.description).substring(0, 120) + '</div>' : '') +
+        '<div style="color:var(--hint);font-size:11px;margin-top:6px">' +
+          t.document_count + ' docs · ' + new Date(t.created_at).toLocaleDateString() +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    loading.classList.add('hidden');
+    el.innerHTML = '<div class="empty-state">Failed to load tasks.</div>';
+  }
+}
+
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function openResearchTask(id) {
+  researchCurrentTaskId = id;
+  document.getElementById('research-list-view').classList.add('hidden');
+  document.getElementById('research-detail-view').classList.remove('hidden');
+  var el = document.getElementById('research-detail-content');
+  el.innerHTML = '<div class="loading">Loading...</div>';
+  try {
+    var resp = await fetch(
+      API_BASE + '/miniapp/api/research/' + id + '?initData=' + encodeURIComponent(initData)
+    );
+    var task = await resp.json();
+    var sc = STATUS_COLORS[task.status] || STATUS_COLORS.pending;
+    var canCancel = task.status === 'pending' || task.status === 'active';
+    var canReopen = task.status === 'completed' || task.status === 'failed';
+
+    var html = '<div class="card glass">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
+        '<span style="font-weight:700;font-size:17px">' + esc(task.title) + '</span>' +
+        '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:' +
+          sc.bg + ';color:' + sc.text + '">' + task.status + '</span>' +
+      '</div>';
+    if (task.description) {
+      html += '<div style="color:var(--hint);font-size:13px;line-height:1.5;margin-bottom:8px;white-space:pre-wrap">' + esc(task.description) + '</div>';
+    }
+    html += '<div style="color:var(--hint);font-size:11px">' +
+      'Created: ' + new Date(task.created_at).toLocaleString() +
+      (task.completed_at ? ' · Completed: ' + new Date(task.completed_at).toLocaleString() : '') +
+    '</div>';
+    if (canCancel || canReopen) {
+      html += '<div style="margin-top:10px;display:flex;gap:8px">';
+      if (canCancel) html += '<button class="worktree-btn dispose" onclick="researchAction(\'' + id + '\',\'cancel\')">Cancel</button>';
+      if (canReopen) html += '<button class="worktree-btn merge" onclick="researchAction(\'' + id + '\',\'reopen\')">Reopen</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // Documents
+    html += '<div class="card-title" style="margin-top:12px">Documents (' + task.documents.length + ')</div>';
+    if (task.documents.length === 0) {
+      html += '<div class="empty-state" style="padding:24px">No documents yet.</div>';
+    } else {
+      html += task.documents.map(function(d) {
+        return '<div class="card glass" style="padding:12px;cursor:pointer" onclick="toggleResearchDoc(this, \'' + id + '\', \'' + d.id + '\')">' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="color:var(--hint);font-family:monospace;font-size:12px">#' + d.seq + '</span>' +
+            '<span style="font-weight:600;font-size:14px;flex:1">' + esc(d.title) + '</span>' +
+            '<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:var(--tab-track-bg);color:var(--hint)">' + d.doc_type + '</span>' +
+          '</div>' +
+          (d.summary ? '<div style="color:var(--hint);font-size:12px;margin-top:4px">' + esc(d.summary) + '</div>' : '') +
+          '<div class="research-doc-body hidden" style="margin-top:8px;border-top:1px solid var(--glass-divider);padding-top:8px">' +
+            '<div class="loading" style="padding:12px">Loading...</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<div class="empty-state">Failed to load task.</div>';
+  }
+}
+
+async function toggleResearchDoc(card, taskId, docId) {
+  var body = card.querySelector('.research-doc-body');
+  if (!body) return;
+  if (!body.classList.contains('hidden')) {
+    body.classList.add('hidden');
+    return;
+  }
+  body.classList.remove('hidden');
+  if (body.dataset.loaded) return;
+  try {
+    var resp = await fetch(
+      API_BASE + '/miniapp/api/research/' + taskId + '/doc/' + docId +
+      '?initData=' + encodeURIComponent(initData)
+    );
+    var data = await resp.json();
+    body.dataset.loaded = '1';
+    body.innerHTML = '<pre style="font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:50vh;overflow:auto">' +
+      esc(data.content) + '</pre>';
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--hint);font-size:12px">Failed to load document.</div>';
+  }
+}
+
+async function researchAction(taskId, action) {
+  try {
+    await fetch(
+      API_BASE + '/miniapp/api/research/' + taskId + '?initData=' + encodeURIComponent(initData),
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: action }) }
+    );
+    openResearchTask(taskId);
+  } catch (e) {
+    // ignore
+  }
+}
+
+function showResearchList() {
+  document.getElementById('research-detail-view').classList.add('hidden');
+  document.getElementById('research-list-view').classList.remove('hidden');
+  researchCurrentTaskId = null;
+  loadResearch();
+}
+
+function showNewTaskForm() {
+  document.getElementById('research-new-form').classList.remove('hidden');
+  document.getElementById('research-title').focus();
+}
+
+function hideNewTaskForm() {
+  document.getElementById('research-new-form').classList.add('hidden');
+  document.getElementById('research-title').value = '';
+  document.getElementById('research-desc').value = '';
+}
+
+async function createResearchTask() {
+  var title = document.getElementById('research-title').value.trim();
+  var desc = document.getElementById('research-desc').value.trim();
+  if (!title) return;
+  try {
+    await fetch(
+      API_BASE + '/miniapp/api/research?initData=' + encodeURIComponent(initData),
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title, description: desc }) }
+    );
+    hideNewTaskForm();
+    loadResearch();
+  } catch (e) {
+    // ignore
+  }
+}
+
+window.showNewTaskForm = showNewTaskForm;
+window.hideNewTaskForm = hideNewTaskForm;
+window.createResearchTask = createResearchTask;
+window.openResearchTask = openResearchTask;
+window.toggleResearchDoc = toggleResearchDoc;
+window.researchAction = researchAction;
+window.showResearchList = showResearchList;
 
 
 
