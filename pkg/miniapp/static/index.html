@@ -19,6 +19,7 @@
     <button class="tab" data-panel="skills">Skills</button>
     <button class="tab" data-panel="session">Session</button>
     <button class="tab" data-panel="config">Config</button>
+    <button class="tab" data-panel="research">Research</button>
     <button class="tab" data-panel="dev">Dev</button>
     <button class="tab" data-panel="orch">Orch</button>
   </div>
@@ -76,6 +77,31 @@
     <div class="log-actions">
       <button class="log-snap-btn" onclick="saveLogSnapshot()">Save Snapshot</button>
     </div>
+  </div>
+</div>
+
+<div id="research" class="panel">
+  <div id="research-list-view">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span class="card-title" style="margin:0">Research Tasks</span>
+      <button class="send-btn" style="padding:6px 14px;font-size:13px" onclick="showNewTaskForm()">+ New</button>
+    </div>
+    <div id="research-new-form" class="hidden" style="margin-bottom:12px">
+      <div class="card glass" style="padding:12px">
+        <input id="research-title" class="send-input glass glass-interactive" placeholder="Task title..." style="width:100%;margin-bottom:8px">
+        <textarea id="research-desc" class="send-input glass glass-interactive" placeholder="Description (optional)..." style="width:100%;min-height:60px;resize:vertical;margin-bottom:8px;border-radius:12px;padding:10px 16px"></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="send-btn" style="padding:6px 14px;font-size:13px;background:var(--hint)" onclick="hideNewTaskForm()">Cancel</button>
+          <button class="send-btn" style="padding:6px 14px;font-size:13px" onclick="createResearchTask()">Create</button>
+        </div>
+      </div>
+    </div>
+    <div class="loading hidden" id="research-loading">Loading tasks...</div>
+    <div id="research-tasks"></div>
+  </div>
+  <div id="research-detail-view" class="hidden">
+    <button class="git-back-btn" onclick="showResearchList()">&#8249; Back</button>
+    <div id="research-detail-content"></div>
   </div>
 </div>
 
