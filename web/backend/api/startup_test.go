@@ -16,8 +16,9 @@ func TestResolveLaunchCommandUsesConfigFileDefaults(t *testing.T) {
 	// pin them into autostart args.
 	launcherPath := launcherconfig.PathForAppConfig(configPath)
 	if err := launcherconfig.Save(launcherPath, launcherconfig.Config{
-		Port:   19999,
-		Public: true,
+		Port:         19999,
+		Public:       true,
+		AllowedCIDRs: []string{"192.168.1.0/24"},
 	}); err != nil {
 		t.Fatalf("launcherconfig.Save() error = %v", err)
 	}

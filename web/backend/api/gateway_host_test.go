@@ -31,8 +31,9 @@ func TestBuildWsURLUsesRequestHostWhenLauncherPublicSaved(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	launcherPath := launcherconfig.PathForAppConfig(configPath)
 	if err := launcherconfig.Save(launcherPath, launcherconfig.Config{
-		Port:   18800,
-		Public: true,
+		Port:         18800,
+		Public:       true,
+		AllowedCIDRs: []string{"192.168.1.0/24"},
 	}); err != nil {
 		t.Fatalf("launcherconfig.Save() error = %v", err)
 	}

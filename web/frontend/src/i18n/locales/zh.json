@@ -429,7 +429,7 @@
       "lan_access": "启用局域网访问",
       "lan_access_hint": "允许局域网中的其他设备访问当前服务。",
       "allowed_cidrs": "允许访问网段",
-      "allowed_cidrs_hint": "仅允许这些 CIDR 网段的客户端访问服务。可按行或逗号分隔；留空表示允许所有来源。",
+      "allowed_cidrs_hint": "仅允许这些 CIDR 网段的客户端访问服务。可按行或逗号分隔；启用局域网访问时必须填写，只有本地 localhost 模式才可留空。",
       "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
       "sections": {
         "agent": "智能体",
