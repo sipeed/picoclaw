@@ -629,12 +629,12 @@ func TestResolveEnvRef(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"${MY_SECRET}", "resolved-value"},          // set var → resolved
-		{"${UNSET_VAR_XYZ}", "${UNSET_VAR_XYZ}"},   // unset var → unchanged
-		{"literal-value", "literal-value"},           // no pattern → unchanged
+		{"${MY_SECRET}", "resolved-value"},             // set var → resolved
+		{"${UNSET_VAR_XYZ}", "${UNSET_VAR_XYZ}"},       // unset var → unchanged
+		{"literal-value", "literal-value"},             // no pattern → unchanged
 		{"prefix-${MY_SECRET}", "prefix-${MY_SECRET}"}, // partial → unchanged (no partial substitution)
 		{"${MY_SECRET}-suffix", "${MY_SECRET}-suffix"}, // partial → unchanged
-		{"${}", "${}"},                                // empty name → unchanged
+		{"${}", "${}"}, // empty name → unchanged
 	}
 
 	for _, tc := range tests {
