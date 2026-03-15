@@ -46,7 +46,7 @@ func TestInitChannels_MattermostEnabled(t *testing.T) {
 	cfg.Channels.Mattermost.BotToken = "token"
 
 	m := newInitTestManager(cfg)
-	if err := m.initChannels(); err != nil {
+	if err := m.initChannels(&cfg.Channels); err != nil {
 		t.Fatalf("initChannels() error: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestInitChannels_MattermostMissingRequiredFields(t *testing.T) {
 	// BotToken intentionally empty; channel should not initialize.
 
 	m := newInitTestManager(cfg)
-	if err := m.initChannels(); err != nil {
+	if err := m.initChannels(&cfg.Channels); err != nil {
 		t.Fatalf("initChannels() error: %v", err)
 	}
 

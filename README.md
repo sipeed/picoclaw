@@ -367,6 +367,985 @@ This creates `~/.picoclaw/config.json` and the workspace directory.
 }
 ```
 
+> **New**: The `model_list` configuration format allows zero-code provider addition. See [Model Configuration](#model-configuration-model_list) for details.
+> `request_timeout` is optional and uses seconds. If omitted or set to `<= 0`, PicoClaw uses the default timeout (120s).
+
+**3. Get API Keys**
+
+* **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
+* **Web Search** (optional):
+  * [Brave Search](https://brave.com/search/api) - Paid ($5/1000 queries, ~$5-6/month)
+  * [Perplexity](https://www.perplexity.ai) - AI-powered search with chat interface
+  * [SearXNG](https://github.com/searxng/searxng) - Self-hosted metasearch engine (free, no API key needed)
+  * [Tavily](https://tavily.com) - Optimized for AI Agents (1000 requests/month)
+  * DuckDuckGo - Built-in fallback (no API key required)
+
+> **Note**: See `config.example.json` for a complete configuration template.
+
+**4. Chat**
+
+```bash
+picoclaw agent -m "What is 2+2?"
+```
+
+That's it! You have a working AI assistant in 2 minutes.
+
+---
+
+## 💬 Chat Apps
+
+Talk to your picoclaw through Telegram, Discord, WhatsApp, Mattermost, Matrix, QQ, DingTalk, LINE, or WeCom
+
+> **Note**: All webhook-based channels (LINE, WeCom, etc.) are served on a single shared Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). There are no per-channel ports to configure. Note: Feishu uses WebSocket/SDK mode and does not use the shared HTTP webhook server.
+
+| Channel      | Setup                              |
+| ------------ | ---------------------------------- |
+| **Telegram** | Easy (just a token)                |
+| **Discord**  | Easy (bot token + intents)         |
+| **WhatsApp** | Easy (native: QR scan; or bridge URL) |
+| **Mattermost** | Easy (server URL + bot token)    |
+| **Matrix**   | Medium (homeserver + bot access token) |
+| **QQ**       | Easy (AppID + AppSecret)           |
+| **DingTalk** | Medium (app credentials)           |
+| **LINE**     | Medium (credentials + webhook URL) |
+| **WeCom AI Bot** | Medium (Token + AES key)       |
+
+<details>
+<summary><b>Telegram</b> (Recommended)</summary>
+
+**1. Create a bot**
+
+* Open Telegram, search `@BotFather`
+* Send `/newbot`, follow prompts
+* Copy the token
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_BOT_TOKEN",
+      "allow_from": ["YOUR_USER_ID"]
+    }
+  }
+}
+```
+
+> Get your user ID from `@userinfobot` on Telegram.
+
+**3. Run**
+
+```bash
+picoclaw gateway
+```
+
+**4. Telegram command menu (auto-registered at startup)**
+
+PicoClaw now keeps command definitions in one shared registry. On startup, Telegram will automatically register supported bot commands (for example `/start`, `/help`, `/show`, `/list`) so command menu and runtime behavior stay in sync.
+Telegram command menu registration remains channel-local discovery UX; generic command execution is handled centrally in the agent loop via the commands executor.
+
+If command registration fails (network/API transient errors), the channel still starts and PicoClaw retries registration in the background.
+
+</details>
+
+<details>
+<summary><b>Discord</b></summary>
+
+**1. Create a bot**
+
+* Go to <https://discord.com/developers/applications>
+* Create an application → Bot → Add Bot
+* Copy the bot token
+
+**2. Enable intents**
+
+* In the Bot settings, enable **MESSAGE CONTENT INTENT**
+* (Optional) Enable **SERVER MEMBERS INTENT** if you plan to use allow lists based on member data
+
+**3. Get your User ID**
+* Discord Settings → Advanced → enable **Developer Mode**
+* Right-click your avatar → **Copy User ID**
+
+**4. Configure**
+
+```json
+{
+  "channels": {
+    "discord": {
+      "enabled": true,
+      "token": "YOUR_BOT_TOKEN",
+      "allow_from": ["YOUR_USER_ID"]
+    }
+  }
+}
+```
+
+**5. Invite the bot**
+
+* OAuth2 → URL Generator
+* Scopes: `bot`
+* Bot Permissions: `Send Messages`, `Read Message History`
+* Open the generated invite URL and add the bot to your server
+
+**Optional: Group trigger mode**
+
+By default the bot responds to all messages in a server channel. To restrict responses to @-mentions only, add:
+
+```json
+{
+  "channels": {
+    "discord": {
+      "group_trigger": { "mention_only": true }
+    }
+  }
+}
+```
+
+You can also trigger by keyword prefixes (e.g. `!bot`):
+
+```json
+{
+  "channels": {
+    "discord": {
+      "group_trigger": { "prefixes": ["!bot"] }
+    }
+  }
+}
+```
+
+**6. Run**
+
+```bash
+picoclaw gateway
+```
+
+</details>
+
+<details>
+<summary><b>WhatsApp</b> (native via whatsmeow)</summary>
+
+PicoClaw can connect to WhatsApp in two ways:
+
+- **Native (recommended):** In-process using [whatsmeow](https://github.com/tulir/whatsmeow). No separate bridge. Set `"use_native": true` and leave `bridge_url` empty. On first run, scan the QR code with WhatsApp (Linked Devices). Session is stored under your workspace (e.g. `workspace/whatsapp/`). The native channel is **optional** to keep the default binary small; build with `-tags whatsapp_native` (e.g. `make build-whatsapp-native` or `go build -tags whatsapp_native ./cmd/...`).
+- **Bridge:** Connect to an external WebSocket bridge. Set `bridge_url` (e.g. `ws://localhost:3001`) and keep `use_native` false.
+
+**Configure (native)**
+
+```json
+{
+  "channels": {
+    "whatsapp": {
+      "enabled": true,
+      "use_native": true,
+      "session_store_path": "",
+      "allow_from": []
+    }
+  }
+}
+```
+
+If `session_store_path` is empty, the session is stored in `&lt;workspace&gt;/whatsapp/`. Run `picoclaw gateway`; on first run, scan the QR code printed in the terminal with WhatsApp → Linked Devices.
+
+</details>
+
+<details>
+<summary><b>QQ</b></summary>
+
+**1. Create a bot**
+
+- Go to [QQ Open Platform](https://q.qq.com/#)
+- Create an application → Get **AppID** and **AppSecret**
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "qq": {
+      "enabled": true,
+      "app_id": "YOUR_APP_ID",
+      "app_secret": "YOUR_APP_SECRET",
+      "allow_from": []
+    }
+  }
+}
+```
+
+> Set `allow_from` to empty to allow all users, or specify QQ numbers to restrict access.
+
+**3. Run**
+
+```bash
+picoclaw gateway
+```
+
+</details>
+
+<details>
+<summary><b>DingTalk</b></summary>
+
+**1. Create a bot**
+
+* Go to [Open Platform](https://open.dingtalk.com/)
+* Create an internal app
+* Copy Client ID and Client Secret
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "dingtalk": {
+      "enabled": true,
+      "client_id": "YOUR_CLIENT_ID",
+      "client_secret": "YOUR_CLIENT_SECRET",
+      "allow_from": []
+    }
+  }
+}
+```
+
+> Set `allow_from` to empty to allow all users, or specify DingTalk user IDs to restrict access.
+
+**3. Run**
+
+```bash
+picoclaw gateway
+```
+</details>
+
+<details>
+<summary><b>Mattermost</b></summary>
+
+**1. Create a bot account**
+
+- In Mattermost, go to **System Console** -> **Integrations** -> **Bot Accounts**
+- Create a bot account and copy its access token
+- Ensure the bot is added to channels where it should respond
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "mattermost": {
+      "enabled": true,
+      "url": "https://your-mattermost.example.com",
+      "bot_token": "YOUR_MATTERMOST_BOT_TOKEN",
+      "allow_from": []
+    }
+  }
+}
+```
+
+> Set `allow_from` empty to allow all users, or use Mattermost user IDs to restrict access.
+
+**3. Optional group trigger**
+
+By default, group/channel messages are processed. To require mention:
+
+```json
+{
+  "channels": {
+    "mattermost": {
+      "group_trigger": { "mention_only": true }
+    }
+  }
+}
+```
+
+**4. Run**
+
+```bash
+picoclaw gateway
+```
+
+For full options (`typing`, `placeholder`, `reasoning_channel_id`), see [Mattermost Channel Configuration Guide](docs/channels/mattermost/README.zh.md).
+
+</details>
+
+<details>
+<summary><b>Matrix</b></summary>
+
+**1. Prepare bot account**
+
+* Use your preferred homeserver (e.g. `https://matrix.org` or self-hosted)
+* Create a bot user and obtain its access token
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "matrix": {
+      "enabled": true,
+      "homeserver": "https://matrix.org",
+      "user_id": "@your-bot:matrix.org",
+      "access_token": "YOUR_MATRIX_ACCESS_TOKEN",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**3. Run**
+
+```bash
+picoclaw gateway
+```
+
+For full options (`device_id`, `join_on_invite`, `group_trigger`, `placeholder`, `reasoning_channel_id`), see [Matrix Channel Configuration Guide](docs/channels/matrix/README.md).
+
+</details>
+
+<details>
+<summary><b>LINE</b></summary>
+
+**1. Create a LINE Official Account**
+
+- Go to [LINE Developers Console](https://developers.line.biz/)
+- Create a provider → Create a Messaging API channel
+- Copy **Channel Secret** and **Channel Access Token**
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "line": {
+      "enabled": true,
+      "channel_secret": "YOUR_CHANNEL_SECRET",
+      "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
+      "webhook_path": "/webhook/line",
+      "allow_from": []
+    }
+  }
+}
+```
+
+> LINE webhook is served on the shared Gateway server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`).
+
+**3. Set up Webhook URL**
+
+LINE requires HTTPS for webhooks. Use a reverse proxy or tunnel:
+
+```bash
+# Example with ngrok (gateway default port is 18790)
+ngrok http 18790
+```
+
+Then set the Webhook URL in LINE Developers Console to `https://your-domain/webhook/line` and enable **Use webhook**.
+
+**4. Run**
+
+```bash
+picoclaw gateway
+```
+
+> In group chats, the bot responds only when @mentioned. Replies quote the original message.
+
+</details>
+
+<details>
+<summary><b>WeCom (企业微信)</b></summary>
+
+PicoClaw supports three types of WeCom integration:
+
+**Option 1: WeCom Bot (Bot)** - Easier setup, supports group chats
+**Option 2: WeCom App (Custom App)** - More features, proactive messaging, private chat only
+**Option 3: WeCom AI Bot (AI Bot)** - Official AI Bot, streaming replies, supports group & private chat
+
+See [WeCom AI Bot Configuration Guide](docs/channels/wecom/wecom_aibot/README.zh.md) for detailed setup instructions.
+
+**Quick Setup - WeCom Bot:**
+
+**1. Create a bot**
+
+* Go to WeCom Admin Console → Group Chat → Add Group Bot
+* Copy the webhook URL (format: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_path": "/webhook/wecom",
+      "allow_from": []
+    }
+  }
+}
+```
+
+> WeCom webhook is served on the shared Gateway server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`).
+
+**Quick Setup - WeCom App:**
+
+**1. Create an app**
+
+* Go to WeCom Admin Console → App Management → Create App
+* Copy **AgentId** and **Secret**
+* Go to "My Company" page, copy **CorpID**
+
+**2. Configure receive message**
+
+* In App details, click "Receive Message" → "Set API"
+* Set URL to `http://your-server:18790/webhook/wecom-app`
+* Generate **Token** and **EncodingAESKey**
+
+**3. Configure**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. Run**
+
+```bash
+picoclaw gateway
+```
+
+> **Note**: WeCom webhook callbacks are served on the Gateway port (default 18790). Use a reverse proxy for HTTPS.
+
+**Quick Setup - WeCom AI Bot:**
+
+**1. Create an AI Bot**
+
+* Go to WeCom Admin Console → App Management → AI Bot
+* In the AI Bot settings, configure callback URL: `http://your-server:18791/webhook/wecom-aibot`
+* Copy **Token** and click "Random Generate" for **EncodingAESKey**
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "wecom_aibot": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-aibot",
+      "allow_from": [],
+      "welcome_message": "Hello! How can I help you?"
+    }
+  }
+}
+```
+
+**3. Run**
+
+```bash
+picoclaw gateway
+```
+
+> **Note**: WeCom AI Bot uses streaming pull protocol — no reply timeout concerns. Long tasks (>30 seconds) automatically switch to `response_url` push delivery.
+
+</details>
+
+## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Join the Agent Social Network
+
+Connect Picoclaw to the Agent Social Network simply by sending a single message via the CLI or any integrated Chat App.
+
+**Read `https://clawdchat.ai/skill.md` and follow the instructions to join [ClawdChat.ai](https://clawdchat.ai)**
+
+## ⚙️ Configuration
+
+Config file: `~/.picoclaw/config.json`
+
+### Environment Variables
+
+You can override default paths using environment variables. This is useful for portable installations, containerized deployments, or running picoclaw as a system service. These variables are independent and control different paths.
+
+| Variable          | Description                                                                                                                             | Default Path              |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Overrides the path to the configuration file. This directly tells picoclaw which `config.json` to load, ignoring all other locations. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Overrides the root directory for picoclaw data. This changes the default location of the `workspace` and other data directories.          | `~/.picoclaw`             |
+
+**Examples:**
+
+```bash
+# Run picoclaw using a specific config file
+# The workspace path will be read from within that config file
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Run picoclaw with all its data stored in /opt/picoclaw
+# Config will be loaded from the default ~/.picoclaw/config.json
+# Workspace will be created at /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Use both for a fully customized setup
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
+
+### Workspace Layout
+
+PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspace`):
+
+```
+~/.picoclaw/workspace/
+├── sessions/          # Conversation sessions and history
+├── memory/           # Long-term memory (MEMORY.md)
+├── state/            # Persistent state (last channel, etc.)
+├── cron/             # Scheduled jobs database
+├── skills/           # Custom skills
+├── AGENTS.md         # Agent behavior guide
+├── HEARTBEAT.md      # Periodic task prompts (checked every 30 min)
+├── IDENTITY.md       # Agent identity
+├── SOUL.md           # Agent soul
+└── USER.md           # User preferences
+```
+
+### Skill Sources
+
+By default, skills are loaded from:
+
+1. `~/.picoclaw/workspace/skills` (workspace)
+2. `~/.picoclaw/skills` (global)
+3. `<current-working-directory>/skills` (builtin)
+
+For advanced/test setups, you can override the builtin skills root with:
+
+```bash
+export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
+```
+
+### Unified Command Execution Policy
+
+- Generic slash commands are executed through a single path in `pkg/agent/loop.go` via `commands.Executor`.
+- Channel adapters no longer consume generic commands locally; they forward inbound text to the bus/agent path. Telegram still auto-registers supported commands at startup.
+- Unknown slash command (for example `/foo`) passes through to normal LLM processing.
+- Registered but unsupported command on the current channel (for example `/show` on WhatsApp) returns an explicit user-facing error and stops further processing.
+### 🔒 Security Sandbox
+
+PicoClaw runs in a sandboxed environment by default. The agent can only access files and execute commands within the configured workspace.
+
+#### Default Configuration
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.picoclaw/workspace",
+      "restrict_to_workspace": true
+    }
+  }
+}
+```
+
+| Option                  | Default                 | Description                               |
+| ----------------------- | ----------------------- | ----------------------------------------- |
+| `workspace`             | `~/.picoclaw/workspace` | Working directory for the agent           |
+| `restrict_to_workspace` | `true`                  | Restrict file/command access to workspace |
+
+#### Protected Tools
+
+When `restrict_to_workspace: true`, the following tools are sandboxed:
+
+| Tool          | Function         | Restriction                            |
+| ------------- | ---------------- | -------------------------------------- |
+| `read_file`   | Read files       | Only files within workspace            |
+| `write_file`  | Write files      | Only files within workspace            |
+| `list_dir`    | List directories | Only directories within workspace      |
+| `edit_file`   | Edit files       | Only files within workspace            |
+| `append_file` | Append to files  | Only files within workspace            |
+| `exec`        | Execute commands | Command paths must be within workspace |
+
+#### Additional Exec Protection
+
+Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous commands:
+
+* `rm -rf`, `del /f`, `rmdir /s` — Bulk deletion
+* `format`, `mkfs`, `diskpart` — Disk formatting
+* `dd if=` — Disk imaging
+* Writing to `/dev/sd[a-z]` — Direct disk writes
+* `shutdown`, `reboot`, `poweroff` — System shutdown
+* Fork bomb `:(){ :|:& };:`
+
+#### Known Limitation: Child Processes From Build Tools
+
+The exec safety guard only inspects the command line PicoClaw launches directly. It does not recursively inspect child
+processes spawned by allowed developer tools such as `make`, `go run`, `cargo`, `npm run`, or custom build scripts.
+
+That means a top-level command can still compile or launch other binaries after it passes the initial guard check. In
+practice, treat build scripts, Makefiles, package scripts, and generated binaries as executable code that needs the same
+level of review as a direct shell command.
+
+For higher-risk environments:
+
+* Review build scripts before execution.
+* Prefer approval/manual review for compile-and-run workflows.
+* Run PicoClaw inside a container or VM if you need stronger isolation than the built-in guard provides.
+
+#### Error Examples
+
+```
+[ERROR] tool: Tool execution failed
+{tool=exec, error=Command blocked by safety guard (path outside working dir)}
+```
+
+```
+[ERROR] tool: Tool execution failed
+{tool=exec, error=Command blocked by safety guard (dangerous pattern detected)}
+```
+
+#### Disabling Restrictions (Security Risk)
+
+If you need the agent to access paths outside the workspace:
+
+**Method 1: Config file**
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "restrict_to_workspace": false
+    }
+  }
+}
+```
+
+**Method 2: Environment variable**
+
+```bash
+export PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false
+```
+
+> ⚠️ **Warning**: Disabling this restriction allows the agent to access any path on your system. Use with caution in controlled environments only.
+
+#### Security Boundary Consistency
+
+The `restrict_to_workspace` setting applies consistently across all execution paths:
+
+| Execution Path   | Security Boundary            |
+| ---------------- | ---------------------------- |
+| Main Agent       | `restrict_to_workspace` ✅   |
+| Subagent / Spawn | Inherits same restriction ✅ |
+| Heartbeat tasks  | Inherits same restriction ✅ |
+
+All paths share the same workspace restriction — there's no way to bypass the security boundary through subagents or scheduled tasks.
+
+### Heartbeat (Periodic Tasks)
+
+PicoClaw can perform periodic tasks automatically. Create a `HEARTBEAT.md` file in your workspace:
+
+```markdown
+# Periodic Tasks
+
+- Check my email for important messages
+- Review my calendar for upcoming events
+- Check the weather forecast
+```
+
+The agent will read this file every 30 minutes (configurable) and execute any tasks using available tools.
+
+#### Async Tasks with Spawn
+
+For long-running tasks (web search, API calls), use the `spawn` tool to create a **subagent**:
+
+```markdown
+# Periodic Tasks
+
+## Quick Tasks (respond directly)
+
+- Report current time
+
+## Long Tasks (use spawn for async)
+
+- Search the web for AI news and summarize
+- Check email and report important messages
+```
+
+**Key behaviors:**
+
+| Feature                 | Description                                               |
+| ----------------------- | --------------------------------------------------------- |
+| **spawn**               | Creates async subagent, doesn't block heartbeat           |
+| **Independent context** | Subagent has its own context, no session history          |
+| **message tool**        | Subagent communicates with user directly via message tool |
+| **Non-blocking**        | After spawning, heartbeat continues to next task          |
+
+#### How Subagent Communication Works
+
+```
+Heartbeat triggers
+    ↓
+Agent reads HEARTBEAT.md
+    ↓
+For long task: spawn subagent
+    ↓                           ↓
+Continue to next task      Subagent works independently
+    ↓                           ↓
+All tasks done            Subagent uses "message" tool
+    ↓                           ↓
+Respond HEARTBEAT_OK      User receives result directly
+```
+
+The subagent has access to tools (message, web_search, etc.) and can communicate with the user independently without going through the main agent.
+
+**Configuration:**
+
+```json
+{
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
+  }
+}
+```
+
+| Option     | Default | Description                        |
+| ---------- | ------- | ---------------------------------- |
+| `enabled`  | `true`  | Enable/disable heartbeat           |
+| `interval` | `30`    | Check interval in minutes (min: 5) |
+
+**Environment variables:**
+
+* `PICOCLAW_HEARTBEAT_ENABLED=false` to disable
+* `PICOCLAW_HEARTBEAT_INTERVAL=60` to change interval
+
+### Providers
+
+> [!NOTE]
+> Groq provides free voice transcription via Whisper. If configured, audio messages from any channel will be automatically transcribed at the agent level.
+
+| Provider     | Purpose                                 | Get API Key                                                  |
+| ------------ | --------------------------------------- | ------------------------------------------------------------ |
+| `gemini`     | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)           |
+| `zhipu`      | LLM (Zhipu direct)                      | [bigmodel.cn](https://bigmodel.cn)                           |
+| `volcengine` | LLM(Volcengine direct)                  | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw)                 |
+| `openrouter` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                       |
+| `anthropic`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com)       |
+| `openai`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)           |
+| `deepseek`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)       |
+| `qwen`       | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
+| `groq`       | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                 |
+| `cerebras`   | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                           |
+| `vivgrid`    | LLM (Vivgrid direct)                    | [vivgrid.com](https://vivgrid.com)                           |
+| `azure`      | LLM (Azure OpenAI)                      | [portal.azure.com](https://portal.azure.com)                 |
+
+### Model Configuration (model_list)
+
+> **What's New?** PicoClaw now uses a **model-centric** configuration approach. Simply specify `vendor/model` format (e.g., `zhipu/glm-4.7`) to add new providers—**zero code changes required!**
+
+This design also enables **multi-agent support** with flexible provider selection:
+
+- **Different agents, different providers**: Each agent can use its own LLM provider
+- **Model fallbacks**: Configure primary and fallback models for resilience
+- **Load balancing**: Distribute requests across multiple endpoints
+- **Centralized configuration**: Manage all providers in one place
+
+#### 📋 All Supported Vendors
+
+| Vendor              | `model` Prefix    | Default API Base                                    | Protocol  | API Key                                                          |
+| ------------------- | ----------------- |-----------------------------------------------------| --------- | ---------------------------------------------------------------- |
+| **OpenAI**          | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
+| **Anthropic**       | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
+| **智谱 AI (GLM)**   | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek**        | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [Get Key](https://platform.deepseek.com)                         |
+| **Google Gemini**   | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Get Key](https://aistudio.google.com/api-keys)                  |
+| **Groq**            | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [Get Key](https://console.groq.com)                              |
+| **Moonshot**        | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [Get Key](https://platform.moonshot.cn)                          |
+| **通义千问 (Qwen)** | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
+| **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
+| **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
+| **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
+| **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                            |
+| **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
+| **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
+| **VolcEngine (Doubao)** | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw)                        |
+| **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
+| **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Get Key](https://www.byteplus.com)                        |
+| **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
+| **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Get Key](https://longcat.chat/platform)                         |
+| **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [Get Token](https://modelscope.cn/my/tokens)                     |
+| **Azure OpenAI**    | `azure/`          | `https://{resource}.openai.azure.com`               | Azure     | [Get Key](https://portal.azure.com)                              |
+| **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
+| **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
+
+#### Basic Configuration
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
+      "api_key": "sk-your-openai-key"
+    },
+    {
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
+      "api_key": "sk-ant-your-key"
+    },
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "gpt-5.4"
+    }
+  }
+}
+```
+
+#### Vendor-Specific Examples
+
+**OpenAI**
+
+```json
+{
+  "model_name": "gpt-5.4",
+  "model": "openai/gpt-5.4",
+  "api_key": "sk-..."
+}
+```
+
+**VolcEngine (Doubao)**
+
+```json
+{
+  "model_name": "ark-code-latest",
+  "model": "volcengine/ark-code-latest",
+  "api_key": "sk-..."
+}
+```
+
+**智谱 AI (GLM)**
+
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+**DeepSeek**
+
+```json
+{
+  "model_name": "deepseek-chat",
+  "model": "deepseek/deepseek-chat",
+  "api_key": "sk-..."
+}
+```
+
+**Anthropic (with API key)**
+
+```json
+{
+  "model_name": "claude-sonnet-4.6",
+  "model": "anthropic/claude-sonnet-4.6",
+  "api_key": "sk-ant-your-key"
+}
+```
+
+> Run `picoclaw auth login --provider anthropic` to paste your API token.
+
+**Anthropic Messages API (native format)**
+
+For direct Anthropic API access or custom endpoints that only support Anthropic's native message format:
+
+```json
+{
+  "model_name": "claude-opus-4-6",
+  "model": "anthropic-messages/claude-opus-4-6",
+  "api_key": "sk-ant-your-key",
+  "api_base": "https://api.anthropic.com"
+}
+```
+
+> Use `anthropic-messages` protocol when:
+> - Using third-party proxies that only support Anthropic's native `/v1/messages` endpoint (not OpenAI-compatible `/v1/chat/completions`)
+> - Connecting to services like MiniMax, Synthetic that require Anthropic's native message format
+> - The existing `anthropic` protocol returns 404 errors (indicating the endpoint doesn't support OpenAI-compatible format)
+>
+> **Note:** The `anthropic` protocol uses OpenAI-compatible format (`/v1/chat/completions`), while `anthropic-messages` uses Anthropic's native format (`/v1/messages`). Choose based on your endpoint's supported format.
+
+**Ollama (local)**
+
+```json
+{
+  "model_name": "llama3",
+  "model": "ollama/llama3"
+}
+```
+
+**Custom Proxy/API**
+
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
+
+**LiteLLM Proxy**
+
+```json
+{
+  "model_name": "lite-gpt4",
+  "model": "litellm/lite-gpt4",
+  "api_base": "http://localhost:4000/v1",
+  "api_key": "sk-..."
+}
+```
+
+PicoClaw strips only the outer `litellm/` prefix before sending the request, so proxy aliases like `litellm/lite-gpt4` send `lite-gpt4`, while `litellm/openai/gpt-4o` sends `openai/gpt-4o`.
+
+#### Load Balancing
+
+Configure multiple endpoints for the same model name—PicoClaw will automatically round-robin between them:
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
+      "api_base": "https://api1.example.com/v1",
+      "api_key": "sk-key1"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
+      "api_base": "https://api2.example.com/v1",
+      "api_key": "sk-key2"
+    }
+  ]
+}
+```
+
 > See `config/config.example.json` in the repo for a complete configuration template with all available options.
 > 
 > Please note: config.example.json format is version 0, with sensitive codes in it, and will be auto migrated to version 1+, then, the config.json will only store insensitive data, the sensitive codes will be stored in .security.yml, if you need manually modify the codes, please see `docs/security_configuration.md` for more details.

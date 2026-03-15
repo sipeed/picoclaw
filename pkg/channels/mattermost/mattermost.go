@@ -496,14 +496,9 @@ func (c *MattermostChannel) SendPlaceholder(ctx context.Context, chatID string) 
 	if !c.config.Placeholder.Enabled {
 		return "", nil
 	}
-	text := c.config.Placeholder.Text
-	if text == "" {
-		text = "Thinking..."
-	}
-
 	payload := map[string]any{
 		"channel_id": chatID,
-		"message":    text,
+		"message":    c.config.Placeholder.GetRandomText(),
 	}
 	resp, err := c.doJSON(http.MethodPost, "/api/v4/posts", payload)
 	if err != nil {
