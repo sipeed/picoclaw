@@ -37,7 +37,7 @@ const (
 	dedupInterval = 60 * time.Second
 	dedupMaxSize  = 10000 // hard cap on dedup map entries
 	typingResend  = 8 * time.Second
-	typingSeconds = 20
+	typingSeconds = 10
 )
 
 var emojiRegexp = regexp.MustCompile(`<[^<]*?ext="([^"]+)"[^<]*?faceType=(\d+)[^<]*?>|<[^<]*?faceType=(\d+)[^<]*?ext="([^"]+)"[^<]*?>`)
@@ -253,7 +253,6 @@ func (c *QQChannel) getReplyExtInfo(ctx context.Context, chatID string) (replyID
 		c.replySeq.Store(0)
 		seq = c.replySeq.Add(1)
 	}
-
 	return replyID, seq
 }
 
