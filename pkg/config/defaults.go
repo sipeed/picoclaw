@@ -512,6 +512,9 @@ func DefaultConfig() *Config {
 			Spawn: ToolConfig{
 				Enabled: true,
 			},
+			SpawnStatus: ToolConfig{
+				Enabled: true,
+			},
 			SPI: ToolConfig{
 				Enabled: false, // Hardware tool - Linux only
 			},

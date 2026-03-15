@@ -233,7 +233,9 @@ func registerSharedTools(
 					return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
 				})
 				agent.Tools.Register(spawnTool)
-				agent.Tools.Register(tools.NewSpawnStatusTool(subagentManager))
+				if cfg.Tools.IsToolEnabled("spawn_status") {
+					agent.Tools.Register(tools.NewSpawnStatusTool(subagentManager))
+				}
 			} else {
 				logger.WarnCF("agent", "spawn tool requires subagent to be enabled", nil)
 			}

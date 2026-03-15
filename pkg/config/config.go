@@ -748,6 +748,7 @@ type ToolsConfig struct {
 	ReadFile        ReadFileToolConfig `json:"read_file"                                                envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
 	SendFile        ToolConfig         `json:"send_file"                                                envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
 	Spawn           ToolConfig         `json:"spawn"                                                    envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
+	SpawnStatus     ToolConfig         `json:"spawn_status"                                             envPrefix:"PICOCLAW_TOOLS_SPAWN_STATUS_"`
 	SPI             ToolConfig         `json:"spi"                                                      envPrefix:"PICOCLAW_TOOLS_SPI_"`
 	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
 	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
@@ -1043,6 +1044,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.ReadFile.Enabled
 	case "spawn":
 		return t.Spawn.Enabled
+	case "spawn_status":
+		return t.SpawnStatus.Enabled
 	case "spi":
 		return t.SPI.Enabled
 	case "subagent":
