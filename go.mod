@@ -4,7 +4,6 @@ go 1.25.7
 
 require (
 	github.com/adhocore/gronx v1.19.6
-	github.com/alecthomas/kong v1.14.0
 	github.com/alpacahq/alpaca-trade-api-go/v3 v3.9.1
 	github.com/anthropics/anthropic-sdk-go v1.22.1
 	github.com/bwmarrin/discordgo v0.29.0

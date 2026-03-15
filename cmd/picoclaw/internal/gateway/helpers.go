@@ -185,6 +185,11 @@ func gatewayCmd(debug bool) error {
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
 	channelManager.SetupHTTPServer(addr, healthServer)
 
+	// Start resource tracker for ETL Visibility
+	resourceTracker := health.NewResourceTracker(1 * time.Minute)
+	resourceTracker.Start(ctx)
+	fmt.Println("✓ Resource tracker started")
+
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
 		return err
@@ -214,6 +219,7 @@ func gatewayCmd(debug bool) error {
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
+	resourceTracker.Stop()
 	mediaStore.Stop()
 	agentLoop.Stop()
 	agentLoop.Close()
