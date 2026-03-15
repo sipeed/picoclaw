@@ -753,25 +753,25 @@ func (c *FeishuChannel) downloadExternalImage(
 		return ""
 	}
 
-	if _, err := io.Copy(out, resp.Body); err != nil {
+	if _, copyErr := io.Copy(out, resp.Body); copyErr != nil {
 		out.Close()
 		os.Remove(localPath)
 		logger.ErrorCF("feishu", "Failed to write external image to file", map[string]any{
-			"error": err.Error(),
+			"error": copyErr.Error(),
 		})
 		return ""
 	}
 	out.Close()
 
 	// Store in MediaStore
-	ref, err := store.Store(localPath, media.MediaMeta{
+	ref, storeErr := store.Store(localPath, media.MediaMeta{
 		Filename: filename,
 		Source:   "feishu_external",
 	}, scope)
-	if err != nil {
+	if storeErr != nil {
 		logger.ErrorCF("feishu", "Failed to store external image", map[string]any{
 			"url":   imageURL,
-			"error": err.Error(),
+			"error": storeErr.Error(),
 		})
 		os.Remove(localPath)
 		return ""
