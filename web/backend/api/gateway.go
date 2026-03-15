@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -44,8 +45,22 @@ var (
 )
 
 var gatewayHealthGet = func(url string, timeout time.Duration) (*http.Response, error) {
-	client := http.Client{Timeout: timeout}
+	transport := http.DefaultTransport
+	if strings.HasPrefix(url, "https://") {
+		transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // localhost self-signed
+		}
+	}
+	client := http.Client{Timeout: timeout, Transport: transport}
 	return client.Get(url)
+}
+
+// gatewayHealthScheme returns "https" if the gateway is serving TLS, "http" otherwise.
+func gatewayHealthScheme(cfg *config.Config) string {
+	if cfg != nil && strings.HasPrefix(cfg.Channels.Telegram.WebAppURL, "https://") {
+		return "https"
+	}
+	return "http"
 }
 
 // registerGatewayRoutes binds gateway lifecycle endpoints to the ServeMux.
@@ -356,7 +371,7 @@ func (h *Handler) startGatewayLocked(initialStatus string) (int, error) {
 			if healthPort == 0 {
 				healthPort = 18790
 			}
-			healthURL := fmt.Sprintf("http://%s/health", net.JoinHostPort(healthHost, strconv.Itoa(healthPort)))
+			healthURL := fmt.Sprintf("%s://%s/health", gatewayHealthScheme(cfg), net.JoinHostPort(healthHost, strconv.Itoa(healthPort)))
 			resp, err := gatewayHealthGet(healthURL, 1*time.Second)
 			if err == nil {
 				resp.Body.Close()
@@ -609,7 +624,7 @@ func (h *Handler) gatewayStatusData() map[string]any {
 			}
 		}
 
-		url := fmt.Sprintf("http://%s/health", net.JoinHostPort(host, strconv.Itoa(port)))
+		url := fmt.Sprintf("%s://%s/health", gatewayHealthScheme(cfg), net.JoinHostPort(host, strconv.Itoa(port)))
 		resp, err := gatewayHealthGet(url, 2*time.Second)
 
 		if err != nil {
