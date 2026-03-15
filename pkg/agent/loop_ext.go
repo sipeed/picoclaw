@@ -1,11 +1,18 @@
 package agent
 
 import (
+	"strings"
 	"sync"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/orch"
+	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/stats"
+	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // loopExt holds fork-specific fields for AgentLoop.
@@ -35,6 +42,61 @@ type loopExt struct {
 	onHeartbeatThreadUpdate func(int)
 }
 
+// initLoopExt initializes all fork-specific fields: stats tracker,
+// session tracker, orchestration broadcaster, and background goroutines.
+// Called from NewAgentLoop after the struct is constructed.
+func (al *AgentLoop) initLoopExt(cfg *config.Config, registry *AgentRegistry, enableStats bool) {
+	defaultAgent := registry.GetDefaultAgent()
+
+	// Stats tracker
+	if enableStats && defaultAgent != nil {
+		al.stats = stats.NewTracker(defaultAgent.Workspace)
+	}
+
+	// Session tracker
+	al.sessions = NewSessionTracker()
+
+	// Orchestration broadcaster — needed if any agent has subagents enabled.
+	// Note: instance.go maps defaults.Orchestration → Subagents.Enabled,
+	// so --orchestration is automatically reflected here.
+	al.orchReporter = orch.Noop
+	for _, id := range registry.ListAgentIDs() {
+		if a, ok := registry.GetAgent(id); ok && a.Subagents != nil && a.Subagents.Enabled {
+			al.orchBroadcaster = orch.NewBroadcaster()
+			al.orchReporter = al.orchBroadcaster
+			break
+		}
+	}
+
+	// Shutdown signal channel
+	al.done = make(chan struct{})
+
+	// Background GC goroutine
+	go al.gcLoop()
+}
+
+// closeExt releases fork-specific resources: done channel, stats tracker,
+// and session stores for all agents.
+func (al *AgentLoop) closeExt() {
+	select {
+	case <-al.done:
+		// already closed
+	default:
+		close(al.done)
+	}
+
+	if al.stats != nil {
+		al.stats.Close()
+	}
+
+	registry := al.GetRegistry()
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
+			agent.Sessions.Close()
+		}
+	}
+}
+
 // SetConfigSaver registers a callback to persist config changes.
 func (al *AgentLoop) SetConfigSaver(fn func(*config.Config) error) {
 	al.saveConfig = fn
@@ -43,4 +105,140 @@ func (al *AgentLoop) SetConfigSaver(fn func(*config.Config) error) {
 // SetHeartbeatThreadUpdater registers a callback to apply runtime heartbeat thread updates.
 func (al *AgentLoop) SetHeartbeatThreadUpdater(fn func(int)) {
 	al.onHeartbeatThreadUpdate = fn
+}
+
+// registerOrchestrationTools registers spawn, subagent, answer, and review_plan
+// tools for agents with orchestration enabled.
+func registerOrchestrationTools(
+	cfg *config.Config,
+	agent *AgentInstance,
+	agentID string,
+	registry *AgentRegistry,
+	provider providers.LLMProvider,
+	msgBus *bus.MessageBus,
+	al *AgentLoop,
+) {
+	if agent.Subagents == nil || !agent.Subagents.Enabled {
+		return
+	}
+
+	webSearchOpts := tools.WebSearchToolOptions{
+		BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey, cfg.Tools.Web.Brave.APIKeys),
+		BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
+		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
+		TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey, cfg.Tools.Web.Tavily.APIKeys),
+		TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
+		TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
+		TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
+		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
+		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+		PerplexityAPIKeys: config.MergeAPIKeys(
+			cfg.Tools.Web.Perplexity.APIKey,
+			cfg.Tools.Web.Perplexity.APIKeys,
+		),
+		PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
+		PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+	}
+
+	subagentManager := tools.NewSubagentManager(
+		provider,
+		agent.Model,
+		agent.Workspace,
+		msgBus,
+		al.reporter(),
+		webSearchOpts,
+	)
+
+	subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+
+	// Wire session recorder for DAG persistence.
+	recorder := newSessionRecorder(agent.Sessions)
+	conductorKey := routing.BuildAgentMainSessionKey(agent.ID)
+	subagentManager.SetSessionRecorder(recorder, conductorKey)
+
+	agent.SubagentMgr = subagentManager
+
+	spawnTool := tools.NewSpawnTool(subagentManager)
+	currentAgentID := agentID
+	spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
+		return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
+	})
+	agent.Tools.Register(spawnTool)
+
+	// Register blocking subagent tool alongside spawn
+	agent.Tools.Register(tools.NewSubagentTool(subagentManager))
+
+	// Register conductor-side escalation tools (answer questions, review plans)
+	agent.Tools.Register(tools.NewAnswerSubagentTool(subagentManager))
+	agent.Tools.Register(tools.NewReviewSubagentPlanTool(subagentManager))
+
+	// Set orchestration mode on context builder
+	agent.ContextBuilder.SetOrchestrationEnabled(true)
+}
+
+// handleTaskIntervention checks if a message is a reply to an active task and
+// either cancels the task or injects a user intervention. Returns (response, handled).
+func (al *AgentLoop) handleTaskIntervention(msg bus.InboundMessage) (string, bool) {
+	taskID, ok := msg.Metadata["task_id"]
+	if !ok || taskID == "" {
+		return "", false
+	}
+
+	val, found := al.activeTasks.Load(taskID)
+	if !found {
+		// Task not found — fall through to normal processing
+		return "", false
+	}
+
+	task := val.(*activeTask)
+
+	content := strings.TrimSpace(msg.Content)
+	lower := strings.ToLower(content)
+
+	// Check for stop keywords
+	stopKeywords := []string{
+		"stop", "cancel", "abort",
+		"停止", "中止", "やめて", //nolint:gosmopolitan // intentional CJK stop words
+	}
+
+	for _, kw := range stopKeywords {
+		if lower == kw {
+			task.cancel()
+
+			logger.InfoCF("agent", "Task canceled by user intervention",
+				map[string]any{"task_id": taskID})
+
+			return "Task canceled.", true
+		}
+	}
+
+	// Inject message into interrupt channel for the tool loop
+	select {
+	case task.interrupt <- content:
+		logger.InfoCF("agent", "User intervention queued",
+			map[string]any{"task_id": taskID, "content": utils.Truncate(content, 80)})
+	default:
+		logger.WarnCF("agent", "Interrupt channel full, message dropped",
+			map[string]any{"task_id": taskID})
+	}
+
+	return "Intervention sent to running task.", true
+}
+
+// expandForkCommands expands fork-specific /skill and /plan commands in the message.
+// Returns the modified message and the compact form for history.
+func (al *AgentLoop) expandForkCommands(msg *bus.InboundMessage) string {
+	var expansionCompact string
+
+	if expanded, compact, ok := al.expandSkillCommand(*msg); ok {
+		msg.Content = expanded
+		expansionCompact = compact
+	}
+
+	if expanded, compact, ok := al.expandPlanCommand(*msg); ok {
+		msg.Content = expanded
+		expansionCompact = compact
+	}
+
+	return expansionCompact
 }

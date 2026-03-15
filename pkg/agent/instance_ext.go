@@ -2,10 +2,12 @@ package agent
 
 import (
 	"fmt"
+	"path/filepath"
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/git"
+	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -16,9 +18,6 @@ type instanceExt struct {
 	// Used by runAgentLoop to wait for spawned subagents before worktree cleanup.
 	SubagentMgr *tools.SubagentManager
 
-	Subagents    *config.SubagentsConfig
-	SkillsFilter []string
-
 	// Interview staleness tracking: consecutive turns where MEMORY.md was not updated.
 	interviewStaleCount int
 	interviewMemoryLen  int
@@ -26,6 +25,47 @@ type instanceExt struct {
 	// Per-session worktree isolation
 	worktrees  map[string]*git.WorktreeInfo // sessionKey → worktree
 	worktreeMu sync.RWMutex
+}
+
+// initInstanceExt initializes fork-specific fields: subagents config,
+// skills filter, plan model resolution, and worktree pruning.
+func (ai *AgentInstance) initInstanceExt(
+	agentCfg *config.AgentConfig,
+	defaults *config.AgentDefaults,
+	cfg *config.Config,
+) {
+	// Extract subagents and skills filter from agent config
+	if agentCfg != nil {
+		ai.Subagents = agentCfg.Subagents
+		ai.SkillsFilter = agentCfg.Skills
+	}
+
+	// Apply defaults.Orchestration: if the flag is set, ensure orchestration is enabled.
+	if defaults.Orchestration {
+		if ai.Subagents == nil {
+			ai.Subagents = &config.SubagentsConfig{Enabled: true}
+		} else {
+			ai.Subagents.Enabled = true
+		}
+	}
+
+	// Resolve plan model (for interviewing/review phases)
+	ai.PlanModel = resolvePlanModel(agentCfg, defaults)
+	ai.PlanFallbacks = resolvePlanFallbacks(agentCfg, defaults)
+
+	if ai.PlanModel != "" {
+		planModelCfg := providers.ModelConfig{
+			Primary:   ai.PlanModel,
+			Fallbacks: ai.PlanFallbacks,
+		}
+		ai.PlanCandidates = providers.ResolveCandidates(planModelCfg, defaults.Provider)
+	}
+
+	// Startup cleanup: prune orphaned worktrees
+	worktreesDir := filepath.Join(ai.Workspace, ".worktrees")
+	if repoRoot := git.FindRepoRoot(ai.Workspace); repoRoot != "" {
+		git.PruneOrphaned(repoRoot, worktreesDir)
+	}
 }
 
 // ActivateWorktree creates a worktree for a session.
