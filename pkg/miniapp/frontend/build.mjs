@@ -15,6 +15,7 @@ const result = await Bun.build({
   target: 'browser',
   format: 'iife',
   sourcemap: 'none',
+  packages: 'bundle',
 });
 
 if (!result.success) {
