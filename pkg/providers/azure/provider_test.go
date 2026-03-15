@@ -53,7 +53,7 @@ func TestProviderChat_AzureAuthHeader(t *testing.T) {
 	var capturedAuth string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedAPIKey = r.Header.Get("api-key")
+		capturedAPIKey = r.Header.Get("Api-Key")
 		capturedAuth = r.Header.Get("Authorization")
 		writeValidResponse(w)
 	}))

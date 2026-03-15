@@ -128,7 +128,7 @@ func (p *Provider) Chat(
 	// Azure uses api-key header instead of Authorization: Bearer
 	req.Header.Set("Content-Type", "application/json")
 	if p.apiKey != "" {
-		req.Header.Set("api-key", p.apiKey)
+		req.Header.Set("Api-Key", p.apiKey)
 	}
 
 	resp, err := p.httpClient.Do(req)
