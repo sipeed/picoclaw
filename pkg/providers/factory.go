@@ -40,6 +40,10 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 	providerName := strings.ToLower(cfg.Agents.Defaults.Provider)
 	lowerModel := strings.ToLower(model)
 
+	if providerName == "" && model == "" {
+		return providerSelection{}, fmt.Errorf("no model configured: agents.defaults.model is empty")
+	}
+
 	sel := providerSelection{
 		providerType: providerTypeHTTPCompat,
 		model:        model,
@@ -208,6 +212,24 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = "https://api.mistral.ai/v1"
 				}
 			}
+		case "minimax":
+			if cfg.Providers.Minimax.APIKey != "" {
+				sel.apiKey = cfg.Providers.Minimax.APIKey
+				sel.apiBase = cfg.Providers.Minimax.APIBase
+				sel.proxy = cfg.Providers.Minimax.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.minimaxi.com/v1"
+				}
+			}
+		case "longcat":
+			if cfg.Providers.LongCat.APIKey != "" {
+				sel.apiKey = cfg.Providers.LongCat.APIKey
+				sel.apiBase = cfg.Providers.LongCat.APIBase
+				sel.proxy = cfg.Providers.LongCat.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.longcat.chat/openai"
+				}
+			}
 		case "github_copilot", "copilot":
 			sel.providerType = providerTypeGitHubCopilot
 			if cfg.Providers.GitHubCopilot.APIBase != "" {
@@ -325,12 +347,26 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			if sel.apiBase == "" {
 				sel.apiBase = "https://api.mistral.ai/v1"
 			}
+		case (strings.Contains(lowerModel, "minimax") || strings.HasPrefix(model, "minimax/")) && cfg.Providers.Minimax.APIKey != "":
+			sel.apiKey = cfg.Providers.Minimax.APIKey
+			sel.apiBase = cfg.Providers.Minimax.APIBase
+			sel.proxy = cfg.Providers.Minimax.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.minimaxi.com/v1"
+			}
 		case strings.HasPrefix(model, "avian/") && cfg.Providers.Avian.APIKey != "":
 			sel.apiKey = cfg.Providers.Avian.APIKey
 			sel.apiBase = cfg.Providers.Avian.APIBase
 			sel.proxy = cfg.Providers.Avian.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "https://api.avian.io/v1"
+			}
+		case (strings.Contains(lowerModel, "longcat") || strings.HasPrefix(model, "longcat/")) && cfg.Providers.LongCat.APIKey != "":
+			sel.apiKey = cfg.Providers.LongCat.APIKey
+			sel.apiBase = cfg.Providers.LongCat.APIBase
+			sel.proxy = cfg.Providers.LongCat.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.longcat.chat/openai"
 			}
 		case cfg.Providers.VLLM.APIBase != "":
 			sel.apiKey = cfg.Providers.VLLM.APIKey

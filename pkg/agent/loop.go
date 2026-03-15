@@ -25,7 +25,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -48,6 +47,10 @@ type AgentLoop struct {
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
 	cmdRegistry    *commands.Registry
+	mcp            mcpRuntime
+	mu             sync.RWMutex
+	// Track active requests for safe provider cleanup
+	activeRequests sync.WaitGroup
 }
 
 // processOptions configures how a message is processed
@@ -120,19 +123,21 @@ func registerSharedTools(
 			continue
 		}
 
-		// Web tools
 		if cfg.Tools.IsToolEnabled("web") {
 			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
-				BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
+				BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey, cfg.Tools.Web.Brave.APIKeys),
 				BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 				BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-				TavilyAPIKey:         cfg.Tools.Web.Tavily.APIKey,
+				TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey, cfg.Tools.Web.Tavily.APIKeys),
 				TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
 				TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
 				TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
 				DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 				DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
-				PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
+				PerplexityAPIKeys: config.MergeAPIKeys(
+					cfg.Tools.Web.Perplexity.APIKey,
+					cfg.Tools.Web.Perplexity.APIKeys,
+				),
 				PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 				PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 				SearXNGBaseURL:       cfg.Tools.Web.SearXNG.BaseURL,
@@ -238,71 +243,8 @@ func registerSharedTools(
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
 
-	// Initialize MCP servers for all agents
-	if al.cfg.Tools.IsToolEnabled("mcp") {
-		mcpManager := mcp.NewManager()
-		// Ensure MCP connections are cleaned up on exit, regardless of initialization success
-		// This fixes resource leak when LoadFromMCPConfig partially succeeds then fails
-		defer func() {
-			if err := mcpManager.Close(); err != nil {
-				logger.ErrorCF("agent", "Failed to close MCP manager",
-					map[string]any{
-						"error": err.Error(),
-					})
-			}
-		}()
-
-		defaultAgent := al.registry.GetDefaultAgent()
-		var workspacePath string
-		if defaultAgent != nil && defaultAgent.Workspace != "" {
-			workspacePath = defaultAgent.Workspace
-		} else {
-			workspacePath = al.cfg.WorkspacePath()
-		}
-
-		if err := mcpManager.LoadFromMCPConfig(ctx, al.cfg.Tools.MCP, workspacePath); err != nil {
-			logger.WarnCF("agent", "Failed to load MCP servers, MCP tools will not be available",
-				map[string]any{
-					"error": err.Error(),
-				})
-		} else {
-			// Register MCP tools for all agents
-			servers := mcpManager.GetServers()
-			uniqueTools := 0
-			totalRegistrations := 0
-			agentIDs := al.registry.ListAgentIDs()
-			agentCount := len(agentIDs)
-
-			for serverName, conn := range servers {
-				uniqueTools += len(conn.Tools)
-				for _, tool := range conn.Tools {
-					for _, agentID := range agentIDs {
-						agent, ok := al.registry.GetAgent(agentID)
-						if !ok {
-							continue
-						}
-
-						mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
-						agent.Tools.Register(mcpTool)
-						totalRegistrations++
-						logger.DebugCF("agent", "Registered MCP tool",
-							map[string]any{
-								"agent_id": agentID,
-								"server":   serverName,
-								"tool":     tool.Name,
-								"name":     mcpTool.Name(),
-							})
-					}
-				}
-			}
-			logger.InfoCF("agent", "MCP tools registered successfully",
-				map[string]any{
-					"server_count":        len(servers),
-					"unique_tools":        uniqueTools,
-					"total_registrations": totalRegistrations,
-					"agent_count":         agentCount,
-				})
-		}
+	if err := al.ensureMCPInitialized(ctx); err != nil {
+		return err
 	}
 
 	for al.running.Load() {
@@ -340,7 +282,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					// If so, skip publishing to avoid duplicate messages to the user.
 					// Use default agent's tools to check (message tool is shared).
 					alreadySent := false
-					defaultAgent := al.registry.GetDefaultAgent()
+					defaultAgent := al.GetRegistry().GetDefaultAgent()
 					if defaultAgent != nil {
 						if tool, ok := defaultAgent.Tools.Get("message"); ok {
 							if mt, ok := tool.(*tools.MessageTool); ok {
@@ -380,9 +322,26 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
+// Close releases resources held by agent session stores. Call after Stop.
+func (al *AgentLoop) Close() {
+	mcpManager := al.mcp.takeManager()
+
+	if mcpManager != nil {
+		if err := mcpManager.Close(); err != nil {
+			logger.ErrorCF("agent", "Failed to close MCP manager",
+				map[string]any{
+					"error": err.Error(),
+				})
+		}
+	}
+
+	al.GetRegistry().Close()
+}
+
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
-	for _, agentID := range al.registry.ListAgentIDs() {
-		if agent, ok := al.registry.GetAgent(agentID); ok {
+	registry := al.GetRegistry()
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
 			agent.Tools.Register(tool)
 		}
 	}
@@ -392,12 +351,123 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }
 
+// ReloadProviderAndConfig atomically swaps the provider and config with proper synchronization.
+// It uses a context to allow timeout control from the caller.
+// Returns an error if the reload fails or context is canceled.
+func (al *AgentLoop) ReloadProviderAndConfig(
+	ctx context.Context,
+	provider providers.LLMProvider,
+	cfg *config.Config,
+) error {
+	// Validate inputs
+	if provider == nil {
+		return fmt.Errorf("provider cannot be nil")
+	}
+	if cfg == nil {
+		return fmt.Errorf("config cannot be nil")
+	}
+
+	// Create new registry with updated config and provider
+	// Wrap in defer/recover to handle any panics gracefully
+	var registry *AgentRegistry
+	var panicErr error
+	done := make(chan struct{}, 1)
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicErr = fmt.Errorf("panic during registry creation: %v", r)
+				logger.ErrorCF("agent", "Panic during registry creation",
+					map[string]any{"panic": r})
+			}
+			close(done)
+		}()
+
+		registry = NewAgentRegistry(cfg, provider)
+	}()
+
+	// Wait for completion or context cancellation
+	select {
+	case <-done:
+		if registry == nil {
+			if panicErr != nil {
+				return fmt.Errorf("registry creation failed: %w", panicErr)
+			}
+			return fmt.Errorf("registry creation failed (nil result)")
+		}
+	case <-ctx.Done():
+		return fmt.Errorf("context canceled during registry creation: %w", ctx.Err())
+	}
+
+	// Check context again before proceeding
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context canceled after registry creation: %w", err)
+	}
+
+	// Ensure shared tools are re-registered on the new registry
+	registerSharedTools(cfg, al.bus, registry, provider)
+
+	// Atomically swap the config and registry under write lock
+	// This ensures readers see a consistent pair
+	al.mu.Lock()
+	oldRegistry := al.registry
+
+	// Store new values
+	al.cfg = cfg
+	al.registry = registry
+
+	// Also update fallback chain with new config
+	al.fallback = providers.NewFallbackChain(providers.NewCooldownTracker())
+
+	al.mu.Unlock()
+
+	// Close old provider after releasing the lock
+	// This prevents blocking readers while closing
+	if oldProvider, ok := extractProvider(oldRegistry); ok {
+		if stateful, ok := oldProvider.(providers.StatefulProvider); ok {
+			// Give in-flight requests a moment to complete
+			// Use a reasonable timeout that balances cleanup vs resource usage
+			select {
+			case <-time.After(100 * time.Millisecond):
+				stateful.Close()
+			case <-ctx.Done():
+				// Context canceled, close immediately but log warning
+				logger.WarnCF("agent", "Context canceled during provider cleanup, forcing close",
+					map[string]any{"error": ctx.Err()})
+				stateful.Close()
+			}
+		}
+	}
+
+	logger.InfoCF("agent", "Provider and config reloaded successfully",
+		map[string]any{
+			"model": cfg.Agents.Defaults.GetModelName(),
+		})
+
+	return nil
+}
+
+// GetRegistry returns the current registry (thread-safe)
+func (al *AgentLoop) GetRegistry() *AgentRegistry {
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+	return al.registry
+}
+
+// GetConfig returns the current config (thread-safe)
+func (al *AgentLoop) GetConfig() *config.Config {
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+	return al.cfg
+}
+
 // SetMediaStore injects a MediaStore for media lifecycle management.
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
 
 	// Propagate store to send_file tools in all agents.
-	al.registry.ForEachTool("send_file", func(t tools.Tool) {
+	registry := al.GetRegistry()
+	registry.ForEachTool("send_file", func(t tools.Tool) {
 		if sf, ok := t.(*tools.SendFileTool); ok {
 			sf.SetMediaStore(s)
 		}
@@ -413,9 +483,10 @@ var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
 
 // transcribeAudioInMessage resolves audio media refs, transcribes them, and
 // replaces audio annotations in msg.Content with the transcribed text.
-func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.InboundMessage) bus.InboundMessage {
+// Returns the (possibly modified) message and true if audio was transcribed.
+func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.InboundMessage) (bus.InboundMessage, bool) {
 	if al.transcriber == nil || al.mediaStore == nil || len(msg.Media) == 0 {
-		return msg
+		return msg, false
 	}
 
 	// Transcribe each audio media ref in order.
@@ -439,8 +510,10 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	}
 
 	if len(transcriptions) == 0 {
-		return msg
+		return msg, false
 	}
+
+	al.sendTranscriptionFeedback(ctx, msg.Channel, msg.ChatID, msg.MessageID, transcriptions)
 
 	// Replace audio annotations sequentially with transcriptions.
 	idx := 0
@@ -459,7 +532,48 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	}
 
 	msg.Content = newContent
-	return msg
+	return msg, true
+}
+
+// sendTranscriptionFeedback sends feedback to the user with the result of
+// audio transcription if the option is enabled. It uses Manager.SendMessage
+// which executes synchronously (rate limiting, splitting, retry) so that
+// ordering with the subsequent placeholder is guaranteed.
+func (al *AgentLoop) sendTranscriptionFeedback(
+	ctx context.Context,
+	channel, chatID, messageID string,
+	validTexts []string,
+) {
+	if !al.cfg.Voice.EchoTranscription {
+		return
+	}
+	if al.channelManager == nil {
+		return
+	}
+
+	var nonEmpty []string
+	for _, t := range validTexts {
+		if t != "" {
+			nonEmpty = append(nonEmpty, t)
+		}
+	}
+
+	var feedbackMsg string
+	if len(nonEmpty) > 0 {
+		feedbackMsg = "Transcript: " + strings.Join(nonEmpty, "\n")
+	} else {
+		feedbackMsg = "No voice detected in the audio"
+	}
+
+	err := al.channelManager.SendMessage(ctx, bus.OutboundMessage{
+		Channel:          channel,
+		ChatID:           chatID,
+		Content:          feedbackMsg,
+		ReplyToMessageID: messageID,
+	})
+	if err != nil {
+		logger.WarnCF("voice", "Failed to send transcription feedback", map[string]any{"error": err.Error()})
+	}
 }
 
 // inferMediaType determines the media type ("image", "audio", "video", "file")
@@ -521,6 +635,10 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 	ctx context.Context,
 	content, sessionKey, channel, chatID string,
 ) (string, error) {
+	if err := al.ensureMCPInitialized(ctx); err != nil {
+		return "", err
+	}
+
 	msg := bus.InboundMessage{
 		Channel:    channel,
 		SenderID:   "cron",
@@ -538,7 +656,7 @@ func (al *AgentLoop) ProcessHeartbeat(
 	ctx context.Context,
 	content, channel, chatID string,
 ) (string, error) {
-	agent := al.registry.GetDefaultAgent()
+	agent := al.GetRegistry().GetDefaultAgent()
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for heartbeat")
 	}
@@ -573,7 +691,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		},
 	)
 
-	msg = al.transcribeAudioInMessage(ctx, msg)
+	var hadAudio bool
+	msg, hadAudio = al.transcribeAudioInMessage(ctx, msg)
+
+	// For audio messages the placeholder was deferred by the channel.
+	// Now that transcription (and optional feedback) is done, send it.
+	if hadAudio && al.channelManager != nil {
+		al.channelManager.SendPlaceholder(ctx, msg.Channel, msg.ChatID)
+	}
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
@@ -581,15 +706,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	route, agent, routeErr := al.resolveMessageRoute(msg)
-
-	// Commands are checked before requiring a successful route.
-	// Global commands (/help, /show, /switch) work even when routing fails;
-	// context-dependent commands check their own Runtime fields and report
-	// "unavailable" when the required capability is nil.
-	if response, handled := al.handleCommand(ctx, msg, agent); handled {
-		return response, nil
-	}
-
 	if routeErr != nil {
 		return "", routeErr
 	}
@@ -615,7 +731,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"route_channel": route.Channel,
 		})
 
-	return al.runAgentLoop(ctx, agent, processOptions{
+	opts := processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
@@ -624,11 +740,20 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
 		SendResponse:    false,
-	})
+	}
+
+	// context-dependent commands check their own Runtime fields and report
+	// "unavailable" when the required capability is nil.
+	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {
+		return response, nil
+	}
+
+	return al.runAgentLoop(ctx, agent, opts)
 }
 
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
-	route := al.registry.ResolveRoute(routing.RouteInput{
+	registry := al.GetRegistry()
+	route := registry.ResolveRoute(routing.RouteInput{
 		Channel:    msg.Channel,
 		AccountID:  inboundMetadata(msg, metadataKeyAccountID),
 		Peer:       extractPeer(msg),
@@ -637,9 +762,9 @@ func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.Resolv
 		TeamID:     inboundMetadata(msg, metadataKeyTeamID),
 	})
 
-	agent, ok := al.registry.GetAgent(route.AgentID)
+	agent, ok := registry.GetAgent(route.AgentID)
 	if !ok {
-		agent = al.registry.GetDefaultAgent()
+		agent = registry.GetDefaultAgent()
 	}
 	if agent == nil {
 		return routing.ResolvedRoute{}, nil, fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
@@ -701,7 +826,7 @@ func (al *AgentLoop) processSystemMessage(
 	}
 
 	// Use default agent for system messages
-	agent := al.registry.GetDefaultAgent()
+	agent := al.GetRegistry().GetDefaultAgent()
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for system message")
 	}
@@ -756,8 +881,9 @@ func (al *AgentLoop) runAgentLoop(
 		opts.ChatID,
 	)
 
-	// Resolve media:// refs to base64 data URLs (streaming)
-	maxMediaSize := al.cfg.Agents.Defaults.GetMaxMediaSize()
+	// Resolve media:// refs: images→base64 data URLs, non-images→local paths in content
+	cfg := al.GetConfig()
+	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 
 	// 2. Save user message to session
@@ -935,6 +1061,9 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		callLLM := func() (*providers.LLMResponse, error) {
+			al.activeRequests.Add(1)
+			defer al.activeRequests.Done()
+
 			if len(activeCandidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(
 					ctx,
@@ -1033,6 +1162,7 @@ func (al *AgentLoop) runLLMIteration(
 				map[string]any{
 					"agent_id":  agent.ID,
 					"iteration": iteration,
+					"model":     activeModel,
 					"error":     err.Error(),
 				})
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
@@ -1255,6 +1385,17 @@ func (al *AgentLoop) runLLMIteration(
 			// Save tool result message to session
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
+
+		// Tick down TTL of discovered tools after processing tool results.
+		// Only reached when tool calls were made (the loop continues);
+		// the break on no-tool-call responses skips this.
+		// NOTE: This is safe because processMessage is sequential per agent.
+		// If per-agent concurrency is added, TTL consistency between
+		// ToProviderDefs and Get must be re-evaluated.
+		agent.Tools.TickTTL()
+		logger.DebugCF("agent", "TTL tick after tool execution", map[string]any{
+			"agent_id": agent.ID, "iteration": iteration,
+		})
 	}
 
 	return finalContent, iteration, nil
@@ -1373,7 +1514,8 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 func (al *AgentLoop) GetStartupInfo() map[string]any {
 	info := make(map[string]any)
 
-	agent := al.registry.GetDefaultAgent()
+	registry := al.GetRegistry()
+	agent := registry.GetDefaultAgent()
 	if agent == nil {
 		return info
 	}
@@ -1390,8 +1532,8 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 
 	// Agents info
 	info["agents"] = map[string]any{
-		"count": len(al.registry.ListAgentIDs()),
-		"ids":   al.registry.ListAgentIDs(),
+		"count": len(registry.ListAgentIDs()),
+		"ids":   registry.ListAgentIDs(),
 	}
 
 	return info
@@ -1492,10 +1634,20 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 		return
 	}
 
+	const (
+		maxSummarizationMessages = 10
+		llmMaxRetries            = 3
+		llmTemperature           = 0.3
+		fallbackMaxContentLength = 200
+	)
+
 	// Multi-Part Summarization
 	var finalSummary string
-	if len(validMessages) > 10 {
+	if len(validMessages) > maxSummarizationMessages {
 		mid := len(validMessages) / 2
+
+		mid = al.findNearestUserMessage(validMessages, mid)
+
 		part1 := validMessages[:mid]
 		part2 := validMessages[mid:]
 
@@ -1507,18 +1659,9 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 			s1,
 			s2,
 		)
-		resp, err := agent.Provider.Chat(
-			ctx,
-			[]providers.Message{{Role: "user", Content: mergePrompt}},
-			nil,
-			agent.Model,
-			map[string]any{
-				"max_tokens":       1024,
-				"temperature":      0.3,
-				"prompt_cache_key": agent.ID,
-			},
-		)
-		if err == nil {
+
+		resp, err := al.retryLLMCall(ctx, agent, mergePrompt, llmMaxRetries)
+		if err == nil && resp.Content != "" {
 			finalSummary = resp.Content
 		} else {
 			finalSummary = s1 + " " + s2
@@ -1538,6 +1681,73 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	}
 }
 
+// findNearestUserMessage finds the nearest user message to the given index.
+// It searches backward first, then forward if no user message is found.
+func (al *AgentLoop) findNearestUserMessage(messages []providers.Message, mid int) int {
+	originalMid := mid
+
+	for mid > 0 && messages[mid].Role != "user" {
+		mid--
+	}
+
+	if messages[mid].Role == "user" {
+		return mid
+	}
+
+	mid = originalMid
+	for mid < len(messages) && messages[mid].Role != "user" {
+		mid++
+	}
+
+	if mid < len(messages) {
+		return mid
+	}
+
+	return originalMid
+}
+
+// retryLLMCall calls the LLM with retry logic.
+func (al *AgentLoop) retryLLMCall(
+	ctx context.Context,
+	agent *AgentInstance,
+	prompt string,
+	maxRetries int,
+) (*providers.LLMResponse, error) {
+	const (
+		llmTemperature = 0.3
+	)
+
+	var resp *providers.LLMResponse
+	var err error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		al.activeRequests.Add(1)
+		resp, err = func() (*providers.LLMResponse, error) {
+			defer al.activeRequests.Done()
+			return agent.Provider.Chat(
+				ctx,
+				[]providers.Message{{Role: "user", Content: prompt}},
+				nil,
+				agent.Model,
+				map[string]any{
+					"max_tokens":       agent.MaxTokens,
+					"temperature":      llmTemperature,
+					"prompt_cache_key": agent.ID,
+				},
+			)
+		}()
+
+		if err == nil && resp != nil && resp.Content != "" {
+			return resp, nil
+		}
+		if attempt < maxRetries-1 {
+			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+		}
+	}
+
+	return resp, err
+}
+
 // summarizeBatch summarizes a batch of messages.
 func (al *AgentLoop) summarizeBatch(
 	ctx context.Context,
@@ -1545,6 +1755,13 @@ func (al *AgentLoop) summarizeBatch(
 	batch []providers.Message,
 	existingSummary string,
 ) (string, error) {
+	const (
+		llmMaxRetries             = 3
+		llmTemperature            = 0.3
+		fallbackMinContentLength  = 200
+		fallbackMaxContentPercent = 10
+	)
+
 	var sb strings.Builder
 	sb.WriteString(
 		"Provide a concise summary of this conversation segment, preserving core context and key points.\n",
@@ -1560,21 +1777,40 @@ func (al *AgentLoop) summarizeBatch(
 	}
 	prompt := sb.String()
 
-	response, err := agent.Provider.Chat(
-		ctx,
-		[]providers.Message{{Role: "user", Content: prompt}},
-		nil,
-		agent.Model,
-		map[string]any{
-			"max_tokens":       1024,
-			"temperature":      0.3,
-			"prompt_cache_key": agent.ID,
-		},
-	)
-	if err != nil {
-		return "", err
+	response, err := al.retryLLMCall(ctx, agent, prompt, llmMaxRetries)
+	if err == nil && response.Content != "" {
+		return strings.TrimSpace(response.Content), nil
 	}
-	return response.Content, nil
+
+	var fallback strings.Builder
+	fallback.WriteString("Conversation summary: ")
+	for i, m := range batch {
+		if i > 0 {
+			fallback.WriteString(" | ")
+		}
+		content := strings.TrimSpace(m.Content)
+		runes := []rune(content)
+		if len(runes) == 0 {
+			fallback.WriteString(fmt.Sprintf("%s: ", m.Role))
+			continue
+		}
+
+		keepLength := len(runes) * fallbackMaxContentPercent / 100
+		if keepLength < fallbackMinContentLength {
+			keepLength = fallbackMinContentLength
+		}
+
+		if keepLength > len(runes) {
+			keepLength = len(runes)
+		}
+
+		content = string(runes[:keepLength])
+		if keepLength < len(runes) {
+			content += "..."
+		}
+		fallback.WriteString(fmt.Sprintf("%s: %s", m.Role, content))
+	}
+	return fallback.String(), nil
 }
 
 // estimateTokens estimates the number of tokens in a message list.
@@ -1593,6 +1829,7 @@ func (al *AgentLoop) handleCommand(
 	ctx context.Context,
 	msg bus.InboundMessage,
 	agent *AgentInstance,
+	opts *processOptions,
 ) (string, bool) {
 	if !commands.HasCommandPrefix(msg.Content) {
 		return "", false
@@ -1602,7 +1839,7 @@ func (al *AgentLoop) handleCommand(
 		return "", false
 	}
 
-	rt := al.buildCommandsRuntime(agent)
+	rt := al.buildCommandsRuntime(agent, opts)
 	executor := commands.NewExecutor(al.cmdRegistry, rt)
 
 	var commandReply string
@@ -1631,10 +1868,12 @@ func (al *AgentLoop) handleCommand(
 	}
 }
 
-func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtime {
+func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOptions) *commands.Runtime {
+	registry := al.GetRegistry()
+	cfg := al.GetConfig()
 	rt := &commands.Runtime{
-		Config:          al.cfg,
-		ListAgentIDs:    al.registry.ListAgentIDs,
+		Config:          cfg,
+		ListAgentIDs:    registry.ListAgentIDs,
 		ListDefinitions: al.cmdRegistry.Definitions,
 		GetEnabledChannels: func() []string {
 			if al.channelManager == nil {
@@ -1654,12 +1893,26 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance) *commands.Runtim
 	}
 	if agent != nil {
 		rt.GetModelInfo = func() (string, string) {
-			return agent.Model, al.cfg.Agents.Defaults.Provider
+			return agent.Model, cfg.Agents.Defaults.Provider
 		}
 		rt.SwitchModel = func(value string) (string, error) {
 			oldModel := agent.Model
 			agent.Model = value
 			return oldModel, nil
+		}
+
+		rt.ClearHistory = func() error {
+			if opts == nil {
+				return fmt.Errorf("process options not available")
+			}
+			if agent.Sessions == nil {
+				return fmt.Errorf("sessions not initialized for agent")
+			}
+
+			agent.Sessions.SetHistory(opts.SessionKey, make([]providers.Message, 0))
+			agent.Sessions.SetSummary(opts.SessionKey, "")
+			agent.Sessions.Save(opts.SessionKey)
+			return nil
 		}
 	}
 	return rt
@@ -1703,4 +1956,17 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 		return nil
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
+}
+
+// Helper to extract provider from registry for cleanup
+func extractProvider(registry *AgentRegistry) (providers.LLMProvider, bool) {
+	if registry == nil {
+		return nil, false
+	}
+	// Get any agent to access the provider
+	defaultAgent := registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		return nil, false
+	}
+	return defaultAgent.Provider, true
 }

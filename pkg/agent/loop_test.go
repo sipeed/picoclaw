@@ -770,6 +770,63 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	}
 }
 
+// TestProcessDirectWithChannel_TriggersMCPInitialization verifies that
+// ProcessDirectWithChannel triggers MCP initialization when MCP is enabled.
+// Note: Manager is only initialized when at least one MCP server is configured
+// and successfully connected.
+func TestProcessDirectWithChannel_TriggersMCPInitialization(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Test with MCP enabled but no servers - should not initialize manager
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				ToolConfig: config.ToolConfig{
+					Enabled: true,
+				},
+				// No servers configured - manager should not be initialized
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	defer al.Close()
+
+	if al.mcp.hasManager() {
+		t.Fatal("expected MCP manager to be nil before first direct processing")
+	}
+
+	_, err = al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"session-1",
+		"cli",
+		"direct",
+	)
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+
+	// Manager should not be initialized when no servers are configured
+	if al.mcp.hasManager() {
+		t.Fatal("expected MCP manager to be nil when no servers are configured")
+	}
+}
+
 func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
@@ -1038,7 +1095,7 @@ func TestResolveMediaRefs_SkipsOversizedFile(t *testing.T) {
 	}
 }
 
-func TestResolveMediaRefs_SkipsUnknownType(t *testing.T) {
+func TestResolveMediaRefs_UnknownTypeInjectsPath(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()
 
@@ -1054,7 +1111,11 @@ func TestResolveMediaRefs_SkipsUnknownType(t *testing.T) {
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
 
 	if len(result[0].Media) != 0 {
-		t.Fatalf("expected 0 media (unknown type), got %d", len(result[0].Media))
+		t.Fatalf("expected 0 media entries, got %d", len(result[0].Media))
+	}
+	expected := "hi [file:" + txtPath + "]"
+	if result[0].Content != expected {
+		t.Fatalf("expected content %q, got %q", expected, result[0].Content)
 	}
 }
 
@@ -1114,5 +1175,146 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 	}
 	if !strings.HasPrefix(result[0].Media[0], "data:image/jpeg;base64,") {
 		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
+	}
+}
+
+func TestResolveMediaRefs_PDFInjectsFilePath(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	pdfPath := filepath.Join(dir, "report.pdf")
+	// PDF magic bytes
+	os.WriteFile(pdfPath, []byte("%PDF-1.4 test content"), 0o644)
+	ref, _ := store.Store(pdfPath, media.MediaMeta{ContentType: "application/pdf"}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "report.pdf [file]", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media (non-image), got %d", len(result[0].Media))
+	}
+	expected := "report.pdf [file:" + pdfPath + "]"
+	if result[0].Content != expected {
+		t.Fatalf("expected content %q, got %q", expected, result[0].Content)
+	}
+}
+
+func TestResolveMediaRefs_AudioInjectsAudioPath(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	oggPath := filepath.Join(dir, "voice.ogg")
+	os.WriteFile(oggPath, []byte("fake audio"), 0o644)
+	ref, _ := store.Store(oggPath, media.MediaMeta{ContentType: "audio/ogg"}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "voice.ogg [audio]", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media, got %d", len(result[0].Media))
+	}
+	expected := "voice.ogg [audio:" + oggPath + "]"
+	if result[0].Content != expected {
+		t.Fatalf("expected content %q, got %q", expected, result[0].Content)
+	}
+}
+
+func TestResolveMediaRefs_VideoInjectsVideoPath(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	mp4Path := filepath.Join(dir, "clip.mp4")
+	os.WriteFile(mp4Path, []byte("fake video"), 0o644)
+	ref, _ := store.Store(mp4Path, media.MediaMeta{ContentType: "video/mp4"}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "clip.mp4 [video]", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media, got %d", len(result[0].Media))
+	}
+	expected := "clip.mp4 [video:" + mp4Path + "]"
+	if result[0].Content != expected {
+		t.Fatalf("expected content %q, got %q", expected, result[0].Content)
+	}
+}
+
+func TestResolveMediaRefs_NoGenericTagAppendsPath(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	csvPath := filepath.Join(dir, "data.csv")
+	os.WriteFile(csvPath, []byte("a,b,c"), 0o644)
+	ref, _ := store.Store(csvPath, media.MediaMeta{ContentType: "text/csv"}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "here is my data", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	expected := "here is my data [file:" + csvPath + "]"
+	if result[0].Content != expected {
+		t.Fatalf("expected content %q, got %q", expected, result[0].Content)
+	}
+}
+
+func TestResolveMediaRefs_EmptyContentGetsPathTag(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	docPath := filepath.Join(dir, "doc.docx")
+	os.WriteFile(docPath, []byte("fake docx"), 0o644)
+	docxMIME := "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	ref, _ := store.Store(docPath, media.MediaMeta{ContentType: docxMIME}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	expected := "[file:" + docPath + "]"
+	if result[0].Content != expected {
+		t.Fatalf("expected content %q, got %q", expected, result[0].Content)
+	}
+}
+
+func TestResolveMediaRefs_MixedImageAndFile(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	pngPath := filepath.Join(dir, "photo.png")
+	pngHeader := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
+		0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
+	}
+	os.WriteFile(pngPath, pngHeader, 0o644)
+	imgRef, _ := store.Store(pngPath, media.MediaMeta{}, "test")
+
+	pdfPath := filepath.Join(dir, "report.pdf")
+	os.WriteFile(pdfPath, []byte("%PDF-1.4 test"), 0o644)
+	fileRef, _ := store.Store(pdfPath, media.MediaMeta{ContentType: "application/pdf"}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "check these [file]", Media: []string{imgRef, fileRef}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 1 {
+		t.Fatalf("expected 1 media (image only), got %d", len(result[0].Media))
+	}
+	if !strings.HasPrefix(result[0].Media[0], "data:image/png;base64,") {
+		t.Fatal("expected image to be base64 encoded")
+	}
+	expectedContent := "check these [file:" + pdfPath + "]"
+	if result[0].Content != expectedContent {
+		t.Fatalf("expected content %q, got %q", expectedContent, result[0].Content)
 	}
 }

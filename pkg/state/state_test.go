@@ -2,7 +2,6 @@ package state
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -217,10 +216,7 @@ func TestNewManager_EmptyWorkspace(t *testing.T) {
 	}
 }
 
-func TestNewManager_MkdirFailureCrashes(t *testing.T) {
-	// Since log.Fatalf calls os.Exit(1), we cannot test it normally
-	// Otherwise, the test suite would stop altogether.
-	// We use the standard pattern of Go: rerun this test in a subprocess.
+func TestNewManager_MkdirFailureDoesNotCrash(t *testing.T) {
 	if os.Getenv("BE_CRASHER") == "1" {
 		tmpDir := os.Getenv("CRASH_DIR")
 
@@ -240,15 +236,11 @@ func TestNewManager_MkdirFailureCrashes(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	cmd := exec.Command(os.Args[0], "-test.run=TestNewManager_MkdirFailureCrashes")
+	cmd := exec.Command(os.Args[0], "-test.run=TestNewManager_MkdirFailureDoesNotCrash")
 	cmd.Env = append(os.Environ(), "BE_CRASHER=1", "CRASH_DIR="+tmpDir)
 
 	err = cmd.Run()
-
-	var e *exec.ExitError
-	if errors.As(err, &e) && !e.Success() {
-		return
+	if err != nil {
+		t.Fatalf("NewManager should not crash when state dir creation fails, got: %v", err)
 	}
-
-	t.Fatalf("The process ended without error, a crash was expected via os.Exit(1). Err: %v", err)
 }
