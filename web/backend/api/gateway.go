@@ -371,7 +371,9 @@ func (h *Handler) startGatewayLocked(initialStatus string) (int, error) {
 			if healthPort == 0 {
 				healthPort = 18790
 			}
-			healthURL := fmt.Sprintf("%s://%s/health", gatewayHealthScheme(cfg), net.JoinHostPort(healthHost, strconv.Itoa(healthPort)))
+			scheme := gatewayHealthScheme(cfg)
+			hostPort := net.JoinHostPort(healthHost, strconv.Itoa(healthPort))
+			healthURL := fmt.Sprintf("%s://%s/health", scheme, hostPort)
 			resp, err := gatewayHealthGet(healthURL, 1*time.Second)
 			if err == nil {
 				resp.Body.Close()
