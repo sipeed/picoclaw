@@ -520,15 +520,7 @@ func (al *AgentLoop) Stop() {
 // and dirty session data). Should be called during graceful shutdown.
 
 func (al *AgentLoop) Close() {
-	select {
-	case <-al.done:
-
-		// already closed
-
-	default:
-
-		close(al.done)
-	}
+	al.closeExt()
 
 	mcpManager := al.mcp.takeManager()
 	if mcpManager != nil {
@@ -540,18 +532,7 @@ func (al *AgentLoop) Close() {
 		}
 	}
 
-	if al.stats != nil {
-		al.stats.Close()
-	}
-
-	registry := al.GetRegistry()
-	for _, agentID := range registry.ListAgentIDs() {
-		if agent, ok := registry.GetAgent(agentID); ok {
-			agent.Sessions.Close()
-		}
-	}
-
-	registry.Close()
+	al.GetRegistry().Close()
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {

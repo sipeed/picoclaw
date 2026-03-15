@@ -75,6 +75,28 @@ func (al *AgentLoop) initLoopExt(cfg *config.Config, registry *AgentRegistry, en
 	go al.gcLoop()
 }
 
+// closeExt releases fork-specific resources: done channel, stats tracker,
+// and session stores for all agents.
+func (al *AgentLoop) closeExt() {
+	select {
+	case <-al.done:
+		// already closed
+	default:
+		close(al.done)
+	}
+
+	if al.stats != nil {
+		al.stats.Close()
+	}
+
+	registry := al.GetRegistry()
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
+			agent.Sessions.Close()
+		}
+	}
+}
+
 // SetConfigSaver registers a callback to persist config changes.
 func (al *AgentLoop) SetConfigSaver(fn func(*config.Config) error) {
 	al.saveConfig = fn
