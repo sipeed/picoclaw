@@ -1357,7 +1357,6 @@ func (al *AgentLoop) publishToolMedia(ctx context.Context, result *tools.ToolRes
 	})
 }
 
-
 // Helper to extract provider from registry for cleanup
 func extractProvider(registry *AgentRegistry) (providers.LLMProvider, bool) {
 	if registry == nil {

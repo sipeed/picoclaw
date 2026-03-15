@@ -535,10 +535,7 @@ func (al *AgentLoop) runAgentLoopImpl(ctx context.Context, agent *AgentInstance,
 	}
 
 	// 5d. Store result summary for task completion notification
-
-	if task != nil {
-		task.Result = utils.Truncate(finalContent, 280)
-	}
+	task.Result = utils.Truncate(finalContent, 280)
 
 	// 6. Save final assistant message to session (deferred write-behind)
 
@@ -644,7 +641,9 @@ func (al *AgentLoop) cleanupHeartbeatWorktree(agent *AgentInstance, opts process
 
 // publishTaskCompletion publishes the final task status on completion for
 // background tasks, including the LLM response in the completion bubble.
-func (al *AgentLoop) publishTaskCompletion(task *activeTask, finalContent *string, opts processOptions, taskKey string) {
+func (al *AgentLoop) publishTaskCompletion(
+	task *activeTask, finalContent *string, opts processOptions, taskKey string,
+) {
 	al.activeTasks.Delete(taskKey)
 
 	if opts.TaskID == "" {
