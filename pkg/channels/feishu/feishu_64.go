@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -702,8 +703,9 @@ func (c *FeishuChannel) downloadExternalImage(
 		return ""
 	}
 
-	// Download image
-	resp, err := http.DefaultClient.Do(req)
+	// Download image with timeout
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		logger.ErrorCF("feishu", "Failed to download external image", map[string]any{
 			"url":   imageURL,
