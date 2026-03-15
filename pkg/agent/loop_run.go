@@ -19,9 +19,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
-// runAgentLoopImpl is the full implementation of runAgentLoop, extracted
-// to keep loop.go minimal and reduce upstream merge conflicts.
-func (al *AgentLoop) runAgentLoopImpl(ctx context.Context, agent *AgentInstance, opts processOptions) (string, error) {
+// runAgentLoop is the main message processing loop for a single agent session.
+func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opts processOptions) (string, error) {
 	// -1. Acquire per-session lock to prevent concurrent access on the same session
 
 	if !al.acquireSessionLock(ctx, opts.SessionKey) {

@@ -107,24 +107,6 @@ func (al *AgentLoop) SetHeartbeatThreadUpdater(fn func(int)) {
 	al.onHeartbeatThreadUpdate = fn
 }
 
-// registerAllOrchestrationTools iterates all agents and registers orchestration
-// tools for those with subagents enabled. Called from NewAgentLoop after
-// registerSharedTools, keeping the upstream function signature clean.
-func (al *AgentLoop) registerAllOrchestrationTools(
-	cfg *config.Config,
-	registry *AgentRegistry,
-	provider providers.LLMProvider,
-	msgBus *bus.MessageBus,
-) {
-	for _, agentID := range registry.ListAgentIDs() {
-		agent, ok := registry.GetAgent(agentID)
-		if !ok {
-			continue
-		}
-		registerOrchestrationTools(cfg, agent, agentID, registry, provider, msgBus, al)
-	}
-}
-
 // registerOrchestrationTools registers spawn, subagent, answer, and review_plan
 // tools for agents with orchestration enabled.
 func registerOrchestrationTools(
