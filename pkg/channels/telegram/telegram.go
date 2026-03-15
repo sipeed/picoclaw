@@ -40,12 +40,12 @@ var (
 
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot     *telego.Bot
-	bh      *th.BotHandler
-	config  *config.Config
-	chatIDs map[string]int64
-	ctx     context.Context
-	cancel  context.CancelFunc
+	bot            *telego.Bot
+	bh             *th.BotHandler
+	placeholderCfg config.PlaceholderConfig
+	chatIDs        map[string]int64
+	ctx            context.Context
+	cancel         context.CancelFunc
 
 	registerFunc     func(context.Context, []commands.Definition) error
 	commandRegCancel context.CancelFunc
@@ -95,10 +95,64 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	)
 
 	return &TelegramChannel{
-		BaseChannel: base,
-		bot:         bot,
-		config:      cfg,
-		chatIDs:     make(map[string]int64),
+		BaseChannel:    base,
+		bot:            bot,
+		placeholderCfg: telegramCfg.Placeholder,
+		chatIDs:        make(map[string]int64),
+	}, nil
+}
+
+// NewTelegramChannelFromConfig creates a TelegramChannel from a TelegramConfig and
+// an explicit channel name. Used when initializing named bots from telegram_bots config.
+func NewTelegramChannelFromConfig(telegramCfg config.TelegramConfig, channelName string, b *bus.MessageBus) (*TelegramChannel, error) {
+	if telegramCfg.Token == "" {
+		return nil, fmt.Errorf("telegram bot token is required")
+	}
+	var opts []telego.BotOption
+
+	if telegramCfg.Proxy != "" {
+		proxyURL, parseErr := url.Parse(telegramCfg.Proxy)
+		if parseErr != nil {
+			return nil, fmt.Errorf("invalid proxy URL %q: %w", telegramCfg.Proxy, parseErr)
+		}
+		opts = append(opts, telego.WithHTTPClient(&http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			},
+		}))
+	} else if os.Getenv("HTTP_PROXY") != "" || os.Getenv("HTTPS_PROXY") != "" {
+		opts = append(opts, telego.WithHTTPClient(&http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+			},
+		}))
+	}
+
+	if baseURL := strings.TrimRight(strings.TrimSpace(telegramCfg.BaseURL), "/"); baseURL != "" {
+		opts = append(opts, telego.WithAPIServer(baseURL))
+	}
+	opts = append(opts, telego.WithLogger(logger.NewLogger("telego")))
+
+	bot, err := telego.NewBot(telegramCfg.Token, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
+	}
+
+	base := channels.NewBaseChannel(
+		channelName,
+		telegramCfg,
+		b,
+		telegramCfg.AllowFrom,
+		channels.WithMaxMessageLength(4000),
+		channels.WithGroupTrigger(telegramCfg.GroupTrigger),
+		channels.WithReasoningChannelID(telegramCfg.ReasoningChannelID),
+	)
+
+	return &TelegramChannel{
+		BaseChannel:    base,
+		bot:            bot,
+		placeholderCfg: telegramCfg.Placeholder,
+		chatIDs:        make(map[string]int64),
 	}, nil
 }
 
@@ -298,7 +352,7 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 // It sends a placeholder message (e.g. "Thinking... 💭") that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).
 func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
-	phCfg := c.config.Channels.Telegram.Placeholder
+	phCfg := c.placeholderCfg
 	if !phCfg.Enabled {
 		return "", nil
 	}
