@@ -298,86 +298,11 @@ func registerSharedTools(
 			}
 		}
 
-		// Spawn tool — only registered when orchestration is explicitly enabled.
-
-		if agent.Subagents != nil && agent.Subagents.Enabled {
-			webSearchOpts := tools.WebSearchToolOptions{
-				BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey, cfg.Tools.Web.Brave.APIKeys),
-				BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
-				BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-				TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey, cfg.Tools.Web.Tavily.APIKeys),
-				TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
-				TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
-				TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
-				DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
-				DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
-				PerplexityAPIKeys: config.MergeAPIKeys(
-					cfg.Tools.Web.Perplexity.APIKey,
-					cfg.Tools.Web.Perplexity.APIKeys,
-				),
-				PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
-				PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
-			}
-
-			subagentManager := tools.NewSubagentManager(
-
-				provider,
-
-				agent.Model,
-
-				agent.Workspace,
-
-				msgBus,
-
-				al.reporter(),
-
-				webSearchOpts,
-			)
-
-			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
-
-			// Wire session recorder for DAG persistence.
-
-			recorder := newSessionRecorder(agent.Sessions)
-
-			conductorKey := routing.BuildAgentMainSessionKey(agent.ID)
-
-			subagentManager.SetSessionRecorder(recorder, conductorKey)
-
-			agent.SubagentMgr = subagentManager
-
-			spawnTool := tools.NewSpawnTool(subagentManager)
-
-			currentAgentID := agentID
-
-			spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
-				return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
-			})
-
-			agent.Tools.Register(spawnTool)
-
-			// Register blocking subagent tool alongside spawn
-
-			subagentTool := tools.NewSubagentTool(subagentManager)
-
-			agent.Tools.Register(subagentTool)
-
-			// Register conductor-side escalation tools (answer questions, review plans)
-
-			agent.Tools.Register(tools.NewAnswerSubagentTool(subagentManager))
-
-			agent.Tools.Register(tools.NewReviewSubagentPlanTool(subagentManager))
-		}
+		// Orchestration tools (spawn, subagent, answer, review_plan)
+		registerOrchestrationTools(cfg, agent, agentID, registry, provider, msgBus, al)
 
 		// Update context builder with the complete tools registry
-
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
-
-		// Set orchestration mode if enabled
-
-		if agent.Subagents != nil && agent.Subagents.Enabled {
-			agent.ContextBuilder.SetOrchestrationEnabled(true)
-		}
 	}
 }
 

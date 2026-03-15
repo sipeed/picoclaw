@@ -8,7 +8,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/orch"
+	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/stats"
+	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -80,6 +83,75 @@ func (al *AgentLoop) SetConfigSaver(fn func(*config.Config) error) {
 // SetHeartbeatThreadUpdater registers a callback to apply runtime heartbeat thread updates.
 func (al *AgentLoop) SetHeartbeatThreadUpdater(fn func(int)) {
 	al.onHeartbeatThreadUpdate = fn
+}
+
+// registerOrchestrationTools registers spawn, subagent, answer, and review_plan
+// tools for agents with orchestration enabled.
+func registerOrchestrationTools(
+	cfg *config.Config,
+	agent *AgentInstance,
+	agentID string,
+	registry *AgentRegistry,
+	provider providers.LLMProvider,
+	msgBus *bus.MessageBus,
+	al *AgentLoop,
+) {
+	if agent.Subagents == nil || !agent.Subagents.Enabled {
+		return
+	}
+
+	webSearchOpts := tools.WebSearchToolOptions{
+		BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey, cfg.Tools.Web.Brave.APIKeys),
+		BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
+		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
+		TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey, cfg.Tools.Web.Tavily.APIKeys),
+		TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
+		TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
+		TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
+		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
+		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+		PerplexityAPIKeys: config.MergeAPIKeys(
+			cfg.Tools.Web.Perplexity.APIKey,
+			cfg.Tools.Web.Perplexity.APIKeys,
+		),
+		PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
+		PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+	}
+
+	subagentManager := tools.NewSubagentManager(
+		provider,
+		agent.Model,
+		agent.Workspace,
+		msgBus,
+		al.reporter(),
+		webSearchOpts,
+	)
+
+	subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+
+	// Wire session recorder for DAG persistence.
+	recorder := newSessionRecorder(agent.Sessions)
+	conductorKey := routing.BuildAgentMainSessionKey(agent.ID)
+	subagentManager.SetSessionRecorder(recorder, conductorKey)
+
+	agent.SubagentMgr = subagentManager
+
+	spawnTool := tools.NewSpawnTool(subagentManager)
+	currentAgentID := agentID
+	spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
+		return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
+	})
+	agent.Tools.Register(spawnTool)
+
+	// Register blocking subagent tool alongside spawn
+	agent.Tools.Register(tools.NewSubagentTool(subagentManager))
+
+	// Register conductor-side escalation tools (answer questions, review plans)
+	agent.Tools.Register(tools.NewAnswerSubagentTool(subagentManager))
+	agent.Tools.Register(tools.NewReviewSubagentPlanTool(subagentManager))
+
+	// Set orchestration mode on context builder
+	agent.ContextBuilder.SetOrchestrationEnabled(true)
 }
 
 // handleTaskIntervention checks if a message is a reply to an active task and
