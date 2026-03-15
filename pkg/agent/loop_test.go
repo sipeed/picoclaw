@@ -220,6 +220,51 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	}
 }
 
+func TestSelectCandidates_UsesResolvedSingleCandidateModel(t *testing.T) {
+	al := &AgentLoop{}
+	agent := &AgentInstance{
+		ID:    "agent-1",
+		Model: "nemotron-3-nano-30b-a3b",
+		Candidates: []providers.FallbackCandidate{
+			{Provider: "openrouter", Model: "nvidia/nemotron-3-nano-30b-a3b:free"},
+		},
+	}
+
+	candidates, model := al.selectCandidates(agent, "hello", []providers.Message{{Role: "user", Content: "hello"}})
+
+	if len(candidates) != 1 {
+		t.Fatalf("len(candidates) = %d, want 1", len(candidates))
+	}
+	if model != "nvidia/nemotron-3-nano-30b-a3b:free" {
+		t.Fatalf("model = %q, want resolved model", model)
+	}
+}
+
+func TestRetryLLMCall_UsesResolvedSingleCandidateModel(t *testing.T) {
+	provider := &mockProvider{}
+	al := &AgentLoop{}
+	agent := &AgentInstance{
+		ID:        "agent-1",
+		Model:     "nemotron-3-nano-30b-a3b",
+		MaxTokens: 1024,
+		Provider:  provider,
+		Candidates: []providers.FallbackCandidate{
+			{Provider: "openrouter", Model: "nvidia/nemotron-3-nano-30b-a3b:free"},
+		},
+	}
+
+	resp, err := al.retryLLMCall(context.Background(), agent, "hello", 1)
+	if err != nil {
+		t.Fatalf("retryLLMCall() error = %v", err)
+	}
+	if resp == nil {
+		t.Fatal("retryLLMCall() response = nil, want non-nil")
+	}
+	if got := provider.LastModel(); got != "nvidia/nemotron-3-nano-30b-a3b:free" {
+		t.Fatalf("provider model = %q, want resolved model", got)
+	}
+}
+
 // TestAgentLoop_GetStartupInfo verifies startup info contains tools
 func TestAgentLoop_GetStartupInfo(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
