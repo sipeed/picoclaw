@@ -13,6 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/research"
 )
 
+//go:generate bun install --cwd frontend
 //go:generate bun run --cwd frontend build
 //go:embed static
 var staticFS embed.FS
