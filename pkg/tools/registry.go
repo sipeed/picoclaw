@@ -24,6 +24,10 @@ type ToolRegistry struct {
 	tools   map[string]*ToolEntry
 	mu      sync.RWMutex
 	version atomic.Uint64 // incremented on Register/RegisterHidden for cache invalidation
+
+	// Cached provider definitions, invalidated when version changes.
+	cachedDefs    []providers.ToolDefinition
+	cachedVersion uint64
 }
 
 func NewToolRegistry() *ToolRegistry {
@@ -81,6 +85,9 @@ func (r *ToolRegistry) PromoteTools(names []string, ttl int) {
 			}
 		}
 	}
+	if promoted > 0 {
+		r.version.Add(1) // invalidate ToProviderDefs cache
+	}
 	logger.DebugCF(
 		"tools",
 		"PromoteTools completed",
@@ -92,10 +99,15 @@ func (r *ToolRegistry) PromoteTools(names []string, ttl int) {
 func (r *ToolRegistry) TickTTL() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	changed := false
 	for _, entry := range r.tools {
 		if !entry.IsCore && entry.TTL > 0 {
 			entry.TTL--
+			changed = true
 		}
+	}
+	if changed {
+		r.version.Add(1) // invalidate ToProviderDefs cache
 	}
 }
 
@@ -260,9 +272,25 @@ func (r *ToolRegistry) GetDefinitions() []map[string]any {
 
 // ToProviderDefs converts tool definitions to provider-compatible format.
 // This is the format expected by LLM provider APIs.
+// Results are cached and invalidated when the registry version changes
+// (i.e. when tools are registered). Callers must not mutate the returned slice.
 func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
+	v := r.version.Load()
+	if r.cachedVersion == v && r.cachedDefs != nil {
+		defs := r.cachedDefs
+		r.mu.RUnlock()
+		return defs
+	}
+	r.mu.RUnlock()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Double-check after upgrading to write lock.
+	v = r.version.Load()
+	if r.cachedVersion == v && r.cachedDefs != nil {
+		return r.cachedDefs
+	}
 
 	sorted := r.sortedToolNames()
 	definitions := make([]providers.ToolDefinition, 0, len(sorted))
@@ -299,6 +327,8 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 			},
 		})
 	}
+	r.cachedDefs = definitions
+	r.cachedVersion = v
 	return definitions
 }
 

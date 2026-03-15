@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -358,5 +359,123 @@ func TestToolRegistry_ConcurrentAccess(t *testing.T) {
 
 	if r.Count() == 0 {
 		t.Error("expected tools to be registered after concurrent access")
+	}
+}
+
+func TestToolRegistry_ToProviderDefs_Cache(t *testing.T) {
+	r := NewToolRegistry()
+	params := map[string]any{"type": "object", "properties": map[string]any{}}
+	for i := range 10 {
+		r.Register(&mockRegistryTool{
+			name:   string(rune('a' + i)),
+			desc:   "tool",
+			params: params,
+			result: SilentResult("ok"),
+		})
+	}
+
+	defs1 := r.ToProviderDefs()
+	defs2 := r.ToProviderDefs()
+
+	// Should return the same backing slice (cached).
+	if &defs1[0] != &defs2[0] {
+		t.Error("expected cached result to return same slice")
+	}
+
+	// Registering a new tool should invalidate the cache.
+	r.Register(&mockRegistryTool{
+		name:   "new_tool",
+		desc:   "new",
+		params: params,
+		result: SilentResult("ok"),
+	})
+
+	defs3 := r.ToProviderDefs()
+	if len(defs3) != 11 {
+		t.Errorf("expected 11 defs after new registration, got %d", len(defs3))
+	}
+	if &defs1[0] == &defs3[0] {
+		t.Error("expected cache invalidation after Register")
+	}
+}
+
+func TestToolRegistry_ToProviderDefs_CacheInvalidatedByTTL(t *testing.T) {
+	r := NewToolRegistry()
+	r.RegisterHidden(&mockRegistryTool{
+		name:   "hidden",
+		desc:   "hidden tool",
+		params: map[string]any{"type": "object"},
+		result: SilentResult("ok"),
+	})
+
+	// Hidden tool with TTL=0 should not appear.
+	defs1 := r.ToProviderDefs()
+	if len(defs1) != 0 {
+		t.Fatalf("expected 0 defs for hidden tool with TTL=0, got %d", len(defs1))
+	}
+
+	// Promote the tool.
+	r.PromoteTools([]string{"hidden"}, 2)
+	defs2 := r.ToProviderDefs()
+	if len(defs2) != 1 {
+		t.Fatalf("expected 1 def after promote, got %d", len(defs2))
+	}
+
+	// Tick TTL twice to expire.
+	r.TickTTL()
+	r.TickTTL()
+	defs3 := r.ToProviderDefs()
+	if len(defs3) != 0 {
+		t.Errorf("expected 0 defs after TTL expiry, got %d", len(defs3))
+	}
+}
+
+func BenchmarkToProviderDefs(b *testing.B) {
+	r := NewToolRegistry()
+	params := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{"type": "string", "description": "file path"},
+		},
+		"required": []string{"path"},
+	}
+	for i := range 30 {
+		r.Register(&mockRegistryTool{
+			name:   fmt.Sprintf("tool_%02d", i),
+			desc:   fmt.Sprintf("Description for tool %d", i),
+			params: params,
+			result: SilentResult("ok"),
+		})
+	}
+
+	b.ResetTimer()
+	for range b.N {
+		r.ToProviderDefs()
+	}
+}
+
+func BenchmarkToProviderDefs_NoCache(b *testing.B) {
+	r := NewToolRegistry()
+	params := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{"type": "string", "description": "file path"},
+		},
+		"required": []string{"path"},
+	}
+	for i := range 30 {
+		r.Register(&mockRegistryTool{
+			name:   fmt.Sprintf("tool_%02d", i),
+			desc:   fmt.Sprintf("Description for tool %d", i),
+			params: params,
+			result: SilentResult("ok"),
+		})
+	}
+
+	b.ResetTimer()
+	for range b.N {
+		// Force cache miss by bumping version each time.
+		r.version.Add(1)
+		r.ToProviderDefs()
 	}
 }
