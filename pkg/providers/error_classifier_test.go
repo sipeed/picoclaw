@@ -336,3 +336,35 @@ func TestIsImageSizeError(t *testing.T) {
 		t.Error("should not match normal error")
 	}
 }
+
+func TestClassifyError_TransportPatterns(t *testing.T) {
+	patterns := []string{
+		"connection reset by peer",
+		"connection refused",
+		"no route to host",
+		"unexpected EOF",
+		"broken pipe",
+		"connection closed",
+		"connection reset",
+		"EOF",
+		"network is unreachable",
+		"temporary failure in name resolution",
+		"dial tcp: lookup api.openrouter.ai: no such host",
+		"read tcp 10.0.0.1:12345->10.0.0.2:443: connection reset by peer",
+	}
+
+	for _, msg := range patterns {
+		err := errors.New(msg)
+		result := ClassifyError(err, "openrouter", "claude-3-opus")
+		if result == nil {
+			t.Errorf("pattern %q: expected non-nil", msg)
+			continue
+		}
+		if result.Reason != FailoverTimeout {
+			t.Errorf("pattern %q: reason = %q, want timeout", msg, result.Reason)
+		}
+		if !result.IsRetriable() {
+			t.Errorf("pattern %q: should be retriable", msg)
+		}
+	}
+}
