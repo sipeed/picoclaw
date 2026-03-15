@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/git"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -141,23 +140,10 @@ func NewAgentInstance(
 
 	agentID := routing.DefaultAgentID
 	agentName := ""
-	var subagents *config.SubagentsConfig
-	var skillsFilter []string
 
 	if agentCfg != nil {
 		agentID = routing.NormalizeAgentID(agentCfg.ID)
 		agentName = agentCfg.Name
-		subagents = agentCfg.Subagents
-		skillsFilter = agentCfg.Skills
-	}
-
-	// Apply defaults.Orchestration: if the flag is set, ensure orchestration is enabled.
-	if defaults.Orchestration {
-		if subagents == nil {
-			subagents = &config.SubagentsConfig{Enabled: true}
-		} else {
-			subagents.Enabled = true
-		}
 	}
 
 	maxIter := defaults.MaxToolIterations
@@ -243,19 +229,6 @@ func NewAgentInstance(
 
 	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
-	// Resolve plan model (for interviewing/review phases)
-	planModel := resolvePlanModel(agentCfg, defaults)
-	planFallbacks := resolvePlanFallbacks(agentCfg, defaults)
-
-	var planCandidates []providers.FallbackCandidate
-	if planModel != "" {
-		planModelCfg := providers.ModelConfig{
-			Primary:   planModel,
-			Fallbacks: planFallbacks,
-		}
-		planCandidates = providers.ResolveCandidates(planModelCfg, defaults.Provider)
-	}
-
 	// Model routing setup: pre-resolve light model candidates at creation time
 	// to avoid repeated model_list lookups on every incoming message.
 	var router *routing.Router
@@ -275,17 +248,7 @@ func NewAgentInstance(
 		}
 	}
 
-	// Startup cleanup: prune orphaned worktrees
-	worktreesDir := filepath.Join(workspace, ".worktrees")
-	if repoRoot := git.FindRepoRoot(workspace); repoRoot != "" {
-		git.PruneOrphaned(repoRoot, worktreesDir)
-	}
-
-	return &AgentInstance{
-		instanceExt: instanceExt{
-			Subagents:    subagents,
-			SkillsFilter: skillsFilter,
-		},
+	agent := &AgentInstance{
 		ID:                        agentID,
 		Name:                      agentName,
 		Model:                     model,
@@ -304,12 +267,14 @@ func NewAgentInstance(
 		ContextBuilder:            contextBuilder,
 		Tools:                     toolsRegistry,
 		Candidates:                candidates,
-		PlanModel:                 planModel,
-		PlanFallbacks:             planFallbacks,
-		PlanCandidates:            planCandidates,
 		Router:                    router,
 		LightCandidates:           lightCandidates,
 	}
+
+	// Initialize fork-specific fields (subagents, plan model, worktree pruning).
+	agent.initInstanceExt(agentCfg, defaults, cfg)
+
+	return agent
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.
