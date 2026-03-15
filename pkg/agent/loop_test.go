@@ -1325,7 +1325,10 @@ type nativeSearchProvider struct {
 	supported bool
 }
 
-func (p *nativeSearchProvider) Chat(ctx context.Context, msgs []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error) {
+func (p *nativeSearchProvider) Chat(
+	ctx context.Context, msgs []providers.Message, tools []providers.ToolDefinition,
+	model string, opts map[string]any,
+) (*providers.LLMResponse, error) {
 	return &providers.LLMResponse{Content: "ok"}, nil
 }
 
@@ -1335,7 +1338,10 @@ func (p *nativeSearchProvider) SupportsNativeSearch() bool { return p.supported 
 
 type plainProvider struct{}
 
-func (p *plainProvider) Chat(ctx context.Context, msgs []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error) {
+func (p *plainProvider) Chat(
+	ctx context.Context, msgs []providers.Message, tools []providers.ToolDefinition,
+	model string, opts map[string]any,
+) (*providers.LLMResponse, error) {
 	return &providers.LLMResponse{Content: "ok"}, nil
 }
 
