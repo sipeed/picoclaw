@@ -42,6 +42,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/miniapp"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/research"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/stats"
@@ -330,6 +331,19 @@ func setupAndStartServices(
 			// Register dev preview tool for all agents
 			devPreviewTool := tools.NewDevPreviewTool(handler)
 			agentLoop.RegisterTool(devPreviewTool)
+
+			// Research store + tool registration
+			researchStore, rsErr := research.OpenResearchStore(
+				filepath.Join(cfg.WorkspacePath(), "research.db"),
+				cfg.WorkspacePath(),
+			)
+			if rsErr != nil {
+				logger.ErrorCF("research", "Failed to open research store", map[string]any{"error": rsErr.Error()})
+			} else {
+				agentLoop.RegisterTool(tools.NewResearchTool(researchStore, cfg.WorkspacePath()))
+				handler.SetResearchStore(researchStore)
+				fmt.Println("✓ Research store initialized")
+			}
 
 			fmt.Printf("✓ Mini App registered at %s\n", webAppURL)
 		}
