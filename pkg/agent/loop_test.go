@@ -220,6 +220,84 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	}
 }
 
+func TestSelectCandidates_PrefersImageModelForMediaTurns(t *testing.T) {
+	al := &AgentLoop{}
+	agent := &AgentInstance{
+		ID:    "agent-1",
+		Model: "primary-text",
+		Candidates: []providers.FallbackCandidate{
+			{Provider: "openrouter", Model: "example/text"},
+		},
+		ImageModel: "vision-model",
+		ImageCandidates: []providers.FallbackCandidate{
+			{Provider: "gemini", Model: "gemini-2.5-flash-lite"},
+		},
+		Router: routing.New(routing.RouterConfig{
+			LightModel: "light-model",
+			Threshold:  0.95,
+		}),
+		LightCandidates: []providers.FallbackCandidate{
+			{Provider: "openrouter", Model: "example/light"},
+		},
+	}
+
+	messages := []providers.Message{
+		{Role: "system", Content: "system"},
+		{Role: "user", Content: "describe this image", Media: []string{"https://example.com/image.png"}},
+	}
+
+	candidates, model, imageTurn := al.selectCandidates(agent, "describe this image", messages)
+
+	if !imageTurn {
+		t.Fatal("expected imageTurn=true for media message")
+	}
+	if model != "vision-model" {
+		t.Fatalf("model = %q, want %q", model, "vision-model")
+	}
+	if len(candidates) != 1 || candidates[0].Provider != "gemini" || candidates[0].Model != "gemini-2.5-flash-lite" {
+		t.Fatalf("unexpected image candidates: %+v", candidates)
+	}
+}
+
+func TestSelectCandidates_UsesRoutingWhenNoMedia(t *testing.T) {
+	al := &AgentLoop{}
+	agent := &AgentInstance{
+		ID:    "agent-1",
+		Model: "primary-text",
+		Candidates: []providers.FallbackCandidate{
+			{Provider: "openrouter", Model: "example/text"},
+		},
+		ImageModel: "vision-model",
+		ImageCandidates: []providers.FallbackCandidate{
+			{Provider: "gemini", Model: "gemini-2.5-flash-lite"},
+		},
+		Router: routing.New(routing.RouterConfig{
+			LightModel: "light-model",
+			Threshold:  0.95,
+		}),
+		LightCandidates: []providers.FallbackCandidate{
+			{Provider: "openrouter", Model: "example/light"},
+		},
+	}
+
+	messages := []providers.Message{
+		{Role: "system", Content: "system"},
+		{Role: "user", Content: "hi"},
+	}
+
+	candidates, model, imageTurn := al.selectCandidates(agent, "hi", messages)
+
+	if imageTurn {
+		t.Fatal("expected imageTurn=false for text-only message")
+	}
+	if model != "light-model" {
+		t.Fatalf("model = %q, want %q", model, "light-model")
+	}
+	if len(candidates) != 1 || candidates[0].Model != "example/light" {
+		t.Fatalf("unexpected routed candidates: %+v", candidates)
+	}
+}
+
 // TestAgentLoop_GetStartupInfo verifies startup info contains tools
 func TestAgentLoop_GetStartupInfo(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")

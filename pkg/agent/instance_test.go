@@ -160,3 +160,55 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 		})
 	}
 }
+
+func TestNewAgentInstance_ResolvesImageCandidatesFromModelList(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:           tmpDir,
+				Model:               "text-default",
+				ImageModel:          "vision-primary",
+				ImageModelFallbacks: []string{"vision-fallback"},
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "text-default",
+				Model:     "openrouter/example/text-model",
+				APIBase:   "https://openrouter.ai/api/v1",
+			},
+			{
+				ModelName: "vision-primary",
+				Model:     "gemini/gemini-2.5-flash-lite",
+				APIBase:   "https://generativelanguage.googleapis.com/v1beta/openai/",
+			},
+			{
+				ModelName: "vision-fallback",
+				Model:     "openrouter/example/vision-fallback",
+				APIBase:   "https://openrouter.ai/api/v1",
+			},
+		},
+	}
+
+	provider := &mockProvider{}
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
+
+	if agent.ImageModel != "vision-primary" {
+		t.Fatalf("ImageModel = %q, want %q", agent.ImageModel, "vision-primary")
+	}
+	if len(agent.ImageCandidates) != 2 {
+		t.Fatalf("len(ImageCandidates) = %d, want 2", len(agent.ImageCandidates))
+	}
+	if agent.ImageCandidates[0].Provider != "gemini" || agent.ImageCandidates[0].Model != "gemini-2.5-flash-lite" {
+		t.Fatalf("first image candidate = %+v, want gemini/gemini-2.5-flash-lite", agent.ImageCandidates[0])
+	}
+	if agent.ImageCandidates[1].Provider != "openrouter" || agent.ImageCandidates[1].Model != "example/vision-fallback" {
+		t.Fatalf("second image candidate = %+v, want openrouter/example/vision-fallback", agent.ImageCandidates[1])
+	}
+}
