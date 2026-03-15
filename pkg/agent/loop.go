@@ -24,12 +24,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
-	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
-	"github.com/sipeed/picoclaw/pkg/stats"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/sipeed/picoclaw/pkg/voice"
@@ -136,43 +134,7 @@ func NewAgentLoop(
 
 	providerCache := make(map[string]providers.LLMProvider)
 
-	// Create stats tracker if enabled
-
-	var statsTracker *stats.Tracker
-
-	if len(enableStats) > 0 && enableStats[0] && defaultAgent != nil {
-		statsTracker = stats.NewTracker(defaultAgent.Workspace)
-	}
-
-	// Determine if orchestration broadcaster is needed (any agent has subagents enabled).
-
-	// Note: instance.go maps defaults.Orchestration → Subagents.Enabled, so --orchestration
-
-	// is automatically reflected here.
-
-	var orchBroadcaster *orch.Broadcaster
-
-	var orchReporter orch.AgentReporter = orch.Noop
-
-	for _, id := range registry.ListAgentIDs() {
-		if a, ok := registry.GetAgent(id); ok && a.Subagents != nil && a.Subagents.Enabled {
-			orchBroadcaster = orch.NewBroadcaster()
-
-			orchReporter = orchBroadcaster
-
-			break
-		}
-	}
-
 	al := &AgentLoop{
-		loopExt: loopExt{
-			stats:           statsTracker,
-			sessions:        NewSessionTracker(),
-			orchBroadcaster: orchBroadcaster,
-			orchReporter:    orchReporter,
-			done:            make(chan struct{}),
-		},
-
 		bus: msgBus,
 
 		cfg: cfg,
@@ -190,11 +152,11 @@ func NewAgentLoop(
 		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
 	}
 
+	// Initialize fork-specific fields (stats, sessions, orchestration, gcLoop).
+	al.initLoopExt(cfg, registry, len(enableStats) > 0 && enableStats[0])
+
 	// Register shared tools to all agents (needs al for reporter injection).
-
 	registerSharedTools(cfg, msgBus, registry, provider, al)
-
-	go al.gcLoop()
 
 	return al
 }

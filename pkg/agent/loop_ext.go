@@ -39,6 +39,39 @@ type loopExt struct {
 	onHeartbeatThreadUpdate func(int)
 }
 
+// initLoopExt initializes all fork-specific fields: stats tracker,
+// session tracker, orchestration broadcaster, and background goroutines.
+// Called from NewAgentLoop after the struct is constructed.
+func (al *AgentLoop) initLoopExt(cfg *config.Config, registry *AgentRegistry, enableStats bool) {
+	defaultAgent := registry.GetDefaultAgent()
+
+	// Stats tracker
+	if enableStats && defaultAgent != nil {
+		al.stats = stats.NewTracker(defaultAgent.Workspace)
+	}
+
+	// Session tracker
+	al.sessions = NewSessionTracker()
+
+	// Orchestration broadcaster — needed if any agent has subagents enabled.
+	// Note: instance.go maps defaults.Orchestration → Subagents.Enabled,
+	// so --orchestration is automatically reflected here.
+	al.orchReporter = orch.Noop
+	for _, id := range registry.ListAgentIDs() {
+		if a, ok := registry.GetAgent(id); ok && a.Subagents != nil && a.Subagents.Enabled {
+			al.orchBroadcaster = orch.NewBroadcaster()
+			al.orchReporter = al.orchBroadcaster
+			break
+		}
+	}
+
+	// Shutdown signal channel
+	al.done = make(chan struct{})
+
+	// Background GC goroutine
+	go al.gcLoop()
+}
+
 // SetConfigSaver registers a callback to persist config changes.
 func (al *AgentLoop) SetConfigSaver(fn func(*config.Config) error) {
 	al.saveConfig = fn
