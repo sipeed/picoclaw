@@ -12,7 +12,8 @@
     "show_more_channels": "更多",
     "show_less_channels": "收起",
     "config": "配置",
-    "logs": "日志"
+    "logs": "日志",
+    "research": "调研"
   },
   "chat": {
     "welcome": "今天我能为您做些什么？",
@@ -455,6 +456,36 @@
     "logs": {
       "clear": "清空日志",
       "empty": "等待日志中..."
+    },
+    "research": {
+      "load_error": "加载调研任务失败。",
+      "empty": "暂无调研任务，创建一个开始吧。",
+      "new_task": "新建调研",
+      "new_task_description": "创建一个调研任务，由智能体自动执行调查。",
+      "field_title": "标题",
+      "field_title_placeholder": "例如：调查日志覆盖情况",
+      "field_description": "描述",
+      "field_description_placeholder": "描述需要调研的内容...",
+      "create": "创建任务",
+      "create_success": "调研任务已创建。",
+      "create_error": "创建调研任务失败。",
+      "back": "返回",
+      "description": "描述",
+      "documents_title": "文档 ({{count}})",
+      "documents_count": "{{count}} 篇文档",
+      "no_documents": "暂无文档。",
+      "created_at": "创建时间",
+      "completed_at": "完成时间",
+      "output_dir": "输出目录",
+      "action_cancel": "取消任务",
+      "action_reopen": "重新打开",
+      "status": {
+        "pending": "待处理",
+        "active": "进行中",
+        "completed": "已完成",
+        "failed": "失败",
+        "canceled": "已取消"
+      }
     }
   }
 }

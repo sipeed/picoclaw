@@ -12,7 +12,8 @@
     "show_more_channels": "More",
     "show_less_channels": "Less",
     "config": "Config",
-    "logs": "Logs"
+    "logs": "Logs",
+    "research": "Research"
   },
   "chat": {
     "welcome": "How can I help you today?",
@@ -455,6 +456,36 @@
     "logs": {
       "clear": "Clear logs",
       "empty": "Waiting for logs..."
+    },
+    "research": {
+      "load_error": "Failed to load research tasks.",
+      "empty": "No research tasks yet. Create one to get started.",
+      "new_task": "New Research",
+      "new_task_description": "Create a new research task for the agent to investigate.",
+      "field_title": "Title",
+      "field_title_placeholder": "e.g. Investigate logging gaps",
+      "field_description": "Description",
+      "field_description_placeholder": "Describe what should be researched...",
+      "create": "Create Task",
+      "create_success": "Research task created.",
+      "create_error": "Failed to create research task.",
+      "back": "Back",
+      "description": "Description",
+      "documents_title": "Documents ({{count}})",
+      "documents_count": "{{count}} docs",
+      "no_documents": "No documents yet.",
+      "created_at": "Created",
+      "completed_at": "Completed",
+      "output_dir": "Output",
+      "action_cancel": "Cancel Task",
+      "action_reopen": "Reopen Task",
+      "status": {
+        "pending": "Pending",
+        "active": "Active",
+        "completed": "Completed",
+        "failed": "Failed",
+        "canceled": "Canceled"
+      }
     }
   }
 }
