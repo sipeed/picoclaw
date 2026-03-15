@@ -33,6 +33,53 @@ func (cb *ContextBuilder) SetOrchestrationEnabled(enabled bool) {
 	cb.orchestrationEnabled = enabled
 }
 
+// extIdentityOverrides returns the orchestration-specific overrides for
+// getIdentity: banner prefix, identity string, and plan executing rule.
+// When orchestration is disabled, all return values are empty strings.
+func (cb *ContextBuilder) extIdentityOverrides() (banner, identity, executingRule string) {
+	if !cb.orchestrationEnabled {
+		return "", "", ""
+	}
+
+	banner = ` /_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+ O R C H E S T R A  M O D E
+
+/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+
+
+`
+	identity = "a conductor AI agent that orchestrates subagents"
+	executingRule = `Delegate the current Phase's steps to subagents using spawn.
+     For each step: spawn a subagent with the appropriate preset (scout for investigation,
+     coder for implementation, analyst for review). Spawn multiple independent steps in parallel.
+     When a subagent completes, mark "- [x]" via edit_file and record findings in
+     ## Orchestration > Findings in MEMORY.md.
+     Only do a step inline if it's a single quick tool call (e.g., reading one file).`
+	return banner, identity, executingRule
+}
+
+// extPromptSections returns fork-specific prompt sections to append to
+// BuildSystemPrompt: orchestration guidance and peer session note.
+func (cb *ContextBuilder) extPromptSections() []string {
+	var sections []string
+
+	// Orchestration guidance — injected only when spawn tool is registered
+	if cb.tools != nil {
+		if _, hasSpawn := cb.tools.Get("spawn"); hasSpawn {
+			sections = append(sections, orchestrationGuidance)
+		}
+	}
+
+	// Peer session coordination
+	if cb.peerNote != "" {
+		sections = append(sections, "## Active Sessions\n\n"+cb.peerNote)
+	}
+
+	return sections
+}
+
 // Memory returns the underlying MemoryStore for direct plan queries.
 func (cb *ContextBuilder) Memory() *MemoryStore {
 	return cb.memory

@@ -89,32 +89,14 @@ func (cb *ContextBuilder) getIdentity() string {
 	// Build tools section dynamically
 	toolsSection := cb.buildToolsSection()
 
-	// Build prompt with optional orchestration banner
-	var prompt string
-	if cb.orchestrationEnabled {
-		prompt = ` /_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-
- O R C H E S T R A  M O D E
-
-/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-
-
-
-`
+	// Orchestration overrides (banner, identity, executing rule)
+	prompt, identity, executingRule := cb.extIdentityOverrides()
+	if identity == "" {
+		identity = "a helpful AI assistant"
 	}
-
-	// Conditional identity and plan executing rule for orchestration mode
-	identity := "a helpful AI assistant"
-	executingRule := `Work through the current Phase's steps.
+	if executingRule == "" {
+		executingRule = `Work through the current Phase's steps.
      Mark each "- [x]" via edit_file. The system will auto-advance phases.`
-	if cb.orchestrationEnabled {
-		identity = "a conductor AI agent that orchestrates subagents"
-		executingRule = `Delegate the current Phase's steps to subagents using spawn.
-     For each step: spawn a subagent with the appropriate preset (scout for investigation,
-     coder for implementation, analyst for review). Spawn multiple independent steps in parallel.
-     When a subagent completes, mark "- [x]" via edit_file and record findings in
-     ## Orchestration > Findings in MEMORY.md.
-     Only do a step inline if it's a single quick tool call (e.g., reading one file).`
 	}
 
 	return fmt.Sprintf(prompt+`# picoclaw 🦞 (%s)
@@ -223,12 +205,8 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 	// Core identity section
 	parts = append(parts, cb.getIdentity())
 
-	// Orchestration guidance — injected only when spawn tool is registered
-	if cb.tools != nil {
-		if _, hasSpawn := cb.tools.Get("spawn"); hasSpawn {
-			parts = append(parts, orchestrationGuidance)
-		}
-	}
+	// Fork-specific prompt sections (orchestration guidance, peer note)
+	parts = append(parts, cb.extPromptSections()...)
 
 	// Bootstrap files
 	bootstrapContent := cb.LoadBootstrapFiles()
@@ -251,11 +229,6 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 		if status := cb.tools.GetRuntimeStatus(); status != "" {
 			parts = append(parts, status)
 		}
-	}
-
-	// Peer session coordination
-	if cb.peerNote != "" {
-		parts = append(parts, "## Active Sessions\n\n"+cb.peerNote)
 	}
 
 	// Memory context
