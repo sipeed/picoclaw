@@ -37,7 +37,7 @@ const (
 	dedupInterval = 60 * time.Second
 	dedupMaxSize  = 10000 // hard cap on dedup map entries
 	typingResend  = 8 * time.Second
-	typingSeconds = 20
+	typingSeconds = 10
 )
 
 var emojiRegexp = regexp.MustCompile(`<[^<]*?ext="([^"]+)"[^<]*?faceType=(\d+)[^<]*?>|<[^<]*?faceType=(\d+)[^<]*?ext="([^"]+)"[^<]*?>`)
@@ -57,6 +57,8 @@ type QQChannel struct {
 	// Passive reply: store last inbound message ID per chat.
 	lastMsgID sync.Map // chatID → string
 
+	// 消息回复时API时的SEQ，用于回复时去重
+	// 被动回复： 同一个chatID+replyMsgID+seq 去重。 主动回复：不限制。
 	replySeq atomic.Uint32
 	seqLock  sync.Mutex
 
@@ -248,9 +250,9 @@ func (c *QQChannel) getReplyExtInfo(ctx context.Context, chatID string) (replyID
 	defer c.seqLock.Unlock()
 	seq = c.replySeq.Add(1)
 	if seq > math.MaxInt32 {
-		c.replySeq.Store(1)
+		c.replySeq.Store(0)
+		seq = c.replySeq.Add(1)
 	}
-
 	return replyID, seq
 }
 
