@@ -277,7 +277,7 @@ func TestBackend_TruncateHistory_LargerThanLen(t *testing.T) {
 	}
 }
 
-func TestBackend_GetHistory_DefensiveCopy(t *testing.T) {
+func TestBackend_GetHistory_ReadOnlyContract(t *testing.T) {
 	for name, be := range backends(t) {
 		t.Run(name, func(t *testing.T) {
 			be.GetOrCreate("k1")
@@ -285,13 +285,14 @@ func TestBackend_GetHistory_DefensiveCopy(t *testing.T) {
 			be.AddMessage("k1", "user", "hello")
 
 			h1 := be.GetHistory("k1")
-
-			h1[0].Content = "modified"
-
 			h2 := be.GetHistory("k1")
 
-			if h2[0].Content != "hello" {
-				t.Errorf("defensive copy failed: %q", h2[0].Content)
+			// Read-only contract: both calls return the same backing data.
+			if len(h1) != len(h2) {
+				t.Errorf("expected same length, got %d vs %d", len(h1), len(h2))
+			}
+			if h1[0].Content != "hello" || h2[0].Content != "hello" {
+				t.Errorf("expected content 'hello'")
 			}
 		})
 	}

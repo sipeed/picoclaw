@@ -176,7 +176,9 @@ func (la *LegacyAdapter) AddFullMessage(sessionKey string, msg providers.Message
 	c.dirty = true
 }
 
-// GetHistory returns a defensive copy of the session messages.
+// GetHistory returns the session messages directly (read-only contract).
+// Callers must not mutate the returned slice. If mutation is needed,
+// copy the slice first or use SetHistory.
 
 func (la *LegacyAdapter) GetHistory(key string) []providers.Message {
 	la.mu.RLock()
@@ -213,11 +215,7 @@ func (la *LegacyAdapter) GetHistory(key string) []providers.Message {
 
 	defer la.mu.RUnlock()
 
-	history := make([]providers.Message, len(c.messages))
-
-	copy(history, c.messages)
-
-	return history
+	return c.messages
 }
 
 // SetHistory replaces the session's message history entirely.
