@@ -1,5 +1,49 @@
 import './styles.css';
+import 'highlight.js/styles/github-dark.min.css';
+import { marked } from 'marked';
+import hljs from 'highlight.js/lib/core';
+import javascript from 'highlight.js/lib/languages/javascript';
+import python from 'highlight.js/lib/languages/python';
+import go from 'highlight.js/lib/languages/go';
+import bash from 'highlight.js/lib/languages/bash';
+import json from 'highlight.js/lib/languages/json';
+import yaml from 'highlight.js/lib/languages/yaml';
+import typescript from 'highlight.js/lib/languages/typescript';
+import sql from 'highlight.js/lib/languages/sql';
+import xml from 'highlight.js/lib/languages/xml';
+import css from 'highlight.js/lib/languages/css';
+import markdown from 'highlight.js/lib/languages/markdown';
 import { renderLogs as renderLogsView } from './logs_view.js';
+
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('js', javascript);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('py', python);
+hljs.registerLanguage('go', go);
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('sh', bash);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('yaml', yaml);
+hljs.registerLanguage('yml', yaml);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('ts', typescript);
+hljs.registerLanguage('sql', sql);
+hljs.registerLanguage('xml', xml);
+hljs.registerLanguage('html', xml);
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('md', markdown);
+
+marked.setOptions({
+  highlight: function(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  },
+  breaks: true,
+  gfm: true,
+});
 
 const tg = window.Telegram.WebApp;
 tg.ready();
@@ -246,37 +290,7 @@ function setupSlideApprove() {
 }
 
 function renderSimpleMarkdown(text) {
-  var lines = text.split('\n');
-  var out = [];
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-    // Headings
-    if (/^### /.test(line)) {
-      out.push('<div class="md-h3">' + escapeHtml(line.slice(4)) + '</div>');
-    } else if (/^## /.test(line)) {
-      out.push('<div class="md-h2">' + escapeHtml(line.slice(3)) + '</div>');
-    } else if (/^# /.test(line)) {
-      out.push('<div class="md-h1">' + escapeHtml(line.slice(2)) + '</div>');
-    // Checkboxes
-    } else if (/^- \[x\] /.test(line)) {
-      out.push('<div class="md-checkbox"><span class="md-checkbox-icon checked"></span>' + escapeHtml(line.slice(6)) + '</div>');
-    } else if (/^- \[ \] /.test(line)) {
-      out.push('<div class="md-checkbox"><span class="md-checkbox-icon"></span>' + escapeHtml(line.slice(6)) + '</div>');
-    // Blockquote
-    } else if (/^> /.test(line)) {
-      out.push('<div class="md-quote">' + escapeHtml(line.slice(2)) + '</div>');
-    // Bullet list
-    } else if (/^- /.test(line)) {
-      out.push('<div class="md-bullet">' + escapeHtml(line.slice(2)) + '</div>');
-    // Empty line
-    } else if (line.trim() === '') {
-      out.push('<br>');
-    // Plain text
-    } else {
-      out.push('<div>' + escapeHtml(line) + '</div>');
-    }
-  }
-  return out.join('');
+  return marked.parse(text);
 }
 
 async function loadTab(loadingId, contentId, label, fetchFn, renderFn) {
@@ -1468,8 +1482,8 @@ async function toggleResearchDoc(card, taskId, docId) {
     );
     var data = await resp.json();
     body.dataset.loaded = '1';
-    body.innerHTML = '<pre style="font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:50vh;overflow:auto">' +
-      esc(data.content) + '</pre>';
+    body.innerHTML = '<div class="md-rendered" style="max-height:50vh;overflow:auto;padding:8px 0">' +
+      marked.parse(data.content) + '</div>';
   } catch (e) {
     body.innerHTML = '<div style="color:var(--hint);font-size:12px">Failed to load document.</div>';
   }

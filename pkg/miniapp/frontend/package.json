@@ -9,6 +9,9 @@
   "devDependencies": {
     "happy-dom": "^16.8.1",
     "vitest": "^2.1.9"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "marked": "^17.0.4"
   }
 }
-
