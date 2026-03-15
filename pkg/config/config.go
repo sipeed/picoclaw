@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/joho/godotenv"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
@@ -837,9 +839,23 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// Load .env from current working directory before parsing env vars.
+	// Uses Load (not Overload) so shell-exported vars take precedence over .env file.
+	// Silently ignored if .env does not exist.
+	_ = godotenv.Load(".env")
+
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
+
+	// Apply well-known provider env vars (e.g. OPENAI_API_KEY) to model_list entries
+	// whose api_key is empty. caarlos0/env cannot map slice elements, so this is done
+	// as a post-processing step.
+	applyModelEnvOverrides(cfg)
+
+	// Resolve ${VAR} references in MCP server Env and Headers maps so secrets
+	// can live in .env instead of config.json.
+	applyMCPEnvOverrides(cfg)
 
 	// Migrate legacy channel config fields to new unified structures
 	cfg.migrateChannelConfigs()
@@ -878,6 +894,90 @@ func SaveConfig(path string, cfg *Config) error {
 
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	return fileutil.WriteFileAtomic(path, data, 0o600)
+}
+
+// applyModelEnvOverrides reads well-known provider API key env vars and applies
+// them to model_list entries whose api_key field is empty. This handles the
+// model_list slice case that caarlos0/env cannot map via struct tags.
+//
+// Precedence: config.json api_key > shell env var / .env file > nothing.
+func applyModelEnvOverrides(cfg *Config) {
+	// Maps provider prefix (from "provider/model" format) to env var name.
+	providerEnvMap := map[string]string{
+		"openai":              "OPENAI_API_KEY",
+		"anthropic":           "ANTHROPIC_API_KEY",
+		"anthropic-messages":  "ANTHROPIC_API_KEY",
+		"openrouter":          "OPENROUTER_API_KEY",
+		"groq":                "GROQ_API_KEY",
+		"gemini":              "GEMINI_API_KEY",
+		"google":              "GEMINI_API_KEY",
+		"deepseek":            "DEEPSEEK_API_KEY",
+		"zhipu":               "ZHIPU_API_KEY",
+		"moonshot":            "MOONSHOT_API_KEY",
+		"mistral":             "MISTRAL_API_KEY",
+		"cerebras":            "CEREBRAS_API_KEY",
+		"volcengine":          "VOLCENGINE_API_KEY",
+		"modelscope":          "MODELSCOPE_API_KEY",
+		"longcat":             "LONGCAT_API_KEY",
+		"nvidia":              "NVIDIA_API_KEY",
+		"perplexity":          "PERPLEXITY_API_KEY",
+		"avian":               "AVIAN_API_KEY",
+		"qwen-portal":         "QWEN_API_KEY",
+		"ollama":              "OLLAMA_API_KEY",
+	}
+	for i, m := range cfg.ModelList {
+		if m.APIKey != "" {
+			continue // already set in config.json, don't override
+		}
+		provider, _, ok := strings.Cut(m.Model, "/")
+		if !ok {
+			continue
+		}
+		envVar, ok := providerEnvMap[strings.ToLower(provider)]
+		if !ok {
+			continue
+		}
+		if val := os.Getenv(envVar); val != "" {
+			cfg.ModelList[i].APIKey = val
+		}
+	}
+}
+
+// envVarRef matches a value that is entirely a ${VAR_NAME} reference.
+var envVarRef = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$`)
+
+// resolveEnvRef resolves a ${VAR_NAME} reference to its env value.
+// Returns the original value unchanged if it is not a reference or the var is unset.
+func resolveEnvRef(value string) string {
+	if m := envVarRef.FindStringSubmatch(value); m != nil {
+		if resolved := os.Getenv(m[1]); resolved != "" {
+			return resolved
+		}
+	}
+	return value
+}
+
+// applyMCPEnvOverrides resolves ${VAR} references in MCP server Env and Headers maps.
+// This allows secrets to live in .env instead of config.json.
+func applyMCPEnvOverrides(cfg *Config) {
+	for name, srv := range cfg.Tools.MCP.Servers {
+		changed := false
+		for k, v := range srv.Env {
+			if resolved := resolveEnvRef(v); resolved != v {
+				srv.Env[k] = resolved
+				changed = true
+			}
+		}
+		for k, v := range srv.Headers {
+			if resolved := resolveEnvRef(v); resolved != v {
+				srv.Headers[k] = resolved
+				changed = true
+			}
+		}
+		if changed {
+			cfg.Tools.MCP.Servers[name] = srv
+		}
+	}
 }
 
 func (c *Config) WorkspacePath() string {

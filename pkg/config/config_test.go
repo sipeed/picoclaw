@@ -621,3 +621,142 @@ func TestFlexibleStringSlice_UnmarshalText_EmptySliceConsistency(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveEnvRef(t *testing.T) {
+	t.Setenv("MY_SECRET", "resolved-value")
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"${MY_SECRET}", "resolved-value"},          // set var → resolved
+		{"${UNSET_VAR_XYZ}", "${UNSET_VAR_XYZ}"},   // unset var → unchanged
+		{"literal-value", "literal-value"},           // no pattern → unchanged
+		{"prefix-${MY_SECRET}", "prefix-${MY_SECRET}"}, // partial → unchanged (no partial substitution)
+		{"${MY_SECRET}-suffix", "${MY_SECRET}-suffix"}, // partial → unchanged
+		{"${}", "${}"},                                // empty name → unchanged
+	}
+
+	for _, tc := range tests {
+		got := resolveEnvRef(tc.input)
+		if got != tc.want {
+			t.Errorf("resolveEnvRef(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestApplyMCPEnvOverrides_Headers(t *testing.T) {
+	t.Setenv("CONTEXT7_API_KEY", "ctx7sk-test")
+
+	cfg := DefaultConfig()
+	cfg.Tools.MCP.Servers = map[string]MCPServerConfig{
+		"context7": {
+			Headers: map[string]string{
+				"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}",
+				"STATIC_HEADER":    "keep-as-is",
+			},
+		},
+	}
+
+	applyMCPEnvOverrides(cfg)
+
+	srv := cfg.Tools.MCP.Servers["context7"]
+	if got := srv.Headers["CONTEXT7_API_KEY"]; got != "ctx7sk-test" {
+		t.Errorf("Headers[CONTEXT7_API_KEY] = %q, want %q", got, "ctx7sk-test")
+	}
+	if got := srv.Headers["STATIC_HEADER"]; got != "keep-as-is" {
+		t.Errorf("Headers[STATIC_HEADER] = %q, want %q", got, "keep-as-is")
+	}
+}
+
+func TestApplyMCPEnvOverrides_Env(t *testing.T) {
+	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "ghp-test-token")
+
+	cfg := DefaultConfig()
+	cfg.Tools.MCP.Servers = map[string]MCPServerConfig{
+		"github": {
+			Env: map[string]string{
+				"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}",
+			},
+		},
+	}
+
+	applyMCPEnvOverrides(cfg)
+
+	srv := cfg.Tools.MCP.Servers["github"]
+	if got := srv.Env["GITHUB_PERSONAL_ACCESS_TOKEN"]; got != "ghp-test-token" {
+		t.Errorf("Env[GITHUB_PERSONAL_ACCESS_TOKEN] = %q, want %q", got, "ghp-test-token")
+	}
+}
+
+func TestApplyMCPEnvOverrides_BackwardCompat(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Tools.MCP.Servers = map[string]MCPServerConfig{
+		"server": {
+			Headers: map[string]string{"KEY": "hardcoded-value"},
+			Env:     map[string]string{"VAR": "hardcoded-env"},
+		},
+	}
+
+	applyMCPEnvOverrides(cfg)
+
+	srv := cfg.Tools.MCP.Servers["server"]
+	if got := srv.Headers["KEY"]; got != "hardcoded-value" {
+		t.Errorf("Headers[KEY] = %q, want %q (hardcoded value should pass through)", got, "hardcoded-value")
+	}
+	if got := srv.Env["VAR"]; got != "hardcoded-env" {
+		t.Errorf("Env[VAR] = %q, want %q (hardcoded value should pass through)", got, "hardcoded-env")
+	}
+}
+
+func TestApplyMCPEnvOverrides_UnsetVarUnchanged(t *testing.T) {
+	os.Unsetenv("DEFINITELY_UNSET_VAR_12345")
+
+	cfg := DefaultConfig()
+	cfg.Tools.MCP.Servers = map[string]MCPServerConfig{
+		"server": {
+			Headers: map[string]string{"KEY": "${DEFINITELY_UNSET_VAR_12345}"},
+		},
+	}
+
+	applyMCPEnvOverrides(cfg)
+
+	srv := cfg.Tools.MCP.Servers["server"]
+	if got := srv.Headers["KEY"]; got != "${DEFINITELY_UNSET_VAR_12345}" {
+		t.Errorf("Headers[KEY] = %q, want original %q when var is unset", got, "${DEFINITELY_UNSET_VAR_12345}")
+	}
+}
+
+func TestLoadConfig_MCPEnvOverrides(t *testing.T) {
+	t.Setenv("CONTEXT7_API_KEY", "ctx7sk-integration")
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	configJSON := `{
+  "tools": {
+    "mcp": {
+      "servers": {
+        "context7": {
+          "enabled": true,
+          "type": "http",
+          "url": "https://mcp.context7.com/mcp",
+          "headers": {"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"}
+        }
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	srv := cfg.Tools.MCP.Servers["context7"]
+	if got := srv.Headers["CONTEXT7_API_KEY"]; got != "ctx7sk-integration" {
+		t.Errorf("Headers[CONTEXT7_API_KEY] = %q, want %q", got, "ctx7sk-integration")
+	}
+}
