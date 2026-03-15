@@ -441,13 +441,25 @@
         "clawhub": {
           "enabled": true,
           "base_url": "https://clawhub.ai",
-          "auth_token": "",
-          "search_path": "",
-          "skills_path": "",
-          "download_path": "",
-          "timeout": 0,
-          "max_zip_size": 0,
-          "max_response_size": 0
+          "search_path": "/api/v1/search",
+          "skills_path": "/api/v1/skills",
+          "download_path": "/api/v1/download"
+        },
+        "index:angelhub": {
+          "enabled": false,
+          "index_url": "https://raw.githubusercontent.com/wiki/keithy/angelhub/picoclaw-skills-index.json",
+          "extra_header": "X-Custom-Header: value",
+          "authorization_header": "Bearer token",
+          "agent_header": "picoclaw/1.0",
+          "allowed_prefixes": [
+            "https://raw.githubusercontent.com/wiki/keithy/angelhub/",
+            "https://raw.githubusercontent.com/keithy/angelhub/"
+          ],
+          "url_mappings": {
+            "https://raw.githubusercontent.com/keithy/angelhub/main/": "https://raw.githubusercontent.com/keithy/angelhub/beta/",
+            "https://raw.githubusercontent.com/keithy/angelhub/": "file:///home/me/repos/angelhub/"
+          },
+          "symlink_local": true
         }
       },
       "github": {

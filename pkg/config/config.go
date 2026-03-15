@@ -760,7 +760,56 @@ type SearchCacheConfig struct {
 }
 
 type SkillsRegistriesConfig struct {
-	ClawHub ClawHubRegistryConfig `json:"clawhub"`
+	ClawHub ClawHubRegistryConfig          `json:"clawhub"`
+	Index   map[string]IndexRegistryConfig `json:"index"`
+}
+
+// UnmarshalJSON supports both flat "index:*" keys and nested "index" object.
+// Keys like "index:angelhub" are auto-detected as index registries.
+func (s *SkillsRegistriesConfig) UnmarshalJSON(data []byte) error {
+	type Alias SkillsRegistriesConfig
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(s),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Initialize Index map if nil
+	if s.Index == nil {
+		s.Index = make(map[string]IndexRegistryConfig)
+	}
+
+	// Parse again to find flat "index:*" keys
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	for key, value := range raw {
+		if strings.HasPrefix(key, "index:") {
+			var cfg IndexRegistryConfig
+			if err := json.Unmarshal(value, &cfg); err != nil {
+				return err
+			}
+			s.Index[key] = cfg
+		}
+	}
+
+	return nil
+}
+
+type IndexRegistryConfig struct {
+	Enabled             bool              `json:"enabled"`
+	IndexURL            string            `json:"index_url"`
+	ExtraHeader         string            `json:"extra_header"`
+	AuthorizationHeader string            `json:"authorization_header"`
+	AgentHeader         string            `json:"agent_header"`
+	AllowedPrefixes     []string          `json:"allowed_prefixes"`
+	URLMappings         map[string]string `json:"url_mappings"`
+	SymlinkLocal        bool              `json:"symlink_local"`
 }
 
 type SkillsGithubConfig struct {
