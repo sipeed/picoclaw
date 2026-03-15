@@ -401,6 +401,10 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("irc", "IRC")
 	}
 
+	if m.config.Channels.MQTT.Enabled && m.config.Channels.MQTT.Broker != "" && m.config.Channels.MQTT.ClientID != "" && len(m.config.Channels.MQTT.SubscribeTopics) > 0 {
+		m.initChannel("mqtt", "MQTT")
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})
