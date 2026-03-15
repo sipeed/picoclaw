@@ -78,7 +78,8 @@ func TestSpawnStatusTool_Empty(t *testing.T) {
 
 func TestSpawnStatusTool_ListAll(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	workspace := t.TempDir()
+	manager := NewSubagentManager(provider, "test-model", workspace)
 
 	now := time.Now().UnixMilli()
 	manager.mu.Lock()
