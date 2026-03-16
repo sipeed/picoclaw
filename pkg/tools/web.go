@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
@@ -40,43 +42,6 @@ var (
 	reDDGLink    = regexp.MustCompile(`<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>`)
 	reDDGSnippet = regexp.MustCompile(`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`)
 )
-
-// createHTTPClient creates an HTTP client with optional proxy support
-func createHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  false,
-			TLSHandshakeTimeout: 15 * time.Second,
-		},
-	}
-
-	if proxyURL != "" {
-		proxy, err := url.Parse(proxyURL)
-		if err != nil {
-			return nil, fmt.Errorf("invalid proxy URL: %w", err)
-		}
-		scheme := strings.ToLower(proxy.Scheme)
-		switch scheme {
-		case "http", "https", "socks5", "socks5h":
-		default:
-			return nil, fmt.Errorf(
-				"unsupported proxy scheme %q (supported: http, https, socks5, socks5h)",
-				proxy.Scheme,
-			)
-		}
-		if proxy.Host == "" {
-			return nil, fmt.Errorf("invalid proxy URL: missing host")
-		}
-		client.Transport.(*http.Transport).Proxy = http.ProxyURL(proxy)
-	} else {
-		client.Transport.(*http.Transport).Proxy = http.ProxyFromEnvironment
-	}
-
-	return client, nil
-}
 
 type APIKeyPool struct {
 	keys    []string
@@ -678,7 +643,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	maxResults := 5
 	// Priority: Perplexity > Brave > SearXNG > Tavily > DuckDuckGo > GLM Search
 	if opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0 {
-		client, err := createHTTPClient(opts.Proxy, perplexityTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Perplexity: %w", err)
 		}
@@ -691,7 +656,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.PerplexityMaxResults
 		}
 	} else if opts.BraveEnabled && len(opts.BraveAPIKeys) > 0 {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Brave: %w", err)
 		}
@@ -705,7 +670,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.SearXNGMaxResults
 		}
 	} else if opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0 {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Tavily: %w", err)
 		}
@@ -719,7 +684,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.TavilyMaxResults
 		}
 	} else if opts.DuckDuckGoEnabled {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for DuckDuckGo: %w", err)
 		}
@@ -728,7 +693,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.DuckDuckGoMaxResults
 		}
 	} else if opts.GLMSearchEnabled && opts.GLMSearchAPIKey != "" {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for GLM Search: %w", err)
 		}
@@ -827,7 +792,7 @@ func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64)
 	if maxChars <= 0 {
 		maxChars = defaultMaxChars
 	}
-	client, err := createHTTPClient(proxy, fetchTimeout)
+	client, err := utils.CreateHTTPClient(proxy, fetchTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client for web fetch: %w", err)
 	}

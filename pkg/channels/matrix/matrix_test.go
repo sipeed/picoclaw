@@ -2,6 +2,8 @@ package matrix
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,6 +196,50 @@ func TestMatrixMediaExt(t *testing.T) {
 	}
 	if got := matrixMediaExt("", "", "file"); got != ".bin" {
 		t.Fatalf("default file extension mismatch: got=%q", got)
+	}
+}
+
+func TestDownloadMedia_WritesResponseToTempFile(t *testing.T) {
+	const wantBody = "matrix-media-payload"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/_matrix/client/v1/media/download/matrix.test/abc123") {
+			t.Fatalf("unexpected download path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte(wantBody))
+	}))
+	defer server.Close()
+
+	client, err := mautrix.NewClient(server.URL, id.UserID("@picoclaw:matrix.test"), "")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	ch := &MatrixChannel{client: client}
+	msg := &event.MessageEventContent{
+		MsgType: event.MsgImage,
+		Body:    "image.png",
+		URL:     id.ContentURIString("mxc://matrix.test/abc123"),
+		Info:    &event.FileInfo{MimeType: "image/png"},
+	}
+
+	path, err := ch.downloadMedia(context.Background(), msg, "image")
+	if err != nil {
+		t.Fatalf("downloadMedia: %v", err)
+	}
+	defer os.Remove(path)
+
+	if ext := filepath.Ext(path); ext != ".png" {
+		t.Fatalf("temp file extension=%q want=.png", ext)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != wantBody {
+		t.Fatalf("file contents=%q want=%q", string(got), wantBody)
 	}
 }
 

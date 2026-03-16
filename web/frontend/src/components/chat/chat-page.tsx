@@ -20,10 +20,12 @@ export function ChatPage() {
   const { t } = useTranslation()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
+  const [hasScrolled, setHasScrolled] = useState(false)
   const [input, setInput] = useState("")
 
   const {
     messages,
+    connectionState,
     isTyping,
     activeSessionId,
     sendMessage,
@@ -32,7 +34,8 @@ export function ChatPage() {
   } = usePicoChat()
 
   const { state: gwState } = useGateway()
-  const isConnected = gwState === "running"
+  const isGatewayRunning = gwState === "running"
+  const isChatConnected = connectionState === "connected"
 
   const {
     defaultModelName,
@@ -41,7 +44,8 @@ export function ChatPage() {
     oauthModels,
     localModels,
     handleSetDefault,
-  } = useChatModels({ isConnected })
+  } = useChatModels({ isConnected: isGatewayRunning })
+  const canSend = isChatConnected && Boolean(defaultModelName)
 
   const {
     sessions,
@@ -56,27 +60,39 @@ export function ChatPage() {
     onDeletedActiveSession: newChat,
   })
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
+  const syncScrollState = (element: HTMLDivElement) => {
+    const { scrollTop, scrollHeight, clientHeight } = element
+    setHasScrolled(scrollTop > 0)
     setIsAtBottom(scrollHeight - scrollTop <= clientHeight + 10)
   }
 
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    syncScrollState(e.currentTarget)
+  }
+
   useEffect(() => {
-    if (isAtBottom && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    if (scrollRef.current) {
+      if (isAtBottom) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      }
+      syncScrollState(scrollRef.current)
     }
   }, [messages, isTyping, isAtBottom])
 
   const handleSend = () => {
-    if (!input.trim() || !isConnected) return
-    sendMessage(input.trim())
-    setInput("")
+    if (!input.trim() || !canSend) return
+    if (sendMessage(input.trim())) {
+      setInput("")
+    }
   }
 
   return (
     <div className="bg-background/95 flex h-full flex-col">
       <PageHeader
         title={t("navigation.chat")}
+        className={`transition-shadow ${
+          hasScrolled ? "shadow-sm" : "shadow-none"
+        }`}
         titleExtra={
           hasConfiguredModels && (
             <ModelSelector
@@ -90,7 +106,7 @@ export function ChatPage() {
         }
       >
         <Button
-          variant="outline"
+          variant="secondary"
           size="sm"
           onClick={newChat}
           className="h-9 gap-2"
@@ -126,7 +142,7 @@ export function ChatPage() {
             <ChatEmptyState
               hasConfiguredModels={hasConfiguredModels}
               defaultModelName={defaultModelName}
-              isConnected={isConnected}
+              isConnected={isGatewayRunning}
             />
           )}
 
@@ -151,7 +167,7 @@ export function ChatPage() {
         input={input}
         onInputChange={setInput}
         onSend={handleSend}
-        isConnected={isConnected}
+        isConnected={isChatConnected}
         hasDefaultModel={Boolean(defaultModelName)}
       />
     </div>

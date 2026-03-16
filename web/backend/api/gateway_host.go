@@ -57,10 +57,28 @@ func requestHostName(r *http.Request) string {
 	return "127.0.0.1"
 }
 
+func requestWSScheme(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
+		proto := strings.ToLower(strings.TrimSpace(strings.Split(forwarded, ",")[0]))
+		if proto == "https" || proto == "wss" {
+			return "wss"
+		}
+		if proto == "http" || proto == "ws" {
+			return "ws"
+		}
+	}
+
+	if r.TLS != nil {
+		return "wss"
+	}
+
+	return "ws"
+}
+
 func (h *Handler) buildWsURL(r *http.Request, cfg *config.Config) string {
 	host := h.effectiveGatewayBindHost(cfg)
 	if host == "" || host == "0.0.0.0" {
 		host = requestHostName(r)
 	}
-	return "ws://" + net.JoinHostPort(host, strconv.Itoa(cfg.Gateway.Port)) + "/pico/ws"
+	return requestWSScheme(r) + "://" + net.JoinHostPort(host, strconv.Itoa(cfg.Gateway.Port)) + "/pico/ws"
 }
