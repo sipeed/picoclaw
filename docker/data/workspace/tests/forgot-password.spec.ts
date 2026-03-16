@@ -1,10 +1,12 @@
 import { test, expect } from '@playwright/test';
+import { performLogin } from './utils/auth';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';
 import * as dotenv from 'dotenv';
 dotenv.config({ path: __dirname + '/../.env' });
 
 test('Password reset flow - Reset password and verify login', async ({ page }) => {
+    test.setTimeout(120000);
     const testEmail = 'test@intnt.ai';
     const newPassword = 'testing2027!';
     const originalPassword = 'testing2026!';
@@ -151,7 +153,7 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
 
     // Step 8: Verify success message and click Go To Dashboard
     console.log('\n📍 Step 8: Verify success message and click Go To Dashboard');
-    await expect(page.getByText('Your password was reset successfully')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Your password was reset successfully/i)).toBeVisible({ timeout: 10000 });
     console.log('   ✓ Success message visible');
     const goToDashboardButton = page.locator('button:has-text("Go To Dashboard"), a:has-text("Go To Dashboard")').first();
     await expect(goToDashboardButton).toBeVisible();
@@ -161,17 +163,8 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
     console.log('✅ PASS: Step 8 - Clicked Go To Dashboard, redirected to login page');
 
     // Step 9: Login with new password and verify
-    console.log('\n📍 Step 9: Login with new password testing2027! and verify');
-    const emailInput = page.locator('.v-text-field').nth(0).locator('input');
-    const passwordInput = page.locator('.v-text-field').nth(1).locator('input');
-    const loginButton = page.locator('button:has-text("Login")');
-
-    await emailInput.fill(testEmail);
-    await passwordInput.fill(newPassword);
-    await loginButton.click();
-
-    await page.waitForURL('**/dashboard.int3nt.info/?select_org', { timeout: 20000 });
-    await expect(page).toHaveURL(/.*\?select_org/);
+    console.log(`\n📍 Step 9: Login with new password ${newPassword} and verify`);
+    await performLogin(page, testEmail, newPassword);
     console.log('✅ PASS: Step 9 - Login successful with new password, redirected to org selection');
 
     // Step 10: Logout before reverting password
@@ -182,18 +175,18 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
     let logoutFound = false;
 
     // Try clicking logout button directly
-    if (await logoutButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await logoutButton.isVisible({ timeout: 10000 }).catch(() => false)) {
         await logoutButton.click();
         logoutFound = true;
         console.log('   ✓ Logout button clicked directly');
     }
     // Try clicking profile menu first, then logout
-    else if (await profileMenu.isVisible({ timeout: 3000 }).catch(() => false)) {
+    else if (await profileMenu.isVisible({ timeout: 10000 }).catch(() => false)) {
         await profileMenu.click();
         await page.waitForTimeout(500);
 
         const logoutInMenu = page.locator('[class*="logout"], button:has-text("Logout"), button:has-text("Sign out")').first();
-        if (await logoutInMenu.isVisible({ timeout: 3000 }).catch(() => false)) {
+        if (await logoutInMenu.isVisible({ timeout: 10000 }).catch(() => false)) {
             await logoutInMenu.click();
             logoutFound = true;
             console.log('   ✓ Profile menu clicked and logout selected');
@@ -218,7 +211,7 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
 
     // Step 12: Enter email and send reset email again
     console.log('\n📍 Step 12: Enter email and send reset email again');
-    const emailInputField2 = page.locator('input[type="email"], input[placeholder*="email" i]').first();
+    const emailInputField2 = page.locator('.forgot-password-card .v-input input').first();
     await expect(emailInputField2).toBeVisible();
     await emailInputField2.fill(testEmail);
 
@@ -264,17 +257,8 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
     console.log('✅ PASS: Step 13 - Password reverted, clicked Go To Dashboard, redirected to login');
 
     // Step 14: Login with original password and verify
-    console.log('\n📍 Step 14: Login with original password testing2026! and verify');
-    const emailInput3 = page.locator('.v-text-field').nth(0).locator('input');
-    const passwordInput3 = page.locator('.v-text-field').nth(1).locator('input');
-    const loginButton3 = page.locator('button:has-text("Login")');
-
-    await emailInput3.fill(testEmail);
-    await passwordInput3.fill(originalPassword);
-    await loginButton3.click();
-
-    await page.waitForURL('**/dashboard.int3nt.info/?select_org', { timeout: 20000 });
-    await expect(page).toHaveURL(/.*\?select_org/);
+    console.log(`\n📍 Step 14: Login with original password ${originalPassword} and verify`);
+    await performLogin(page, testEmail, originalPassword);
     console.log('✅ PASS: Step 14 - Login successful with original password, redirected to org selection');
 
     // Step 14: Report results

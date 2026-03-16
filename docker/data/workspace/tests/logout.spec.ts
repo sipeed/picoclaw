@@ -1,32 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { performLogin } from './utils/auth';
 
 test('Logout flow - User logout and redirect to login page', async ({ page }) => {
   // Step 1: Perform the login flow
-  console.log('\n📍 Step 1: Perform login flow');
-  console.log('  1a. Opening https://dashboard.int3nt.info/login');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
-  await expect(page).toHaveURL(/.*login/);
-  console.log('  ✓ Login page loaded');
-
-  console.log('  1b. Verifying login form is visible');
-  const emailInput = page.locator('.v-text-field').nth(0).locator('input');
-  const passwordInput = page.locator('.v-text-field').nth(1).locator('input');
-  const loginButton = page.locator('button:has-text("Login")');
-
-  await expect(emailInput).toBeVisible();
-  await expect(passwordInput).toBeVisible();
-  await expect(loginButton).toBeVisible();
-  console.log('  ✓ Login form is visible');
-
-  console.log('  1c. Entering credentials');
-  await emailInput.fill('test@intnt.ai');
-  await expect(emailInput).toHaveValue('test@intnt.ai');
-  await passwordInput.fill('testing2026!');
-  await expect(passwordInput).toHaveValue('testing2026!');
-  console.log('  ✓ Credentials entered');
-
-  console.log('  1d. Clicking Login button');
-  await loginButton.click();
+  await performLogin(page, 'test@intnt.ai', 'testing2026!');
   console.log('✅ PASS: Step 1 - Login flow completed');
 
   // Step 2: Verify login succeeds and redirect

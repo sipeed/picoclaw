@@ -271,3 +271,38 @@ Use this format for test execution reports:
 > `.v-text-field.locator('input')`, but the Forgot Password page does not  
 > expose any email-specific attributes, so generic email selectors will  
 > always fail there.
+
+## STABILITY RULES FOR VUETIFY UI:
+
+Selector priority:
+1. Use getByRole() with accessible names whenever possible
+2. Use getByLabel() for text fields
+3. Use getByText() for menu items
+4. Use Vuetify classes only when necessary (.v-btn, .v-select, .v-dialog)
+
+Dialogs:
+- Wait for dialogs using:
+  await page.locator('.v-dialog--active').waitFor()
+
+Menus / dropdowns:
+- Vuetify v-menu is teleported to the bottom of the body
+- Always wait for the menu before selecting items
+
+Example:
+await page.getByRole('button', { name: /select role/i }).click()
+await page.getByRole('option', { name: /developer/i }).click()
+
+Tables:
+- When selecting rows by email:
+await page.locator('tr', { hasText: "test2@intnt.ai" })
+
+Notifications:
+- Wait for snackbar using:
+await expect(page.locator('.v-snackbar')).toContainText('success')
+
+Buttons:
+- Always ensure buttons are enabled before clicking
+await expect(button).toBeEnabled()
+
+Animations:
+- After opening dialogs or menus, wait for the element to become visible before interacting.
