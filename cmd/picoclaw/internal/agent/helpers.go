@@ -47,9 +47,10 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 		cfg.Agents.Defaults.ModelName = modelID
 	}
 
+	dispatcher := providers.NewProviderDispatcher(cfg)
 	msgBus := bus.NewMessageBus()
 	defer msgBus.Close()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, dispatcher)
 	defer agentLoop.Close()
 
 	// Print agent startup info (only for interactive mode)
