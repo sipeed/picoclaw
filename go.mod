@@ -4,7 +4,7 @@ go 1.25.7
 
 require (
 	github.com/adhocore/gronx v1.19.6
-	github.com/anthropics/anthropic-sdk-go v1.22.1
+	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/caarlos0/env/v11 v11.4.0
 	github.com/ergochat/irc-go v0.5.0
