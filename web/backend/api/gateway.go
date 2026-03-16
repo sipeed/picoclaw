@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/credential"
 	"github.com/sipeed/picoclaw/web/backend/utils"
 )
 
@@ -74,7 +76,15 @@ func (h *Handler) TryAutoStartGateway() {
 
 	ready, reason, err := h.gatewayStartReady()
 	if err != nil {
-		log.Printf("Skip auto-starting gateway: %v", err)
+		if errors.Is(err, credential.ErrPassphraseRequired) {
+			log.Printf("Skip auto-starting gateway: encrypted credentials require a passphrase. " +
+				"Enter it on the Credentials page to unlock.")
+		} else if errors.Is(err, credential.ErrDecryptionFailed) {
+			log.Printf("Skip auto-starting gateway: failed to decrypt credentials. " +
+				"Check the passphrase and SSH key on the Credentials page.")
+		} else {
+			log.Printf("Skip auto-starting gateway: %v", err)
+		}
 		return
 	}
 	if !ready {
@@ -91,17 +101,26 @@ func (h *Handler) TryAutoStartGateway() {
 }
 
 // gatewayStartReady validates whether current config can start the gateway.
+// LoadConfig uses credential.PassphraseProvider (set to SecureStore.Get at
+// startup) so enc:// credentials are resolved correctly without os.Environ.
 func (h *Handler) gatewayStartReady() (bool, string, error) {
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// If passphrase is required but not yet set, report that first so the
+	// frontend can prompt the user — even before checking the model name.
+	if h.passphraseStore != nil && !h.passphraseStore.IsSet() {
+		if configHasEncryptedCredentials(cfg) {
+			return false, "", credential.ErrPassphraseRequired
+		}
+	}
+
 	modelName := strings.TrimSpace(cfg.Agents.Defaults.GetModelName())
 	if modelName == "" {
 		return false, "no default model configured", nil
 	}
-
 	modelCfg := lookupModelConfig(cfg, modelName)
 	if modelCfg == nil {
 		return false, fmt.Sprintf("default model %q is invalid", modelName), nil
@@ -256,7 +275,18 @@ func (h *Handler) startGatewayLocked(initialStatus string) (int, error) {
 	execPath := utils.FindPicoclawBinary()
 
 	cmd := exec.Command(execPath, "gateway")
-	cmd.Env = os.Environ()
+
+	// Build a clean environment for the child process.
+	// Start from the launcher's current environment, but explicitly strip
+	// PICOCLAW_KEY_PASSPHRASE so it cannot leak from the parent env.
+	// The passphrase is then injected directly from the in-memory SecureStore
+	// (child-only; never stored in the launcher's own os.Environ).
+	childEnv := filterEnv(os.Environ(), credential.PassphraseEnvVar)
+	if passphrase := h.passphraseStore.Get(); passphrase != "" {
+		childEnv = append(childEnv, credential.PassphraseEnvVar+"="+passphrase)
+	}
+	cmd.Env = childEnv
+
 	// Forward the launcher's config path via the environment variable that
 	// GetConfigPath() already reads, so the gateway sub-process uses the same
 	// config file without requiring a --config flag on the gateway subcommand.
@@ -311,8 +341,9 @@ func (h *Handler) startGatewayLocked(initialStatus string) (int, error) {
 
 	// Wait for exit in background and clean up
 	go func() {
-		if err := cmd.Wait(); err != nil {
-			log.Printf("Gateway process exited: %v", err)
+		exitErr := cmd.Wait()
+		if exitErr != nil {
+			log.Printf("Gateway process exited: %v", exitErr)
 		} else {
 			log.Printf("Gateway process exited normally")
 		}
@@ -329,11 +360,29 @@ func (h *Handler) startGatewayLocked(initialStatus string) (int, error) {
 		}
 		gateway.mu.Unlock()
 
+		// If we had an active passphrase attempt and the gateway crashed,
+		// mark passphrase as failed so the frontend can show an error.
+		// But do NOT clear the passphrase store: the gateway may have failed
+		// for reasons unrelated to the passphrase (e.g. missing default model,
+		// config error). Keeping the passphrase lets the user access
+		// /api/config and /api/models to fix the issue without re-entering it.
+		if exitErr != nil {
+			h.passphraseMu.Lock()
+			if h.passphraseLastState == passphraseStatePending {
+				h.passphraseLastState = passphraseStateFailed
+			}
+			h.passphraseMu.Unlock()
+		} else {
+			// Clean normal exit
+			h.passphraseMu.Lock()
+			if h.passphraseLastState == passphraseStatePending {
+				h.passphraseLastState = passphraseStateNone
+			}
+			h.passphraseMu.Unlock()
+		}
+
 		if shouldBroadcastStopped {
-			gateway.events.Broadcast(GatewayEvent{
-				Status:          "stopped",
-				RestartRequired: false,
-			})
+			gateway.events.Broadcast(GatewayEvent{Status: "stopped"})
 		}
 	}()
 
@@ -662,6 +711,13 @@ func (h *Handler) gatewayStatusData() map[string]any {
 		}
 	}
 
+	// Expose passphrase state so the frontend can distinguish
+	// "never entered" vs "wrong passphrase" vs "pending start".
+	h.passphraseMu.Lock()
+	ps := h.passphraseLastState
+	h.passphraseMu.Unlock()
+	data["passphrase_state"] = string(ps)
+
 	return data
 }
 
@@ -771,4 +827,31 @@ func scanPipe(r io.Reader, buf *LogBuffer) {
 	for scanner.Scan() {
 		buf.Append(scanner.Text())
 	}
+}
+
+// filterEnv returns a copy of environ with all entries whose key matches
+// the supplied key removed. Used to strip the passphrase from the
+// inherited environment before assembling the child-process environ.
+func filterEnv(environ []string, key string) []string {
+	prefix := key + "="
+	result := make([]string, 0, len(environ))
+	for _, e := range environ {
+		if !strings.HasPrefix(e, prefix) {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
+// configHasEncryptedCredentials reports whether any model in cfg has an
+// api_key that uses the enc:// scheme, meaning a passphrase is required to
+// decrypt it before the gateway can start.
+func configHasEncryptedCredentials(cfg *config.Config) bool {
+	const encScheme = "enc://"
+	for _, m := range cfg.ModelList {
+		if strings.HasPrefix(m.APIKey, encScheme) {
+			return true
+		}
+	}
+	return false
 }

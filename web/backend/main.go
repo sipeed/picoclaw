@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/credential"
 	"github.com/sipeed/picoclaw/web/backend/api"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 	"github.com/sipeed/picoclaw/web/backend/middleware"
@@ -115,6 +116,21 @@ func main() {
 	// API Routes (e.g. /api/status)
 	apiHandler := api.NewHandler(absPath)
 	apiHandler.SetServerOptions(portNum, effectivePublic, explicitPublic, launcherCfg.AllowedCIDRs)
+
+	// If PICOCLAW_KEY_PASSPHRASE is set in the environment at startup, seed it
+	// into the in-memory SecureStore and then remove it from the process
+	// environment so it is no longer visible via /proc/<pid>/environ or similar.
+	if envPassphrase := os.Getenv(credential.PassphraseEnvVar); envPassphrase != "" {
+		apiHandler.SeedPassphrase(envPassphrase)
+		os.Unsetenv(credential.PassphraseEnvVar)
+		log.Printf("Seeded passphrase from %s environment variable (env var cleared)", credential.PassphraseEnvVar)
+	}
+
+	// Point the credential package at the in-memory store so that all
+	// LoadConfig() calls in the launcher (config API, models API, gateway
+	// readiness check, etc.) use the same passphrase source.
+	credential.PassphraseProvider = apiHandler.GetPassphrase
+
 	apiHandler.RegisterRoutes(mux)
 
 	// Frontend Embedded Assets

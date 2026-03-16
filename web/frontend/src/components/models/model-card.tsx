@@ -28,7 +28,7 @@ export function ModelCard({
 }: ModelCardProps) {
   const { t } = useTranslation()
   const isOAuth = model.auth_method === "oauth"
-  const canSetDefault = model.configured && !model.is_default
+  const canSetDefault = !model.is_default
 
   return (
     <div

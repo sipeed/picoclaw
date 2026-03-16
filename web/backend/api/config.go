@@ -2,11 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/credential"
 )
 
 // registerConfigRoutes binds configuration management endpoints to the ServeMux.
@@ -22,6 +24,10 @@ func (h *Handler) registerConfigRoutes(mux *http.ServeMux) {
 func (h *Handler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
+		if errors.Is(err, credential.ErrPassphraseRequired) || errors.Is(err, credential.ErrDecryptionFailed) {
+			http.Error(w, err.Error(), http.StatusLocked)
+			return
+		}
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}

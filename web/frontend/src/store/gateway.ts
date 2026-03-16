@@ -13,36 +13,19 @@ export type GatewayState =
 export interface GatewayStoreState {
   status: GatewayState
   canStart: boolean
-  restartRequired: boolean
+  startReason: string
+  passphraseState: "" | "pending" | "failed"
 }
 
 type GatewayStorePatch = Partial<GatewayStoreState>
 
-const DEFAULT_GATEWAY_STATE: GatewayStoreState = {
+// Global atom for gateway state
+export const gatewayAtom = atom<GatewayStoreState>({
   status: "unknown",
   canStart: true,
-  restartRequired: false,
-}
-
-// Global atom for gateway state
-export const gatewayAtom = atom<GatewayStoreState>(DEFAULT_GATEWAY_STATE)
-
-function normalizeGatewayStoreState(
-  prev: GatewayStoreState,
-  patch: GatewayStorePatch,
-) {
-  const next = { ...prev, ...patch }
-
-  if (
-    next.status === prev.status &&
-    next.canStart === prev.canStart &&
-    next.restartRequired === prev.restartRequired
-  ) {
-    return prev
-  }
-
-  return next
-}
+  startReason: "",
+  passphraseState: "",
+})
 
 export function updateGatewayStore(
   patch:
@@ -51,26 +34,17 @@ export function updateGatewayStore(
 ) {
   getDefaultStore().set(gatewayAtom, (prev) => {
     const nextPatch = typeof patch === "function" ? patch(prev) : patch
-    return normalizeGatewayStoreState(prev, nextPatch)
+    return { ...prev, ...nextPatch }
   })
 }
 
-export function applyGatewayStatusToStore(
-  data: Partial<
-    Pick<
-      GatewayStatusResponse,
-      "gateway_status" | "gateway_start_allowed" | "gateway_restart_required"
-    >
-  >,
-) {
-  updateGatewayStore((prev) => ({
-    status: data.gateway_status ?? prev.status,
-    canStart: data.gateway_start_allowed ?? prev.canStart,
-    restartRequired:
-      data.gateway_restart_required ??
-      (data.gateway_status && data.gateway_status !== "running"
-        ? false
-        : prev.restartRequired),
+function applyGatewayStatusToStore(data: GatewayStatusResponse) {
+  getDefaultStore().set(gatewayAtom, (prev) => ({
+    ...prev,
+    status: data.gateway_status ?? "unknown",
+    canStart: data.gateway_start_allowed ?? true,
+    startReason: data.gateway_start_reason ?? "",
+    passphraseState: data.passphrase_state ?? "",
   }))
 }
 
@@ -79,6 +53,6 @@ export async function refreshGatewayState() {
     const status = await getGatewayStatus()
     applyGatewayStatusToStore(status)
   } catch {
-    updateGatewayStore(DEFAULT_GATEWAY_STATE)
+    updateGatewayStore({ status: "unknown", canStart: true, startReason: "", passphraseState: "" })
   }
 }

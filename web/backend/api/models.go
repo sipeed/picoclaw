@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/credential"
 )
 
 // registerModelRoutes binds model list management endpoints to the ServeMux.
@@ -48,6 +50,10 @@ type modelResponse struct {
 func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
+		if errors.Is(err, credential.ErrPassphraseRequired) || errors.Is(err, credential.ErrDecryptionFailed) {
+			http.Error(w, err.Error(), http.StatusLocked)
+			return
+		}
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}

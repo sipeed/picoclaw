@@ -6,7 +6,6 @@ import {
   IconMoon,
   IconPlayerPlay,
   IconPower,
-  IconRefresh,
   IconSun,
 } from "@tabler/icons-react"
 import { Link } from "@tanstack/react-router"
@@ -47,9 +46,7 @@ export function AppHeader() {
     state: gwState,
     loading: gwLoading,
     canStart,
-    restartRequired,
     start,
-    restart,
     stop,
   } = useGateway()
 
@@ -69,11 +66,6 @@ export function AppHeader() {
     } else {
       void start()
     }
-  }
-
-  const handleGatewayRestart = () => {
-    if (gwLoading || isRestarting || !restartRequired || !canStart) return
-    void restart()
   }
 
   const confirmStop = () => {
@@ -129,26 +121,6 @@ export function AppHeader() {
       </AlertDialog>
 
       <div className="text-muted-foreground flex items-center gap-1 text-sm font-medium md:gap-2">
-        {restartRequired && (
-          <Tooltip delayDuration={700}>
-            <TooltipTrigger asChild>
-              <Button
-                variant="secondary"
-                size="icon-sm"
-                className="bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 hover:text-amber-800 dark:text-amber-300 dark:hover:bg-amber-500/25"
-                onClick={handleGatewayRestart}
-                disabled={gwLoading || isRestarting || !canStart}
-                aria-label={t("header.gateway.action.restart")}
-              >
-                <IconRefresh className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {t("header.gateway.restartRequired")}
-            </TooltipContent>
-          </Tooltip>
-        )}
-
         {/* Gateway Start/Stop */}
         {isRunning ? (
           <Tooltip delayDuration={700}>
