@@ -834,6 +834,15 @@ func (t *WebSearchTool) Parameters() map[string]any {
 }
 
 func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+	// Enforce heartbeat web search quota
+	if quota := GetWebSearchQuota(ctx); quota != nil {
+		if !quota.TryConsume() {
+			return ErrorResult(fmt.Sprintf(
+				"web_search quota exhausted (%d/%d used this heartbeat). Work with findings you already have.",
+				quota.Max(), quota.Max()))
+		}
+	}
+
 	query, ok := args["query"].(string)
 	if !ok {
 		return ErrorResult("query is required")

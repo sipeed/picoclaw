@@ -63,6 +63,8 @@ const (
 type gatewayServices struct {
 	CronService      *cron.CronService
 	HeartbeatService *heartbeat.HeartbeatService
+	ResearchStore    *research.ResearchStore
+	ResearchFocus    *research.FocusTracker
 	MediaStore       media.MediaStore
 	ChannelManager   *channels.Manager
 	DeviceService    *devices.Service
@@ -340,8 +342,13 @@ func setupAndStartServices(
 			if rsErr != nil {
 				logger.ErrorCF("research", "Failed to open research store", map[string]any{"error": rsErr.Error()})
 			} else {
-				agentLoop.RegisterTool(tools.NewResearchTool(researchStore, cfg.WorkspacePath()))
+				focusTracker := research.NewFocusTracker()
+				agentLoop.RegisterTool(tools.NewResearchTool(researchStore, cfg.WorkspacePath(), focusTracker))
 				handler.SetResearchStore(researchStore)
+				handler.SetResearchFocus(focusTracker)
+				services.ResearchStore = researchStore
+				services.ResearchFocus = focusTracker
+				services.HeartbeatService.SetResearchStore(researchStore)
 				fmt.Println("✓ Research store initialized")
 			}
 
@@ -547,6 +554,9 @@ func restartServices(
 		cfg.Heartbeat.Enabled,
 	)
 	services.HeartbeatService.SetBus(msgBus)
+	if services.ResearchStore != nil {
+		services.HeartbeatService.SetResearchStore(services.ResearchStore)
+	}
 	services.HeartbeatService.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
 		if channel == "" || chatID == "" {
 			channel, chatID = "cli", "direct"

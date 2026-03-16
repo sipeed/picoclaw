@@ -29,16 +29,18 @@ func (h *Handler) openResearchStore() (*research.ResearchStore, error) {
 }
 
 type researchTaskJSON struct {
-	ID            string `json:"id"`
-	Title         string `json:"title"`
-	Slug          string `json:"slug"`
-	Description   string `json:"description"`
-	Status        string `json:"status"`
-	OutputDir     string `json:"output_dir"`
-	CreatedAt     string `json:"created_at"`
-	UpdatedAt     string `json:"updated_at"`
-	CompletedAt   string `json:"completed_at,omitempty"`
-	DocumentCount int    `json:"document_count"`
+	ID               string `json:"id"`
+	Title            string `json:"title"`
+	Slug             string `json:"slug"`
+	Description      string `json:"description"`
+	Status           string `json:"status"`
+	OutputDir        string `json:"output_dir"`
+	Interval         string `json:"interval"`
+	LastResearchedAt string `json:"last_researched_at,omitempty"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
+	CompletedAt      string `json:"completed_at,omitempty"`
+	DocumentCount    int    `json:"document_count"`
 }
 
 type researchDocJSON struct {
@@ -60,9 +62,13 @@ func taskToJSON(t *research.Task, docCount int) researchTaskJSON {
 		Description:   t.Description,
 		Status:        string(t.Status),
 		OutputDir:     t.OutputDir,
+		Interval:      t.Interval,
 		CreatedAt:     t.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:     t.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 		DocumentCount: docCount,
+	}
+	if !t.LastResearchedAt.IsZero() {
+		r.LastResearchedAt = t.LastResearchedAt.Format("2006-01-02T15:04:05Z")
 	}
 	if !t.CompletedAt.IsZero() {
 		r.CompletedAt = t.CompletedAt.Format("2006-01-02T15:04:05Z")
@@ -103,6 +109,7 @@ func (h *Handler) handleResearch(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Title       string `json:"title"`
 			Description string `json:"description"`
+			Interval    string `json:"interval"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
 			http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -112,7 +119,11 @@ func (h *Handler) handleResearch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"title is required"}`, http.StatusBadRequest)
 			return
 		}
-		task, err := store.CreateTask(strings.TrimSpace(req.Title), strings.TrimSpace(req.Description))
+		task, err := store.CreateTask(
+			strings.TrimSpace(req.Title),
+			strings.TrimSpace(req.Description),
+			strings.TrimSpace(req.Interval),
+		)
 		if err != nil {
 			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 			return

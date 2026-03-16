@@ -16,6 +16,11 @@ func (h *Handler) SetResearchStore(rs *research.ResearchStore) {
 	h.researchStore = rs
 }
 
+// SetResearchFocus injects the shared focus tracker for recall/forget control.
+func (h *Handler) SetResearchFocus(ft *research.FocusTracker) {
+	h.researchFocus = ft
+}
+
 // apiResearch handles GET /miniapp/api/research (list) and POST (create).
 func (h *Handler) apiResearch(w http.ResponseWriter, r *http.Request) {
 	if h.researchStore == nil {
@@ -34,16 +39,19 @@ func (h *Handler) apiResearch(w http.ResponseWriter, r *http.Request) {
 }
 
 type researchTaskResponse struct {
-	ID            string `json:"id"`
-	Title         string `json:"title"`
-	Slug          string `json:"slug"`
-	Description   string `json:"description"`
-	Status        string `json:"status"`
-	OutputDir     string `json:"output_dir"`
-	CreatedAt     string `json:"created_at"`
-	UpdatedAt     string `json:"updated_at"`
-	CompletedAt   string `json:"completed_at,omitempty"`
-	DocumentCount int    `json:"document_count"`
+	ID               string `json:"id"`
+	Title            string `json:"title"`
+	Slug             string `json:"slug"`
+	Description      string `json:"description"`
+	Status           string `json:"status"`
+	OutputDir        string `json:"output_dir"`
+	Interval         string `json:"interval"`
+	LastResearchedAt string `json:"last_researched_at,omitempty"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
+	CompletedAt      string `json:"completed_at,omitempty"`
+	DocumentCount    int    `json:"document_count"`
+	Focused          bool   `json:"focused"`
 }
 
 func taskToResponse(t *research.Task, docCount int) researchTaskResponse {
@@ -54,9 +62,13 @@ func taskToResponse(t *research.Task, docCount int) researchTaskResponse {
 		Description:   t.Description,
 		Status:        string(t.Status),
 		OutputDir:     t.OutputDir,
+		Interval:      t.Interval,
 		CreatedAt:     t.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:     t.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 		DocumentCount: docCount,
+	}
+	if !t.LastResearchedAt.IsZero() {
+		resp.LastResearchedAt = t.LastResearchedAt.Format("2006-01-02T15:04:05Z")
 	}
 	if !t.CompletedAt.IsZero() {
 		resp.CompletedAt = t.CompletedAt.Format("2006-01-02T15:04:05Z")
@@ -75,7 +87,11 @@ func (h *Handler) apiResearchList(w http.ResponseWriter, r *http.Request) {
 	result := make([]researchTaskResponse, 0, len(tasks))
 	for _, t := range tasks {
 		docCount, _ := h.researchStore.DocumentCount(t.ID)
-		result = append(result, taskToResponse(t, docCount))
+		resp := taskToResponse(t, docCount)
+		if h.researchFocus != nil {
+			resp.Focused = h.researchFocus.IsFocused(t.ID)
+		}
+		result = append(result, resp)
 	}
 	writeJSON(w, result)
 }
@@ -84,6 +100,7 @@ func (h *Handler) apiResearchCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title       string `json:"title"`
 		Description string `json:"description"`
+		Interval    string `json:"interval"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -94,7 +111,11 @@ func (h *Handler) apiResearchCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := h.researchStore.CreateTask(strings.TrimSpace(req.Title), strings.TrimSpace(req.Description))
+	task, err := h.researchStore.CreateTask(
+		strings.TrimSpace(req.Title),
+		strings.TrimSpace(req.Description),
+		strings.TrimSpace(req.Interval),
+	)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -180,8 +201,13 @@ func (h *Handler) apiResearchGetTask(w http.ResponseWriter, taskID string) {
 		})
 	}
 
+	resp := taskToResponse(task, len(docs))
+	if h.researchFocus != nil {
+		resp.Focused = h.researchFocus.IsFocused(taskID)
+	}
+
 	writeJSON(w, researchTaskDetailResponse{
-		researchTaskResponse: taskToResponse(task, len(docs)),
+		researchTaskResponse: resp,
 		Documents:            docResponses,
 	})
 }
@@ -191,6 +217,7 @@ func (h *Handler) apiResearchTaskAction(w http.ResponseWriter, r *http.Request, 
 		Action      string `json:"action"`
 		Title       string `json:"title"`
 		Description string `json:"description"`
+		Interval    string `json:"interval"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -205,6 +232,16 @@ func (h *Handler) apiResearchTaskAction(w http.ResponseWriter, r *http.Request, 
 		}
 	case "reopen":
 		if err := h.researchStore.SetTaskStatus(taskID, research.StatusPending); err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+			return
+		}
+	case "activate":
+		if err := h.researchStore.SetTaskStatus(taskID, research.StatusActive); err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+			return
+		}
+	case "complete":
+		if err := h.researchStore.SetTaskStatus(taskID, research.StatusCompleted); err != nil {
 			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
 			return
 		}
@@ -224,6 +261,15 @@ func (h *Handler) apiResearchTaskAction(w http.ResponseWriter, r *http.Request, 
 		}
 		if err := h.researchStore.UpdateTask(taskID, title, desc); err != nil {
 			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+	case "set_interval":
+		if req.Interval == "" {
+			http.Error(w, `{"error":"interval is required"}`, http.StatusBadRequest)
+			return
+		}
+		if err := h.researchStore.SetInterval(taskID, req.Interval); err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
 			return
 		}
 	default:
@@ -272,4 +318,66 @@ func (h *Handler) apiResearchGetDoc(w http.ResponseWriter, taskID, docID string)
 		"doc_type": found.DocType,
 		"content":  string(content),
 	})
+}
+
+// apiResearchFocus handles GET/POST /miniapp/api/research/focus.
+// GET returns the current focus state; POST sets focus/unfocus for a task.
+func (h *Handler) apiResearchFocus(w http.ResponseWriter, r *http.Request) {
+	if h.researchFocus == nil {
+		http.Error(w, `{"error":"research focus not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		h.apiResearchFocusGet(w)
+	case http.MethodPost:
+		h.apiResearchFocusSet(w, r)
+	default:
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) apiResearchFocusGet(w http.ResponseWriter) {
+	taskID, title := h.researchFocus.Current()
+	writeJSON(w, map[string]any{
+		"focused_id":    taskID,
+		"focused_title": title,
+	})
+}
+
+func (h *Handler) apiResearchFocusSet(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Action string `json:"action"` // "recall" or "forget"
+		TaskID string `json:"task_id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<14)).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	switch req.Action {
+	case "recall":
+		if req.TaskID == "" {
+			http.Error(w, `{"error":"task_id is required"}`, http.StatusBadRequest)
+			return
+		}
+		task, err := h.researchStore.GetTask(req.TaskID)
+		if err != nil {
+			http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
+			return
+		}
+		h.researchFocus.Focus(task.ID, task.Title)
+	case "forget":
+		if req.TaskID == "" {
+			h.researchFocus.UnfocusAll()
+		} else {
+			h.researchFocus.Unfocus(req.TaskID)
+		}
+	default:
+		http.Error(w, `{"error":"action must be recall or forget"}`, http.StatusBadRequest)
+		return
+	}
+
+	h.apiResearchFocusGet(w)
 }

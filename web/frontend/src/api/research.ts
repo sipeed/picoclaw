@@ -5,6 +5,8 @@ export interface ResearchTask {
   description: string
   status: "pending" | "active" | "completed" | "failed" | "canceled"
   output_dir: string
+  interval: string
+  last_researched_at?: string
   created_at: string
   updated_at: string
   completed_at?: string
@@ -68,18 +70,19 @@ export async function getResearchTask(
 export async function createResearchTask(
   title: string,
   description: string,
+  interval?: string,
 ): Promise<ResearchTask> {
   return request<ResearchTask>("/api/research", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, description }),
+    body: JSON.stringify({ title, description, interval }),
   })
 }
 
 export async function researchTaskAction(
   id: string,
-  action: "cancel" | "reopen" | "update",
-  data?: { title?: string; description?: string },
+  action: "cancel" | "reopen" | "update" | "set_interval",
+  data?: { title?: string; description?: string; interval?: string },
 ): Promise<ResearchTaskDetail> {
   return request<ResearchTaskDetail>(
     `/api/research/${encodeURIComponent(id)}`,

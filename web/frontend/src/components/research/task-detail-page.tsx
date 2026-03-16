@@ -172,6 +172,13 @@ export function TaskDetailPage({ taskId }: { taskId: string }) {
 
               <div className="text-muted-foreground space-y-1 text-xs">
                 <div>
+                  {t("pages.research.interval")}: {task.interval || "24h"}
+                  {task.last_researched_at ? (
+                    <> · {t("pages.research.last_researched")}:{" "}
+                    {new Date(task.last_researched_at).toLocaleString()}</>
+                  ) : null}
+                </div>
+                <div>
                   {t("pages.research.created_at")}:{" "}
                   {new Date(task.created_at).toLocaleString()}
                 </div>

@@ -218,9 +218,13 @@ function TaskCard({ task }: { task: ResearchTask }) {
                 count: task.document_count,
               })}
             </span>
-            <span>
-              {new Date(task.created_at).toLocaleDateString()}
-            </span>
+            <span>⏱ {task.interval || "24h"}</span>
+            {task.last_researched_at ? (
+              <span>
+                {t("pages.research.last_researched")}:{" "}
+                {new Date(task.last_researched_at).toLocaleDateString()}
+              </span>
+            ) : null}
           </div>
         </CardContent>
       </Card>

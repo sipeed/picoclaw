@@ -67,7 +67,69 @@ func OpenResearchStore(dbPath, workspace string) (*ResearchStore, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
-	return &ResearchStore{db: db, workspace: workspace}, nil
+	s := &ResearchStore{db: db, workspace: workspace}
+	if err := s.migrateSchema(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate schema: %w", err)
+	}
+	return s, nil
+}
+
+// migrateSchema adds columns introduced after the initial schema.
+func (s *ResearchStore) migrateSchema() error {
+	migrations := []struct {
+		table, column, ddl string
+	}{
+		{
+			"research_tasks", "interval",
+			`ALTER TABLE research_tasks ADD COLUMN interval TEXT NOT NULL DEFAULT '1d'`,
+		},
+		{
+			"research_tasks", "last_researched_at",
+			`ALTER TABLE research_tasks ADD COLUMN last_researched_at TEXT NOT NULL DEFAULT ''`,
+		},
+	}
+	for _, m := range migrations {
+		exists, err := s.columnExists(m.table, m.column)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if _, err := s.db.Exec(m.ddl); err != nil {
+				return fmt.Errorf("add column %s.%s: %w", m.table, m.column, err)
+			}
+		}
+	}
+
+	// Normalize legacy '24h' default to '1d'
+	if _, err := s.db.Exec(
+		`UPDATE research_tasks SET interval = '1d' WHERE interval = '24h'`,
+	); err != nil {
+		return fmt.Errorf("normalize interval 24h→1d: %w", err)
+	}
+	return nil
+}
+
+func (s *ResearchStore) columnExists(table, column string) (bool, error) {
+	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dfltValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 // Close closes the database connection.
@@ -76,7 +138,15 @@ func (s *ResearchStore) Close() error {
 }
 
 // CreateTask creates a new research task with auto-generated slug and output directory.
-func (s *ResearchStore) CreateTask(title, description string) (*Task, error) {
+// interval is optional; pass "" to use DefaultResearchInterval.
+func (s *ResearchStore) CreateTask(title, description, interval string) (*Task, error) {
+	if interval == "" {
+		interval = DefaultResearchInterval
+	}
+	if _, err := ParseInterval(interval); err != nil {
+		return nil, fmt.Errorf("invalid interval %q: %w", interval, err)
+	}
+
 	id := uuid.New().String()
 	slug := slugify(title)
 	now := time.Now().UTC()
@@ -90,9 +160,9 @@ func (s *ResearchStore) CreateTask(title, description string) (*Task, error) {
 
 	nowStr := now.Format(time.RFC3339)
 	_, err := s.db.Exec(
-		`INSERT INTO research_tasks (id, title, slug, description, status, output_dir, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, title, slug, description, string(StatusPending), outputDir, nowStr, nowStr,
+		`INSERT INTO research_tasks (id, title, slug, description, status, output_dir, interval, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, title, slug, description, string(StatusPending), outputDir, interval, nowStr, nowStr,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
@@ -105,16 +175,18 @@ func (s *ResearchStore) CreateTask(title, description string) (*Task, error) {
 		Description: description,
 		Status:      StatusPending,
 		OutputDir:   outputDir,
+		Interval:    interval,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}, nil
 }
 
+const taskColumns = `id, title, slug, description, status, output_dir, interval, last_researched_at, created_at, updated_at, completed_at`
+
 // GetTask retrieves a single task by ID.
 func (s *ResearchStore) GetTask(id string) (*Task, error) {
 	row := s.db.QueryRow(
-		`SELECT id, title, slug, description, status, output_dir, created_at, updated_at, completed_at
-		 FROM research_tasks WHERE id = ?`, id)
+		`SELECT `+taskColumns+` FROM research_tasks WHERE id = ?`, id)
 	return scanTask(row)
 }
 
@@ -124,12 +196,10 @@ func (s *ResearchStore) ListTasks(status TaskStatus) ([]*Task, error) {
 	var err error
 	if status == "" {
 		rows, err = s.db.Query(
-			`SELECT id, title, slug, description, status, output_dir, created_at, updated_at, completed_at
-			 FROM research_tasks ORDER BY created_at DESC`)
+			`SELECT ` + taskColumns + ` FROM research_tasks ORDER BY created_at DESC`)
 	} else {
 		rows, err = s.db.Query(
-			`SELECT id, title, slug, description, status, output_dir, created_at, updated_at, completed_at
-			 FROM research_tasks WHERE status = ? ORDER BY created_at DESC`, string(status))
+			`SELECT `+taskColumns+` FROM research_tasks WHERE status = ? ORDER BY created_at DESC`, string(status))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("list tasks: %w", err)
@@ -145,6 +215,33 @@ func (s *ResearchStore) ListTasks(status TaskStatus) ([]*Task, error) {
 		tasks = append(tasks, t)
 	}
 	return tasks, rows.Err()
+}
+
+// ListDueTasks returns active/pending tasks that are due for research (interval elapsed).
+func (s *ResearchStore) ListDueTasks(maxTasks int) ([]*Task, error) {
+	rows, err := s.db.Query(
+		`SELECT ` + taskColumns + ` FROM research_tasks
+		 WHERE status IN ('active', 'pending')
+		 ORDER BY last_researched_at ASC, created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list due tasks: %w", err)
+	}
+	defer rows.Close()
+
+	var due []*Task
+	for rows.Next() {
+		t, err := scanTaskRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		if t.IsDue() {
+			due = append(due, t)
+			if len(due) >= maxTasks {
+				break
+			}
+		}
+	}
+	return due, rows.Err()
 }
 
 // SetTaskStatus updates task status with transition validation.
@@ -251,17 +348,65 @@ func (s *ResearchStore) DocumentCount(taskID string) (int, error) {
 	return count, err
 }
 
+// SearchTasks searches tasks by title or slug partial match (case-insensitive).
+func (s *ResearchStore) SearchTasks(query string) ([]*Task, error) {
+	like := "%" + query + "%"
+	rows, err := s.db.Query(
+		`SELECT `+taskColumns+` FROM research_tasks
+		 WHERE title LIKE ? COLLATE NOCASE OR slug LIKE ? COLLATE NOCASE
+		 ORDER BY updated_at DESC`, like, like)
+	if err != nil {
+		return nil, fmt.Errorf("search tasks: %w", err)
+	}
+	defer rows.Close()
+
+	var tasks []*Task
+	for rows.Next() {
+		t, err := scanTaskRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, rows.Err()
+}
+
+// TouchLastResearched updates the last_researched_at timestamp for a task.
+func (s *ResearchStore) TouchLastResearched(taskID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(
+		`UPDATE research_tasks SET last_researched_at = ?, updated_at = ? WHERE id = ?`,
+		now, now, taskID)
+	return err
+}
+
+// SetInterval updates the research interval for a task.
+func (s *ResearchStore) SetInterval(taskID, interval string) error {
+	if _, err := ParseInterval(interval); err != nil {
+		return fmt.Errorf("invalid interval %q: %w", interval, err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(
+		`UPDATE research_tasks SET interval = ?, updated_at = ? WHERE id = ?`,
+		interval, now, taskID)
+	return err
+}
+
 // --- helpers ---
 
 func scanTask(row *sql.Row) (*Task, error) {
 	var t Task
-	var statusStr, createdStr, updatedStr, completedStr string
+	var statusStr, lastResearchedStr, createdStr, updatedStr, completedStr string
 	err := row.Scan(&t.ID, &t.Title, &t.Slug, &t.Description, &statusStr,
-		&t.OutputDir, &createdStr, &updatedStr, &completedStr)
+		&t.OutputDir, &t.Interval, &lastResearchedStr, &createdStr, &updatedStr, &completedStr)
 	if err != nil {
 		return nil, err
 	}
 	t.Status = TaskStatus(statusStr)
+	if t.Interval == "" {
+		t.Interval = DefaultResearchInterval
+	}
+	t.LastResearchedAt, _ = time.Parse(time.RFC3339, lastResearchedStr)
 	t.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	t.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
 	if completedStr != "" {
@@ -276,13 +421,17 @@ type rowScanner interface {
 
 func scanTaskRow(row rowScanner) (*Task, error) {
 	var t Task
-	var statusStr, createdStr, updatedStr, completedStr string
+	var statusStr, lastResearchedStr, createdStr, updatedStr, completedStr string
 	err := row.Scan(&t.ID, &t.Title, &t.Slug, &t.Description, &statusStr,
-		&t.OutputDir, &createdStr, &updatedStr, &completedStr)
+		&t.OutputDir, &t.Interval, &lastResearchedStr, &createdStr, &updatedStr, &completedStr)
 	if err != nil {
 		return nil, err
 	}
 	t.Status = TaskStatus(statusStr)
+	if t.Interval == "" {
+		t.Interval = DefaultResearchInterval
+	}
+	t.LastResearchedAt, _ = time.Parse(time.RFC3339, lastResearchedStr)
 	t.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	t.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
 	if completedStr != "" {

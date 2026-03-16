@@ -474,6 +474,8 @@
       "documents_title": "Documents ({{count}})",
       "documents_count": "{{count}} docs",
       "no_documents": "No documents yet.",
+      "interval": "Interval",
+      "last_researched": "Last researched",
       "created_at": "Created",
       "completed_at": "Completed",
       "output_dir": "Output",

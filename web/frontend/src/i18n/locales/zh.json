@@ -474,6 +474,8 @@
       "documents_title": "文档 ({{count}})",
       "documents_count": "{{count}} 篇文档",
       "no_documents": "暂无文档。",
+      "interval": "调查频率",
+      "last_researched": "最后调查",
       "created_at": "创建时间",
       "completed_at": "完成时间",
       "output_dir": "输出目录",

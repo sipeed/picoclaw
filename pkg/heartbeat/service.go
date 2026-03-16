@@ -18,6 +18,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/research"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -39,6 +40,7 @@ type HeartbeatService struct {
 	bus               *bus.MessageBus
 	state             *state.Manager
 	handler           HeartbeatHandler
+	researchStore     *research.ResearchStore
 	interval          time.Duration
 	enabled           bool
 	mu                sync.RWMutex
@@ -85,6 +87,13 @@ func (hs *HeartbeatService) SetHeartbeatThreadID(threadID int) {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 	hs.heartbeatThreadID = threadID
+}
+
+// SetResearchStore injects the research store for heartbeat-driven research.
+func (hs *HeartbeatService) SetResearchStore(store *research.ResearchStore) {
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	hs.researchStore = store
 }
 
 // ResetSuppression clears the notification suppression so the next
@@ -321,6 +330,7 @@ func (hs *HeartbeatService) buildPrompt() string {
 	}
 
 	now := time.Now().Format("2006-01-02 15:04:05")
+	researchCtx := hs.buildResearchContext()
 	return fmt.Sprintf(`# Heartbeat Check
 
 Current time: %s
@@ -330,7 +340,95 @@ Review the following tasks and execute any necessary actions using available ski
 If there is nothing that requires attention, respond ONLY with: HEARTBEAT_OK
 
 %s
-`, now, content)
+%s`, now, content, researchCtx)
+}
+
+const (
+	maxResearchTasks   = 3
+	maxFindingsPerTask = 10
+	maxSummaryLen      = 200
+)
+
+// buildResearchContext generates a prompt section for incremental research progress.
+// Only includes tasks that are "due" based on their interval setting.
+func (hs *HeartbeatService) buildResearchContext() string {
+	hs.mu.RLock()
+	store := hs.researchStore
+	hs.mu.RUnlock()
+
+	if store == nil {
+		return ""
+	}
+
+	tasks, err := store.ListDueTasks(maxResearchTasks)
+	if err != nil {
+		hs.logErrorf("Failed to list due research tasks: %v", err)
+		return ""
+	}
+
+	if len(tasks) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n## Research Tasks (Incremental Progress)\n\n")
+	b.WriteString("You have research tasks due for progress. For each task below:\n")
+	b.WriteString("1. If pending, set status to 'active' first\n")
+	b.WriteString("2. Use web_search to find new information, then add_finding to record it\n")
+	b.WriteString(
+		fmt.Sprintf(
+			"3. **Web search budget: %d calls total this heartbeat** — use them wisely\n",
+			research.DefaultHeartbeatSearchQuota,
+		),
+	)
+	b.WriteString("4. Do NOT set status to 'completed' — research progresses incrementally across heartbeats\n\n")
+
+	for _, task := range tasks {
+		b.WriteString(fmt.Sprintf("### %s [%s] (id: %s)\n", task.Title, task.Status, task.ID))
+		b.WriteString(fmt.Sprintf("Interval: %s", task.Interval))
+		if !task.LastResearchedAt.IsZero() {
+			b.WriteString(fmt.Sprintf(" | Last researched: %s", task.LastResearchedAt.Format("2006-01-02 15:04")))
+		}
+		b.WriteString("\n")
+		if task.Description != "" {
+			b.WriteString(fmt.Sprintf("Description: %s\n", task.Description))
+		}
+
+		docs, err := store.ListDocuments(task.ID)
+		if err != nil {
+			b.WriteString("(error loading findings)\n\n")
+			continue
+		}
+
+		if len(docs) == 0 {
+			b.WriteString("No findings yet — start researching this topic.\n\n")
+			continue
+		}
+
+		shown := docs
+		if len(shown) > maxFindingsPerTask {
+			shown = shown[:maxFindingsPerTask]
+		}
+
+		b.WriteString(fmt.Sprintf("Existing findings (%d total):\n", len(docs)))
+		for _, d := range shown {
+			summary := d.Summary
+			if len(summary) > maxSummaryLen {
+				summary = summary[:maxSummaryLen] + "..."
+			}
+			b.WriteString(fmt.Sprintf("- [%d] %s", d.Seq, d.Title))
+			if summary != "" {
+				b.WriteString(fmt.Sprintf(" — %s", summary))
+			}
+			b.WriteString("\n")
+		}
+		if len(docs) > maxFindingsPerTask {
+			b.WriteString(fmt.Sprintf("  ... and %d more findings\n", len(docs)-maxFindingsPerTask))
+		}
+		b.WriteString("\nAdd NEW findings that build on and extend the above. Do not repeat existing findings.\n\n")
+	}
+
+	return b.String()
 }
 
 // createDefaultHeartbeatTemplate creates the default HEARTBEAT.md file

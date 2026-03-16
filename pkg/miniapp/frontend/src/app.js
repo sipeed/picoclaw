@@ -1381,15 +1381,22 @@ async function loadResearch() {
     }
     el.innerHTML = tasks.map(function(t) {
       var sc = STATUS_COLORS[t.status] || STATUS_COLORS.pending;
-      return '<div class="card glass glass-interactive" style="cursor:pointer;padding:14px" onclick="openResearchTask(\'' + t.id + '\')">' +
+      var focusBadge = t.focused ? '<span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;background:rgba(168,85,247,0.2);color:#a855f7">focused</span>' : '';
+      return '<div class="card glass glass-interactive" style="cursor:pointer;padding:14px' +
+        (t.focused ? ';border-left:3px solid #a855f7' : '') +
+        '" onclick="openResearchTask(\'' + t.id + '\')">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
           '<span style="font-weight:600;font-size:15px">' + esc(t.title) + '</span>' +
-          '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:' +
-            sc.bg + ';color:' + sc.text + '">' + t.status + '</span>' +
+          '<div style="display:flex;gap:4px;align-items:center">' +
+            focusBadge +
+            '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:' +
+              sc.bg + ';color:' + sc.text + '">' + t.status + '</span>' +
+          '</div>' +
         '</div>' +
         (t.description ? '<div style="color:var(--hint);font-size:13px;margin-top:4px;line-height:1.4">' + esc(t.description).substring(0, 120) + '</div>' : '') +
         '<div style="color:var(--hint);font-size:11px;margin-top:6px">' +
-          t.document_count + ' docs · ' + new Date(t.created_at).toLocaleDateString() +
+          t.document_count + ' docs · ⏱ ' + ((t.interval === '24h' ? '1d' : t.interval) || '1d') +
+          (t.last_researched_at ? ' · last: ' + new Date(t.last_researched_at).toLocaleDateString() : '') +
         '</div>' +
       '</div>';
     }).join('');
@@ -1429,16 +1436,36 @@ async function openResearchTask(id) {
     if (task.description) {
       html += '<div style="color:var(--hint);font-size:13px;line-height:1.5;margin-bottom:8px;white-space:pre-wrap">' + esc(task.description) + '</div>';
     }
-    html += '<div style="color:var(--hint);font-size:11px">' +
+    var curInterval = task.interval || '24h';
+    if (curInterval === '24h') curInterval = '1d';
+    html += '<div style="color:var(--hint);font-size:11px;display:flex;align-items:center;gap:6px">' +
+      '<span>Interval:</span>' +
+      '<select id="research-interval-select" data-task-id="' + id + '" style="' +
+        'font-size:11px;padding:1px 4px;border-radius:6px;' +
+        'background:var(--tab-track-bg);color:var(--text);' +
+        'border:1px solid var(--glass-divider);outline:none' +
+      '">' +
+        ['30m','1h','6h','12h','1d','3d','7d'].map(function(v) {
+          return '<option value="' + v + '"' + (v === curInterval ? ' selected' : '') + '>' + v + '</option>';
+        }).join('') +
+      '</select>' +
+      (task.last_researched_at ? '<span> · Last: ' + new Date(task.last_researched_at).toLocaleString() + '</span>' : '<span> · Not yet researched</span>') +
+    '</div>';
+    html += '<div style="color:var(--hint);font-size:11px;margin-top:2px">' +
       'Created: ' + new Date(task.created_at).toLocaleString() +
       (task.completed_at ? ' · Completed: ' + new Date(task.completed_at).toLocaleString() : '') +
     '</div>';
-    if (canCancel || canReopen) {
-      html += '<div style="margin-top:10px;display:flex;gap:8px">';
-      if (canCancel) html += '<button class="worktree-btn dispose" onclick="researchAction(\'' + id + '\',\'cancel\')">Cancel</button>';
-      if (canReopen) html += '<button class="worktree-btn merge" onclick="researchAction(\'' + id + '\',\'reopen\')">Reopen</button>';
-      html += '</div>';
+    html += '<div style="margin-top:10px;display:flex;gap:8px">';
+    if (task.focused) {
+      html += '<button class="worktree-btn dispose" onclick="researchSetFocus(\'' + id + '\',false)" style="background:rgba(168,85,247,0.15);color:#a855f7;border-color:#a855f7">Forget</button>';
+    } else {
+      html += '<button class="worktree-btn merge" onclick="researchSetFocus(\'' + id + '\',true)" style="background:rgba(168,85,247,0.15);color:#a855f7;border-color:#a855f7">Recall</button>';
     }
+    if (task.status === 'pending') html += '<button class="worktree-btn merge" onclick="researchAction(\'' + id + '\',\'activate\')">Activate</button>';
+    if (task.status === 'active') html += '<button class="worktree-btn merge" onclick="researchAction(\'' + id + '\',\'complete\')" style="background:rgba(34,197,94,0.15);color:#22c55e;border-color:#22c55e">Complete</button>';
+    if (canCancel) html += '<button class="worktree-btn dispose" onclick="researchAction(\'' + id + '\',\'cancel\')">Cancel</button>';
+    if (canReopen) html += '<button class="worktree-btn merge" onclick="researchAction(\'' + id + '\',\'reopen\')">Reopen</button>';
+    html += '</div>';
     html += '</div>';
 
     // Documents
@@ -1461,6 +1488,13 @@ async function openResearchTask(id) {
       }).join('');
     }
     el.innerHTML = html;
+    // Bind interval select via addEventListener (inline onchange unreliable in Telegram WebView)
+    var sel = document.getElementById('research-interval-select');
+    if (sel) {
+      sel.addEventListener('change', function() {
+        researchSetInterval(sel.dataset.taskId, sel.value);
+      });
+    }
   } catch (e) {
     el.innerHTML = '<div class="empty-state">Failed to load task.</div>';
   }
@@ -1486,6 +1520,18 @@ async function toggleResearchDoc(card, taskId, docId) {
       marked.parse(data.content) + '</div>';
   } catch (e) {
     body.innerHTML = '<div style="color:var(--hint);font-size:12px">Failed to load document.</div>';
+  }
+}
+
+async function researchSetInterval(taskId, interval) {
+  try {
+    await fetch(
+      API_BASE + '/miniapp/api/research/' + taskId + '?initData=' + encodeURIComponent(initData),
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set_interval', interval: interval }) }
+    );
+    openResearchTask(taskId);
+  } catch (e) {
+    // ignore
   }
 }
 
@@ -1535,12 +1581,27 @@ async function createResearchTask() {
   }
 }
 
+async function researchSetFocus(taskId, recall) {
+  try {
+    await fetch(
+      API_BASE + '/miniapp/api/research/focus?initData=' + encodeURIComponent(initData),
+      { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: recall ? 'recall' : 'forget', task_id: taskId }) }
+    );
+    // Refresh the detail view to show updated focus state
+    openResearchTask(taskId);
+  } catch (e) {
+    // ignore
+  }
+}
+
 window.showNewTaskForm = showNewTaskForm;
 window.hideNewTaskForm = hideNewTaskForm;
 window.createResearchTask = createResearchTask;
 window.openResearchTask = openResearchTask;
 window.toggleResearchDoc = toggleResearchDoc;
 window.researchAction = researchAction;
+window.researchSetFocus = researchSetFocus;
 window.showResearchList = showResearchList;
 
 

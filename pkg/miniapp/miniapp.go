@@ -41,6 +41,7 @@ type Handler struct {
 	workspace       string
 	orchBroadcaster *orch.Broadcaster
 	researchStore   *research.ResearchStore
+	researchFocus   *research.FocusTracker
 
 	devMu       sync.RWMutex
 	devTarget   *url.URL
@@ -107,6 +108,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/dev/console", h.apiDevConsole)
 	mux.HandleFunc("/miniapp/dev/", h.serveDevProxy)
 	mux.HandleFunc("/miniapp/api/research", h.requireAuth(h.apiResearch))
+	mux.HandleFunc("/miniapp/api/research/focus", h.requireAuth(h.apiResearchFocus))
 	mux.HandleFunc("/miniapp/api/research/", h.requireAuth(h.apiResearchDetail))
 }
 

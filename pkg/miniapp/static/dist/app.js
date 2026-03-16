@@ -8638,7 +8638,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
       }
       el.innerHTML = tasks.map(function(t) {
         var sc = STATUS_COLORS[t.status] || STATUS_COLORS.pending;
-        return `<div class="card glass glass-interactive" style="cursor:pointer;padding:14px" onclick="openResearchTask('` + t.id + `')">` + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' + '<span style="font-weight:600;font-size:15px">' + esc(t.title) + "</span>" + '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:' + sc.bg + ";color:" + sc.text + '">' + t.status + "</span>" + "</div>" + (t.description ? '<div style="color:var(--hint);font-size:13px;margin-top:4px;line-height:1.4">' + esc(t.description).substring(0, 120) + "</div>" : "") + '<div style="color:var(--hint);font-size:11px;margin-top:6px">' + t.document_count + " docs · " + new Date(t.created_at).toLocaleDateString() + "</div>" + "</div>";
+        var focusBadge = t.focused ? '<span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;background:rgba(168,85,247,0.2);color:#a855f7">focused</span>' : "";
+        return '<div class="card glass glass-interactive" style="cursor:pointer;padding:14px' + (t.focused ? ";border-left:3px solid #a855f7" : "") + `" onclick="openResearchTask('` + t.id + `')">` + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' + '<span style="font-weight:600;font-size:15px">' + esc(t.title) + "</span>" + '<div style="display:flex;gap:4px;align-items:center">' + focusBadge + '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:' + sc.bg + ";color:" + sc.text + '">' + t.status + "</span>" + "</div>" + "</div>" + (t.description ? '<div style="color:var(--hint);font-size:13px;margin-top:4px;line-height:1.4">' + esc(t.description).substring(0, 120) + "</div>" : "") + '<div style="color:var(--hint);font-size:11px;margin-top:6px">' + t.document_count + " docs · " + new Date(t.created_at).toLocaleDateString() + "</div>" + "</div>";
       }).join("");
     } catch (e) {
       loading.classList.add("hidden");
@@ -8667,14 +8668,17 @@ Please report this to https://github.com/markedjs/marked.`, e) {
         html += '<div style="color:var(--hint);font-size:13px;line-height:1.5;margin-bottom:8px;white-space:pre-wrap">' + esc(task.description) + "</div>";
       }
       html += '<div style="color:var(--hint);font-size:11px">' + "Created: " + new Date(task.created_at).toLocaleString() + (task.completed_at ? " · Completed: " + new Date(task.completed_at).toLocaleString() : "") + "</div>";
-      if (canCancel || canReopen) {
-        html += '<div style="margin-top:10px;display:flex;gap:8px">';
-        if (canCancel)
-          html += `<button class="worktree-btn dispose" onclick="researchAction('` + id + `','cancel')">Cancel</button>`;
-        if (canReopen)
-          html += `<button class="worktree-btn merge" onclick="researchAction('` + id + `','reopen')">Reopen</button>`;
-        html += "</div>";
+      html += '<div style="margin-top:10px;display:flex;gap:8px">';
+      if (task.focused) {
+        html += `<button class="worktree-btn dispose" onclick="researchSetFocus('` + id + `',false)" style="background:rgba(168,85,247,0.15);color:#a855f7;border-color:#a855f7">Forget</button>`;
+      } else {
+        html += `<button class="worktree-btn merge" onclick="researchSetFocus('` + id + `',true)" style="background:rgba(168,85,247,0.15);color:#a855f7;border-color:#a855f7">Recall</button>`;
       }
+      if (canCancel)
+        html += `<button class="worktree-btn dispose" onclick="researchAction('` + id + `','cancel')">Cancel</button>`;
+      if (canReopen)
+        html += `<button class="worktree-btn merge" onclick="researchAction('` + id + `','reopen')">Reopen</button>`;
+      html += "</div>";
       html += "</div>";
       html += '<div class="card-title" style="margin-top:12px">Documents (' + task.documents.length + ")</div>";
       if (task.documents.length === 0) {
@@ -8741,11 +8745,22 @@ Please report this to https://github.com/markedjs/marked.`, e) {
       loadResearch();
     } catch (e) {}
   }
+  async function researchSetFocus(taskId, recall) {
+    try {
+      await fetch(API_BASE + "/miniapp/api/research/focus?initData=" + encodeURIComponent(initData), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: recall ? "recall" : "forget", task_id: taskId })
+      });
+      openResearchTask(taskId);
+    } catch (e) {}
+  }
   window.showNewTaskForm = showNewTaskForm;
   window.hideNewTaskForm = hideNewTaskForm;
   window.createResearchTask = createResearchTask;
   window.openResearchTask = openResearchTask;
   window.toggleResearchDoc = toggleResearchDoc;
   window.researchAction = researchAction;
+  window.researchSetFocus = researchSetFocus;
   window.showResearchList = showResearchList;
 })();
