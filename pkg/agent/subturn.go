@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -36,20 +38,20 @@ type SubTurnSpawnEvent struct {
 
 type SubTurnEndEvent struct {
 	ChildID string
-	Result  *ToolResult
+	Result  *tools.ToolResult
 	Err     error
 }
 
 type SubTurnResultDeliveredEvent struct {
 	ParentID string
 	ChildID  string
-	Result   *ToolResult
+	Result   *tools.ToolResult
 }
 
 type SubTurnOrphanResultEvent struct {
 	ParentID string
 	ChildID  string
-	Result   *ToolResult
+	Result   *tools.ToolResult
 }
 
 // ====================== turnState (Simplified, reusable with existing structs) ======================
@@ -60,8 +62,8 @@ type turnState struct {
 	parentTurnID   string
 	depth          int
 	childTurnIDs   []string
-	pendingResults chan *ToolResult
-	session        *Session
+	pendingResults chan *tools.ToolResult
+	session        session.SessionStore
 	mu             sync.Mutex
 	isFinished     bool // Marks if the parent Turn has ended
 }
@@ -86,7 +88,7 @@ func newTurnState(ctx context.Context, id string, parent *turnState) *turnState 
 		// Under high concurrency or long-running sub-turns, this might fill up and cause
 		// intermediate results to be discarded in deliverSubTurnResult.
 		// For production, consider an unbounded queue or a blocking strategy with backpressure.
-		pendingResults: make(chan *ToolResult, 16),
+		pendingResults: make(chan *tools.ToolResult, 16),
 	}
 }
 
@@ -100,16 +102,70 @@ func (ts *turnState) Finish() {
 	}
 }
 
-// newEphemeralSession - Pure in-memory temporary Session (avoids polluting the main session)
-func newEphemeralSession(parent *Session) *Session {
-	// In a real project, it's recommended to copy only necessary fields; simplified here.
-	return &Session{
-		History: make([]Message, 0, len(parent.History)),
+// ephemeralSessionStore is a pure in-memory SessionStore for SubTurns.
+// It never writes to disk, keeping sub-turn history isolated from the parent session.
+type ephemeralSessionStore struct {
+	mu      sync.Mutex
+	history []providers.Message
+	summary string
+}
+
+func (e *ephemeralSessionStore) AddMessage(sessionKey, role, content string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.history = append(e.history, providers.Message{Role: role, Content: content})
+}
+
+func (e *ephemeralSessionStore) AddFullMessage(sessionKey string, msg providers.Message) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.history = append(e.history, msg)
+}
+
+func (e *ephemeralSessionStore) GetHistory(key string) []providers.Message {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]providers.Message, len(e.history))
+	copy(out, e.history)
+	return out
+}
+
+func (e *ephemeralSessionStore) GetSummary(key string) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.summary
+}
+
+func (e *ephemeralSessionStore) SetSummary(key, summary string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.summary = summary
+}
+
+func (e *ephemeralSessionStore) SetHistory(key string, history []providers.Message) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.history = make([]providers.Message, len(history))
+	copy(e.history, history)
+}
+
+func (e *ephemeralSessionStore) TruncateHistory(key string, keepLast int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.history) > keepLast {
+		e.history = e.history[len(e.history)-keepLast:]
 	}
 }
 
+func (e *ephemeralSessionStore) Save(key string) error { return nil }
+func (e *ephemeralSessionStore) Close() error          { return nil }
+
+func newEphemeralSession(_ session.SessionStore) session.SessionStore {
+	return &ephemeralSessionStore{}
+}
+
 // ====================== Core Function: spawnSubTurn ======================
-func spawnSubTurn(ctx context.Context, parentTS *turnState, cfg SubTurnConfig) (result *ToolResult, err error) {
+func spawnSubTurn(ctx context.Context, al *AgentLoop, parentTS *turnState, cfg SubTurnConfig) (result *tools.ToolResult, err error) {
 	// 1. Depth limit check
 	if parentTS.depth >= maxSubTurnDepth {
 		return nil, ErrDepthLimitExceeded
@@ -153,9 +209,9 @@ func spawnSubTurn(ctx context.Context, parentTS *turnState, cfg SubTurnConfig) (
 		})
 	}()
 
-	// 7. Execute full runTurn (follows the main execution path, all hooks, steering, and interrupts are effective!)
-	// Pass the childCtx so the sub-turn can be interrupted if the parent is cancelled.
-	result, err = runTurn(childCtx, childTS, childTS.session, cfg)
+	// 7. Execute sub-turn via the real agent loop.
+	// Build a child AgentInstance from SubTurnConfig, inheriting defaults from the parent agent.
+	result, err = runTurn(childCtx, al, childTS, cfg)
 
 	// 8. Deliver result back to parent Turn
 	deliverSubTurnResult(parentTS, childID, result)
@@ -164,7 +220,7 @@ func spawnSubTurn(ctx context.Context, parentTS *turnState, cfg SubTurnConfig) (
 }
 
 // ====================== Result Delivery ======================
-func deliverSubTurnResult(parentTS *turnState, childID string, result *ToolResult) {
+func deliverSubTurnResult(parentTS *turnState, childID string, result *tools.ToolResult) {
 	parentTS.mu.Lock()
 	defer parentTS.mu.Unlock()
 
@@ -196,26 +252,58 @@ func deliverSubTurnResult(parentTS *turnState, childID string, result *ToolResul
 	}
 }
 
-// ====================== Placeholder Function (Actually reuses runTurn in loop.go) ======================
-func runTurn(ctx context.Context, ts *turnState, session *Session, cfg SubTurnConfig) (*ToolResult, error) {
-	// TODO: Directly call the existing runTurn implementation in your project here
-	// Ensure the existing runTurn respects the context for cancellation.
-	return &ToolResult{Content: "Sub-turn executed successfully"}, nil
+// runTurn builds a temporary AgentInstance from SubTurnConfig and delegates to
+// the real agent loop. The child's ephemeral session is used for history so it
+// never pollutes the parent session.
+func runTurn(ctx context.Context, al *AgentLoop, ts *turnState, cfg SubTurnConfig) (*tools.ToolResult, error) {
+	// Derive candidates from the requested model using the parent loop's provider.
+	defaultProvider := al.GetConfig().Agents.Defaults.Provider
+	candidates := providers.ResolveCandidates(
+		providers.ModelConfig{Primary: cfg.Model},
+		defaultProvider,
+	)
+
+	// Build a minimal AgentInstance for this sub-turn.
+	// It reuses the parent loop's provider and config, but gets its own
+	// ephemeral session store and tool registry.
+	toolRegistry := tools.NewToolRegistry()
+	for _, t := range cfg.Tools {
+		toolRegistry.Register(t)
+	}
+
+	parentAgent := al.GetRegistry().GetDefaultAgent()
+	childAgent := &AgentInstance{
+		ID:                        ts.turnID,
+		Model:                     cfg.Model,
+		MaxIterations:             parentAgent.MaxIterations,
+		MaxTokens:                 cfg.MaxTokens,
+		Temperature:               parentAgent.Temperature,
+		ThinkingLevel:             parentAgent.ThinkingLevel,
+		ContextWindow:             cfg.MaxTokens,
+		SummarizeMessageThreshold: parentAgent.SummarizeMessageThreshold,
+		SummarizeTokenPercent:     parentAgent.SummarizeTokenPercent,
+		Provider:                  parentAgent.Provider,
+		Sessions:                  ts.session,
+		ContextBuilder:            parentAgent.ContextBuilder,
+		Tools:                     toolRegistry,
+		Candidates:                candidates,
+	}
+	if childAgent.MaxTokens == 0 {
+		childAgent.MaxTokens = parentAgent.MaxTokens
+		childAgent.ContextWindow = parentAgent.ContextWindow
+	}
+
+	finalContent, err := al.runAgentLoop(ctx, childAgent, processOptions{
+		SessionKey:      ts.turnID,
+		UserMessage:     cfg.SystemPrompt,
+		DefaultResponse: "",
+		EnableSummary:   false,
+		SendResponse:    false,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &tools.ToolResult{ForLLM: finalContent}, nil
 }
 
-// ====================== Other Types (Reused or simplified from existing code) ======================
-type ToolResult struct {
-	Content string
-}
-
-func (r *ToolResult) ToMessage() Message {
-	return Message{Content: r.Content}
-}
-
-type Session struct {
-	History []Message
-}
-
-type Message struct {
-	Content string
-}
+// ====================== Other Types ======================

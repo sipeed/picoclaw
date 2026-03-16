@@ -96,6 +96,9 @@ func TestSpawnSubTurn(t *testing.T) {
 		},
 	}
 
+	al, _, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Prepare parent Turn
@@ -104,8 +107,8 @@ func TestSpawnSubTurn(t *testing.T) {
 				turnID:         "parent-1",
 				depth:          tt.parentDepth,
 				childTurnIDs:   []string{},
-				pendingResults: make(chan *ToolResult, 10),
-				session:        &Session{History: []Message{}},
+				pendingResults: make(chan *tools.ToolResult, 10),
+				session:        &ephemeralSessionStore{},
 			}
 
 			// Replace mock with test collector
@@ -115,7 +118,7 @@ func TestSpawnSubTurn(t *testing.T) {
 			defer func() { MockEventBus.Emit = originalEmit }()
 
 			// Execute spawnSubTurn
-			result, err := spawnSubTurn(context.Background(), parent, tt.config)
+			result, err := spawnSubTurn(context.Background(), al, parent, tt.config)
 
 			// Assert errors
 			if tt.wantErr != nil {
@@ -152,7 +155,7 @@ func TestSpawnSubTurn(t *testing.T) {
 			}
 
 			// Verify result delivery (pendingResults or history)
-			if len(parent.pendingResults) > 0 || len(parent.session.History) > 0 {
+			if len(parent.pendingResults) > 0 || len(parent.session.GetHistory("")) > 0 {
 				// Result delivered via at least one path
 			} else {
 				t.Error("child result not delivered")
@@ -163,39 +166,47 @@ func TestSpawnSubTurn(t *testing.T) {
 
 // ====================== Extra Independent Test: Ephemeral Session Isolation ======================
 func TestSpawnSubTurn_EphemeralSessionIsolation(t *testing.T) {
+	al, _, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	parentSession := &ephemeralSessionStore{}
+	parentSession.AddMessage("", "user", "parent msg")
 	parent := &turnState{
 		ctx:     context.Background(),
 		turnID:  "parent-1",
 		depth:   0,
-		session: &Session{History: []Message{{Content: "parent msg"}}},
+		session: parentSession,
 	}
 
 	cfg := SubTurnConfig{Model: "gpt-4o-mini", Tools: []tools.Tool{}}
 
 	// Record main session length before execution
-	originalLen := len(parent.session.History)
+	originalLen := len(parent.session.GetHistory(""))
 
-	_, _ = spawnSubTurn(context.Background(), parent, cfg)
+	_, _ = spawnSubTurn(context.Background(), al, parent, cfg)
 
 	// After sub-turn ends, main session must remain unchanged
-	if len(parent.session.History) != originalLen {
+	if len(parent.session.GetHistory("")) != originalLen {
 		t.Error("ephemeral session polluted the main session")
 	}
 }
 
 // ====================== Extra Independent Test: Result Delivery Path ======================
 func TestSpawnSubTurn_ResultDelivery(t *testing.T) {
+	al, _, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
 	parent := &turnState{
 		ctx:            context.Background(),
 		turnID:         "parent-1",
 		depth:          0,
-		pendingResults: make(chan *ToolResult, 1),
-		session:        &Session{},
+		pendingResults: make(chan *tools.ToolResult, 1),
+		session:        &ephemeralSessionStore{},
 	}
 
 	cfg := SubTurnConfig{Model: "gpt-4o-mini", Tools: []tools.Tool{}}
 
-	_, _ = spawnSubTurn(context.Background(), parent, cfg)
+	_, _ = spawnSubTurn(context.Background(), al, parent, cfg)
 
 	// Check if pendingResults received the result
 	select {
@@ -216,8 +227,8 @@ func TestSpawnSubTurn_OrphanResultRouting(t *testing.T) {
 		cancelFunc:     cancelParent,
 		turnID:         "parent-1",
 		depth:          0,
-		pendingResults: make(chan *ToolResult, 1),
-		session:        &Session{History: []Message{}},
+		pendingResults: make(chan *tools.ToolResult, 1),
+		session:        &ephemeralSessionStore{},
 	}
 
 	collector := &eventCollector{}
@@ -229,7 +240,7 @@ func TestSpawnSubTurn_OrphanResultRouting(t *testing.T) {
 	parent.Finish()
 
 	// Call deliverSubTurnResult directly to simulate a delayed child
-	deliverSubTurnResult(parent, "delayed-child", &ToolResult{Content: "late result"})
+	deliverSubTurnResult(parent, "delayed-child", &tools.ToolResult{ForLLM: "late result"})
 
 	// Verify Orphan event is emitted
 	if !collector.hasEventOfType(SubTurnOrphanResultEvent{}) {
@@ -237,7 +248,7 @@ func TestSpawnSubTurn_OrphanResultRouting(t *testing.T) {
 	}
 
 	// Verify history is NOT polluted
-	if len(parent.session.History) != 0 {
+	if len(parent.session.GetHistory("")) != 0 {
 		t.Error("Parent history was polluted by orphan result")
 	}
 }
