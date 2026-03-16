@@ -31,7 +31,17 @@ function normalizeGatewayStoreState(
   prev: GatewayStoreState,
   patch: GatewayStorePatch,
 ) {
-  return { ...prev, ...patch }
+  const next = { ...prev, ...patch }
+
+  if (
+    next.status === prev.status &&
+    next.canStart === prev.canStart &&
+    next.restartRequired === prev.restartRequired
+  ) {
+    return prev
+  }
+
+  return next
 }
 
 export function updateGatewayStore(
