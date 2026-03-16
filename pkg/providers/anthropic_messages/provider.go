@@ -161,8 +161,11 @@ func buildRequestBody(
 		return nil, fmt.Errorf("max_tokens is required in options")
 	}
 
+	// Normalize model ID: Anthropic API uses hyphens (claude-sonnet-4-6),
+	// but config may use dots (claude-sonnet-4.6).
+	apiModel := strings.ReplaceAll(model, ".", "-")
 	result := map[string]any{
-		"model":      model,
+		"model":      apiModel,
 		"max_tokens": int64(maxTokens),
 		"messages":   []any{},
 	}

@@ -134,6 +134,9 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		), modelID, nil
 
 	case "anthropic":
+		// Normalize model ID: Anthropic API uses hyphens (claude-sonnet-4-6),
+		// but config may use dots (claude-sonnet-4.6).
+		modelID = strings.ReplaceAll(modelID, ".", "-")
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
 			// Use OAuth credentials from auth store
 			provider, err := createClaudeAuthProvider()
