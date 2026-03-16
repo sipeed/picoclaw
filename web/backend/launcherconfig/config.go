@@ -28,17 +28,27 @@ func Default() Config {
 	return Config{Port: DefaultPort, Public: false}
 }
 
-// Validate checks if launcher settings are valid.
-func Validate(cfg Config) error {
-	if cfg.Port < 1 || cfg.Port > 65535 {
-		return fmt.Errorf("port %d is out of range (1-65535)", cfg.Port)
+// ValidateNetworkExposure ensures public mode is only enabled with an
+// explicit CIDR allowlist and that each CIDR is syntactically valid.
+func ValidateNetworkExposure(public bool, allowedCIDRs []string) error {
+	normalized := NormalizeCIDRs(allowedCIDRs)
+	if public && len(normalized) == 0 {
+		return fmt.Errorf("public mode requires at least one allowed_cidrs entry")
 	}
-	for _, cidr := range cfg.AllowedCIDRs {
+	for _, cidr := range normalized {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {
 			return fmt.Errorf("invalid CIDR %q", cidr)
 		}
 	}
 	return nil
+}
+
+// Validate checks if launcher settings are valid.
+func Validate(cfg Config) error {
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return fmt.Errorf("port %d is out of range (1-65535)", cfg.Port)
+	}
+	return ValidateNetworkExposure(cfg.Public, cfg.AllowedCIDRs)
 }
 
 // NormalizeCIDRs trims entries, removes empty values, and deduplicates CIDRs.

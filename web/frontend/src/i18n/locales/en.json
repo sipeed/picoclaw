@@ -429,7 +429,7 @@
       "lan_access": "Enable LAN Access",
       "lan_access_hint": "Allow access from other devices on your local network.",
       "allowed_cidrs": "Allowed Network CIDRs",
-      "allowed_cidrs_hint": "Only clients from these CIDR ranges can access the service. One per line or comma-separated. Leave empty to allow all.",
+      "allowed_cidrs_hint": "Only clients from these CIDR ranges can access the service. One per line or comma-separated. Required when LAN access is enabled; leave empty only for localhost-only mode.",
       "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
       "sections": {
         "agent": "Agent",

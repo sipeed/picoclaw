@@ -207,6 +207,7 @@ Open http://localhost:18800 in your browser. The launcher manages the gateway pr
 
 > [!WARNING]
 > The web console does not yet support authentication. Avoid exposing it to the public internet.
+> If you enable LAN/public access, configure `allowed_cidrs` first. PicoClaw Web now refuses to start in public mode without an explicit CIDR allowlist.
 
 ### Agent Mode (One-shot)
 

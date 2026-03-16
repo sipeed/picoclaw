@@ -30,7 +30,11 @@ import (
 
 func main() {
 	port := flag.String("port", "18800", "Port to listen on")
-	public := flag.Bool("public", false, "Listen on all interfaces (0.0.0.0) instead of localhost only")
+	public := flag.Bool(
+		"public",
+		false,
+		"Listen on all interfaces (0.0.0.0) instead of localhost only; requires allowed_cidrs in launcher-config.json",
+	)
 	noBrowser := flag.Bool("no-browser", false, "Do not auto-open browser on startup")
 
 	flag.Usage = func() {
@@ -45,7 +49,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  %s ./config.json             Specify a config file\n", os.Args[0])
 		fmt.Fprintf(
 			os.Stderr,
-			"  %s -public ./config.json     Allow access from other devices on the network\n",
+			"  %s -public ./config.json     Allow access from other devices on the network (requires allowed_cidrs)\n",
 			os.Args[0],
 		)
 	}
@@ -99,6 +103,10 @@ func main() {
 			err = errors.New("must be in range 1-65535")
 		}
 		log.Fatalf("Invalid port %q: %v", effectivePort, err)
+	}
+
+	if err := launcherconfig.ValidateNetworkExposure(effectivePublic, launcherCfg.AllowedCIDRs); err != nil {
+		log.Fatalf("Invalid network exposure configuration: %v", err)
 	}
 
 	// Determine listen address

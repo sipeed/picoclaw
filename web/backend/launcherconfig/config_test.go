@@ -75,6 +75,25 @@ func TestValidateRejectsInvalidCIDR(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsPublicWithoutCIDRs(t *testing.T) {
+	err := Validate(Config{Port: 18800, Public: true})
+	if err == nil {
+		t.Fatal("Validate() expected error for public mode without allowed_cidrs")
+	}
+}
+
+func TestValidateNetworkExposure_AllowsLocalhostWithoutCIDRs(t *testing.T) {
+	if err := ValidateNetworkExposure(false, nil); err != nil {
+		t.Fatalf("ValidateNetworkExposure() error = %v, want nil", err)
+	}
+}
+
+func TestValidateNetworkExposure_AllowsPublicWithCIDRs(t *testing.T) {
+	if err := ValidateNetworkExposure(true, []string{"192.168.1.0/24"}); err != nil {
+		t.Fatalf("ValidateNetworkExposure() error = %v, want nil", err)
+	}
+}
+
 func TestNormalizeCIDRs(t *testing.T) {
 	got := NormalizeCIDRs([]string{" 192.168.1.0/24 ", "", "10.0.0.0/8", "192.168.1.0/24"})
 	want := []string{"192.168.1.0/24", "10.0.0.0/8"}
