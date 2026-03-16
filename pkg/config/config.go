@@ -29,7 +29,7 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	// Accept a single string so config patch APIs can submit comma-separated values.
+	// Accept a comma-separated string for channels and allow_from style fields.
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
 		*f = parseFlexibleStringSlice(s)
@@ -64,11 +64,13 @@ func (f *FlexibleStringSlice) UnmarshalText(text []byte) error {
 		*f = nil
 		return nil
 	}
+
 	*f = parseFlexibleStringSlice(string(text))
 	return nil
 }
 
 func parseFlexibleStringSlice(s string) FlexibleStringSlice {
+	// Replace Chinese comma with English comma, then split
 	s = strings.ReplaceAll(s, "，", ",")
 	parts := strings.Split(s, ",")
 
@@ -230,8 +232,8 @@ type AgentDefaults struct {
 	RestrictToWorkspace       bool           `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 	AllowReadOutsideWorkspace bool           `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
 	Provider                  string         `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	ModelName                 string         `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
-	Model                     string         `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
+	ModelName                 string         `json:"model_name"                      env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
+	Model                     string         `json:"model,omitempty"                 env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
 	ModelFallbacks            []string       `json:"model_fallbacks,omitempty"`
 	ImageModel                string         `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks       []string       `json:"image_model_fallbacks,omitempty"`
@@ -536,6 +538,7 @@ type ProvidersConfig struct {
 	Avian         ProviderConfig       `json:"avian"`
 	Minimax       ProviderConfig       `json:"minimax"`
 	LongCat       ProviderConfig       `json:"longcat"`
+	ModelScope    ProviderConfig       `json:"modelscope"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -563,7 +566,8 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.Mistral.APIKey == "" && p.Mistral.APIBase == "" &&
 		p.Avian.APIKey == "" && p.Avian.APIBase == "" &&
 		p.Minimax.APIKey == "" && p.Minimax.APIBase == "" &&
-		p.LongCat.APIKey == "" && p.LongCat.APIBase == ""
+		p.LongCat.APIKey == "" && p.LongCat.APIBase == "" &&
+		p.ModelScope.APIKey == "" && p.ModelScope.APIBase == ""
 }
 
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig
@@ -719,6 +723,7 @@ type ExecConfig struct {
 type SkillsToolsConfig struct {
 	ToolConfig            `                       envPrefix:"PICOCLAW_TOOLS_SKILLS_"`
 	Registries            SkillsRegistriesConfig `                                   json:"registries"`
+	Github                SkillsGithubConfig     `                                   json:"github"`
 	MaxConcurrentSearches int                    `                                   json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
 	SearchCache           SearchCacheConfig      `                                   json:"search_cache"`
 }
@@ -766,6 +771,11 @@ type SearchCacheConfig struct {
 
 type SkillsRegistriesConfig struct {
 	ClawHub ClawHubRegistryConfig `json:"clawhub"`
+}
+
+type SkillsGithubConfig struct {
+	Token string `json:"token,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_AUTH_TOKEN"`
+	Proxy string `json:"proxy,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_PROXY"`
 }
 
 type ClawHubRegistryConfig struct {

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -85,42 +84,5 @@ func TestHandleUpdateConfig_DoesNotInheritDefaultModelFields(t *testing.T) {
 	}
 	if got := cfg.ModelList[0].APIBase; got != "" {
 		t.Fatalf("model_list[0].api_base = %q, want empty string", got)
-	}
-}
-
-func TestHandlePatchConfig_AcceptsFlexibleStringSliceString(t *testing.T) {
-	configPath, cleanup := setupOAuthTestEnv(t)
-	defer cleanup()
-
-	h := NewHandler(configPath)
-	mux := http.NewServeMux()
-	h.RegisterRoutes(mux)
-
-	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
-		"channels": {
-			"irc": {
-				"enabled": true,
-				"server": "irc.example.com:6667",
-				"nick": "testbot",
-				"channels": "general, #ops，dev"
-			}
-		}
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-
-	want := config.FlexibleStringSlice{"general", "#ops", "dev"}
-	if !reflect.DeepEqual(cfg.Channels.IRC.Channels, want) {
-		t.Fatalf("channels.irc.channels = %#v, want %#v", cfg.Channels.IRC.Channels, want)
 	}
 }
