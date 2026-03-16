@@ -1,6 +1,7 @@
 package agent
 
 import (
+
 	"context"
 	"fmt"
 	"log"
@@ -116,6 +117,7 @@ func NewAgentInstance(
 		subagents = agentCfg.Subagents
 		skillsFilter = agentCfg.Skills
 	}
+
 
 	maxIter := defaults.MaxToolIterations
 	if maxIter == 0 {

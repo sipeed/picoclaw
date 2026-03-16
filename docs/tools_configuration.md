@@ -21,6 +21,9 @@ PicoClaw's tools configuration is located in the `tools` field of `config.json`.
     },
     "skills": {
       ...
+    },
+    "team": {
+      ...
     }
   }
 }
@@ -302,6 +305,44 @@ The skills tool configures skill discovery and installation via registries like 
 }
 ```
 
+## Team Tool
+
+The team tool allows PicoClaw to orchestrate multiple agents using strategies like Sequential, Parallel, DAG, and Evaluator-Optimizer.
+
+### Global Config
+
+| Config | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `enabled` | bool | false | Enable the Team tool |
+| `max_members` | int | 5 | Max agents in a single team |
+| `max_team_tokens` | int | 0 | Hard ceiling for total token usage per team call (0 = no limit) |
+| `max_evaluator_loops`| int | 5 | Max retries for `evaluator_optimizer` strategy |
+| `max_timeout_minutes`| int | 15 | Max execution time for team tasks |
+| `max_context_runes` | int | 8000 | Max dependency context size between workers |
+| `disable_auto_reviewer` | bool | false | Skip automatic QA reviewer step |
+| `reviewer_model` | string | - | Specifically assigned model for the reviewer step |
+| `allowed_strategies` | array | [] | Whitelist of allowed strategies (empty = all) |
+| `allowed_models` | array | [] | Whitelist of models team members can use |
+
+### Configuration Example
+
+```json
+{
+  "tools": {
+    "team": {
+      "enabled": true,
+      "max_members": 5,
+      "max_team_tokens": 100000,
+      "reviewer_model": "gpt-4o-mini",
+      "allowed_models": [
+        { "name": "gpt-4o", "tags": ["vision", "code"] },
+        { "name": "claude-3-5-sonnet", "tags": ["precise"] }
+      ]
+    }
+  }
+}
+```
+
 ## Environment Variables
 
 All configuration options can be overridden via environment variables with the format `PICOCLAW_TOOLS_<SECTION>_<KEY>`:
@@ -312,6 +353,6 @@ For example:
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`
+- `PICOCLAW_TOOLS_TEAM_MAX_TEAM_TOKENS=50000`
 
-Note: Nested map-style config (for example `tools.mcp.servers.<name>.*`) is configured in `config.json` rather than
-environment variables.
+Note: Nested map-style config (for example `tools.mcp.servers.<name>.*` or `tools.team.allowed_models`) is configured in `config.json` rather than environment variables.
