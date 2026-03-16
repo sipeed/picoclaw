@@ -788,6 +788,12 @@ func NewWebFetchTool(maxChars int, fetchLimitBytes int64) (*WebFetchTool, error)
 // This is false in normal runtime to reduce SSRF exposure, and tests can override it temporarily.
 var allowPrivateWebFetchHosts atomic.Bool
 
+// SetAllowPrivateWebFetchHosts configures whether the web_fetch tool may access local/private IPs.
+// This is normally false to reduce SSRF attack surface.
+func SetAllowPrivateWebFetchHosts(allow bool) {
+	allowPrivateWebFetchHosts.Store(allow)
+}
+
 func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64) (*WebFetchTool, error) {
 	if maxChars <= 0 {
 		maxChars = defaultMaxChars
