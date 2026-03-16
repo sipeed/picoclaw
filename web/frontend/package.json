@@ -28,7 +28,7 @@
     "radix-ui": "^1.4.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-i18next": "^16.5.4",
+    "react-i18next": "^16.5.8",
     "react-markdown": "^10.1.0",
     "react-textarea-autosize": "^8.5.9",
     "remark-gfm": "^4.0.1",
