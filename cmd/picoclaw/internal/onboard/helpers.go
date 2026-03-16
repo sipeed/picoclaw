@@ -13,46 +13,51 @@ import (
 	"github.com/sipeed/picoclaw/pkg/credential"
 )
 
-func onboard() {
+func onboard(encrypt bool) {
 	configPath := internal.GetConfigPath()
 
 	configExists := false
 	if _, err := os.Stat(configPath); err == nil {
 		configExists = true
-		// Only ask for confirmation when *both* config and SSH key already exist,
-		// indicating a full re-onboard that would reset the config to defaults.
-		sshKeyPath, _ := credential.DefaultSSHKeyPath()
-		if _, err := os.Stat(sshKeyPath); err == nil {
-			// Both exist — confirm a full reset.
-			fmt.Printf("Config already exists at %s\n", configPath)
-			fmt.Print("Overwrite config with defaults? (y/n): ")
-			var response string
-			fmt.Scanln(&response)
-			if response != "y" {
-				fmt.Println("Aborted.")
-				return
+		if encrypt {
+			// Only ask for confirmation when *both* config and SSH key already exist,
+			// indicating a full re-onboard that would reset the config to defaults.
+			sshKeyPath, _ := credential.DefaultSSHKeyPath()
+			if _, err := os.Stat(sshKeyPath); err == nil {
+				// Both exist — confirm a full reset.
+				fmt.Printf("Config already exists at %s\n", configPath)
+				fmt.Print("Overwrite config with defaults? (y/n): ")
+				var response string
+				fmt.Scanln(&response)
+				if response != "y" {
+					fmt.Println("Aborted.")
+					return
+				}
+				configExists = false // user agreed to reset; treat as fresh
 			}
-			configExists = false // user agreed to reset; treat as fresh
+			// Config exists but SSH key is missing — keep existing config, only add SSH key.
 		}
-		// Config exists but SSH key is missing — keep existing config, only add SSH key.
 	}
 
-	fmt.Println("\nSet up credential encryption")
-	fmt.Println("-----------------------------")
-	passphrase, err := promptPassphrase()
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
-	// Expose the passphrase to credential.PassphraseProvider (which calls
-	// os.Getenv by default) so that SaveConfig can encrypt api_keys.
-	// This process is a one-shot CLI tool; the env var is never exposed outside
-	// the current process and disappears when it exits.
-	os.Setenv(credential.PassphraseEnvVar, passphrase)
+	var err error
+	if encrypt {
+		fmt.Println("\nSet up credential encryption")
+		fmt.Println("-----------------------------")
+		passphrase, pErr := promptPassphrase()
+		if pErr != nil {
+			fmt.Printf("Error: %v\n", pErr)
+			os.Exit(1)
+		}
+		// Expose the passphrase to credential.PassphraseProvider (which calls
+		// os.Getenv by default) so that SaveConfig can encrypt api_keys.
+		// This process is a one-shot CLI tool; the env var is never exposed outside
+		// the current process and disappears when it exits.
+		os.Setenv(credential.PassphraseEnvVar, passphrase)
 
-	if err = setupSSHKey(); err != nil {
-		fmt.Printf("Error generating SSH key: %v\n", err)
-		os.Exit(1)
+		if err = setupSSHKey(); err != nil {
+			fmt.Printf("Error generating SSH key: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	var cfg *config.Config
@@ -76,11 +81,15 @@ func onboard() {
 
 	fmt.Printf("\n%s picoclaw is ready!\n", internal.Logo)
 	fmt.Println("\nNext steps:")
-	fmt.Println("  1. Set your encryption passphrase before starting picoclaw:")
-	fmt.Println("       export PICOCLAW_KEY_PASSPHRASE=<your-passphrase>   # Linux/macOS")
-	fmt.Println("       set PICOCLAW_KEY_PASSPHRASE=<your-passphrase>      # Windows cmd")
-	fmt.Println("")
-	fmt.Println("  2. Add your API key to", configPath)
+	if encrypt {
+		fmt.Println("  1. Set your encryption passphrase before starting picoclaw:")
+		fmt.Println("       export PICOCLAW_KEY_PASSPHRASE=<your-passphrase>   # Linux/macOS")
+		fmt.Println("       set PICOCLAW_KEY_PASSPHRASE=<your-passphrase>      # Windows cmd")
+		fmt.Println("")
+		fmt.Println("  2. Add your API key to", configPath)
+	} else {
+		fmt.Println("  1. Add your API key to", configPath)
+	}
 	fmt.Println("")
 	fmt.Println("     Recommended:")
 	fmt.Println("     - OpenRouter: https://openrouter.ai/keys (access 100+ models)")
