@@ -342,8 +342,8 @@ func TestSaveConfig_IncludesEmptyLegacyModelField(t *testing.T) {
 		t.Fatalf("ReadFile failed: %v", err)
 	}
 
-	if !strings.Contains(string(data), `"model": ""`) {
-		t.Fatalf("saved config should include empty legacy model field, got: %s", string(data))
+	if !strings.Contains(string(data), `"model_name": ""`) {
+		t.Fatalf("saved config should include empty legacy model_name field, got: %s", string(data))
 	}
 }
 
@@ -444,7 +444,7 @@ func TestLoadConfig_WebToolsProxy(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.json")
 	configJSON := `{
   "agents": {"defaults":{"workspace":"./workspace","model":"gpt4","max_tokens":8192,"max_tool_iterations":20}},
-  "model_list": [{"model_name":"gpt4","model":"openai/gpt-5.2","api_key":"x"}],
+  "model_list": [{"model_name":"gpt4","model":"openai/gpt-5.4","api_key":"x"}],
   "tools": {"web":{"proxy":"http://127.0.0.1:7890"}}
 }`
 	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
