@@ -67,10 +67,9 @@ export function useGateway() {
     }
 
     es.onerror = () => {
-      // EventSource will auto-reconnect
-      updateGatewayStore((prev) =>
-        prev.status === "restarting" ? {} : { status: "unknown" },
-      )
+      // EventSource will auto-reconnect. Preserve the last known gateway
+      // status so transient SSE disconnects do not suppress chat websocket
+      // reconnects while polling catches up.
     }
 
     return () => {
@@ -105,6 +104,11 @@ export function useGateway() {
     setLoading(true)
     try {
       await stopGateway()
+      updateGatewayStore({
+        status: "stopped",
+        canStart: true,
+        restartRequired: false,
+      })
     } catch (err) {
       console.error("Failed to stop gateway:", err)
     } finally {

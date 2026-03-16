@@ -42,7 +42,7 @@ export function ChatComposer({
           placeholder={t("chat.placeholder")}
           disabled={!canInput}
           className={cn(
-            "max-h-[200px] min-h-[60px] resize-none border-0 bg-transparent px-2 py-1 text-[15px] shadow-none transition-colors focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent",
+            "placeholder:text-muted-foreground max-h-[200px] min-h-[60px] resize-none border-0 bg-transparent px-2 py-1 text-[15px] shadow-none transition-colors focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent",
             !canInput && "cursor-not-allowed",
           )}
           minRows={1}
@@ -56,7 +56,7 @@ export function ChatComposer({
             size="icon"
             className="size-8 rounded-full bg-violet-500 text-white transition-transform hover:bg-violet-600 active:scale-95"
             onClick={onSend}
-            disabled={!input.trim() || !isConnected}
+            disabled={!input.trim() || !canInput}
           >
             <IconArrowUp className="size-4" />
           </Button>
