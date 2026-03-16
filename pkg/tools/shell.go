@@ -441,6 +441,14 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				continue
 			}
 
+			if runtime.GOOS == "windows" {
+				pathVolume := filepath.VolumeName(p)
+				cwdVolume := filepath.VolumeName(cwdPath)
+				if pathVolume != "" && cwdVolume != "" && !strings.EqualFold(pathVolume, cwdVolume) {
+					return "Command blocked by safety guard (path outside working dir)"
+				}
+			}
+
 			rel, err := filepath.Rel(cwdPath, p)
 			if err != nil {
 				continue
