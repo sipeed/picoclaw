@@ -9,6 +9,7 @@ package agent
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"jane/pkg/bus"
@@ -26,26 +27,40 @@ func formatMessagesForLog(messages []providers.Message) string {
 	var sb strings.Builder
 	sb.WriteString("[\n")
 	for i, msg := range messages {
-		fmt.Fprintf(&sb, "  [%d] Role: %s\n", i, msg.Role)
+		sb.WriteString("  [")
+		sb.WriteString(strconv.Itoa(i))
+		sb.WriteString("] Role: ")
+		sb.WriteString(msg.Role)
+		sb.WriteString("\n")
+
 		if len(msg.ToolCalls) > 0 {
 			sb.WriteString("  ToolCalls:\n")
 			for _, tc := range msg.ToolCalls {
-				fmt.Fprintf(&sb, "    - ID: %s, Type: %s, Name: %s\n", tc.ID, tc.Type, tc.Name)
+				sb.WriteString("    - ID: ")
+				sb.WriteString(tc.ID)
+				sb.WriteString(", Type: ")
+				sb.WriteString(tc.Type)
+				sb.WriteString(", Name: ")
+				sb.WriteString(tc.Name)
+				sb.WriteString("\n")
+
 				if tc.Function != nil {
-					fmt.Fprintf(
-						&sb,
-						"      Arguments: %s\n",
-						utils.Truncate(tc.Function.Arguments, 200),
-					)
+					sb.WriteString("      Arguments: ")
+					sb.WriteString(utils.Truncate(tc.Function.Arguments, 200))
+					sb.WriteString("\n")
 				}
 			}
 		}
 		if msg.Content != "" {
 			content := utils.Truncate(msg.Content, 200)
-			fmt.Fprintf(&sb, "  Content: %s\n", content)
+			sb.WriteString("  Content: ")
+			sb.WriteString(content)
+			sb.WriteString("\n")
 		}
 		if msg.ToolCallID != "" {
-			fmt.Fprintf(&sb, "  ToolCallID: %s\n", msg.ToolCallID)
+			sb.WriteString("  ToolCallID: ")
+			sb.WriteString(msg.ToolCallID)
+			sb.WriteString("\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -62,14 +77,22 @@ func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 	var sb strings.Builder
 	sb.WriteString("[\n")
 	for i, tool := range toolDefs {
-		fmt.Fprintf(&sb, "  [%d] Type: %s, Name: %s\n", i, tool.Type, tool.Function.Name)
-		fmt.Fprintf(&sb, "      Description: %s\n", tool.Function.Description)
+		sb.WriteString("  [")
+		sb.WriteString(strconv.Itoa(i))
+		sb.WriteString("] Type: ")
+		sb.WriteString(tool.Type)
+		sb.WriteString(", Name: ")
+		sb.WriteString(tool.Function.Name)
+		sb.WriteString("\n")
+
+		sb.WriteString("      Description: ")
+		sb.WriteString(tool.Function.Description)
+		sb.WriteString("\n")
+
 		if len(tool.Function.Parameters) > 0 {
-			fmt.Fprintf(
-				&sb,
-				"      Parameters: %s\n",
-				utils.Truncate(fmt.Sprintf("%v", tool.Function.Parameters), 200),
-			)
+			sb.WriteString("      Parameters: ")
+			sb.WriteString(utils.Truncate(fmt.Sprintf("%v", tool.Function.Parameters), 200))
+			sb.WriteString("\n")
 		}
 	}
 	sb.WriteString("]")
