@@ -69,17 +69,17 @@ Run multiple Telegram bots from a single picoclaw instance, each connected to a 
 "channels": {
     "telegram_bots": [
         {
-            "id": "amber",
+            "id": "alice",
             "enabled": true,
-            "token": "AMBER_BOT_TOKEN",
+            "token": "ALICE_BOT_TOKEN",
             "allow_from": ["YOUR_TELEGRAM_USER_ID"],
             "typing": { "enabled": true },
             "placeholder": { "enabled": true, "text": "Thinking... 💭" }
         },
         {
-            "id": "karen",
+            "id": "bob",
             "enabled": true,
-            "token": "KAREN_BOT_TOKEN",
+            "token": "BOB_BOT_TOKEN",
             "allow_from": ["YOUR_TELEGRAM_USER_ID"],
             "typing": { "enabled": true },
             "placeholder": { "enabled": true, "text": "Thinking... 💭" }
@@ -88,12 +88,12 @@ Run multiple Telegram bots from a single picoclaw instance, each connected to a 
 },
 "bindings": [
     {
-        "agent_id": "amber",
-        "match": { "channel": "telegram-amber" }
+        "agent_id": "alice",
+        "match": { "channel": "telegram-alice" }
     },
     {
-        "agent_id": "karen",
-        "match": { "channel": "telegram-karen" }
+        "agent_id": "bob",
+        "match": { "channel": "telegram-bob" }
     }
 ]
 ```
@@ -106,23 +106,23 @@ Define each agent in `agents.list` with its own workspace, model, and personalit
 "agents": {
     "list": [
         {
-            "id": "amber",
-            "name": "Amber",
+            "id": "alice",
+            "name": "Alice",
             "default": true,
-            "workspace": "~/.picoclaw/agents/amber",
+            "workspace": "~/.picoclaw/agents/alice",
             "model": {
                 "primary": "claude-cli",
                 "fallbacks": ["gemini-cli"]
             },
             "subagents": {
-                "allow_agents": ["karen"]
+                "allow_agents": ["bob"]
             }
         },
         {
-            "id": "karen",
-            "name": "Karen",
+            "id": "bob",
+            "name": "Bob",
             "default": false,
-            "workspace": "~/.picoclaw/agents/karen",
+            "workspace": "~/.picoclaw/agents/bob",
             "model": {
                 "primary": "claude-cli",
                 "fallbacks": ["gemini-cli"]
