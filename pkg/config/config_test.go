@@ -7,7 +7,21 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/credential"
 )
+
+// mustSetupSSHKey generates a temporary Ed25519 SSH key in t.TempDir() and sets
+// PICOCLAW_SSH_KEY_PATH to its path for the duration of the test. This is required
+// whenever a test exercises encryption/decryption via credential.Encrypt or SaveConfig.
+func mustSetupSSHKey(t *testing.T) {
+	t.Helper()
+	keyPath := filepath.Join(t.TempDir(), "picoclaw_ed25519.key")
+	if err := credential.GenerateSSHKey(keyPath); err != nil {
+		t.Fatalf("mustSetupSSHKey: %v", err)
+	}
+	t.Setenv("PICOCLAW_SSH_KEY_PATH", keyPath)
+}
 
 func TestAgentModelConfig_UnmarshalString(t *testing.T) {
 	var m AgentModelConfig
@@ -482,13 +496,19 @@ func TestDefaultConfig_DMScope(t *testing.T) {
 }
 
 func TestDefaultConfig_WorkspacePath_Default(t *testing.T) {
-	// Unset to ensure we test the default
 	t.Setenv("PICOCLAW_HOME", "")
-	// Set a known home for consistent test results
-	t.Setenv("HOME", "/tmp/home")
+
+	var fakeHome string
+	if runtime.GOOS == "windows" {
+		fakeHome = `C:\tmp\home`
+		t.Setenv("USERPROFILE", fakeHome)
+	} else {
+		fakeHome = "/tmp/home"
+		t.Setenv("HOME", fakeHome)
+	}
 
 	cfg := DefaultConfig()
-	want := filepath.Join("/tmp/home", ".picoclaw", "workspace")
+	want := filepath.Join(fakeHome, ".picoclaw", "workspace")
 
 	if cfg.Agents.Defaults.Workspace != want {
 		t.Errorf("Default workspace path = %q, want %q", cfg.Agents.Defaults.Workspace, want)
@@ -499,7 +519,7 @@ func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
 	t.Setenv("PICOCLAW_HOME", "/custom/picoclaw/home")
 
 	cfg := DefaultConfig()
-	want := "/custom/picoclaw/home/workspace"
+	want := filepath.Join("/custom/picoclaw/home", "workspace")
 
 	if cfg.Agents.Defaults.Workspace != want {
 		t.Errorf("Workspace path with PICOCLAW_HOME = %q, want %q", cfg.Agents.Defaults.Workspace, want)
@@ -620,4 +640,339 @@ func TestFlexibleStringSlice_UnmarshalText_EmptySliceConsistency(t *testing.T) {
 			t.Errorf("Expected empty slice, got %v", f)
 		}
 	})
+}
+
+// TestLoadConfig_WarnsForPlaintextAPIKey verifies that LoadConfig resolves a plaintext
+// api_key into memory but does NOT rewrite the config file. File writes are the sole
+// responsibility of SaveConfig.
+func TestLoadConfig_WarnsForPlaintextAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	const original = `{"model_list":[{"model_name":"test","model":"openai/gpt-4","api_key":"sk-plaintext"}]}`
+	if err := os.WriteFile(cfgPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "test-passphrase")
+	t.Setenv("PICOCLAW_SSH_KEY_PATH", "")
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	// In-memory value must be the resolved plaintext.
+	if cfg.ModelList[0].APIKey != "sk-plaintext" {
+		t.Errorf("in-memory api_key = %q, want %q", cfg.ModelList[0].APIKey, "sk-plaintext")
+	}
+	// The file on disk must remain unchanged — LoadConfig must not write anything.
+	raw, _ := os.ReadFile(cfgPath)
+	if string(raw) != original {
+		t.Errorf("LoadConfig must not modify the config file; got:\n%s", string(raw))
+	}
+}
+
+// TestSaveConfig_EncryptsPlaintextAPIKey verifies that SaveConfig writes enc:// ciphertext
+// to disk and that a subsequent LoadConfig decrypts it back to the original plaintext.
+func TestSaveConfig_EncryptsPlaintextAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "test-passphrase")
+	mustSetupSSHKey(t)
+
+	cfg := DefaultConfig()
+	cfg.ModelList = []ModelConfig{
+		{ModelName: "test", Model: "openai/gpt-4", APIKey: "sk-plaintext"},
+	}
+	if err := SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	// Disk must contain enc://, not the raw key.
+	raw, _ := os.ReadFile(cfgPath)
+	if !strings.Contains(string(raw), "enc://") {
+		t.Errorf("saved file should contain enc://, got:\n%s", string(raw))
+	}
+	if strings.Contains(string(raw), "sk-plaintext") {
+		t.Errorf("saved file must not contain the plaintext key")
+	}
+
+	// A fresh load must decrypt back to the original plaintext.
+	cfg2, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig after SaveConfig: %v", err)
+	}
+	if cfg2.ModelList[0].APIKey != "sk-plaintext" {
+		t.Errorf("loaded api_key = %q, want %q", cfg2.ModelList[0].APIKey, "sk-plaintext")
+	}
+}
+
+// TestLoadConfig_NoSealWithoutPassphrase verifies that api_key values are left
+// unchanged when PICOCLAW_KEY_PASSPHRASE is not set.
+func TestLoadConfig_NoSealWithoutPassphrase(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	data := `{"model_list":[{"model_name":"test","model":"openai/gpt-4","api_key":"sk-plaintext"}]}`
+	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "")
+	t.Setenv("PICOCLAW_SSH_KEY_PATH", "")
+
+	if _, err := LoadConfig(cfgPath); err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	raw, _ := os.ReadFile(cfgPath)
+	if strings.Contains(string(raw), "enc://") {
+		t.Error("config file must not be modified when no passphrase is set")
+	}
+}
+
+// TestLoadConfig_FileRefNotSealed verifies that file:// api_key references are not
+// converted to enc:// values (they are resolved at runtime by the Resolver).
+func TestLoadConfig_FileRefNotSealed(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	keyFile := filepath.Join(dir, "openai.key")
+	if err := os.WriteFile(keyFile, []byte("sk-from-file"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	data := `{"model_list":[{"model_name":"test","model":"openai/gpt-4","api_key":"file://openai.key"}]}`
+	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "test-passphrase")
+	t.Setenv("PICOCLAW_SSH_KEY_PATH", "")
+
+	if _, err := LoadConfig(cfgPath); err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	raw, _ := os.ReadFile(cfgPath)
+	if !strings.Contains(string(raw), "file://openai.key") {
+		t.Error("file:// reference should be preserved unchanged in the config file")
+	}
+	if strings.Contains(string(raw), "enc://") {
+		t.Error("file:// reference must not be converted to enc://")
+	}
+}
+
+// TestSaveConfig_MixedKeys verifies that SaveConfig encrypts only plaintext api_keys
+// and leaves already-encrypted (enc://) and file:// entries unchanged.
+func TestSaveConfig_MixedKeys(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "test-passphrase")
+	mustSetupSSHKey(t)
+
+	// Pre-encrypt one key so we have a genuine enc:// value to put in the config.
+	if err := SaveConfig(cfgPath, &Config{
+		ModelList: []ModelConfig{
+			{ModelName: "pre", Model: "openai/gpt-4", APIKey: "sk-already-plain"},
+		},
+	}); err != nil {
+		t.Fatalf("setup SaveConfig: %v", err)
+	}
+	raw, _ := os.ReadFile(cfgPath)
+	// Extract the enc:// value from the saved file.
+	var tmp struct {
+		ModelList []struct {
+			APIKey string `json:"api_key"`
+		} `json:"model_list"`
+	}
+	if err := json.Unmarshal(raw, &tmp); err != nil || len(tmp.ModelList) == 0 {
+		t.Fatalf("setup: could not parse saved config: %v", err)
+	}
+	alreadyEncrypted := tmp.ModelList[0].APIKey
+	if !strings.HasPrefix(alreadyEncrypted, "enc://") {
+		t.Fatalf("setup: expected enc:// key, got %q", alreadyEncrypted)
+	}
+
+	// Build a config with three models:
+	//   1. plaintext   → must be encrypted by SaveConfig
+	//   2. enc://      → must be left unchanged (already encrypted)
+	//   3. file://     → must be left unchanged (file reference)
+	keyFile := filepath.Join(dir, "api.key")
+	if err := os.WriteFile(keyFile, []byte("sk-from-file"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	cfg := &Config{
+		ModelList: []ModelConfig{
+			{ModelName: "plain", Model: "openai/gpt-4", APIKey: "sk-new-plaintext"},
+			{ModelName: "enc", Model: "openai/gpt-4", APIKey: alreadyEncrypted},
+			{ModelName: "file", Model: "openai/gpt-4", APIKey: "file://api.key"},
+		},
+	}
+	if err := SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	raw, _ = os.ReadFile(cfgPath)
+	s := string(raw)
+
+	// 1. Plaintext must be encrypted.
+	if strings.Contains(s, "sk-new-plaintext") {
+		t.Error("plaintext key must not appear in saved file")
+	}
+	// 2. The pre-existing enc:// value must still be present (byte-for-byte unchanged).
+	if !strings.Contains(s, alreadyEncrypted) {
+		t.Error("pre-existing enc:// entry must be preserved unchanged")
+	}
+	// 3. file:// must be preserved.
+	if !strings.Contains(s, "file://api.key") {
+		t.Error("file:// reference must be preserved unchanged")
+	}
+
+	// Now load and verify all three decrypt/resolve correctly.
+	cfg2, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig after SaveConfig: %v", err)
+	}
+	byName := make(map[string]string)
+	for _, m := range cfg2.ModelList {
+		byName[m.ModelName] = m.APIKey
+	}
+	if byName["plain"] != "sk-new-plaintext" {
+		t.Errorf("plain model api_key = %q, want %q", byName["plain"], "sk-new-plaintext")
+	}
+	if byName["enc"] != "sk-already-plain" {
+		t.Errorf("enc model api_key = %q, want %q", byName["enc"], "sk-already-plain")
+	}
+	if byName["file"] != "sk-from-file" {
+		t.Errorf("file model api_key = %q, want %q", byName["file"], "sk-from-file")
+	}
+}
+
+// TestLoadConfig_MixedKeys_NoPassphrase verifies that when PICOCLAW_KEY_PASSPHRASE
+// is not set, enc:// entries cause LoadConfig to return an error, while plaintext
+// and file:// entries in the same config are not affected.
+func TestLoadConfig_MixedKeys_NoPassphrase(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	// First encrypt a key so we have a real enc:// value.
+	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "test-passphrase")
+	mustSetupSSHKey(t)
+	if err := SaveConfig(cfgPath, &Config{
+		ModelList: []ModelConfig{
+			{ModelName: "m", Model: "openai/gpt-4", APIKey: "sk-secret"},
+		},
+	}); err != nil {
+		t.Fatalf("setup SaveConfig: %v", err)
+	}
+	raw, _ := os.ReadFile(cfgPath)
+	var tmp struct {
+		ModelList []struct {
+			APIKey string `json:"api_key"`
+		} `json:"model_list"`
+	}
+	if err := json.Unmarshal(raw, &tmp); err != nil {
+		t.Fatalf("setup parse: %v", err)
+	}
+	encValue := tmp.ModelList[0].APIKey
+
+	// Write a mixed config: enc:// + plaintext + file://
+	keyFile := filepath.Join(dir, "api.key")
+	if err := os.WriteFile(keyFile, []byte("sk-from-file"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	mixed, _ := json.Marshal(map[string]any{
+		"model_list": []map[string]any{
+			{"model_name": "enc", "model": "openai/gpt-4", "api_key": encValue},
+			{"model_name": "plain", "model": "openai/gpt-4", "api_key": "sk-plain"},
+			{"model_name": "file", "model": "openai/gpt-4", "api_key": "file://api.key"},
+		},
+	})
+	if err := os.WriteFile(cfgPath, mixed, 0o600); err != nil {
+		t.Fatalf("setup write: %v", err)
+	}
+
+	// Now clear the passphrase — LoadConfig must fail because enc:// cannot be decrypted.
+	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "")
+
+	_, err := LoadConfig(cfgPath)
+	if err == nil {
+		t.Fatal("LoadConfig should fail when enc:// key is present and no passphrase is set")
+	}
+	if !strings.Contains(err.Error(), "passphrase required") {
+		t.Errorf("error should mention passphrase required, got: %v", err)
+	}
+}
+
+// TestSaveConfig_UsesPassphraseProvider verifies that SaveConfig encrypts plaintext
+// api_keys using credential.PassphraseProvider() rather than os.Getenv directly.
+// This matters for the launcher, which clears the environment variable and redirects
+// PassphraseProvider to an in-memory SecureStore.
+func TestSaveConfig_UsesPassphraseProvider(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	// Ensure the env var is empty — passphrase must come from PassphraseProvider only.
+	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "")
+	mustSetupSSHKey(t)
+
+	// Replace PassphraseProvider with an in-memory function (simulating SecureStore).
+	const testPassphrase = "provider-passphrase"
+	orig := credential.PassphraseProvider
+	credential.PassphraseProvider = func() string { return testPassphrase }
+	t.Cleanup(func() { credential.PassphraseProvider = orig })
+
+	cfg := DefaultConfig()
+	cfg.ModelList = []ModelConfig{
+		{ModelName: "test", Model: "openai/gpt-4", APIKey: "sk-plaintext"},
+	}
+	if err := SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	raw, _ := os.ReadFile(cfgPath)
+	if !strings.Contains(string(raw), "enc://") {
+		t.Errorf("SaveConfig should have encrypted plaintext key via PassphraseProvider; got:\n%s", raw)
+	}
+}
+
+// TestLoadConfig_UsesPassphraseProvider verifies that LoadConfig decrypts enc:// keys
+// using credential.PassphraseProvider() rather than os.Getenv directly.
+func TestLoadConfig_UsesPassphraseProvider(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	// Ensure the env var is empty throughout.
+	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "")
+	mustSetupSSHKey(t)
+
+	const testPassphrase = "provider-passphrase"
+	const plainKey = "sk-secret"
+
+	// First, encrypt the key using the same passphrase.
+	encrypted, err := credential.Encrypt(testPassphrase, "", plainKey)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	raw, _ := json.Marshal(map[string]any{
+		"model_list": []map[string]any{
+			{"model_name": "test", "model": "openai/gpt-4", "api_key": encrypted},
+		},
+	})
+	if err = os.WriteFile(cfgPath, raw, 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Redirect PassphraseProvider — env var is empty, so without this the load would fail.
+	orig := credential.PassphraseProvider
+	credential.PassphraseProvider = func() string { return testPassphrase }
+	t.Cleanup(func() { credential.PassphraseProvider = orig })
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.ModelList[0].APIKey != plainKey {
+		t.Errorf("api_key = %q, want %q", cfg.ModelList[0].APIKey, plainKey)
+	}
 }
