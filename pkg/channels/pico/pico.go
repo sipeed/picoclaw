@@ -305,7 +305,7 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // authenticate checks the Bearer token from the Authorization header.
 // Query parameter authentication is only allowed when AllowTokenQuery is explicitly enabled.
-// Token comparison uses constant-time equality to prevent timing side-channels.
+// Token comparison uses subtle.ConstantTimeCompare to reduce timing side-channels.
 func (c *PicoChannel) authenticate(r *http.Request) bool {
 	token := c.config.Token
 	if token == "" {
@@ -385,6 +385,7 @@ func (c *PicoChannel) handleHTTPMessage(w http.ResponseWriter, r *http.Request) 
 	metadata := map[string]string{
 		"platform":   "pico",
 		"session_id": sessionID,
+		"transport":  "http",
 	}
 
 	logger.DebugCF("pico", "Received HTTP message", map[string]any{

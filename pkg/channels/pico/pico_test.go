@@ -292,6 +292,9 @@ func TestHTTPMessage_PublishesBusMessage(t *testing.T) {
 	if msg.Metadata["session_id"] != "sess-42" {
 		t.Errorf("Metadata[session_id]: expected sess-42, got %s", msg.Metadata["session_id"])
 	}
+	if msg.Metadata["transport"] != "http" {
+		t.Errorf("Metadata[transport]: expected http, got %s", msg.Metadata["transport"])
+	}
 	// SenderID is resolved to canonical form by BaseChannel.HandleMessage.
 	if msg.SenderID != "pico:pico-user" {
 		t.Errorf("SenderID: expected pico:pico-user, got %s", msg.SenderID)
