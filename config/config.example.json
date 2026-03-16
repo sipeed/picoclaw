@@ -11,6 +11,17 @@
       "summarize_token_percent": 75
     }
   },
+  "bindings": [
+    {
+      "_comment": "Route each named Telegram bot to a specific agent. Remove this section if you only use one agent.",
+      "agent_id": "alice",
+      "match": { "channel": "telegram-alice" }
+    },
+    {
+      "agent_id": "bob",
+      "match": { "channel": "telegram-bob" }
+    }
+  ],
   "model_list": [
     {
       "model_name": "gpt-5.4",
@@ -83,6 +94,25 @@
       ],
       "reasoning_channel_id": ""
     },
+    "telegram_bots": [
+      {
+        "_comment": "Multiple named Telegram bots — each creates a separate channel (e.g. telegram-alice). Use bindings to route each bot to a different agent.",
+        "id": "alice",
+        "enabled": false,
+        "token": "ALICE_BOT_TOKEN",
+        "allow_from": ["YOUR_USER_ID"],
+        "typing": { "enabled": true },
+        "placeholder": { "enabled": true, "text": "Thinking... 💭" }
+      },
+      {
+        "id": "bob",
+        "enabled": false,
+        "token": "BOB_BOT_TOKEN",
+        "allow_from": ["YOUR_USER_ID"],
+        "typing": { "enabled": true },
+        "placeholder": { "enabled": true, "text": "Thinking... 💭" }
+      }
+    ],
     "discord": {
       "enabled": false,
       "token": "YOUR_DISCORD_BOT_TOKEN",

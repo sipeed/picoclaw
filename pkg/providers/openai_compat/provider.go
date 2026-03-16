@@ -31,6 +31,7 @@ type Provider struct {
 	apiKey         string
 	apiBase        string
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	strictCompat   bool   // Strip non-standard fields for strict OpenAI-compatible endpoints
 	httpClient     *http.Client
 }
 
@@ -49,6 +50,12 @@ func WithRequestTimeout(timeout time.Duration) Option {
 		if timeout > 0 {
 			p.httpClient.Timeout = timeout
 		}
+	}
+}
+
+func WithStrictCompat(v bool) Option {
+	return func(p *Provider) {
+		p.strictCompat = v
 	}
 }
 
@@ -100,7 +107,7 @@ func (p *Provider) Chat(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": common.SerializeMessages(messages),
+		"messages": serializeMessages(messages, p.strictCompat),
 	}
 
 	if len(tools) > 0 {
@@ -173,6 +180,106 @@ func (p *Provider) Chat(
 	}
 
 	return common.ReadAndParseResponse(resp, p.apiBase)
+}
+
+// openaiMessage is the wire-format message for OpenAI-compatible APIs.
+// It mirrors protocoltypes.Message but omits SystemParts, which is an
+// internal field that would be unknown to third-party endpoints.
+type openaiMessage struct {
+	Role             string     `json:"role"`
+	Content          *string    `json:"content,omitempty"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
+}
+
+// msgContent returns the content pointer for an outbound message.
+// When content is empty and tool_calls are present, nil is returned so the
+// field is omitted entirely. The OpenAI spec allows content to be absent (or
+// null) when tool_calls is set, and some strict providers reject "" in that
+// position, causing intermittent failures.
+func msgContent(content string, toolCalls []ToolCall) *string {
+	if content == "" && len(toolCalls) > 0 {
+		return nil
+	}
+	return &content
+}
+
+// serializeMessages converts internal Message structs to the OpenAI wire format.
+// - Strips SystemParts (unknown to third-party endpoints)
+// - Converts messages with Media to multipart content format (text + image_url parts)
+// - Preserves ToolCallID, ToolCalls, and ReasoningContent for all messages
+// - When strictCompat is true, strips non-standard fields (reasoning_content, extra_content,
+//   thought_signature) that some strict OpenAI-compatible providers reject
+func serializeMessages(messages []Message, strictCompat bool) []any {
+	out := make([]any, 0, len(messages))
+	for _, m := range messages {
+		toolCalls := m.ToolCalls
+		reasoningContent := m.ReasoningContent
+
+		if strictCompat {
+			reasoningContent = ""
+			if len(toolCalls) > 0 {
+				sanitized := make([]ToolCall, len(toolCalls))
+				for i, tc := range toolCalls {
+					sanitized[i] = tc
+					sanitized[i].ExtraContent = nil
+					if tc.Function != nil {
+						fnCopy := *tc.Function
+						fnCopy.ThoughtSignature = ""
+						sanitized[i].Function = &fnCopy
+					}
+				}
+				toolCalls = sanitized
+			}
+		}
+
+		if len(m.Media) == 0 {
+			out = append(out, openaiMessage{
+				Role:             m.Role,
+				Content:          msgContent(m.Content, toolCalls),
+				ReasoningContent: reasoningContent,
+				ToolCalls:        toolCalls,
+				ToolCallID:       m.ToolCallID,
+			})
+			continue
+		}
+
+		// Multipart content format for messages with media
+		parts := make([]map[string]any, 0, 1+len(m.Media))
+		if m.Content != "" {
+			parts = append(parts, map[string]any{
+				"type": "text",
+				"text": m.Content,
+			})
+		}
+		for _, mediaURL := range m.Media {
+			if strings.HasPrefix(mediaURL, "data:image/") {
+				parts = append(parts, map[string]any{
+					"type": "image_url",
+					"image_url": map[string]any{
+						"url": mediaURL,
+					},
+				})
+			}
+		}
+
+		msg := map[string]any{
+			"role":    m.Role,
+			"content": parts,
+		}
+		if m.ToolCallID != "" {
+			msg["tool_call_id"] = m.ToolCallID
+		}
+		if len(toolCalls) > 0 {
+			msg["tool_calls"] = toolCalls
+		}
+		if reasoningContent != "" {
+			msg["reasoning_content"] = reasoningContent
+		}
+		out = append(out, msg)
+	}
+	return out
 }
 
 func normalizeModel(model, apiBase string) string {

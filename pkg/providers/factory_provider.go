@@ -8,10 +8,12 @@ package providers
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	anthropicmessages "github.com/sipeed/picoclaw/pkg/providers/anthropic_messages"
 	"github.com/sipeed/picoclaw/pkg/providers/azure"
+	"github.com/sipeed/picoclaw/pkg/providers/openai_compat"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -87,13 +89,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
-			cfg.APIKey,
-			apiBase,
-			cfg.Proxy,
-			cfg.MaxTokensField,
-			cfg.RequestTimeout,
-		), modelID, nil
+		opts := []openai_compat.Option{
+			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
+			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout) * time.Second),
+			openai_compat.WithStrictCompat(cfg.StrictCompat),
+		}
+		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy, opts...), modelID, nil
 
 	case "azure", "azure-openai":
 		// Azure OpenAI uses deployment-based URLs, api-key header auth,
@@ -125,13 +126,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
-			cfg.APIKey,
-			apiBase,
-			cfg.Proxy,
-			cfg.MaxTokensField,
-			cfg.RequestTimeout,
-		), modelID, nil
+		opts := []openai_compat.Option{
+			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
+			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout) * time.Second),
+			openai_compat.WithStrictCompat(cfg.StrictCompat),
+		}
+		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy, opts...), modelID, nil
 
 	case "anthropic":
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
@@ -150,13 +150,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
-			cfg.APIKey,
-			apiBase,
-			cfg.Proxy,
-			cfg.MaxTokensField,
-			cfg.RequestTimeout,
-		), modelID, nil
+		opts := []openai_compat.Option{
+			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
+			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout) * time.Second),
+			openai_compat.WithStrictCompat(cfg.StrictCompat),
+		}
+		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy, opts...), modelID, nil
 
 	case "anthropic-messages":
 		// Anthropic Messages API with native format (HTTP-based, no SDK)

@@ -649,7 +649,7 @@ func TestSerializeMessages_PlainText(t *testing.T) {
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", Content: "hi", ReasoningContent: "thinking..."},
 	}
-	result := common.SerializeMessages(messages)
+	result := serializeMessages(messages, false)
 
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -671,7 +671,7 @@ func TestSerializeMessages_WithMedia(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{Role: "user", Content: "describe this", Media: []string{"data:image/png;base64,abc123"}},
 	}
-	result := common.SerializeMessages(messages)
+	result := serializeMessages(messages, false)
 
 	data, _ := json.Marshal(result)
 	var msgs []map[string]any
@@ -704,7 +704,7 @@ func TestSerializeMessages_MediaWithToolCallID(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{Role: "tool", Content: "image result", Media: []string{"data:image/png;base64,xyz"}, ToolCallID: "call_1"},
 	}
-	result := common.SerializeMessages(messages)
+	result := serializeMessages(messages, false)
 
 	data, _ := json.Marshal(result)
 	var msgs []map[string]any
@@ -824,6 +824,51 @@ func TestSupportsPromptCacheKey(t *testing.T) {
 	}
 }
 
+func TestSerializeMessages_OmitsContentWhenEmptyAndToolCallsPresent(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{
+			Role:    "assistant",
+			Content: "",
+			ToolCalls: []protocoltypes.ToolCall{
+				{ID: "call_1", Type: "function", Function: &protocoltypes.FunctionCall{Name: "fn", Arguments: "{}"}},
+			},
+		},
+	}
+	result := serializeMessages(messages, false)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	if _, ok := msgs[0]["content"]; ok {
+		t.Fatalf("content should be omitted when empty and tool_calls present, got %v", msgs[0]["content"])
+	}
+	if msgs[0]["tool_calls"] == nil {
+		t.Fatal("tool_calls should be present")
+	}
+}
+
+func TestSerializeMessages_IncludesContentWhenNonEmptyWithToolCalls(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{
+			Role:    "assistant",
+			Content: "thinking...",
+			ToolCalls: []protocoltypes.ToolCall{
+				{ID: "call_1", Type: "function", Function: &protocoltypes.FunctionCall{Name: "fn", Arguments: "{}"}},
+			},
+		},
+	}
+	result := serializeMessages(messages, false)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	if msgs[0]["content"] != "thinking..." {
+		t.Fatalf("content should be preserved when non-empty, got %v", msgs[0]["content"])
+	}
+}
+
 func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{
@@ -834,11 +879,133 @@ func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 			},
 		},
 	}
-	result := common.SerializeMessages(messages)
+	result := serializeMessages(messages, false)
 
 	data, _ := json.Marshal(result)
 	raw := string(data)
 	if strings.Contains(raw, "system_parts") {
 		t.Fatal("system_parts should not appear in serialized output")
+	}
+}
+
+func TestSerializeMessages_StrictCompat_StripsReasoningContent(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{Role: "user", Content: "What is 1+1?"},
+		{Role: "assistant", Content: "2", ReasoningContent: "Let me think... 1+1=2"},
+	}
+	result := serializeMessages(messages, true)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	if _, ok := msgs[1]["reasoning_content"]; ok {
+		t.Fatalf("reasoning_content should be stripped when strictCompat=true, got %v", msgs[1]["reasoning_content"])
+	}
+	if msgs[1]["content"] != "2" {
+		t.Fatalf("content should be preserved, got %v", msgs[1]["content"])
+	}
+}
+
+func TestSerializeMessages_StrictCompat_StripsExtraContent(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{
+			Role:    "assistant",
+			Content: "",
+			ToolCalls: []protocoltypes.ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &protocoltypes.FunctionCall{
+						Name:      "get_weather",
+						Arguments: `{"city":"SF"}`,
+					},
+					ExtraContent: &protocoltypes.ExtraContent{
+						Google: &protocoltypes.GoogleExtra{
+							ThoughtSignature: "sig123",
+						},
+					},
+				},
+			},
+		},
+	}
+	result := serializeMessages(messages, true)
+
+	data, _ := json.Marshal(result)
+	raw := string(data)
+	if strings.Contains(raw, "extra_content") {
+		t.Fatalf("extra_content should be stripped when strictCompat=true, got: %s", raw)
+	}
+	if strings.Contains(raw, "sig123") {
+		t.Fatalf("thought_signature value should be stripped when strictCompat=true, got: %s", raw)
+	}
+}
+
+func TestSerializeMessages_StrictCompat_StripsThoughtSignature(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{
+			Role:    "assistant",
+			Content: "",
+			ToolCalls: []protocoltypes.ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &protocoltypes.FunctionCall{
+						Name:             "search",
+						Arguments:        `{"query":"test"}`,
+						ThoughtSignature: "thought-sig-abc",
+					},
+				},
+			},
+		},
+	}
+	result := serializeMessages(messages, true)
+
+	data, _ := json.Marshal(result)
+	raw := string(data)
+	if strings.Contains(raw, "thought_signature") {
+		t.Fatalf("thought_signature should be stripped when strictCompat=true, got: %s", raw)
+	}
+	if strings.Contains(raw, "thought-sig-abc") {
+		t.Fatalf("thought_signature value should be stripped when strictCompat=true, got: %s", raw)
+	}
+}
+
+func TestSerializeMessages_NoStrictCompat_PreservesFields(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{
+			Role:             "assistant",
+			Content:          "result",
+			ReasoningContent: "my reasoning",
+			ToolCalls: []protocoltypes.ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &protocoltypes.FunctionCall{
+						Name:             "get_weather",
+						Arguments:        `{"city":"SF"}`,
+						ThoughtSignature: "thought-sig-xyz",
+					},
+					ExtraContent: &protocoltypes.ExtraContent{
+						Google: &protocoltypes.GoogleExtra{
+							ThoughtSignature: "sig456",
+						},
+					},
+				},
+			},
+		},
+	}
+	result := serializeMessages(messages, false)
+
+	data, _ := json.Marshal(result)
+	raw := string(data)
+	if !strings.Contains(raw, "my reasoning") {
+		t.Fatalf("reasoning_content should be preserved when strictCompat=false, got: %s", raw)
+	}
+	if !strings.Contains(raw, "extra_content") {
+		t.Fatalf("extra_content should be preserved when strictCompat=false, got: %s", raw)
+	}
+	if !strings.Contains(raw, "sig456") {
+		t.Fatalf("thought_signature value in extra_content should be preserved when strictCompat=false, got: %s", raw)
 	}
 }
