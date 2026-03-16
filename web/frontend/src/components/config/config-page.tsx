@@ -14,6 +14,7 @@ import {
 } from "@/api/system"
 import {
   AgentDefaultsSection,
+  CronSection,
   DevicesSection,
   LauncherSection,
   RuntimeSection,
@@ -164,6 +165,11 @@ export function ConfigPage() {
           "Heartbeat interval",
           { min: 1 },
         )
+        const cronExecTimeoutMinutes = parseIntField(
+          form.cronExecTimeoutMinutes,
+          "Cron exec timeout",
+          { min: 0 },
+        )
 
         await patchAppConfig({
           agents: {
@@ -180,6 +186,10 @@ export function ConfigPage() {
             dm_scope: dmScope,
           },
           tools: {
+            cron: {
+              allow_command: form.allowCommand,
+              exec_timeout_minutes: cronExecTimeoutMinutes,
+            },
             exec: {
               allow_remote: form.allowRemote,
             },
@@ -278,6 +288,8 @@ export function ConfigPage() {
               <AgentDefaultsSection form={form} onFieldChange={updateField} />
 
               <RuntimeSection form={form} onFieldChange={updateField} />
+
+              <CronSection form={form} onFieldChange={updateField} />
 
               <LauncherSection
                 launcherForm={launcherForm}

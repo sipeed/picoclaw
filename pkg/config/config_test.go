@@ -405,6 +405,13 @@ func TestDefaultConfig_ExecAllowRemoteEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_CronAllowCommandEnabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Tools.Cron.AllowCommand {
+		t.Fatal("DefaultConfig().Tools.Cron.AllowCommand should be true")
+	}
+}
+
 func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
@@ -434,6 +441,22 @@ func TestLoadConfig_ExecAllowRemoteDefaultsTrueWhenUnset(t *testing.T) {
 	}
 	if !cfg.Tools.Exec.AllowRemote {
 		t.Fatal("tools.exec.allow_remote should remain true when unset in config file")
+	}
+}
+
+func TestLoadConfig_CronAllowCommandDefaultsTrueWhenUnset(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"tools":{"cron":{"exec_timeout_minutes":5}}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if !cfg.Tools.Cron.AllowCommand {
+		t.Fatal("tools.cron.allow_command should remain true when unset in config file")
 	}
 }
 
