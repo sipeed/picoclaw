@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"expvar"
 	"fmt"
 	"maps"
 	"net/http"
@@ -41,6 +42,7 @@ func NewServer(host string, port int) *Server {
 
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
+	mux.Handle("/debug/vars", expvar.Handler())
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	s.server = &http.Server{
@@ -162,6 +164,7 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) RegisterOnMux(mux *http.ServeMux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
+	mux.Handle("/debug/vars", expvar.Handler())
 }
 
 func statusString(ok bool) string {
