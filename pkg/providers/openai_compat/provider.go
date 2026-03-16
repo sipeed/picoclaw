@@ -428,12 +428,20 @@ func serializeMessages(messages []Message) []any {
 }
 
 func normalizeModel(model, apiBase string) string {
-	before, after, ok := strings.Cut(model, "/")
-	if !ok {
+	lowerBase := strings.ToLower(apiBase)
+	if strings.Contains(lowerBase, "openrouter.ai") {
 		return model
 	}
 
-	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
+	if strings.Contains(lowerBase, "api.anthropic.com") {
+		if _, after, ok := strings.Cut(model, "/"); ok {
+			model = after
+		}
+		return strings.ReplaceAll(model, ".", "-")
+	}
+
+	before, after, ok := strings.Cut(model, "/")
+	if !ok {
 		return model
 	}
 

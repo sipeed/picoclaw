@@ -514,6 +514,12 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	if got := normalizeModel("deepseek/deepseek-chat", "https://api.deepseek.com/v1"); got != "deepseek-chat" {
 		t.Fatalf("normalizeModel(deepseek) = %q, want %q", got, "deepseek-chat")
 	}
+	if got := normalizeModel("claude-sonnet-4.6", "https://api.anthropic.com/v1"); got != "claude-sonnet-4-6" {
+		t.Fatalf("normalizeModel(anthropic plain) = %q, want %q", got, "claude-sonnet-4-6")
+	}
+	if got := normalizeModel("anthropic/claude-sonnet-4.6", "https://api.anthropic.com/v1"); got != "claude-sonnet-4-6" {
+		t.Fatalf("normalizeModel(anthropic prefixed) = %q, want %q", got, "claude-sonnet-4-6")
+	}
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
 	}
@@ -522,6 +528,51 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	}
 	if got := normalizeModel("vivgrid/auto", "https://api.vivgrid.com/v1"); got != "auto" {
 		t.Fatalf("normalizeModel(vivgrid auto) = %q, want %q", got, "auto")
+	}
+}
+
+func TestProviderChat_NormalizesAnthropicModelForAnthropicAPIBase(t *testing.T) {
+	var requestBody map[string]any
+
+	p := NewProvider("key", "https://api.anthropic.com/v1", "")
+	p.httpClient.Transport = roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.String() != "https://api.anthropic.com/v1/chat/completions" {
+			t.Fatalf("request URL = %q, want %q", r.URL.String(), "https://api.anthropic.com/v1/chat/completions")
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		data, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatalf("marshal response: %v", err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader(data)),
+		}, nil
+	})
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"claude-sonnet-4.6",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if got := requestBody["model"]; got != "claude-sonnet-4-6" {
+		t.Fatalf("request model = %v, want %q", got, "claude-sonnet-4-6")
 	}
 }
 
