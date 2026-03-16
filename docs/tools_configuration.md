@@ -104,9 +104,10 @@ By default, PicoClaw blocks the following dangerous commands:
 
 The cron tool is used for scheduling periodic tasks.
 
-| Config                 | Type | Default | Description                                    |
-|------------------------|------|---------|------------------------------------------------|
-| `exec_timeout_minutes` | int  | 5       | Execution timeout in minutes, 0 means no limit |
+| Config                 | Type | Default | Description                                                  |
+|------------------------|------|---------|--------------------------------------------------------------|
+| `exec_timeout_minutes` | int  | 5       | Execution timeout in minutes, 0 means no limit               |
+| `min_interval_seconds` | int  | 60      | Minimum allowed interval for recurring jobs, 0 means no limit |
 
 ## MCP Tool
 
@@ -311,6 +312,7 @@ For example:
 - `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
+- `PICOCLAW_TOOLS_CRON_MIN_INTERVAL_SECONDS=60`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`
 
 Note: Nested map-style config (for example `tools.mcp.servers.<name>.*`) is configured in `config.json` rather than

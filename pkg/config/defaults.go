@@ -452,6 +452,7 @@ func DefaultConfig() *Config {
 					Enabled: true,
 				},
 				ExecTimeoutMinutes: 5,
+				MinIntervalSeconds: 60,
 			},
 			Exec: ExecConfig{
 				ToolConfig: ToolConfig{

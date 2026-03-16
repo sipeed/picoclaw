@@ -700,7 +700,8 @@ type WebToolsConfig struct {
 
 type CronToolsConfig struct {
 	ToolConfig         `    envPrefix:"PICOCLAW_TOOLS_CRON_"`
-	ExecTimeoutMinutes int `                                 env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES" json:"exec_timeout_minutes"` // 0 means no timeout
+	ExecTimeoutMinutes int `                                 env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"  json:"exec_timeout_minutes"`  // 0 means no timeout
+	MinIntervalSeconds int `                                 env:"PICOCLAW_TOOLS_CRON_MIN_INTERVAL_SECONDS" json:"min_interval_seconds"` // minimum interval for recurring jobs; 0 means no limit
 }
 
 type ExecConfig struct {

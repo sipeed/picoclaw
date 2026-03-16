@@ -20,10 +20,11 @@ type JobExecutor interface {
 
 // CronTool provides scheduling capabilities for the agent
 type CronTool struct {
-	cronService *cron.CronService
-	executor    JobExecutor
-	msgBus      *bus.MessageBus
-	execTool    *ExecTool
+	cronService        *cron.CronService
+	executor           JobExecutor
+	msgBus             *bus.MessageBus
+	execTool           *ExecTool
+	minIntervalSeconds int
 }
 
 // NewCronTool creates a new CronTool
@@ -39,10 +40,11 @@ func NewCronTool(
 
 	execTool.SetTimeout(execTimeout)
 	return &CronTool{
-		cronService: cronService,
-		executor:    executor,
-		msgBus:      msgBus,
-		execTool:    execTool,
+		cronService:        cronService,
+		executor:           executor,
+		msgBus:             msgBus,
+		execTool:           execTool,
+		minIntervalSeconds: config.Tools.Cron.MinIntervalSeconds,
 	}, nil
 }
 
@@ -174,6 +176,13 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		return ErrorResult("one of at_seconds, every_seconds, or cron_expr is required")
 	}
 
+	// Enforce minimum interval for recurring schedules
+	if t.minIntervalSeconds > 0 {
+		if err := t.validateMinInterval(schedule); err != nil {
+			return ErrorResult(err.Error())
+		}
+	}
+
 	// Read deliver parameter, default to false so scheduled tasks execute through the agent
 	deliver := false
 	if d, ok := args["deliver"].(bool); ok {
@@ -272,6 +281,42 @@ func (t *CronTool) enableJob(args map[string]any, enable bool) *ToolResult {
 		status = "disabled"
 	}
 	return SilentResult(fmt.Sprintf("Cron job '%s' %s", job.Name, status))
+}
+
+// validateMinInterval checks that the schedule interval is not below the configured minimum.
+// It validates "every" schedules directly and estimates the interval for cron expressions.
+func (t *CronTool) validateMinInterval(schedule cron.CronSchedule) error {
+	minMS := int64(t.minIntervalSeconds) * 1000
+
+	switch schedule.Kind {
+	case "every":
+		if schedule.EveryMS != nil && *schedule.EveryMS < minMS {
+			return fmt.Errorf(
+				"interval %ds is below the minimum allowed interval of %ds",
+				*schedule.EveryMS/1000, t.minIntervalSeconds,
+			)
+		}
+	case "cron":
+		if schedule.Expr != "" {
+			now := time.Now()
+			next1, err := cron.NextTickAfter(schedule.Expr, now)
+			if err != nil {
+				return nil // let gronx validate later
+			}
+			next2, err := cron.NextTickAfter(schedule.Expr, next1)
+			if err != nil {
+				return nil
+			}
+			gapMS := next2.Sub(next1).Milliseconds()
+			if gapMS < minMS {
+				return fmt.Errorf(
+					"cron expression '%s' fires every %ds, which is below the minimum allowed interval of %ds",
+					schedule.Expr, gapMS/1000, t.minIntervalSeconds,
+				)
+			}
+		}
+	}
+	return nil
 }
 
 // ExecuteJob executes a cron job through the agent
