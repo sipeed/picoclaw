@@ -615,6 +615,26 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 
 		case "assistant":
 			if len(msg.ToolCalls) > 0 {
+				// Normalize tool calls: restores Name from Function.Name after JSON
+				// deserialization (Name is json:"-" and is lost when sessions are
+				// persisted). Drop any tool calls that still have an empty name or
+				// ID after normalization — these would cause Anthropic API errors
+				// ("tooluse.name: String should have at least 1 character").
+				cleaned := make([]providers.ToolCall, 0, len(msg.ToolCalls))
+				for _, tc := range msg.ToolCalls {
+					tc = providers.NormalizeToolCall(tc)
+					if strings.TrimSpace(tc.ID) == "" || strings.TrimSpace(tc.Name) == "" {
+						logger.DebugCF("agent", "Dropping tool call with empty id or name", map[string]any{
+							"id":   tc.ID,
+							"name": tc.Name,
+						})
+						continue
+					}
+					cleaned = append(cleaned, tc)
+				}
+				msg.ToolCalls = cleaned
+			}
+			if len(msg.ToolCalls) > 0 {
 				if len(sanitized) == 0 {
 					logger.DebugCF("agent", "Dropping assistant tool-call turn at history start", map[string]any{})
 					continue
@@ -640,6 +660,9 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 	// tool result messages following it. This is required by strict providers
 	// like DeepSeek that enforce: "An assistant message with 'tool_calls' must
 	// be followed by tool messages responding to each 'tool_call_id'."
+	// Also drops tool results whose ToolCallID has no matching tool call in the
+	// preceding assistant message (can occur when some tool calls were dropped
+	// by the normalization step above).
 	final := make([]providers.Message, 0, len(sanitized))
 	for i := 0; i < len(sanitized); i++ {
 		msg := sanitized[i]
@@ -650,13 +673,13 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 				expected[tc.ID] = false
 			}
 
-			// Check following messages for matching tool results
-			toolMsgCount := 0
+			// Collect following tool messages
+			var toolMsgs []providers.Message
 			for j := i + 1; j < len(sanitized); j++ {
 				if sanitized[j].Role != "tool" {
 					break
 				}
-				toolMsgCount++
+				toolMsgs = append(toolMsgs, sanitized[j])
 				if _, exists := expected[sanitized[j].ToolCallID]; exists {
 					expected[sanitized[j].ToolCallID] = true
 				}
@@ -673,7 +696,7 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 						map[string]any{
 							"missing_tool_call_id": toolCallID,
 							"expected_count":       len(expected),
-							"found_count":          toolMsgCount,
+							"found_count":          len(toolMsgs),
 						},
 					)
 					break
@@ -682,9 +705,25 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 
 			if !allFound {
 				// Skip this assistant message and its tool messages
-				i += toolMsgCount
+				i += len(toolMsgs)
 				continue
 			}
+
+			// Add the assistant message, then only tool results that match an
+			// expected tool call ID. Drop orphaned results (referencing a tool
+			// call that was removed by the normalization step above).
+			final = append(final, msg)
+			for _, tm := range toolMsgs {
+				if expected[tm.ToolCallID] {
+					final = append(final, tm)
+				} else {
+					logger.DebugCF("agent", "Dropping tool result with no matching tool call", map[string]any{
+						"tool_call_id": tm.ToolCallID,
+					})
+				}
+			}
+			i += len(toolMsgs)
+			continue
 		}
 		final = append(final, msg)
 	}

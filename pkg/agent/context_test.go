@@ -13,7 +13,15 @@ func msg(role, content string) providers.Message {
 func assistantWithTools(toolIDs ...string) providers.Message {
 	calls := make([]providers.ToolCall, len(toolIDs))
 	for i, id := range toolIDs {
-		calls[i] = providers.ToolCall{ID: id, Type: "function"}
+		calls[i] = providers.ToolCall{
+			ID:   id,
+			Type: "function",
+			Name: "test_tool",
+			Function: &providers.FunctionCall{
+				Name:      "test_tool",
+				Arguments: "{}",
+			},
+		}
 	}
 	return providers.Message{Role: "assistant", ToolCalls: calls}
 }
@@ -280,4 +288,77 @@ func TestSanitizeHistoryForProvider_PartialToolResultsInMiddle(t *testing.T) {
 		t.Fatalf("expected 9 messages, got %d: %+v", len(result), roles(result))
 	}
 	assertRoles(t, result, "user", "assistant", "tool", "assistant", "user", "user", "assistant", "tool", "assistant")
+}
+
+// TestSanitizeHistoryForProvider_EmptyToolCallName tests that tool calls with
+// an empty name are dropped. This can occur when sessions are deserialized from
+// JSON storage: ToolCall.Name is json:"-" so it is lost, but Function.Name is
+// preserved. NormalizeToolCall restores Name from Function.Name; tool calls
+// where both are empty are dropped to prevent "tooluse.name: String should
+// have at least 1 character" errors from the Anthropic API.
+func TestSanitizeHistoryForProvider_EmptyToolCallName(t *testing.T) {
+	// Tool call with empty Name but Function.Name set — should be normalized and kept.
+	toolCallRestorable := providers.ToolCall{
+		ID:   "A",
+		Type: "function",
+		// Name intentionally empty (simulates post-JSON-deserialization state)
+		Function: &providers.FunctionCall{Name: "my_tool", Arguments: "{}"},
+	}
+	// Tool call with both Name and Function.Name empty — truly invalid, should be dropped.
+	toolCallInvalid := providers.ToolCall{
+		ID:   "B",
+		Type: "function",
+		// Name empty, Function.Name empty
+		Function: &providers.FunctionCall{Name: "", Arguments: "{}"},
+	}
+
+	history := []providers.Message{
+		msg("user", "hello"),
+		{Role: "assistant", ToolCalls: []providers.ToolCall{toolCallRestorable, toolCallInvalid}},
+		toolResult("A"),
+		toolResult("B"), // orphaned result for the dropped tool call
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	// toolCallRestorable: Name restored from Function.Name → kept.
+	// toolCallInvalid: Name still empty after normalization → dropped.
+	// toolResult("B") references the dropped call → also dropped.
+	// Result: user, assistant (with only tc_A), tool_A
+	if len(result) != 3 {
+		t.Fatalf("expected 3 messages, got %d: %+v", len(result), roles(result))
+	}
+	assertRoles(t, result, "user", "assistant", "tool")
+	if len(result[1].ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call in assistant, got %d", len(result[1].ToolCalls))
+	}
+	if result[1].ToolCalls[0].Name != "my_tool" {
+		t.Errorf("expected tool call name %q, got %q", "my_tool", result[1].ToolCalls[0].Name)
+	}
+	if result[2].ToolCallID != "A" {
+		t.Errorf("expected surviving tool result id %q, got %q", "A", result[2].ToolCallID)
+	}
+}
+
+// TestSanitizeHistoryForProvider_EmptyToolCallID tests that tool calls with an
+// empty ID are dropped (an empty ID also causes Anthropic API errors).
+func TestSanitizeHistoryForProvider_EmptyToolCallID(t *testing.T) {
+	history := []providers.Message{
+		msg("user", "hello"),
+		{Role: "assistant", ToolCalls: []providers.ToolCall{
+			{ID: "", Name: "my_tool", Type: "function", Function: &providers.FunctionCall{Name: "my_tool"}},
+		}},
+		// No tool result since the call has no ID to reference
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	// The tool call with empty ID is dropped; the assistant message has no tool
+	// calls after filtering, so it passes through as a plain assistant message.
+	// user + assistant (plain) = 2
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages, got %d: %+v", len(result), roles(result))
+	}
+	assertRoles(t, result, "user", "assistant")
+	if len(result[1].ToolCalls) != 0 {
+		t.Fatalf("expected 0 tool calls in assistant, got %d", len(result[1].ToolCalls))
+	}
 }
