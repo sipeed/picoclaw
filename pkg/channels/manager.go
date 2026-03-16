@@ -279,6 +279,12 @@ func (m *Manager) initChannels() error {
 		m.initChannel("matrix", "Matrix")
 	}
 
+	if m.config.Channels.Mattermost.Enabled &&
+		m.config.Channels.Mattermost.Token != "" &&
+		m.config.Channels.Mattermost.URL != "" {
+		m.initChannel("mattermost", "Mattermost")
+	}
+
 	if m.config.Channels.LINE.Enabled && m.config.Channels.LINE.ChannelAccessToken != "" {
 		m.initChannel("line", "LINE")
 	}
