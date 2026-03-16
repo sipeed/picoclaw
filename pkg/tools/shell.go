@@ -376,9 +376,39 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		matches := findAbsolutePathMatches(cmd)
+		// Web URL schemes whose path components (starting with //) should be exempt
+		// from workspace sandbox checks. file: is intentionally excluded so that
+		// file:// URIs are still validated against the workspace boundary.
+		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
 
-		for _, raw := range matches {
+		matchIndices := absolutePathPattern.FindAllStringIndex(cmd, -1)
+
+		for _, loc := range matchIndices {
+			if !isPathBoundary(cmd, loc[0]) {
+				continue
+			}
+
+			raw := cmd[loc[0]:loc[1]]
+
+			// Skip URL path components that look like they're from web URLs.
+			// When a URL like "https://github.com" is parsed, the regex captures
+			// "//github.com" as a match (the path portion after "https:").
+			if strings.HasPrefix(raw, "//") && loc[0] > 0 {
+				before := cmd[:loc[0]]
+				isWebURL := false
+
+				for _, scheme := range webSchemes {
+					if strings.HasSuffix(before, scheme) {
+						isWebURL = true
+						break
+					}
+				}
+
+				if isWebURL {
+					continue
+				}
+			}
+
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue
@@ -400,24 +430,6 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	return ""
-}
-
-func findAbsolutePathMatches(command string) []string {
-	indexes := absolutePathPattern.FindAllStringIndex(command, -1)
-	if len(indexes) == 0 {
-		return nil
-	}
-
-	matches := make([]string, 0, len(indexes))
-	for _, idx := range indexes {
-		start := idx[0]
-		if !isPathBoundary(command, start) {
-			continue
-		}
-		matches = append(matches, command[start:idx[1]])
-	}
-
-	return matches
 }
 
 func isPathBoundary(command string, start int) bool {
