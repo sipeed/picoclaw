@@ -1,7 +1,4 @@
 services:
-  # ─────────────────────────────────────────────
-  # LiteLLM Proxy (translates OpenAI format → AWS Bedrock)
-  # ─────────────────────────────────────────────
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: litellm
@@ -18,12 +15,6 @@ services:
       retries: 5
       start_period: 15s
 
-  # ─────────────────────────────────────────────
-  # PicoClaw Gateway (Long-running, persistent)
-  #   Start:  docker compose --env-file .env --profile gateway up -d
-  #   Logs:   docker logs picoclaw-gateway -f
-  #   Stop:   docker compose --env-file .env --profile gateway down
-  # ─────────────────────────────────────────────
   picoclaw-gateway:
     build:
       context: ..
@@ -41,16 +32,12 @@ services:
       - AWS_REGION_NAME=${AWS_REGION_NAME:-ap-southeast-1}
     volumes:
       - ./data:/home/picoclaw/.picoclaw
+    shm_size: "1gb"
 
-  # ─────────────────────────────────────────────
-  # PicoClaw Agent (one-shot, connects to gateway via pico channel)
-  #   docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m "Hello"
-  # ─────────────────────────────────────────────
   picoclaw-agent:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: picoclaw-agent
     profiles:
       - gateway
     depends_on:
@@ -64,3 +51,4 @@ services:
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
     tty: true
+    shm_size: "1gb"

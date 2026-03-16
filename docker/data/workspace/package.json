@@ -1,0 +1,24 @@
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.13.6",
+    "dotenv": "^17.3.1",
+    "imap": "^0.8.19",
+    "mailparser": "^3.9.4",
+    "playwright": "^1.58.2"
+  },
+  "devDependencies": {
+    "@types/imap": "^0.8.43",
+    "@types/mailparser": "^3.4.6",
+    "@types/node": "^25.5.0"
+  }
+}
