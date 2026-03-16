@@ -40,9 +40,13 @@ func (b *EventBroadcaster) Subscribe() chan string {
 // Unsubscribe removes a listener channel and closes it.
 func (b *EventBroadcaster) Unsubscribe(ch chan string) {
 	b.mu.Lock()
-	delete(b.clients, ch)
-	b.mu.Unlock()
-	close(ch)
+	defer b.mu.Unlock()
+
+	// Check if the channel is still registered before closing
+	if _, exists := b.clients[ch]; exists {
+		delete(b.clients, ch)
+		close(ch)
+	}
 }
 
 // Broadcast sends a GatewayEvent to all connected SSE clients.
@@ -62,4 +66,15 @@ func (b *EventBroadcaster) Broadcast(event GatewayEvent) {
 		default:
 		}
 	}
+}
+
+// Shutdown closes all subscriber channels, notifying all SSE clients to disconnect.
+// This should be called when the server is shutting down.
+func (b *EventBroadcaster) Shutdown() {
+	// Close all channels to notify listeners
+	for ch := range b.clients {
+		b.Unsubscribe(ch)
+	}
+	// Clear the map
+	b.clients = make(map[chan string]struct{})
 }

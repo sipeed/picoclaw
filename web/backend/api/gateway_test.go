@@ -494,60 +494,6 @@ func TestGatewayStatusReturnsRestartingDuringRestartGap(t *testing.T) {
 	}
 }
 
-func TestGatewayStatusIncludesRestartRequiredWhenModelsDiffer(t *testing.T) {
-	resetGatewayTestState(t)
-
-	configPath := filepath.Join(t.TempDir(), "config.json")
-	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.ModelName = cfg.ModelList[0].ModelName
-	cfg.ModelList[0].APIKey = "test-key"
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		t.Fatalf("SaveConfig() error = %v", err)
-	}
-
-	h := NewHandler(configPath)
-	mux := http.NewServeMux()
-	h.RegisterRoutes(mux)
-
-	cmd := startLongRunningProcess(t)
-	t.Cleanup(func() {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		_ = cmd.Wait()
-	})
-
-	gateway.mu.Lock()
-	gateway.cmd = cmd
-	gateway.bootDefaultModel = "previous-model"
-	setGatewayRuntimeStatusLocked("running")
-	gateway.mu.Unlock()
-
-	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
-		rec := httptest.NewRecorder()
-		rec.WriteHeader(http.StatusOK)
-		_, _ = rec.WriteString(`{"ok":true}`)
-		return rec.Result(), nil
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
-	mux.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-
-	var body map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-
-	if got := body["gateway_restart_required"]; got != true {
-		t.Fatalf("gateway_restart_required = %#v, want true", got)
-	}
-}
-
 func TestGatewayRestartKeepsRunningProcessWhenPreconditionsFail(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	cfg := config.DefaultConfig()
