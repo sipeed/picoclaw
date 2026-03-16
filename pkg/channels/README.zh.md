@@ -1372,7 +1372,7 @@ agentLoop.Stop()               // 停止 Agent
 
 3. **WeCom 有两个工厂**：`"wecom"`（Bot 模式，纯 webhook）和 `"wecom_app"`（应用模式，支持 MediaSender）分别注册。两者都实现了 `WebhookHandler` 和 `HealthChecker`。
 
-4. **Pico Protocol**：`pkg/channels/pico/` 实现了一个自定义的 PicoClaw 原生协议 channel，通过 WebSocket webhook (`/pico/ws`) 接收消息。
+4. **Pico Protocol**：`pkg/channels/pico/` 实现了一个自定义的 PicoClaw 原生协议 channel，通过 WebSocket (`/pico/ws`) 和 HTTP 消息入口 (`POST /pico/message`) 接收消息。HTTP 端点接受包含 `content` 和可选 `session_id` 的 JSON 请求体，使用与 WebSocket 相同的 Pico token 进行认证（Bearer header，或在启用 `allow_token_query` 时支持查询参数），并将消息异步发布到总线（返回 `202 Accepted`）。
 
 5. **WhatsApp 有两种模式**：`"whatsapp"`（Bridge 模式，通过外部 bridge URL 通信）和 `"whatsapp_native"`（原生 whatsmeow 模式，直接连接 WhatsApp）。Manager 根据 `WhatsAppConfig.UseNative` 决定初始化哪个。
 

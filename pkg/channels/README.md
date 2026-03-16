@@ -1373,7 +1373,7 @@ agentLoop.Stop()               // Stop Agent
 
 3. **WeCom has two factories**: `"wecom"` (Bot mode, webhook only) and `"wecom_app"` (App mode, supports MediaSender) are registered separately. Both implement `WebhookHandler` and `HealthChecker`.
 
-4. **Pico Protocol**: `pkg/channels/pico/` implements a custom PicoClaw native protocol channel that receives messages via WebSocket webhook (`/pico/ws`).
+4. **Pico Protocol**: `pkg/channels/pico/` implements a custom PicoClaw native protocol channel that receives messages via WebSocket (`/pico/ws`) and HTTP message ingress (`POST /pico/message`). The HTTP endpoint accepts a JSON body with `content` and optional `session_id`, authenticates with the same Pico token as the WebSocket (Bearer header, or query parameter when `allow_token_query` is enabled), and publishes the message to the bus asynchronously (returns `202 Accepted`).
 
 5. **WhatsApp has two modes**: `"whatsapp"` (Bridge mode, communicates via external bridge URL) and `"whatsapp_native"` (native whatsmeow mode, connects directly to WhatsApp). Manager selects which to initialize based on `WhatsAppConfig.UseNative`.
 
