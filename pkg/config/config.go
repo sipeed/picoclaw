@@ -77,19 +77,46 @@ func (f *FlexibleStringSlice) UnmarshalText(text []byte) error {
 }
 
 type Config struct {
-	Agents    AgentsConfig    `json:"agents"`
-	Bindings  []AgentBinding  `json:"bindings,omitempty"`
-	Session   SessionConfig   `json:"session,omitempty"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
-	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
-	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Devices   DevicesConfig   `json:"devices"`
-	Voice     VoiceConfig     `json:"voice"`
+	Agents     AgentsConfig     `json:"agents"`
+	Bindings   []AgentBinding   `json:"bindings,omitempty"`
+	Session    SessionConfig    `json:"session,omitempty"`
+	Channels   ChannelsConfig   `json:"channels"`
+	Providers  ProvidersConfig  `json:"providers,omitempty"`
+	ModelList  []ModelConfig    `json:"model_list"` // New model-centric provider configuration
+	Gateway    GatewayConfig    `json:"gateway"`
+	Tools      ToolsConfig      `json:"tools"`
+	Heartbeat  HeartbeatConfig  `json:"heartbeat"`
+	Devices    DevicesConfig    `json:"devices"`
+	Voice      VoiceConfig      `json:"voice"`
+	RequestLog RequestLogConfig `json:"request_log,omitempty"`
 	// BuildInfo contains build-time version information
 	BuildInfo BuildInfo `json:"build_info,omitempty"`
+}
+
+type RequestLogConfig struct {
+	Enabled             bool   `json:"enabled"`
+	LogDir              string `json:"log_dir,omitempty"`
+	MaxFileSizeMB       int    `json:"max_file_size_mb,omitempty"`
+	MaxFiles            int    `json:"max_files,omitempty"`
+	RetentionDays       int    `json:"retention_days,omitempty"`
+	ArchiveInterval     string `json:"archive_interval,omitempty"`
+	CompressArchive     bool   `json:"compress_archive,omitempty"`
+	LogContentMaxLength int    `json:"log_content_max_length,omitempty"`
+	RecordMedia         bool   `json:"record_media,omitempty"`
+}
+
+func DefaultRequestLogConfig() RequestLogConfig {
+	return RequestLogConfig{
+		Enabled:             true,
+		LogDir:              "logs/requests",
+		MaxFileSizeMB:       100,
+		MaxFiles:            100,
+		RetentionDays:       30,
+		ArchiveInterval:     "24h",
+		CompressArchive:     true,
+		LogContentMaxLength: 1000,
+		RecordMedia:         false,
+	}
 }
 
 // BuildInfo contains build-time version information

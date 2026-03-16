@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -19,6 +20,13 @@ type MessageBus struct {
 	outboundMedia chan OutboundMediaMessage
 	done          chan struct{}
 	closed        atomic.Bool
+
+	inboundMu         sync.RWMutex
+	inboundSubs       []chan InboundMessage
+	outboundMu        sync.RWMutex
+	outboundSubs      []chan OutboundMessage
+	outboundMediaMu   sync.RWMutex
+	outboundMediaSubs []chan OutboundMediaMessage
 }
 
 func NewMessageBus() *MessageBus {
@@ -37,6 +45,18 @@ func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) er
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
+	mb.inboundMu.RLock()
+	subs := mb.inboundSubs
+	mb.inboundMu.RUnlock()
+
+	for _, sub := range subs {
+		select {
+		case sub <- msg:
+		default:
+		}
+	}
+
 	select {
 	case mb.inbound <- msg:
 		return nil
@@ -45,6 +65,28 @@ func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) er
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (mb *MessageBus) SubscribeInbound(ctx context.Context) (<-chan InboundMessage, func()) {
+	ch := make(chan InboundMessage, defaultBusBufferSize)
+
+	mb.inboundMu.Lock()
+	mb.inboundSubs = append(mb.inboundSubs, ch)
+	mb.inboundMu.Unlock()
+
+	unsub := func() {
+		mb.inboundMu.Lock()
+		for i, sub := range mb.inboundSubs {
+			if sub == ch {
+				mb.inboundSubs = append(mb.inboundSubs[:i], mb.inboundSubs[i+1:]...)
+				break
+			}
+		}
+		mb.inboundMu.Unlock()
+		close(ch)
+	}
+
+	return ch, unsub
 }
 
 func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool) {
@@ -65,6 +107,18 @@ func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
+	mb.outboundMu.RLock()
+	subs := mb.outboundSubs
+	mb.outboundMu.RUnlock()
+
+	for _, sub := range subs {
+		select {
+		case sub <- msg:
+		default:
+		}
+	}
+
 	select {
 	case mb.outbound <- msg:
 		return nil
@@ -86,6 +140,28 @@ func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, b
 	}
 }
 
+func (mb *MessageBus) SubscribeOutboundChan(ctx context.Context) (<-chan OutboundMessage, func()) {
+	ch := make(chan OutboundMessage, defaultBusBufferSize)
+
+	mb.outboundMu.Lock()
+	mb.outboundSubs = append(mb.outboundSubs, ch)
+	mb.outboundMu.Unlock()
+
+	unsub := func() {
+		mb.outboundMu.Lock()
+		for i, sub := range mb.outboundSubs {
+			if sub == ch {
+				mb.outboundSubs = append(mb.outboundSubs[:i], mb.outboundSubs[i+1:]...)
+				break
+			}
+		}
+		mb.outboundMu.Unlock()
+		close(ch)
+	}
+
+	return ch, unsub
+}
+
 func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMediaMessage) error {
 	if mb.closed.Load() {
 		return ErrBusClosed
@@ -93,6 +169,18 @@ func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMedi
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
+	mb.outboundMediaMu.RLock()
+	subs := mb.outboundMediaSubs
+	mb.outboundMediaMu.RUnlock()
+
+	for _, sub := range subs {
+		select {
+		case sub <- msg:
+		default:
+		}
+	}
+
 	select {
 	case mb.outboundMedia <- msg:
 		return nil

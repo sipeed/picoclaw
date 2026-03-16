@@ -4,16 +4,20 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/sipeed/picoclaw/pkg/requestlog"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 )
 
 // Handler serves HTTP API requests.
 type Handler struct {
 	configPath           string
+	workspacePath        string
 	serverPort           int
 	serverPublic         bool
 	serverPublicExplicit bool
 	serverCIDRs          []string
+	requestLogReader     *requestlog.Reader
+	requestLogger        *requestlog.Logger
 	oauthMu              sync.Mutex
 	oauthFlows           map[string]*oauthFlow
 	oauthState           map[string]string
@@ -22,11 +26,25 @@ type Handler struct {
 // NewHandler creates an instance of the API handler.
 func NewHandler(configPath string) *Handler {
 	return &Handler{
-		configPath: configPath,
-		serverPort: launcherconfig.DefaultPort,
-		oauthFlows: make(map[string]*oauthFlow),
-		oauthState: make(map[string]string),
+		configPath:       configPath,
+		serverPort:       launcherconfig.DefaultPort,
+		requestLogReader: nil,
+		requestLogger:    nil,
+		oauthFlows:       make(map[string]*oauthFlow),
+		oauthState:       make(map[string]string),
 	}
+}
+
+func (h *Handler) SetRequestLogReader(reader *requestlog.Reader) {
+	h.requestLogReader = reader
+}
+
+func (h *Handler) SetRequestLogger(logger *requestlog.Logger) {
+	h.requestLogger = logger
+}
+
+func (h *Handler) SetWorkspacePath(path string) {
+	h.workspacePath = path
 }
 
 // SetServerOptions stores current backend listen options for fallback behavior.
@@ -69,4 +87,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Launcher service parameters (port/public)
 	h.registerLauncherConfigRoutes(mux)
+
+	if h.requestLogReader != nil {
+		h.registerRequestLogRoutes(mux)
+	}
 }
