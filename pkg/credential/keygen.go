@@ -42,7 +42,7 @@ func GenerateSSHKey(path string) error {
 	}
 	privPEM := pem.EncodeToMemory(block)
 
-	if err := os.WriteFile(path, privPEM, 0o600); err != nil {
+	if err = os.WriteFile(path, privPEM, 0o600); err != nil {
 		return fmt.Errorf("credential: keygen: write private key %q: %w", path, err)
 	}
 

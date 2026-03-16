@@ -1,6 +1,6 @@
 // Package credential resolves API credential values for model_list entries.
 //
-// An API key is a form of authorization credential. This package centralises
+// An API key is a form of authorization credential. This package centralizes
 // how raw credential strings—plaintext or file references—are resolved into
 // their actual values, keeping that logic out of the config loader.
 //
@@ -88,8 +88,8 @@ type Resolver struct {
 func NewResolver(configDir string) *Resolver {
 	resolved := configDir
 	if configDir != "" {
-		if real, err := filepath.EvalSymlinks(configDir); err == nil {
-			resolved = real
+		if linkedPath, err := filepath.EvalSymlinks(configDir); err == nil {
+			resolved = linkedPath
 		}
 	}
 	return &Resolver{configDir: configDir, resolvedConfigDir: resolved}
@@ -278,10 +278,15 @@ func allowedSSHKeyPath(path string) bool {
 // sshKeyPath must be non-empty; returns an error otherwise.
 func deriveKey(passphrase, sshKeyPath string, salt []byte) ([]byte, error) {
 	if sshKeyPath == "" {
-		return nil, fmt.Errorf("credential: SSH private key is required but not found (set PICOCLAW_SSH_KEY_PATH or place key at ~/.ssh/picoclaw_ed25519.key)")
+		return nil, fmt.Errorf(
+			"credential: SSH private key is required but not found" +
+				" (set PICOCLAW_SSH_KEY_PATH or place key at ~/.ssh/picoclaw_ed25519.key)")
 	}
 	if !allowedSSHKeyPath(sshKeyPath) {
-		return nil, fmt.Errorf("credential: SSH key path %q is not in an allowed location (PICOCLAW_SSH_KEY_PATH, PICOCLAW_HOME, or ~/.ssh/)", sshKeyPath)
+		return nil, fmt.Errorf(
+			"credential: SSH key path %q is not in an allowed location (PICOCLAW_SSH_KEY_PATH, PICOCLAW_HOME, or ~/.ssh/)",
+			sshKeyPath,
+		)
 	}
 	sshBytes, err := os.ReadFile(sshKeyPath)
 	if err != nil {

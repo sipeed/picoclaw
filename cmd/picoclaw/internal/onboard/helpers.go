@@ -6,10 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"golang.org/x/term"
+
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/credential"
-	"golang.org/x/term"
 )
 
 func onboard() {
@@ -49,7 +50,7 @@ func onboard() {
 	// the current process and disappears when it exits.
 	os.Setenv(credential.PassphraseEnvVar, passphrase)
 
-	if err := setupSSHKey(); err != nil {
+	if err = setupSSHKey(); err != nil {
 		fmt.Printf("Error generating SSH key: %v\n", err)
 		os.Exit(1)
 	}

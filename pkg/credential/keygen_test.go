@@ -61,9 +61,15 @@ func TestGenerateSSHKey_CreatesFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read public key: %v", err)
 	}
-	_, _, _, _, err = ssh.ParseAuthorizedKey(pubBytes)
+	pubKey, _, _, rest, err := ssh.ParseAuthorizedKey(pubBytes)
 	if err != nil {
 		t.Fatalf("parse public key: %v", err)
+	}
+	if pubKey == nil {
+		t.Fatal("expected non-nil public key")
+	}
+	if len(rest) > 0 {
+		t.Errorf("unexpected trailing bytes after public key: %d bytes", len(rest))
 	}
 }
 
@@ -80,7 +86,7 @@ func TestGenerateSSHKey_OverwritesExisting(t *testing.T) {
 		t.Fatalf("read first key: %v", err)
 	}
 
-	if err := GenerateSSHKey(keyPath); err != nil {
+	if err = GenerateSSHKey(keyPath); err != nil {
 		t.Fatalf("second GenerateSSHKey() error = %v", err)
 	}
 	second, err := os.ReadFile(keyPath)

@@ -834,7 +834,9 @@ func LoadConfig(path string) (*Config, error) {
 	if passphrase := credential.PassphraseProvider(); passphrase != "" {
 		for _, m := range cfg.ModelList {
 			if m.APIKey != "" && !strings.HasPrefix(m.APIKey, "enc://") && !strings.HasPrefix(m.APIKey, "file://") {
-				fmt.Fprintf(os.Stderr, "picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n", m.ModelName)
+				fmt.Fprintf(os.Stderr,
+					"picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n",
+					m.ModelName)
 			}
 		}
 	}

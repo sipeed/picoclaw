@@ -11,6 +11,18 @@ import (
 	"github.com/sipeed/picoclaw/pkg/credential"
 )
 
+// mustSetupSSHKey generates a temporary Ed25519 SSH key in t.TempDir() and sets
+// PICOCLAW_SSH_KEY_PATH to its path for the duration of the test. This is required
+// whenever a test exercises encryption/decryption via credential.Encrypt or SaveConfig.
+func mustSetupSSHKey(t *testing.T) {
+	t.Helper()
+	keyPath := filepath.Join(t.TempDir(), "picoclaw_ed25519.key")
+	if err := credential.GenerateSSHKey(keyPath); err != nil {
+		t.Fatalf("mustSetupSSHKey: %v", err)
+	}
+	t.Setenv("PICOCLAW_SSH_KEY_PATH", keyPath)
+}
+
 func TestAgentModelConfig_UnmarshalString(t *testing.T) {
 	var m AgentModelConfig
 	if err := json.Unmarshal([]byte(`"gpt-4"`), &m); err != nil {
@@ -666,7 +678,7 @@ func TestSaveConfig_EncryptsPlaintextAPIKey(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.json")
 
 	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "test-passphrase")
-	t.Setenv("PICOCLAW_SSH_KEY_PATH", "")
+	mustSetupSSHKey(t)
 
 	cfg := DefaultConfig()
 	cfg.ModelList = []ModelConfig{
@@ -755,7 +767,7 @@ func TestSaveConfig_MixedKeys(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.json")
 
 	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "test-passphrase")
-	t.Setenv("PICOCLAW_SSH_KEY_PATH", "")
+	mustSetupSSHKey(t)
 
 	// Pre-encrypt one key so we have a genuine enc:// value to put in the config.
 	if err := SaveConfig(cfgPath, &Config{
@@ -844,7 +856,7 @@ func TestLoadConfig_MixedKeys_NoPassphrase(t *testing.T) {
 
 	// First encrypt a key so we have a real enc:// value.
 	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "test-passphrase")
-	t.Setenv("PICOCLAW_SSH_KEY_PATH", "")
+	mustSetupSSHKey(t)
 	if err := SaveConfig(cfgPath, &Config{
 		ModelList: []ModelConfig{
 			{ModelName: "m", Model: "openai/gpt-4", APIKey: "sk-secret"},
@@ -901,7 +913,7 @@ func TestSaveConfig_UsesPassphraseProvider(t *testing.T) {
 
 	// Ensure the env var is empty — passphrase must come from PassphraseProvider only.
 	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "")
-	t.Setenv("PICOCLAW_SSH_KEY_PATH", "")
+	mustSetupSSHKey(t)
 
 	// Replace PassphraseProvider with an in-memory function (simulating SecureStore).
 	const testPassphrase = "provider-passphrase"
@@ -931,7 +943,7 @@ func TestLoadConfig_UsesPassphraseProvider(t *testing.T) {
 
 	// Ensure the env var is empty throughout.
 	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "")
-	t.Setenv("PICOCLAW_SSH_KEY_PATH", "")
+	mustSetupSSHKey(t)
 
 	const testPassphrase = "provider-passphrase"
 	const plainKey = "sk-secret"
@@ -947,7 +959,7 @@ func TestLoadConfig_UsesPassphraseProvider(t *testing.T) {
 			{"model_name": "test", "model": "openai/gpt-4", "api_key": encrypted},
 		},
 	})
-	if err := os.WriteFile(cfgPath, raw, 0o600); err != nil {
+	if err = os.WriteFile(cfgPath, raw, 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
