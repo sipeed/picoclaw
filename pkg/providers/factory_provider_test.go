@@ -65,16 +65,16 @@ func TestExtractProtocol(t *testing.T) {
 			wantModelID:  "meta/llama-3.1-8b",
 		},
 		{
-			name:         "cloudflare model id keeps full path",
-			model:        "@cf/qwen/qwen1.5-0.5b-chat",
-			wantProtocol: "openai",
-			wantModelID:  "@cf/qwen/qwen1.5-0.5b-chat",
-		},
-		{
 			name:         "azure with prefix",
 			model:        "azure/my-gpt5-deployment",
 			wantProtocol: "azure",
 			wantModelID:  "my-gpt5-deployment",
+		},
+		{
+			name:         "cloudflare model id keeps full path",
+			model:        "@cf/qwen/qwen1.5-0.5b-chat",
+			wantProtocol: "openai",
+			wantModelID:  "@cf/qwen/qwen1.5-0.5b-chat",
 		},
 	}
 
