@@ -105,6 +105,10 @@ func NewAgentInstance(
 		}
 	}
 
+	if cfg.Tools.IsToolEnabled("calculator") {
+		toolsRegistry.Register(tools.NewCalculatorTool())
+	}
+
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessions := initSessionStore(sessionsDir)
 

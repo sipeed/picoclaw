@@ -3,6 +3,7 @@ module jane
 go 1.25.7
 
 require (
+	github.com/Knetic/govaluate v3.0.0+incompatible
 	github.com/adhocore/gronx v1.19.6
 	github.com/alpacahq/alpaca-trade-api-go/v3 v3.9.1
 	github.com/anthropics/anthropic-sdk-go v1.22.1
