@@ -70,6 +70,12 @@ func TestExtractProtocol(t *testing.T) {
 			wantProtocol: "openai",
 			wantModelID:  "@cf/qwen/qwen1.5-0.5b-chat",
 		},
+		{
+			name:         "azure with prefix",
+			model:        "azure/my-gpt5-deployment",
+			wantProtocol: "azure",
+			wantModelID:  "my-gpt5-deployment",
+		},
 	}
 
 	for _, tt := range tests {
