@@ -384,15 +384,13 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		matchIndices := absolutePathPattern.FindAllStringIndex(cmd, -1)
 
 		for _, loc := range matchIndices {
-			if !isPathBoundary(cmd, loc[0]) {
-				continue
-			}
-
 			raw := cmd[loc[0]:loc[1]]
 
 			// Skip URL path components that look like they're from web URLs.
 			// When a URL like "https://github.com" is parsed, the regex captures
 			// "//github.com" as a match (the path portion after "https:").
+			// Use the exact match position (loc[0]) so that duplicate //path substrings
+			// in the same command are each evaluated at their own position.
 			if strings.HasPrefix(raw, "//") && loc[0] > 0 {
 				before := cmd[:loc[0]]
 				isWebURL := false
@@ -407,6 +405,10 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				if isWebURL {
 					continue
 				}
+			}
+
+			if !isPathBoundary(cmd, loc[0]) {
+				continue
 			}
 
 			p, err := filepath.Abs(raw)
