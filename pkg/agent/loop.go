@@ -1152,15 +1152,17 @@ func (al *AgentLoop) runLLMIteration(
 			isTransientProviderError := classifiedErr != nil && classifiedErr.Reason == providers.FailoverTimeout
 
 			// Detect real context window / token limit errors, excluding network timeouts.
-			isContextError := !isTimeoutError && !isTransientProviderError && (strings.Contains(errMsg, "context_length_exceeded") ||
-				strings.Contains(errMsg, "context window") ||
-				strings.Contains(errMsg, "maximum context length") ||
-				strings.Contains(errMsg, "token limit") ||
-				strings.Contains(errMsg, "too many tokens") ||
-				strings.Contains(errMsg, "max_tokens") ||
-				strings.Contains(errMsg, "invalidparameter") ||
-				strings.Contains(errMsg, "prompt is too long") ||
-				strings.Contains(errMsg, "request too large"))
+			isContextError := !isTimeoutError &&
+				!isTransientProviderError &&
+				(strings.Contains(errMsg, "context_length_exceeded") ||
+					strings.Contains(errMsg, "context window") ||
+					strings.Contains(errMsg, "maximum context length") ||
+					strings.Contains(errMsg, "token limit") ||
+					strings.Contains(errMsg, "too many tokens") ||
+					strings.Contains(errMsg, "max_tokens") ||
+					strings.Contains(errMsg, "invalidparameter") ||
+					strings.Contains(errMsg, "prompt is too long") ||
+					strings.Contains(errMsg, "request too large"))
 
 			if (isTimeoutError || isTransientProviderError) && retry < maxRetries {
 				backoff := time.Duration(retry+1) * 5 * time.Second
