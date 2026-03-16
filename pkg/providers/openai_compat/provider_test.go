@@ -511,13 +511,15 @@ func TestProviderChat_AcceptsNumericOptionTypes(t *testing.T) {
 }
 
 func TestNormalizeModel_UsesAPIBase(t *testing.T) {
+	const anthropicAPIBase = "https://api.anthropic.com/v1"
+
 	if got := normalizeModel("deepseek/deepseek-chat", "https://api.deepseek.com/v1"); got != "deepseek-chat" {
 		t.Fatalf("normalizeModel(deepseek) = %q, want %q", got, "deepseek-chat")
 	}
-	if got := normalizeModel("claude-sonnet-4.6", "https://api.anthropic.com/v1"); got != "claude-sonnet-4-6" {
+	if got := normalizeModel("claude-sonnet-4.6", anthropicAPIBase); got != "claude-sonnet-4-6" {
 		t.Fatalf("normalizeModel(anthropic plain) = %q, want %q", got, "claude-sonnet-4-6")
 	}
-	if got := normalizeModel("anthropic/claude-sonnet-4.6", "https://api.anthropic.com/v1"); got != "claude-sonnet-4-6" {
+	if got := normalizeModel("anthropic/claude-sonnet-4.6", anthropicAPIBase); got != "claude-sonnet-4-6" {
 		t.Fatalf("normalizeModel(anthropic prefixed) = %q, want %q", got, "claude-sonnet-4-6")
 	}
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
