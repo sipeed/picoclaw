@@ -506,6 +506,11 @@ func (cs *CronService) Status() map[string]any {
 	}
 }
 
+// NextTickAfter returns the next time a cron expression fires after the given reference time.
+func NextTickAfter(expr string, after time.Time) (time.Time, error) {
+	return gronx.NextTickAfter(expr, after, false)
+}
+
 func generateID() string {
 	// Use crypto/rand for better uniqueness under concurrent access
 	b := make([]byte, 8)
