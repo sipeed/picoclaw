@@ -70,12 +70,6 @@ func TestExtractProtocol(t *testing.T) {
 			wantProtocol: "azure",
 			wantModelID:  "my-gpt5-deployment",
 		},
-		{
-			name:         "cloudflare model id keeps full path",
-			model:        "@cf/qwen/qwen1.5-0.5b-chat",
-			wantProtocol: "openai",
-			wantModelID:  "@cf/qwen/qwen1.5-0.5b-chat",
-		},
 	}
 
 	for _, tt := range tests {
@@ -88,6 +82,16 @@ func TestExtractProtocol(t *testing.T) {
 				t.Errorf("ExtractProtocol(%q) modelID = %q, want %q", tt.model, modelID, tt.wantModelID)
 			}
 		})
+	}
+}
+
+func TestExtractProtocol_CloudflareModelID(t *testing.T) {
+	protocol, modelID := ExtractProtocol("@cf/qwen/qwen1.5-0.5b-chat")
+	if protocol != "openai" {
+		t.Fatalf("protocol = %q, want %q", protocol, "openai")
+	}
+	if modelID != "@cf/qwen/qwen1.5-0.5b-chat" {
+		t.Fatalf("modelID = %q, want %q", modelID, "@cf/qwen/qwen1.5-0.5b-chat")
 	}
 }
 
