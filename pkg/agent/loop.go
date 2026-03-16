@@ -1049,10 +1049,15 @@ func (al *AgentLoop) runLLMIteration(
 			"temperature":      agent.Temperature,
 			"prompt_cache_key": agent.ID,
 		}
+		activeProvider := agent.Provider
+		if len(activeCandidates) > 0 {
+			activeProvider = agent.providerForCandidate(activeCandidates[0].Provider, activeCandidates[0].Model)
+		}
+
 		// parseThinkingLevel guarantees ThinkingOff for empty/unknown values,
 		// so checking != ThinkingOff is sufficient.
 		if agent.ThinkingLevel != ThinkingOff {
-			if tc, ok := agent.Provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
+			if tc, ok := activeProvider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
 				llmOpts["thinking_level"] = string(agent.ThinkingLevel)
 			} else {
 				logger.WarnCF("agent", "thinking_level is set but current provider does not support it, ignoring",
@@ -1069,7 +1074,8 @@ func (al *AgentLoop) runLLMIteration(
 					ctx,
 					activeCandidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
+						candidateProvider := agent.providerForCandidate(provider, model)
+						return candidateProvider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
 					},
 				)
 				if fbErr != nil {
@@ -1085,7 +1091,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, activeModel, llmOpts)
+			return activeProvider.Chat(ctx, messages, providerToolDefs, activeModel, llmOpts)
 		}
 
 		// Retry loop for context/token errors

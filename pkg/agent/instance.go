@@ -39,6 +39,7 @@ type AgentInstance struct {
 	Subagents                 *config.SubagentsConfig
 	SkillsFilter              []string
 	Candidates                []providers.FallbackCandidate
+	candidateProviders        map[string]providers.LLMProvider
 
 	// Router is non-nil when model routing is configured and the light model
 	// was successfully resolved. It scores each incoming message and decides
@@ -153,6 +154,39 @@ func NewAgentInstance(
 		Primary:   model,
 		Fallbacks: fallbacks,
 	}
+	resolvedModelConfigs := make(map[string]*config.ModelConfig)
+	resolveModelConfig := func(raw string) (*config.ModelConfig, bool) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" || cfg == nil {
+			return nil, false
+		}
+		if mc, ok := resolvedModelConfigs[raw]; ok && mc != nil {
+			return mc, true
+		}
+
+		if mc, err := cfg.GetModelConfig(raw); err == nil && mc != nil && strings.TrimSpace(mc.Model) != "" {
+			resolvedModelConfigs[raw] = mc
+			return mc, true
+		}
+
+		for i := range cfg.ModelList {
+			fullModel := strings.TrimSpace(cfg.ModelList[i].Model)
+			if fullModel == "" {
+				continue
+			}
+			if fullModel == raw {
+				resolvedModelConfigs[raw] = &cfg.ModelList[i]
+				return &cfg.ModelList[i], true
+			}
+			_, modelID := providers.ExtractProtocol(fullModel)
+			if modelID == raw {
+				resolvedModelConfigs[raw] = &cfg.ModelList[i]
+				return &cfg.ModelList[i], true
+			}
+		}
+
+		return nil, false
+	}
 	resolveFromModelList := func(raw string) (string, bool) {
 		ensureProtocol := func(model string) string {
 			model = strings.TrimSpace(model)
@@ -165,35 +199,38 @@ func NewAgentInstance(
 			return "openai/" + model
 		}
 
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			return "", false
-		}
-
-		if cfg != nil {
-			if mc, err := cfg.GetModelConfig(raw); err == nil && mc != nil && strings.TrimSpace(mc.Model) != "" {
-				return ensureProtocol(mc.Model), true
-			}
-
-			for i := range cfg.ModelList {
-				fullModel := strings.TrimSpace(cfg.ModelList[i].Model)
-				if fullModel == "" {
-					continue
-				}
-				if fullModel == raw {
-					return ensureProtocol(fullModel), true
-				}
-				_, modelID := providers.ExtractProtocol(fullModel)
-				if modelID == raw {
-					return ensureProtocol(fullModel), true
-				}
-			}
+		if mc, ok := resolveModelConfig(raw); ok {
+			return ensureProtocol(mc.Model), true
 		}
 
 		return "", false
 	}
 
 	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
+	candidateProviders := make(map[string]providers.LLMProvider)
+	registerCandidateProvider := func(raw string) {
+		mc, ok := resolveModelConfig(raw)
+		if !ok {
+			return
+		}
+
+		protocol, modelID := providers.ExtractProtocol(strings.TrimSpace(mc.Model))
+		key := providers.ModelKey(protocol, modelID)
+		if _, exists := candidateProviders[key]; exists {
+			return
+		}
+
+		candidateProvider, candidateModel, err := providers.CreateProviderFromConfig(mc)
+		if err != nil || candidateProvider == nil {
+			return
+		}
+
+		key = providers.ModelKey(protocol, candidateModel)
+		candidateProviders[key] = candidateProvider
+	}
+	for _, raw := range fallbacks {
+		registerCandidateProvider(raw)
+	}
 
 	// Model routing setup: pre-resolve light model candidates at creation time
 	// to avoid repeated model_list lookups on every incoming message.
@@ -203,6 +240,7 @@ func NewAgentInstance(
 		lightModelCfg := providers.ModelConfig{Primary: rc.LightModel}
 		resolved := providers.ResolveCandidatesWithLookup(lightModelCfg, defaults.Provider, resolveFromModelList)
 		if len(resolved) > 0 {
+			registerCandidateProvider(rc.LightModel)
 			router = routing.New(routing.RouterConfig{
 				LightModel: rc.LightModel,
 				Threshold:  rc.Threshold,
@@ -234,9 +272,18 @@ func NewAgentInstance(
 		Subagents:                 subagents,
 		SkillsFilter:              skillsFilter,
 		Candidates:                candidates,
+		candidateProviders:        candidateProviders,
 		Router:                    router,
 		LightCandidates:           lightCandidates,
 	}
+}
+
+func (a *AgentInstance) providerForCandidate(provider, model string) providers.LLMProvider {
+	key := providers.ModelKey(provider, model)
+	if candidateProvider, ok := a.candidateProviders[key]; ok && candidateProvider != nil {
+		return candidateProvider
+	}
+	return a.Provider
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.
@@ -284,6 +331,14 @@ func compilePatterns(patterns []string) []*regexp.Regexp {
 
 // Close releases resources held by the agent's session store.
 func (a *AgentInstance) Close() error {
+	for _, candidateProvider := range a.candidateProviders {
+		if candidateProvider == nil || candidateProvider == a.Provider {
+			continue
+		}
+		if stateful, ok := candidateProvider.(providers.StatefulProvider); ok {
+			stateful.Close()
+		}
+	}
 	if a.Sessions != nil {
 		return a.Sessions.Close()
 	}
