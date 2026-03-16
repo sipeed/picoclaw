@@ -1004,7 +1004,7 @@ func (al *AgentLoop) runLLMIteration(
 	// selectCandidates evaluates routing once and the decision is sticky for
 	// all tool-follow-up iterations within the same turn so that a multi-step
 	// tool chain doesn't switch models mid-way through.
-	activeCandidates, activeModel := al.selectCandidates(agent, opts.UserMessage, messages)
+	activeCandidates, activeModel, imageTurn := al.selectCandidates(agent, opts.UserMessage, messages)
 
 	for iteration < agent.MaxIterations {
 		iteration++
@@ -1065,6 +1065,28 @@ func (al *AgentLoop) runLLMIteration(
 			defer al.activeRequests.Done()
 
 			if len(activeCandidates) > 1 && al.fallback != nil {
+				if imageTurn {
+					fbResult, fbErr := al.fallback.ExecuteImage(
+						ctx,
+						activeCandidates,
+						func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
+							return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
+						},
+					)
+					if fbErr != nil {
+						return nil, fbErr
+					}
+					if fbResult.Provider != "" && len(fbResult.Attempts) > 0 {
+						logger.InfoCF(
+							"agent",
+							fmt.Sprintf("Image fallback: succeeded with %s/%s after %d attempts",
+								fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
+							map[string]any{"agent_id": agent.ID, "iteration": iteration},
+						)
+					}
+					return fbResult.Response, nil
+				}
+
 				fbResult, fbErr := al.fallback.Execute(
 					ctx,
 					activeCandidates,
@@ -1413,9 +1435,18 @@ func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
 	userMsg string,
 	history []providers.Message,
-) (candidates []providers.FallbackCandidate, model string) {
+) (candidates []providers.FallbackCandidate, model string, imageTurn bool) {
+	if hasCurrentTurnMedia(history) && len(agent.ImageCandidates) > 0 {
+		logger.InfoCF("agent", "Model routing: image model selected",
+			map[string]any{
+				"agent_id":    agent.ID,
+				"image_model": agent.ImageModel,
+			})
+		return agent.ImageCandidates, agent.ImageModel, true
+	}
+
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
-		return agent.Candidates, agent.Model
+		return agent.Candidates, agent.Model, false
 	}
 
 	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
@@ -1426,7 +1457,7 @@ func (al *AgentLoop) selectCandidates(
 				"score":     score,
 				"threshold": agent.Router.Threshold(),
 			})
-		return agent.Candidates, agent.Model
+		return agent.Candidates, agent.Model, false
 	}
 
 	logger.InfoCF("agent", "Model routing: light model selected",
@@ -1436,7 +1467,17 @@ func (al *AgentLoop) selectCandidates(
 			"score":       score,
 			"threshold":   agent.Router.Threshold(),
 		})
-	return agent.LightCandidates, agent.Router.LightModel()
+	return agent.LightCandidates, agent.Router.LightModel(), false
+}
+
+func hasCurrentTurnMedia(messages []providers.Message) bool {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != "user" {
+			continue
+		}
+		return len(messages[i].Media) > 0
+	}
+	return false
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
