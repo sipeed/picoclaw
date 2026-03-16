@@ -407,16 +407,16 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				}
 			}
 
-			if !isPathBoundary(cmd, loc[0]) {
-				continue
-			}
-
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue
 			}
 
 			if safePaths[p] {
+				continue
+			}
+
+			if !isPathBoundary(cmd, loc[0]) {
 				continue
 			}
 
