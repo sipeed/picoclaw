@@ -1,0 +1,52 @@
+# picoclaw-voice 部署 docker-compose
+#
+# 用法：
+#   首次启动：docker compose -f docker/docker-compose.voice.yml up -d --build
+#   重启：    docker compose -f docker/docker-compose.voice.yml restart
+#   查看日志：docker compose -f docker/docker-compose.voice.yml logs -f
+#   停止：    docker compose -f docker/docker-compose.voice.yml down
+#
+# 注意：picoclaw-voice 端口由 .env 中的 PICOCLAW_VOICE_LISTEN 决定（默认 :8765）。
+# 若修改 PICOCLAW_VOICE_LISTEN 端口，需同步修改下方 ports 映射。
+
+services:
+  # picoclaw gateway + Web UI
+  # Web UI：http://localhost:18800
+  picoclaw:
+    image: sipeed/picoclaw:launcher
+    container_name: picoclaw
+    restart: unless-stopped
+    environment:
+      # 允许容器外部（Web UI）访问 gateway
+      - PICOCLAW_GATEWAY_HOST=0.0.0.0
+    ports:
+      # Web UI，仅本机可访问
+      - "127.0.0.1:18800:18800"
+    volumes:
+      # 与 picoclaw-voice 共享同一份配置、workspace、记忆
+      - /home/kkroid/.picoclaw:/root/.picoclaw
+
+  # picoclaw-voice：xiaozhi 协议语音网关（doubao ASR/TTS）
+  # picoclaw-voice 客户端 连接：ws://<WSL_IP>:18765
+  picoclaw-voice:
+    build:
+      # context 必须是 repo 根，因为 go.mod 有 replace => ../../
+      context: ..
+      dockerfile: cmd/picoclaw-voice/Dockerfile
+    image: picoclaw-voice:local
+    container_name: picoclaw-voice
+    restart: unless-stopped
+    env_file: ../cmd/picoclaw-voice/.env
+    environment:
+      # 容器内通过 host-gateway 访问宿主机的 funasr/fishspeech
+      - PICOCLAW_VOICE_ASR_WS_URL=wss://host.docker.internal:10095
+      - PICOCLAW_VOICE_TTS_API_URL=http://host.docker.internal:8080
+    ports:
+      # picoclaw-voice 客户端（UE5，Windows）经 WSL 局域网连接此端口
+      - "18765:18765"
+    extra_hosts:
+      # Linux 下使 host.docker.internal 解析到宿主机（访问 funasr/fishspeech）
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # 读取 picoclaw 配置：LLM API key、记忆、MCP 工具
+      - /home/kkroid/.picoclaw:/root/.picoclaw

@@ -1,0 +1,83 @@
+# 本地 AI 推理服务（FunASR + Fish Speech）
+#
+# 用法（在 repo 根目录执行）：
+#   docker compose -f docker/docker-compose.asr-tts.yml up -d
+#   docker compose -f docker/docker-compose.asr-tts.yml logs -f
+#   docker compose -f docker/docker-compose.asr-tts.yml down
+#
+# 前置条件：
+#   1. 安装 NVIDIA Container Toolkit（Docker GPU 支持）：
+#      curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+#      ... （见 README）
+#   2. FunASR 模型首次启动自动从 ModelScope 下载到 ~/models/funasr/（约 500MB）
+#   3. Fish Speech 模型已内置于 v1.5.1 镜像，无需单独下载
+#
+# picoclaw-voice 配置：
+#   PICOCLAW_VOICE_ASR_PROVIDER=funasr
+#   PICOCLAW_VOICE_ASR_WS_URL=ws://127.0.0.1:10095
+#   PICOCLAW_VOICE_TTS_PROVIDER=fishspeech
+#   PICOCLAW_VOICE_TTS_API_URL=http://127.0.0.1:8080
+
+services:
+
+  # ─── FunASR：本地中文语音识别（2pass 模式，免费）──────────────────────────
+  # 首次启动自动下载模型（约 1 GB），需要访问 ModelScope（modelscope.cn）
+  funasr:
+    image: funasr/funasr:funasr-runtime-sdk-cpu-0.1.0
+    container_name: funasr
+    restart: unless-stopped
+    ports:
+      - "10095:10095"
+    volumes:
+      # 模型缓存，避免每次重启重新下载
+      - ${HOME}/models/funasr:/workspace/models
+    command: >
+      bash -c "cd /workspace/FunASR/funasr/runtime &&
+      bash run_server.sh
+        --download-model-dir /workspace/models
+        --model-dir          damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-onnx
+        --vad-dir            damo/speech_fsmn_vad_zh-cn-16k-common-onnx
+        --punc-dir           damo/punc_ct-transformer_zh-cn-common-vocab272727-onnx
+        --port 10095
+        --certfile 0 --keyfile 0"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 10095 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s   # 首次启动需下载模型，延迟检查
+
+  # ─── Fish Speech：本地中文 TTS（PCM 输出，模型内置于镜像，需 GPU）──────────
+  # 使用 v1.5.1 版本（含 FireflyGAN decoder，模型已内置无需挂载）
+  fishspeech:
+    image: fishaudio/fish-speech:v1.5.1
+    container_name: fishspeech
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    command:
+      - python
+      - tools/api_server.py
+      - --llama-checkpoint-path
+      - checkpoints/fish-speech-1.5
+      - --decoder-checkpoint-path
+      - checkpoints/fish-speech-1.5/firefly-gan-vq-fsq-8x1024-21hz-generator.pth
+      - --decoder-config-name
+      - firefly_gan_vq
+      - --device
+      - cuda
+      - --listen
+      - 0.0.0.0:8080
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

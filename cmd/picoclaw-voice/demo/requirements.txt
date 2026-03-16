@@ -1,0 +1,4 @@
+websocket-client>=1.6.0
+pyaudio>=0.2.14
+opuslib>=3.0.1
+miniaudio>=1.2

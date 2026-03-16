@@ -10,6 +10,9 @@ build/
 *.out
 /picoclaw
 /picoclaw-test
+# picoclaw-voice binary (cmd/picoclaw-voice/ module)
+/picoclaw-voice
+cmd/picoclaw-voice/picoclaw-voice
 cmd/**/workspace
 
 # Picoclaw specific
@@ -25,6 +28,7 @@ build/
 # Secrets & Config (keep templates, ignore actual secrets)
 .env
 config/config.json
+config/config.yaml
 
 # Test
 coverage.txt

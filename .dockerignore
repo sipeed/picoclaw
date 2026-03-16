@@ -8,3 +8,6 @@ config/
 *.md
 LICENSE
 assets/
+# picoclaw-voice binary
+cmd/picoclaw-voice/picoclaw-voice
+cmd/picoclaw-voice/.env
