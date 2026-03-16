@@ -528,7 +528,10 @@ func TestShellTool_GuardCommand_BlocksAbsolutePathOutsideWorkspace(t *testing.T)
 		t.Fatalf("unable to configure exec tool: %s", err)
 	}
 
-	if got := tool.guardCommand(`cat "`+outsideFile+`"`, workspace); !strings.Contains(got, "path outside working dir") {
+	if got := tool.guardCommand(
+		`cat "`+outsideFile+`"`,
+		workspace,
+	); !strings.Contains(got, "path outside working dir") {
 		t.Fatalf("guardCommand should block outside path, got %q", got)
 	}
 }

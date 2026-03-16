@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,6 +84,9 @@ var (
 	// absolutePathPattern matches path-like substrings in commands (Unix and Windows).
 	// A separate boundary check is applied before treating a match as a filesystem path.
 	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+
+	// fileURIPathPattern matches file:// URIs that may point at local or UNC paths.
+	fileURIPathPattern = regexp.MustCompile(`file://[^\s\"']+`)
 
 	// safePaths are kernel pseudo-devices that are always safe to reference in
 	// commands, regardless of workspace restriction. They contain no user data
@@ -376,6 +380,23 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
+		fileURIMatches := fileURIPathPattern.FindAllString(cmd, -1)
+		for _, rawURI := range fileURIMatches {
+			p, ok := fileURIToPath(rawURI, cwdPath)
+			if !ok || safePaths[p] {
+				continue
+			}
+
+			rel, err := filepath.Rel(cwdPath, p)
+			if err != nil {
+				continue
+			}
+
+			if strings.HasPrefix(rel, "..") {
+				return "Command blocked by safety guard (path outside working dir)"
+			}
+		}
+
 		// Web URL schemes whose path components (starting with //) should be exempt
 		// from workspace sandbox checks. file: is intentionally excluded so that
 		// file:// URIs are still validated against the workspace boundary.
@@ -445,6 +466,45 @@ func isPathBoundary(command string, start int) bool {
 	}
 
 	return strings.ContainsRune(`"'=<>|&;()[]{},`, r)
+}
+
+func fileURIToPath(rawURI, cwdPath string) (string, bool) {
+	u, err := url.Parse(rawURI)
+	if err != nil || u.Scheme != "file" {
+		return "", false
+	}
+
+	path := u.Path
+	if path == "" {
+		path = u.Opaque
+	}
+
+	if path == "" {
+		return "", false
+	}
+
+	if runtime.GOOS == "windows" && len(path) >= 3 && path[0] == '/' && path[2] == ':' {
+		path = path[1:]
+	}
+
+	if u.Host != "" && u.Host != "localhost" {
+		path = "//" + u.Host + path
+	}
+
+	path = filepath.FromSlash(path)
+
+	if runtime.GOOS == "windows" &&
+		filepath.VolumeName(path) == "" &&
+		(strings.HasPrefix(path, `\`) || strings.HasPrefix(path, `/`)) {
+		path = filepath.VolumeName(cwdPath) + path
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+
+	return absPath, true
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {
