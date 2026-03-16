@@ -538,8 +538,7 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		c.lastMsgID.Store(data.GroupID, data.ID)
 
 		metadata := map[string]string{
-			"account_id": senderID,
-			"group_id":   data.GroupID,
+			"group_id": data.GroupID,
 		}
 
 		sender := bus.SenderInfo{
