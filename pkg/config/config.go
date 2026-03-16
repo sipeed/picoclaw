@@ -255,9 +255,10 @@ func (d *AgentDefaults) GetModelName() string {
 }
 
 type ChannelsConfig struct {
-	WhatsApp   WhatsAppConfig   `json:"whatsapp"`
-	Telegram   TelegramConfig   `json:"telegram"`
-	Feishu     FeishuConfig     `json:"feishu"`
+	WhatsApp     WhatsAppConfig    `json:"whatsapp"`
+	Telegram     TelegramConfig    `json:"telegram"`
+	TelegramBots []TelegramBotConfig `json:"telegram_bots,omitempty"`
+	Feishu       FeishuConfig      `json:"feishu"`
 	Discord    DiscordConfig    `json:"discord"`
 	MaixCam    MaixCamConfig    `json:"maixcam"`
 	QQ         QQConfig         `json:"qq"`
@@ -309,6 +310,47 @@ type TelegramConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+}
+
+// TelegramBotConfig defines a single named Telegram bot for use in telegram_bots.
+// Each entry creates a separate channel named "telegram-<id>", except when id is
+// empty or "default" which creates the standard "telegram" channel.
+type TelegramBotConfig struct {
+	ID                 string              `json:"id"`
+	Enabled            bool                `json:"enabled"`
+	Token              string              `json:"token"`
+	BaseURL            string              `json:"base_url,omitempty"`
+	Proxy              string              `json:"proxy,omitempty"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from,omitempty"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	Typing             TypingConfig        `json:"typing,omitempty"`
+	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
+	ReasoningChannelID string              `json:"reasoning_channel_id,omitempty"`
+}
+
+// ChannelName returns the channel identifier for this bot.
+// Bots with an empty or "default" ID use "telegram" for backward compatibility.
+// All other IDs produce "telegram-<id>".
+func (b TelegramBotConfig) ChannelName() string {
+	if b.ID == "" || b.ID == "default" {
+		return "telegram"
+	}
+	return "telegram-" + b.ID
+}
+
+// AsTelegramConfig converts a TelegramBotConfig to the equivalent TelegramConfig.
+func (b TelegramBotConfig) AsTelegramConfig() TelegramConfig {
+	return TelegramConfig{
+		Enabled:            b.Enabled,
+		Token:              b.Token,
+		BaseURL:            b.BaseURL,
+		Proxy:              b.Proxy,
+		AllowFrom:          b.AllowFrom,
+		GroupTrigger:       b.GroupTrigger,
+		Typing:             b.Typing,
+		Placeholder:        b.Placeholder,
+		ReasoningChannelID: b.ReasoningChannelID,
+	}
 }
 
 type FeishuConfig struct {
@@ -608,6 +650,7 @@ type ModelConfig struct {
 	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
 	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
 	RequestTimeout int    `json:"request_timeout,omitempty"`
+	StrictCompat   bool   `json:"strict_compat,omitempty"` // Strip non-standard fields for strict OpenAI-compatible endpoints
 	ThinkingLevel  string `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
 }
 
@@ -843,6 +886,7 @@ func LoadConfig(path string) (*Config, error) {
 
 	// Migrate legacy channel config fields to new unified structures
 	cfg.migrateChannelConfigs()
+	cfg.normalizeTelegramBots()
 
 	// Auto-migrate: if only legacy providers config exists, convert to model_list
 	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
@@ -855,6 +899,35 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// normalizeTelegramBots folds the legacy single channels.telegram entry into
+// channels.telegram_bots so the rest of the codebase only needs to range over
+// TelegramBots. The legacy entry is prepended with id "default", which produces
+// the channel name "telegram" — preserving all existing bindings unchanged.
+func (c *Config) normalizeTelegramBots() {
+	if c.Channels.Telegram.Token == "" {
+		return
+	}
+	// Already represented in the list (same channel name) — avoid duplicates.
+	for _, b := range c.Channels.TelegramBots {
+		if b.ChannelName() == "telegram" {
+			return
+		}
+	}
+	legacy := TelegramBotConfig{
+		ID:                 "default",
+		Enabled:            c.Channels.Telegram.Enabled,
+		Token:              c.Channels.Telegram.Token,
+		BaseURL:            c.Channels.Telegram.BaseURL,
+		Proxy:              c.Channels.Telegram.Proxy,
+		AllowFrom:          c.Channels.Telegram.AllowFrom,
+		GroupTrigger:       c.Channels.Telegram.GroupTrigger,
+		Typing:             c.Channels.Telegram.Typing,
+		Placeholder:        c.Channels.Telegram.Placeholder,
+		ReasoningChannelID: c.Channels.Telegram.ReasoningChannelID,
+	}
+	c.Channels.TelegramBots = append([]TelegramBotConfig{legacy}, c.Channels.TelegramBots...)
 }
 
 func (c *Config) migrateChannelConfigs() {
