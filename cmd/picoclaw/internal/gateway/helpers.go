@@ -81,8 +81,9 @@ func gatewayCmd(debug bool) error {
 		cfg.Agents.Defaults.ModelName = modelID
 	}
 
+	dispatcher := providers.NewProviderDispatcher(cfg)
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, dispatcher)
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")

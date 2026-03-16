@@ -51,6 +51,7 @@ type AgentLoop struct {
 	mu             sync.RWMutex
 	// Track active requests for safe provider cleanup
 	activeRequests sync.WaitGroup
+	dispatcher     *providers.ProviderDispatcher
 }
 
 // processOptions configures how a message is processed
@@ -80,6 +81,7 @@ func NewAgentLoop(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	provider providers.LLMProvider,
+	dispatcher *providers.ProviderDispatcher,
 ) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
@@ -105,6 +107,7 @@ func NewAgentLoop(
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
 		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
+		dispatcher:  dispatcher,
 	}
 
 	return al
@@ -420,6 +423,11 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	al.fallback = providers.NewFallbackChain(providers.NewCooldownTracker())
 
 	al.mu.Unlock()
+
+	// Flush the dispatcher cache so stale providers are evicted on config reload.
+	if al.dispatcher != nil {
+		al.dispatcher.Flush(cfg)
+	}
 
 	// Close old provider after releasing the lock
 	// This prevents blocking readers while closing
@@ -1068,7 +1076,12 @@ func (al *AgentLoop) runLLMIteration(
 				fbResult, fbErr := al.fallback.Execute(
 					ctx,
 					activeCandidates,
-					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
+					func(ctx context.Context, providerName, model string) (*providers.LLMResponse, error) {
+						if al.dispatcher != nil {
+							if p, err := al.dispatcher.Get(providerName, model); err == nil {
+								return p.Chat(ctx, messages, providerToolDefs, model, llmOpts)
+							}
+						}
 						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
 					},
 				)
