@@ -165,17 +165,23 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 }
 
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	_, err := c.SendMessageWithIDs(ctx, msg)
+	return err
+}
+
+// SendMessageWithIDs implements channels.MessageIDsSender.
+func (c *TelegramChannel) SendMessageWithIDs(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	chatID, threadID, err := parseTelegramChatID(msg.ChatID)
 	if err != nil {
-		return fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
+		return nil, fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
 
 	if msg.Content == "" {
-		return nil
+		return nil, nil
 	}
 
 	// The Manager already splits messages to ≤4000 chars (WithMaxMessageLength),
@@ -183,6 +189,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	// check if HTML expansion pushes it beyond Telegram's 4096-char API limit.
 	replyToID := msg.ReplyToMessageID
 	queue := []string{msg.Content}
+	var messageIDs []string
 	for len(queue) > 0 {
 		chunk := queue[0]
 		queue = queue[1:]
@@ -202,21 +209,23 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			continue
 		}
 
-		if err := c.sendHTMLChunk(ctx, chatID, threadID, htmlContent, chunk, replyToID); err != nil {
-			return err
+		msgID, err := c.sendHTMLChunk(ctx, chatID, threadID, htmlContent, chunk, replyToID)
+		if err != nil {
+			return nil, err
 		}
+		messageIDs = append(messageIDs, msgID)
 		// Only the first chunk should be a reply; subsequent chunks are normal messages.
 		replyToID = ""
 	}
 
-	return nil
+	return messageIDs, nil
 }
 
 // sendHTMLChunk sends a single HTML message, falling back to the original
 // markdown as plain text on parse failure so users never see raw HTML tags.
 func (c *TelegramChannel) sendHTMLChunk(
 	ctx context.Context, chatID int64, threadID int, htmlContent, mdFallback string, replyToID string,
-) error {
+) (string, error) {
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
 	tgMsg.MessageThreadID = threadID
@@ -229,17 +238,19 @@ func (c *TelegramChannel) sendHTMLChunk(
 		}
 	}
 
-	if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
+	msg, err := c.bot.SendMessage(ctx, tgMsg)
+	if err != nil {
 		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
 			"error": err.Error(),
 		})
 		tgMsg.Text = mdFallback
 		tgMsg.ParseMode = ""
-		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
+		msg, err = c.bot.SendMessage(ctx, tgMsg)
+		if err != nil {
+			return "", fmt.Errorf("telegram send: %w", channels.ErrTemporary)
 		}
 	}
-	return nil
+	return strconv.Itoa(msg.MessageID), nil
 }
 
 // StartTyping implements channels.TypingCapable.
@@ -424,6 +435,8 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		CanonicalID: identity.BuildCanonicalID("telegram", platformID),
 		Username:    user.Username,
 		DisplayName: user.FirstName,
+		FirstName:   user.FirstName,
+		LastName:    user.LastName,
 	}
 
 	// check allowlist to avoid downloading attachments for rejected users

@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/commands"
 )
 
@@ -42,6 +43,12 @@ type PlaceholderRecorder interface {
 	RecordPlaceholder(channel, chatID, placeholderID string)
 	RecordTypingStop(channel, chatID string, stop func())
 	RecordReactionUndo(channel, chatID string, undo func())
+}
+
+// MessageIDsSender is implemented by channels that can return the platform
+// message IDs for a delivered outbound text message.
+type MessageIDsSender interface {
+	SendMessageWithIDs(ctx context.Context, msg bus.OutboundMessage) (messageIDs []string, err error)
 }
 
 // CommandRegistrarCapable is implemented by channels that can register

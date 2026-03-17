@@ -78,6 +78,16 @@ func (mb *MessageBus) OutboundChan() <-chan OutboundMessage {
 	return mb.outbound
 }
 
+// SubscribeOutbound waits for the next outbound message or until ctx is done.
+func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, bool) {
+	select {
+	case msg, ok := <-mb.outbound:
+		return msg, ok
+	case <-ctx.Done():
+		return OutboundMessage{}, false
+	}
+}
+
 func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMediaMessage) error {
 	return publish(ctx, mb, mb.outboundMedia, msg)
 }

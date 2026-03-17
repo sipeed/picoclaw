@@ -51,7 +51,12 @@ func (s *stubConstructor) MultipartRequest(
 // successResponse returns a ta.Response that telego will treat as a successful SendMessage.
 func successResponse(t *testing.T) *ta.Response {
 	t.Helper()
-	msg := &telego.Message{MessageID: 1}
+	return successResponseWithMessageID(t, 1)
+}
+
+func successResponseWithMessageID(t *testing.T, messageID int) *ta.Response {
+	t.Helper()
+	msg := &telego.Message{MessageID: messageID}
 	b, err := json.Marshal(msg)
 	require.NoError(t, err)
 	return &ta.Response{Ok: true, Result: b}
@@ -136,6 +141,27 @@ func TestSend_LongMessage_SingleCall(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, caller.calls, 1, "pre-split message within limit should result in one SendMessage call")
+}
+
+func TestSendMessageWithIDs_ReturnsAllChunkIDsAfterHTMLResplit(t *testing.T) {
+	caller := &stubCaller{}
+	caller.callFn = func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+		return successResponseWithMessageID(t, len(caller.calls)), nil
+	}
+	ch := newTestChannel(t, caller)
+
+	chunk := "[x](https://example.com/" + strings.Repeat("a", 20) + ") "
+	content := strings.Repeat(chunk, 120)
+
+	ids, err := ch.SendMessageWithIDs(context.Background(), bus.OutboundMessage{
+		ChatID:  "12345",
+		Content: content,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, ids, 2)
+	assert.Equal(t, []string{"1", "2"}, ids)
+	assert.Len(t, caller.calls, 2)
 }
 
 func TestSend_HTMLFallback_PerChunk(t *testing.T) {
