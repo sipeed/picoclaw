@@ -190,6 +190,17 @@ func TestResolveProviderSelection(t *testing.T) {
 			wantProxy:   "http://127.0.0.1:7890",
 		},
 		{
+			name: "explicit novita provider uses defaults",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "novita"
+				cfg.Providers.Novita.APIKey = "novita-key"
+				cfg.Providers.Novita.Proxy = "http://127.0.0.1:7890"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "https://api.novita.ai/openai",
+			wantProxy:   "http://127.0.0.1:7890",
+		},
+		{
 			name: "longcat model fallback uses longcat base default",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "longcat/LongCat-Flash-Thinking"
@@ -197,6 +208,15 @@ func TestResolveProviderSelection(t *testing.T) {
 			},
 			wantType:    providerTypeHTTPCompat,
 			wantAPIBase: "https://api.longcat.chat/openai",
+		},
+		{
+			name: "novita model fallback uses novita base default",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Model = "novita/deepseek/deepseek-v3.2"
+				cfg.Providers.Novita.APIKey = "novita-key"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "https://api.novita.ai/openai",
 		},
 		{
 			name: "missing keys returns model config error",

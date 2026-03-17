@@ -377,6 +377,26 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// Novita AI - https://novita.ai
+			{
+				ModelName: "deepseek-v3.2",
+				Model:     "novita/deepseek/deepseek-v3.2",
+				APIBase:   "https://api.novita.ai/openai",
+				APIKey:    "",
+			},
+			{
+				ModelName: "glm-5",
+				Model:     "novita/zai-org/glm-5",
+				APIBase:   "https://api.novita.ai/openai",
+				APIKey:    "",
+			},
+			{
+				ModelName: "minimax-m2.5",
+				Model:     "novita/minimax/minimax-m2.5",
+				APIBase:   "https://api.novita.ai/openai",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",

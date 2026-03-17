@@ -230,6 +230,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = "https://api.longcat.chat/openai"
 				}
 			}
+		case "novita":
+			if cfg.Providers.Novita.APIKey != "" {
+				sel.apiKey = cfg.Providers.Novita.APIKey
+				sel.apiBase = cfg.Providers.Novita.APIBase
+				sel.proxy = cfg.Providers.Novita.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.novita.ai/openai"
+				}
+			}
 		case "github_copilot", "copilot":
 			sel.providerType = providerTypeGitHubCopilot
 			if cfg.Providers.GitHubCopilot.APIBase != "" {
@@ -367,6 +376,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.proxy = cfg.Providers.LongCat.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "https://api.longcat.chat/openai"
+			}
+		case (strings.Contains(lowerModel, "novita") || strings.HasPrefix(model, "novita/")) && cfg.Providers.Novita.APIKey != "":
+			sel.apiKey = cfg.Providers.Novita.APIKey
+			sel.apiBase = cfg.Providers.Novita.APIBase
+			sel.proxy = cfg.Providers.Novita.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.novita.ai/openai"
 			}
 		case cfg.Providers.VLLM.APIBase != "":
 			sel.apiKey = cfg.Providers.VLLM.APIKey
