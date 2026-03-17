@@ -30,6 +30,28 @@ func (f *fakeChannel) IsAllowed(string) bool                                   {
 func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool              { return true }
 func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
 
+type recordingProvider struct {
+	lastMessages []providers.Message
+}
+
+func (r *recordingProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	r.lastMessages = append([]providers.Message(nil), messages...)
+	return &providers.LLMResponse{
+		Content:   "Mock response",
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (r *recordingProvider) GetDefaultModel() string {
+	return "mock-model"
+}
+
 func newTestAgentLoop(
 	t *testing.T,
 ) (al *AgentLoop, cfg *config.Config, msgBus *bus.MessageBus, provider *mockProvider, cleanup func()) {
@@ -52,6 +74,59 @@ func newTestAgentLoop(
 	provider = &mockProvider{}
 	al = NewAgentLoop(cfg, msgBus, provider)
 	return al, cfg, msgBus, provider, func() { os.RemoveAll(tmpDir) }
+}
+
+func TestProcessMessage_IncludesCurrentSenderInDynamicContext(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "discord",
+		SenderID: "discord:123",
+		Sender: bus.SenderInfo{
+			DisplayName: "Alice",
+		},
+		ChatID:  "group-1",
+		Content: "hello",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "Mock response")
+	}
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("provider did not receive any messages")
+	}
+
+	systemPrompt := provider.lastMessages[0].Content
+	wantSender := "## Current Sender\nCurrent sender: Alice (ID: discord:123)"
+	if !strings.Contains(systemPrompt, wantSender) {
+		t.Fatalf("system prompt missing sender context %q:\n%s", wantSender, systemPrompt)
+	}
+
+	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
+	if lastMessage.Role != "user" || lastMessage.Content != "hello" {
+		t.Fatalf("last provider message = %+v, want unchanged user message", lastMessage)
+	}
 }
 
 func TestRecordLastChannel(t *testing.T) {

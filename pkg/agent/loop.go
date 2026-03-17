@@ -55,15 +55,17 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string   // Session identifier for history/context
-	Channel         string   // Target channel for tool execution
-	ChatID          string   // Target chat ID for tool execution
-	UserMessage     string   // User message content (may include prefix)
-	Media           []string // media:// refs from inbound message
-	DefaultResponse string   // Response when LLM returns empty
-	EnableSummary   bool     // Whether to trigger summarization
-	SendResponse    bool     // Whether to send response via bus
-	NoHistory       bool     // If true, don't load session history (for heartbeat)
+	SessionKey        string   // Session identifier for history/context
+	Channel           string   // Target channel for tool execution
+	ChatID            string   // Target chat ID for tool execution
+	SenderID          string   // Current sender ID for dynamic context
+	SenderDisplayName string   // Current sender display name for dynamic context
+	UserMessage       string   // User message content (may include prefix)
+	Media             []string // media:// refs from inbound message
+	DefaultResponse   string   // Response when LLM returns empty
+	EnableSummary     bool     // Whether to trigger summarization
+	SendResponse      bool     // Whether to send response via bus
+	NoHistory         bool     // If true, don't load session history (for heartbeat)
 }
 
 const (
@@ -741,14 +743,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		})
 
 	opts := processOptions{
-		SessionKey:      sessionKey,
-		Channel:         msg.Channel,
-		ChatID:          msg.ChatID,
-		UserMessage:     msg.Content,
-		Media:           msg.Media,
-		DefaultResponse: defaultResponse,
-		EnableSummary:   true,
-		SendResponse:    false,
+		SessionKey:        sessionKey,
+		Channel:           msg.Channel,
+		ChatID:            msg.ChatID,
+		SenderID:          msg.SenderID,
+		SenderDisplayName: msg.Sender.DisplayName,
+		UserMessage:       msg.Content,
+		Media:             msg.Media,
+		DefaultResponse:   defaultResponse,
+		EnableSummary:     true,
+		SendResponse:      false,
 	}
 
 	// context-dependent commands check their own Runtime fields and report
@@ -888,6 +892,8 @@ func (al *AgentLoop) runAgentLoop(
 		opts.Media,
 		opts.Channel,
 		opts.ChatID,
+		opts.SenderID,
+		opts.SenderDisplayName,
 	)
 
 	// Resolve media:// refs: images→base64 data URLs, non-images→local paths in content
@@ -1159,7 +1165,7 @@ func (al *AgentLoop) runLLMIteration(
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
 					newHistory, newSummary, "",
-					nil, opts.Channel, opts.ChatID,
+					nil, opts.Channel, opts.ChatID, opts.SenderID, opts.SenderDisplayName,
 				)
 				continue
 			}
