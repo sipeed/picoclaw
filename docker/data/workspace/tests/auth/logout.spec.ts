@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { performLogin } from './utils/auth';
+import { performLogin } from '../utils/auth';
 
 test('Logout flow - User logout and redirect to login page', async ({ page }) => {
   // Step 1: Perform the login flow
-  await performLogin(page, 'test@intnt.ai', 'testing2026!');
+  await performLogin(page, 'heidi@intnt.ai', 'testing2026!');
   console.log('✅ PASS: Step 1 - Login flow completed');
 
   // Step 2: Verify login succeeds and redirect
