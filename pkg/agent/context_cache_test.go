@@ -667,3 +667,65 @@ func BenchmarkBuildMessagesWithCache(b *testing.B) {
 		_ = cb.BuildMessages(history, "summary", "new message", nil, "cli", "test")
 	}
 }
+
+func TestBuildMessages_IncludesUserSpecificMemory(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"IDENTITY.md":                     "# Identity\nTest agent.",
+		"users/webchat/user123/MEMORY.md": "favorite color: blue",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	msgs := cb.BuildMessages(nil, "", "hello", nil, "webchat", "user123")
+	if len(msgs) == 0 || msgs[0].Role != "system" {
+		t.Fatalf("expected first system message")
+	}
+	if !strings.Contains(msgs[0].Content, "User-specific Memory") {
+		t.Fatalf("expected user memory section in system prompt")
+	}
+	if !strings.Contains(msgs[0].Content, "favorite color: blue") {
+		t.Fatalf("expected user memory content in system prompt")
+	}
+}
+
+func TestBuildMessages_UserSpecificMemoryIgnoredForInvalidChatID(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"IDENTITY.md":             "# Identity\nTest agent.",
+		"users/webchat/u1/MEMORY.md": "secret",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	msgs := cb.BuildMessages(nil, "", "hello", nil, "webchat", "../u1")
+	if strings.Contains(msgs[0].Content, "User-specific Memory") {
+		t.Fatalf("expected no user memory section for invalid chat id")
+	}
+}
+
+func TestBuildMessages_IncludesUserMemoryFromMemoryDirAndDailyNotes(t *testing.T) {
+	today := time.Now().Format("20060102")
+	tmpDir := setupWorkspace(t, map[string]string{
+		"IDENTITY.md": "# Identity\nTest agent.",
+		"users/u42/memory/MEMORY.md": "timezone: UTC",
+		"users/u42/memory/" + today[:6] + "/" + today + ".md": "met a friend today",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	msgs := cb.BuildMessages(nil, "", "hello", nil, "webchat", "u42")
+	if len(msgs) == 0 || msgs[0].Role != "system" {
+		t.Fatalf("expected first system message")
+	}
+	if !strings.Contains(msgs[0].Content, "### Long-term Memory") {
+		t.Fatalf("expected long-term user memory heading")
+	}
+	if !strings.Contains(msgs[0].Content, "timezone: UTC") {
+		t.Fatalf("expected user long-term memory content")
+	}
+	if !strings.Contains(msgs[0].Content, "### Recent Daily Notes") {
+		t.Fatalf("expected user daily notes heading")
+	}
+	if !strings.Contains(msgs[0].Content, "met a friend today") {
+		t.Fatalf("expected user daily notes content")
+	}
+}
