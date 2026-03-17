@@ -374,7 +374,18 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return fmt.Sprintf("Error: %v", err)
 	}
 
-	// Response is automatically sent via MessageBus by AgentLoop
-	_ = response // Will be sent by AgentLoop
+	// ProcessDirectWithChannel bypasses the normal inbound loop, so publish the
+	// returned final text here when the agent produced one.
+	if strings.TrimSpace(response) == "" {
+		return "ok"
+	}
+
+	pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pubCancel()
+	t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
+		Channel: channel,
+		ChatID:  chatID,
+		Content: response,
+	})
 	return "ok"
 }
