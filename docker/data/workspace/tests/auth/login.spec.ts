@@ -20,8 +20,8 @@ test('Login flow - User login and redirect to organization selection', async ({ 
 
   // Step 3: Input email and password
   console.log('\n📍 Step 3: Input email test@intnt.ai and password testing2026!');
-  await emailInput.fill('test@intnt.ai');
-  await expect(emailInput).toHaveValue('test@intnt.ai');
+  await emailInput.fill('heidi@intnt.ai');
+  await expect(emailInput).toHaveValue('heidi@intnt.ai');
   console.log('  ✓ Email entered: test@intnt.ai');
 
   await passwordInput.fill('testing2026!');

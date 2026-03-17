@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { performLogin } from './utils/auth';
+import { performLogin } from '../utils/auth';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';
 import * as dotenv from 'dotenv';
@@ -7,7 +7,7 @@ dotenv.config({ path: __dirname + '/../.env' });
 
 test('Password reset flow - Reset password and verify login', async ({ page }) => {
     test.setTimeout(120000);
-    const testEmail = 'test@intnt.ai';
+    const testEmail = 'heidi@intnt.ai';
     const newPassword = 'testing2027!';
     const originalPassword = 'testing2026!';
 
