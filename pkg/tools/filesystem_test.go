@@ -570,6 +570,41 @@ func TestWhitelistFs_WriteAllowsNewFileUnderAllowedDir(t *testing.T) {
 	}
 }
 
+func TestWhitelistFs_AllowsResolvedAllowedRootAlias(t *testing.T) {
+	workspace := t.TempDir()
+	realDir := t.TempDir()
+	linkParent := t.TempDir()
+	allowedAlias := filepath.Join(linkParent, "allowed-link")
+
+	if err := os.Symlink(realDir, allowedAlias); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	targetFile := filepath.Join(allowedAlias, "nested", "alias.txt")
+	if err := os.MkdirAll(filepath.Dir(targetFile), 0o755); err != nil {
+		t.Fatalf("MkdirAll(targetFile dir) error = %v", err)
+	}
+	if err := os.WriteFile(targetFile, []byte("through alias"), 0o644); err != nil {
+		t.Fatalf("WriteFile(targetFile) error = %v", err)
+	}
+
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(
+			"^" + regexp.QuoteMeta(filepath.Clean(allowedAlias)) +
+				"(?:" + regexp.QuoteMeta(string(os.PathSeparator)) + "|$)",
+		),
+	}
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
+
+	result := tool.Execute(context.Background(), map[string]any{"path": targetFile})
+	if result.IsError {
+		t.Fatalf("expected symlink-backed allowed root to be readable, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "through alias") {
+		t.Fatalf("expected file content, got: %s", result.ForLLM)
+	}
+}
+
 // TestReadFileTool_ChunkedReading verifies the pagination logic of the tool
 // by reading a file in multiple chunks using 'offset' and 'length'.
 func TestReadFileTool_ChunkedReading(t *testing.T) {
