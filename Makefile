@@ -16,6 +16,7 @@ LDFLAGS=-X $(CONFIG_PKG).Version=$(VERSION) -X $(CONFIG_PKG).GitCommit=$(GIT_COM
 
 # Go variables
 GO?=CGO_ENABLED=0 go
+WEB_GO?=$(GO)
 GOFLAGS?=-v -tags stdjson
 
 # Patch MIPS LE ELF e_flags (offset 36) for NaN2008-only kernels (e.g. Ingenic X2600).
@@ -79,6 +80,7 @@ ifeq ($(UNAME_S),Linux)
 	endif
 else ifeq ($(UNAME_S),Darwin)
 	PLATFORM=darwin
+	WEB_GO=CGO_ENABLED=1 go
 	ifeq ($(UNAME_M),x86_64)
 		ARCH=amd64
 	else ifeq ($(UNAME_M),arm64)
@@ -119,7 +121,7 @@ build-launcher:
 		echo "Building frontend..."; \
 		cd web/frontend && pnpm install && pnpm build:backend; \
 	fi
-	@$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH) ./web/backend
+	@$(WEB_GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH) ./web/backend
 	@ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher
 	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher"
 
@@ -219,7 +221,9 @@ clean:
 
 ## vet: Run go vet for static analysis
 vet: generate
-	@$(GO) vet ./...
+	@packages="$$(go list ./...)" && \
+		$(GO) vet $$(printf '%s\n' "$$packages" | grep -v '^github.com/sipeed/picoclaw/web/')
+	@cd web/backend && $(WEB_GO) vet ./...
 
 ## test: Test Go code
 test: generate

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:backend": "tsc -b && vite build --outDir ../backend/dist --emptyOutDir",
+    "build:backend": "tsc -b && vite build --outDir ../backend/dist --emptyOutDir && node ./scripts/ensure-backend-gitkeep.cjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "prettier --check .",

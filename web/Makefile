@@ -1,16 +1,17 @@
 .PHONY: dev dev-frontend dev-backend build test lint clean
 
+# Go variables
+GO?=CGO_ENABLED=0 go
+WEB_GO?=$(GO)
+GOFLAGS?=-v -tags stdjson
+
 # Version
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT=$(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date +%FT%T%z)
-GO_VERSION=$(shell $(GO) version | awk '{print $$3}')
+GO_VERSION=$(shell $(WEB_GO) version | awk '{print $$3}')
 CONFIG_PKG=github.com/sipeed/picoclaw/pkg/config
 LDFLAGS=-X $(CONFIG_PKG).Version=$(VERSION) -X $(CONFIG_PKG).GitCommit=$(GIT_COMMIT) -X $(CONFIG_PKG).BuildTime=$(BUILD_TIME) -X $(CONFIG_PKG).GoVersion=$(GO_VERSION) -s -w
-
-# Go variables
-GO?=CGO_ENABLED=0 go
-GOFLAGS?=-v -tags stdjson
 
 
 # OS detection
@@ -37,7 +38,7 @@ ifeq ($(UNAME_S),Linux)
 	endif
 else ifeq ($(UNAME_S),Darwin)
 	PLATFORM=darwin
-	GO=CGO_ENABLED=1 go
+	WEB_GO=CGO_ENABLED=1 go
 	ifeq ($(UNAME_M),x86_64)
 		ARCH=amd64
 	else ifeq ($(UNAME_M),arm64)
@@ -69,21 +70,21 @@ dev-frontend:
 
 # Start backend dev server
 dev-backend:
-	cd backend && ${GO} run  -ldflags "$(LDFLAGS)" .
+	cd backend && ${WEB_GO} run -ldflags "$(LDFLAGS)" .
 
 # Build frontend and embed into Go binary
 build:
 	cd frontend && pnpm build:backend
-	cd backend && ${GO} build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o picoclaw-web .
+	cd backend && ${WEB_GO} build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o picoclaw-web .
 
 # Run all tests
 test:
-	cd backend && ${GO} test ./...
+	cd backend && ${WEB_GO} test ./...
 	cd frontend && pnpm lint
 
 # Lint and format
 lint:
-	cd backend && ${GO} vet ./...
+	cd backend && ${WEB_GO} vet ./...
 	cd frontend && pnpm check
 
 # Clean build artifacts
