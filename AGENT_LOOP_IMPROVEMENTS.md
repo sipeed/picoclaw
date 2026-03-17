@@ -33,7 +33,7 @@ This document outlines a series of tasks to improve the main loop of the agentic
 ## Phase 5: Observability & Logging Dashboard
 
 * [ ] **Session Replay:** Capture the full "Chain of Thought" (CoT), including tool-call inputs/outputs, and state transitions to facilitate deep-dive session reviews.
-* [ ] **Error Categorization:** Distinguish between Model Failures (hallucinations/refusals), Infrastructure Failures (API timeouts), and Logic Failures (code execution errors).
+* [x] **Error Categorization:** Distinguish between Model Failures (hallucinations/refusals), Infrastructure Failures (API timeouts), and Logic Failures (code execution errors).
 * [ ] **Real-time Visuals:** Implement a lightweight UI/Dashboard using a Go-compatible framework like a custom Bubble Tea TUI to monitor the agent's health.
 
 ---

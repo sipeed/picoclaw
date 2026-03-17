@@ -361,6 +361,15 @@ func (al *AgentLoop) runLLMIteration(
 				contentForLLM = r.result.Err.Error()
 			}
 
+			if r.result.IsError {
+				logger.ErrorCF("agent", "Tool execution failed",
+					map[string]any{
+						"tool":           r.tc.Name,
+						"error":          contentForLLM,
+						"error_category": "logic_failure",
+					})
+			}
+
 			toolResultMsg := providers.Message{
 				Role:       "tool",
 				Content:    contentForLLM,
