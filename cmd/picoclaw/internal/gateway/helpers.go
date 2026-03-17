@@ -580,6 +580,11 @@ func setupCronTool(
 	// Create cron service
 	cronService := cron.NewCronService(cronStorePath, nil)
 
+	// Apply default timezone from config for cron expressions
+	if cfg.Tools.Cron.DefaultTimezone != "" {
+		cronService.SetDefaultTimezone(cfg.Tools.Cron.DefaultTimezone)
+	}
+
 	// Create and register CronTool if enabled
 	var cronTool *tools.CronTool
 	if cfg.Tools.IsToolEnabled("cron") {
