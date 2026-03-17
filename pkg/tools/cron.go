@@ -25,6 +25,7 @@ type CronTool struct {
 	msgBus       *bus.MessageBus
 	execTool     *ExecTool
 	allowCommand bool
+	execEnabled  bool
 }
 
 // NewCronTool creates a new CronTool
@@ -33,23 +34,32 @@ func NewCronTool(
 	cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool,
 	execTimeout time.Duration, config *config.Config,
 ) (*CronTool, error) {
-	execTool, err := NewExecToolWithConfig(workspace, restrict, config)
-	if err != nil {
-		return nil, fmt.Errorf("unable to configure exec tool: %w", err)
-	}
-
 	allowCommand := true
+	execEnabled := true
 	if config != nil {
 		allowCommand = config.Tools.Cron.AllowCommand
+		execEnabled = config.Tools.Exec.Enabled
 	}
 
-	execTool.SetTimeout(execTimeout)
+	var execTool *ExecTool
+	if execEnabled {
+		var err error
+		execTool, err = NewExecToolWithConfig(workspace, restrict, config)
+		if err != nil {
+			return nil, fmt.Errorf("unable to configure exec tool: %w", err)
+		}
+	}
+
+	if execTool != nil {
+		execTool.SetTimeout(execTimeout)
+	}
 	return &CronTool{
 		cronService:  cronService,
 		executor:     executor,
 		msgBus:       msgBus,
 		execTool:     execTool,
 		allowCommand: allowCommand,
+		execEnabled:  execEnabled,
 	}, nil
 }
 
@@ -193,6 +203,9 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 	command, _ := args["command"].(string)
 	commandConfirm, _ := args["command_confirm"].(bool)
 	if command != "" {
+		if !t.execEnabled {
+			return ErrorResult("command execution is disabled")
+		}
 		if !constants.IsInternalChannel(channel) {
 			return ErrorResult("scheduling command execution is restricted to internal channels")
 		}
@@ -298,6 +311,18 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 
 	// Execute command if present
 	if job.Payload.Command != "" {
+		if !t.execEnabled || t.execTool == nil {
+			output := "Error executing scheduled command: command execution is disabled"
+			pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer pubCancel()
+			t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
+				Channel: channel,
+				ChatID:  chatID,
+				Content: output,
+			})
+			return "ok"
+		}
+
 		args := map[string]any{
 			"command":   job.Payload.Command,
 			"__channel": channel,

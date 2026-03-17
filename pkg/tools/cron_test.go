@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -112,6 +113,28 @@ func TestCronTool_CommandAllowedWithConfirmWhenAllowCommandDisabled(t *testing.T
 	}
 }
 
+func TestCronTool_CommandBlockedWhenExecDisabled(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tools.Exec.Enabled = false
+
+	tool := newTestCronToolWithConfig(t, cfg)
+	ctx := WithToolContext(context.Background(), "cli", "direct")
+	result := tool.Execute(ctx, map[string]any{
+		"action":          "add",
+		"message":         "check disk",
+		"command":         "df -h",
+		"command_confirm": true,
+		"at_seconds":      float64(60),
+	})
+
+	if !result.IsError {
+		t.Fatal("expected command scheduling to be blocked when exec is disabled")
+	}
+	if !strings.Contains(result.ForLLM, "command execution is disabled") {
+		t.Errorf("expected exec disabled message, got: %s", result.ForLLM)
+	}
+}
+
 // TestCronTool_CommandAllowedFromInternalChannel verifies command scheduling works from internal channels
 func TestCronTool_CommandAllowedFromInternalChannel(t *testing.T) {
 	tool := newTestCronTool(t)
@@ -183,5 +206,31 @@ func TestCronTool_NonCommandJobDefaultsDeliverToFalse(t *testing.T) {
 	}
 	if jobs[0].Payload.Deliver {
 		t.Fatal("expected deliver=false by default for non-command jobs")
+	}
+}
+
+func TestCronTool_ExecuteJobPublishesErrorWhenExecDisabled(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tools.Exec.Enabled = false
+
+	tool := newTestCronToolWithConfig(t, cfg)
+	job := &cron.CronJob{}
+	job.Payload.Channel = "cli"
+	job.Payload.To = "direct"
+	job.Payload.Command = "df -h"
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	msg, ok := tool.msgBus.SubscribeOutbound(ctx)
+	if !ok {
+		t.Fatal("expected outbound message")
+	}
+	if !strings.Contains(msg.Content, "command execution is disabled") {
+		t.Fatalf("expected exec disabled message, got: %s", msg.Content)
 	}
 }

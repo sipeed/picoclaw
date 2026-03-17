@@ -93,14 +93,6 @@ export function AgentDefaultsSection({
         }
       />
 
-      <SwitchCardField
-        label={t("pages.config.allow_remote")}
-        hint={t("pages.config.allow_remote_hint")}
-        layout="setting-row"
-        checked={form.allowRemote}
-        onCheckedChange={(checked) => onFieldChange("allowRemote", checked)}
-      />
-
       <Field
         label={t("pages.config.max_tokens")}
         hint={t("pages.config.max_tokens_hint")}
@@ -157,6 +149,98 @@ export function AgentDefaultsSection({
           }
         />
       </Field>
+    </ConfigSectionCard>
+  )
+}
+
+interface ExecSectionProps {
+  form: CoreConfigForm
+  onFieldChange: UpdateCoreField
+}
+
+export function ExecSection({ form, onFieldChange }: ExecSectionProps) {
+  const { t } = useTranslation()
+
+  return (
+    <ConfigSectionCard title={t("pages.config.sections.exec")}>
+      <SwitchCardField
+        label={t("pages.config.exec_enabled")}
+        hint={t("pages.config.exec_enabled_hint")}
+        layout="setting-row"
+        checked={form.execEnabled}
+        onCheckedChange={(checked) => onFieldChange("execEnabled", checked)}
+      />
+
+      {form.execEnabled && (
+        <>
+          <SwitchCardField
+            label={t("pages.config.allow_remote")}
+            hint={t("pages.config.allow_remote_hint")}
+            layout="setting-row"
+            checked={form.allowRemote}
+            onCheckedChange={(checked) => onFieldChange("allowRemote", checked)}
+          />
+
+          <SwitchCardField
+            label={t("pages.config.enable_deny_patterns")}
+            hint={t("pages.config.enable_deny_patterns_hint")}
+            layout="setting-row"
+            checked={form.enableDenyPatterns}
+            onCheckedChange={(checked) =>
+              onFieldChange("enableDenyPatterns", checked)
+            }
+          />
+
+          {form.enableDenyPatterns && (
+            <Field
+              label={t("pages.config.custom_deny_patterns")}
+              hint={t("pages.config.custom_deny_patterns_hint")}
+              layout="setting-row"
+              controlClassName="md:max-w-md"
+            >
+              <Textarea
+                value={form.customDenyPatternsText}
+                placeholder={t("pages.config.custom_patterns_placeholder")}
+                className="min-h-[88px]"
+                onChange={(e) =>
+                  onFieldChange("customDenyPatternsText", e.target.value)
+                }
+              />
+            </Field>
+          )}
+
+          <Field
+            label={t("pages.config.custom_allow_patterns")}
+            hint={t("pages.config.custom_allow_patterns_hint")}
+            layout="setting-row"
+            controlClassName="md:max-w-md"
+          >
+            <Textarea
+              value={form.customAllowPatternsText}
+              placeholder={t("pages.config.custom_patterns_placeholder")}
+              className="min-h-[88px]"
+              onChange={(e) =>
+                onFieldChange("customAllowPatternsText", e.target.value)
+              }
+            />
+          </Field>
+
+          <Field
+            label={t("pages.config.exec_timeout_seconds")}
+            hint={t("pages.config.exec_timeout_seconds_hint")}
+            layout="setting-row"
+          >
+            <Input
+              type="number"
+              min={0}
+              value={form.execTimeoutSeconds}
+              onChange={(e) =>
+                onFieldChange("execTimeoutSeconds", e.target.value)
+              }
+            />
+          </Field>
+        </>
+      )}
     </ConfigSectionCard>
   )
 }
@@ -251,6 +335,7 @@ export function CronSection({ form, onFieldChange }: CronSectionProps) {
         hint={t("pages.config.allow_shell_execution_hint")}
         layout="setting-row"
         checked={form.allowCommand}
+        disabled={!form.execEnabled}
         onCheckedChange={(checked) => onFieldChange("allowCommand", checked)}
       />
 
@@ -262,6 +347,7 @@ export function CronSection({ form, onFieldChange }: CronSectionProps) {
         <Input
           type="number"
           min={0}
+          disabled={!form.execEnabled}
           value={form.cronExecTimeoutMinutes}
           onChange={(e) =>
             onFieldChange("cronExecTimeoutMinutes", e.target.value)

@@ -3,7 +3,12 @@ export type JsonRecord = Record<string, unknown>
 export interface CoreConfigForm {
   workspace: string
   restrictToWorkspace: boolean
+  execEnabled: boolean
   allowRemote: boolean
+  enableDenyPatterns: boolean
+  customDenyPatternsText: string
+  customAllowPatternsText: string
+  execTimeoutSeconds: string
   allowCommand: boolean
   cronExecTimeoutMinutes: string
   maxTokens: string
@@ -57,7 +62,12 @@ export const DM_SCOPE_OPTIONS = [
 export const EMPTY_FORM: CoreConfigForm = {
   workspace: "",
   restrictToWorkspace: true,
+  execEnabled: true,
   allowRemote: true,
+  enableDenyPatterns: true,
+  customDenyPatternsText: "",
+  customAllowPatternsText: "",
+  execTimeoutSeconds: "0",
   allowCommand: true,
   cronExecTimeoutMinutes: "5",
   maxTokens: "32768",
@@ -119,10 +129,32 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       defaults.restrict_to_workspace === undefined
         ? EMPTY_FORM.restrictToWorkspace
         : asBool(defaults.restrict_to_workspace),
+    execEnabled:
+      exec.enabled === undefined
+        ? EMPTY_FORM.execEnabled
+        : asBool(exec.enabled),
     allowRemote:
       exec.allow_remote === undefined
         ? EMPTY_FORM.allowRemote
         : asBool(exec.allow_remote),
+    enableDenyPatterns:
+      exec.enable_deny_patterns === undefined
+        ? EMPTY_FORM.enableDenyPatterns
+        : asBool(exec.enable_deny_patterns),
+    customDenyPatternsText: Array.isArray(exec.custom_deny_patterns)
+      ? exec.custom_deny_patterns
+          .filter((value): value is string => typeof value === "string")
+          .join("\n")
+      : EMPTY_FORM.customDenyPatternsText,
+    customAllowPatternsText: Array.isArray(exec.custom_allow_patterns)
+      ? exec.custom_allow_patterns
+          .filter((value): value is string => typeof value === "string")
+          .join("\n")
+      : EMPTY_FORM.customAllowPatternsText,
+    execTimeoutSeconds: asNumberString(
+      exec.timeout_seconds,
+      EMPTY_FORM.execTimeoutSeconds,
+    ),
     allowCommand:
       cron.allow_command === undefined
         ? EMPTY_FORM.allowCommand
@@ -190,4 +222,14 @@ export function parseCIDRText(raw: string): string[] {
     .split(/[\n,]/)
     .map((v) => v.trim())
     .filter((v) => v.length > 0)
+}
+
+export function parseMultilineList(raw: string): string[] {
+  if (!raw.trim()) {
+    return []
+  }
+  return raw
+    .split("\n")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
 }
