@@ -190,11 +190,19 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 			arguments = DecodeToolCallArguments(tc.Function.Arguments, name)
 		}
 
+		argsJSON, _ := json.Marshal(arguments)
 		toolCall := ToolCall{
 			ID:               tc.ID,
 			Name:             name,
 			Arguments:        arguments,
 			ThoughtSignature: thoughtSignature,
+			// Function must be populated so Name and Arguments survive
+			// JSON serialization to session storage (both fields are
+			// json:"-" on ToolCall; Function carries them through).
+			Function: &FunctionCall{
+				Name:      name,
+				Arguments: string(argsJSON),
+			},
 		}
 
 		if thoughtSignature != "" {

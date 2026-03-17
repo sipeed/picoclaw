@@ -378,10 +378,18 @@ func parseCodexResponse(resp *responses.Response) *LLMResponse {
 			if err := json.Unmarshal([]byte(item.Arguments), &args); err != nil {
 				args = map[string]any{"raw": item.Arguments}
 			}
+			argsJSON, _ := json.Marshal(args)
 			toolCalls = append(toolCalls, ToolCall{
 				ID:        item.CallID,
 				Name:      item.Name,
 				Arguments: args,
+				// Function must be populated so Name and Arguments survive
+				// JSON serialization to session storage (both fields are
+				// json:"-" on ToolCall; Function carries them through).
+				Function: &FunctionCall{
+					Name:      item.Name,
+					Arguments: string(argsJSON),
+				},
 			})
 		}
 	}

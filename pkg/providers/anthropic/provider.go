@@ -351,10 +351,18 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 				log.Printf("anthropic: failed to decode tool call input for %q: %v", tu.Name, err)
 				args = map[string]any{"raw": string(tu.Input)}
 			}
+			argsJSON, _ := json.Marshal(args)
 			toolCalls = append(toolCalls, ToolCall{
 				ID:        tu.ID,
 				Name:      tu.Name,
 				Arguments: args,
+				// Function must be populated so Name and Arguments survive
+				// JSON serialization to session storage (both fields are
+				// json:"-" on ToolCall; Function carries them through).
+				Function: &FunctionCall{
+					Name:      tu.Name,
+					Arguments: string(argsJSON),
+				},
 			})
 		}
 	}
