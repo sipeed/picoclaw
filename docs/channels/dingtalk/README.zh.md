@@ -42,13 +42,13 @@
 
 ## 功能特性
 
-### 健康监控与自动恢复
+### 连接稳定性
 
-钉钉频道内置了连接健康监控机制，确保流式连接的稳定性：
+钉钉频道依赖 SDK 内置的自动重连机制来保持连接稳定：
 
-- **定期健康检查**：每 5 分钟检查一次连接状态
-- **自动恢复**：当连接超过 30 分钟未收到消息时，自动触发重连
-- **重试机制**：恢复失败时每 30 秒重试一次，直到成功
+- **自动重连**：SDK 默认启用 `AutoReconnect`，连接断开时自动重连
+- **心跳检测**：SDK 每 120 秒发送心跳包检测连接状态
+- **Pong 超时**：心跳发送后 5 秒内未收到响应则触发重连
 
 ### 主动消息发送
 
@@ -67,7 +67,6 @@
 ```log
 INFO  dingtalk: DingTalk channel started {"proactive_send": true}
 DEBUG dingtalk: Received message {"sender_nick": "张三", "sender_id": "user123", "preview": "你好"}
-INFO  dingtalk: Connection recovered successfully {}
 ```
 
 ## 设置流程
