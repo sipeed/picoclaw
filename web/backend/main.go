@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/getlantern/systray"
+	"fyne.io/systray"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/web/backend/api"

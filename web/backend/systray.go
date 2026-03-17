@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/getlantern/systray"
+	"fyne.io/systray"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/web/backend/utils"
