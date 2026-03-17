@@ -236,6 +236,42 @@ export function RuntimeSection({ form, onFieldChange }: RuntimeSectionProps) {
   )
 }
 
+interface CronSectionProps {
+  form: CoreConfigForm
+  onFieldChange: UpdateCoreField
+}
+
+export function CronSection({ form, onFieldChange }: CronSectionProps) {
+  const { t } = useTranslation()
+
+  return (
+    <ConfigSectionCard title={t("pages.config.sections.cron")}>
+      <SwitchCardField
+        label={t("pages.config.allow_shell_execution")}
+        hint={t("pages.config.allow_shell_execution_hint")}
+        layout="setting-row"
+        checked={form.allowCommand}
+        onCheckedChange={(checked) => onFieldChange("allowCommand", checked)}
+      />
+
+      <Field
+        label={t("pages.config.cron_exec_timeout")}
+        hint={t("pages.config.cron_exec_timeout_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={0}
+          value={form.cronExecTimeoutMinutes}
+          onChange={(e) =>
+            onFieldChange("cronExecTimeoutMinutes", e.target.value)
+          }
+        />
+      </Field>
+    </ConfigSectionCard>
+  )
+}
+
 interface LauncherSectionProps {
   launcherForm: LauncherForm
   onFieldChange: UpdateLauncherField

@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/getlantern/systray"
-	"github.com/sipeed/picoclaw/pkg/config"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/web/backend/api"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 	"github.com/sipeed/picoclaw/web/backend/middleware"

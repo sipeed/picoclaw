@@ -394,6 +394,10 @@
       "restrict_workspace_hint": "仅允许在工作目录内执行文件操作。",
       "allow_remote": "允许远程执行 Shell 命令",
       "allow_remote_hint": "开启后，来自远程会话或非本地上下文的请求也可以执行 shell 命令；关闭后，仅允许本地安全上下文执行。",
+      "allow_shell_execution": "允许 Shell 执行",
+      "allow_shell_execution_hint": "开启后，cron 定时任务默认允许执行 shell 命令。关闭后，必须显式传入 command_confirm=true 才能创建 cron 命令任务。",
+      "cron_exec_timeout": "定时命令超时（分钟）",
+      "cron_exec_timeout_hint": "定时 shell 命令的最长执行时间。设置为 0 表示不限制超时。",
       "max_tokens": "最大 Token 数",
       "max_tokens_hint": "单次模型响应允许的最大 Token 数。",
       "max_tool_iterations": "最大工具迭代次数",
@@ -434,6 +438,7 @@
       "sections": {
         "agent": "智能体",
         "runtime": "运行时",
+        "cron": "定时任务",
         "launcher": "服务参数",
         "devices": "设备"
       },

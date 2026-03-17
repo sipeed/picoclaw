@@ -15,6 +15,7 @@ import (
 	"maunium.net/go/mautrix/id"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 func TestMatrixLocalpartMentionRegexp(t *testing.T) {
@@ -165,7 +166,7 @@ func TestMatrixMediaTempDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("matrixMediaTempDir failed: %v", err)
 	}
-	if filepath.Base(dir) != matrixMediaTempDirName {
+	if filepath.Base(dir) != media.TempDirName {
 		t.Fatalf("unexpected media dir base: %q", filepath.Base(dir))
 	}
 

@@ -394,6 +394,10 @@
       "restrict_workspace_hint": "Only allow file operations inside workspace.",
       "allow_remote": "Allow Remote Shell Execution",
       "allow_remote_hint": "When enabled, shell commands can also run for remote sessions or non-local contexts. When disabled, shell execution stays limited to local safe contexts.",
+      "allow_shell_execution": "Allow Shell Execution",
+      "allow_shell_execution_hint": "Enable scheduled shell commands for cron jobs by default. When disabled, users must pass command_confirm=true to schedule a cron command.",
+      "cron_exec_timeout": "Cron Command Timeout (minutes)",
+      "cron_exec_timeout_hint": "Maximum runtime for scheduled shell commands. Set to 0 to disable the timeout.",
       "max_tokens": "Max Tokens",
       "max_tokens_hint": "Upper token limit per model response.",
       "max_tool_iterations": "Max Tool Iterations",
@@ -434,6 +438,7 @@
       "sections": {
         "agent": "Agent",
         "runtime": "Runtime",
+        "cron": "Cron Tasks",
         "launcher": "Service",
         "devices": "Devices"
       },
