@@ -3,12 +3,15 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mymmrac/telego"
@@ -23,6 +26,13 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
+)
+
+const (
+	reconnectInitial    = 5 * time.Second
+	reconnectMax        = 5 * time.Minute
+	reconnectMultiplier = 2.0
+	telegramPollTimeout = 30 * time.Second
 )
 
 var (
@@ -49,6 +59,33 @@ type TelegramChannel struct {
 
 	registerFunc     func(context.Context, []commands.Definition) error
 	commandRegCancel context.CancelFunc
+
+	// Lifecycle management for reconnection
+	pollDone     chan struct{}
+	reconnectMu  sync.Mutex
+	reconnecting bool
+	stopping     atomic.Bool
+	wg           sync.WaitGroup
+}
+
+// newTelegramHTTPClient builds an *http.Client with timeouts tuned for long
+// polling behind a proxy. Without explicit timeouts a broken proxy connection
+// can hang forever, making the bot appear alive but deaf.
+func newTelegramHTTPClient(proxy func(*http.Request) (*url.URL, error)) *http.Client {
+	return &http.Client{
+		Timeout: telegramPollTimeout + 20*time.Second,
+		Transport: &http.Transport{
+			Proxy:                 proxy,
+			DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          20,
+			MaxIdleConnsPerHost:   4,
+			IdleConnTimeout:       30 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: telegramPollTimeout + 10*time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 }
 
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
@@ -60,18 +97,10 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid proxy URL %q: %w", telegramCfg.Proxy, parseErr)
 		}
-		opts = append(opts, telego.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			},
-		}))
+		opts = append(opts, telego.WithHTTPClient(newTelegramHTTPClient(http.ProxyURL(proxyURL))))
 	} else if os.Getenv("HTTP_PROXY") != "" || os.Getenv("HTTPS_PROXY") != "" {
 		// Use environment proxy if configured
-		opts = append(opts, telego.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-			},
-		}))
+		opts = append(opts, telego.WithHTTPClient(newTelegramHTTPClient(http.ProxyFromEnvironment)))
 	}
 
 	if baseURL := strings.TrimRight(strings.TrimSpace(telegramCfg.BaseURL), "/"); baseURL != "" {
@@ -107,24 +136,10 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	updates, err := c.bot.UpdatesViaLongPolling(c.ctx, &telego.GetUpdatesParams{
-		Timeout: 30,
-	})
-	if err != nil {
+	if err := c.startPolling(); err != nil {
 		c.cancel()
-		return fmt.Errorf("failed to start long polling: %w", err)
+		return err
 	}
-
-	bh, err := th.NewBotHandler(c.bot, updates)
-	if err != nil {
-		c.cancel()
-		return fmt.Errorf("failed to create bot handler: %w", err)
-	}
-	c.bh = bh
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.handleMessage(ctx, &message)
-	}, th.AnyMessage())
 
 	c.SetRunning(true)
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]any{
@@ -133,9 +148,40 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 
 	c.startCommandRegistration(c.ctx, commands.BuiltinDefinitions())
 
+	c.wg.Add(1)
 	go func() {
-		if err = bh.Start(); err != nil {
-			logger.ErrorCF("telegram", "Bot handler failed", map[string]any{
+		defer c.wg.Done()
+		c.monitorAndReconnect()
+	}()
+
+	return nil
+}
+
+// startPolling sets up long polling with retryTimeout=0 so that errors
+// immediately close the updates channel instead of retrying internally.
+func (c *TelegramChannel) startPolling() error {
+	updates, err := c.bot.UpdatesViaLongPolling(c.ctx, &telego.GetUpdatesParams{
+		Timeout: int(telegramPollTimeout.Seconds()),
+	}, telego.WithLongPollingRetryTimeout(0))
+	if err != nil {
+		return fmt.Errorf("failed to start long polling: %w", err)
+	}
+
+	bh, err := th.NewBotHandler(c.bot, updates)
+	if err != nil {
+		return fmt.Errorf("failed to create bot handler: %w", err)
+	}
+	c.bh = bh
+
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.handleMessage(ctx, &message)
+	}, th.AnyMessage())
+
+	c.pollDone = make(chan struct{})
+	go func() {
+		defer close(c.pollDone)
+		if err := bh.Start(); err != nil {
+			logger.ErrorCF("telegram", "Bot handler stopped", map[string]any{
 				"error": err.Error(),
 			})
 		}
@@ -144,8 +190,85 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	return nil
 }
 
+// monitorAndReconnect watches for unexpected polling termination and
+// triggers exponential-backoff reconnection.
+func (c *TelegramChannel) monitorAndReconnect() {
+	for {
+		select {
+		case <-c.pollDone:
+			if c.stopping.Load() {
+				return
+			}
+			logger.WarnC("telegram", "Long polling ended unexpectedly, attempting reconnect...")
+			c.reconnectWithBackoff()
+			if c.stopping.Load() {
+				return
+			}
+		case <-c.ctx.Done():
+			return
+		}
+	}
+}
+
+// reconnectWithBackoff attempts to re-establish long polling with exponential
+// backoff (5s initial, 2x multiplier, 5min cap).
+func (c *TelegramChannel) reconnectWithBackoff() {
+	c.reconnectMu.Lock()
+	if c.reconnecting || c.stopping.Load() {
+		c.reconnectMu.Unlock()
+		return
+	}
+	c.reconnecting = true
+	c.reconnectMu.Unlock()
+
+	defer func() {
+		c.reconnectMu.Lock()
+		c.reconnecting = false
+		c.reconnectMu.Unlock()
+	}()
+
+	backoff := reconnectInitial
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+		}
+
+		logger.InfoCF("telegram", "Telegram reconnecting", map[string]any{"backoff": backoff.String()})
+
+		if c.bh != nil {
+			cleanupCtx, cleanupCancel := context.WithTimeout(c.ctx, 5*time.Second)
+			_ = c.bh.StopWithContext(cleanupCtx)
+			cleanupCancel()
+		}
+
+		err := c.startPolling()
+		if err == nil {
+			logger.InfoC("telegram", "Telegram reconnected successfully")
+			return
+		}
+
+		logger.WarnCF("telegram", "Telegram reconnect failed", map[string]any{"error": err.Error()})
+
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-time.After(backoff):
+			if backoff < reconnectMax {
+				next := time.Duration(float64(backoff) * reconnectMultiplier)
+				if next > reconnectMax {
+					next = reconnectMax
+				}
+				backoff = next
+			}
+		}
+	}
+}
+
 func (c *TelegramChannel) Stop(ctx context.Context) error {
 	logger.InfoC("telegram", "Stopping Telegram bot...")
+	c.stopping.Store(true)
 	c.SetRunning(false)
 
 	// Stop the bot handler
@@ -160,6 +283,9 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	if c.commandRegCancel != nil {
 		c.commandRegCancel()
 	}
+
+	// Wait for background goroutines (monitor, reconnect) to finish
+	c.wg.Wait()
 
 	return nil
 }
