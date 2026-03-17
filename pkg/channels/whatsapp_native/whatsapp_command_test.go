@@ -43,14 +43,19 @@ func TestHandleIncoming_DoesNotConsumeGenericCommandsLocally(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	inbound, ok := messageBus.ConsumeInbound(ctx)
-	if !ok {
-		t.Fatal("expected inbound message to be forwarded")
-	}
-	if inbound.Channel != "whatsapp_native" {
-		t.Fatalf("channel=%q", inbound.Channel)
-	}
-	if inbound.Content != "/new" {
-		t.Fatalf("content=%q", inbound.Content)
+	select {
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for message to be forwarded")
+		return
+	case inbound, ok := <-messageBus.InboundChan():
+		if !ok {
+			t.Fatal("expected inbound message to be forwarded")
+		}
+		if inbound.Channel != "whatsapp_native" {
+			t.Fatalf("channel=%q", inbound.Channel)
+		}
+		if inbound.Content != "/new" {
+			t.Fatalf("content=%q", inbound.Content)
+		}
 	}
 }

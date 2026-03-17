@@ -3,7 +3,7 @@ import { TanStackRouterDevtools } from "@tanstack/react-router-devtools"
 import { useEffect } from "react"
 
 import { AppLayout } from "@/components/app-layout"
-import { initializeChatStore } from "@/lib/pico-chat-controller"
+import { initializeChatStore } from "@/features/chat/controller"
 
 const RootLayout = () => {
   useEffect(() => {

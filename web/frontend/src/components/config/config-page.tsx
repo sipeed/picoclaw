@@ -14,7 +14,9 @@ import {
 } from "@/api/system"
 import {
   AgentDefaultsSection,
+  CronSection,
   DevicesSection,
+  ExecSection,
   LauncherSection,
   RuntimeSection,
 } from "@/components/config/config-sections"
@@ -26,6 +28,7 @@ import {
   buildFormFromConfig,
   parseCIDRText,
   parseIntField,
+  parseMultilineList,
 } from "@/components/config/form-model"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
@@ -164,6 +167,33 @@ export function ConfigPage() {
           "Heartbeat interval",
           { min: 1 },
         )
+        const cronExecTimeoutMinutes = parseIntField(
+          form.cronExecTimeoutMinutes,
+          "Cron exec timeout",
+          { min: 0 },
+        )
+        const execConfigPatch: Record<string, unknown> = {
+          enabled: form.execEnabled,
+        }
+
+        if (form.execEnabled) {
+          execConfigPatch.allow_remote = form.allowRemote
+          execConfigPatch.enable_deny_patterns = form.enableDenyPatterns
+          execConfigPatch.custom_allow_patterns = parseMultilineList(
+            form.customAllowPatternsText,
+          )
+          execConfigPatch.timeout_seconds = parseIntField(
+            form.execTimeoutSeconds,
+            "Exec timeout",
+            { min: 0 },
+          )
+
+          if (form.enableDenyPatterns) {
+            execConfigPatch.custom_deny_patterns = parseMultilineList(
+              form.customDenyPatternsText,
+            )
+          }
+        }
 
         await patchAppConfig({
           agents: {
@@ -180,9 +210,11 @@ export function ConfigPage() {
             dm_scope: dmScope,
           },
           tools: {
-            exec: {
-              allow_remote: form.allowRemote,
+            cron: {
+              allow_command: form.allowCommand,
+              exec_timeout_minutes: cronExecTimeoutMinutes,
             },
+            exec: execConfigPatch,
           },
           heartbeat: {
             enabled: form.heartbeatEnabled,
@@ -278,6 +310,10 @@ export function ConfigPage() {
               <AgentDefaultsSection form={form} onFieldChange={updateField} />
 
               <RuntimeSection form={form} onFieldChange={updateField} />
+
+              <ExecSection form={form} onFieldChange={updateField} />
+
+              <CronSection form={form} onFieldChange={updateField} />
 
               <LauncherSection
                 launcherForm={launcherForm}

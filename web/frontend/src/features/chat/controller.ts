@@ -2,24 +2,24 @@ import { getDefaultStore } from "jotai"
 import { toast } from "sonner"
 
 import { getPicoToken } from "@/api/pico"
-import { getSessionHistory } from "@/api/sessions"
-import i18n from "@/i18n"
+import {
+  loadSessionMessages,
+  mergeHistoryMessages,
+} from "@/features/chat/history"
+import { type PicoMessage, handlePicoMessage } from "@/features/chat/protocol"
 import {
   clearStoredSessionId,
   generateSessionId,
-  normalizeUnixTimestamp,
   readStoredSessionId,
-} from "@/lib/pico-chat-state"
-import { type ChatMessage, getChatState, updateChatStore } from "@/store/chat"
-import { gatewayAtom } from "@/store/gateway"
-
-interface PicoMessage {
-  type: string
-  id?: string
-  session_id?: string
-  timestamp?: number | string
-  payload?: Record<string, unknown>
-}
+} from "@/features/chat/state"
+import {
+  invalidateSocket,
+  isCurrentSocket,
+  normalizeWsUrlForBrowser,
+} from "@/features/chat/websocket"
+import i18n from "@/i18n"
+import { getChatState, updateChatStore } from "@/store/chat"
+import { type GatewayState, gatewayAtom } from "@/store/gateway"
 
 const store = getDefaultStore()
 
@@ -31,81 +31,51 @@ let initialized = false
 let unsubscribeGateway: (() => void) | null = null
 let hydratePromise: Promise<void> | null = null
 let connectionGeneration = 0
+let reconnectTimer: number | null = null
+let reconnectAttempts = 0
+let shouldMaintainConnection = false
 
-async function loadSessionMessages(sessionId: string): Promise<ChatMessage[]> {
-  const detail = await getSessionHistory(sessionId)
-  const fallbackTime = detail.updated
-
-  return detail.messages.map((message, index) => ({
-    id: `hist-${index}-${Date.now()}`,
-    role: message.role,
-    content: message.content,
-    timestamp: fallbackTime,
-  }))
+function clearReconnectTimer() {
+  if (reconnectTimer !== null) {
+    window.clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
 }
 
-function handlePicoMessage(message: PicoMessage) {
-  const payload = message.payload || {}
+function shouldReconnectFor(generation: number, sessionId: string): boolean {
+  return (
+    shouldMaintainConnection &&
+    generation === connectionGeneration &&
+    sessionId === activeSessionIdRef &&
+    store.get(gatewayAtom).status === "running"
+  )
+}
 
-  switch (message.type) {
-    case "message.create": {
-      const content = (payload.content as string) || ""
-      const messageId = (payload.message_id as string) || `pico-${Date.now()}`
-      const timestamp =
-        message.timestamp !== undefined &&
-        Number.isFinite(Number(message.timestamp))
-          ? normalizeUnixTimestamp(Number(message.timestamp))
-          : Date.now()
-
-      updateChatStore((prev) => ({
-        messages: [
-          ...prev.messages,
-          {
-            id: messageId,
-            role: "assistant",
-            content,
-            timestamp,
-          },
-        ],
-        isTyping: false,
-      }))
-      break
-    }
-
-    case "message.update": {
-      const content = (payload.content as string) || ""
-      const messageId = payload.message_id as string
-      if (!messageId) {
-        break
-      }
-
-      updateChatStore((prev) => ({
-        messages: prev.messages.map((msg) =>
-          msg.id === messageId ? { ...msg, content } : msg,
-        ),
-      }))
-      break
-    }
-
-    case "typing.start":
-      updateChatStore({ isTyping: true })
-      break
-
-    case "typing.stop":
-      updateChatStore({ isTyping: false })
-      break
-
-    case "error":
-      console.error("Pico error:", payload)
-      updateChatStore({ isTyping: false })
-      break
-
-    case "pong":
-      break
-
-    default:
-      console.log("Unknown pico message type:", message.type)
+function scheduleReconnect(generation: number, sessionId: string) {
+  if (!shouldReconnectFor(generation, sessionId) || reconnectTimer !== null) {
+    return
   }
+
+  const delay = Math.min(1000 * 2 ** reconnectAttempts, 5000)
+  reconnectAttempts += 1
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null
+    if (!shouldReconnectFor(generation, sessionId)) {
+      return
+    }
+    void connectChat()
+  }, delay)
+}
+
+function needsActiveSessionHydration(): boolean {
+  const state = getChatState()
+  const storedSessionId = readStoredSessionId()
+
+  return Boolean(
+    storedSessionId &&
+    storedSessionId === state.activeSessionId &&
+    !state.hasHydratedActiveSession,
+  )
 }
 
 function setActiveSessionId(sessionId: string) {
@@ -113,8 +83,35 @@ function setActiveSessionId(sessionId: string) {
   updateChatStore({ activeSessionId: sessionId })
 }
 
+function disconnectChatInternal({
+  clearDesiredConnection,
+}: {
+  clearDesiredConnection: boolean
+}) {
+  connectionGeneration += 1
+  clearReconnectTimer()
+
+  if (clearDesiredConnection) {
+    shouldMaintainConnection = false
+  }
+
+  const socket = wsRef
+  wsRef = null
+  isConnecting = false
+
+  invalidateSocket(socket)
+
+  updateChatStore({
+    connectionState: "disconnected",
+    isTyping: false,
+  })
+}
+
 export async function connectChat() {
-  if (store.get(gatewayAtom).status !== "running") {
+  if (
+    store.get(gatewayAtom).status !== "running" ||
+    needsActiveSessionHydration()
+  ) {
     return
   }
 
@@ -130,12 +127,15 @@ export async function connectChat() {
   const generation = connectionGeneration + 1
   connectionGeneration = generation
   isConnecting = true
+  clearReconnectTimer()
   updateChatStore({ connectionState: "connecting" })
 
   try {
     const { token, ws_url } = await getPicoToken()
+    const sessionId = activeSessionIdRef
 
     if (generation !== connectionGeneration) {
+      isConnecting = false
       return
     }
 
@@ -143,55 +143,71 @@ export async function connectChat() {
       console.error("No pico token available")
       updateChatStore({ connectionState: "error" })
       isConnecting = false
+      scheduleReconnect(generation, sessionId)
       return
     }
 
-    let finalWsUrl = ws_url
-    try {
-      const parsedUrl = new URL(ws_url)
-      const isLocalHost =
-        parsedUrl.hostname === "localhost" ||
-        parsedUrl.hostname === "127.0.0.1" ||
-        parsedUrl.hostname === "0.0.0.0"
-      const isBrowserLocal =
-        window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1"
-
-      if (isLocalHost && !isBrowserLocal) {
-        parsedUrl.hostname = window.location.hostname
-        finalWsUrl = parsedUrl.toString()
-      }
-    } catch (error) {
-      console.warn("Could not parse ws_url:", error)
-    }
-
-    const url = `${finalWsUrl}?token=${encodeURIComponent(token)}&session_id=${encodeURIComponent(activeSessionIdRef)}`
-    const socket = new WebSocket(url)
+    const finalWsUrl = normalizeWsUrlForBrowser(ws_url)
+    const url = `${finalWsUrl}?session_id=${encodeURIComponent(sessionId)}`
+    const socket = new WebSocket(url, [`token.${token}`])
 
     if (generation !== connectionGeneration) {
-      socket.close()
+      isConnecting = false
+      invalidateSocket(socket)
       return
     }
 
     socket.onopen = () => {
-      if (wsRef !== socket) {
+      if (
+        !isCurrentSocket({
+          socket,
+          currentSocket: wsRef,
+          generation,
+          currentGeneration: connectionGeneration,
+          sessionId,
+          currentSessionId: activeSessionIdRef,
+        })
+      ) {
         return
       }
       updateChatStore({ connectionState: "connected" })
       isConnecting = false
+      reconnectAttempts = 0
     }
 
     socket.onmessage = (event) => {
+      if (
+        !isCurrentSocket({
+          socket,
+          currentSocket: wsRef,
+          generation,
+          currentGeneration: connectionGeneration,
+          sessionId,
+          currentSessionId: activeSessionIdRef,
+        })
+      ) {
+        return
+      }
+
       try {
-        const message: PicoMessage = JSON.parse(event.data)
-        handlePicoMessage(message)
+        const message = JSON.parse(event.data) as PicoMessage
+        handlePicoMessage(message, sessionId)
       } catch {
         console.warn("Non-JSON message from pico:", event.data)
       }
     }
 
     socket.onclose = () => {
-      if (wsRef !== socket) {
+      if (
+        !isCurrentSocket({
+          socket,
+          currentSocket: wsRef,
+          generation,
+          currentGeneration: connectionGeneration,
+          sessionId,
+          currentSessionId: activeSessionIdRef,
+        })
+      ) {
         return
       }
       wsRef = null
@@ -200,42 +216,42 @@ export async function connectChat() {
         connectionState: "disconnected",
         isTyping: false,
       })
+      scheduleReconnect(generation, sessionId)
     }
 
     socket.onerror = () => {
-      if (wsRef !== socket) {
+      if (
+        !isCurrentSocket({
+          socket,
+          currentSocket: wsRef,
+          generation,
+          currentGeneration: connectionGeneration,
+          sessionId,
+          currentSessionId: activeSessionIdRef,
+        })
+      ) {
         return
       }
       isConnecting = false
       updateChatStore({ connectionState: "error" })
+      scheduleReconnect(generation, sessionId)
     }
 
     wsRef = socket
   } catch (error) {
     if (generation !== connectionGeneration) {
+      isConnecting = false
       return
     }
     console.error("Failed to connect to pico:", error)
     updateChatStore({ connectionState: "error" })
     isConnecting = false
+    scheduleReconnect(generation, activeSessionIdRef)
   }
 }
 
 export function disconnectChat() {
-  connectionGeneration += 1
-
-  const socket = wsRef
-  wsRef = null
-  isConnecting = false
-
-  if (socket) {
-    socket.close()
-  }
-
-  updateChatStore({
-    connectionState: "disconnected",
-    isTyping: false,
-  })
+  disconnectChatInternal({ clearDesiredConnection: true })
 }
 
 export async function hydrateActiveSession() {
@@ -249,7 +265,6 @@ export async function hydrateActiveSession() {
   if (
     !storedSessionId ||
     state.hasHydratedActiveSession ||
-    state.messages.length > 0 ||
     storedSessionId !== state.activeSessionId
   ) {
     if (!state.hasHydratedActiveSession) {
@@ -266,7 +281,13 @@ export async function hydrateActiveSession() {
       }
 
       if (currentState.messages.length > 0) {
-        updateChatStore({ hasHydratedActiveSession: true })
+        updateChatStore({
+          messages: mergeHistoryMessages(
+            historyMessages,
+            currentState.messages,
+          ),
+          hasHydratedActiveSession: true,
+        })
         return
       }
 
@@ -306,9 +327,10 @@ export async function hydrateActiveSession() {
 export function sendChatMessage(content: string) {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
     console.warn("WebSocket not connected")
-    return
+    return false
   }
 
+  const socket = wsRef
   const id = `msg-${++msgIdCounter}-${Date.now()}`
 
   updateChatStore((prev) => ({
@@ -319,13 +341,23 @@ export function sendChatMessage(content: string) {
     isTyping: true,
   }))
 
-  wsRef.send(
-    JSON.stringify({
-      type: "message.send",
-      id,
-      payload: { content },
-    }),
-  )
+  try {
+    socket.send(
+      JSON.stringify({
+        type: "message.send",
+        id,
+        payload: { content },
+      }),
+    )
+    return true
+  } catch (error) {
+    console.error("Failed to send pico message:", error)
+    updateChatStore((prev) => ({
+      messages: prev.messages.filter((message) => message.id !== id),
+      isTyping: false,
+    }))
+    return false
+  }
 }
 
 export async function switchChatSession(sessionId: string) {
@@ -336,7 +368,7 @@ export async function switchChatSession(sessionId: string) {
   try {
     const historyMessages = await loadSessionMessages(sessionId)
 
-    disconnectChat()
+    disconnectChatInternal({ clearDesiredConnection: false })
     setActiveSessionId(sessionId)
     updateChatStore({
       messages: historyMessages,
@@ -345,6 +377,7 @@ export async function switchChatSession(sessionId: string) {
     })
 
     if (store.get(gatewayAtom).status === "running") {
+      shouldMaintainConnection = true
       await connectChat()
     }
   } catch (error) {
@@ -358,7 +391,7 @@ export async function newChatSession() {
     return
   }
 
-  disconnectChat()
+  disconnectChatInternal({ clearDesiredConnection: false })
   setActiveSessionId(generateSessionId())
   updateChatStore({
     messages: [],
@@ -367,6 +400,7 @@ export async function newChatSession() {
   })
 
   if (store.get(gatewayAtom).status === "running") {
+    shouldMaintainConnection = true
     await connectChat()
   }
 }
@@ -378,23 +412,43 @@ export function initializeChatStore() {
 
   initialized = true
   activeSessionIdRef = getChatState().activeSessionId
+  let lastGatewayStatus: GatewayState | null = null
 
-  const syncConnectionWithGateway = () => {
-    if (store.get(gatewayAtom).status === "running") {
+  const syncConnectionWithGateway = (force: boolean = false) => {
+    const gatewayStatus = store.get(gatewayAtom).status
+    if (!force && gatewayStatus === lastGatewayStatus) {
+      return
+    }
+    lastGatewayStatus = gatewayStatus
+
+    if (gatewayStatus === "running") {
+      shouldMaintainConnection = true
+      if (needsActiveSessionHydration()) {
+        return
+      }
       void connectChat()
       return
     }
 
-    disconnectChat()
+    if (gatewayStatus === "stopped" || gatewayStatus === "error") {
+      disconnectChatInternal({ clearDesiredConnection: true })
+    }
   }
 
   unsubscribeGateway = store.sub(gatewayAtom, syncConnectionWithGateway)
 
   if (!readStoredSessionId()) {
     updateChatStore({ hasHydratedActiveSession: true })
+    syncConnectionWithGateway(true)
+    return
   }
 
-  syncConnectionWithGateway()
+  void hydrateActiveSession().finally(() => {
+    if (!initialized) {
+      return
+    }
+    syncConnectionWithGateway(true)
+  })
 }
 
 export function teardownChatStore() {

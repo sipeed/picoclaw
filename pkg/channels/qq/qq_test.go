@@ -34,11 +34,19 @@ func TestHandleC2CMessage_IncludesAccountIDMetadata(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	inbound, ok := messageBus.ConsumeInbound(ctx)
-	if !ok {
-		t.Fatal("expected inbound message")
-	}
-	if inbound.Metadata["account_id"] != "7750283E123456" {
-		t.Fatalf("account_id metadata = %q, want %q", inbound.Metadata["account_id"], "7750283E123456")
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatal("timeout waiting for inbound message")
+			return
+		case inbound, ok := <-messageBus.InboundChan():
+			if !ok {
+				t.Fatal("expected inbound message")
+			}
+			if inbound.Metadata["account_id"] != "7750283E123456" {
+				t.Fatalf("account_id metadata = %q, want %q", inbound.Metadata["account_id"], "7750283E123456")
+			}
+			return
+		}
 	}
 }
