@@ -439,6 +439,44 @@ func TestProcessMessage_UsesRouteSessionKey(t *testing.T) {
 	}
 }
 
+func TestPassiveInboundRecorder_PersistsObservedMessage(t *testing.T) {
+	al, _, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	recorder := &passiveInboundRecorder{registry: al.registry}
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello everyone",
+		Peer: bus.Peer{
+			Kind: "group",
+			ID:   "chat1",
+		},
+	}
+
+	if err := recorder.RecordPassiveInbound(context.Background(), msg); err != nil {
+		t.Fatalf("RecordPassiveInbound error: %v", err)
+	}
+
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: msg.Channel,
+		Peer:    extractPeer(msg),
+	})
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	history := defaultAgent.Sessions.GetHistory(route.SessionKey)
+	if len(history) != 1 {
+		t.Fatalf("expected observed history len=1, got %d", len(history))
+	}
+	if history[0].Role != "user" || history[0].Content != "hello everyone" {
+		t.Fatalf("unexpected observed message: %+v", history[0])
+	}
+}
+
 func TestProcessMessage_CommandOutcomes(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {

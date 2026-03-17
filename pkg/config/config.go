@@ -278,6 +278,7 @@ type ChannelsConfig struct {
 // GroupTriggerConfig controls when the bot responds in group chats.
 type GroupTriggerConfig struct {
 	MentionOnly bool     `json:"mention_only,omitempty"`
+	ObserveOnly bool     `json:"observe_only,omitempty"`
 	Prefixes    []string `json:"prefixes,omitempty"`
 }
 

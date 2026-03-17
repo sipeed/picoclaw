@@ -77,18 +77,19 @@ type channelWorker struct {
 }
 
 type Manager struct {
-	channels      map[string]Channel
-	workers       map[string]*channelWorker
-	bus           *bus.MessageBus
-	config        *config.Config
-	mediaStore    media.MediaStore
-	dispatchTask  *asyncTask
-	mux           *http.ServeMux
-	httpServer    *http.Server
-	mu            sync.RWMutex
-	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
-	typingStops   sync.Map // "channel:chatID" → func()
-	reactionUndos sync.Map // "channel:chatID" → reactionEntry
+	channels        map[string]Channel
+	workers         map[string]*channelWorker
+	bus             *bus.MessageBus
+	config          *config.Config
+	mediaStore      media.MediaStore
+	passiveRecorder PassiveInboundRecorder
+	dispatchTask    *asyncTask
+	mux             *http.ServeMux
+	httpServer      *http.Server
+	mu              sync.RWMutex
+	placeholders    sync.Map // "channel:chatID" → placeholderID (string)
+	typingStops     sync.Map // "channel:chatID" → func()
+	reactionUndos   sync.Map // "channel:chatID" → reactionEntry
 }
 
 type asyncTask struct {
@@ -225,10 +226,30 @@ func (m *Manager) initChannel(name, displayName string) {
 		if setter, ok := ch.(interface{ SetOwner(ch Channel) }); ok {
 			setter.SetOwner(ch)
 		}
+		if m.passiveRecorder != nil {
+			if setter, ok := ch.(interface {
+				SetPassiveInboundRecorder(r PassiveInboundRecorder)
+			}); ok {
+				setter.SetPassiveInboundRecorder(m.passiveRecorder)
+			}
+		}
 		m.channels[name] = ch
 		logger.InfoCF("channels", "Channel enabled successfully", map[string]any{
 			"channel": displayName,
 		})
+	}
+}
+
+func (m *Manager) SetPassiveInboundRecorder(r PassiveInboundRecorder) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.passiveRecorder = r
+	for _, ch := range m.channels {
+		if setter, ok := ch.(interface {
+			SetPassiveInboundRecorder(r PassiveInboundRecorder)
+		}); ok {
+			setter.SetPassiveInboundRecorder(r)
+		}
 	}
 }
 

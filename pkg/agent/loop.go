@@ -358,6 +358,9 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+	if cm != nil {
+		cm.SetPassiveInboundRecorder(&passiveInboundRecorder{registry: al.registry})
+	}
 }
 
 // ReloadProviderAndConfig atomically swaps the provider and config with proper synchronization.
@@ -1078,7 +1081,12 @@ func (al *AgentLoop) runLLMIteration(
 					ctx,
 					activeCandidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
+						modelRef := provider + "/" + model
+						candidateProvider, candidateModel, err := providers.CreateProviderForModelRef(al.cfg, modelRef)
+						if err != nil {
+							return nil, err
+						}
+						return candidateProvider.Chat(ctx, messages, providerToolDefs, candidateModel, llmOpts)
 					},
 				)
 				if fbErr != nil {
@@ -1932,6 +1940,37 @@ func mapCommandError(result commands.ExecuteResult) string {
 		return fmt.Sprintf("Failed to execute command: %v", result.Err)
 	}
 	return fmt.Sprintf("Failed to execute /%s: %v", result.Command, result.Err)
+}
+
+type passiveInboundRecorder struct {
+	registry *AgentRegistry
+}
+
+func (r *passiveInboundRecorder) RecordPassiveInbound(ctx context.Context, msg bus.InboundMessage) error {
+	if r == nil || r.registry == nil {
+		return fmt.Errorf("passive inbound recorder not configured")
+	}
+
+	route := r.registry.ResolveRoute(routing.RouteInput{
+		Channel:    msg.Channel,
+		AccountID:  inboundMetadata(msg, metadataKeyAccountID),
+		Peer:       extractPeer(msg),
+		ParentPeer: extractParentPeer(msg),
+		GuildID:    inboundMetadata(msg, metadataKeyGuildID),
+		TeamID:     inboundMetadata(msg, metadataKeyTeamID),
+	})
+
+	agent, ok := r.registry.GetAgent(route.AgentID)
+	if !ok {
+		agent = r.registry.GetDefaultAgent()
+	}
+	if agent == nil {
+		return fmt.Errorf("no agent available for passive inbound route (agent_id=%s)", route.AgentID)
+	}
+
+	sessionKey := resolveScopeKey(route, msg.SessionKey)
+	agent.Sessions.AddMessage(sessionKey, "user", msg.Content)
+	return agent.Sessions.Save(sessionKey)
 }
 
 // extractPeer extracts the routing peer from the inbound message's structured Peer field.

@@ -41,19 +41,28 @@ func newTestTelegramBot(t *testing.T, username string) *telego.Bot {
 	return bot
 }
 
-func newGroupMentionOnlyChannel(t *testing.T, botUsername string) (*TelegramChannel, *bus.MessageBus) {
+func newGroupChannelWithTrigger(
+	t *testing.T,
+	botUsername string,
+	trigger config.GroupTriggerConfig,
+) (*TelegramChannel, *bus.MessageBus) {
 	t.Helper()
 
 	messageBus := bus.NewMessageBus()
 	ch := &TelegramChannel{
 		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil,
-			channels.WithGroupTrigger(config.GroupTriggerConfig{MentionOnly: true}),
+			channels.WithGroupTrigger(trigger),
 		),
 		bot:     newTestTelegramBot(t, botUsername),
 		chatIDs: make(map[string]int64),
 		ctx:     context.Background(),
 	}
 	return ch, messageBus
+}
+
+func newGroupMentionOnlyChannel(t *testing.T, botUsername string) (*TelegramChannel, *bus.MessageBus) {
+	t.Helper()
+	return newGroupChannelWithTrigger(t, botUsername, config.GroupTriggerConfig{MentionOnly: true})
 }
 
 func TestHandleMessage_GroupMentionOnly_BotCommandEntity(t *testing.T) {

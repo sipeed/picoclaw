@@ -82,6 +82,10 @@ type MessageLengthProvider interface {
 	MaxMessageLength() int
 }
 
+type PassiveInboundRecorder interface {
+	RecordPassiveInbound(ctx context.Context, msg bus.InboundMessage) error
+}
+
 type BaseChannel struct {
 	config              any
 	bus                 *bus.MessageBus
@@ -94,6 +98,7 @@ type BaseChannel struct {
 	placeholderRecorder PlaceholderRecorder
 	owner               Channel // the concrete channel that embeds this BaseChannel
 	reasoningChannelID  string
+	passiveRecorder     PassiveInboundRecorder
 }
 
 func NewBaseChannel(
@@ -119,6 +124,10 @@ func NewBaseChannel(
 // A value of 0 means no limit.
 func (c *BaseChannel) MaxMessageLength() int {
 	return c.maxMessageLength
+}
+
+func (c *BaseChannel) GroupTrigger() config.GroupTriggerConfig {
+	return c.groupTrigger
 }
 
 // ShouldRespondInGroup determines whether the bot should respond in a group chat.
@@ -237,40 +246,9 @@ func (c *BaseChannel) HandleMessage(
 	metadata map[string]string,
 	senderOpts ...bus.SenderInfo,
 ) {
-	// Use SenderInfo-based allow check when available, else fall back to string
-	var sender bus.SenderInfo
-	if len(senderOpts) > 0 {
-		sender = senderOpts[0]
-	}
-	if sender.CanonicalID != "" || sender.PlatformID != "" {
-		if !c.IsAllowedSender(sender) {
-			return
-		}
-	} else {
-		if !c.IsAllowed(senderID) {
-			return
-		}
-	}
-
-	// Set SenderID to canonical if available, otherwise keep the raw senderID
-	resolvedSenderID := senderID
-	if sender.CanonicalID != "" {
-		resolvedSenderID = sender.CanonicalID
-	}
-
-	scope := BuildMediaScope(c.name, chatID, messageID)
-
-	msg := bus.InboundMessage{
-		Channel:    c.name,
-		SenderID:   resolvedSenderID,
-		Sender:     sender,
-		ChatID:     chatID,
-		Content:    content,
-		Media:      media,
-		Peer:       peer,
-		MessageID:  messageID,
-		MediaScope: scope,
-		Metadata:   metadata,
+	msg, ok := c.buildInboundMessage(peer, messageID, senderID, chatID, content, media, metadata, senderOpts...)
+	if !ok {
+		return
 	}
 
 	// Auto-trigger typing indicator, message reaction, and placeholder before publishing.
@@ -310,6 +288,70 @@ func (c *BaseChannel) HandleMessage(
 	}
 }
 
+func (c *BaseChannel) PersistMessage(
+	ctx context.Context,
+	peer bus.Peer,
+	messageID, senderID, chatID, content string,
+	media []string,
+	metadata map[string]string,
+	senderOpts ...bus.SenderInfo,
+) {
+	msg, ok := c.buildInboundMessage(peer, messageID, senderID, chatID, content, media, metadata, senderOpts...)
+	if !ok || c.passiveRecorder == nil {
+		return
+	}
+	if err := c.passiveRecorder.RecordPassiveInbound(ctx, msg); err != nil {
+		logger.ErrorCF("channels", "Failed to persist passive inbound message", map[string]any{
+			"channel": c.name,
+			"chat_id": chatID,
+			"error":   err.Error(),
+		})
+	}
+}
+
+func (c *BaseChannel) buildInboundMessage(
+	peer bus.Peer,
+	messageID, senderID, chatID, content string,
+	media []string,
+	metadata map[string]string,
+	senderOpts ...bus.SenderInfo,
+) (bus.InboundMessage, bool) {
+	var sender bus.SenderInfo
+	if len(senderOpts) > 0 {
+		sender = senderOpts[0]
+	}
+	if sender.CanonicalID != "" || sender.PlatformID != "" {
+		if !c.IsAllowedSender(sender) {
+			return bus.InboundMessage{}, false
+		}
+	} else {
+		if !c.IsAllowed(senderID) {
+			return bus.InboundMessage{}, false
+		}
+	}
+
+	// Set SenderID to canonical if available, otherwise keep the raw senderID
+	resolvedSenderID := senderID
+	if sender.CanonicalID != "" {
+		resolvedSenderID = sender.CanonicalID
+	}
+
+	scope := BuildMediaScope(c.name, chatID, messageID)
+
+	return bus.InboundMessage{
+		Channel:    c.name,
+		SenderID:   resolvedSenderID,
+		Sender:     sender,
+		ChatID:     chatID,
+		Content:    content,
+		Media:      media,
+		Peer:       peer,
+		MessageID:  messageID,
+		MediaScope: scope,
+		Metadata:   metadata,
+	}, true
+}
+
 func (c *BaseChannel) SetRunning(running bool) {
 	c.running.Store(running)
 }
@@ -334,6 +376,10 @@ func (c *BaseChannel) GetPlaceholderRecorder() PlaceholderRecorder {
 // This allows HandleMessage to auto-trigger TypingCapable / ReactionCapable / PlaceholderCapable.
 func (c *BaseChannel) SetOwner(ch Channel) {
 	c.owner = ch
+}
+
+func (c *BaseChannel) SetPassiveInboundRecorder(r PassiveInboundRecorder) {
+	c.passiveRecorder = r
 }
 
 // BuildMediaScope constructs a scope key for media lifecycle tracking.

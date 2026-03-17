@@ -106,6 +106,14 @@ func TestAgentConfig_FullParse(t *testing.T) {
 				}
 			]
 		},
+		"channels": {
+			"telegram": {
+				"group_trigger": {
+					"mention_only": true,
+					"observe_only": true
+				}
+			}
+		},
 		"bindings": [
 			{
 				"agent_id": "support",
@@ -153,6 +161,9 @@ func TestAgentConfig_FullParse(t *testing.T) {
 	}
 	if support.Subagents == nil || len(support.Subagents.AllowAgents) != 1 {
 		t.Errorf("support.Subagents = %+v", support.Subagents)
+	}
+	if !cfg.Channels.Telegram.GroupTrigger.MentionOnly || !cfg.Channels.Telegram.GroupTrigger.ObserveOnly {
+		t.Errorf("cfg.Channels.Telegram.GroupTrigger = %+v", cfg.Channels.Telegram.GroupTrigger)
 	}
 
 	if len(cfg.Bindings) != 1 {
