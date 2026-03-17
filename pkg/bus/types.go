@@ -12,7 +12,9 @@ type SenderInfo struct {
 	PlatformID  string `json:"platform_id,omitempty"`  // raw platform ID, e.g. "123456"
 	CanonicalID string `json:"canonical_id,omitempty"` // "platform:id" format
 	Username    string `json:"username,omitempty"`     // username (e.g. @alice)
-	DisplayName string `json:"display_name,omitempty"` // display name
+	DisplayName string `json:"display_name,omitempty"` // display name (used when first/last are not available)
+	FirstName   string `json:"first_name,omitempty"`   // given name (preferred over DisplayName when set)
+	LastName    string `json:"last_name,omitempty"`    // family name
 }
 
 type InboundMessage struct {

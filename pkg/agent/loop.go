@@ -66,8 +66,9 @@ type processOptions struct {
 	EnableSummary     bool     // Whether to trigger summarization
 	SendResponse      bool     // Whether to send response via bus
 	NoHistory         bool     // If true, don't load session history (for heartbeat)
-	MessageID         string   // Inbound platform message ID (for threading)
-	ReplyToMessageID  string   // Parent message ID from inbound (for threading)
+	MessageID         string                    // Inbound platform message ID (for threading)
+	ReplyToMessageID  string                    // Parent message ID from inbound (for threading)
+	Sender            *providers.MessageSender  // Author identity (nil for system/automated messages)
 }
 
 const (
@@ -761,6 +762,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		SendResponse:      false,
 		MessageID:         msg.MessageID,
 		ReplyToMessageID:  inboundMetadata(msg, metadataKeyReplyToMessage),
+		Sender:            messageSenderFromInbound(msg.Sender),
 	}
 
 	// context-dependent commands check their own Runtime fields and report
@@ -915,6 +917,7 @@ func (al *AgentLoop) runAgentLoop(
 		Content:          opts.UserMessage,
 		MessageID:        opts.MessageID,
 		ReplyToMessageID: opts.ReplyToMessageID,
+		Sender:           opts.Sender,
 	}
 	agent.Sessions.AddFullMessage(opts.SessionKey, userMsg)
 
@@ -1998,4 +2001,23 @@ func extractProvider(registry *AgentRegistry) (providers.LLMProvider, bool) {
 		return nil, false
 	}
 	return defaultAgent.Provider, true
+}
+
+// messageSenderFromInbound converts bus.SenderInfo to providers.MessageSender.
+// Returns nil if no meaningful identity is present.
+func messageSenderFromInbound(s bus.SenderInfo) *providers.MessageSender {
+	if s.Username == "" && s.FirstName == "" && s.LastName == "" && s.DisplayName == "" {
+		return nil
+	}
+	username := s.Username
+	firstName := s.FirstName
+	lastName := s.LastName
+	if firstName == "" && lastName == "" && s.DisplayName != "" {
+		firstName = s.DisplayName
+	}
+	return &providers.MessageSender{
+		Username:  username,
+		FirstName: firstName,
+		LastName:  lastName,
+	}
 }

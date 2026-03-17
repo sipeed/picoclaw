@@ -62,16 +62,26 @@ type ContentBlock struct {
 	CacheControl *CacheControl `json:"cache_control,omitempty"`
 }
 
+// MessageSender carries author identity for a user message.
+// Stored alongside the message in history so the LLM can address
+// participants by name in multi-user conversations.
+type MessageSender struct {
+	Username  string `json:"username,omitempty"`   // e.g. "@alice" (platform handle)
+	FirstName string `json:"first_name,omitempty"` // given name
+	LastName  string `json:"last_name,omitempty"`  // family name
+}
+
 type Message struct {
-	Role             string         `json:"role"`
-	Content          string         `json:"content"`
-	Media            []string       `json:"media,omitempty"`
-	ReasoningContent string         `json:"reasoning_content,omitempty"`
-	SystemParts      []ContentBlock `json:"system_parts,omitempty"` // structured system blocks for cache-aware adapters
-	ToolCalls        []ToolCall     `json:"tool_calls,omitempty"`
-	ToolCallID       string         `json:"tool_call_id,omitempty"`
-	MessageID        string         `json:"message_id,omitempty"`          // Platform message ID
-	ReplyToMessageID string         `json:"reply_to_message_id,omitempty"` // Parent message ID (for threading)
+	Role             string          `json:"role"`
+	Content          string          `json:"content"`
+	Media            []string        `json:"media,omitempty"`
+	ReasoningContent string          `json:"reasoning_content,omitempty"`
+	SystemParts      []ContentBlock  `json:"system_parts,omitempty"` // structured system blocks for cache-aware adapters
+	ToolCalls        []ToolCall      `json:"tool_calls,omitempty"`
+	ToolCallID       string          `json:"tool_call_id,omitempty"`
+	MessageID        string          `json:"message_id,omitempty"`          // Platform message ID
+	ReplyToMessageID string          `json:"reply_to_message_id,omitempty"` // Parent message ID (for threading)
+	Sender           *MessageSender  `json:"sender,omitempty"`              // Author identity (user messages only)
 }
 
 type ToolDefinition struct {
