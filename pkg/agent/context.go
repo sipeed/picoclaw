@@ -615,18 +615,26 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 
 		case "assistant":
 			if len(msg.ToolCalls) > 0 {
-				if len(sanitized) == 0 {
-					logger.DebugCF("agent", "Dropping assistant tool-call turn at history start", map[string]any{})
+				var keep bool
+				msg, keep = sanitizeAssistantToolCalls(msg)
+				if !keep {
 					continue
 				}
-				prev := sanitized[len(sanitized)-1]
-				if prev.Role != "user" && prev.Role != "tool" {
-					logger.DebugCF(
-						"agent",
-						"Dropping assistant tool-call turn with invalid predecessor",
-						map[string]any{"prev_role": prev.Role},
-					)
-					continue
+
+				if len(msg.ToolCalls) > 0 {
+					if len(sanitized) == 0 {
+						logger.DebugCF("agent", "Dropping assistant tool-call turn at history start", map[string]any{})
+						continue
+					}
+					prev := sanitized[len(sanitized)-1]
+					if prev.Role != "user" && prev.Role != "tool" {
+						logger.DebugCF(
+							"agent",
+							"Dropping assistant tool-call turn with invalid predecessor",
+							map[string]any{"prev_role": prev.Role},
+						)
+						continue
+					}
 				}
 			}
 			sanitized = append(sanitized, msg)
@@ -650,8 +658,10 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 				expected[tc.ID] = false
 			}
 
-			// Check following messages for matching tool results
+			// Collect following tool results, keeping only those that still
+			// match a valid tool_call from the assistant message.
 			toolMsgCount := 0
+			matchingToolResults := make([]providers.Message, 0, len(expected))
 			for j := i + 1; j < len(sanitized); j++ {
 				if sanitized[j].Role != "tool" {
 					break
@@ -659,7 +669,12 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 				toolMsgCount++
 				if _, exists := expected[sanitized[j].ToolCallID]; exists {
 					expected[sanitized[j].ToolCallID] = true
+					matchingToolResults = append(matchingToolResults, sanitized[j])
+					continue
 				}
+				logger.DebugCF("agent", "Dropping unexpected tool result from history", map[string]any{
+					"tool_call_id": sanitized[j].ToolCallID,
+				})
 			}
 
 			// If any tool_call_id is missing, drop this assistant message and its partial tool messages
@@ -685,11 +700,43 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 				i += toolMsgCount
 				continue
 			}
+
+			final = append(final, msg)
+			final = append(final, matchingToolResults...)
+			i += toolMsgCount
+			continue
 		}
 		final = append(final, msg)
 	}
 
 	return final
+}
+
+func sanitizeAssistantToolCalls(msg providers.Message) (providers.Message, bool) {
+	filtered := make([]providers.ToolCall, 0, len(msg.ToolCalls))
+	for _, tc := range msg.ToolCalls {
+		normalized := providers.NormalizeToolCall(tc)
+		if strings.TrimSpace(normalized.ID) == "" || strings.TrimSpace(normalized.Name) == "" {
+			logger.DebugCF("agent", "Dropping invalid tool call from history", map[string]any{
+				"tool_call_id": normalized.ID,
+				"tool_name":    normalized.Name,
+			})
+			continue
+		}
+		filtered = append(filtered, normalized)
+	}
+
+	msg.ToolCalls = filtered
+	if len(filtered) > 0 {
+		return msg, true
+	}
+
+	if strings.TrimSpace(msg.Content) != "" || strings.TrimSpace(msg.ReasoningContent) != "" {
+		return msg, true
+	}
+
+	logger.DebugCF("agent", "Dropping assistant message with only invalid tool calls", map[string]any{})
+	return providers.Message{}, false
 }
 
 func (cb *ContextBuilder) AddToolResult(

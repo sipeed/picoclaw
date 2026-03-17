@@ -13,7 +13,7 @@ func msg(role, content string) providers.Message {
 func assistantWithTools(toolIDs ...string) providers.Message {
 	calls := make([]providers.ToolCall, len(toolIDs))
 	for i, id := range toolIDs {
-		calls[i] = providers.ToolCall{ID: id, Type: "function"}
+		calls[i] = providers.ToolCall{ID: id, Type: "function", Name: "tool_" + id}
 	}
 	return providers.Message{Role: "assistant", ToolCalls: calls}
 }
@@ -186,6 +186,61 @@ func TestSanitizeHistoryForProvider_PlainConversation(t *testing.T) {
 		t.Fatalf("expected 4 messages, got %d", len(result))
 	}
 	assertRoles(t, result, "user", "assistant", "user", "assistant")
+}
+
+func TestSanitizeHistoryForProvider_DropsInvalidToolCallsAndUnexpectedToolResults(t *testing.T) {
+	history := []providers.Message{
+		msg("user", "check"),
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{
+				{ID: "call_ok", Name: "read_file"},
+				{ID: "call_blank_name", Name: "   "},
+				{ID: "", Name: "exec"},
+			},
+		},
+		toolResult("call_ok"),
+		toolResult("call_blank_name"),
+		toolResult(""),
+		msg("assistant", "done"),
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	if len(result) != 4 {
+		t.Fatalf("expected 4 messages, got %d: %+v", len(result), result)
+	}
+	assertRoles(t, result, "user", "assistant", "tool", "assistant")
+	if got := len(result[1].ToolCalls); got != 1 {
+		t.Fatalf("assistant tool call count = %d, want 1", got)
+	}
+	if result[1].ToolCalls[0].ID != "call_ok" {
+		t.Fatalf("assistant tool call id = %q, want %q", result[1].ToolCalls[0].ID, "call_ok")
+	}
+	if result[2].ToolCallID != "call_ok" {
+		t.Fatalf("tool result id = %q, want %q", result[2].ToolCallID, "call_ok")
+	}
+}
+
+func TestSanitizeHistoryForProvider_DropsAssistantWithOnlyInvalidToolCalls(t *testing.T) {
+	history := []providers.Message{
+		msg("user", "check"),
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{
+				{ID: "call_blank_name", Name: "   "},
+				{ID: "", Name: "exec"},
+			},
+		},
+		toolResult("call_blank_name"),
+		msg("user", "next"),
+		msg("assistant", "ok"),
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 messages, got %d: %+v", len(result), result)
+	}
+	assertRoles(t, result, "user", "user", "assistant")
 }
 
 func roles(msgs []providers.Message) []string {
