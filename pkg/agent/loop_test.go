@@ -88,6 +88,85 @@ func TestRecordLastChatID(t *testing.T) {
 	}
 }
 
+func TestSelectCandidates_UsesImageModelWhenImageMediaPresent(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:  tmpDir,
+				ModelName:  "text-main",
+				ImageModel: "vision-main",
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{ModelName: "text-main", Model: "openai/gpt-5.4"},
+			{ModelName: "vision-main", Model: "gemini/gemini-2.5-flash-lite"},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	candidates, model, useImageFallback := (&AgentLoop{}).selectCandidates(
+		agent,
+		"describe this image",
+		[]providers.Message{
+			{Role: "user", Content: "describe this image", Media: []string{"data:image/png;base64,AAAA"}},
+		},
+	)
+
+	if !useImageFallback {
+		t.Fatal("expected image fallback to be selected")
+	}
+	if model != "vision-main" {
+		t.Fatalf("model = %q, want %q", model, "vision-main")
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("len(candidates) = %d, want 1", len(candidates))
+	}
+	if candidates[0].Provider != "gemini" || candidates[0].Model != "gemini-2.5-flash-lite" {
+		t.Fatalf("candidate = %+v, want gemini/gemini-2.5-flash-lite", candidates[0])
+	}
+}
+
+func TestRunAgentLoop_UsesImageModelForImageMessages(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "text-main",
+				ImageModel:        "vision-main",
+				MaxTokens:         4096,
+				MaxToolIterations: 5,
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{ModelName: "text-main", Model: "openai/gpt-5.4"},
+			{ModelName: "vision-main", Model: "gemini/gemini-2.5-flash-lite"},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.registry.GetDefaultAgent()
+
+	_, err := al.runAgentLoop(context.Background(), agent, processOptions{
+		SessionKey:      "image-session",
+		Channel:         "telegram",
+		ChatID:          "chat-1",
+		UserMessage:     "describe this image",
+		Media:           []string{"data:image/png;base64,AAAA"},
+		DefaultResponse: "fallback",
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop returned error: %v", err)
+	}
+	if provider.lastModel != "vision-main" {
+		t.Fatalf("provider lastModel = %q, want %q", provider.lastModel, "vision-main")
+	}
+}
+
 func TestNewAgentLoop_StateInitialized(t *testing.T) {
 	// Create temp workspace
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")

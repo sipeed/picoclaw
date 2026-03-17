@@ -39,6 +39,8 @@ type AgentInstance struct {
 	Subagents                 *config.SubagentsConfig
 	SkillsFilter              []string
 	Candidates                []providers.FallbackCandidate
+	ImageModel                string
+	ImageCandidates           []providers.FallbackCandidate
 
 	// Router is non-nil when model routing is configured and the light model
 	// was successfully resolved. It scores each incoming message and decides
@@ -195,6 +197,20 @@ func NewAgentInstance(
 
 	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
+	imageModel := strings.TrimSpace(defaults.ImageModel)
+	var imageCandidates []providers.FallbackCandidate
+	if imageModel != "" {
+		imageModelCfg := providers.ModelConfig{
+			Primary:   imageModel,
+			Fallbacks: defaults.ImageModelFallbacks,
+		}
+		imageCandidates = providers.ResolveCandidatesWithLookup(
+			imageModelCfg,
+			defaults.Provider,
+			resolveFromModelList,
+		)
+	}
+
 	// Model routing setup: pre-resolve light model candidates at creation time
 	// to avoid repeated model_list lookups on every incoming message.
 	var router *routing.Router
@@ -234,6 +250,8 @@ func NewAgentInstance(
 		Subagents:                 subagents,
 		SkillsFilter:              skillsFilter,
 		Candidates:                candidates,
+		ImageModel:                imageModel,
+		ImageCandidates:           imageCandidates,
 		Router:                    router,
 		LightCandidates:           lightCandidates,
 	}
