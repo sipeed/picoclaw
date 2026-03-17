@@ -99,6 +99,33 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 	// Set message handler
 	opts.SetDefaultPublishHandler(c.onMessage)
 
+	// Set connection lost handler
+	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
+		logger.ErrorCF("mqtt", "Connection lost", map[string]any{
+			"error": err,
+		})
+		// Connection will be automatically reconnected by the client
+	})
+
+	// Set connect handler
+	opts.SetOnConnectHandler(func(client mqtt.Client) {
+		logger.InfoC("mqtt", "Connected to MQTT broker")
+		
+		// Subscribe to topics after successful connection
+		for _, topic := range c.config.SubscribeTopics {
+			if token := c.client.Subscribe(topic, byte(c.config.QoS), nil); token.Wait() && token.Error() != nil {
+				logger.ErrorCF("mqtt", "Failed to subscribe to topic", map[string]any{
+					"topic": topic,
+					"error": token.Error(),
+				})
+			} else {
+				logger.InfoCF("mqtt", "Subscribed to topic", map[string]any{
+					"topic": topic,
+				})
+			}
+		}
+	})
+
 	c.client = mqtt.NewClient(opts)
 
 	// Connect with retry
@@ -111,22 +138,12 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 		"client_id": c.config.ClientID,
 	})
 
-	// Subscribe to topics
-	for _, topic := range c.config.SubscribeTopics {
-		if token := c.client.Subscribe(topic, byte(c.config.QoS), nil); token.Wait() && token.Error() != nil {
-		logger.ErrorCF("mqtt", "Failed to subscribe to topic", map[string]any{
-			"topic": topic,
-			"error": token.Error(),
-		})
-		} else {
-			logger.InfoCF("mqtt", "Subscribed to topic", map[string]any{
-				"topic": topic,
-			})
-		}
-	}
-
 	c.SetRunning(true)
 	logger.InfoC("mqtt", "MQTT channel started")
+	
+	// Start periodic connection health check
+	go c.startHealthCheck()
+	
 	return nil
 }
 
@@ -145,6 +162,37 @@ func (c *MQTTChannel) Stop(ctx context.Context) error {
 
 	logger.InfoC("mqtt", "MQTT channel stopped")
 	return nil
+}
+
+// startHealthCheck starts a periodic health check for the MQTT connection.
+func (c *MQTTChannel) startHealthCheck() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-ticker.C:
+			if c.client != nil && c.client.IsConnected() {
+				// Connection is healthy
+				continue
+			}
+			
+			// Connection is lost, attempt to reconnect
+			logger.WarnC("mqtt", "MQTT connection lost, attempting to reconnect")
+			
+			// Try to reconnect
+			if token := c.client.Connect(); token.Wait() && token.Error() != nil {
+				logger.ErrorCF("mqtt", "Failed to reconnect to MQTT broker", map[string]any{
+					"error": token.Error(),
+				})
+				// Continue the loop to try again later
+			} else {
+				logger.InfoC("mqtt", "Successfully reconnected to MQTT broker")
+			}
+		}
+	}
 }
 
 // onMessage handles incoming MQTT messages.
