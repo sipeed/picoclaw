@@ -94,7 +94,7 @@ func onReady() {
 func onExit() {
 	fmt.Println(T(Exiting))
 
-	// First, shutdown API handler to close all SSE connections
+	// First, shutdown API handler
 	if apiHandler != nil {
 		apiHandler.Shutdown()
 	}

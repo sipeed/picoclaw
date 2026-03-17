@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -30,11 +31,9 @@ var gateway = struct {
 	runtimeStatus    string
 	startupDeadline  time.Time
 	logs             *LogBuffer
-	events           *EventBroadcaster
 }{
 	runtimeStatus: "stopped",
 	logs:          NewLogBuffer(200),
-	events:        NewEventBroadcaster(),
 }
 
 var (
@@ -51,11 +50,19 @@ var gatewayHealthGet = func(url string, timeout time.Duration) (*http.Response, 
 
 // getGatewayHealth checks the gateway health endpoint and returns the status response
 // Returns (*health.StatusResponse, statusCode, error). If error is not nil, the other values are not valid.
-func getGatewayHealth(port int, timeout time.Duration) (*health.StatusResponse, int, error) {
-	if port == 0 {
-		port = 18790
+func (h *Handler) getGatewayHealth(cfg *config.Config, timeout time.Duration) (*health.StatusResponse, int, error) {
+	port := 18790
+	if cfg != nil && cfg.Gateway.Port != 0 {
+		port = cfg.Gateway.Port
 	}
-	url := fmt.Sprintf("http://127.0.0.1:%d/health", port)
+
+	probeHost := gatewayProbeHost(h.effectiveGatewayBindHost(cfg))
+	url := "http://" + net.JoinHostPort(probeHost, strconv.Itoa(port)) + "/health"
+
+	return getGatewayHealthByURL(url, timeout)
+}
+
+func getGatewayHealthByURL(url string, timeout time.Duration) (*health.StatusResponse, int, error) {
 	resp, err := gatewayHealthGet(url, timeout)
 	if err != nil {
 		return nil, 0, err
@@ -73,7 +80,6 @@ func getGatewayHealth(port int, timeout time.Duration) (*health.StatusResponse, 
 // registerGatewayRoutes binds gateway lifecycle endpoints to the ServeMux.
 func (h *Handler) registerGatewayRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gateway/status", h.handleGatewayStatus)
-	mux.HandleFunc("GET /api/gateway/events", h.handleGatewayEvents)
 	mux.HandleFunc("GET /api/gateway/logs", h.handleGatewayLogs)
 	mux.HandleFunc("POST /api/gateway/logs/clear", h.handleGatewayClearLogs)
 	mux.HandleFunc("POST /api/gateway/start", h.handleGatewayStart)
@@ -87,7 +93,7 @@ func (h *Handler) TryAutoStartGateway() {
 	// Check if gateway is already running via health endpoint
 	cfg, cfgErr := config.LoadConfig(h.configPath)
 	if cfgErr == nil && cfg != nil {
-		healthResp, statusCode, err := getGatewayHealth(cfg.Gateway.Port, 2*time.Second)
+		healthResp, statusCode, err := h.getGatewayHealth(cfg, 2*time.Second)
 		if err == nil && statusCode == http.StatusOK {
 			// Gateway is already running, attach to the existing process
 			pid := healthResp.Pid
@@ -170,6 +176,16 @@ func lookupModelConfig(cfg *config.Config, modelName string) *config.ModelConfig
 	return modelCfg
 }
 
+func gatewayRestartRequired(configDefaultModel, bootDefaultModel, gatewayStatus string) bool {
+	if gatewayStatus != "running" {
+		return false
+	}
+	if strings.TrimSpace(configDefaultModel) == "" || strings.TrimSpace(bootDefaultModel) == "" {
+		return false
+	}
+	return configDefaultModel != bootDefaultModel
+}
+
 func isCmdProcessAliveLocked(cmd *exec.Cmd) bool {
 	if cmd == nil || cmd.Process == nil {
 		return false
@@ -220,7 +236,7 @@ func attachToGatewayProcessLocked(pid int, cfg *config.Config) error {
 	return nil
 }
 
-func gatewayStatusOnHealthFailureLocked() string {
+func gatewayStatusWithoutHealthLocked() string {
 	if gateway.runtimeStatus == "starting" || gateway.runtimeStatus == "restarting" {
 		if gateway.startupDeadline.IsZero() || time.Now().Before(gateway.startupDeadline) {
 			return gateway.runtimeStatus
@@ -233,23 +249,7 @@ func gatewayStatusOnHealthFailureLocked() string {
 	if gateway.runtimeStatus == "error" {
 		return "error"
 	}
-	return "error"
-}
-
-func currentGatewayStatusLocked(processAlive bool) string {
-	if !processAlive {
-		if gateway.runtimeStatus == "restarting" {
-			if gateway.startupDeadline.IsZero() || time.Now().Before(gateway.startupDeadline) {
-				return "restarting"
-			}
-			return "error"
-		}
-		if gateway.runtimeStatus == "error" {
-			return "error"
-		}
-		return "stopped"
-	}
-	return gatewayStatusOnHealthFailureLocked()
+	return "stopped"
 }
 
 func waitForGatewayProcessExit(cmd *exec.Cmd, timeout time.Duration) bool {
@@ -319,15 +319,6 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 			return 0, err
 		}
 
-		// Broadcast the attached state
-		gateway.events.Broadcast(GatewayEvent{
-			Status:             initialStatus,
-			PID:                pid,
-			BootDefaultModel:   defaultModelName,
-			ConfigDefaultModel: defaultModelName,
-			RestartRequired:    false,
-		})
-
 		return pid, nil
 	}
 
@@ -335,7 +326,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	// Locate the picoclaw executable
 	execPath := utils.FindPicoclawBinary()
 
-	cmd = exec.Command(execPath, "gateway")
+	cmd = exec.Command(execPath, "gateway", "-E")
 	cmd.Env = os.Environ()
 	// Forward the launcher's config path via the environment variable that
 	// GetConfigPath() already reads, so the gateway sub-process uses the same
@@ -376,15 +367,6 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	pid = cmd.Process.Pid
 	log.Printf("Started picoclaw gateway (PID: %d) from %s", pid, execPath)
 
-	// Broadcast the launch state immediately so clients can reflect it without polling.
-	gateway.events.Broadcast(GatewayEvent{
-		Status:             initialStatus,
-		PID:                pid,
-		BootDefaultModel:   defaultModelName,
-		ConfigDefaultModel: defaultModelName,
-		RestartRequired:    false,
-	})
-
 	// Capture stdout/stderr in background
 	go scanPipe(stdoutPipe, gateway.logs)
 	go scanPipe(stderrPipe, gateway.logs)
@@ -398,26 +380,17 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 		}
 
 		gateway.mu.Lock()
-		shouldBroadcastStopped := false
 		if gateway.cmd == cmd {
 			gateway.cmd = nil
 			gateway.bootDefaultModel = ""
 			if gateway.runtimeStatus != "restarting" {
 				setGatewayRuntimeStatusLocked("stopped")
-				shouldBroadcastStopped = true
 			}
 		}
 		gateway.mu.Unlock()
-
-		if shouldBroadcastStopped {
-			gateway.events.Broadcast(GatewayEvent{
-				Status:          "stopped",
-				RestartRequired: false,
-			})
-		}
 	}()
 
-	// Start a goroutine to probe health and broadcast "running" once ready
+	// Start a goroutine to probe health and update the runtime state once ready.
 	go func() {
 		for i := 0; i < 30; i++ { // try for up to 15 seconds
 			time.Sleep(500 * time.Millisecond)
@@ -431,7 +404,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 			if err != nil {
 				continue
 			}
-			healthResp, statusCode, err := getGatewayHealth(cfg.Gateway.Port, 1*time.Second)
+			healthResp, statusCode, err := h.getGatewayHealth(cfg, 1*time.Second)
 			if err == nil && statusCode == http.StatusOK && healthResp.Pid == pid {
 				// Verify the health endpoint returns the expected pid
 				gateway.mu.Lock()
@@ -439,13 +412,6 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 					setGatewayRuntimeStatusLocked("running")
 				}
 				gateway.mu.Unlock()
-				gateway.events.Broadcast(GatewayEvent{
-					Status:             "running",
-					PID:                pid,
-					BootDefaultModel:   defaultModelName,
-					ConfigDefaultModel: defaultModelName,
-					RestartRequired:    false,
-				})
 				return
 			}
 		}
@@ -461,7 +427,7 @@ func (h *Handler) handleGatewayStart(w http.ResponseWriter, r *http.Request) {
 	// Prevent duplicate starts by checking health endpoint
 	cfg, cfgErr := config.LoadConfig(h.configPath)
 	if cfgErr == nil && cfg != nil {
-		healthResp, statusCode, err := getGatewayHealth(cfg.Gateway.Port, 2*time.Second)
+		healthResp, statusCode, err := h.getGatewayHealth(cfg, 2*time.Second)
 		if err == nil && statusCode == http.StatusOK {
 			// Gateway is already running, attach to the existing process
 			pid := healthResp.Pid
@@ -597,10 +563,6 @@ func (h *Handler) RestartGateway() (int, error) {
 	gateway.mu.Lock()
 	previousCmd := gateway.cmd
 	setGatewayRuntimeStatusLocked("restarting")
-	gateway.events.Broadcast(GatewayEvent{
-		Status:          "restarting",
-		RestartRequired: false,
-	})
 	gateway.mu.Unlock()
 
 	if err = stopGatewayProcessForRestart(previousCmd); err != nil {
@@ -704,24 +666,20 @@ func (h *Handler) handleGatewayStatus(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) gatewayStatusData() map[string]any {
 	data := map[string]any{}
+	configDefaultModel := ""
 	cfg, cfgErr := config.LoadConfig(h.configPath)
 	if cfgErr == nil && cfg != nil {
-		configDefaultModel := strings.TrimSpace(cfg.Agents.Defaults.GetModelName())
+		configDefaultModel = strings.TrimSpace(cfg.Agents.Defaults.GetModelName())
 		if configDefaultModel != "" {
 			data["config_default_model"] = configDefaultModel
 		}
 	}
 
 	// Probe health endpoint to get pid and status
-	port := 0
-	if cfgErr == nil && cfg != nil {
-		port = cfg.Gateway.Port
-	}
-
-	healthResp, statusCode, err := getGatewayHealth(port, 2*time.Second)
+	healthResp, statusCode, err := h.getGatewayHealth(cfg, 2*time.Second)
 	if err != nil {
 		gateway.mu.Lock()
-		data["gateway_status"] = currentGatewayStatusLocked(true)
+		data["gateway_status"] = gatewayStatusWithoutHealthLocked()
 		gateway.mu.Unlock()
 		log.Printf("Gateway health check failed: %v", err)
 	} else {
@@ -734,45 +692,43 @@ func (h *Handler) gatewayStatusData() map[string]any {
 			data["status_code"] = statusCode
 		} else {
 			gateway.mu.Lock()
-			// Check if this pid matches our tracked process
-			if gateway.cmd != nil && gateway.cmd.Process != nil && gateway.cmd.Process.Pid == healthResp.Pid {
-				setGatewayRuntimeStatusLocked("running")
-				bootDefaultModel := gateway.bootDefaultModel
-				if bootDefaultModel != "" {
-					data["boot_default_model"] = bootDefaultModel
-				}
-				data["gateway_status"] = "running"
-				data["pid"] = healthResp.Pid
-			} else {
-				// Health endpoint responded with a different pid
-				// This could be a manual restart, try to attach to the new process
+			setGatewayRuntimeStatusLocked("running")
+			if gateway.cmd == nil || gateway.cmd.Process == nil || gateway.cmd.Process.Pid != healthResp.Pid {
 				oldPid := "none"
 				if gateway.cmd != nil && gateway.cmd.Process != nil {
 					oldPid = fmt.Sprintf("%d", gateway.cmd.Process.Pid)
 				}
-				log.Printf("Detected new gateway PID (old: %s, new: %d), attempting to attach", oldPid, healthResp.Pid)
-
+				log.Printf(
+					"Detected gateway PID from health (old: %s, new: %d), attempting to attach",
+					oldPid,
+					healthResp.Pid,
+				)
 				if err := attachToGatewayProcessLocked(healthResp.Pid, cfg); err != nil {
-					// Failed to find the process, treat as error
-					setGatewayRuntimeStatusLocked("error")
-					data["gateway_status"] = "error"
-					data["pid"] = healthResp.Pid
-					log.Printf("Failed to attach to new gateway process (PID: %d): %v", healthResp.Pid, err)
-				} else {
-					// Successfully attached, update response data
-					bootDefaultModel := gateway.bootDefaultModel
-					if bootDefaultModel != "" {
-						data["boot_default_model"] = bootDefaultModel
-					}
-					data["gateway_status"] = "running"
-					data["pid"] = healthResp.Pid
+					log.Printf(
+						"Failed to attach to gateway process reported by health (PID: %d): %v",
+						healthResp.Pid,
+						err,
+					)
 				}
 			}
+
+			bootDefaultModel := gateway.bootDefaultModel
+			if bootDefaultModel != "" {
+				data["boot_default_model"] = bootDefaultModel
+			}
+			data["gateway_status"] = "running"
+			data["pid"] = healthResp.Pid
 			gateway.mu.Unlock()
 		}
 	}
 
-	data["gateway_restart_required"] = false
+	bootDefaultModel, _ := data["boot_default_model"].(string)
+	gatewayStatus, _ := data["gateway_status"].(string)
+	data["gateway_restart_required"] = gatewayRestartRequired(
+		configDefaultModel,
+		bootDefaultModel,
+		gatewayStatus,
+	)
 
 	ready, reason, readyErr := h.gatewayStartReady()
 	if readyErr != nil {
@@ -840,51 +796,6 @@ func gatewayLogsData(r *http.Request) map[string]any {
 	data["log_total"] = total
 	data["log_run_id"] = runID
 	return data
-}
-
-// handleGatewayEvents serves an SSE stream of gateway state change events.
-//
-//	GET /api/gateway/events
-func (h *Handler) handleGatewayEvents(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "SSE not supported", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-
-	// Subscribe to gateway events
-	ch := gateway.events.Subscribe()
-	defer gateway.events.Unsubscribe(ch)
-
-	// Send initial status so the client doesn't start blank
-	initial := h.currentGatewayStatus()
-	fmt.Fprintf(w, "data: %s\n\n", initial)
-	flusher.Flush()
-
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case data, ok := <-ch:
-			if !ok {
-				return
-			}
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			flusher.Flush()
-		}
-	}
-}
-
-// currentGatewayStatus returns the current gateway status as a JSON string.
-func (h *Handler) currentGatewayStatus() string {
-	data := h.gatewayStatusData()
-	encoded, _ := json.Marshal(data)
-	return string(encoded)
 }
 
 // scanPipe reads lines from r and appends them to buf. Returns when r reaches EOF.

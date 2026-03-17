@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -22,20 +21,13 @@ func (h *Handler) registerPicoRoutes(mux *http.ServeMux) {
 	// WebSocket proxy: forward /pico/ws to gateway
 	// This allows the frontend to connect via the same port as the web UI,
 	// avoiding the need to expose extra ports for WebSocket communication.
-	wsProxy := h.createWsProxy()
-	mux.HandleFunc("GET /pico/ws", h.handleWebSocketProxy(wsProxy))
+	mux.HandleFunc("GET /pico/ws", h.handleWebSocketProxy())
 }
 
-// createWsProxy creates a reverse proxy to the gateway WebSocket endpoint.
-// The gateway port is read from the configuration.
+// createWsProxy creates a reverse proxy to the current gateway WebSocket endpoint.
+// The gateway bind host and port are resolved from the latest configuration.
 func (h *Handler) createWsProxy() *httputil.ReverseProxy {
-	cfg, err := config.LoadConfig(h.configPath)
-	gatewayPort := 18790 // default
-	if err == nil && cfg.Gateway.Port != 0 {
-		gatewayPort = cfg.Gateway.Port
-	}
-	gatewayURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", gatewayPort))
-	wsProxy := httputil.NewSingleHostReverseProxy(gatewayURL)
+	wsProxy := httputil.NewSingleHostReverseProxy(h.gatewayProxyURL())
 	wsProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "Gateway unavailable: "+err.Error(), http.StatusBadGateway)
 	}
@@ -43,12 +35,10 @@ func (h *Handler) createWsProxy() *httputil.ReverseProxy {
 }
 
 // handleWebSocketProxy wraps a reverse proxy to handle WebSocket connections.
-// It ensures the Connection and Upgrade headers are properly forwarded.
-func (h *Handler) handleWebSocketProxy(proxy *httputil.ReverseProxy) http.HandlerFunc {
+// The reverse proxy forwards the incoming upgrade handshake as-is.
+func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Set headers for WebSocket upgrade
-		r.Header.Set("Connection", "upgrade")
-		r.Header.Set("Upgrade", "websocket")
+		proxy := h.createWsProxy()
 		proxy.ServeHTTP(w, r)
 	}
 }

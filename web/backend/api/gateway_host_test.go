@@ -2,9 +2,12 @@ package api
 
 import (
 	"crypto/tls"
+	"errors"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
@@ -56,6 +59,79 @@ func TestBuildWsURLUsesRequestHostWhenLauncherPublicSaved(t *testing.T) {
 func TestGatewayProbeHostUsesLoopbackForWildcardBind(t *testing.T) {
 	if got := gatewayProbeHost("0.0.0.0"); got != "127.0.0.1" {
 		t.Fatalf("gatewayProbeHost() = %q, want %q", got, "127.0.0.1")
+	}
+}
+
+func TestGatewayProxyURLUsesConfiguredHost(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "192.168.1.10"
+	cfg.Gateway.Port = 18791
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	if got := h.gatewayProxyURL().String(); got != "http://192.168.1.10:18791" {
+		t.Fatalf("gatewayProxyURL() = %q, want %q", got, "http://192.168.1.10:18791")
+	}
+}
+
+func TestGetGatewayHealthUsesConfiguredHost(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "192.168.1.10"
+	cfg.Gateway.Port = 18791
+
+	originalHealthGet := gatewayHealthGet
+	t.Cleanup(func() {
+		gatewayHealthGet = originalHealthGet
+	})
+
+	var requestedURL string
+	gatewayHealthGet = func(url string, timeout time.Duration) (*http.Response, error) {
+		requestedURL = url
+		return nil, errors.New("probe failed")
+	}
+
+	_, statusCode, err := h.getGatewayHealth(cfg, time.Second)
+	_ = statusCode
+	_ = err
+
+	if requestedURL != "http://192.168.1.10:18791/health" {
+		t.Fatalf("health url = %q, want %q", requestedURL, "http://192.168.1.10:18791/health")
+	}
+}
+
+func TestGetGatewayHealthUsesProbeHostForPublicLauncher(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	h.SetServerOptions(18800, true, true, nil)
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = 18791
+
+	originalHealthGet := gatewayHealthGet
+	t.Cleanup(func() {
+		gatewayHealthGet = originalHealthGet
+	})
+
+	var requestedURL string
+	gatewayHealthGet = func(url string, timeout time.Duration) (*http.Response, error) {
+		requestedURL = url
+		return nil, errors.New("probe failed")
+	}
+
+	_, statusCode, err := h.getGatewayHealth(cfg, time.Second)
+	_ = statusCode
+	_ = err
+
+	if requestedURL != "http://127.0.0.1:18791/health" {
+		t.Fatalf("health url = %q, want %q", requestedURL, "http://127.0.0.1:18791/health")
 	}
 }
 

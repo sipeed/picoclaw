@@ -3,6 +3,7 @@ package api
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -44,6 +45,23 @@ func gatewayProbeHost(bindHost string) string {
 		return "127.0.0.1"
 	}
 	return bindHost
+}
+
+func (h *Handler) gatewayProxyURL() *url.URL {
+	cfg, err := config.LoadConfig(h.configPath)
+	port := 18790
+	bindHost := ""
+	if err == nil && cfg != nil {
+		if cfg.Gateway.Port != 0 {
+			port = cfg.Gateway.Port
+		}
+		bindHost = h.effectiveGatewayBindHost(cfg)
+	}
+
+	return &url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(gatewayProbeHost(bindHost), strconv.Itoa(port)),
+	}
 }
 
 func requestHostName(r *http.Request) string {

@@ -63,7 +63,8 @@
       },
       "status": {
         "starting": "Starting Gateway...",
-        "restarting": "Restarting Gateway..."
+        "restarting": "Restarting Gateway...",
+        "stopping": "Stopping Gateway..."
       },
       "restartRequired": "Model changes require a gateway restart to take effect."
     }

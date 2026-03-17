@@ -71,7 +71,4 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerLauncherConfigRoutes(mux)
 }
 
-// Shutdown gracefully shuts down the handler, closing all SSE connections.
-func (h *Handler) Shutdown() {
-	gateway.events.Shutdown()
-}
+func (h *Handler) Shutdown() {}
