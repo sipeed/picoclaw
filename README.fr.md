@@ -54,7 +54,7 @@
 
 ## 📢 Actualités
 
-2026-02-16 🎉 PicoClaw a atteint 12K étoiles en une semaine ! Merci à tous pour votre soutien ! PicoClaw grandit plus vite que nous ne l'avions jamais imaginé. Vu le volume élevé de PR, nous avons un besoin urgent de mainteneurs communautaires. Nos rôles de bénévoles et notre feuille de route sont officiellement publiés [ici](docs/ROADMAP.md) — nous avons hâte de vous accueillir !
+2026-02-16 🎉 PicoClaw a atteint 12K étoiles en une semaine ! Merci à tous pour votre soutien ! PicoClaw grandit plus vite que nous ne l'avions jamais imaginé. Vu le volume élevé de PR, nous avons un besoin urgent de mainteneurs communautaires. Nos rôles de bénévoles et notre feuille de route sont officiellement publiés [ici](ROADMAP.md) — nous avons hâte de vous accueillir !
 
 2026-02-13 🎉 PicoClaw a atteint 5000 étoiles en 4 jours ! Merci à la communauté ! Nous finalisons la **Feuille de Route du Projet** et mettons en place le **Groupe de Développeurs** pour accélérer le développement de PicoClaw.
 🚀 **Appel à l'action :** Soumettez vos demandes de fonctionnalités dans les GitHub Discussions. Nous les examinerons et les prioriserons lors de notre prochaine réunion hebdomadaire.
