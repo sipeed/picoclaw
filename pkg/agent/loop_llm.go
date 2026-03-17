@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"expvar"
 	"fmt"
 	"time"
 
@@ -18,6 +19,11 @@ import (
 	"jane/pkg/logger"
 	"jane/pkg/providers"
 	"jane/pkg/utils"
+)
+
+var (
+	metricsIterationDuration = expvar.NewFloat("agentloop_iteration_duration_seconds")
+	metricsFailureCounts     = expvar.NewInt("agentloop_failure_counts")
 )
 
 // runAgentLoop is the core message processing logic.
@@ -64,8 +70,11 @@ func (al *AgentLoop) runAgentLoop(
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
 	// 3. Run LLM iteration loop
+	startTime := time.Now()
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
+	metricsIterationDuration.Add(time.Since(startTime).Seconds())
 	if err != nil {
+		metricsFailureCounts.Add(1)
 		return "", err
 	}
 

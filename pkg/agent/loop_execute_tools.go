@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"expvar"
 	"fmt"
 	"sync"
 	"time"
@@ -12,6 +13,10 @@ import (
 	"jane/pkg/providers"
 	"jane/pkg/tools"
 	"jane/pkg/utils"
+)
+
+var (
+	metricsToolExecutionDuration = expvar.NewFloat("agentloop_tool_execution_duration_seconds")
 )
 
 type indexedAgentResult struct {
@@ -106,6 +111,7 @@ func (al *AgentLoop) executeToolBatch(
 				})
 			}
 
+			startToolTime := time.Now()
 			toolResult := agent.Tools.ExecuteWithContext(
 				ctx,
 				tc.Name,
@@ -114,6 +120,7 @@ func (al *AgentLoop) executeToolBatch(
 				opts.ChatID,
 				asyncCallback,
 			)
+			metricsToolExecutionDuration.Add(time.Since(startToolTime).Seconds())
 			agentResults[idx].result = toolResult
 		}(i, tc)
 	}
