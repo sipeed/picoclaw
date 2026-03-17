@@ -21,14 +21,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
-// Health check constants
-const (
-	healthCheckInterval = 5 * time.Minute  // Check every 5 minutes
-	maxSilenceDuration  = 30 * time.Minute // Max time without messages before recovery
-	recoveryDelay       = 2 * time.Second  // Delay before reconnecting
-	recoveryRetryDelay  = 30 * time.Second // Delay before retrying failed recovery
-)
-
 // DingTalkSession stores complete session information for proactive messaging
 type DingTalkSession struct {
 	SessionWebhook            string    `json:"session_webhook"`
@@ -55,10 +47,7 @@ type DingTalkChannel struct {
 	accessToken string
 	tokenExpiry time.Time
 	tokenMu     sync.RWMutex
-	httpClient  *http.Client
-	// Health monitoring
-	lastMessageTime time.Time
-	mu              sync.RWMutex
+	httpClient *http.Client
 }
 
 // NewDingTalkChannel creates a new DingTalk channel instance
@@ -86,7 +75,6 @@ func (c *DingTalkChannel) Start(ctx context.Context) error {
 	logger.InfoC("dingtalk", "Starting DingTalk channel (Stream Mode)...")
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
-	c.lastMessageTime = time.Now() // Initialize on start
 
 	// Initialize HTTP client for robot API
 	c.httpClient = &http.Client{Timeout: 30 * time.Second}
@@ -105,9 +93,6 @@ func (c *DingTalkChannel) Start(ctx context.Context) error {
 	if err := c.startStreamClient(); err != nil {
 		return err
 	}
-
-	// Start health monitoring goroutine
-	go c.healthMonitor()
 
 	c.SetRunning(true)
 	logger.InfoCF("dingtalk", "DingTalk channel started", map[string]any{
@@ -136,81 +121,6 @@ func (c *DingTalkChannel) startStreamClient() error {
 	}
 
 	return nil
-}
-
-// healthMonitor periodically checks connection health and triggers recovery if needed
-func (c *DingTalkChannel) healthMonitor() {
-	ticker := time.NewTicker(healthCheckInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		case <-ticker.C:
-			c.checkAndRecover()
-		}
-	}
-}
-
-// checkAndRecover checks if connection is stale and triggers recovery
-func (c *DingTalkChannel) checkAndRecover() {
-	c.mu.RLock()
-	silenceDuration := time.Since(c.lastMessageTime)
-	c.mu.RUnlock()
-
-	logger.DebugCF("dingtalk", "Health check: silence duration", map[string]any{"duration": silenceDuration})
-
-	if silenceDuration >= maxSilenceDuration {
-		logger.InfoCF(
-			"dingtalk",
-			"Connection appears stale (no messages for configured duration), triggering recovery",
-			map[string]any{"silenceDuration": silenceDuration},
-		)
-		c.recoverConnection()
-	}
-}
-
-// recoverConnection attempts to recover the stream connection
-func (c *DingTalkChannel) recoverConnection() {
-	// Close old client
-	if c.streamClient != nil {
-		c.streamClient.Close()
-		time.Sleep(recoveryDelay)
-	}
-
-	// Attempt to reconnect
-	for {
-		select {
-		case <-c.ctx.Done():
-			logger.InfoC("dingtalk", "Recovery aborted: context canceled")
-			return
-		default:
-		}
-
-		err := c.startStreamClient()
-		if err == nil {
-			logger.InfoCF("dingtalk", "Connection recovered successfully", map[string]any{})
-			c.mu.Lock()
-			c.lastMessageTime = time.Now()
-			c.mu.Unlock()
-			return
-		}
-
-		logger.WarnCF(
-			"dingtalk",
-			"Recovery failed, retrying",
-			map[string]any{"error": err, "retryDelay": recoveryRetryDelay},
-		)
-		time.Sleep(recoveryRetryDelay)
-	}
-}
-
-// updateLastMessageTime updates the last message timestamp
-func (c *DingTalkChannel) updateLastMessageTime() {
-	c.mu.Lock()
-	c.lastMessageTime = time.Now()
-	c.mu.Unlock()
 }
 
 // Stop gracefully stops the DingTalk channel
@@ -293,9 +203,6 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 	ctx context.Context,
 	data *chatbot.BotCallbackDataModel,
 ) ([]byte, error) {
-	// Update last message time for health monitoring
-	c.updateLastMessageTime()
-
 	// Extract message content from Text field
 	content := data.Text.Content
 	if content == "" {
