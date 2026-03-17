@@ -322,6 +322,24 @@ func TestShellTool_RemoteChannelBlockedByDefault(t *testing.T) {
 	}
 }
 
+func TestShellTool_DefaultConfigBlocksRemoteChannels(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	tool, err := NewExecToolWithConfig("", false, cfg)
+	if err != nil {
+		t.Fatalf("NewExecToolWithConfig() error: %v", err)
+	}
+	ctx := WithToolContext(context.Background(), "telegram", "chat-1")
+	result := tool.Execute(ctx, map[string]any{"command": "echo hi"})
+
+	if !result.IsError {
+		t.Fatal("expected remote-channel exec to be blocked by default config")
+	}
+	if !strings.Contains(result.ForLLM, "restricted to internal channels") {
+		t.Errorf("expected 'restricted to internal channels' message, got: %s", result.ForLLM)
+	}
+}
+
 // TestShellTool_InternalChannelAllowed verifies exec is allowed for internal channels
 func TestShellTool_InternalChannelAllowed(t *testing.T) {
 	cfg := &config.Config{}
