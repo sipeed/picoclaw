@@ -105,21 +105,34 @@ func countRecentToolCalls(history []providers.Message) int {
 // false negatives (missing an attachment) just mean the routing falls back to
 // the primary model anyway.
 func hasAttachments(msg string) bool {
-	lower := strings.ToLower(msg)
-
-	// Base64 data URIs embedded directly in the message
-	if strings.Contains(lower, "data:image/") ||
-		strings.Contains(lower, "data:audio/") ||
-		strings.Contains(lower, "data:video/") {
+	// Bolt: Fast path to avoid strings.ToLower memory allocation and full string pass
+	// for the vast majority of messages that contain no media.
+	hasDataURI := strings.Contains(msg, "data:image/") || strings.Contains(msg, "DATA:IMAGE/") ||
+		strings.Contains(msg, "data:audio/") || strings.Contains(msg, "DATA:AUDIO/") ||
+		strings.Contains(msg, "data:video/") || strings.Contains(msg, "DATA:VIDEO/")
+	if hasDataURI {
 		return true
 	}
 
-	// Common image/audio extensions in URLs or file references
+	// Extensions must have a dot
+	if !strings.Contains(msg, ".") {
+		return false
+	}
+
+	// Check common extensions without ToLower first to capture standard lowercase domains
 	mediaExts := []string{
 		".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
 		".mp3", ".wav", ".ogg", ".m4a", ".flac",
 		".mp4", ".avi", ".mov", ".webm",
 	}
+	for _, ext := range mediaExts {
+		if strings.Contains(msg, ext) {
+			return true
+		}
+	}
+
+	// Fallback to ToLower for weirdly cased extensions
+	lower := strings.ToLower(msg)
 	for _, ext := range mediaExts {
 		if strings.Contains(lower, ext) {
 			return true

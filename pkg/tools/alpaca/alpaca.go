@@ -107,8 +107,8 @@ func (t *AlpacaTool) getPrice(symbol string) *tools.ToolResult {
 
 func (t *AlpacaTool) getSMA(symbol string) *tools.ToolResult {
 	req := marketdata.GetBarsRequest{
-		TimeFrame: marketdata.OneDay,
-		TotalLimit:     10, // 10-day simple moving average
+		TimeFrame:  marketdata.OneDay,
+		TotalLimit: 10, // 10-day simple moving average
 	}
 	bars, err := t.marketData.GetBars(symbol, req)
 	if err != nil {

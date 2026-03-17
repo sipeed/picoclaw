@@ -34,9 +34,9 @@ var (
 	currentTimeFormat = "15:04:05"
 	logger            zerolog.Logger
 	fileLogger        zerolog.Logger
-	logFile      *os.File
-	once         sync.Once
-	mu           sync.RWMutex
+	logFile           *os.File
+	once              sync.Once
+	mu                sync.RWMutex
 )
 
 func init() {

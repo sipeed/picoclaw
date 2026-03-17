@@ -66,12 +66,12 @@ func (rt *ResourceTracker) logResources() {
 	sysMB := float64(m.Sys) / 1024 / 1024
 
 	logger.InfoCF("SystemHealth", "Resource tracking telemetry", map[string]any{
-		"goroutines":       goroutines,
-		"memory_alloc_mb":  allocMB,
-		"memory_total_mb":  totalAllocMB,
-		"memory_sys_mb":    sysMB,
-		"num_gc":           m.NumGC,
-		"gc_pause_ns":      m.PauseNs[(m.NumGC+255)%256], // Latest GC pause time
+		"goroutines":        goroutines,
+		"memory_alloc_mb":   allocMB,
+		"memory_total_mb":   totalAllocMB,
+		"memory_sys_mb":     sysMB,
+		"num_gc":            m.NumGC,
+		"gc_pause_ns":       m.PauseNs[(m.NumGC+255)%256], // Latest GC pause time
 		"gc_pause_total_ns": m.PauseTotalNs,
 	})
 }

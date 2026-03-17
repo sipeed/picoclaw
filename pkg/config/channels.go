@@ -1,18 +1,18 @@
 package config
 
 type ChannelsConfig struct {
-	WhatsApp   WhatsAppConfig   `json:"whatsapp"`
-	Telegram   TelegramConfig   `json:"telegram"`
-	Discord    DiscordConfig    `json:"discord"`
-	MaixCam    MaixCamConfig    `json:"maixcam"`
-	QQ         QQConfig         `json:"qq"`
-	DingTalk   DingTalkConfig   `json:"dingtalk"`
-	Slack      SlackConfig      `json:"slack"`
-	Matrix     MatrixConfig     `json:"matrix"`
-	LINE       LINEConfig       `json:"line"`
-	OneBot     OneBotConfig     `json:"onebot"`
-	Pico       PicoConfig       `json:"pico"`
-	IRC        IRCConfig        `json:"irc"`
+	WhatsApp WhatsAppConfig `json:"whatsapp"`
+	Telegram TelegramConfig `json:"telegram"`
+	Discord  DiscordConfig  `json:"discord"`
+	MaixCam  MaixCamConfig  `json:"maixcam"`
+	QQ       QQConfig       `json:"qq"`
+	DingTalk DingTalkConfig `json:"dingtalk"`
+	Slack    SlackConfig    `json:"slack"`
+	Matrix   MatrixConfig   `json:"matrix"`
+	LINE     LINEConfig     `json:"line"`
+	OneBot   OneBotConfig   `json:"onebot"`
+	Pico     PicoConfig     `json:"pico"`
+	IRC      IRCConfig      `json:"irc"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.

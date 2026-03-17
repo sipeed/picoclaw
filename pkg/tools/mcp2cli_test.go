@@ -2,8 +2,8 @@ package tools
 
 import (
 	"context"
-	"testing"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestSplitQuoted(t *testing.T) {

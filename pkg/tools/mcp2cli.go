@@ -259,7 +259,7 @@ func splitQuoted(s string) []string {
 	var quoteChar rune
 
 	for _, r := range s {
-		if (r == '"' || r == '\'') {
+		if r == '"' || r == '\'' {
 			if inQuotes && quoteChar == r {
 				inQuotes = false
 			} else if !inQuotes {

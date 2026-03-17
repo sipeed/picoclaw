@@ -844,15 +844,15 @@ func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 		t.Fatalf("Failed to create channel manager: %v", err)
 	}
 	for name, id := range map[string]string{
-		"whatsapp":  "rid-whatsapp",
-		"telegram":  "rid-telegram",
-		"discord":   "rid-discord",
-		"maixcam":   "rid-maixcam",
-		"qq":        "rid-qq",
-		"dingtalk":  "rid-dingtalk",
-		"slack":     "rid-slack",
-		"line":      "rid-line",
-		"onebot":    "rid-onebot",
+		"whatsapp": "rid-whatsapp",
+		"telegram": "rid-telegram",
+		"discord":  "rid-discord",
+		"maixcam":  "rid-maixcam",
+		"qq":       "rid-qq",
+		"dingtalk": "rid-dingtalk",
+		"slack":    "rid-slack",
+		"line":     "rid-line",
+		"onebot":   "rid-onebot",
 	} {
 		chManager.RegisterChannel(name, &fakeChannel{id: id})
 	}

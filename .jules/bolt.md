@@ -4,3 +4,7 @@
 ## 2024-05-25 - Efficient String Building in Loops
 **Learning:** In Go, string concatenation (`+=`) in a loop leads to $O(N^2)$ complexity due to immutability. Using `strings.Builder` provides $O(N)$ efficiency. Additionally, `fmt.Fprintf` has overhead due to format string parsing; direct `sb.WriteString` calls are significantly faster.
 **Action:** Use `strings.Builder` for building strings in loops and prefer direct `WriteString` calls over `fmt.Fprintf` for maximum performance in hot paths.
+
+## 2024-05-26 - Avoid Unnecessary `strings.ToLower`
+**Learning:** Calling `strings.ToLower` on the entire message content allocates a new string and iterates over all runes. This causes measurable GC pressure and latency on hot paths like feature extraction during routing.
+**Action:** Use fast paths to bypass `strings.ToLower`. For instance, check if a requisite character (like a dot `.`) exists, or check common casings directly (`DATA:IMAGE` vs `data:image`) before falling back to full case-normalization.
