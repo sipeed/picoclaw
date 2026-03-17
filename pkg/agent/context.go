@@ -222,13 +222,10 @@ func (cb *ContextBuilder) InvalidateCache() {
 // invalidation (bootstrap files + memory). Skill roots are handled separately
 // because they require both directory-level and recursive file-level checks.
 func (cb *ContextBuilder) sourcePaths() []string {
-	return []string{
-		filepath.Join(cb.workspace, "AGENTS.md"),
-		filepath.Join(cb.workspace, "SOUL.md"),
-		filepath.Join(cb.workspace, "USER.md"),
-		filepath.Join(cb.workspace, "IDENTITY.md"),
-		filepath.Join(cb.workspace, "memory", "MEMORY.md"),
-	}
+	agentDefinition := cb.LoadAgentDefinition()
+	paths := agentDefinition.trackedPaths(cb.workspace)
+	paths = append(paths, filepath.Join(cb.workspace, "memory", "MEMORY.md"))
+	return uniquePaths(paths)
 }
 
 // skillRoots returns all skill root directories that can affect
@@ -432,18 +429,29 @@ func skillFilesChangedSince(skillRoots []string, filesAtCache map[string]time.Ti
 }
 
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
-	bootstrapFiles := []string{
-		"AGENTS.md",
-		"SOUL.md",
-		"USER.md",
-		"IDENTITY.md",
+	var sb strings.Builder
+
+	agentDefinition := cb.LoadAgentDefinition()
+	if agentDefinition.Agent != nil {
+		label := string(agentDefinition.Source)
+		if label == "" {
+			label = relativeWorkspacePath(cb.workspace, agentDefinition.Agent.Path)
+		}
+		fmt.Fprintf(&sb, "## %s\n\n%s\n\n", label, agentDefinition.Agent.Body)
+	}
+	if agentDefinition.Soul != nil {
+		fmt.Fprintf(
+			&sb,
+			"## %s\n\n%s\n\n",
+			relativeWorkspacePath(cb.workspace, agentDefinition.Soul.Path),
+			agentDefinition.Soul.Content,
+		)
 	}
 
-	var sb strings.Builder
-	for _, filename := range bootstrapFiles {
-		filePath := filepath.Join(cb.workspace, filename)
+	if agentDefinition.Source != AgentDefinitionSourceAgent {
+		filePath := filepath.Join(cb.workspace, "IDENTITY.md")
 		if data, err := os.ReadFile(filePath); err == nil {
-			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, data)
+			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", "IDENTITY.md", data)
 		}
 	}
 
