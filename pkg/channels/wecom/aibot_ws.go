@@ -323,6 +323,12 @@ func (c *WeComAIBotWSChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 
 // ---- Connection management ----
 
+// wsBackoffResetDuration is the minimum duration a WebSocket connection must
+// stay up before we reset the reconnect backoff to its initial value. This
+// prevents a short burst of failures from causing long waits after later,
+// stable connection periods.
+const wsBackoffResetDuration = time.Minute
+
 // connectLoop maintains the WebSocket connection, reconnecting on failure with
 // exponential backoff.
 func (c *WeComAIBotWSChannel) connectLoop() {
@@ -335,7 +341,14 @@ func (c *WeComAIBotWSChannel) connectLoop() {
 		}
 
 		logger.InfoC("wecom_aibot", "Connecting to WeCom WebSocket endpoint...")
+		start := time.Now()
 		if err := c.runConnection(); err != nil {
+			elapsed := time.Since(start)
+			// If the connection was stable for long enough, reset backoff so that
+			// a previous burst of failures does not keep us at the maximum delay.
+			if elapsed >= wsBackoffResetDuration {
+				backoff = wsInitialReconnect
+			}
 			select {
 			case <-c.ctx.Done():
 				return
@@ -824,20 +837,31 @@ func (c *WeComAIBotWSChannel) dispatchWSAgentTask(
 					map[string]any{"chat_id": actualChatID, "tick": tickCount})
 				c.wsSendStreamChunk(reqID, streamID, false, hint)
 			case <-deadlineTimer.C:
-				logger.WarnCF("wecom_aibot", "Stream response deadline reached, waiting for agent to finish",
+				logger.WarnCF("wecom_aibot",
+					"Stream response deadline reached, closing stream; late reply will be pushed",
 					map[string]any{"chat_id": actualChatID})
-				c.wsSendStreamChunk(reqID, streamID, false,
-					"⏳ Processing is taking longer than expected, the response will be sent as soon as it's ready!")
+				c.wsSendStreamFinish(reqID, streamID,
+					"⏳ Processing is taking longer than expected, the response will be sent as a follow-up message.")
 				return
 			case <-taskCtx.Done():
 				// Give a short grace period so that a response queued in the bus
 				// just before cancellation can still be delivered.  This closes a
 				// race where a rapid second message cancels this task after the
 				// agent already published but before Send() wrote to answerCh.
+				//
+				// The connection is gone at this point, so we cannot use
+				// wsSendStreamFinish.  Try wsSendActivePush on the (possibly
+				// already-restored) connection; if that also fails, leave the
+				// route intact so Send() can push the reply once reconnected.
 				select {
 				case answer := <-task.answerCh:
-					c.wsSendStreamFinish(reqID, streamID, answer)
-					c.deleteReqState(reqID)
+					if err := c.wsSendActivePush(task.ChatID, task.ChatType, answer); err != nil {
+						logger.WarnCF("wecom_aibot",
+							"Grace-period push failed after task cancellation; reply may be lost",
+							map[string]any{"req_id": reqID, "chat_id": task.ChatID, "error": err.Error()})
+					} else {
+						c.deleteReqState(reqID)
+					}
 				case <-time.After(100 * time.Millisecond):
 				}
 				return
@@ -978,13 +1002,19 @@ func (c *WeComAIBotWSChannel) writeWSAndWait(cmd wsCommand, timeout time.Duratio
 }
 
 // cancelAllTasks cancels every pending agent task; called when the connection drops.
+// It also expires each task's stream window (ReadyAt = now) so that when the agent
+// eventually delivers its reply via Send(), the message is forwarded via
+// wsSendActivePush on the restored connection instead of being silently discarded.
 func (c *WeComAIBotWSChannel) cancelAllTasks() {
 	c.reqStatesMu.Lock()
 	defer c.reqStatesMu.Unlock()
+	now := time.Now()
 	for _, state := range c.reqStates {
 		if state != nil && state.Task != nil {
 			state.Task.cancel()
 			state.Task = nil
+			// Expire the stream window immediately so Send() uses wsSendActivePush.
+			state.Route.ReadyAt = now
 		}
 	}
 }
