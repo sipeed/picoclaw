@@ -653,11 +653,10 @@ PicoClaw stocke les données dans votre workspace configuré (par défaut : `~/.
 ├── state/            # État persistant (dernier canal, etc.)
 ├── cron/             # Base de données des tâches planifiées
 ├── skills/           # Compétences personnalisées
-├── AGENTS.md         # Guide de comportement de l'Agent
+├── AGENT.md          # Définition structurée de l'agent et prompt système
 ├── HEARTBEAT.md      # Invites de tâches périodiques (vérifiées toutes les 30 min)
-├── IDENTITY.md       # Identité de l'Agent
 ├── SOUL.md           # Âme de l'Agent
-└── USER.md           # Préférences utilisateur
+└── ...
 ```
 
 ### 🔒 Bac à Sable de Sécurité

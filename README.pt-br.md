@@ -649,11 +649,10 @@ O PicoClaw armazena dados no workspace configurado (padrão: `~/.picoclaw/worksp
 ├── state/             # Estado persistente (ultimo canal, etc.)
 ├── cron/              # Banco de dados de tarefas agendadas
 ├── skills/            # Skills personalizadas
-├── AGENTS.md          # Guia de comportamento do Agente
+├── AGENT.md           # Definicao estruturada do agente e prompt do sistema
 ├── HEARTBEAT.md       # Prompts de tarefas periodicas (verificado a cada 30 min)
-├── IDENTITY.md        # Identidade do Agente
 ├── SOUL.md            # Alma do Agente
-└── USER.md            # Preferencias do usuario
+└── ...
 ```
 
 ### 🔒 Sandbox de Segurança

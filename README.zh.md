@@ -369,11 +369,10 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 ├── state/            # 持久化状态 (最后一次频道等)
 ├── cron/             # 定时任务数据库
 ├── skills/           # 自定义技能
-├── AGENTS.md         # Agent 行为指南
+├── AGENT.md          # 结构化 Agent 定义与系统提示词
 ├── HEARTBEAT.md      # 周期性任务提示词 (每 30 分钟检查一次)
-├── IDENTITY.md       # Agent 身份设定
 ├── SOUL.md           # Agent 灵魂/性格
-└── USER.md           # 用户偏好
+└── ...
 
 ```
 
