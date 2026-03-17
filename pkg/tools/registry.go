@@ -85,18 +85,18 @@ func (r *ToolRegistry) ExecuteWithContext(
 	var result *ToolResult
 	func() {
 		defer func() {
-			if r := recover(); r != nil {
-				errMsg := fmt.Sprintf("Tool '%s' crashed with panic: %v", name, r)
+			if re := recover(); re != nil {
+				errMsg := fmt.Sprintf("Tool '%s' crashed with panic: %v", name, re)
 				logger.ErrorCF("tool", "Tool execution panic recovered",
 					map[string]any{
 						"tool":  name,
-						"panic": fmt.Sprintf("%v", r),
+						"panic": fmt.Sprintf("%v", re),
 					})
 				result = &ToolResult{
 					ForLLM:  errMsg,
 					ForUser: errMsg,
 					IsError: true,
-					Err:     fmt.Errorf("panic: %v", r),
+					Err:     fmt.Errorf("panic: %v", re),
 				}
 			}
 		}()
