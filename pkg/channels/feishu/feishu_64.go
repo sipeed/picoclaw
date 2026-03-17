@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -31,9 +32,10 @@ import (
 
 type FeishuChannel struct {
 	*channels.BaseChannel
-	config   config.FeishuConfig
-	client   *lark.Client
-	wsClient *larkws.Client
+	config    config.FeishuConfig
+	client    *lark.Client
+	wsClient  *larkws.Client
+	newClient func() *lark.Client
 
 	botOpenID atomic.Value // stores string; populated lazily for @mention detection
 
@@ -42,6 +44,9 @@ type FeishuChannel struct {
 }
 
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
+	newClient := func() *lark.Client {
+		return lark.NewClient(cfg.AppID, cfg.AppSecret)
+	}
 	base := channels.NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom,
 		channels.WithGroupTrigger(cfg.GroupTrigger),
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
@@ -50,10 +55,79 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 	ch := &FeishuChannel{
 		BaseChannel: base,
 		config:      cfg,
-		client:      lark.NewClient(cfg.AppID, cfg.AppSecret),
+		client:      newClient(),
+		newClient:   newClient,
 	}
 	ch.SetOwner(ch)
 	return ch, nil
+}
+
+const feishuInvalidAccessTokenCode = 99991663
+
+type feishuRespMetaExtractor[T any] func(T) (code int, msg string, ok bool)
+
+func (c *FeishuChannel) currentRESTClient() *lark.Client {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.client
+}
+
+func (c *FeishuChannel) refreshRESTClient() *lark.Client {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	builder := c.newClient
+	if builder == nil {
+		builder = func() *lark.Client {
+			return lark.NewClient(c.config.AppID, c.config.AppSecret)
+		}
+	}
+
+	c.client = builder()
+	return c.client
+}
+
+func shouldRetryFeishuAuth[T any](resp T, err error, extract feishuRespMetaExtractor[T]) bool {
+	if extract != nil {
+		if code, msg, ok := extract(resp); ok && isFeishuAuthFailure(code, msg) {
+			return true
+		}
+	}
+	if err == nil {
+		return false
+	}
+	return isFeishuAuthFailure(0, err.Error())
+}
+
+func isFeishuAuthFailure(code int, msg string) bool {
+	if code == feishuInvalidAccessTokenCode {
+		return true
+	}
+
+	msg = strings.ToLower(strings.TrimSpace(msg))
+	if msg == "" {
+		return false
+	}
+
+	return strings.Contains(msg, "99991663") ||
+		strings.Contains(msg, "invalid access token") ||
+		strings.Contains(msg, "token attached")
+}
+
+func withRESTClientAuthRetry[T any](
+	c *FeishuChannel,
+	call func(*lark.Client) (T, error),
+	extract feishuRespMetaExtractor[T],
+) (T, error) {
+	client := c.currentRESTClient()
+	resp, err := call(client)
+	if !shouldRetryFeishuAuth(resp, err, extract) {
+		return resp, err
+	}
+
+	logger.WarnCF("feishu", "REST auth token rejected, recreating client and retrying once", nil)
+	client = c.refreshRESTClient()
+	return call(client)
 }
 
 func (c *FeishuChannel) Start(ctx context.Context) error {
@@ -142,7 +216,18 @@ func (c *FeishuChannel) EditMessage(ctx context.Context, chatID, messageID, cont
 		Body(larkim.NewPatchMessageReqBodyBuilder().Content(cardContent).Build()).
 		Build()
 
-	resp, err := c.client.Im.V1.Message.Patch(ctx, req)
+	resp, err := withRESTClientAuthRetry(
+		c,
+		func(client *lark.Client) (*larkim.PatchMessageResp, error) {
+			return client.Im.V1.Message.Patch(ctx, req)
+		},
+		func(resp *larkim.PatchMessageResp) (int, string, bool) {
+			if resp == nil {
+				return 0, "", false
+			}
+			return resp.Code, resp.Msg, true
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("feishu edit: %w", err)
 	}
@@ -181,7 +266,18 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 			Build()).
 		Build()
 
-	resp, err := c.client.Im.V1.Message.Create(ctx, req)
+	resp, err := withRESTClientAuthRetry(
+		c,
+		func(client *lark.Client) (*larkim.CreateMessageResp, error) {
+			return client.Im.V1.Message.Create(ctx, req)
+		},
+		func(resp *larkim.CreateMessageResp) (int, string, bool) {
+			if resp == nil {
+				return 0, "", false
+			}
+			return resp.Code, resp.Msg, true
+		},
+	)
 	if err != nil {
 		return "", fmt.Errorf("feishu placeholder send: %w", err)
 	}
@@ -216,7 +312,18 @@ func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID st
 			Build()).
 		Build()
 
-	resp, err := c.client.Im.V1.MessageReaction.Create(ctx, req)
+	resp, err := withRESTClientAuthRetry(
+		c,
+		func(client *lark.Client) (*larkim.CreateMessageReactionResp, error) {
+			return client.Im.V1.MessageReaction.Create(ctx, req)
+		},
+		func(resp *larkim.CreateMessageReactionResp) (int, string, bool) {
+			if resp == nil {
+				return 0, "", false
+			}
+			return resp.Code, resp.Msg, true
+		},
+	)
 	if err != nil {
 		logger.ErrorCF("feishu", "Failed to add reaction", map[string]any{
 			"emoji":      chosenEmoji,
@@ -252,7 +359,18 @@ func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID st
 			MessageId(messageID).
 			ReactionId(reactionID).
 			Build()
-		_, _ = c.client.Im.V1.MessageReaction.Delete(context.Background(), delReq)
+		_, _ = withRESTClientAuthRetry(
+			c,
+			func(client *lark.Client) (*larkim.DeleteMessageReactionResp, error) {
+				return client.Im.V1.MessageReaction.Delete(context.Background(), delReq)
+			},
+			func(resp *larkim.DeleteMessageReactionResp) (int, string, bool) {
+				if resp == nil {
+					return 0, "", false
+				}
+				return resp.Code, resp.Msg, true
+			},
+		)
 	}
 	return undo, nil
 }
@@ -432,11 +550,30 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 
 // fetchBotOpenID calls the Feishu bot info API to retrieve and store the bot's open_id.
 func (c *FeishuChannel) fetchBotOpenID(ctx context.Context) error {
-	resp, err := c.client.Do(ctx, &larkcore.ApiReq{
-		HttpMethod:                http.MethodGet,
-		ApiPath:                   "/open-apis/bot/v3/info",
-		SupportedAccessTokenTypes: []larkcore.AccessTokenType{larkcore.AccessTokenTypeTenant},
-	})
+	resp, err := withRESTClientAuthRetry(
+		c,
+		func(client *lark.Client) (*larkcore.ApiResp, error) {
+			return client.Do(ctx, &larkcore.ApiReq{
+				HttpMethod:                http.MethodGet,
+				ApiPath:                   "/open-apis/bot/v3/info",
+				SupportedAccessTokenTypes: []larkcore.AccessTokenType{larkcore.AccessTokenTypeTenant},
+			})
+		},
+		func(resp *larkcore.ApiResp) (int, string, bool) {
+			if resp == nil || len(resp.RawBody) == 0 {
+				return 0, "", false
+			}
+
+			var result struct {
+				Code int    `json:"code"`
+				Msg  string `json:"msg"`
+			}
+			if err := json.Unmarshal(resp.RawBody, &result); err != nil {
+				return 0, "", false
+			}
+			return result.Code, result.Msg, true
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("bot info request: %w", err)
 	}
@@ -583,7 +720,18 @@ func (c *FeishuChannel) downloadResource(
 		Type(resourceType).
 		Build()
 
-	resp, err := c.client.Im.V1.MessageResource.Get(ctx, req)
+	resp, err := withRESTClientAuthRetry(
+		c,
+		func(client *lark.Client) (*larkim.GetMessageResourceResp, error) {
+			return client.Im.V1.MessageResource.Get(ctx, req)
+		},
+		func(resp *larkim.GetMessageResourceResp) (int, string, bool) {
+			if resp == nil {
+				return 0, "", false
+			}
+			return resp.Code, resp.Msg, true
+		},
+	)
 	if err != nil {
 		logger.ErrorCF("feishu", "Failed to download resource", map[string]any{
 			"message_id": messageID,
@@ -699,7 +847,18 @@ func (c *FeishuChannel) sendCard(ctx context.Context, chatID, cardContent string
 			Build()).
 		Build()
 
-	resp, err := c.client.Im.V1.Message.Create(ctx, req)
+	resp, err := withRESTClientAuthRetry(
+		c,
+		func(client *lark.Client) (*larkim.CreateMessageResp, error) {
+			return client.Im.V1.Message.Create(ctx, req)
+		},
+		func(resp *larkim.CreateMessageResp) (int, string, bool) {
+			if resp == nil {
+				return 0, "", false
+			}
+			return resp.Code, resp.Msg, true
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("feishu send card: %w", channels.ErrTemporary)
 	}
@@ -718,14 +877,29 @@ func (c *FeishuChannel) sendCard(ctx context.Context, chatID, cardContent string
 // sendImage uploads an image and sends it as a message.
 func (c *FeishuChannel) sendImage(ctx context.Context, chatID string, file *os.File) error {
 	// Upload image to get image_key
-	uploadReq := larkim.NewCreateImageReqBuilder().
-		Body(larkim.NewCreateImageReqBodyBuilder().
-			ImageType("message").
-			Image(file).
-			Build()).
-		Build()
+	uploadResp, err := withRESTClientAuthRetry(
+		c,
+		func(client *lark.Client) (*larkim.CreateImageResp, error) {
+			if _, err := file.Seek(0, io.SeekStart); err != nil {
+				return nil, fmt.Errorf("feishu image upload seek: %w", err)
+			}
 
-	uploadResp, err := c.client.Im.V1.Image.Create(ctx, uploadReq)
+			uploadReq := larkim.NewCreateImageReqBuilder().
+				Body(larkim.NewCreateImageReqBodyBuilder().
+					ImageType("message").
+					Image(file).
+					Build()).
+				Build()
+
+			return client.Im.V1.Image.Create(ctx, uploadReq)
+		},
+		func(resp *larkim.CreateImageResp) (int, string, bool) {
+			if resp == nil {
+				return 0, "", false
+			}
+			return resp.Code, resp.Msg, true
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("feishu image upload: %w", err)
 	}
@@ -749,7 +923,18 @@ func (c *FeishuChannel) sendImage(ctx context.Context, chatID string, file *os.F
 			Build()).
 		Build()
 
-	resp, err := c.client.Im.V1.Message.Create(ctx, req)
+	resp, err := withRESTClientAuthRetry(
+		c,
+		func(client *lark.Client) (*larkim.CreateMessageResp, error) {
+			return client.Im.V1.Message.Create(ctx, req)
+		},
+		func(resp *larkim.CreateMessageResp) (int, string, bool) {
+			if resp == nil {
+				return 0, "", false
+			}
+			return resp.Code, resp.Msg, true
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("feishu image send: %w", err)
 	}
@@ -771,15 +956,30 @@ func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.Fi
 	}
 
 	// Upload file to get file_key
-	uploadReq := larkim.NewCreateFileReqBuilder().
-		Body(larkim.NewCreateFileReqBodyBuilder().
-			FileType(feishuFileType).
-			FileName(filename).
-			File(file).
-			Build()).
-		Build()
+	uploadResp, err := withRESTClientAuthRetry(
+		c,
+		func(client *lark.Client) (*larkim.CreateFileResp, error) {
+			if _, err := file.Seek(0, io.SeekStart); err != nil {
+				return nil, fmt.Errorf("feishu file upload seek: %w", err)
+			}
 
-	uploadResp, err := c.client.Im.V1.File.Create(ctx, uploadReq)
+			uploadReq := larkim.NewCreateFileReqBuilder().
+				Body(larkim.NewCreateFileReqBodyBuilder().
+					FileType(feishuFileType).
+					FileName(filename).
+					File(file).
+					Build()).
+				Build()
+
+			return client.Im.V1.File.Create(ctx, uploadReq)
+		},
+		func(resp *larkim.CreateFileResp) (int, string, bool) {
+			if resp == nil {
+				return 0, "", false
+			}
+			return resp.Code, resp.Msg, true
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("feishu file upload: %w", err)
 	}
@@ -803,7 +1003,18 @@ func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.Fi
 			Build()).
 		Build()
 
-	resp, err := c.client.Im.V1.Message.Create(ctx, req)
+	resp, err := withRESTClientAuthRetry(
+		c,
+		func(client *lark.Client) (*larkim.CreateMessageResp, error) {
+			return client.Im.V1.Message.Create(ctx, req)
+		},
+		func(resp *larkim.CreateMessageResp) (int, string, bool) {
+			if resp == nil {
+				return 0, "", false
+			}
+			return resp.Code, resp.Msg, true
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("feishu file send: %w", err)
 	}

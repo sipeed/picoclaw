@@ -3,10 +3,18 @@
 package feishu
 
 import (
+	"context"
+	"errors"
 	"testing"
 
+	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
+
+type feishuRetryResp struct {
+	code int
+	msg  string
+}
 
 func TestExtractContent(t *testing.T) {
 	tests := []struct {
@@ -252,5 +260,128 @@ func TestExtractFeishuSenderID(t *testing.T) {
 				t.Errorf("extractFeishuSenderID() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestWithRESTClientAuthRetry_RecreatesClientOnInvalidAuth(t *testing.T) {
+	first := &lark.Client{}
+	second := &lark.Client{}
+	newClientCalls := 0
+
+	ch := &FeishuChannel{
+		client: first,
+		newClient: func() *lark.Client {
+			newClientCalls++
+			return second
+		},
+	}
+
+	attempts := 0
+	resp, err := withRESTClientAuthRetry(
+		ch,
+		func(client *lark.Client) (feishuRetryResp, error) {
+			attempts++
+			switch attempts {
+			case 1:
+				if client != first {
+					t.Fatalf("first attempt used %p, want %p", client, first)
+				}
+				return feishuRetryResp{
+					code: feishuInvalidAccessTokenCode,
+					msg:  "Invalid access token for authorization. Please make a request with token attached.",
+				}, nil
+			case 2:
+				if client != second {
+					t.Fatalf("second attempt used %p, want %p", client, second)
+				}
+				return feishuRetryResp{}, nil
+			default:
+				t.Fatalf("unexpected attempt %d", attempts)
+				return feishuRetryResp{}, nil
+			}
+		},
+		func(resp feishuRetryResp) (int, string, bool) {
+			return resp.code, resp.msg, true
+		},
+	)
+	if err != nil {
+		t.Fatalf("withRESTClientAuthRetry() error = %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+	if newClientCalls != 1 {
+		t.Fatalf("newClientCalls = %d, want 1", newClientCalls)
+	}
+	if ch.currentRESTClient() != second {
+		t.Fatal("expected channel client to be replaced after auth retry")
+	}
+	if resp.code != 0 || resp.msg != "" {
+		t.Fatalf("final response = %+v, want success response", resp)
+	}
+}
+
+func TestWithRESTClientAuthRetry_DoesNotRetryNonAuthError(t *testing.T) {
+	first := &lark.Client{}
+	newClientCalls := 0
+	expectedErr := errors.New("network timeout")
+
+	ch := &FeishuChannel{
+		client: first,
+		newClient: func() *lark.Client {
+			newClientCalls++
+			return &lark.Client{}
+		},
+	}
+
+	attempts := 0
+	_, err := withRESTClientAuthRetry(
+		ch,
+		func(client *lark.Client) (feishuRetryResp, error) {
+			attempts++
+			if client != first {
+				t.Fatalf("attempt used %p, want %p", client, first)
+			}
+			return feishuRetryResp{}, expectedErr
+		},
+		func(resp feishuRetryResp) (int, string, bool) {
+			return resp.code, resp.msg, true
+		},
+	)
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("withRESTClientAuthRetry() error = %v, want %v", err, expectedErr)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+	if newClientCalls != 0 {
+		t.Fatalf("newClientCalls = %d, want 0", newClientCalls)
+	}
+	if ch.currentRESTClient() != first {
+		t.Fatal("expected channel client to remain unchanged for non-auth error")
+	}
+}
+
+func TestShouldRetryFeishuAuth_ErrorMessageFallback(t *testing.T) {
+	retry := shouldRetryFeishuAuth(
+		feishuRetryResp{},
+		context.DeadlineExceeded,
+		func(resp feishuRetryResp) (int, string, bool) {
+			return resp.code, resp.msg, false
+		},
+	)
+	if retry {
+		t.Fatal("shouldRetryFeishuAuth() retried unexpected non-auth error")
+	}
+
+	retry = shouldRetryFeishuAuth(
+		feishuRetryResp{},
+		errors.New("code=99991663 msg=Invalid access token for authorization"),
+		func(resp feishuRetryResp) (int, string, bool) {
+			return resp.code, resp.msg, false
+		},
+	)
+	if !retry {
+		t.Fatal("shouldRetryFeishuAuth() should retry invalid access token errors")
 	}
 }
