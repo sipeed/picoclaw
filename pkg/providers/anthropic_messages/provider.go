@@ -176,7 +176,8 @@ func buildRequestBody(
 	var systemPrompt string
 	var apiMessages []any
 
-	for _, msg := range messages {
+	for i := 0; i < len(messages); i++ {
+		msg := messages[i]
 		switch msg.Role {
 		case "system":
 			// Accumulate system messages
@@ -188,13 +189,23 @@ func buildRequestBody(
 
 		case "user":
 			if msg.ToolCallID != "" {
-				// Tool result message
+				// Tool result message — group consecutive tool results into
+				// a single user message to avoid consecutive user messages.
 				content := []map[string]any{
 					{
 						"type":        "tool_result",
 						"tool_use_id": msg.ToolCallID,
 						"content":     msg.Content,
 					},
+				}
+				for i+1 < len(messages) && (messages[i+1].Role == "tool" ||
+					(messages[i+1].Role == "user" && messages[i+1].ToolCallID != "")) {
+					i++
+					content = append(content, map[string]any{
+						"type":        "tool_result",
+						"tool_use_id": messages[i].ToolCallID,
+						"content":     messages[i].Content,
+					})
 				}
 				apiMessages = append(apiMessages, map[string]any{
 					"role":    "user",
@@ -236,13 +247,21 @@ func buildRequestBody(
 			})
 
 		case "tool":
-			// Tool result (alternative format)
+			// Group consecutive tool results into a single user message.
 			content := []map[string]any{
 				{
 					"type":        "tool_result",
 					"tool_use_id": msg.ToolCallID,
 					"content":     msg.Content,
 				},
+			}
+			for i+1 < len(messages) && messages[i+1].Role == "tool" {
+				i++
+				content = append(content, map[string]any{
+					"type":        "tool_result",
+					"tool_use_id": messages[i].ToolCallID,
+					"content":     messages[i].Content,
+				})
 			}
 			apiMessages = append(apiMessages, map[string]any{
 				"role":    "user",

@@ -738,7 +738,54 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 		final = append(final, msg)
 	}
 
-	return final
+	// Third pass: ensure valid message alternation.
+	// Dropping messages in earlier passes can create consecutive same-role
+	// messages (e.g. two user messages with a dropped assistant between them).
+	// LLM APIs (Anthropic, DeepSeek, etc.) require strict user/assistant
+	// alternation and reject requests with consecutive same-role messages.
+	merged := make([]providers.Message, 0, len(final))
+	for _, msg := range final {
+		// Skip empty user messages (no text content, no tool result)
+		if msg.Role == "user" && strings.TrimSpace(msg.Content) == "" && msg.ToolCallID == "" {
+			logger.DebugCF("agent", "Dropping empty user message", nil)
+			continue
+		}
+
+		if len(merged) == 0 {
+			// First message must be a user message (after system is stripped).
+			// Drop leading assistant/tool messages.
+			if msg.Role != "user" {
+				logger.DebugCF("agent", "Dropping leading non-user message", map[string]any{
+					"role": msg.Role,
+				})
+				continue
+			}
+			merged = append(merged, msg)
+			continue
+		}
+
+		prev := &merged[len(merged)-1]
+
+		// Merge consecutive user text messages (not tool results).
+		if msg.Role == "user" && msg.ToolCallID == "" &&
+			prev.Role == "user" && prev.ToolCallID == "" {
+			if prev.Content != "" && msg.Content != "" {
+				prev.Content = prev.Content + "\n" + msg.Content
+			} else if msg.Content != "" {
+				prev.Content = msg.Content
+			}
+			logger.DebugCF("agent", "Merged consecutive user messages", nil)
+			continue
+		}
+
+		// Tool results (role "tool" or "user" with ToolCallID) count as user
+		// messages in the Anthropic API. If the previous message is also a
+		// tool/user, that's fine — but if the previous is a plain user text
+		// message and this is also a plain user text message, we merged above.
+		merged = append(merged, msg)
+	}
+
+	return merged
 }
 
 func (cb *ContextBuilder) AddToolResult(

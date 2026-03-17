@@ -233,12 +233,13 @@ func TestSanitizeHistoryForProvider_IncompleteToolResults(t *testing.T) {
 
 	result := sanitizeHistoryForProvider(history)
 	// The assistant message with incomplete tool results should be dropped,
-	// along with its partial tool result. The remaining messages are:
-	// user ("do two things"), user ("next question"), assistant ("answer")
-	if len(result) != 3 {
-		t.Fatalf("expected 3 messages, got %d: %+v", len(result), roles(result))
+	// along with its partial tool result. The two consecutive user messages
+	// are then merged by the third pass.
+	// Remaining: user ("do two things\nnext question"), assistant ("answer")
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages, got %d: %+v", len(result), roles(result))
 	}
-	assertRoles(t, result, "user", "user", "assistant")
+	assertRoles(t, result, "user", "assistant")
 }
 
 // TestSanitizeHistoryForProvider_MissingAllToolResults tests the case where
@@ -254,11 +255,12 @@ func TestSanitizeHistoryForProvider_MissingAllToolResults(t *testing.T) {
 
 	result := sanitizeHistoryForProvider(history)
 	// The assistant message with no tool results should be dropped.
-	// Remaining: user ("do something"), user ("hello"), assistant ("hi")
-	if len(result) != 3 {
-		t.Fatalf("expected 3 messages, got %d: %+v", len(result), roles(result))
+	// The two consecutive user messages are merged by the third pass.
+	// Remaining: user ("do something\nhello"), assistant ("hi")
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages, got %d: %+v", len(result), roles(result))
 	}
-	assertRoles(t, result, "user", "user", "assistant")
+	assertRoles(t, result, "user", "assistant")
 }
 
 // TestSanitizeHistoryForProvider_PartialToolResultsInMiddle tests that
@@ -283,11 +285,12 @@ func TestSanitizeHistoryForProvider_PartialToolResultsInMiddle(t *testing.T) {
 	// First round is complete (user, assistant+tools, tool, assistant),
 	// second round is incomplete and dropped (assistant+tools, partial tool),
 	// third round is complete (user, assistant+tools, tool, assistant).
-	// Remaining: user, assistant, tool, assistant, user, user, assistant, tool, assistant
-	if len(result) != 9 {
-		t.Fatalf("expected 9 messages, got %d: %+v", len(result), roles(result))
+	// The two consecutive user messages ("second", "third") are merged.
+	// Remaining: user, assistant, tool, assistant, user, assistant, tool, assistant
+	if len(result) != 8 {
+		t.Fatalf("expected 8 messages, got %d: %+v", len(result), roles(result))
 	}
-	assertRoles(t, result, "user", "assistant", "tool", "assistant", "user", "user", "assistant", "tool", "assistant")
+	assertRoles(t, result, "user", "assistant", "tool", "assistant", "user", "assistant", "tool", "assistant")
 }
 
 // TestSanitizeHistoryForProvider_EmptyToolCallName tests that tool calls with
@@ -379,9 +382,10 @@ func TestSanitizeHistoryForProvider_AllToolCallsDroppedEmptyContent(t *testing.T
 	result := sanitizeHistoryForProvider(history)
 	// The assistant message has no valid tool calls and no content → dropped.
 	// Its tool result is orphaned and also dropped.
-	// Remaining: user ("hello"), user ("follow up")
-	if len(result) != 2 {
-		t.Fatalf("expected 2 messages, got %d: %+v", len(result), roles(result))
+	// The two consecutive user messages are merged by the third pass.
+	// Remaining: user ("hello\nfollow up")
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d: %+v", len(result), roles(result))
 	}
-	assertRoles(t, result, "user", "user")
+	assertRoles(t, result, "user")
 }

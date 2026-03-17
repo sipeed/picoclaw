@@ -146,7 +146,8 @@ func buildParams(
 	var system []anthropic.TextBlockParam
 	var anthropicMessages []anthropic.MessageParam
 
-	for _, msg := range messages {
+	for i := 0; i < len(messages); i++ {
+		msg := messages[i]
 		switch msg.Role {
 		case "system":
 			// Prefer structured SystemParts for per-block cache_control.
@@ -165,9 +166,16 @@ func buildParams(
 			}
 		case "user":
 			if msg.ToolCallID != "" {
-				anthropicMessages = append(anthropicMessages,
-					anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
-				)
+				// Tool result — group with any following tool results into
+				// a single user message to avoid consecutive user messages.
+				var blocks []anthropic.ContentBlockParamUnion
+				blocks = append(blocks, anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false))
+				for i+1 < len(messages) && (messages[i+1].Role == "tool" ||
+					(messages[i+1].Role == "user" && messages[i+1].ToolCallID != "")) {
+					i++
+					blocks = append(blocks, anthropic.NewToolResultBlock(messages[i].ToolCallID, messages[i].Content, false))
+				}
+				anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(blocks...))
 			} else {
 				anthropicMessages = append(anthropicMessages,
 					anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)),
@@ -198,9 +206,16 @@ func buildParams(
 				)
 			}
 		case "tool":
-			anthropicMessages = append(anthropicMessages,
-				anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
-			)
+			// Group consecutive tool results into a single user message.
+			// The Anthropic API requires alternating user/assistant messages;
+			// sending each tool result as a separate user message can violate this.
+			var blocks []anthropic.ContentBlockParamUnion
+			blocks = append(blocks, anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false))
+			for i+1 < len(messages) && messages[i+1].Role == "tool" {
+				i++
+				blocks = append(blocks, anthropic.NewToolResultBlock(messages[i].ToolCallID, messages[i].Content, false))
+			}
+			anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(blocks...))
 		}
 	}
 
