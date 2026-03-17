@@ -1,4 +1,4 @@
-//go:build darwin && !cgo
+//go:build (darwin || freebsd) && !cgo
 
 package main
 
@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 )
 
 func runTray() {
-	logger.Infof("System tray is unavailable in darwin builds without cgo; running without tray")
+	logger.Infof("System tray is unavailable in %s builds without cgo; running without tray", runtime.GOOS)
 
 	if !*noBrowser {
 		go func() {
