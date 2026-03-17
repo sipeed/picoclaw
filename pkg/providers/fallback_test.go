@@ -241,10 +241,14 @@ func TestFallback_DefaultProviderCooldownSkipsSiblingModel(t *testing.T) {
 
 	ct.MarkFailure("litellm", FailoverRateLimit)
 
-	_, err := fc.Execute(context.Background(), candidates, func(ctx context.Context, provider, model string) (*LLMResponse, error) {
-		t.Fatal("run should not be called when provider cooldown is shared")
-		return nil, nil
-	})
+	_, err := fc.Execute(
+		context.Background(),
+		candidates,
+		func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+			t.Fatal("run should not be called when provider cooldown is shared")
+			return nil, nil
+		},
+	)
 	if err == nil {
 		t.Fatal("expected error when all same-provider candidates are skipped")
 	}
