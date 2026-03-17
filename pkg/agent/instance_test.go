@@ -164,6 +164,7 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 		})
 	}
 }
+
 func TestNewAgentInstance_ResolveImageCandidatesFromModelListAlias(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
 	if err != nil {
