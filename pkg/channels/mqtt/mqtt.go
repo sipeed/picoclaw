@@ -154,77 +154,40 @@ func (c *MQTTChannel) onMessage(client mqtt.Client, msg mqtt.Message) {
 		"payload": string(msg.Payload()),
 	})
 
-	// Try to parse as JSON first
-	var mqttMsg MQTTMessage
 	var content string
-	var err error
 	
-	// First try to parse as JSON
-	if err = json.Unmarshal(msg.Payload(), &mqttMsg); err == nil {
-		// Successfully parsed as JSON
-		content = mqttMsg.Status
-	} else {
-		// If JSON parsing fails, try to clean up common malformed JSON issues
-		payloadStr := string(msg.Payload())
-		
-		// Try to extract JSON from malformed strings (e.g., extra quotes or braces)
-		// Look for a valid JSON object within the string
-		if strings.HasPrefix(payloadStr, "{") && (strings.HasSuffix(payloadStr, "}") || strings.HasSuffix(payloadStr, "}\"")) {
-			// Try to parse as-is first
-			if err2 := json.Unmarshal(msg.Payload(), &mqttMsg); err2 == nil {
-				content = mqttMsg.Status
+	// Check if subscribe_json_key is configured
+	if c.config.SubscribeJSONKey != nil && *c.config.SubscribeJSONKey != "" {
+		// Parse as JSON and extract the specified key
+		var jsonMsg map[string]interface{}
+		if err := json.Unmarshal(msg.Payload(), &jsonMsg); err == nil {
+			// Successfully parsed as JSON
+			if value, exists := jsonMsg[*c.config.SubscribeJSONKey]; exists {
+				content = fmt.Sprintf("%v", value)
+				logger.InfoCF("mqtt", "Extracted JSON value", map[string]any{
+					"key":     *c.config.SubscribeJSONKey,
+					"content": content,
+				})
 			} else {
-				// Try to clean up common issues
-				cleaned := strings.TrimSpace(payloadStr)
-				
-				// Remove extra quotes and braces from the end
-				for strings.HasSuffix(cleaned, "}") && strings.Count(cleaned, "{") < strings.Count(cleaned, "}") {
-					cleaned = cleaned[:len(cleaned)-1]
-				}
-				for strings.HasSuffix(cleaned, "\"}") && strings.Count(cleaned, "{") < strings.Count(cleaned, "}") {
-					cleaned = cleaned[:len(cleaned)-1]
-				}
-				// Remove any trailing quotes (simple check for extra quotes at the end)
-				for strings.HasSuffix(cleaned, "\"") && !strings.HasSuffix(cleaned, "\"}") {
-					cleaned = cleaned[:len(cleaned)-1]
-				}
-				
-				// Remove extra opening braces
-				for strings.HasPrefix(cleaned, "{") && strings.Count(cleaned, "{") > strings.Count(cleaned, "}") {
-					cleaned = cleaned[1:]
-				}
-				
-				if cleaned != payloadStr {
-					if err3 := json.Unmarshal([]byte(cleaned), &mqttMsg); err3 == nil {
-						content = mqttMsg.Status
-						logger.InfoCF("mqtt", "Successfully parsed cleaned JSON", map[string]any{
-							"original": payloadStr,
-							"cleaned":  cleaned,
-						})
-					} else {
-						// Fall back to plain text
-						content = payloadStr
-						logger.InfoCF("mqtt", "Received plain text message (JSON parsing failed)", map[string]any{
-							"error":   err.Error(),
-							"payload": content,
-						})
-					}
-				} else {
-					// Fall back to plain text
-					content = payloadStr
-					logger.InfoCF("mqtt", "Received plain text message (JSON parsing failed)", map[string]any{
-						"error":   err.Error(),
-						"payload": content,
-					})
-				}
+				logger.WarnCF("mqtt", "JSON key not found in message", map[string]any{
+					"key": *c.config.SubscribeJSONKey,
+				})
+				content = string(msg.Payload()) // Fall back to raw payload
 			}
 		} else {
-			// Not JSON-like, treat as plain text
-			content = payloadStr
-			logger.InfoCF("mqtt", "Received plain text message (not JSON-like)", map[string]any{
-				"payload": content,
+			// JSON parsing failed, treat as plain text
+			logger.InfoCF("mqtt", "JSON parsing failed, treating as plain text", map[string]any{
+				"error":   err.Error(),
+				"payload": string(msg.Payload()),
 			})
+			content = string(msg.Payload())
 		}
+	} else {
+		// No JSON key configured, treat as plain text
+		content = string(msg.Payload())
+		logger.InfoCF("mqtt", "Received plain text message", map[string]any{
+			"payload": content,
+		})
 	}
 
 	if content == "" {
@@ -292,13 +255,22 @@ func (c *MQTTChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	replyTopic = strings.ReplaceAll(replyTopic, "{topic}", msg.ChatID)
 	// Add more placeholders as needed
 
-	mqttMsg := MQTTMessage{
-		Status: msg.Content,
-	}
+	var payload []byte
+	var err error
 
-	payload, err := json.Marshal(mqttMsg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal MQTT message: %w", err)
+	// Check if reply_json_key is configured
+	if c.config.ReplyJSONKey != nil && *c.config.ReplyJSONKey != "" {
+		// Send as JSON with the specified key
+		jsonMsg := map[string]string{
+			*c.config.ReplyJSONKey: msg.Content,
+		}
+		payload, err = json.Marshal(jsonMsg)
+		if err != nil {
+			return fmt.Errorf("failed to marshal MQTT JSON message: %w", err)
+		}
+	} else {
+		// Send as plain text
+		payload = []byte(msg.Content)
 	}
 
 	token := c.client.Publish(replyTopic, byte(c.config.QoS), c.config.Retain, payload)

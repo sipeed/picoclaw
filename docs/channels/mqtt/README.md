@@ -16,8 +16,12 @@ Add this to `config.json`:
       "qos": 1,
       "retain": false,
       "tls": false,
-      "subscribe_topics": ["picoclaw/chat"],
-      "reply_topic": "picoclaw/reply",
+      "subscribe_topics":  [
+        "picoclaw/input"
+      ],
+      "subscribe_json_key": null,
+      "reply_topic": "picoclaw/output",
+      "reply_json_key": null,
       "allow_from": [],
       "group_trigger": {
         "mention_only": true
@@ -42,7 +46,9 @@ Add this to `config.json`:
 | retain               | bool     | No       | Whether to retain messages. Default: false |
 | tls                  | bool     | No       | Enable TLS/SSL connection. Default: false |
 | subscribe_topics     | []string | Yes      | List of MQTT topics to subscribe to for incoming messages |
+| subscribe_json_key   | string   | No       | JSON key to extract from incoming messages. If null, treats message as plain text |
 | reply_topic          | string   | No       | Topic to publish replies to. Supports placeholders: `{client_id}`, `{topic}` |
+| reply_json_key       | string   | No       | JSON key to use when sending replies. If null, sends as plain text |
 | allow_from           | []string | No       | Client ID whitelist (empty allows all) |
 | group_trigger        | object   | No       | Group trigger strategy (`mention_only` / `prefixes`) |
 | reasoning_channel_id | string   | No       | Target channel for reasoning output |
@@ -54,6 +60,8 @@ Add this to `config.json`:
   - JSON format: `{"status": "your message"}`
   - Plain text: Direct text content
   - Automatic JSON parsing with fallback to plain text for malformed JSON
+- **JSON Key Extraction**: When `subscribe_json_key` is set, extracts specific field from JSON messages
+- **JSON Response Formatting**: When `reply_json_key` is set, sends responses as JSON with specified key
 - **Authentication**: Username/password authentication support
 - **TLS/SSL**: Secure connections with TLS configuration
 - **Quality of Service**: Configurable QoS levels (0, 1, 2)
@@ -67,6 +75,7 @@ Add this to `config.json`:
 
 - **Robust Message Handling**: Intelligent parsing that handles malformed JSON gracefully
 - **Flexible Topic Configuration**: Support for multiple input topics and dynamic reply topics
+- **JSON Message Processing**: Configurable JSON key extraction and response formatting
 - **Connection Resilience**: Automatic reconnection with configurable retry intervals
 - **Security**: TLS support and authentication for secure communication
 - **Message Routing**: Support for reasoning channel routing and group trigger rules
@@ -78,3 +87,56 @@ Add this to `config.json`:
 - Client IDs are used as sender identifiers in the messaging system
 - Topics are treated as channels for message routing purposes
 - The instruction field allows adding context or commands to all incoming messages
+
+## 6. JSON Configuration Examples
+
+### Plain Text Mode (Default)
+```json
+{
+  "subscribe_json_key": null,
+  "reply_json_key": null
+}
+```
+- Incoming messages are treated as plain text
+- Outgoing messages are sent as plain text
+
+### JSON Input Mode
+```json
+{
+  "subscribe_json_key": "message",
+  "reply_json_key": null
+}
+```
+- Incoming JSON: `{"message": "Hello world", "timestamp": 1234567890}`
+- Extracted content: `"Hello world"`
+- Outgoing messages are sent as plain text
+
+### JSON Output Mode
+```json
+{
+  "subscribe_json_key": null,
+  "reply_json_key": "response"
+}
+```
+- Incoming messages are treated as plain text
+- Outgoing JSON: `{"response": "Bot reply"}`
+
+### Full JSON Mode
+```json
+{
+  "subscribe_json_key": "input",
+  "reply_json_key": "output"
+}
+```
+- Incoming JSON: `{"input": "What's the weather?", "location": "Moscow"}`
+- Extracted content: `"What's the weather?"`
+- Outgoing JSON: `{"output": "The weather is sunny"}`
+
+## 7. Troubleshooting
+
+### Common Issues
+
+1. **JSON parsing fails**: Ensure your JSON messages are valid
+2. **Key not found**: Verify the JSON key exists in your messages
+3. **Connection issues**: Check broker URL, credentials, and TLS settings
+4. **Permission denied**: Verify client ID is in the `allow_from` list if configured

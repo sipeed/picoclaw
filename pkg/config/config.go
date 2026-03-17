@@ -600,7 +600,9 @@ type MQTTConfig struct {
 	Username           string              `json:"username"                env:"PICOCLAW_CHANNELS_MQTT_USERNAME"`
 	Password           string              `json:"password"                env:"PICOCLAW_CHANNELS_MQTT_PASSWORD"`
 	SubscribeTopics    []string            `json:"subscribe_topics"        env:"PICOCLAW_CHANNELS_MQTT_SUBSCRIBE_TOPICS"`
+	SubscribeJSONKey   *string             `json:"subscribe_json_key,omitempty"`
 	ReplyTopic         string              `json:"reply_topic"             env:"PICOCLAW_CHANNELS_MQTT_REPLY_TOPIC"`
+	ReplyJSONKey       *string             `json:"reply_json_key,omitempty"`
 	TLS                bool                `json:"tls"                     env:"PICOCLAW_CHANNELS_MQTT_TLS"`
 	TLSCA              string              `json:"tls_ca"                  env:"PICOCLAW_CHANNELS_MQTT_TLS_CA"`
 	TLSCert            string              `json:"tls_cert"                env:"PICOCLAW_CHANNELS_MQTT_TLS_CERT"`
