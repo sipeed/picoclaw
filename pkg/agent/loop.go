@@ -55,20 +55,20 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey        string   // Session identifier for history/context
-	Channel           string   // Target channel for tool execution
-	ChatID            string   // Target chat ID for tool execution
-	SenderID          string   // Current sender ID for dynamic context
-	SenderDisplayName string   // Current sender display name for dynamic context
-	UserMessage       string   // User message content (may include prefix)
-	Media             []string // media:// refs from inbound message
-	DefaultResponse   string   // Response when LLM returns empty
-	EnableSummary     bool     // Whether to trigger summarization
-	SendResponse      bool     // Whether to send response via bus
-	NoHistory         bool     // If true, don't load session history (for heartbeat)
-	MessageID         string                    // Inbound platform message ID (for threading)
-	ReplyToMessageID  string                    // Parent message ID from inbound (for threading)
-	Sender            *providers.MessageSender  // Author identity (nil for system/automated messages)
+	SessionKey        string                   // Session identifier for history/context
+	Channel           string                   // Target channel for tool execution
+	ChatID            string                   // Target chat ID for tool execution
+	SenderID          string                   // Current sender ID for dynamic context
+	SenderDisplayName string                   // Current sender display name for dynamic context
+	UserMessage       string                   // User message content (may include prefix)
+	Media             []string                 // media:// refs from inbound message
+	DefaultResponse   string                   // Response when LLM returns empty
+	EnableSummary     bool                     // Whether to trigger summarization
+	SendResponse      bool                     // Whether to send response via bus
+	NoHistory         bool                     // If true, don't load session history (for heartbeat)
+	MessageID         string                   // Inbound platform message ID (for threading)
+	ReplyToMessageID  string                   // Parent message ID from inbound (for threading)
+	Sender            *providers.MessageSender // Author identity (nil for system/automated messages)
 }
 
 const (
@@ -77,9 +77,9 @@ const (
 	metadataKeyAccountID      = "account_id"
 	metadataKeyGuildID        = "guild_id"
 	metadataKeyTeamID         = "team_id"
-	metadataKeyParentPeerKind  = "parent_peer_kind"
-	metadataKeyParentPeerID    = "parent_peer_id"
-	metadataKeyReplyToMessage  = "reply_to_message_id"
+	metadataKeyParentPeerKind = "parent_peer_kind"
+	metadataKeyParentPeerID   = "parent_peer_id"
+	metadataKeyReplyToMessage = "reply_to_message_id"
 )
 
 func NewAgentLoop(

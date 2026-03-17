@@ -72,16 +72,16 @@ type MessageSender struct {
 }
 
 type Message struct {
-	Role             string          `json:"role"`
-	Content          string          `json:"content"`
-	Media            []string        `json:"media,omitempty"`
-	ReasoningContent string          `json:"reasoning_content,omitempty"`
-	SystemParts      []ContentBlock  `json:"system_parts,omitempty"` // structured system blocks for cache-aware adapters
-	ToolCalls        []ToolCall      `json:"tool_calls,omitempty"`
-	ToolCallID       string          `json:"tool_call_id,omitempty"`
-	MessageID        string          `json:"message_id,omitempty"`          // Platform message ID
-	ReplyToMessageID string          `json:"reply_to_message_id,omitempty"` // Parent message ID (for threading)
-	Sender           *MessageSender  `json:"sender,omitempty"`              // Author identity (user messages only)
+	Role             string         `json:"role"`
+	Content          string         `json:"content"`
+	Media            []string       `json:"media,omitempty"`
+	ReasoningContent string         `json:"reasoning_content,omitempty"`
+	SystemParts      []ContentBlock `json:"system_parts,omitempty"` // structured system blocks for cache-aware adapters
+	ToolCalls        []ToolCall     `json:"tool_calls,omitempty"`
+	ToolCallID       string         `json:"tool_call_id,omitempty"`
+	MessageID        string         `json:"message_id,omitempty"`          // Platform message ID
+	ReplyToMessageID string         `json:"reply_to_message_id,omitempty"` // Parent message ID (for threading)
+	Sender           *MessageSender `json:"sender,omitempty"`              // Author identity (user messages only)
 }
 
 type ToolDefinition struct {
