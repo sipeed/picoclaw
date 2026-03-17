@@ -432,7 +432,29 @@ func TestProviderChat_StripsMoonshotPrefixAndNormalizesKimiTemperature(t *testin
 	}
 }
 
-func TestProviderChat_StripsGroqOllamaDeepseekVivgridPrefixes(t *testing.T) {
+func TestProviderChat_StripsGroqOllamaDeepseekVivgridNovitaPrefixes(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+
 	tests := []struct {
 		name      string
 		input     string
@@ -463,31 +485,25 @@ func TestProviderChat_StripsGroqOllamaDeepseekVivgridPrefixes(t *testing.T) {
 			input:     "vivgrid/auto",
 			wantModel: "auto",
 		},
+		{
+			name:      "strips novita prefix deepseek model",
+			input:     "novita/deepseek/deepseek-v3.2",
+			wantModel: "deepseek/deepseek-v3.2",
+		},
+		{
+			name:      "strips novita prefix zai model",
+			input:     "novita/zai-org/glm-5",
+			wantModel: "zai-org/glm-5",
+		},
+		{
+			name:      "strips novita prefix minimax model",
+			input:     "novita/minimax/minimax-m2.5",
+			wantModel: "minimax/minimax-m2.5",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var requestBody map[string]any
-
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-				resp := map[string]any{
-					"choices": []map[string]any{
-						{
-							"message":       map[string]any{"content": "ok"},
-							"finish_reason": "stop",
-						},
-					},
-				}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
-			}))
-			defer server.Close()
-
-			p := NewProvider("key", server.URL, "")
 			_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, tt.input, nil)
 			if err != nil {
 				t.Fatalf("Chat() error = %v", err)
