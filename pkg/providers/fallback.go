@@ -14,8 +14,9 @@ type FallbackChain struct {
 
 // FallbackCandidate represents one model/provider to try.
 type FallbackCandidate struct {
-	Provider string
-	Model    string
+	Provider    string
+	Model       string
+	CooldownKey string
 }
 
 // FallbackResult contains the successful response and metadata about all attempts.
@@ -39,6 +40,13 @@ type FallbackAttempt struct {
 // NewFallbackChain creates a new fallback chain with the given cooldown tracker.
 func NewFallbackChain(cooldown *CooldownTracker) *FallbackChain {
 	return &FallbackChain{cooldown: cooldown}
+}
+
+func (c FallbackCandidate) cooldownKey() string {
+	if strings.TrimSpace(c.CooldownKey) != "" {
+		return c.CooldownKey
+	}
+	return ModelKey(c.Provider, c.Model)
 }
 
 // ResolveCandidates parses model config into a deduplicated candidate list.
@@ -112,6 +120,8 @@ func (fc *FallbackChain) Execute(
 	}
 
 	for i, candidate := range candidates {
+		cooldownKey := candidate.cooldownKey()
+
 		// Check context before each attempt.
 		if ctx.Err() == context.Canceled {
 			return nil, context.Canceled
@@ -119,7 +129,6 @@ func (fc *FallbackChain) Execute(
 
 		// Check cooldown (per provider/model, not just provider).
 		// This allows multi-key failover where different keys use different model names.
-		cooldownKey := ModelKey(candidate.Provider, candidate.Model)
 		if !fc.cooldown.IsAvailable(cooldownKey) {
 			remaining := fc.cooldown.CooldownRemaining(cooldownKey)
 			result.Attempts = append(result.Attempts, FallbackAttempt{

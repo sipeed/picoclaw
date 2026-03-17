@@ -289,6 +289,15 @@ func TestModelConfig_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid per-model cooldown strategy",
+			config: ModelConfig{
+				ModelName:        "router-model",
+				Model:            "litellm/openai/gpt-4o",
+				CooldownStrategy: "per-model",
+			},
+			wantErr: false,
+		},
+		{
 			name: "missing model_name",
 			config: ModelConfig{
 				Model: "openai/gpt-4o",
@@ -305,6 +314,15 @@ func TestModelConfig_Validate(t *testing.T) {
 		{
 			name:    "empty config",
 			config:  ModelConfig{},
+			wantErr: true,
+		},
+		{
+			name: "invalid cooldown strategy",
+			config: ModelConfig{
+				ModelName:        "test",
+				Model:            "openai/gpt-4o",
+				CooldownStrategy: "backend",
+			},
 			wantErr: true,
 		},
 	}

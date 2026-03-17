@@ -644,10 +644,11 @@ type ModelConfig struct {
 	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
 
 	// Optional optimizations
-	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
-	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
-	RequestTimeout int    `json:"request_timeout,omitempty"`
-	ThinkingLevel  string `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
+	RPM              int    `json:"rpm,omitempty"`              // Requests per minute limit
+	MaxTokensField   string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
+	RequestTimeout   int    `json:"request_timeout,omitempty"`
+	ThinkingLevel    string `json:"thinking_level,omitempty"`    // Extended thinking: off|low|medium|high|xhigh|adaptive
+	CooldownStrategy string `json:"cooldown_strategy,omitempty"` // Cooldown scope: provider|model(per-model)
 }
 
 // Validate checks if the ModelConfig has all required fields.
@@ -658,7 +659,19 @@ func (c *ModelConfig) Validate() error {
 	if c.Model == "" {
 		return fmt.Errorf("model is required")
 	}
+	if !isValidCooldownStrategy(c.CooldownStrategy) {
+		return fmt.Errorf("cooldown_strategy must be one of: provider, model, per-model, per_model")
+	}
 	return nil
+}
+
+func isValidCooldownStrategy(strategy string) bool {
+	switch strings.ReplaceAll(strings.ToLower(strings.TrimSpace(strategy)), "_", "-") {
+	case "", "provider", "model", "per-model":
+		return true
+	default:
+		return false
+	}
 }
 
 type GatewayConfig struct {
