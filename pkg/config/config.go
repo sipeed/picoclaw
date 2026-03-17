@@ -851,7 +851,11 @@ type ModelConfig struct {
 	MaxTokensField string         `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
 	RequestTimeout int            `json:"request_timeout,omitempty"`
 	ThinkingLevel  string         `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
-	ExtraBody      map[string]any `json:"extra_body,omitempty"`     // Additional fields to inject into request body
+	// CooldownStrategy controls the scope of cooldown tracking for this model.
+	// - "provider" (default): cooldown is shared across all models in the provider
+	// - "model" or "per-model": cooldown is isolated to this specific model
+	CooldownStrategy string         `json:"cooldown_strategy,omitempty"`
+	ExtraBody        map[string]any `json:"extra_body,omitempty"` // Additional fields to inject into request body
 
 	// from security
 	secModelName string
@@ -884,7 +888,28 @@ func (c *ModelConfig) Validate() error {
 	if c.Model == "" {
 		return fmt.Errorf("model is required")
 	}
+	if !isValidCooldownStrategy(c.CooldownStrategy) {
+		return fmt.Errorf("cooldown_strategy must be one of: provider, model, per-model (or per_model)")
+	}
 	return nil
+}
+
+// NormalizeCooldownStrategy canonicalizes cooldown strategy aliases.
+// It returns "provider" for the default/shared scope, "model" for per-model
+// scope, and "" for invalid values.
+func NormalizeCooldownStrategy(strategy string) string {
+	switch strings.ReplaceAll(strings.ToLower(strings.TrimSpace(strategy)), "_", "-") {
+	case "", "provider":
+		return "provider"
+	case "model", "per-model":
+		return "model"
+	default:
+		return ""
+	}
+}
+
+func isValidCooldownStrategy(strategy string) bool {
+	return NormalizeCooldownStrategy(strategy) != ""
 }
 
 func (c *ModelConfig) SetAPIKey(value string) {
