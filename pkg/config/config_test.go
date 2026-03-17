@@ -267,6 +267,9 @@ func TestDefaultConfig_Gateway(t *testing.T) {
 	if cfg.Gateway.Port == 0 {
 		t.Error("Gateway port should have default value")
 	}
+	if cfg.Gateway.HotReload {
+		t.Error("Gateway hot reload should be disabled by default")
+	}
 }
 
 // TestDefaultConfig_Providers verifies provider structure

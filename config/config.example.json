@@ -518,6 +518,7 @@
   },
   "gateway": {
     "host": "127.0.0.1",
-    "port": 18790
+    "port": 18790,
+    "hot_reload": false
   }
 }
