@@ -271,7 +271,9 @@
       "subscribe_topics": [
         "picoclaw/input"
       ],
+      "subscribe_json_key": null,
       "reply_topic": "picoclaw/output",
+      "reply_json_key": null,
       "tls": false,
       "tls_ca": "",
       "tls_cert": "",
