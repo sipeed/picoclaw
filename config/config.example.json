@@ -36,6 +36,12 @@
       "api_key": "sk-your-deepseek-key"
     },
     {
+      "model_name": "glm-coding-plan",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key",
+      "api_base": "https://open.bigmodel.cn/api/coding/paas/v4"
+    },
+    {
       "model_name": "loadbalanced-gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-key1",

@@ -1037,6 +1037,8 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
 
+> For Zhipu GLM Coding Plan, keep the model as `zhipu/<model>` and set `api_base` to `https://open.bigmodel.cn/api/coding/paas/v4`.
+
 #### Basic Configuration
 
 ```json
@@ -1055,6 +1057,12 @@ This design also enables **multi-agent support** with flexible provider selectio
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
+    },
+    {
+      "model_name": "glm-4.7-coding-plan",
+      "model": "zhipu/glm-4.7",
+      "api_base": "https://open.bigmodel.cn/api/coding/paas/v4",
       "api_key": "your-zhipu-key"
     }
   ],
@@ -1084,6 +1092,17 @@ This design also enables **multi-agent support** with flexible provider selectio
 {
   "model_name": "glm-4.7",
   "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+**智谱 AI (GLM Coding Plan)**
+
+```json
+{
+  "model_name": "glm-4.7-coding-plan",
+  "model": "zhipu/glm-4.7",
+  "api_base": "https://open.bigmodel.cn/api/coding/paas/v4",
   "api_key": "your-key"
 }
 ```

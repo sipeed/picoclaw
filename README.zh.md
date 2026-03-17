@@ -520,6 +520,8 @@ Agent 读取 HEARTBEAT.md
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | 自定义    | 仅 OAuth                                                          |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                 |
 
+> 如果你使用智谱 GLM Coding Plan，请保持 `model` 为 `zhipu/<model>`，并将 `api_base` 改成 `https://open.bigmodel.cn/api/coding/paas/v4`。
+
 #### 基础配置示例
 
 ```json
@@ -538,6 +540,12 @@ Agent 读取 HEARTBEAT.md
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
+    },
+    {
+      "model_name": "glm-4.7-coding-plan",
+      "model": "zhipu/glm-4.7",
+      "api_base": "https://open.bigmodel.cn/api/coding/paas/v4",
       "api_key": "your-zhipu-key"
     }
   ],
@@ -567,6 +575,17 @@ Agent 读取 HEARTBEAT.md
 {
   "model_name": "glm-4.7",
   "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+**智谱 AI (GLM Coding Plan)**
+
+```json
+{
+  "model_name": "glm-4.7-coding-plan",
+  "model": "zhipu/glm-4.7",
+  "api_base": "https://open.bigmodel.cn/api/coding/paas/v4",
   "api_key": "your-key"
 }
 ```
