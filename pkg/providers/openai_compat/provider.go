@@ -121,7 +121,7 @@ func (p *Provider) Chat(
 	}
 
 	if len(tools) > 0 {
-		requestBody["tools"] = tools
+		requestBody["tools"] = p.finalizeTools(tools, options)
 		requestBody["tool_choice"] = "auto"
 	}
 
@@ -517,4 +517,55 @@ func supportsPromptCacheKey(apiBase string) bool {
 	}
 	host := u.Hostname()
 	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+}
+
+// supportsStrictMode reports whether the given API base is known to
+// support the 'strict' flag in tool definitions (Structured Outputs).
+// Non-OpenAI compatible providers often reject this flag with 400 errors.
+func supportsStrictMode(apiBase string) bool {
+	// For now, mirror prompt caching check: only native OpenAI is trusted.
+	return supportsPromptCacheKey(apiBase)
+}
+
+// finalizeTools handles OpenAI Strict Mode compatibility (Structured Outputs).
+// For native OpenAI, it passes tools through as-is for maximum performance.
+// For non-native providers, it strips the 'strict' flag to prevent 400 errors.
+func (p *Provider) finalizeTools(tools []ToolDefinition, options map[string]any) any {
+	// 1. Check if user explicitly wants to force strict mode on/off
+	forceStrict, hasForce := options["strict_mode"].(bool)
+
+	// 2. Determine if we can use the tools as-is
+	isNative := supportsStrictMode(p.apiBase)
+
+	// Performance & Safety Path:
+	// If it's a native provider and the user didn't force a specific mode,
+	// pass through the original tools immediately. This preserves the
+	// original schema behavior (e.g., allowing non-strict schemas).
+	if isNative && !hasForce {
+		return tools
+	}
+
+	// 3. Sanitization / Explicit Force Path
+	// Build compatible map based on 'useStrict' decision
+	useStrict := isNative
+	if hasForce {
+		useStrict = forceStrict
+	}
+
+	out := make([]any, 0, len(tools))
+	for _, t := range tools {
+		toolMap := map[string]any{
+			"type": t.Type,
+			"function": map[string]any{
+				"name":        t.Function.Name,
+				"description": t.Function.Description,
+				"parameters":  t.Function.Parameters,
+			},
+		}
+		if useStrict {
+			toolMap["function"].(map[string]any)["strict"] = true
+		}
+		out = append(out, toolMap)
+	}
+	return out
 }
