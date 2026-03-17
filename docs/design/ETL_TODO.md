@@ -8,7 +8,7 @@ This document tracks the tasks required to implement the "Ultimate Visibility" E
 - [x] **Basic Metrics Implementation:** Introduce a metrics package (e.g., using `expvar` or a Prometheus client) to expose basic application metrics.
 - [x] **Goroutine Tracking:** Implement a metric to track the number of active Goroutines.
 - [x] **Memory Tracking:** Implement a metric to track heap allocation and GC pauses.
-- [ ] **AgentLoop Telemetry:** Add specific instrumentation to the `AgentLoop` (iteration duration, tool execution duration, failure counts).
+- [x] **AgentLoop Telemetry:** Add specific instrumentation to the `AgentLoop` (iteration duration, tool execution duration, failure counts).
 - [ ] **LLM Provider Telemetry:** Track API call latency, token usage, and failover reasons for LLM providers.
 - [ ] **API Gateway Telemetry:** Track request rates (RPS), latency percentiles, and error rates for HTTP and WebSocket endpoints.
 - [ ] **Tracing Instrumentation:** Introduce trace IDs at entry points (HTTP, WebSocket) and propagate them via context to track end-to-end execution flow.
