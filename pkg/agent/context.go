@@ -634,6 +634,16 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 				}
 				msg.ToolCalls = cleaned
 			}
+			// If all tool calls were dropped and the message has no text
+			// content either, the message would produce an empty content
+			// array ("content": []) or an empty text block — both rejected
+			// by the Anthropic API with a generic 400 "Error". Drop it
+			// entirely; the second pass will orphan any associated tool
+			// results, which are also harmless to drop.
+			if len(msg.ToolCalls) == 0 && strings.TrimSpace(msg.Content) == "" {
+				logger.DebugCF("agent", "Dropping assistant message with no content and no tool calls", map[string]any{})
+				continue
+			}
 			if len(msg.ToolCalls) > 0 {
 				if len(sanitized) == 0 {
 					logger.DebugCF("agent", "Dropping assistant tool-call turn at history start", map[string]any{})

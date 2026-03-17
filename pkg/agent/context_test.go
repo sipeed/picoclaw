@@ -340,7 +340,8 @@ func TestSanitizeHistoryForProvider_EmptyToolCallName(t *testing.T) {
 }
 
 // TestSanitizeHistoryForProvider_EmptyToolCallID tests that tool calls with an
-// empty ID are dropped (an empty ID also causes Anthropic API errors).
+// empty ID are dropped, and that the resulting content-less assistant message
+// is also dropped (avoiding an empty content array sent to the API).
 func TestSanitizeHistoryForProvider_EmptyToolCallID(t *testing.T) {
 	history := []providers.Message{
 		msg("user", "hello"),
@@ -351,14 +352,36 @@ func TestSanitizeHistoryForProvider_EmptyToolCallID(t *testing.T) {
 	}
 
 	result := sanitizeHistoryForProvider(history)
-	// The tool call with empty ID is dropped; the assistant message has no tool
-	// calls after filtering, so it passes through as a plain assistant message.
-	// user + assistant (plain) = 2
+	// The tool call with empty ID is dropped; the assistant message then has no
+	// tool calls and no text content → it is also dropped to avoid sending an
+	// empty content array to the API.
+	// Remaining: user ("hello") only.
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d: %+v", len(result), roles(result))
+	}
+	assertRoles(t, result, "user")
+}
+
+// TestSanitizeHistoryForProvider_AllToolCallsDroppedEmptyContent tests that an
+// assistant message whose every tool call is dropped AND whose text content is
+// empty is itself dropped. Sending such a message would produce "content": []
+// or an empty text block — both cause a generic Anthropic 400 "Error".
+func TestSanitizeHistoryForProvider_AllToolCallsDroppedEmptyContent(t *testing.T) {
+	history := []providers.Message{
+		msg("user", "hello"),
+		{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{
+			{ID: "A", Type: "function", Function: &providers.FunctionCall{Name: "", Arguments: "{}"}},
+		}},
+		toolResult("A"),
+		msg("user", "follow up"),
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	// The assistant message has no valid tool calls and no content → dropped.
+	// Its tool result is orphaned and also dropped.
+	// Remaining: user ("hello"), user ("follow up")
 	if len(result) != 2 {
 		t.Fatalf("expected 2 messages, got %d: %+v", len(result), roles(result))
 	}
-	assertRoles(t, result, "user", "assistant")
-	if len(result[1].ToolCalls) != 0 {
-		t.Fatalf("expected 0 tool calls in assistant, got %d", len(result[1].ToolCalls))
-	}
+	assertRoles(t, result, "user", "user")
 }
