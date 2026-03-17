@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSpawnTool_Execute_EmptyTask(t *testing.T) {
@@ -75,5 +76,41 @@ func TestSpawnTool_Execute_NilManager(t *testing.T) {
 	}
 	if !strings.Contains(result.ForLLM, "Subagent manager not configured") {
 		t.Errorf("Error message should mention manager not configured, got: %s", result.ForLLM)
+	}
+}
+
+func TestSpawnTool_ExecuteAsync_UsesTargetAgentModel(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "caller-model", "/tmp/test")
+	manager.SetAgentModelResolver(func(agentID string) (string, bool) {
+		if agentID == "analyst" {
+			return "premium-model", true
+		}
+		return "", false
+	})
+	tool := NewSpawnTool(manager)
+
+	done := make(chan *ToolResult, 1)
+	result := tool.ExecuteAsync(context.Background(), map[string]any{
+		"task":     "Investigate the issue",
+		"agent_id": "analyst",
+	}, func(_ context.Context, result *ToolResult) {
+		done <- result
+	})
+	if result == nil || result.IsError {
+		t.Fatalf("expected async spawn success, got: %+v", result)
+	}
+
+	select {
+	case callbackResult := <-done:
+		if callbackResult == nil || callbackResult.IsError {
+			t.Fatalf("expected successful callback result, got: %+v", callbackResult)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for async spawn callback")
+	}
+
+	if provider.lastModel != "premium-model" {
+		t.Fatalf("model = %q, want %q", provider.lastModel, "premium-model")
 	}
 }

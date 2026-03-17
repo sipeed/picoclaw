@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
@@ -11,6 +12,7 @@ import (
 // MockLLMProvider is a test implementation of LLMProvider
 type MockLLMProvider struct {
 	lastOptions map[string]any
+	lastModel   string
 }
 
 func (m *MockLLMProvider) Chat(
@@ -21,6 +23,7 @@ func (m *MockLLMProvider) Chat(
 	options map[string]any,
 ) (*providers.LLMResponse, error) {
 	m.lastOptions = options
+	m.lastModel = model
 	// Find the last user message to generate a response
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {
@@ -66,6 +69,46 @@ func TestSubagentManager_SetLLMOptions_AppliesToRunToolLoop(t *testing.T) {
 	}
 	if provider.lastOptions["temperature"] != 0.6 {
 		t.Fatalf("temperature = %v, want %v", provider.lastOptions["temperature"], 0.6)
+	}
+}
+
+func TestSubagentManager_RunTask_UsesResolvedTargetAgentModel(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "caller-model", "/tmp/test")
+	manager.SetAgentModelResolver(func(agentID string) (string, bool) {
+		if agentID == "analyst" {
+			return "premium-model", true
+		}
+		return "", false
+	})
+
+	done := make(chan *ToolResult, 1)
+	_, err := manager.Spawn(
+		context.Background(),
+		"Investigate the issue",
+		"analysis",
+		"analyst",
+		"cli",
+		"direct",
+		func(_ context.Context, result *ToolResult) {
+			done <- result
+		},
+	)
+	if err != nil {
+		t.Fatalf("Spawn() error: %v", err)
+	}
+
+	select {
+	case result := <-done:
+		if result == nil || result.IsError {
+			t.Fatalf("expected successful async result, got: %+v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for subagent completion")
+	}
+
+	if provider.lastModel != "premium-model" {
+		t.Fatalf("model = %q, want %q", provider.lastModel, "premium-model")
 	}
 }
 
