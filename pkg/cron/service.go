@@ -215,8 +215,8 @@ func (cs *CronService) executeJobByID(jobID string) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
-	if err := cs.reloadStoreUnsafe(); err != nil {
-		log.Printf("[cron] failed to reload store before updating job state: %v", err)
+	if reloadErr := cs.reloadStoreUnsafe(); reloadErr != nil {
+		log.Printf("[cron] failed to reload store before updating job state: %v", reloadErr)
 	}
 
 	var job *CronJob
