@@ -1,6 +1,6 @@
 ---
 name: skill-creator
-description: Create or update AgentSkills. Use when designing, structuring, or packaging skills with scripts, references, and assets.
+description: Create or update PicoClaw skills. Use when designing, structuring, or documenting skills with SKILL.md plus optional scripts, references, and assets.
 ---
 
 # Skill Creator
@@ -200,172 +200,126 @@ the agent reads REDLINING.md or OOXML.md only when the user needs those features
 
 ## Skill Creation Process
 
-Skill creation involves these steps:
+Create or update a skill with this workflow:
 
-1. Understand the skill with concrete examples
-2. Plan reusable skill contents (scripts, references, assets)
-3. Initialize the skill (run init_skill.py)
-4. Edit the skill (implement resources and write SKILL.md)
-5. Package the skill (run package_skill.py)
+1. Understand the intended examples and trigger phrases
+2. Plan which reusable resources belong in `scripts/`, `references/`, or `assets/`
+3. Initialize the folder structure manually
+4. Write `SKILL.md` and any bundled resources
+5. Validate the skill inside PicoClaw
 6. Iterate based on real usage
 
-Follow these steps in order, skipping only if there is a clear reason why they are not applicable.
+Follow the steps in order unless you are only making a narrow edit to an existing skill.
 
 ### Skill Naming
 
-- Use lowercase letters, digits, and hyphens only; normalize user-provided titles to hyphen-case (e.g., "Plan Mode" -> `plan-mode`).
-- When generating names, generate a name under 64 characters (letters, digits, hyphens).
-- Prefer short, verb-led phrases that describe the action.
-- Namespace by tool when it improves clarity or triggering (e.g., `gh-address-comments`, `linear-address-issue`).
-- Name the skill folder exactly after the skill name.
+- Use lowercase letters, digits, and hyphens only; normalize user-provided titles to hyphen-case (for example, "Plan Mode" -> `plan-mode`).
+- Keep the name under 64 characters.
+- Prefer short, action-oriented names.
+- Namespace by tool when that improves triggering clarity (for example, `gh-address-comments`).
+- Make the folder name exactly match the skill name.
 
-### Step 1: Understanding the Skill with Concrete Examples
+### Step 1: Understand the Skill with Concrete Examples
 
-Skip this step only when the skill's usage patterns are already clearly understood. It remains valuable even when working with an existing skill.
+Gather a few concrete prompts the skill should handle before writing anything. Use those examples to decide:
 
-To create an effective skill, clearly understand concrete examples of how the skill will be used. This understanding can come from either direct user examples or generated examples that are validated with user feedback.
+- What users will ask that should trigger the skill
+- Which parts need deterministic scripts versus simple instructions
+- Which details are stable enough to store as reusable references
 
-For example, when building an image-editor skill, relevant questions include:
+Avoid asking every possible question up front. Start with the most important examples and refine only if the trigger boundary is still unclear.
 
-- "What functionality should the image-editor skill support? Editing, rotating, anything else?"
-- "Can you give some examples of how this skill would be used?"
-- "I can imagine users asking for things like 'Remove the red-eye from this image' or 'Rotate this image'. Are there other ways you imagine this skill being used?"
-- "What would a user say that should trigger this skill?"
+### Step 2: Plan the Reusable Contents
 
-To avoid overwhelming users, avoid asking too many questions in a single message. Start with the most important questions and follow up as needed for better effectiveness.
+For each example, decide what should be reusable:
 
-Conclude this step when there is a clear sense of the functionality the skill should support.
+- `scripts/` when the same code would otherwise be rewritten or must be deterministic
+- `references/` when the agent needs documentation, schemas, policies, or long examples
+- `assets/` when the skill needs templates or files that become part of the output
 
-### Step 2: Planning the Reusable Skill Contents
+Only create directories that the skill will actually use.
 
-To turn concrete examples into an effective skill, analyze each example by:
+### Step 3: Initialize the Skill Manually
 
-1. Considering how to execute on the example from scratch
-2. Identifying what scripts, references, and assets would be helpful when executing these workflows repeatedly
+PicoClaw does not ship `scripts/init_skill.py` or `scripts/package_skill.py`. Create the scaffold directly.
 
-Example: When building a `pdf-editor` skill to handle queries like "Help me rotate this PDF," the analysis shows:
+Use one of these roots:
 
-1. Rotating a PDF requires re-writing the same code each time
-2. A `scripts/rotate_pdf.py` script would be helpful to store in the skill
+- Local user skill: `~/.picoclaw/workspace/skills/<skill-name>/`
+- In-repo builtin skill contribution: `<repo>/workspace/skills/<skill-name>/`
 
-Example: When designing a `frontend-webapp-builder` skill for queries like "Build me a todo app" or "Build me a dashboard to track my steps," the analysis shows:
-
-1. Writing a frontend webapp requires the same boilerplate HTML/React each time
-2. An `assets/hello-world/` template containing the boilerplate HTML/React project files would be helpful to store in the skill
-
-Example: When building a `big-query` skill to handle queries like "How many users have logged in today?" the analysis shows:
-
-1. Querying BigQuery requires re-discovering the table schemas and relationships each time
-2. A `references/schema.md` file documenting the table schemas would be helpful to store in the skill
-
-To establish the skill's contents, analyze each concrete example to create a list of the reusable resources to include: scripts, references, and assets.
-
-### Step 3: Initializing the Skill
-
-At this point, it is time to actually create the skill.
-
-Skip this step only if the skill being developed already exists, and iteration or packaging is needed. In this case, continue to the next step.
-
-When creating a new skill from scratch, always run the `init_skill.py` script. The script conveniently generates a new template skill directory that automatically includes everything a skill requires, making the skill creation process much more efficient and reliable.
-
-Usage:
+Minimal scaffold:
 
 ```bash
-scripts/init_skill.py <skill-name> --path <output-directory> [--resources scripts,references,assets] [--examples]
+SKILL_DIR="$HOME/.picoclaw/workspace/skills/my-skill"
+mkdir -p "$SKILL_DIR"
+mkdir -p "$SKILL_DIR/scripts" "$SKILL_DIR/references" "$SKILL_DIR/assets"
 ```
 
-Examples:
+Minimal `SKILL.md` template:
+
+```markdown
+---
+name: my-skill
+description: Describe what the skill does and when it should trigger.
+---
+
+# My Skill
+
+1. Put the core workflow here.
+2. Keep the body concise.
+3. Move long details into references/.
+```
+
+If the skill does not need `scripts/`, `references/`, or `assets/`, remove those empty directories.
+
+### Step 4: Write the Skill
+
+When writing the skill, optimize for another agent instance that has no project-specific context besides what you provide.
+
+#### Frontmatter
+
+Write YAML frontmatter with only:
+
+- `name`
+- `description`
+
+The `description` is the main trigger surface. Include both what the skill does and when it should be used. Put trigger information in the description, not in a "when to use" section in the body.
+
+#### Body
+
+Write the body in imperative form. Keep it focused on:
+
+- The workflow to follow
+- Which bundled files exist and when to open them
+- Constraints, quality bars, and decision rules that are not obvious from general model knowledge
+
+If you need longer examples or detailed domain docs, store them in `references/` and link to them directly from `SKILL.md`.
+
+Any script you add must be run and sanity-checked. If you create placeholder files while drafting, delete them before finishing unless they still add value.
+
+### Step 5: Validate the Skill in PicoClaw
+
+Before considering the skill done, verify:
+
+- The folder contains `SKILL.md`
+- `SKILL.md` frontmatter has a valid `name` and `description`
+- The folder name matches the skill name
+- The skill appears in `picoclaw skills list`
+
+When testing from a source checkout, point PicoClaw at the repo's builtin skills explicitly:
 
 ```bash
-scripts/init_skill.py my-skill --path skills/public
-scripts/init_skill.py my-skill --path skills/public --resources scripts,references
-scripts/init_skill.py my-skill --path skills/public --resources scripts --examples
+PICOCLAW_BUILTIN_SKILLS="$PWD/workspace/skills" picoclaw skills list
 ```
 
-The script:
-
-- Creates the skill directory at the specified path
-- Generates a SKILL.md template with proper frontmatter and TODO placeholders
-- Optionally creates resource directories based on `--resources`
-- Optionally adds example files when `--examples` is set
-
-After initialization, customize the SKILL.md and add resources as needed. If you used `--examples`, replace or delete placeholder files.
-
-### Step 4: Edit the Skill
-
-When editing the (newly-generated or existing) skill, remember that the skill is being created for another instance of the agent to use. Include information that would be beneficial and non-obvious to the agent. Consider what procedural knowledge, domain-specific details, or reusable assets would help another the agent instance execute these tasks more effectively.
-
-#### Learn Proven Design Patterns
-
-Consult these helpful guides based on your skill's needs:
-
-- **Multi-step processes**: See references/workflows.md for sequential workflows and conditional logic
-- **Specific output formats or quality standards**: See references/output-patterns.md for template and example patterns
-
-These files contain established best practices for effective skill design.
-
-#### Start with Reusable Skill Contents
-
-To begin implementation, start with the reusable resources identified above: `scripts/`, `references/`, and `assets/` files. Note that this step may require user input. For example, when implementing a `brand-guidelines` skill, the user may need to provide brand assets or templates to store in `assets/`, or documentation to store in `references/`.
-
-Added scripts must be tested by actually running them to ensure there are no bugs and that the output matches what is expected. If there are many similar scripts, only a representative sample needs to be tested to ensure confidence that they all work while balancing time to completion.
-
-If you used `--examples`, delete any placeholder files that are not needed for the skill. Only create resource directories that are actually required.
-
-#### Update SKILL.md
-
-**Writing Guidelines:** Always use imperative/infinitive form.
-
-##### Frontmatter
-
-Write the YAML frontmatter with `name` and `description`:
-
-- `name`: The skill name
-- `description`: This is the primary triggering mechanism for your skill, and helps the agent understand when to use the skill.
-  - Include both what the Skill does and specific triggers/contexts for when to use it.
-  - Include all "when to use" information here - Not in the body. The body is only loaded after triggering, so "When to Use This Skill" sections in the body are not helpful to the agent.
-  - Example description for a `docx` skill: "Comprehensive document creation, editing, and analysis with support for tracked changes, comments, formatting preservation, and text extraction. Use when the agent needs to work with professional documents (.docx files) for: (1) Creating new documents, (2) Modifying or editing content, (3) Working with tracked changes, (4) Adding comments, or any other document tasks"
-
-Do not include any other fields in YAML frontmatter.
-
-##### Body
-
-Write instructions for using the skill and its bundled resources.
-
-### Step 5: Packaging a Skill
-
-Once development of the skill is complete, it must be packaged into a distributable .skill file that gets shared with the user. The packaging process automatically validates the skill first to ensure it meets all requirements:
-
-```bash
-scripts/package_skill.py <path/to/skill-folder>
-```
-
-Optional output directory specification:
-
-```bash
-scripts/package_skill.py <path/to/skill-folder> ./dist
-```
-
-The packaging script will:
-
-1. **Validate** the skill automatically, checking:
-
-   - YAML frontmatter format and required fields
-   - Skill naming conventions and directory structure
-   - Description completeness and quality
-   - File organization and resource references
-
-2. **Package** the skill if validation passes, creating a .skill file named after the skill (e.g., `my-skill.skill`) that includes all files and maintains the proper directory structure for distribution. The .skill file is a zip file with a .skill extension.
-
-If validation fails, the script will report the errors and exit without creating a package. Fix any validation errors and run the packaging command again.
+Then trigger the skill with a realistic prompt and confirm the agent loads the intended instructions. There is no repo-local packaging helper; for in-repo contributions, commit the skill folder directly.
 
 ### Step 6: Iterate
 
-After testing the skill, users may request improvements. Often this happens right after using the skill, with fresh context of how the skill performed.
+After using the skill on real tasks:
 
-**Iteration workflow:**
-
-1. Use the skill on real tasks
-2. Notice struggles or inefficiencies
-3. Identify how SKILL.md or bundled resources should be updated
-4. Implement changes and test again
+1. Note where the agent hesitated, overused tools, or missed constraints
+2. Tighten the trigger description or workflow instructions
+3. Move repeated details into bundled resources when that reduces prompt bloat
+4. Re-test with the original example prompts

@@ -805,6 +805,46 @@ For advanced/test setups, you can override the builtin skills root with:
 export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 ```
 
+### Create a Custom Skill
+
+Create custom skills in your workspace at `~/.picoclaw/workspace/skills/<skill-name>/`.
+
+If you are contributing a builtin skill to this repository, place it under `workspace/skills/<skill-name>/`.
+
+Minimal scaffold:
+
+```bash
+SKILL_DIR="$HOME/.picoclaw/workspace/skills/my-skill"
+mkdir -p "$SKILL_DIR"
+```
+
+Minimal `SKILL.md`:
+
+```markdown
+---
+name: my-skill
+description: Describe what the skill does and when PicoClaw should use it.
+---
+
+# My Skill
+
+1. Keep the workflow concise.
+2. Add `scripts/`, `references/`, or `assets/` only when they are useful.
+3. Put trigger details in the description, not in the body.
+```
+
+Optional resource directories:
+
+```bash
+mkdir -p "$SKILL_DIR/scripts" "$SKILL_DIR/references" "$SKILL_DIR/assets"
+```
+
+To test builtin skills from a source checkout, point PicoClaw at the repo's skill tree:
+
+```bash
+PICOCLAW_BUILTIN_SKILLS="$PWD/workspace/skills" picoclaw skills list
+```
+
 ### Unified Command Execution Policy
 
 - Generic slash commands are executed through a single path in `pkg/agent/loop.go` via `commands.Executor`.
