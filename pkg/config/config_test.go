@@ -555,9 +555,51 @@ func TestLoadConfig_WebToolsProxy(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_ModelListInheritsProviderFields(t *testing.T) {
+func loadModelConfigFromJSON(t *testing.T, configJSON, modelName string) *ModelConfig {
+	t.Helper()
+
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.json")
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	modelCfg, err := cfg.GetModelConfig(modelName)
+	if err != nil {
+		t.Fatalf("GetModelConfig() error: %v", err)
+	}
+
+	return modelCfg
+}
+
+func assertModelConfigProviderInheritance(
+	t *testing.T,
+	modelCfg *ModelConfig,
+	wantAPIKey, wantAPIBase, wantProxy string,
+	wantRequestTimeout int,
+) {
+	t.Helper()
+
+	if modelCfg.APIKey != wantAPIKey {
+		t.Fatalf("APIKey = %q, want %q", modelCfg.APIKey, wantAPIKey)
+	}
+	if modelCfg.APIBase != wantAPIBase {
+		t.Fatalf("APIBase = %q, want %q", modelCfg.APIBase, wantAPIBase)
+	}
+	if modelCfg.Proxy != wantProxy {
+		t.Fatalf("Proxy = %q, want %q", modelCfg.Proxy, wantProxy)
+	}
+	if modelCfg.RequestTimeout != wantRequestTimeout {
+		t.Fatalf("RequestTimeout = %d, want %d", modelCfg.RequestTimeout, wantRequestTimeout)
+	}
+}
+
+func TestLoadConfig_ModelListInheritsProviderFields(t *testing.T) {
 	configJSON := `{
   "providers": {
     "litellm": {
@@ -574,36 +616,12 @@ func TestLoadConfig_ModelListInheritsProviderFields(t *testing.T) {
     }
   ]
 }`
-	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
-		t.Fatalf("os.WriteFile() error: %v", err)
-	}
 
-	cfg, err := LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error: %v", err)
-	}
-
-	modelCfg, err := cfg.GetModelConfig("kimi1")
-	if err != nil {
-		t.Fatalf("GetModelConfig() error: %v", err)
-	}
-	if modelCfg.APIKey != "shared-key" {
-		t.Fatalf("APIKey = %q, want %q", modelCfg.APIKey, "shared-key")
-	}
-	if modelCfg.APIBase != "http://host:4000/v1" {
-		t.Fatalf("APIBase = %q, want %q", modelCfg.APIBase, "http://host:4000/v1")
-	}
-	if modelCfg.Proxy != "http://proxy:8080" {
-		t.Fatalf("Proxy = %q, want %q", modelCfg.Proxy, "http://proxy:8080")
-	}
-	if modelCfg.RequestTimeout != 45 {
-		t.Fatalf("RequestTimeout = %d, want %d", modelCfg.RequestTimeout, 45)
-	}
+	modelCfg := loadModelConfigFromJSON(t, configJSON, "kimi1")
+	assertModelConfigProviderInheritance(t, modelCfg, "shared-key", "http://host:4000/v1", "http://proxy:8080", 45)
 }
 
 func TestLoadConfig_ModelListKeepsExplicitOverrides(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.json")
 	configJSON := `{
   "providers": {
     "litellm": {
@@ -622,31 +640,9 @@ func TestLoadConfig_ModelListKeepsExplicitOverrides(t *testing.T) {
     }
   ]
 }`
-	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
-		t.Fatalf("os.WriteFile() error: %v", err)
-	}
 
-	cfg, err := LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error: %v", err)
-	}
-
-	modelCfg, err := cfg.GetModelConfig("kimi1")
-	if err != nil {
-		t.Fatalf("GetModelConfig() error: %v", err)
-	}
-	if modelCfg.APIKey != "model-key" {
-		t.Fatalf("APIKey = %q, want %q", modelCfg.APIKey, "model-key")
-	}
-	if modelCfg.APIBase != "http://host:4000/v1" {
-		t.Fatalf("APIBase = %q, want %q", modelCfg.APIBase, "http://host:4000/v1")
-	}
-	if modelCfg.Proxy != "http://proxy:8080" {
-		t.Fatalf("Proxy = %q, want %q", modelCfg.Proxy, "http://proxy:8080")
-	}
-	if modelCfg.RequestTimeout != 90 {
-		t.Fatalf("RequestTimeout = %d, want %d", modelCfg.RequestTimeout, 90)
-	}
+	modelCfg := loadModelConfigFromJSON(t, configJSON, "kimi1")
+	assertModelConfigProviderInheritance(t, modelCfg, "model-key", "http://host:4000/v1", "http://proxy:8080", 90)
 }
 
 func TestLoadConfig_ModelListInheritsOpenAIProviderForBareModel(t *testing.T) {
