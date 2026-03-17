@@ -25,6 +25,7 @@ build/
 # Secrets & Config (keep templates, ignore actual secrets)
 .env
 config/config.json
+docker/data/
 
 # Test
 coverage.txt
