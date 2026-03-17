@@ -11,6 +11,14 @@ func makeCandidate(provider, model string) FallbackCandidate {
 	return FallbackCandidate{Provider: provider, Model: model}
 }
 
+func makePerModelCandidate(provider, model string) FallbackCandidate {
+	return FallbackCandidate{
+		Provider:    provider,
+		Model:       model,
+		CooldownKey: ModelKey(provider, model),
+	}
+}
+
 func successRun(content string) func(ctx context.Context, provider, model string) (*LLMResponse, error) {
 	return func(ctx context.Context, provider, model string) (*LLMResponse, error) {
 		return &LLMResponse{Content: content, FinishReason: "stop"}, nil
@@ -188,6 +196,57 @@ func TestFallback_CooldownSkip(t *testing.T) {
 	}
 	if skipped != 1 {
 		t.Errorf("skipped = %d, want 1", skipped)
+	}
+}
+
+func TestFallback_PerModelCooldownDoesNotSkipSiblingModel(t *testing.T) {
+	now := time.Now()
+	ct, _ := newTestTracker(now)
+	fc := NewFallbackChain(ct)
+
+	candidates := []FallbackCandidate{
+		makePerModelCandidate("litellm", "openai/gpt-4o-mini"),
+		makePerModelCandidate("litellm", "openai/gpt-4o"),
+	}
+
+	ct.MarkFailure(candidates[0].CooldownKey, FailoverRateLimit)
+
+	called := []string{}
+	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		called = append(called, provider+"/"+model)
+		return &LLMResponse{Content: "ok", FinishReason: "stop"}, nil
+	}
+
+	result, err := fc.Execute(context.Background(), candidates, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Model != "openai/gpt-4o" {
+		t.Fatalf("result model = %q, want %q", result.Model, "openai/gpt-4o")
+	}
+	if len(called) != 1 || called[0] != "litellm/openai/gpt-4o" {
+		t.Fatalf("called = %v, want only second model", called)
+	}
+}
+
+func TestFallback_DefaultProviderCooldownSkipsSiblingModel(t *testing.T) {
+	now := time.Now()
+	ct, _ := newTestTracker(now)
+	fc := NewFallbackChain(ct)
+
+	candidates := []FallbackCandidate{
+		makeCandidate("litellm", "openai/gpt-4o-mini"),
+		makeCandidate("litellm", "openai/gpt-4o"),
+	}
+
+	ct.MarkFailure("litellm", FailoverRateLimit)
+
+	_, err := fc.Execute(context.Background(), candidates, func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		t.Fatal("run should not be called when provider cooldown is shared")
+		return nil, nil
+	})
+	if err == nil {
+		t.Fatal("expected error when all same-provider candidates are skipped")
 	}
 }
 

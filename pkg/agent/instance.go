@@ -167,8 +167,9 @@ func NewAgentInstance(
 		summarizeTokenPercent = 75
 	}
 
-	// Resolve fallback candidates
+	// Resolve fallback candidates.
 	candidates := resolveModelCandidates(cfg, defaults.Provider, model, fallbacks)
+	candidates = applyCooldownKeys(cfg, candidates)
 
 	// Model routing setup: pre-resolve light model candidates at creation time
 	// to avoid repeated model_list lookups on every incoming message.
@@ -192,7 +193,7 @@ func NewAgentInstance(
 						LightModel: rc.LightModel,
 						Threshold:  rc.Threshold,
 					})
-					lightCandidates = resolved
+					lightCandidates = applyCooldownKeys(cfg, resolved)
 					lightProvider = lp
 				}
 			}
@@ -225,6 +226,64 @@ func NewAgentInstance(
 		Router:                    router,
 		LightCandidates:           lightCandidates,
 		LightProvider:             lightProvider,
+	}
+}
+
+func applyCooldownKeys(cfg *config.Config, candidates []providers.FallbackCandidate) []providers.FallbackCandidate {
+	if len(candidates) == 0 {
+		return candidates
+	}
+
+	resolved := make([]providers.FallbackCandidate, len(candidates))
+	copy(resolved, candidates)
+
+	for i := range resolved {
+		resolved[i].CooldownKey = resolveCooldownKey(cfg, resolved[i])
+	}
+
+	return resolved
+}
+
+func resolveCooldownKey(cfg *config.Config, candidate providers.FallbackCandidate) string {
+	if candidate.Provider == "" {
+		return ""
+	}
+
+	if cfg != nil && candidateUsesPerModelCooldown(cfg, candidate) {
+		return providers.ModelKey(candidate.Provider, candidate.Model)
+	}
+
+	return candidate.Provider
+}
+
+func candidateUsesPerModelCooldown(cfg *config.Config, candidate providers.FallbackCandidate) bool {
+	if cfg == nil {
+		return false
+	}
+
+	candidateKey := providers.ModelKey(candidate.Provider, candidate.Model)
+	for i := range cfg.ModelList {
+		ref := providers.ParseModelRef(cfg.ModelList[i].Model, "openai")
+		if ref == nil {
+			continue
+		}
+		if providers.ModelKey(ref.Provider, ref.Model) != candidateKey {
+			continue
+		}
+		if normalizeCooldownStrategy(cfg.ModelList[i].CooldownStrategy) == "model" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func normalizeCooldownStrategy(strategy string) string {
+	switch strings.ReplaceAll(strings.ToLower(strings.TrimSpace(strategy)), "_", "-") {
+	case "model", "per-model":
+		return "model"
+	default:
+		return "provider"
 	}
 }
 
