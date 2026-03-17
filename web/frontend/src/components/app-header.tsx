@@ -56,14 +56,20 @@ export function AppHeader() {
   const isRunning = gwState === "running"
   const isStarting = gwState === "starting"
   const isRestarting = gwState === "restarting"
+  const isStopping = gwState === "stopping"
   const isStopped = gwState === "stopped" || gwState === "unknown"
   const showNotConnectedHint =
-    !isRestarting && canStart && (gwState === "stopped" || gwState === "error")
+    !isRestarting &&
+    !isStopping &&
+    canStart &&
+    (gwState === "stopped" || gwState === "error")
 
   const [showStopDialog, setShowStopDialog] = React.useState(false)
 
   const handleGatewayToggle = () => {
-    if (gwLoading || isRestarting || (!isRunning && !canStart)) return
+    if (gwLoading || isRestarting || isStopping || (!isRunning && !canStart)) {
+      return
+    }
     if (isRunning) {
       setShowStopDialog(true)
     } else {
@@ -137,7 +143,7 @@ export function AppHeader() {
                 size="icon-sm"
                 className="bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 hover:text-amber-800 dark:text-amber-300 dark:hover:bg-amber-500/25"
                 onClick={handleGatewayRestart}
-                disabled={gwLoading || isRestarting || !canStart}
+                disabled={gwLoading || isRestarting || isStopping || !canStart}
                 aria-label={t("header.gateway.action.restart")}
               >
                 <IconRefresh className="size-4" />
@@ -168,25 +174,31 @@ export function AppHeader() {
           </Tooltip>
         ) : (
           <Button
-            variant={isStarting || isRestarting ? "secondary" : "default"}
+            variant={
+              isStarting || isRestarting || isStopping ? "secondary" : "default"
+            }
             size="sm"
             className={`h-8 gap-2 px-3 ${
               isStopped ? "bg-green-500 text-white hover:bg-green-600" : ""
             }`}
             onClick={handleGatewayToggle}
-            disabled={gwLoading || isStarting || isRestarting || !canStart}
+            disabled={
+              gwLoading || isStarting || isRestarting || isStopping || !canStart
+            }
           >
-            {gwLoading || isStarting || isRestarting ? (
+            {gwLoading || isStarting || isRestarting || isStopping ? (
               <IconLoader2 className="h-4 w-4 animate-spin opacity-70" />
             ) : (
               <IconPlayerPlay className="h-4 w-4 opacity-80" />
             )}
             <span className="text-xs font-semibold">
-              {isRestarting
-                ? t("header.gateway.status.restarting")
-                : isStarting
-                  ? t("header.gateway.status.starting")
-                  : t("header.gateway.action.start")}
+              {isStopping
+                ? t("header.gateway.status.stopping")
+                : isRestarting
+                  ? t("header.gateway.status.restarting")
+                  : isStarting
+                    ? t("header.gateway.status.starting")
+                    : t("header.gateway.action.start")}
             </span>
           </Button>
         )}

@@ -15,7 +15,6 @@ import { useChatModels } from "@/hooks/use-chat-models"
 import { useGateway } from "@/hooks/use-gateway"
 import { usePicoChat } from "@/hooks/use-pico-chat"
 import { useSessionHistory } from "@/hooks/use-session-history"
-import { hydrateActiveSession } from "@/lib/pico-chat-controller"
 
 export function ChatPage() {
   const { t } = useTranslation()
@@ -26,6 +25,7 @@ export function ChatPage() {
 
   const {
     messages,
+    connectionState,
     isTyping,
     activeSessionId,
     sendMessage,
@@ -34,7 +34,8 @@ export function ChatPage() {
   } = usePicoChat()
 
   const { state: gwState } = useGateway()
-  const isConnected = gwState === "running"
+  const isGatewayRunning = gwState === "running"
+  const isChatConnected = connectionState === "connected"
 
   const {
     defaultModelName,
@@ -43,7 +44,8 @@ export function ChatPage() {
     oauthModels,
     localModels,
     handleSetDefault,
-  } = useChatModels({ isConnected })
+  } = useChatModels({ isConnected: isGatewayRunning })
+  const canSend = isChatConnected && Boolean(defaultModelName)
 
   const {
     sessions,
@@ -69,10 +71,6 @@ export function ChatPage() {
   }
 
   useEffect(() => {
-    void hydrateActiveSession()
-  }, [])
-
-  useEffect(() => {
     if (scrollRef.current) {
       if (isAtBottom) {
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -82,9 +80,10 @@ export function ChatPage() {
   }, [messages, isTyping, isAtBottom])
 
   const handleSend = () => {
-    if (!input.trim() || !isConnected) return
-    sendMessage(input.trim())
-    setInput("")
+    if (!input.trim() || !canSend) return
+    if (sendMessage(input.trim())) {
+      setInput("")
+    }
   }
 
   return (
@@ -143,7 +142,7 @@ export function ChatPage() {
             <ChatEmptyState
               hasConfiguredModels={hasConfiguredModels}
               defaultModelName={defaultModelName}
-              isConnected={isConnected}
+              isConnected={isGatewayRunning}
             />
           )}
 
@@ -168,7 +167,7 @@ export function ChatPage() {
         input={input}
         onInputChange={setInput}
         onSend={handleSend}
-        isConnected={isConnected}
+        isConnected={isChatConnected}
         hasDefaultModel={Boolean(defaultModelName)}
       />
     </div>

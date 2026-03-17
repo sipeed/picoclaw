@@ -357,7 +357,6 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	if len(m.channels) == 0 {
 		logger.WarnC("channels", "No channels enabled")
-		return errors.New("no channels enabled")
 	}
 
 	logger.InfoC("channels", "Starting all channels")
@@ -397,7 +396,7 @@ func (m *Manager) StartAll(ctx context.Context) error {
 				"addr": m.httpServer.Addr,
 			})
 			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.ErrorCF("channels", "Shared HTTP server error", map[string]any{
+				logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
 					"error": err.Error(),
 				})
 			}

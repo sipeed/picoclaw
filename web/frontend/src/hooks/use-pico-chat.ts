@@ -5,7 +5,7 @@ import {
   newChatSession,
   sendChatMessage,
   switchChatSession,
-} from "@/lib/pico-chat-controller"
+} from "@/features/chat/controller"
 import { chatAtom } from "@/store/chat"
 
 const UNIX_MS_THRESHOLD = 1e12
@@ -33,7 +33,6 @@ function parseTimestamp(dateRaw: number | string | Date) {
   return dayjs(dateRaw)
 }
 
-// Helper to format message timestamps
 export function formatMessageTime(dateRaw: number | string | Date): string {
   const date = parseTimestamp(dateRaw)
   if (!date.isValid()) {
@@ -48,7 +47,6 @@ export function formatMessageTime(dateRaw: number | string | Date): string {
     return date.format("LT")
   }
 
-  // Cross-day formatting
   if (isThisYear) {
     return date.format("MMM D LT")
   }

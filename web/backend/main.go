@@ -22,16 +22,32 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/web/backend/api"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 	"github.com/sipeed/picoclaw/web/backend/middleware"
 	"github.com/sipeed/picoclaw/web/backend/utils"
 )
 
+const (
+	appName = "PicoClaw"
+)
+
+var (
+	appVersion = config.Version
+
+	server     *http.Server
+	serverAddr string
+	apiHandler *api.Handler
+
+	noBrowser *bool
+)
+
 func main() {
 	port := flag.String("port", "18800", "Port to listen on")
 	public := flag.Bool("public", false, "Listen on all interfaces (0.0.0.0) instead of localhost only")
-	noBrowser := flag.Bool("no-browser", false, "Do not auto-open browser on startup")
+	noBrowser = flag.Bool("no-browser", false, "Do not auto-open browser on startup")
+	lang := flag.String("lang", "", "Language: en (English) or zh (Chinese). Default: auto-detect from system locale")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "PicoClaw Launcher - A web-based configuration editor\n\n")
@@ -50,6 +66,11 @@ func main() {
 		)
 	}
 	flag.Parse()
+
+	// Set language from command line or auto-detect
+	if *lang != "" {
+		SetLanguage(*lang)
+	}
 
 	// Resolve config path
 	configPath := utils.GetDefaultConfigPath()
@@ -113,7 +134,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// API Routes (e.g. /api/status)
-	apiHandler := api.NewHandler(absPath)
+	apiHandler = api.NewHandler(absPath)
 	apiHandler.SetServerOptions(portNum, effectivePublic, explicitPublic, launcherCfg.AllowedCIDRs)
 	apiHandler.RegisterRoutes(mux)
 
@@ -145,16 +166,10 @@ func main() {
 	}
 	fmt.Println()
 
-	// Auto-open browser
-	if !*noBrowser {
-		go func() {
-			time.Sleep(500 * time.Millisecond)
-			url := "http://localhost:" + effectivePort
-			if err := utils.OpenBrowser(url); err != nil {
-				log.Printf("Warning: Failed to auto-open browser: %v", err)
-			}
-		}()
-	}
+	// Share the local URL with the launcher runtime.
+	serverAddr = fmt.Sprintf("http://localhost:%s", effectivePort)
+
+	// Auto-open browser will be handled by the launcher runtime.
 
 	// Auto-start gateway after backend starts listening.
 	go func() {
@@ -162,8 +177,14 @@ func main() {
 		apiHandler.TryAutoStartGateway()
 	}()
 
-	// Start the Server
-	if err := http.ListenAndServe(addr, handler); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
-	}
+	// Start the Server in a goroutine
+	server = &http.Server{Addr: addr, Handler: handler}
+	go func() {
+		log.Printf("Server listening on %s", addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
+		}
+	}()
+
+	runTray()
 }

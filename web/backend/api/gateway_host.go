@@ -3,6 +3,7 @@ package api
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -46,6 +47,23 @@ func gatewayProbeHost(bindHost string) string {
 	return bindHost
 }
 
+func (h *Handler) gatewayProxyURL() *url.URL {
+	cfg, err := config.LoadConfig(h.configPath)
+	port := 18790
+	bindHost := ""
+	if err == nil && cfg != nil {
+		if cfg.Gateway.Port != 0 {
+			port = cfg.Gateway.Port
+		}
+		bindHost = h.effectiveGatewayBindHost(cfg)
+	}
+
+	return &url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(gatewayProbeHost(bindHost), strconv.Itoa(port)),
+	}
+}
+
 func requestHostName(r *http.Request) string {
 	reqHost, _, err := net.SplitHostPort(r.Host)
 	if err == nil {
@@ -57,10 +75,34 @@ func requestHostName(r *http.Request) string {
 	return "127.0.0.1"
 }
 
+func requestWSScheme(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
+		proto := strings.ToLower(strings.TrimSpace(strings.Split(forwarded, ",")[0]))
+		if proto == "https" || proto == "wss" {
+			return "wss"
+		}
+		if proto == "http" || proto == "ws" {
+			return "ws"
+		}
+	}
+
+	if r.TLS != nil {
+		return "wss"
+	}
+
+	return "ws"
+}
+
 func (h *Handler) buildWsURL(r *http.Request, cfg *config.Config) string {
 	host := h.effectiveGatewayBindHost(cfg)
 	if host == "" || host == "0.0.0.0" {
 		host = requestHostName(r)
 	}
-	return "ws://" + net.JoinHostPort(host, strconv.Itoa(cfg.Gateway.Port)) + "/pico/ws"
+	// Use web server port instead of gateway port to avoid exposing extra ports
+	// The WebSocket connection will be proxied by the backend to the gateway
+	wsPort := h.serverPort
+	if wsPort == 0 {
+		wsPort = 18800 // default web server port
+	}
+	return requestWSScheme(r) + "://" + net.JoinHostPort(host, strconv.Itoa(wsPort)) + "/pico/ws"
 }
