@@ -675,8 +675,8 @@ func TestNewSafeDialContext_AllowsWhitelistedPrivateDNSResolution(t *testing.T) 
 
 	accepted := make(chan struct{}, 1)
 	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
 			return
 		}
 		conn.Close()
