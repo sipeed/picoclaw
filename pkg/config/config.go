@@ -1028,8 +1028,11 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 		return &matches[0], nil
 	}
 
-	// Multiple configs - use round-robin for load balancing
-	idx := rrCounter.Add(1) % uint64(len(matches))
+	// Multiple configs - use round-robin for load balancing.
+	// Subtract 1 because Add returns the new (post-increment) value,
+	// so without the subtraction the first entry (index 0) is skipped
+	// on the initial call.
+	idx := (rrCounter.Add(1) - 1) % uint64(len(matches))
 	return &matches[idx], nil
 }
 
