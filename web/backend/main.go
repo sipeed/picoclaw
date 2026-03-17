@@ -22,8 +22,6 @@ import (
 	"strconv"
 	"time"
 
-	"fyne.io/systray"
-
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/web/backend/api"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
@@ -168,10 +166,10 @@ func main() {
 	}
 	fmt.Println()
 
-	// Set server address for systray
+	// Share the local URL with the launcher runtime.
 	serverAddr = fmt.Sprintf("http://localhost:%s", effectivePort)
 
-	// Auto-open browser will be handled by systray onReady
+	// Auto-open browser will be handled by the launcher runtime.
 
 	// Auto-start gateway after backend starts listening.
 	go func() {
@@ -188,6 +186,5 @@ func main() {
 		}
 	}()
 
-	// Start system tray
-	systray.Run(onReady, onExit)
+	runTray()
 }

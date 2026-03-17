@@ -1,10 +1,10 @@
+//go:build !darwin || cgo
+
 package main
 
 import (
-	"context"
 	_ "embed"
 	"fmt"
-	"time"
 
 	"fyne.io/systray"
 
@@ -12,10 +12,9 @@ import (
 	"github.com/sipeed/picoclaw/web/backend/utils"
 )
 
-const (
-	browserDelay    = 500 * time.Millisecond
-	shutdownTimeout = 15 * time.Second
-)
+func runTray() {
+	systray.Run(onReady, shutdownApp)
+}
 
 // onReady is called when the system tray is ready
 func onReady() {
@@ -88,43 +87,6 @@ func onReady() {
 			logger.Errorf("Warning: Failed to auto-open browser: %v", err)
 		}
 	}
-}
-
-// onExit is called when the system tray is exiting
-func onExit() {
-	fmt.Println(T(Exiting))
-
-	// First, shutdown API handler
-	if apiHandler != nil {
-		apiHandler.Shutdown()
-	}
-
-	if server != nil {
-		// Disable keep-alive to allow graceful shutdown
-		server.SetKeepAlivesEnabled(false)
-
-		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		if err := server.Shutdown(ctx); err != nil {
-			// Context deadline exceeded is expected if there are active connections
-			// This is not necessarily an error, so log it at info level
-			if err == context.DeadlineExceeded {
-				logger.Infof("Server shutdown timeout after %v, forcing close", shutdownTimeout)
-			} else {
-				logger.Errorf("Server shutdown error: %v", err)
-			}
-		} else {
-			logger.Infof("Server shutdown completed successfully")
-		}
-	}
-}
-
-// openBrowser opens the PicoClaw web console in the default browser
-func openBrowser() error {
-	if serverAddr == "" {
-		return fmt.Errorf("server address not set")
-	}
-	return utils.OpenBrowser(serverAddr)
 }
 
 // getIcon returns the system tray icon
