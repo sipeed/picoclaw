@@ -342,6 +342,45 @@ func (m *countingMockProvider) GetDefaultModel() string {
 	return "counting-mock-model"
 }
 
+type toolLimitFallbackProvider struct {
+	calls           int
+	toolsPerCall    []int
+	messagesPerCall [][]providers.Message
+}
+
+func (m *toolLimitFallbackProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	m.toolsPerCall = append(m.toolsPerCall, len(tools))
+	msgCopy := append([]providers.Message(nil), messages...)
+	m.messagesPerCall = append(m.messagesPerCall, msgCopy)
+
+	if len(tools) > 0 {
+		return &providers.LLMResponse{
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_loop_test",
+				Type:      "function",
+				Name:      "loop_test_tool",
+				Arguments: map[string]any{"value": "x"},
+			}},
+		}, nil
+	}
+
+	return &providers.LLMResponse{
+		Content:   "Recovered direct answer",
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *toolLimitFallbackProvider) GetDefaultModel() string {
+	return "tool-limit-fallback-model"
+}
+
 // mockCustomTool is a simple mock tool for registration testing
 type mockCustomTool struct{}
 
@@ -362,6 +401,29 @@ func (m *mockCustomTool) Parameters() map[string]any {
 
 func (m *mockCustomTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
 	return tools.SilentResult("Custom tool executed")
+}
+
+type loopTestTool struct{}
+
+func (m *loopTestTool) Name() string {
+	return "loop_test_tool"
+}
+
+func (m *loopTestTool) Description() string {
+	return "Loop test tool"
+}
+
+func (m *loopTestTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"value": map[string]any{"type": "string"},
+		},
+	}
+}
+
+func (m *loopTestTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	return tools.SilentResult("loop tool result")
 }
 
 // testHelper executes a message and returns the response
@@ -767,6 +829,92 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+func TestAgentLoop_ToolLimitFallsBackToDirectAnswer(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 1,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &toolLimitFallbackProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	al.RegisterTool(&loopTestTool{})
+
+	sessionKey := "tool-limit-session"
+	response, err := al.ProcessDirectWithChannel(context.Background(), "hello", sessionKey, "test", "chat1")
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+	if response != "Recovered direct answer" {
+		t.Fatalf("response = %q, want %q", response, "Recovered direct answer")
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", provider.calls)
+	}
+	if len(provider.toolsPerCall) != 2 {
+		t.Fatalf("toolsPerCall len = %d, want 2", len(provider.toolsPerCall))
+	}
+	if provider.toolsPerCall[0] == 0 {
+		t.Fatalf("expected first call to include tools, got %v", provider.toolsPerCall)
+	}
+	if provider.toolsPerCall[1] != 0 {
+		t.Fatalf("expected second call to disable tools, got %v", provider.toolsPerCall)
+	}
+
+	fallbackMessages := provider.messagesPerCall[1]
+	lastMessage := fallbackMessages[len(fallbackMessages)-1]
+	if lastMessage.Role != "user" || !strings.Contains(lastMessage.Content, "Tool iteration limit reached") {
+		t.Fatalf("unexpected fallback prompt: %+v", lastMessage)
+	}
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: "test",
+		Peer: &routing.RoutePeer{
+			Kind: "direct",
+			ID:   "cron",
+		},
+	})
+	history := defaultAgent.Sessions.GetHistory(route.SessionKey)
+	if len(history) != 4 {
+		t.Fatalf("history len = %d, want 4", len(history))
+	}
+	assertRoles(t, history, "user", "assistant", "tool", "assistant")
+	if len(history[1].ToolCalls) != 1 || history[1].ToolCalls[0].Name != "loop_test_tool" {
+		if len(history[1].ToolCalls) != 1 ||
+			history[1].ToolCalls[0].Function == nil ||
+			history[1].ToolCalls[0].Function.Name != "loop_test_tool" {
+			t.Fatalf("unexpected assistant tool call history: %+v", history[1].ToolCalls)
+		}
+	}
+	if history[2].Content != "loop tool result" {
+		t.Fatalf("tool result content = %q, want %q", history[2].Content, "loop tool result")
+	}
+	if history[3].Content != "Recovered direct answer" {
+		t.Fatalf("final assistant content = %q, want %q", history[3].Content, "Recovered direct answer")
+	}
+	for _, msg := range history {
+		if strings.Contains(msg.Content, "Tool iteration limit reached") {
+			t.Fatalf("synthetic fallback prompt leaked into session history: %+v", history)
+		}
 	}
 }
 
