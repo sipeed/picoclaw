@@ -812,12 +812,136 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
 	}
 
+	cfg.applyModelListProviderInheritance()
+
 	// Validate model_list for uniqueness and required fields
 	if err := cfg.ValidateModelList(); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
+}
+
+// applyModelListProviderInheritance fills missing model_list fields from the
+// matching legacy providers entry while keeping any explicit model_list values.
+func (c *Config) applyModelListProviderInheritance() {
+	if len(c.ModelList) == 0 {
+		return
+	}
+
+	for i := range c.ModelList {
+		protocol := canonicalModelProtocol(c.ModelList[i].Model)
+		if protocol == "" {
+			continue
+		}
+
+		providerCfg, ok := providerConfigForProtocol(c.Providers, protocol)
+		if !ok || !hasInheritableProviderFields(providerCfg) {
+			continue
+		}
+
+		inheritModelConfig(&c.ModelList[i], providerCfg)
+	}
+}
+
+func canonicalModelProtocol(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
+	}
+
+	protocol, _, found := strings.Cut(model, "/")
+	if !found {
+		return "openai"
+	}
+
+	switch strings.ToLower(protocol) {
+	case "copilot":
+		return "github-copilot"
+	default:
+		return strings.ToLower(protocol)
+	}
+}
+
+func providerConfigForProtocol(providers ProvidersConfig, protocol string) (ProviderConfig, bool) {
+	switch protocol {
+	case "anthropic":
+		return providers.Anthropic, true
+	case "openai":
+		return providers.OpenAI.ProviderConfig, true
+	case "litellm":
+		return providers.LiteLLM, true
+	case "openrouter":
+		return providers.OpenRouter, true
+	case "groq":
+		return providers.Groq, true
+	case "zhipu":
+		return providers.Zhipu, true
+	case "vllm":
+		return providers.VLLM, true
+	case "gemini":
+		return providers.Gemini, true
+	case "nvidia":
+		return providers.Nvidia, true
+	case "ollama":
+		return providers.Ollama, true
+	case "moonshot":
+		return providers.Moonshot, true
+	case "shengsuanyun":
+		return providers.ShengSuanYun, true
+	case "deepseek":
+		return providers.DeepSeek, true
+	case "cerebras":
+		return providers.Cerebras, true
+	case "vivgrid":
+		return providers.Vivgrid, true
+	case "volcengine":
+		return providers.VolcEngine, true
+	case "github-copilot":
+		return providers.GitHubCopilot, true
+	case "antigravity":
+		return providers.Antigravity, true
+	case "qwen":
+		return providers.Qwen, true
+	case "mistral":
+		return providers.Mistral, true
+	case "avian":
+		return providers.Avian, true
+	case "minimax":
+		return providers.Minimax, true
+	default:
+		return ProviderConfig{}, false
+	}
+}
+
+func hasInheritableProviderFields(provider ProviderConfig) bool {
+	return provider.APIKey != "" ||
+		provider.APIBase != "" ||
+		provider.Proxy != "" ||
+		provider.RequestTimeout != 0 ||
+		provider.AuthMethod != "" ||
+		provider.ConnectMode != ""
+}
+
+func inheritModelConfig(model *ModelConfig, provider ProviderConfig) {
+	if model.APIKey == "" {
+		model.APIKey = provider.APIKey
+	}
+	if model.APIBase == "" {
+		model.APIBase = provider.APIBase
+	}
+	if model.Proxy == "" {
+		model.Proxy = provider.Proxy
+	}
+	if model.RequestTimeout == 0 {
+		model.RequestTimeout = provider.RequestTimeout
+	}
+	if model.AuthMethod == "" {
+		model.AuthMethod = provider.AuthMethod
+	}
+	if model.ConnectMode == "" {
+		model.ConnectMode = provider.ConnectMode
+	}
 }
 
 func (c *Config) migrateChannelConfigs() {
