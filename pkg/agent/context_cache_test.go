@@ -144,8 +144,8 @@ func TestBuildMessages_CurrentSenderDynamicContext(t *testing.T) {
 		{
 			name:              "both id and display name",
 			senderID:          "feishu:ou_xxx",
-			senderDisplayName: "张三",
-			wantLine:          "Current sender: 张三 (ID: feishu:ou_xxx)",
+			senderDisplayName: "Zhang San",
+			wantLine:          "Current sender: Zhang San (ID: feishu:ou_xxx)",
 			wantSection:       true,
 		},
 		{
