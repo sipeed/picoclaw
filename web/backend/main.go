@@ -81,7 +81,10 @@ func main() {
 
 		logPath := filepath.Join(picoHome, "logs", "web.log")
 		if err := logger.EnableFileLogging(logPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+			// Re-enable console logging so the error is visible in GUI mode
+			logger.SetConsoleLevel(logger.INFO)
+			logger.Errorf("Failed to initialize log file at %s: %v", logPath, err)
+			logger.Error("Please check that the logs directory is writable")
 			os.Exit(1)
 		}
 		defer logger.DisableFileLogging()
