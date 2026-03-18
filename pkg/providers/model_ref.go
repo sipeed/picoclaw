@@ -53,6 +53,8 @@ func NormalizeProvider(provider string) string {
 		return "zhipu"
 	case "google":
 		return "gemini"
+	case "alibaba-coding", "qwen-coding":
+		return "coding-plan"
 	}
 
 	return p

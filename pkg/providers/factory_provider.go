@@ -115,8 +115,9 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "mistral", "avian",
-		"minimax", "longcat", "modelscope", "novita":
+		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-us",
+		"mistral", "avian", "minimax", "longcat", "modelscope", "novita",
+		"coding-plan", "alibaba-coding", "qwen-coding":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -245,6 +246,14 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://ark.cn-beijing.volces.com/api/v3"
 	case "qwen":
 		return "https://dashscope.aliyuncs.com/compatible-mode/v1"
+	case "qwen-intl", "qwen-international", "dashscope-intl":
+		return "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+	case "qwen-us", "dashscope-us":
+		return "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
+	case "coding-plan", "alibaba-coding", "qwen-coding":
+		return "https://coding-intl.dashscope.aliyuncs.com/v1"
+	case "coding-plan-anthropic", "alibaba-coding-anthropic":
+		return "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"
 	case "vllm":
 		return "http://localhost:8000/v1"
 	case "mistral":
