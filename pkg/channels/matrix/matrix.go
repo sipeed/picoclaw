@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"io"
 	"mime"
 	"net/url"
 	"os"
@@ -13,6 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gomarkdown/markdown"
+	mdhtml "github.com/gomarkdown/markdown/html"
+	"github.com/gomarkdown/markdown/parser"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -31,8 +35,6 @@ const (
 	roomKindCacheTTL           = 5 * time.Minute
 	roomKindCacheCleanupPeriod = 1 * time.Minute
 	roomKindCacheMaxEntries    = 2048
-
-	matrixMediaTempDirName = "picoclaw_media"
 )
 
 var matrixMentionHrefRegexp = regexp.MustCompile(`(?i)<a[^>]+href=["']([^"']+)["']`)
@@ -268,6 +270,12 @@ func (c *MatrixChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
+func markdownToHTML(md string) string {
+	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs)
+	renderer := mdhtml.NewRenderer(mdhtml.RendererOptions{Flags: mdhtml.CommonFlags})
+	return strings.TrimSpace(string(markdown.ToHTML([]byte(md), p, renderer)))
+}
+
 func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
@@ -283,14 +291,20 @@ func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return nil
 	}
 
-	_, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, &event.MessageEventContent{
-		MsgType: event.MsgText,
-		Body:    content,
-	})
+	_, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, c.messageContent(content))
 	if err != nil {
 		return fmt.Errorf("matrix send: %w", channels.ErrTemporary)
 	}
 	return nil
+}
+
+func (c *MatrixChannel) messageContent(text string) *event.MessageEventContent {
+	mc := &event.MessageEventContent{MsgType: event.MsgText, Body: text}
+	if c.config.MessageFormat != "plain" {
+		mc.Format = event.FormatHTML
+		mc.FormattedBody = markdownToHTML(text)
+	}
+	return mc
 }
 
 // SendMedia implements channels.MediaSender.
@@ -482,10 +496,7 @@ func (c *MatrixChannel) EditMessage(ctx context.Context, chatID string, messageI
 		return fmt.Errorf("matrix message ID is empty")
 	}
 
-	editContent := &event.MessageEventContent{
-		MsgType: event.MsgText,
-		Body:    content,
-	}
+	editContent := c.messageContent(content)
 	editContent.SetEdit(id.EventID(messageID))
 
 	_, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, editContent)
@@ -714,17 +725,23 @@ func (c *MatrixChannel) downloadMedia(
 	reqCtx, cancel := context.WithTimeout(dlCtx, 20*time.Second)
 	defer cancel()
 
-	data, err := c.client.DownloadBytes(reqCtx, parsed)
+	resp, err := c.client.Download(reqCtx, parsed)
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
+
+	reader := resp.Body
+	readerClose := func() error { return nil }
 
 	// Encrypted attachments put URL in msgEvt.File and require client-side decryption.
 	if msgEvt != nil && msgEvt.File != nil && msgEvt.URL == "" {
-		err = msgEvt.File.DecryptInPlace(data)
-		if err != nil {
+		if err = msgEvt.File.PrepareForDecryption(); err != nil {
 			return "", fmt.Errorf("decrypt matrix media: %w", err)
 		}
+		decryptReader := msgEvt.File.DecryptStream(resp.Body)
+		reader = decryptReader
+		readerClose = decryptReader.Close
 	}
 
 	label := matrixMediaLabel(msgEvt, mediaKind)
@@ -737,14 +754,28 @@ func (c *MatrixChannel) downloadMedia(
 	if err != nil {
 		return "", err
 	}
-	defer tmp.Close()
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		_ = tmp.Close()
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
 
-	if _, err = tmp.Write(data); err != nil {
-		_ = os.Remove(tmp.Name())
+	_, err = io.Copy(tmp, reader)
+	if err != nil {
+		return "", err
+	}
+	if err = readerClose(); err != nil {
+		return "", fmt.Errorf("decrypt matrix media: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
 		return "", err
 	}
 
-	return tmp.Name(), nil
+	cleanup = false
+	return tmpPath, nil
 }
 
 func matrixContentType(msgEvt *event.MessageEventContent) string {
@@ -1072,7 +1103,7 @@ func (c *MatrixChannel) stripSelfMention(text string) string {
 }
 
 func matrixMediaTempDir() (string, error) {
-	mediaDir := filepath.Join(os.TempDir(), matrixMediaTempDirName)
+	mediaDir := media.TempDir()
 	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
 		return "", err
 	}

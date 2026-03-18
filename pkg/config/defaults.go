@@ -15,7 +15,7 @@ func DefaultConfig() *Config {
 	// Determine the base path for the workspace.
 	// Priority: $PICOCLAW_HOME > ~/.picoclaw
 	var homePath string
-	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
+	if picoclawHome := os.Getenv(EnvHome); picoclawHome != "" {
 		homePath = picoclawHome
 	} else {
 		userHome, _ := os.UserHomeDir()
@@ -62,6 +62,7 @@ func DefaultConfig() *Config {
 					Enabled: true,
 					Text:    "Thinking... 💭",
 				},
+				UseMarkdownV2: false,
 			},
 			Feishu: FeishuConfig{
 				Enabled:           false,
@@ -198,8 +199,8 @@ func DefaultConfig() *Config {
 
 			// OpenAI - https://platform.openai.com/api-keys
 			{
-				ModelName: "gpt-5.2",
-				Model:     "openai/gpt-5.2",
+				ModelName: "gpt-5.4",
+				Model:     "openai/gpt-5.4",
 				APIBase:   "https://api.openai.com/v1",
 				APIKey:    "",
 			},
@@ -260,8 +261,8 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 			{
-				ModelName: "openrouter-gpt-5.2",
-				Model:     "openrouter/openai/gpt-5.2",
+				ModelName: "openrouter-gpt-5.4",
+				Model:     "openrouter/openai/gpt-5.4",
 				APIBase:   "https://openrouter.ai/api/v1",
 				APIKey:    "",
 			},
@@ -292,6 +293,12 @@ func DefaultConfig() *Config {
 
 			// Volcengine (火山引擎) - https://console.volcengine.com/ark
 			{
+				ModelName: "ark-code-latest",
+				Model:     "volcengine/ark-code-latest",
+				APIBase:   "https://ark.cn-beijing.volces.com/api/v3",
+				APIKey:    "",
+			},
+			{
 				ModelName: "doubao-pro",
 				Model:     "volcengine/doubao-pro-32k",
 				APIBase:   "https://ark.cn-beijing.volces.com/api/v3",
@@ -315,8 +322,8 @@ func DefaultConfig() *Config {
 
 			// GitHub Copilot - https://github.com/settings/tokens
 			{
-				ModelName:  "copilot-gpt-5.2",
-				Model:      "github-copilot/gpt-5.2",
+				ModelName:  "copilot-gpt-5.4",
+				Model:      "github-copilot/gpt-5.4",
 				APIBase:    "http://localhost:4321",
 				AuthMethod: "oauth",
 			},
@@ -359,6 +366,22 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// LongCat - https://longcat.chat/platform
+			{
+				ModelName: "LongCat-Flash-Thinking",
+				Model:     "longcat/LongCat-Flash-Thinking",
+				APIBase:   "https://api.longcat.chat/openai",
+				APIKey:    "",
+			},
+
+			// ModelScope (魔搭社区) - https://modelscope.cn/my/tokens
+			{
+				ModelName: "modelscope-qwen",
+				Model:     "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+				APIBase:   "https://api-inference.modelscope.cn/v1",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",
@@ -366,10 +389,20 @@ func DefaultConfig() *Config {
 				APIBase:   "http://localhost:8000/v1",
 				APIKey:    "",
 			},
+
+			// Azure OpenAI - https://portal.azure.com
+			// model_name is a user-friendly alias; the model field's path after "azure/" is your deployment name
+			{
+				ModelName: "azure-gpt5",
+				Model:     "azure/my-gpt5-deployment",
+				APIBase:   "https://your-resource.openai.azure.com",
+				APIKey:    "",
+			},
 		},
 		Gateway: GatewayConfig{
-			Host: "127.0.0.1",
-			Port: 18790,
+			Host:      "127.0.0.1",
+			Port:      18790,
+			HotReload: false,
 		},
 		Tools: ToolsConfig{
 			MediaCleanup: MediaCleanupConfig{
@@ -383,8 +416,10 @@ func DefaultConfig() *Config {
 				ToolConfig: ToolConfig{
 					Enabled: true,
 				},
+				PreferNative:    true,
 				Proxy:           "",
 				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
+				Format:          "plaintext",
 				Brave: BraveConfig{
 					Enabled:    false,
 					APIKey:     "",
@@ -425,12 +460,14 @@ func DefaultConfig() *Config {
 					Enabled: true,
 				},
 				ExecTimeoutMinutes: 5,
+				AllowCommand:       true,
 			},
 			Exec: ExecConfig{
 				ToolConfig: ToolConfig{
 					Enabled: true,
 				},
 				EnableDenyPatterns: true,
+				AllowRemote:        true,
 				TimeoutSeconds:     60,
 			},
 			Skills: SkillsToolsConfig{
@@ -493,6 +530,9 @@ func DefaultConfig() *Config {
 			Spawn: ToolConfig{
 				Enabled: true,
 			},
+			SpawnStatus: ToolConfig{
+				Enabled: false,
+			},
 			SPI: ToolConfig{
 				Enabled: false, // Hardware tool - Linux only
 			},
@@ -513,6 +553,9 @@ func DefaultConfig() *Config {
 		Devices: DevicesConfig{
 			Enabled:    false,
 			MonitorUSB: true,
+		},
+		Voice: VoiceConfig{
+			EchoTranscription: false,
 		},
 		BuildInfo: BuildInfo{
 			Version:   Version,

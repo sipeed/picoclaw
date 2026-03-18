@@ -110,7 +110,7 @@ export function EditModelSheet({
           : undefined,
         thinking_level: form.thinkingLevel || undefined,
       })
-      if (setAsDefault) {
+      if (setAsDefault && !model.is_default) {
         await setDefaultModel(model.model_name)
       }
       onSaved()

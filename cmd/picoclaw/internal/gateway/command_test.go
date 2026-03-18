@@ -28,4 +28,5 @@ func TestNewGatewayCommand(t *testing.T) {
 
 	assert.True(t, cmd.HasFlags())
 	assert.NotNil(t, cmd.Flags().Lookup("debug"))
+	assert.NotNil(t, cmd.Flags().Lookup("allow-empty"))
 }

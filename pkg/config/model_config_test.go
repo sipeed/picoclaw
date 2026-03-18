@@ -80,6 +80,36 @@ func TestGetModelConfig_RoundRobin(t *testing.T) {
 	}
 }
 
+func TestGetModelConfig_RoundRobinStartsFromFirstMatch(t *testing.T) {
+	rrCounter.Store(0)
+
+	cfg := &Config{
+		ModelList: []ModelConfig{
+			{ModelName: "lb-model", Model: "openai/gpt-4o-1", APIKey: "key1"},
+			{ModelName: "lb-model", Model: "openai/gpt-4o-2", APIKey: "key2"},
+			{ModelName: "lb-model", Model: "openai/gpt-4o-3", APIKey: "key3"},
+		},
+	}
+
+	wantOrder := []string{
+		"openai/gpt-4o-1",
+		"openai/gpt-4o-2",
+		"openai/gpt-4o-3",
+		"openai/gpt-4o-1",
+		"openai/gpt-4o-2",
+	}
+
+	for i, want := range wantOrder {
+		result, err := cfg.GetModelConfig("lb-model")
+		if err != nil {
+			t.Fatalf("GetModelConfig() call %d error = %v", i, err)
+		}
+		if result.Model != want {
+			t.Fatalf("GetModelConfig() call %d model = %q, want %q", i, result.Model, want)
+		}
+	}
+}
+
 func TestGetModelConfig_Concurrent(t *testing.T) {
 	cfg := &Config{
 		ModelList: []ModelConfig{

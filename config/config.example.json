@@ -3,7 +3,7 @@
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model_name": "gpt4",
+      "model_name": "gpt-5.4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20,
@@ -17,8 +17,8 @@
   },
   "model_list": [
     {
-      "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-openai-key",
       "api_base": "https://api.openai.com/v1"
     },
@@ -28,6 +28,13 @@
       "api_key": "sk-ant-your-key",
       "api_base": "https://api.anthropic.com/v1",
       "thinking_level": "high"
+    },
+    {
+      "_comment": "Anthropic Messages API - use native format for direct Anthropic API access",
+      "model_name": "claude-opus-4-6",
+      "model": "anthropic-messages/claude-opus-4-6",
+      "api_key": "sk-ant-your-key",
+      "api_base": "https://api.anthropic.com"
     },
     {
       "model_name": "gemini",
@@ -40,14 +47,31 @@
       "api_key": "sk-your-deepseek-key"
     },
     {
-      "model_name": "loadbalanced-gpt4",
-      "model": "openai/gpt-5.2",
+      "model_name": "longcat",
+      "model": "longcat/LongCat-Flash-Thinking",
+      "api_key": "your-longcat-api-key"
+    },
+    {
+      "model_name": "modelscope-qwen",
+      "model": "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "api_key": "your-modelscope-access-token",
+      "api_base": "https://api-inference.modelscope.cn/v1"
+    },
+    {
+      "model_name": "azure-gpt5",
+      "model": "azure/my-gpt5-deployment",
+      "api_key": "your-azure-api-key",
+      "api_base": "https://your-resource.openai.azure.com"
+    },
+    {
+      "model_name": "loadbalanced-gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-key1",
       "api_base": "https://api1.example.com/v1"
     },
     {
-      "model_name": "loadbalanced-gpt4",
-      "model": "openai/gpt-5.2",
+      "model_name": "loadbalanced-gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-key2",
       "api_base": "https://api2.example.com/v1"
     }
@@ -58,9 +82,8 @@
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "base_url": "",
       "proxy": "",
-      "allow_from": [
-        "YOUR_USER_ID"
-      ],
+      "allow_from": ["YOUR_USER_ID"],
+      "use_markdown_v2": false,
       "reasoning_channel_id": ""
     },
     "discord": {
@@ -103,7 +126,8 @@
       "verification_token": "",
       "allow_from": [],
       "reasoning_channel_id": "",
-      "random_reaction_emoji": []
+      "random_reaction_emoji": [],
+      "is_lark": false
     },
     "dingtalk": {
       "enabled": false,
@@ -278,6 +302,14 @@
     "avian": {
       "api_key": "",
       "api_base": "https://api.avian.io/v1"
+    },
+    "longcat": {
+      "api_key": "",
+      "api_base": "https://api.longcat.chat/openai"
+    },
+    "modelscope": {
+      "api_key": "",
+      "api_base": "https://api-inference.modelscope.cn/v1"
     }
   },
   "tools": {
@@ -285,6 +317,9 @@
     "allow_write_paths": null,
     "web": {
       "enabled": true,
+      "prefer_native": true,
+      "fetch_limit_bytes": 10485760,
+      "format": "plaintext",
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
@@ -323,7 +358,8 @@
         "search_engine": "search_std",
         "max_results": 5
       },
-      "fetch_limit_bytes": 10485760
+      "fetch_limit_bytes": 10485760,
+      "private_host_whitelist": []
     },
     "cron": {
       "enabled": true,
@@ -422,6 +458,10 @@
           "max_response_size": 0
         }
       },
+      "github": {
+        "proxy": "http://127.0.0.1:7891",
+        "token": ""
+      },
       "max_concurrent_searches": 2,
       "search_cache": {
         "max_size": 50,
@@ -481,8 +521,12 @@
     "enabled": false,
     "monitor_usb": true
   },
+  "voice": {
+    "echo_transcription": false
+  },
   "gateway": {
     "host": "127.0.0.1",
-    "port": 18790
+    "port": 18790,
+    "hot_reload": false
   }
 }

@@ -9,13 +9,14 @@ import (
 
 // Handler serves HTTP API requests.
 type Handler struct {
-	configPath   string
-	serverPort   int
-	serverPublic bool
-	serverCIDRs  []string
-	oauthMu      sync.Mutex
-	oauthFlows   map[string]*oauthFlow
-	oauthState   map[string]string
+	configPath           string
+	serverPort           int
+	serverPublic         bool
+	serverPublicExplicit bool
+	serverCIDRs          []string
+	oauthMu              sync.Mutex
+	oauthFlows           map[string]*oauthFlow
+	oauthState           map[string]string
 }
 
 // NewHandler creates an instance of the API handler.
@@ -29,9 +30,10 @@ func NewHandler(configPath string) *Handler {
 }
 
 // SetServerOptions stores current backend listen options for fallback behavior.
-func (h *Handler) SetServerOptions(port int, public bool, allowedCIDRs []string) {
+func (h *Handler) SetServerOptions(port int, public bool, publicExplicit bool, allowedCIDRs []string) {
 	h.serverPort = port
 	h.serverPublic = public
+	h.serverPublicExplicit = publicExplicit
 	h.serverCIDRs = append([]string(nil), allowedCIDRs...)
 }
 
@@ -58,9 +60,18 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Channel catalog (for frontend navigation/config pages)
 	h.registerChannelRoutes(mux)
 
+	// Skills and tools support/actions
+	h.registerSkillRoutes(mux)
+	h.registerToolRoutes(mux)
+
 	// OS startup / launch-at-login
 	h.registerStartupRoutes(mux)
 
 	// Launcher service parameters (port/public)
 	h.registerLauncherConfigRoutes(mux)
+}
+
+// Shutdown gracefully shuts down the handler, stopping the gateway if it was started by this handler.
+func (h *Handler) Shutdown() {
+	h.StopGateway()
 }

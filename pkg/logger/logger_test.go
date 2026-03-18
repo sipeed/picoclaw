@@ -123,17 +123,132 @@ func TestLoggerHelperFunctions(t *testing.T) {
 	SetLevel(INFO)
 
 	Debug("This should not log")
+	Debugf("this should not log")
 	Info("This should log")
 	Warn("This should log")
 	Error("This should log")
 
 	InfoC("test", "Component message")
 	InfoF("Fields message", map[string]any{"key": "value"})
+	Infof("test from %v", "Infof")
 
 	WarnC("test", "Warning with component")
 	ErrorF("Error with fields", map[string]any{"error": "test"})
+	Errorf("test from %v", "Errorf")
 
 	SetLevel(DEBUG)
 	DebugC("test", "Debug with component")
+	Debugf("test from %v", "Debugf")
 	WarnF("Warning with fields", map[string]any{"key": "value"})
+}
+
+func TestFormatFieldValue(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    any
+		expected string
+	}{
+		// Basic types test (default case of the switch)
+		{
+			name:     "Integer Type",
+			input:    42,
+			expected: "42",
+		},
+		{
+			name:     "Boolean Type",
+			input:    true,
+			expected: "true",
+		},
+		{
+			name:     "Unsupported Struct Type",
+			input:    struct{ A int }{A: 1},
+			expected: "{1}",
+		},
+
+		// Simple strings and byte slices test
+		{
+			name:     "Simple string without spaces",
+			input:    "simple_value",
+			expected: "simple_value",
+		},
+		{
+			name:     "Simple byte slice",
+			input:    []byte("byte_value"),
+			expected: "byte_value",
+		},
+
+		// Unquoting test (strconv.Unquote)
+		{
+			name:     "Quoted string",
+			input:    `"quoted_value"`,
+			expected: "quoted_value",
+		},
+
+		// Strings with newline (\n) test
+		{
+			name:     "String with newline",
+			input:    "line1\nline2",
+			expected: "\nline1\nline2",
+		},
+		{
+			name:     "Quoted string with newline (Unquote -> newline)",
+			input:    `"line1\nline2"`, // Escaped \n that Unquote will resolve
+			expected: "\nline1\nline2",
+		},
+
+		// Strings with spaces test (which should be quoted)
+		{
+			name:     "String with spaces",
+			input:    "hello world",
+			expected: `"hello world"`,
+		},
+		{
+			name:     "Quoted string with spaces (Unquote -> has spaces -> Re-quote)",
+			input:    `"hello world"`,
+			expected: `"hello world"`,
+		},
+
+		// JSON formats test (strings with spaces that start/end with brackets)
+		{
+			name:     "Valid JSON object",
+			input:    `{"key": "value"}`,
+			expected: `{"key": "value"}`,
+		},
+		{
+			name:     "Valid JSON array",
+			input:    `[1, 2, "three"]`,
+			expected: `[1, 2, "three"]`,
+		},
+		{
+			name:     "Fake JSON (starts with { but doesn't end with })",
+			input:    `{"key": "value"`, // Missing closing bracket, has spaces
+			expected: `"{\"key\": \"value\""`,
+		},
+		{
+			name:     "Empty JSON (object)",
+			input:    `{ }`,
+			expected: `{ }`,
+		},
+
+		// 7. Edge Cases
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "Whitespace only string",
+			input:    "   ",
+			expected: `"   "`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := formatFieldValue(tt.input)
+			if actual != tt.expected {
+				t.Errorf("formatFieldValue() = %q, expected %q", actual, tt.expected)
+			}
+		})
+	}
 }

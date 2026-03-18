@@ -72,14 +72,14 @@ func authLoginOpenAI(useDeviceCode bool) error {
 		// If no openai in ModelList, add it
 		if !foundOpenAI {
 			appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
-				ModelName:  "gpt-5.2",
-				Model:      "openai/gpt-5.2",
+				ModelName:  "gpt-5.4",
+				Model:      "openai/gpt-5.4",
 				AuthMethod: "oauth",
 			})
 		}
 
 		// Update default model to use OpenAI
-		appCfg.Agents.Defaults.ModelName = "gpt-5.2"
+		appCfg.Agents.Defaults.ModelName = "gpt-5.4"
 
 		if err = config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
 			return fmt.Errorf("could not update config: %w", err)
@@ -90,7 +90,7 @@ func authLoginOpenAI(useDeviceCode bool) error {
 	if cred.AccountID != "" {
 		fmt.Printf("Account: %s\n", cred.AccountID)
 	}
-	fmt.Println("Default model set to: gpt-5.2")
+	fmt.Println("Default model set to: gpt-5.4")
 
 	return nil
 }
@@ -318,13 +318,13 @@ func authLoginPasteToken(provider string) error {
 			}
 			if !found {
 				appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
-					ModelName:  "gpt-5.2",
-					Model:      "openai/gpt-5.2",
+					ModelName:  "gpt-5.4",
+					Model:      "openai/gpt-5.4",
 					AuthMethod: "token",
 				})
 			}
 			// Update default model
-			appCfg.Agents.Defaults.ModelName = "gpt-5.2"
+			appCfg.Agents.Defaults.ModelName = "gpt-5.4"
 		}
 		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
 			return fmt.Errorf("could not update config: %w", err)

@@ -31,7 +31,7 @@ func computeSignature(token, timestamp, nonce, encrypt string) string {
 // This is a common function used by both WeCom Bot and WeCom App
 func verifySignature(token, msgSignature, timestamp, nonce, msgEncrypt string) bool {
 	if token == "" {
-		return true // Skip verification if token is not set
+		return false
 	}
 	return computeSignature(token, timestamp, nonce, msgEncrypt) == msgSignature
 }

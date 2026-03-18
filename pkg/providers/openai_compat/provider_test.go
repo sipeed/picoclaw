@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -105,6 +106,55 @@ func TestProviderChat_ParsesToolCalls(t *testing.T) {
 	}
 	if out.ToolCalls[0].Arguments["city"] != "SF" {
 		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want SF", out.ToolCalls[0].Arguments["city"])
+	}
+}
+
+func TestProviderChat_ParsesToolCallsWithObjectArguments(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call_1",
+								"type": "function",
+								"function": map[string]any{
+									"name": "get_weather",
+									"arguments": map[string]any{
+										"city":   "SF",
+										"metric": true,
+									},
+								},
+							},
+						},
+					},
+					"finish_reason": "tool_calls",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "get_weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "get_weather")
+	}
+	if out.ToolCalls[0].Arguments["city"] != "SF" {
+		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want SF", out.ToolCalls[0].Arguments["city"])
+	}
+	if out.ToolCalls[0].Arguments["metric"] != true {
+		t.Fatalf("ToolCalls[0].Arguments[metric] = %v, want true", out.ToolCalls[0].Arguments["metric"])
 	}
 }
 
@@ -382,7 +432,28 @@ func TestProviderChat_StripsMoonshotPrefixAndNormalizesKimiTemperature(t *testin
 	}
 }
 
-func TestProviderChat_StripsGroqOllamaDeepseekVivgridPrefixes(t *testing.T) {
+func TestProviderChat_StripsGroqOllamaDeepseekVivgridNovitaPrefixes(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
 	tests := []struct {
 		name      string
 		input     string
@@ -413,31 +484,25 @@ func TestProviderChat_StripsGroqOllamaDeepseekVivgridPrefixes(t *testing.T) {
 			input:     "vivgrid/auto",
 			wantModel: "auto",
 		},
+		{
+			name:      "strips novita prefix deepseek model",
+			input:     "novita/deepseek/deepseek-v3.2",
+			wantModel: "deepseek/deepseek-v3.2",
+		},
+		{
+			name:      "strips novita prefix zai model",
+			input:     "novita/zai-org/glm-5",
+			wantModel: "zai-org/glm-5",
+		},
+		{
+			name:      "strips novita prefix minimax model",
+			input:     "novita/minimax/minimax-m2.5",
+			wantModel: "minimax/minimax-m2.5",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var requestBody map[string]any
-
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-				resp := map[string]any{
-					"choices": []map[string]any{
-						{
-							"message":       map[string]any{"content": "ok"},
-							"finish_reason": "stop",
-						},
-					},
-				}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
-			}))
-			defer server.Close()
-
-			p := NewProvider("key", server.URL, "")
 			_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, tt.input, nil)
 			if err != nil {
 				t.Fatalf("Chat() error = %v", err)
@@ -523,6 +588,12 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	if got := normalizeModel("vivgrid/auto", "https://api.vivgrid.com/v1"); got != "auto" {
 		t.Fatalf("normalizeModel(vivgrid auto) = %q, want %q", got, "auto")
 	}
+	if got := normalizeModel(
+		"novita/deepseek/deepseek-v3.2",
+		"https://api.novita.ai/openai",
+	); got != "deepseek/deepseek-v3.2" {
+		t.Fatalf("normalizeModel(novita) = %q, want %q", got, "deepseek/deepseek-v3.2")
+	}
 }
 
 func TestProvider_RequestTimeoutDefault(t *testing.T) {
@@ -599,7 +670,7 @@ func TestSerializeMessages_PlainText(t *testing.T) {
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", Content: "hi", ReasoningContent: "thinking..."},
 	}
-	result := serializeMessages(messages)
+	result := common.SerializeMessages(messages)
 
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -621,7 +692,7 @@ func TestSerializeMessages_WithMedia(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{Role: "user", Content: "describe this", Media: []string{"data:image/png;base64,abc123"}},
 	}
-	result := serializeMessages(messages)
+	result := common.SerializeMessages(messages)
 
 	data, _ := json.Marshal(result)
 	var msgs []map[string]any
@@ -654,7 +725,7 @@ func TestSerializeMessages_MediaWithToolCallID(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{Role: "tool", Content: "image result", Media: []string{"data:image/png;base64,xyz"}, ToolCallID: "call_1"},
 	}
-	result := serializeMessages(messages)
+	result := common.SerializeMessages(messages)
 
 	data, _ := json.Marshal(result)
 	var msgs []map[string]any
@@ -669,6 +740,337 @@ func TestSerializeMessages_MediaWithToolCallID(t *testing.T) {
 	}
 }
 
+// chatWithCacheKey sets up a test server, sends a Chat request with prompt_cache_key,
+// and returns the decoded request body for assertion.
+func chatWithCacheKey(t *testing.T, apiBase string) map[string]any {
+	t.Helper()
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	p.apiBase = apiBase
+	p.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.URL, _ = url.Parse(server.URL + r.URL.Path)
+			return http.DefaultTransport.RoundTrip(r)
+		}),
+	}
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"test-model",
+		map[string]any{"prompt_cache_key": "agent-main"},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	return requestBody
+}
+
+func TestProviderChat_PromptCacheKeySentToOpenAI(t *testing.T) {
+	body := chatWithCacheKey(t, "https://api.openai.com/v1")
+	if body["prompt_cache_key"] != "agent-main" {
+		t.Fatalf("prompt_cache_key = %v, want %q", body["prompt_cache_key"], "agent-main")
+	}
+}
+
+func TestProviderChat_PromptCacheKeyOmittedForNonOpenAI(t *testing.T) {
+	tests := []struct {
+		name    string
+		apiBase string
+	}{
+		{"mistral", "https://api.mistral.ai/v1"},
+		{"gemini", "https://generativelanguage.googleapis.com/v1beta"},
+		{"deepseek", "https://api.deepseek.com/v1"},
+		{"groq", "https://api.groq.com/openai/v1"},
+		{"minimax", "https://api.minimaxi.com/v1"},
+		{"ollama_local", "http://localhost:11434/v1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := chatWithCacheKey(t, tt.apiBase)
+			if _, exists := body["prompt_cache_key"]; exists {
+				t.Fatalf("prompt_cache_key should NOT be sent to %s, but was included in request", tt.name)
+			}
+		})
+	}
+}
+
+func TestSupportsPromptCacheKey(t *testing.T) {
+	tests := []struct {
+		apiBase string
+		want    bool
+	}{
+		{"https://api.openai.com/v1", true},
+		{"https://api.openai.com/v1/", true},
+		{"https://myresource.openai.azure.com/openai/deployments/gpt-4", true},
+		{"https://eastus.openai.azure.com/v1", true},
+		{"https://api.mistral.ai/v1", false},
+		{"https://generativelanguage.googleapis.com/v1beta", false},
+		{"https://api.deepseek.com/v1", false},
+		{"https://api.groq.com/openai/v1", false},
+		{"http://localhost:11434/v1", false},
+		{"https://openrouter.ai/api/v1", false},
+		// Edge cases: proxy URLs with openai.com in path should NOT match
+		{"https://my-proxy.com/api.openai.com/v1", false},
+		{"https://proxy.example.com/openai.azure.com/v1", false},
+		// Malformed or empty
+		{"", false},
+		{"not-a-url", false},
+	}
+	for _, tt := range tests {
+		if got := supportsPromptCacheKey(tt.apiBase); got != tt.want {
+			t.Errorf("supportsPromptCacheKey(%q) = %v, want %v", tt.apiBase, got, tt.want)
+		}
+	}
+}
+
+func TestBuildToolsList_NativeSearchAddsWebSearchPreview(t *testing.T) {
+	tools := []ToolDefinition{
+		{Type: "function", Function: ToolFunctionDefinition{Name: "read_file", Description: "read"}},
+	}
+	result := buildToolsList(tools, true)
+	if len(result) != 2 {
+		t.Fatalf("len(result) = %d, want 2", len(result))
+	}
+	wsEntry, ok := result[1].(map[string]any)
+	if !ok {
+		t.Fatalf("web search entry is %T, want map[string]any", result[1])
+	}
+	if wsEntry["type"] != "web_search_preview" {
+		t.Fatalf("type = %v, want web_search_preview", wsEntry["type"])
+	}
+}
+
+func TestBuildToolsList_NativeSearchFiltersClientWebSearch(t *testing.T) {
+	tools := []ToolDefinition{
+		{Type: "function", Function: ToolFunctionDefinition{Name: "web_search", Description: "search"}},
+		{Type: "function", Function: ToolFunctionDefinition{Name: "read_file", Description: "read"}},
+	}
+	result := buildToolsList(tools, true)
+	for _, entry := range result {
+		if td, ok := entry.(ToolDefinition); ok && strings.EqualFold(td.Function.Name, "web_search") {
+			t.Fatal("client-side web_search should be filtered out when native search is enabled")
+		}
+	}
+	if len(result) != 2 { // read_file + web_search_preview
+		t.Fatalf("len(result) = %d, want 2 (read_file + web_search_preview)", len(result))
+	}
+}
+
+func TestBuildToolsList_NoNativeSearchPassesThrough(t *testing.T) {
+	tools := []ToolDefinition{
+		{Type: "function", Function: ToolFunctionDefinition{Name: "web_search", Description: "search"}},
+		{Type: "function", Function: ToolFunctionDefinition{Name: "read_file", Description: "read"}},
+	}
+	result := buildToolsList(tools, false)
+	if len(result) != 2 {
+		t.Fatalf("len(result) = %d, want 2", len(result))
+	}
+}
+
+func TestIsNativeSearchHost(t *testing.T) {
+	tests := []struct {
+		apiBase string
+		want    bool
+	}{
+		{"https://api.openai.com/v1", true},
+		{"https://myresource.openai.azure.com/openai/deployments/gpt-4", true},
+		{"https://api.mistral.ai/v1", false},
+		{"https://api.deepseek.com/v1", false},
+		{"https://api.groq.com/openai/v1", false},
+		{"http://localhost:11434/v1", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := isNativeSearchHost(tt.apiBase); got != tt.want {
+			t.Errorf("isNativeSearchHost(%q) = %v, want %v", tt.apiBase, got, tt.want)
+		}
+	}
+}
+
+func TestSupportsNativeSearch_OpenAI(t *testing.T) {
+	p := NewProvider("key", "https://api.openai.com/v1", "")
+	if !p.SupportsNativeSearch() {
+		t.Fatal("OpenAI provider should support native search")
+	}
+}
+
+func TestSupportsNativeSearch_NonOpenAI(t *testing.T) {
+	p := NewProvider("key", "https://api.deepseek.com/v1", "")
+	if p.SupportsNativeSearch() {
+		t.Fatal("DeepSeek provider should not support native search")
+	}
+}
+
+func TestProviderChat_NativeSearchToolInjected(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	p.apiBase = "https://api.openai.com/v1"
+	p.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.URL, _ = url.Parse(server.URL + r.URL.Path)
+			return http.DefaultTransport.RoundTrip(r)
+		}),
+	}
+	tools := []ToolDefinition{
+		{Type: "function", Function: ToolFunctionDefinition{Name: "read_file", Description: "read"}},
+	}
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		tools,
+		"gpt-5.4",
+		map[string]any{"native_search": true},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	toolsRaw, ok := requestBody["tools"].([]any)
+	if !ok {
+		t.Fatalf("tools is %T, want []any", requestBody["tools"])
+	}
+	if len(toolsRaw) != 2 {
+		t.Fatalf("len(tools) = %d, want 2 (read_file + web_search_preview)", len(toolsRaw))
+	}
+
+	lastTool, ok := toolsRaw[1].(map[string]any)
+	if !ok {
+		t.Fatalf("last tool is %T, want map[string]any", toolsRaw[1])
+	}
+	if lastTool["type"] != "web_search_preview" {
+		t.Fatalf("last tool type = %v, want web_search_preview", lastTool["type"])
+	}
+}
+
+func TestProviderChat_NativeSearchNotInjectedWithoutOption(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	tools := []ToolDefinition{
+		{Type: "function", Function: ToolFunctionDefinition{Name: "web_search", Description: "search"}},
+	}
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		tools,
+		"gpt-5.4",
+		map[string]any{},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	toolsRaw, ok := requestBody["tools"].([]any)
+	if !ok {
+		t.Fatalf("tools is %T, want []any", requestBody["tools"])
+	}
+	if len(toolsRaw) != 1 {
+		t.Fatalf("len(tools) = %d, want 1 (web_search only)", len(toolsRaw))
+	}
+}
+
+// TestProviderChat_NativeSearchIgnoredOnNonOpenAI verifies that when native_search
+// is true in options but the provider's apiBase is not OpenAI (e.g. fallback to DeepSeek),
+// we do not inject web_search_preview to avoid API errors.
+func TestProviderChat_NativeSearchIgnoredOnNonOpenAI(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	// Use server.URL so host is not api.openai.com — simulates DeepSeek/other provider
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"deepseek-chat",
+		map[string]any{"native_search": true},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	// Should not have tools at all (no tools passed, and we must not add web_search_preview)
+	if toolsRaw, ok := requestBody["tools"]; ok {
+		t.Fatalf("tools should be omitted for non-OpenAI when only native_search was requested, got %v", toolsRaw)
+	}
+}
+
 func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{
@@ -679,7 +1081,7 @@ func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 			},
 		},
 	}
-	result := serializeMessages(messages)
+	result := common.SerializeMessages(messages)
 
 	data, _ := json.Marshal(result)
 	raw := string(data)

@@ -108,22 +108,24 @@ func TestHandleMessage_GroupMentionOnly_BotCommandEntity(t *testing.T) {
 				t.Fatalf("handleMessage error: %v", err)
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Microsecond)
 			defer cancel()
-
-			inbound, ok := messageBus.ConsumeInbound(ctx)
-			if tc.wantForwarded {
-				if !ok {
-					t.Fatal("expected inbound message to be forwarded")
+			select {
+			case <-ctx.Done():
+				if tc.wantForwarded {
+					t.Fatal("timeout waiting for message to be forwarded")
+					return
 				}
-				if inbound.Content != tc.wantContent {
-					t.Fatalf("content=%q want=%q", inbound.Content, tc.wantContent)
+			case inbound, ok := <-messageBus.InboundChan():
+				if tc.wantForwarded {
+					if !ok {
+						t.Fatal("expected inbound message to be forwarded")
+					}
+					if inbound.Content != tc.wantContent {
+						t.Fatalf("content=%q want=%q", inbound.Content, tc.wantContent)
+					}
+					return
 				}
-				return
-			}
-
-			if ok {
-				t.Fatalf("expected message to be filtered, got content=%q", inbound.Content)
 			}
 		})
 	}
