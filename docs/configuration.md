@@ -49,6 +49,8 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 └── USER.md           # User preferences
 ```
 
+> **Note:** Changes to `AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md`, and `memory/MEMORY.md` are automatically detected at runtime via file modification time (mtime) tracking. You do **not** need to restart the gateway after editing these files — the agent picks up the new content on the next request.
+
 ### Skill Sources
 
 By default, skills are loaded from:

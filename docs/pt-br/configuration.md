@@ -49,6 +49,8 @@ O PicoClaw armazena dados no seu workspace configurado (padrão: `~/.picoclaw/wo
 └── USER.md           # Preferências do usuário
 ```
 
+> **Nota:** Alterações em `AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md` e `memory/MEMORY.md` são detectadas automaticamente em tempo de execução via rastreamento de data de modificação (mtime). **Não é necessário reiniciar o gateway** após editar esses arquivos — o agente carrega o novo conteúdo na próxima requisição.
+
 ### Fontes de Skills
 
 Por padrão, as skills são carregadas de:

@@ -49,6 +49,8 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 └── USER.md           # 用户偏好
 ```
 
+> **提示：** 对 `AGENTS.md`、`SOUL.md`、`USER.md`、`IDENTITY.md` 和 `memory/MEMORY.md` 的修改会通过文件修改时间（mtime）在运行时自动检测。**无需重启 gateway**，Agent 将在下一次请求时自动加载最新内容。
+
 ### 技能来源 (Skill Sources)
 
 默认情况下，技能会按以下顺序加载：

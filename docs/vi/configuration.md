@@ -49,6 +49,8 @@ PicoClaw lưu trữ dữ liệu trong workspace đã cấu hình (mặc định:
 └── USER.md           # Tùy chọn người dùng
 ```
 
+> **Lưu ý:** Các thay đổi đối với `AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md` và `memory/MEMORY.md` được tự động phát hiện trong thời gian chạy thông qua theo dõi thời gian sửa đổi file (mtime). **Không cần khởi động lại gateway** sau khi chỉnh sửa các file này — agent sẽ tải nội dung mới vào yêu cầu tiếp theo.
+
 ### Nguồn Skill
 
 Mặc định, skill được tải từ:

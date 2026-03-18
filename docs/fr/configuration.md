@@ -49,6 +49,8 @@ PicoClaw stocke les données dans votre workspace configuré (par défaut : `~/.
 └── USER.md           # Préférences utilisateur
 ```
 
+> **Remarque :** Les modifications apportées à `AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md` et `memory/MEMORY.md` sont détectées automatiquement au moment de l'exécution via le suivi de la date de modification (mtime). Il n'est **pas nécessaire de redémarrer le gateway** après avoir modifié ces fichiers — l'agent charge le nouveau contenu à la prochaine requête.
+
 ### Sources de Compétences
 
 Par défaut, les compétences sont chargées depuis :
