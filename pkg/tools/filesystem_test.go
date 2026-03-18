@@ -203,7 +203,7 @@ func TestFilesystemTool_WriteFile_OverwriteDefaultBlocked(t *testing.T) {
 	})
 
 	assert.True(t, result.IsError, "expected error when overwriting without overwrite=true")
-	assert.Contains(t, result.ForLLM, "file already exists")
+	assert.Contains(t, result.ForLLM, "already exists")
 	assert.Contains(t, result.ForLLM, "overwrite=true")
 
 	// Original content must be untouched
@@ -267,7 +267,7 @@ func TestFilesystemTool_WriteFile_OverwriteFalseExplicitBlocked(t *testing.T) {
 	})
 
 	assert.True(t, result.IsError, "expected error when overwrite=false")
-	assert.Contains(t, result.ForLLM, "file already exists")
+	assert.Contains(t, result.ForLLM, "already exists")
 
 	data, err := os.ReadFile(testFile)
 	assert.NoError(t, err)
@@ -289,7 +289,7 @@ func TestFilesystemTool_WriteFile_OverwriteSandboxed(t *testing.T) {
 		"content": "new content",
 	})
 	assert.True(t, result.IsError, "expected error in sandbox mode without overwrite=true")
-	assert.Contains(t, result.ForLLM, "file already exists")
+	assert.Contains(t, result.ForLLM, "already exists")
 
 	// With overwrite=true → allowed
 	result = tool.Execute(context.Background(), map[string]any{

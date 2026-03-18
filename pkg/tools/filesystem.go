@@ -536,7 +536,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 
 	if !overwrite {
 		if _, err := t.fs.Open(path); err == nil {
-			return ErrorResult(fmt.Sprintf("file already exists: %s (set overwrite=true to replace it)", path))
+			return ErrorResult(fmt.Sprintf("file: %s already exists. Set overwrite=true to replace.", path))
 		}
 	}
 
