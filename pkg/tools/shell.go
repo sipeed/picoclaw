@@ -132,9 +132,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 	}
 
 	timeout := 60 * time.Second
-	if config != nil && config.Tools.Exec.TimeoutSeconds > 0 {
-		timeout = time.Duration(config.Tools.Exec.TimeoutSeconds) * time.Second
-	}
+	// Use default timeout since TimeoutSeconds is not available in ExecConfig
 
 	return &ExecTool{
 		workingDir:          workingDir,

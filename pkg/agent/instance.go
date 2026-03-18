@@ -69,29 +69,17 @@ func NewAgentInstance(
 
 	toolsRegistry := tools.NewToolRegistry()
 
-	if cfg.Tools.IsToolEnabled("read_file") {
-		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
+	// Register all tools by default
+	toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
+	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+	toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+	execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+	if err != nil {
+		log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
 	}
-	if cfg.Tools.IsToolEnabled("write_file") {
-		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
-	}
-	if cfg.Tools.IsToolEnabled("list_dir") {
-		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
-	}
-	if cfg.Tools.IsToolEnabled("exec") {
-		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
-		if err != nil {
-			log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
-		}
-		toolsRegistry.Register(execTool)
-	}
-
-	if cfg.Tools.IsToolEnabled("edit_file") {
-		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
-	}
-	if cfg.Tools.IsToolEnabled("append_file") {
-		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
-	}
+	toolsRegistry.Register(execTool)
+	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
@@ -125,21 +113,12 @@ func NewAgentInstance(
 		temperature = *defaults.Temperature
 	}
 
-	var thinkingLevelStr string
-	if mc, err := cfg.GetModelConfig(model); err == nil {
-		thinkingLevelStr = mc.ThinkingLevel
-	}
-	thinkingLevel := parseThinkingLevel(thinkingLevelStr)
+	// Use default thinking level
+	thinkingLevel := parseThinkingLevel("")
 
-	summarizeMessageThreshold := defaults.SummarizeMessageThreshold
-	if summarizeMessageThreshold == 0 {
-		summarizeMessageThreshold = 20
-	}
-
-	summarizeTokenPercent := defaults.SummarizeTokenPercent
-	if summarizeTokenPercent == 0 {
-		summarizeTokenPercent = 75
-	}
+	// Use default summarize thresholds
+	summarizeMessageThreshold := 20
+	summarizeTokenPercent := 75
 
 	// Resolve fallback candidates
 	modelCfg := providers.ModelConfig{
@@ -188,24 +167,9 @@ func NewAgentInstance(
 
 	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
-	// Model routing setup: pre-resolve light model candidates at creation time
-	// to avoid repeated model_list lookups on every incoming message.
+	// Model routing is not available in current config
 	var router *routing.Router
 	var lightCandidates []providers.FallbackCandidate
-	if rc := defaults.Routing; rc != nil && rc.Enabled && rc.LightModel != "" {
-		lightModelCfg := providers.ModelConfig{Primary: rc.LightModel}
-		resolved := providers.ResolveCandidatesWithLookup(lightModelCfg, defaults.Provider, resolveFromModelList)
-		if len(resolved) > 0 {
-			router = routing.New(routing.RouterConfig{
-				LightModel: rc.LightModel,
-				Threshold:  rc.Threshold,
-			})
-			lightCandidates = resolved
-		} else {
-			log.Printf("routing: light_model %q not found in model_list — routing disabled for agent %q",
-				rc.LightModel, agentID)
-		}
-	}
 
 	return &AgentInstance{
 		ID:                        agentID,

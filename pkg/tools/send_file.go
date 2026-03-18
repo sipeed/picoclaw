@@ -10,7 +10,6 @@ import (
 
 	"github.com/h2non/filetype"
 
-	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
 )
 
@@ -28,7 +27,7 @@ type SendFileTool struct {
 
 func NewSendFileTool(workspace string, restrict bool, maxFileSize int, store media.MediaStore) *SendFileTool {
 	if maxFileSize <= 0 {
-		maxFileSize = config.DefaultMaxMediaSize
+		maxFileSize = 10 * 1024 * 1024 // 10MB default
 	}
 	return &SendFileTool{
 		workspace:   workspace,

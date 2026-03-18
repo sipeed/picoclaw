@@ -50,9 +50,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
 	}
 
-	if err := applyDiscordProxy(session, cfg.Proxy); err != nil {
-		return nil, err
-	}
+
 	base := channels.NewBaseChannel("discord", cfg, bus, cfg.AllowFrom,
 		channels.WithMaxMessageLength(2000),
 		channels.WithGroupTrigger(cfg.GroupTrigger),
@@ -496,7 +494,6 @@ func (c *DiscordChannel) StartTyping(ctx context.Context, chatID string) (func()
 func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "discord",
-		ProxyURL:     c.config.Proxy,
 	})
 }
 

@@ -28,13 +28,16 @@ func DefaultConfig() *Config {
 			Defaults: AgentDefaults{
 				Workspace:                 workspacePath,
 				RestrictToWorkspace:       true,
+				AllowReadOutsideWorkspace: false,
 				Provider:                  "",
+				ModelName:                 "",
 				Model:                     "",
+				ModelFallbacks:            []string{},
+				ImageModel:                "",
+				ImageModelFallbacks:       []string{},
 				MaxTokens:                 32768,
 				Temperature:               nil, // nil means use provider default
 				MaxToolIterations:         50,
-				SummarizeMessageThreshold: 20,
-				SummarizeTokenPercent:     75,
 			},
 		},
 		Bindings: []AgentBinding{},
@@ -138,16 +141,6 @@ func DefaultConfig() *Config {
 				WebhookPath:    "/webhook/wecom-app",
 				AllowFrom:      FlexibleStringSlice{},
 				ReplyTimeout:   5,
-			},
-			WeComAIBot: WeComAIBotConfig{
-				Enabled:        false,
-				Token:          "",
-				EncodingAESKey: "",
-				WebhookPath:    "/webhook/wecom-aibot",
-				AllowFrom:      FlexibleStringSlice{},
-				ReplyTimeout:   5,
-				MaxSteps:       10,
-				WelcomeMessage: "Hello! I'm your AI assistant. How can I help you today?",
 			},
 			Pico: PicoConfig{
 				Enabled:        false,
@@ -336,21 +329,20 @@ func DefaultConfig() *Config {
 		},
 		Tools: ToolsConfig{
 			MediaCleanup: MediaCleanupConfig{
-				ToolConfig: ToolConfig{
-					Enabled: true,
-				},
+				Enabled:  true,
 				MaxAge:   30,
 				Interval: 5,
 			},
 			Web: WebToolsConfig{
-				ToolConfig: ToolConfig{
-					Enabled: true,
-				},
-				Proxy:           "",
-				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
 				Brave: BraveConfig{
 					Enabled:    false,
 					APIKey:     "",
+					MaxResults: 5,
+				},
+				Tavily: TavilyConfig{
+					Enabled:    false,
+					APIKey:     "",
+					BaseURL:    "",
 					MaxResults: 5,
 				},
 				DuckDuckGo: DuckDuckGoConfig{
@@ -362,40 +354,29 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
-				SearXNG: SearXNGConfig{
-					Enabled:    false,
-					BaseURL:    "",
-					MaxResults: 5,
-				},
-				GLMSearch: GLMSearchConfig{
-					Enabled:      false,
-					APIKey:       "",
-					BaseURL:      "https://open.bigmodel.cn/api/paas/v4/web_search",
-					SearchEngine: "search_std",
-					MaxResults:   5,
-				},
+				Proxy:           "",
+				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
 			},
 			Cron: CronToolsConfig{
-				ToolConfig: ToolConfig{
-					Enabled: true,
-				},
 				ExecTimeoutMinutes: 5,
 			},
 			Exec: ExecConfig{
-				ToolConfig: ToolConfig{
-					Enabled: true,
-				},
 				EnableDenyPatterns: true,
-				TimeoutSeconds:     60,
+				CustomDenyPatterns: []string{},
+				CustomAllowPatterns: []string{},
 			},
 			Skills: SkillsToolsConfig{
-				ToolConfig: ToolConfig{
-					Enabled: true,
-				},
 				Registries: SkillsRegistriesConfig{
 					ClawHub: ClawHubRegistryConfig{
-						Enabled: true,
-						BaseURL: "https://clawhub.ai",
+						Enabled:         true,
+						BaseURL:         "https://clawhub.ai",
+						AuthToken:       "",
+						SearchPath:      "",
+						SkillsPath:      "",
+						DownloadPath:    "",
+						Timeout:         0,
+						MaxZipSize:      0,
+						MaxResponseSize: 0,
 					},
 				},
 				MaxConcurrentSearches: 2,
@@ -404,54 +385,8 @@ func DefaultConfig() *Config {
 					TTLSeconds: 300,
 				},
 			},
-			SendFile: ToolConfig{
-				Enabled: true,
-			},
-			MCP: MCPConfig{
-				ToolConfig: ToolConfig{
-					Enabled: false,
-				},
-				Servers: map[string]MCPServerConfig{},
-			},
-			AppendFile: ToolConfig{
-				Enabled: true,
-			},
-			EditFile: ToolConfig{
-				Enabled: true,
-			},
-			FindSkills: ToolConfig{
-				Enabled: true,
-			},
-			I2C: ToolConfig{
-				Enabled: false, // Hardware tool - Linux only
-			},
-			InstallSkill: ToolConfig{
-				Enabled: true,
-			},
-			ListDir: ToolConfig{
-				Enabled: true,
-			},
-			Message: ToolConfig{
-				Enabled: true,
-			},
-			ReadFile: ToolConfig{
-				Enabled: true,
-			},
-			Spawn: ToolConfig{
-				Enabled: true,
-			},
-			SPI: ToolConfig{
-				Enabled: false, // Hardware tool - Linux only
-			},
-			Subagent: ToolConfig{
-				Enabled: true,
-			},
-			WebFetch: ToolConfig{
-				Enabled: true,
-			},
-			WriteFile: ToolConfig{
-				Enabled: true,
-			},
+			AllowReadPaths:  []string{},
+			AllowWritePaths: []string{},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
