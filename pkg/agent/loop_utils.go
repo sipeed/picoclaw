@@ -102,28 +102,44 @@ func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 // inferMediaType determines the media type ("image", "audio", "video", "file")
 // from a filename and MIME content type.
 func inferMediaType(filename, contentType string) string {
-	ct := strings.ToLower(contentType)
-	fn := strings.ToLower(filename)
-
-	if strings.HasPrefix(ct, "image/") {
+	// Fast path for common, correctly cased content types
+	if strings.HasPrefix(contentType, "image/") {
 		return "image"
 	}
-	if strings.HasPrefix(ct, "audio/") || ct == "application/ogg" {
+	if strings.HasPrefix(contentType, "audio/") || contentType == "application/ogg" {
 		return "audio"
 	}
-	if strings.HasPrefix(ct, "video/") {
+	if strings.HasPrefix(contentType, "video/") {
 		return "video"
+	}
+
+	// Slower path for uppercase or mixed case
+	if contentType != "" {
+		ct := strings.ToLower(contentType)
+		if strings.HasPrefix(ct, "image/") {
+			return "image"
+		}
+		if strings.HasPrefix(ct, "audio/") || ct == "application/ogg" {
+			return "audio"
+		}
+		if strings.HasPrefix(ct, "video/") {
+			return "video"
+		}
 	}
 
 	// Fallback: infer from extension
-	ext := filepath.Ext(fn)
-	switch ext {
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
-		return "image"
-	case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma", ".opus":
-		return "audio"
-	case ".mp4", ".avi", ".mov", ".webm", ".mkv":
-		return "video"
+	ext := filepath.Ext(filename)
+	if ext != "" {
+		// Only lower case the extension, which is usually just a few characters
+		ext = strings.ToLower(ext)
+		switch ext {
+		case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
+			return "image"
+		case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma", ".opus":
+			return "audio"
+		case ".mp4", ".avi", ".mov", ".webm", ".mkv":
+			return "video"
+		}
 	}
 
 	return "file"
