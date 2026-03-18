@@ -191,15 +191,44 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		htmlContent := markdownToTelegramHTML(chunk)
 
 		if len([]rune(htmlContent)) > 4096 {
-			ratio := float64(len([]rune(chunk))) / float64(len([]rune(htmlContent)))
+			runeChunk := []rune(chunk)
+			ratio := float64(len(runeChunk)) / float64(len([]rune(htmlContent)))
 			smallerLen := int(float64(4096) * ratio * 0.95) // 5% safety margin
-			if smallerLen < 100 {
-				smallerLen = 100
+
+			// Guarantee progress: if estimated length is >= chunk length, force it smaller
+			if smallerLen >= len(runeChunk) {
+				smallerLen = len(runeChunk) - 1
 			}
-			// Push sub-chunks back to the front of the queue for
-			// re-validation instead of sending them blindly.
+
+			if smallerLen <= 0 {
+				if err := c.sendHTMLChunk(ctx, chatID, threadID, htmlContent, chunk, replyToID); err != nil {
+					return err
+				}
+				replyToID = ""
+				continue
+			}
+
+			// Use the estimated smaller length as a guide for SplitMessage.
+			// SplitMessage will find natural break points (newlines/spaces) and respect code blocks.
 			subChunks := channels.SplitMessage(chunk, smallerLen)
-			queue = append(subChunks, queue...)
+
+			// Safety fallback: If SplitMessage failed to shorten the chunk, force a manual hard split.
+			if len(subChunks) == 1 && subChunks[0] == chunk {
+				part1 := string(runeChunk[:smallerLen])
+				part2 := string(runeChunk[smallerLen:])
+				subChunks = []string{part1, part2}
+			}
+
+			// Filter out empty chunks to avoid sending empty messages to Telegram.
+			nonEmpty := make([]string, 0, len(subChunks))
+			for _, s := range subChunks {
+				if s != "" {
+					nonEmpty = append(nonEmpty, s)
+				}
+			}
+
+			// Push sub-chunks back to the front of the queue
+			queue = append(nonEmpty, queue...)
 			continue
 		}
 

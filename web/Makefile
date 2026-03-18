@@ -5,6 +5,9 @@ GO?=CGO_ENABLED=0 go
 WEB_GO?=$(GO)
 GOFLAGS?=-v -tags stdjson
 
+# Build variables
+BUILD_DIR=build
+
 # Version
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT=$(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")
@@ -57,7 +60,7 @@ endif
 
 # Run both frontend and backend dev servers
 dev:
-	@if [ ! -f backend/picoclaw-web ] || [ ! -d backend/dist ]; then \
+	@if [ ! -f $(BUILD_DIR)/picoclaw-launcher ] || [ ! -d backend/dist ]; then \
 		echo "Build artifacts not found, building..."; \
 		$(MAKE) build; \
 	fi
@@ -75,7 +78,7 @@ dev-backend:
 # Build frontend and embed into Go binary
 build:
 	cd frontend && pnpm build:backend
-	cd backend && ${WEB_GO} build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o picoclaw-web .
+	${WEB_GO} build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/picoclaw-launcher ./backend/
 
 # Run all tests
 test:
@@ -89,5 +92,5 @@ lint:
 
 # Clean build artifacts
 clean:
-	rm -rf frontend/dist backend/dist backend/picoclaw-web
+	rm -rf frontend/dist backend/dist $(BUILD_DIR)
 	mkdir -p backend/dist && touch backend/dist/.gitkeep

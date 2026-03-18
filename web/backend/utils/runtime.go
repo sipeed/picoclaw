@@ -9,19 +9,21 @@ import (
 	"runtime"
 )
 
-// GetDefaultConfigPath returns the default path to the picoclaw config file.
+// GetPicoclawHome returns the picoclaw home directory.
+// Priority: $PICOCLAW_HOME > ~/.picoclaw
+func GetPicoclawHome() string {
+	if home := os.Getenv("PICOCLAW_HOME"); home != "" {
+		return home
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".picoclaw")
+}
+
 func GetDefaultConfigPath() string {
 	if configPath := os.Getenv("PICOCLAW_CONFIG"); configPath != "" {
 		return configPath
 	}
-	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
-		return filepath.Join(picoclawHome, "config.json")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "config.json"
-	}
-	return filepath.Join(home, ".picoclaw", "config.json")
+	return filepath.Join(GetPicoclawHome(), "config.json")
 }
 
 // FindPicoclawBinary locates the picoclaw executable.

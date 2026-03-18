@@ -51,7 +51,7 @@ func init() {
 			FormatFieldValue: formatFieldValue,
 		}
 
-		logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
+		logger = zerolog.New(consoleWriter).With().Timestamp().Caller().Logger()
 		fileLogger = zerolog.Logger{}
 	})
 }
@@ -94,6 +94,12 @@ func SetLevel(level LogLevel) {
 	zerolog.SetGlobalLevel(level)
 }
 
+func SetConsoleLevel(level LogLevel) {
+	mu.Lock()
+	defer mu.Unlock()
+	logger = logger.Level(level)
+}
+
 func GetLevel() LogLevel {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -134,9 +140,9 @@ func DisableFileLogging() {
 	fileLogger = zerolog.Logger{}
 }
 
-func getCallerInfo() (string, int, string) {
+func getCallerSkip() int {
 	for i := 2; i < 15; i++ {
-		pc, file, line, ok := runtime.Caller(i)
+		pc, file, _, ok := runtime.Caller(i)
 		if !ok {
 			continue
 		}
@@ -158,10 +164,10 @@ func getCallerInfo() (string, int, string) {
 			continue
 		}
 
-		return filepath.Base(file), line, filepath.Base(funcName)
+		return i - 1
 	}
 
-	return "???", 0, "???"
+	return 3
 }
 
 //nolint:zerologlint
@@ -187,19 +193,16 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		return
 	}
 
-	callerFile, callerLine, callerFunc := getCallerInfo()
+	skip := getCallerSkip()
 
 	event := getEvent(logger, level)
 
-	// Build combined field with component and caller
 	if component != "" {
-		event.Str("caller", fmt.Sprintf("%-6s %s:%d (%s)", component, callerFile, callerLine, callerFunc))
-	} else {
-		event.Str("caller", fmt.Sprintf("<none> %s:%d (%s)", callerFile, callerLine, callerFunc))
+		event.Str("component", component)
 	}
 
 	appendFields(event, fields)
-	event.Msg(message)
+	event.CallerSkipFrame(skip).Msg(message)
 
 	// Also log to file if enabled
 	if fileLogger.GetLevel() != zerolog.NoLevel {
@@ -208,9 +211,10 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		if component != "" {
 			fileEvent.Str("component", component)
 		}
+		// fileEvent.Str("caller", fmt.Sprintf("%s:%d (%s)", callerFile, callerLine, callerFunc))
 
 		appendFields(fileEvent, fields)
-		fileEvent.Msg(message)
+		fileEvent.CallerSkipFrame(skip).Msg(message)
 	}
 
 	if level == FATAL {
