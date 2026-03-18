@@ -47,7 +47,14 @@ type multipartCall struct {
 }
 
 func (s *stubConstructor) JSONRequest(parameters any) (*ta.RequestData, error) {
-	return &ta.RequestData{}, nil
+	b, err := json.Marshal(parameters)
+	if err != nil {
+		return nil, err
+	}
+	return &ta.RequestData{
+		ContentType: "application/json",
+		BodyRaw:     b,
+	}, nil
 }
 
 func (s *stubConstructor) MultipartRequest(
@@ -365,6 +372,55 @@ func TestSend_MarkdownShortButHTMLLong_MultipleCalls(t *testing.T) {
 		t, len(caller.calls), 1,
 		"markdown-short but HTML-long message should be split into multiple SendMessage calls",
 	)
+}
+
+func TestSend_HTMLOverflow_WordBoundary(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return successResponse(t), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+
+	// We want to force a split near index ~2600 while keeping markdown length <= 4000.
+	// Prefix of 430 bold units (6 chars each) = 2580 chars.
+	// Expansion per unit is +3 chars when converted to HTML, so 2580 + 430*3 = 3870.
+	prefix := strings.Repeat("**a** ", 430)
+	targetWord := "TARGETWORDTHATSTAYSTOGETHER"
+	// Suffix of 230 bold units (6 chars each) = 1380 chars.
+	// Total markdown length: 2580 (prefix) + 27 (target word) + 1380 (suffix) = 3987 <= 4000.
+	// HTML expansion adds ~3 chars per bold unit: (430 + 230)*3 = 1980 extra chars,
+	// so total HTML length comfortably exceeds 4096.
+	suffix := strings.Repeat(" **b**", 230)
+	content := prefix + targetWord + suffix
+
+	// Ensure the test content matches the intended boundary conditions.
+	assert.LessOrEqual(t, len([]rune(content)), 4000, "markdown content must not exceed chunk size for this test")
+
+	err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "123456",
+		Content: content,
+	})
+
+	assert.NoError(t, err)
+
+	foundFullWord := false
+	for i, call := range caller.calls {
+		var params map[string]any
+		err := json.Unmarshal(call.Data.BodyRaw, &params)
+		require.NoError(t, err)
+		text, _ := params["text"].(string)
+
+		hasWord := strings.Contains(text, targetWord)
+		t.Logf("Chunk %d length: %d, contains target word: %v", i, len(text), hasWord)
+
+		if hasWord {
+			foundFullWord = true
+			break
+		}
+	}
+
+	assert.True(t, foundFullWord, "The target word should not be split between chunks")
 }
 
 func TestSend_NotRunning(t *testing.T) {
