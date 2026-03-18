@@ -365,13 +365,14 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 ```
 ~/.picoclaw/workspace/
 ├── sessions/          # 对话会话和历史
-├── memory/           # 长期记忆 (MEMORY.md)
-├── state/            # 持久化状态 (最后一次频道等)
-├── cron/             # 定时任务数据库
-├── skills/           # 自定义技能
-├── AGENT.md          # 结构化 Agent 定义与系统提示词
-├── HEARTBEAT.md      # 周期性任务提示词 (每 30 分钟检查一次)
-├── SOUL.md           # Agent 灵魂/性格
+├── memory/            # 长期记忆 (MEMORY.md)
+├── state/             # 持久化状态 (最后一次频道等)
+├── cron/              # 定时任务数据库
+├── skills/            # 工作区级技能
+├── AGENT.md           # 结构化 Agent 定义与系统提示词
+├── SOUL.md            # Agent 灵魂/性格
+├── USER.md            # 当前工作区的用户资料与偏好
+├── HEARTBEAT.md       # 周期性任务提示词 (每 30 分钟检查一次)
 └── ...
 
 ```
