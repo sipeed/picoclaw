@@ -926,12 +926,16 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 			return nil, nil, fmt.Errorf("request failed: %w", doErr)
 		}
 		resp.Body = http.MaxBytesReader(nil, resp.Body, t.fetchLimitBytes)
-		defer resp.Body.Close()
+
 		b, readErr := io.ReadAll(resp.Body)
 		return resp, b, readErr
 	}
 
 	resp, body, err := doFetch(userAgent)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
@@ -943,11 +947,16 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	// Cloudflare (and similar WAFs) signal bot challenges with 403 + cf-mitigated: challenge.
 	// Retry once with an honest User-Agent that identifies picoclaw, which some
 	// operators explicitly allow-list for AI assistants.
-	if resp.StatusCode == http.StatusForbidden && resp.Header.Get("cf-mitigated") == "challenge" {
+	if resp.StatusCode == http.StatusForbidden && resp.Header.Get("Cf-Mitigated") == "challenge" {
 		logger.DebugCF("tool", "Cloudflare challenge detected, retrying with honest User-Agent",
 			map[string]any{"url": urlStr})
 		honestUA := fmt.Sprintf(userAgentHonest, config.Version)
-		if resp2, body2, err2 := doFetch(honestUA); err2 == nil {
+		resp2, body2, err2 := doFetch(honestUA)
+		if resp2 != nil && resp2.Body != nil {
+			defer resp2.Body.Close()
+		}
+
+		if err2 == nil {
 			resp, body = resp2, body2
 		} else {
 			var maxBytesErr *http.MaxBytesError

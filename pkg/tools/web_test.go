@@ -1084,7 +1084,7 @@ func TestWebFetchTool_CloudflareChallenge_RetryWithHonestUA(t *testing.T) {
 
 		if requestCount == 1 {
 			// First request: simulate Cloudflare challenge
-			w.Header().Set("cf-mitigated", "challenge")
+			w.Header().Set("Cf-Mitigated", "challenge")
 			w.Header().Set("Content-Type", "text/html")
 			w.WriteHeader(http.StatusForbidden)
 			w.Write([]byte("<html><body>Cloudflare challenge</body></html>"))
@@ -1158,7 +1158,7 @@ func TestWebFetchTool_CloudflareChallenge_RetryFailsToo(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Always return CF challenge regardless of UA
-		w.Header().Set("cf-mitigated", "challenge")
+		w.Header().Set("Cf-Mitigated", "challenge")
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusForbidden)
 		w.Write([]byte("<html><body>still blocked</body></html>"))
