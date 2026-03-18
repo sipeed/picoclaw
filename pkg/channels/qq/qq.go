@@ -102,7 +102,7 @@ func (c *QQChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("QQ app_id and app_secret not configured")
 	}
 
-	botgo.SetLogger(logger.NewLogger("botgo"))
+	botgo.SetLogger(newBotGoLogger("botgo"))
 	logger.InfoC("qq", "Starting QQ bot (WebSocket mode)")
 
 	// Reinitialize shutdown signal for clean restart.
