@@ -81,6 +81,7 @@ func main() {
 
 		logPath := filepath.Join(picoHome, "logs", "web.log")
 		if err := logger.EnableFileLogging(logPath); err != nil {
+			// FIXME: https://github.com/sipeed/picoclaw/issues/1734
 			fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 			os.Exit(1)
 		}

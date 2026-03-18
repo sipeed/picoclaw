@@ -566,6 +566,8 @@ func (h *Handler) handleGatewayStart(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGatewayStop stops the running gateway subprocess gracefully.
+// Note: Unlike StopGateway (which only stops self-started processes), this API endpoint
+// stops any gateway process, including attached ones. This is intentional for user control.
 //
 //	POST /api/gateway/stop
 func (h *Handler) handleGatewayStop(w http.ResponseWriter, r *http.Request) {
