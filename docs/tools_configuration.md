@@ -175,10 +175,37 @@ and injected into the context for a configured number of turns (`ttl`).
 | `type`     | string | no       | Transport type: `stdio`, `sse`, `http`     |
 | `command`  | string | stdio    | Executable command for stdio transport     |
 | `args`     | array  | no       | Command arguments for stdio transport      |
-| `env`      | object | no       | Environment variables for stdio process    |
+| `env`      | object | no       | Environment variables for stdio process (supports `${VAR}` references) |
 | `env_file` | string | no       | Path to environment file for stdio process |
 | `url`      | string | sse/http | Endpoint URL for `sse`/`http` transport    |
-| `headers`  | object | no       | HTTP headers for `sse`/`http` transport    |
+| `headers`  | object | no       | HTTP headers for `sse`/`http` transport (supports `${VAR}` references) |
+
+### Secrets via `.env` File
+
+Values in `env` and `headers` maps support `${VAR_NAME}` substitution. At startup, any value that is exactly `${VAR_NAME}` is replaced with the corresponding environment variable, which can come from a `.env` file in the working directory or from the shell environment.
+
+This keeps secrets out of `config.json` (which may be committed to source control):
+
+```json
+"github": {
+  "enabled": true,
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-github"],
+  "env": {
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+  }
+}
+```
+
+```sh
+# .env (git-ignored)
+GITHUB_PERSONAL_ACCESS_TOKEN=ghp_your_actual_token
+```
+
+**Rules:**
+- Only whole-value references are substituted: `"${FOO}"` → resolved. `"prefix-${FOO}"` → unchanged.
+- If the referenced variable is unset, the original `${VAR_NAME}` string is left as-is.
+- Literal values (no `${}`) pass through unchanged — existing configs continue to work.
 
 ### Transport Behavior
 
@@ -261,7 +288,7 @@ dynamically only when requested by the user.*
             "@modelcontextprotocol/server-github"
           ],
           "env": {
-            "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_TOKEN"
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
           }
         },
         "postgres": {
@@ -281,8 +308,8 @@ dynamically only when requested by the user.*
             "@modelcontextprotocol/server-slack"
           ],
           "env": {
-            "SLACK_BOT_TOKEN": "YOUR_SLACK_BOT_TOKEN",
-            "SLACK_TEAM_ID": "YOUR_SLACK_TEAM_ID"
+            "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}",
+            "SLACK_TEAM_ID": "${SLACK_TEAM_ID}"
           }
         }
       }

@@ -376,7 +376,7 @@
           "type": "http",
           "url": "https://mcp.context7.com/mcp",
           "headers": {
-            "CONTEXT7_API_KEY": "ctx7sk-xx"
+            "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
           }
         },
         "filesystem": {
@@ -396,7 +396,7 @@
             "@modelcontextprotocol/server-github"
           ],
           "env": {
-            "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_TOKEN"
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
           }
         },
         "brave-search": {
@@ -407,7 +407,7 @@
             "@modelcontextprotocol/server-brave-search"
           ],
           "env": {
-            "BRAVE_API_KEY": "YOUR_BRAVE_API_KEY"
+            "BRAVE_API_KEY": "${BRAVE_API_KEY}"
           }
         },
         "postgres": {
@@ -427,8 +427,8 @@
             "@modelcontextprotocol/server-slack"
           ],
           "env": {
-            "SLACK_BOT_TOKEN": "YOUR_SLACK_BOT_TOKEN",
-            "SLACK_TEAM_ID": "YOUR_SLACK_TEAM_ID"
+            "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}",
+            "SLACK_TEAM_ID": "${SLACK_TEAM_ID}"
           }
         }
       }
