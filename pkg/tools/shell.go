@@ -3,19 +3,33 @@ package tools
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 )
+
+var globalSessionManager = NewSessionManager()
+var sessionManagerMu sync.RWMutex
+
+func getSessionManager() *SessionManager {
+	sessionManagerMu.RLock()
+	defer sessionManagerMu.RUnlock()
+	return globalSessionManager
+}
 
 type ExecTool struct {
 	workingDir          string
@@ -26,6 +40,30 @@ type ExecTool struct {
 	allowedPathPatterns []*regexp.Regexp
 	restrictToWorkspace bool
 	allowRemote         bool
+	sessionManager      *SessionManager
+}
+
+var ptyForbiddenPrograms = []string{
+	"bash", "sh", "zsh", "fish", "dash", "ksh", "csh", "tcsh",
+	"python", "python3", "python2",
+	"node", "nodejs",
+	"ruby", "perl", "php", "lua", "lua5",
+	"powershell", "pwsh",
+	"adb", "telnet",
+}
+
+func isForbiddenInterpreter(cmd string) bool {
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return false
+	}
+	base := filepath.Base(parts[0])
+	for _, p := range ptyForbiddenPrograms {
+		if base == p {
+			return true
+		}
+	}
+	return false
 }
 
 var (
@@ -159,6 +197,7 @@ func NewExecToolWithConfig(
 		allowedPathPatterns: allowedPathPatterns,
 		restrictToWorkspace: restrict,
 		allowRemote:         allowRemote,
+		sessionManager:      getSessionManager(),
 	}, nil
 }
 
@@ -167,27 +206,103 @@ func (t *ExecTool) Name() string {
 }
 
 func (t *ExecTool) Description() string {
-	return "Execute a shell command and return its output. Use with caution."
+	return `Execute a shell command and return its output.
+
+Actions:
+- run: Execute a command (supports background mode)
+- list: List all active sessions
+- poll: Check session status
+- read: Read output from a session
+- write: Send input to a session
+- kill: Terminate a session
+
+Use background=true for long-running commands. Use pty=true for interactive commands (not supported for shell interpreters).`
 }
 
 func (t *ExecTool) Parameters() map[string]any {
 	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"command": map[string]any{
-				"type":        "string",
-				"description": "The shell command to execute",
+		"oneOf": []map[string]any{
+			{
+				"type": "object",
+				"properties": map[string]any{
+					"action":     map[string]any{"const": "run"},
+					"command":    map[string]any{"type": "string", "description": "The shell command to execute"},
+					"pty":        map[string]any{"type": "boolean", "description": "Use PTY for interactive mode"},
+					"background": map[string]any{"type": "boolean", "description": "Run in background mode"},
+					"timeout":    map[string]any{"type": "integer", "description": "Timeout in seconds (0 = no timeout)"},
+					"cwd":        map[string]any{"type": "string", "description": "Working directory"},
+				},
+				"required": []string{"action", "command"},
 			},
-			"working_dir": map[string]any{
-				"type":        "string",
-				"description": "Optional working directory for the command",
+			{
+				"type": "object",
+				"properties": map[string]any{
+					"action": map[string]any{"const": "list"},
+				},
+				"required": []string{"action"},
+			},
+			{
+				"type": "object",
+				"properties": map[string]any{
+					"action":    map[string]any{"const": "poll"},
+					"sessionId": map[string]any{"type": "string", "description": "Session ID to poll"},
+				},
+				"required": []string{"action", "sessionId"},
+			},
+			{
+				"type": "object",
+				"properties": map[string]any{
+					"action":    map[string]any{"const": "read"},
+					"sessionId": map[string]any{"type": "string", "description": "Session ID to read from"},
+				},
+				"required": []string{"action", "sessionId"},
+			},
+			{
+				"type": "object",
+				"properties": map[string]any{
+					"action":    map[string]any{"const": "write"},
+					"sessionId": map[string]any{"type": "string", "description": "Session ID to write to"},
+					"data":      map[string]any{"type": "string", "description": "Data to write to the session"},
+				},
+				"required": []string{"action", "sessionId", "data"},
+			},
+			{
+				"type": "object",
+				"properties": map[string]any{
+					"action":    map[string]any{"const": "kill"},
+					"sessionId": map[string]any{"type": "string", "description": "Session ID to kill"},
+				},
+				"required": []string{"action", "sessionId"},
 			},
 		},
-		"required": []string{"command"},
 	}
 }
 
 func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+	action, _ := args["action"].(string)
+	if action == "" {
+		return ErrorResult("action is required")
+	}
+
+	switch action {
+	case "run":
+		return t.executeRun(ctx, args)
+	case "list":
+		return t.executeList()
+	case "poll":
+		return t.executePoll(args)
+	case "read":
+		return t.executeRead(args)
+	case "write":
+		return t.executeWrite(args)
+	case "kill":
+		return t.executeKill(args)
+	default:
+		return ErrorResult(fmt.Sprintf("unknown action: %s", action))
+	}
+}
+
+func (t *ExecTool) executeRun(ctx context.Context, args map[string]any) *ToolResult {
 	command, ok := args["command"].(string)
 	if !ok {
 		return ErrorResult("command is required")
@@ -206,8 +321,20 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		}
 	}
 
+	pty, _ := args["pty"].(bool)
+	background, _ := args["background"].(bool)
+
+	if pty {
+		if runtime.GOOS == "windows" {
+			return ErrorResult("PTY is not supported on Windows. Use background=true without pty.")
+		}
+		if isForbiddenInterpreter(command) {
+			return ErrorResult("PTY is forbidden for interpreter programs (bash, python, node, etc.) for security reasons")
+		}
+	}
+
 	cwd := t.workingDir
-	if wd, ok := args["working_dir"].(string); ok && wd != "" {
+	if wd, ok := args["cwd"].(string); ok && wd != "" {
 		if t.restrictToWorkspace && t.workingDir != "" {
 			resolvedWD, err := validatePathWithAllowPaths(wd, t.workingDir, true, t.allowedPathPatterns)
 			if err != nil {
@@ -253,6 +380,14 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		}
 	}
 
+	if background {
+		return t.runBackground(ctx, command, cwd, pty)
+	}
+
+	return t.runSync(ctx, command, cwd)
+}
+
+func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult {
 	// timeout == 0 means no timeout
 	var cmdCtx context.Context
 	var cancel context.CancelFunc
@@ -340,6 +475,261 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	return &ToolResult{
 		ForLLM:  output,
 		ForUser: output,
+		IsError: false,
+	}
+}
+
+func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEnabled bool) *ToolResult {
+	sessionID := generateSessionID()
+	session := &ProcessSession{
+		ID:         sessionID,
+		Command:    command,
+		PTY:        ptyEnabled,
+		Background: true,
+		StartTime:  time.Now().Unix(),
+		Status:     "running",
+	}
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", command)
+	} else {
+		cmd = exec.Command("sh", "-c", command)
+	}
+	if cwd != "" {
+		cmd.Dir = cwd
+	}
+
+	prepareCommandForTermination(cmd)
+
+	if ptyEnabled {
+		// Create PTY pair
+		ptmx, tty, err := pty.Open()
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to create PTY: %v", err))
+		}
+
+		// Set up the command to use the PTY slave as stdin/stdout/stderr
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		// For PTY, we need Setsid to create a new session.
+		// Note: Setsid and Setpgid conflict, so we must replace SysProcAttr entirely.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+
+		session.ptyMaster = ptmx
+	} else {
+		// Non-PTY mode: use pipes
+		stdoutPipe, err := cmd.StdoutPipe()
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to create stdout pipe: %v", err))
+		}
+		stderrPipe, err := cmd.StderrPipe()
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to create stderr pipe: %v", err))
+		}
+		stdinPipe, err := cmd.StdinPipe()
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to create stdin pipe: %v", err))
+		}
+
+		session.stdoutPipe = io.MultiReader(stdoutPipe, stderrPipe)
+		session.stdinWriter = stdinPipe
+	}
+
+	if err := cmd.Start(); err != nil {
+		if session.ptyMaster != nil {
+			session.ptyMaster.Close()
+		}
+		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
+	}
+
+	session.PID = cmd.Process.Pid
+	t.sessionManager.Add(session)
+
+	go func() {
+		err := cmd.Wait()
+
+		// Close PTY master when process exits
+		if session.ptyMaster != nil {
+			session.ptyMaster.Close()
+			session.ptyMaster = nil
+		}
+
+		session.mu.Lock()
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				session.ExitCode = exitErr.ExitCode()
+			} else {
+				session.ExitCode = 1
+			}
+		} else {
+			session.ExitCode = 0
+		}
+		session.Status = "done"
+		session.mu.Unlock()
+	}()
+
+	resp := ExecResponse{
+		SessionID: sessionID,
+		Status:    "running",
+	}
+	data, _ := json.Marshal(resp)
+	return &ToolResult{
+		ForLLM:  string(data),
+		ForUser: fmt.Sprintf("Session %s started", sessionID),
+		IsError: false,
+	}
+}
+
+func (t *ExecTool) executeList() *ToolResult {
+	sessions := t.sessionManager.List()
+	resp := ExecResponse{
+		Sessions: sessions,
+	}
+	data, _ := json.Marshal(resp)
+	return &ToolResult{
+		ForLLM:  string(data),
+		ForUser: fmt.Sprintf("%d active sessions", len(sessions)),
+		IsError: false,
+	}
+}
+
+func (t *ExecTool) executePoll(args map[string]any) *ToolResult {
+	sessionID, ok := args["sessionId"].(string)
+	if !ok {
+		return ErrorResult("sessionId is required")
+	}
+
+	session, err := t.sessionManager.Get(sessionID)
+	if err != nil {
+		if errors.Is(err, ErrSessionNotFound) {
+			return ErrorResult(fmt.Sprintf("session not found: %s", sessionID))
+		}
+		return ErrorResult(err.Error())
+	}
+
+	resp := ExecResponse{
+		SessionID: sessionID,
+		Status:    session.GetStatus(),
+		ExitCode:  session.GetExitCode(),
+	}
+	data, _ := json.Marshal(resp)
+	return &ToolResult{
+		ForLLM:  string(data),
+		IsError: false,
+	}
+}
+
+func (t *ExecTool) executeRead(args map[string]any) *ToolResult {
+	sessionID, ok := args["sessionId"].(string)
+	if !ok {
+		return ErrorResult("sessionId is required")
+	}
+
+	session, err := t.sessionManager.Get(sessionID)
+	if err != nil {
+		if errors.Is(err, ErrSessionNotFound) {
+			return ErrorResult(fmt.Sprintf("session not found: %s", sessionID))
+		}
+		return ErrorResult(err.Error())
+	}
+
+	if session.IsDone() {
+		return ErrorResult(fmt.Sprintf("process already exited with code %d", session.GetExitCode()))
+	}
+
+	output, err := session.Read()
+	if err != nil && !errors.Is(err, ErrSessionDone) {
+		return ErrorResult(fmt.Sprintf("failed to read from session: %v", err))
+	}
+
+	resp := ExecResponse{
+		SessionID: sessionID,
+		Output:    output,
+		Status:    session.GetStatus(),
+	}
+	data, _ := json.Marshal(resp)
+	return &ToolResult{
+		ForLLM:  string(data),
+		IsError: false,
+	}
+}
+
+func (t *ExecTool) executeWrite(args map[string]any) *ToolResult {
+	sessionID, ok := args["sessionId"].(string)
+	if !ok {
+		return ErrorResult("sessionId is required")
+	}
+
+	data, ok := args["data"].(string)
+	if !ok {
+		return ErrorResult("data is required")
+	}
+
+	session, err := t.sessionManager.Get(sessionID)
+	if err != nil {
+		if errors.Is(err, ErrSessionNotFound) {
+			return ErrorResult(fmt.Sprintf("session not found: %s", sessionID))
+		}
+		return ErrorResult(err.Error())
+	}
+
+	if session.IsDone() {
+		return ErrorResult(fmt.Sprintf("process already exited with code %d", session.GetExitCode()))
+	}
+
+	if err := session.Write(data); err != nil {
+		if errors.Is(err, ErrSessionDone) {
+			return ErrorResult(fmt.Sprintf("process already exited with code %d", session.GetExitCode()))
+		}
+		return ErrorResult(fmt.Sprintf("failed to write to session: %v", err))
+	}
+
+	resp := ExecResponse{
+		SessionID: sessionID,
+		Status:    session.GetStatus(),
+	}
+	respData, _ := json.Marshal(resp)
+	return &ToolResult{
+		ForLLM:  string(respData),
+		IsError: false,
+	}
+}
+
+func (t *ExecTool) executeKill(args map[string]any) *ToolResult {
+	sessionID, ok := args["sessionId"].(string)
+	if !ok {
+		return ErrorResult("sessionId is required")
+	}
+
+	session, err := t.sessionManager.Get(sessionID)
+	if err != nil {
+		if errors.Is(err, ErrSessionNotFound) {
+			return ErrorResult(fmt.Sprintf("session not found: %s", sessionID))
+		}
+		return ErrorResult(err.Error())
+	}
+
+	if session.IsDone() {
+		return ErrorResult(fmt.Sprintf("process already exited with code %d", session.GetExitCode()))
+	}
+
+	if err := session.Kill(); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to kill session: %v", err))
+	}
+
+	t.sessionManager.Remove(sessionID)
+
+	resp := ExecResponse{
+		SessionID: sessionID,
+		Status:    "done",
+	}
+	data, _ := json.Marshal(resp)
+	return &ToolResult{
+		ForLLM:  string(data),
+		ForUser: fmt.Sprintf("Session %s killed", sessionID),
 		IsError: false,
 	}
 }

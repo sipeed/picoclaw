@@ -8,6 +8,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/caarlos0/env/v11 v11.4.0
+	github.com/creack/pty v1.1.9
 	github.com/ergochat/irc-go v0.5.0
 	github.com/ergochat/readline v0.1.3
 	github.com/gdamore/tcell/v2 v2.13.8
@@ -93,7 +94,7 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/arch v0.24.0 // indirect
 	golang.org/x/crypto v0.48.0
-	golang.org/x/net v0.51.0 // indirect
+	golang.org/x/net v0.51.0
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 )
