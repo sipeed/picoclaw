@@ -23,7 +23,12 @@ func TestCopyEmbeddedToTargetUsesStructuredAgentFiles(t *testing.T) {
 		t.Fatalf("expected %s to exist: %v", soulPath, err)
 	}
 
-	for _, legacyName := range []string{"AGENTS.md", "IDENTITY.md", "USER.md"} {
+	userPath := filepath.Join(targetDir, "USER.md")
+	if _, err := os.Stat(userPath); err != nil {
+		t.Fatalf("expected %s to exist: %v", userPath, err)
+	}
+
+	for _, legacyName := range []string{"AGENTS.md", "IDENTITY.md"} {
 		legacyPath := filepath.Join(targetDir, legacyName)
 		if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
 			t.Fatalf("expected legacy file %s to be absent, got err=%v", legacyPath, err)

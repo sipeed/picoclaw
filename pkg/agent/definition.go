@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gomarkdown/markdown/parser"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"gopkg.in/yaml.v3"
 )
 
@@ -51,11 +52,18 @@ type SoulDefinition struct {
 	Content string `json:"content"`
 }
 
+// UserDefinition represents the resolved USER.md file linked to the workspace.
+type UserDefinition struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
 // AgentContextDefinition captures the workspace agent definition in a runtime-friendly shape.
 type AgentContextDefinition struct {
 	Source AgentDefinitionSource  `json:"source,omitempty"`
 	Agent  *AgentPromptDefinition `json:"agent,omitempty"`
 	Soul   *SoulDefinition        `json:"soul,omitempty"`
+	User   *UserDefinition        `json:"user,omitempty"`
 }
 
 // LoadAgentDefinition parses the workspace agent bootstrap files.
@@ -69,6 +77,7 @@ func (cb *ContextBuilder) LoadAgentDefinition() AgentContextDefinition {
 
 func loadAgentDefinition(workspace string) AgentContextDefinition {
 	definition := AgentContextDefinition{}
+	definition.User = loadUserDefinition(workspace)
 	agentPath := filepath.Join(workspace, string(AgentDefinitionSourceAgent))
 	if content, err := os.ReadFile(agentPath); err == nil {
 		prompt := parseAgentPromptDefinition(agentPath, string(content))
@@ -111,6 +120,7 @@ func (definition AgentContextDefinition) trackedPaths(workspace string) []string
 	paths := []string{
 		filepath.Join(workspace, string(AgentDefinitionSourceAgent)),
 		filepath.Join(workspace, "SOUL.md"),
+		filepath.Join(workspace, "USER.md"),
 	}
 	if definition.Source != AgentDefinitionSourceAgent {
 		paths = append(paths,
@@ -121,6 +131,18 @@ func (definition AgentContextDefinition) trackedPaths(workspace string) []string
 	return uniquePaths(paths)
 }
 
+func loadUserDefinition(workspace string) *UserDefinition {
+	userPath := filepath.Join(workspace, "USER.md")
+	if content, err := os.ReadFile(userPath); err == nil {
+		return &UserDefinition{
+			Path:    userPath,
+			Content: string(content),
+		}
+	}
+
+	return nil
+}
+
 func parseAgentPromptDefinition(path, content string) AgentPromptDefinition {
 	frontmatter, body := splitAgentFrontmatter(content)
 	return AgentPromptDefinition{
@@ -128,11 +150,11 @@ func parseAgentPromptDefinition(path, content string) AgentPromptDefinition {
 		Raw:            content,
 		Body:           body,
 		RawFrontmatter: frontmatter,
-		Frontmatter:    parseAgentFrontmatter(frontmatter),
+		Frontmatter:    parseAgentFrontmatter(path, frontmatter),
 	}
 }
 
-func parseAgentFrontmatter(frontmatter string) AgentFrontmatter {
+func parseAgentFrontmatter(path, frontmatter string) AgentFrontmatter {
 	frontmatter = strings.TrimSpace(frontmatter)
 	if frontmatter == "" {
 		return AgentFrontmatter{}
@@ -140,6 +162,10 @@ func parseAgentFrontmatter(frontmatter string) AgentFrontmatter {
 
 	rawFields := make(map[string]any)
 	if err := yaml.Unmarshal([]byte(frontmatter), &rawFields); err != nil {
+		logger.WarnCF("agent", "Failed to parse AGENT.md frontmatter", map[string]any{
+			"path":  path,
+			"error": err.Error(),
+		})
 		return AgentFrontmatter{}
 	}
 
@@ -153,6 +179,10 @@ func parseAgentFrontmatter(frontmatter string) AgentFrontmatter {
 		MCPServers  []string `yaml:"mcpServers"`
 	}
 	if err := yaml.Unmarshal([]byte(frontmatter), &typed); err != nil {
+		logger.WarnCF("agent", "Failed to decode AGENT.md frontmatter fields", map[string]any{
+			"path":  path,
+			"error": err.Error(),
+		})
 		return AgentFrontmatter{}
 	}
 

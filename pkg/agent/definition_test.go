@@ -106,6 +106,63 @@ func TestLoadAgentDefinitionFallsBackToLegacyAgentsMarkdown(t *testing.T) {
 	}
 }
 
+func TestLoadAgentDefinitionLoadsWorkspaceUserMarkdown(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"AGENT.md": "# Agent\nStructured agent.",
+		"USER.md":  "# User\nWorkspace preferences.",
+	})
+	defer cleanupWorkspace(t, tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	definition := cb.LoadAgentDefinition()
+
+	if definition.User == nil {
+		t.Fatal("expected USER.md to be loaded")
+	}
+	if definition.User.Path != filepath.Join(tmpDir, "USER.md") {
+		t.Fatalf("expected workspace USER.md path, got %q", definition.User.Path)
+	}
+	if !strings.Contains(definition.User.Content, "Workspace preferences") {
+		t.Fatalf("expected workspace USER.md content, got %q", definition.User.Content)
+	}
+}
+
+func TestLoadAgentDefinitionInvalidFrontmatterFallsBackToEmptyStructuredFields(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+name: pico
+tools:
+  - shell
+  broken
+---
+# Agent
+
+Keep going.
+`,
+	})
+	defer cleanupWorkspace(t, tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	definition := cb.LoadAgentDefinition()
+
+	if definition.Agent == nil {
+		t.Fatal("expected AGENT.md definition to be loaded")
+	}
+	if !strings.Contains(definition.Agent.Body, "Keep going.") {
+		t.Fatalf("expected AGENT.md body to be preserved, got %q", definition.Agent.Body)
+	}
+	if definition.Agent.Frontmatter.Name != "" ||
+		definition.Agent.Frontmatter.Description != "" ||
+		definition.Agent.Frontmatter.Model != "" ||
+		definition.Agent.Frontmatter.MaxTurns != nil ||
+		len(definition.Agent.Frontmatter.Tools) != 0 ||
+		len(definition.Agent.Frontmatter.Skills) != 0 ||
+		len(definition.Agent.Frontmatter.MCPServers) != 0 ||
+		len(definition.Agent.Frontmatter.Fields) != 0 {
+		t.Fatalf("expected invalid frontmatter to decode as empty struct, got %+v", definition.Agent.Frontmatter)
+	}
+}
+
 func TestLoadBootstrapFilesUsesAgentBodyNotFrontmatter(t *testing.T) {
 	tmpDir := setupWorkspace(t, map[string]string{
 		"AGENT.md": `---
@@ -144,6 +201,25 @@ Follow the body prompt.
 	}
 }
 
+func TestLoadBootstrapFilesIncludesWorkspaceUserMarkdown(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"AGENT.md": "# Agent\nFollow the new structure.",
+		"SOUL.md":  "# Soul\nSpeak plainly.",
+		"USER.md":  "# User\nShared profile.",
+	})
+	defer cleanupWorkspace(t, tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	bootstrap := cb.LoadBootstrapFiles()
+
+	if !strings.Contains(bootstrap, "Shared profile") {
+		t.Fatalf("expected workspace USER.md in bootstrap, got %q", bootstrap)
+	}
+	if !strings.Contains(bootstrap, "## USER.md") {
+		t.Fatalf("expected USER.md heading in bootstrap, got %q", bootstrap)
+	}
+}
+
 func TestStructuredAgentIgnoresIdentityChanges(t *testing.T) {
 	tmpDir := setupWorkspace(t, map[string]string{
 		"AGENT.md":    "# Agent\nFollow the new structure.",
@@ -178,6 +254,43 @@ func TestStructuredAgentIgnoresIdentityChanges(t *testing.T) {
 	promptV2 := cb.BuildSystemPromptWithCache()
 	if promptV1 != promptV2 {
 		t.Fatal("structured prompt should remain stable after IDENTITY.md changes")
+	}
+}
+
+func TestStructuredAgentUserChangesInvalidateCache(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"AGENT.md": "# Agent\nFollow the new structure.",
+		"SOUL.md":  "# Soul\nVersion one.",
+		"USER.md":  "# User\nInitial workspace preferences.",
+	})
+	defer cleanupWorkspace(t, tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+
+	promptV1 := cb.BuildSystemPromptWithCache()
+	if !strings.Contains(promptV1, "Initial workspace preferences") {
+		t.Fatalf("expected workspace USER.md in prompt, got %q", promptV1)
+	}
+
+	userPath := filepath.Join(tmpDir, "USER.md")
+	if err := os.WriteFile(userPath, []byte("# User\nUpdated workspace preferences."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(userPath, future, future); err != nil {
+		t.Fatal(err)
+	}
+
+	cb.systemPromptMutex.RLock()
+	changed := cb.sourceFilesChangedLocked()
+	cb.systemPromptMutex.RUnlock()
+	if !changed {
+		t.Fatal("workspace USER.md changes should invalidate cache")
+	}
+
+	promptV2 := cb.BuildSystemPromptWithCache()
+	if !strings.Contains(promptV2, "Updated workspace preferences") {
+		t.Fatalf("expected updated workspace USER.md in prompt, got %q", promptV2)
 	}
 }
 

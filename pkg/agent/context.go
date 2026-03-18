@@ -447,6 +447,9 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 			agentDefinition.Soul.Content,
 		)
 	}
+	if agentDefinition.User != nil {
+		fmt.Fprintf(&sb, "## %s\n\n%s\n\n", "USER.md", agentDefinition.User.Content)
+	}
 
 	if agentDefinition.Source != AgentDefinitionSourceAgent {
 		filePath := filepath.Join(cb.workspace, "IDENTITY.md")
