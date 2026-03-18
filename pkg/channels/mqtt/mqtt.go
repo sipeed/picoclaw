@@ -129,8 +129,11 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 		logger.InfoC("mqtt", "Connected to MQTT broker")
 		
 		// Subscribe to topics after successful connection
+		var subscriptionErrors []string
 		for _, topic := range c.config.SubscribeTopics {
 			if token := c.client.Subscribe(topic, byte(c.config.QoS), nil); token.Wait() && token.Error() != nil {
+				errMsg := fmt.Sprintf("topic %s: %v", topic, token.Error())
+				subscriptionErrors = append(subscriptionErrors, errMsg)
 				logger.ErrorCF("mqtt", "Failed to subscribe to topic", map[string]any{
 					"topic": topic,
 					"error": token.Error(),
@@ -141,12 +144,22 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 				})
 			}
 		}
+		
+		// Log subscription errors summary
+		if len(subscriptionErrors) > 0 {
+			logger.ErrorCF("mqtt", "Subscription errors occurred", map[string]any{
+				"errors": subscriptionErrors,
+				"count":  len(subscriptionErrors),
+			})
+		}
 	})
 
 	c.client = mqtt.NewClient(opts)
 
 	// Connect with retry
 	if token := c.client.Connect(); token.Wait() && token.Error() != nil {
+		// Clean up client on connection failure
+		c.client = nil
 		return fmt.Errorf("mqtt connect failed: %w", token.Error())
 	}
 
@@ -236,11 +249,18 @@ func (c *MQTTChannel) onMessage(client mqtt.Client, msg mqtt.Message) {
 	// Check if message has reply-to header (in payload or topic)
 	replyTopic := c.config.ReplyTopic
 	if strings.Contains(content, "reply-to:") {
-		// Simple parsing for reply-to
-		parts := strings.SplitN(content, "reply-to:", 2)
-		if len(parts) == 2 {
-			replyTopic = strings.TrimSpace(parts[1])
-			content = strings.TrimSpace(parts[0])
+		// Improved parsing for reply-to: extract the last occurrence
+		lastIndex := strings.LastIndex(content, "reply-to:")
+		if lastIndex != -1 {
+			replyTopicPart := content[lastIndex+len("reply-to:"):]
+			// Find the end of the reply-to value (newline or end of string)
+			if newlineIndex := strings.Index(replyTopicPart, "\n"); newlineIndex != -1 {
+				replyTopic = strings.TrimSpace(replyTopicPart[:newlineIndex])
+				content = strings.TrimSpace(content[:lastIndex]) + strings.TrimSpace(replyTopicPart[newlineIndex:])
+			} else {
+				replyTopic = strings.TrimSpace(replyTopicPart)
+				content = strings.TrimSpace(content[:lastIndex])
+			}
 		}
 	}
 
@@ -285,8 +305,15 @@ func (c *MQTTChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	// Replace placeholders in reply topic
 	replyTopic = strings.ReplaceAll(replyTopic, "{client_id}", c.config.ClientID)
 	replyTopic = strings.ReplaceAll(replyTopic, "{topic}", msg.ChatID)
+	replyTopic = strings.ReplaceAll(replyTopic, "{timestamp}", fmt.Sprintf("%d", time.Now().Unix()))
+	replyTopic = strings.ReplaceAll(replyTopic, "{message_id}", msg.ReplyToMessageID)
 	// Add more placeholders as needed
 
+	// Validate reply topic
+	if replyTopic == "" {
+		return fmt.Errorf("reply topic is empty and no default configured")
+	}
+	
 	var payload []byte
 	var err error
 
