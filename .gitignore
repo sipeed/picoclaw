@@ -59,4 +59,3 @@ cmd/telegram/
 !web/backend/dist/
 web/backend/dist/*
 !web/backend/dist/.gitkeep
->>>>>>> origin/main
