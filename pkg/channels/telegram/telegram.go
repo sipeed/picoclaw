@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -77,6 +78,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	if baseURL := strings.TrimRight(strings.TrimSpace(telegramCfg.BaseURL), "/"); baseURL != "" {
 		opts = append(opts, telego.WithAPIServer(baseURL))
 	}
+	opts = append(opts, telego.WithLogger(logger.NewLogger("telego")))
 
 	bot, err := telego.NewBot(telegramCfg.Token, opts...)
 	if err != nil {
@@ -191,15 +193,51 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		content := parseContent(chunk, useMarkdownV2)
 
 		if len([]rune(content)) > 4096 {
-			ratio := float64(len([]rune(chunk))) / float64(len([]rune(content)))
+			runeChunk := []rune(chunk)
+			ratio := float64(len(runeChunk)) / float64(len([]rune(content)))
 			smallerLen := int(float64(4096) * ratio * 0.95) // 5% safety margin
-			if smallerLen < 100 {
-				smallerLen = 100
+
+			// Guarantee progress: if estimated length is >= chunk length, force it smaller
+			if smallerLen >= len(runeChunk) {
+				smallerLen = len(runeChunk) - 1
 			}
-			// Push sub-chunks back to the front of the queue for
-			// re-validation instead of sending them blindly.
+
+			if smallerLen <= 0 {
+				if err := c.sendChunk(ctx, sendChunkParams{
+					chatID:        chatID,
+					threadID:      threadID,
+					content:       content,
+					replyToID:     replyToID,
+					mdFallback:    chunk,
+					useMarkdownV2: useMarkdownV2,
+				}); err != nil {
+					return err
+				}
+				replyToID = ""
+				continue
+			}
+
+			// Use the estimated smaller length as a guide for SplitMessage.
+			// SplitMessage will find natural break points (newlines/spaces) and respect code blocks.
 			subChunks := channels.SplitMessage(chunk, smallerLen)
-			queue = append(subChunks, queue...)
+
+			// Safety fallback: If SplitMessage failed to shorten the chunk, force a manual hard split.
+			if len(subChunks) == 1 && subChunks[0] == chunk {
+				part1 := string(runeChunk[:smallerLen])
+				part2 := string(runeChunk[smallerLen:])
+				subChunks = []string{part1, part2}
+			}
+
+			// Filter out empty chunks to avoid sending empty messages to Telegram.
+			nonEmpty := make([]string, 0, len(subChunks))
+			for _, s := range subChunks {
+				if s != "" {
+					nonEmpty = append(nonEmpty, s)
+				}
+			}
+
+			// Push sub-chunks back to the front of the queue
+			queue = append(nonEmpty, queue...)
 			continue
 		}
 
@@ -399,6 +437,20 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 				Caption:         part.Caption,
 			}
 			_, err = c.bot.SendPhoto(ctx, params)
+			if err != nil && strings.Contains(err.Error(), "PHOTO_INVALID_DIMENSIONS") {
+				if _, seekErr := file.Seek(0, io.SeekStart); seekErr != nil {
+					file.Close()
+					return fmt.Errorf("telegram rewind media after photo failure: %w", channels.ErrTemporary)
+				}
+
+				docParams := &telego.SendDocumentParams{
+					ChatID:          tu.ID(chatID),
+					MessageThreadID: threadID,
+					Document:        telego.InputFile{File: file},
+					Caption:         part.Caption,
+				}
+				_, err = c.bot.SendDocument(ctx, docParams)
+			}
 		case "audio":
 			params := &telego.SendAudioParams{
 				ChatID:          tu.ID(chatID),

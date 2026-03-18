@@ -79,6 +79,8 @@ export function ModelsPage() {
   }, [fetchModels])
 
   const handleSetDefault = async (model: ModelInfo) => {
+    if (model.is_default) return
+
     setSettingDefaultIndex(model.index)
     try {
       await setDefaultModel(model.model_name)

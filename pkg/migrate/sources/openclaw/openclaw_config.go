@@ -1115,6 +1115,7 @@ func (c ToolsConfig) ToStandardTools() config.ToolsConfig {
 		Exec: config.ExecConfig{
 			EnableDenyPatterns: c.Exec.EnableDenyPatterns,
 			CustomDenyPatterns: c.Exec.CustomDenyPatterns,
+			AllowRemote:        config.DefaultConfig().Tools.Exec.AllowRemote,
 		},
 	}
 }

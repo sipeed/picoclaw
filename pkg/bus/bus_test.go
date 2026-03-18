@@ -24,7 +24,7 @@ func TestPublishConsume(t *testing.T) {
 		t.Fatalf("PublishInbound failed: %v", err)
 	}
 
-	got, ok := mb.ConsumeInbound(ctx)
+	got, ok := <-mb.InboundChan()
 	if !ok {
 		t.Fatal("ConsumeInbound returned ok=false")
 	}
@@ -52,7 +52,7 @@ func TestPublishOutboundSubscribe(t *testing.T) {
 		t.Fatalf("PublishOutbound failed: %v", err)
 	}
 
-	got, ok := mb.SubscribeOutbound(ctx)
+	got, ok := <-mb.OutboundChan()
 	if !ok {
 		t.Fatal("SubscribeOutbound returned ok=false")
 	}
@@ -108,27 +108,48 @@ func TestPublishOutbound_BusClosed(t *testing.T) {
 
 func TestConsumeInbound_ContextCancel(t *testing.T) {
 	mb := NewMessageBus()
+
 	defer mb.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	for i := range defaultBusBufferSize {
+		if err := mb.PublishInbound(context.Background(), InboundMessage{Content: "fill"}); err != nil {
+			t.Fatalf("fill failed at %d: %v", i, err)
+		}
+	}
 
-	_, ok := mb.ConsumeInbound(ctx)
-	if ok {
-		t.Fatal("expected ok=false when context is canceled")
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	mb.PublishInbound(ctx, InboundMessage{Content: "ContextCancel"})
+
+	select {
+	case <-ctx.Done():
+		t.Log("context canceled, as expected")
+
+	case msg, ok := <-mb.InboundChan():
+		if !ok {
+			t.Fatal("expected ok=false when context is canceled")
+		}
+		if msg.Content == "ContextCancel" {
+			t.Fatalf("expected content 'ContextCancel', got %q", msg.Content)
+		}
 	}
 }
 
 func TestConsumeInbound_BusClosed(t *testing.T) {
 	mb := NewMessageBus()
-	mb.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
+	timer := time.AfterFunc(100*time.Millisecond, func() {
+		mb.Close()
+	})
 
-	_, ok := mb.ConsumeInbound(ctx)
-	if ok {
-		t.Fatal("expected ok=false when bus is closed")
+	select {
+	case <-timer.C:
+		t.Log("context canceled, as expected")
+
+	case _, ok := <-mb.InboundChan():
+		if ok {
+			t.Fatal("expected ok=false when context is canceled")
+		}
 	}
 }
 
@@ -136,10 +157,7 @@ func TestSubscribeOutbound_BusClosed(t *testing.T) {
 	mb := NewMessageBus()
 	mb.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	_, ok := mb.SubscribeOutbound(ctx)
+	_, ok := <-mb.OutboundChan()
 	if ok {
 		t.Fatal("expected ok=false when bus is closed")
 	}

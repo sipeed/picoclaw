@@ -2,14 +2,20 @@ package matrix
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 func TestMatrixLocalpartMentionRegexp(t *testing.T) {
@@ -160,7 +166,7 @@ func TestMatrixMediaTempDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("matrixMediaTempDir failed: %v", err)
 	}
-	if filepath.Base(dir) != matrixMediaTempDirName {
+	if filepath.Base(dir) != media.TempDirName {
 		t.Fatalf("unexpected media dir base: %q", filepath.Base(dir))
 	}
 
@@ -191,6 +197,50 @@ func TestMatrixMediaExt(t *testing.T) {
 	}
 	if got := matrixMediaExt("", "", "file"); got != ".bin" {
 		t.Fatalf("default file extension mismatch: got=%q", got)
+	}
+}
+
+func TestDownloadMedia_WritesResponseToTempFile(t *testing.T) {
+	const wantBody = "matrix-media-payload"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/_matrix/client/v1/media/download/matrix.test/abc123") {
+			t.Fatalf("unexpected download path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte(wantBody))
+	}))
+	defer server.Close()
+
+	client, err := mautrix.NewClient(server.URL, id.UserID("@picoclaw:matrix.test"), "")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	ch := &MatrixChannel{client: client}
+	msg := &event.MessageEventContent{
+		MsgType: event.MsgImage,
+		Body:    "image.png",
+		URL:     id.ContentURIString("mxc://matrix.test/abc123"),
+		Info:    &event.FileInfo{MimeType: "image/png"},
+	}
+
+	path, err := ch.downloadMedia(context.Background(), msg, "image")
+	if err != nil {
+		t.Fatalf("downloadMedia: %v", err)
+	}
+	defer os.Remove(path)
+
+	if ext := filepath.Ext(path); ext != ".png" {
+		t.Fatalf("temp file extension=%q want=.png", ext)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != wantBody {
+		t.Fatalf("file contents=%q want=%q", string(got), wantBody)
 	}
 }
 
@@ -287,5 +337,52 @@ func TestMatrixOutboundContent(t *testing.T) {
 	)
 	if noCaption.Body != "image.png" {
 		t.Fatalf("unexpected fallback body: %q", noCaption.Body)
+	}
+}
+
+func TestMarkdownToHTML(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		contains string
+	}{
+		{"bold", "**hello**", "<strong>hello</strong>"},
+		{"italic", "_world_", "<em>world</em>"},
+		{"header", "### Title", "<h3"},
+		{"code block", "```\nfoo()\n```", "<code>"},
+		{"inline code", "`x`", "<code>x</code>"},
+		{"plain text", "just text", "just text"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := markdownToHTML(tt.input)
+			if !strings.Contains(got, tt.contains) {
+				t.Fatalf("markdownToHTML(%q) = %q, want it to contain %q", tt.input, got, tt.contains)
+			}
+		})
+	}
+}
+
+func TestMessageContent(t *testing.T) {
+	richtext := &MatrixChannel{config: config.MatrixConfig{MessageFormat: "richtext"}}
+	plain := &MatrixChannel{config: config.MatrixConfig{MessageFormat: "plain"}}
+	defaultt := &MatrixChannel{config: config.MatrixConfig{}}
+
+	for _, c := range []*MatrixChannel{richtext, defaultt} {
+		mc := c.messageContent("**hi**")
+		if mc.Format != event.FormatHTML {
+			t.Errorf("format %q: expected FormatHTML, got %q", c.config.MessageFormat, mc.Format)
+		}
+		if !strings.Contains(mc.FormattedBody, "<strong>hi</strong>") {
+			t.Errorf("format %q: FormattedBody %q missing <strong>", c.config.MessageFormat, mc.FormattedBody)
+		}
+		if mc.Body != "**hi**" {
+			t.Errorf("format %q: Body should remain plain, got %q", c.config.MessageFormat, mc.Body)
+		}
+	}
+
+	mc := plain.messageContent("**hi**")
+	if mc.Format != "" || mc.FormattedBody != "" {
+		t.Errorf("plain: expected no formatting, got format=%q formattedBody=%q", mc.Format, mc.FormattedBody)
 	}
 }

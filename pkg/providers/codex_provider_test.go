@@ -355,7 +355,9 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
 
 	messages := []Message{{Role: "user", Content: "Hello"}}
-	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", map[string]any{"max_tokens": 1024})
+	// Pass native_search so Codex injects built-in web search (mirrors agent loop when prefer_native is true).
+	opts := map[string]any{"max_tokens": 1024, "native_search": true}
+	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", opts)
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}
@@ -568,7 +570,7 @@ func TestCodexProvider_ChatRoundTrip_ModelFallbackFromUnsupported(t *testing.T) 
 	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
 
 	messages := []Message{{Role: "user", Content: "Hello"}}
-	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-5.2", nil)
+	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-5.3-codex", nil)
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}
@@ -599,7 +601,7 @@ func TestResolveCodexModel(t *testing.T) {
 			wantFallback: true,
 		},
 		{name: "non-openai prefixed", input: "glm-4.7", wantModel: codexDefaultModel, wantFallback: true},
-		{name: "openai prefix", input: "openai/gpt-5.2", wantModel: "gpt-5.2", wantFallback: false},
+		{name: "openai prefix", input: "openai/gpt-5.3-codex", wantModel: "gpt-5.3-codex", wantFallback: false},
 		{name: "direct gpt", input: "gpt-4o", wantModel: "gpt-4o", wantFallback: false},
 	}
 

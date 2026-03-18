@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -45,13 +46,24 @@ type modelResponse struct {
 //
 //	GET /api/models
 func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
-	cfg, err := h.loadFilteredConfig()
+	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	defaultModel := cfg.Agents.Defaults.GetModelName()
+	configured := make([]bool, len(cfg.ModelList))
+
+	var wg sync.WaitGroup
+	wg.Add(len(cfg.ModelList))
+	for i, m := range cfg.ModelList {
+		go func(i int, m config.ModelConfig) {
+			defer wg.Done()
+			configured[i] = isModelConfigured(m)
+		}(i, m)
+	}
+	wg.Wait()
 
 	models := make([]modelResponse, 0, len(cfg.ModelList))
 	for i, m := range cfg.ModelList {
@@ -69,7 +81,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			MaxTokensField: m.MaxTokensField,
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,
-			Configured:     m.APIKey != "" || m.AuthMethod != "",
+			Configured:     configured[i],
 			IsDefault:      m.ModelName == defaultModel,
 		})
 	}

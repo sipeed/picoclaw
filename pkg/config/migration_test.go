@@ -31,8 +31,8 @@ func TestConvertProvidersToModelList_OpenAI(t *testing.T) {
 	if result[0].ModelName != "openai" {
 		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "openai")
 	}
-	if result[0].Model != "openai/gpt-5.2" {
-		t.Errorf("Model = %q, want %q", result[0].Model, "openai/gpt-5.2")
+	if result[0].Model != "openai/gpt-5.4" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "openai/gpt-5.4")
 	}
 	if result[0].APIKey != "sk-test-key" {
 		t.Errorf("APIKey = %q, want %q", result[0].APIKey, "sk-test-key")
@@ -162,14 +162,16 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 			Qwen:          ProviderConfig{APIKey: "key17"},
 			Mistral:       ProviderConfig{APIKey: "key18"},
 			Avian:         ProviderConfig{APIKey: "key19"},
+			LongCat:       ProviderConfig{APIKey: "key-longcat"},
+			ModelScope:    ProviderConfig{APIKey: "key-modelscope"},
 		},
 	}
 
 	result := ConvertProvidersToModelList(cfg)
 
-	// All 21 providers should be converted
-	if len(result) != 21 {
-		t.Errorf("len(result) = %d, want 21", len(result))
+	// All 23 providers should be converted
+	if len(result) != 23 {
+		t.Errorf("len(result) = %d, want 23", len(result))
 	}
 }
 
@@ -383,8 +385,8 @@ func TestConvertProvidersToModelList_MultipleProviders_PreservesUserModel(t *tes
 	for _, mc := range result {
 		switch mc.ModelName {
 		case "openai":
-			if mc.Model != "openai/gpt-5.2" {
-				t.Errorf("OpenAI Model = %q, want %q (default)", mc.Model, "openai/gpt-5.2")
+			if mc.Model != "openai/gpt-5.4" {
+				t.Errorf("OpenAI Model = %q, want %q (default)", mc.Model, "openai/gpt-5.4")
 			}
 		case "deepseek":
 			if mc.Model != "deepseek/deepseek-reasoner" {
@@ -557,9 +559,9 @@ func TestConvertProvidersToModelList_NoProviderField_NoModel(t *testing.T) {
 // Tests for buildModelWithProtocol helper function
 
 func TestBuildModelWithProtocol_NoPrefix(t *testing.T) {
-	result := buildModelWithProtocol("openai", "gpt-5.2")
-	if result != "openai/gpt-5.2" {
-		t.Errorf("buildModelWithProtocol(openai, gpt-5.2) = %q, want %q", result, "openai/gpt-5.2")
+	result := buildModelWithProtocol("openai", "gpt-5.4")
+	if result != "openai/gpt-5.4" {
+		t.Errorf("buildModelWithProtocol(openai, gpt-5.4) = %q, want %q", result, "openai/gpt-5.4")
 	}
 }
 

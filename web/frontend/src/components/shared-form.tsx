@@ -9,6 +9,9 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
+import { cn } from "@/lib/utils"
+
+type FieldLayout = "default" | "setting-row"
 
 interface FieldProps {
   label: string
@@ -16,9 +19,45 @@ interface FieldProps {
   error?: string
   required?: boolean
   children: ReactNode
+  layout?: FieldLayout
+  controlClassName?: string
 }
 
-export function Field({ label, hint, error, required, children }: FieldProps) {
+export function Field({
+  label,
+  hint,
+  error,
+  required,
+  children,
+  layout = "default",
+  controlClassName,
+}: FieldProps) {
+  if (layout === "setting-row") {
+    return (
+      <div className="flex flex-col gap-4 py-4 md:grid md:grid-cols-[minmax(0,1fr)_minmax(240px,320px)] md:items-center md:gap-6">
+        <div className="max-w-full space-y-1 md:max-w-[clamp(18rem,42vw,28rem)]">
+          <FieldLabel>
+            {label}
+            {required && <span className="text-destructive ml-1">*</span>}
+          </FieldLabel>
+          {hint && (
+            <FieldDescription className="text-xs leading-normal break-words">
+              {hint}
+            </FieldDescription>
+          )}
+        </div>
+        <div className={cn("w-full md:justify-self-center", controlClassName)}>
+          {children}
+        </div>
+        {error && (
+          <FieldDescription className="text-destructive text-xs leading-normal md:col-start-2">
+            {error}
+          </FieldDescription>
+        )}
+      </div>
+    )
+  }
+
   return (
     <UiField className="gap-2.5">
       <div className="space-y-1">
@@ -85,6 +124,7 @@ interface SwitchCardFieldProps {
   ariaLabel?: string
   disabled?: boolean
   children?: ReactNode
+  layout?: FieldLayout
 }
 
 export function SwitchCardField({
@@ -96,7 +136,37 @@ export function SwitchCardField({
   ariaLabel,
   disabled,
   children,
+  layout = "default",
 }: SwitchCardFieldProps) {
+  if (layout === "setting-row") {
+    return (
+      <div className="flex flex-col gap-4 py-4 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-6">
+        <div className="max-w-full min-w-0 md:max-w-[clamp(18rem,42vw,28rem)]">
+          <p className="text-sm font-medium">{label}</p>
+          {hint && (
+            <p className="text-muted-foreground mt-0.5 text-xs leading-normal break-words">
+              {hint}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center md:justify-self-center">
+          <Switch
+            checked={checked}
+            onCheckedChange={onCheckedChange}
+            disabled={disabled}
+            aria-label={ariaLabel ?? label}
+          />
+        </div>
+        {children && <div className="md:col-start-2">{children}</div>}
+        {error && (
+          <p className="text-destructive text-xs leading-normal md:col-start-2">
+            {error}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="border-border/60 bg-background rounded-lg border px-4 py-3">
       <div className="flex items-start justify-between gap-3">

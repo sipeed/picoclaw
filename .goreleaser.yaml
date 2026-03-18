@@ -27,6 +27,7 @@ builds:
       - windows
       - darwin
       - freebsd
+      - netbsd
     goarch:
       - amd64
       - arm64
@@ -44,6 +45,12 @@ builds:
     ignore:
       - goos: windows
         goarch: arm
+      - goos: netbsd
+        goarch: s390x
+      - goos: netbsd
+        goarch: mips64
+      - goos: netbsd
+        goarch: arm
 
   - id: picoclaw-launcher
     binary: picoclaw-launcher
@@ -58,6 +65,7 @@ builds:
       - windows
       - darwin
       - freebsd
+      - netbsd
     goarch:
       - amd64
       - arm64
@@ -75,6 +83,12 @@ builds:
     ignore:
       - goos: windows
         goarch: arm
+      - goos: netbsd
+        goarch: s390x
+      - goos: netbsd
+        goarch: mips64
+      - goos: netbsd
+        goarch: arm
 
   - id: picoclaw-launcher-tui
     binary: picoclaw-launcher-tui
@@ -89,6 +103,7 @@ builds:
       - windows
       - darwin
       - freebsd
+      - netbsd
     goarch:
       - amd64
       - arm64
@@ -106,6 +121,12 @@ builds:
     ignore:
       - goos: windows
         goarch: arm
+      - goos: netbsd
+        goarch: s390x
+      - goos: netbsd
+        goarch: mips64
+      - goos: netbsd
+        goarch: arm
 
 dockers_v2:
   - id: picoclaw
@@ -116,9 +137,9 @@ dockers_v2:
       - picoclaw
     images:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
-      - '{{ if not (isEnvSet "NIGHTLY_BUILD") }}docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}{{ end }}'
+      - 'docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}'
     tags:
-      - "{{ .Tag }}"
+      - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly{{ else }}{{ .Tag }}{{ end }}'
       - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly{{ else }}latest{{ end }}'
     platforms:
       - linux/amd64
@@ -133,9 +154,9 @@ dockers_v2:
       - picoclaw-launcher-tui
     images:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
-      - '{{ if not (isEnvSet "NIGHTLY_BUILD") }}docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}{{ end }}'
+      - 'docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}'
     tags:
-      - "{{ .Tag }}-launcher"
+      - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly-launcher{{ else }}{{ .Tag }}-launcher{{ end }}'
       - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly-launcher{{ else }}launcher{{ end }}'
     platforms:
       - linux/amd64
@@ -215,6 +236,7 @@ changelog:
 #      lzma: true
 
 release:
+  disable: '{{ isEnvSet "NIGHTLY_BUILD" }}'
   footer: >-
 
     ---
