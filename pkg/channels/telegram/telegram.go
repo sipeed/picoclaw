@@ -203,7 +203,14 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			continue
 		}
 
-		if err := c.sendChunk(ctx, chatID, threadID, content, chunk, replyToID, useMarkdownV2); err != nil {
+		if err := c.sendChunk(ctx, sendChunkParams{
+			chatID:        chatID,
+			threadID:      threadID,
+			content:       content,
+			replyToID:     replyToID,
+			mdFallback:    chunk,
+			useMarkdownV2: useMarkdownV2,
+		}); err != nil {
 			return err
 		}
 		// Only the first chunk should be a reply; subsequent chunks are normal messages.
@@ -213,25 +220,31 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	return nil
 }
 
+type sendChunkParams struct {
+	chatID        int64
+	threadID      int
+	content       string
+	replyToID     string
+	mdFallback    string
+	useMarkdownV2 bool
+}
+
 // sendChunk sends a single HTML/MarkdownV2 message, falling back to the original
 // markdown as plain text on parse failure so users never see raw HTML/MarkdownV2 tags.
 func (c *TelegramChannel) sendChunk(
 	ctx context.Context,
-	chatID int64,
-	threadID int,
-	content, replyToID, mdFallback string,
-	useMarkdownV2 bool,
+	params sendChunkParams,
 ) error {
-	tgMsg := tu.Message(tu.ID(chatID), content)
-	tgMsg.MessageThreadID = threadID
-	if useMarkdownV2 {
+	tgMsg := tu.Message(tu.ID(params.chatID), params.content)
+	tgMsg.MessageThreadID = params.threadID
+	if params.useMarkdownV2 {
 		tgMsg.WithParseMode(telego.ModeMarkdownV2)
 	} else {
 		tgMsg.WithParseMode(telego.ModeHTML)
 	}
 
-	if replyToID != "" {
-		if mid, parseErr := strconv.Atoi(replyToID); parseErr == nil {
+	if params.replyToID != "" {
+		if mid, parseErr := strconv.Atoi(params.replyToID); parseErr == nil {
 			tgMsg.ReplyParameters = &telego.ReplyParameters{
 				MessageID: mid,
 			}
@@ -239,9 +252,9 @@ func (c *TelegramChannel) sendChunk(
 	}
 
 	if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
-		logParseFailed(err, useMarkdownV2)
+		logParseFailed(err, params.useMarkdownV2)
 
-		tgMsg.Text = mdFallback
+		tgMsg.Text = params.mdFallback
 		tgMsg.ParseMode = ""
 		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
 			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
@@ -298,8 +311,12 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 		return err
 	}
 	parsedContent := parseContent(content, useMarkdownV2)
-	editMsg := tu.EditMessageText(tu.ID(cid), mid, parsedContent).
-		WithParseMode(telego.ModeMarkdownV2)
+	editMsg := tu.EditMessageText(tu.ID(cid), mid, parsedContent)
+	if useMarkdownV2 {
+		editMsg.WithParseMode(telego.ModeMarkdownV2)
+	} else {
+		editMsg.WithParseMode(telego.ModeHTML)
+	}
 	_, err = c.bot.EditMessageText(ctx, editMsg)
 	if err != nil {
 		logParseFailed(err, useMarkdownV2)
