@@ -561,17 +561,68 @@ func TestProviderChat_AcceptsNumericOptionTypes(t *testing.T) {
 }
 
 func TestNormalizeModel_UsesAPIBase(t *testing.T) {
-	if got := normalizeModel("deepseek/deepseek-chat", "https://api.deepseek.com/v1"); got != "deepseek-chat" {
-		t.Fatalf("normalizeModel(deepseek) = %q, want %q", got, "deepseek-chat")
+	tests := []struct {
+		name    string
+		model   string
+		apiBase string
+		want    string
+	}{
+		{
+			name:    "strips deepseek transport prefix",
+			model:   "deepseek/deepseek-chat",
+			apiBase: "https://api.deepseek.com/v1",
+			want:    "deepseek-chat",
+		},
+		{
+			name:    "preserves openrouter auto shorthand",
+			model:   "openrouter/auto",
+			apiBase: "https://openrouter.ai/api/v1",
+			want:    "openrouter/auto",
+		},
+		{
+			name:    "preserves openrouter free shorthand",
+			model:   "openrouter/free",
+			apiBase: "https://openrouter.ai/api/v1",
+			want:    "openrouter/free",
+		},
+		{
+			name:    "strips openrouter transport prefix for nested vendor model",
+			model:   "openrouter/openai/gpt-5.4",
+			apiBase: "https://openrouter.ai/api/v1",
+			want:    "openai/gpt-5.4",
+		},
+		{
+			name:    "strips openrouter transport prefix for any nested provider path",
+			model:   "openrouter/stepfun/step-3.5-flash:free",
+			apiBase: "https://openrouter.ai/api/v1",
+			want:    "stepfun/step-3.5-flash:free",
+		},
+		{
+			name:    "strips openrouter transport prefix for other nested vendor model",
+			model:   "openrouter/minimax/minimax-m2.5",
+			apiBase: "https://openrouter.ai/api/v1",
+			want:    "minimax/minimax-m2.5",
+		},
+		{
+			name:    "strips vivgrid transport prefix",
+			model:   "vivgrid/managed",
+			apiBase: "https://api.vivgrid.com/v1",
+			want:    "managed",
+		},
+		{
+			name:    "strips vivgrid auto alias",
+			model:   "vivgrid/auto",
+			apiBase: "https://api.vivgrid.com/v1",
+			want:    "auto",
+		},
 	}
-	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
-		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
-	}
-	if got := normalizeModel("vivgrid/managed", "https://api.vivgrid.com/v1"); got != "managed" {
-		t.Fatalf("normalizeModel(vivgrid) = %q, want %q", got, "managed")
-	}
-	if got := normalizeModel("vivgrid/auto", "https://api.vivgrid.com/v1"); got != "auto" {
-		t.Fatalf("normalizeModel(vivgrid auto) = %q, want %q", got, "auto")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeModel(tt.model, tt.apiBase); got != tt.want {
+				t.Fatalf("normalizeModel(%q, %q) = %q, want %q", tt.model, tt.apiBase, got, tt.want)
+			}
+		})
 	}
 }
 
