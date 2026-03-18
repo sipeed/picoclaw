@@ -115,8 +115,8 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-us",
-		"mistral", "avian", "minimax", "longcat", "modelscope", "novita",
+		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
+		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
@@ -167,6 +167,21 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic-messages protocol (model: %s)", cfg.Model)
+		}
+		return anthropicmessages.NewProviderWithTimeout(
+			cfg.APIKey,
+			apiBase,
+			cfg.RequestTimeout,
+		), modelID, nil
+
+	case "coding-plan-anthropic", "alibaba-coding-anthropic":
+		// Alibaba Coding Plan with Anthropic-compatible API
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase(protocol)
+		}
+		if cfg.APIKey == "" {
+			return nil, "", fmt.Errorf("api_key is required for %q protocol (model: %s)", protocol, cfg.Model)
 		}
 		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey,
