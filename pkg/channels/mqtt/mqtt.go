@@ -74,7 +74,7 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 	opts.SetAutoReconnect(true)
 	opts.SetConnectRetry(true)
 	opts.SetConnectRetryInterval(5 * time.Second)
-	opts.SetMaxReconnectInterval(5 * time.Minute)
+	opts.SetMaxReconnectInterval(1 * time.Minute)
 	opts.SetKeepAlive(60 * time.Second)
 	opts.SetPingTimeout(10 * time.Second)
 	opts.SetWriteTimeout(10 * time.Second)
@@ -141,9 +141,6 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 	c.SetRunning(true)
 	logger.InfoC("mqtt", "MQTT channel started")
 	
-	// Start periodic connection health check
-	go c.startHealthCheck()
-	
 	return nil
 }
 
@@ -164,36 +161,6 @@ func (c *MQTTChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-// startHealthCheck starts a periodic health check for the MQTT connection.
-func (c *MQTTChannel) startHealthCheck() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		case <-ticker.C:
-			if c.client != nil && c.client.IsConnected() {
-				// Connection is healthy
-				continue
-			}
-			
-			// Connection is lost, attempt to reconnect
-			logger.WarnC("mqtt", "MQTT connection lost, attempting to reconnect")
-			
-			// Try to reconnect
-			if token := c.client.Connect(); token.Wait() && token.Error() != nil {
-				logger.ErrorCF("mqtt", "Failed to reconnect to MQTT broker", map[string]any{
-					"error": token.Error(),
-				})
-				// Continue the loop to try again later
-			} else {
-				logger.InfoC("mqtt", "Successfully reconnected to MQTT broker")
-			}
-		}
-	}
-}
 
 // onMessage handles incoming MQTT messages.
 func (c *MQTTChannel) onMessage(client mqtt.Client, msg mqtt.Message) {
