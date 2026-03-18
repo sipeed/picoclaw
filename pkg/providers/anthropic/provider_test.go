@@ -77,6 +77,42 @@ func TestBuildParams_ToolCallMessage(t *testing.T) {
 	}
 }
 
+func TestBuildParams_ToolCallMessageWithEmptyName(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "What's the weather?"},
+		{
+			Role:    "assistant",
+			Content: "",
+			ToolCalls: []ToolCall{
+				{
+					ID:        "call_1",
+					Name:      "get_weather",
+					Arguments: map[string]any{"city": "SF"},
+				},
+				{
+					ID:        "call_2",
+					Name:      "",
+					Arguments: map[string]any{"invalid": true},
+				},
+			},
+		},
+	}
+	params, err := buildParams(messages, nil, "claude-sonnet-4.6", map[string]any{})
+	if err != nil {
+		t.Fatalf("buildParams() error: %v", err)
+	}
+	if len(params.Messages) != 2 {
+		t.Fatalf("len(Messages) = %d, want 2", len(params.Messages))
+	}
+
+	// Check that the assistant message only contains one tool_use block (the valid one)
+	assistantMsg := params.Messages[1]
+	contentBlocks := assistantMsg.GetContent()
+	if len(contentBlocks) != 1 {
+		t.Fatalf("len(assistant content blocks) = %d, want 1", len(contentBlocks))
+	}
+}
+
 func TestBuildParams_WithTools(t *testing.T) {
 	tools := []ToolDefinition{
 		{
