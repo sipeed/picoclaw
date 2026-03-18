@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // ====================== Config & Constants ======================
@@ -103,6 +105,19 @@ type SubTurnConfig struct {
 	// If the SubTurn runs longer than this, it will be cancelled.
 	// Default is 5 minutes (defaultSubTurnTimeout) if not specified.
 	Timeout time.Duration
+
+	// MaxContextRunes limits the context size (in runes) passed to the SubTurn.
+	// This prevents context window overflow by truncating message history before LLM calls.
+	//
+	// Values:
+	//   0  = Auto-calculate based on model's ContextWindow * 0.75 (default, recommended)
+	//   -1 = No limit (disable soft truncation, rely only on hard context errors)
+	//   >0 = Use specified rune limit
+	//
+	// The soft limit acts as a first line of defense before hitting the provider's
+	// hard context window limit. When exceeded, older messages are intelligently
+	// truncated while preserving system messages and recent context.
+	MaxContextRunes int
 
 	// Can be extended with temperature, topP, etc.
 }
@@ -377,6 +392,25 @@ func deliverSubTurnResult(parentTS *turnState, childID string, result *tools.Too
 // runTurn builds a temporary AgentInstance from SubTurnConfig and delegates to
 // the real agent loop. The child's ephemeral session is used for history so it
 // never pollutes the parent session.
+//
+// This function implements multiple layers of context protection and error recovery:
+//
+// 1. Soft Context Limit (MaxContextRunes):
+//   - Proactively truncates message history before LLM calls
+//   - Default: 75% of model's context window
+//   - Preserves system messages and recent context
+//   - First line of defense against context overflow
+//
+// 2. Hard Context Error Recovery:
+//   - Detects context_length_exceeded errors from provider
+//   - Triggers force compression and retries (up to 2 times)
+//   - Second line of defense when soft limit is insufficient
+//
+// 3. Truncation Recovery:
+//   - Detects when LLM response is truncated (finish_reason="truncated")
+//   - Injects recovery prompt asking for shorter response
+//   - Retries up to 2 times
+//   - Handles cases where max_tokens is hit
 func runTurn(ctx context.Context, al *AgentLoop, ts *turnState, cfg SubTurnConfig) (*tools.ToolResult, error) {
 	// Derive candidates from the requested model using the parent loop's provider.
 	defaultProvider := al.GetConfig().Agents.Defaults.Provider
@@ -420,17 +454,144 @@ func runTurn(ctx context.Context, al *AgentLoop, ts *turnState, cfg SubTurnConfi
 		childAgent.MaxTokens = parentAgent.MaxTokens
 	}
 
-	finalContent, err := al.runAgentLoop(ctx, childAgent, processOptions{
-		SessionKey:      ts.turnID,
-		UserMessage:     cfg.SystemPrompt,
-		DefaultResponse: "",
-		EnableSummary:   false,
-		SendResponse:    false,
-	})
-	if err != nil {
-		return nil, err
+	// Resolve MaxContextRunes configuration
+	maxContextRunes := utils.ResolveMaxContextRunes(cfg.MaxContextRunes, childAgent.ContextWindow)
+
+	logger.DebugCF("subturn", "Context limit resolved",
+		map[string]any{
+			"turn_id":           ts.turnID,
+			"context_window":    childAgent.ContextWindow,
+			"max_context_runes": maxContextRunes,
+			"configured_value":  cfg.MaxContextRunes,
+		})
+
+	// Retry loop for truncation and context errors
+	const (
+		maxTruncationRetries = 2
+		maxContextRetries    = 2
+	)
+
+	truncationRetryCount := 0
+	contextRetryCount := 0
+	currentPrompt := cfg.SystemPrompt
+
+	for {
+		// Soft context limit: check and truncate before LLM call
+		if maxContextRunes > 0 {
+			messages := childAgent.Sessions.GetHistory(ts.turnID)
+			currentRunes := utils.MeasureContextRunes(messages)
+
+			if currentRunes > maxContextRunes {
+				logger.WarnCF("subturn", "Context exceeds soft limit, truncating",
+					map[string]any{
+						"turn_id":       ts.turnID,
+						"current_runes": currentRunes,
+						"max_runes":     maxContextRunes,
+						"overflow":      currentRunes - maxContextRunes,
+					})
+
+				truncatedMessages := utils.TruncateContextSmart(messages, maxContextRunes)
+				childAgent.Sessions.SetHistory(ts.turnID, truncatedMessages)
+
+				// Log truncation result
+				newRunes := utils.MeasureContextRunes(truncatedMessages)
+				logger.InfoCF("subturn", "Context truncated successfully",
+					map[string]any{
+						"turn_id":      ts.turnID,
+						"before_runes": currentRunes,
+						"after_runes":  newRunes,
+						"saved_runes":  currentRunes - newRunes,
+					})
+			}
+		}
+
+		// Call the agent loop
+		finalContent, err := al.runAgentLoop(ctx, childAgent, processOptions{
+			SessionKey:         ts.turnID,
+			UserMessage:        currentPrompt,
+			DefaultResponse:    "",
+			EnableSummary:      false,
+			SendResponse:       false,
+			SkipAddUserMessage: contextRetryCount > 0,
+		})
+
+		// 1. Handle context length errors
+		if err != nil && isContextLengthError(err) {
+			if contextRetryCount >= maxContextRetries {
+				logger.ErrorCF("subturn", "Context limit exceeded after max retries",
+					map[string]any{
+						"turn_id":     ts.turnID,
+						"retries":     contextRetryCount,
+						"max_retries": maxContextRetries,
+					})
+				return nil, fmt.Errorf("context limit exceeded after %d retries: %w", maxContextRetries, err)
+			}
+
+			logger.WarnCF("subturn", "Context length exceeded, compressing and retrying",
+				map[string]any{
+					"turn_id": ts.turnID,
+					"retry":   contextRetryCount + 1,
+				})
+
+			// Trigger force compression
+			al.forceCompression(childAgent, ts.turnID)
+
+			contextRetryCount++
+			continue // Retry with compressed history
+		}
+
+		if err != nil {
+			return nil, err // Other errors, return immediately
+		}
+
+		// 2. Check for truncation (retrieve finishReason from turnState)
+		finishReason := ts.GetLastFinishReason()
+
+		if finishReason == "truncated" && truncationRetryCount < maxTruncationRetries {
+			logger.WarnCF("subturn", "Response truncated, injecting recovery message",
+				map[string]any{
+					"turn_id": ts.turnID,
+					"retry":   truncationRetryCount + 1,
+				})
+
+			// IMPORTANT: Do NOT manually add messages to history here.
+			// runAgentLoop has already saved both the assistant message (finalContent)
+			// and will save the next user message (currentPrompt) on the next iteration.
+			// Manually adding them would cause duplicates.
+
+			// Inject recovery prompt - it will be added by runAgentLoop on next iteration
+			recoveryPrompt := "Your previous response was truncated due to length. Please provide a shorter, complete response that finishes your thought."
+			currentPrompt = recoveryPrompt
+
+			truncationRetryCount++
+			continue // Retry with recovery prompt
+		}
+
+		// 3. Success - return result
+		return &tools.ToolResult{ForLLM: finalContent}, nil
 	}
-	return &tools.ToolResult{ForLLM: finalContent}, nil
+}
+
+// isContextLengthError checks if the error is due to context length exceeded.
+// It excludes timeout errors to avoid false positives.
+func isContextLengthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := strings.ToLower(err.Error())
+
+	// Exclude timeout errors
+	if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "deadline exceeded") {
+		return false
+	}
+
+	// Detect context error patterns
+	return strings.Contains(errMsg, "context_length_exceeded") ||
+		strings.Contains(errMsg, "maximum context length") ||
+		strings.Contains(errMsg, "context window") ||
+		strings.Contains(errMsg, "too many tokens") ||
+		strings.Contains(errMsg, "token limit") ||
+		strings.Contains(errMsg, "prompt is too long")
 }
 
 // ====================== Other Types ======================

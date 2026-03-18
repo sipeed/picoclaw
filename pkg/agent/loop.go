@@ -49,8 +49,8 @@ type AgentLoop struct {
 	cmdRegistry      *commands.Registry
 	mcp              mcpRuntime
 	steering         *steeringQueue
-	subTurnResults   sync.Map // key: sessionKey (string), value: chan *tools.ToolResult
-	activeTurnStates sync.Map // key: sessionKey (string), value: *turnState
+	subTurnResults   sync.Map     // key: sessionKey (string), value: chan *tools.ToolResult
+	activeTurnStates sync.Map     // key: sessionKey (string), value: *turnState
 	subTurnCounter   atomic.Int64 // Counter for generating unique SubTurn IDs
 	mu               sync.RWMutex
 	// Track active requests for safe provider cleanup
@@ -69,6 +69,7 @@ type processOptions struct {
 	SendResponse            bool     // Whether to send response via bus
 	NoHistory               bool     // If true, don't load session history (for heartbeat)
 	SkipInitialSteeringPoll bool     // If true, skip the steering poll at loop start (used by Continue)
+	SkipAddUserMessage      bool     // If true, skip adding UserMessage to session history
 }
 
 const (
@@ -1051,7 +1052,9 @@ func (al *AgentLoop) runAgentLoop(
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 
 	// 2. Save user message to session
-	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+	if !opts.SkipAddUserMessage && opts.UserMessage != "" {
+		agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+	}
 
 	// 3. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
@@ -1401,6 +1404,11 @@ func (al *AgentLoop) runLLMIteration(
 					"error":     err.Error(),
 				})
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
+		}
+
+		// Save finishReason to turnState for SubTurn truncation detection
+		if ts := turnStateFromContext(ctx); ts != nil {
+			ts.SetLastFinishReason(response.FinishReason)
 		}
 
 		go al.handleReasoning(

@@ -55,6 +55,11 @@ type turnState struct {
 	// This allows child SubTurns to check if the parent has ended.
 	// Nil for root turns.
 	parentTurnState *turnState
+
+	// lastFinishReason stores the finish_reason from the last LLM call.
+	// Used by SubTurn to detect truncation and retry.
+	// MUST be accessed under mu lock.
+	lastFinishReason string
 }
 
 // ====================== Public API ======================
@@ -134,6 +139,20 @@ func (ts *turnState) IsParentEnded() bool {
 		return false
 	}
 	return ts.parentTurnState.parentEnded.Load()
+}
+
+// SetLastFinishReason updates the last finish reason (thread-safe).
+func (ts *turnState) SetLastFinishReason(reason string) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.lastFinishReason = reason
+}
+
+// GetLastFinishReason retrieves the last finish reason (thread-safe).
+func (ts *turnState) GetLastFinishReason() string {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.lastFinishReason
 }
 
 // IsParentEnded is a convenience method to check if parent ended.
