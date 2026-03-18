@@ -63,6 +63,53 @@ docker compose -f docker/docker-compose.yml pull
 docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
+## 🐳 Docker Compose - Sandbox
+
+Vous pouvez exécuter PicoClaw dans un environnement Docker sandboxé pour une meilleure isolation de l'hôte. Les fichiers compose sandbox ajoutent des protections de sécurité : système de fichiers en lecture seule, suppression des capabilities, limites de ressources (2 Go RAM, 2 CPUs, 500 PIDs) et un réseau dédié.
+
+```bash
+# 1. Premier lancement — génère automatiquement docker/data/config.json puis s'arrête
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up
+# Le conteneur affiche "First-run setup complete." et s'arrête.
+
+# 2. Configurer vos clés API
+vim docker/data/config.json   # Set provider API keys, bot tokens, etc.
+
+# 3. Démarrer
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up -d
+```
+
+```bash
+# 4. Vérifier les logs
+docker compose -f docker/docker-compose-sandbox.yml logs -f picoclaw-gateway
+
+# 5. Arrêter
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway down
+```
+
+### Mode Launcher (Console Web)
+
+```bash
+docker compose -f docker/docker-compose-sandbox.yml --profile launcher up -d
+```
+
+### Mode Agent (One-shot)
+
+```bash
+# Poser une question
+docker compose -f docker/docker-compose-sandbox.yml run --rm picoclaw-agent -m "What is 2+2?"
+
+# Mode interactif
+docker compose -f docker/docker-compose-sandbox.yml run --rm picoclaw-agent
+```
+
+### Mise à jour
+
+```bash
+docker compose -f docker/docker-compose-sandbox.yml pull
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up -d
+```
+
 ### 🚀 Démarrage Rapide
 
 > [!TIP]

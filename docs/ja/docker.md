@@ -63,6 +63,53 @@ docker compose -f docker/docker-compose.yml pull
 docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
+## 🐳 Docker Compose - Sandbox
+
+ホストとの分離を強化するため、サンドボックス化された Docker 環境で PicoClaw を実行できます。サンドボックス compose ファイルは、読み取り専用ファイルシステム、capability の削除、リソース制限（2 GB RAM、2 CPU、500 PID）、専用ネットワークなどのセキュリティ強化を追加します。
+
+```bash
+# 1. 初回実行 — docker/data/config.json を自動生成して終了
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up
+# コンテナが "First-run setup complete." と表示して停止します
+
+# 2. API Key を設定
+vim docker/data/config.json   # provider API key、Bot Token などを設定
+
+# 3. 起動
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up -d
+```
+
+```bash
+# 4. ログを確認
+docker compose -f docker/docker-compose-sandbox.yml logs -f picoclaw-gateway
+
+# 5. 停止
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway down
+```
+
+### Launcher モード (Web コンソール)
+
+```bash
+docker compose -f docker/docker-compose-sandbox.yml --profile launcher up -d
+```
+
+### Agent モード (ワンショット)
+
+```bash
+# 質問する
+docker compose -f docker/docker-compose-sandbox.yml run --rm picoclaw-agent -m "2+2は？"
+
+# インタラクティブモード
+docker compose -f docker/docker-compose-sandbox.yml run --rm picoclaw-agent
+```
+
+### イメージの更新
+
+```bash
+docker compose -f docker/docker-compose-sandbox.yml pull
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up -d
+```
+
 ---
 
 ## 🚀 クイックスタート
