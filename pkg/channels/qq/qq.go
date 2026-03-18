@@ -51,7 +51,7 @@ type qqAPI interface {
 	PostC2CMessage(
 		ctx context.Context, userID string, msg dto.APIMessage, opt ...options.Option,
 	) (*dto.Message, error)
-	Transport(ctx context.Context, method, url string, body interface{}) ([]byte, error)
+	Transport(ctx context.Context, method, url string, body any) ([]byte, error)
 }
 
 type QQChannel struct {
@@ -413,9 +413,9 @@ func (c *QQChannel) buildMediaUpload(part bus.MediaPart) (*qqMediaUpload, error)
 	}
 
 	if limitBytes := c.maxBase64FileSizeBytes(); limitBytes > 0 {
-		info, err := os.Stat(resolved)
-		if err != nil {
-			return nil, fmt.Errorf("qq stat local media %q: %v: %w", resolved, err, channels.ErrSendFailed)
+		info, statErr := os.Stat(resolved)
+		if statErr != nil {
+			return nil, fmt.Errorf("qq stat local media %q: %v: %w", resolved, statErr, channels.ErrSendFailed)
 		}
 		if info.Size() > limitBytes {
 			return nil, fmt.Errorf(

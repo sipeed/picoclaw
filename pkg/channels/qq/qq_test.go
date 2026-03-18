@@ -179,8 +179,8 @@ func TestSendMedia_UploadsLocalFileAsBase64(t *testing.T) {
 	defer tmpFile.Close()
 
 	content := []byte("local-image-data")
-	if _, err := tmpFile.Write(content); err != nil {
-		t.Fatalf("Write() error = %v", err)
+	if _, writeErr := tmpFile.Write(content); writeErr != nil {
+		t.Fatalf("Write() error = %v", writeErr)
 	}
 
 	ref, err := store.Store(tmpFile.Name(), media.MediaMeta{
@@ -357,8 +357,8 @@ func TestSendMedia_ReturnsSendFailedWhenLocalFileExceedsBase64MiBLimit(t *testin
 	defer tmpFile.Close()
 
 	content := make([]byte, bytesPerMiB+1)
-	if _, err := tmpFile.Write(content); err != nil {
-		t.Fatalf("Write() error = %v", err)
+	if _, writeErr := tmpFile.Write(content); writeErr != nil {
+		t.Fatalf("Write() error = %v", writeErr)
 	}
 
 	ref, err := store.Store(tmpFile.Name(), media.MediaMeta{
@@ -443,7 +443,7 @@ func (f *fakeQQAPI) PostC2CMessage(
 	return &dto.Message{}, f.c2cErr
 }
 
-func (f *fakeQQAPI) Transport(_ context.Context, method, url string, body interface{}) ([]byte, error) {
+func (f *fakeQQAPI) Transport(_ context.Context, method, url string, body any) ([]byte, error) {
 	upload, ok := body.(*qqMediaUpload)
 	if !ok {
 		return nil, errors.New("unexpected transport body type")

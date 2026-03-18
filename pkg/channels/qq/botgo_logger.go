@@ -17,7 +17,7 @@ func newBotGoLogger(component string) *botGoLogger {
 	return &botGoLogger{Logger: logger.NewLogger(component)}
 }
 
-func (b *botGoLogger) Info(v ...interface{}) {
+func (b *botGoLogger) Info(v ...any) {
 	message := fmt.Sprint(v...)
 	if shouldDemoteBotGoInfo(message) {
 		b.Logger.Debug(message)
@@ -26,7 +26,7 @@ func (b *botGoLogger) Info(v ...interface{}) {
 	b.Logger.Info(message)
 }
 
-func (b *botGoLogger) Infof(format string, v ...interface{}) {
+func (b *botGoLogger) Infof(format string, v ...any) {
 	message := fmt.Sprintf(format, v...)
 	if shouldDemoteBotGoInfo(message) {
 		b.Logger.Debug(message)
