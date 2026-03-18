@@ -198,14 +198,20 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 	}
 
 	// Try to create and deliver card (optional feature)
-	// If it fails, log the error but continue with normal message handling
-	if cardID, err := c.tryCardCreateAndDeliver(ctx, data); err != nil {
-		logger.WarnC("dingtalk", "Failed to create or deliver card, falling back to direct reply")
-		// Store the session webhook for this chat so we can reply later
-		c.sessionWebhooks.Store(chatID, data.SessionWebhook)
+	// Only attempt this if a card template is configured; otherwise, fall back silently
+	if c.config.CardTemplateID != "" {
+		// If it fails, log the error but continue with normal message handling
+		if cardID, err := c.tryCardCreateAndDeliver(ctx, data); err != nil {
+			logger.WarnC("dingtalk", "Failed to create or deliver card, falling back to direct reply")
+			// Store the session webhook for this chat so we can reply later
+			c.sessionWebhooks.Store(chatID, data.SessionWebhook)
+		} else {
+			chatID = data.MsgId
+			c.cardInstanceIDs.Store(chatID, cardID)
+		}
 	} else {
-		chatID = data.MsgId
-		c.cardInstanceIDs.Store(chatID, cardID)
+		// Card feature not configured; just store the session webhook for direct replies
+		c.sessionWebhooks.Store(chatID, data.SessionWebhook)
 	}
 
 	// Handle the message through the base channel
