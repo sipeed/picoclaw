@@ -693,10 +693,17 @@ type WebToolsConfig struct {
 	Perplexity PerplexityConfig `                                json:"perplexity"`
 	SearXNG    SearXNGConfig    `                                json:"searxng"`
 	GLMSearch  GLMSearchConfig  `                                json:"glm_search"`
+	// PreferNative controls whether to use provider-native web search when
+	// the active LLM supports it (e.g. OpenAI web_search_preview). When true,
+	// the client-side web_search tool is hidden to avoid duplicate search surfaces,
+	// and the provider's built-in search is used instead. Falls back to client-side
+	// search when the provider does not support native search.
+	PreferNative bool `json:"prefer_native" env:"PICOCLAW_TOOLS_WEB_PREFER_NATIVE"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
 	Proxy                string              `json:"proxy,omitempty"                  env:"PICOCLAW_TOOLS_WEB_PROXY"`
 	FetchLimitBytes      int64               `json:"fetch_limit_bytes,omitempty"      env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
+	Format               string              `json:"format,omitempty"                 env:"PICOCLAW_TOOLS_WEB_FORMAT"`
 	PrivateHostWhitelist FlexibleStringSlice `json:"private_host_whitelist,omitempty" env:"PICOCLAW_TOOLS_WEB_PRIVATE_HOST_WHITELIST"`
 }
 
@@ -1030,7 +1037,7 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 	}
 
 	// Multiple configs - use round-robin for load balancing
-	idx := rrCounter.Add(1) % uint64(len(matches))
+	idx := (rrCounter.Add(1) - 1) % uint64(len(matches))
 	return &matches[idx], nil
 }
 

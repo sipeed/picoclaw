@@ -30,6 +30,15 @@ PicoClaw's tools configuration is located in the `tools` field of `config.json`.
 
 Web tools are used for web search and fetching.
 
+### Web Fetcher
+General settings for fetching and processing webpage content.
+
+| Config              | Type   | Default       | Description                                                                                   |
+|---------------------|--------|---------------|-----------------------------------------------------------------------------------------------|
+| `enabled`           | bool   | true          | Enable the webpage fetching capability.                                                       |
+| `fetch_limit_bytes` | int    | 10485760      | Maximum size of the webpage payload to fetch, in bytes (default is 10MB).                     |
+| `format`            | string | "plaintext"   | Output format of the fetched content. Options: `plaintext` or `markdown` (recommended).       |
+
 ### Brave
 
 | Config        | Type   | Default | Description               |

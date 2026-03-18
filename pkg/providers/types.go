@@ -44,6 +44,15 @@ type ThinkingCapable interface {
 	SupportsThinking() bool
 }
 
+// NativeSearchCapable is an optional interface for providers that support
+// built-in web search during LLM inference (e.g. OpenAI web_search_preview,
+// xAI Grok search). When the active provider implements this interface and
+// returns true, the agent loop can hide the client-side web_search tool to
+// avoid duplicate search surfaces and use the provider's native search instead.
+type NativeSearchCapable interface {
+	SupportsNativeSearch() bool
+}
+
 // FailoverReason classifies why an LLM request failed for fallback decisions.
 type FailoverReason string
 

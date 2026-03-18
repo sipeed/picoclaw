@@ -104,8 +104,13 @@ func (p *Provider) Chat(
 		"messages": common.SerializeMessages(messages),
 	}
 
-	if len(tools) > 0 {
-		requestBody["tools"] = p.finalizeTools(tools, options)
+	// When fallback uses a different provider (e.g. DeepSeek), that provider must not inject web_search_preview.
+	nativeSearch, _ := options["native_search"].(bool)
+	nativeSearch = nativeSearch && isNativeSearchHost(p.apiBase)
+	if len(tools) > 0 || nativeSearch {
+		// Build tool list with native search handling, then apply strict mode sanitization
+		toolsList := buildToolsList(tools, nativeSearch)
+		requestBody["tools"] = p.finalizeTools(toolsList, options)
 		requestBody["tool_choice"] = "auto"
 	}
 
@@ -196,6 +201,33 @@ func normalizeModel(model, apiBase string) string {
 	}
 }
 
+func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {
+	result := make([]any, 0, len(tools)+1)
+	for _, t := range tools {
+		if nativeSearch && strings.EqualFold(t.Function.Name, "web_search") {
+			continue
+		}
+		result = append(result, t)
+	}
+	if nativeSearch {
+		result = append(result, map[string]any{"type": "web_search_preview"})
+	}
+	return result
+}
+
+func (p *Provider) SupportsNativeSearch() bool {
+	return isNativeSearchHost(p.apiBase)
+}
+
+func isNativeSearchHost(apiBase string) bool {
+	u, err := url.Parse(apiBase)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+}
+
 // supportsPromptCacheKey reports whether the given API base is known to
 // support the prompt_cache_key request field. Currently only OpenAI's own
 // API and Azure OpenAI support this. All other OpenAI-compatible providers
@@ -217,54 +249,54 @@ func supportsStrictMode(apiBase string) bool {
 	return supportsPromptCacheKey(apiBase)
 }
 
-// finalizeTools handles OpenAI Strict Mode compatibility (Structured Outputs).
-// For native OpenAI, it passes tools through as-is for maximum performance.
-// For non-native providers, it strips the 'strict' flag to prevent 400 errors.
-func (p *Provider) finalizeTools(tools []ToolDefinition, options map[string]any) any {
-	// 1. Check if user explicitly wants to force strict mode on/off
+// finalizeTools handles OpenAI Strict Mode compatibility.
+// Strips 'strict' flag for non-OpenAI providers to prevent 400 errors.
+func (p *Provider) finalizeTools(tools []any, options map[string]any) any {
 	forceStrict, hasForce := options["strict_mode"].(bool)
-
-	// 2. Determine if we can use the tools as-is
 	isNative := supportsStrictMode(p.apiBase)
 
-	// Performance & Safety Path:
-	// If it's a native provider and the user didn't force a specific mode,
-	// pass through the original tools immediately. This preserves the
-	// original schema behavior (e.g., allowing non-strict schemas).
+	// Native providers: pass through unless user forces a mode
 	if isNative && !hasForce {
 		return tools
 	}
 
-	// 3. Sanitization / Explicit Force Path / Edge Case Handling
 	// Decide whether to use strict mode
 	useStrict := isNative
 	if hasForce {
 		if forceStrict && !isNative {
-			// Non-native providers don't support strict mode, ignore user setting
-			slog.Warn(
-				"openai_compat: strict_mode=true ignored for non-OpenAI provider (unsupported field)",
-				"api_base",
-				p.apiBase,
-			)
+			slog.Warn("openai_compat: strict_mode=true ignored for non-OpenAI provider", "api_base", p.apiBase)
 			useStrict = false
 		} else {
 			useStrict = forceStrict
 		}
 	}
 
-	// Build compatible map based on 'useStrict' decision
+	// Build tool list with appropriate strict mode setting
 	out := make([]any, 0, len(tools))
 	for _, t := range tools {
-		toolMap := map[string]any{
-			"type": t.Type,
-			"function": map[string]any{
-				"name":        t.Function.Name,
-				"description": t.Function.Description,
-				"parameters":  t.Function.Parameters,
-			},
+		var toolMap map[string]any
+		switch v := t.(type) {
+		case ToolDefinition:
+			toolMap = map[string]any{
+				"type": v.Type,
+				"function": map[string]any{
+					"name":        v.Function.Name,
+					"description": v.Function.Description,
+					"parameters":  v.Function.Parameters,
+				},
+			}
+		case map[string]any:
+			toolMap = v
+		default:
+			out = append(out, t)
+			continue
 		}
-		if useStrict {
-			toolMap["function"].(map[string]any)["strict"] = true
+
+		// Add strict flag only to function tools
+		if useStrict && toolMap["type"] == "function" {
+			if fn, ok := toolMap["function"].(map[string]any); ok {
+				fn["strict"] = true
+			}
 		}
 		out = append(out, toolMap)
 	}

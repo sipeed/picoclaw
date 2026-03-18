@@ -15,7 +15,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-const testFetchLimit = int64(10 * 1024 * 1024)
+const (
+	testFetchLimit = int64(10 * 1024 * 1024)
+	format         = "plaintext"
+)
 
 // TestWebTool_WebFetch_Success verifies successful URL fetching
 func TestWebTool_WebFetch_Success(t *testing.T) {
@@ -28,7 +31,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -70,7 +73,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -95,7 +98,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 
 // TestWebTool_WebFetch_InvalidURL verifies error handling for invalid URL
 func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -120,7 +123,7 @@ func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
 
 // TestWebTool_WebFetch_UnsupportedScheme verifies error handling for non-http URLs
 func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -145,7 +148,7 @@ func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingURL verifies error handling for missing URL
 func TestWebTool_WebFetch_MissingURL(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -179,7 +182,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool, err := NewWebFetchTool(1000, testFetchLimit) // Limit to 1000 chars
+	tool, err := NewWebFetchTool(1000, format, testFetchLimit) // Limit to 1000 chars
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -229,7 +232,7 @@ func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
 	defer ts.Close()
 
 	// Initialize the tool
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -312,7 +315,7 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -448,7 +451,7 @@ func singleHostCIDR(t *testing.T, host string) string {
 }
 
 func TestWebTool_WebFetch_PrivateHostBlocked(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -474,7 +477,7 @@ func TestWebTool_WebFetch_PrivateHostAllowedByExactWhitelist(t *testing.T) {
 	defer server.Close()
 
 	host, _ := serverHostAndPort(t, server.URL)
-	tool, err := NewWebFetchToolWithConfig(50000, "", testFetchLimit, []string{host})
+	tool, err := NewWebFetchToolWithConfig(50000, "", format, testFetchLimit, []string{host})
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -499,7 +502,7 @@ func TestWebTool_WebFetch_PrivateHostAllowedByCIDRWhitelist(t *testing.T) {
 	defer server.Close()
 
 	host, _ := serverHostAndPort(t, server.URL)
-	tool, err := NewWebFetchToolWithConfig(50000, "", testFetchLimit, []string{singleHostCIDR(t, host)})
+	tool, err := NewWebFetchToolWithConfig(50000, "", format, testFetchLimit, []string{singleHostCIDR(t, host)})
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -525,7 +528,7 @@ func TestWebTool_WebFetch_PrivateHostAllowedForTests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -540,7 +543,7 @@ func TestWebTool_WebFetch_PrivateHostAllowedForTests(t *testing.T) {
 
 // TestWebFetch_BlocksIPv4MappedIPv6Loopback verifies ::ffff:127.0.0.1 is blocked
 func TestWebFetch_BlocksIPv4MappedIPv6Loopback(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -555,7 +558,7 @@ func TestWebFetch_BlocksIPv4MappedIPv6Loopback(t *testing.T) {
 
 // TestWebFetch_BlocksMetadataIP verifies 169.254.169.254 is blocked
 func TestWebFetch_BlocksMetadataIP(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -570,7 +573,7 @@ func TestWebFetch_BlocksMetadataIP(t *testing.T) {
 
 // TestWebFetch_BlocksIPv6UniqueLocal verifies fc00::/7 addresses are blocked
 func TestWebFetch_BlocksIPv6UniqueLocal(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -585,7 +588,7 @@ func TestWebFetch_BlocksIPv6UniqueLocal(t *testing.T) {
 
 // TestWebFetch_Blocks6to4WithPrivateEmbed verifies 6to4 with private embedded IPv4 is blocked
 func TestWebFetch_Blocks6to4WithPrivateEmbed(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -601,7 +604,7 @@ func TestWebFetch_Blocks6to4WithPrivateEmbed(t *testing.T) {
 
 // TestWebFetch_Allows6to4WithPublicEmbed verifies 6to4 with public embedded IPv4 is NOT blocked
 func TestWebFetch_Allows6to4WithPublicEmbed(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -631,7 +634,7 @@ func TestWebFetch_RedirectToPrivateBlocked(t *testing.T) {
 	allowPrivateWebFetchHosts.Store(false)
 	defer allowPrivateWebFetchHosts.Store(true)
 
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -752,7 +755,7 @@ func TestIsPrivateOrRestrictedIP_Table(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingDomain verifies error handling for URL without domain
 func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -776,7 +779,7 @@ func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 }
 
 func TestNewWebFetchToolWithProxy(t *testing.T) {
-	tool, err := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890", testFetchLimit)
+	tool, err := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890", format, testFetchLimit, nil)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	} else if tool.maxChars != 1024 {
@@ -787,7 +790,7 @@ func TestNewWebFetchToolWithProxy(t *testing.T) {
 		t.Fatalf("proxy = %q, want %q", tool.proxy, "http://127.0.0.1:7890")
 	}
 
-	tool, err = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890", testFetchLimit)
+	tool, err = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890", format, testFetchLimit, nil)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -798,7 +801,7 @@ func TestNewWebFetchToolWithProxy(t *testing.T) {
 }
 
 func TestNewWebFetchToolWithConfig_InvalidPrivateHostWhitelist(t *testing.T) {
-	_, err := NewWebFetchToolWithConfig(1024, "", testFetchLimit, []string{"not-an-ip-or-cidr"})
+	_, err := NewWebFetchToolWithConfig(1024, "", format, testFetchLimit, []string{"not-an-ip-or-cidr"})
 	if err == nil {
 		t.Fatal("expected invalid whitelist entry to fail")
 	}

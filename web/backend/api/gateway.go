@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/health"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/web/backend/utils"
 )
 
@@ -27,6 +27,7 @@ import (
 var gateway = struct {
 	mu               sync.Mutex
 	cmd              *exec.Cmd
+	owned            bool // true if we started the process, false if we attached to an existing one
 	bootDefaultModel string
 	runtimeStatus    string
 	startupDeadline  time.Time
@@ -101,16 +102,16 @@ func (h *Handler) TryAutoStartGateway() {
 			defer gateway.mu.Unlock()
 			ready, reason, err := h.gatewayStartReady()
 			if err != nil {
-				log.Printf("Skip auto-starting gateway: %v", err)
+				logger.ErrorC("gateway", fmt.Sprintf("Skip auto-starting gateway: %v", err))
 				return
 			}
 			if !ready {
-				log.Printf("Skip auto-starting gateway: %s", reason)
+				logger.InfoC("gateway", fmt.Sprintf("Skip auto-starting gateway: %s", reason))
 				return
 			}
 			_, err = h.startGatewayLocked("starting", pid)
 			if err != nil {
-				log.Printf("Failed to attach to running gateway (PID: %d): %v", pid, err)
+				logger.ErrorC("gateway", fmt.Sprintf("Failed to attach to running gateway (PID: %d): %v", pid, err))
 			}
 			return
 		}
@@ -125,20 +126,20 @@ func (h *Handler) TryAutoStartGateway() {
 
 	ready, reason, err := h.gatewayStartReady()
 	if err != nil {
-		log.Printf("Skip auto-starting gateway: %v", err)
+		logger.ErrorC("gateway", fmt.Sprintf("Skip auto-starting gateway: %v", err))
 		return
 	}
 	if !ready {
-		log.Printf("Skip auto-starting gateway: %s", reason)
+		logger.InfoC("gateway", fmt.Sprintf("Skip auto-starting gateway: %s", reason))
 		return
 	}
 
 	pid, err := h.startGatewayLocked("starting", 0)
 	if err != nil {
-		log.Printf("Failed to auto-start gateway: %v", err)
+		logger.ErrorC("gateway", fmt.Sprintf("Failed to auto-start gateway: %v", err))
 		return
 	}
-	log.Printf("Gateway auto-started (PID: %d)", pid)
+	logger.InfoC("gateway", fmt.Sprintf("Gateway auto-started (PID: %d)", pid))
 }
 
 // gatewayStartReady validates whether current config can start the gateway.
@@ -224,6 +225,7 @@ func attachToGatewayProcessLocked(pid int, cfg *config.Config) error {
 	}
 
 	gateway.cmd = &exec.Cmd{Process: process}
+	gateway.owned = false // We didn't start this process
 	setGatewayRuntimeStatusLocked("running")
 
 	// Update bootDefaultModel from config
@@ -232,7 +234,7 @@ func attachToGatewayProcessLocked(pid int, cfg *config.Config) error {
 		gateway.bootDefaultModel = defaultModelName
 	}
 
-	log.Printf("Attached to gateway process (PID: %d)", pid)
+	logger.InfoC("gateway", fmt.Sprintf("Attached to gateway process (PID: %d)", pid))
 	return nil
 }
 
@@ -267,6 +269,59 @@ func waitForGatewayProcessExit(cmd *exec.Cmd, timeout time.Duration) bool {
 		}
 		time.Sleep(gatewayRestartPollInterval)
 	}
+}
+
+// StopGateway stops the gateway process if it was started by this handler.
+// This method is called during application shutdown to ensure the gateway subprocess
+// is properly terminated. It only stops processes that were started by this handler,
+// not processes that were attached to from existing instances.
+func (h *Handler) StopGateway() {
+	gateway.mu.Lock()
+	defer gateway.mu.Unlock()
+
+	// Only stop if we own the process (started it ourselves)
+	if !gateway.owned || gateway.cmd == nil || gateway.cmd.Process == nil {
+		return
+	}
+
+	pid, err := stopGatewayLocked()
+	if err != nil {
+		logger.ErrorC("gateway", fmt.Sprintf("Failed to stop gateway (PID %d): %v", pid, err))
+		return
+	}
+
+	logger.InfoC("gateway", fmt.Sprintf("Gateway stopped (PID: %d)", pid))
+}
+
+// stopGatewayLocked sends a stop signal to the gateway process.
+// Assumes gateway.mu is held by the caller.
+// Returns the PID of the stopped process and any error encountered.
+func stopGatewayLocked() (int, error) {
+	if gateway.cmd == nil || gateway.cmd.Process == nil {
+		return 0, nil
+	}
+
+	pid := gateway.cmd.Process.Pid
+
+	// Send SIGTERM for graceful shutdown (SIGKILL on Windows)
+	var sigErr error
+	if runtime.GOOS == "windows" {
+		sigErr = gateway.cmd.Process.Kill()
+	} else {
+		sigErr = gateway.cmd.Process.Signal(syscall.SIGTERM)
+	}
+
+	if sigErr != nil {
+		return pid, sigErr
+	}
+
+	logger.InfoC("gateway", fmt.Sprintf("Sent stop signal to gateway (PID: %d)", pid))
+	gateway.cmd = nil
+	gateway.owned = false
+	gateway.bootDefaultModel = ""
+	setGatewayRuntimeStatusLocked("stopped")
+
+	return pid, nil
 }
 
 func stopGatewayProcessForRestart(cmd *exec.Cmd) error {
@@ -353,7 +408,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 
 	// Ensure Pico Channel is configured before starting gateway
 	if _, err := h.ensurePicoChannel(""); err != nil {
-		log.Printf("Warning: failed to ensure pico channel: %v", err)
+		logger.ErrorC("gateway", fmt.Sprintf("Warning: failed to ensure pico channel: %v", err))
 		// Non-fatal: gateway can still start without pico channel
 	}
 
@@ -362,10 +417,11 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	}
 
 	gateway.cmd = cmd
+	gateway.owned = true // We started this process
 	gateway.bootDefaultModel = defaultModelName
 	setGatewayRuntimeStatusLocked(initialStatus)
 	pid = cmd.Process.Pid
-	log.Printf("Started picoclaw gateway (PID: %d) from %s", pid, execPath)
+	logger.InfoC("gateway", fmt.Sprintf("Started picoclaw gateway (PID: %d) from %s", pid, execPath))
 
 	// Capture stdout/stderr in background
 	go scanPipe(stdoutPipe, gateway.logs)
@@ -374,9 +430,9 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	// Wait for exit in background and clean up
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			log.Printf("Gateway process exited: %v", err)
+			logger.ErrorC("gateway", fmt.Sprintf("Gateway process exited: %v", err))
 		} else {
-			log.Printf("Gateway process exited normally")
+			logger.InfoC("gateway", "Gateway process exited normally")
 		}
 
 		gateway.mu.Lock()
@@ -455,7 +511,7 @@ func (h *Handler) handleGatewayStart(w http.ResponseWriter, r *http.Request) {
 			_, err = h.startGatewayLocked("starting", pid)
 			gateway.mu.Unlock()
 			if err != nil {
-				log.Printf("Failed to attach to running gateway (PID: %d): %v", pid, err)
+				logger.ErrorC("gateway", fmt.Sprintf("Failed to attach to running gateway (PID: %d): %v", pid, err))
 				http.Error(w, fmt.Sprintf("Failed to attach to gateway: %v", err), http.StatusInternalServerError)
 				return
 			}
@@ -524,22 +580,11 @@ func (h *Handler) handleGatewayStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pid := gateway.cmd.Process.Pid
-
-	// Send SIGTERM for graceful shutdown (SIGKILL on Windows)
-	var sigErr error
-	if runtime.GOOS == "windows" {
-		sigErr = gateway.cmd.Process.Kill()
-	} else {
-		sigErr = gateway.cmd.Process.Signal(syscall.SIGTERM)
-	}
-
-	if sigErr != nil {
-		http.Error(w, fmt.Sprintf("Failed to stop gateway (PID %d): %v", pid, sigErr), http.StatusInternalServerError)
+	pid, err := stopGatewayLocked()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to stop gateway (PID %d): %v", pid, err), http.StatusInternalServerError)
 		return
 	}
-
-	log.Printf("Sent stop signal to gateway (PID: %d)", pid)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
@@ -681,9 +726,9 @@ func (h *Handler) gatewayStatusData() map[string]any {
 		gateway.mu.Lock()
 		data["gateway_status"] = gatewayStatusWithoutHealthLocked()
 		gateway.mu.Unlock()
-		log.Printf("Gateway health check failed: %v", err)
+		logger.ErrorC("gateway", fmt.Sprintf("Gateway health check failed: %v", err))
 	} else {
-		log.Printf("Gateway health status: %d", statusCode)
+		logger.InfoC("gateway", fmt.Sprintf("Gateway health status: %d", statusCode))
 		if statusCode != http.StatusOK {
 			gateway.mu.Lock()
 			setGatewayRuntimeStatusLocked("error")
@@ -698,17 +743,32 @@ func (h *Handler) gatewayStatusData() map[string]any {
 				if gateway.cmd != nil && gateway.cmd.Process != nil {
 					oldPid = fmt.Sprintf("%d", gateway.cmd.Process.Pid)
 				}
-				log.Printf(
-					"Detected gateway PID from health (old: %s, new: %d), attempting to attach",
-					oldPid,
-					healthResp.Pid,
-				)
-				if err := attachToGatewayProcessLocked(healthResp.Pid, cfg); err != nil {
-					log.Printf(
-						"Failed to attach to gateway process reported by health (PID: %d): %v",
+				logger.InfoC(
+					"gateway",
+					fmt.Sprintf(
+						"Detected new gateway PID (old: %s, new: %d), attempting to attach",
+						oldPid,
 						healthResp.Pid,
-						err,
+					),
+				)
+
+				if err := attachToGatewayProcessLocked(healthResp.Pid, cfg); err != nil {
+					// Failed to find the process, treat as error
+					setGatewayRuntimeStatusLocked("error")
+					data["gateway_status"] = "error"
+					data["pid"] = healthResp.Pid
+					logger.ErrorC(
+						"gateway",
+						fmt.Sprintf("Failed to attach to new gateway process (PID: %d): %v", healthResp.Pid, err),
 					)
+				} else {
+					// Successfully attached, update response data
+					bootDefaultModel := gateway.bootDefaultModel
+					if bootDefaultModel != "" {
+						data["boot_default_model"] = bootDefaultModel
+					}
+					data["gateway_status"] = "running"
+					data["pid"] = healthResp.Pid
 				}
 			}
 

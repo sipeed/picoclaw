@@ -71,4 +71,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerLauncherConfigRoutes(mux)
 }
 
-func (h *Handler) Shutdown() {}
+// Shutdown gracefully shuts down the handler, stopping the gateway if it was started by this handler.
+func (h *Handler) Shutdown() {
+	h.StopGateway()
+}

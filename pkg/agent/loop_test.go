@@ -1426,3 +1426,84 @@ func TestResolveMediaRefs_MixedImageAndFile(t *testing.T) {
 		t.Fatalf("expected content %q, got %q", expectedContent, result[0].Content)
 	}
 }
+
+// --- Native search helper tests ---
+
+type nativeSearchProvider struct {
+	supported bool
+}
+
+func (p *nativeSearchProvider) Chat(
+	ctx context.Context, msgs []providers.Message, tools []providers.ToolDefinition,
+	model string, opts map[string]any,
+) (*providers.LLMResponse, error) {
+	return &providers.LLMResponse{Content: "ok"}, nil
+}
+
+func (p *nativeSearchProvider) GetDefaultModel() string { return "test-model" }
+
+func (p *nativeSearchProvider) SupportsNativeSearch() bool { return p.supported }
+
+type plainProvider struct{}
+
+func (p *plainProvider) Chat(
+	ctx context.Context, msgs []providers.Message, tools []providers.ToolDefinition,
+	model string, opts map[string]any,
+) (*providers.LLMResponse, error) {
+	return &providers.LLMResponse{Content: "ok"}, nil
+}
+
+func (p *plainProvider) GetDefaultModel() string { return "test-model" }
+
+func TestIsNativeSearchProvider_Supported(t *testing.T) {
+	if !isNativeSearchProvider(&nativeSearchProvider{supported: true}) {
+		t.Fatal("expected true for provider that supports native search")
+	}
+}
+
+func TestIsNativeSearchProvider_NotSupported(t *testing.T) {
+	if isNativeSearchProvider(&nativeSearchProvider{supported: false}) {
+		t.Fatal("expected false for provider that does not support native search")
+	}
+}
+
+func TestIsNativeSearchProvider_NoInterface(t *testing.T) {
+	if isNativeSearchProvider(&plainProvider{}) {
+		t.Fatal("expected false for provider that does not implement NativeSearchCapable")
+	}
+}
+
+func TestFilterClientWebSearch_RemovesWebSearch(t *testing.T) {
+	defs := []providers.ToolDefinition{
+		{Type: "function", Function: providers.ToolFunctionDefinition{Name: "web_search"}},
+		{Type: "function", Function: providers.ToolFunctionDefinition{Name: "read_file"}},
+		{Type: "function", Function: providers.ToolFunctionDefinition{Name: "exec"}},
+	}
+	result := filterClientWebSearch(defs)
+	if len(result) != 2 {
+		t.Fatalf("len(result) = %d, want 2", len(result))
+	}
+	for _, td := range result {
+		if td.Function.Name == "web_search" {
+			t.Fatal("web_search should be filtered out")
+		}
+	}
+}
+
+func TestFilterClientWebSearch_NoWebSearch(t *testing.T) {
+	defs := []providers.ToolDefinition{
+		{Type: "function", Function: providers.ToolFunctionDefinition{Name: "read_file"}},
+		{Type: "function", Function: providers.ToolFunctionDefinition{Name: "exec"}},
+	}
+	result := filterClientWebSearch(defs)
+	if len(result) != 2 {
+		t.Fatalf("len(result) = %d, want 2", len(result))
+	}
+}
+
+func TestFilterClientWebSearch_EmptyInput(t *testing.T) {
+	result := filterClientWebSearch(nil)
+	if len(result) != 0 {
+		t.Fatalf("len(result) = %d, want 0", len(result))
+	}
+}

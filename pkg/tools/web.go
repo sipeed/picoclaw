@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -776,6 +778,7 @@ type WebFetchTool struct {
 	maxChars        int
 	proxy           string
 	client          *http.Client
+	format          string
 	fetchLimitBytes int64
 	whitelist       *privateHostWhitelist
 }
@@ -785,22 +788,29 @@ type privateHostWhitelist struct {
 	cidrs []*net.IPNet
 }
 
-func NewWebFetchTool(maxChars int, fetchLimitBytes int64) (*WebFetchTool, error) {
+func NewWebFetchTool(maxChars int, format string, fetchLimitBytes int64) (*WebFetchTool, error) {
 	// createHTTPClient cannot fail with an empty proxy string.
-	return NewWebFetchToolWithConfig(maxChars, "", fetchLimitBytes, nil)
+	return NewWebFetchToolWithConfig(maxChars, "", format, fetchLimitBytes, nil)
 }
 
 // allowPrivateWebFetchHosts controls whether loopback/private hosts are allowed.
 // This is false in normal runtime to reduce SSRF exposure, and tests can override it temporarily.
 var allowPrivateWebFetchHosts atomic.Bool
 
-func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64) (*WebFetchTool, error) {
-	return NewWebFetchToolWithConfig(maxChars, proxy, fetchLimitBytes, nil)
+func NewWebFetchToolWithProxy(
+	maxChars int,
+	proxy string,
+	format string,
+	fetchLimitBytes int64,
+	privateHostWhitelist []string,
+) (*WebFetchTool, error) {
+	return NewWebFetchToolWithConfig(maxChars, proxy, format, fetchLimitBytes, privateHostWhitelist)
 }
 
 func NewWebFetchToolWithConfig(
 	maxChars int,
 	proxy string,
+	format string,
 	fetchLimitBytes int64,
 	privateHostWhitelist []string,
 ) (*WebFetchTool, error) {
@@ -838,6 +848,7 @@ func NewWebFetchToolWithConfig(
 		maxChars:        maxChars,
 		proxy:           proxy,
 		client:          client,
+		format:          format,
 		fetchLimitBytes: fetchLimitBytes,
 		whitelist:       whitelist,
 	}, nil
@@ -926,26 +937,68 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult(fmt.Sprintf("failed to read response: %v", err))
 	}
 
+	bodyStr := string(body)
 	contentType := resp.Header.Get("Content-Type")
+
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		// The most common error here is "mime: no media type" if the header is empty.
+		logger.WarnCF("tool", "Failed to parse Content-Type", map[string]any{
+			"raw_header": contentType,
+			"error":      err.Error(),
+		})
+
+		// security fallback
+		mediaType = "application/octet-stream"
+	}
+
+	charset, hasCharset := params["charset"]
+	if hasCharset {
+		// If the charset is not utf-8, we might have to convert the bodyStr
+		// before passing it to the HTML/Markdown parser
+		if strings.ToLower(charset) != "utf-8" {
+			logger.WarnCF("tool", "Note: the content is not in UTF-8", map[string]any{"charset": charset})
+		}
+	}
 
 	var text, extractor string
 
-	if strings.Contains(contentType, "application/json") {
+	switch {
+	case mediaType == "application/json":
 		var jsonData any
-		if err := json.Unmarshal(body, &jsonData); err == nil {
-			formatted, _ := json.MarshalIndent(jsonData, "", "  ")
-			text = string(formatted)
-			extractor = "json"
-		} else {
-			text = string(body)
+		if err := json.Unmarshal(body, &jsonData); err != nil {
+			text = bodyStr
 			extractor = "raw"
+			break
 		}
-	} else if strings.Contains(contentType, "text/html") || len(body) > 0 &&
-		(strings.HasPrefix(string(body), "<!DOCTYPE") || strings.HasPrefix(strings.ToLower(string(body)), "<html")) {
-		text = t.extractText(string(body))
-		extractor = "text"
-	} else {
-		text = string(body)
+
+		formatted, err := json.MarshalIndent(jsonData, "", "  ")
+		if err != nil {
+			text = bodyStr
+			extractor = "raw"
+			break
+		}
+
+		text = string(formatted)
+		extractor = "json"
+
+	case mediaType == "text/html" || looksLikeHTML(bodyStr):
+		switch strings.ToLower(t.format) {
+		case "markdown":
+			var err error
+			text, err = utils.HtmlToMarkdown(bodyStr)
+			if err != nil {
+				return ErrorResult(fmt.Sprintf("failed to HTML to markdown: %v", err))
+			}
+			extractor = "markdown"
+
+		default:
+			text = t.extractText(bodyStr)
+			extractor = "text"
+		}
+
+	default:
+		text = bodyStr
 		extractor = "raw"
 	}
 
@@ -975,6 +1028,17 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 			truncated,
 		),
 	}
+}
+
+func looksLikeHTML(body string) bool {
+	if body == "" {
+		return false
+	}
+
+	lower := strings.ToLower(body)
+
+	return strings.HasPrefix(body, "<!doctype") ||
+		strings.HasPrefix(lower, "<html")
 }
 
 func (t *WebFetchTool) extractText(htmlContent string) string {

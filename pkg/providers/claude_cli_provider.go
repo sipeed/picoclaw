@@ -50,10 +50,18 @@ func (p *ClaudeCliProvider) Chat(
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		if stderrStr := stderr.String(); stderrStr != "" {
+		stderrStr := strings.TrimSpace(stderr.String())
+		stdoutStr := strings.TrimSpace(stdout.String())
+		switch {
+		case stderrStr != "" && stdoutStr != "":
+			return nil, fmt.Errorf("claude cli error: %w\nstderr: %s\nstdout: %s", err, stderrStr, stdoutStr)
+		case stderrStr != "":
 			return nil, fmt.Errorf("claude cli error: %s", stderrStr)
+		case stdoutStr != "":
+			return nil, fmt.Errorf("claude cli error: %w\noutput: %s", err, stdoutStr)
+		default:
+			return nil, fmt.Errorf("claude cli error: %w", err)
 		}
-		return nil, fmt.Errorf("claude cli error: %w", err)
 	}
 
 	return p.parseClaudeCliResponse(stdout.String())

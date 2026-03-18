@@ -13,7 +13,7 @@ import (
 )
 
 func runTray() {
-	systray.Run(onReady, shutdownApp)
+	systray.Run(onReady, onExit)
 }
 
 // onReady is called when the system tray is ready
@@ -87,6 +87,11 @@ func onReady() {
 			logger.Errorf("Warning: Failed to auto-open browser: %v", err)
 		}
 	}
+}
+
+// onExit is called when the system tray is exiting
+func onExit() {
+	logger.Info(T(Exiting))
 }
 
 // getIcon returns the system tray icon
