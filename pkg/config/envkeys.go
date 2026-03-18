@@ -30,4 +30,8 @@ const (
 	// Used by the web launcher when spawning the gateway subprocess.
 	// Default: resolved from the same directory as the current executable.
 	EnvBinary = "PICOCLAW_BINARY"
+
+	// EnvGatewayHost overrides the host address for the gateway server.
+	// Default: "127.0.0.1"
+	EnvGatewayHost = "PICOCLAW_GATEWAY_HOST"
 )

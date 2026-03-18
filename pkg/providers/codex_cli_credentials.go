@@ -1,10 +1,5 @@
 package providers
 
-// CodexHomeEnvVar is the environment variable that overrides the Codex CLI
-// home directory when resolving the codex auth.json credentials file.
-// Default: ~/.codex
-const CodexHomeEnvVar = "CODEX_HOME"
-
 import (
 	"encoding/json"
 	"fmt"
@@ -12,6 +7,11 @@ import (
 	"path/filepath"
 	"time"
 )
+
+// CodexHomeEnvVar is the environment variable that overrides the Codex CLI
+// home directory when resolving the codex auth.json credentials file.
+// Default: ~/.codex
+const CodexHomeEnvVar = "CODEX_HOME"
 
 // CodexCliAuth represents the ~/.codex/auth.json file structure.
 type CodexCliAuth struct {

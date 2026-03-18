@@ -1,10 +1,5 @@
 package openclaw
 
-// OpenclawHomeEnvVar is the environment variable that overrides the source
-// openclaw home directory when migrating from openclaw to picoclaw.
-// Default: ~/.openclaw
-const OpenclawHomeEnvVar = "OPENCLAW_HOME"
-
 import (
 	"fmt"
 	"os"
@@ -14,6 +9,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/migrate/internal"
 )
+
+// OpenclawHomeEnvVar is the environment variable that overrides the source
+// openclaw home directory when migrating from openclaw to picoclaw.
+// Default: ~/.openclaw
+const OpenclawHomeEnvVar = "OPENCLAW_HOME"
 
 var providerMapping = map[string]string{
 	"anthropic":  "anthropic",
