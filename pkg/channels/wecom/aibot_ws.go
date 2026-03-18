@@ -705,7 +705,7 @@ func (c *WeComAIBotWSChannel) wsHandleMediaMessage(
 	ctx, cancel := context.WithTimeout(c.ctx, wsImageDownloadTimeout)
 	defer cancel()
 
-	ref, err := c.storeWSImage(ctx, chatID, msg.MsgID, resourceURL, aesKey)
+	ref, err := c.storeWSMedia(ctx, chatID, msg.MsgID, resourceURL, aesKey, wsLabelToDefaultExt(label))
 	if err != nil {
 		logger.WarnCF("wecom_aibot", "Failed to download/store WS "+label,
 			map[string]any{"error": err.Error(), "url": resourceURL})
@@ -742,8 +742,8 @@ func (c *WeComAIBotWSChannel) handleWSMixedMessage(reqID string, msg WeComAIBotW
 			}
 		case "image":
 			if item.Image != nil {
-				ref, err := c.storeWSImage(ctx, chatID,
-					msg.MsgID+"-"+wsGenerateID(), item.Image.URL, item.Image.AESKey)
+				ref, err := c.storeWSMedia(ctx, chatID,
+					msg.MsgID+"-"+wsGenerateID(), item.Image.URL, item.Image.AESKey, ".jpg")
 				if err != nil {
 					logger.WarnCF("wecom_aibot", "Failed to download/store mixed image",
 						map[string]any{"error": err.Error()})
@@ -751,6 +751,9 @@ func (c *WeComAIBotWSChannel) handleWSMixedMessage(reqID string, msg WeComAIBotW
 					mediaRefs = append(mediaRefs, ref)
 				}
 			}
+		default:
+			logger.WarnCF("wecom_aibot", "Unsupported item type in mixed message",
+				map[string]any{"msgtype": item.MsgType})
 		}
 	}
 
@@ -1116,12 +1119,15 @@ func wsGenerateID() string {
 	return generateRandomID(10)
 }
 
-// ---- Inbound image download helpers ----
+// ---- Inbound media download helpers ----
 
-// storeWSImage downloads the image at imageURL (with optional AES-CBC decryption) and stores it in the MediaStore.
-func (c *WeComAIBotWSChannel) storeWSImage(
+// storeWSMedia downloads the resource at resourceURL (with optional AES-CBC
+// decryption) and stores it in the MediaStore. The file extension is inferred
+// from the HTTP Content-Type response header; defaultExt is used as a fallback
+// when the content type is absent or unrecognized.
+func (c *WeComAIBotWSChannel) storeWSMedia(
 	ctx context.Context,
-	chatID, msgID, imageURL, aesKey string,
+	chatID, msgID, resourceURL, aesKey, defaultExt string,
 ) (string, error) {
 	store := c.GetMediaStore()
 	if store == nil {
@@ -1130,7 +1136,7 @@ func (c *WeComAIBotWSChannel) storeWSImage(
 
 	const maxSize = 20 << 20 // 20 MB
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
@@ -1143,13 +1149,19 @@ func (c *WeComAIBotWSChannel) storeWSImage(
 		return "", fmt.Errorf("download HTTP %d", resp.StatusCode)
 	}
 
-	// Buffer the image in memory, bounded to maxSize.
+	// Infer file extension from the Content-Type response header.
+	ext := wsMediaExtFromContentType(resp.Header.Get("Content-Type"))
+	if ext == "" {
+		ext = defaultExt
+	}
+
+	// Buffer the media in memory, bounded to maxSize.
 	data, err := io.ReadAll(io.LimitReader(resp.Body, int64(maxSize)+1))
 	if err != nil {
-		return "", fmt.Errorf("read image: %w", err)
+		return "", fmt.Errorf("read media: %w", err)
 	}
 	if len(data) > maxSize {
-		return "", fmt.Errorf("image too large (> %d MB)", maxSize>>20)
+		return "", fmt.Errorf("media too large (> %d MB)", maxSize>>20)
 	}
 
 	// AES-CBC decryption if a key is present.
@@ -1158,12 +1170,12 @@ func (c *WeComAIBotWSChannel) storeWSImage(
 		if decErr != nil || len(key) != 32 {
 			key, decErr = decodeWeComAESKey(aesKey)
 			if decErr != nil {
-				return "", fmt.Errorf("decode image AES key: %w", decErr)
+				return "", fmt.Errorf("decode media AES key: %w", decErr)
 			}
 		}
 		data, err = decryptAESCBC(key, data)
 		if err != nil {
-			return "", fmt.Errorf("decrypt image: %w", err)
+			return "", fmt.Errorf("decrypt media: %w", err)
 		}
 	}
 
@@ -1173,7 +1185,7 @@ func (c *WeComAIBotWSChannel) storeWSImage(
 	if err = os.MkdirAll(mediaDir, 0o700); err != nil {
 		return "", fmt.Errorf("mkdir: %w", err)
 	}
-	tmpFile, err := os.CreateTemp(mediaDir, msgID+"-*.jpg")
+	tmpFile, err := os.CreateTemp(mediaDir, msgID+"-*"+ext)
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
@@ -1182,16 +1194,16 @@ func (c *WeComAIBotWSChannel) storeWSImage(
 	closeErr := tmpFile.Close()
 	if writeErr != nil {
 		os.Remove(tmpPath)
-		return "", fmt.Errorf("write image: %w", writeErr)
+		return "", fmt.Errorf("write media: %w", writeErr)
 	}
 	if closeErr != nil {
 		os.Remove(tmpPath)
-		return "", fmt.Errorf("close image: %w", closeErr)
+		return "", fmt.Errorf("close media: %w", closeErr)
 	}
 
 	scope := channels.BuildMediaScope("wecom_aibot", chatID, msgID)
 	ref, err := store.Store(tmpPath, media.MediaMeta{
-		Filename: msgID + ".jpg",
+		Filename: msgID + ext,
 		Source:   "wecom_aibot",
 	}, scope)
 	if err != nil {
@@ -1199,4 +1211,72 @@ func (c *WeComAIBotWSChannel) storeWSImage(
 		return "", fmt.Errorf("store: %w", err)
 	}
 	return ref, nil
+}
+
+// wsMediaExtFromContentType returns the lowercase file extension (with leading
+// dot) for the given Content-Type value, or "" when the type is unrecognized.
+func wsMediaExtFromContentType(contentType string) string {
+	if contentType == "" {
+		return ""
+	}
+	// Strip parameters (e.g. "image/jpeg; charset=utf-8" → "image/jpeg").
+	mt := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
+	switch mt {
+	case "image/jpeg", "image/jpg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	case "video/mp4":
+		return ".mp4"
+	case "video/mpeg", "video/x-mpeg":
+		return ".mpeg"
+	case "video/quicktime":
+		return ".mov"
+	case "video/webm":
+		return ".webm"
+	case "audio/mpeg", "audio/mp3":
+		return ".mp3"
+	case "audio/ogg":
+		return ".ogg"
+	case "audio/wav":
+		return ".wav"
+	case "application/pdf":
+		return ".pdf"
+	case "application/zip":
+		return ".zip"
+	case "application/x-rar-compressed", "application/vnd.rar":
+		return ".rar"
+	case "text/plain":
+		return ".txt"
+	case "application/msword":
+		return ".doc"
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		return ".docx"
+	case "application/vnd.ms-excel":
+		return ".xls"
+	case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+		return ".xlsx"
+	case "application/vnd.ms-powerpoint":
+		return ".ppt"
+	case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+		return ".pptx"
+	}
+	return ""
+}
+
+// wsLabelToDefaultExt returns the default file extension for the given media label
+// used in wsHandleMediaMessage. It is the fallback when Content-Type detection fails.
+func wsLabelToDefaultExt(label string) string {
+	switch label {
+	case "image":
+		return ".jpg"
+	case "video":
+		return ".mp4"
+	default: // "file" and any future labels
+		return ".bin"
+	}
 }

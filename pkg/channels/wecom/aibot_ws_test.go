@@ -29,19 +29,19 @@ func newTestWSChannel(t *testing.T) *WeComAIBotWSChannel {
 	return ch
 }
 
-// TestStoreWSImage_NilStore verifies that storeWSImage returns an error when no
+// TestStoreWSMedia_NilStore verifies that storeWSMedia returns an error when no
 // MediaStore has been injected.
-func TestStoreWSImage_NilStore(t *testing.T) {
+func TestStoreWSMedia_NilStore(t *testing.T) {
 	ch := newTestWSChannel(t)
-	_, err := ch.storeWSImage(context.Background(), "chat1", "msg1", "http://any", "")
+	_, err := ch.storeWSMedia(context.Background(), "chat1", "msg1", "http://any", "", ".jpg")
 	if err == nil {
 		t.Fatal("expected error when no MediaStore is set")
 	}
 }
 
-// TestStoreWSImage_HTTPError verifies that storeWSImage propagates HTTP errors
-// from the image server.
-func TestStoreWSImage_HTTPError(t *testing.T) {
+// TestStoreWSMedia_HTTPError verifies that storeWSMedia propagates HTTP errors
+// from the media server.
+func TestStoreWSMedia_HTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
@@ -50,29 +50,29 @@ func TestStoreWSImage_HTTPError(t *testing.T) {
 	ch := newTestWSChannel(t)
 	ch.SetMediaStore(media.NewFileMediaStore())
 
-	_, err := ch.storeWSImage(context.Background(), "chat1", "msg1", srv.URL, "")
+	_, err := ch.storeWSMedia(context.Background(), "chat1", "msg1", srv.URL, "", ".jpg")
 	if err == nil {
 		t.Fatal("expected error for HTTP 404")
 	}
 }
 
-// TestStoreWSImage_ServerUnavailable verifies that storeWSImage returns a clear
-// error when the image server cannot be reached.
-func TestStoreWSImage_ServerUnavailable(t *testing.T) {
+// TestStoreWSMedia_ServerUnavailable verifies that storeWSMedia returns a clear
+// error when the media server cannot be reached.
+func TestStoreWSMedia_ServerUnavailable(t *testing.T) {
 	ch := newTestWSChannel(t)
 	ch.SetMediaStore(media.NewFileMediaStore())
 
 	// Port 1 is reserved and will refuse the connection immediately.
-	_, err := ch.storeWSImage(context.Background(), "chat1", "msg1", "http://127.0.0.1:1", "")
+	_, err := ch.storeWSMedia(context.Background(), "chat1", "msg1", "http://127.0.0.1:1", "", ".jpg")
 	if err == nil {
 		t.Fatal("expected error for unreachable server")
 	}
 }
 
-// TestStoreWSImage_Success_NoAES verifies the happy path: the image is downloaded,
+// TestStoreWSMedia_Success_NoAES verifies the happy path: the media is downloaded,
 // a media ref is returned, and the file persists and is readable via Resolve until
-// ReleaseAll is called.
-func TestStoreWSImage_Success_NoAES(t *testing.T) {
+// ReleaseAll is called. The server returns no Content-Type, so the defaultExt is used.
+func TestStoreWSMedia_Success_NoAES(t *testing.T) {
 	imageData := bytes.Repeat([]byte("x"), 256)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -84,7 +84,7 @@ func TestStoreWSImage_Success_NoAES(t *testing.T) {
 	store := media.NewFileMediaStore()
 	ch.SetMediaStore(store)
 
-	ref, err := ch.storeWSImage(context.Background(), "chat1", "msg1", srv.URL, "")
+	ref, err := ch.storeWSMedia(context.Background(), "chat1", "msg1", srv.URL, "", ".jpg")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -92,7 +92,7 @@ func TestStoreWSImage_Success_NoAES(t *testing.T) {
 		t.Fatal("expected non-empty ref")
 	}
 
-	// File must be accessible after storeWSImage returns (no premature deletion).
+	// File must be accessible after storeWSMedia returns (no premature deletion).
 	path, err := store.Resolve(ref)
 	if err != nil {
 		t.Fatalf("ref should resolve: %v", err)
@@ -115,9 +115,9 @@ func TestStoreWSImage_Success_NoAES(t *testing.T) {
 	}
 }
 
-// TestStoreWSImage_MultipleMessages verifies that concurrent image messages with
+// TestStoreWSMedia_MultipleMessages verifies that concurrent media messages with
 // different msgIDs do not collide and each resolve to distinct files.
-func TestStoreWSImage_MultipleMessages(t *testing.T) {
+func TestStoreWSMedia_MultipleMessages(t *testing.T) {
 	imageA := bytes.Repeat([]byte("a"), 64)
 	imageB := bytes.Repeat([]byte("b"), 64)
 
@@ -136,13 +136,13 @@ func TestStoreWSImage_MultipleMessages(t *testing.T) {
 	store := media.NewFileMediaStore()
 	ch.SetMediaStore(store)
 
-	refA, err := ch.storeWSImage(context.Background(), "chat1", "msgA", srvA.URL, "")
+	refA, err := ch.storeWSMedia(context.Background(), "chat1", "msgA", srvA.URL, "", ".jpg")
 	if err != nil {
-		t.Fatalf("storeWSImage A: %v", err)
+		t.Fatalf("storeWSMedia A: %v", err)
 	}
-	refB, err := ch.storeWSImage(context.Background(), "chat1", "msgB", srvB.URL, "")
+	refB, err := ch.storeWSMedia(context.Background(), "chat1", "msgB", srvB.URL, "", ".jpg")
 	if err != nil {
-		t.Fatalf("storeWSImage B: %v", err)
+		t.Fatalf("storeWSMedia B: %v", err)
 	}
 	if refA == refB {
 		t.Fatal("distinct messages must produce distinct refs")
@@ -161,5 +161,58 @@ func TestStoreWSImage_MultipleMessages(t *testing.T) {
 	}
 	if !bytes.Equal(gotB, imageB) {
 		t.Errorf("content mismatch for message B")
+	}
+}
+
+// TestStoreWSMedia_ContentTypeExt verifies that the file extension is inferred
+// from the HTTP Content-Type header and the defaultExt fallback is used when the
+// type is absent or unrecognized.
+func TestStoreWSMedia_ContentTypeExt(t *testing.T) {
+	tests := []struct {
+		contentType string
+		wantExt     string
+	}{
+		{"image/jpeg", ".jpg"},
+		{"image/png", ".png"},
+		{"video/mp4", ".mp4"},
+		{"application/pdf", ".pdf"},
+		{"application/zip", ".zip"},
+		// With parameters stripped.
+		{"video/mp4; codecs=avc1", ".mp4"},
+		// Unknown type → falls back to defaultExt.
+		{"", ""},
+		{"application/octet-stream", ""},
+	}
+	for _, tc := range tests {
+		got := wsMediaExtFromContentType(tc.contentType)
+		if got != tc.wantExt {
+			t.Errorf("wsMediaExtFromContentType(%q) = %q, want %q", tc.contentType, got, tc.wantExt)
+		}
+	}
+
+	// End-to-end: server returns Content-Type: video/mp4, defaultExt is .bin.
+	// The stored file should carry the .mp4 extension, not .bin.
+	payload := bytes.Repeat([]byte("v"), 128)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+	}))
+	defer srv.Close()
+
+	ch := newTestWSChannel(t)
+	store := media.NewFileMediaStore()
+	ch.SetMediaStore(store)
+
+	ref, err := ch.storeWSMedia(context.Background(), "chat1", "vid1", srv.URL, "", ".bin")
+	if err != nil {
+		t.Fatalf("storeWSMedia: %v", err)
+	}
+	path, err := store.Resolve(ref)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if ext := path[len(path)-4:]; ext != ".mp4" {
+		t.Errorf("expected .mp4 extension from Content-Type, got %q", ext)
 	}
 }
