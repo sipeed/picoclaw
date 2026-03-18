@@ -139,6 +139,23 @@
       "allow_from": [],
       "reasoning_channel_id": ""
     },
+    "mattermost": {
+      "enabled": false,
+      "url": "https://your-mattermost.example.com",
+      "bot_token": "YOUR_MATTERMOST_BOT_TOKEN",
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "typing": {
+        "enabled": true
+      },
+      "placeholder": {
+        "enabled": false,
+        "text": "Thinking..."
+      },
+      "reasoning_channel_id": ""
+    },
     "matrix": {
       "enabled": false,
       "homeserver": "https://matrix.org",

@@ -58,13 +58,14 @@ type placeholderEntry struct {
 
 // channelRateConfig maps channel name to per-second rate limit.
 var channelRateConfig = map[string]float64{
-	"telegram": 20,
-	"discord":  1,
-	"slack":    1,
-	"matrix":   2,
-	"line":     10,
-	"qq":       5,
-	"irc":      2,
+	"telegram":   20,
+	"discord":    1,
+	"slack":      1,
+	"matrix":     2,
+	"line":       10,
+	"qq":         5,
+	"irc":        2,
+	"mattermost": 5,
 }
 
 type channelWorker struct {
@@ -305,6 +306,12 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.IRC.Enabled && m.config.Channels.IRC.Server != "" {
 		m.initChannel("irc", "IRC")
+	}
+
+	if m.config.Channels.Mattermost.Enabled &&
+		m.config.Channels.Mattermost.URL != "" &&
+		m.config.Channels.Mattermost.BotToken != "" {
+		m.initChannel("mattermost", "Mattermost")
 	}
 
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{

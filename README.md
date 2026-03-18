@@ -331,7 +331,7 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, or WeCom
+Talk to your picoclaw through Telegram, Discord, WhatsApp, Mattermost, Matrix, QQ, DingTalk, LINE, or WeCom
 
 > **Note**: All webhook-based channels (LINE, WeCom, etc.) are served on a single shared Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). There are no per-channel ports to configure. Note: Feishu uses WebSocket/SDK mode and does not use the shared HTTP webhook server.
 
@@ -340,6 +340,7 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk,
 | **Telegram** | Easy (just a token)                |
 | **Discord**  | Easy (bot token + intents)         |
 | **WhatsApp** | Easy (native: QR scan; or bridge URL) |
+| **Mattermost** | Easy (server URL + bot token)    |
 | **Matrix**   | Medium (homeserver + bot access token) |
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
@@ -550,6 +551,56 @@ picoclaw gateway
 ```bash
 picoclaw gateway
 ```
+</details>
+
+<details>
+<summary><b>Mattermost</b></summary>
+
+**1. Create a bot account**
+
+- In Mattermost, go to **System Console** -> **Integrations** -> **Bot Accounts**
+- Create a bot account and copy its access token
+- Ensure the bot is added to channels where it should respond
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "mattermost": {
+      "enabled": true,
+      "url": "https://your-mattermost.example.com",
+      "bot_token": "YOUR_MATTERMOST_BOT_TOKEN",
+      "allow_from": []
+    }
+  }
+}
+```
+
+> Set `allow_from` empty to allow all users, or use Mattermost user IDs to restrict access.
+
+**3. Optional group trigger**
+
+By default, group/channel messages are processed. To require mention:
+
+```json
+{
+  "channels": {
+    "mattermost": {
+      "group_trigger": { "mention_only": true }
+    }
+  }
+}
+```
+
+**4. Run**
+
+```bash
+picoclaw gateway
+```
+
+For full options (`typing`, `placeholder`, `reasoning_channel_id`), see [Mattermost Channel Configuration Guide](docs/channels/mattermost/README.zh.md).
+
 </details>
 
 <details>
