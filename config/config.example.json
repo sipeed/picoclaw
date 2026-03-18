@@ -313,6 +313,8 @@
     "allow_write_paths": null,
     "web": {
       "enabled": true,
+      "fetch_limit_bytes": 10485760,
+      "format": "plaintext",
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
@@ -351,7 +353,8 @@
         "search_engine": "search_std",
         "max_results": 5
       },
-      "fetch_limit_bytes": 10485760
+      "fetch_limit_bytes": 10485760,
+      "private_host_whitelist": []
     },
     "cron": {
       "enabled": true,
@@ -518,6 +521,7 @@
   },
   "gateway": {
     "host": "127.0.0.1",
-    "port": 18790
+    "port": 18790,
+    "hot_reload": false
   }
 }

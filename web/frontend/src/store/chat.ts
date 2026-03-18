@@ -3,7 +3,7 @@ import { atom, getDefaultStore } from "jotai"
 import {
   getInitialActiveSessionId,
   writeStoredSessionId,
-} from "@/lib/pico-chat-state"
+} from "@/features/chat/state"
 
 export interface ChatMessage {
   id: string

@@ -26,7 +26,9 @@
 
 ---
 
-🦐 PicoClaw は [nanobot](https://github.com/HKUDS/nanobot) にインスパイアされた超軽量パーソナル AI アシスタントです。Go でゼロからリファクタリングされ、AI エージェント自身がアーキテクチャの移行とコード最適化を推進するセルフブートストラッピングプロセスで構築されました。
+> **PicoClaw** は [Sipeed](https://sipeed.com) が立ち上げた独立したオープンソースプロジェクトです。完全に **Go 言語**で一から書かれており、OpenClaw、NanoBot、その他のプロジェクトのフォークではありません。
+
+🦐 PicoClaw は [NanoBot](https://github.com/HKUDS/nanobot) にインスパイアされた超軽量パーソナル AI アシスタントです。Go でゼロからリファクタリングされ、AI エージェント自身がアーキテクチャの移行とコード最適化を推進するセルフブートストラッピングプロセスで構築されました。
 
 ⚡️ $10 のハードウェアで 10MB 未満の RAM で動作：OpenClaw より 99% 少ないメモリ、Mac mini より 98% 安い！
 
@@ -216,6 +218,9 @@ picoclaw onboard
   },
   "tools": {
     "web": {
+      "enabled": true,
+      "fetch_limit_bytes": 10485760,
+      "format": "plaintext",
       "search": {
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5

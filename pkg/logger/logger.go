@@ -209,7 +209,7 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 			fileEvent.Str("component", component)
 		}
 
-		appendFields(event, fields)
+		appendFields(fileEvent, fields)
 		fileEvent.Msg(message)
 	}
 

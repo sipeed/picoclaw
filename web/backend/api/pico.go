@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -16,6 +17,30 @@ func (h *Handler) registerPicoRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/pico/token", h.handleGetPicoToken)
 	mux.HandleFunc("POST /api/pico/token", h.handleRegenPicoToken)
 	mux.HandleFunc("POST /api/pico/setup", h.handlePicoSetup)
+
+	// WebSocket proxy: forward /pico/ws to gateway
+	// This allows the frontend to connect via the same port as the web UI,
+	// avoiding the need to expose extra ports for WebSocket communication.
+	mux.HandleFunc("GET /pico/ws", h.handleWebSocketProxy())
+}
+
+// createWsProxy creates a reverse proxy to the current gateway WebSocket endpoint.
+// The gateway bind host and port are resolved from the latest configuration.
+func (h *Handler) createWsProxy() *httputil.ReverseProxy {
+	wsProxy := httputil.NewSingleHostReverseProxy(h.gatewayProxyURL())
+	wsProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		http.Error(w, "Gateway unavailable: "+err.Error(), http.StatusBadGateway)
+	}
+	return wsProxy
+}
+
+// handleWebSocketProxy wraps a reverse proxy to handle WebSocket connections.
+// The reverse proxy forwards the incoming upgrade handshake as-is.
+func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		proxy := h.createWsProxy()
+		proxy.ServeHTTP(w, r)
+	}
 }
 
 // handleGetPicoToken returns the current WS token and URL for the frontend.

@@ -361,7 +361,6 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	if len(m.channels) == 0 {
 		logger.WarnC("channels", "No channels enabled")
-		return errors.New("no channels enabled")
 	}
 
 	logger.InfoC("channels", "Starting all channels")
@@ -401,7 +400,7 @@ func (m *Manager) StartAll(ctx context.Context) error {
 				"addr": m.httpServer.Addr,
 			})
 			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.ErrorCF("channels", "Shared HTTP server error", map[string]any{
+				logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
 					"error": err.Error(),
 				})
 			}
@@ -590,7 +589,7 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 func dispatchLoop[M any](
 	ctx context.Context,
 	m *Manager,
-	subscribe func(context.Context) (M, bool),
+	ch <-chan M,
 	getChannel func(M) string,
 	enqueue func(context.Context, *channelWorker, M) bool,
 	startMsg, stopMsg, unknownMsg, noWorkerMsg string,
@@ -598,35 +597,41 @@ func dispatchLoop[M any](
 	logger.InfoC("channels", startMsg)
 
 	for {
-		msg, ok := subscribe(ctx)
-		if !ok {
+		select {
+		case <-ctx.Done():
 			logger.InfoC("channels", stopMsg)
 			return
-		}
 
-		channel := getChannel(msg)
-
-		// Silently skip internal channels
-		if constants.IsInternalChannel(channel) {
-			continue
-		}
-
-		m.mu.RLock()
-		_, exists := m.channels[channel]
-		w, wExists := m.workers[channel]
-		m.mu.RUnlock()
-
-		if !exists {
-			logger.WarnCF("channels", unknownMsg, map[string]any{"channel": channel})
-			continue
-		}
-
-		if wExists && w != nil {
-			if !enqueue(ctx, w, msg) {
+		case msg, ok := <-ch:
+			if !ok {
+				logger.InfoC("channels", stopMsg)
 				return
 			}
-		} else if exists {
-			logger.WarnCF("channels", noWorkerMsg, map[string]any{"channel": channel})
+
+			channel := getChannel(msg)
+
+			// Silently skip internal channels
+			if constants.IsInternalChannel(channel) {
+				continue
+			}
+
+			m.mu.RLock()
+			_, exists := m.channels[channel]
+			w, wExists := m.workers[channel]
+			m.mu.RUnlock()
+
+			if !exists {
+				logger.WarnCF("channels", unknownMsg, map[string]any{"channel": channel})
+				continue
+			}
+
+			if wExists && w != nil {
+				if !enqueue(ctx, w, msg) {
+					return
+				}
+			} else if exists {
+				logger.WarnCF("channels", noWorkerMsg, map[string]any{"channel": channel})
+			}
 		}
 	}
 }
@@ -634,7 +639,7 @@ func dispatchLoop[M any](
 func (m *Manager) dispatchOutbound(ctx context.Context) {
 	dispatchLoop(
 		ctx, m,
-		m.bus.SubscribeOutbound,
+		m.bus.OutboundChan(),
 		func(msg bus.OutboundMessage) string { return msg.Channel },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMessage) bool {
 			select {
@@ -654,7 +659,7 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 func (m *Manager) dispatchOutboundMedia(ctx context.Context) {
 	dispatchLoop(
 		ctx, m,
-		m.bus.SubscribeOutboundMedia,
+		m.bus.OutboundMediaChan(),
 		func(msg bus.OutboundMediaMessage) string { return msg.Channel },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMediaMessage) bool {
 			select {

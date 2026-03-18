@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -776,21 +778,48 @@ type WebFetchTool struct {
 	maxChars        int
 	proxy           string
 	client          *http.Client
+	format          string
 	fetchLimitBytes int64
+	whitelist       *privateHostWhitelist
 }
 
-func NewWebFetchTool(maxChars int, fetchLimitBytes int64) (*WebFetchTool, error) {
+type privateHostWhitelist struct {
+	exact map[string]struct{}
+	cidrs []*net.IPNet
+}
+
+func NewWebFetchTool(maxChars int, format string, fetchLimitBytes int64) (*WebFetchTool, error) {
 	// createHTTPClient cannot fail with an empty proxy string.
-	return NewWebFetchToolWithProxy(maxChars, "", fetchLimitBytes)
+	return NewWebFetchToolWithConfig(maxChars, "", format, fetchLimitBytes, nil)
 }
 
 // allowPrivateWebFetchHosts controls whether loopback/private hosts are allowed.
 // This is false in normal runtime to reduce SSRF exposure, and tests can override it temporarily.
 var allowPrivateWebFetchHosts atomic.Bool
 
-func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64) (*WebFetchTool, error) {
+func NewWebFetchToolWithProxy(
+	maxChars int,
+	proxy string,
+	format string,
+	fetchLimitBytes int64,
+	privateHostWhitelist []string,
+) (*WebFetchTool, error) {
+	return NewWebFetchToolWithConfig(maxChars, proxy, format, fetchLimitBytes, privateHostWhitelist)
+}
+
+func NewWebFetchToolWithConfig(
+	maxChars int,
+	proxy string,
+	format string,
+	fetchLimitBytes int64,
+	privateHostWhitelist []string,
+) (*WebFetchTool, error) {
 	if maxChars <= 0 {
 		maxChars = defaultMaxChars
+	}
+	whitelist, err := newPrivateHostWhitelist(privateHostWhitelist)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse web fetch private host whitelist: %w", err)
 	}
 	client, err := utils.CreateHTTPClient(proxy, fetchTimeout)
 	if err != nil {
@@ -801,13 +830,13 @@ func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64)
 			Timeout:   15 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}
-		transport.DialContext = newSafeDialContext(dialer)
+		transport.DialContext = newSafeDialContext(dialer, whitelist)
 	}
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= maxRedirects {
 			return fmt.Errorf("stopped after %d redirects", maxRedirects)
 		}
-		if isObviousPrivateHost(req.URL.Hostname()) {
+		if isObviousPrivateHost(req.URL.Hostname(), whitelist) {
 			return fmt.Errorf("redirect target is private or local network host")
 		}
 		return nil
@@ -819,7 +848,9 @@ func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64)
 		maxChars:        maxChars,
 		proxy:           proxy,
 		client:          client,
+		format:          format,
 		fetchLimitBytes: fetchLimitBytes,
+		whitelist:       whitelist,
 	}, nil
 }
 
@@ -871,7 +902,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	// Lightweight pre-flight: block obvious localhost/literal-IP without DNS resolution.
 	// The real SSRF guard is newSafeDialContext at connect time.
 	hostname := parsedURL.Hostname()
-	if isObviousPrivateHost(hostname) {
+	if isObviousPrivateHost(hostname, t.whitelist) {
 		return ErrorResult("fetching private or local network hosts is not allowed")
 	}
 
@@ -906,26 +937,68 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult(fmt.Sprintf("failed to read response: %v", err))
 	}
 
+	bodyStr := string(body)
 	contentType := resp.Header.Get("Content-Type")
+
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		// The most common error here is "mime: no media type" if the header is empty.
+		logger.WarnCF("tool", "Failed to parse Content-Type", map[string]any{
+			"raw_header": contentType,
+			"error":      err.Error(),
+		})
+
+		// security fallback
+		mediaType = "application/octet-stream"
+	}
+
+	charset, hasCharset := params["charset"]
+	if hasCharset {
+		// If the charset is not utf-8, we might have to convert the bodyStr
+		// before passing it to the HTML/Markdown parser
+		if strings.ToLower(charset) != "utf-8" {
+			logger.WarnCF("tool", "Note: the content is not in UTF-8", map[string]any{"charset": charset})
+		}
+	}
 
 	var text, extractor string
 
-	if strings.Contains(contentType, "application/json") {
+	switch {
+	case mediaType == "application/json":
 		var jsonData any
-		if err := json.Unmarshal(body, &jsonData); err == nil {
-			formatted, _ := json.MarshalIndent(jsonData, "", "  ")
-			text = string(formatted)
-			extractor = "json"
-		} else {
-			text = string(body)
+		if err := json.Unmarshal(body, &jsonData); err != nil {
+			text = bodyStr
 			extractor = "raw"
+			break
 		}
-	} else if strings.Contains(contentType, "text/html") || len(body) > 0 &&
-		(strings.HasPrefix(string(body), "<!DOCTYPE") || strings.HasPrefix(strings.ToLower(string(body)), "<html")) {
-		text = t.extractText(string(body))
-		extractor = "text"
-	} else {
-		text = string(body)
+
+		formatted, err := json.MarshalIndent(jsonData, "", "  ")
+		if err != nil {
+			text = bodyStr
+			extractor = "raw"
+			break
+		}
+
+		text = string(formatted)
+		extractor = "json"
+
+	case mediaType == "text/html" || looksLikeHTML(bodyStr):
+		switch strings.ToLower(t.format) {
+		case "markdown":
+			var err error
+			text, err = utils.HtmlToMarkdown(bodyStr)
+			if err != nil {
+				return ErrorResult(fmt.Sprintf("failed to HTML to markdown: %v", err))
+			}
+			extractor = "markdown"
+
+		default:
+			text = t.extractText(bodyStr)
+			extractor = "text"
+		}
+
+	default:
+		text = bodyStr
 		extractor = "raw"
 	}
 
@@ -957,6 +1030,17 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 }
 
+func looksLikeHTML(body string) bool {
+	if body == "" {
+		return false
+	}
+
+	lower := strings.ToLower(body)
+
+	return strings.HasPrefix(body, "<!doctype") ||
+		strings.HasPrefix(lower, "<html")
+}
+
 func (t *WebFetchTool) extractText(htmlContent string) string {
 	result := reScript.ReplaceAllLiteralString(htmlContent, "")
 	result = reStyle.ReplaceAllLiteralString(result, "")
@@ -981,7 +1065,10 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 
 // newSafeDialContext re-resolves DNS at connect time to mitigate DNS rebinding (TOCTOU)
 // where a hostname resolves to a public IP during pre-flight but a private IP at connect time.
-func newSafeDialContext(dialer *net.Dialer) func(context.Context, string, string) (net.Conn, error) {
+func newSafeDialContext(
+	dialer *net.Dialer,
+	whitelist *privateHostWhitelist,
+) func(context.Context, string, string) (net.Conn, error) {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		if allowPrivateWebFetchHosts.Load() {
 			return dialer.DialContext(ctx, network, address)
@@ -996,7 +1083,7 @@ func newSafeDialContext(dialer *net.Dialer) func(context.Context, string, string
 		}
 
 		if ip := net.ParseIP(host); ip != nil {
-			if isPrivateOrRestrictedIP(ip) {
+			if shouldBlockPrivateIP(ip, whitelist) {
 				return nil, fmt.Errorf("blocked private or local target: %s", host)
 			}
 			return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
@@ -1010,7 +1097,7 @@ func newSafeDialContext(dialer *net.Dialer) func(context.Context, string, string
 		attempted := 0
 		var lastErr error
 		for _, ipAddr := range ipAddrs {
-			if isPrivateOrRestrictedIP(ipAddr.IP) {
+			if shouldBlockPrivateIP(ipAddr.IP, whitelist) {
 				continue
 			}
 			attempted++
@@ -1022,7 +1109,7 @@ func newSafeDialContext(dialer *net.Dialer) func(context.Context, string, string
 		}
 
 		if attempted == 0 {
-			return nil, fmt.Errorf("all resolved addresses for %s are private or restricted", host)
+			return nil, fmt.Errorf("all resolved addresses for %s are private, restricted, or not whitelisted", host)
 		}
 		if lastErr != nil {
 			return nil, fmt.Errorf("failed connecting to public addresses for %s: %w", host, lastErr)
@@ -1031,10 +1118,72 @@ func newSafeDialContext(dialer *net.Dialer) func(context.Context, string, string
 	}
 }
 
+func newPrivateHostWhitelist(entries []string) (*privateHostWhitelist, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	whitelist := &privateHostWhitelist{
+		exact: make(map[string]struct{}),
+		cidrs: make([]*net.IPNet, 0, len(entries)),
+	}
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if ip := net.ParseIP(entry); ip != nil {
+			whitelist.exact[normalizeWhitelistIP(ip).String()] = struct{}{}
+			continue
+		}
+		_, network, err := net.ParseCIDR(entry)
+		if err != nil {
+			return nil, fmt.Errorf("invalid entry %q: expected IP or CIDR", entry)
+		}
+		whitelist.cidrs = append(whitelist.cidrs, network)
+	}
+
+	if len(whitelist.exact) == 0 && len(whitelist.cidrs) == 0 {
+		return nil, nil
+	}
+	return whitelist, nil
+}
+
+func (w *privateHostWhitelist) Contains(ip net.IP) bool {
+	if w == nil || ip == nil {
+		return false
+	}
+
+	normalized := normalizeWhitelistIP(ip)
+	if _, ok := w.exact[normalized.String()]; ok {
+		return true
+	}
+	for _, network := range w.cidrs {
+		if network.Contains(normalized) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeWhitelistIP(ip net.IP) net.IP {
+	if ip == nil {
+		return nil
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return ip4
+	}
+	return ip
+}
+
+func shouldBlockPrivateIP(ip net.IP, whitelist *privateHostWhitelist) bool {
+	return isPrivateOrRestrictedIP(ip) && !whitelist.Contains(ip)
+}
+
 // isObviousPrivateHost performs a lightweight, no-DNS check for obviously private hosts.
 // It catches localhost, literal private IPs, and empty hosts. It does NOT resolve DNS —
 // the real SSRF guard is newSafeDialContext which checks IPs at connect time.
-func isObviousPrivateHost(host string) bool {
+func isObviousPrivateHost(host string, whitelist *privateHostWhitelist) bool {
 	if allowPrivateWebFetchHosts.Load() {
 		return false
 	}
@@ -1050,7 +1199,7 @@ func isObviousPrivateHost(host string) bool {
 	}
 
 	if ip := net.ParseIP(h); ip != nil {
-		return isPrivateOrRestrictedIP(ip)
+		return shouldBlockPrivateIP(ip, whitelist)
 	}
 
 	return false

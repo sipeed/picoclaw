@@ -3,7 +3,6 @@ package whatsapp
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -25,10 +24,7 @@ func TestHandleIncomingMessage_DoesNotConsumeGenericCommandsLocally(t *testing.T
 		"content": "/help",
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	inbound, ok := messageBus.ConsumeInbound(ctx)
+	inbound, ok := <-messageBus.InboundChan()
 	if !ok {
 		t.Fatal("expected inbound message to be forwarded")
 	}

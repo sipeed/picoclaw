@@ -24,7 +24,9 @@
 
 ---
 
-🦐 PicoClaw is an ultra-lightweight personal AI Assistant inspired by [nanobot](https://github.com/HKUDS/nanobot), refactored from the ground up in Go through a self-bootstrapping process, where the AI agent itself drove the entire architectural migration and code optimization.
+> **PicoClaw** is an independent open-source project initiated by [Sipeed](https://sipeed.com). It is written entirely in **Go** — not a fork of OpenClaw, NanoBot, or any other project.
+
+🦐 PicoClaw is an ultra-lightweight personal AI Assistant inspired by [NanoBot](https://github.com/HKUDS/nanobot), refactored from the ground up in Go through a self-bootstrapping process, where the AI agent itself drove the entire architectural migration and code optimization.
 
 ⚡️ Runs on $10 hardware with <10MB RAM: That's 99% less memory than OpenClaw and 98% cheaper than a Mac mini!
 
@@ -270,6 +272,9 @@ picoclaw onboard
   ],
   "tools": {
     "web": {
+      "enabled": true,
+      "fetch_limit_bytes": 10485760,
+      "format": "plaintext",
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
@@ -860,6 +865,21 @@ Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous
 * Writing to `/dev/sd[a-z]` — Direct disk writes
 * `shutdown`, `reboot`, `poweroff` — System shutdown
 * Fork bomb `:(){ :|:& };:`
+
+#### Known Limitation: Child Processes From Build Tools
+
+The exec safety guard only inspects the command line PicoClaw launches directly. It does not recursively inspect child
+processes spawned by allowed developer tools such as `make`, `go run`, `cargo`, `npm run`, or custom build scripts.
+
+That means a top-level command can still compile or launch other binaries after it passes the initial guard check. In
+practice, treat build scripts, Makefiles, package scripts, and generated binaries as executable code that needs the same
+level of review as a direct shell command.
+
+For higher-risk environments:
+
+* Review build scripts before execution.
+* Prefer approval/manual review for compile-and-run workflows.
+* Run PicoClaw inside a container or VM if you need stronger isolation than the built-in guard provides.
 
 #### Error Examples
 

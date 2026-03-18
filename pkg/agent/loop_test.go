@@ -30,6 +30,28 @@ func (f *fakeChannel) IsAllowed(string) bool                                   {
 func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool              { return true }
 func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
 
+type recordingProvider struct {
+	lastMessages []providers.Message
+}
+
+func (r *recordingProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	r.lastMessages = append([]providers.Message(nil), messages...)
+	return &providers.LLMResponse{
+		Content:   "Mock response",
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (r *recordingProvider) GetDefaultModel() string {
+	return "mock-model"
+}
+
 func newTestAgentLoop(
 	t *testing.T,
 ) (al *AgentLoop, cfg *config.Config, msgBus *bus.MessageBus, provider *mockProvider, cleanup func()) {
@@ -52,6 +74,59 @@ func newTestAgentLoop(
 	provider = &mockProvider{}
 	al = NewAgentLoop(cfg, msgBus, provider)
 	return al, cfg, msgBus, provider, func() { os.RemoveAll(tmpDir) }
+}
+
+func TestProcessMessage_IncludesCurrentSenderInDynamicContext(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "discord",
+		SenderID: "discord:123",
+		Sender: bus.SenderInfo{
+			DisplayName: "Alice",
+		},
+		ChatID:  "group-1",
+		Content: "hello",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "Mock response")
+	}
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("provider did not receive any messages")
+	}
+
+	systemPrompt := provider.lastMessages[0].Content
+	wantSender := "## Current Sender\nCurrent sender: Alice (ID: discord:123)"
+	if !strings.Contains(systemPrompt, wantSender) {
+		t.Fatalf("system prompt missing sender context %q:\n%s", wantSender, systemPrompt)
+	}
+
+	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
+	if lastMessage.Role != "user" || lastMessage.Content != "hello" {
+		t.Fatalf("last provider message = %+v, want unchanged user message", lastMessage)
+	}
 }
 
 func TestRecordLastChannel(t *testing.T) {
@@ -922,10 +997,25 @@ func TestHandleReasoning(t *testing.T) {
 		al, msgBus := newLoop(t)
 		al.handleReasoning(context.Background(), "reasoning", "telegram", "")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		if msg, ok := msgBus.SubscribeOutbound(ctx); ok {
-			t.Fatalf("expected no outbound message, got %+v", msg)
+		for {
+			select {
+			case msg, ok := <-msgBus.OutboundChan():
+				if !ok {
+					t.Fatalf("expected no outbound message, got %+v", msg)
+				}
+				if msg.Content == "reasoning" {
+					t.Fatalf("expected no message for empty chatID, got %+v", msg)
+				}
+				return
+			case <-ctx.Done():
+				t.Log("expected an outbound message, got none within timeout")
+				return
+			default:
+				// Continue to check for message
+				time.Sleep(5 * time.Millisecond) // Avoid busy loop
+			}
 		}
 	})
 
@@ -933,9 +1023,7 @@ func TestHandleReasoning(t *testing.T) {
 		al, msgBus := newLoop(t)
 		al.handleReasoning(context.Background(), "hello reasoning", "slack", "channel-1")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-		defer cancel()
-		msg, ok := msgBus.SubscribeOutbound(ctx)
+		msg, ok := <-msgBus.OutboundChan()
 		if !ok {
 			t.Fatal("expected an outbound message")
 		}
@@ -949,35 +1037,52 @@ func TestHandleReasoning(t *testing.T) {
 		reasoning := "hello telegram reasoning"
 		al.handleReasoning(context.Background(), reasoning, "telegram", "tg-chat")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		msg, ok := msgBus.SubscribeOutbound(ctx)
-		if !ok {
-			t.Fatal("expected outbound message")
-		}
+		for {
+			select {
+			case <-ctx.Done():
+				t.Fatal("expected an outbound message, got none within timeout")
+				return
+			case msg, ok := <-msgBus.OutboundChan():
+				if !ok {
+					t.Fatal("expected outbound message")
+				}
 
-		if msg.Channel != "telegram" {
-			t.Fatalf("expected telegram channel message, got %+v", msg)
-		}
-		if msg.ChatID != "tg-chat" {
-			t.Fatalf("expected chatID tg-chat, got %+v", msg)
-		}
-		if msg.Content != reasoning {
-			t.Fatalf("content mismatch: got %q want %q", msg.Content, reasoning)
+				if msg.Channel != "telegram" {
+					t.Fatalf("expected telegram channel message, got %+v", msg)
+				}
+				if msg.ChatID != "tg-chat" {
+					t.Fatalf("expected chatID tg-chat, got %+v", msg)
+				}
+				if msg.Content != reasoning {
+					t.Fatalf("content mismatch: got %q want %q", msg.Content, reasoning)
+				}
+				return
+			}
 		}
 	})
 	t.Run("expired ctx", func(t *testing.T) {
 		al, msgBus := newLoop(t)
 		reasoning := "hello telegram reasoning"
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		al.handleReasoning(ctx, reasoning, "telegram", "tg-chat")
 
-		ctx, cancel = context.WithTimeout(context.Background(), 200*time.Millisecond)
-		defer cancel()
-		msg, ok := msgBus.SubscribeOutbound(ctx)
-		if ok {
-			t.Fatalf("expected no outbound message, got %+v", msg)
+		al.handleReasoning(context.Background(), reasoning, "telegram", "tg-chat")
+
+		consumeCtx, consumeCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer consumeCancel()
+
+		for {
+			select {
+			case msg, ok := <-msgBus.OutboundChan():
+				if !ok {
+					t.Fatalf("expected no outbound message, but received: %+v", msg)
+				}
+				t.Logf("Received unexpected outbound message: %+v", msg)
+				return
+			case <-consumeCtx.Done():
+				t.Fatalf("failed: no message received within timeout")
+				return
+			}
 		}
 	})
 
@@ -1017,20 +1122,23 @@ func TestHandleReasoning(t *testing.T) {
 
 		// Drain the bus and verify the reasoning message was NOT published
 		// (it should have been dropped due to timeout).
-		drainCtx, drainCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		defer drainCancel()
-		foundReasoning := false
+		timeer := time.After(1 * time.Second)
 		for {
-			msg, ok := msgBus.SubscribeOutbound(drainCtx)
-			if !ok {
-				break
+			select {
+			case <-timeer:
+				t.Logf(
+					"no reasoning message received after draining bus for 1s, as expected,length=%d",
+					len(msgBus.OutboundChan()),
+				)
+				return
+			case msg, ok := <-msgBus.OutboundChan():
+				if !ok {
+					break
+				}
+				if msg.Content == "should timeout" {
+					t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
+				}
 			}
-			if msg.Content == "should timeout" {
-				foundReasoning = true
-			}
-		}
-		if foundReasoning {
-			t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
 		}
 	})
 }

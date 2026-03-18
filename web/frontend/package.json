@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:backend": "tsc -b && vite build --outDir ../backend/dist --emptyOutDir",
+    "build:backend": "tsc -b && vite build --outDir ../backend/dist --emptyOutDir && node ./scripts/ensure-backend-gitkeep.cjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "prettier --check .",
@@ -40,7 +40,7 @@
     "wrap-ansi": "^10.0.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.1",
+    "@eslint/js": "^9.39.3",
     "@tailwindcss/typography": "^0.5.19",
     "@tanstack/router-plugin": "^1.164.0",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
@@ -49,7 +49,7 @@
     "@types/react-dom": "^19.2.3",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@vitejs/plugin-react": "^5.2.0",
-    "eslint": "^9.39.1",
+    "eslint": "^9.39.3",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

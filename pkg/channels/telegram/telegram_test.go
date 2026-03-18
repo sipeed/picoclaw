@@ -6,7 +6,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mymmrac/telego"
 	ta "github.com/mymmrac/telego/telegoapi"
@@ -355,10 +354,7 @@ func TestHandleMessage_ForumTopic_SetsMetadata(t *testing.T) {
 	err := ch.handleMessage(context.Background(), msg)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	inbound, ok := messageBus.ConsumeInbound(ctx)
+	inbound, ok := <-messageBus.InboundChan()
 	require.True(t, ok, "expected inbound message")
 
 	// Composite chatID should include thread ID
@@ -397,10 +393,7 @@ func TestHandleMessage_NoForum_NoThreadMetadata(t *testing.T) {
 	err := ch.handleMessage(context.Background(), msg)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	inbound, ok := messageBus.ConsumeInbound(ctx)
+	inbound, ok := <-messageBus.InboundChan()
 	require.True(t, ok)
 
 	// Plain chatID without thread suffix
@@ -443,10 +436,7 @@ func TestHandleMessage_ReplyThread_NonForum_NoIsolation(t *testing.T) {
 	err := ch.handleMessage(context.Background(), msg)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	inbound, ok := messageBus.ConsumeInbound(ctx)
+	inbound, ok := <-messageBus.InboundChan()
 	require.True(t, ok)
 
 	// chatID should NOT include thread suffix for non-forum groups

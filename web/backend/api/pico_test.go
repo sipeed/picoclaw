@@ -2,9 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -234,4 +237,78 @@ func TestHandlePicoSetup_Response(t *testing.T) {
 	if resp["changed"] != true {
 		t.Error("response should have changed=true on first setup")
 	}
+}
+
+func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	handler := h.handleWebSocketProxy()
+
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/pico/ws" {
+			t.Fatalf("server1 path = %q, want %q", r.URL.Path, "/pico/ws")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "server1")
+	}))
+	defer server1.Close()
+
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/pico/ws" {
+			t.Fatalf("server2 path = %q, want %q", r.URL.Path, "/pico/ws")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "server2")
+	}))
+	defer server2.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = mustGatewayTestPort(t, server1.URL)
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	req1 := httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
+	rec1 := httptest.NewRecorder()
+	handler(rec1, req1)
+
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("first status = %d, want %d", rec1.Code, http.StatusOK)
+	}
+	if body := rec1.Body.String(); body != "server1" {
+		t.Fatalf("first body = %q, want %q", body, "server1")
+	}
+
+	cfg.Gateway.Port = mustGatewayTestPort(t, server2.URL)
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
+	rec2 := httptest.NewRecorder()
+	handler(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second status = %d, want %d", rec2.Code, http.StatusOK)
+	}
+	if body := rec2.Body.String(); body != "server2" {
+		t.Fatalf("second body = %q, want %q", body, "server2")
+	}
+}
+
+func mustGatewayTestPort(t *testing.T, rawURL string) int {
+	t.Helper()
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatalf("Atoi(%q) error = %v", parsed.Port(), err)
+	}
+
+	return port
 }

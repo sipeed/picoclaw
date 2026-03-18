@@ -221,11 +221,17 @@ func buildRequestBody(
 
 			// Add tool_use blocks
 			for _, tc := range msg.ToolCalls {
+				// Handle nil Arguments (GLM-4 may return null input)
+				input := tc.Arguments
+				if input == nil {
+					input = map[string]any{}
+				}
+
 				toolUse := map[string]any{
 					"type":  "tool_use",
 					"id":    tc.ID,
 					"name":  tc.Name,
-					"input": tc.Arguments,
+					"input": input,
 				}
 				content = append(content, toolUse)
 			}
