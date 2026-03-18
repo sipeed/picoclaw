@@ -490,6 +490,12 @@ func DefaultConfig() *Config {
 			WriteFile: ToolConfig{
 				Enabled: true,
 			},
+			BrowserAction: ToolConfig{
+				Enabled: true,
+			},
+			GoEval: ToolConfig{
+				Enabled: true,
+			},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
