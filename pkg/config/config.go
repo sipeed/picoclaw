@@ -696,6 +696,7 @@ func (c *ModelConfig) APIKey() string {
 func (c *ModelConfig) IsVirtual() bool {
 	return c.isVirtual
 }
+}
 
 // Validate checks if the ModelConfig has all required fields.
 func (c *ModelConfig) Validate() error {
@@ -736,7 +737,6 @@ func (c *ModelConfig) SetAPIKey(value string) {
 		c.APIKeys = append(c.APIKeys, NewSecureString(value))
 	}
 }
-
 type GatewayConfig struct {
 	Host      string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
 	Port      int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
