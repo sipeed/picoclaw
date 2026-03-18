@@ -251,7 +251,7 @@ func TestGetDefaultAPIBase_Novita(t *testing.T) {
 	}
 }
 
-func TestCreateProviderFromConfig_Anthropic(t *testing.T) {
+func TestCreateProviderFromConfig_AnthropicAPIKeyNormalizesDottedModelID(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-anthropic",
 		Model:     "anthropic/claude-sonnet-4.6",
@@ -265,8 +265,8 @@ func TestCreateProviderFromConfig_Anthropic(t *testing.T) {
 	if provider == nil {
 		t.Fatal("CreateProviderFromConfig() returned nil provider")
 	}
-	if modelID != "claude-sonnet-4.6" {
-		t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4.6")
+	if modelID != "claude-sonnet-4-6" {
+		t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4-6")
 	}
 }
 
