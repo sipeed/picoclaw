@@ -308,6 +308,7 @@ func (r *ToolRegistry) List() []string {
 // snapshot of the parent agent's tools without sharing the same registry —
 // tools registered on the parent after cloning (e.g. spawn, spawn_status)
 // will NOT be visible to the clone, preventing recursive subagent spawning.
+// The version counter is reset to 0 in the clone as it's a new independent registry.
 func (r *ToolRegistry) Clone() *ToolRegistry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

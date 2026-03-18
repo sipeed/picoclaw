@@ -400,6 +400,31 @@ func TestToolRegistry_Clone_PreservesHiddenToolState(t *testing.T) {
 	}
 }
 
+func TestToolRegistry_Clone_PreservesTTLValue(t *testing.T) {
+	r := NewToolRegistry()
+	r.RegisterHidden(newMockTool("ttl_tool", "tool with TTL"))
+
+	// Manually set a non-zero TTL on the entry
+	r.mu.RLock()
+	if entry, ok := r.tools["ttl_tool"]; ok {
+		entry.TTL = 5
+	}
+	r.mu.RUnlock()
+
+	clone := r.Clone()
+
+	// Verify TTL value is preserved in the clone
+	clone.mu.RLock()
+	defer clone.mu.RUnlock()
+	entry, ok := clone.tools["ttl_tool"]
+	if !ok {
+		t.Fatal("expected ttl_tool to exist in clone")
+	}
+	if entry.TTL != 5 {
+		t.Errorf("expected TTL=5 in clone, got %d", entry.TTL)
+	}
+}
+
 func TestToolRegistry_ConcurrentAccess(t *testing.T) {
 	r := NewToolRegistry()
 	var wg sync.WaitGroup
