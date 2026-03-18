@@ -3,8 +3,10 @@ package mqtt
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -85,14 +87,29 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 		tlsConfig := &tls.Config{
 			InsecureSkipVerify: false,
 		}
+		
+		// Load CA certificate if provided
 		if c.config.TLSCA != "" {
-			// Load CA cert if provided
-			// For simplicity, assuming file path
-			// In production, load cert properly
+			caCert, err := os.ReadFile(c.config.TLSCA)
+			if err != nil {
+				return fmt.Errorf("failed to read CA certificate: %w", err)
+			}
+			caCertPool := x509.NewCertPool()
+			if !caCertPool.AppendCertsFromPEM(caCert) {
+				return fmt.Errorf("failed to parse CA certificate")
+			}
+			tlsConfig.RootCAs = caCertPool
 		}
+		
+		// Load client certificate and key if provided
 		if c.config.TLSCert != "" && c.config.TLSKey != "" {
-			// Load client cert
+			cert, err := tls.LoadX509KeyPair(c.config.TLSCert, c.config.TLSKey)
+			if err != nil {
+				return fmt.Errorf("failed to load client certificate and key: %w", err)
+			}
+			tlsConfig.Certificates = []tls.Certificate{cert}
 		}
+		
 		opts.SetTLSConfig(tlsConfig)
 	}
 
