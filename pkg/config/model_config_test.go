@@ -337,6 +337,29 @@ func TestModelConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestNormalizeCooldownStrategy(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "", want: "provider"},
+		{input: "provider", want: "provider"},
+		{input: "model", want: "model"},
+		{input: "per-model", want: "model"},
+		{input: "per_model", want: "model"},
+		{input: " Per_Model ", want: "model"},
+		{input: "backend", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := NormalizeCooldownStrategy(tt.input); got != tt.want {
+				t.Fatalf("NormalizeCooldownStrategy(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConfig_ValidateModelList(t *testing.T) {
 	tests := []struct {
 		name    string

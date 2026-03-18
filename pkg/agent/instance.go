@@ -203,57 +203,53 @@ func applyCooldownKeys(cfg *config.Config, candidates []providers.FallbackCandid
 		return candidates
 	}
 
+	strategyLookup := buildCooldownStrategyLookup(cfg)
 	resolved := make([]providers.FallbackCandidate, len(candidates))
 	copy(resolved, candidates)
 
 	for i := range resolved {
-		resolved[i].CooldownKey = resolveCooldownKey(cfg, resolved[i])
+		resolved[i].CooldownKey = resolveCooldownKey(strategyLookup, resolved[i])
 	}
 
 	return resolved
 }
 
-func resolveCooldownKey(cfg *config.Config, candidate providers.FallbackCandidate) string {
-	if candidate.Provider == "" {
-		return ""
+func buildCooldownStrategyLookup(cfg *config.Config) map[string]string {
+	if cfg == nil || len(cfg.ModelList) == 0 {
+		return nil
 	}
 
-	if cfg != nil && candidateUsesPerModelCooldown(cfg, candidate) {
-		return providers.ModelKey(candidate.Provider, candidate.Model)
-	}
-
-	return candidate.Provider
-}
-
-func candidateUsesPerModelCooldown(cfg *config.Config, candidate providers.FallbackCandidate) bool {
-	if cfg == nil {
-		return false
-	}
-
-	candidateKey := providers.ModelKey(candidate.Provider, candidate.Model)
+	strategyLookup := make(map[string]string, len(cfg.ModelList))
 	for i := range cfg.ModelList {
 		ref := providers.ParseModelRef(cfg.ModelList[i].Model, "openai")
 		if ref == nil {
 			continue
 		}
-		if providers.ModelKey(ref.Provider, ref.Model) != candidateKey {
+
+		strategy := config.NormalizeCooldownStrategy(cfg.ModelList[i].CooldownStrategy)
+		if strategy == "" {
 			continue
 		}
-		if normalizeCooldownStrategy(cfg.ModelList[i].CooldownStrategy) == "model" {
-			return true
-		}
+		strategyLookup[providers.ModelKey(ref.Provider, ref.Model)] = strategy
 	}
 
-	return false
+	return strategyLookup
 }
 
-func normalizeCooldownStrategy(strategy string) string {
-	switch strings.ReplaceAll(strings.ToLower(strings.TrimSpace(strategy)), "_", "-") {
-	case "model", "per-model":
-		return "model"
-	default:
-		return "provider"
+func resolveCooldownKey(strategyLookup map[string]string, candidate providers.FallbackCandidate) string {
+	if strings.TrimSpace(candidate.Provider) == "" {
+		if strings.TrimSpace(candidate.Model) == "" {
+			return ""
+		}
+		return providers.ModelKey(candidate.Provider, candidate.Model)
 	}
+
+	candidateKey := providers.ModelKey(candidate.Provider, candidate.Model)
+	if strategyLookup[candidateKey] == "model" {
+		return candidateKey
+	}
+
+	return candidate.Provider
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.

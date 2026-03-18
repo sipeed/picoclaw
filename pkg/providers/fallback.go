@@ -46,7 +46,13 @@ func (c FallbackCandidate) cooldownKey() string {
 	if strings.TrimSpace(c.CooldownKey) != "" {
 		return c.CooldownKey
 	}
-	return ModelKey(c.Provider, c.Model)
+	if strings.TrimSpace(c.Provider) == "" {
+		if strings.TrimSpace(c.Model) == "" {
+			return ""
+		}
+		return ModelKey(c.Provider, c.Model)
+	}
+	return c.Provider
 }
 
 // ResolveCandidates parses model config into a deduplicated candidate list.
@@ -127,8 +133,7 @@ func (fc *FallbackChain) Execute(
 			return nil, context.Canceled
 		}
 
-		// Check cooldown (per provider/model, not just provider).
-		// This allows multi-key failover where different keys use different model names.
+		// Check cooldown using the resolved provider- or model-scoped key.
 		if !fc.cooldown.IsAvailable(cooldownKey) {
 			remaining := fc.cooldown.CooldownRemaining(cooldownKey)
 			result.Attempts = append(result.Attempts, FallbackAttempt{
