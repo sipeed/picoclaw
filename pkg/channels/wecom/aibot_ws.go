@@ -33,6 +33,7 @@ const (
 	wsSubscribeTimeout  = 10 * time.Second
 	wsSendMsgTimeout    = 10 * time.Second
 	wsRespondMsgTimeout = 10 * time.Second
+	wsWelcomeMsgTimeout = 5 * time.Second // WeCom requires welcome reply within 5 seconds
 	wsMaxReconnectWait  = 60 * time.Second
 	wsInitialReconnect  = time.Second
 
@@ -68,6 +69,9 @@ type WeComAIBotWSChannel struct {
 	conn   *websocket.Conn
 	connMu sync.Mutex
 
+	// dedupe prevents duplicate message processing (WeCom may re-deliver).
+	dedupe *MessageDeduplicator
+
 	// reqStates holds per-req_id runtime state.
 	// It unifies active task state and late-reply fallback routing.
 	reqStates   map[string]*wsReqState
@@ -81,14 +85,13 @@ type WeComAIBotWSChannel struct {
 
 // wsTask tracks one in-progress agent reply for a single chat turn.
 type wsTask struct {
-	ReqID       string // req_id echoed in all replies for this turn
-	ChatID      string
-	ChatType    uint32
-	StreamID    string // our generated stream.id
-	CreatedTime time.Time
-	answerCh    chan string // agent delivers its reply here via Send()
-	ctx         context.Context
-	cancel      context.CancelFunc
+	ReqID    string // req_id echoed in all replies for this turn
+	ChatID   string
+	ChatType uint32
+	StreamID string      // our generated stream.id
+	answerCh chan string // agent delivers its reply here via Send()
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 type wsReqState struct {
@@ -183,7 +186,7 @@ type WeComAIBotWSMessage struct {
 		AESKey string `json:"aeskey,omitempty"` // long-connection: per-resource decrypt key
 	} `json:"image,omitempty"`
 	Voice *struct {
-		Text string `json:"text"` // WeCom transcribes voice to text in callbacks
+		Content string `json:"content"` // WeCom transcribes voice to text in callbacks
 	} `json:"voice,omitempty"`
 	Mixed *struct {
 		MsgItem []struct {
@@ -200,6 +203,14 @@ type WeComAIBotWSMessage struct {
 	Event *struct {
 		EventType string `json:"eventtype"`
 	} `json:"event,omitempty"`
+	File *struct {
+		URL    string `json:"url"`
+		AESKey string `json:"aeskey,omitempty"`
+	} `json:"file,omitempty"`
+	Video *struct {
+		URL    string `json:"url"`
+		AESKey string `json:"aeskey,omitempty"`
+	} `json:"video,omitempty"`
 }
 
 // ---- Constructor ----
@@ -221,6 +232,7 @@ func newWeComAIBotWSChannel(
 	return &WeComAIBotWSChannel{
 		BaseChannel: base,
 		config:      cfg,
+		dedupe:      NewMessageDeduplicator(wecomMaxProcessedMessages),
 		reqStates:   make(map[string]*wsReqState),
 		reqPending:  make(map[string]chan wsEnvelope),
 	}, nil
@@ -494,6 +506,8 @@ func (c *WeComAIBotWSChannel) sendAndWait(
 }
 
 // heartbeatLoop sends a ping every wsHeartbeatInterval until conn is closed.
+// It validates the server's pong response via sendAndWait; a failed pong
+// triggers a reconnection by closing the connection.
 func (c *WeComAIBotWSChannel) heartbeatLoop(conn *websocket.Conn) {
 	ticker := time.NewTicker(wsHeartbeatInterval)
 	defer ticker.Stop()
@@ -501,18 +515,23 @@ func (c *WeComAIBotWSChannel) heartbeatLoop(conn *websocket.Conn) {
 		select {
 		case <-ticker.C:
 			reqID := wsGenerateID()
-			data, _ := json.Marshal(wsCommand{
+			resp, err := c.sendAndWait(conn, reqID, wsCommand{
 				Cmd:     "ping",
 				Headers: wsHeaders{ReqID: reqID},
-			})
-			c.connMu.Lock()
-			err := conn.WriteMessage(websocket.TextMessage, data)
-			c.connMu.Unlock()
+			}, wsHeartbeatInterval)
 			if err != nil {
-				logger.WarnCF("wecom_aibot", "Heartbeat write failed", map[string]any{"error": err.Error()})
+				logger.WarnCF("wecom_aibot", "Heartbeat failed, closing connection",
+					map[string]any{"error": err.Error()})
+				conn.Close()
 				return
 			}
-			logger.DebugCF("wecom_aibot", "Heartbeat sent", map[string]any{"req_id": reqID})
+			if resp.ErrCode != 0 {
+				logger.WarnCF("wecom_aibot", "Heartbeat rejected",
+					map[string]any{"errcode": resp.ErrCode, "errmsg": resp.ErrMsg})
+				conn.Close()
+				return
+			}
+			logger.DebugCF("wecom_aibot", "Heartbeat pong received", map[string]any{"req_id": reqID})
 		case <-c.ctx.Done():
 			return
 		}
@@ -540,8 +559,9 @@ func (c *WeComAIBotWSChannel) readLoop(conn *websocket.Conn) error {
 			continue
 		}
 
-		// If there is a waiting sendAndWait() call for this req_id, forward
-		// the envelope to it.  Command responses have an empty Cmd field.
+		// Command responses have an empty Cmd field; forward to any waiting
+		// sendAndWait() call, or silently drop if no one is waiting (e.g.
+		// late responses after timeout).
 		if env.Cmd == "" && env.Headers.ReqID != "" {
 			c.reqPendingMu.Lock()
 			ch, ok := c.reqPending[env.Headers.ReqID]
@@ -551,8 +571,8 @@ func (c *WeComAIBotWSChannel) readLoop(conn *websocket.Conn) error {
 			c.reqPendingMu.Unlock()
 			if ok {
 				ch <- env
-				continue
 			}
+			continue
 		}
 
 		// Dispatch to appropriate handler in a separate goroutine so the
@@ -585,6 +605,13 @@ func (c *WeComAIBotWSChannel) handleMsgCallback(env wsEnvelope) {
 		return
 	}
 
+	// Deduplicate by msgid (WeCom may re-deliver on network issues).
+	if msg.MsgID != "" && !c.dedupe.MarkMessageProcessed(msg.MsgID) {
+		logger.DebugCF("wecom_aibot", "Duplicate message ignored",
+			map[string]any{"msgid": msg.MsgID})
+		return
+	}
+
 	reqID := env.Headers.ReqID
 	switch msg.MsgType {
 	case "text":
@@ -595,6 +622,10 @@ func (c *WeComAIBotWSChannel) handleMsgCallback(env wsEnvelope) {
 		c.handleWSVoiceMessage(reqID, msg)
 	case "mixed":
 		c.handleWSMixedMessage(reqID, msg)
+	case "file":
+		c.handleWSFileMessage(reqID, msg)
+	case "video":
+		c.handleWSVideoMessage(reqID, msg)
 	default:
 		logger.WarnCF("wecom_aibot", "Unsupported message type",
 			map[string]any{"msgtype": msg.MsgType})
@@ -609,6 +640,13 @@ func (c *WeComAIBotWSChannel) handleEventCallback(env wsEnvelope) {
 	if err := json.Unmarshal(env.Body, &msg); err != nil {
 		logger.WarnCF("wecom_aibot", "Failed to parse event callback body",
 			map[string]any{"error": err.Error()})
+		return
+	}
+
+	// Deduplicate by msgid.
+	if msg.MsgID != "" && !c.dedupe.MarkMessageProcessed(msg.MsgID) {
+		logger.DebugCF("wecom_aibot", "Duplicate event ignored",
+			map[string]any{"msgid": msg.MsgID})
 		return
 	}
 
@@ -653,26 +691,30 @@ func (c *WeComAIBotWSChannel) handleWSImageMessage(reqID string, msg WeComAIBotW
 		c.wsSendStreamFinish(reqID, wsGenerateID(), "Image message could not be processed.")
 		return
 	}
+	c.wsHandleMediaMessage(reqID, msg, msg.Image.URL, msg.Image.AESKey, "image")
+}
 
-	chatID := msg.ChatID
-	if chatID == "" {
-		chatID = msg.From.UserID
-	}
+// wsHandleMediaMessage is a shared helper for image, file and video messages.
+// It downloads the resource, stores it in MediaStore, and dispatches to the agent.
+func (c *WeComAIBotWSChannel) wsHandleMediaMessage(
+	reqID string, msg WeComAIBotWSMessage,
+	resourceURL, aesKey, label string,
+) {
+	chatID := wsChatID(msg)
 
 	ctx, cancel := context.WithTimeout(c.ctx, wsImageDownloadTimeout)
 	defer cancel()
 
-	mediaRefs := make([]string, 0, 1)
-	ref, err := c.storeWSImage(ctx, chatID, msg.MsgID, msg.Image.URL, msg.Image.AESKey)
+	ref, err := c.storeWSImage(ctx, chatID, msg.MsgID, resourceURL, aesKey)
 	if err != nil {
-		logger.WarnCF("wecom_aibot", "Failed to download/store WS image",
-			map[string]any{"error": err.Error(), "url": msg.Image.URL})
-		c.wsSendStreamFinish(reqID, wsGenerateID(), "Image message could not be processed.")
+		logger.WarnCF("wecom_aibot", "Failed to download/store WS "+label,
+			map[string]any{"error": err.Error(), "url": resourceURL})
+		c.wsSendStreamFinish(reqID, wsGenerateID(),
+			strings.ToUpper(label[:1])+label[1:]+" message could not be processed.")
 		return
 	}
-	mediaRefs = append(mediaRefs, ref)
 
-	c.dispatchWSAgentTask(reqID, msg, "[image]", mediaRefs)
+	c.dispatchWSAgentTask(reqID, msg, "["+label+"]", []string{ref})
 }
 
 // handleWSMixedMessage handles mixed text+image messages.
@@ -685,10 +727,7 @@ func (c *WeComAIBotWSChannel) handleWSMixedMessage(reqID string, msg WeComAIBotW
 		return
 	}
 
-	chatID := msg.ChatID
-	if chatID == "" {
-		chatID = msg.From.UserID
-	}
+	chatID := wsChatID(msg)
 
 	ctx, cancel := context.WithTimeout(c.ctx, wsImageDownloadTimeout)
 	defer cancel()
@@ -744,24 +783,20 @@ func (c *WeComAIBotWSChannel) dispatchWSAgentTask(
 	}
 	// actualChatID is the real WeCom chat/user ID used for peer identification.
 	// reqID is used as the routing chatID so each turn is independently addressable.
-	actualChatID := msg.ChatID
-	if actualChatID == "" {
-		actualChatID = userID
-	}
+	actualChatID := wsChatID(msg)
 
 	streamID := wsGenerateID()
 	chatType := wsChatTypeValue(msg.ChatType)
 	taskCtx, taskCancel := context.WithCancel(c.ctx)
 
 	task := &wsTask{
-		ReqID:       reqID,
-		ChatID:      actualChatID,
-		ChatType:    chatType,
-		StreamID:    streamID,
-		CreatedTime: time.Now(),
-		answerCh:    make(chan string, 1),
-		ctx:         taskCtx,
-		cancel:      taskCancel,
+		ReqID:    reqID,
+		ChatID:   actualChatID,
+		ChatType: chatType,
+		StreamID: streamID,
+		answerCh: make(chan string, 1),
+		ctx:      taskCtx,
+		cancel:   taskCancel,
 	}
 	// Each req_id is unique per WeCom turn; tasks run concurrently, no cancellation.
 	c.setReqState(reqID, &wsReqState{
@@ -873,23 +908,33 @@ func (c *WeComAIBotWSChannel) dispatchWSAgentTask(
 
 // handleWSVoiceMessage handles voice messages.
 // WeCom transcribes voice to text in the callback; if the transcription is
-// present it is forwarded as a text message.
+// present it is dispatched as plain text to the agent.
 func (c *WeComAIBotWSChannel) handleWSVoiceMessage(reqID string, msg WeComAIBotWSMessage) {
-	if msg.Voice != nil && msg.Voice.Text != "" {
-		c.handleWSTextMessage(reqID, WeComAIBotWSMessage{
-			MsgID:    msg.MsgID,
-			AIBotID:  msg.AIBotID,
-			ChatID:   msg.ChatID,
-			ChatType: msg.ChatType,
-			From:     msg.From,
-			MsgType:  "text",
-			Text: &struct {
-				Content string `json:"content"`
-			}{Content: msg.Voice.Text},
-		})
+	if msg.Voice != nil && msg.Voice.Content != "" {
+		c.dispatchWSAgentTask(reqID, msg, msg.Voice.Content, nil)
 		return
 	}
 	c.wsSendStreamFinish(reqID, wsGenerateID(), "Voice messages are not yet supported.")
+}
+
+// handleWSFileMessage handles file messages.
+func (c *WeComAIBotWSChannel) handleWSFileMessage(reqID string, msg WeComAIBotWSMessage) {
+	if msg.File == nil {
+		logger.WarnC("wecom_aibot", "File message missing file field")
+		c.wsSendStreamFinish(reqID, wsGenerateID(), "File message could not be processed.")
+		return
+	}
+	c.wsHandleMediaMessage(reqID, msg, msg.File.URL, msg.File.AESKey, "file")
+}
+
+// handleWSVideoMessage handles video messages.
+func (c *WeComAIBotWSChannel) handleWSVideoMessage(reqID string, msg WeComAIBotWSMessage) {
+	if msg.Video == nil {
+		logger.WarnC("wecom_aibot", "Video message missing video field")
+		c.wsSendStreamFinish(reqID, wsGenerateID(), "Video message could not be processed.")
+		return
+	}
+	c.wsHandleMediaMessage(reqID, msg, msg.Video.URL, msg.Video.AESKey, "video")
 }
 
 // ---- WebSocket write helpers ----
@@ -939,7 +984,7 @@ func (c *WeComAIBotWSChannel) wsSendWelcomeMsg(reqID, content string) {
 			Text:    &wsTextContent{Content: content},
 		},
 	}
-	if err := c.writeWSAndWait(cmd, wsRespondMsgTimeout); err != nil {
+	if err := c.writeWSAndWait(cmd, wsWelcomeMsgTimeout); err != nil {
 		logger.WarnCF("wecom_aibot", "Welcome message ack failed",
 			map[string]any{"req_id": reqID, "error": err.Error()})
 	}
@@ -952,15 +997,7 @@ func (c *WeComAIBotWSChannel) wsSendActivePush(chatID string, chatType uint32, c
 		return fmt.Errorf("chatid is empty")
 	}
 	reqID := wsGenerateID()
-
-	c.connMu.Lock()
-	conn := c.conn
-	c.connMu.Unlock()
-	if conn == nil {
-		return fmt.Errorf("websocket not connected")
-	}
-
-	resp, err := c.sendAndWait(conn, reqID, wsCommand{
+	return c.writeWSAndWait(wsCommand{
 		Cmd:     "aibot_send_msg",
 		Headers: wsHeaders{ReqID: reqID},
 		Body: wsSendMsgBody{
@@ -970,13 +1007,6 @@ func (c *WeComAIBotWSChannel) wsSendActivePush(chatID string, chatType uint32, c
 			Markdown: &wsMarkdownContent{Content: content},
 		},
 	}, wsSendMsgTimeout)
-	if err != nil {
-		return err
-	}
-	if resp.ErrCode != 0 {
-		return fmt.Errorf("aibot_send_msg rejected (errcode=%d): %s", resp.ErrCode, resp.ErrMsg)
-	}
-	return nil
 }
 
 // writeWSAndWait writes cmd to the active connection and validates the command response.
@@ -1069,6 +1099,15 @@ func wsChatTypeValue(chatType string) uint32 {
 		return 2
 	}
 	return 1
+}
+
+// wsChatID returns the effective chat ID from a WS message.
+// For group messages it is msg.ChatID; for single chats it falls back to the sender's UserID.
+func wsChatID(msg WeComAIBotWSMessage) string {
+	if msg.ChatID != "" {
+		return msg.ChatID
+	}
+	return msg.From.UserID
 }
 
 // wsGenerateID generates a random 10-character alphanumeric ID.
