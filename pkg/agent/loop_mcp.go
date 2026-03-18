@@ -213,8 +213,11 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 // The per-server Deferred field takes precedence over the global discoveryEnabled
 // default. When Deferred is nil, discoveryEnabled is used as the fallback.
 func serverIsDeferred(discoveryEnabled bool, serverCfg config.MCPServerConfig) bool {
+	if !discoveryEnabled {
+		return false
+	}
 	if serverCfg.Deferred != nil {
 		return *serverCfg.Deferred
 	}
-	return discoveryEnabled
+	return true
 }

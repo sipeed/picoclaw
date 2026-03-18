@@ -21,30 +21,31 @@ func TestServerIsDeferred(t *testing.T) {
 		serverDeferred   *bool
 		want             bool
 	}{
-		// --- per-server override wins regardless of global setting ---
+		// --- global false always wins: per-server deferred is ignored ---
 		{
-			name:             "per-server deferred=true overrides global false",
+			name:             "global false: per-server deferred=true is ignored",
 			discoveryEnabled: false,
 			serverDeferred:   boolPtr(true),
-			want:             true,
+			want:             false,
 		},
 		{
-			name:             "per-server deferred=false overrides global true",
+			name:             "global false: per-server deferred=false stays false",
+			discoveryEnabled: false,
+			serverDeferred:   boolPtr(false),
+			want:             false,
+		},
+		// --- global true: per-server override applies ---
+		{
+			name:             "global true: per-server deferred=false opts out",
 			discoveryEnabled: true,
 			serverDeferred:   boolPtr(false),
 			want:             false,
 		},
 		{
-			name:             "per-server deferred=true with global true",
+			name:             "global true: per-server deferred=true stays true",
 			discoveryEnabled: true,
 			serverDeferred:   boolPtr(true),
 			want:             true,
-		},
-		{
-			name:             "per-server deferred=false with global false",
-			discoveryEnabled: false,
-			serverDeferred:   boolPtr(false),
-			want:             false,
 		},
 		// --- no per-server override: fall back to global ---
 		{
