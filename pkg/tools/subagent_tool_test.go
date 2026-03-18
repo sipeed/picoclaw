@@ -325,3 +325,82 @@ func TestSubagentTool_ForUserTruncation(t *testing.T) {
 		t.Error("ForLLM should contain reference to original task")
 	}
 }
+
+// MockTool is a test tool implementation for verifying subagent receives tools
+type MockTool struct {
+	name        string
+	description string
+}
+
+func (m *MockTool) Name() string        { return m.name }
+func (m *MockTool) Description() string { return m.description }
+func (m *MockTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+func (m *MockTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+	return &ToolResult{ForLLM: "mock result"}
+}
+
+// TestSubagentManager_SetTools verifies that SetTools properly passes tools to subagent
+func TestSubagentManager_SetTools(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+
+	// Create a tool registry with some tools
+	registry := NewToolRegistry()
+	registry.Register(&MockTool{name: "test_tool", description: "A test tool"})
+	registry.Register(&MockTool{name: "another_tool", description: "Another test tool"})
+
+	// Set the tools on the manager
+	manager.SetTools(registry)
+
+	// Verify that the tools were set by checking the internal tools field
+	// We can do this by checking if the manager has tools after SetTools
+	toolCount := len(registry.List())
+	if toolCount != 2 {
+		t.Fatalf("Expected 2 tools in registry, got: %d", toolCount)
+	}
+
+	// Verify the tools are the same instance
+	if manager.tools != registry {
+		t.Error("Manager's tools should be the same registry instance passed to SetTools")
+	}
+}
+
+// TestSubagentManager_SetTools_NilRegistry verifies behavior when nil registry is passed
+func TestSubagentManager_SetTools_NilRegistry(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+
+	// Initially, manager has an empty registry from NewSubagentManager
+	initialTools := manager.tools
+	if initialTools == nil {
+		t.Fatal("NewSubagentManager should initialize tools to a non-nil registry")
+	}
+
+	// Set nil tools - this should replace the registry with nil
+	manager.SetTools(nil)
+
+	if manager.tools != nil {
+		t.Error("SetTools(nil) should set tools to nil")
+	}
+}
+
+// TestSubagentManager_DefaultToolsNotNil verifies that NewSubagentManager initializes tools
+func TestSubagentManager_DefaultToolsNotNil(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+
+	// The tools field should be initialized to a non-nil registry
+	if manager.tools == nil {
+		t.Error("NewSubagentManager should initialize tools to a non-nil registry")
+	}
+
+	// The default registry should be empty
+	if len(manager.tools.List()) != 0 {
+		t.Errorf("Default registry should be empty, got: %d tools", len(manager.tools.List()))
+	}
+}
