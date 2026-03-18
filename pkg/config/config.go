@@ -531,6 +531,7 @@ type ProvidersConfig struct {
 	Minimax       ProviderConfig       `json:"minimax"`
 	LongCat       ProviderConfig       `json:"longcat"`
 	ModelScope    ProviderConfig       `json:"modelscope"`
+	Novita        ProviderConfig       `json:"novita"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -559,7 +560,8 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.Avian.APIKey == "" && p.Avian.APIBase == "" &&
 		p.Minimax.APIKey == "" && p.Minimax.APIBase == "" &&
 		p.LongCat.APIKey == "" && p.LongCat.APIBase == "" &&
-		p.ModelScope.APIKey == "" && p.ModelScope.APIBase == ""
+		p.ModelScope.APIKey == "" && p.ModelScope.APIBase == "" &&
+		p.Novita.APIKey == "" && p.Novita.APIBase == ""
 }
 
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig
@@ -589,7 +591,9 @@ type OpenAIProviderConfig struct {
 // ModelConfig represents a model-centric provider configuration.
 // It allows adding new providers (especially OpenAI-compatible ones) via configuration only.
 // The model field uses protocol prefix format: [protocol/]model-identifier
-// Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot
+// Supported protocols include openai, anthropic, antigravity, claude-cli,
+// codex-cli, github-copilot, and named OpenAI-compatible protocols such as
+// groq, deepseek, modelscope, and novita.
 // Default protocol is "openai" if no prefix is specified.
 type ModelConfig struct {
 	// Required fields
