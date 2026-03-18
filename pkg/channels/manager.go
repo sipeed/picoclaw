@@ -299,6 +299,10 @@ func (m *Manager) initChannels() error {
 		m.initChannel("wecom_app", "WeCom App")
 	}
 
+	if m.config.Channels.WeComWS.Enabled && m.config.Channels.WeComWS.BotID != "" && m.config.Channels.WeComWS.Secret != "" {
+		m.initChannel("wecom_ws", "WeCom WebSocket")
+	}
+
 	if m.config.Channels.Pico.Enabled && m.config.Channels.Pico.Token != "" {
 		m.initChannel("pico", "Pico")
 	}
