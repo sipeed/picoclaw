@@ -211,6 +211,50 @@ func TestNewAgentInstance_ResolvePerModelCooldownKeys(t *testing.T) {
 	}
 }
 
+func TestNewAgentInstance_ResolveLightModelPerModelCooldownKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: tmpDir,
+				Model:     "primary-model",
+				Routing: &config.RoutingConfig{
+					Enabled:    true,
+					LightModel: "light-model",
+					Threshold:  0.5,
+				},
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "primary-model",
+				Model:     "litellm/openai/gpt-4o-mini",
+			},
+			{
+				ModelName:        "light-model",
+				Model:            " LiteLLM/OpenAI/GPT-4O ",
+				CooldownStrategy: "per_model",
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if agent.Router == nil {
+		t.Fatal("expected Router to be initialized for light model routing")
+	}
+	if len(agent.LightCandidates) != 1 {
+		t.Fatalf("len(LightCandidates) = %d, want 1", len(agent.LightCandidates))
+	}
+	if got := agent.LightCandidates[0].Provider; got != "litellm" {
+		t.Fatalf("light candidate provider = %q, want %q", got, "litellm")
+	}
+	if got := agent.LightCandidates[0].CooldownKey; got != "litellm/openai/gpt-4o" {
+		t.Fatalf("light candidate cooldown key = %q, want %q", got, "litellm/openai/gpt-4o")
+	}
+}
+
 func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 	workspace := t.TempDir()
 	mediaDir := media.TempDir()
