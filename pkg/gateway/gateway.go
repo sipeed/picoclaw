@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -55,6 +56,7 @@ type services struct {
 	DeviceService    *devices.Service
 	HealthServer     *health.Server
 	manualReloadChan chan struct{}
+	reloading        atomic.Bool
 }
 
 type startupBlockedProvider struct {
@@ -122,11 +124,16 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 	manualReloadChan := make(chan struct{}, 1)
 	runningServices.manualReloadChan = manualReloadChan
 	reloadTrigger := func() error {
+		if !runningServices.reloading.CompareAndSwap(false, true) {
+			return fmt.Errorf("reload already in progress")
+		}
 		select {
 		case manualReloadChan <- struct{}{}:
 			return nil
 		default:
-			return fmt.Errorf("reload already in progress")
+			// Should not happen, but reset flag if channel is full
+			runningServices.reloading.Store(false)
+			return fmt.Errorf("reload already queued")
 		}
 	}
 	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
@@ -158,7 +165,11 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 			shutdownGateway(runningServices, agentLoop, provider, true)
 			return nil
 		case newCfg := <-configReloadChan:
-			err := handleConfigReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
+			if !runningServices.reloading.CompareAndSwap(false, true) {
+				logger.Warn("Config reload skipped: another reload is in progress")
+				continue
+			}
+			err := executeReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
 			if err != nil {
 				logger.Errorf("Config reload failed: %v", err)
 			}
@@ -167,13 +178,15 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 			newCfg, err := config.LoadConfig(configPath)
 			if err != nil {
 				logger.Errorf("Error loading config for manual reload: %v", err)
+				runningServices.reloading.Store(false)
 				continue
 			}
 			if err = newCfg.ValidateModelList(); err != nil {
 				logger.Errorf("Config validation failed: %v", err)
+				runningServices.reloading.Store(false)
 				continue
 			}
-			err = handleConfigReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
+			err = executeReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
 			if err != nil {
 				logger.Errorf("Manual reload failed: %v", err)
 			} else {
@@ -181,6 +194,19 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 			}
 		}
 	}
+}
+
+func executeReload(
+	ctx context.Context,
+	agentLoop *agent.AgentLoop,
+	newCfg *config.Config,
+	provider *providers.LLMProvider,
+	runningServices *services,
+	msgBus *bus.MessageBus,
+	allowEmptyStartup bool,
+) error {
+	defer runningServices.reloading.Store(false)
+	return handleConfigReload(ctx, agentLoop, newCfg, provider, runningServices, msgBus, allowEmptyStartup)
 }
 
 func createStartupProvider(

@@ -18,7 +18,6 @@ type Server struct {
 	checks     map[string]Check
 	startTime  time.Time
 	reloadFunc func() error
-	reloadMu   sync.Mutex
 }
 
 type Check struct {
@@ -111,8 +110,8 @@ func (s *Server) RegisterCheck(name string, checkFn func() (bool, string)) {
 
 // SetReloadFunc sets the callback function for config reload.
 func (s *Server) SetReloadFunc(fn func() error) {
-	s.reloadMu.Lock()
-	defer s.reloadMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.reloadFunc = fn
 }
 
@@ -124,9 +123,9 @@ func (s *Server) reloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.reloadMu.Lock()
+	s.mu.Lock()
 	reloadFunc := s.reloadFunc
-	s.reloadMu.Unlock()
+	s.mu.Unlock()
 
 	if reloadFunc == nil {
 		w.Header().Set("Content-Type", "application/json")
