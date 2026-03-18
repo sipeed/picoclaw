@@ -264,16 +264,66 @@ picoclaw agent -m "What is 2+2?"
 
 ## 💬 チャットアプリ
 
-Telegram、Discord、QQ、DingTalk、LINE、WeCom で PicoClaw と会話できます
+Telegram、Zalo、Discord、QQ、DingTalk、LINE、WeCom で PicoClaw と会話できます
 
 | チャネル | セットアップ |
 |---------|------------|
 | **Telegram** | 簡単（トークンのみ） |
+| **Zalo** | 普通（token + secret_token + webhook URL） |
 | **Discord** | 簡単（Bot トークン + Intents） |
 | **QQ** | 簡単（AppID + AppSecret） |
 | **DingTalk** | 普通（アプリ認証情報） |
 | **LINE** | 普通（認証情報 + Webhook URL） |
 | **WeCom AI Bot** | 普通（Token + AES キー） |
+
+<details>
+<summary><b>Zalo</b>（Webhook）</summary>
+
+**1. 準備**
+
+- Zalo の `BOT_TOKEN` を用意
+- `secret_token`（8–256 文字）を決める（Zalo が `X-Bot-Api-Secret-Token` ヘッダーで返します）
+- Webhook の詳細は公式ドキュメント [`setWebhook`](https://bot.zapps.me/docs/apis/setWebhook/) を参照してください。
+
+**2. 設定**
+
+```json
+{
+  "channels": {
+    "zalo": {
+      "enabled": true,
+      "token": "YOUR_ZALO_BOT_TOKEN",
+      "secret_token": "YOUR_SECRET_TOKEN",
+      "webhook_path": "/webhook/zalo",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**3. 起動**
+
+```bash
+picoclaw gateway
+```
+
+**4. ローカルで HTTPS（ngrok）**
+
+```bash
+ngrok http 18790
+```
+
+Webhook URL: `https://<ngrok-domain>/webhook/zalo`
+
+**5. Webhook 登録**
+
+```bash
+curl -X POST "https://bot-api.zaloplatforms.com/bot${BOT_TOKEN}/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://<ngrok-domain>/webhook/zalo","secret_token":"YOUR_SECRET_TOKEN"}'
+```
+
+</details>
 
 <details>
 <summary><b>Telegram</b>（推奨）</summary>

@@ -257,16 +257,66 @@ Vậy là xong! Bạn đã có một trợ lý AI hoạt động chỉ trong 2 p
 
 ## 💬 Tích hợp ứng dụng Chat
 
-Trò chuyện với PicoClaw qua Telegram, Discord, DingTalk, LINE hoặc WeCom.
+Trò chuyện với PicoClaw qua Telegram, Zalo, Discord, DingTalk, LINE hoặc WeCom.
 
 | Kênh | Mức độ thiết lập |
 | --- | --- |
 | **Telegram** | Dễ (chỉ cần token) |
+| **Zalo** | Trung bình (token + secret_token + webhook URL) |
 | **Discord** | Dễ (bot token + intents) |
 | **QQ** | Dễ (AppID + AppSecret) |
 | **DingTalk** | Trung bình (app credentials) |
 | **LINE** | Trung bình (credentials + webhook URL) |
 | **WeCom AI Bot** | Trung bình (Token + khóa AES) |
+
+<details>
+<summary><b>Zalo</b> (Webhook)</summary>
+
+**1. Chuẩn bị**
+
+* Lấy `BOT_TOKEN` của Zalo Bot
+* Tạo `secret_token` (8–256 ký tự). Zalo sẽ gửi lại trong header `X-Bot-Api-Secret-Token`.
+* Xem thêm chi tiết webhook tại tài liệu chính thức [`setWebhook`](https://bot.zapps.me/docs/apis/setWebhook/).
+
+**2. Cấu hình**
+
+```json
+{
+  "channels": {
+    "zalo": {
+      "enabled": true,
+      "token": "YOUR_ZALO_BOT_TOKEN",
+      "secret_token": "YOUR_SECRET_TOKEN",
+      "webhook_path": "/webhook/zalo",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**3. Chạy**
+
+```bash
+picoclaw gateway
+```
+
+**4. HTTPS local (ngrok)**
+
+```bash
+ngrok http 18790
+```
+
+Webhook URL: `https://<ngrok-domain>/webhook/zalo`
+
+**5. Đăng ký webhook**
+
+```bash
+curl -X POST "https://bot-api.zaloplatforms.com/bot${BOT_TOKEN}/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://<ngrok-domain>/webhook/zalo","secret_token":"YOUR_SECRET_TOKEN"}'
+```
+
+</details>
 
 <details>
 <summary><b>Telegram</b> (Khuyên dùng)</summary>
