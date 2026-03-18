@@ -588,7 +588,10 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	if got := normalizeModel("vivgrid/auto", "https://api.vivgrid.com/v1"); got != "auto" {
 		t.Fatalf("normalizeModel(vivgrid auto) = %q, want %q", got, "auto")
 	}
-	if got := normalizeModel("novita/deepseek/deepseek-v3.2", "https://api.novita.ai/openai"); got != "deepseek/deepseek-v3.2" {
+	if got := normalizeModel(
+		"novita/deepseek/deepseek-v3.2",
+		"https://api.novita.ai/openai",
+	); got != "deepseek/deepseek-v3.2" {
 		t.Fatalf("normalizeModel(novita) = %q, want %q", got, "deepseek/deepseek-v3.2")
 	}
 }
