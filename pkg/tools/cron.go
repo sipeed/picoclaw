@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adhocore/gronx"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
@@ -19,29 +21,40 @@ type JobExecutor interface {
 
 // CronTool provides scheduling capabilities for the agent
 type CronTool struct {
-	cronService *cron.CronService
-	executor    JobExecutor
-	msgBus      *bus.MessageBus
-	execTool    *ExecTool
+	cronService        *cron.CronService
+	executor           JobExecutor
+	msgBus             *bus.MessageBus
+	execTool           *ExecTool
+	minIntervalSeconds int
 }
 
 // NewCronTool creates a new CronTool
 // execTimeout: 0 means no timeout, >0 sets the timeout duration
 func NewCronTool(
 	cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool,
-	execTimeout time.Duration, config *config.Config,
+	execTimeout time.Duration, cfg *config.Config,
 ) (*CronTool, error) {
-	execTool, err := NewExecToolWithConfig(workspace, restrict, config)
+	execTool, err := NewExecToolWithConfig(workspace, restrict, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to configure exec tool: %w", err)
 	}
 
 	execTool.SetTimeout(execTimeout)
+
+	minIntervalSeconds := 60 // default 1 minute
+	if cfg != nil {
+		minIntervalSeconds = cfg.Tools.Cron.MinIntervalSeconds
+		if minIntervalSeconds < 0 {
+			minIntervalSeconds = 60
+		}
+	}
+
 	return &CronTool{
-		cronService: cronService,
-		executor:    executor,
-		msgBus:      msgBus,
-		execTool:    execTool,
+		cronService:        cronService,
+		executor:           executor,
+		msgBus:             msgBus,
+		execTool:           execTool,
+		minIntervalSeconds: minIntervalSeconds,
 	}, nil
 }
 
@@ -121,6 +134,41 @@ func (t *CronTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	}
 }
 
+// validateMinInterval checks if the schedule interval meets the minimum requirement
+func (t *CronTool) validateMinInterval(schedule cron.CronSchedule) error {
+	if t.minIntervalSeconds <= 0 {
+		return nil
+	}
+
+	switch schedule.Kind {
+	case "every":
+		if schedule.EveryMS != nil {
+			intervalSeconds := *schedule.EveryMS / 1000
+			if intervalSeconds < int64(t.minIntervalSeconds) {
+				return fmt.Errorf("interval too short: minimum allowed is %d seconds, got %d seconds", t.minIntervalSeconds, intervalSeconds)
+			}
+		}
+	case "cron":
+		if schedule.Expr != "" {
+			// Calculate the interval between next two ticks
+			now := time.Now()
+			next1, err := gronx.NextTickAfter(schedule.Expr, now, false)
+			if err != nil {
+				return fmt.Errorf("invalid cron expression: %w", err)
+			}
+			next2, err := gronx.NextTickAfter(schedule.Expr, next1, false)
+			if err != nil {
+				return fmt.Errorf("invalid cron expression: %w", err)
+			}
+			intervalSeconds := int64(next2.Sub(next1).Seconds())
+			if intervalSeconds < int64(t.minIntervalSeconds) {
+				return fmt.Errorf("cron interval too short: minimum allowed is %d seconds, calculated interval is %d seconds", t.minIntervalSeconds, intervalSeconds)
+			}
+		}
+	}
+	return nil
+}
+
 func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult {
 	channel := ToolChannel(ctx)
 	chatID := ToolChatID(ctx)
@@ -182,6 +230,13 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		// But for our new logic in ExecuteJob, we can handle it regardless of deliver flag if Payload.Command is set.
 		// However, logically, it's not "delivered" to chat directly as is.
 		deliver = false
+	}
+
+	// Validate minimum interval for recurring schedules
+	if t.minIntervalSeconds > 0 {
+		if err := t.validateMinInterval(schedule); err != nil {
+			return ErrorResult(err.Error())
+		}
 	}
 
 	// Truncate message for job name (max 30 chars)

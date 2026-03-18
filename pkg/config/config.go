@@ -648,7 +648,9 @@ type WebToolsConfig struct {
 
 type CronToolsConfig struct {
 	ToolConfig         `    envPrefix:"PICOCLAW_TOOLS_CRON_"`
-	ExecTimeoutMinutes int `                                 env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES" json:"exec_timeout_minutes"` // 0 means no timeout
+	ExecTimeoutMinutes int  `                                 env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES" json:"exec_timeout_minutes"` // 0 means no timeout
+	AllowCommand       bool `                                 env:"PICOCLAW_TOOLS_CRON_ALLOW_COMMAND"        json:"allow_command"`
+	MinIntervalSeconds int  `                                 env:"PICOCLAW_TOOLS_CRON_MIN_INTERVAL_SECONDS" json:"min_interval_seconds"` // 0 means disable check, default 60
 }
 
 type ExecConfig struct {
