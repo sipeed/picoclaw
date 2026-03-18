@@ -135,7 +135,7 @@ test('Create API Key flow', async ({ page }) => {
   console.log('\n' + '='.repeat(70));
   console.log('📊 TEST SUMMARY');
   console.log('='.repeat(70));
-  console.log('✅ Step 1: PASS - Login successful with test@intnt.ai');
+  console.log('✅ Step 1: PASS - Login successful with heidi@intnt.ai');
   console.log('✅ Step 2: PASS - Organization Testing2026 selected and redirected');
   console.log('✅ Step 3: PASS - Settings clicked in sidebar');
   console.log('✅ Step 4: PASS - Settings page loaded and API Keys tab visible');
