@@ -251,7 +251,13 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := c.upgrader.Upgrade(w, r, nil)
+	// Echo the matched subprotocol back so the browser accepts the upgrade.
+	var responseHeader http.Header
+	if proto := c.matchedSubprotocol(r); proto != "" {
+		responseHeader = http.Header{"Sec-WebSocket-Protocol": {proto}}
+	}
+
+	conn, err := c.upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		logger.ErrorCF("pico", "WebSocket upgrade failed", map[string]any{
 			"error": err.Error(),
@@ -282,8 +288,10 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	go c.readLoop(pc)
 }
 
-// authenticate checks the Bearer token from the Authorization header.
-// Query parameter authentication is only allowed when AllowTokenQuery is explicitly enabled.
+// authenticate checks the request for a valid token:
+//  1. Authorization: Bearer <token> header
+//  2. Sec-WebSocket-Protocol "token.<value>" (for browsers that can't set headers)
+//  3. Query parameter "token" (only when AllowTokenQuery is on)
 func (c *PicoChannel) authenticate(r *http.Request) bool {
 	token := c.config.Token
 	if token == "" {
@@ -298,6 +306,11 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 		}
 	}
 
+	// Check Sec-WebSocket-Protocol subprotocol ("token.<value>")
+	if c.matchedSubprotocol(r) != "" {
+		return true
+	}
+
 	// Check query parameter only when explicitly allowed
 	if c.config.AllowTokenQuery {
 		if r.URL.Query().Get("token") == token {
@@ -306,6 +319,18 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 	}
 
 	return false
+}
+
+// matchedSubprotocol returns the "token.<value>" subprotocol that matches
+// the configured token, or "" if none do.
+func (c *PicoChannel) matchedSubprotocol(r *http.Request) string {
+	token := c.config.Token
+	for _, proto := range websocket.Subprotocols(r) {
+		if after, ok := strings.CutPrefix(proto, "token."); ok && after == token {
+			return proto
+		}
+	}
+	return ""
 }
 
 // readLoop reads messages from a WebSocket connection.

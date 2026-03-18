@@ -105,6 +105,16 @@ func TestMatchAllowed(t *testing.T) {
 			want:    true,
 		},
 		{
+			name: "plain entry does not match username",
+			sender: bus.SenderInfo{
+				Platform:   "discord",
+				PlatformID: "999999",
+				Username:   "123456",
+			},
+			allowed: "123456",
+			want:    false,
+		},
+		{
 			name:    "@username does not match",
 			sender:  telegramSender,
 			allowed: "@bob",
@@ -121,6 +131,16 @@ func TestMatchAllowed(t *testing.T) {
 			name:    "compound matches by username",
 			sender:  telegramSender,
 			allowed: "999|alice",
+			want:    true,
+		},
+		{
+			name: "compound matches by ID when username differs",
+			sender: bus.SenderInfo{
+				Platform:   "discord",
+				PlatformID: "123456",
+				Username:   "not123456",
+			},
+			allowed: "123456|alice",
 			want:    true,
 		},
 		{

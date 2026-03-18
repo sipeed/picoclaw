@@ -355,7 +355,9 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
 
 	messages := []Message{{Role: "user", Content: "Hello"}}
-	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", map[string]any{"max_tokens": 1024})
+	// Pass native_search so Codex injects built-in web search (mirrors agent loop when prefer_native is true).
+	opts := map[string]any{"max_tokens": 1024, "native_search": true}
+	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", opts)
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}

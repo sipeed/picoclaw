@@ -2,18 +2,85 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/web/backend/utils"
 )
+
+func startLongRunningProcess(t *testing.T) *exec.Cmd {
+	t.Helper()
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("powershell", "-NoProfile", "-Command", "Start-Sleep -Seconds 30")
+	} else {
+		cmd = exec.Command("sleep", "30")
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	return cmd
+}
+
+func mockGatewayHealthResponse(statusCode, pid int) *http.Response {
+	return &http.Response{
+		StatusCode: statusCode,
+		Body: io.NopCloser(strings.NewReader(
+			`{"status":"ok","uptime":"1s","pid":` + strconv.Itoa(pid) + `}`,
+		)),
+	}
+}
+
+func startIgnoringTermProcess(t *testing.T) *exec.Cmd {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("TERM handling differs on Windows")
+	}
+
+	cmd := exec.Command("sh", "-c", "trap '' TERM; sleep 30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	return cmd
+}
+
+func resetGatewayTestState(t *testing.T) {
+	t.Helper()
+
+	originalHealthGet := gatewayHealthGet
+	originalRestartGracePeriod := gatewayRestartGracePeriod
+	originalRestartForceKillWindow := gatewayRestartForceKillWindow
+	originalRestartPollInterval := gatewayRestartPollInterval
+	t.Cleanup(func() {
+		gatewayHealthGet = originalHealthGet
+		gatewayRestartGracePeriod = originalRestartGracePeriod
+		gatewayRestartForceKillWindow = originalRestartForceKillWindow
+		gatewayRestartPollInterval = originalRestartPollInterval
+
+		gateway.mu.Lock()
+		gateway.cmd = nil
+		gateway.bootDefaultModel = ""
+		setGatewayRuntimeStatusLocked("stopped")
+		gateway.mu.Unlock()
+	})
+}
 
 func TestGatewayStartReady_NoDefaultModel(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
@@ -317,6 +384,477 @@ func TestGatewayStatusIncludesStartConditionWhenNotReady(t *testing.T) {
 	}
 }
 
+func TestGatewayStatusKeepsRunningWhenHealthProbeFailsAfterRunning(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	cmd := startLongRunningProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+
+	gateway.mu.Lock()
+	gateway.cmd = cmd
+	gateway.bootDefaultModel = "existing-model"
+	// Simulate a process that has already reached the running state.
+	setGatewayRuntimeStatusLocked("running")
+	gateway.mu.Unlock()
+
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return nil, errors.New("probe failed")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "running" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "running")
+	}
+}
+
+func TestGatewayStatusReportsRunningFromHealthProbe(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	cmd := startLongRunningProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+
+	gateway.mu.Lock()
+	setGatewayRuntimeStatusLocked("stopped")
+	gateway.mu.Unlock()
+
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return mockGatewayHealthResponse(http.StatusOK, cmd.Process.Pid), nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "running" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "running")
+	}
+	if got := body["pid"]; got != float64(cmd.Process.Pid) {
+		t.Fatalf("pid = %#v, want %d", got, cmd.Process.Pid)
+	}
+	if got := body["gateway_restart_required"]; got != false {
+		t.Fatalf("gateway_restart_required = %#v, want false", got)
+	}
+}
+
+func TestGatewayStatusRequiresRestartAfterDefaultModelChange(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = cfg.ModelList[0].ModelName
+	cfg.ModelList[0].APIKey = "test-key"
+	cfg.ModelList = append(cfg.ModelList, config.ModelConfig{
+		ModelName: "second-model",
+		Model:     "openai/gpt-4.1",
+		APIKey:    "second-key",
+	})
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	process, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("FindProcess() error = %v", err)
+	}
+
+	gateway.mu.Lock()
+	gateway.cmd = &exec.Cmd{Process: process}
+	gateway.bootDefaultModel = cfg.ModelList[0].ModelName
+	setGatewayRuntimeStatusLocked("running")
+	gateway.mu.Unlock()
+
+	updatedCfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	updatedCfg.Agents.Defaults.ModelName = "second-model"
+	if err := config.SaveConfig(configPath, updatedCfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return mockGatewayHealthResponse(http.StatusOK, os.Getpid()), nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "running" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "running")
+	}
+	if got := body["boot_default_model"]; got != cfg.ModelList[0].ModelName {
+		t.Fatalf("boot_default_model = %#v, want %q", got, cfg.ModelList[0].ModelName)
+	}
+	if got := body["config_default_model"]; got != "second-model" {
+		t.Fatalf("config_default_model = %#v, want %q", got, "second-model")
+	}
+	if got := body["gateway_restart_required"]; got != true {
+		t.Fatalf("gateway_restart_required = %#v, want true", got)
+	}
+}
+
+func TestGatewayStatusReturnsErrorAfterStartupWindowExpires(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	cmd := startLongRunningProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+
+	gateway.mu.Lock()
+	gateway.cmd = cmd
+	gateway.bootDefaultModel = "existing-model"
+	setGatewayRuntimeStatusLocked("starting")
+	gateway.startupDeadline = time.Now().Add(-time.Second)
+	gateway.mu.Unlock()
+
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return nil, errors.New("probe failed")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "error" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "error")
+	}
+}
+
+func TestGatewayStatusReturnsRestartingDuringRestartGap(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	gateway.mu.Lock()
+	setGatewayRuntimeStatusLocked("restarting")
+	gateway.mu.Unlock()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "restarting" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "restarting")
+	}
+}
+
+func TestGatewayRestartKeepsRunningProcessWhenPreconditionsFail(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = cfg.ModelList[0].ModelName
+	cfg.ModelList[0].APIKey = ""
+	cfg.ModelList[0].AuthMethod = ""
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	cmd := startLongRunningProcess(t)
+	t.Cleanup(func() {
+		gateway.mu.Lock()
+		if gateway.cmd == cmd {
+			gateway.cmd = nil
+			gateway.bootDefaultModel = ""
+		}
+		gateway.mu.Unlock()
+
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+
+	gateway.mu.Lock()
+	gateway.cmd = cmd
+	gateway.bootDefaultModel = "existing-model"
+	gateway.mu.Unlock()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/gateway/restart", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	gateway.mu.Lock()
+	stillRunning := gateway.cmd == cmd && isCmdProcessAliveLocked(cmd)
+	gateway.mu.Unlock()
+
+	if !stillRunning {
+		t.Fatalf("gateway process was stopped when restart preconditions failed")
+	}
+}
+
+func TestGatewayRestartKeepsOldProcessWhenItDoesNotExitInTime(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = cfg.ModelList[0].ModelName
+	cfg.ModelList[0].APIKey = "test-key"
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	cmd := startIgnoringTermProcess(t)
+	t.Cleanup(func() {
+		gateway.mu.Lock()
+		if gateway.cmd == cmd {
+			gateway.cmd = nil
+			gateway.bootDefaultModel = ""
+		}
+		gateway.mu.Unlock()
+
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+
+	gatewayRestartGracePeriod = 150 * time.Millisecond
+	gatewayRestartForceKillWindow = 150 * time.Millisecond
+	gatewayRestartPollInterval = 10 * time.Millisecond
+
+	gateway.mu.Lock()
+	gateway.cmd = cmd
+	gateway.bootDefaultModel = "existing-model"
+	setGatewayRuntimeStatusLocked("running")
+	gateway.mu.Unlock()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/gateway/restart", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	gateway.mu.Lock()
+	stillRunning := gateway.cmd == cmd && isCmdProcessAliveLocked(cmd)
+	status := gateway.runtimeStatus
+	gateway.mu.Unlock()
+
+	if !stillRunning {
+		t.Fatalf("gateway process was replaced before the old process exited")
+	}
+	if status != "running" {
+		t.Fatalf("runtimeStatus = %q, want %q", status, "running")
+	}
+}
+
+func TestGatewayRestartReturnsErrorStatusWhenReplacementFailsToStart(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = cfg.ModelList[0].ModelName
+	cfg.ModelList[0].APIKey = "test-key"
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	invalidBinaryPath := filepath.Join(t.TempDir(), "fake-picoclaw")
+	if err := os.WriteFile(invalidBinaryPath, []byte("#!/bin/sh\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	t.Setenv("PICOCLAW_BINARY", invalidBinaryPath)
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/gateway/restart", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("restart status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	statusRec := httptest.NewRecorder()
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(statusRec, statusReq)
+
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", statusRec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "error" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "error")
+	}
+}
+
+func TestGatewayStatusExcludesLogsFields(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if _, ok := body["logs"]; ok {
+		t.Fatalf("logs unexpectedly present in status response: %#v", body["logs"])
+	}
+	if _, ok := body["log_total"]; ok {
+		t.Fatalf("log_total unexpectedly present in status response: %#v", body["log_total"])
+	}
+	if _, ok := body["log_run_id"]; ok {
+		t.Fatalf("log_run_id unexpectedly present in status response: %#v", body["log_run_id"])
+	}
+}
+
+func TestGatewayLogsReturnsIncrementalHistory(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	gateway.logs.Clear()
+	gateway.logs.Append("first line")
+	gateway.logs.Append("second line")
+	runID := gateway.logs.RunID()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/gateway/logs?log_offset=1&log_run_id="+strconv.Itoa(runID),
+		nil,
+	)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logs status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal logs response: %v", err)
+	}
+
+	logs, ok := body["logs"].([]any)
+	if !ok {
+		t.Fatalf("logs missing or not array: %#v", body["logs"])
+	}
+	if len(logs) != 1 || logs[0] != "second line" {
+		t.Fatalf("logs = %#v, want [\"second line\"]", logs)
+	}
+	if got := body["log_total"]; got != float64(2) {
+		t.Fatalf("log_total = %#v, want 2", got)
+	}
+	if got := body["log_run_id"]; got != float64(runID) {
+		t.Fatalf("log_run_id = %#v, want %d", got, runID)
+	}
+}
+
 func TestGatewayClearLogsResetsBufferedHistory(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
@@ -353,32 +891,35 @@ func TestGatewayClearLogsResetsBufferedHistory(t *testing.T) {
 		t.Fatalf("log_run_id = %d, want > %d", int(clearRunID), previousRunID)
 	}
 
-	statusRec := httptest.NewRecorder()
-	statusReq := httptest.NewRequest(
+	logsRec := httptest.NewRecorder()
+	logsReq := httptest.NewRequest(
 		http.MethodGet,
-		"/api/gateway/status?log_offset=0&log_run_id="+strconv.Itoa(previousRunID),
+		"/api/gateway/logs?log_offset=0&log_run_id="+strconv.Itoa(previousRunID),
 		nil,
 	)
-	mux.ServeHTTP(statusRec, statusReq)
+	mux.ServeHTTP(logsRec, logsReq)
 
-	if statusRec.Code != http.StatusOK {
-		t.Fatalf("status code = %d, want %d", statusRec.Code, http.StatusOK)
+	if logsRec.Code != http.StatusOK {
+		t.Fatalf("logs code = %d, want %d", logsRec.Code, http.StatusOK)
 	}
 
-	var statusBody map[string]any
-	if err := json.Unmarshal(statusRec.Body.Bytes(), &statusBody); err != nil {
-		t.Fatalf("unmarshal status response: %v", err)
+	var logsBody map[string]any
+	if err := json.Unmarshal(logsRec.Body.Bytes(), &logsBody); err != nil {
+		t.Fatalf("unmarshal logs response: %v", err)
 	}
 
-	logs, ok := statusBody["logs"].([]any)
+	logs, ok := logsBody["logs"].([]any)
 	if !ok {
-		t.Fatalf("logs missing or not array: %#v", statusBody["logs"])
+		t.Fatalf("logs missing or not array: %#v", logsBody["logs"])
 	}
 	if len(logs) != 0 {
 		t.Fatalf("logs len = %d, want 0", len(logs))
 	}
-	if got := statusBody["log_total"]; got != float64(0) {
+	if got := logsBody["log_total"]; got != float64(0) {
 		t.Fatalf("log_total = %#v, want 0", got)
+	}
+	if got := logsBody["log_run_id"]; got != clearBody["log_run_id"] {
+		t.Fatalf("log_run_id = %#v, want %#v", got, clearBody["log_run_id"])
 	}
 }
 

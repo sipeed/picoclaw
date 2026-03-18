@@ -23,6 +23,7 @@ type ExecTool struct {
 	denyPatterns        []*regexp.Regexp
 	allowPatterns       []*regexp.Regexp
 	customAllowPatterns []*regexp.Regexp
+	allowedPathPatterns []*regexp.Regexp
 	restrictToWorkspace bool
 	allowRemote         bool
 }
@@ -95,14 +96,23 @@ var (
 	}
 )
 
-func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
-	return NewExecToolWithConfig(workingDir, restrict, nil)
+func NewExecTool(workingDir string, restrict bool, allowPaths ...[]*regexp.Regexp) (*ExecTool, error) {
+	return NewExecToolWithConfig(workingDir, restrict, nil, allowPaths...)
 }
 
-func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) (*ExecTool, error) {
+func NewExecToolWithConfig(
+	workingDir string,
+	restrict bool,
+	config *config.Config,
+	allowPaths ...[]*regexp.Regexp,
+) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
 	customAllowPatterns := make([]*regexp.Regexp, 0)
+	var allowedPathPatterns []*regexp.Regexp
 	allowRemote := true
+	if len(allowPaths) > 0 {
+		allowedPathPatterns = allowPaths[0]
+	}
 
 	if config != nil {
 		execConfig := config.Tools.Exec
@@ -146,6 +156,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		denyPatterns:        denyPatterns,
 		allowPatterns:       nil,
 		customAllowPatterns: customAllowPatterns,
+		allowedPathPatterns: allowedPathPatterns,
 		restrictToWorkspace: restrict,
 		allowRemote:         allowRemote,
 	}, nil
@@ -198,7 +209,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
 		if t.restrictToWorkspace && t.workingDir != "" {
-			resolvedWD, err := validatePath(wd, t.workingDir, true)
+			resolvedWD, err := validatePathWithAllowPaths(wd, t.workingDir, true, t.allowedPathPatterns)
 			if err != nil {
 				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
 			}
@@ -226,16 +237,20 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("Command blocked by safety guard (path resolution failed: %v)", err))
 		}
-		absWorkspace, _ := filepath.Abs(t.workingDir)
-		wsResolved, _ := filepath.EvalSymlinks(absWorkspace)
-		if wsResolved == "" {
-			wsResolved = absWorkspace
+		if isAllowedPath(resolved, t.allowedPathPatterns) {
+			cwd = resolved
+		} else {
+			absWorkspace, _ := filepath.Abs(t.workingDir)
+			wsResolved, _ := filepath.EvalSymlinks(absWorkspace)
+			if wsResolved == "" {
+				wsResolved = absWorkspace
+			}
+			rel, err := filepath.Rel(wsResolved, resolved)
+			if err != nil || !filepath.IsLocal(rel) {
+				return ErrorResult("Command blocked by safety guard (working directory escaped workspace)")
+			}
+			cwd = resolved
 		}
-		rel, err := filepath.Rel(wsResolved, resolved)
-		if err != nil || !filepath.IsLocal(rel) {
-			return ErrorResult("Command blocked by safety guard (working directory escaped workspace)")
-		}
-		cwd = resolved
 	}
 
 	// timeout == 0 means no timeout
@@ -296,13 +311,30 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	if err != nil {
 		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
 			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
+			if output != "" {
+				msg += "\n\nPartial output before timeout:\n" + output
+			}
 			return &ToolResult{
 				ForLLM:  msg,
 				ForUser: msg,
 				IsError: true,
+				Err:     fmt.Errorf("command timeout: %w", err),
 			}
 		}
-		output += fmt.Sprintf("\nExit code: %v", err)
+
+		// Extract detailed exit information
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode := exitErr.ExitCode()
+			output += fmt.Sprintf("\n\n[Command exited with code %d]", exitCode)
+
+			// Add signal information if killed by signal (Unix)
+			if exitCode == -1 {
+				output += " (killed by signal)"
+			}
+		} else {
+			output += fmt.Sprintf("\n\n[Command failed: %v]", err)
+		}
 	}
 
 	if output == "" {
@@ -373,15 +405,46 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		matches := absolutePathPattern.FindAllString(cmd, -1)
+		// Web URL schemes whose path components (starting with //) should be exempt
+		// from workspace sandbox checks. file: is intentionally excluded so that
+		// file:// URIs are still validated against the workspace boundary.
+		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
 
-		for _, raw := range matches {
+		matchIndices := absolutePathPattern.FindAllStringIndex(cmd, -1)
+
+		for _, loc := range matchIndices {
+			raw := cmd[loc[0]:loc[1]]
+
+			// Skip URL path components that look like they're from web URLs.
+			// When a URL like "https://github.com" is parsed, the regex captures
+			// "//github.com" as a match (the path portion after "https:").
+			// Use the exact match position (loc[0]) so that duplicate //path substrings
+			// in the same command are each evaluated at their own position.
+			if strings.HasPrefix(raw, "//") && loc[0] > 0 {
+				before := cmd[:loc[0]]
+				isWebURL := false
+
+				for _, scheme := range webSchemes {
+					if strings.HasSuffix(before, scheme) {
+						isWebURL = true
+						break
+					}
+				}
+
+				if isWebURL {
+					continue
+				}
+			}
+
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue
 			}
 
 			if safePaths[p] {
+				continue
+			}
+			if isAllowedPath(p, t.allowedPathPatterns) {
 				continue
 			}
 

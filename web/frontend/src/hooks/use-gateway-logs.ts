@@ -1,7 +1,7 @@
 import { useAtomValue } from "jotai"
 import { useEffect, useRef, useState } from "react"
 
-import { clearGatewayLogs, getGatewayStatus } from "@/api/gateway"
+import { clearGatewayLogs, getGatewayLogs } from "@/api/gateway"
 import { gatewayAtom } from "@/store/gateway"
 
 export function useGatewayLogs() {
@@ -37,7 +37,9 @@ export function useGatewayLogs() {
     const fetchLogs = async () => {
       if (
         !mounted ||
-        (gateway.status !== "running" && gateway.status !== "starting")
+        !["running", "starting", "restarting", "stopping"].includes(
+          gateway.status,
+        )
       ) {
         if (mounted) {
           timeout = setTimeout(fetchLogs, 1000)
@@ -49,7 +51,7 @@ export function useGatewayLogs() {
         const requestToken = syncTokenRef.current
         const requestOffset = logOffsetRef.current
         const requestRunId = logRunIdRef.current
-        const data = await getGatewayStatus({
+        const data = await getGatewayLogs({
           log_offset: requestOffset,
           log_run_id: requestRunId,
         })

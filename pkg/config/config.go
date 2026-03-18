@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
 
+	"github.com/sipeed/picoclaw/pkg/credential"
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
@@ -222,8 +224,8 @@ type AgentDefaults struct {
 	RestrictToWorkspace       bool           `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 	AllowReadOutsideWorkspace bool           `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
 	Provider                  string         `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	ModelName                 string         `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
-	Model                     string         `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
+	ModelName                 string         `json:"model_name"                      env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
+	Model                     string         `json:"model,omitempty"                 env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
 	ModelFallbacks            []string       `json:"model_fallbacks,omitempty"`
 	ImageModel                string         `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks       []string       `json:"image_model_fallbacks,omitempty"`
@@ -309,6 +311,7 @@ type TelegramConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+	UseMarkdownV2      bool                `json:"use_markdown_v2"         env:"PICOCLAW_CHANNELS_TELEGRAM_USE_MARKDOWN_V2"`
 }
 
 type FeishuConfig struct {
@@ -322,6 +325,7 @@ type FeishuConfig struct {
 	Placeholder         PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID  string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
 	RandomReactionEmoji FlexibleStringSlice `json:"random_reaction_emoji"   env:"PICOCLAW_CHANNELS_FEISHU_RANDOM_REACTION_EMOJI"`
+	IsLark              bool                `json:"is_lark"                 env:"PICOCLAW_CHANNELS_FEISHU_IS_LARK"`
 }
 
 type DiscordConfig struct {
@@ -528,6 +532,8 @@ type ProvidersConfig struct {
 	Avian         ProviderConfig       `json:"avian"`
 	Minimax       ProviderConfig       `json:"minimax"`
 	LongCat       ProviderConfig       `json:"longcat"`
+	ModelScope    ProviderConfig       `json:"modelscope"`
+	Novita        ProviderConfig       `json:"novita"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -555,7 +561,9 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.Mistral.APIKey == "" && p.Mistral.APIBase == "" &&
 		p.Avian.APIKey == "" && p.Avian.APIBase == "" &&
 		p.Minimax.APIKey == "" && p.Minimax.APIBase == "" &&
-		p.LongCat.APIKey == "" && p.LongCat.APIBase == ""
+		p.LongCat.APIKey == "" && p.LongCat.APIBase == "" &&
+		p.ModelScope.APIKey == "" && p.ModelScope.APIBase == "" &&
+		p.Novita.APIKey == "" && p.Novita.APIBase == ""
 }
 
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig
@@ -585,7 +593,9 @@ type OpenAIProviderConfig struct {
 // ModelConfig represents a model-centric provider configuration.
 // It allows adding new providers (especially OpenAI-compatible ones) via configuration only.
 // The model field uses protocol prefix format: [protocol/]model-identifier
-// Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot
+// Supported protocols include openai, anthropic, antigravity, claude-cli,
+// codex-cli, github-copilot, and named OpenAI-compatible protocols such as
+// groq, deepseek, modelscope, and novita.
 // Default protocol is "openai" if no prefix is specified.
 type ModelConfig struct {
 	// Required fields
@@ -593,9 +603,11 @@ type ModelConfig struct {
 	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
 
 	// HTTP-based providers
-	APIBase string `json:"api_base,omitempty"` // API endpoint URL
-	APIKey  string `json:"api_key"`            // API authentication key
-	Proxy   string `json:"proxy,omitempty"`    // HTTP proxy URL
+	APIBase   string   `json:"api_base,omitempty"`  // API endpoint URL
+	APIKey    string   `json:"api_key"`             // API authentication key (single key)
+	APIKeys   []string `json:"api_keys,omitempty"`  // API authentication keys (multiple keys for failover)
+	Proxy     string   `json:"proxy,omitempty"`     // HTTP proxy URL
+	Fallbacks []string `json:"fallbacks,omitempty"` // Fallback model names for failover
 
 	// Special providers (CLI-based, OAuth, etc.)
 	AuthMethod  string `json:"auth_method,omitempty"`  // Authentication method: oauth, token
@@ -621,8 +633,9 @@ func (c *ModelConfig) Validate() error {
 }
 
 type GatewayConfig struct {
-	Host string `json:"host" env:"PICOCLAW_GATEWAY_HOST"`
-	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
+	Host      string `json:"host"       env:"PICOCLAW_GATEWAY_HOST"`
+	Port      int    `json:"port"       env:"PICOCLAW_GATEWAY_PORT"`
+	HotReload bool   `json:"hot_reload" env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
 }
 
 type ToolDiscoveryConfig struct {
@@ -688,15 +701,24 @@ type WebToolsConfig struct {
 	Perplexity PerplexityConfig `                                json:"perplexity"`
 	SearXNG    SearXNGConfig    `                                json:"searxng"`
 	GLMSearch  GLMSearchConfig  `                                json:"glm_search"`
+	// PreferNative controls whether to use provider-native web search when
+	// the active LLM supports it (e.g. OpenAI web_search_preview). When true,
+	// the client-side web_search tool is hidden to avoid duplicate search surfaces,
+	// and the provider's built-in search is used instead. Falls back to client-side
+	// search when the provider does not support native search.
+	PreferNative bool `json:"prefer_native" env:"PICOCLAW_TOOLS_WEB_PREFER_NATIVE"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
-	Proxy           string `json:"proxy,omitempty"             env:"PICOCLAW_TOOLS_WEB_PROXY"`
-	FetchLimitBytes int64  `json:"fetch_limit_bytes,omitempty" env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
+	Proxy                string              `json:"proxy,omitempty"                  env:"PICOCLAW_TOOLS_WEB_PROXY"`
+	FetchLimitBytes      int64               `json:"fetch_limit_bytes,omitempty"      env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
+	Format               string              `json:"format,omitempty"                 env:"PICOCLAW_TOOLS_WEB_FORMAT"`
+	PrivateHostWhitelist FlexibleStringSlice `json:"private_host_whitelist,omitempty" env:"PICOCLAW_TOOLS_WEB_PRIVATE_HOST_WHITELIST"`
 }
 
 type CronToolsConfig struct {
-	ToolConfig         `    envPrefix:"PICOCLAW_TOOLS_CRON_"`
-	ExecTimeoutMinutes int `                                 env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES" json:"exec_timeout_minutes"` // 0 means no timeout
+	ToolConfig         `     envPrefix:"PICOCLAW_TOOLS_CRON_"`
+	ExecTimeoutMinutes int  `                                 env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES" json:"exec_timeout_minutes"` // 0 means no timeout
+	AllowCommand       bool `                                 env:"PICOCLAW_TOOLS_CRON_ALLOW_COMMAND"        json:"allow_command"`
 }
 
 type ExecConfig struct {
@@ -711,6 +733,7 @@ type ExecConfig struct {
 type SkillsToolsConfig struct {
 	ToolConfig            `                       envPrefix:"PICOCLAW_TOOLS_SKILLS_"`
 	Registries            SkillsRegistriesConfig `                                   json:"registries"`
+	Github                SkillsGithubConfig     `                                   json:"github"`
 	MaxConcurrentSearches int                    `                                   json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
 	SearchCache           SearchCacheConfig      `                                   json:"search_cache"`
 }
@@ -745,6 +768,7 @@ type ToolsConfig struct {
 	ReadFile        ReadFileToolConfig `json:"read_file"                                                envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
 	SendFile        ToolConfig         `json:"send_file"                                                envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
 	Spawn           ToolConfig         `json:"spawn"                                                    envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
+	SpawnStatus     ToolConfig         `json:"spawn_status"                                             envPrefix:"PICOCLAW_TOOLS_SPAWN_STATUS_"`
 	SPI             ToolConfig         `json:"spi"                                                      envPrefix:"PICOCLAW_TOOLS_SPI_"`
 	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
 	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
@@ -758,6 +782,11 @@ type SearchCacheConfig struct {
 
 type SkillsRegistriesConfig struct {
 	ClawHub ClawHubRegistryConfig `json:"clawhub"`
+}
+
+type SkillsGithubConfig struct {
+	Token string `json:"token,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_AUTH_TOKEN"`
+	Proxy string `json:"proxy,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_PROXY"`
 }
 
 type ClawHubRegistryConfig struct {
@@ -829,9 +858,26 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	if passphrase := credential.PassphraseProvider(); passphrase != "" {
+		for _, m := range cfg.ModelList {
+			if m.APIKey != "" && !strings.HasPrefix(m.APIKey, "enc://") && !strings.HasPrefix(m.APIKey, "file://") {
+				fmt.Fprintf(os.Stderr,
+					"picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n",
+					m.ModelName)
+			}
+		}
+	}
+
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
+
+	if err := resolveAPIKeys(cfg.ModelList, filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+
+	// Expand multi-key configs into separate entries for key-level failover
+	cfg.ModelList = ExpandMultiKeyModels(cfg.ModelList)
 
 	// Migrate legacy channel config fields to new unified structures
 	cfg.migrateChannelConfigs()
@@ -849,6 +895,59 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// encryptPlaintextAPIKeys returns a copy of models with plaintext api_key values
+// encrypted. Returns (nil, nil) when nothing changed (all keys already sealed or
+// empty). Returns (nil, error) if any key fails to encrypt — callers must treat
+// this as a hard failure to prevent a mixed plaintext/ciphertext state on disk.
+// Symmetric counterpart of resolveAPIKeys: both operate purely on []ModelConfig
+// and leave JSON marshaling to the caller.
+func encryptPlaintextAPIKeys(models []ModelConfig, passphrase string) ([]ModelConfig, error) {
+	sealed := make([]ModelConfig, len(models))
+	copy(sealed, models)
+	changed := false
+	for i := range sealed {
+		m := &sealed[i]
+		if m.APIKey == "" || strings.HasPrefix(m.APIKey, "enc://") || strings.HasPrefix(m.APIKey, "file://") {
+			continue
+		}
+		encrypted, err := credential.Encrypt(passphrase, "", m.APIKey)
+		if err != nil {
+			return nil, fmt.Errorf("cannot seal api_key for model %q: %w", m.ModelName, err)
+		}
+		m.APIKey = encrypted
+		changed = true
+	}
+	if !changed {
+		return nil, nil
+	}
+	return sealed, nil
+}
+
+// resolveAPIKeys decrypts or dereferences each api_key in models in-place.
+// Supports plaintext (no-op), file:// (read from configDir), and enc:// (AES-GCM decrypt).
+// Also resolves api_keys array if present.
+func resolveAPIKeys(models []ModelConfig, configDir string) error {
+	cr := credential.NewResolver(configDir)
+	for i := range models {
+		// Resolve single APIKey
+		resolved, err := cr.Resolve(models[i].APIKey)
+		if err != nil {
+			return fmt.Errorf("model_list[%d] (%s): %w", i, models[i].ModelName, err)
+		}
+		models[i].APIKey = resolved
+
+		// Resolve APIKeys array
+		for j, key := range models[i].APIKeys {
+			resolved, err := cr.Resolve(key)
+			if err != nil {
+				return fmt.Errorf("model_list[%d] (%s): api_keys[%d]: %w", i, models[i].ModelName, j, err)
+			}
+			models[i].APIKeys[j] = resolved
+		}
+	}
+	return nil
+}
+
 func (c *Config) migrateChannelConfigs() {
 	// Discord: mention_only -> group_trigger.mention_only
 	if c.Channels.Discord.MentionOnly && !c.Channels.Discord.GroupTrigger.MentionOnly {
@@ -863,12 +962,22 @@ func (c *Config) migrateChannelConfigs() {
 }
 
 func SaveConfig(path string, cfg *Config) error {
+	if passphrase := credential.PassphraseProvider(); passphrase != "" {
+		sealed, err := encryptPlaintextAPIKeys(cfg.ModelList, passphrase)
+		if err != nil {
+			return err
+		}
+		if sealed != nil {
+			tmp := *cfg
+			tmp.ModelList = sealed
+			cfg = &tmp
+		}
+	}
+
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-
-	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	return fileutil.WriteFileAtomic(path, data, 0o600)
 }
 
@@ -950,7 +1059,7 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 	}
 
 	// Multiple configs - use round-robin for load balancing
-	idx := rrCounter.Add(1) % uint64(len(matches))
+	idx := (rrCounter.Add(1) - 1) % uint64(len(matches))
 	return &matches[idx], nil
 }
 
@@ -1005,6 +1114,89 @@ func MergeAPIKeys(apiKey string, apiKeys []string) []string {
 	return all
 }
 
+// ExpandMultiKeyModels expands ModelConfig entries with multiple API keys into
+// separate entries for key-level failover. Each key gets its own ModelConfig entry,
+// and the original entry's fallbacks are set up to chain through the expanded entries.
+//
+// Example: {"model_name": "gpt-4", "api_keys": ["k1", "k2", "k3"]}
+// Becomes:
+//   - {"model_name": "gpt-4", "api_key": "k1", "fallbacks": ["gpt-4__key_1", "gpt-4__key_2"]}
+//   - {"model_name": "gpt-4__key_1", "api_key": "k2"}
+//   - {"model_name": "gpt-4__key_2", "api_key": "k3"}
+func ExpandMultiKeyModels(models []ModelConfig) []ModelConfig {
+	var expanded []ModelConfig
+
+	for _, m := range models {
+		keys := MergeAPIKeys(m.APIKey, m.APIKeys)
+
+		// Single key or no keys: keep as-is
+		if len(keys) <= 1 {
+			// Ensure APIKey is set from APIKeys if needed
+			if m.APIKey == "" && len(keys) == 1 {
+				m.APIKey = keys[0]
+			}
+			m.APIKeys = nil // Clear APIKeys to avoid confusion
+			expanded = append(expanded, m)
+			continue
+		}
+
+		// Multiple keys: expand
+		originalName := m.ModelName
+
+		// Create entries for additional keys (key_1, key_2, ...)
+		var fallbackNames []string
+		for i := 1; i < len(keys); i++ {
+			suffix := fmt.Sprintf("__key_%d", i)
+			expandedName := originalName + suffix
+
+			// Create a copy for the additional key
+			additionalEntry := ModelConfig{
+				ModelName:      expandedName,
+				Model:          m.Model,
+				APIBase:        m.APIBase,
+				APIKey:         keys[i],
+				Proxy:          m.Proxy,
+				AuthMethod:     m.AuthMethod,
+				ConnectMode:    m.ConnectMode,
+				Workspace:      m.Workspace,
+				RPM:            m.RPM,
+				MaxTokensField: m.MaxTokensField,
+				RequestTimeout: m.RequestTimeout,
+				ThinkingLevel:  m.ThinkingLevel,
+			}
+			expanded = append(expanded, additionalEntry)
+			fallbackNames = append(fallbackNames, expandedName)
+		}
+
+		// Create the primary entry with first key and fallbacks
+		primaryEntry := ModelConfig{
+			ModelName:      originalName,
+			Model:          m.Model,
+			APIBase:        m.APIBase,
+			APIKey:         keys[0],
+			Proxy:          m.Proxy,
+			AuthMethod:     m.AuthMethod,
+			ConnectMode:    m.ConnectMode,
+			Workspace:      m.Workspace,
+			RPM:            m.RPM,
+			MaxTokensField: m.MaxTokensField,
+			RequestTimeout: m.RequestTimeout,
+			ThinkingLevel:  m.ThinkingLevel,
+		}
+
+		// Prepend new fallbacks to existing ones
+		if len(fallbackNames) > 0 {
+			primaryEntry.Fallbacks = append(fallbackNames, m.Fallbacks...)
+		} else if len(m.Fallbacks) > 0 {
+			primaryEntry.Fallbacks = m.Fallbacks
+		}
+
+		expanded = append(expanded, primaryEntry)
+	}
+
+	return expanded
+}
+
 func (t *ToolsConfig) IsToolEnabled(name string) bool {
 	switch name {
 	case "web":
@@ -1035,6 +1227,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.ReadFile.Enabled
 	case "spawn":
 		return t.Spawn.Enabled
+	case "spawn_status":
+		return t.SpawnStatus.Enabled
 	case "spi":
 		return t.SPI.Enabled
 	case "subagent":

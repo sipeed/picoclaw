@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -188,6 +189,27 @@ func validateConfig(cfg *config.Config) []string {
 		errs = append(errs, "channels.discord.token is required when discord channel is enabled")
 	}
 
+	if cfg.Tools.Exec.Enabled {
+		if cfg.Tools.Exec.EnableDenyPatterns {
+			errs = append(
+				errs,
+				validateRegexPatterns("tools.exec.custom_deny_patterns", cfg.Tools.Exec.CustomDenyPatterns)...)
+		}
+		errs = append(
+			errs,
+			validateRegexPatterns("tools.exec.custom_allow_patterns", cfg.Tools.Exec.CustomAllowPatterns)...)
+	}
+
+	return errs
+}
+
+func validateRegexPatterns(field string, patterns []string) []string {
+	var errs []string
+	for index, pattern := range patterns {
+		if _, err := regexp.Compile(pattern); err != nil {
+			errs = append(errs, fmt.Sprintf("%s[%d] is not a valid regular expression: %v", field, index, err))
+		}
+	}
 	return errs
 }
 

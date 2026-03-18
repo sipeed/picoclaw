@@ -423,7 +423,9 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		// Reset msg_seq counter for new inbound message.
 		c.msgSeqCounters.Store(senderID, new(atomic.Uint64))
 
-		metadata := map[string]string{}
+		metadata := map[string]string{
+			"account_id": senderID,
+		}
 
 		sender := bus.SenderInfo{
 			Platform:    "qq",
@@ -495,7 +497,8 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		c.msgSeqCounters.Store(data.GroupID, new(atomic.Uint64))
 
 		metadata := map[string]string{
-			"group_id": data.GroupID,
+			"account_id": senderID,
+			"group_id":   data.GroupID,
 		}
 
 		sender := bus.SenderInfo{

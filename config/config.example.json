@@ -26,6 +26,13 @@
       "thinking_level": "high"
     },
     {
+      "_comment": "Anthropic Messages API - use native format for direct Anthropic API access",
+      "model_name": "claude-opus-4-6",
+      "model": "anthropic-messages/claude-opus-4-6",
+      "api_key": "sk-ant-your-key",
+      "api_base": "https://api.anthropic.com"
+    },
+    {
       "model_name": "gemini",
       "model": "antigravity/gemini-2.0-flash",
       "auth_method": "oauth"
@@ -39,6 +46,18 @@
       "model_name": "longcat",
       "model": "longcat/LongCat-Flash-Thinking",
       "api_key": "your-longcat-api-key"
+    },
+    {
+      "model_name": "modelscope-qwen",
+      "model": "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "api_key": "your-modelscope-access-token",
+      "api_base": "https://api-inference.modelscope.cn/v1"
+    },
+    {
+      "model_name": "azure-gpt5",
+      "model": "azure/my-gpt5-deployment",
+      "api_key": "your-azure-api-key",
+      "api_base": "https://your-resource.openai.azure.com"
     },
     {
       "model_name": "loadbalanced-gpt-5.4",
@@ -59,9 +78,8 @@
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "base_url": "",
       "proxy": "",
-      "allow_from": [
-        "YOUR_USER_ID"
-      ],
+      "allow_from": ["YOUR_USER_ID"],
+      "use_markdown_v2": false,
       "reasoning_channel_id": ""
     },
     "discord": {
@@ -104,7 +122,8 @@
       "verification_token": "",
       "allow_from": [],
       "reasoning_channel_id": "",
-      "random_reaction_emoji": []
+      "random_reaction_emoji": [],
+      "is_lark": false
     },
     "dingtalk": {
       "enabled": false,
@@ -283,6 +302,10 @@
     "longcat": {
       "api_key": "",
       "api_base": "https://api.longcat.chat/openai"
+    },
+    "modelscope": {
+      "api_key": "",
+      "api_base": "https://api-inference.modelscope.cn/v1"
     }
   },
   "tools": {
@@ -290,6 +313,9 @@
     "allow_write_paths": null,
     "web": {
       "enabled": true,
+      "prefer_native": true,
+      "fetch_limit_bytes": 10485760,
+      "format": "plaintext",
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
@@ -328,7 +354,8 @@
         "search_engine": "search_std",
         "max_results": 5
       },
-      "fetch_limit_bytes": 10485760
+      "fetch_limit_bytes": 10485760,
+      "private_host_whitelist": []
     },
     "cron": {
       "enabled": true,
@@ -427,6 +454,10 @@
           "max_response_size": 0
         }
       },
+      "github": {
+        "proxy": "http://127.0.0.1:7891",
+        "token": ""
+      },
       "max_concurrent_searches": 2,
       "search_cache": {
         "max_size": 50,
@@ -491,6 +522,7 @@
   },
   "gateway": {
     "host": "127.0.0.1",
-    "port": 18790
+    "port": 18790,
+    "hot_reload": false
   }
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -45,11 +46,45 @@ func init() {
 		consoleWriter := zerolog.ConsoleWriter{
 			Out:        os.Stdout,
 			TimeFormat: "15:04:05", // TODO: make it configurable???
+
+			// Custom formatter to handle multiline strings and JSON objects
+			FormatFieldValue: formatFieldValue,
 		}
 
-		logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
+		logger = zerolog.New(consoleWriter).With().Timestamp().Caller().Logger()
 		fileLogger = zerolog.Logger{}
 	})
+}
+
+func formatFieldValue(i any) string {
+	var s string
+
+	switch val := i.(type) {
+	case string:
+		s = val
+	case []byte:
+		s = string(val)
+	default:
+		return fmt.Sprintf("%v", i)
+	}
+
+	if unquoted, err := strconv.Unquote(s); err == nil {
+		s = unquoted
+	}
+
+	if strings.Contains(s, "\n") {
+		return fmt.Sprintf("\n%s", s)
+	}
+
+	if strings.Contains(s, " ") {
+		if (strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")) ||
+			(strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]")) {
+			return s
+		}
+		return fmt.Sprintf("%q", s)
+	}
+
+	return s
 }
 
 func SetLevel(level LogLevel) {
@@ -57,6 +92,12 @@ func SetLevel(level LogLevel) {
 	defer mu.Unlock()
 	currentLevel = level
 	zerolog.SetGlobalLevel(level)
+}
+
+func SetConsoleLevel(level LogLevel) {
+	mu.Lock()
+	defer mu.Unlock()
+	logger = logger.Level(level)
 }
 
 func GetLevel() LogLevel {
@@ -99,9 +140,9 @@ func DisableFileLogging() {
 	fileLogger = zerolog.Logger{}
 }
 
-func getCallerInfo() (string, int, string) {
+func getCallerSkip() int {
 	for i := 2; i < 15; i++ {
-		pc, file, line, ok := runtime.Caller(i)
+		pc, file, _, ok := runtime.Caller(i)
 		if !ok {
 			continue
 		}
@@ -113,6 +154,7 @@ func getCallerInfo() (string, int, string) {
 
 		// bypass common loggers
 		if strings.HasSuffix(file, "/logger.go") ||
+			strings.HasSuffix(file, "/logger_3rd_party.go") ||
 			strings.HasSuffix(file, "/log.go") {
 			continue
 		}
@@ -122,10 +164,10 @@ func getCallerInfo() (string, int, string) {
 			continue
 		}
 
-		return filepath.Base(file), line, filepath.Base(funcName)
+		return i - 1
 	}
 
-	return "???", 0, "???"
+	return 3
 }
 
 //nolint:zerologlint
@@ -151,22 +193,16 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		return
 	}
 
-	callerFile, callerLine, callerFunc := getCallerInfo()
+	skip := getCallerSkip()
 
 	event := getEvent(logger, level)
 
-	// Build combined field with component and caller
 	if component != "" {
-		event.Str("caller", fmt.Sprintf("%-6s %s:%d (%s)", component, callerFile, callerLine, callerFunc))
-	} else {
-		event.Str("caller", fmt.Sprintf("<none> %s:%d (%s)", callerFile, callerLine, callerFunc))
+		event.Str("component", component)
 	}
 
-	for k, v := range fields {
-		event.Interface(k, v)
-	}
-
-	event.Msg(message)
+	appendFields(event, fields)
+	event.CallerSkipFrame(skip).Msg(message)
 
 	// Also log to file if enabled
 	if fileLogger.GetLevel() != zerolog.NoLevel {
@@ -175,14 +211,34 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		if component != "" {
 			fileEvent.Str("component", component)
 		}
-		for k, v := range fields {
-			fileEvent.Interface(k, v)
-		}
-		fileEvent.Msg(message)
+		// fileEvent.Str("caller", fmt.Sprintf("%s:%d (%s)", callerFile, callerLine, callerFunc))
+
+		appendFields(fileEvent, fields)
+		fileEvent.CallerSkipFrame(skip).Msg(message)
 	}
 
 	if level == FATAL {
 		os.Exit(1)
+	}
+}
+
+func appendFields(event *zerolog.Event, fields map[string]any) {
+	for k, v := range fields {
+		// Type switch to avoid double JSON serialization of strings
+		switch val := v.(type) {
+		case string:
+			event.Str(k, val)
+		case int:
+			event.Int(k, val)
+		case int64:
+			event.Int64(k, val)
+		case float64:
+			event.Float64(k, val)
+		case bool:
+			event.Bool(k, val)
+		default:
+			event.Interface(k, v) // Fallback for struct, slice and maps
+		}
 	}
 }
 
@@ -192,6 +248,10 @@ func Debug(message string) {
 
 func DebugC(component string, message string) {
 	logMessage(DEBUG, component, message, nil)
+}
+
+func Debugf(message string, ss ...any) {
+	logMessage(DEBUG, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func DebugF(message string, fields map[string]any) {
@@ -212,6 +272,10 @@ func InfoC(component string, message string) {
 
 func InfoF(message string, fields map[string]any) {
 	logMessage(INFO, "", message, fields)
+}
+
+func Infof(message string, ss ...any) {
+	logMessage(INFO, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func InfoCF(component string, message string, fields map[string]any) {
@@ -240,6 +304,10 @@ func Error(message string) {
 
 func ErrorC(component string, message string) {
 	logMessage(ERROR, component, message, nil)
+}
+
+func Errorf(message string, ss ...any) {
+	logMessage(ERROR, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func ErrorF(message string, fields map[string]any) {

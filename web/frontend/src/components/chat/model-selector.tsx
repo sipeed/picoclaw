@@ -37,7 +37,7 @@ export function ModelSelector({
       >
         <SelectValue placeholder={t("chat.noModel")} />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent position="popper" align="start">
         {apiKeyModels.length > 0 && (
           <SelectGroup>
             <SelectLabel>{t("chat.modelGroup.apikey")}</SelectLabel>
