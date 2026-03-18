@@ -297,6 +297,18 @@ docker-clean:
 	docker compose -f docker/docker-compose.full.yml down -v
 	docker rmi picoclaw:latest picoclaw:full 2>/dev/null || true
 
+
+## build-macos-app: Build PicoClaw macOS .app bundle (no terminal window)
+build-macos-app:
+	@echo "Building macOS .app bundle..."
+	@if [ "$(UNAME_S)" != "Darwin" ]; then \
+		echo "Error: This target is only available on macOS"; \
+		exit 1; \
+	fi
+	@cd web && $(MAKE) build && cd ..
+	@./scripts/build-macos-app.sh $(BINARY_NAME)-$(PLATFORM)-$(ARCH)
+	@echo "macOS .app bundle created: $(BUILD_DIR)/PicoClaw.app"
+
 ## help: Show this help message
 help:
 	@echo "picoclaw Makefile"

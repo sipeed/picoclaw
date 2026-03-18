@@ -1,10 +1,12 @@
 package middleware
 
 import (
-	"log"
+	"fmt"
 	"net/http"
 	"runtime/debug"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // JSONContentType sets the Content-Type header to application/json for
@@ -48,7 +50,7 @@ func Logger(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.statusCode, time.Since(start))
+		logger.DebugC("http", fmt.Sprintf("%s %s %d %s", r.Method, r.URL.Path, rec.statusCode, time.Since(start)))
 	})
 }
 
@@ -58,7 +60,7 @@ func Recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("panic recovered: %v\n%s", err, debug.Stack())
+				logger.ErrorC("http", fmt.Sprintf("panic recovered: %v\n%s", err, debug.Stack()))
 				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 			}
 		}()
