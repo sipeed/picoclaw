@@ -106,6 +106,16 @@ func (c *DingTalkChannel) Stop(ctx context.Context) error {
 		c.streamClient.Close()
 	}
 
+	// Clear session-related state on shutdown
+	c.sessionWebhooks.Range(func(key, _ any) bool {
+		c.sessionWebhooks.Delete(key)
+		return true
+	})
+	c.cardInstanceIDs.Range(func(key, _ any) bool {
+		c.cardInstanceIDs.Delete(key)
+		return true
+	})
+
 	c.SetRunning(false)
 	logger.InfoC("dingtalk", "DingTalk channel stopped")
 	return nil
@@ -117,7 +127,7 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return channels.ErrNotRunning
 	}
 	// Check if we have a card instance ID for this chat (indicating we can send a card reply)
-	cardInstanceIDRaw, ok := c.cardInstanceIDs.LoadAndDelete(msg.ChatID)
+	cardInstanceIDRaw, ok := c.cardInstanceIDs.Load(msg.ChatID)
 	if !ok {
 		return c.SendDirectReply(ctx, msg)
 	}
@@ -202,12 +212,17 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 	if c.config.CardTemplateID != "" {
 		// If it fails, log the error but continue with normal message handling
 		if cardID, err := c.tryCardCreateAndDeliver(ctx, data); err != nil {
-			logger.WarnC("dingtalk", "Failed to create or deliver card, falling back to direct reply")
+			logger.WarnCF("dingtalk", "Failed to create or deliver card, falling back to direct reply", map[string]any{
+				"error":     err.Error(),
+				"sender_id": senderID,
+				"msg_id":    data.MsgId,
+			})
 			// Store the session webhook for this chat so we can reply later
 			c.sessionWebhooks.Store(chatID, data.SessionWebhook)
 		} else {
 			chatID = data.MsgId
 			c.cardInstanceIDs.Store(chatID, cardID)
+			c.sessionWebhooks.Store(chatID, data.SessionWebhook)
 		}
 	} else {
 		// Card feature not configured; just store the session webhook for direct replies

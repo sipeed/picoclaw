@@ -110,13 +110,10 @@ func (c *Client) BatchSendMessages(ctx context.Context, msgType MessageType, use
 
 // CardStreaming updates the content of a card instance identified by cardInstanceID.
 func (c *Client) CardStreaming(ctx context.Context, cardInstanceID, content string) error {
-	id, err := uuid.NewUUID()
-	if err != nil {
-		return err
-	}
+	guid := uuid.NewString()
 	body := map[string]any{
 		"outTrackId": cardInstanceID,
-		"guid":       id.String(),
+		"guid":       guid,
 		"key":        c.cardTemplateContentKey,
 		"content":    content,
 		"isFull":     true,
@@ -149,19 +146,16 @@ func (c *Client) CardCreateAndDeliver(ctx context.Context, chatbot *chatbot.BotC
 		}
 	)
 
-	id, err := uuid.NewUUID()
-	if err != nil {
-		return "", err
-	}
 	if group {
 		openSpaceID = "dtv1.card//IM_GROUP." + chatbot.ConversationId
 		imRobotOpenDeliverModel = map[string]any{}
 		imGroupOpenDeliverModel["robotCode"] = c.robotCode
 	}
 
+	outTrackId := uuid.NewString()
 	body := map[string]any{
 		"cardTemplateId":          c.cardTemplateID,
-		"outTrackId":              id.String(),
+		"outTrackId":              outTrackId,
 		"cardData":                map[string]any{},
 		"openSpaceId":             openSpaceID,
 		"userIdType":              1,
@@ -198,7 +192,7 @@ func (c *Client) CardCreateAndDeliver(ctx context.Context, chatbot *chatbot.BotC
 		} `json:"result"`
 		Success bool `json:"success"`
 	}{}
-	if err = c.httpRequest(ctx, http.MethodPost, createCardAndDeliver, body, &resp); err != nil {
+	if err := c.httpRequest(ctx, http.MethodPost, createCardAndDeliver, body, &resp); err != nil {
 		return "", err
 	}
 	if resp.Success {
