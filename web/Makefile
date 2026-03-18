@@ -92,5 +92,5 @@ lint:
 
 # Clean build artifacts
 clean:
-	rm -rf frontend/dist backend/dist $(BUILD_DIR)/*
+	rm -rf frontend/dist backend/dist $(BUILD_DIR)
 	mkdir -p backend/dist && touch backend/dist/.gitkeep

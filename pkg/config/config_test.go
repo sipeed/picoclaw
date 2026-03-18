@@ -77,6 +77,22 @@ func TestAgentModelConfig_MarshalObject(t *testing.T) {
 	}
 }
 
+func TestProvidersConfig_IsEmpty(t *testing.T) {
+	var empty ProvidersConfig
+	if !empty.IsEmpty() {
+		t.Fatal("empty ProvidersConfig should report empty")
+	}
+
+	novita := ProvidersConfig{
+		Novita: ProviderConfig{
+			APIKey: "test-key",
+		},
+	}
+	if novita.IsEmpty() {
+		t.Fatal("ProvidersConfig with novita settings should not report empty")
+	}
+}
+
 func TestAgentConfig_FullParse(t *testing.T) {
 	jsonData := `{
 		"agents": {

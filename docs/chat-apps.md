@@ -42,7 +42,8 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk,
     "telegram": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"],
+      "use_markdown_v2": false,
     }
   }
 }
@@ -62,6 +63,9 @@ PicoClaw now keeps command definitions in one shared registry. On startup, Teleg
 Telegram command menu registration remains channel-local discovery UX; generic command execution is handled centrally in the agent loop via the commands executor.
 
 If command registration fails (network/API transient errors), the channel still starts and PicoClaw retries registration in the background.
+
+**4. Advanced Formatting**
+You can set use_markdown_v2: true to enable enhanced formatting options. This allows the bot to utilize the full range of Telegram MarkdownV2 features, including nested styles, spoilers, and custom fixed-width blocks.
 
 </details>
 

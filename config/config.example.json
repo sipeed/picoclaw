@@ -78,9 +78,8 @@
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "base_url": "",
       "proxy": "",
-      "allow_from": [
-        "YOUR_USER_ID"
-      ],
+      "allow_from": ["YOUR_USER_ID"],
+      "use_markdown_v2": false,
       "reasoning_channel_id": ""
     },
     "discord": {

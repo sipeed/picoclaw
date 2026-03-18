@@ -80,8 +80,6 @@ cat > "${APP_CONTENTS}/Info.plist" << 'EOF'
     <true/>
     <key>LSUIElement</key>
     <string>1</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
 </dict>
 </plist>
 EOF
