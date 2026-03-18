@@ -56,7 +56,7 @@ func ExtractProtocol(model string) (protocol, modelID string) {
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
 // Supported protocols: openai, litellm, anthropic, anthropic-messages, antigravity,
-// claude-cli, codex-cli, github-copilot
+// claude-cli, codex-cli, qwen-cli, github-copilot
 // Returns the provider, the model ID (without protocol prefix), and any error.
 func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, error) {
 	if cfg == nil {
@@ -189,6 +189,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			workspace = "."
 		}
 		return NewCodexCliProvider(workspace), modelID, nil
+
+	case "qwen-cli", "qwencli":
+		workspace := cfg.Workspace
+		if workspace == "" {
+			workspace = "."
+		}
+		return NewQwenCliProvider(workspace), modelID, nil
 
 	case "github-copilot", "copilot":
 		apiBase := cfg.APIBase

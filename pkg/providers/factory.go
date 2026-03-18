@@ -21,6 +21,7 @@ const (
 	providerTypeCodexCLIToken
 	providerTypeClaudeCLI
 	providerTypeCodexCLI
+	providerTypeQwenCLI
 	providerTypeGitHubCopilot
 )
 
@@ -180,6 +181,14 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 				workspace = "."
 			}
 			sel.providerType = providerTypeCodexCLI
+			sel.workspace = workspace
+			return sel, nil
+		case "qwen-cli", "qwen-code", "qwencode":
+			workspace := cfg.WorkspacePath()
+			if workspace == "" {
+				workspace = "."
+			}
+			sel.providerType = providerTypeQwenCLI
 			sel.workspace = workspace
 			return sel, nil
 		case "deepseek":
