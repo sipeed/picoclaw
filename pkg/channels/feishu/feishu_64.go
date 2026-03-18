@@ -54,11 +54,15 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 	)
 
 	tc := newTokenCache()
+	opts := []lark.ClientOptionFunc{lark.WithTokenCache(tc)}
+	if cfg.IsLark {
+		opts = append(opts, lark.WithOpenBaseUrl(lark.LarkBaseUrl))
+	}
 	ch := &FeishuChannel{
 		BaseChannel: base,
 		config:      cfg,
 		tokenCache:  tc,
-		client:      lark.NewClient(cfg.AppID, cfg.AppSecret, lark.WithTokenCache(tc)),
+		client:      lark.NewClient(cfg.AppID, cfg.AppSecret, opts...),
 	}
 	ch.SetOwner(ch)
 	return ch, nil
@@ -83,10 +87,15 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 
 	c.mu.Lock()
 	c.cancel = cancel
+	domain := lark.FeishuBaseUrl
+	if c.config.IsLark {
+		domain = lark.LarkBaseUrl
+	}
 	c.wsClient = larkws.NewClient(
 		c.config.AppID,
 		c.config.AppSecret,
 		larkws.WithEventHandler(dispatcher),
+		larkws.WithDomain(domain),
 	)
 	wsClient := c.wsClient
 	c.mu.Unlock()
