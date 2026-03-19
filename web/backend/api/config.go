@@ -179,6 +179,20 @@ func validateConfig(cfg *config.Config) []string {
 		errs = append(errs, "channels.pico.token is required when pico channel is enabled")
 	}
 
+	if cfg.Channels.OpenAIAPI.Enabled && (cfg.Channels.OpenAIAPI.Port < 1 || cfg.Channels.OpenAIAPI.Port > 65535) {
+		errs = append(errs, fmt.Sprintf("channels.openai_api.port %d is out of valid range (1-65535)", cfg.Channels.OpenAIAPI.Port))
+	} else if cfg.Channels.OpenAIAPI.Port != 0 && (cfg.Channels.OpenAIAPI.Port < 1 || cfg.Channels.OpenAIAPI.Port > 65535) {
+		errs = append(errs, fmt.Sprintf("channels.openai_api.port %d is out of valid range (1-65535)", cfg.Channels.OpenAIAPI.Port))
+	}
+
+	if cfg.Channels.OpenAIAPI.Enabled && cfg.Channels.OpenAIAPI.APIKey == "" {
+		errs = append(errs, "channels.openai_api.api_key is required when openai_api channel is enabled")
+	}
+
+	if cfg.Channels.OpenAIAPI.Enabled && cfg.Channels.OpenAIAPI.Port == cfg.Gateway.Port {
+		errs = append(errs, "channels.openai_api.port must differ from gateway.port")
+	}
+
 	// Telegram: token required when enabled
 	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token == "" {
 		errs = append(errs, "channels.telegram.token is required when telegram channel is enabled")

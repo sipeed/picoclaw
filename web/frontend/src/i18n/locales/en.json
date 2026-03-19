@@ -238,6 +238,7 @@
       "whatsapp": "WhatsApp",
       "whatsapp_native": "WhatsApp Native",
       "pico": "Web",
+      "openai_api": "OpenAI API",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
       "irc": "IRC"
@@ -278,6 +279,7 @@
     "form": {
       "desc": {
         "token": "Bot access token used to connect to the platform API.",
+        "apiKey": "Authentication key used by external clients to access the OpenAI-compatible endpoint.",
         "botToken": "Bot token used to send and receive messages.",
         "appToken": "App token used for Socket Mode connections.",
         "appId": "Unique application ID used for authentication.",

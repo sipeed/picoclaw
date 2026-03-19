@@ -176,6 +176,11 @@ func DefaultConfig() *Config {
 				MaxConnections: 100,
 				AllowFrom:      FlexibleStringSlice{},
 			},
+			OpenAIAPI: OpenAIAPIConfig{
+				Enabled: false,
+				Port:    18794,
+				APIKey:  "",
+			},
 		},
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{WebSearch: true},

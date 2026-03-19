@@ -17,6 +17,7 @@ interface GenericFormProps {
 // Secret field names that should use masked input.
 const SECRET_FIELDS = new Set([
   "token",
+  "api_key",
   "app_secret",
   "client_secret",
   "corp_secret",
@@ -47,6 +48,23 @@ const OBJECT_FIELDS = new Set([
 ])
 
 function formatLabel(key: string): string {
+  const overrides: Record<string, string> = {
+    api_key: "API Key",
+    ws_url: "WS URL",
+    app_id: "App ID",
+    user_id: "User ID",
+    device_id: "Device ID",
+    client_id: "Client ID",
+    corp_id: "Corp ID",
+    agent_id: "Agent ID",
+    webhook_url: "Webhook URL",
+    webhook_host: "Webhook Host",
+    webhook_port: "Webhook Port",
+    webhook_path: "Webhook Path",
+  }
+  if (overrides[key]) {
+    return overrides[key]
+  }
   return key
     .split("_")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -104,6 +122,7 @@ export function GenericForm({
 
   const buildHint = (key: string): string => {
     const descriptions: Record<string, string> = {
+      api_key: t("channels.form.desc.apiKey"),
       ws_url: t("channels.form.desc.wsUrl"),
       reconnect_interval: t("channels.form.desc.reconnectInterval"),
       bridge_url: t("channels.form.desc.bridgeUrl"),

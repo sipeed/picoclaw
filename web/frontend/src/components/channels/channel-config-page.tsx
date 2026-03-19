@@ -36,6 +36,7 @@ const SECRET_FIELD_MAP: Record<string, string> = {
   access_token: "_access_token",
   bot_token: "_bot_token",
   app_token: "_app_token",
+  api_key: "_api_key",
   encoding_aes_key: "_encoding_aes_key",
   encrypt_key: "_encrypt_key",
   verification_token: "_verification_token",
@@ -156,6 +157,8 @@ function isConfigured(
       return asBool(config.use_native)
     case "pico":
       return asString(config.token) !== ""
+    case "openai_api":
+      return asString(config.api_key) !== ""
     case "maixcam":
       return asString(config.host) !== ""
     case "matrix":
@@ -199,6 +202,8 @@ function getRequiredFieldKeys(channelName: string): string[] {
       return ["bridge_url"]
     case "pico":
       return ["token"]
+    case "openai_api":
+      return ["api_key", "port"]
     case "maixcam":
       return ["host"]
     case "matrix":
@@ -229,6 +234,7 @@ function getChannelDocSlug(channelName: string): string {
 
 const CHANNELS_WITHOUT_DOCS = new Set([
   "pico",
+  "openai_api",
   "wecom",
   "matrix",
   "irc",

@@ -42,6 +42,7 @@ const CHANNEL_IMPORTANCE_ORDER = [
   "onebot",
   "matrix",
   "pico",
+  "openai_api",
   "maixcam",
   "irc",
   "whatsapp",
@@ -84,6 +85,7 @@ const CHANNEL_ICON_MAP: Record<
   maixcam: IconCamera,
   onebot: IconRobot,
   pico: IconBrandChrome,
+  openai_api: IconPlug,
   irc: IconMessages,
 }
 

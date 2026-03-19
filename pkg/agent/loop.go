@@ -62,20 +62,27 @@ type processOptions struct {
 	SenderDisplayName string   // Current sender display name for dynamic context
 	UserMessage       string   // User message content (may include prefix)
 	Media             []string // media:// refs from inbound message
-	DefaultResponse   string   // Response when LLM returns empty
-	EnableSummary     bool     // Whether to trigger summarization
-	SendResponse      bool     // Whether to send response via bus
-	NoHistory         bool     // If true, don't load session history (for heartbeat)
+	InjectedHistory   []providers.Message
+	ExtraSystemPrompt string
+	RequestedModel    string
+	DefaultResponse   string // Response when LLM returns empty
+	EnableSummary     bool   // Whether to trigger summarization
+	SendResponse      bool   // Whether to send response via bus
+	NoHistory         bool   // If true, don't load or persist session history
 }
 
 const (
-	defaultResponse           = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
-	sessionKeyAgentPrefix     = "agent:"
-	metadataKeyAccountID      = "account_id"
-	metadataKeyGuildID        = "guild_id"
-	metadataKeyTeamID         = "team_id"
-	metadataKeyParentPeerKind = "parent_peer_kind"
-	metadataKeyParentPeerID   = "parent_peer_id"
+	defaultResponse              = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
+	sessionKeyAgentPrefix        = "agent:"
+	metadataKeyAccountID         = "account_id"
+	metadataKeyGuildID           = "guild_id"
+	metadataKeyTeamID            = "team_id"
+	metadataKeyParentPeerKind    = "parent_peer_kind"
+	metadataKeyParentPeerID      = "parent_peer_id"
+	metadataKeyNoHistory         = "no_history"
+	metadataKeyRequestedModel    = "requested_model"
+	metadataKeyInjectedHistory   = "injected_history"
+	metadataKeyExtraSystemPrompt = "extra_system_prompt"
 )
 
 func NewAgentLoop(
@@ -763,6 +770,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		SendResponse:      false,
 	}
 
+	if metadataEnabled(msg, metadataKeyNoHistory) {
+		opts.NoHistory = true
+		opts.EnableSummary = false
+	}
+	opts.RequestedModel = inboundMetadata(msg, metadataKeyRequestedModel)
+	opts.ExtraSystemPrompt = inboundMetadata(msg, metadataKeyExtraSystemPrompt)
+	opts.InjectedHistory = decodeInjectedHistory(msg)
+
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
 	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {
@@ -889,7 +904,9 @@ func (al *AgentLoop) runAgentLoop(
 	// 1. Build messages (skip history for heartbeat)
 	var history []providers.Message
 	var summary string
-	if !opts.NoHistory {
+	if len(opts.InjectedHistory) > 0 {
+		history = append([]providers.Message(nil), opts.InjectedHistory...)
+	} else if !opts.NoHistory {
 		history = agent.Sessions.GetHistory(opts.SessionKey)
 		summary = agent.Sessions.GetSummary(opts.SessionKey)
 	}
@@ -902,6 +919,7 @@ func (al *AgentLoop) runAgentLoop(
 		opts.ChatID,
 		opts.SenderID,
 		opts.SenderDisplayName,
+		opts.ExtraSystemPrompt,
 	)
 
 	// Resolve media:// refs: images→base64 data URLs, non-images→local paths in content
@@ -910,7 +928,9 @@ func (al *AgentLoop) runAgentLoop(
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 
 	// 2. Save user message to session
-	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+	if !opts.NoHistory {
+		agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+	}
 
 	// 3. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
@@ -927,11 +947,13 @@ func (al *AgentLoop) runAgentLoop(
 	}
 
 	// 5. Save final assistant message to session
-	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
-	agent.Sessions.Save(opts.SessionKey)
+	if !opts.NoHistory {
+		agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
+		agent.Sessions.Save(opts.SessionKey)
+	}
 
 	// 6. Optional: summarization
-	if opts.EnableSummary {
+	if opts.EnableSummary && !opts.NoHistory {
 		al.maybeSummarize(agent, opts.SessionKey, opts.Channel, opts.ChatID)
 	}
 
@@ -1027,7 +1049,10 @@ func (al *AgentLoop) runLLMIteration(
 	// selectCandidates evaluates routing once and the decision is sticky for
 	// all tool-follow-up iterations within the same turn so that a multi-step
 	// tool chain doesn't switch models mid-way through.
-	activeCandidates, activeModel := al.selectCandidates(agent, opts.UserMessage, messages)
+	activeCandidates, activeModel, err := al.selectCandidates(agent, opts.RequestedModel, opts.UserMessage, messages)
+	if err != nil {
+		return "", iteration, err
+	}
 
 	for iteration < agent.MaxIterations {
 		iteration++
@@ -1167,7 +1192,7 @@ func (al *AgentLoop) runLLMIteration(
 				continue
 			}
 
-			if isContextError && retry < maxRetries {
+			if isContextError && retry < maxRetries && !opts.NoHistory {
 				logger.WarnCF(
 					"agent",
 					"Context window error detected, attempting compression",
@@ -1190,7 +1215,7 @@ func (al *AgentLoop) runLLMIteration(
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
 					newHistory, newSummary, "",
-					nil, opts.Channel, opts.ChatID, opts.SenderID, opts.SenderDisplayName,
+					nil, opts.Channel, opts.ChatID, opts.SenderID, opts.SenderDisplayName, opts.ExtraSystemPrompt,
 				)
 				continue
 			}
@@ -1451,11 +1476,16 @@ func (al *AgentLoop) runLLMIteration(
 // that a multi-step tool chain doesn't switch models mid-way.
 func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
+	requestedModel string,
 	userMsg string,
 	history []providers.Message,
-) (candidates []providers.FallbackCandidate, model string) {
+) (candidates []providers.FallbackCandidate, model string, err error) {
+	if strings.TrimSpace(requestedModel) != "" {
+		return al.resolveRequestedModelCandidates(agent, requestedModel)
+	}
+
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
-		return agent.Candidates, agent.Model
+		return agent.Candidates, agent.Model, nil
 	}
 
 	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
@@ -1466,7 +1496,7 @@ func (al *AgentLoop) selectCandidates(
 				"score":     score,
 				"threshold": agent.Router.Threshold(),
 			})
-		return agent.Candidates, agent.Model
+		return agent.Candidates, agent.Model, nil
 	}
 
 	logger.InfoCF("agent", "Model routing: light model selected",
@@ -1476,7 +1506,66 @@ func (al *AgentLoop) selectCandidates(
 			"score":       score,
 			"threshold":   agent.Router.Threshold(),
 		})
-	return agent.LightCandidates, agent.Router.LightModel()
+	return agent.LightCandidates, agent.Router.LightModel(), nil
+}
+
+func (al *AgentLoop) resolveRequestedModelCandidates(
+	agent *AgentInstance,
+	requestedModel string,
+) ([]providers.FallbackCandidate, string, error) {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return agent.Candidates, agent.Model, nil
+	}
+
+	cfg := al.GetConfig()
+	resolveFromModelList := func(raw string) (string, bool) {
+		ensureProtocol := func(model string) string {
+			if model == "" {
+				return ""
+			}
+			if strings.Contains(model, "/") {
+				return model
+			}
+			return "openai/" + model
+		}
+
+		raw = strings.TrimSpace(raw)
+		if raw == "" || cfg == nil {
+			return "", false
+		}
+
+		if mc, err := cfg.GetModelConfig(raw); err == nil && mc != nil && strings.TrimSpace(mc.Model) != "" {
+			return ensureProtocol(mc.Model), true
+		}
+
+		for i := range cfg.ModelList {
+			fullModel := strings.TrimSpace(cfg.ModelList[i].Model)
+			if fullModel == "" {
+				continue
+			}
+			if fullModel == raw {
+				return ensureProtocol(fullModel), true
+			}
+			_, modelID := providers.ExtractProtocol(fullModel)
+			if modelID == raw {
+				return ensureProtocol(fullModel), true
+			}
+		}
+
+		return "", false
+	}
+
+	candidates := providers.ResolveCandidatesWithLookup(
+		providers.ModelConfig{Primary: requestedModel},
+		al.cfg.Agents.Defaults.Provider,
+		resolveFromModelList,
+	)
+	if len(candidates) == 0 {
+		return nil, "", fmt.Errorf("requested model %q not found in model_list", requestedModel)
+	}
+
+	return candidates, requestedModel, nil
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
@@ -1986,6 +2075,27 @@ func inboundMetadata(msg bus.InboundMessage, key string) string {
 		return ""
 	}
 	return msg.Metadata[key]
+}
+
+func metadataEnabled(msg bus.InboundMessage, key string) bool {
+	value := strings.ToLower(strings.TrimSpace(inboundMetadata(msg, key)))
+	return value == "1" || value == "true" || value == "yes" || value == "on"
+}
+
+func decodeInjectedHistory(msg bus.InboundMessage) []providers.Message {
+	raw := inboundMetadata(msg, metadataKeyInjectedHistory)
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	var history []providers.Message
+	if err := json.Unmarshal([]byte(raw), &history); err != nil {
+		logger.WarnCF("agent", "Failed to decode injected history", map[string]any{
+			"error": err.Error(),
+		})
+		return nil
+	}
+	return history
 }
 
 // extractParentPeer extracts the parent peer (reply-to) from inbound message metadata.

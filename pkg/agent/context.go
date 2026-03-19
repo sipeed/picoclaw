@@ -497,6 +497,7 @@ func (cb *ContextBuilder) BuildMessages(
 	currentMessage string,
 	media []string,
 	channel, chatID, senderID, senderDisplayName string,
+	extraSystemPrompt string,
 ) []providers.Message {
 	messages := []providers.Message{}
 
@@ -537,6 +538,15 @@ func (cb *ContextBuilder) BuildMessages(
 			summary)
 		stringParts = append(stringParts, summaryText)
 		contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: summaryText})
+	}
+
+	if strings.TrimSpace(extraSystemPrompt) != "" {
+		extraText := fmt.Sprintf(
+			"CLIENT_SYSTEM_INSTRUCTIONS: The following instructions were provided by the external client for this request only.\n\n%s",
+			extraSystemPrompt,
+		)
+		stringParts = append(stringParts, extraText)
+		contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: extraText})
 	}
 
 	fullSystemPrompt := strings.Join(stringParts, "\n\n---\n\n")

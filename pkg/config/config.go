@@ -272,6 +272,7 @@ type ChannelsConfig struct {
 	WeComApp   WeComAppConfig   `json:"wecom_app"`
 	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
 	Pico       PicoConfig       `json:"pico"`
+	OpenAIAPI  OpenAIAPIConfig  `json:"openai_api"`
 	IRC        IRCConfig        `json:"irc"`
 }
 
@@ -473,6 +474,12 @@ type PicoConfig struct {
 	MaxConnections  int                 `json:"max_connections,omitempty"`
 	AllowFrom       FlexibleStringSlice `json:"allow_from"                  env:"PICOCLAW_CHANNELS_PICO_ALLOW_FROM"`
 	Placeholder     PlaceholderConfig   `json:"placeholder,omitempty"`
+}
+
+type OpenAIAPIConfig struct {
+	Enabled bool   `json:"enabled" env:"PICOCLAW_CHANNELS_OPENAI_API_ENABLED"`
+	Port    int    `json:"port"    env:"PICOCLAW_CHANNELS_OPENAI_API_PORT"`
+	APIKey  string `json:"api_key" env:"PICOCLAW_CHANNELS_OPENAI_API_API_KEY"`
 }
 
 type IRCConfig struct {

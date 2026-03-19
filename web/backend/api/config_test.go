@@ -165,3 +165,64 @@ func TestHandlePatchConfig_AllowsInvalidDenyRegexPatternsWhenDenyPatternsDisable
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
+
+func TestHandlePatchConfig_RejectsOpenAIAPIWithoutKeyWhenEnabled(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"channels": {
+			"openai_api": {
+				"enabled": true,
+				"port": 18794,
+				"api_key": ""
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("channels.openai_api.api_key")) {
+		t.Fatalf("expected openai_api api_key validation error, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandlePatchConfig_RejectsOpenAIAPIPortConflictWithGateway(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"gateway": {
+			"port": 18790
+		},
+		"channels": {
+			"openai_api": {
+				"enabled": true,
+				"port": 18790,
+				"api_key": "test-key"
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("channels.openai_api.port must differ from gateway.port")) {
+		t.Fatalf("expected openai_api port conflict validation error, body=%s", rec.Body.String())
+	}
+}
