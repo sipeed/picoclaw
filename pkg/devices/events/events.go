@@ -1,6 +1,9 @@
 package events
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 type EventSource interface {
 	Kind() Kind
@@ -44,14 +47,26 @@ func (e *DeviceEvent) FormatMessage() string {
 		actionText = "Disconnected"
 	}
 
-	msg := actionEmoji + " Device " + actionText + "\n\n"
-	msg += "Type: " + string(e.Kind) + "\n"
-	msg += "Device: " + e.Vendor + " " + e.Product + "\n"
+	var b strings.Builder
+	b.WriteString(actionEmoji)
+	b.WriteString(" Device ")
+	b.WriteString(actionText)
+	b.WriteString("\n\nType: ")
+	b.WriteString(string(e.Kind))
+	b.WriteString("\nDevice: ")
+	b.WriteString(e.Vendor)
+	b.WriteByte(' ')
+	b.WriteString(e.Product)
+	b.WriteByte('\n')
 	if e.Capabilities != "" {
-		msg += "Capabilities: " + e.Capabilities + "\n"
+		b.WriteString("Capabilities: ")
+		b.WriteString(e.Capabilities)
+		b.WriteByte('\n')
 	}
 	if e.Serial != "" {
-		msg += "Serial: " + e.Serial + "\n"
+		b.WriteString("Serial: ")
+		b.WriteString(e.Serial)
+		b.WriteByte('\n')
 	}
-	return msg
+	return b.String()
 }

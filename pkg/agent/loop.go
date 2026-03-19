@@ -1161,7 +1161,6 @@ func (al *AgentLoop) callLLMWithRetry(
 			ch, sErr := sp.ChatStream(streamCtx, *messages, toolDefs, model, llmOpts)
 			if sErr != nil {
 				return nil, sErr
-
 			}
 			resp, repetition, sErr := consumeStreamWithRepetitionDetection(ch, streamCancel, 1000, onChunk)
 			if sErr != nil {
@@ -1263,7 +1262,6 @@ func (al *AgentLoop) callLLMWithRetry(
 				opts.SenderID, opts.SenderDisplayName,
 			)
 			continue
-
 		}
 		break
 	}
@@ -1374,7 +1372,6 @@ func (al *AgentLoop) publishToolMedia(ctx context.Context, result *tools.ToolRes
 		Parts:   parts,
 	})
 }
-
 
 // isNativeSearchProvider reports whether the given LLM provider implements
 // NativeSearchCapable and returns true for SupportsNativeSearch.

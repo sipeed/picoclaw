@@ -500,7 +500,7 @@ func TestProviderChat_StripsGroqOllamaDeepseekVivgridNovitaPrefixes(t *testing.T
 		},
 	}
 
-	for _, tt := range tests { //nolint:dupl
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, tt.input, nil)
 			if err != nil {

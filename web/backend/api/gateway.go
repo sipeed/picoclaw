@@ -56,14 +56,6 @@ var gatewayHealthGet = func(url string, timeout time.Duration) (*http.Response, 
 	return client.Get(url)
 }
 
-// gatewayHealthScheme returns "https" if the gateway is serving TLS, "http" otherwise.
-func gatewayHealthScheme(cfg *config.Config) string {
-	if cfg != nil && strings.HasPrefix(cfg.Channels.Telegram.WebAppURL, "https://") {
-		return "https"
-	}
-	return "http"
-}
-
 // getGatewayHealth checks the gateway health endpoint and returns the status response
 // Returns (*health.StatusResponse, statusCode, error). If error is not nil, the other values are not valid.
 func (h *Handler) getGatewayHealth(cfg *config.Config, timeout time.Duration) (*health.StatusResponse, int, error) {

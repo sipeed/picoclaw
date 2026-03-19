@@ -77,7 +77,7 @@ type channelWorker struct {
 }
 
 type Manager struct {
-	managerExt // fork-specific fields (statusMsgIDs, taskMsgIDs, statusEditTimes)
+	managerExt    // fork-specific fields (statusMsgIDs, taskMsgIDs, statusEditTimes)
 	channels      map[string]Channel
 	workers       map[string]*channelWorker
 	bus           *bus.MessageBus

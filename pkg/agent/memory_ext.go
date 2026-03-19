@@ -650,8 +650,8 @@ func (ms *MemoryStore) FormatPlanDisplay() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Plan: %s\n", state.taskName))
-	sb.WriteString(fmt.Sprintf("Status: %s | Phase %d/%d\n\n", state.status, state.currentPhase, len(state.phases)))
+	fmt.Fprintf(&sb, "Plan: %s\n", state.taskName)
+	fmt.Fprintf(&sb, "Status: %s | Phase %d/%d\n\n", state.status, state.currentPhase, len(state.phases))
 
 	for _, p := range state.phases {
 		var emoji string
@@ -662,7 +662,7 @@ func (ms *MemoryStore) FormatPlanDisplay() string {
 		} else {
 			emoji = "\u23F3"
 		}
-		sb.WriteString(fmt.Sprintf("%s Phase %d: %s\n", emoji, p.Number, p.Title))
+		fmt.Fprintf(&sb, "%s Phase %d: %s\n", emoji, p.Number, p.Title)
 		if p.Number <= state.currentPhase {
 			for _, s := range p.Steps {
 				if s.Done {

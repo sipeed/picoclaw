@@ -97,19 +97,19 @@ func formatSearchResults(query string, results []skills.SearchResult, cached boo
 	if cached {
 		source = " (cached)"
 	}
-	sb.WriteString(fmt.Sprintf("Found %d skills for %q%s:\n\n", len(results), query, source))
+	fmt.Fprintf(&sb, "Found %d skills for %q%s:\n\n", len(results), query, source)
 
 	for i, r := range results {
-		sb.WriteString(fmt.Sprintf("%d. **%s**", i+1, r.Slug))
+		fmt.Fprintf(&sb, "%d. **%s**", i+1, r.Slug)
 		if r.Version != "" {
-			sb.WriteString(fmt.Sprintf(" v%s", r.Version))
+			fmt.Fprintf(&sb, " v%s", r.Version)
 		}
-		sb.WriteString(fmt.Sprintf("  (score: %.3f, registry: %s)\n", r.Score, r.RegistryName))
+		fmt.Fprintf(&sb, "  (score: %.3f, registry: %s)\n", r.Score, r.RegistryName)
 		if r.DisplayName != "" && r.DisplayName != r.Slug {
-			sb.WriteString(fmt.Sprintf("   Name: %s\n", r.DisplayName))
+			fmt.Fprintf(&sb, "   Name: %s\n", r.DisplayName)
 		}
 		if r.Summary != "" {
-			sb.WriteString(fmt.Sprintf("   %s\n", r.Summary))
+			fmt.Fprintf(&sb, "   %s\n", r.Summary)
 		}
 		sb.WriteString("\n")
 	}

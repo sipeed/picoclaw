@@ -362,7 +362,6 @@ func mediaTempDirPattern() string {
 	return "^" + regexp.QuoteMeta(filepath.Clean(media.TempDir())) + "(?:" + sep + "|$)"
 }
 
-
 func expandHome(path string) string {
 	if path == "" {
 		return path

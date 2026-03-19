@@ -70,7 +70,7 @@ func (mb *MessageBus) InboundChan() <-chan InboundMessage {
 	return mb.inbound
 }
 
-// ConsumeInbound blocks until an inbound message is available or the context is cancelled.
+// ConsumeInbound blocks until an inbound message is available or the context is canceled.
 func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool) {
 	select {
 	case msg, ok := <-mb.inbound:
@@ -90,7 +90,7 @@ func (mb *MessageBus) OutboundChan() <-chan OutboundMessage {
 	return mb.outbound
 }
 
-// SubscribeOutbound blocks until an outbound message is available or the context is cancelled.
+// SubscribeOutbound blocks until an outbound message is available or the context is canceled.
 func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, bool) {
 	select {
 	case msg, ok := <-mb.outbound:

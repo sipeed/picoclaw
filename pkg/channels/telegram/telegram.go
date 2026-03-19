@@ -521,8 +521,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	chatID := message.Chat.ID
 	c.chatIDs[platformID] = chatID
 
-	content := ""
 	mediaPaths := []string{}
+	hasMedia := message.Caption != "" || len(message.Photo) > 0 ||
+		message.Voice != nil || message.Audio != nil || message.Document != nil
 
 	chatIDStr := fmt.Sprintf("%d", chatID)
 	messageIDStr := fmt.Sprintf("%d", message.MessageID)
@@ -542,63 +543,66 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		return localPath // fallback: use raw path
 	}
 
-	if message.Text != "" {
-		content += message.Text
-	}
-
-	if message.Caption != "" {
-		if content != "" {
-			content += "\n"
+	// Fast path: text-only message (most common) — avoid Builder alloc
+	var content string
+	if !hasMedia {
+		if message.Text != "" {
+			content = message.Text
 		}
-		content += message.Caption
-	}
-
-	if len(message.Photo) > 0 {
-		photo := message.Photo[len(message.Photo)-1]
-		photoPath := c.downloadPhoto(ctx, photo.FileID)
-		if photoPath != "" {
-			mediaPaths = append(mediaPaths, storeMedia(photoPath, "photo.jpg"))
-			if content != "" {
-				content += "\n"
+	} else {
+		var cb strings.Builder
+		if message.Text != "" {
+			cb.WriteString(message.Text)
+		}
+		if message.Caption != "" {
+			if cb.Len() > 0 {
+				cb.WriteByte('\n')
 			}
-			content += "[image: photo]"
+			cb.WriteString(message.Caption)
 		}
-	}
-
-	if message.Voice != nil {
-		voicePath := c.downloadFile(ctx, message.Voice.FileID, ".ogg")
-		if voicePath != "" {
-			mediaPaths = append(mediaPaths, storeMedia(voicePath, "voice.ogg"))
-
-			if content != "" {
-				content += "\n"
+		if len(message.Photo) > 0 {
+			photo := message.Photo[len(message.Photo)-1]
+			photoPath := c.downloadPhoto(ctx, photo.FileID)
+			if photoPath != "" {
+				mediaPaths = append(mediaPaths, storeMedia(photoPath, "photo.jpg"))
+				if cb.Len() > 0 {
+					cb.WriteByte('\n')
+				}
+				cb.WriteString("[image: photo]")
 			}
-			content += "[voice]"
 		}
-	}
-
-	if message.Audio != nil {
-		audioPath := c.downloadFile(ctx, message.Audio.FileID, ".mp3")
-		if audioPath != "" {
-			mediaPaths = append(mediaPaths, storeMedia(audioPath, "audio.mp3"))
-			if content != "" {
-				content += "\n"
+		if message.Voice != nil {
+			voicePath := c.downloadFile(ctx, message.Voice.FileID, ".ogg")
+			if voicePath != "" {
+				mediaPaths = append(mediaPaths, storeMedia(voicePath, "voice.ogg"))
+				if cb.Len() > 0 {
+					cb.WriteByte('\n')
+				}
+				cb.WriteString("[voice]")
 			}
-			content += "[audio]"
 		}
-	}
-
-	if message.Document != nil {
-		docPath := c.downloadFile(ctx, message.Document.FileID, "")
-		if docPath != "" {
-			mediaPaths = append(mediaPaths, storeMedia(docPath, "document"))
-			if content != "" {
-				content += "\n"
+		if message.Audio != nil {
+			audioPath := c.downloadFile(ctx, message.Audio.FileID, ".mp3")
+			if audioPath != "" {
+				mediaPaths = append(mediaPaths, storeMedia(audioPath, "audio.mp3"))
+				if cb.Len() > 0 {
+					cb.WriteByte('\n')
+				}
+				cb.WriteString("[audio]")
 			}
-			content += "[file]"
 		}
+		if message.Document != nil {
+			docPath := c.downloadFile(ctx, message.Document.FileID, "")
+			if docPath != "" {
+				mediaPaths = append(mediaPaths, storeMedia(docPath, "document"))
+				if cb.Len() > 0 {
+					cb.WriteByte('\n')
+				}
+				cb.WriteString("[file]")
+			}
+		}
+		content = cb.String()
 	}
-
 	if content == "" {
 		content = "[empty message]"
 	}

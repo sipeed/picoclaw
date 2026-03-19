@@ -127,11 +127,11 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Subagent status report (%d total):\n", len(tasks)))
+	fmt.Fprintf(&sb, "Subagent status report (%d total):\n", len(tasks))
 	for _, status := range []string{"running", "completed", "failed", "canceled"} {
 		if n := counts[status]; n > 0 {
 			label := strings.ToUpper(status[:1]) + status[1:] + ":"
-			sb.WriteString(fmt.Sprintf("  %-10s %d\n", label, n))
+			fmt.Fprintf(&sb, "  %-10s %d\n", label, n)
 		}
 	}
 	sb.WriteString("\n")
@@ -148,21 +148,20 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 func spawnStatusFormatTask(task *SubagentTask) string {
 	var sb strings.Builder
 
-	header := fmt.Sprintf("[%s] status=%s", task.ID, task.Status)
+	fmt.Fprintf(&sb, "[%s] status=%s", task.ID, task.Status)
 	if task.Label != "" {
-		header += fmt.Sprintf("  label=%q", task.Label)
+		fmt.Fprintf(&sb, "  label=%q", task.Label)
 	}
 	if task.AgentID != "" {
-		header += fmt.Sprintf("  agent=%s", task.AgentID)
+		fmt.Fprintf(&sb, "  agent=%s", task.AgentID)
 	}
 	if task.Created > 0 {
 		created := time.UnixMilli(task.Created).UTC().Format("2006-01-02 15:04:05 UTC")
-		header += fmt.Sprintf("  created=%s", created)
+		fmt.Fprintf(&sb, "  created=%s", created)
 	}
-	sb.WriteString(header)
 
 	if task.Task != "" {
-		sb.WriteString(fmt.Sprintf("\n  task:   %s", task.Task))
+		fmt.Fprintf(&sb, "\n  task:   %s", task.Task)
 	}
 	if task.Result != "" {
 		result := task.Result
@@ -171,7 +170,7 @@ func spawnStatusFormatTask(task *SubagentTask) string {
 		if len(runes) > maxResultLen {
 			result = string(runes[:maxResultLen]) + "…"
 		}
-		sb.WriteString(fmt.Sprintf("\n  result: %s", result))
+		fmt.Fprintf(&sb, "\n  result: %s", result)
 	}
 
 	return sb.String()

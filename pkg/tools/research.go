@@ -129,12 +129,12 @@ func (t *ResearchTool) RuntimeStatus() string {
 	b.WriteString("Available research topics:\n")
 	for _, task := range tasks {
 		docCount, _ := t.store.DocumentCount(task.ID)
-		b.WriteString(fmt.Sprintf("- \"%s\" [%s, %d docs] (id: %s)\n",
-			task.Title, task.Status, docCount, task.ID))
+		fmt.Fprintf(&b, "- \"%s\" [%s, %d docs] (id: %s)\n",
+			task.Title, task.Status, docCount, task.ID)
 	}
 
 	if focusID, focusTitle := t.focus.Current(); focusID != "" {
-		b.WriteString(fmt.Sprintf("\nCurrently focused: \"%s\" (id: %s)\n", focusTitle, focusID))
+		fmt.Fprintf(&b, "\nCurrently focused: \"%s\" (id: %s)\n", focusTitle, focusID)
 	}
 
 	b.WriteString("\nUse `research recall` to load findings when the user asks about a research topic.\n")
@@ -154,11 +154,11 @@ func (t *ResearchTool) listTasks(args map[string]any) *ToolResult {
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Found %d research task(s):\n\n", len(tasks)))
+	fmt.Fprintf(&b, "Found %d research task(s):\n\n", len(tasks))
 	for _, task := range tasks {
 		docCount, _ := t.store.DocumentCount(task.ID)
-		b.WriteString(fmt.Sprintf("- **%s** [%s] (id: %s, docs: %d)\n  %s\n",
-			task.Title, task.Status, task.ID, docCount, task.Description))
+		fmt.Fprintf(&b, "- **%s** [%s] (id: %s, docs: %d)\n  %s\n",
+			task.Title, task.Status, task.ID, docCount, task.Description)
 	}
 	return NewToolResult(b.String())
 }
@@ -177,20 +177,20 @@ func (t *ResearchTool) getTask(args map[string]any) *ToolResult {
 	docs, _ := t.store.ListDocuments(taskID)
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("## %s\n", task.Title))
-	b.WriteString(fmt.Sprintf("- **Status**: %s\n", task.Status))
-	b.WriteString(fmt.Sprintf("- **ID**: %s\n", task.ID))
-	b.WriteString(fmt.Sprintf("- **Output dir**: %s\n", task.OutputDir))
+	fmt.Fprintf(&b, "## %s\n", task.Title)
+	fmt.Fprintf(&b, "- **Status**: %s\n", task.Status)
+	fmt.Fprintf(&b, "- **ID**: %s\n", task.ID)
+	fmt.Fprintf(&b, "- **Output dir**: %s\n", task.OutputDir)
 	if task.Description != "" {
-		b.WriteString(fmt.Sprintf("- **Description**: %s\n", task.Description))
+		fmt.Fprintf(&b, "- **Description**: %s\n", task.Description)
 	}
-	b.WriteString(fmt.Sprintf("- **Created**: %s\n", task.CreatedAt.Format("2006-01-02 15:04")))
+	fmt.Fprintf(&b, "- **Created**: %s\n", task.CreatedAt.Format("2006-01-02 15:04"))
 
 	if len(docs) > 0 {
-		b.WriteString(fmt.Sprintf("\n### Documents (%d)\n", len(docs)))
+		fmt.Fprintf(&b, "\n### Documents (%d)\n", len(docs))
 		for _, d := range docs {
-			b.WriteString(fmt.Sprintf("- [%d] %s (%s) — %s\n  path: %s\n",
-				d.Seq, d.Title, d.DocType, d.Summary, d.FilePath))
+			fmt.Fprintf(&b, "- [%d] %s (%s) — %s\n  path: %s\n",
+				d.Seq, d.Title, d.DocType, d.Summary, d.FilePath)
 		}
 	} else {
 		b.WriteString("\nNo documents yet.\n")
@@ -313,10 +313,10 @@ func (t *ResearchTool) recall(args map[string]any) *ToolResult {
 	t.focus.Focus(task.ID, task.Title)
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("# Research Context: %s\n\n", task.Title))
-	b.WriteString(fmt.Sprintf("**Status**: %s | **Documents**: %d\n", task.Status, len(docs)))
+	fmt.Fprintf(&b, "# Research Context: %s\n\n", task.Title)
+	fmt.Fprintf(&b, "**Status**: %s | **Documents**: %d\n", task.Status, len(docs))
 	if task.Description != "" {
-		b.WriteString(fmt.Sprintf("**Description**: %s\n", task.Description))
+		fmt.Fprintf(&b, "**Description**: %s\n", task.Description)
 	}
 	b.WriteString("\n---\n\n")
 
@@ -331,7 +331,7 @@ func (t *ResearchTool) recall(args map[string]any) *ToolResult {
 		absPath := filepath.Join(t.workspace, d.FilePath)
 		data, readErr := os.ReadFile(absPath)
 		if readErr != nil {
-			b.WriteString(fmt.Sprintf("## [%d] %s\n\n(file not found: %s)\n\n", d.Seq, d.Title, d.FilePath))
+			fmt.Fprintf(&b, "## [%d] %s\n\n(file not found: %s)\n\n", d.Seq, d.Title, d.FilePath)
 			loaded++
 			continue
 		}
@@ -340,16 +340,14 @@ func (t *ResearchTool) recall(args map[string]any) *ToolResult {
 		entrySize := len(d.Title) + len(content) + 40 // rough overhead for headers
 		if totalBytes+entrySize > maxContextBytes {
 			remaining := len(docs) - loaded
-			b.WriteString(
-				fmt.Sprintf(
-					"\n---\n*Context limit reached. %d more finding(s) not shown. Use get_task to see the full list.*\n",
-					remaining,
-				),
+			fmt.Fprintf(&b,
+				"\n---\n*Context limit reached. %d more finding(s) not shown. Use get_task to see the full list.*\n",
+				remaining,
 			)
 			break
 		}
 
-		b.WriteString(fmt.Sprintf("## [%d] %s\n\n", d.Seq, d.Title))
+		fmt.Fprintf(&b, "## [%d] %s\n\n", d.Seq, d.Title)
 		b.WriteString(content)
 		if !strings.HasSuffix(content, "\n") {
 			b.WriteByte('\n')
