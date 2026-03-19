@@ -372,7 +372,7 @@ func (al *AgentLoop) processingIndicator(ctx context.Context, channel, chatID, l
 	}
 
 	go func() {
-		ticker := time.NewTicker(150 * time.Millisecond)
+		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
 
 		frame := 0
@@ -596,8 +596,10 @@ func (al *AgentLoop) ocrPDF(
 		return fmt.Sprintf("[file:%s]", pdfPath)
 	}
 
-	// Track progress via stderr
+	// Track progress via stderr, keep last lines for error diagnosis
 	page := 0
+	var stderrTail []string
+	const maxTailLines = 20
 	scanner := bufio.NewScanner(stderrPipe)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -605,12 +607,17 @@ func (al *AgentLoop) ocrPDF(
 			page++
 			indicator.UpdateLabel(fmt.Sprintf("%s (%d/%s)...", modeLabel, page, totalStr))
 		}
+		stderrTail = append(stderrTail, line)
+		if len(stderrTail) > maxTailLines {
+			stderrTail = stderrTail[1:]
+		}
 	}
 
 	if waitErr := cmd.Wait(); waitErr != nil {
 		logger.WarnCF("agent", "OCR command failed", map[string]any{
-			"path":  pdfPath,
-			"error": waitErr.Error(),
+			"path":   pdfPath,
+			"error":  waitErr.Error(),
+			"stderr": strings.Join(stderrTail, "\n"),
 		})
 		return fmt.Sprintf("[file:%s]", pdfPath)
 	}

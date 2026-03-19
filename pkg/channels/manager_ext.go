@@ -18,7 +18,8 @@ const (
 	// for the same status/task bubble. EditMessage APIs are more rate-sensitive
 	// than SendMessageDraft, so we throttle edits to avoid "(edited)" flicker
 	// and API rate limit errors. Draft-based channels bypass this throttle.
-	statusEditInterval = 500 * time.Millisecond
+	// Telegram enforces ~20 messages/min per group chat, so 3s is safe.
+	statusEditInterval = 3 * time.Second
 )
 
 // statusMsgEntry tracks a status or task message ID for later editing.
@@ -85,8 +86,9 @@ func (m *Manager) handleStatusSend(ctx context.Context, name string, w *channelW
 	if v, loaded := m.placeholders.Load(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := w.ch.(MessageEditor); ok {
+				// Always record edit time to prevent retry storms on 429 errors.
+				m.statusEditTimes.Store(key, time.Now())
 				if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
-					m.statusEditTimes.Store(key, time.Now())
 					return
 				}
 			}
@@ -97,8 +99,8 @@ func (m *Manager) handleStatusSend(ctx context.Context, name string, w *channelW
 	if v, loaded := m.statusMsgIDs.Load(key); loaded {
 		if entry, ok := v.(statusMsgEntry); ok && entry.messageID != "" {
 			if editor, ok := w.ch.(MessageEditor); ok {
+				m.statusEditTimes.Store(key, time.Now())
 				if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
-					m.statusEditTimes.Store(key, time.Now())
 					return
 				}
 			}
@@ -223,8 +225,8 @@ func (m *Manager) handleTaskStatusSend(ctx context.Context, name string, w *chan
 		if v, loaded := m.taskMsgIDs.Load(taskKey); loaded {
 			if entry, ok := v.(statusMsgEntry); ok && entry.messageID != "" {
 				if editor, ok := w.ch.(MessageEditor); ok {
+					m.statusEditTimes.Store(taskKey, time.Now())
 					if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
-						m.statusEditTimes.Store(taskKey, time.Now())
 						return
 					}
 				}
