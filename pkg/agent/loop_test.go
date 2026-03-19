@@ -447,6 +447,46 @@ type testHelper struct {
 	al *AgentLoop
 }
 
+func newChatCompletionTestServer(
+	t *testing.T,
+	label string,
+	response string,
+	calls *int,
+	model *string,
+) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("%s server path = %q, want /chat/completions", label, r.URL.Path)
+		}
+		*calls = *calls + 1
+		defer r.Body.Close()
+
+		var req struct {
+			Model string `json:"model"`
+		}
+		decodeErr := json.NewDecoder(r.Body).Decode(&req)
+		if decodeErr != nil {
+			t.Fatalf("decode %s request: %v", label, decodeErr)
+		}
+		*model = req.Model
+
+		w.Header().Set("Content-Type", "application/json")
+		encodeErr := json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": response},
+					"finish_reason": "stop",
+				},
+			},
+		})
+		if encodeErr != nil {
+			t.Fatalf("encode %s response: %v", label, encodeErr)
+		}
+	}))
+}
+
 func (h testHelper) executeAndGetResponse(tb testing.TB, ctx context.Context, msg bus.InboundMessage) string {
 	// Use a short timeout to avoid hanging
 	timeoutCtx, cancel := context.WithTimeout(ctx, responseTimeout)
@@ -741,60 +781,12 @@ func TestProcessMessage_SwitchModelRoutesSubsequentRequestsToSelectedProvider(t 
 
 	localCalls := 0
 	localModel := ""
-	localServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
-			t.Fatalf("local server path = %q, want /chat/completions", r.URL.Path)
-		}
-		localCalls++
-		defer r.Body.Close()
-		var req struct {
-			Model string `json:"model"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode local request: %v", err)
-		}
-		localModel = req.Model
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
-			"choices": []map[string]any{
-				{
-					"message":       map[string]any{"content": "local reply"},
-					"finish_reason": "stop",
-				},
-			},
-		}); err != nil {
-			t.Fatalf("encode local response: %v", err)
-		}
-	}))
+	localServer := newChatCompletionTestServer(t, "local", "local reply", &localCalls, &localModel)
 	defer localServer.Close()
 
 	remoteCalls := 0
 	remoteModel := ""
-	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
-			t.Fatalf("remote server path = %q, want /chat/completions", r.URL.Path)
-		}
-		remoteCalls++
-		defer r.Body.Close()
-		var req struct {
-			Model string `json:"model"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode remote request: %v", err)
-		}
-		remoteModel = req.Model
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
-			"choices": []map[string]any{
-				{
-					"message":       map[string]any{"content": "remote reply"},
-					"finish_reason": "stop",
-				},
-			},
-		}); err != nil {
-			t.Fatalf("encode remote response: %v", err)
-		}
-	}))
+	remoteServer := newChatCompletionTestServer(t, "remote", "remote reply", &remoteCalls, &remoteModel)
 	defer remoteServer.Close()
 
 	cfg := &config.Config{
