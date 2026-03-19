@@ -248,6 +248,14 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 
+	// Describe images for text-only main models. In plan pre-execution mode
+	// (interviewing/review), the plan model (vision-capable) handles images
+	// directly, so skip description generation.
+	planStatus := agent.ContextBuilder.GetPlanStatus()
+	if len(agent.ImageCandidates) > 0 && !isPlanPreExecution(planStatus) {
+		messages = al.describeImagesInMessages(ctx, messages, agent, opts.Channel, opts.ChatID)
+	}
+
 	// 2b. Interview staleness nudge: if MEMORY.md hasn't been updated for
 
 	// several consecutive turns, inject a reminder so the AI writes its findings.

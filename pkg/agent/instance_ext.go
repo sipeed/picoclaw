@@ -61,6 +61,17 @@ func (ai *AgentInstance) initInstanceExt(
 		ai.PlanCandidates = providers.ResolveCandidates(planModelCfg, defaults.Provider)
 	}
 
+	// Resolve image model (for describing images sent to text-only main models)
+	ai.ImageModel = resolveImageModel(agentCfg, defaults)
+	ai.ImageFallbacks = resolveImageFallbacks(agentCfg, defaults)
+	if ai.ImageModel != "" {
+		imageModelCfg := providers.ModelConfig{
+			Primary:   ai.ImageModel,
+			Fallbacks: ai.ImageFallbacks,
+		}
+		ai.ImageCandidates = providers.ResolveCandidates(imageModelCfg, defaults.Provider)
+	}
+
 	// Startup cleanup: prune orphaned worktrees
 	worktreesDir := filepath.Join(ai.Workspace, ".worktrees")
 	if repoRoot := git.FindRepoRoot(ai.Workspace); repoRoot != "" {
