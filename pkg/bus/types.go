@@ -34,6 +34,7 @@ type OutboundMessage struct {
 	ChatID           string `json:"chat_id"`
 	Content          string `json:"content"`
 	ReplyToMessageID string `json:"reply_to_message_id,omitempty"`
+	Final            bool   `json:"final,omitempty"`
 }
 
 // MediaPart describes a single media attachment to send.

@@ -193,6 +193,7 @@ func registerSharedTools(
 					Channel: channel,
 					ChatID:  chatID,
 					Content: content,
+					Final:   true,
 				})
 			})
 			agent.Tools.Register(messageTool)
@@ -315,6 +316,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						Channel: msg.Channel,
 						ChatID:  msg.ChatID,
 						Content: response,
+						Final:   true,
 					})
 					logger.InfoCF("agent", "Published outbound response",
 						map[string]any{
