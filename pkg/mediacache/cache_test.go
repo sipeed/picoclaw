@@ -135,7 +135,7 @@ func TestCache_PutEntryAndGetEntry(t *testing.T) {
 	hash := HashData([]byte("pdf-content"))
 
 	entry := Entry{
-		Result:   "契約書 — 第1条 本契約は甲乙間の...",
+		Result:   "Contract - Article 1: This agreement between...",
 		FilePath: "/workspace/.mediacache/abc123.md",
 		Pages:    8,
 	}
@@ -147,7 +147,7 @@ func TestCache_PutEntryAndGetEntry(t *testing.T) {
 	if !ok {
 		t.Fatal("expected hit")
 	}
-	if got.Result != entry.Result {
+	if got.Result != "Contract - Article 1: This agreement between..." {
 		t.Errorf("Result = %q", got.Result)
 	}
 	if got.FilePath != entry.FilePath {
