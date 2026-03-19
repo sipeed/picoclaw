@@ -204,6 +204,8 @@
     "wecom_aibot": {
       "_comment": "WeCom AI Bot (智能机器人) - Official WeCom AI Bot integration, supports proactive messaging and private chats.",
       "enabled": false,
+      "bot_id": "YOUR_BOT_ID",
+      "secret": "YOUR_SECRET",
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
       "webhook_path": "/webhook/wecom-aibot",

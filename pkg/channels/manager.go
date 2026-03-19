@@ -296,7 +296,9 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("wecom", "WeCom")
 	}
 
-	if channels.WeComAIBot.Enabled && channels.WeComAIBot.Token != "" {
+	if m.config.Channels.WeComAIBot.Enabled &&
+		((m.config.Channels.WeComAIBot.BotID != "" && m.config.Channels.WeComAIBot.Secret != "") ||
+			m.config.Channels.WeComAIBot.Token != "") {
 		m.initChannel("wecom_aibot", "WeCom AI Bot")
 	}
 
