@@ -10,12 +10,12 @@ This document tracks the tasks required to implement the "Ultimate Visibility" E
 - [x] **Memory Tracking:** Implement a metric to track heap allocation and GC pauses.
 - [x] **AgentLoop Telemetry:** Add specific instrumentation to the `AgentLoop` (iteration duration, tool execution duration, failure counts).
 - [x] **LLM Provider Telemetry:** Track API call latency, token usage, and failover reasons for LLM providers.
-- [ ] **API Gateway Telemetry:** Track request rates (RPS), latency percentiles, and error rates for HTTP and WebSocket endpoints.
-- [ ] **Tracing Instrumentation:** Introduce trace IDs at entry points (HTTP, WebSocket) and propagate them via context to track end-to-end execution flow.
+- [x] **API Gateway Telemetry:** Track request rates (RPS), latency percentiles, and error rates for HTTP and WebSocket endpoints.
+- [x] **Tracing Instrumentation:** Introduce trace IDs at entry points (HTTP, WebSocket) and propagate them via context to track end-to-end execution flow.
 
 ## 2. Transform (Stream Processing & Enrichment)
 
-- [ ] **Log Normalization:** Standardize error classifications (e.g., Model Failure, Infrastructure Failure, Logic Failure) to ensure consistent log querying.
+- [x] **Log Normalization:** Standardize error classifications (e.g., Model Failure, Infrastructure Failure, Logic Failure) to ensure consistent log querying.
 - [ ] **Aggregation Strategy:** Design the pipeline for aggregating high-volume events before they reach the data warehouse (e.g., Vector.dev configuration).
 
 ## 3. Load (Storage & Analytics)

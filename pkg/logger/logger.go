@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,22 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog"
+)
+
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const (
+	// TraceIDKey is the context key for tracing requests
+	TraceIDKey contextKey = "traceID"
+)
+
+type ErrorCategory string
+
+const (
+	ErrorCategoryModelFailure          ErrorCategory = "Model Failure"
+	ErrorCategoryInfrastructureFailure ErrorCategory = "Infrastructure Failure"
+	ErrorCategoryLogicFailure          ErrorCategory = "Logic Failure"
 )
 
 type LogLevel = zerolog.Level
@@ -161,7 +178,7 @@ func getEvent(logger zerolog.Logger, level LogLevel) *zerolog.Event {
 	}
 }
 
-func logMessage(level LogLevel, component string, message string, fields map[string]any) {
+func logMessageCtx(ctx context.Context, level LogLevel, component string, message string, fields map[string]any) {
 	if level < currentLevel {
 		return
 	}
@@ -169,6 +186,12 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 	callerFile, callerLine, callerFunc := getCallerInfo()
 
 	event := getEvent(logger, level)
+
+	if ctx != nil {
+		if traceID, ok := ctx.Value(TraceIDKey).(string); ok && traceID != "" {
+			event.Str("trace_id", traceID)
+		}
+	}
 
 	// Build combined field with component and caller
 	if component != "" {
@@ -187,6 +210,12 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 	if fileLogger.GetLevel() != zerolog.NoLevel {
 		fileEvent := getEvent(fileLogger, level)
 
+		if ctx != nil {
+			if traceID, ok := ctx.Value(TraceIDKey).(string); ok && traceID != "" {
+				fileEvent.Str("trace_id", traceID)
+			}
+		}
+
 		if component != "" {
 			fileEvent.Str("component", component)
 		}
@@ -199,6 +228,104 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 	if level == FATAL {
 		os.Exit(1)
 	}
+}
+
+func logMessage(level LogLevel, component string, message string, fields map[string]any) {
+	logMessageCtx(nil, level, component, message, fields)
+}
+
+func DebugCtx(ctx context.Context, message string) {
+	logMessageCtx(ctx, DEBUG, "", message, nil)
+}
+
+func DebugCCtx(ctx context.Context, component string, message string) {
+	logMessageCtx(ctx, DEBUG, component, message, nil)
+}
+
+func DebugFCtx(ctx context.Context, message string, fields map[string]any) {
+	logMessageCtx(ctx, DEBUG, "", message, fields)
+}
+
+func DebugCFCtx(ctx context.Context, component string, message string, fields map[string]any) {
+	logMessageCtx(ctx, DEBUG, component, message, fields)
+}
+
+func InfoCtx(ctx context.Context, message string) {
+	logMessageCtx(ctx, INFO, "", message, nil)
+}
+
+func InfoCCtx(ctx context.Context, component string, message string) {
+	logMessageCtx(ctx, INFO, component, message, nil)
+}
+
+func InfoFCtx(ctx context.Context, message string, fields map[string]any) {
+	logMessageCtx(ctx, INFO, "", message, fields)
+}
+
+func InfoCFCtx(ctx context.Context, component string, message string, fields map[string]any) {
+	logMessageCtx(ctx, INFO, component, message, fields)
+}
+
+func WarnCtx(ctx context.Context, message string) {
+	logMessageCtx(ctx, WARN, "", message, nil)
+}
+
+func WarnCCtx(ctx context.Context, component string, message string) {
+	logMessageCtx(ctx, WARN, component, message, nil)
+}
+
+func WarnFCtx(ctx context.Context, message string, fields map[string]any) {
+	logMessageCtx(ctx, WARN, "", message, fields)
+}
+
+func WarnCFCtx(ctx context.Context, component string, message string, fields map[string]any) {
+	logMessageCtx(ctx, WARN, component, message, fields)
+}
+
+func ErrorCtx(ctx context.Context, message string) {
+	logMessageCtx(ctx, ERROR, "", message, nil)
+}
+
+func ErrorCCtx(ctx context.Context, component string, message string) {
+	logMessageCtx(ctx, ERROR, component, message, nil)
+}
+
+func ErrorFCtx(ctx context.Context, message string, fields map[string]any) {
+	logMessageCtx(ctx, ERROR, "", message, fields)
+}
+
+func ErrorCFCtx(ctx context.Context, component string, message string, fields map[string]any) {
+	logMessageCtx(ctx, ERROR, component, message, fields)
+}
+
+func FatalCtx(ctx context.Context, message string) {
+	logMessageCtx(ctx, FATAL, "", message, nil)
+}
+
+func FatalCCtx(ctx context.Context, component string, message string) {
+	logMessageCtx(ctx, FATAL, component, message, nil)
+}
+
+func FatalfCtx(ctx context.Context, message string, ss ...any) {
+	logMessageCtx(ctx, FATAL, "", fmt.Sprintf(message, ss...), nil)
+}
+
+func FatalFCtx(ctx context.Context, message string, fields map[string]any) {
+	logMessageCtx(ctx, FATAL, "", message, fields)
+}
+
+func FatalCFCtx(ctx context.Context, component string, message string, fields map[string]any) {
+	logMessageCtx(ctx, FATAL, component, message, fields)
+}
+
+func LogErrorWithCategory(ctx context.Context, category ErrorCategory, message string, err error) {
+	fields := map[string]any{
+		"error_category": string(category),
+	}
+	if err != nil {
+		fields["error"] = err.Error()
+	}
+	logMessageCtx(ctx, ERROR, "", message, fields)
 }
 
 func Debug(message string) {
