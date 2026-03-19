@@ -482,42 +482,121 @@ func (al *AgentLoop) llmWorker(ctx context.Context, queue <-chan bus.InboundMess
 			return
 		}
 
-		// Reset per-round message-tool state so a previous round's
-		// tool-sent flag does not suppress this round's response.
-		if defaultAgent := al.registry.GetDefaultAgent(); defaultAgent != nil {
-			if tool, ok := defaultAgent.Tools.Get("message"); ok {
-				if mt, ok := tool.(*tools.MessageTool); ok {
-					mt.ResetSentInRound()
-				}
-			}
+		// PDF two-phase handling:
+		//   Phase 1: wait briefly for OCR keyword follow-up ("figures"/"図版")
+		//   Phase 2: buffer messages during OCR, support cancel
+		if messageHasBareFile(msg) {
+			al.llmWorkerPDF(ctx, msg, queue)
+			continue
 		}
 
-		response, err := al.processMessage(ctx, msg)
-		if err != nil {
-			response = fmt.Sprintf("Error processing message: %v", err)
+		al.llmWorkerNormal(ctx, msg)
+	}
+}
+
+// llmWorkerNormal processes a single non-PDF message.
+func (al *AgentLoop) llmWorkerNormal(ctx context.Context, msg bus.InboundMessage) {
+	// Reset per-round message-tool state so a previous round's
+	// tool-sent flag does not suppress this round's response.
+	if defaultAgent := al.registry.GetDefaultAgent(); defaultAgent != nil {
+		if tool, ok := defaultAgent.Tools.Get("message"); ok {
+			if mt, ok := tool.(*tools.MessageTool); ok {
+				mt.ResetSentInRound()
+			}
+		}
+	}
+
+	response, err := al.processMessage(ctx, msg)
+	if err != nil {
+		response = fmt.Sprintf("Error processing message: %v", err)
+	}
+
+	al.sendResponseIfNeeded(ctx, msg, response)
+}
+
+// llmWorkerPDF handles a bare-PDF message with two-phase follow-up collection.
+func (al *AgentLoop) llmWorkerPDF(ctx context.Context, msg bus.InboundMessage, queue <-chan bus.InboundMessage) {
+	// Phase 1: wait for OCR keywords (figures/図版) — up to 5 seconds.
+	var overflow []bus.InboundMessage
+	msg, overflow = al.waitForPDFFollowUp(ctx, msg, queue)
+
+	// Phase 2: run processMessage (OCR) concurrently while buffering
+	// messages from the same chat. Cancel on "中止"/"cancel".
+	al.resetMessageTool()
+
+	response, err, buffered := al.processPDFWithBuffering(ctx, msg, queue, overflow)
+	if err != nil {
+		response = fmt.Sprintf("Error processing message: %v", err)
+	}
+
+	al.sendResponseIfNeeded(ctx, msg, response)
+
+	// Process buffered same-chat messages as a single follow-up turn
+	// so the LLM sees user instructions alongside the OCR result.
+	followUpText := mergeBufferedMessages(buffered, msg.ChatID)
+	if followUpText != "" {
+		notice := formatBufferedNotice(len(buffered))
+		if notice != "" {
+			_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+				Channel:         msg.Channel,
+				ChatID:          msg.ChatID,
+				Content:         notice,
+				SkipPlaceholder: true,
+				IsStatus:        true,
+			})
 		}
 
-		if response != "" {
-			alreadySent := false
+		followUpMsg := bus.InboundMessage{
+			Channel:    msg.Channel,
+			SenderID:   msg.SenderID,
+			Sender:     msg.Sender,
+			ChatID:     msg.ChatID,
+			Peer:       msg.Peer,
+			SessionKey: msg.SessionKey,
+			Content:    followUpText,
+			Metadata:   msg.Metadata,
+		}
+		al.llmWorkerNormal(ctx, followUpMsg)
+	}
 
-			defaultAgent := al.registry.GetDefaultAgent()
+	// Re-queue messages from other chats that were buffered.
+	otherMsgs := extractNonChatMessages(buffered, msg.ChatID)
+	for _, other := range otherMsgs {
+		al.llmWorkerNormal(ctx, other)
+	}
+}
 
-			if defaultAgent != nil {
-				if tool, ok := defaultAgent.Tools.Get("message"); ok {
-					if mt, ok := tool.(*tools.MessageTool); ok {
-						alreadySent = mt.HasSentInRound()
-					}
-				}
+// sendResponseIfNeeded sends the LLM response unless the message tool
+// already sent it during this round.
+func (al *AgentLoop) sendResponseIfNeeded(ctx context.Context, msg bus.InboundMessage, response string) {
+	if response == "" {
+		return
+	}
+
+	alreadySent := false
+	if defaultAgent := al.registry.GetDefaultAgent(); defaultAgent != nil {
+		if tool, ok := defaultAgent.Tools.Get("message"); ok {
+			if mt, ok := tool.(*tools.MessageTool); ok {
+				alreadySent = mt.HasSentInRound()
 			}
+		}
+	}
 
-			if !alreadySent {
-				_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-					Channel: msg.Channel,
+	if !alreadySent {
+		_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+			Channel: msg.Channel,
+			ChatID:  msg.ChatID,
+			Content: response,
+		})
+	}
+}
 
-					ChatID: msg.ChatID,
-
-					Content: response,
-				})
+// resetMessageTool resets the per-round message-tool state.
+func (al *AgentLoop) resetMessageTool() {
+	if defaultAgent := al.registry.GetDefaultAgent(); defaultAgent != nil {
+		if tool, ok := defaultAgent.Tools.Get("message"); ok {
+			if mt, ok := tool.(*tools.MessageTool); ok {
+				mt.ResetSentInRound()
 			}
 		}
 	}
