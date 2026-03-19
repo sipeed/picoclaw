@@ -537,13 +537,14 @@ func (al *AgentLoop) ocrPDF(
 	totalPages := mediacache.PDFPageCount(pdfPath)
 	totalStr := mediacache.FormatPageCount(totalPages)
 
-	// Send hint message and start progress indicator
+	// Send hint message (only if not already sent by Phase 1 waitForPDFFollowUp)
 	if al.bus != nil && channel != "" && chatID != "" {
 		_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel:         channel,
 			ChatID:          chatID,
 			Content:         pdfHintMessage,
 			SkipPlaceholder: true,
+			IsStatus:        true,
 		})
 	}
 
