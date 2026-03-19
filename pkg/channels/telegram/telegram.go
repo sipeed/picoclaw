@@ -28,7 +28,7 @@ import (
 
 // telegramHTTPTimeout is the HTTP client timeout for Telegram API requests.
 // Long polling uses Timeout=30s on the API side; the HTTP client timeout
-// must be longer to avoid cancelling valid long-poll responses.
+// must be longer to avoid canceling valid long-poll responses.
 const telegramHTTPTimeout = 65 * time.Second
 
 type TelegramChannel struct {
