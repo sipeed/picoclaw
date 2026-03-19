@@ -41,6 +41,9 @@ tasks/
 # Plans
 docs/plans/
 
+# Git worktrees
+.worktrees/
+
 # Editors
 .vscode/
 .idea/
