@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -444,6 +447,46 @@ type testHelper struct {
 	al *AgentLoop
 }
 
+func newChatCompletionTestServer(
+	t *testing.T,
+	label string,
+	response string,
+	calls *int,
+	model *string,
+) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("%s server path = %q, want /chat/completions", label, r.URL.Path)
+		}
+		*calls = *calls + 1
+		defer r.Body.Close()
+
+		var req struct {
+			Model string `json:"model"`
+		}
+		decodeErr := json.NewDecoder(r.Body).Decode(&req)
+		if decodeErr != nil {
+			t.Fatalf("decode %s request: %v", label, decodeErr)
+		}
+		*model = req.Model
+
+		w.Header().Set("Content-Type", "application/json")
+		encodeErr := json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": response},
+					"finish_reason": "stop",
+				},
+			},
+		})
+		if encodeErr != nil {
+			t.Fatalf("encode %s response: %v", label, encodeErr)
+		}
+	}))
+}
+
 func (h testHelper) executeAndGetResponse(tb testing.TB, ctx context.Context, msg bus.InboundMessage) string {
 	// Use a short timeout to avoid hanging
 	timeoutCtx, cancel := context.WithTimeout(ctx, responseTimeout)
@@ -605,9 +648,23 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				Provider:          "openai",
-				Model:             "before-switch",
+				Model:             "local",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "local",
+				Model:     "openai/local-model",
+				APIKey:    "test-key",
+				APIBase:   "https://local.example.invalid/v1",
+			},
+			{
+				ModelName: "deepseek",
+				Model:     "openrouter/deepseek/deepseek-v3.2",
+				APIKey:    "test-key",
+				APIBase:   "https://openrouter.ai/api/v1",
 			},
 		},
 	}
@@ -621,13 +678,13 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 		Channel:  "telegram",
 		SenderID: "user1",
 		ChatID:   "chat1",
-		Content:  "/switch model to after-switch",
+		Content:  "/switch model to deepseek",
 		Peer: bus.Peer{
 			Kind: "direct",
 			ID:   "user1",
 		},
 	})
-	if !strings.Contains(switchResp, "Switched model from before-switch to after-switch") {
+	if !strings.Contains(switchResp, "Switched model from local to deepseek") {
 		t.Fatalf("unexpected /switch reply: %q", switchResp)
 	}
 
@@ -641,12 +698,193 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 			ID:   "user1",
 		},
 	})
-	if !strings.Contains(showResp, "Current Model: after-switch (Provider: openai)") {
+	if !strings.Contains(showResp, "Current Model: deepseek (Provider: openrouter)") {
 		t.Fatalf("unexpected /show model reply after switch: %q", showResp)
 	}
 
 	if provider.calls != 0 {
 		t.Fatalf("LLM should not be called for /switch and /show, calls=%d", provider.calls)
+	}
+}
+
+func TestProcessMessage_SwitchModelRejectsUnknownAlias(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Provider:          "openai",
+				Model:             "local",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "local",
+				Model:     "openai/local-model",
+				APIKey:    "test-key",
+				APIBase:   "https://local.example.invalid/v1",
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &countingMockProvider{response: "LLM reply"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	switchResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/switch model to missing",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if switchResp != `model "missing" not found in model_list or providers` {
+		t.Fatalf("unexpected /switch error reply: %q", switchResp)
+	}
+
+	showResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/show model",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if !strings.Contains(showResp, "Current Model: local (Provider: openai)") {
+		t.Fatalf("unexpected /show model reply after rejected switch: %q", showResp)
+	}
+
+	if provider.calls != 0 {
+		t.Fatalf("LLM should not be called for rejected /switch and /show, calls=%d", provider.calls)
+	}
+}
+
+func TestProcessMessage_SwitchModelRoutesSubsequentRequestsToSelectedProvider(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	localCalls := 0
+	localModel := ""
+	localServer := newChatCompletionTestServer(t, "local", "local reply", &localCalls, &localModel)
+	defer localServer.Close()
+
+	remoteCalls := 0
+	remoteModel := ""
+	remoteServer := newChatCompletionTestServer(t, "remote", "remote reply", &remoteCalls, &remoteModel)
+	defer remoteServer.Close()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Provider:          "openai",
+				Model:             "local",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "local",
+				Model:     "openai/Qwen3.5-35B-A3B",
+				APIKey:    "local-key",
+				APIBase:   localServer.URL,
+			},
+			{
+				ModelName: "deepseek",
+				Model:     "openrouter/deepseek/deepseek-v3.2",
+				APIKey:    "remote-key",
+				APIBase:   remoteServer.URL,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider, _, err := providers.CreateProvider(cfg)
+	if err != nil {
+		t.Fatalf("CreateProvider() error = %v", err)
+	}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	firstResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello before switch",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if firstResp != "local reply" {
+		t.Fatalf("unexpected response before switch: %q", firstResp)
+	}
+	if localCalls != 1 {
+		t.Fatalf("local calls before switch = %d, want 1", localCalls)
+	}
+	if remoteCalls != 0 {
+		t.Fatalf("remote calls before switch = %d, want 0", remoteCalls)
+	}
+	if localModel != "Qwen3.5-35B-A3B" {
+		t.Fatalf("local model before switch = %q, want %q", localModel, "Qwen3.5-35B-A3B")
+	}
+
+	switchResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/switch model to deepseek",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if !strings.Contains(switchResp, "Switched model from local to deepseek") {
+		t.Fatalf("unexpected /switch reply: %q", switchResp)
+	}
+
+	secondResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello after switch",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if secondResp != "remote reply" {
+		t.Fatalf("unexpected response after switch: %q", secondResp)
+	}
+	if localCalls != 1 {
+		t.Fatalf("local calls after switch = %d, want 1", localCalls)
+	}
+	if remoteCalls != 1 {
+		t.Fatalf("remote calls after switch = %d, want 1", remoteCalls)
+	}
+	if remoteModel != "deepseek-v3.2" {
+		t.Fatalf(
+			"remote model after switch = %q, want %q",
+			remoteModel,
+			"deepseek-v3.2",
+		)
 	}
 }
 
