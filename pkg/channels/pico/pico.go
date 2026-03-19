@@ -2,6 +2,7 @@ package pico
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -293,14 +294,14 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 	// Check Authorization header
 	auth := r.Header.Get("Authorization")
 	if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
-		if after == token {
+		if subtle.ConstantTimeCompare([]byte(after), []byte(token)) == 1 {
 			return true
 		}
 	}
 
 	// Check query parameter only when explicitly allowed
 	if c.config.AllowTokenQuery {
-		if r.URL.Query().Get("token") == token {
+		if subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("token")), []byte(token)) == 1 {
 			return true
 		}
 	}
