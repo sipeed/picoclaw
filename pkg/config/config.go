@@ -543,26 +543,26 @@ type IRCConfig struct {
 }
 
 type MQTTConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_MQTT_ENABLED"`
-	Broker             string              `json:"broker"                  env:"PICOCLAW_CHANNELS_MQTT_BROKER"`
-	ClientID           string              `json:"client_id"               env:"PICOCLAW_CHANNELS_MQTT_CLIENT_ID"`
-	Username           string              `json:"username"                env:"PICOCLAW_CHANNELS_MQTT_USERNAME"`
-	Password           string              `json:"password"                env:"PICOCLAW_CHANNELS_MQTT_PASSWORD"`
-	SubscribeTopics    []string            `json:"subscribe_topics"        env:"PICOCLAW_CHANNELS_MQTT_SUBSCRIBE_TOPICS"`
+	Enabled            bool                `json:"enabled"                      env:"PICOCLAW_CHANNELS_MQTT_ENABLED"`
+	Broker             string              `json:"broker"                       env:"PICOCLAW_CHANNELS_MQTT_BROKER"`
+	ClientID           string              `json:"client_id"                    env:"PICOCLAW_CHANNELS_MQTT_CLIENT_ID"`
+	Username           string              `json:"username"                     env:"PICOCLAW_CHANNELS_MQTT_USERNAME"`
+	Password           string              `json:"password"                     env:"PICOCLAW_CHANNELS_MQTT_PASSWORD"`
+	SubscribeTopics    []string            `json:"subscribe_topics"             env:"PICOCLAW_CHANNELS_MQTT_SUBSCRIBE_TOPICS"`
 	SubscribeJSONKey   *string             `json:"subscribe_json_key,omitempty"`
-	ReplyTopic         string              `json:"reply_topic"             env:"PICOCLAW_CHANNELS_MQTT_REPLY_TOPIC"`
+	ReplyTopic         string              `json:"reply_topic"                  env:"PICOCLAW_CHANNELS_MQTT_REPLY_TOPIC"`
 	ReplyJSONKey       *string             `json:"reply_json_key,omitempty"`
-	TLS                bool                `json:"tls"                     env:"PICOCLAW_CHANNELS_MQTT_TLS"`
-	TLSCA              string              `json:"tls_ca"                  env:"PICOCLAW_CHANNELS_MQTT_TLS_CA"`
-	TLSCert            string              `json:"tls_cert"                env:"PICOCLAW_CHANNELS_MQTT_TLS_CERT"`
-	TLSKey             string              `json:"tls_key"                 env:"PICOCLAW_CHANNELS_MQTT_TLS_KEY"`
-	QoS                int                 `json:"qos"                     env:"PICOCLAW_CHANNELS_MQTT_QOS"`
-	Retain             bool                `json:"retain"                  env:"PICOCLAW_CHANNELS_MQTT_RETAIN"`
-	Prefix             string              `json:"prefix"                  env:"PICOCLAW_CHANNELS_MQTT_PREFIX"`
-	Instruction        string              `json:"instruction"             env:"PICOCLAW_CHANNELS_MQTT_INSTRUCTION"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_MQTT_ALLOW_FROM"`
+	TLS                bool                `json:"tls"                          env:"PICOCLAW_CHANNELS_MQTT_TLS"`
+	TLSCA              string              `json:"tls_ca"                       env:"PICOCLAW_CHANNELS_MQTT_TLS_CA"`
+	TLSCert            string              `json:"tls_cert"                     env:"PICOCLAW_CHANNELS_MQTT_TLS_CERT"`
+	TLSKey             string              `json:"tls_key"                      env:"PICOCLAW_CHANNELS_MQTT_TLS_KEY"`
+	QoS                int                 `json:"qos"                          env:"PICOCLAW_CHANNELS_MQTT_QOS"`
+	Retain             bool                `json:"retain"                       env:"PICOCLAW_CHANNELS_MQTT_RETAIN"`
+	Prefix             string              `json:"prefix"                       env:"PICOCLAW_CHANNELS_MQTT_PREFIX"`
+	Instruction        string              `json:"instruction"                  env:"PICOCLAW_CHANNELS_MQTT_INSTRUCTION"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"                   env:"PICOCLAW_CHANNELS_MQTT_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_MQTT_REASONING_CHANNEL_ID"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"         env:"PICOCLAW_CHANNELS_MQTT_REASONING_CHANNEL_ID"`
 }
 
 type HeartbeatConfig struct {
@@ -755,9 +755,9 @@ type SearXNGConfig struct {
 }
 
 type GLMSearchConfig struct {
-	Enabled bool   `json:"enabled"  env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
-	APIKey  string `json:"api_key"  env:"PICOCLAW_TOOLS_WEB_GLM_API_KEY"`
-	BaseURL string `json:"base_url" env:"PICOCLAW_TOOLS_WEB_GLM_BASE_URL"`
+	Enabled bool   `json:"enabled"       env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
+	APIKey  string `json:"api_key"       env:"PICOCLAW_TOOLS_WEB_GLM_API_KEY"`
+	BaseURL string `json:"base_url"      env:"PICOCLAW_TOOLS_WEB_GLM_BASE_URL"`
 	// SearchEngine specifies the search backend: "search_std" (default),
 	// "search_pro", "search_pro_sogou", or "search_pro_quark".
 	SearchEngine string `json:"search_engine" env:"PICOCLAW_TOOLS_WEB_GLM_SEARCH_ENGINE"`
@@ -765,7 +765,7 @@ type GLMSearchConfig struct {
 }
 
 type WebToolsConfig struct {
-	ToolConfig `                 envPrefix:"PICOCLAW_TOOLS_WEB_"`
+	ToolConfig `                    envPrefix:"PICOCLAW_TOOLS_WEB_"`
 	Brave      BraveConfig      `                                json:"brave"`
 	Tavily     TavilyConfig     `                                json:"tavily"`
 	DuckDuckGo DuckDuckGoConfig `                                json:"duckduckgo"`
@@ -777,13 +777,13 @@ type WebToolsConfig struct {
 	// the client-side web_search tool is hidden to avoid duplicate search surfaces,
 	// and the provider's built-in search is used instead. Falls back to client-side
 	// search when the provider does not support native search.
-	PreferNative bool `json:"prefer_native" env:"PICOCLAW_TOOLS_WEB_PREFER_NATIVE"`
+	PreferNative bool `                                json:"prefer_native"                    env:"PICOCLAW_TOOLS_WEB_PREFER_NATIVE"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
-	Proxy                string              `json:"proxy,omitempty"                  env:"PICOCLAW_TOOLS_WEB_PROXY"`
-	FetchLimitBytes      int64               `json:"fetch_limit_bytes,omitempty"      env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
-	Format               string              `json:"format,omitempty"                 env:"PICOCLAW_TOOLS_WEB_FORMAT"`
-	PrivateHostWhitelist FlexibleStringSlice `json:"private_host_whitelist,omitempty" env:"PICOCLAW_TOOLS_WEB_PRIVATE_HOST_WHITELIST"`
+	Proxy                string              `                                json:"proxy,omitempty"                  env:"PICOCLAW_TOOLS_WEB_PROXY"`
+	FetchLimitBytes      int64               `                                json:"fetch_limit_bytes,omitempty"      env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
+	Format               string              `                                json:"format,omitempty"                 env:"PICOCLAW_TOOLS_WEB_FORMAT"`
+	PrivateHostWhitelist FlexibleStringSlice `                                json:"private_host_whitelist,omitempty" env:"PICOCLAW_TOOLS_WEB_PRIVATE_HOST_WHITELIST"`
 }
 
 type CronToolsConfig struct {
@@ -898,10 +898,10 @@ type MCPServerConfig struct {
 
 // MCPConfig defines configuration for all MCP servers
 type MCPConfig struct {
-	ToolConfig `                    envPrefix:"PICOCLAW_TOOLS_MCP_"`
+	ToolConfig `                           envPrefix:"PICOCLAW_TOOLS_MCP_"`
 	Discovery  ToolDiscoveryConfig `                                json:"discovery"`
 	// Servers is a map of server name to server configuration
-	Servers map[string]MCPServerConfig `json:"servers,omitempty"`
+	Servers map[string]MCPServerConfig `                                json:"servers,omitempty"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -935,10 +935,13 @@ func LoadConfig(path string) (*Config, error) {
 
 	if passphrase := credential.PassphraseProvider(); passphrase != "" {
 		for _, m := range cfg.ModelList {
-			if m.APIKey != "" && !strings.HasPrefix(m.APIKey, "enc://") && !strings.HasPrefix(m.APIKey, "file://") {
-				fmt.Fprintf(os.Stderr,
+			if m.APIKey != "" && !strings.HasPrefix(m.APIKey, "enc://") &&
+				!strings.HasPrefix(m.APIKey, "file://") {
+				fmt.Fprintf(
+					os.Stderr,
 					"picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n",
-					m.ModelName)
+					m.ModelName,
+				)
 			}
 		}
 	}
@@ -991,7 +994,8 @@ func encryptPlaintextAPIKeys(models []ModelConfig, passphrase string) ([]ModelCo
 	changed := false
 	for i := range sealed {
 		m := &sealed[i]
-		if m.APIKey == "" || strings.HasPrefix(m.APIKey, "enc://") || strings.HasPrefix(m.APIKey, "file://") {
+		if m.APIKey == "" || strings.HasPrefix(m.APIKey, "enc://") ||
+			strings.HasPrefix(m.APIKey, "file://") {
 			continue
 		}
 		encrypted, err := credential.Encrypt(passphrase, "", m.APIKey)
@@ -1024,7 +1028,13 @@ func resolveAPIKeys(models []ModelConfig, configDir string) error {
 		for j, key := range models[i].APIKeys {
 			resolved, err := cr.Resolve(key)
 			if err != nil {
-				return fmt.Errorf("model_list[%d] (%s): api_keys[%d]: %w", i, models[i].ModelName, j, err)
+				return fmt.Errorf(
+					"model_list[%d] (%s): api_keys[%d]: %w",
+					i,
+					models[i].ModelName,
+					j,
+					err,
+				)
 			}
 			models[i].APIKeys[j] = resolved
 		}
