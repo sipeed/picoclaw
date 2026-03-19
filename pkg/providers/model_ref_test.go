@@ -73,6 +73,14 @@ func TestNormalizeProvider(t *testing.T) {
 		{"glm", "zhipu"},
 		{"google", "gemini"},
 		{"groq", "groq"},
+		// Alibaba Coding Plan aliases
+		{"alibaba-coding", "coding-plan"},
+		{"qwen-coding", "coding-plan"},
+		{"alibaba-coding-anthropic", "coding-plan-anthropic"},
+		// Qwen international aliases
+		{"qwen-international", "qwen-intl"},
+		{"dashscope-intl", "qwen-intl"},
+		{"dashscope-us", "qwen-us"},
 		{"", ""},
 	}
 
