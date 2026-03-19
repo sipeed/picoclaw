@@ -525,8 +525,8 @@ func extractContent(messageType, rawContent string) string {
 		return rawContent
 
 	case larkim.MsgTypePost:
-		// Pass raw JSON to LLM — structured rich text is more informative than flattened plain text
-		return rawContent
+		// Extract plain text from post; images are handled separately via downloadInboundMedia.
+		return extractPostText(rawContent)
 
 	case larkim.MsgTypeImage:
 		// Image messages don't have text content
@@ -563,6 +563,14 @@ func (c *FeishuChannel) downloadInboundMedia(
 		ref := c.downloadResource(ctx, messageID, imageKey, "image", ".jpg", store, scope)
 		if ref != "" {
 			refs = append(refs, ref)
+		}
+
+	case larkim.MsgTypePost:
+		for _, imageKey := range extractPostImageKeys(rawContent) {
+			ref := c.downloadResource(ctx, messageID, imageKey, "image", ".jpg", store, scope)
+			if ref != "" {
+				refs = append(refs, ref)
+			}
 		}
 
 	case larkim.MsgTypeFile, larkim.MsgTypeAudio, larkim.MsgTypeMedia:
@@ -692,7 +700,7 @@ func appendMediaTags(content, messageType string, mediaRefs []string) string {
 
 	var tag string
 	switch messageType {
-	case larkim.MsgTypeImage:
+	case larkim.MsgTypeImage, larkim.MsgTypePost:
 		tag = "[image: photo]"
 	case larkim.MsgTypeAudio:
 		tag = "[audio]"
