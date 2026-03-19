@@ -80,7 +80,7 @@ ifeq ($(UNAME_S),Linux)
 	endif
 else ifeq ($(UNAME_S),Darwin)
 	PLATFORM=darwin
-	WEB_GO=CGO_ENABLED=1 go
+	WEB_GO=CGO_LDFLAGS="-mmacosx-version-min=10.11" CGO_CFLAGS="-mmacosx-version-min=10.11" CGO_ENABLED=1 go
 	ifeq ($(UNAME_M),x86_64)
 		ARCH=amd64
 	else ifeq ($(UNAME_M),arm64)
@@ -109,7 +109,7 @@ generate:
 build: generate
 	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH) ./$(CMD_DIR)
+	@GOARCH=${ARCH} $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
 
@@ -121,7 +121,7 @@ build-launcher:
 		echo "Building frontend..."; \
 		cd web/frontend && pnpm install && pnpm build:backend; \
 	fi
-	@$(WEB_GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH) ./web/backend
+	@GOARCH=${ARCH} $(WEB_GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH) ./web/backend
 	@ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher
 	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher"
 
@@ -299,14 +299,13 @@ docker-clean:
 
 
 ## build-macos-app: Build PicoClaw macOS .app bundle (no terminal window)
-build-macos-app:
+build-macos-app:build-launcher
 	@echo "Building macOS .app bundle..."
 	@if [ "$(UNAME_S)" != "Darwin" ]; then \
 		echo "Error: This target is only available on macOS"; \
 		exit 1; \
 	fi
-	@cd web && $(MAKE) build && cd ..
-	@./scripts/build-macos-app.sh $(BINARY_NAME)-$(PLATFORM)-$(ARCH)
+	@./scripts/build-macos-app.sh $(PLATFORM)-$(ARCH)
 	@echo "macOS .app bundle created: $(BUILD_DIR)/PicoClaw.app"
 
 ## help: Show this help message
