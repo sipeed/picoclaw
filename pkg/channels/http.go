@@ -5,12 +5,93 @@
 package channels
 
 import (
+	"bufio"
+	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"time"
+
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 
 	"jane/pkg/health"
 	"jane/pkg/logger"
 )
+
+// telemetryMiddleware wraps an http.Handler to track request metrics using OpenTelemetry.
+func telemetryMiddleware(next http.Handler) http.Handler {
+	meter := otel.Meter("jane/pkg/channels")
+
+	// Create metrics
+	requestCounter, err := meter.Int64Counter(
+		"http.server.requests",
+		metric.WithDescription("Total number of HTTP requests"),
+	)
+	if err != nil {
+		logger.ErrorCF("channels", "Failed to create request counter metric", map[string]any{"error": err.Error()})
+	}
+
+	durationHistogram, err := meter.Float64Histogram(
+		"http.server.duration",
+		metric.WithDescription("HTTP request duration in milliseconds"),
+	)
+	if err != nil {
+		logger.ErrorCF("channels", "Failed to create duration histogram metric", map[string]any{"error": err.Error()})
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Generate Trace ID and attach to context and response header
+		traceID := uuid.New().String()
+		w.Header().Set("X-Trace-Id", traceID)
+		ctx := context.WithValue(r.Context(), logger.TraceIDKey, traceID)
+		r = r.WithContext(ctx)
+
+		// Wrap ResponseWriter to capture the status code
+		rw := &responseWriterWrapper{ResponseWriter: w, statusCode: http.StatusOK}
+
+		next.ServeHTTP(rw, r)
+
+		durationMs := float64(time.Since(start).Microseconds()) / 1000.0
+
+		if requestCounter != nil {
+			requestCounter.Add(r.Context(), 1)
+		}
+		if durationHistogram != nil {
+			durationHistogram.Record(r.Context(), durationMs)
+		}
+	})
+}
+
+// responseWriterWrapper captures the HTTP status code for metrics and logging
+type responseWriterWrapper struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriterWrapper) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Hijack implements the http.Hijacker interface, required for WebSockets
+func (rw *responseWriterWrapper) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := rw.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("underlying ResponseWriter does not support hijacking")
+	}
+	return hijacker.Hijack()
+}
+
+// Flush implements the http.Flusher interface, required for streaming
+func (rw *responseWriterWrapper) Flush() {
+	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
 
 // SetupHTTPServer creates a shared HTTP server with the given listen address.
 // It registers health endpoints from the health server and discovers channels
@@ -43,7 +124,7 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 
 	m.httpServer = &http.Server{
 		Addr:              addr,
-		Handler:           m.mux,
+		Handler:           telemetryMiddleware(m.mux),
 		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      30 * time.Second,
