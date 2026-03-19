@@ -199,20 +199,7 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		msgToCreate.Content = ""
 	}
 
-	// Attach passive reply msg_id and msg_seq if available.
-	if v, ok := c.lastMsgID.Load(msg.ChatID); ok {
-		if msgID, ok := v.(string); ok && msgID != "" {
-			msgToCreate.MsgID = msgID
-
-			// Increment msg_seq atomically for multi-part replies.
-			if counterVal, ok := c.msgSeqCounters.Load(msg.ChatID); ok {
-				if counter, ok := counterVal.(*atomic.Uint64); ok {
-					seq := counter.Add(1)
-					msgToCreate.MsgSeq = uint32(seq)
-				}
-			}
-		}
-	}
+	c.applyReplyContext(msg.ChatID, msgToCreate)
 
 	// Sanitize URLs in group messages to avoid QQ's URL blacklist rejection.
 	if chatKind == "group" {
@@ -242,6 +229,22 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	}
 
 	return nil
+}
+
+func (c *QQChannel) applyReplyContext(chatID string, msgToCreate *dto.MessageToCreate) {
+	if v, ok := c.lastMsgID.Load(chatID); ok {
+		if msgID, ok := v.(string); ok && msgID != "" {
+			msgToCreate.MsgID = msgID
+
+			// Increment msg_seq atomically for multi-part replies.
+			if counterVal, ok := c.msgSeqCounters.Load(chatID); ok {
+				if counter, ok := counterVal.(*atomic.Uint64); ok {
+					seq := counter.Add(1)
+					msgToCreate.MsgSeq = uint32(seq)
+				}
+			}
+		}
+	}
 }
 
 // StartTyping implements channels.TypingCapable.
@@ -316,71 +319,60 @@ func (c *QQChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage)
 	chatKind := c.getChatKind(msg.ChatID)
 
 	for _, part := range msg.Parts {
-		// If the ref is already an HTTP(S) URL, use it directly.
-		mediaURL := part.Ref
-		if !isHTTPURL(mediaURL) {
-			// Try resolving through media store.
-			store := c.GetMediaStore()
-			if store == nil {
-				logger.WarnCF("qq", "QQ media requires HTTP/HTTPS URL, no media store available", map[string]any{
-					"ref": part.Ref,
-				})
-				continue
+		if isHTTPURL(part.Ref) {
+			richMedia := &dto.RichMediaMessage{
+				FileType:   qqFileType(part.Type),
+				URL:        part.Ref,
+				SrvSendMsg: true,
 			}
 
-			resolved, err := store.Resolve(part.Ref)
-			if err != nil {
-				logger.ErrorCF("qq", "Failed to resolve media ref", map[string]any{
-					"ref":   part.Ref,
-					"error": err.Error(),
-				})
-				continue
+			var sendErr error
+			if chatKind == "group" {
+				_, sendErr = c.api.PostGroupMessage(ctx, msg.ChatID, richMedia)
+			} else {
+				_, sendErr = c.api.PostC2CMessage(ctx, msg.ChatID, richMedia)
 			}
 
-			if !isHTTPURL(resolved) {
-				logger.WarnCF("qq", "QQ media requires HTTP/HTTPS URL, local files not supported", map[string]any{
-					"ref":      part.Ref,
-					"resolved": resolved,
+			if sendErr != nil {
+				logger.ErrorCF("qq", "Failed to send remote media", map[string]any{
+					"type":    part.Type,
+					"chat_id": msg.ChatID,
+					"error":   sendErr.Error(),
 				})
-				continue
+				return fmt.Errorf("qq send media: %w", channels.ErrTemporary)
 			}
-
-			mediaURL = resolved
+			continue
 		}
 
-		// Map part type to QQ file type: 1=image, 2=video, 3=audio, 4=file.
-		var fileType uint64
-		switch part.Type {
-		case "image":
-			fileType = 1
-		case "video":
-			fileType = 2
-		case "audio":
-			fileType = 3
-		default:
-			fileType = 4 // file
+		store := c.GetMediaStore()
+		if store == nil {
+			return fmt.Errorf("qq send media: media store not configured for local media ref %q", part.Ref)
 		}
 
-		richMedia := &dto.RichMediaMessage{
-			FileType:   fileType,
-			URL:        mediaURL,
-			SrvSendMsg: true,
+		resolved, err := store.Resolve(part.Ref)
+		if err != nil {
+			return fmt.Errorf("qq send media: resolve local media ref %q: %w", part.Ref, err)
 		}
 
-		var sendErr error
-		if chatKind == "group" {
-			_, sendErr = c.api.PostGroupMessage(ctx, msg.ChatID, richMedia)
-		} else {
-			_, sendErr = c.api.PostC2CMessage(ctx, msg.ChatID, richMedia)
+		fileInfo, err := c.uploadLocalMedia(ctx, chatKind, msg.ChatID, part.Type, part.Filename, resolved)
+		if err != nil {
+			logger.ErrorCF("qq", "Failed to upload local media", map[string]any{
+				"type":     part.Type,
+				"chat_id":  msg.ChatID,
+				"ref":      part.Ref,
+				"resolved": resolved,
+				"error":    err.Error(),
+			})
+			return fmt.Errorf("qq send media: %w", err)
 		}
 
-		if sendErr != nil {
-			logger.ErrorCF("qq", "Failed to send media", map[string]any{
+		if err := c.sendUploadedMedia(ctx, chatKind, msg.ChatID, part, fileInfo); err != nil {
+			logger.ErrorCF("qq", "Failed to send uploaded media", map[string]any{
 				"type":    part.Type,
 				"chat_id": msg.ChatID,
-				"error":   sendErr.Error(),
+				"error":   err.Error(),
 			})
-			return fmt.Errorf("qq send media: %w", channels.ErrTemporary)
+			return err
 		}
 	}
 
