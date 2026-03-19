@@ -27,6 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_media_cache_accessed ON media_cache(accessed_at);
 const (
 	TypeImageDesc = "image_desc"
 	TypePDFOCR    = "pdf_ocr"
+	TypePDFText   = "pdf_text" // pypdf text extraction (no OCR)
 )
 
 // Cache provides SQLite-backed caching for media processing results.

@@ -525,16 +525,31 @@ func (al *AgentLoop) ocrPDF(
 	}
 	hash := mediacache.HashData(hashInput)
 
-	// Check cache
+	// Check cache (both text extraction and OCR)
 	if al.mediaCache != nil {
+		if entry, ok := al.mediaCache.GetEntry(hash, mediacache.TypePDFText); ok {
+			logger.DebugCF("agent", "PDF text cache hit", map[string]any{"hash": hash})
+			return formatDocumentTag(entry.Result, entry.FilePath, entry.Pages)
+		}
 		if entry, ok := al.mediaCache.GetEntry(hash, mediacache.TypePDFOCR); ok {
 			logger.DebugCF("agent", "PDF OCR cache hit", map[string]any{"hash": hash})
 			return formatDocumentTag(entry.Result, entry.FilePath, entry.Pages)
 		}
 	}
 
-	// Get page count for progress display
-	totalPages := mediacache.PDFPageCount(pdfPath)
+	// Fast path: try pdftotext for PDFs with a text layer (skip if figures requested).
+	// pdftotext is orders of magnitude faster than OCR.
+	if !withFigures {
+		if text, pages, ok := tryPdftotextExtract(ctx, pdfPath); ok {
+			return al.savePdftotextResult(pdfPath, text, pages, hash)
+		}
+	}
+
+	// Get page count for progress display (use pdfinfo, fall back to regex)
+	totalPages := pdfinfoPageCount(ctx, pdfPath)
+	if totalPages == 0 {
+		totalPages = mediacache.PDFPageCount(pdfPath)
+	}
 	totalStr := mediacache.FormatPageCount(totalPages)
 
 	// Send hint message (only if not already sent by Phase 1 waitForPDFFollowUp)
