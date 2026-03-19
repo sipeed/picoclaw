@@ -256,6 +256,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		messages = al.describeImagesInMessages(ctx, messages, agent, opts.Channel, opts.ChatID)
 	}
 
+	// Process PDFs with OCR when configured
+	if ocrCfg := cfg.Agents.Defaults.OCR; ocrCfg != nil && ocrCfg.Command != "" {
+		messages = al.processPDFsInMessages(ctx, messages, ocrCfg, opts.Channel, opts.ChatID)
+	}
+
 	// 2b. Interview staleness nudge: if MEMORY.md hasn't been updated for
 
 	// several consecutive turns, inject a reminder so the AI writes its findings.

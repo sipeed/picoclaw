@@ -17,7 +17,6 @@ import {
   createResearchTask,
   getResearchTasks,
 } from "@/api/research"
-import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -83,7 +82,7 @@ export function ResearchPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title={t("navigation.research")}>
+      <div className="flex justify-end px-6 pt-2">
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
             <Button size="sm">
@@ -143,7 +142,7 @@ export function ResearchPage() {
             </form>
           </SheetContent>
         </Sheet>
-      </PageHeader>
+      </div>
 
       <div className="flex-1 overflow-auto px-6 py-3">
         <div className="w-full max-w-6xl space-y-4">

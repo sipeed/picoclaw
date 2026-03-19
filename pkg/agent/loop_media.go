@@ -7,18 +7,23 @@
 package agent
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/h2non/filetype"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/mediacache"
@@ -216,8 +221,8 @@ func (al *AgentLoop) describeImagesInMessages(
 	if imageCount > 1 {
 		label = fmt.Sprintf("Processing %d images...", imageCount)
 	}
-	stopIndicator := al.processingIndicator(ctx, channel, chatID, label)
-	defer stopIndicator()
+	indicator := al.processingIndicator(ctx, channel, chatID, label)
+	defer indicator.Stop()
 
 	for i, m := range result {
 		if len(m.Media) == 0 {
@@ -257,7 +262,10 @@ func (al *AgentLoop) describeImage(
 	hash := mediacache.HashData([]byte(dataURL))
 	if al.mediaCache != nil {
 		if cached, ok := al.mediaCache.Get(hash, mediacache.TypeImageDesc); ok {
-			logger.DebugCF("agent", "Image description cache hit", map[string]any{"hash": hash})
+			logger.InfoCF("agent", "Image description (cached)", map[string]any{
+				"hash":        hash,
+				"description": cached,
+			})
 			return cached
 		}
 	}
@@ -312,6 +320,11 @@ func (al *AgentLoop) describeImage(
 
 	desc := strings.TrimSpace(resp.Content)
 
+	logger.InfoCF("agent", "Image described", map[string]any{
+		"hash":        hash,
+		"description": desc,
+	})
+
 	// Store in cache
 	if al.mediaCache != nil {
 		if cErr := al.mediaCache.Put(hash, mediacache.TypeImageDesc, desc); cErr != nil {
@@ -326,15 +339,38 @@ func (al *AgentLoop) describeImage(
 // a smooth rotating animation when displayed sequentially.
 var brailleSpinnerFrames = [...]string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
+// progressIndicator manages a braille spinner with a dynamically updatable label.
+// Call UpdateLabel to change the displayed text during processing.
+type progressIndicator struct {
+	label atomic.Value // string
+	done  chan struct{}
+}
+
+// UpdateLabel changes the label shown alongside the spinner.
+func (p *progressIndicator) UpdateLabel(label string) {
+	p.label.Store(label)
+}
+
+// Stop terminates the spinner goroutine.
+func (p *progressIndicator) Stop() {
+	select {
+	case <-p.done:
+	default:
+		close(p.done)
+	}
+}
+
 // processingIndicator publishes draft status messages with a braille spinner
-// animation to indicate active processing. It runs until the returned stop
-// function is called. The label describes what is being processed.
-func (al *AgentLoop) processingIndicator(ctx context.Context, channel, chatID, label string) (stop func()) {
+// animation to indicate active processing. It runs until Stop is called.
+// Use UpdateLabel to change the displayed text during long operations.
+func (al *AgentLoop) processingIndicator(ctx context.Context, channel, chatID, label string) *progressIndicator {
+	p := &progressIndicator{done: make(chan struct{})}
+	p.label.Store(label)
+
 	if al.bus == nil || channel == "" || chatID == "" {
-		return func() {}
+		return p
 	}
 
-	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(150 * time.Millisecond)
 		defer ticker.Stop()
@@ -342,12 +378,13 @@ func (al *AgentLoop) processingIndicator(ctx context.Context, channel, chatID, l
 		frame := 0
 		for {
 			select {
-			case <-done:
+			case <-p.done:
 				return
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				content := fmt.Sprintf("%s %s", brailleSpinnerFrames[frame%len(brailleSpinnerFrames)], label)
+				lbl, _ := p.label.Load().(string)
+				content := fmt.Sprintf("%s %s", brailleSpinnerFrames[frame%len(brailleSpinnerFrames)], lbl)
 				_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 					Channel:  channel,
 					ChatID:   chatID,
@@ -359,9 +396,7 @@ func (al *AgentLoop) processingIndicator(ctx context.Context, channel, chatID, l
 		}
 	}()
 
-	return func() {
-		close(done)
-	}
+	return p
 }
 
 // injectImageDescriptions replaces "[image: photo]" tags in content with
@@ -378,4 +413,347 @@ func injectImageDescriptions(content string, descriptions []string) string {
 		}
 	}
 	return content
+}
+
+// maxPreviewRunes is the maximum number of runes to store as preview
+// in the media cache for PDF OCR results.
+const maxPreviewRunes = 500
+
+// figureKeywords triggers --figure --figure_letter when found in the message.
+//
+//nolint:gosmopolitan // intentional CJK keywords for Japanese users
+var figureKeywords = []string{
+	"figure", "figures", "with images",
+	"図版", "図付き", "画像付き", "図も",
+}
+
+// wantFigures returns true if the message content contains a figure keyword.
+func wantFigures(content string) bool {
+	lower := strings.ToLower(content)
+	for _, kw := range figureKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+const pdfHintMessage = "PDF OCR in progress. " +
+	"Tip: include \"figures\" or \"\u56f3\u7248\" in your message to extract images and in-figure text."
+
+// processPDFsInMessages finds [file:/path.pdf] tags in messages and replaces
+// them with [document: preview... (full: /path/to.md, N pages)] tags after
+// running OCR. A braille spinner with page progress is shown during processing.
+func (al *AgentLoop) processPDFsInMessages(
+	ctx context.Context, messages []providers.Message, ocrCfg *config.OCRConfig,
+	channel, chatID string,
+) []providers.Message {
+	result := make([]providers.Message, len(messages))
+	copy(result, messages)
+
+	for i, m := range result {
+		if !strings.Contains(m.Content, "[file:") {
+			continue
+		}
+		withFigures := wantFigures(m.Content)
+		result[i].Content = al.replacePDFTags(
+			ctx, m.Content, ocrCfg, channel, chatID, withFigures,
+		)
+	}
+
+	return result
+}
+
+// pdfTagPrefix is the file tag pattern for PDF files injected by resolveMediaRefs.
+const pdfTagPrefix = "[file:"
+
+// replacePDFTags finds [file:*.pdf] tags and replaces them with OCR results.
+func (al *AgentLoop) replacePDFTags(
+	ctx context.Context, content string, ocrCfg *config.OCRConfig,
+	channel, chatID string, withFigures bool,
+) string {
+	var out strings.Builder
+	rest := content
+
+	for {
+		idx := strings.Index(rest, pdfTagPrefix)
+		if idx < 0 {
+			out.WriteString(rest)
+			break
+		}
+		endRel := strings.Index(rest[idx:], "]")
+		if endRel < 0 {
+			out.WriteString(rest)
+			break
+		}
+		end := idx + endRel + 1
+
+		tag := rest[idx:end]
+		path := tag[len(pdfTagPrefix) : len(tag)-1]
+
+		out.WriteString(rest[:idx])
+
+		if strings.HasSuffix(strings.ToLower(path), ".pdf") {
+			out.WriteString(al.ocrPDF(ctx, path, ocrCfg, channel, chatID, withFigures))
+		} else {
+			out.WriteString(tag)
+		}
+
+		rest = rest[end:]
+	}
+
+	return out.String()
+}
+
+// ocrPDF runs OCR on a PDF file and returns a document tag with preview.
+// Uses the media cache to avoid redundant OCR runs.
+// When withFigures is true, --figure and --figure_letter flags are added.
+func (al *AgentLoop) ocrPDF(
+	ctx context.Context, pdfPath string, ocrCfg *config.OCRConfig,
+	channel, chatID string, withFigures bool,
+) string {
+	// Hash the file content for cache lookup.
+	// Include figure mode in the hash so both variants are cached separately.
+	pdfData, err := os.ReadFile(pdfPath)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to read PDF", map[string]any{"path": pdfPath, "error": err.Error()})
+		return fmt.Sprintf("[file:%s]", pdfPath)
+	}
+	hashInput := pdfData
+	if withFigures {
+		hashInput = append(hashInput, []byte(":figures")...)
+	}
+	hash := mediacache.HashData(hashInput)
+
+	// Check cache
+	if al.mediaCache != nil {
+		if entry, ok := al.mediaCache.GetEntry(hash, mediacache.TypePDFOCR); ok {
+			logger.DebugCF("agent", "PDF OCR cache hit", map[string]any{"hash": hash})
+			return formatDocumentTag(entry.Result, entry.FilePath, entry.Pages)
+		}
+	}
+
+	// Get page count for progress display
+	totalPages := mediacache.PDFPageCount(pdfPath)
+	totalStr := mediacache.FormatPageCount(totalPages)
+
+	// Send hint message and start progress indicator
+	if al.bus != nil && channel != "" && chatID != "" {
+		_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+			Channel:         channel,
+			ChatID:          chatID,
+			Content:         pdfHintMessage,
+			SkipPlaceholder: true,
+		})
+	}
+
+	modeLabel := "Processing PDF"
+	if withFigures {
+		modeLabel = "Processing PDF (with figures)"
+	}
+	indicator := al.processingIndicator(ctx, channel, chatID,
+		fmt.Sprintf("%s (0/%s)...", modeLabel, totalStr))
+	defer indicator.Stop()
+
+	// Determine output directory for OCR results
+	outputDir := al.ocrOutputDir()
+	os.MkdirAll(outputDir, 0o755)
+
+	// Build command
+	timeout := time.Duration(ocrCfg.GetOCRTimeout()) * time.Second
+	cmdCtx, cmdCancel := context.WithTimeout(ctx, timeout)
+	defer cmdCancel()
+
+	args := make([]string, 0, len(ocrCfg.Args)+6)
+	args = append(args, ocrCfg.Args...)
+	if withFigures {
+		args = append(args, "--figure", "--figure_letter")
+	}
+	args = append(args, pdfPath, "-o", outputDir)
+
+	cmd := exec.CommandContext(cmdCtx, ocrCfg.Command, args...)
+
+	// Set environment
+	if len(ocrCfg.Env) > 0 {
+		cmd.Env = append(os.Environ(), ocrEnvSlice(ocrCfg.Env)...)
+	}
+
+	// Pipe stderr for progress tracking
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		logger.WarnCF("agent", "Failed to create stderr pipe", map[string]any{"error": err.Error()})
+		return fmt.Sprintf("[file:%s]", pdfPath)
+	}
+
+	logger.InfoCF("agent", "Starting PDF OCR", map[string]any{
+		"path":  pdfPath,
+		"pages": totalStr,
+		"cmd":   ocrCfg.Command,
+	})
+
+	if startErr := cmd.Start(); startErr != nil {
+		logger.WarnCF("agent", "Failed to start OCR command", map[string]any{"error": startErr.Error()})
+		return fmt.Sprintf("[file:%s]", pdfPath)
+	}
+
+	// Track progress via stderr
+	page := 0
+	scanner := bufio.NewScanner(stderrPipe)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "TextDetector __call__") {
+			page++
+			indicator.UpdateLabel(fmt.Sprintf("%s (%d/%s)...", modeLabel, page, totalStr))
+		}
+	}
+
+	if waitErr := cmd.Wait(); waitErr != nil {
+		logger.WarnCF("agent", "OCR command failed", map[string]any{
+			"path":  pdfPath,
+			"error": waitErr.Error(),
+		})
+		return fmt.Sprintf("[file:%s]", pdfPath)
+	}
+
+	// Clean up page images (_pN.jpg) generated by yomitoku.
+	// These are always created and cannot be suppressed via CLI options.
+	// Keep: .md files, figures/ directory (referenced by markdown output).
+	cleanupOCRPageImages(outputDir, pdfPath)
+
+	// Find the output markdown file
+	mdPath := findOCROutput(outputDir, pdfPath)
+	if mdPath == "" {
+		logger.WarnCF("agent", "OCR output not found", map[string]any{"output_dir": outputDir})
+		return fmt.Sprintf("[file:%s]", pdfPath)
+	}
+
+	// Read preview from first part of the markdown
+	mdData, err := os.ReadFile(mdPath)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to read OCR output", map[string]any{"path": mdPath, "error": err.Error()})
+		return fmt.Sprintf("[file:%s]", pdfPath)
+	}
+
+	preview := extractPreview(string(mdData), maxPreviewRunes)
+	if totalPages == 0 {
+		totalPages = page // use detected page count as fallback
+	}
+
+	// Store in cache
+	if al.mediaCache != nil {
+		_ = al.mediaCache.PutEntry(hash, mediacache.TypePDFOCR, mediacache.Entry{
+			Result:   preview,
+			FilePath: mdPath,
+			Pages:    totalPages,
+		})
+	}
+
+	logger.InfoCF("agent", "PDF OCR completed", map[string]any{
+		"path":    pdfPath,
+		"pages":   totalPages,
+		"md_path": mdPath,
+	})
+
+	return formatDocumentTag(preview, mdPath, totalPages)
+}
+
+// formatDocumentTag creates the tag injected into message content.
+func formatDocumentTag(preview, mdPath string, pages int) string {
+	pagesStr := mediacache.FormatPageCount(pages)
+	return fmt.Sprintf("[document: %s\n  full: %s (%s pages)\n  Use read_file to see the complete document.]",
+		preview, mdPath, pagesStr)
+}
+
+// extractPreview returns the first maxRunes runes of text, appending "..." if truncated.
+func extractPreview(text string, maxRunes int) string {
+	runes := []rune(strings.TrimSpace(text))
+	if len(runes) <= maxRunes {
+		return string(runes)
+	}
+	return string(runes[:maxRunes]) + "..."
+}
+
+// ocrOutputDir returns the directory for storing OCR markdown output files.
+func (al *AgentLoop) ocrOutputDir() string {
+	registry := al.GetRegistry()
+	if agent := registry.GetDefaultAgent(); agent != nil {
+		return filepath.Join(agent.Workspace, ".ocr_cache")
+	}
+	return filepath.Join(os.TempDir(), "picoclaw-ocr")
+}
+
+// findOCROutput locates the markdown file generated by yomitoku.
+// yomitoku names output as <basename>.md or <basename>_combined.md in the output dir.
+func findOCROutput(outputDir, pdfPath string) string {
+	base := strings.TrimSuffix(filepath.Base(pdfPath), filepath.Ext(pdfPath))
+
+	// Try common yomitoku output patterns
+	candidates := []string{
+		filepath.Join(outputDir, base+".md"),
+		filepath.Join(outputDir, base+"_combined.md"),
+	}
+
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+
+	// Fallback: find any .md file in the output directory
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			return filepath.Join(outputDir, e.Name())
+		}
+	}
+
+	return ""
+}
+
+// ocrEnvSlice converts a map to "KEY=VALUE" slice for exec.Cmd.Env.
+func ocrEnvSlice(env map[string]string) []string {
+	result := make([]string, 0, len(env))
+	for k, v := range env {
+		result = append(result, k+"="+v)
+	}
+	return result
+}
+
+// cleanupOCRPageImages removes _pN.jpg files generated by yomitoku.
+// These per-page images are always created by the CLI and cannot be suppressed.
+// Only top-level _pN.jpg files matching the PDF basename are removed;
+// the figures/ subdirectory and .md files are preserved.
+func cleanupOCRPageImages(outputDir, pdfPath string) {
+	base := strings.TrimSuffix(filepath.Base(pdfPath), filepath.Ext(pdfPath))
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return
+	}
+
+	removed := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		// Match pattern: <dirname>_<basename>_pN.jpg
+		if !strings.HasSuffix(strings.ToLower(name), ".jpg") {
+			continue
+		}
+		if !strings.Contains(name, base+"_p") {
+			continue
+		}
+		if rmErr := os.Remove(filepath.Join(outputDir, name)); rmErr == nil {
+			removed++
+		}
+	}
+	if removed > 0 {
+		logger.DebugCF("agent", "Cleaned up OCR page images", map[string]any{
+			"dir":     outputDir,
+			"removed": removed,
+		})
+	}
 }
