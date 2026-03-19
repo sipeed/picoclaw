@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-**中文** | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [English](README.md)
+**中文** | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Malay](README.my.md) | [English](README.md)
 
 </div>
 
@@ -190,15 +190,15 @@ make install
 
 详细指南请参阅以下文档，README 仅涵盖快速入门。
 
-| 主题 | 说明 |
-|------|------|
-| 🐳 [Docker 与快速开始](docs/zh/docker.md) | Docker Compose 配置、Launcher/Agent 模式、快速开始 |
-| 💬 [聊天应用配置](docs/zh/chat-apps.md) | Telegram、Discord、WhatsApp、Matrix、QQ、Slack、IRC、钉钉、LINE、飞书、企业微信等 |
-| ⚙️ [配置指南](docs/zh/configuration.md) | 环境变量、工作区布局、技能来源、安全沙箱、心跳任务 |
-| 🔌 [提供商与模型配置](docs/zh/providers.md) | 20+ LLM 提供商、模型路由、model_list 配置、Provider 架构 |
-| 🔄 [异步任务与 Spawn](docs/zh/spawn-tasks.md) | 快速任务、长任务与 Spawn、异步子 Agent 编排 |
-| 🐛 [疑难解答](docs/zh/troubleshooting.md) | 常见问题与解决方案 |
-| 🔧 [工具配置](docs/zh/tools_configuration.md) | 工具启用/禁用、执行策略 |
+| 主题                                         | 说明                                                                              |
+| -------------------------------------------- | --------------------------------------------------------------------------------- |
+| 🐳 [Docker 与快速开始](docs/zh/docker.md)     | Docker Compose 配置、Launcher/Agent 模式、快速开始                                |
+| 💬 [聊天应用配置](docs/zh/chat-apps.md)       | Telegram、Discord、WhatsApp、Matrix、QQ、Slack、IRC、钉钉、LINE、飞书、企业微信等 |
+| ⚙️ [配置指南](docs/zh/configuration.md)       | 环境变量、工作区布局、技能来源、安全沙箱、心跳任务                                |
+| 🔌 [提供商与模型配置](docs/zh/providers.md)   | 20+ LLM 提供商、模型路由、model_list 配置、Provider 架构                          |
+| 🔄 [异步任务与 Spawn](docs/zh/spawn-tasks.md) | 快速任务、长任务与 Spawn、异步子 Agent 编排                                       |
+| 🐛 [疑难解答](docs/zh/troubleshooting.md)     | 常见问题与解决方案                                                                |
+| 🔧 [工具配置](docs/zh/tools_configuration.md) | 工具启用/禁用、执行策略                                                           |
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> 加入 Agent 社交网络
 
@@ -208,22 +208,22 @@ make install
 
 ## 🖥️ CLI 命令行参考
 
-| 命令                       | 说明                   |
-| ------------------------- | ---------------------- |
-| `picoclaw onboard`        | 初始化配置与工作区       |
-| `picoclaw agent -m "..."` | 与 Agent 对话           |
-| `picoclaw agent`          | 交互式对话模式           |
-| `picoclaw gateway`        | 启动网关                |
-| `picoclaw status`         | 查看状态                |
-| `picoclaw version`        | 查看版本信息             |
-| `picoclaw cron list`      | 列出所有定时任务         |
-| `picoclaw cron add ...`   | 添加定时任务             |
-| `picoclaw cron disable`   | 禁用定时任务             |
-| `picoclaw cron remove`    | 删除定时任务             |
-| `picoclaw skills list`    | 列出已安装技能           |
-| `picoclaw skills install` | 安装技能                |
-| `picoclaw migrate`        | 从旧版本迁移数据         |
-| `picoclaw auth login`     | 认证提供商               |
+| 命令                      | 说明               |
+| ------------------------- | ------------------ |
+| `picoclaw onboard`        | 初始化配置与工作区 |
+| `picoclaw agent -m "..."` | 与 Agent 对话      |
+| `picoclaw agent`          | 交互式对话模式     |
+| `picoclaw gateway`        | 启动网关           |
+| `picoclaw status`         | 查看状态           |
+| `picoclaw version`        | 查看版本信息       |
+| `picoclaw cron list`      | 列出所有定时任务   |
+| `picoclaw cron add ...`   | 添加定时任务       |
+| `picoclaw cron disable`   | 禁用定时任务       |
+| `picoclaw cron remove`    | 删除定时任务       |
+| `picoclaw skills list`    | 列出已安装技能     |
+| `picoclaw skills install` | 安装技能           |
+| `picoclaw migrate`        | 从旧版本迁移数据   |
+| `picoclaw auth login`     | 认证提供商         |
 
 ### 定时任务 / 提醒
 

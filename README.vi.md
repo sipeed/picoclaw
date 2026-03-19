@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | **Tiếng Việt** | [Français](README.fr.md) | [English](README.md)
+[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | **Tiếng Việt** | [Français](README.fr.md) | [Italiano](README.it.md) | [Malay](README.my.md) | [English](README.md)
 
 </div>
 
@@ -96,12 +96,12 @@
 
 _*Các phiên bản gần đây có thể sử dụng 10–20MB do merge tính năng nhanh chóng. Tối ưu tài nguyên đang được lên kế hoạch. So sánh thời gian khởi động dựa trên benchmark đơn nhân 0.8GHz (xem bảng bên dưới)._
 
-|                               | OpenClaw      | NanoBot                  | **PicoClaw**                              |
-| ----------------------------- | ------------- | ------------------------ | ----------------------------------------- |
-| **Ngôn ngữ**                  | TypeScript    | Python                   | **Go**                                    |
-| **RAM**                       | >1GB          | >100MB                   | **< 10MB***                               |
-| **Thời gian khởi động**</br>(CPU 0.8GHz) | >500s         | >30s                     | **<1s**                                   |
-| **Chi phí**                   | Mac Mini $599 | Hầu hết SBC Linux ~$50  | **Mọi bo mạch Linux**</br>**Chỉ từ $10** |
+|                                          | OpenClaw      | NanoBot                | **PicoClaw**                             |
+| ---------------------------------------- | ------------- | ---------------------- | ---------------------------------------- |
+| **Ngôn ngữ**                             | TypeScript    | Python                 | **Go**                                   |
+| **RAM**                                  | >1GB          | >100MB                 | **< 10MB***                              |
+| **Thời gian khởi động**</br>(CPU 0.8GHz) | >500s         | >30s                   | **<1s**                                  |
+| **Chi phí**                              | Mac Mini $599 | Hầu hết SBC Linux ~$50 | **Mọi bo mạch Linux**</br>**Chỉ từ $10** |
 
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
 
@@ -191,15 +191,15 @@ make install
 
 Để xem hướng dẫn chi tiết, tham khảo tài liệu bên dưới. README này chỉ bao gồm phần bắt đầu nhanh.
 
-| Chủ đề | Mô tả |
-|--------|-------|
-| 🐳 [Docker & Bắt đầu nhanh](docs/vi/docker.md) | Thiết lập Docker Compose, chế độ Launcher/Agent, cấu hình Bắt đầu nhanh |
-| 💬 [Ứng dụng Chat](docs/vi/chat-apps.md) | Telegram, Discord, WhatsApp, Matrix, QQ, Slack, IRC, DingTalk, LINE, Feishu, WeCom và nhiều hơn |
-| ⚙️ [Cấu hình](docs/vi/configuration.md) | Biến môi trường, cấu trúc workspace, nguồn skill, sandbox bảo mật, heartbeat |
-| 🔌 [Nhà cung cấp & Mô hình](docs/vi/providers.md) | 20+ nhà cung cấp LLM, định tuyến mô hình, cấu hình model_list, kiến trúc nhà cung cấp |
-| 🔄 [Spawn & Tác vụ bất đồng bộ](docs/vi/spawn-tasks.md) | Tác vụ nhanh, tác vụ dài với spawn, điều phối sub-agent bất đồng bộ |
-| 🐛 [Xử lý sự cố](docs/vi/troubleshooting.md) | Các vấn đề thường gặp và giải pháp |
-| 🔧 [Cấu hình Công cụ](docs/vi/tools_configuration.md) | Bật/tắt từng công cụ, chính sách thực thi |
+| Chủ đề                                                 | Mô tả                                                                                           |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| 🐳 [Docker & Bắt đầu nhanh](docs/vi/docker.md)          | Thiết lập Docker Compose, chế độ Launcher/Agent, cấu hình Bắt đầu nhanh                         |
+| 💬 [Ứng dụng Chat](docs/vi/chat-apps.md)                | Telegram, Discord, WhatsApp, Matrix, QQ, Slack, IRC, DingTalk, LINE, Feishu, WeCom và nhiều hơn |
+| ⚙️ [Cấu hình](docs/vi/configuration.md)                 | Biến môi trường, cấu trúc workspace, nguồn skill, sandbox bảo mật, heartbeat                    |
+| 🔌 [Nhà cung cấp & Mô hình](docs/vi/providers.md)       | 20+ nhà cung cấp LLM, định tuyến mô hình, cấu hình model_list, kiến trúc nhà cung cấp           |
+| 🔄 [Spawn & Tác vụ bất đồng bộ](docs/vi/spawn-tasks.md) | Tác vụ nhanh, tác vụ dài với spawn, điều phối sub-agent bất đồng bộ                             |
+| 🐛 [Xử lý sự cố](docs/vi/troubleshooting.md)            | Các vấn đề thường gặp và giải pháp                                                              |
+| 🔧 [Cấu hình Công cụ](docs/vi/tools_configuration.md)   | Bật/tắt từng công cụ, chính sách thực thi                                                       |
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Tham gia Mạng xã hội Agent
 
@@ -209,22 +209,22 @@ Kết nối PicoClaw với Mạng xã hội Agent chỉ bằng cách gửi một
 
 ## 🖥️ Tham chiếu CLI
 
-| Lệnh                      | Mô tả                         |
-| -------------------------- | ------------------------------ |
-| `picoclaw onboard`         | Khởi tạo cấu hình & workspace |
-| `picoclaw agent -m "..."`  | Trò chuyện với agent           |
-| `picoclaw agent`           | Chế độ chat tương tác          |
-| `picoclaw gateway`         | Khởi động gateway              |
-| `picoclaw status`          | Hiển thị trạng thái            |
-| `picoclaw version`         | Hiển thị thông tin phiên bản   |
-| `picoclaw cron list`       | Liệt kê tất cả tác vụ định kỳ |
-| `picoclaw cron add ...`    | Thêm tác vụ định kỳ           |
-| `picoclaw cron disable`    | Tắt tác vụ định kỳ            |
-| `picoclaw cron remove`     | Xóa tác vụ định kỳ            |
-| `picoclaw skills list`     | Liệt kê các skill đã cài      |
-| `picoclaw skills install`  | Cài đặt một skill              |
-| `picoclaw migrate`         | Di chuyển dữ liệu từ phiên bản cũ |
-| `picoclaw auth login`      | Xác thực với nhà cung cấp     |
+| Lệnh                      | Mô tả                             |
+| ------------------------- | --------------------------------- |
+| `picoclaw onboard`        | Khởi tạo cấu hình & workspace     |
+| `picoclaw agent -m "..."` | Trò chuyện với agent              |
+| `picoclaw agent`          | Chế độ chat tương tác             |
+| `picoclaw gateway`        | Khởi động gateway                 |
+| `picoclaw status`         | Hiển thị trạng thái               |
+| `picoclaw version`        | Hiển thị thông tin phiên bản      |
+| `picoclaw cron list`      | Liệt kê tất cả tác vụ định kỳ     |
+| `picoclaw cron add ...`   | Thêm tác vụ định kỳ               |
+| `picoclaw cron disable`   | Tắt tác vụ định kỳ                |
+| `picoclaw cron remove`    | Xóa tác vụ định kỳ                |
+| `picoclaw skills list`    | Liệt kê các skill đã cài          |
+| `picoclaw skills install` | Cài đặt một skill                 |
+| `picoclaw migrate`        | Di chuyển dữ liệu từ phiên bản cũ |
+| `picoclaw auth login`     | Xác thực với nhà cung cấp         |
 
 ### Tác vụ định kỳ / Nhắc nhở
 
