@@ -16,12 +16,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
-	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	userAgent       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	userAgentHonest = "picoclaw/%s (+https://github.com/sipeed/picoclaw; AI assistant bot)"
 
 	// HTTP client timeouts for web tool providers.
 	searchTimeout     = 10 * time.Second // Brave, Tavily, DuckDuckGo
@@ -913,28 +915,58 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to create request: %v", err))
+	doFetch := func(ua string) (*http.Response, []byte, error) {
+		req, reqErr := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
+		if reqErr != nil {
+			return nil, nil, fmt.Errorf("failed to create request: %w", reqErr)
+		}
+		req.Header.Set("User-Agent", ua)
+		resp, doErr := t.client.Do(req)
+		if doErr != nil {
+			return nil, nil, fmt.Errorf("request failed: %w", doErr)
+		}
+		resp.Body = http.MaxBytesReader(nil, resp.Body, t.fetchLimitBytes)
+
+		b, readErr := io.ReadAll(resp.Body)
+		return resp, b, readErr
 	}
 
-	req.Header.Set("User-Agent", userAgent)
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("request failed: %v", err))
+	resp, body, err := doFetch(userAgent)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
 	}
 
-	resp.Body = http.MaxBytesReader(nil, resp.Body, t.fetchLimitBytes)
-
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
 			return ErrorResult(fmt.Sprintf("failed to read response: size exceeded %d bytes limit", t.fetchLimitBytes))
 		}
-		return ErrorResult(fmt.Sprintf("failed to read response: %v", err))
+		return ErrorResult(err.Error())
+	}
+
+	// Cloudflare (and similar WAFs) signal bot challenges with 403 + cf-mitigated: challenge.
+	// Retry once with an honest User-Agent that identifies picoclaw, which some
+	// operators explicitly allow-list for AI assistants.
+	if resp.StatusCode == http.StatusForbidden && resp.Header.Get("Cf-Mitigated") == "challenge" {
+		logger.DebugCF("tool", "Cloudflare challenge detected, retrying with honest User-Agent",
+			map[string]any{"url": urlStr})
+		honestUA := fmt.Sprintf(userAgentHonest, config.Version)
+		resp2, body2, err2 := doFetch(honestUA)
+		if resp2 != nil && resp2.Body != nil {
+			defer resp2.Body.Close()
+		}
+
+		if err2 == nil {
+			resp, body = resp2, body2
+		} else {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err2, &maxBytesErr) {
+				return ErrorResult(
+					fmt.Sprintf("failed to read response: size exceeded %d bytes limit", t.fetchLimitBytes),
+				)
+			}
+			return ErrorResult(err2.Error())
+		}
 	}
 
 	bodyStr := string(body)
@@ -1004,7 +1036,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	truncated := len(text) > maxChars
 	if truncated {
-		text = text[:maxChars]
+		text = text[:maxChars] + "\n[Content truncated due to size limit]"
 	}
 
 	result := map[string]any{

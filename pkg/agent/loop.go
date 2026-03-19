@@ -1322,6 +1322,22 @@ func (al *AgentLoop) runLLMIteration(
 						"iteration": iteration,
 					})
 
+				// Send tool feedback to chat channel if enabled
+				if al.cfg.Agents.Defaults.IsToolFeedbackEnabled() && opts.Channel != "" {
+					feedbackPreview := utils.Truncate(
+						string(argsJSON),
+						al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
+					)
+					feedbackMsg := fmt.Sprintf("\U0001f527 `%s`\n```\n%s\n```", tc.Name, feedbackPreview)
+					fbCtx, fbCancel := context.WithTimeout(ctx, 3*time.Second)
+					_ = al.bus.PublishOutbound(fbCtx, bus.OutboundMessage{
+						Channel: opts.Channel,
+						ChatID:  opts.ChatID,
+						Content: feedbackMsg,
+					})
+					fbCancel()
+				}
+
 				// Create async callback for tools that implement AsyncExecutor.
 				// When the background work completes, this publishes the result
 				// as an inbound system message so processSystemMessage routes it

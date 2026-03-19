@@ -158,7 +158,7 @@ and injected into the context for a configured number of turns (`ttl`).
 
 | Config               | Type | Default | Description                                                                                                                       |
 |----------------------|------|---------|-----------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`            | bool | false   | If true, MCP tools are hidden and loaded on-demand via search. If false, all tools are loaded                                     |
+| `enabled`            | bool | false   | Global default: if `true`, all MCP tools are hidden and loaded on-demand via search; if `false`, all tools are loaded into context. Individual servers can override this with the per-server `deferred` field. |
 | `ttl`                | int  | 5       | Number of conversational turns a discovered tool remains unlocked                                                                 |
 | `max_search_results` | int  | 5       | Maximum number of tools returned per search query                                                                                 |
 | `use_bm25`           | bool | true    | Enable the natural language/keyword search tool (`tool_search_tool_bm25`). **Warning**: consumes more resources than regex search |
@@ -169,16 +169,17 @@ and injected into the context for a configured number of turns (`ttl`).
 
 ### Per-Server Config
 
-| Config     | Type   | Required | Description                                |
-|------------|--------|----------|--------------------------------------------|
-| `enabled`  | bool   | yes      | Enable this MCP server                     |
-| `type`     | string | no       | Transport type: `stdio`, `sse`, `http`     |
-| `command`  | string | stdio    | Executable command for stdio transport     |
-| `args`     | array  | no       | Command arguments for stdio transport      |
-| `env`      | object | no       | Environment variables for stdio process    |
-| `env_file` | string | no       | Path to environment file for stdio process |
-| `url`      | string | sse/http | Endpoint URL for `sse`/`http` transport    |
-| `headers`  | object | no       | HTTP headers for `sse`/`http` transport    |
+| Config     | Type    | Required | Description                                                                                                                                                     |
+|------------|---------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `enabled`  | bool    | yes      | Enable this MCP server                                                                                                                                          |
+| `deferred` | bool    | no       | Override deferred mode for this server only. `true` = tools are hidden and discoverable via search; `false` = tools are always visible in context. When omitted, the global `discovery.enabled` value applies. |
+| `type`     | string  | no       | Transport type: `stdio`, `sse`, `http`                                                                                                                          |
+| `command`  | string  | stdio    | Executable command for stdio transport                                                                                                                          |
+| `args`     | array   | no       | Command arguments for stdio transport                                                                                                                           |
+| `env`      | object  | no       | Environment variables for stdio process                                                                                                                         |
+| `env_file` | string  | no       | Path to environment file for stdio process                                                                                                                      |
+| `url`      | string  | sse/http | Endpoint URL for `sse`/`http` transport                                                                                                                         |
+| `headers`  | object  | no       | HTTP headers for `sse`/`http` transport                                                                                                                         |
 
 ### Transport Behavior
 
@@ -290,6 +291,50 @@ dynamically only when requested by the user.*
   }
 }
 ```
+
+#### 4) Mixed setup: per-server deferred override
+
+*Discovery is enabled globally, but `filesystem` is pinned as always-visible while `context7` follows the global
+default (deferred). `aws` explicitly opts in to deferred mode even though it is the same as the global default.*
+
+```json
+{
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "discovery": {
+        "enabled": true,
+        "ttl": 5,
+        "max_search_results": 5,
+        "use_bm25": true
+      },
+      "servers": {
+        "filesystem": {
+          "enabled": true,
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
+          "deferred": false
+        },
+        "context7": {
+          "enabled": true,
+          "command": "npx",
+          "args": ["-y", "@upstash/context7-mcp"]
+        },
+        "aws": {
+          "enabled": true,
+          "command": "npx",
+          "args": ["-y", "aws-mcp-server"],
+          "deferred": true
+        }
+      }
+    }
+  }
+}
+```
+
+> **Tip:** `deferred` on a per-server basis is independent of `discovery.enabled`. You can keep
+> `discovery.enabled: false` globally (all tools visible by default) and still mark individual
+> high-volume servers as `"deferred": true` to avoid polluting the context with their tools.
 
 ## Skills Tool
 

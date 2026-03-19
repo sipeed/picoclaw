@@ -8,7 +8,11 @@
       "temperature": 0.7,
       "max_tool_iterations": 20,
       "summarize_message_threshold": 20,
-      "summarize_token_percent": 75
+      "summarize_token_percent": 75,
+      "tool_feedback": {
+        "enabled": false,
+        "max_args_length": 300
+      }
     }
   },
   "model_list": [
@@ -200,6 +204,8 @@
     "wecom_aibot": {
       "_comment": "WeCom AI Bot (智能机器人) - Official WeCom AI Bot integration, supports proactive messaging and private chats.",
       "enabled": false,
+      "bot_id": "YOUR_BOT_ID",
+      "secret": "YOUR_SECRET",
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
       "webhook_path": "/webhook/wecom-aibot",

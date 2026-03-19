@@ -138,6 +138,7 @@ export function GenericForm({
       real_name: t("channels.form.desc.realName"),
       channels: t("channels.form.desc.channels"),
       request_caps: t("channels.form.desc.requestCaps"),
+      max_base64_file_size_mib: t("channels.form.desc.maxBase64FileSizeMiB"),
     }
     return (
       descriptions[key] ??

@@ -327,6 +327,7 @@
         "realName": "Displayed real name.",
         "channels": "IRC channels to join.",
         "requestCaps": "IRC capability list requested on connect.",
+        "maxBase64FileSizeMiB": "Maximum size in MiB for converting local files to base64 before upload. 0 means unlimited. Applies only to local files, not URL uploads.",
         "genericField": "Used to configure {{field}}."
       }
     },
