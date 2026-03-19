@@ -175,6 +175,7 @@ LLM 不会加载所有工具，而是获得一个轻量级搜索工具（使用 
 | `env_file` | string | 否       | stdio 进程的环境文件路径           |
 | `url`      | string | sse/http | `sse`/`http` 传输的端点 URL        |
 | `headers`  | object | 否       | `sse`/`http` 传输的 HTTP 头        |
+| `timeout`  | int    | 否       | 工具调用超时时间（秒，默认: 60）   |
 
 ### 传输行为
 
@@ -223,7 +224,8 @@ LLM 不会加载所有工具，而是获得一个轻量级搜索工具（使用 
           "url": "https://example.com/mcp",
           "headers": {
             "Authorization": "Bearer YOUR_TOKEN"
-          }
+          },
+          "timeout": 120
         }
       }
     }

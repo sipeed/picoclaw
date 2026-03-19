@@ -175,6 +175,7 @@ Au lieu de charger tous les outils, le LLM reçoit un outil de recherche léger 
 | `env_file` | string | non      | Chemin vers le fichier d'environnement pour le processus stdio |
 | `url`      | string | sse/http | URL du point de terminaison pour le transport `sse`/`http` |
 | `headers`  | object | non      | En-têtes HTTP pour le transport `sse`/`http` |
+| `timeout`  | int    | non      | Délai d'attente des appels d'outils en secondes (défaut : 60) |
 
 ### Comportement du transport
 
@@ -223,7 +224,8 @@ Au lieu de charger tous les outils, le LLM reçoit un outil de recherche léger 
           "url": "https://example.com/mcp",
           "headers": {
             "Authorization": "Bearer YOUR_TOKEN"
-          }
+          },
+          "timeout": 120
         }
       }
     }
