@@ -70,8 +70,31 @@ Exec 工具用于执行 shell 命令。
 
 | 配置项                 | 类型  | 默认值 | 描述                           |
 |------------------------|-------|--------|--------------------------------|
+| `enabled`              | bool  | true   | 启用 exec 工具                 |
 | `enable_deny_patterns` | bool  | true   | 启用默认的危险命令拦截         |
 | `custom_deny_patterns` | array | []     | 自定义拒绝模式（正则表达式）   |
+
+### 禁用 Exec 工具
+
+要完全禁用 `exec` 工具，请将 `enabled` 设置为 `false`：
+
+**通过配置文件：**
+```json
+{
+  "tools": {
+    "exec": {
+      "enabled": false
+    }
+  }
+}
+```
+
+**通过环境变量：**
+```bash
+PICOCLAW_TOOLS_EXEC_ENABLED=false
+```
+
+> **注意：** 禁用后，代理将无法执行 shell 命令。这也会影响 Cron 工具运行计划 shell 命令的能力。
 
 ### 功能说明
 
@@ -329,6 +352,7 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
 例如：
 
 - `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`

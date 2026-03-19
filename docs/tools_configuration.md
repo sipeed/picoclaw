@@ -68,8 +68,31 @@ The exec tool is used to execute shell commands.
 
 | Config                 | Type  | Default | Description                                |
 |------------------------|-------|---------|--------------------------------------------|
+| `enabled`              | bool  | true    | Enable the exec tool                        |
 | `enable_deny_patterns` | bool  | true    | Enable default dangerous command blocking  |
 | `custom_deny_patterns` | array | []      | Custom deny patterns (regular expressions) |
+
+### Disabling the Exec Tool
+
+To completely disable the `exec` tool, set `enabled` to `false`:
+
+**Via config file:**
+```json
+{
+  "tools": {
+    "exec": {
+      "enabled": false
+    }
+  }
+}
+```
+
+**Via environment variable:**
+```bash
+PICOCLAW_TOOLS_EXEC_ENABLED=false
+```
+
+> **Note:** When disabled, the agent will not be able to execute shell commands. This also affects the Cron tool's ability to run scheduled shell commands.
 
 ### Functionality
 
@@ -379,6 +402,7 @@ All configuration options can be overridden via environment variables with the f
 For example:
 
 - `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`
