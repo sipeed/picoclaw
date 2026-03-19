@@ -3,7 +3,7 @@
 
   <h1>PicoClaw: Pembantu AI Sangat Efisien dalam Go</h1>
 
-  <h3>Perkakasan $10 · RAM <10MB · But <1s · 皮皮虾，我们走！</h3>
+  <h3>Perkakasan $10 · RAM <10MB · Boot <1s · 皮皮虾，我们走！</h3>
   <p>
     <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
     <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V%2C%20LoongArch-blue" alt="Hardware">
