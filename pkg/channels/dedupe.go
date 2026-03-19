@@ -1,8 +1,8 @@
-package wecom
+package channels
 
 import "sync"
 
-const wecomMaxProcessedMessages = 1000
+const defaultMaxProcessedMessages = 1000
 
 // MessageDeduplicator provides thread-safe message deduplication using a circular queue (ring buffer)
 // combined with a hash map. This ensures fast O(1) lookups while naturally evicting the oldest
@@ -18,7 +18,7 @@ type MessageDeduplicator struct {
 // NewMessageDeduplicator creates a new deduplicator with the specified capacity.
 func NewMessageDeduplicator(maxEntries int) *MessageDeduplicator {
 	if maxEntries <= 0 {
-		maxEntries = wecomMaxProcessedMessages
+		maxEntries = defaultMaxProcessedMessages
 	}
 	return &MessageDeduplicator{
 		msgs: make(map[string]bool, maxEntries),
