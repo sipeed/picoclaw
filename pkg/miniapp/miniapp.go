@@ -107,6 +107,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/api/orchestration/ws", h.requireAuth(h.wsOrchestration))
 	mux.HandleFunc("/miniapp/dev/console", h.apiDevConsole)
 	mux.HandleFunc("/miniapp/dev/", h.serveDevProxy)
+	mux.HandleFunc("/miniapp/api/cache", h.requireAuth(h.apiCache))
 	mux.HandleFunc("/miniapp/api/research", h.requireAuth(h.apiResearch))
 	mux.HandleFunc("/miniapp/api/research/focus", h.requireAuth(h.apiResearchFocus))
 	mux.HandleFunc("/miniapp/api/research/", h.requireAuth(h.apiResearchDetail))

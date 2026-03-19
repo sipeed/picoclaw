@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sipeed/picoclaw/pkg/mediacache"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/stats"
@@ -278,4 +279,16 @@ func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 	sb.WriteString("]")
 
 	return sb.String()
+}
+
+// ListMediaCache returns all media cache entries, optionally filtered by type.
+func (al *AgentLoop) ListMediaCache(entryType string) []mediacache.ListEntry {
+	if al.mediaCache == nil {
+		return nil
+	}
+	entries, err := al.mediaCache.List(entryType)
+	if err != nil {
+		return nil
+	}
+	return entries
 }

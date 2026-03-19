@@ -211,6 +211,10 @@ func (m *mockDataProvider) GetSystemPrompt() string {
 	return "mock system prompt"
 }
 
+func (m *mockDataProvider) ListMediaCache(entryType string) []MediaCacheEntry {
+	return nil
+}
+
 type mockSender struct{}
 
 func (m *mockSender) SendCommand(senderID, chatID, command string) {}
@@ -561,6 +565,10 @@ func (m *mutatingDataProvider) GetContextInfo() ContextInfo {
 
 func (m *mutatingDataProvider) GetSystemPrompt() string {
 	return "mock system prompt"
+}
+
+func (m *mutatingDataProvider) ListMediaCache(entryType string) []MediaCacheEntry {
+	return nil
 }
 
 // ── Dev proxy tests ──

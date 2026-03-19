@@ -114,6 +114,17 @@ type SessionGraphEdge struct {
 	ForkTurnID string `json:"fork_turn_id,omitempty"`
 }
 
+// MediaCacheEntry represents a single media cache entry for the Mini App.
+type MediaCacheEntry struct {
+	Hash       string `json:"hash"`
+	Type       string `json:"type"`
+	Result     string `json:"result"`
+	FilePath   string `json:"file_path,omitempty"`
+	Pages      int    `json:"pages,omitempty"`
+	CreatedAt  string `json:"created_at"`
+	AccessedAt string `json:"accessed_at"`
+}
+
 // DataProvider is the read-only interface to agent state for the Mini App API.
 type DataProvider interface {
 	ListSkills() []skills.SkillInfo
@@ -125,6 +136,7 @@ type DataProvider interface {
 	GetGitRepoDetail(name string) GitInfo
 	GetContextInfo() ContextInfo
 	GetSystemPrompt() string
+	ListMediaCache(entryType string) []MediaCacheEntry
 }
 
 // CommandSender injects a command into the message bus on behalf of a user.
