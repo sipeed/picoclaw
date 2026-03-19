@@ -60,6 +60,13 @@ func DefaultConfig() *Config {
 				},
 				UseMarkdownV2: false,
 			},
+			Zalo: ZaloConfig{
+				Enabled:     false,
+				Token:       "",
+				SecretToken: "",
+				WebhookPath: "/webhook/zalo",
+				AllowFrom:   FlexibleStringSlice{},
+			},
 			Feishu: FeishuConfig{
 				Enabled:           false,
 				AppID:             "",

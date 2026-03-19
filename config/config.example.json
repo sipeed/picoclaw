@@ -92,6 +92,14 @@
       },
       "reasoning_channel_id": ""
     },
+    "zalo": {
+      "enabled": false,
+      "token": "YOUR_ZALO_BOT_TOKEN",
+      "secret_token": "YOUR_SECRET_TOKEN",
+      "webhook_path": "/webhook/zalo",
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
     "qq": {
       "enabled": false,
       "app_id": "YOUR_QQ_APP_ID",
