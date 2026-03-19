@@ -71,6 +71,135 @@ export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 - Channel adapters no longer consume generic commands locally; they forward inbound text to the bus/agent path. Telegram still auto-registers supported commands at startup.
 - Unknown slash command (for example `/foo`) passes through to normal LLM processing.
 - Registered but unsupported command on the current channel (for example `/show` on WhatsApp) returns an explicit user-facing error and stops further processing.
+
+### Agent Bindings (Route messages to specific agents)
+
+Use `bindings` in `config.json` to route incoming messages to different agents by channel/account/context.
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.picoclaw/workspace",
+      "model_name": "gpt-4o-mini"
+    },
+    "list": [
+      { "id": "main", "default": true, "name": "Main Assistant" },
+      { "id": "support", "name": "Support Assistant" },
+      { "id": "sales", "name": "Sales Assistant" }
+    ]
+  },
+  "bindings": [
+    {
+      "agent_id": "support",
+      "match": {
+        "channel": "telegram",
+        "account_id": "*",
+        "peer": { "kind": "direct", "id": "user123" }
+      }
+    },
+    {
+      "agent_id": "sales",
+      "match": {
+        "channel": "discord",
+        "account_id": "my-discord-bot",
+        "guild_id": "987654321"
+      }
+    }
+  ]
+}
+```
+
+#### `bindings` fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `agent_id` | Yes | Target agent id in `agents.list` |
+| `match.channel` | Yes | Channel name (e.g. `telegram`, `discord`) |
+| `match.account_id` | No | Channel account filter. Use `"*"` for all accounts of that channel. If omitted, only default account is matched |
+| `match.peer.kind` + `match.peer.id` | No | Exact peer match (e.g. direct chat / topic / group id) |
+| `match.guild_id` | No | Guild/server-level match |
+| `match.team_id` | No | Team/workspace-level match |
+
+#### Matching priority
+
+When multiple bindings exist, PicoClaw resolves in this order:
+
+1. `peer`
+2. `parent_peer` (for thread/topic parent contexts)
+3. `guild_id`
+4. `team_id`
+5. `account_id` (non-wildcard)
+6. channel wildcard (`account_id: "*"`)
+7. default agent
+
+If a binding points to a missing `agent_id`, PicoClaw falls back to the default agent.
+
+#### How matching works (step-by-step)
+
+1. PicoClaw first filters bindings by `match.channel` (must equal current channel).
+2. It then filters by `match.account_id`:
+   - omitted: match only the channel's default account
+   - `"*"`: match all accounts on this channel
+   - explicit value: exact account id match (case-insensitive)
+3. From the remaining candidates, it applies the priority chain above and stops at the first hit.
+
+In other words: **channel + account form the candidate set; peer/guild/team then decide final winner**.
+
+#### Common recipes
+
+**1) Route one specific DM user to a specialist agent**
+
+```json
+{
+  "agent_id": "support",
+  "match": {
+    "channel": "telegram",
+    "account_id": "*",
+    "peer": { "kind": "direct", "id": "user123" }
+  }
+}
+```
+
+**2) Route one Discord server (guild) to a dedicated agent**
+
+```json
+{
+  "agent_id": "sales",
+  "match": {
+    "channel": "discord",
+    "account_id": "my-discord-bot",
+    "guild_id": "987654321"
+  }
+}
+```
+
+**3) Route all remaining traffic of a channel to a fallback agent**
+
+```json
+{
+  "agent_id": "main",
+  "match": {
+    "channel": "discord",
+    "account_id": "*"
+  }
+}
+```
+
+#### Authoring guidelines (important)
+
+- Keep exactly one clear default agent in `agents.list` (`"default": true`).
+- Put specific rules (`peer`, `guild_id`, `team_id`) and broad rules (`account_id: "*"` only) together safely; priority already guarantees specific rules win.
+- Avoid duplicate rules with the same specificity and match values. If duplicates exist, the first matching entry in the config array wins.
+- Ensure every `agent_id` exists in `agents.list`; unknown IDs silently fall back to default.
+
+#### Troubleshooting checklist
+
+- **Rule not taking effect?** Check `match.channel` spelling first (must be exact).
+- **Expected account-specific routing but still using default?** Verify `match.account_id` equals actual runtime account id.
+- **Wildcard catches too much traffic?** Add more specific `peer/guild/team` rules for critical paths.
+- **Unexpected default fallback?** Confirm `agent_id` exists and is not misspelled.
+
 ### 🔒 Security Sandbox
 
 PicoClaw runs in a sandboxed environment by default. The agent can only access files and execute commands within the configured workspace.
