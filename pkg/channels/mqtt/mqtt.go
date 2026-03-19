@@ -11,7 +11,6 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -87,7 +86,7 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 		tlsConfig := &tls.Config{
 			InsecureSkipVerify: false,
 		}
-		
+
 		// Load CA certificate if provided
 		if c.config.TLSCA != "" {
 			caCert, err := os.ReadFile(c.config.TLSCA)
@@ -100,7 +99,7 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 			}
 			tlsConfig.RootCAs = caCertPool
 		}
-		
+
 		// Load client certificate and key if provided
 		if c.config.TLSCert != "" && c.config.TLSKey != "" {
 			cert, err := tls.LoadX509KeyPair(c.config.TLSCert, c.config.TLSKey)
@@ -109,7 +108,7 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 			}
 			tlsConfig.Certificates = []tls.Certificate{cert}
 		}
-		
+
 		opts.SetTLSConfig(tlsConfig)
 	}
 
@@ -127,7 +126,7 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 	// Set connect handler
 	opts.SetOnConnectHandler(func(client mqtt.Client) {
 		logger.InfoC("mqtt", "Connected to MQTT broker")
-		
+
 		// Subscribe to topics after successful connection
 		var subscriptionErrors []string
 		for _, topic := range c.config.SubscribeTopics {
@@ -144,7 +143,7 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 				})
 			}
 		}
-		
+
 		// Log subscription errors summary
 		if len(subscriptionErrors) > 0 {
 			logger.ErrorCF("mqtt", "Subscription errors occurred", map[string]any{
@@ -164,13 +163,13 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 	}
 
 	logger.InfoCF("mqtt", "Connected to MQTT broker", map[string]any{
-		"broker":   c.config.Broker,
+		"broker":    c.config.Broker,
 		"client_id": c.config.ClientID,
 	})
 
 	c.SetRunning(true)
 	logger.InfoC("mqtt", "MQTT channel started")
-	
+
 	return nil
 }
 
@@ -191,7 +190,6 @@ func (c *MQTTChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-
 // onMessage handles incoming MQTT messages.
 func (c *MQTTChannel) onMessage(client mqtt.Client, msg mqtt.Message) {
 	logger.DebugCF("mqtt", "Received message", map[string]any{
@@ -200,7 +198,7 @@ func (c *MQTTChannel) onMessage(client mqtt.Client, msg mqtt.Message) {
 	})
 
 	var content string
-	
+
 	// Check if subscribe_json_key is configured
 	if c.config.SubscribeJSONKey != nil && *c.config.SubscribeJSONKey != "" {
 		// Parse as JSON and extract the specified key
@@ -277,8 +275,8 @@ func (c *MQTTChannel) onMessage(client mqtt.Client, msg mqtt.Message) {
 	messageID := fmt.Sprintf("mqtt-%d", time.Now().UnixNano())
 
 	metadata := map[string]string{
-		"platform": "mqtt",
-		"topic":    msg.Topic(),
+		"platform":    "mqtt",
+		"topic":       msg.Topic(),
 		"reply_topic": replyTopic,
 	}
 
@@ -313,7 +311,7 @@ func (c *MQTTChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if replyTopic == "" {
 		return fmt.Errorf("reply topic is empty and no default configured")
 	}
-	
+
 	var payload []byte
 	var err error
 
