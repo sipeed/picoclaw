@@ -374,7 +374,8 @@ func TestCalculateBackoff(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			result := calculateBackoff(tt.attempt)
+			ch := newTestQQChannel(t, &mockQQAPI{})
+			result := ch.calculateBackoff(tt.attempt)
 			if result != tt.expected {
 				t.Errorf("calculateBackoff(%d) = %v, want %v", tt.attempt, result, tt.expected)
 			}
@@ -424,6 +425,105 @@ func TestQQChannel_ResetSessionState_ReasoningChannel(t *testing.T) {
 
 	if kind, _ := ch.chatType.Load("reasoning-group"); kind != "group" {
 		t.Error("expected reasoning channel to be re-registered as group")
+	}
+}
+
+// TestQQChannel_ConfigDrivenParams tests that config values override defaults.
+func TestQQChannel_ConfigDrivenParams(t *testing.T) {
+	tests := []struct {
+		name   string
+		setup  func(*config.QQConfig)
+		check  func(*testing.T, *QQChannel)
+	}{
+		{
+			name:  "reconnect initial uses config when set",
+			setup: func(cfg *config.QQConfig) { cfg.ReconnectInitialMs = 10000 },
+			check: func(t *testing.T, ch *QQChannel) {
+				if got := ch.reconnectInitial(); got != 10*time.Second {
+					t.Errorf("reconnectInitial() = %v, want 10s", got)
+				}
+			},
+		},
+		{
+			name:  "reconnect initial falls back to default when zero",
+			setup: func(cfg *config.QQConfig) { cfg.ReconnectInitialMs = 0 },
+			check: func(t *testing.T, ch *QQChannel) {
+				if got := ch.reconnectInitial(); got != 5*time.Second {
+					t.Errorf("reconnectInitial() = %v, want 5s", got)
+				}
+			},
+		},
+		{
+			name:  "reconnect max uses config when set",
+			setup: func(cfg *config.QQConfig) { cfg.ReconnectMaxMs = 60000 },
+			check: func(t *testing.T, ch *QQChannel) {
+				if got := ch.reconnectMax(); got != 60*time.Second {
+					t.Errorf("reconnectMax() = %v, want 60s", got)
+				}
+			},
+		},
+		{
+			name:  "max retries uses config when set",
+			setup: func(cfg *config.QQConfig) { cfg.MaxRetries = 5 },
+			check: func(t *testing.T, ch *QQChannel) {
+				if got := ch.maxRetries(); got != 5 {
+					t.Errorf("maxRetries() = %v, want 5", got)
+				}
+			},
+		},
+		{
+			name:  "max retries falls back to default when zero",
+			setup: func(cfg *config.QQConfig) { cfg.MaxRetries = 0 },
+			check: func(t *testing.T, ch *QQChannel) {
+				if got := ch.maxRetries(); got != 3 {
+					t.Errorf("maxRetries() = %v, want 3", got)
+				}
+			},
+		},
+		{
+			name:  "retry max delay uses config when set",
+			setup: func(cfg *config.QQConfig) { cfg.RetryMaxDelayMs = 30000 },
+			check: func(t *testing.T, ch *QQChannel) {
+				if got := ch.retryMaxDelay(); got != 30*time.Second {
+					t.Errorf("retryMaxDelay() = %v, want 30s", got)
+				}
+			},
+		},
+		{
+			name:  "rate limiters use config values",
+			setup: func(cfg *config.QQConfig) {
+				cfg.RateLimitGroupMs = 1000
+				cfg.RateLimitDirectMs = 500
+			},
+			check: func(t *testing.T, ch *QQChannel) {
+				// Verify rate limiters are created with config values
+				start := time.Now()
+				ch.groupRateLimiter.wait("test-chat")
+				ch.groupRateLimiter.wait("test-chat")
+				elapsed := time.Since(start)
+				if elapsed < 900*time.Millisecond {
+					t.Errorf("group rate limiter did not delay ~1s, got %v", elapsed)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.QQConfig{AppID: "test", AppSecret: "test"}
+			tt.setup(&cfg)
+			// Rate limiter test needs NewQQChannel to initialize rate limiters
+			if tt.name == "rate limiters use config values" {
+				ch, err := NewQQChannel(cfg, nil)
+				if err != nil {
+					t.Fatalf("NewQQChannel failed: %v", err)
+				}
+				tt.check(t, ch)
+				return
+			}
+			ch := &QQChannel{config: cfg}
+			tt.check(t, ch)
+		})
 	}
 }
 

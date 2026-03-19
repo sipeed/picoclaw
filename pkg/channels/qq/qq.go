@@ -42,15 +42,19 @@ const (
 	typingSeconds = 10
 	bytesPerMiB   = 1024 * 1024
 
-	// Reconnection constants
-	reconnectInitial    = 5 * time.Second
-	reconnectMax        = 5 * time.Minute
-	reconnectMultiplier = 2.0
+	// Reconnection constants (used as defaults when config values are 0)
+	reconnectInitialDefault    = 5 * time.Second
+	reconnectMaxDefault        = 5 * time.Minute
+	reconnectMultiplier        = 2.0
 
-	// Retry constants
-	maxRetries        = 3
-	retryInitialDelay = 500 * time.Millisecond
-	retryMaxDelay     = 10 * time.Second
+	// Retry constants (used as defaults when config values are 0)
+	maxRetriesDefault        = 3
+	retryInitialDelayDefault = 500 * time.Millisecond
+	retryMaxDelayDefault     = 10 * time.Second
+
+	// Rate limit defaults
+	rateLimitGroupDefault   = 500 * time.Millisecond
+	rateLimitDirectDefault  = 200 * time.Millisecond
 )
 
 type qqAPI interface {
@@ -108,13 +112,23 @@ func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, 
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
 
+	// Use config values with defaults for rate limiters
+	groupRateMs := cfg.RateLimitGroupMs
+	if groupRateMs <= 0 {
+		groupRateMs = int(rateLimitGroupDefault / time.Millisecond)
+	}
+	directRateMs := cfg.RateLimitDirectMs
+	if directRateMs <= 0 {
+		directRateMs = int(rateLimitDirectDefault / time.Millisecond)
+	}
+
 	return &QQChannel{
-		BaseChannel:      base,
-		config:          cfg,
-		dedup:           make(map[string]time.Time),
-		done:            make(chan struct{}),
-		groupRateLimiter:  newRateLimiter(500 * time.Millisecond),  // 20 msg/min with headroom
-		directRateLimiter: newRateLimiter(200 * time.Millisecond), // 5 msg/sec with headroom
+		BaseChannel:       base,
+		config:            cfg,
+		dedup:             make(map[string]time.Time),
+		done:              make(chan struct{}),
+		groupRateLimiter:  newRateLimiter(time.Duration(groupRateMs) * time.Millisecond),
+		directRateLimiter: newRateLimiter(time.Duration(directRateMs) * time.Millisecond),
 	}, nil
 }
 
@@ -250,10 +264,11 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	}
 
 	// Route to group or C2C with retry.
+	maxRetries := c.maxRetries()
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
-			backoff := calculateBackoff(attempt - 1)
+			backoff := c.calculateBackoff(attempt - 1)
 			logger.InfoCF("qq", "Retrying send", map[string]any{
 				"attempt":  attempt,
 				"chat_id":  msg.ChatID,
@@ -1030,7 +1045,7 @@ func (c *QQChannel) reconnect() {
 		c.reconnectMu.Unlock()
 	}()
 
-	backoff := reconnectInitial
+	backoff := c.reconnectInitial()
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -1064,6 +1079,7 @@ func (c *QQChannel) reconnect() {
 		case <-c.stopReconnect:
 			return
 		case <-time.After(backoff):
+			reconnectMax := c.reconnectMax()
 			if backoff < reconnectMax {
 				backoff = time.Duration(float64(backoff) * reconnectMultiplier)
 				if backoff > reconnectMax {
@@ -1123,10 +1139,52 @@ func isRetryableError(err error) bool {
 }
 
 // calculateBackoff returns the next backoff duration with exponential increase.
-func calculateBackoff(attempt int) time.Duration {
-	backoff := retryInitialDelay * time.Duration(1<<uint(attempt))
-	if backoff > retryMaxDelay {
-		backoff = retryMaxDelay
+func (c *QQChannel) calculateBackoff(attempt int) time.Duration {
+	initialDelay := c.retryInitialDelay()
+	maxDelay := c.retryMaxDelay()
+	backoff := initialDelay * time.Duration(1<<uint(attempt))
+	if backoff > maxDelay {
+		backoff = maxDelay
 	}
 	return backoff
+}
+
+// reconnectInitial returns the configured or default initial reconnect interval.
+func (c *QQChannel) reconnectInitial() time.Duration {
+	if c.config.ReconnectInitialMs > 0 {
+		return time.Duration(c.config.ReconnectInitialMs) * time.Millisecond
+	}
+	return reconnectInitialDefault
+}
+
+// reconnectMax returns the configured or default max reconnect interval.
+func (c *QQChannel) reconnectMax() time.Duration {
+	if c.config.ReconnectMaxMs > 0 {
+		return time.Duration(c.config.ReconnectMaxMs) * time.Millisecond
+	}
+	return reconnectMaxDefault
+}
+
+// maxRetries returns the configured or default max retry count.
+func (c *QQChannel) maxRetries() int {
+	if c.config.MaxRetries > 0 {
+		return c.config.MaxRetries
+	}
+	return maxRetriesDefault
+}
+
+// retryInitialDelay returns the configured or default initial retry delay.
+func (c *QQChannel) retryInitialDelay() time.Duration {
+	if c.config.RetryInitialDelayMs > 0 {
+		return time.Duration(c.config.RetryInitialDelayMs) * time.Millisecond
+	}
+	return retryInitialDelayDefault
+}
+
+// retryMaxDelay returns the configured or default max retry delay.
+func (c *QQChannel) retryMaxDelay() time.Duration {
+	if c.config.RetryMaxDelayMs > 0 {
+		return time.Duration(c.config.RetryMaxDelayMs) * time.Millisecond
+	}
+	return retryMaxDelayDefault
 }

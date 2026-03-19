@@ -358,6 +358,15 @@ type QQConfig struct {
 	MaxBase64FileSizeMiB int64               `json:"max_base64_file_size_mib" env:"PICOCLAW_CHANNELS_QQ_MAX_BASE64_FILE_SIZE_MIB"`
 	SendMarkdown         bool                `json:"send_markdown"            env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
 	ReasoningChannelID   string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
+
+	// Stability config (all optional with sensible defaults)
+	ReconnectInitialMs   int `json:"reconnect_initial_ms,omitempty"   env:"PICOCLAW_CHANNELS_QQ_RECONNECT_INITIAL_MS"`
+	ReconnectMaxMs       int `json:"reconnect_max_ms,omitempty"       env:"PICOCLAW_CHANNELS_QQ_RECONNECT_MAX_MS"`
+	MaxRetries           int `json:"max_retries,omitempty"            env:"PICOCLAW_CHANNELS_QQ_MAX_RETRIES"`
+	RetryInitialDelayMs int `json:"retry_initial_delay_ms,omitempty" env:"PICOCLAW_CHANNELS_QQ_RETRY_INITIAL_DELAY_MS"`
+	RetryMaxDelayMs      int `json:"retry_max_delay_ms,omitempty"     env:"PICOCLAW_CHANNELS_QQ_RETRY_MAX_DELAY_MS"`
+	RateLimitGroupMs    int `json:"rate_limit_group_ms,omitempty"    env:"PICOCLAW_CHANNELS_QQ_RATE_LIMIT_GROUP_MS"`
+	RateLimitDirectMs   int `json:"rate_limit_direct_ms,omitempty"   env:"PICOCLAW_CHANNELS_QQ_RATE_LIMIT_DIRECT_MS"`
 }
 
 type DingTalkConfig struct {

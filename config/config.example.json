@@ -97,7 +97,15 @@
       "app_id": "YOUR_QQ_APP_ID",
       "app_secret": "YOUR_QQ_APP_SECRET",
       "allow_from": [],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "_comment_stability": "Stability parameters (all optional with sensible defaults)",
+      "reconnect_initial_ms": 5000,
+      "reconnect_max_ms": 300000,
+      "max_retries": 3,
+      "retry_initial_delay_ms": 500,
+      "retry_max_delay_ms": 10000,
+      "rate_limit_group_ms": 500,
+      "rate_limit_direct_ms": 200
     },
     "maixcam": {
       "enabled": false,
