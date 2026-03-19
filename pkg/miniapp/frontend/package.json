@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "highlight.js": "^11.11.1",
-    "marked": "^17.0.4"
+    "marked": "^17.0.4",
+    "preact": "^10.25.0"
   }
 }

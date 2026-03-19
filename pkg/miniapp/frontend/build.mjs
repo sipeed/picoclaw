@@ -10,12 +10,15 @@ await rm(outDir, { recursive: true, force: true });
 await mkdir(outDir, { recursive: true });
 
 const result = await Bun.build({
-  entrypoints: [path.join(srcDir, 'app.js')],
+  entrypoints: [path.join(srcDir, 'index.tsx')],
   outdir: outDir,
   target: 'browser',
   format: 'iife',
   sourcemap: 'none',
   packages: 'bundle',
+  naming: {
+    entry: 'app.[ext]',
+  },
 });
 
 if (!result.success) {
