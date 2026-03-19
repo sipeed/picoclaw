@@ -468,3 +468,84 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 
 	return result
 }
+
+// protocolProviderMapping maps a model protocol prefix (the part before "/" in
+// the Model field) to a function that extracts the corresponding ProviderConfig
+// from the legacy ProvidersConfig.  Used by InheritProviderCredentials.
+var protocolProviderMapping = map[string]func(p ProvidersConfig) ProviderConfig{
+	"openai":         func(p ProvidersConfig) ProviderConfig { return p.OpenAI.ProviderConfig },
+	"anthropic":      func(p ProvidersConfig) ProviderConfig { return p.Anthropic },
+	"litellm":        func(p ProvidersConfig) ProviderConfig { return p.LiteLLM },
+	"openrouter":     func(p ProvidersConfig) ProviderConfig { return p.OpenRouter },
+	"groq":           func(p ProvidersConfig) ProviderConfig { return p.Groq },
+	"zhipu":          func(p ProvidersConfig) ProviderConfig { return p.Zhipu },
+	"vllm":           func(p ProvidersConfig) ProviderConfig { return p.VLLM },
+	"gemini":         func(p ProvidersConfig) ProviderConfig { return p.Gemini },
+	"nvidia":         func(p ProvidersConfig) ProviderConfig { return p.Nvidia },
+	"ollama":         func(p ProvidersConfig) ProviderConfig { return p.Ollama },
+	"moonshot":       func(p ProvidersConfig) ProviderConfig { return p.Moonshot },
+	"shengsuanyun":   func(p ProvidersConfig) ProviderConfig { return p.ShengSuanYun },
+	"deepseek":       func(p ProvidersConfig) ProviderConfig { return p.DeepSeek },
+	"cerebras":       func(p ProvidersConfig) ProviderConfig { return p.Cerebras },
+	"vivgrid":        func(p ProvidersConfig) ProviderConfig { return p.Vivgrid },
+	"volcengine":     func(p ProvidersConfig) ProviderConfig { return p.VolcEngine },
+	"github-copilot": func(p ProvidersConfig) ProviderConfig { return p.GitHubCopilot },
+	"antigravity":    func(p ProvidersConfig) ProviderConfig { return p.Antigravity },
+	"qwen":           func(p ProvidersConfig) ProviderConfig { return p.Qwen },
+	"mistral":        func(p ProvidersConfig) ProviderConfig { return p.Mistral },
+	"avian":          func(p ProvidersConfig) ProviderConfig { return p.Avian },
+	"minimax":        func(p ProvidersConfig) ProviderConfig { return p.Minimax },
+	"longcat":        func(p ProvidersConfig) ProviderConfig { return p.LongCat },
+	"modelscope":     func(p ProvidersConfig) ProviderConfig { return p.ModelScope },
+	"novita":         func(p ProvidersConfig) ProviderConfig { return p.Novita },
+}
+
+// InheritProviderCredentials fills in missing api_key, api_base, proxy, and
+// request_timeout on model_list entries from the matching legacy providers
+// configuration.  The match is determined by the protocol prefix in the Model
+// field (e.g. "deepseek/deepseek-chat" matches providers.deepseek).
+//
+// Only empty fields are filled — any value explicitly set on a model_list entry
+// takes precedence.  This function modifies the slice in place.
+//
+// This bridges the gap described in issue #1635: users who configure
+// credentials once in the providers section expect model_list entries using
+// the same protocol to "just work" without duplicating credentials.
+func InheritProviderCredentials(models []ModelConfig, providers ProvidersConfig) {
+	if providers.IsEmpty() {
+		return
+	}
+
+	for i := range models {
+		m := &models[i]
+
+		// Extract protocol prefix from Model field
+		protocol := ""
+		if idx := strings.Index(m.Model, "/"); idx > 0 {
+			protocol = strings.ToLower(m.Model[:idx])
+		}
+		if protocol == "" {
+			continue
+		}
+
+		getProvider, ok := protocolProviderMapping[protocol]
+		if !ok {
+			continue
+		}
+		pc := getProvider(providers)
+
+		// Only fill empty fields — explicit model_list values win
+		if m.APIKey == "" && pc.APIKey != "" {
+			m.APIKey = pc.APIKey
+		}
+		if m.APIBase == "" && pc.APIBase != "" {
+			m.APIBase = pc.APIBase
+		}
+		if m.Proxy == "" && pc.Proxy != "" {
+			m.Proxy = pc.Proxy
+		}
+		if m.RequestTimeout == 0 && pc.RequestTimeout != 0 {
+			m.RequestTimeout = pc.RequestTimeout
+		}
+	}
+}
