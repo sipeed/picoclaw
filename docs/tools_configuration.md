@@ -179,6 +179,7 @@ and injected into the context for a configured number of turns (`ttl`).
 | `env_file` | string | no       | Path to environment file for stdio process |
 | `url`      | string | sse/http | Endpoint URL for `sse`/`http` transport    |
 | `headers`  | object | no       | HTTP headers for `sse`/`http` transport    |
+| `timeout`  | int    | no       | Tool call timeout in seconds (default: 60) |
 
 ### Transport Behavior
 
@@ -227,7 +228,8 @@ and injected into the context for a configured number of turns (`ttl`).
           "url": "https://example.com/mcp",
           "headers": {
             "Authorization": "Bearer YOUR_TOKEN"
-          }
+          },
+          "timeout": 120
         }
       }
     }

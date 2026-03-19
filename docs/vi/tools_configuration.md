@@ -175,6 +175,7 @@ Thay vì tải tất cả các công cụ, LLM được cung cấp một công c
 | `env_file` | string | không    | Đường dẫn đến tệp môi trường cho tiến trình stdio |
 | `url`      | string | sse/http | URL endpoint cho truyền tải `sse`/`http`  |
 | `headers`  | object | không    | Header HTTP cho truyền tải `sse`/`http`   |
+| `timeout`  | int    | không    | Thời gian chờ gọi công cụ tính bằng giây (mặc định: 60) |
 
 ### Hành vi truyền tải
 
@@ -223,7 +224,8 @@ Thay vì tải tất cả các công cụ, LLM được cung cấp một công c
           "url": "https://example.com/mcp",
           "headers": {
             "Authorization": "Bearer YOUR_TOKEN"
-          }
+          },
+          "timeout": 120
         }
       }
     }

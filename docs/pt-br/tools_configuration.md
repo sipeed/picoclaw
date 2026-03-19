@@ -175,6 +175,7 @@ Em vez de carregar todas as ferramentas, o LLM recebe uma ferramenta de pesquisa
 | `env_file` | string | não         | Caminho para arquivo de ambiente para processo stdio |
 | `url`      | string | sse/http    | URL do endpoint para transporte `sse`/`http` |
 | `headers`  | object | não         | Cabeçalhos HTTP para transporte `sse`/`http` |
+| `timeout`  | int    | não         | Tempo limite de chamada de ferramenta em segundos (padrão: 60) |
 
 ### Comportamento do transporte
 
@@ -223,7 +224,8 @@ Em vez de carregar todas as ferramentas, o LLM recebe uma ferramenta de pesquisa
           "url": "https://example.com/mcp",
           "headers": {
             "Authorization": "Bearer YOUR_TOKEN"
-          }
+          },
+          "timeout": 120
         }
       }
     }
