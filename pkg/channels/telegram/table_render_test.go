@@ -9,9 +9,9 @@ import (
 func TestRuneWidth(t *testing.T) {
 	assert.Equal(t, 1, runeWidth('a'))
 	assert.Equal(t, 1, runeWidth('1'))
-	assert.Equal(t, 2, runeWidth('名')) //nolint:gosmopolitan
-	assert.Equal(t, 2, runeWidth('ア')) //nolint:gosmopolitan
-	assert.Equal(t, 2, runeWidth('あ')) //nolint:gosmopolitan
+	assert.Equal(t, 2, runeWidth('名'))
+	assert.Equal(t, 2, runeWidth('ア'))
+	assert.Equal(t, 2, runeWidth('あ'))
 }
 
 func TestStringWidth(t *testing.T) {
