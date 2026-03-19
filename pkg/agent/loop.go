@@ -85,12 +85,12 @@ func NewAgentLoop(
 ) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
-	// Register shared tools to all agents
-	registerSharedTools(cfg, msgBus, registry, provider)
-
 	// Set up shared fallback chain
 	cooldown := providers.NewCooldownTracker()
 	fallbackChain := providers.NewFallbackChain(cooldown)
+
+	// Register shared tools to all agents
+	registerSharedTools(cfg, msgBus, registry, provider, dispatcher, fallbackChain)
 
 	// Create state manager using default agent's workspace for channel recording
 	defaultAgent := registry.GetDefaultAgent()
@@ -119,6 +119,8 @@ func registerSharedTools(
 	msgBus *bus.MessageBus,
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
+	dispatcher *providers.ProviderDispatcher,
+	fallbackChain *providers.FallbackChain,
 ) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
@@ -228,10 +230,31 @@ func registerSharedTools(
 		// Spawn tool with allowlist checker
 		if cfg.Tools.IsToolEnabled("spawn") {
 			if cfg.Tools.IsToolEnabled("subagent") {
-				subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace)
+				currentAgentID := agentID
+				// Build a resolver so the subagent manager can look up any target
+				// agent's candidates without importing the agent package from tools.
+				candidateResolver := func(targetAgentID string) ([]providers.FallbackCandidate, bool) {
+					target, ok := registry.GetAgent(targetAgentID)
+					if !ok {
+						return nil, false
+					}
+					if len(target.Candidates) == 0 {
+						return nil, false
+					}
+					return target.Candidates, true
+				}
+				subagentManager := tools.NewSubagentManager(tools.SubagentManagerConfig{
+					Provider:          provider,
+					DefaultModel:      agent.Model,
+					Workspace:         agent.Workspace,
+					Dispatcher:        dispatcher,
+					Fallback:          fallbackChain,
+					SelfCandidates:    agent.Candidates,
+					CallerAgentID:     currentAgentID,
+					CandidateResolver: candidateResolver,
+				})
 				subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 				spawnTool := tools.NewSpawnTool(subagentManager)
-				currentAgentID := agentID
 				spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
 					return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
 				})
@@ -407,8 +430,10 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 		return fmt.Errorf("context canceled after registry creation: %w", err)
 	}
 
-	// Ensure shared tools are re-registered on the new registry
-	registerSharedTools(cfg, al.bus, registry, provider)
+	// Ensure shared tools are re-registered on the new registry.
+	// Build a fresh fallback chain for the new registry's subagent managers.
+	newFallbackChain := providers.NewFallbackChain(providers.NewCooldownTracker())
+	registerSharedTools(cfg, al.bus, registry, provider, al.dispatcher, newFallbackChain)
 
 	// Atomically swap the config and registry under write lock
 	// This ensures readers see a consistent pair

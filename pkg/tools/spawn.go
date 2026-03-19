@@ -72,10 +72,16 @@ func (t *SpawnTool) execute(ctx context.Context, args map[string]any, cb AsyncCa
 	label, _ := args["label"].(string)
 	agentID, _ := args["agent_id"].(string)
 
-	// Check allowlist if targeting a specific agent
-	if agentID != "" && t.allowlistCheck != nil {
-		if !t.allowlistCheck(agentID) {
-			return ErrorResult(fmt.Sprintf("not allowed to spawn agent '%s'", agentID))
+	// Check allowlist for both self-spawn (agentID == "") and targeted spawns.
+	// For self-spawn we pass the manager's callerAgentID so that operators can
+	// restrict agents to only spawning specific peers (not themselves).
+	if t.allowlistCheck != nil {
+		checkID := agentID
+		if checkID == "" && t.manager != nil {
+			checkID = t.manager.callerAgentID
+		}
+		if checkID != "" && !t.allowlistCheck(checkID) {
+			return ErrorResult(fmt.Sprintf("not allowed to spawn agent '%s'", checkID))
 		}
 	}
 

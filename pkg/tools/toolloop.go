@@ -24,6 +24,14 @@ type ToolLoopConfig struct {
 	Tools         *ToolRegistry
 	MaxIterations int
 	LLMOptions    map[string]any
+
+	// Per-candidate dispatch: when Dispatcher and Candidates are set, RunToolLoop
+	// selects the provider for each LLM call through the dispatcher using the
+	// candidate list, falling back through candidates on error via Fallback.
+	// If Fallback is nil, only the first candidate is tried.
+	Dispatcher *providers.ProviderDispatcher
+	Candidates []providers.FallbackCandidate
+	Fallback   *providers.FallbackChain
 }
 
 // ToolLoopResult contains the result of running the tool loop.
@@ -63,8 +71,38 @@ func RunToolLoop(
 		if llmOpts == nil {
 			llmOpts = map[string]any{}
 		}
-		// 3. Call LLM
-		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
+		// 3. Call LLM — use per-candidate dispatch when configured, else fall back
+		// to the plain Provider/Model pair.
+		var response *providers.LLMResponse
+		var err error
+		if config.Dispatcher != nil && len(config.Candidates) > 0 {
+			if config.Fallback != nil && len(config.Candidates) > 1 {
+				fbResult, fbErr := config.Fallback.Execute(
+					ctx,
+					config.Candidates,
+					func(ctx context.Context, providerName, model string) (*providers.LLMResponse, error) {
+						if p, perr := config.Dispatcher.Get(providerName, model); perr == nil {
+							return p.Chat(ctx, messages, providerToolDefs, model, llmOpts)
+						}
+						return config.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
+					},
+				)
+				if fbErr != nil {
+					err = fbErr
+				} else {
+					response = fbResult.Response
+				}
+			} else {
+				first := config.Candidates[0]
+				if p, perr := config.Dispatcher.Get(first.Provider, first.Model); perr == nil {
+					response, err = p.Chat(ctx, messages, providerToolDefs, first.Model, llmOpts)
+				} else {
+					response, err = config.Provider.Chat(ctx, messages, providerToolDefs, first.Model, llmOpts)
+				}
+			}
+		} else {
+			response, err = config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
+		}
 		if err != nil {
 			logger.ErrorCF("toolloop", "LLM call failed",
 				map[string]any{
