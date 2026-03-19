@@ -188,15 +188,48 @@ func (r *ToolRegistry) ExecuteWithContext(
 	// The callback is a call parameter, not mutable state on the tool instance.
 	var result *ToolResult
 	start := time.Now()
-	if asyncExec, ok := tool.(AsyncExecutor); ok && asyncCallback != nil {
-		logger.DebugCF("tool", "Executing async tool via ExecuteAsync",
-			map[string]any{
-				"tool": name,
-			})
-		result = asyncExec.ExecuteAsync(ctx, args, asyncCallback)
-	} else {
-		result = tool.Execute(ctx, args)
+
+	// Use recover to catch any panics during tool execution
+	// This prevents tool crashes from killing the entire agent
+	func() {
+		defer func() {
+			if re := recover(); re != nil {
+				errMsg := fmt.Sprintf("Tool '%s' crashed with panic: %v", name, re)
+				logger.ErrorCF("tool", "Tool execution panic recovered",
+					map[string]any{
+						"tool":  name,
+						"panic": fmt.Sprintf("%v", re),
+					})
+				result = &ToolResult{
+					ForLLM:  errMsg,
+					ForUser: errMsg,
+					IsError: true,
+					Err:     fmt.Errorf("panic: %v", re),
+				}
+			}
+		}()
+
+		if asyncExec, ok := tool.(AsyncExecutor); ok && asyncCallback != nil {
+			logger.DebugCF("tool", "Executing async tool via ExecuteAsync",
+				map[string]any{
+					"tool": name,
+				})
+			result = asyncExec.ExecuteAsync(ctx, args, asyncCallback)
+		} else {
+			result = tool.Execute(ctx, args)
+		}
+	}()
+
+	// Handle nil result (should not happen, but defensive)
+	if result == nil {
+		result = &ToolResult{
+			ForLLM:  fmt.Sprintf("Tool '%s' returned nil result unexpectedly", name),
+			ForUser: fmt.Sprintf("Tool '%s' returned nil result unexpectedly", name),
+			IsError: true,
+			Err:     fmt.Errorf("nil result from tool"),
+		}
 	}
+
 	duration := time.Since(start)
 
 	// Log based on result type
@@ -301,6 +334,28 @@ func (r *ToolRegistry) List() []string {
 	defer r.mu.RUnlock()
 
 	return r.sortedToolNames()
+}
+
+// Clone creates an independent copy of the registry containing the same tool
+// entries (shallow copy of each ToolEntry). This is used to give subagents a
+// snapshot of the parent agent's tools without sharing the same registry —
+// tools registered on the parent after cloning (e.g. spawn, spawn_status)
+// will NOT be visible to the clone, preventing recursive subagent spawning.
+// The version counter is reset to 0 in the clone as it's a new independent registry.
+func (r *ToolRegistry) Clone() *ToolRegistry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	clone := &ToolRegistry{
+		tools: make(map[string]*ToolEntry, len(r.tools)),
+	}
+	for name, entry := range r.tools {
+		clone.tools[name] = &ToolEntry{
+			Tool:   entry.Tool,
+			IsCore: entry.IsCore,
+			TTL:    entry.TTL,
+		}
+	}
+	return clone
 }
 
 // Count returns the number of registered tools.

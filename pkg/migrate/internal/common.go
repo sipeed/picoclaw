@@ -5,13 +5,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func ResolveTargetHome(override string) (string, error) {
 	if override != "" {
 		return ExpandHome(override), nil
 	}
-	if envHome := os.Getenv("PICOCLAW_HOME"); envHome != "" {
+	if envHome := os.Getenv(config.EnvHome); envHome != "" {
 		return ExpandHome(envHome), nil
 	}
 	home, err := os.UserHomeDir()

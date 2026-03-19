@@ -66,6 +66,14 @@ var ErrPassphraseRequired = errors.New("credential: enc:// passphrase required")
 // indicating a wrong passphrase or SSH key. Callers can detect this with errors.Is.
 var ErrDecryptionFailed = errors.New("credential: enc:// decryption failed (wrong passphrase or SSH key?)")
 
+// SSHKeyPathEnvVar is the environment variable that specifies the path to the
+// SSH private key used for enc:// credential encryption and decryption.
+const SSHKeyPathEnvVar = "PICOCLAW_SSH_KEY_PATH"
+
+// picoclawHome is a package-local copy of config.EnvHome. It is kept here to
+// avoid a circular import between pkg/credential and pkg/config.
+const picoclawHome = "PICOCLAW_HOME"
+
 const (
 	fileScheme = "file://"
 	encScheme  = "enc://"
@@ -73,7 +81,6 @@ const (
 	saltLen    = 16
 	nonceLen   = 12
 	keyLen     = 32
-	sshKeyEnv  = "PICOCLAW_SSH_KEY_PATH"
 )
 
 // Resolver resolves raw credential strings for model_list api_key fields.
@@ -248,14 +255,14 @@ func allowedSSHKeyPath(path string) bool {
 	clean := filepath.Clean(path)
 
 	// Exact match with PICOCLAW_SSH_KEY_PATH.
-	if envPath, ok := os.LookupEnv(sshKeyEnv); ok && envPath != "" {
+	if envPath, ok := os.LookupEnv(SSHKeyPathEnvVar); ok && envPath != "" {
 		if clean == filepath.Clean(envPath) {
 			return true
 		}
 	}
 
 	// Within PICOCLAW_HOME.
-	if picoHome := os.Getenv("PICOCLAW_HOME"); picoHome != "" {
+	if picoHome := os.Getenv(picoclawHome); picoHome != "" {
 		if isWithinDir(clean, picoHome) {
 			return true
 		}
@@ -316,7 +323,7 @@ func pickSSHKeyPath(override string) string {
 	if override != "" {
 		return override
 	}
-	if p, ok := os.LookupEnv(sshKeyEnv); ok {
+	if p, ok := os.LookupEnv(SSHKeyPathEnvVar); ok {
 		return p // respect explicit setting, even if ""
 	}
 	return findDefaultSSHKey()

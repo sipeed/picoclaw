@@ -132,11 +132,12 @@ type OpenClawChannels struct {
 }
 
 type OpenClawTelegramConfig struct {
-	BotToken    *string  `json:"botToken"`
-	AllowFrom   []string `json:"allowFrom"`
-	GroupPolicy *string  `json:"groupPolicy"`
-	DmPolicy    *string  `json:"dmPolicy"`
-	Enabled     *bool    `json:"enabled"`
+	BotToken      *string  `json:"botToken"`
+	AllowFrom     []string `json:"allowFrom"`
+	GroupPolicy   *string  `json:"groupPolicy"`
+	DmPolicy      *string  `json:"dmPolicy"`
+	Enabled       *bool    `json:"enabled"`
+	UseMarkdownV2 *bool    `json:"useMarkdownV2"`
 }
 
 type OpenClawDiscordConfig struct {
@@ -645,10 +646,11 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled   bool     `json:"enabled"`
-	Token     string   `json:"token"`
-	Proxy     string   `json:"proxy"`
-	AllowFrom []string `json:"allow_from"`
+	Enabled       bool     `json:"enabled"`
+	Token         string   `json:"token"`
+	Proxy         string   `json:"proxy"`
+	AllowFrom     []string `json:"allow_from"`
+	UseMarkdownV2 bool     `json:"use_markdown_v2"`
 }
 
 type FeishuConfig struct {
@@ -777,9 +779,11 @@ func (c *OpenClawConfig) convertChannels(warnings *[]string) ChannelsConfig {
 
 	if c.Channels.Telegram != nil {
 		enabled := c.Channels.Telegram.Enabled == nil || *c.Channels.Telegram.Enabled
+		useMarkdownV2 := c.Channels.Telegram.UseMarkdownV2 != nil && *c.Channels.Telegram.UseMarkdownV2
 		channels.Telegram = TelegramConfig{
-			Enabled:   enabled,
-			AllowFrom: c.Channels.Telegram.AllowFrom,
+			Enabled:       enabled,
+			AllowFrom:     c.Channels.Telegram.AllowFrom,
+			UseMarkdownV2: useMarkdownV2,
 		}
 		if c.Channels.Telegram.BotToken != nil {
 			channels.Telegram.Token = *c.Channels.Telegram.BotToken

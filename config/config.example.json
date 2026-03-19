@@ -78,9 +78,8 @@
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "base_url": "",
       "proxy": "",
-      "allow_from": [
-        "YOUR_USER_ID"
-      ],
+      "allow_from": ["YOUR_USER_ID"],
+      "use_markdown_v2": false,
       "reasoning_channel_id": ""
     },
     "discord": {
@@ -123,7 +122,8 @@
       "verification_token": "",
       "allow_from": [],
       "reasoning_channel_id": "",
-      "random_reaction_emoji": []
+      "random_reaction_emoji": [],
+      "is_lark": false
     },
     "dingtalk": {
       "enabled": false,
