@@ -17,6 +17,7 @@ The main project is maintained at [sipeed/picoclaw](https://github.com/sipeed/pi
 | [#1810](https://github.com/sipeed/picoclaw/pull/1810) | fix(launcher): recognise gemini-cli as a credential-free CLI provider | Open |
 | [#1811](https://github.com/sipeed/picoclaw/pull/1811) | fix(launcher): detect and display externally-managed gateway as running | Open |
 | [#1812](https://github.com/sipeed/picoclaw/pull/1812) | fix(claude-cli): pass system prompt via stdin instead of CLI argument | Open |
+| [#1813](https://github.com/sipeed/picoclaw/pull/1813) | fix(providers): robust CLI tool call extraction and mixed response handling | Open |
 
 ---
 
