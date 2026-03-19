@@ -1461,7 +1461,7 @@ func (al *AgentLoop) selectCandidates(
 	history []providers.Message,
 ) (candidates []providers.FallbackCandidate, model string) {
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
-		return agent.Candidates, agent.Model
+		return agent.Candidates, resolvedDirectModel(agent.Model, agent.Candidates)
 	}
 
 	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
@@ -1472,7 +1472,7 @@ func (al *AgentLoop) selectCandidates(
 				"score":     score,
 				"threshold": agent.Router.Threshold(),
 			})
-		return agent.Candidates, agent.Model
+		return agent.Candidates, resolvedDirectModel(agent.Model, agent.Candidates)
 	}
 
 	logger.InfoCF("agent", "Model routing: light model selected",
@@ -1482,7 +1482,14 @@ func (al *AgentLoop) selectCandidates(
 			"score":       score,
 			"threshold":   agent.Router.Threshold(),
 		})
-	return agent.LightCandidates, agent.Router.LightModel()
+	return agent.LightCandidates, resolvedDirectModel(agent.Router.LightModel(), agent.LightCandidates)
+}
+
+func resolvedDirectModel(raw string, candidates []providers.FallbackCandidate) string {
+	if len(candidates) == 1 && strings.TrimSpace(candidates[0].Model) != "" {
+		return candidates[0].Model
+	}
+	return raw
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
@@ -1774,7 +1781,7 @@ func (al *AgentLoop) retryLLMCall(
 				ctx,
 				[]providers.Message{{Role: "user", Content: prompt}},
 				nil,
-				agent.Model,
+				resolvedDirectModel(agent.Model, agent.Candidates),
 				map[string]any{
 					"max_tokens":       agent.MaxTokens,
 					"temperature":      llmTemperature,

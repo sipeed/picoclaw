@@ -2,11 +2,15 @@ package agent
 
 import (
 	"context"
+	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-type mockProvider struct{}
+type mockProvider struct {
+	mu        sync.Mutex
+	lastModel string
+}
 
 func (m *mockProvider) Chat(
 	ctx context.Context,
@@ -15,6 +19,9 @@ func (m *mockProvider) Chat(
 	model string,
 	opts map[string]any,
 ) (*providers.LLMResponse, error) {
+	m.mu.Lock()
+	m.lastModel = model
+	m.mu.Unlock()
 	return &providers.LLMResponse{
 		Content:   "Mock response",
 		ToolCalls: []providers.ToolCall{},
@@ -23,4 +30,10 @@ func (m *mockProvider) Chat(
 
 func (m *mockProvider) GetDefaultModel() string {
 	return "mock-model"
+}
+
+func (m *mockProvider) LastModel() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastModel
 }
