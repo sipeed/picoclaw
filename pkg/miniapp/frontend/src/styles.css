@@ -76,7 +76,7 @@
     top: 2px;
     bottom: 2px;
     left: 2px;
-    width: calc(100% / var(--tab-count, 8) - 2px);
+    width: calc(100% / var(--tab-count, 4) - 2px);
     border-radius: 8px;
     background: var(--tab-pill-bg);
     box-shadow: 0 0.5px 2px rgba(0,0,0,0.12), 0 0.5px 1px rgba(0,0,0,0.08);

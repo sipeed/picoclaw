@@ -76,7 +76,7 @@ body {
 
 .tab-indicator {
   position: absolute;
-  width: calc(100% / var(--tab-count, 8)  - 2px);
+  width: calc(100% / var(--tab-count, 4)  - 2px);
   background: var(--tab-pill-bg);
   z-index: 0;
   border-radius: 8px;
