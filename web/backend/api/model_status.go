@@ -61,7 +61,7 @@ func requiresRuntimeProbe(m config.ModelConfig) bool {
 	}
 
 	switch modelProtocol(m.Model) {
-	case "claude-cli", "claudecli", "codex-cli", "codexcli", "github-copilot", "copilot":
+	case "claude-cli", "claudecli", "codex-cli", "codexcli", "gemini-cli", "geminicli", "github-copilot", "copilot":
 		return true
 	case "ollama", "vllm":
 		apiBase := strings.TrimSpace(m.APIBase)
@@ -85,7 +85,7 @@ func probeLocalModelAvailability(m config.ModelConfig) bool {
 		return probeOpenAICompatibleModelFunc(apiBase, modelID)
 	case "github-copilot", "copilot":
 		return probeTCPServiceFunc(apiBase)
-	case "claude-cli", "claudecli", "codex-cli", "codexcli":
+	case "claude-cli", "claudecli", "codex-cli", "codexcli", "gemini-cli", "geminicli":
 		return true
 	default:
 		if hasLocalAPIBase(apiBase) {
