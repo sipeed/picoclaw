@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"sync"
 	"time"
 
@@ -76,17 +77,18 @@ type channelWorker struct {
 }
 
 type Manager struct {
-	managerExt // fork-specific fields (see manager_ext.go)
-
+	managerExt // fork-specific fields (statusMsgIDs, taskMsgIDs, statusEditTimes)
 	channels      map[string]Channel
 	workers       map[string]*channelWorker
 	bus           *bus.MessageBus
 	config        *config.Config
 	mediaStore    media.MediaStore
 	dispatchTask  *asyncTask
+	mux           *http.ServeMux
+	httpServer    *http.Server
 	mu            sync.RWMutex
-	placeholders  sync.Map // "channel:chatID" → placeholderEntry
-	typingStops   sync.Map // "channel:chatID" → typingEntry
+	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
+	typingStops   sync.Map // "channel:chatID" → func()
 	reactionUndos sync.Map // "channel:chatID" → reactionEntry
 }
 
@@ -101,7 +103,7 @@ func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
 	m.placeholders.Store(key, placeholderEntry{id: placeholderID, createdAt: time.Now()})
 }
 
-// SendPlaceholder sends a "Thinking..." placeholder for the given channel/chatID
+// SendPlaceholder sends a "Thinking…" placeholder for the given channel/chatID
 // and records it for later editing. Returns true if a placeholder was sent.
 func (m *Manager) SendPlaceholder(ctx context.Context, channel, chatID string) bool {
 	m.mu.RLock()
@@ -124,11 +126,6 @@ func (m *Manager) SendPlaceholder(ctx context.Context, channel, chatID string) b
 
 // RecordTypingStop registers a typing stop function for later invocation.
 // Implements PlaceholderRecorder.
-//
-// If a previous typing indicator exists for the same chat, it is stopped
-// immediately before the new one is recorded.  This prevents the next
-// preSend (which finalizes the *previous* processing cycle) from
-// consuming the *new* message's typing entry.
 func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
 	key := channel + ":" + chatID
 	entry := typingEntry{stop: stop, createdAt: time.Now()}
@@ -141,11 +138,6 @@ func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
 
 // RecordReactionUndo registers a reaction undo function for later invocation.
 // Implements PlaceholderRecorder.
-//
-// If a previous reaction exists for the same chat, it is undone immediately
-// before the new one is recorded.  Same rationale as RecordTypingStop: the
-// old entry belongs to the previous processing cycle and must not leak into
-// the next preSend call.
 func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
 	key := channel + ":" + chatID
 	if v, loaded := m.reactionUndos.Load(key); loaded {
@@ -156,8 +148,8 @@ func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
 	m.reactionUndos.Store(key, reactionEntry{undo: undo, createdAt: time.Now()})
 }
 
-// preSend handles typing stop, reaction undo, and placeholder/status editing before sending a message.
-// Returns true if the message was edited into an existing message (skip Send).
+// preSend handles typing stop, reaction undo, and placeholder editing before sending a message.
+// Returns true if the message was edited into a placeholder (skip Send).
 func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) bool {
 	key := name + ":" + msg.ChatID
 
@@ -350,31 +342,40 @@ func (m *Manager) initChannels() error {
 	return nil
 }
 
-// SetupHTTPServer registers channel webhook handlers and health checkers
-// onto the provided health server's mux. The health server owns the HTTP
-// listener; the channel manager no longer creates its own http.Server.
-func (m *Manager) SetupHTTPServer(_ string, healthServer *health.Server) {
-	if healthServer == nil {
-		return
+// SetupHTTPServer creates a shared HTTP server with the given listen address.
+// It registers health endpoints from the health server and discovers channels
+// that implement WebhookHandler and/or HealthChecker to register their handlers.
+func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
+	m.mux = http.NewServeMux()
+
+	// Register health endpoints
+	if healthServer != nil {
+		healthServer.RegisterOnMux(m.mux)
 	}
-	mux := healthServer.Mux()
 
 	// Discover and register webhook handlers and health checkers
 	for name, ch := range m.channels {
 		if wh, ok := ch.(WebhookHandler); ok {
-			mux.Handle(wh.WebhookPath(), wh)
+			m.mux.Handle(wh.WebhookPath(), wh)
 			logger.InfoCF("channels", "Webhook handler registered", map[string]any{
 				"channel": name,
 				"path":    wh.WebhookPath(),
 			})
 		}
 		if hc, ok := ch.(HealthChecker); ok {
-			mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
+			m.mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
 			logger.InfoCF("channels", "Health endpoint registered", map[string]any{
 				"channel": name,
 				"path":    hc.HealthPath(),
 			})
 		}
+	}
+
+	m.httpServer = &http.Server{
+		Addr:         addr,
+		Handler:      m.mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
 	}
 }
 
@@ -384,7 +385,6 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	if len(m.channels) == 0 {
 		logger.WarnC("channels", "No channels enabled")
-		return errors.New("no channels enabled")
 	}
 
 	logger.InfoC("channels", "Starting all channels")
@@ -417,6 +417,20 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	// Start the TTL janitor that cleans up stale typing/placeholder entries
 	go m.runTTLJanitor(dispatchCtx)
 
+	// Start shared HTTP server if configured
+	if m.httpServer != nil {
+		go func() {
+			logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
+				"addr": m.httpServer.Addr,
+			})
+			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
+					"error": err.Error(),
+				})
+			}
+		}()
+	}
+
 	logger.InfoC("channels", "All channels started")
 	return nil
 }
@@ -426,6 +440,18 @@ func (m *Manager) StopAll(ctx context.Context) error {
 	defer m.mu.Unlock()
 
 	logger.InfoC("channels", "Stopping all channels")
+
+	// Shutdown shared HTTP server first
+	if m.httpServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := m.httpServer.Shutdown(shutdownCtx); err != nil {
+			logger.ErrorCF("channels", "Shared HTTP server shutdown error", map[string]any{
+				"error": err.Error(),
+			})
+		}
+		m.httpServer = nil
+	}
 
 	// Cancel dispatcher
 	if m.dispatchTask != nil {
@@ -598,7 +624,7 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 func dispatchLoop[M any](
 	ctx context.Context,
 	m *Manager,
-	subscribe func(context.Context) (M, bool),
+	ch <-chan M,
 	getChannel func(M) string,
 	enqueue func(context.Context, *channelWorker, M) bool,
 	startMsg, stopMsg, unknownMsg, noWorkerMsg string,
@@ -606,35 +632,41 @@ func dispatchLoop[M any](
 	logger.InfoC("channels", startMsg)
 
 	for {
-		msg, ok := subscribe(ctx)
-		if !ok {
+		select {
+		case <-ctx.Done():
 			logger.InfoC("channels", stopMsg)
 			return
-		}
 
-		channel := getChannel(msg)
-
-		// Silently skip internal channels
-		if constants.IsInternalChannel(channel) {
-			continue
-		}
-
-		m.mu.RLock()
-		_, exists := m.channels[channel]
-		w, wExists := m.workers[channel]
-		m.mu.RUnlock()
-
-		if !exists {
-			logger.WarnCF("channels", unknownMsg, map[string]any{"channel": channel})
-			continue
-		}
-
-		if wExists && w != nil {
-			if !enqueue(ctx, w, msg) {
+		case msg, ok := <-ch:
+			if !ok {
+				logger.InfoC("channels", stopMsg)
 				return
 			}
-		} else if exists {
-			logger.WarnCF("channels", noWorkerMsg, map[string]any{"channel": channel})
+
+			channel := getChannel(msg)
+
+			// Silently skip internal channels
+			if constants.IsInternalChannel(channel) {
+				continue
+			}
+
+			m.mu.RLock()
+			_, exists := m.channels[channel]
+			w, wExists := m.workers[channel]
+			m.mu.RUnlock()
+
+			if !exists {
+				logger.WarnCF("channels", unknownMsg, map[string]any{"channel": channel})
+				continue
+			}
+
+			if wExists && w != nil {
+				if !enqueue(ctx, w, msg) {
+					return
+				}
+			} else if exists {
+				logger.WarnCF("channels", noWorkerMsg, map[string]any{"channel": channel})
+			}
 		}
 	}
 }
@@ -642,7 +674,7 @@ func dispatchLoop[M any](
 func (m *Manager) dispatchOutbound(ctx context.Context) {
 	dispatchLoop(
 		ctx, m,
-		m.bus.SubscribeOutbound,
+		m.bus.OutboundChan(),
 		func(msg bus.OutboundMessage) string { return msg.Channel },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMessage) bool {
 			select {
@@ -662,7 +694,7 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 func (m *Manager) dispatchOutboundMedia(ctx context.Context) {
 	dispatchLoop(
 		ctx, m,
-		m.bus.SubscribeOutboundMedia,
+		m.bus.OutboundMediaChan(),
 		func(msg bus.OutboundMediaMessage) string { return msg.Channel },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMediaMessage) bool {
 			select {
@@ -792,32 +824,6 @@ func (m *Manager) runTTLJanitor(ctx context.Context) {
 				if entry, ok := value.(placeholderEntry); ok {
 					if now.Sub(entry.createdAt) > placeholderTTL {
 						m.placeholders.Delete(key)
-					}
-				}
-				return true
-			})
-			m.statusMsgIDs.Range(func(key, value any) bool {
-				if entry, ok := value.(statusMsgEntry); ok {
-					if now.Sub(entry.createdAt) > statusMsgTTL {
-						m.statusMsgIDs.Delete(key)
-					}
-				}
-				return true
-			})
-			m.taskMsgIDs.Range(func(key, value any) bool {
-				if entry, ok := value.(statusMsgEntry); ok {
-					if now.Sub(entry.createdAt) > taskMsgTTL {
-						m.taskMsgIDs.Delete(key)
-					}
-				}
-				return true
-			})
-			// Clean up stale edit-time entries (only needed for a few seconds,
-			// but janitor runs infrequently so use a generous TTL).
-			m.statusEditTimes.Range(func(key, value any) bool {
-				if t, ok := value.(time.Time); ok {
-					if now.Sub(t) > statusMsgTTL {
-						m.statusEditTimes.Delete(key)
 					}
 				}
 				return true

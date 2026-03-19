@@ -30,6 +30,15 @@ PicoClaw's tools configuration is located in the `tools` field of `config.json`.
 
 Web tools are used for web search and fetching.
 
+### Web Fetcher
+General settings for fetching and processing webpage content.
+
+| Config              | Type   | Default       | Description                                                                                   |
+|---------------------|--------|---------------|-----------------------------------------------------------------------------------------------|
+| `enabled`           | bool   | true          | Enable the webpage fetching capability.                                                       |
+| `fetch_limit_bytes` | int    | 10485760      | Maximum size of the webpage payload to fetch, in bytes (default is 10MB).                     |
+| `format`            | string | "plaintext"   | Output format of the fetched content. Options: `plaintext` or `markdown` (recommended).       |
+
 ### Brave
 
 | Config        | Type   | Default | Description               |
@@ -83,6 +92,22 @@ By default, PicoClaw blocks the following dangerous commands:
 - Containers: `docker run`, `docker exec`
 - Git: `git push`, `git force`
 - Other: `eval`, `source *.sh`
+
+### Known Architectural Limitation
+
+The exec guard only validates the top-level command sent to PicoClaw. It does **not** recursively inspect child
+processes spawned by build tools or scripts after that command starts running.
+
+Examples of workflows that can bypass the direct command guard once the initial command is allowed:
+
+- `make run`
+- `go run ./cmd/...`
+- `cargo run`
+- `npm run build`
+
+This means the guard is useful for blocking obviously dangerous direct commands, but it is **not** a full sandbox for
+unreviewed build pipelines. If your threat model includes untrusted code in the workspace, use stronger isolation such
+as containers, VMs, or an approval flow around build-and-run commands.
 
 ### Configuration Example
 

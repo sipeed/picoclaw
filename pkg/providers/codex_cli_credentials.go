@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+// CodexHomeEnvVar is the environment variable that overrides the Codex CLI
+// home directory when resolving the codex auth.json credentials file.
+// Default: ~/.codex
+const CodexHomeEnvVar = "CODEX_HOME"
+
 // CodexCliAuth represents the ~/.codex/auth.json file structure.
 type CodexCliAuth struct {
 	Tokens struct {
@@ -69,7 +74,7 @@ func CreateCodexCliTokenSource() func() (string, string, error) {
 }
 
 func resolveCodexAuthPath() (string, error) {
-	codexHome := os.Getenv("CODEX_HOME")
+	codexHome := os.Getenv(CodexHomeEnvVar)
 	if codexHome == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {

@@ -236,11 +236,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		history,
 		summary,
 		opts.UserMessage,
-
 		opts.Media,
-
 		opts.Channel,
 		opts.ChatID,
+		opts.SenderID,
+		opts.SenderDisplayName,
 	)
 
 	// Resolve media:// refs: images→base64 data URLs, non-images→local paths in content
@@ -337,12 +337,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 		if phaseLoop > 0 {
 			messages = agent.ContextBuilder.BuildMessages(
-
 				agent.Sessions.GetHistory(opts.SessionKey),
-
 				agent.Sessions.GetSummary(opts.SessionKey),
-
 				"", opts.Media, opts.Channel, opts.ChatID,
+				opts.SenderID, opts.SenderDisplayName,
 			)
 
 			messages = append(messages, providers.Message{

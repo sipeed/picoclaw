@@ -466,6 +466,18 @@ func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {
 	return task, ok
 }
 
+// GetTaskCopy returns a copy of the task with the given ID, taken under the
+// read lock, so the caller receives a consistent snapshot with no data race.
+func (sm *SubagentManager) GetTaskCopy(taskID string) (SubagentTask, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	task, ok := sm.tasks[taskID]
+	if !ok {
+		return SubagentTask{}, false
+	}
+	return *task, true
+}
+
 func (sm *SubagentManager) ListTasks() []*SubagentTask {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
@@ -475,6 +487,19 @@ func (sm *SubagentManager) ListTasks() []*SubagentTask {
 		tasks = append(tasks, task)
 	}
 	return tasks
+}
+
+// ListTaskCopies returns value copies of all tasks, taken under the read lock,
+// so callers receive consistent snapshots with no data race.
+func (sm *SubagentManager) ListTaskCopies() []SubagentTask {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	copies := make([]SubagentTask, 0, len(sm.tasks))
+	for _, task := range sm.tasks {
+		copies = append(copies, *task)
+	}
+	return copies
 }
 
 // SubagentTool executes a subagent task synchronously and returns the result.
