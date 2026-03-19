@@ -70,8 +70,31 @@ A ferramenta exec é usada para executar comandos shell.
 
 | Config                 | Tipo  | Padrão | Descrição                                      |
 |------------------------|-------|--------|-------------------------------------------------|
+| `enabled`              | bool  | true   | Habilitar a ferramenta exec                     |
 | `enable_deny_patterns` | bool  | true   | Habilitar bloqueio padrão de comandos perigosos |
 | `custom_deny_patterns` | array | []     | Padrões de negação personalizados (expressões regulares) |
+
+### Desabilitando a Ferramenta Exec
+
+Para desabilitar completamente a ferramenta `exec`, defina `enabled` como `false`:
+
+**Via arquivo de configuração:**
+```json
+{
+  "tools": {
+    "exec": {
+      "enabled": false
+    }
+  }
+}
+```
+
+**Via variável de ambiente:**
+```bash
+PICOCLAW_TOOLS_EXEC_ENABLED=false
+```
+
+> **Nota:** Quando desabilitada, o agent não poderá executar comandos shell. Isso também afeta a capacidade da ferramenta Cron de executar comandos shell agendados.
 
 ### Funcionalidade
 
@@ -329,6 +352,7 @@ Todas as opções de configuração podem ser substituídas via variáveis de am
 Por exemplo:
 
 - `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`
