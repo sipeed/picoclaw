@@ -763,9 +763,14 @@ func (c *MatrixChannel) downloadMedia(
 		}
 	}()
 
-	_, err = io.Copy(tmp, reader)
-	if err != nil {
+	// Limit media download to 50 MB to prevent disk exhaustion.
+	const maxMediaSize int64 = 50 << 20 // 50 MB
+	written, err := io.CopyN(tmp, reader, maxMediaSize)
+	if err != nil && err != io.EOF {
 		return "", err
+	}
+	if written >= maxMediaSize {
+		return "", fmt.Errorf("matrix media exceeds %d MB size limit", maxMediaSize/(1<<20))
 	}
 	if err = readerClose(); err != nil {
 		return "", fmt.Errorf("decrypt matrix media: %w", err)

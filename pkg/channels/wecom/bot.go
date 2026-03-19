@@ -253,13 +253,18 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 		return
 	}
 
-	// Read request body
-	body, err := io.ReadAll(r.Body)
+	// Read request body (limit to 4 MB to prevent memory exhaustion).
+	const maxBodySize = 4 << 20 // 4 MB
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodySize+1))
 	if err != nil {
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
+	if len(body) > maxBodySize {
+		http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+		return
+	}
 
 	// Parse XML to get encrypted message
 	var encryptedMsg struct {
@@ -452,8 +457,9 @@ func (c *WeComBotChannel) sendWebhookReply(ctx context.Context, userID, content 
 	}
 	defer resp.Body.Close()
 
+	const maxRespSize = 1 << 20 // 1 MB
 	if resp.StatusCode != http.StatusOK {
-		body, readErr := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxRespSize))
 		if readErr != nil {
 			return channels.ClassifySendError(
 				resp.StatusCode,
@@ -466,7 +472,7 @@ func (c *WeComBotChannel) sendWebhookReply(ctx context.Context, userID, content 
 		)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRespSize))
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
