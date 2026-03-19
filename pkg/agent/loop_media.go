@@ -438,7 +438,6 @@ func wantFigures(content string) bool {
 	return false
 }
 
-//nolint:gosmopolitan // intentional CJK in user-facing hint
 const pdfHintMessage = "PDF OCR in progress. " +
 	"Tip: include \"figures\" or \"\u56f3\u7248\" in your message to extract images and in-figure text."
 
