@@ -2,9 +2,16 @@ package providers
 
 import (
 	"context"
+	"expvar"
 	"fmt"
 	"strings"
 	"time"
+)
+
+var (
+	metricsLLMProviderDuration   = expvar.NewMap("llm_provider_duration_seconds")
+	metricsLLMProviderFailover   = expvar.NewMap("llm_provider_failover_counts")
+	metricsLLMProviderTokenUsage = expvar.NewMap("llm_provider_token_usage")
 )
 
 // FallbackChain orchestrates model fallback across multiple candidates.
@@ -139,8 +146,15 @@ func (fc *FallbackChain) Execute(
 		resp, err := run(ctx, candidate.Provider, candidate.Model)
 		elapsed := time.Since(start)
 
+		metricsLLMProviderDuration.AddFloat(candidate.Provider, elapsed.Seconds())
+
 		if err == nil {
 			// Success.
+			if resp != nil && resp.Usage != nil {
+				metricsLLMProviderTokenUsage.Add(candidate.Provider+"_prompt", int64(resp.Usage.PromptTokens))
+				metricsLLMProviderTokenUsage.Add(candidate.Provider+"_completion", int64(resp.Usage.CompletionTokens))
+				metricsLLMProviderTokenUsage.Add(candidate.Provider+"_total", int64(resp.Usage.TotalTokens))
+			}
 			fc.cooldown.MarkSuccess(candidate.Provider)
 			result.Response = resp
 			result.Provider = candidate.Provider
@@ -170,9 +184,12 @@ func (fc *FallbackChain) Execute(
 				Error:    err,
 				Duration: elapsed,
 			})
+			metricsLLMProviderFailover.Add(candidate.Provider+"_"+string(FailoverUnknown), 1)
 			return nil, fmt.Errorf("fallback: unclassified error from %s/%s: %w",
 				candidate.Provider, candidate.Model, err)
 		}
+
+		metricsLLMProviderFailover.Add(candidate.Provider+"_"+string(failErr.Reason), 1)
 
 		// Non-retriable error: abort immediately.
 		if !failErr.IsRetriable() {
@@ -231,7 +248,14 @@ func (fc *FallbackChain) ExecuteImage(
 		resp, err := run(ctx, candidate.Provider, candidate.Model)
 		elapsed := time.Since(start)
 
+		metricsLLMProviderDuration.AddFloat(candidate.Provider, elapsed.Seconds())
+
 		if err == nil {
+			if resp != nil && resp.Usage != nil {
+				metricsLLMProviderTokenUsage.Add(candidate.Provider+"_prompt", int64(resp.Usage.PromptTokens))
+				metricsLLMProviderTokenUsage.Add(candidate.Provider+"_completion", int64(resp.Usage.CompletionTokens))
+				metricsLLMProviderTokenUsage.Add(candidate.Provider+"_total", int64(resp.Usage.TotalTokens))
+			}
 			result.Response = resp
 			result.Provider = candidate.Provider
 			result.Model = candidate.Model
@@ -251,6 +275,7 @@ func (fc *FallbackChain) ExecuteImage(
 		// Image dimension/size errors are non-retriable.
 		errMsg := strings.ToLower(err.Error())
 		if IsImageDimensionError(errMsg) || IsImageSizeError(errMsg) {
+			metricsLLMProviderFailover.Add(candidate.Provider+"_"+string(FailoverFormat), 1)
 			result.Attempts = append(result.Attempts, FallbackAttempt{
 				Provider: candidate.Provider,
 				Model:    candidate.Model,
@@ -267,6 +292,7 @@ func (fc *FallbackChain) ExecuteImage(
 		}
 
 		// Any other error: record and try next.
+		metricsLLMProviderFailover.Add(candidate.Provider+"_"+string(FailoverUnknown), 1)
 		result.Attempts = append(result.Attempts, FallbackAttempt{
 			Provider: candidate.Provider,
 			Model:    candidate.Model,

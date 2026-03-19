@@ -9,7 +9,7 @@ This document tracks the tasks required to implement the "Ultimate Visibility" E
 - [x] **Goroutine Tracking:** Implement a metric to track the number of active Goroutines.
 - [x] **Memory Tracking:** Implement a metric to track heap allocation and GC pauses.
 - [x] **AgentLoop Telemetry:** Add specific instrumentation to the `AgentLoop` (iteration duration, tool execution duration, failure counts).
-- [ ] **LLM Provider Telemetry:** Track API call latency, token usage, and failover reasons for LLM providers.
+- [x] **LLM Provider Telemetry:** Track API call latency, token usage, and failover reasons for LLM providers.
 - [ ] **API Gateway Telemetry:** Track request rates (RPS), latency percentiles, and error rates for HTTP and WebSocket endpoints.
 - [ ] **Tracing Instrumentation:** Introduce trace IDs at entry points (HTTP, WebSocket) and propagate them via context to track end-to-end execution flow.
 
