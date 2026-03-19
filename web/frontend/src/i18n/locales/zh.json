@@ -195,6 +195,8 @@
       "apiKeyPlaceholderSet": "留空保持原有 Key 不变",
       "proxy": "HTTP 代理",
       "proxyHint": "可选。例如 http://127.0.0.1:7890",
+      "stream": "强制流式返回",
+      "streamHint": "以 stream=true 发送 chat/completions 请求，并解析 SSE 响应。",
       "authMethod": "认证方式",
       "authMethodHint": "认证方式：oauth、token。留空表示使用 API Key 认证。",
       "connectMode": "连接模式",

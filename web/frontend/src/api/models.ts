@@ -9,6 +9,7 @@ export interface ModelInfo {
   api_base?: string
   api_key: string
   proxy?: string
+  stream?: boolean
   auth_method?: string
   // Advanced fields
   connect_mode?: string

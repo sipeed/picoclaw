@@ -113,6 +113,7 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 | `api_base` | No | API endpoint URL |
 | `api_key` | No* | API authentication key |
 | `proxy` | No | HTTP proxy URL |
+| `stream` | No | Force `chat/completions` requests to use `stream=true` and parse SSE responses |
 | `auth_method` | No | Authentication method: `oauth`, `token` |
 | `connect_mode` | No | Connection mode for CLI providers: `stdio`, `grpc` |
 | `rpm` | No | Requests per minute limit |
@@ -120,6 +121,8 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 | `request_timeout` | No | HTTP request timeout in seconds; `<=0` uses default `120s` |
 
 *`api_key` is required for HTTP-based protocols unless `api_base` points to a local server.
+
+Use `stream: true` for OpenAI-compatible relays that reject non-streaming requests or always return `text/event-stream`.
 
 ## Load Balancing
 

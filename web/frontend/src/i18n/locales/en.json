@@ -195,6 +195,8 @@
       "apiKeyPlaceholderSet": "Leave blank to keep existing key",
       "proxy": "HTTP Proxy",
       "proxyHint": "Optional. e.g. http://127.0.0.1:7890",
+      "stream": "Force Streaming",
+      "streamHint": "Send chat/completions requests with stream=true and parse SSE responses.",
       "authMethod": "Auth Method",
       "authMethodHint": "Authentication method: oauth, token. Leave blank for API key auth.",
       "connectMode": "Connect Mode",

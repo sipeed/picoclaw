@@ -60,6 +60,14 @@
       "api_base": "https://your-resource.openai.azure.com"
     },
     {
+      "_comment": "Some OpenAI-compatible relays require chat/completions requests with stream=true",
+      "model_name": "custom-relay-gpt-5.4",
+      "model": "openai/gpt-5.4",
+      "api_key": "sk-your-relay-key",
+      "api_base": "https://relay.example.com/v1",
+      "stream": true
+    },
+    {
       "model_name": "loadbalanced-gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_key": "sk-key1",

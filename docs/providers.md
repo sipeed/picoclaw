@@ -39,6 +39,26 @@ This design also enables **multi-agent support** with flexible provider selectio
 - **Load balancing**: Distribute requests across multiple endpoints
 - **Centralized configuration**: Manage all providers in one place
 
+#### Model Fields
+
+| Field | Required | Description |
+| ----- | -------- | ----------- |
+| `model_name` | Yes | User-facing alias for the model |
+| `model` | Yes | Protocol and model identifier (for example `openai/gpt-5.4`) |
+| `api_base` | No | API endpoint URL |
+| `api_key` | No* | API authentication key |
+| `proxy` | No | HTTP proxy URL |
+| `stream` | No | Force `chat/completions` requests to send `stream=true` and parse SSE responses. Useful for OpenAI-compatible relays that reject non-streaming requests. |
+| `auth_method` | No | Authentication method: `oauth`, `token` |
+| `connect_mode` | No | Connection mode for CLI providers: `stdio`, `grpc` |
+| `workspace` | No | Working directory for CLI-based providers |
+| `rpm` | No | Requests per minute limit |
+| `max_tokens_field` | No | Override the request field name for max tokens |
+| `request_timeout` | No | HTTP request timeout in seconds; `<=0` uses the default timeout |
+| `thinking_level` | No | Extended thinking budget: `off`, `low`, `medium`, `high`, `xhigh`, `adaptive` |
+
+*`api_key` is required for HTTP-based protocols unless `api_base` points to a local server.
+
 #### 📋 All Supported Vendors
 
 | Vendor              | `model` Prefix    | Default API Base                                    | Protocol  | API Key                                                          |
@@ -193,6 +213,18 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
   "api_base": "https://my-proxy.com/v1",
   "api_key": "sk-...",
   "request_timeout": 300
+}
+```
+
+If your relay rejects non-streaming `chat/completions` calls with errors such as `Stream must be set to true`, enable `stream`:
+
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "stream": true
 }
 ```
 
