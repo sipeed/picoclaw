@@ -1160,3 +1160,5 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
 	}
 }
+
+func (t *mockCustomTool) RequiresApproval() bool { return false }

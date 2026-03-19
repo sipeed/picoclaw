@@ -100,3 +100,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		Silent: true,
 	}
 }
+
+func (t *MessageTool) RequiresApproval() bool {
+	return false
+}

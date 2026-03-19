@@ -145,3 +145,7 @@ func (t *GoEvalTool) Execute(ctx context.Context, args map[string]any) *ToolResu
 		ForUser: output,
 	}
 }
+
+func (t *GoEvalTool) RequiresApproval() bool {
+	return false
+}

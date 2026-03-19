@@ -358,3 +358,7 @@ func TestToolRegistry_ConcurrentAccess(t *testing.T) {
 		t.Error("expected tools to be registered after concurrent access")
 	}
 }
+
+func (t *mockRegistryTool) RequiresApproval() bool { return false }
+func (t *mockContextAwareTool) RequiresApproval() bool { return false }
+func (t *mockAsyncRegistryTool) RequiresApproval() bool { return false }

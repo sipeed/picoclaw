@@ -14,6 +14,7 @@ import (
 	"jane/pkg/bus"
 	"jane/pkg/constants"
 	"jane/pkg/logger"
+	"jane/pkg/providers"
 	"jane/pkg/routing"
 	"jane/pkg/utils"
 )
@@ -147,6 +148,126 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {
 		return response, nil
 	}
+
+	// HITL: Check for pending approvals
+	if val, ok := al.pendingApprovals.Load(sessionKey); ok {
+		pending := val.(pendingApprovalState)
+
+		responseStr := strings.ToLower(strings.TrimSpace(msg.Content))
+		isYes := responseStr == "yes" || responseStr == "y"
+		isNo := responseStr == "no" || responseStr == "n"
+
+		if isYes || isNo {
+			al.pendingApprovals.Delete(sessionKey)
+
+			if isNo {
+				logger.InfoCF("agent", "User rejected tool execution", map[string]any{
+					"agent_id":    agent.ID,
+					"session_key": sessionKey,
+				})
+				for _, tc := range pending.normalizedToolCalls {
+					rejectMsg := providers.Message{
+						Role:       "tool",
+						Content:    "User rejected tool execution",
+						ToolCallID: tc.ID,
+					}
+					pending.messages = append(pending.messages, rejectMsg)
+					agent.Sessions.AddFullMessage(sessionKey, rejectMsg)
+				}
+
+				// Tick TTL since we bypass normal execution where it happens
+				agent.Tools.TickTTL()
+
+				// Continue loop with rejection feedback
+				finalContent, _, err := al.runLLMIteration(ctx, pending.agent, pending.messages, pending.opts)
+				if err != nil {
+					return "", err
+				}
+
+				// Update session and return
+				if finalContent == "" {
+					finalContent = pending.opts.DefaultResponse
+				}
+				agent.Sessions.AddMessage(sessionKey, "assistant", finalContent)
+				agent.Sessions.Save(sessionKey)
+				return finalContent, nil
+			}
+
+			if isYes {
+				logger.InfoCF("agent", "User approved tool execution", map[string]any{
+					"agent_id":    agent.ID,
+					"session_key": sessionKey,
+				})
+
+				// Execute the approved tools
+				agentResults := al.executeToolBatch(ctx, pending.agent, pending.opts, pending.normalizedToolCalls, pending.iteration)
+
+				// Inject results into context, matching original logic from loop_llm.go
+				for _, r := range agentResults {
+					if !r.result.Silent && r.result.ForUser != "" && pending.opts.SendResponse {
+						al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+							Channel: pending.opts.Channel,
+							ChatID:  pending.opts.ChatID,
+							Content: r.result.ForUser,
+						})
+					}
+
+					if len(r.result.Media) > 0 {
+						parts := make([]bus.MediaPart, 0, len(r.result.Media))
+						for _, ref := range r.result.Media {
+							part := bus.MediaPart{Ref: ref}
+							if al.mediaStore != nil {
+								if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
+									part.Filename = meta.Filename
+									part.ContentType = meta.ContentType
+									part.Type = inferMediaType(meta.Filename, meta.ContentType)
+								}
+							}
+							parts = append(parts, part)
+						}
+						al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
+							Channel: pending.opts.Channel,
+							ChatID:  pending.opts.ChatID,
+							Parts:   parts,
+						})
+					}
+
+					contentForLLM := r.result.ForLLM
+					if contentForLLM == "" && r.result.Err != nil {
+						contentForLLM = r.result.Err.Error()
+					}
+
+					toolResultMsg := providers.Message{
+						Role:       "tool",
+						Content:    contentForLLM,
+						ToolCallID: r.tc.ID,
+					}
+					pending.messages = append(pending.messages, toolResultMsg)
+					agent.Sessions.AddFullMessage(sessionKey, toolResultMsg)
+				}
+
+				agent.Tools.TickTTL()
+
+				// Continue loop with execution feedback
+				finalContent, _, err := al.runLLMIteration(ctx, pending.agent, pending.messages, pending.opts)
+				if err != nil {
+					return "", err
+				}
+
+				// Update session and return
+				if finalContent == "" {
+					finalContent = pending.opts.DefaultResponse
+				}
+				agent.Sessions.AddMessage(sessionKey, "assistant", finalContent)
+				agent.Sessions.Save(sessionKey)
+				return finalContent, nil
+			}
+		} else {
+			// Ask again
+			return "Please respond with Yes or No to approve the tool execution.", nil
+		}
+	}
+	// End HITL
 
 	return al.runAgentLoop(ctx, agent, opts)
 }

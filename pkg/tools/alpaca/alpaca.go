@@ -127,3 +127,7 @@ func (t *AlpacaTool) getSMA(symbol string) *tools.ToolResult {
 func init() {
 	// tools.Register(&AlpacaTool{}) // We will register it manually where we have access to config.
 }
+
+func (t *AlpacaTool) RequiresApproval() bool {
+	return false
+}

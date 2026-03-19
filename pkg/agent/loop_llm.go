@@ -315,6 +315,49 @@ func (al *AgentLoop) runLLMIteration(
 		// Save assistant message with tool calls to session
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
+		// --- HITL: Check if any tool requires human approval ---
+		requiresApproval := false
+		for _, tc := range normalizedToolCalls {
+			if t, ok := agent.Tools.Get(tc.Name); ok && t.RequiresApproval() {
+				requiresApproval = true
+				break
+			}
+		}
+
+		if requiresApproval {
+			logger.InfoCF("agent", "Tool execution paused for user approval", map[string]any{
+				"agent_id":    agent.ID,
+				"session_key": opts.SessionKey,
+			})
+
+			// Format approval message
+			approvalMsg := "The following tool execution requires your approval:\n"
+			for _, tc := range normalizedToolCalls {
+				argsJSON, _ := json.MarshalIndent(tc.Arguments, "", "  ")
+				approvalMsg += fmt.Sprintf("\n- `%s`:\n```json\n%s\n```\n", tc.Name, string(argsJSON))
+			}
+			approvalMsg += "\nDo you approve? (Yes/No)"
+
+			al.pendingApprovals.Store(opts.SessionKey, pendingApprovalState{
+				agent:               agent,
+				opts:                opts,
+				normalizedToolCalls: normalizedToolCalls,
+				messages:            messages,
+				iteration:           iteration,
+				activeCandidates:    activeCandidates,
+				activeModel:         activeModel,
+			})
+
+			al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+				Channel: opts.Channel,
+				ChatID:  opts.ChatID,
+				Content: approvalMsg,
+			})
+
+			return "", iteration, nil
+		}
+		// --- End HITL ---
+
 		// Execute tool calls in parallel
 		agentResults := al.executeToolBatch(ctx, agent, opts, normalizedToolCalls, iteration)
 

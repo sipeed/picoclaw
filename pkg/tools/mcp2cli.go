@@ -282,3 +282,7 @@ func splitQuoted(s string) []string {
 	}
 	return parts
 }
+
+func (t *MCP2CliTool) RequiresApproval() bool {
+	return false
+}

@@ -117,3 +117,7 @@ func formatSearchResults(query string, results []skills.SearchResult, cached boo
 	sb.WriteString("Use install_skill with the slug to install a skill.")
 	return sb.String()
 }
+
+func (t *FindSkillsTool) RequiresApproval() bool {
+	return false
+}

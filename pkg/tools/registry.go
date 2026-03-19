@@ -329,3 +329,7 @@ func (r *ToolRegistry) GetSummaries() []string {
 	}
 	return summaries
 }
+
+func (t *ToolRegistry) RequiresApproval() bool {
+	return false
+}

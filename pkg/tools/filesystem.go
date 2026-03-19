@@ -696,3 +696,15 @@ func getSafeRelPath(workspace, path string) (string, error) {
 
 	return rel, nil
 }
+
+func (t *ReadFileTool) RequiresApproval() bool {
+	return false
+}
+
+func (t *WriteFileTool) RequiresApproval() bool {
+	return false
+}
+
+func (t *ListDirTool) RequiresApproval() bool {
+	return false
+}

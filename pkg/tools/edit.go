@@ -172,3 +172,11 @@ func replaceEditContent(content []byte, oldText, newText string) ([]byte, error)
 	newContent := strings.Replace(contentStr, oldText, newText, 1)
 	return []byte(newContent), nil
 }
+
+func (t *EditFileTool) RequiresApproval() bool {
+	return false
+}
+
+func (t *AppendFileTool) RequiresApproval() bool {
+	return false
+}

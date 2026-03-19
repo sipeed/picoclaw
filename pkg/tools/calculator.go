@@ -56,3 +56,7 @@ func (t *CalculatorTool) Execute(ctx context.Context, args map[string]any) *Tool
 	resStr := fmt.Sprintf("%v", result)
 	return UserResult(resStr)
 }
+
+func (t *CalculatorTool) RequiresApproval() bool {
+	return false
+}

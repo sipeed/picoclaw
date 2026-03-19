@@ -21,20 +21,31 @@ import (
 )
 
 type AgentLoop struct {
-	bus            *bus.MessageBus
-	cfg            *config.Config
-	registry       *AgentRegistry
-	state          *state.Manager
-	running        atomic.Bool
-	summarizing    sync.Map
-	summaryJobs    chan summaryJob
-	wg             sync.WaitGroup
-	fallback       *providers.FallbackChain
-	channelManager *channels.Manager
-	mediaStore     media.MediaStore
-	transcriber    voice.Transcriber
-	cmdRegistry    *commands.Registry
-	mcp            mcpRuntime
+	bus              *bus.MessageBus
+	cfg              *config.Config
+	registry         *AgentRegistry
+	state            *state.Manager
+	running          atomic.Bool
+	summarizing      sync.Map
+	pendingApprovals sync.Map // Tracks state for Human-in-the-Loop approvals
+	summaryJobs      chan summaryJob
+	wg               sync.WaitGroup
+	fallback         *providers.FallbackChain
+	channelManager   *channels.Manager
+	mediaStore       media.MediaStore
+	transcriber      voice.Transcriber
+	cmdRegistry      *commands.Registry
+	mcp              mcpRuntime
+}
+
+type pendingApprovalState struct {
+	agent               *AgentInstance
+	opts                processOptions
+	normalizedToolCalls []providers.ToolCall
+	messages            []providers.Message
+	iteration           int
+	activeCandidates    []providers.FallbackCandidate
+	activeModel         string
 }
 
 // processOptions configures how a message is processed

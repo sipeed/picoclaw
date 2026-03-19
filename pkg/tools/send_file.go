@@ -148,3 +148,7 @@ func detectMediaType(path string) string {
 
 	return "application/octet-stream"
 }
+
+func (t *SendFileTool) RequiresApproval() bool {
+	return false
+}
