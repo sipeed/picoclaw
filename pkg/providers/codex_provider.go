@@ -231,6 +231,28 @@ func buildCodexParams(
 						},
 					},
 				})
+			} else if hasImageMedia(msg.Media) {
+				var parts responses.ResponseInputMessageContentListParam
+				if msg.Content != "" {
+					parts = append(parts, responses.ResponseInputContentParamOfInputText(msg.Content))
+				}
+				for _, mediaURL := range msg.Media {
+					if strings.HasPrefix(mediaURL, "data:image/") {
+						parts = append(parts, responses.ResponseInputContentUnionParam{
+							OfInputImage: &responses.ResponseInputImageParam{
+								ImageURL: openai.Opt(mediaURL),
+							},
+						})
+					}
+				}
+				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
+					OfMessage: &responses.EasyInputMessageParam{
+						Role: responses.EasyInputMessageRoleUser,
+						Content: responses.EasyInputMessageContentUnionParam{
+							OfInputItemContentList: parts,
+						},
+					},
+				})
 			} else {
 				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 					OfMessage: &responses.EasyInputMessageParam{
@@ -420,6 +442,16 @@ func parseCodexResponse(resp *responses.Response) *LLMResponse {
 		FinishReason: finishReason,
 		Usage:        usage,
 	}
+}
+
+// hasImageMedia returns true if the media slice contains at least one data:image/* URL.
+func hasImageMedia(media []string) bool {
+	for _, m := range media {
+		if strings.HasPrefix(m, "data:image/") {
+			return true
+		}
+	}
+	return false
 }
 
 func createCodexTokenSource() func() (string, string, error) {

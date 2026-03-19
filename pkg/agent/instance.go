@@ -44,6 +44,9 @@ type AgentInstance struct {
 	PlanModel                 string
 	PlanFallbacks             []string
 	PlanCandidates            []providers.FallbackCandidate
+	ImageModel                string
+	ImageFallbacks            []string
+	ImageCandidates           []providers.FallbackCandidate
 
 	// Router is non-nil when model routing is configured and the light model
 	// was successfully resolved. It scores each incoming message and decides
@@ -323,6 +326,23 @@ func resolvePlanModel(agentCfg *config.AgentConfig, defaults *config.AgentDefaul
 func resolvePlanFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) []string {
 	if agentCfg != nil && agentCfg.PlanModel != nil && agentCfg.PlanModel.Fallbacks != nil {
 		return agentCfg.PlanModel.Fallbacks
+	}
+	return defaults.PlanModelFallbacks
+}
+
+// resolveImageModel resolves the image description model for an agent.
+// Falls back to PlanModel if no dedicated image model is configured.
+func resolveImageModel(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
+	if defaults.ImageModel != "" {
+		return defaults.ImageModel
+	}
+	return defaults.PlanModel
+}
+
+// resolveImageFallbacks resolves the image model fallbacks.
+func resolveImageFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) []string {
+	if defaults.ImageModelFallbacks != nil {
+		return defaults.ImageModelFallbacks
 	}
 	return defaults.PlanModelFallbacks
 }

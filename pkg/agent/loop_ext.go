@@ -1,12 +1,16 @@
 package agent
 
 import (
+	"log"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/mediacache"
 	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -40,6 +44,8 @@ type loopExt struct {
 	saveConfig func(*config.Config) error
 
 	onHeartbeatThreadUpdate func(int)
+
+	mediaCache *mediacache.Cache // nil when workspace unavailable
 }
 
 // initLoopExt initializes all fork-specific fields: stats tracker,
@@ -68,6 +74,17 @@ func (al *AgentLoop) initLoopExt(cfg *config.Config, registry *AgentRegistry, en
 		}
 	}
 
+	// Media cache (co-located with sessions.db in default agent workspace)
+	if defaultAgent != nil {
+		cachePath := filepath.Join(defaultAgent.Workspace, "media_cache.db")
+		mc, err := mediacache.Open(cachePath)
+		if err != nil {
+			log.Printf("media cache: %v (caching disabled)", err)
+		} else {
+			al.mediaCache = mc
+		}
+	}
+
 	// Shutdown signal channel
 	al.done = make(chan struct{})
 
@@ -89,11 +106,28 @@ func (al *AgentLoop) closeExt() {
 		al.stats.Close()
 	}
 
+	if al.mediaCache != nil {
+		al.mediaCache.Close()
+	}
+
 	registry := al.GetRegistry()
 	for _, agentID := range registry.ListAgentIDs() {
 		if agent, ok := registry.GetAgent(agentID); ok {
 			agent.Sessions.Close()
 		}
+	}
+}
+
+// pruneMediaCache removes stale entries from the media cache.
+func (al *AgentLoop) pruneMediaCache() {
+	if al.mediaCache == nil {
+		return
+	}
+	const mediaCacheTTL = 7 * 24 * time.Hour
+	if n, err := al.mediaCache.Prune(mediaCacheTTL); err != nil {
+		logger.WarnCF("agent", "media cache prune error", map[string]any{"error": err.Error()})
+	} else if n > 0 {
+		logger.InfoCF("agent", "media cache pruned", map[string]any{"removed": n})
 	}
 }
 

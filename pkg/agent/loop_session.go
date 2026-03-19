@@ -35,6 +35,7 @@ func (al *AgentLoop) gcLoop() {
 		case <-ticker.C:
 
 			al.gcSessionLocks()
+			al.pruneMediaCache()
 
 		case <-al.done:
 

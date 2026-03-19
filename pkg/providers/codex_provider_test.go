@@ -612,6 +612,106 @@ func TestResolveCodexModel(t *testing.T) {
 	}
 }
 
+func TestBuildCodexParams_WithImageMedia(t *testing.T) {
+	messages := []Message{
+		{
+			Role:    "user",
+			Content: "What's in this image?",
+			Media:   []string{"data:image/jpeg;base64,/9j/4AAQ"},
+		},
+	}
+	params := buildCodexParams(messages, nil, "gpt-5.4", map[string]any{}, false)
+
+	items := params.Input.OfInputItemList
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
+	}
+	msg := items[0].OfMessage
+	if msg == nil {
+		t.Fatal("expected OfMessage")
+	}
+	contentList := msg.Content.OfInputItemContentList
+	if len(contentList) != 2 {
+		t.Fatalf("len(contentList) = %d, want 2 (text + image)", len(contentList))
+	}
+	if contentList[0].OfInputText == nil {
+		t.Error("first content part should be input_text")
+	}
+	if contentList[1].OfInputImage == nil {
+		t.Fatal("second content part should be input_image")
+	}
+	if contentList[1].OfInputImage.ImageURL.Or("") != "data:image/jpeg;base64,/9j/4AAQ" {
+		t.Errorf("ImageURL = %q", contentList[1].OfInputImage.ImageURL.Or(""))
+	}
+}
+
+func TestBuildCodexParams_MixedTextAndImage(t *testing.T) {
+	messages := []Message{
+		{
+			Role:    "user",
+			Content: "Describe both images",
+			Media: []string{
+				"data:image/png;base64,iVBOR",
+				"data:image/jpeg;base64,/9j/4",
+			},
+		},
+	}
+	params := buildCodexParams(messages, nil, "gpt-5.4", map[string]any{}, false)
+
+	items := params.Input.OfInputItemList
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
+	}
+	contentList := items[0].OfMessage.Content.OfInputItemContentList
+	if len(contentList) != 3 {
+		t.Fatalf("len(contentList) = %d, want 3 (text + 2 images)", len(contentList))
+	}
+	if contentList[0].OfInputText == nil {
+		t.Error("first part should be text")
+	}
+	if contentList[1].OfInputImage == nil {
+		t.Error("second part should be image")
+	}
+	if contentList[2].OfInputImage == nil {
+		t.Error("third part should be image")
+	}
+}
+
+func TestBuildCodexParams_NoMedia(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "Hello"},
+	}
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]any{}, false)
+
+	items := params.Input.OfInputItemList
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
+	}
+	msg := items[0].OfMessage
+	if msg == nil {
+		t.Fatal("expected OfMessage")
+	}
+	// Should use OfString, not OfInputItemContentList
+	if msg.Content.OfString.Or("") != "Hello" {
+		t.Errorf("OfString = %q, want %q", msg.Content.OfString.Or(""), "Hello")
+	}
+}
+
+func TestHasImageMedia(t *testing.T) {
+	if hasImageMedia(nil) {
+		t.Error("nil should be false")
+	}
+	if hasImageMedia([]string{"https://example.com/img.png"}) {
+		t.Error("URL should be false")
+	}
+	if !hasImageMedia([]string{"data:image/jpeg;base64,abc"}) {
+		t.Error("data URL should be true")
+	}
+	if !hasImageMedia([]string{"text", "data:image/png;base64,xyz"}) {
+		t.Error("mixed with data URL should be true")
+	}
+}
+
 func createOpenAITestClient(baseURL, token, accountID string) *openai.Client {
 	opts := []openaiopt.RequestOption{
 		openaiopt.WithBaseURL(baseURL),
