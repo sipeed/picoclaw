@@ -130,6 +130,47 @@ func (c *Cache) PutEntry(hash, entryType string, entry Entry) error {
 	return err
 }
 
+// ListEntry represents a full row from the media_cache table.
+type ListEntry struct {
+	Hash       string
+	Type       string
+	Result     string
+	FilePath   string
+	Pages      int
+	CreatedAt  string
+	AccessedAt string
+}
+
+// List returns all cache entries, optionally filtered by type.
+// Pass empty string to list all types. Ordered by accessed_at desc.
+func (c *Cache) List(entryType string) ([]ListEntry, error) {
+	var rows *sql.Rows
+	var err error
+	if entryType != "" {
+		rows, err = c.db.Query(
+			`SELECT hash, type, result, file_path, pages, created_at, accessed_at
+			 FROM media_cache WHERE type = ? ORDER BY accessed_at DESC`, entryType)
+	} else {
+		rows, err = c.db.Query(
+			`SELECT hash, type, result, file_path, pages, created_at, accessed_at
+			 FROM media_cache ORDER BY accessed_at DESC`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []ListEntry
+	for rows.Next() {
+		var e ListEntry
+		if err := rows.Scan(&e.Hash, &e.Type, &e.Result, &e.FilePath, &e.Pages, &e.CreatedAt, &e.AccessedAt); err != nil {
+			return entries, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
 // Prune removes entries not accessed within the given duration.
 // Returns the number of entries removed.
 func (c *Cache) Prune(ttl time.Duration) (int64, error) {
