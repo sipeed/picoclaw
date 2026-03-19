@@ -262,7 +262,10 @@ func (al *AgentLoop) describeImage(
 	hash := mediacache.HashData([]byte(dataURL))
 	if al.mediaCache != nil {
 		if cached, ok := al.mediaCache.Get(hash, mediacache.TypeImageDesc); ok {
-			logger.DebugCF("agent", "Image description cache hit", map[string]any{"hash": hash})
+			logger.InfoCF("agent", "Image description (cached)", map[string]any{
+				"hash":        hash,
+				"description": cached,
+			})
 			return cached
 		}
 	}
@@ -316,6 +319,11 @@ func (al *AgentLoop) describeImage(
 	}
 
 	desc := strings.TrimSpace(resp.Content)
+
+	logger.InfoCF("agent", "Image described", map[string]any{
+		"hash":        hash,
+		"description": desc,
+	})
 
 	// Store in cache
 	if al.mediaCache != nil {
