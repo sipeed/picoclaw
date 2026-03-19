@@ -1231,6 +1231,18 @@ func (al *AgentLoop) runLLMIteration(
 				"iteration": iteration,
 			})
 
+		// If the LLM returned both text content and tool calls, publish the
+		// text to the user immediately so it is visible before tool execution.
+		if response.Content != "" && opts.Channel != "" {
+			pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
+			_ = al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+				Channel: opts.Channel,
+				ChatID:  opts.ChatID,
+				Content: response.Content,
+			})
+			pubCancel()
+		}
+
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
 			Role:             "assistant",

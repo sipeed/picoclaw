@@ -261,6 +261,7 @@ func TestCreateProvider_GeminiCliWithModel(t *testing.T) {
 
 func TestCreateProvider_GeminiCliDefaultWorkspace(t *testing.T) {
 	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = "" // no workspace configured
 	cfg.ModelList = []config.ModelConfig{
 		{ModelName: "gemini-cli", Model: "gemini-cli/gemini-cli"},
 	}
