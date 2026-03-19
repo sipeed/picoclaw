@@ -9,15 +9,15 @@ import (
 func TestRuneWidth(t *testing.T) {
 	assert.Equal(t, 1, runeWidth('a'))
 	assert.Equal(t, 1, runeWidth('1'))
-	assert.Equal(t, 2, runeWidth('名'))
-	assert.Equal(t, 2, runeWidth('ア'))
-	assert.Equal(t, 2, runeWidth('あ'))
+	assert.Equal(t, 2, runeWidth('名')) //nolint:gosmopolitan
+	assert.Equal(t, 2, runeWidth('ア')) //nolint:gosmopolitan
+	assert.Equal(t, 2, runeWidth('あ')) //nolint:gosmopolitan
 }
 
 func TestStringWidth(t *testing.T) {
 	assert.Equal(t, 5, stringWidth("hello"))
-	assert.Equal(t, 4, stringWidth("名前"))   // 2+2
-	assert.Equal(t, 4, stringWidth("Go言"))   // 1+1+2
+	assert.Equal(t, 4, stringWidth("名前"))  //nolint:gosmopolitan // CJK width test
+	assert.Equal(t, 4, stringWidth("Go言")) //nolint:gosmopolitan // CJK width test
 }
 
 func TestRenderTableMono(t *testing.T) {
@@ -56,16 +56,14 @@ func TestRenderTableMono_SingleColumn(t *testing.T) {
 
 func TestRenderTableMono_CJK(t *testing.T) {
 	td := tableData{
-		headers: []string{"名前", "バージョン"},
+		headers: []string{"名前", "バージョン"}, //nolint:gosmopolitan
 		rows: [][]string{
 			{"Go", "1.22"},
 		},
 	}
 
 	got := renderTableMono(td)
-	// "名前" width=4, "バージョン" width=10
-	// "Go" width=2, "1.22" width=4
-	expected := "名前 | バージョン\n" +
+	expected := "名前 | バージョン\n" + //nolint:gosmopolitan
 		"-----+-----------\n" +
 		"Go   | 1.22      "
 	assert.Equal(t, expected, got)
@@ -142,7 +140,7 @@ func TestTableWidth(t *testing.T) {
 
 func TestTableWidth_CJK(t *testing.T) {
 	td := tableData{
-		headers: []string{"名前", "値"},
+		headers: []string{"名前", "値"}, //nolint:gosmopolitan
 		rows:    [][]string{{"Go", "ok"}},
 	}
 	// "名前"=4, "値"=2 → max col widths: 4, 2 → total=4+2+3=9

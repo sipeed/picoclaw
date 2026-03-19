@@ -280,9 +280,9 @@ func TestRender_Table_EmptyCells(t *testing.T) {
 }
 
 func TestRender_Table_CJK(t *testing.T) {
-	input := "| 名前 | バージョン |\n|---|---|\n| Go | 1.22 |"
+	input := "| 名前 | バージョン |\n|---|---|\n| Go | 1.22 |" //nolint:gosmopolitan
 	htmlGot := renderHTML(input)
-	assert.Contains(t, htmlGot, "名前")
+	assert.Contains(t, htmlGot, "名前") //nolint:gosmopolitan
 	assert.Contains(t, htmlGot, "Go")
 }
 
