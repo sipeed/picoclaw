@@ -242,6 +242,23 @@ type AgentDefaults struct {
 	TaskReminderInterval      int            `json:"task_reminder_interval"          env:"PICOCLAW_AGENTS_DEFAULTS_TASK_REMINDER_INTERVAL"`
 	Orchestration             bool           `json:"orchestration,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_ORCHESTRATION"`
 	Routing                   *RoutingConfig `json:"routing,omitempty"`
+	OCR                       *OCRConfig     `json:"ocr,omitempty"`
+}
+
+// OCRConfig configures the external OCR command for PDF text extraction.
+type OCRConfig struct {
+	Command string            `json:"command"`            // path to OCR binary (e.g. "/path/to/.venv/bin/yomitoku")
+	Args    []string          `json:"args,omitempty"`     // static arguments (e.g. ["-f", "md", "--lite", ...])
+	Env     map[string]string `json:"env,omitempty"`      // extra environment variables (e.g. {"HF_HOME": "/tmp/hf-home"})
+	Timeout int               `json:"timeout,omitempty"`  // timeout in seconds (default: 600)
+}
+
+// GetOCRTimeout returns the configured timeout or default (600s = 10min).
+func (c *OCRConfig) GetOCRTimeout() int {
+	if c != nil && c.Timeout > 0 {
+		return c.Timeout
+	}
+	return 600
 }
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB
