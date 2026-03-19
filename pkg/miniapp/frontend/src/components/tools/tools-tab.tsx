@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'preact/hooks';
 import type { SSEHook } from '../../hooks/use-sse';
-import { isFresh } from '../../utils';
 import { SkillsSection } from './skills-section';
 import { CommandsSection } from './commands-section';
 import { LogsSection } from './logs-section';
 import { ResearchSection } from './research-section';
+import { CacheSection } from './cache-section';
 
 interface ToolsTabProps {
   active: boolean;
@@ -18,6 +17,7 @@ export function ToolsTab({ active, sse }: ToolsTabProps) {
       <CommandsSection />
       <LogsSection active={active} />
       <ResearchSection active={active} />
+      <CacheSection active={active} />
     </>
   );
 }

@@ -888,6 +888,26 @@ func (p *agentLoopDataProvider) GetSystemPrompt() string {
 	return p.loop.GetSystemPrompt()
 }
 
+func (p *agentLoopDataProvider) ListMediaCache(entryType string) []miniapp.MediaCacheEntry {
+	raw := p.loop.ListMediaCache(entryType)
+	if len(raw) == 0 {
+		return nil
+	}
+	entries := make([]miniapp.MediaCacheEntry, len(raw))
+	for i, e := range raw {
+		entries[i] = miniapp.MediaCacheEntry{
+			Hash:       e.Hash,
+			Type:       e.Type,
+			Result:     e.Result,
+			FilePath:   e.FilePath,
+			Pages:      e.Pages,
+			CreatedAt:  e.CreatedAt,
+			AccessedAt: e.AccessedAt,
+		}
+	}
+	return entries
+}
+
 func (p *agentLoopDataProvider) GetGitRepos() []miniapp.GitRepoSummary {
 	if time.Since(p.gitReposCacheAt) < gitCacheTTL {
 		return p.gitReposCache

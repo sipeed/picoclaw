@@ -10496,6 +10496,229 @@ Please report this to https://github.com/markedjs/marked.`, e3) {
     }, undefined, true, undefined, this);
   }
 
+  // src/components/tools/cache-section.tsx
+  var TYPE_LABELS = {
+    pdf_ocr: "PDF OCR",
+    pdf_text: "PDF Text",
+    image_desc: "Image"
+  };
+  var TYPE_COLORS = {
+    pdf_ocr: { bg: "rgba(234,179,8,0.15)", text: "#ca8a04" },
+    pdf_text: { bg: "rgba(59,130,246,0.15)", text: "#2563eb" },
+    image_desc: { bg: "rgba(168,85,247,0.15)", text: "#a855f7" }
+  };
+  function CacheSection({ active }) {
+    const [entries, setEntries] = d2(null);
+    const [loading, setLoading] = d2(false);
+    const [filter, setFilter] = d2("");
+    const [expanded, setExpanded] = d2(null);
+    const load = q2(async () => {
+      setLoading(true);
+      try {
+        const url = filter ? "/miniapp/api/cache?type=" + encodeURIComponent(filter) : "/miniapp/api/cache";
+        const data = await apiFetch(url);
+        setEntries(data);
+      } catch {
+        setEntries(null);
+      }
+      setLoading(false);
+    }, [filter]);
+    y2(() => {
+      if (active)
+        load();
+    }, [active, filter]);
+    const formatDate = (iso) => {
+      try {
+        const d3 = new Date(iso);
+        return d3.toLocaleDateString() + " " + d3.toLocaleTimeString().slice(0, 5);
+      } catch {
+        return iso;
+      }
+    };
+    return /* @__PURE__ */ u5("div", {
+      class: "card glass",
+      children: [
+        /* @__PURE__ */ u5("div", {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "8px"
+          },
+          children: [
+            /* @__PURE__ */ u5("span", {
+              class: "card-title",
+              style: { margin: 0 },
+              children: "Media Cache"
+            }, undefined, false, undefined, this),
+            /* @__PURE__ */ u5("button", {
+              class: "send-btn",
+              style: { padding: "4px 12px", fontSize: "12px" },
+              onClick: load,
+              children: "Refresh"
+            }, undefined, false, undefined, this)
+          ]
+        }, undefined, true, undefined, this),
+        /* @__PURE__ */ u5("div", {
+          class: "log-filter-chips",
+          style: { marginBottom: "10px" },
+          children: [
+            { label: "All", value: "" },
+            { label: "PDF OCR", value: "pdf_ocr" },
+            { label: "PDF Text", value: "pdf_text" },
+            { label: "Image", value: "image_desc" }
+          ].map((f4) => /* @__PURE__ */ u5("button", {
+            class: `log-filter-chip${filter === f4.value ? " active" : ""}`,
+            onClick: () => setFilter(f4.value),
+            children: f4.label
+          }, f4.value, false, undefined, this))
+        }, undefined, false, undefined, this),
+        loading && !entries ? /* @__PURE__ */ u5("div", {
+          class: "loading",
+          style: { padding: "12px" },
+          children: "Loading cache..."
+        }, undefined, false, undefined, this) : !entries || entries.length === 0 ? /* @__PURE__ */ u5("div", {
+          class: "empty-state",
+          style: { padding: "24px 0" },
+          children: "No cached items."
+        }, undefined, false, undefined, this) : entries.map((e3) => {
+          const tc = TYPE_COLORS[e3.type] || TYPE_COLORS.image_desc;
+          const isExpanded = expanded === e3.hash + ":" + e3.type;
+          const preview = e3.result.length > 80 ? e3.result.substring(0, 80) + "..." : e3.result;
+          return /* @__PURE__ */ u5("div", {
+            style: {
+              padding: "10px 0",
+              borderBottom: "1px solid var(--glass-divider)",
+              cursor: "pointer"
+            },
+            onClick: () => setExpanded(isExpanded ? null : e3.hash + ":" + e3.type),
+            children: [
+              /* @__PURE__ */ u5("div", {
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px"
+                },
+                children: [
+                  /* @__PURE__ */ u5("span", {
+                    style: {
+                      fontSize: "10px",
+                      fontWeight: 600,
+                      padding: "2px 6px",
+                      borderRadius: "8px",
+                      background: tc.bg,
+                      color: tc.text,
+                      flexShrink: 0
+                    },
+                    children: TYPE_LABELS[e3.type] || e3.type
+                  }, undefined, false, undefined, this),
+                  /* @__PURE__ */ u5("span", {
+                    style: {
+                      fontSize: "13px",
+                      flex: 1,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap"
+                    },
+                    children: preview || "(empty)"
+                  }, undefined, false, undefined, this),
+                  e3.pages ? /* @__PURE__ */ u5("span", {
+                    style: {
+                      fontSize: "11px",
+                      color: "var(--hint)",
+                      flexShrink: 0
+                    },
+                    children: [
+                      e3.pages,
+                      "p"
+                    ]
+                  }, undefined, true, undefined, this) : null
+                ]
+              }, undefined, true, undefined, this),
+              isExpanded && /* @__PURE__ */ u5("div", {
+                style: {
+                  marginTop: "8px",
+                  fontSize: "12px",
+                  color: "var(--hint)"
+                },
+                children: [
+                  /* @__PURE__ */ u5("div", {
+                    style: { marginBottom: "4px" },
+                    children: [
+                      /* @__PURE__ */ u5("span", {
+                        style: { fontWeight: 600 },
+                        children: "Hash:"
+                      }, undefined, false, undefined, this),
+                      " ",
+                      /* @__PURE__ */ u5("code", {
+                        style: { fontSize: "11px" },
+                        children: e3.hash
+                      }, undefined, false, undefined, this)
+                    ]
+                  }, undefined, true, undefined, this),
+                  e3.file_path && /* @__PURE__ */ u5("div", {
+                    style: { marginBottom: "4px" },
+                    children: [
+                      /* @__PURE__ */ u5("span", {
+                        style: { fontWeight: 600 },
+                        children: "File:"
+                      }, undefined, false, undefined, this),
+                      " ",
+                      /* @__PURE__ */ u5("code", {
+                        style: {
+                          fontSize: "11px",
+                          wordBreak: "break-all"
+                        },
+                        children: e3.file_path
+                      }, undefined, false, undefined, this)
+                    ]
+                  }, undefined, true, undefined, this),
+                  /* @__PURE__ */ u5("div", {
+                    style: { marginBottom: "4px" },
+                    children: [
+                      /* @__PURE__ */ u5("span", {
+                        style: { fontWeight: 600 },
+                        children: "Created:"
+                      }, undefined, false, undefined, this),
+                      " ",
+                      formatDate(e3.created_at)
+                    ]
+                  }, undefined, true, undefined, this),
+                  /* @__PURE__ */ u5("div", {
+                    style: { marginBottom: "4px" },
+                    children: [
+                      /* @__PURE__ */ u5("span", {
+                        style: { fontWeight: 600 },
+                        children: "Accessed:"
+                      }, undefined, false, undefined, this),
+                      " ",
+                      formatDate(e3.accessed_at)
+                    ]
+                  }, undefined, true, undefined, this),
+                  e3.result && /* @__PURE__ */ u5("pre", {
+                    style: {
+                      marginTop: "6px",
+                      fontSize: "11px",
+                      maxHeight: "200px",
+                      overflow: "auto",
+                      background: "var(--secondary-bg)",
+                      padding: "8px",
+                      borderRadius: "6px",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      color: "var(--text)"
+                    },
+                    children: e3.result
+                  }, undefined, false, undefined, this)
+                ]
+              }, undefined, true, undefined, this)
+            ]
+          }, e3.hash + ":" + e3.type, true, undefined, this);
+        })
+      ]
+    }, undefined, true, undefined, this);
+  }
+
   // src/components/tools/tools-tab.tsx
   function ToolsTab({ active, sse }) {
     return /* @__PURE__ */ u5(k, {
@@ -10509,6 +10732,9 @@ Please report this to https://github.com/markedjs/marked.`, e3) {
           active
         }, undefined, false, undefined, this),
         /* @__PURE__ */ u5(ResearchSection, {
+          active
+        }, undefined, false, undefined, this),
+        /* @__PURE__ */ u5(CacheSection, {
           active
         }, undefined, false, undefined, this)
       ]

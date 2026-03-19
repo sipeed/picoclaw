@@ -307,3 +307,13 @@ func writeWorktreeAPIError(w http.ResponseWriter, err error) bool {
 }
 
 // apiDevConsole receives console output from dev preview iframes.
+
+// apiCache returns a list of media cache entries.
+func (h *Handler) apiCache(w http.ResponseWriter, r *http.Request) {
+	entryType := r.URL.Query().Get("type")
+	entries := h.provider.ListMediaCache(entryType)
+	if entries == nil {
+		entries = []MediaCacheEntry{}
+	}
+	writeJSON(w, entries)
+}
