@@ -420,6 +420,8 @@ func injectImageDescriptions(content string, descriptions []string) string {
 const maxPreviewRunes = 500
 
 // figureKeywords triggers --figure --figure_letter when found in the message.
+//
+//nolint:gosmopolitan // intentional CJK keywords for Japanese users
 var figureKeywords = []string{
 	"figure", "figures", "with images",
 	"図版", "図付き", "画像付き", "図も",
@@ -436,9 +438,9 @@ func wantFigures(content string) bool {
 	return false
 }
 
-// pdfHintMessage is sent once when a PDF is first processed to explain options.
+//nolint:gosmopolitan // intentional CJK in user-facing hint
 const pdfHintMessage = "PDF OCR in progress. " +
-	"Tip: include \"figures\" or \"図版\" in your message to extract images and in-figure text."
+	"Tip: include \"figures\" or \"\u56f3\u7248\" in your message to extract images and in-figure text."
 
 // processPDFsInMessages finds [file:/path.pdf] tags in messages and replaces
 // them with [document: preview... (full: /path/to.md, N pages)] tags after
