@@ -27,13 +27,9 @@ func NewClaudeCliProvider(workspace string) *ClaudeCliProvider {
 func (p *ClaudeCliProvider) Chat(
 	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
 ) (*LLMResponse, error) {
-	systemPrompt := p.buildSystemPrompt(messages, tools)
-	prompt := p.messagesToPrompt(messages)
+	prompt := p.buildStdinPrompt(messages, tools)
 
 	args := []string{"-p", "--output-format", "json", "--dangerously-skip-permissions", "--no-chrome"}
-	if systemPrompt != "" {
-		args = append(args, "--system-prompt", systemPrompt)
-	}
 	if model != "" && model != "claude-code" {
 		args = append(args, "--model", model)
 	}
@@ -72,14 +68,26 @@ func (p *ClaudeCliProvider) GetDefaultModel() string {
 	return "claude-code"
 }
 
-// messagesToPrompt converts messages to a CLI-compatible prompt string.
+// buildStdinPrompt combines the system context and conversation into a single stdin payload.
+// Passing system instructions via stdin avoids exposing them in the process argument list and
+// sidesteps operating-system ARG_MAX limits when many tools are registered.
+func (p *ClaudeCliProvider) buildStdinPrompt(messages []Message, tools []ToolDefinition) string {
+	system := p.buildSystemPrompt(messages, tools)
+	conversation := p.messagesToPrompt(messages)
+	if system == "" {
+		return conversation
+	}
+	return system + "\n\n---\n\n" + conversation
+}
+
+// messagesToPrompt converts non-system messages to a CLI-compatible prompt string.
 func (p *ClaudeCliProvider) messagesToPrompt(messages []Message) string {
 	var parts []string
 
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system":
-			// handled via --system-prompt flag
+			// included in system context block; see buildStdinPrompt
 		case "user":
 			parts = append(parts, "User: "+msg.Content)
 		case "assistant":

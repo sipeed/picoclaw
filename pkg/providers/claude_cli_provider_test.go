@@ -300,9 +300,27 @@ func TestChat_ContextCancellation(t *testing.T) {
 	}
 }
 
-func TestChat_PassesSystemPromptFlag(t *testing.T) {
-	argsFile := filepath.Join(t.TempDir(), "args.txt")
-	script := createArgCaptureCLI(t, argsFile)
+func TestChat_SystemPromptInStdinNotArgs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mock CLI scripts not supported on Windows")
+	}
+
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	stdinFile := filepath.Join(dir, "stdin.txt")
+
+	// Script captures both args and stdin content.
+	script := filepath.Join(dir, "claude")
+	scriptContent := fmt.Sprintf(`#!/bin/sh
+echo "$@" > '%s'
+cat - > '%s'
+cat <<'EOFMOCK'
+{"type":"result","result":"ok","session_id":"test"}
+EOFMOCK
+`, argsFile, stdinFile)
+	if err := os.WriteFile(script, []byte(scriptContent), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	p := NewClaudeCliProvider(t.TempDir())
 	p.command = script
@@ -320,8 +338,20 @@ func TestChat_PassesSystemPromptFlag(t *testing.T) {
 		t.Fatalf("failed to read args file: %v", err)
 	}
 	args := string(argsBytes)
-	if !strings.Contains(args, "--system-prompt") {
-		t.Errorf("CLI args missing --system-prompt, got: %s", args)
+	if strings.Contains(args, "--system-prompt") {
+		t.Errorf("CLI args must not contain --system-prompt, got: %s", args)
+	}
+
+	stdinBytes, err := os.ReadFile(stdinFile)
+	if err != nil {
+		t.Fatalf("failed to read stdin file: %v", err)
+	}
+	stdin := string(stdinBytes)
+	if !strings.Contains(stdin, "Be helpful.") {
+		t.Errorf("stdin must contain system prompt content, got: %s", stdin)
+	}
+	if !strings.Contains(stdin, "Hi") {
+		t.Errorf("stdin must contain user message, got: %s", stdin)
 	}
 }
 
@@ -654,6 +684,36 @@ func TestBuildSystemPrompt_ToolsOnlyNoSystem(t *testing.T) {
 	got := p.buildSystemPrompt(nil, tools)
 	if !strings.Contains(got, "test_tool") {
 		t.Error("should include tool definitions even without system messages")
+	}
+}
+
+// --- buildStdinPrompt tests ---
+
+func TestBuildStdinPrompt_NoSystem(t *testing.T) {
+	p := NewClaudeCliProvider("/workspace")
+	messages := []Message{{Role: "user", Content: "Hello"}}
+	got := p.buildStdinPrompt(messages, nil)
+	if got != "Hello" {
+		t.Errorf("buildStdinPrompt() without system = %q, want %q", got, "Hello")
+	}
+}
+
+func TestBuildStdinPrompt_WithSystem(t *testing.T) {
+	p := NewClaudeCliProvider("/workspace")
+	messages := []Message{
+		{Role: "system", Content: "Be concise."},
+		{Role: "user", Content: "Hello"},
+	}
+	got := p.buildStdinPrompt(messages, nil)
+	if !strings.Contains(got, "Be concise.") {
+		t.Error("buildStdinPrompt() must include system content")
+	}
+	if !strings.Contains(got, "Hello") {
+		t.Error("buildStdinPrompt() must include user content")
+	}
+	// System section must precede user section.
+	if strings.Index(got, "Be concise.") > strings.Index(got, "Hello") {
+		t.Error("buildStdinPrompt() system content must appear before user content")
 	}
 }
 
