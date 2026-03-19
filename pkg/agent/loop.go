@@ -82,6 +82,10 @@ type processOptions struct {
 
 	ChatID string // Target chat ID for tool execution
 
+	SenderID string // Current sender ID for dynamic context
+
+	SenderDisplayName string // Current sender display name for dynamic context
+
 	UserMessage string // User message content (may include prefix)
 
 	Media []string // media:// refs from inbound message
@@ -170,6 +174,8 @@ func registerSharedTools(
 	provider providers.LLMProvider,
 	al *AgentLoop,
 ) {
+	allowReadPaths := buildAllowReadPatterns(cfg)
+
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
 		if !ok {
@@ -224,7 +230,12 @@ func registerSharedTools(
 		}
 
 		if cfg.Tools.IsToolEnabled("web_fetch") {
-			fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
+			fetchTool, err := tools.NewWebFetchToolWithProxy(
+				50000,
+				cfg.Tools.Web.Proxy,
+				cfg.Tools.Web.Format,
+				cfg.Tools.Web.FetchLimitBytes,
+				cfg.Tools.Web.PrivateHostWhitelist)
 			if err != nil {
 				logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{
 					"agent_id": agentID,
@@ -271,6 +282,7 @@ func registerSharedTools(
 				cfg.Agents.Defaults.RestrictToWorkspace,
 				cfg.Agents.Defaults.GetMaxMediaSize(),
 				nil,
+				allowReadPaths,
 			)
 			agent.Tools.Register(sendFileTool)
 		}
@@ -1064,6 +1076,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 		ChatID: msg.ChatID,
 
+		SenderID: msg.SenderID,
+
+		SenderDisplayName: msg.Sender.DisplayName,
+
 		UserMessage: msg.Content,
 
 		Media: msg.Media,
@@ -1243,6 +1259,7 @@ func (al *AgentLoop) callLLMWithRetry(
 			*messages = agent.ContextBuilder.BuildMessages(
 				newHistory, newSummary, "",
 				nil, opts.Channel, opts.ChatID,
+				opts.SenderID, opts.SenderDisplayName,
 			)
 			continue
 		}
@@ -1354,6 +1371,28 @@ func (al *AgentLoop) publishToolMedia(ctx context.Context, result *tools.ToolRes
 		ChatID:  opts.ChatID,
 		Parts:   parts,
 	})
+}
+
+// isNativeSearchProvider reports whether the given LLM provider implements
+// NativeSearchCapable and returns true for SupportsNativeSearch.
+func isNativeSearchProvider(p providers.LLMProvider) bool {
+	if ns, ok := p.(providers.NativeSearchCapable); ok {
+		return ns.SupportsNativeSearch()
+	}
+	return false
+}
+
+// filterClientWebSearch returns a copy of tools with the client-side
+// web_search tool removed. Used when native provider search is preferred.
+func filterClientWebSearch(tools []providers.ToolDefinition) []providers.ToolDefinition {
+	result := make([]providers.ToolDefinition, 0, len(tools))
+	for _, t := range tools {
+		if strings.EqualFold(t.Function.Name, "web_search") {
+			continue
+		}
+		result = append(result, t)
+	}
+	return result
 }
 
 // Helper to extract provider from registry for cleanup

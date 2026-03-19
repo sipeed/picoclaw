@@ -375,23 +375,19 @@ func (hs *HeartbeatService) buildResearchContext() string {
 	b.WriteString("You have research tasks due for progress. For each task below:\n")
 	b.WriteString("1. If pending, set status to 'active' first\n")
 	b.WriteString("2. Use web_search to find new information, then add_finding to record it\n")
-	b.WriteString(
-		fmt.Sprintf(
-			"3. **Web search budget: %d calls total this heartbeat** — use them wisely\n",
-			research.DefaultHeartbeatSearchQuota,
-		),
-	)
+	fmt.Fprintf(&b, "3. **Web search budget: %d calls total this heartbeat** — use them wisely\n",
+		research.DefaultHeartbeatSearchQuota)
 	b.WriteString("4. Do NOT set status to 'completed' — research progresses incrementally across heartbeats\n\n")
 
 	for _, task := range tasks {
-		b.WriteString(fmt.Sprintf("### %s [%s] (id: %s)\n", task.Title, task.Status, task.ID))
-		b.WriteString(fmt.Sprintf("Interval: %s", task.Interval))
+		fmt.Fprintf(&b, "### %s [%s] (id: %s)\n", task.Title, task.Status, task.ID)
+		fmt.Fprintf(&b, "Interval: %s", task.Interval)
 		if !task.LastResearchedAt.IsZero() {
-			b.WriteString(fmt.Sprintf(" | Last researched: %s", task.LastResearchedAt.Format("2006-01-02 15:04")))
+			fmt.Fprintf(&b, " | Last researched: %s", task.LastResearchedAt.Format("2006-01-02 15:04"))
 		}
 		b.WriteString("\n")
 		if task.Description != "" {
-			b.WriteString(fmt.Sprintf("Description: %s\n", task.Description))
+			fmt.Fprintf(&b, "Description: %s\n", task.Description)
 		}
 
 		docs, err := store.ListDocuments(task.ID)
@@ -410,20 +406,20 @@ func (hs *HeartbeatService) buildResearchContext() string {
 			shown = shown[:maxFindingsPerTask]
 		}
 
-		b.WriteString(fmt.Sprintf("Existing findings (%d total):\n", len(docs)))
+		fmt.Fprintf(&b, "Existing findings (%d total):\n", len(docs))
 		for _, d := range shown {
 			summary := d.Summary
 			if len(summary) > maxSummaryLen {
 				summary = summary[:maxSummaryLen] + "..."
 			}
-			b.WriteString(fmt.Sprintf("- [%d] %s", d.Seq, d.Title))
+			fmt.Fprintf(&b, "- [%d] %s", d.Seq, d.Title)
 			if summary != "" {
-				b.WriteString(fmt.Sprintf(" — %s", summary))
+				fmt.Fprintf(&b, " — %s", summary)
 			}
 			b.WriteString("\n")
 		}
 		if len(docs) > maxFindingsPerTask {
-			b.WriteString(fmt.Sprintf("  ... and %d more findings\n", len(docs)-maxFindingsPerTask))
+			fmt.Fprintf(&b, "  ... and %d more findings\n", len(docs)-maxFindingsPerTask)
 		}
 		b.WriteString("\nAdd NEW findings that build on and extend the above. Do not repeat existing findings.\n\n")
 	}

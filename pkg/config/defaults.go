@@ -15,7 +15,7 @@ func DefaultConfig() *Config {
 	// Determine the base path for the workspace.
 	// Priority: $PICOCLAW_HOME > ~/.picoclaw
 	var homePath string
-	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
+	if picoclawHome := os.Getenv(EnvHome); picoclawHome != "" {
 		homePath = picoclawHome
 	} else {
 		userHome, _ := os.UserHomeDir()
@@ -58,6 +58,7 @@ func DefaultConfig() *Config {
 					Enabled: true,
 					Text:    "Thinking... 💭",
 				},
+				UseMarkdownV2: false,
 			},
 			Feishu: FeishuConfig{
 				Enabled:           false,
@@ -386,8 +387,9 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host: "127.0.0.1",
-			Port: 18790,
+			Host:      "127.0.0.1",
+			Port:      18790,
+			HotReload: false,
 		},
 		Tools: ToolsConfig{
 			MediaCleanup: MediaCleanupConfig{
@@ -401,8 +403,10 @@ func DefaultConfig() *Config {
 				ToolConfig: ToolConfig{
 					Enabled: true,
 				},
+				PreferNative:    true,
 				Proxy:           "",
 				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
+				Format:          "plaintext",
 				Brave: BraveConfig{
 					Enabled:    false,
 					APIKey:     "",
@@ -443,6 +447,7 @@ func DefaultConfig() *Config {
 					Enabled: true,
 				},
 				ExecTimeoutMinutes: 5,
+				AllowCommand:       true,
 			},
 			Exec: ExecConfig{
 				ToolConfig: ToolConfig{
@@ -511,6 +516,9 @@ func DefaultConfig() *Config {
 			},
 			Spawn: ToolConfig{
 				Enabled: true,
+			},
+			SpawnStatus: ToolConfig{
+				Enabled: false,
 			},
 			SPI: ToolConfig{
 				Enabled: false, // Hardware tool - Linux only

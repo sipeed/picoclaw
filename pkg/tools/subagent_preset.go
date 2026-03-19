@@ -221,7 +221,7 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string, 
 	}
 
 	if config.AllowedTools["web_fetch"] {
-		if fetchTool, err := NewWebFetchTool(50000); err == nil {
+		if fetchTool, err := NewWebFetchTool(50000, "", 0); err == nil {
 			registry.Register(fetchTool)
 		}
 	}

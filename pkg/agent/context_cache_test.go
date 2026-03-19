@@ -82,7 +82,7 @@ func TestSingleSystemMessage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msgs := cb.BuildMessages(tt.history, tt.summary, tt.message, nil, "test", "chat1")
+			msgs := cb.BuildMessages(tt.history, tt.summary, tt.message, nil, "test", "chat1", "", "")
 
 			systemCount := 0
 			for _, m := range msgs {
@@ -121,6 +121,68 @@ func TestSingleSystemMessage(t *testing.T) {
 				if strings.Contains(sys, "CONTEXT_SUMMARY:") {
 					t.Error("CONTEXT_SUMMARY should not appear without summary")
 				}
+			}
+		})
+	}
+}
+
+func TestBuildMessages_CurrentSenderDynamicContext(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"IDENTITY.md": "# Identity\nTest agent.",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+
+	tests := []struct {
+		name              string
+		senderID          string
+		senderDisplayName string
+		wantLine          string
+		wantSection       bool
+	}{
+		{
+			name:              "both id and display name",
+			senderID:          "feishu:ou_xxx",
+			senderDisplayName: "Zhang San",
+			wantLine:          "Current sender: Zhang San (ID: feishu:ou_xxx)",
+			wantSection:       true,
+		},
+		{
+			name:              "display name only",
+			senderDisplayName: "Alice",
+			wantLine:          "Current sender: Alice",
+			wantSection:       true,
+		},
+		{
+			name:        "id only",
+			senderID:    "discord:123",
+			wantLine:    "Current sender: discord:123",
+			wantSection: true,
+		},
+		{
+			name:        "no sender info",
+			wantSection: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msgs := cb.BuildMessages(nil, "", "hello", nil, "discord", "chat1", tt.senderID, tt.senderDisplayName)
+			sys := msgs[0].Content
+
+			if tt.wantSection {
+				if !strings.Contains(sys, "## Current Sender") {
+					t.Fatalf("system prompt missing Current Sender section:\n%s", sys)
+				}
+				if !strings.Contains(sys, tt.wantLine) {
+					t.Fatalf("system prompt missing sender line %q:\n%s", tt.wantLine, sys)
+				}
+				return
+			}
+
+			if strings.Contains(sys, "## Current Sender") {
+				t.Fatalf("system prompt should omit Current Sender section:\n%s", sys)
 			}
 		})
 	}
@@ -576,7 +638,7 @@ func TestConcurrentBuildSystemPromptWithCache(t *testing.T) {
 				}
 
 				// Also exercise BuildMessages concurrently
-				msgs := cb.BuildMessages(nil, "", "hello", nil, "test", "chat")
+				msgs := cb.BuildMessages(nil, "", "hello", nil, "test", "chat", "", "")
 				if len(msgs) < 2 {
 					errs <- "BuildMessages returned fewer than 2 messages"
 					return
@@ -664,6 +726,6 @@ func BenchmarkBuildMessagesWithCache(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = cb.BuildMessages(history, "summary", "new message", nil, "cli", "test")
+		_ = cb.BuildMessages(history, "summary", "new message", nil, "cli", "test", "", "")
 	}
 }

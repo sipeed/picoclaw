@@ -73,3 +73,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Research tasks (proxy to gateway)
 	h.registerResearchRoutes(mux)
 }
+
+// Shutdown gracefully shuts down the handler, stopping the gateway if it was started by this handler.
+func (h *Handler) Shutdown() {
+	h.StopGateway()
+}

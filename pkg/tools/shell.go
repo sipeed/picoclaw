@@ -28,6 +28,8 @@ type ExecTool struct {
 
 	customAllowPatterns []*regexp.Regexp
 
+	allowedPathPatterns []*regexp.Regexp
+
 	restrictToWorkspace bool
 
 	allowRemote bool
@@ -143,14 +145,23 @@ var (
 	}
 )
 
-func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
-	return NewExecToolWithConfig(workingDir, restrict, nil)
+func NewExecTool(workingDir string, restrict bool, allowPaths ...[]*regexp.Regexp) (*ExecTool, error) {
+	return NewExecToolWithConfig(workingDir, restrict, nil, allowPaths...)
 }
 
-func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) (*ExecTool, error) {
+func NewExecToolWithConfig(
+	workingDir string,
+	restrict bool,
+	config *config.Config,
+	allowPaths ...[]*regexp.Regexp,
+) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
 	customAllowPatterns := make([]*regexp.Regexp, 0)
+	var allowedPathPatterns []*regexp.Regexp
 	allowRemote := true
+	if len(allowPaths) > 0 {
+		allowedPathPatterns = allowPaths[0]
+	}
 
 	if config != nil {
 		execConfig := config.Tools.Exec
@@ -205,6 +216,8 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		denyPatterns: denyPatterns,
 
 		customAllowPatterns: customAllowPatterns,
+
+		allowedPathPatterns: allowedPathPatterns,
 
 		restrictToWorkspace: restrict,
 
@@ -299,8 +312,8 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	}
 
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
-		if t.restrictToWorkspace && cwd != "" {
-			resolvedWD, err := validatePath(wd, cwd, true)
+		if t.restrictToWorkspace && t.workingDir != "" {
+			resolvedWD, err := validatePathWithAllowPaths(wd, t.workingDir, true, t.allowedPathPatterns)
 			if err != nil {
 				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
 			}
@@ -328,16 +341,20 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("Command blocked by safety guard (path resolution failed: %v)", err))
 		}
-		absWorkspace, _ := filepath.Abs(t.workingDir)
-		wsResolved, _ := filepath.EvalSymlinks(absWorkspace)
-		if wsResolved == "" {
-			wsResolved = absWorkspace
+		if isAllowedPath(resolved, t.allowedPathPatterns) {
+			cwd = resolved
+		} else {
+			absWorkspace, _ := filepath.Abs(t.workingDir)
+			wsResolved, _ := filepath.EvalSymlinks(absWorkspace)
+			if wsResolved == "" {
+				wsResolved = absWorkspace
+			}
+			rel, err := filepath.Rel(wsResolved, resolved)
+			if err != nil || !filepath.IsLocal(rel) {
+				return ErrorResult("Command blocked by safety guard (working directory escaped workspace)")
+			}
+			cwd = resolved
 		}
-		rel, err := filepath.Rel(wsResolved, resolved)
-		if err != nil || !filepath.IsLocal(rel) {
-			return ErrorResult("Command blocked by safety guard (working directory escaped workspace)")
-		}
-		cwd = resolved
 	}
 
 	if bg {
@@ -413,15 +430,31 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 	if err != nil {
 		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
 			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
+			if ob.Len() > 0 {
+				msg += "\n\nPartial output before timeout:\n" + ob.String()
+			}
 			return &ToolResult{
 				ForLLM: msg,
 
 				ForUser: msg,
 				IsError: true,
+				Err:     fmt.Errorf("command timeout: %w", err),
 			}
 		}
 
-		fmt.Fprintf(&ob, "\nExit code: %v", err)
+		// Extract detailed exit information
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode := exitErr.ExitCode()
+			fmt.Fprintf(&ob, "\n\n[Command exited with code %d]", exitCode)
+
+			// Add signal information if killed by signal (Unix)
+			if exitCode == -1 {
+				ob.WriteString(" (killed by signal)")
+			}
+		} else {
+			fmt.Fprintf(&ob, "\n\n[Command failed: %v]", err)
+		}
 	}
 
 	output := ob.String()
@@ -579,6 +612,9 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			p := filepath.Clean(token)
 
 			if safePaths[p] {
+				continue
+			}
+			if isAllowedPath(p, t.allowedPathPatterns) {
 				continue
 			}
 

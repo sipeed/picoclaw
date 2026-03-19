@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"html"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -714,7 +714,7 @@ func (h *Handler) persistCredentialAndConfig(provider, authMethod string, cred *
 		if cp.Email == "" {
 			email, err := oauthFetchGoogleUserEmailFunc(cp.AccessToken)
 			if err != nil {
-				log.Printf("oauth warning: could not fetch google email: %v", err)
+				logger.ErrorC("oauth", fmt.Sprintf("oauth warning: could not fetch google email: %v", err))
 			} else {
 				cp.Email = email
 			}
@@ -722,7 +722,7 @@ func (h *Handler) persistCredentialAndConfig(provider, authMethod string, cred *
 		if cp.ProjectID == "" {
 			projectID, err := oauthFetchAntigravityProject(cp.AccessToken)
 			if err != nil {
-				log.Printf("oauth warning: could not fetch antigravity project id: %v", err)
+				logger.ErrorC("oauth", fmt.Sprintf("oauth warning: could not fetch antigravity project id: %v", err))
 			} else {
 				cp.ProjectID = projectID
 			}

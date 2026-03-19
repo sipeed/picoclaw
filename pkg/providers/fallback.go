@@ -117,17 +117,19 @@ func (fc *FallbackChain) Execute(
 			return nil, context.Canceled
 		}
 
-		// Check cooldown.
-		if !fc.cooldown.IsAvailable(candidate.Provider) {
-			remaining := fc.cooldown.CooldownRemaining(candidate.Provider)
+		// Check cooldown (per provider/model, not just provider).
+		// This allows multi-key failover where different keys use different model names.
+		cooldownKey := ModelKey(candidate.Provider, candidate.Model)
+		if !fc.cooldown.IsAvailable(cooldownKey) {
+			remaining := fc.cooldown.CooldownRemaining(cooldownKey)
 			result.Attempts = append(result.Attempts, FallbackAttempt{
 				Provider: candidate.Provider,
 				Model:    candidate.Model,
 				Skipped:  true,
 				Reason:   FailoverRateLimit,
 				Error: fmt.Errorf(
-					"provider %s in cooldown (%s remaining)",
-					candidate.Provider,
+					"%s in cooldown (%s remaining)",
+					cooldownKey,
 					remaining.Round(time.Second),
 				),
 			})
@@ -141,7 +143,7 @@ func (fc *FallbackChain) Execute(
 
 		if err == nil {
 			// Success.
-			fc.cooldown.MarkSuccess(candidate.Provider)
+			fc.cooldown.MarkSuccess(cooldownKey)
 			result.Response = resp
 			result.Provider = candidate.Provider
 			result.Model = candidate.Model
@@ -187,7 +189,7 @@ func (fc *FallbackChain) Execute(
 		}
 
 		// Retriable error: mark failure and continue to next candidate.
-		fc.cooldown.MarkFailure(candidate.Provider, failErr.Reason)
+		fc.cooldown.MarkFailure(cooldownKey, failErr.Reason)
 		result.Attempts = append(result.Attempts, FallbackAttempt{
 			Provider: candidate.Provider,
 			Model:    candidate.Model,

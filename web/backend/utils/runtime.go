@@ -7,21 +7,26 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
+
+// GetPicoclawHome returns the picoclaw home directory.
+// Priority: $PICOCLAW_HOME > ~/.picoclaw
+func GetPicoclawHome() string {
+	if home := os.Getenv(config.EnvHome); home != "" {
+		return home
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".picoclaw")
+}
 
 // GetDefaultConfigPath returns the default path to the picoclaw config file.
 func GetDefaultConfigPath() string {
-	if configPath := os.Getenv("PICOCLAW_CONFIG"); configPath != "" {
+	if configPath := os.Getenv(config.EnvConfig); configPath != "" {
 		return configPath
 	}
-	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
-		return filepath.Join(picoclawHome, "config.json")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "config.json"
-	}
-	return filepath.Join(home, ".picoclaw", "config.json")
+	return filepath.Join(GetPicoclawHome(), "config.json")
 }
 
 // FindPicoclawBinary locates the picoclaw executable.
@@ -35,7 +40,7 @@ func FindPicoclawBinary() string {
 		binaryName = "picoclaw.exe"
 	}
 
-	if p := os.Getenv("PICOCLAW_BINARY"); p != "" {
+	if p := os.Getenv(config.EnvBinary); p != "" {
 		if info, _ := os.Stat(p); info != nil && !info.IsDir() {
 			return p
 		}
