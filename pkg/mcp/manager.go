@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -103,6 +104,7 @@ type ServerConnection struct {
 	Client  *mcp.Client
 	Session *mcp.ClientSession
 	Tools   []*mcp.Tool
+	Timeout time.Duration
 }
 
 // Manager manages multiple MCP server connections
@@ -401,6 +403,12 @@ func (m *Manager) ConnectServer(
 			})
 	}
 
+	// Resolve timeout (default 60s)
+	timeout := 60 * time.Second
+	if cfg.Timeout > 0 {
+		timeout = time.Duration(cfg.Timeout) * time.Second
+	}
+
 	// Store connection
 	m.mu.Lock()
 	m.servers[name] = &ServerConnection{
@@ -408,6 +416,7 @@ func (m *Manager) ConnectServer(
 		Client:  client,
 		Session: session,
 		Tools:   tools,
+		Timeout: timeout,
 	}
 	m.mu.Unlock()
 
@@ -462,6 +471,13 @@ func (m *Manager) CallTool(
 		return nil, fmt.Errorf("server %s not found", serverName)
 	}
 	defer m.wg.Done()
+
+	// Apply per-server timeout
+	if conn.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, conn.Timeout)
+		defer cancel()
+	}
 
 	params := &mcp.CallToolParams{
 		Name:      toolName,
