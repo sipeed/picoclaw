@@ -22,7 +22,7 @@ func (c *TelegramChannel) SendWithID(ctx context.Context, chatID string, content
 		return "", fmt.Errorf("invalid chat ID %s: %w", chatID, channels.ErrSendFailed)
 	}
 
-	htmlContent := markdownToTelegramHTML(content)
+	htmlContent := parseContent(content, false)
 	tgMsg := tu.Message(tu.ID(cid), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
 	tgMsg.MessageThreadID = tid
@@ -54,7 +54,7 @@ func (c *TelegramChannel) SendDraft(ctx context.Context, chatID string, draftID 
 	if !isLikelyPrivateChatID(cid) && tid == 0 {
 		return fmt.Errorf("telegram draft unsupported for non-threaded group chat: %w", channels.ErrSendFailed)
 	}
-	htmlContent := markdownToTelegramHTML(content)
+	htmlContent := parseContent(content, false)
 	params := &telego.SendMessageDraftParams{
 		ChatID:          cid,
 		MessageThreadID: tid,

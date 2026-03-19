@@ -26,19 +26,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
-var (
-	reHeading    = regexp.MustCompile(`(?m)^#{1,6}\s+([^\n]+)`)
-	reBlockquote = regexp.MustCompile(`^>\s*(.*)$`)
-	reLink       = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
-	reBoldStar   = regexp.MustCompile(`\*\*(.+?)\*\*`)
-	reBoldUnder  = regexp.MustCompile(`__(.+?)__`)
-	reItalic     = regexp.MustCompile(`_([^_]+)_`)
-	reStrike     = regexp.MustCompile(`~~(.+?)~~`)
-	reListItem   = regexp.MustCompile(`^[-*]\s+`)
-	reCodeBlock  = regexp.MustCompile("```[\\w]*\\n?([\\s\\S]*?)```")
-	reInlineCode = regexp.MustCompile("`([^`]+)`")
-)
-
 type TelegramChannel struct {
 	*channels.BaseChannel
 	bot     *telego.Bot
@@ -713,11 +700,12 @@ func (c *TelegramChannel) downloadFile(ctx context.Context, fileID, ext string) 
 }
 
 func parseContent(text string, useMarkdownV2 bool) string {
-	if useMarkdownV2 {
-		return markdownToTelegramMarkdownV2(text)
+	if text == "" {
+		return ""
 	}
-
-	return markdownToTelegramHTML(text)
+	doc := parseMarkdownAST(text)
+	r := &telegramRenderer{mdv2: useMarkdownV2}
+	return r.render(doc)
 }
 
 // parseTelegramChatID splits "chatID/threadID" into its components.
