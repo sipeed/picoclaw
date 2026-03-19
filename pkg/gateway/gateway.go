@@ -74,27 +74,17 @@ type startupBlockedProvider struct {
 }
 
 func (p *startupBlockedProvider) Chat(
-
 	_ context.Context,
-
 	_ []providers.Message,
-
 	_ []providers.ToolDefinition,
-
 	_ string,
-
 	_ map[string]any,
-
 ) (*providers.LLMResponse, error) {
-
 	return nil, fmt.Errorf("%s", p.reason)
-
 }
 
 func (p *startupBlockedProvider) GetDefaultModel() string {
-
 	return ""
-
 }
 
 // Run starts the gateway runtime using the configuration loaded from configPath.

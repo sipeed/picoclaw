@@ -7,17 +7,10 @@ import (
 )
 
 func init() {
-
 	channels.RegisterFactory("mqtt", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
-
 		if !cfg.Channels.MQTT.Enabled {
-
 			return nil, nil
-
 		}
-
 		return NewMQTTChannel(cfg.Channels.MQTT, b)
-
 	})
-
 }
