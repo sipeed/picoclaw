@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
-    "@tabler/icons-react": "^3.38.0",
+    "@tabler/icons-react": "^3.40.0",
     "@tailwindcss/vite": "^4.2.1",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-router": "^1.167.0",
