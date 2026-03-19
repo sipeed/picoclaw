@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | **English**
+[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Malay](README.my.md) | **English**
 
 </div>
 
@@ -191,15 +191,15 @@ make install
 
 For detailed guides, see the docs below. The README covers quick start only.
 
-| Topic | Description |
-|-------|-------------|
-| 🐳 [Docker & Quick Start](docs/docker.md) | Docker Compose setup, Launcher/Agent modes, Quick Start configuration |
-| 💬 [Chat Apps](docs/chat-apps.md) | Telegram, Discord, WhatsApp, Matrix, QQ, Slack, IRC, DingTalk, LINE, Feishu, WeCom, and more |
-| ⚙️ [Configuration](docs/configuration.md) | Environment variables, workspace layout, skill sources, security sandbox, heartbeat |
-| 🔌 [Providers & Models](docs/providers.md) | 20+ LLM providers, model routing, model_list configuration, provider architecture |
-| 🔄 [Spawn & Async Tasks](docs/spawn-tasks.md) | Quick tasks, long tasks with spawn, async sub-agent orchestration |
-| 🐛 [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
-| 🔧 [Tools Configuration](docs/tools_configuration.md) | Per-tool enable/disable, exec policies |
+| Topic                                                | Description                                                                                  |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 🐳 [Docker & Quick Start](docs/docker.md)             | Docker Compose setup, Launcher/Agent modes, Quick Start configuration                        |
+| 💬 [Chat Apps](docs/chat-apps.md)                     | Telegram, Discord, WhatsApp, Matrix, QQ, Slack, IRC, DingTalk, LINE, Feishu, WeCom, and more |
+| ⚙️ [Configuration](docs/configuration.md)             | Environment variables, workspace layout, skill sources, security sandbox, heartbeat          |
+| 🔌 [Providers & Models](docs/providers.md)            | 20+ LLM providers, model routing, model_list configuration, provider architecture            |
+| 🔄 [Spawn & Async Tasks](docs/spawn-tasks.md)         | Quick tasks, long tasks with spawn, async sub-agent orchestration                            |
+| 🐛 [Troubleshooting](docs/troubleshooting.md)         | Common issues and solutions                                                                  |
+| 🔧 [Tools Configuration](docs/tools_configuration.md) | Per-tool enable/disable, exec policies                                                       |
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Join the Agent Social Network
 
@@ -209,22 +209,22 @@ Connect Picoclaw to the Agent Social Network simply by sending a single message 
 
 ## 🖥️ CLI Reference
 
-| Command                   | Description                   |
-| ------------------------- | ----------------------------- |
-| `picoclaw onboard`        | Initialize config & workspace |
-| `picoclaw agent -m "..."` | Chat with the agent           |
-| `picoclaw agent`          | Interactive chat mode         |
-| `picoclaw gateway`        | Start the gateway             |
-| `picoclaw status`         | Show status                   |
-| `picoclaw version`        | Show version info             |
-| `picoclaw cron list`      | List all scheduled jobs       |
-| `picoclaw cron add ...`   | Add a scheduled job           |
-| `picoclaw cron disable`   | Disable a scheduled job       |
-| `picoclaw cron remove`    | Remove a scheduled job        |
-| `picoclaw skills list`    | List installed skills         |
-| `picoclaw skills install` | Install a skill               |
+| Command                   | Description                      |
+| ------------------------- | -------------------------------- |
+| `picoclaw onboard`        | Initialize config & workspace    |
+| `picoclaw agent -m "..."` | Chat with the agent              |
+| `picoclaw agent`          | Interactive chat mode            |
+| `picoclaw gateway`        | Start the gateway                |
+| `picoclaw status`         | Show status                      |
+| `picoclaw version`        | Show version info                |
+| `picoclaw cron list`      | List all scheduled jobs          |
+| `picoclaw cron add ...`   | Add a scheduled job              |
+| `picoclaw cron disable`   | Disable a scheduled job          |
+| `picoclaw cron remove`    | Remove a scheduled job           |
+| `picoclaw skills list`    | List installed skills            |
+| `picoclaw skills install` | Install a skill                  |
 | `picoclaw migrate`        | Migrate data from older versions |
-| `picoclaw auth login`     | Authenticate with providers   |
+| `picoclaw auth login`     | Authenticate with providers      |
 
 ### Scheduled Tasks / Reminders
 

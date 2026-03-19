@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | **Português** | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [English](README.md)
+[中文](README.zh.md) | [日本語](README.ja.md) | **Português** | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Malay](README.my.md) | [English](README.md)
 
 </div>
 
@@ -96,12 +96,12 @@
 
 _*Versões recentes podem usar 10–20MB devido a merges rápidos de funcionalidades. Otimização de recursos está planejada. Comparação de inicialização baseada em benchmarks de single-core a 0.8GHz (veja tabela abaixo)._
 
-|                               | OpenClaw      | NanoBot                  | **PicoClaw**                              |
-| ----------------------------- | ------------- | ------------------------ | ----------------------------------------- |
-| **Linguagem**                 | TypeScript    | Python                   | **Go**                                    |
-| **RAM**                       | >1GB          | >100MB                   | **< 10MB***                               |
-| **Inicialização**</br>(CPU 0.8GHz) | >500s         | >30s                     | **<1s**                                   |
-| **Custo**                     | Mac Mini $599 | Maioria dos SBC Linux </br>~$50 | **Qualquer placa Linux**</br>**A partir de $10** |
+|                                    | OpenClaw      | NanoBot                         | **PicoClaw**                                     |
+| ---------------------------------- | ------------- | ------------------------------- | ------------------------------------------------ |
+| **Linguagem**                      | TypeScript    | Python                          | **Go**                                           |
+| **RAM**                            | >1GB          | >100MB                          | **< 10MB***                                      |
+| **Inicialização**</br>(CPU 0.8GHz) | >500s         | >30s                            | **<1s**                                          |
+| **Custo**                          | Mac Mini $599 | Maioria dos SBC Linux </br>~$50 | **Qualquer placa Linux**</br>**A partir de $10** |
 
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
 
@@ -191,15 +191,15 @@ make install
 
 Para guias detalhados, consulte a documentação abaixo. Este README cobre apenas o início rápido.
 
-| Tópico | Descrição |
-|--------|-----------|
-| 🐳 [Docker & Início Rápido](docs/pt-br/docker.md) | Configuração Docker Compose, modos Launcher/Agent, configuração de Início Rápido |
-| 💬 [Apps de Chat](docs/pt-br/chat-apps.md) | Telegram, Discord, WhatsApp, Matrix, QQ, Slack, IRC, DingTalk, LINE, Feishu, WeCom e mais |
-| ⚙️ [Configuração](docs/pt-br/configuration.md) | Variáveis de ambiente, estrutura do workspace, fontes de skills, sandbox de segurança, heartbeat |
-| 🔌 [Provedores & Modelos](docs/pt-br/providers.md) | 20+ provedores LLM, roteamento de modelos, configuração model_list, arquitetura de provedores |
-| 🔄 [Spawn & Tarefas Assíncronas](docs/pt-br/spawn-tasks.md) | Tarefas rápidas, tarefas longas com spawn, orquestração assíncrona de sub-agentes |
-| 🐛 [Solução de Problemas](docs/pt-br/troubleshooting.md) | Problemas comuns e soluções |
-| 🔧 [Configuração de Ferramentas](docs/pt-br/tools_configuration.md) | Habilitar/desabilitar por ferramenta, políticas de execução |
+| Tópico                                                             | Descrição                                                                                        |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| 🐳 [Docker & Início Rápido](docs/pt-br/docker.md)                   | Configuração Docker Compose, modos Launcher/Agent, configuração de Início Rápido                 |
+| 💬 [Apps de Chat](docs/pt-br/chat-apps.md)                          | Telegram, Discord, WhatsApp, Matrix, QQ, Slack, IRC, DingTalk, LINE, Feishu, WeCom e mais        |
+| ⚙️ [Configuração](docs/pt-br/configuration.md)                      | Variáveis de ambiente, estrutura do workspace, fontes de skills, sandbox de segurança, heartbeat |
+| 🔌 [Provedores & Modelos](docs/pt-br/providers.md)                  | 20+ provedores LLM, roteamento de modelos, configuração model_list, arquitetura de provedores    |
+| 🔄 [Spawn & Tarefas Assíncronas](docs/pt-br/spawn-tasks.md)         | Tarefas rápidas, tarefas longas com spawn, orquestração assíncrona de sub-agentes                |
+| 🐛 [Solução de Problemas](docs/pt-br/troubleshooting.md)            | Problemas comuns e soluções                                                                      |
+| 🔧 [Configuração de Ferramentas](docs/pt-br/tools_configuration.md) | Habilitar/desabilitar por ferramenta, políticas de execução                                      |
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Junte-se à Rede Social de Agentes
 
@@ -209,22 +209,22 @@ Conecte o PicoClaw à Rede Social de Agentes simplesmente enviando uma única me
 
 ## 🖥️ Referência CLI
 
-| Comando                   | Descrição                     |
-| ------------------------- | ----------------------------- |
+| Comando                   | Descrição                            |
+| ------------------------- | ------------------------------------ |
 | `picoclaw onboard`        | Inicializar configuração & workspace |
-| `picoclaw agent -m "..."` | Conversar com o agente        |
-| `picoclaw agent`          | Modo de chat interativo       |
-| `picoclaw gateway`        | Iniciar o gateway             |
-| `picoclaw status`         | Mostrar status                |
-| `picoclaw version`        | Mostrar informações de versão |
-| `picoclaw cron list`      | Listar todas as tarefas agendadas |
-| `picoclaw cron add ...`   | Adicionar uma tarefa agendada |
-| `picoclaw cron disable`   | Desabilitar uma tarefa agendada |
-| `picoclaw cron remove`    | Remover uma tarefa agendada   |
-| `picoclaw skills list`    | Listar skills instaladas      |
-| `picoclaw skills install` | Instalar uma skill            |
-| `picoclaw migrate`        | Migrar dados de versões anteriores |
-| `picoclaw auth login`     | Autenticar com provedores     |
+| `picoclaw agent -m "..."` | Conversar com o agente               |
+| `picoclaw agent`          | Modo de chat interativo              |
+| `picoclaw gateway`        | Iniciar o gateway                    |
+| `picoclaw status`         | Mostrar status                       |
+| `picoclaw version`        | Mostrar informações de versão        |
+| `picoclaw cron list`      | Listar todas as tarefas agendadas    |
+| `picoclaw cron add ...`   | Adicionar uma tarefa agendada        |
+| `picoclaw cron disable`   | Desabilitar uma tarefa agendada      |
+| `picoclaw cron remove`    | Remover uma tarefa agendada          |
+| `picoclaw skills list`    | Listar skills instaladas             |
+| `picoclaw skills install` | Instalar uma skill                   |
+| `picoclaw migrate`        | Migrar dados de versões anteriores   |
+| `picoclaw auth login`     | Autenticar com provedores            |
 
 ### Tarefas Agendadas / Lembretes
 
