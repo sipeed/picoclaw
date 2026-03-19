@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -190,10 +191,35 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 		return "", fmt.Errorf("feishu placeholder: card build failed: %w", err)
 	}
 
+	actualChatID, rootID := c.splitChatID(chatID)
+
+	if rootID != "" {
+		req := larkim.NewReplyMessageReqBuilder().
+			MessageId(rootID).
+			Body(larkim.NewReplyMessageReqBodyBuilder().
+				MsgType(larkim.MsgTypeInteractive).
+				Content(cardContent).
+				ReplyInThread(true).
+				Build()).
+			Build()
+
+		replyResp, replyErr := c.client.Im.V1.Message.Reply(ctx, req)
+		if replyErr != nil {
+			return "", fmt.Errorf("feishu placeholder reply: %w", replyErr)
+		}
+		if !replyResp.Success() {
+			return "", fmt.Errorf("feishu placeholder reply api error (code=%d msg=%s)", replyResp.Code, replyResp.Msg)
+		}
+		if replyResp.Data != nil && replyResp.Data.MessageId != nil {
+			return *replyResp.Data.MessageId, nil
+		}
+		return "", nil
+	}
+
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
-			ReceiveId(chatID).
+			ReceiveId(actualChatID).
 			MsgType(larkim.MsgTypeInteractive).
 			Content(cardContent).
 			Build()).
@@ -387,19 +413,7 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	// Extract content based on message type
 	content := extractContent(messageType, rawContent)
 
-	// Handle media messages (download and store)
-	var mediaRefs []string
-	if store := c.GetMediaStore(); store != nil && messageID != "" {
-		mediaRefs = c.downloadInboundMedia(ctx, chatID, messageID, messageType, rawContent, store)
-	}
-
-	// Append media tags to content (like Telegram does)
-	content = appendMediaTags(content, messageType, mediaRefs)
-
-	if content == "" {
-		content = "[empty message]"
-	}
-
+	// Initialize metadata
 	metadata := map[string]string{}
 	if messageID != "" {
 		metadata["message_id"] = messageID
@@ -407,19 +421,43 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	if messageType != "" {
 		metadata["message_type"] = messageType
 	}
+	if sender != nil && sender.TenantKey != nil {
+		metadata["tenant_key"] = *sender.TenantKey
+	}
+
+	rootID := stringValue(message.RootId)
+	parentID := stringValue(message.ParentId)
+	if rootID != "" {
+		metadata["root_id"] = rootID
+	}
+	if parentID != "" {
+		metadata["parent_id"] = parentID
+	}
+
 	chatType := stringValue(message.ChatType)
 	if chatType != "" {
 		metadata["chat_type"] = chatType
 	}
-	if sender != nil && sender.TenantKey != nil {
-		metadata["tenant_key"] = *sender.TenantKey
+
+	compositeChatID := chatID
+	if chatType == "group" && rootID != "" {
+		compositeChatID = fmt.Sprintf("%s/%s", chatID, rootID)
 	}
+
+	// Handle media messages (download and store) using the composite scope
+	var mediaRefs []string
+	if store := c.GetMediaStore(); store != nil && messageID != "" {
+		mediaRefs = c.downloadInboundMedia(ctx, compositeChatID, messageID, messageType, rawContent, store)
+	}
+
+	// Append media tags to content (like Telegram does)
+	content = appendMediaTags(content, messageType, mediaRefs)
 
 	var peer bus.Peer
 	if chatType == "p2p" {
 		peer = bus.Peer{Kind: "direct", ID: senderID}
 	} else {
-		peer = bus.Peer{Kind: "group", ID: chatID}
+		peer = bus.Peer{Kind: "group", ID: compositeChatID}
 
 		// Check if bot was mentioned
 		isMentioned := c.isBotMentioned(message)
@@ -439,12 +477,13 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 
 	logger.InfoCF("feishu", "Feishu message received", map[string]any{
 		"sender_id":  senderID,
-		"chat_id":    chatID,
+		"chat_id":    compositeChatID,
 		"message_id": messageID,
+		"root_id":    rootID,
 		"preview":    utils.Truncate(content, 80),
 	})
 
-	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaRefs, metadata, senderInfo)
+	c.HandleMessage(ctx, peer, messageID, senderID, compositeChatID, content, mediaRefs, metadata, senderInfo)
 	return nil
 }
 
@@ -710,12 +749,48 @@ func appendMediaTags(content, messageType string, mediaRefs []string) string {
 	return content + " " + tag
 }
 
+func (c *FeishuChannel) splitChatID(chatID string) (string, string) {
+	if chat, root, ok := strings.Cut(chatID, "/"); ok {
+		return chat, root
+	}
+	return chatID, ""
+}
+
 // sendCard sends an interactive card message to a chat.
 func (c *FeishuChannel) sendCard(ctx context.Context, chatID, cardContent string) error {
+	actualChatID, rootID := c.splitChatID(chatID)
+
+	if rootID != "" {
+		// If we have a rootID, we use the Reply API to stay in the thread.
+		// Replying to any message in the thread with ReplyInThread=true attaches it to the thread.
+		req := larkim.NewReplyMessageReqBuilder().
+			MessageId(rootID).
+			Body(larkim.NewReplyMessageReqBodyBuilder().
+				MsgType(larkim.MsgTypeInteractive).
+				Content(cardContent).
+				ReplyInThread(true).
+				Build()).
+			Build()
+
+		resp, err := c.client.Im.V1.Message.Reply(ctx, req)
+		if err != nil {
+			return fmt.Errorf("feishu reply thread: %w", channels.ErrTemporary)
+		}
+		if !resp.Success() {
+			return fmt.Errorf("feishu reply api error (code=%d msg=%s): %w", resp.Code, resp.Msg, channels.ErrTemporary)
+		}
+		logger.DebugCF("feishu", "Feishu thread reply sent", map[string]any{
+			"chat_id": actualChatID,
+			"root_id": rootID,
+		})
+		return nil
+	}
+
+	// Default: Create a new message in the chat.
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
-			ReceiveId(chatID).
+			ReceiveId(actualChatID).
 			MsgType(larkim.MsgTypeInteractive).
 			Content(cardContent).
 			Build()).
@@ -732,7 +807,7 @@ func (c *FeishuChannel) sendCard(ctx context.Context, chatID, cardContent string
 	}
 
 	logger.DebugCF("feishu", "Feishu card message sent", map[string]any{
-		"chat_id": chatID,
+		"chat_id": actualChatID,
 	})
 
 	return nil
@@ -763,11 +838,33 @@ func (c *FeishuChannel) sendImage(ctx context.Context, chatID string, file *os.F
 	imageKey := *uploadResp.Data.ImageKey
 
 	// Send image message
+	actualChatID, rootID := c.splitChatID(chatID)
 	content, _ := json.Marshal(map[string]string{"image_key": imageKey})
+
+	if rootID != "" {
+		req := larkim.NewReplyMessageReqBuilder().
+			MessageId(rootID).
+			Body(larkim.NewReplyMessageReqBodyBuilder().
+				MsgType(larkim.MsgTypeImage).
+				Content(string(content)).
+				ReplyInThread(true).
+				Build()).
+			Build()
+
+		replyResp, replyErr := c.client.Im.V1.Message.Reply(ctx, req)
+		if replyErr != nil {
+			return fmt.Errorf("feishu image reply: %w", replyErr)
+		}
+		if !replyResp.Success() {
+			return fmt.Errorf("feishu image reply api error (code=%d msg=%s)", replyResp.Code, replyResp.Msg)
+		}
+		return nil
+	}
+
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
-			ReceiveId(chatID).
+			ReceiveId(actualChatID).
 			MsgType(larkim.MsgTypeImage).
 			Content(string(content)).
 			Build()).
@@ -786,13 +883,16 @@ func (c *FeishuChannel) sendImage(ctx context.Context, chatID string, file *os.F
 
 // sendFile uploads a file and sends it as a message.
 func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.File, filename, fileType string) error {
-	// Map part type to Feishu file type
+	// Map part type to Feishu upload file type and IM message type
 	feishuFileType := "stream"
+	msgType := larkim.MsgTypeFile
 	switch fileType {
 	case "audio":
 		feishuFileType = "opus"
+		msgType = larkim.MsgTypeAudio
 	case "video":
 		feishuFileType = "mp4"
+		msgType = larkim.MsgTypeMedia
 	}
 
 	// Upload file to get file_key
@@ -819,12 +919,34 @@ func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.Fi
 	fileKey := *uploadResp.Data.FileKey
 
 	// Send file message
+	actualChatID, rootID := c.splitChatID(chatID)
 	content, _ := json.Marshal(map[string]string{"file_key": fileKey})
+
+	if rootID != "" {
+		req := larkim.NewReplyMessageReqBuilder().
+			MessageId(rootID).
+			Body(larkim.NewReplyMessageReqBodyBuilder().
+				MsgType(msgType).
+				Content(string(content)).
+				ReplyInThread(true).
+				Build()).
+			Build()
+
+		replyResp, replyErr := c.client.Im.V1.Message.Reply(ctx, req)
+		if replyErr != nil {
+			return fmt.Errorf("feishu file reply: %w", replyErr)
+		}
+		if !replyResp.Success() {
+			return fmt.Errorf("feishu file reply api error (code=%d msg=%s)", replyResp.Code, replyResp.Msg)
+		}
+		return nil
+	}
+
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
-			ReceiveId(chatID).
-			MsgType(larkim.MsgTypeFile).
+			ReceiveId(actualChatID).
+			MsgType(msgType).
 			Content(string(content)).
 			Build()).
 		Build()
