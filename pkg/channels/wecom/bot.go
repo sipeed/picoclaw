@@ -27,7 +27,7 @@ type WeComBotChannel struct {
 	client        *http.Client
 	ctx           context.Context
 	cancel        context.CancelFunc
-	processedMsgs *MessageDeduplicator
+	processedMsgs *channels.MessageDeduplicator
 }
 
 // WeComBotMessage represents the JSON message structure from WeCom Bot (AIBOT)
@@ -106,7 +106,7 @@ func NewWeComBotChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*We
 		client:        &http.Client{Timeout: clientTimeout},
 		ctx:           ctx,
 		cancel:        cancel,
-		processedMsgs: NewMessageDeduplicator(wecomMaxProcessedMessages),
+		processedMsgs: channels.NewMessageDeduplicator(1000),
 	}, nil
 }
 

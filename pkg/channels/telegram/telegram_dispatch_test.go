@@ -15,6 +15,7 @@ func TestHandleMessage_DoesNotConsumeGenericCommandsLocally(t *testing.T) {
 	ch := &TelegramChannel{
 		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
 		chatIDs:     make(map[string]int64),
+		dedupe:      channels.NewMessageDeduplicator(1000),
 		ctx:         context.Background(),
 	}
 

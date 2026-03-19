@@ -38,7 +38,7 @@ type WeComAppChannel struct {
 	tokenMu       sync.RWMutex
 	ctx           context.Context
 	cancel        context.CancelFunc
-	processedMsgs *MessageDeduplicator
+	processedMsgs *channels.MessageDeduplicator
 }
 
 // WeComXMLMessage represents the XML message structure from WeCom
@@ -143,7 +143,7 @@ func NewWeComAppChannel(cfg config.WeComAppConfig, messageBus *bus.MessageBus) (
 		client:        &http.Client{Timeout: clientTimeout},
 		ctx:           ctx,
 		cancel:        cancel,
-		processedMsgs: NewMessageDeduplicator(wecomMaxProcessedMessages),
+		processedMsgs: channels.NewMessageDeduplicator(1000),
 	}, nil
 }
 

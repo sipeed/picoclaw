@@ -26,14 +26,22 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// telegramHTTPTimeout is the HTTP client timeout for Telegram API requests.
+// Long polling uses Timeout=30s on the API side; the HTTP client timeout
+// must be longer to avoid cancelling valid long-poll responses.
+const telegramHTTPTimeout = 65 * time.Second
+
 type TelegramChannel struct {
 	*channels.BaseChannel
 	bot     *telego.Bot
 	bh      *th.BotHandler
 	config  *config.Config
 	chatIDs map[string]int64
+	dedupe  *channels.MessageDeduplicator
 	ctx     context.Context
 	cancel  context.CancelFunc
+
+	lastActiveChatID string // composite chat ID of last received message
 
 	registerFunc     func(context.Context, []commands.Definition) error
 	commandRegCancel context.CancelFunc
@@ -43,24 +51,46 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	var opts []telego.BotOption
 	telegramCfg := cfg.Channels.Telegram
 
+	// Build the base transport (with optional proxy) and wrap it with
+	// resilientTransport for connection-failure detection and recovery logging.
+	var baseTransport http.RoundTripper
 	if telegramCfg.Proxy != "" {
 		proxyURL, parseErr := url.Parse(telegramCfg.Proxy)
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid proxy URL %q: %w", telegramCfg.Proxy, parseErr)
 		}
-		opts = append(opts, telego.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			},
-		}))
+		baseTransport = &http.Transport{Proxy: http.ProxyURL(proxyURL)}
 	} else if os.Getenv("HTTP_PROXY") != "" || os.Getenv("HTTPS_PROXY") != "" {
-		// Use environment proxy if configured
-		opts = append(opts, telego.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-			},
-		}))
+		baseTransport = &http.Transport{Proxy: http.ProxyFromEnvironment}
+	} else {
+		baseTransport = http.DefaultTransport
 	}
+
+	ch := &TelegramChannel{
+		config:  cfg,
+		chatIDs: make(map[string]int64),
+		dedupe:  channels.NewMessageDeduplicator(1000),
+	}
+
+	transport := &resilientTransport{
+		base: baseTransport,
+		onFailure: func() {
+			logger.WarnC("telegram", "Polling connection lost, retrying...")
+		},
+		onRecover: func() {
+			logger.InfoC("telegram", "Polling connection recovered")
+			if chatID := ch.lastActiveChatID; chatID != "" {
+				go func() {
+					_ = ch.sendReconnectNotice(chatID)
+				}()
+			}
+		},
+	}
+
+	opts = append(opts, telego.WithHTTPClient(&http.Client{
+		Transport: transport,
+		Timeout:   telegramHTTPTimeout,
+	}))
 
 	if baseURL := strings.TrimRight(strings.TrimSpace(telegramCfg.BaseURL), "/"); baseURL != "" {
 		opts = append(opts, telego.WithAPIServer(baseURL))
@@ -82,12 +112,10 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		channels.WithReasoningChannelID(telegramCfg.ReasoningChannelID),
 	)
 
-	return &TelegramChannel{
-		BaseChannel: base,
-		bot:         bot,
-		config:      cfg,
-		chatIDs:     make(map[string]int64),
-	}, nil
+	ch.BaseChannel = base
+	ch.bot = bot
+
+	return ch, nil
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
@@ -505,6 +533,15 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		return nil
 	}
 
+	// Deduplicate: Telegram may redeliver the same update after a timeout.
+	msgID := fmt.Sprintf("%d", message.MessageID)
+	if !c.dedupe.MarkMessageProcessed(msgID) {
+		logger.DebugCF("telegram", "Skipping duplicate message", map[string]any{
+			"message_id": msgID,
+		})
+		return nil
+	}
+
 	chatID := message.Chat.ID
 	c.chatIDs[platformID] = chatID
 
@@ -616,6 +653,8 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	if message.Chat.IsForum && threadID != 0 {
 		compositeChatID = fmt.Sprintf("%d/%d", chatID, threadID)
 	}
+
+	c.lastActiveChatID = compositeChatID
 
 	logger.DebugCF("telegram", "Received message", map[string]any{
 		"sender_id": sender.CanonicalID,
@@ -816,6 +855,19 @@ func isBotCommandEntityForThisBot(entityText, botUsername string) bool {
 		return false
 	}
 	return strings.EqualFold(mentionUsername, botUsername)
+}
+
+// sendReconnectNotice sends a short notification to the given chat after
+// the polling connection recovers from a failure.
+func (c *TelegramChannel) sendReconnectNotice(compositeChatID string) error {
+	cid, threadID, err := parseTelegramChatID(compositeChatID)
+	if err != nil {
+		return err
+	}
+	msg := tu.Message(tu.ID(cid), "[system] Connection recovered — messages during the outage may have been delayed.")
+	msg.MessageThreadID = threadID
+	_, err = c.bot.SendMessage(c.ctx, msg)
+	return err
 }
 
 // stripBotMention removes the @bot mention from the content.

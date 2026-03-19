@@ -1,4 +1,4 @@
-package wecom
+package channels
 
 import (
 	"sync"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestMessageDeduplicator_DuplicateDetection(t *testing.T) {
-	d := NewMessageDeduplicator(wecomMaxProcessedMessages)
+	d := NewMessageDeduplicator(defaultMaxProcessedMessages)
 
 	if ok := d.MarkMessageProcessed("msg-1"); !ok {
 		t.Fatalf("first message should be accepted")
@@ -18,7 +18,7 @@ func TestMessageDeduplicator_DuplicateDetection(t *testing.T) {
 }
 
 func TestMessageDeduplicator_ConcurrentSameMessage(t *testing.T) {
-	d := NewMessageDeduplicator(wecomMaxProcessedMessages)
+	d := NewMessageDeduplicator(defaultMaxProcessedMessages)
 
 	const goroutines = 64
 	var wg sync.WaitGroup

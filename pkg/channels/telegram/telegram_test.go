@@ -524,6 +524,7 @@ func TestHandleMessage_ForumTopic_SetsMetadata(t *testing.T) {
 	ch := &TelegramChannel{
 		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
 		chatIDs:     make(map[string]int64),
+		dedupe:      channels.NewMessageDeduplicator(1000),
 		ctx:         context.Background(),
 	}
 
@@ -565,6 +566,7 @@ func TestHandleMessage_NoForum_NoThreadMetadata(t *testing.T) {
 	ch := &TelegramChannel{
 		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
 		chatIDs:     make(map[string]int64),
+		dedupe:      channels.NewMessageDeduplicator(1000),
 		ctx:         context.Background(),
 	}
 
@@ -604,6 +606,7 @@ func TestHandleMessage_ReplyThread_NonForum_NoIsolation(t *testing.T) {
 	ch := &TelegramChannel{
 		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
 		chatIDs:     make(map[string]int64),
+		dedupe:      channels.NewMessageDeduplicator(1000),
 		ctx:         context.Background(),
 	}
 
