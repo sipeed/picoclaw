@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net/http"
 	"sync"
 	"time"
 
@@ -84,8 +83,6 @@ type Manager struct {
 	config        *config.Config
 	mediaStore    media.MediaStore
 	dispatchTask  *asyncTask
-	mux           *http.ServeMux
-	httpServer    *http.Server
 	mu            sync.RWMutex
 	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
 	typingStops   sync.Map // "channel:chatID" → func()
@@ -342,40 +339,30 @@ func (m *Manager) initChannels() error {
 	return nil
 }
 
-// SetupHTTPServer creates a shared HTTP server with the given listen address.
-// It registers health endpoints from the health server and discovers channels
-// that implement WebhookHandler and/or HealthChecker to register their handlers.
+// SetupHTTPServer registers channel webhook handlers and health checkers onto
+// the health server's mux so everything is served by a single HTTP listener.
 func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
-	m.mux = http.NewServeMux()
-
-	// Register health endpoints
-	if healthServer != nil {
-		healthServer.RegisterOnMux(m.mux)
+	if healthServer == nil {
+		return
 	}
+	mux := healthServer.Mux()
 
 	// Discover and register webhook handlers and health checkers
 	for name, ch := range m.channels {
 		if wh, ok := ch.(WebhookHandler); ok {
-			m.mux.Handle(wh.WebhookPath(), wh)
+			mux.Handle(wh.WebhookPath(), wh)
 			logger.InfoCF("channels", "Webhook handler registered", map[string]any{
 				"channel": name,
 				"path":    wh.WebhookPath(),
 			})
 		}
 		if hc, ok := ch.(HealthChecker); ok {
-			m.mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
+			mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
 			logger.InfoCF("channels", "Health endpoint registered", map[string]any{
 				"channel": name,
 				"path":    hc.HealthPath(),
 			})
 		}
-	}
-
-	m.httpServer = &http.Server{
-		Addr:         addr,
-		Handler:      m.mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
 	}
 }
 
@@ -417,20 +404,6 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	// Start the TTL janitor that cleans up stale typing/placeholder entries
 	go m.runTTLJanitor(dispatchCtx)
 
-	// Start shared HTTP server if configured
-	if m.httpServer != nil {
-		go func() {
-			logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
-				"addr": m.httpServer.Addr,
-			})
-			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
-					"error": err.Error(),
-				})
-			}
-		}()
-	}
-
 	logger.InfoC("channels", "All channels started")
 	return nil
 }
@@ -440,18 +413,6 @@ func (m *Manager) StopAll(ctx context.Context) error {
 	defer m.mu.Unlock()
 
 	logger.InfoC("channels", "Stopping all channels")
-
-	// Shutdown shared HTTP server first
-	if m.httpServer != nil {
-		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if err := m.httpServer.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorCF("channels", "Shared HTTP server shutdown error", map[string]any{
-				"error": err.Error(),
-			})
-		}
-		m.httpServer = nil
-	}
 
 	// Cancel dispatcher
 	if m.dispatchTask != nil {

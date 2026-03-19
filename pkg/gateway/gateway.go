@@ -356,6 +356,8 @@ func setupAndStartServices(
 		}
 	}
 
+	// HealthServer is the single HTTP listener. Channel webhooks and health
+	// checkers were registered on its mux via SetupHTTPServer.
 	go func() {
 		var serverErr error
 		if useTLS {
@@ -571,6 +573,13 @@ func restartServices(
 	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
 		return fmt.Errorf("error restarting channels: %w", err)
 	}
+
+	// Start the HealthServer listener (single HTTP server for all routes)
+	go func() {
+		if sErr := runningServices.HealthServer.Start(); sErr != nil && sErr != http.ErrServerClosed {
+			logger.ErrorCF("health", "Health server error", map[string]any{"error": sErr.Error()})
+		}
+	}()
 	fmt.Printf(
 		"  ✓ Channels restarted, health endpoints at http://%s:%d/health and ready\n",
 		cfg.Gateway.Host,
