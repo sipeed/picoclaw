@@ -324,11 +324,12 @@ func setupAndStartServices(
 	return runningServices, nil
 }
 
-func stopAndCleanupServices(runningServices *services, shutdownTimeout time.Duration) {
+func stopAndCleanupServices(runningServices *services, shutdownTimeout time.Duration, isReload bool) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
-	if runningServices.ChannelManager != nil {
+	// reload should not stop channel manager
+	if !isReload && runningServices.ChannelManager != nil {
 		runningServices.ChannelManager.StopAll(shutdownCtx)
 	}
 	if runningServices.DeviceService != nil {
@@ -357,7 +358,7 @@ func shutdownGateway(
 		cp.Close()
 	}
 
-	stopAndCleanupServices(runningServices, gracefulShutdownTimeout)
+	stopAndCleanupServices(runningServices, gracefulShutdownTimeout, false)
 
 	agentLoop.Stop()
 	agentLoop.Close()
@@ -384,7 +385,7 @@ func handleConfigReload(
 	logger.Infof(" New model is '%s', recreating provider...", newModel)
 
 	logger.Info("  Stopping all services...")
-	stopAndCleanupServices(runningServices, serviceShutdownTimeout)
+	stopAndCleanupServices(runningServices, serviceShutdownTimeout, true)
 
 	newProvider, newModelID, err := createStartupProvider(newCfg, allowEmptyStartup)
 	if err != nil {
@@ -494,8 +495,8 @@ func restartServices(
 	}
 	runningServices.ChannelManager.SetupHTTPServer(addr, runningServices.HealthServer)
 
-	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
-		return fmt.Errorf("error restarting channels: %w", err)
+	if err = runningServices.ChannelManager.Reload(context.Background(), cfg); err != nil {
+		return fmt.Errorf("error reload channels: %w", err)
 	}
 	fmt.Println("  ✓ Channels restarted.")
 
