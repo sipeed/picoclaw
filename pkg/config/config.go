@@ -806,6 +806,10 @@ type ClawHubRegistryConfig struct {
 type MCPServerConfig struct {
 	// Enabled indicates whether this MCP server is active
 	Enabled bool `json:"enabled"`
+	// Deferred controls whether this server's tools are registered as hidden (deferred/discovery mode).
+	// When nil, the global Discovery.Enabled setting applies.
+	// When explicitly set to true or false, it overrides the global setting for this server only.
+	Deferred *bool `json:"deferred,omitempty"`
 	// Command is the executable to run (e.g., "npx", "python", "/path/to/server")
 	Command string `json:"command"`
 	// Args are the arguments to pass to the command
