@@ -163,7 +163,10 @@ func (c *Cache) List(entryType string) ([]ListEntry, error) {
 	var entries []ListEntry
 	for rows.Next() {
 		var e ListEntry
-		if err := rows.Scan(&e.Hash, &e.Type, &e.Result, &e.FilePath, &e.Pages, &e.CreatedAt, &e.AccessedAt); err != nil {
+		if err := rows.Scan(
+			&e.Hash, &e.Type, &e.Result, &e.FilePath,
+			&e.Pages, &e.CreatedAt, &e.AccessedAt,
+		); err != nil {
 			return entries, err
 		}
 		entries = append(entries, e)

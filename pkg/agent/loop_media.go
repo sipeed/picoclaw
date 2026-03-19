@@ -544,8 +544,8 @@ func (al *AgentLoop) ocrPDF(
 		"cmd":   ocrCfg.Command,
 	})
 
-	if err := cmd.Start(); err != nil {
-		logger.WarnCF("agent", "Failed to start OCR command", map[string]any{"error": err.Error()})
+	if startErr := cmd.Start(); startErr != nil {
+		logger.WarnCF("agent", "Failed to start OCR command", map[string]any{"error": startErr.Error()})
 		return fmt.Sprintf("[file:%s]", pdfPath)
 	}
 
@@ -560,10 +560,10 @@ func (al *AgentLoop) ocrPDF(
 		}
 	}
 
-	if err := cmd.Wait(); err != nil {
+	if waitErr := cmd.Wait(); waitErr != nil {
 		logger.WarnCF("agent", "OCR command failed", map[string]any{
 			"path":  pdfPath,
-			"error": err.Error(),
+			"error": waitErr.Error(),
 		})
 		return fmt.Sprintf("[file:%s]", pdfPath)
 	}

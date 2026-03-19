@@ -247,10 +247,10 @@ type AgentDefaults struct {
 
 // OCRConfig configures the external OCR command for PDF text extraction.
 type OCRConfig struct {
-	Command string            `json:"command"`            // path to OCR binary (e.g. "/path/to/.venv/bin/yomitoku")
-	Args    []string          `json:"args,omitempty"`     // static arguments (e.g. ["-f", "md", "--lite", ...])
-	Env     map[string]string `json:"env,omitempty"`      // extra environment variables (e.g. {"HF_HOME": "/tmp/hf-home"})
-	Timeout int               `json:"timeout,omitempty"`  // timeout in seconds (default: 600)
+	Command string            `json:"command"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	Timeout int               `json:"timeout,omitempty"`
 }
 
 // GetOCRTimeout returns the configured timeout or default (600s = 10min).
