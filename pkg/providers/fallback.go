@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -42,7 +43,7 @@ func NewFallbackChain(cooldown *CooldownTracker) *FallbackChain {
 	return &FallbackChain{cooldown: cooldown}
 }
 
-func (c FallbackCandidate) cooldownKey() string {
+func (c FallbackCandidate) cooldownKey(candidates []FallbackCandidate) string {
 	if strings.TrimSpace(c.CooldownKey) != "" {
 		return c.CooldownKey
 	}
@@ -52,7 +53,47 @@ func (c FallbackCandidate) cooldownKey() string {
 		}
 		return ModelKey(c.Provider, c.Model)
 	}
+	if belongsToMultiKeySet(c, candidates) {
+		return ModelKey(c.Provider, c.Model)
+	}
 	return c.Provider
+}
+
+func belongsToMultiKeySet(candidate FallbackCandidate, candidates []FallbackCandidate) bool {
+	provider := NormalizeProvider(candidate.Provider)
+	model := strings.ToLower(strings.TrimSpace(candidate.Model))
+	if provider == "" || model == "" {
+		return false
+	}
+
+	baseModel, isReplica := multiKeyBaseModel(model)
+	if isReplica {
+		return true
+	}
+
+	for _, other := range candidates {
+		if NormalizeProvider(other.Provider) != provider {
+			continue
+		}
+		otherBase, otherIsReplica := multiKeyBaseModel(other.Model)
+		if otherIsReplica && otherBase == baseModel {
+			return true
+		}
+	}
+
+	return false
+}
+
+func multiKeyBaseModel(model string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	idx := strings.LastIndex(normalized, "__key_")
+	if idx <= 0 {
+		return normalized, false
+	}
+	if _, err := strconv.Atoi(normalized[idx+len("__key_"):]); err != nil {
+		return normalized, false
+	}
+	return normalized[:idx], true
 }
 
 // ResolveCandidates parses model config into a deduplicated candidate list.
@@ -126,7 +167,7 @@ func (fc *FallbackChain) Execute(
 	}
 
 	for i, candidate := range candidates {
-		cooldownKey := candidate.cooldownKey()
+		cooldownKey := candidate.cooldownKey(candidates)
 
 		// Check context before each attempt.
 		if ctx.Err() == context.Canceled {
