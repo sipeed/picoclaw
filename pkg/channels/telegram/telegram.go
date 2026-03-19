@@ -305,6 +305,10 @@ func (c *TelegramChannel) sendChunk(
 	}
 
 	if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
+		// Don't retry on rate limit errors — they aren't parse failures.
+		if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "Too Many Requests") {
+			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
+		}
 		logParseFailed(err, params.useMarkdownV2)
 
 		tgMsg.Text = params.mdFallback
@@ -372,6 +376,10 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 	}
 	_, err = c.bot.EditMessageText(ctx, editMsg)
 	if err != nil {
+		// Don't retry on rate limit errors — they aren't parse failures.
+		if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "Too Many Requests") {
+			return err
+		}
 		logParseFailed(err, useMarkdownV2)
 		_, err = c.bot.EditMessageText(ctx, tu.EditMessageText(tu.ID(cid), mid, content))
 	}
