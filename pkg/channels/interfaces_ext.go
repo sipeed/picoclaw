@@ -14,3 +14,8 @@ type MessageSenderWithID interface {
 type DraftSender interface {
 	SendDraft(ctx context.Context, chatID string, draftID int, content string) error
 }
+
+// MessageDeleter — channels that can delete a previously sent message.
+type MessageDeleter interface {
+	DeleteMessage(ctx context.Context, chatID string, messageID string) error
+}

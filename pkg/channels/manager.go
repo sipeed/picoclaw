@@ -165,20 +165,32 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	}
 
 	// 3. Try editing a tracked status message (from streaming preview).
-	// For draft-based entries, explicitly dismiss the draft bubble before
-	// sending the permanent message.  Without this, a user message sent
-	// between the last draft update and sendMessage may prevent the
-	// platform from auto-replacing the draft, leaving a ghost bubble.
+	// For draft-based entries, update the draft with the final content so
+	// the draft bubble becomes the permanent response. If a placeholder
+	// also exists, delete it to avoid orphan "Thinking…" messages.
 	if v, loaded := m.statusMsgIDs.LoadAndDelete(key); loaded {
 		if entry, ok := v.(statusMsgEntry); ok {
 			if entry.draftID != 0 {
 				if drafter, ok := ch.(DraftSender); ok {
-					_ = drafter.SendDraft(ctx, msg.ChatID, entry.draftID, "")
+					if err := drafter.SendDraft(ctx, msg.ChatID, entry.draftID, msg.Content); err == nil {
+						m.statusEditTimes.Delete(key)
+						// Draft displays the final content; delete orphan placeholder.
+						if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
+							if phEntry, ok := v.(placeholderEntry); ok && phEntry.id != "" {
+								if deleter, ok := ch.(MessageDeleter); ok {
+									_ = deleter.DeleteMessage(ctx, msg.ChatID, phEntry.id)
+								}
+							}
+						}
+						return true
+					}
 				}
 				m.statusEditTimes.Delete(key)
+				// Draft update failed → fall through to placeholder path.
 			} else if entry.messageID != "" {
 				if editor, ok := ch.(MessageEditor); ok {
 					if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
+						m.placeholders.Delete(key)
 						return true // edited successfully, skip Send
 					}
 				}

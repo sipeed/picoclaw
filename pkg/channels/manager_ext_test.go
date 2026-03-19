@@ -783,29 +783,22 @@ func TestGenerateDraftID_Stable(t *testing.T) {
 	}
 }
 
-// TestPreSend_DismissesDraftBeforeSend verifies that preSend explicitly
-// dismisses a draft-based status bubble (via SendDraft with empty text)
-// before proceeding to send the permanent message.  This prevents ghost
-// draft bubbles when a user message arrives between the last draft update
-// and the final sendMessage.
-// TestPreSend_DismissesDraftBeforeSend verifies that preSend explicitly
-// dismisses a draft-based status bubble (via SendDraft with empty text)
-// before proceeding to send the permanent message.  This prevents ghost
-// draft bubbles when a user message arrives between the last draft update
-// and the final sendMessage.
-func TestPreSend_DismissesDraftBeforeSend(t *testing.T) {
+// TestPreSend_DraftPath_UpdatesWithFinalContent verifies that preSend updates
+// the draft bubble with the final content (instead of dismissing with empty text),
+// and returns true so no separate Send is performed.
+func TestPreSend_DraftPath_UpdatesWithFinalContent(t *testing.T) {
 	m := newTestManager()
 
-	var dismissCalled bool
-	var dismissContent string
+	var draftCalled bool
+	var draftContent string
 
 	ch := &mockDraftSender{
 		mockChannel: mockChannel{
 			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
 		},
 		draftFn: func(_ context.Context, _ string, _ int, content string) error {
-			dismissCalled = true
-			dismissContent = content
+			draftCalled = true
+			draftContent = content
 			return nil
 		},
 		editFn:     func(_ context.Context, _, _, _ string) error { return nil },
@@ -817,14 +810,14 @@ func TestPreSend_DismissesDraftBeforeSend(t *testing.T) {
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "final response"}
 	edited := m.preSend(context.Background(), "test", msg, ch)
 
-	if edited {
-		t.Fatal("expected preSend to return false for draft-based status")
+	if !edited {
+		t.Fatal("expected preSend to return true when draft is updated with final content")
 	}
-	if !dismissCalled {
-		t.Fatal("expected preSend to call SendDraft to dismiss the draft")
+	if !draftCalled {
+		t.Fatal("expected preSend to call SendDraft with final content")
 	}
-	if dismissContent != "" {
-		t.Fatalf("expected empty dismiss content, got %q", dismissContent)
+	if draftContent != "final response" {
+		t.Fatalf("expected draft content 'final response', got %q", draftContent)
 	}
 }
 
@@ -864,13 +857,10 @@ func TestRecordReactionUndo_CleansUpOldEntry(t *testing.T) {
 	}
 }
 
-// TestPreSend_DraftDismiss_ClearsEditTimes verifies that dismissing a draft
-// in preSend also clears the statusEditTimes entry for that key, preventing
-// stale throttle state from affecting the next processing cycle.
-// TestPreSend_DraftDismiss_ClearsEditTimes verifies that dismissing a draft
-// in preSend also clears the statusEditTimes entry for that key, preventing
-// stale throttle state from affecting the next processing cycle.
-func TestPreSend_DraftDismiss_ClearsEditTimes(t *testing.T) {
+// TestPreSend_DraftUpdate_ClearsEditTimes verifies that updating a draft
+// with final content in preSend also clears the statusEditTimes entry for
+// that key, preventing stale throttle state from affecting the next cycle.
+func TestPreSend_DraftUpdate_ClearsEditTimes(t *testing.T) {
 	m := newTestManager()
 
 	ch := &mockDraftSender{
@@ -887,9 +877,94 @@ func TestPreSend_DraftDismiss_ClearsEditTimes(t *testing.T) {
 	m.statusEditTimes.Store(key, time.Now())
 
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "final"}
-	m.preSend(context.Background(), "test", msg, ch)
+	edited := m.preSend(context.Background(), "test", msg, ch)
 
+	if !edited {
+		t.Fatal("expected preSend to return true when draft updated")
+	}
 	if _, loaded := m.statusEditTimes.Load(key); loaded {
-		t.Fatal("expected statusEditTimes to be cleared after draft dismiss")
+		t.Fatal("expected statusEditTimes to be cleared after draft update")
+	}
+}
+
+// mockDraftSenderWithDelete implements DraftSender + MessageDeleter + MessageEditor.
+type mockDraftSenderWithDelete struct {
+	mockDraftSender
+	deleteFn func(ctx context.Context, chatID, messageID string) error
+}
+
+func (m *mockDraftSenderWithDelete) DeleteMessage(ctx context.Context, chatID, messageID string) error {
+	return m.deleteFn(ctx, chatID, messageID)
+}
+
+// TestPreSend_DraftPath_DeletesPlaceholder verifies that when the draft path
+// succeeds, any orphan placeholder message is deleted via DeleteMessage.
+func TestPreSend_DraftPath_DeletesPlaceholder(t *testing.T) {
+	m := newTestManager()
+
+	var deleteCalled bool
+	var deletedMsgID string
+
+	ch := &mockDraftSenderWithDelete{
+		mockDraftSender: mockDraftSender{
+			mockChannel: mockChannel{
+				sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+			},
+			draftFn:    func(_ context.Context, _ string, _ int, _ string) error { return nil },
+			editFn:     func(_ context.Context, _, _, _ string) error { return nil },
+			sendWithID: func(_ context.Context, _, _ string) (string, error) { return "", nil },
+		},
+		deleteFn: func(_ context.Context, _, messageID string) error {
+			deleteCalled = true
+			deletedMsgID = messageID
+			return nil
+		},
+	}
+
+	key := "test:123"
+	m.statusMsgIDs.Store(key, statusMsgEntry{draftID: 42, createdAt: time.Now()})
+	m.RecordPlaceholder("test", "123", "ph-99")
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "final"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if !edited {
+		t.Fatal("expected preSend to return true")
+	}
+	if !deleteCalled {
+		t.Fatal("expected DeleteMessage to be called for orphan placeholder")
+	}
+	if deletedMsgID != "ph-99" {
+		t.Fatalf("expected deleted message ID ph-99, got %s", deletedMsgID)
+	}
+	if _, loaded := m.placeholders.Load(key); loaded {
+		t.Fatal("expected placeholder to be removed from map")
+	}
+}
+
+// TestPreSend_MessageIDPath_CleansPlaceholder verifies that when the messageID
+// edit path succeeds, the placeholder map entry is also cleaned up.
+func TestPreSend_MessageIDPath_CleansPlaceholder(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockMessageEditor{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		editFn: func(_ context.Context, _, _, _ string) error { return nil },
+	}
+
+	key := "test:123"
+	m.statusMsgIDs.Store(key, statusMsgEntry{messageID: "status-77", createdAt: time.Now()})
+	m.RecordPlaceholder("test", "123", "ph-leftover")
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "final response"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if !edited {
+		t.Fatal("expected preSend to return true (status message edited)")
+	}
+	if _, loaded := m.placeholders.Load(key); loaded {
+		t.Fatal("expected placeholder to be cleaned up after messageID edit")
 	}
 }
