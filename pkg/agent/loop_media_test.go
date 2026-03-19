@@ -151,7 +151,7 @@ func TestFormatDocumentTag_UnknownPages(t *testing.T) {
 func TestReplacePDFTags_NoPDF(t *testing.T) {
 	al := &AgentLoop{}
 	content := "Check this out [file:/path/to/audio.mp3]"
-	result := al.replacePDFTags(t.Context(), content, &config.OCRConfig{Command: "echo"}, "", "")
+	result := al.replacePDFTags(t.Context(), content, &config.OCRConfig{Command: "echo"}, "", "", false)
 	if result != content {
 		t.Errorf("non-PDF should be unchanged, got %q", result)
 	}
@@ -160,7 +160,7 @@ func TestReplacePDFTags_NoPDF(t *testing.T) {
 func TestReplacePDFTags_NoTags(t *testing.T) {
 	al := &AgentLoop{}
 	content := "Hello world"
-	result := al.replacePDFTags(t.Context(), content, &config.OCRConfig{Command: "echo"}, "", "")
+	result := al.replacePDFTags(t.Context(), content, &config.OCRConfig{Command: "echo"}, "", "", false)
 	if result != content {
 		t.Errorf("no tags should be unchanged, got %q", result)
 	}
@@ -175,5 +175,24 @@ func TestProcessPDFs_NilOCR(t *testing.T) {
 	result := al.processPDFsInMessages(t.Context(), messages, nil, "", "")
 	if result[0].Content != messages[0].Content {
 		t.Errorf("content should be unchanged when OCR config is nil")
+	}
+}
+
+func TestWantFigures(t *testing.T) {
+	tests := []struct {
+		content string
+		want    bool
+	}{
+		{"check this pdf", false},
+		{"extract with figures please", true},
+		{"Figures included", true},
+		{"figure mode", true},
+		{"with images", true},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := wantFigures(tt.content); got != tt.want {
+			t.Errorf("wantFigures(%q) = %v, want %v", tt.content, got, tt.want)
+		}
 	}
 }

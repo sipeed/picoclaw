@@ -419,6 +419,27 @@ func injectImageDescriptions(content string, descriptions []string) string {
 // in the media cache for PDF OCR results.
 const maxPreviewRunes = 500
 
+// figureKeywords triggers --figure --figure_letter when found in the message.
+var figureKeywords = []string{
+	"figure", "figures", "with images",
+	"図版", "図付き", "画像付き", "図も",
+}
+
+// wantFigures returns true if the message content contains a figure keyword.
+func wantFigures(content string) bool {
+	lower := strings.ToLower(content)
+	for _, kw := range figureKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// pdfHintMessage is sent once when a PDF is first processed to explain options.
+const pdfHintMessage = "PDF OCR in progress. " +
+	"Tip: include \"figures\" or \"図版\" in your message to extract images and in-figure text."
+
 // processPDFsInMessages finds [file:/path.pdf] tags in messages and replaces
 // them with [document: preview... (full: /path/to.md, N pages)] tags after
 // running OCR. A braille spinner with page progress is shown during processing.
@@ -433,7 +454,10 @@ func (al *AgentLoop) processPDFsInMessages(
 		if !strings.Contains(m.Content, "[file:") {
 			continue
 		}
-		result[i].Content = al.replacePDFTags(ctx, m.Content, ocrCfg, channel, chatID)
+		withFigures := wantFigures(m.Content)
+		result[i].Content = al.replacePDFTags(
+			ctx, m.Content, ocrCfg, channel, chatID, withFigures,
+		)
 	}
 
 	return result
@@ -445,7 +469,7 @@ const pdfTagPrefix = "[file:"
 // replacePDFTags finds [file:*.pdf] tags and replaces them with OCR results.
 func (al *AgentLoop) replacePDFTags(
 	ctx context.Context, content string, ocrCfg *config.OCRConfig,
-	channel, chatID string,
+	channel, chatID string, withFigures bool,
 ) string {
 	var out strings.Builder
 	rest := content
@@ -469,7 +493,7 @@ func (al *AgentLoop) replacePDFTags(
 		out.WriteString(rest[:idx])
 
 		if strings.HasSuffix(strings.ToLower(path), ".pdf") {
-			out.WriteString(al.ocrPDF(ctx, path, ocrCfg, channel, chatID))
+			out.WriteString(al.ocrPDF(ctx, path, ocrCfg, channel, chatID, withFigures))
 		} else {
 			out.WriteString(tag)
 		}
@@ -482,17 +506,23 @@ func (al *AgentLoop) replacePDFTags(
 
 // ocrPDF runs OCR on a PDF file and returns a document tag with preview.
 // Uses the media cache to avoid redundant OCR runs.
+// When withFigures is true, --figure and --figure_letter flags are added.
 func (al *AgentLoop) ocrPDF(
 	ctx context.Context, pdfPath string, ocrCfg *config.OCRConfig,
-	channel, chatID string,
+	channel, chatID string, withFigures bool,
 ) string {
-	// Hash the file content for cache lookup
+	// Hash the file content for cache lookup.
+	// Include figure mode in the hash so both variants are cached separately.
 	pdfData, err := os.ReadFile(pdfPath)
 	if err != nil {
 		logger.WarnCF("agent", "Failed to read PDF", map[string]any{"path": pdfPath, "error": err.Error()})
 		return fmt.Sprintf("[file:%s]", pdfPath)
 	}
-	hash := mediacache.HashData(pdfData)
+	hashInput := pdfData
+	if withFigures {
+		hashInput = append(hashInput, []byte(":figures")...)
+	}
+	hash := mediacache.HashData(hashInput)
 
 	// Check cache
 	if al.mediaCache != nil {
@@ -506,9 +536,22 @@ func (al *AgentLoop) ocrPDF(
 	totalPages := mediacache.PDFPageCount(pdfPath)
 	totalStr := mediacache.FormatPageCount(totalPages)
 
-	// Start progress indicator
+	// Send hint message and start progress indicator
+	if al.bus != nil && channel != "" && chatID != "" {
+		_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+			Channel:         channel,
+			ChatID:          chatID,
+			Content:         pdfHintMessage,
+			SkipPlaceholder: true,
+		})
+	}
+
+	modeLabel := "Processing PDF"
+	if withFigures {
+		modeLabel = "Processing PDF (with figures)"
+	}
 	indicator := al.processingIndicator(ctx, channel, chatID,
-		fmt.Sprintf("Processing PDF (0/%s)...", totalStr))
+		fmt.Sprintf("%s (0/%s)...", modeLabel, totalStr))
 	defer indicator.Stop()
 
 	// Determine output directory for OCR results
@@ -520,8 +563,11 @@ func (al *AgentLoop) ocrPDF(
 	cmdCtx, cmdCancel := context.WithTimeout(ctx, timeout)
 	defer cmdCancel()
 
-	args := make([]string, 0, len(ocrCfg.Args)+4)
+	args := make([]string, 0, len(ocrCfg.Args)+6)
 	args = append(args, ocrCfg.Args...)
+	if withFigures {
+		args = append(args, "--figure", "--figure_letter")
+	}
 	args = append(args, pdfPath, "-o", outputDir)
 
 	cmd := exec.CommandContext(cmdCtx, ocrCfg.Command, args...)
@@ -556,7 +602,7 @@ func (al *AgentLoop) ocrPDF(
 		line := scanner.Text()
 		if strings.Contains(line, "TextDetector __call__") {
 			page++
-			indicator.UpdateLabel(fmt.Sprintf("Processing PDF (%d/%s)...", page, totalStr))
+			indicator.UpdateLabel(fmt.Sprintf("%s (%d/%s)...", modeLabel, page, totalStr))
 		}
 	}
 
