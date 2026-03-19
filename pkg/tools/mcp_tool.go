@@ -244,3 +244,7 @@ func extractContentText(content []mcp.Content) string {
 	}
 	return strings.Join(parts, "\n")
 }
+
+func (t *MCPTool) RequiresApproval() bool {
+	return false
+}

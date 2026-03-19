@@ -201,3 +201,7 @@ func writeOriginMeta(targetDir, registryName, slug, version string) error {
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	return fileutil.WriteFileAtomic(filepath.Join(targetDir, ".skill-origin.json"), data, 0o600)
 }
+
+func (t *InstallSkillTool) RequiresApproval() bool {
+	return false
+}

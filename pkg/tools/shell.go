@@ -418,3 +418,7 @@ func (t *ExecTool) SetAllowPatterns(patterns []string) error {
 	}
 	return nil
 }
+
+func (t *ExecTool) RequiresApproval() bool {
+	return true
+}

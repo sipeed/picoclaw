@@ -155,3 +155,7 @@ func parseI2CBus(args map[string]any) (string, *ToolResult) {
 	}
 	return bus, nil
 }
+
+func (t *I2CTool) RequiresApproval() bool {
+	return false
+}

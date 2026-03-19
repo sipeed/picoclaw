@@ -359,3 +359,7 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		Async:   false,
 	}
 }
+
+func (t *SubagentTool) RequiresApproval() bool {
+	return false
+}

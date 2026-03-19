@@ -250,3 +250,7 @@ func (t *BrowserActionTool) Close() {
 		t.pw = nil
 	}
 }
+
+func (t *BrowserActionTool) RequiresApproval() bool {
+	return false
+}

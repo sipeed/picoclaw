@@ -345,3 +345,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 	_ = response // Will be sent by AgentLoop
 	return "ok"
 }
+
+func (t *CronTool) RequiresApproval() bool {
+	return false
+}

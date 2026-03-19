@@ -8,6 +8,7 @@ type Tool interface {
 	Description() string
 	Parameters() map[string]any
 	Execute(ctx context.Context, args map[string]any) *ToolResult
+	RequiresApproval() bool
 }
 
 // --- Request-scoped tool context (channel / chatID) ---

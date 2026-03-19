@@ -302,3 +302,11 @@ func (r *ToolRegistry) SearchBM25(query string, maxSearchResults int) []ToolSear
 	}
 	return out
 }
+
+func (t *RegexSearchTool) RequiresApproval() bool {
+	return false
+}
+
+func (t *BM25SearchTool) RequiresApproval() bool {
+	return false
+}

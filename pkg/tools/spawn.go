@@ -104,3 +104,7 @@ func (t *SpawnTool) execute(ctx context.Context, args map[string]any, cb AsyncCa
 	// Return AsyncResult since the task runs in background
 	return AsyncResult(result)
 }
+
+func (t *SpawnTool) RequiresApproval() bool {
+	return false
+}

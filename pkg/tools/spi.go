@@ -160,3 +160,7 @@ func parseSPIArgs(args map[string]any) (device string, speed uint32, mode uint8,
 
 	return dev, speed, mode, bits, ""
 }
+
+func (t *SPITool) RequiresApproval() bool {
+	return false
+}
