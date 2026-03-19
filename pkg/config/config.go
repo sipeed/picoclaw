@@ -914,6 +914,15 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
 	}
 
+	// Inherit credentials from providers to model_list entries (#1635).
+	// When both providers and model_list are present, model_list entries
+	// whose api_key/api_base are empty will inherit from the matching
+	// provider (matched by protocol prefix).  Explicit model_list values
+	// always take precedence.
+	if cfg.HasProvidersConfig() {
+		InheritProviderCredentials(cfg.ModelList, cfg.Providers)
+	}
+
 	// Validate model_list for uniqueness and required fields
 	if err := cfg.ValidateModelList(); err != nil {
 		return nil, err
