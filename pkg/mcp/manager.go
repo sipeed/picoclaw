@@ -143,6 +143,8 @@ func (m *Manager) LoadFromMCPConfig(
 				"failed": len(allErrors),
 				"total":  enabledCount,
 			})
+
+			// only all mcp servers  was failed, then return
 			return fmt.Errorf("all MCP servers failed to connect: %w", err)
 		}
 
@@ -150,8 +152,8 @@ func (m *Manager) LoadFromMCPConfig(
 			"failed":    len(allErrors),
 			"connected": connectedCount,
 			"total":     enabledCount,
+			"error":     err.Error(),
 		})
-		return fmt.Errorf("partial MCP initialization failure: %w", err)
 	}
 
 	logger.InfoCF(logModule, "MCP server initialization complete", map[string]any{
@@ -410,6 +412,9 @@ func (m *Manager) handleServerOffline(name string) {
 
 			logger.DebugCF("mcp", "Reconnection attempt", map[string]any{"server": name, "attempt": attempt})
 
+			if m.closed.Load() {
+				return
+			}
 			err := m.ConnectServer(context.Background(), name, conn.Config)
 			if err == nil {
 				logger.InfoCF("mcp", "Reconnection successful", map[string]any{"server": name})
