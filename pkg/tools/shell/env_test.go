@@ -76,7 +76,7 @@ func TestMergeEnvVars_LLMBlocked(t *testing.T) {
 	llmEnv := map[string]string{
 		"PATH":            "/hacked/path",      // Should be blocked
 		"PICOCLAW_SECRET": "should-be-blocked", // Should be blocked by prefix
-		"USER_VAR":        "user-value",       // Should be allowed
+		"USER_VAR":        "user-value",        // Should be allowed
 	}
 
 	result := MergeEnvVars(baseEnv, nil, llmEnv)
