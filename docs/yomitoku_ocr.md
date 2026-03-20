@@ -1,8 +1,32 @@
-# yomitoku OCR Integration
+# PDF Text Extraction
 
-picoclaw は [yomitoku](https://github.com/kotaro-kinoshita/yomitoku) CLI と連携し、スキャン PDF や画像ベースの PDF からテキストを抽出します。
+picoclaw はチャットで送られた PDF を自動的にテキスト化し、LLM のコンテキストに注入します。
+テキストレイヤーのある PDF は高速な pdftotext で処理し、スキャン PDF は [yomitoku](https://github.com/kotaro-kinoshita/yomitoku) OCR にフォールバックします。
 
-## Setup
+## Prerequisites
+
+### pdftotext (推奨)
+
+テキストレイヤーのある PDF を高速に処理します。OCR 不要な PDF はこちらだけで完結します。
+
+```bash
+# Ubuntu/Debian
+sudo apt install poppler-utils
+
+# macOS
+brew install poppler
+```
+
+`pdftotext` と `pdfinfo` コマンドが PATH に必要です。
+
+### yomitoku (スキャン PDF 用)
+
+pdftotext で十分なテキストが得られない場合のフォールバック OCR エンジンです。
+日本語文書 (縦書き含む) に特化しています。
+
+```bash
+pip install yomitoku
+```
 
 `config.json` の `ocr` セクションで設定:
 
@@ -26,7 +50,7 @@ picoclaw は [yomitoku](https://github.com/kotaro-kinoshita/yomitoku) CLI と連
 | `timeout` | OCR タイムアウト (秒) | `600` |
 | `reading_order` | デフォルトの読み順 | `"auto"` |
 
-### reading_order の値
+#### reading_order の値
 
 | 値 | 用途 |
 |---|---|
@@ -39,10 +63,50 @@ picoclaw は [yomitoku](https://github.com/kotaro-kinoshita/yomitoku) CLI と連
 
 PDF ファイルが送られると以下の順序で処理されます:
 
-1. **Phase 1 (キーワード待ち)**: PDF のみ送信された場合、5秒間フォローアップメッセージを待つ
-2. **pdftotext fast path**: テキストレイヤーのある PDF は `pdftotext` で高速抽出 (figures 指定時はスキップ)
-3. **yomitoku OCR**: テキスト抽出に失敗した場合、yomitoku で OCR 実行
-4. **Phase 2 (バッファリング)**: OCR 中のメッセージをバッファし、完了後に LLM に渡す
+```
+PDF 受信
+  │
+  ├─ テキストあり → そのまま処理開始
+  │
+  └─ PDF のみ (テキストなし) → Phase 1: 5秒間キーワード待ち
+                                 │
+                                 ▼
+                            pdftotext で抽出を試行
+                                 │
+                          ┌──────┴──────┐
+                          │             │
+                     成功 (十分な       失敗 (テキスト少ない
+                      テキスト量)       / 密度が低い)
+                          │             │
+                          ▼             ▼
+                     テキスト保存    yomitoku OCR 実行
+                                    (Phase 2: メッセージバッファリング)
+                                        │
+                                        ▼
+                                    OCR 結果保存
+```
+
+### pdftotext Fast Path
+
+- `pdftotext -layout` で抽出、`pdfinfo` でページ数を取得
+- 判定基準: テキスト 100 文字以上 かつ 非空白文字密度 30% 以上
+- figures キーワードが指定された場合はスキップ (図版は pdftotext では抽出できないため)
+
+### yomitoku OCR
+
+- pdftotext が失敗した場合、または figures キーワードが指定された場合に実行
+- 進捗はスピナーで表示: `⠋ Processing PDF (3/12)...`
+- 出力の .md ファイルは `document.md` にリネームされて保存
+
+### Phase 1: キーワード待ち
+
+PDF のみ (テキストなし) で送信された場合、5秒間フォローアップメッセージを待ちます。
+この間に OCR オプションのキーワードを送ることができます。
+
+### Phase 2: バッファリング
+
+OCR 実行中に受信したメッセージはバッファされ、OCR 完了後に LLM コンテキストに追加されます。
+`cancel` / `中止` で OCR を中断できます。
 
 ## Chat Keywords
 
@@ -70,22 +134,33 @@ OCR 実行中に以下のキーワードで中断:
 
 ## Output Structure
 
-OCR 結果は `.ocr_cache/<hash>/` に保存されます:
+抽出結果は `.ocr_cache/<hash>/` に保存されます:
 
 ```
 .ocr_cache/
   c5a9f00fe7567ac0/     # FNV-1a 64bit hash (= cache key)
-    document.md          # OCR テキスト (yomitoku 出力をリネーム)
-    figures/             # 抽出された図版 (--figure 時)
+    document.md          # OCR テキスト
+    figures/             # 抽出された図版 (--figure 時のみ)
   b92a7e9171b9b9e5/
-    document.md          # pdftotext 結果
+    document.md          # pdftotext テキスト
 ```
 
 - ハッシュはキャッシュキーと同一 → ファイルからキャッシュを逆引き可能
 - figures 有無・reading order が異なれば別ハッシュ (別ディレクトリ)
+- LLM には先頭 500 文字のプレビュー + ファイルパスが渡され、`read_file` で全文を参照
 
 ## Cache Management
 
 - **自動 prune**: 7日間アクセスのないエントリを自動削除
-- **Mini App**: キャッシュ一覧 + 個別削除 / 全削除 UI (`/miniapp/api/cache`)
+- **Mini App**: キャッシュ一覧 + 個別削除 / 全削除 UI
 - **API**: `DELETE /api/media-cache/{hash}` (個別) / `DELETE /api/media-cache` (全削除)
+
+## Troubleshooting
+
+| 症状 | 原因 | 対処 |
+|---|---|---|
+| PDF を送っても反応しない | `pdftotext` / `pdfinfo` が未インストール、かつ OCR 未設定 | `poppler-utils` をインストール、または `ocr` を設定 |
+| テキスト抽出が文字化け | PDF にテキストレイヤーがない (スキャン PDF) | yomitoku を設定 |
+| OCR が遅い / タイムアウト | ページ数が多い、GPU なし | `timeout` を延長、GPU 環境を推奨 |
+| 縦書きが正しく読めない | reading order が auto で誤判定 | `縦書き` キーワードを追加、または config で `reading_order: "right2left"` |
+| 前回の PDF の結果が表示される | 旧形式のキャッシュが残っている | Mini App の Clear All でキャッシュを一掃 |
