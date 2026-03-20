@@ -1,6 +1,3 @@
-// model_resolution.go provides model-list resolution helpers used by the upstream
-// loop refactor. These functions are currently unused but will be wired in PR4
-// (upstream-merge/core-loop).
 package agent
 
 import (
