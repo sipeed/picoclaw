@@ -380,6 +380,9 @@ func normalizeModel(model, apiBase string) string {
 	}
 
 	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
+		if strings.EqualFold(before, "openrouter") && strings.Contains(after, "/") {
+			return after
+		}
 		return model
 	}
 
