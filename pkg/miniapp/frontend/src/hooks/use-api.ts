@@ -37,6 +37,16 @@ export async function apiPost<T = any>(
   return res.json();
 }
 
+export async function apiDelete<T = any>(path: string): Promise<T> {
+  const sep = path.includes('?') ? '&' : '?';
+  const res = await fetch(
+    API_BASE + path + sep + 'initData=' + encodeURIComponent(getInitData()),
+    { method: 'DELETE' },
+  );
+  if (!res.ok) throw new Error('API error: ' + res.status);
+  return res.json();
+}
+
 export async function sendCommand(cmd: string): Promise<boolean> {
   if (!cmd.startsWith('/')) return false;
   try {

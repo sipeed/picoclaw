@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'preact/hooks';
-import { apiFetch } from '../../hooks/use-api';
+import { apiFetch, apiDelete } from '../../hooks/use-api';
 
 interface CacheEntry {
   hash: string;
@@ -51,6 +51,30 @@ export function CacheSection({ active }: CacheSectionProps) {
     if (active) load();
   }, [active, filter]);
 
+  const deleteEntry = useCallback(
+    async (hash: string) => {
+      try {
+        await apiDelete('/miniapp/api/cache/' + encodeURIComponent(hash));
+        setExpanded(null);
+        load();
+      } catch {
+        // ignore
+      }
+    },
+    [load],
+  );
+
+  const deleteAll = useCallback(async () => {
+    if (!window.confirm('Delete all cached items?')) return;
+    try {
+      await apiDelete('/miniapp/api/cache');
+      setExpanded(null);
+      load();
+    } catch {
+      // ignore
+    }
+  }, [load]);
+
   const formatDate = (iso: string) => {
     try {
       const d = new Date(iso);
@@ -59,6 +83,8 @@ export function CacheSection({ active }: CacheSectionProps) {
       return iso;
     }
   };
+
+  const count = entries ? entries.length : 0;
 
   return (
     <div class="card glass">
@@ -72,14 +98,42 @@ export function CacheSection({ active }: CacheSectionProps) {
       >
         <span class="card-title" style={{ margin: 0 }}>
           Media Cache
+          {count > 0 && (
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 400,
+                color: 'var(--hint)',
+                marginLeft: '6px',
+              }}
+            >
+              ({count})
+            </span>
+          )}
         </span>
-        <button
-          class="send-btn"
-          style={{ padding: '4px 12px', fontSize: '12px' }}
-          onClick={load}
-        >
-          Refresh
-        </button>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {count > 0 && (
+            <button
+              class="send-btn"
+              style={{
+                padding: '4px 12px',
+                fontSize: '12px',
+                background: 'rgba(239,68,68,0.12)',
+                color: '#ef4444',
+              }}
+              onClick={deleteAll}
+            >
+              Clear All
+            </button>
+          )}
+          <button
+            class="send-btn"
+            style={{ padding: '4px 12px', fontSize: '12px' }}
+            onClick={load}
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div class="log-filter-chips" style={{ marginBottom: '10px' }}>
@@ -223,6 +277,25 @@ export function CacheSection({ active }: CacheSectionProps) {
                       {e.result}
                     </pre>
                   )}
+                  <button
+                    style={{
+                      marginTop: '8px',
+                      padding: '4px 14px',
+                      fontSize: '12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'rgba(239,68,68,0.12)',
+                      color: '#ef4444',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      deleteEntry(e.hash);
+                    }}
+                  >
+                    Delete
+                  </button>
                 </div>
               )}
             </div>
