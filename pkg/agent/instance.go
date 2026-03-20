@@ -159,15 +159,7 @@ func NewAgentInstance(
 	imageModel := strings.TrimSpace(defaults.ImageModel)
 	var imageCandidates []providers.FallbackCandidate
 	if imageModel != "" {
-		imageModelCfg := providers.ModelConfig{
-			Primary:   imageModel,
-			Fallbacks: defaults.ImageModelFallbacks,
-		}
-		imageCandidates = providers.ResolveCandidatesWithLookup(
-			imageModelCfg,
-			defaults.Provider,
-			resolveFromModelList,
-		)
+		imageCandidates = resolveModelCandidates(cfg, defaults.Provider, imageModel, defaults.ImageModelFallbacks)
 	}
 
 	// Model routing setup: pre-resolve light model candidates at creation time

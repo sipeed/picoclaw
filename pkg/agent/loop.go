@@ -1494,7 +1494,7 @@ func (al *AgentLoop) selectCandidates(
 				"agent_id":    agent.ID,
 				"image_model": agent.ImageModel,
 			})
-		return agent.ImageCandidates, resolvedCandidateModel(agent.ImageCandidates, agent.ImageModel), true
+		return agent.ImageCandidates, agent.ImageModel, true
 	}
 
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
