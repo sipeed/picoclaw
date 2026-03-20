@@ -373,21 +373,17 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		mediaRefs = c.downloadInboundMedia(ctx, chatID, messageID, messageType, rawContent, store)
 	}
 
-	// Append media tags to content (like Telegram does)
-	content = appendMediaTags(content, messageType, mediaRefs)
-
-	// For interactive cards, append external image URLs directly for LLM
+	// For interactive cards, pass external image URLs via media refs.
+	// Keep content as valid raw JSON for downstream parsing.
 	if messageType == larkim.MsgTypeInteractive {
 		_, externalURLs := extractCardImageKeys(rawContent)
 		if len(externalURLs) > 0 {
-			urlTags := "\n[external images:"
-			for _, u := range externalURLs {
-				urlTags += " " + u
-			}
-			urlTags += "]"
-			content += urlTags
+			mediaRefs = append(mediaRefs, externalURLs...)
 		}
 	}
+
+	// Append media tags to content (like Telegram does)
+	content = appendMediaTags(content, messageType, mediaRefs)
 
 	if content == "" {
 		content = "[empty message]"
