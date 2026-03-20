@@ -49,26 +49,45 @@ type DisposeResult struct {
 	CommitsAhead  int  // unique commits on branch (0 = safe to delete)
 }
 
-// FindRepoRoot returns the git repository root for dir, or "" if not a git repo.
-func FindRepoRoot(dir string) string {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+func gitOutputTrim(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func gitCombinedOutputTrim(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+func gitRunOK(dir string, args ...string) bool {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	return cmd.Run() == nil
+}
+
+// FindRepoRoot returns the git repository root for dir, or "" if not a git repo.
+func FindRepoRoot(dir string) string {
+	out, err := gitOutputTrim(dir, "rev-parse", "--show-toplevel")
+	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return out
 }
 
 // CurrentBranch returns the current branch name, or "" on error.
 func CurrentBranch(dir string) string {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = dir
-	out, err := cmd.Output()
+	out, err := gitOutputTrim(dir, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return out
 }
 
 var unsafeBranchRe = regexp.MustCompile(`[^a-z0-9-]`)
@@ -111,9 +130,7 @@ func CreateWorktree(repoDir, worktreePath, branchName string) (*WorktreeInfo, er
 	}
 
 	// Check if branch already exists
-	checkCmd := exec.Command("git", "rev-parse", "--verify", branchName)
-	checkCmd.Dir = repoDir
-	branchExists := checkCmd.Run() == nil
+	branchExists := gitRunOK(repoDir, "rev-parse", "--verify", branchName)
 
 	var cmd *exec.Cmd
 	if branchExists {
@@ -138,44 +155,36 @@ func CreateWorktree(repoDir, worktreePath, branchName string) (*WorktreeInfo, er
 
 // HasUncommittedChanges returns true if the working tree has staged or unstaged changes.
 func HasUncommittedChanges(dir string) bool {
-	cmd := exec.Command("git", "status", "--porcelain")
-	cmd.Dir = dir
-	out, err := cmd.Output()
+	out, err := gitOutputTrim(dir, "status", "--porcelain")
 	if err != nil {
 		return false
 	}
-	return len(strings.TrimSpace(string(out))) > 0
+	return out != ""
 }
 
 // AutoCommit stages all changes and commits with the given message.
 func AutoCommit(worktreePath, message string) error {
-	addCmd := exec.Command("git", "add", "-A")
-	addCmd.Dir = worktreePath
-	if out, err := addCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git add: %s: %w", strings.TrimSpace(string(out)), err)
+	if out, err := gitCombinedOutputTrim(worktreePath, "add", "-A"); err != nil {
+		return fmt.Errorf("git add: %s: %w", out, err)
 	}
 
-	commitCmd := exec.Command("git", "commit", "-m", message, "--allow-empty-message")
-	commitCmd.Dir = worktreePath
-	if out, err := commitCmd.CombinedOutput(); err != nil {
+	if out, err := gitCombinedOutputTrim(worktreePath, "commit", "-m", message, "--allow-empty-message"); err != nil {
 		// "nothing to commit" is not a real error
-		if strings.Contains(string(out), "nothing to commit") {
+		if strings.Contains(out, "nothing to commit") {
 			return nil
 		}
-		return fmt.Errorf("git commit: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("git commit: %s: %w", out, err)
 	}
 	return nil
 }
 
 // CommitsAhead returns the number of commits on branch that are not on base.
 func CommitsAhead(repoDir, base, branch string) int {
-	cmd := exec.Command("git", "rev-list", "--count", base+".."+branch)
-	cmd.Dir = repoDir
-	out, err := cmd.Output()
+	out, err := gitOutputTrim(repoDir, "rev-list", "--count", base+".."+branch)
 	if err != nil {
 		return 0
 	}
-	n, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	n, _ := strconv.Atoi(out)
 	return n
 }
 
@@ -360,13 +369,11 @@ func DisposeManagedWorktree(repoDir, worktreesDir, name, baseBranch string) (Dis
 
 // WorktreeStatusShort returns "git status --short" output for a worktree.
 func WorktreeStatusShort(worktreePath string) (string, error) {
-	cmd := exec.Command("git", "status", "--short")
-	cmd.Dir = worktreePath
-	out, err := cmd.CombinedOutput()
+	out, err := gitCombinedOutputTrim(worktreePath, "status", "--short")
 	if err != nil {
-		return "", fmt.Errorf("git status --short: %s: %w", strings.TrimSpace(string(out)), err)
+		return "", fmt.Errorf("git status --short: %s: %w", out, err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	return out, nil
 }
 
 // WorktreeRecentLog returns recent oneline commits for a worktree branch.
@@ -374,24 +381,20 @@ func WorktreeRecentLog(worktreePath string, n int) (string, error) {
 	if n <= 0 {
 		n = 10
 	}
-	cmd := exec.Command("git", "log", "--oneline", fmt.Sprintf("-%d", n))
-	cmd.Dir = worktreePath
-	out, err := cmd.CombinedOutput()
+	out, err := gitCombinedOutputTrim(worktreePath, "log", "--oneline", fmt.Sprintf("-%d", n))
 	if err != nil {
-		return "", fmt.Errorf("git log --oneline: %s: %w", strings.TrimSpace(string(out)), err)
+		return "", fmt.Errorf("git log --oneline: %s: %w", out, err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	return out, nil
 }
 
 // WorktreeDiffStat returns a compact diff stat for a worktree.
 func WorktreeDiffStat(worktreePath string) (string, error) {
-	cmd := exec.Command("git", "diff", "--stat")
-	cmd.Dir = worktreePath
-	out, err := cmd.CombinedOutput()
+	out, err := gitCombinedOutputTrim(worktreePath, "diff", "--stat")
 	if err != nil {
-		return "", fmt.Errorf("git diff --stat: %s: %w", strings.TrimSpace(string(out)), err)
+		return "", fmt.Errorf("git diff --stat: %s: %w", out, err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	return out, nil
 }
 
 // DetectDefaultBranch returns the preferred base branch name for merges/dispose.
@@ -404,10 +407,7 @@ func DetectDefaultBranch(repoDir string) string {
 	}
 
 	// Try origin/HEAD -> origin/<branch>
-	cmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
-	cmd.Dir = repoDir
-	if out, err := cmd.Output(); err == nil {
-		ref := strings.TrimSpace(string(out))
+	if ref, err := gitOutputTrim(repoDir, "symbolic-ref", "refs/remotes/origin/HEAD"); err == nil {
 		if idx := strings.LastIndex(ref, "/"); idx >= 0 && idx < len(ref)-1 {
 			return ref[idx+1:]
 		}
@@ -559,13 +559,11 @@ func buildManagedWorktree(repoDir, name, wtPath string) ManagedWorktree {
 }
 
 func lastCommitInfo(dir string) (hash, subject, age string) {
-	cmd := exec.Command("git", "log", "-1", "--pretty=format:%h\x1f%s\x1f%cr")
-	cmd.Dir = dir
-	out, err := cmd.Output()
+	out, err := gitOutputTrim(dir, "log", "-1", "--pretty=format:%h\x1f%s\x1f%cr")
 	if err != nil {
 		return "", "", ""
 	}
-	parts := strings.SplitN(strings.TrimSpace(string(out)), "\x1f", 3)
+	parts := strings.SplitN(out, "\x1f", 3)
 	if len(parts) > 0 {
 		hash = parts[0]
 	}
@@ -579,28 +577,22 @@ func lastCommitInfo(dir string) (hash, subject, age string) {
 }
 
 func localBranchExists(repoDir, name string) bool {
-	cmd := exec.Command("git", "rev-parse", "--verify", "refs/heads/"+name)
-	cmd.Dir = repoDir
-	return cmd.Run() == nil
+	return gitRunOK(repoDir, "rev-parse", "--verify", "refs/heads/"+name)
 }
 
 func checkoutBranch(repoDir, branch string) error {
-	cmd := exec.Command("git", "checkout", branch)
-	cmd.Dir = repoDir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git checkout %s: %s: %w", branch, strings.TrimSpace(string(out)), err)
+	if out, err := gitCombinedOutputTrim(repoDir, "checkout", branch); err != nil {
+		return fmt.Errorf("git checkout %s: %s: %w", branch, out, err)
 	}
 	return nil
 }
 
 func listGitWorktreePaths(repoDir string) ([]string, error) {
-	cmd := exec.Command("git", "worktree", "list", "--porcelain")
-	cmd.Dir = repoDir
-	out, err := cmd.Output()
+	out, err := gitOutputTrim(repoDir, "worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Split(string(out), "\n")
+	lines := strings.Split(out, "\n")
 	paths := make([]string, 0)
 	for _, line := range lines {
 		if !strings.HasPrefix(line, "worktree ") {

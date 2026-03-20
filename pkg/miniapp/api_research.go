@@ -1,8 +1,6 @@
 package miniapp
 
 import (
-	"encoding/json"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,7 +22,7 @@ func (h *Handler) SetResearchFocus(ft *research.FocusTracker) {
 // apiResearch handles GET /miniapp/api/research (list) and POST (create).
 func (h *Handler) apiResearch(w http.ResponseWriter, r *http.Request) {
 	if h.researchStore == nil {
-		http.Error(w, `{"error":"research store not available"}`, http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "research store not available")
 		return
 	}
 
@@ -34,7 +32,7 @@ func (h *Handler) apiResearch(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		h.apiResearchCreate(w, r)
 	default:
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -80,7 +78,7 @@ func (h *Handler) apiResearchList(w http.ResponseWriter, r *http.Request) {
 	statusFilter := r.URL.Query().Get("status")
 	tasks, err := h.researchStore.ListTasks(research.TaskStatus(statusFilter))
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -102,12 +100,12 @@ func (h *Handler) apiResearchCreate(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		Interval    string `json:"interval"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+	if err := decodeJSONBody(r, 1<<16, &req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if strings.TrimSpace(req.Title) == "" {
-		http.Error(w, `{"error":"title is required"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "title is required")
 		return
 	}
 
@@ -117,7 +115,7 @@ func (h *Handler) apiResearchCreate(w http.ResponseWriter, r *http.Request) {
 		strings.TrimSpace(req.Interval),
 	)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -128,7 +126,7 @@ func (h *Handler) apiResearchCreate(w http.ResponseWriter, r *http.Request) {
 // apiResearchDetail handles /miniapp/api/research/{id} and /miniapp/api/research/{id}/doc/{docId}.
 func (h *Handler) apiResearchDetail(w http.ResponseWriter, r *http.Request) {
 	if h.researchStore == nil {
-		http.Error(w, `{"error":"research store not available"}`, http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "research store not available")
 		return
 	}
 
@@ -145,7 +143,7 @@ func (h *Handler) apiResearchDetail(w http.ResponseWriter, r *http.Request) {
 		case http.MethodPost:
 			h.apiResearchTaskAction(w, r, taskID)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w)
 		}
 		return
 	}
@@ -153,7 +151,7 @@ func (h *Handler) apiResearchDetail(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 3 && parts[1] == "doc" && parts[2] != "" {
 		// /miniapp/api/research/{id}/doc/{docId}
 		if r.Method != http.MethodGet {
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w)
 			return
 		}
 		h.apiResearchGetDoc(w, parts[0], parts[2])
@@ -182,7 +180,7 @@ type researchTaskDetailResponse struct {
 func (h *Handler) apiResearchGetTask(w http.ResponseWriter, taskID string) {
 	task, err := h.researchStore.GetTask(taskID)
 	if err != nil {
-		http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "task not found")
 		return
 	}
 
@@ -219,36 +217,36 @@ func (h *Handler) apiResearchTaskAction(w http.ResponseWriter, r *http.Request, 
 		Description string `json:"description"`
 		Interval    string `json:"interval"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+	if err := decodeJSONBody(r, 1<<16, &req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	switch req.Action {
 	case "cancel":
 		if err := h.researchStore.SetTaskStatus(taskID, research.StatusCanceled); err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	case "reopen":
 		if err := h.researchStore.SetTaskStatus(taskID, research.StatusPending); err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	case "activate":
 		if err := h.researchStore.SetTaskStatus(taskID, research.StatusActive); err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	case "complete":
 		if err := h.researchStore.SetTaskStatus(taskID, research.StatusCompleted); err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	case "update":
 		task, err := h.researchStore.GetTask(taskID)
 		if err != nil {
-			http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
+			writeJSONError(w, http.StatusNotFound, "task not found")
 			return
 		}
 		title := req.Title
@@ -260,20 +258,20 @@ func (h *Handler) apiResearchTaskAction(w http.ResponseWriter, r *http.Request, 
 			desc = task.Description
 		}
 		if err := h.researchStore.UpdateTask(taskID, title, desc); err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "set_interval":
 		if req.Interval == "" {
-			http.Error(w, `{"error":"interval is required"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "interval is required")
 			return
 		}
 		if err := h.researchStore.SetInterval(taskID, req.Interval); err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	default:
-		http.Error(w, `{"error":"unknown action"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "unknown action")
 		return
 	}
 
@@ -284,7 +282,7 @@ func (h *Handler) apiResearchTaskAction(w http.ResponseWriter, r *http.Request, 
 func (h *Handler) apiResearchGetDoc(w http.ResponseWriter, taskID, docID string) {
 	docs, err := h.researchStore.ListDocuments(taskID)
 	if err != nil {
-		http.Error(w, `{"error":"failed to list documents"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "failed to list documents")
 		return
 	}
 
@@ -296,7 +294,7 @@ func (h *Handler) apiResearchGetDoc(w http.ResponseWriter, taskID, docID string)
 		}
 	}
 	if found == nil {
-		http.Error(w, `{"error":"document not found"}`, http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "document not found")
 		return
 	}
 
@@ -308,7 +306,7 @@ func (h *Handler) apiResearchGetDoc(w http.ResponseWriter, taskID, docID string)
 
 	content, err := os.ReadFile(absPath)
 	if err != nil {
-		http.Error(w, `{"error":"failed to read document"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "failed to read document")
 		return
 	}
 
@@ -324,7 +322,7 @@ func (h *Handler) apiResearchGetDoc(w http.ResponseWriter, taskID, docID string)
 // GET returns the current focus state; POST sets focus/unfocus for a task.
 func (h *Handler) apiResearchFocus(w http.ResponseWriter, r *http.Request) {
 	if h.researchFocus == nil {
-		http.Error(w, `{"error":"research focus not available"}`, http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "research focus not available")
 		return
 	}
 
@@ -334,7 +332,7 @@ func (h *Handler) apiResearchFocus(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		h.apiResearchFocusSet(w, r)
 	default:
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -351,20 +349,20 @@ func (h *Handler) apiResearchFocusSet(w http.ResponseWriter, r *http.Request) {
 		Action string `json:"action"` // "recall" or "forget"
 		TaskID string `json:"task_id"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<14)).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+	if err := decodeJSONBody(r, 1<<14, &req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	switch req.Action {
 	case "recall":
 		if req.TaskID == "" {
-			http.Error(w, `{"error":"task_id is required"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "task_id is required")
 			return
 		}
 		task, err := h.researchStore.GetTask(req.TaskID)
 		if err != nil {
-			http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
+			writeJSONError(w, http.StatusNotFound, "task not found")
 			return
 		}
 		h.researchFocus.Focus(task.ID, task.Title)
@@ -375,7 +373,7 @@ func (h *Handler) apiResearchFocusSet(w http.ResponseWriter, r *http.Request) {
 			h.researchFocus.Unfocus(req.TaskID)
 		}
 	default:
-		http.Error(w, `{"error":"action must be recall or forget"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "action must be recall or forget")
 		return
 	}
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -61,7 +60,7 @@ func (h *Handler) apiGit(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) apiWorktrees(w http.ResponseWriter, r *http.Request) {
 	repoRoot := git.FindRepoRoot(h.workspace)
 	if repoRoot == "" {
-		http.Error(w, `{"error":"workspace is not a git repository"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "workspace is not a git repository")
 		return
 	}
 	worktreesDir := filepath.Join(h.workspace, ".worktrees")
@@ -70,26 +69,20 @@ func (h *Handler) apiWorktrees(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		items, err := git.ListManagedWorktrees(repoRoot, worktreesDir)
 		if err != nil {
-			http.Error(w, `{"error":"failed to list worktrees"}`, http.StatusInternalServerError)
+			writeJSONError(w, http.StatusInternalServerError, "failed to list worktrees")
 			return
 		}
 		writeJSON(w, items)
 
 	case http.MethodPost:
-		body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
-		if err != nil {
-			http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
-			return
-		}
-
 		var req struct {
 			Action     string `json:"action"`
 			Name       string `json:"name"`
 			Force      bool   `json:"force"`
 			BaseBranch string `json:"base_branch"`
 		}
-		if err := json.Unmarshal(body, &req); err != nil {
-			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+		if err := decodeJSONBody(r, 4096, &req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 
@@ -97,7 +90,7 @@ func (h *Handler) apiWorktrees(w http.ResponseWriter, r *http.Request) {
 		req.Name = strings.TrimSpace(req.Name)
 		req.BaseBranch = strings.TrimSpace(req.BaseBranch)
 		if req.Action == "" || req.Name == "" {
-			http.Error(w, `{"error":"action and name are required"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "action and name are required")
 			return
 		}
 
@@ -108,7 +101,7 @@ func (h *Handler) apiWorktrees(w http.ResponseWriter, r *http.Request) {
 				if writeWorktreeAPIError(w, err) {
 					return
 				}
-				http.Error(w, `{"error":"merge failed"}`, http.StatusInternalServerError)
+				writeJSONError(w, http.StatusInternalServerError, "merge failed")
 				return
 			}
 			writeJSON(w, map[string]any{
@@ -125,15 +118,11 @@ func (h *Handler) apiWorktrees(w http.ResponseWriter, r *http.Request) {
 				if writeWorktreeAPIError(w, err) {
 					return
 				}
-				http.Error(w, `{"error":"failed to inspect worktree"}`, http.StatusInternalServerError)
+				writeJSONError(w, http.StatusInternalServerError, "failed to inspect worktree")
 				return
 			}
 			if wt.HasUncommitted && !req.Force {
-				http.Error(
-					w,
-					`{"error":"worktree has uncommitted changes; retry with force=true"}`,
-					http.StatusConflict,
-				)
+				writeJSONError(w, http.StatusConflict, "worktree has uncommitted changes; retry with force=true")
 				return
 			}
 
@@ -142,7 +131,7 @@ func (h *Handler) apiWorktrees(w http.ResponseWriter, r *http.Request) {
 				if writeWorktreeAPIError(w, err) {
 					return
 				}
-				http.Error(w, `{"error":"dispose failed"}`, http.StatusInternalServerError)
+				writeJSONError(w, http.StatusInternalServerError, "dispose failed")
 				return
 			}
 			writeJSON(w, map[string]any{
@@ -153,11 +142,11 @@ func (h *Handler) apiWorktrees(w http.ResponseWriter, r *http.Request) {
 			})
 
 		default:
-			http.Error(w, `{"error":"unknown action"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "unknown action")
 		}
 
 	default:
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -174,26 +163,20 @@ func (h *Handler) apiSessionGraph(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) apiCommand(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-
-	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
-	if err != nil {
-		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		writeMethodNotAllowed(w)
 		return
 	}
 
 	var req struct {
 		Command string `json:"command"`
 	}
-	if err := json.Unmarshal(body, &req); err != nil || req.Command == "" {
-		http.Error(w, `{"error":"missing command"}`, http.StatusBadRequest)
+	if err := decodeJSONBody(r, 4096, &req); err != nil || req.Command == "" {
+		writeJSONError(w, http.StatusBadRequest, "missing command")
 		return
 	}
 
 	if !strings.HasPrefix(req.Command, "/") {
-		http.Error(w, `{"error":"command must start with /"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "command must start with /")
 		return
 	}
 
@@ -201,7 +184,7 @@ func (h *Handler) apiCommand(w http.ResponseWriter, r *http.Request) {
 	initData := r.URL.Query().Get("initData")
 	userID, chatID := extractUserFromInitData(initData)
 	if userID == "" {
-		http.Error(w, `{"error":"cannot identify user"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "cannot identify user")
 		return
 	}
 
@@ -212,7 +195,7 @@ func (h *Handler) apiCommand(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, `{"error":"streaming not supported"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
 	rc := http.NewResponseController(w)
@@ -288,18 +271,13 @@ func sendSSEIfChanged(w http.ResponseWriter, f http.Flusher, event string, v any
 	}
 }
 
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
-}
-
 func writeWorktreeAPIError(w http.ResponseWriter, err error) bool {
 	switch {
 	case errors.Is(err, git.ErrInvalidWorktreeName):
-		http.Error(w, `{"error":"invalid worktree name"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid worktree name")
 		return true
 	case errors.Is(err, git.ErrWorktreeNotFound):
-		http.Error(w, `{"error":"worktree not found"}`, http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "worktree not found")
 		return true
 	default:
 		return false

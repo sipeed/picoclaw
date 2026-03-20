@@ -21,17 +21,17 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		initData := r.URL.Query().Get("initData")
 		if initData == "" {
-			http.Error(w, `{"error":"missing initData"}`, http.StatusUnauthorized)
+			writeJSONError(w, http.StatusUnauthorized, "missing initData")
 			return
 		}
 		if !ValidateInitData(initData, h.botToken) {
-			http.Error(w, `{"error":"invalid initData"}`, http.StatusUnauthorized)
+			writeJSONError(w, http.StatusUnauthorized, "invalid initData")
 			return
 		}
 		if len(h.allowList) > 0 {
 			userID, _ := extractUserFromInitData(initData)
 			if userID == "" || !isAllowed(userID, h.allowList) {
-				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+				writeJSONError(w, http.StatusForbidden, "forbidden")
 				return
 			}
 		}

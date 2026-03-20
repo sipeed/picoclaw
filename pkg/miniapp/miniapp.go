@@ -84,33 +84,37 @@ func (h *Handler) SetOrchBroadcaster(b *orch.Broadcaster) {
 	h.orchBroadcaster = b
 }
 
+func (h *Handler) handleProtectedFunc(mux *http.ServeMux, pattern string, handler http.HandlerFunc) {
+	mux.HandleFunc(pattern, h.requireAuth(handler))
+}
+
 // RegisterRoutes registers Mini App routes on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp", h.serveIndex)
 	mux.HandleFunc("/miniapp/index.html", h.serveIndex)
 	mux.HandleFunc("/miniapp/", h.serveStatic)
-	mux.HandleFunc("/miniapp/api/skills", h.requireAuth(h.apiSkills))
-	mux.HandleFunc("/miniapp/api/plan", h.requireAuth(h.apiPlan))
-	mux.HandleFunc("/miniapp/api/session", h.requireAuth(h.apiSession))
-	mux.HandleFunc("/miniapp/api/sessions", h.requireAuth(h.apiSessions))
-	mux.HandleFunc("/miniapp/api/sessions/graph", h.requireAuth(h.apiSessionGraph))
-	mux.HandleFunc("/miniapp/api/command", h.requireAuth(h.apiCommand))
-	mux.HandleFunc("/miniapp/api/context", h.requireAuth(h.apiContext))
-	mux.HandleFunc("/miniapp/api/prompt", h.requireAuth(h.apiPrompt))
-	mux.HandleFunc("/miniapp/api/git", h.requireAuth(h.apiGit))
-	mux.HandleFunc("/miniapp/api/worktrees", h.requireAuth(h.apiWorktrees))
-	mux.HandleFunc("/miniapp/api/dev", h.requireAuth(h.apiDev))
-	mux.HandleFunc("/miniapp/api/events", h.requireAuth(h.apiEvents))
-	mux.HandleFunc("/miniapp/api/logs/ws", h.requireAuth(h.wsLogs))
-	mux.HandleFunc("/miniapp/api/logs/snapshot", h.requireAuth(h.apiLogsSnapshot))
-	mux.HandleFunc("/miniapp/api/logs/snapshot/", h.requireAuth(h.apiLogsSnapshotDownload))
-	mux.HandleFunc("/miniapp/api/orchestration/ws", h.requireAuth(h.wsOrchestration))
+	h.handleProtectedFunc(mux, "/miniapp/api/skills", h.apiSkills)
+	h.handleProtectedFunc(mux, "/miniapp/api/plan", h.apiPlan)
+	h.handleProtectedFunc(mux, "/miniapp/api/session", h.apiSession)
+	h.handleProtectedFunc(mux, "/miniapp/api/sessions", h.apiSessions)
+	h.handleProtectedFunc(mux, "/miniapp/api/sessions/graph", h.apiSessionGraph)
+	h.handleProtectedFunc(mux, "/miniapp/api/command", h.apiCommand)
+	h.handleProtectedFunc(mux, "/miniapp/api/context", h.apiContext)
+	h.handleProtectedFunc(mux, "/miniapp/api/prompt", h.apiPrompt)
+	h.handleProtectedFunc(mux, "/miniapp/api/git", h.apiGit)
+	h.handleProtectedFunc(mux, "/miniapp/api/worktrees", h.apiWorktrees)
+	h.handleProtectedFunc(mux, "/miniapp/api/dev", h.apiDev)
+	h.handleProtectedFunc(mux, "/miniapp/api/events", h.apiEvents)
+	h.handleProtectedFunc(mux, "/miniapp/api/logs/ws", h.wsLogs)
+	h.handleProtectedFunc(mux, "/miniapp/api/logs/snapshot", h.apiLogsSnapshot)
+	h.handleProtectedFunc(mux, "/miniapp/api/logs/snapshot/", h.apiLogsSnapshotDownload)
+	h.handleProtectedFunc(mux, "/miniapp/api/orchestration/ws", h.wsOrchestration)
 	mux.HandleFunc("/miniapp/dev/console", h.apiDevConsole)
 	mux.HandleFunc("/miniapp/dev/", h.serveDevProxy)
-	mux.HandleFunc("/miniapp/api/cache", h.requireAuth(h.apiCache))
-	mux.HandleFunc("/miniapp/api/research", h.requireAuth(h.apiResearch))
-	mux.HandleFunc("/miniapp/api/research/focus", h.requireAuth(h.apiResearchFocus))
-	mux.HandleFunc("/miniapp/api/research/", h.requireAuth(h.apiResearchDetail))
+	h.handleProtectedFunc(mux, "/miniapp/api/cache", h.apiCache)
+	h.handleProtectedFunc(mux, "/miniapp/api/research", h.apiResearch)
+	h.handleProtectedFunc(mux, "/miniapp/api/research/focus", h.apiResearchFocus)
+	h.handleProtectedFunc(mux, "/miniapp/api/research/", h.apiResearchDetail)
 }
 
 func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {
