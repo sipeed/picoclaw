@@ -203,7 +203,7 @@ func (c *MQTTChannel) onMessage(client mqtt.Client, msg mqtt.Message) {
 	// Check if subscribe_json_key is configured
 	if c.config.SubscribeJSONKey != nil && *c.config.SubscribeJSONKey != "" {
 		// Parse as JSON and extract the specified key
-		var jsonMsg map[string]interface{}
+		var jsonMsg map[string]any
 		if err := json.Unmarshal(msg.Payload(), &jsonMsg); err == nil {
 			// Successfully parsed as JSON
 			if value, exists := jsonMsg[*c.config.SubscribeJSONKey]; exists {
