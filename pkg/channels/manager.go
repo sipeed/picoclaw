@@ -805,6 +805,18 @@ func (m *Manager) runTTLJanitor(ctx context.Context) {
 	}
 }
 
+// InvokeTypingStop stops any active typing indicator for the given channel/chatID.
+// Safe to call even if no typing indicator is active. Intended for use in defer
+// after the LLM worker finishes processing a message.
+func (m *Manager) InvokeTypingStop(channel, chatID string) {
+	key := channel + ":" + chatID
+	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
+		if entry, ok := v.(typingEntry); ok && entry.stop != nil {
+			entry.stop()
+		}
+	}
+}
+
 func (m *Manager) GetChannel(name string) (Channel, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
