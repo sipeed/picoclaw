@@ -184,6 +184,8 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 						}
 						return true
 					}
+					// Clear orphan draft on failure to prevent stale streaming preview.
+					_ = drafter.SendDraft(ctx, msg.ChatID, entry.draftID, "")
 				}
 				m.statusEditTimes.Delete(key)
 				// Draft update failed → fall through to placeholder path.

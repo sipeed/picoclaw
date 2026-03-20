@@ -471,6 +471,38 @@ func detectReadingOrder(content string, cfgDefault string) string {
 	return "auto"
 }
 
+// stripConsumedOCRKeywords removes OCR option keywords from the message
+// content after they have been consumed by PDF processing, so the LLM
+// does not interpret them as user instructions.
+func stripConsumedOCRKeywords(content string, withFigures bool, readingOrder string) string {
+	lower := strings.ToLower(content)
+	if withFigures {
+		for _, kw := range figureKeywords {
+			if idx := strings.Index(lower, kw); idx >= 0 {
+				content = content[:idx] + content[idx+len(kw):]
+				lower = lower[:idx] + lower[idx+len(kw):]
+			}
+		}
+	}
+	if readingOrder != "auto" {
+		for _, kw := range readingOrderKeywords {
+			if kw.order != readingOrder {
+				continue
+			}
+			if idx := strings.Index(lower, kw.keyword); idx >= 0 {
+				content = content[:idx] + content[idx+len(kw.keyword):]
+				lower = lower[:idx] + lower[idx+len(kw.keyword):]
+			}
+		}
+	}
+	// Normalize runs of whitespace left by removal.
+	for strings.Contains(content, "  ") {
+		content = strings.ReplaceAll(content, "  ", " ")
+	}
+	content = strings.TrimSpace(content)
+	return content
+}
+
 const pdfHintMessage = "PDF OCR in progress. " +
 	"Tip: include \"figures\" or \"\u56f3\u7248\" to extract images. " +
 	"Add \"\u7e26\u66f8\u304d\" or \"\u6a2a\u66f8\u304d\" to set reading order."
@@ -495,9 +527,14 @@ func (al *AgentLoop) processPDFsInMessages(
 			cfgRO = ocrCfg.ReadingOrder
 		}
 		readingOrder := detectReadingOrder(m.Content, cfgRO)
-		result[i].Content = al.replacePDFTags(
+		newContent := al.replacePDFTags(
 			ctx, m.Content, ocrCfg, channel, chatID, withFigures, readingOrder,
 		)
+		// PDF was actually processed (content changed) → strip consumed keywords
+		if newContent != m.Content {
+			newContent = stripConsumedOCRKeywords(newContent, withFigures, readingOrder)
+		}
+		result[i].Content = newContent
 	}
 
 	return result

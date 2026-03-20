@@ -256,7 +256,7 @@ func (al *AgentLoop) setupStreamingHook(opts processOptions, task *activeTask) (
 	go func() {
 		defer close(streamDone)
 		for up := range streamCh {
-			display := buildStreamingDisplay(up.accumulated, up.reasoning)
+			display := buildStreamingDisplay(utils.StripThinkBlocks(up.accumulated), up.reasoning)
 			outMsg := bus.OutboundMessage{
 				Channel: opts.Channel,
 				ChatID:  opts.ChatID,
