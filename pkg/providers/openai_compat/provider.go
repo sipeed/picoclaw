@@ -150,6 +150,13 @@ func (p *Provider) Chat(
 		}
 	}
 
+	// MiniMax provider: enable reasoning_split to separate CoT from content
+	// This prevents chain-of-thought from leaking into the main content field.
+	// See: https://github.com/sipeed/picoclaw/issues/1320
+	if strings.Contains(strings.ToLower(p.apiBase), "minimaxi.com") {
+		requestBody["reasoning_split"] = true
+	}
+
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
