@@ -555,6 +555,84 @@ func TestLoadConfig_WebToolsProxy(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_LegacyProvidersConfigMigratesWithoutTemplateModelLeak(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	configJSON := `{
+  "providers": {
+    "gemini": {
+      "api_key": "gemini-test-key"
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	if got := cfg.Agents.Defaults.GetModelName(); got != "gemini" {
+		t.Fatalf("GetModelName() = %q, want %q", got, "gemini")
+	}
+	if len(cfg.ModelList) != 1 {
+		t.Fatalf("len(ModelList) = %d, want 1", len(cfg.ModelList))
+	}
+	if cfg.ModelList[0].ModelName != "gemini" {
+		t.Fatalf("ModelList[0].ModelName = %q, want %q", cfg.ModelList[0].ModelName, "gemini")
+	}
+	if cfg.ModelList[0].Model != "gemini/gemini-pro" {
+		t.Fatalf("ModelList[0].Model = %q, want %q", cfg.ModelList[0].Model, "gemini/gemini-pro")
+	}
+
+	modelCfg, err := cfg.GetModelConfig(cfg.Agents.Defaults.GetModelName())
+	if err != nil {
+		t.Fatalf("GetModelConfig() error = %v", err)
+	}
+	if modelCfg.Model != "gemini/gemini-pro" {
+		t.Fatalf("modelCfg.Model = %q, want %q", modelCfg.Model, "gemini/gemini-pro")
+	}
+}
+
+func TestLoadConfig_LegacyProvidersConfigKeepsExplicitLegacyModel(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	configJSON := `{
+  "agents": {
+    "defaults": {
+      "model": "gemini-pro"
+    }
+  },
+  "providers": {
+    "gemini": {
+      "api_key": "gemini-test-key"
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	if got := cfg.Agents.Defaults.GetModelName(); got != "gemini-pro" {
+		t.Fatalf("GetModelName() = %q, want %q", got, "gemini-pro")
+	}
+
+	modelCfg, err := cfg.GetModelConfig(cfg.Agents.Defaults.GetModelName())
+	if err != nil {
+		t.Fatalf("GetModelConfig() error = %v", err)
+	}
+	if modelCfg.Model != "gemini/gemini-pro" {
+		t.Fatalf("modelCfg.Model = %q, want %q", modelCfg.Model, "gemini/gemini-pro")
+	}
+}
+
 // TestDefaultConfig_DMScope verifies the default dm_scope value
 // TestDefaultConfig_SummarizationThresholds verifies summarization defaults
 func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
