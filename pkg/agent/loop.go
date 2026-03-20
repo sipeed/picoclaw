@@ -1500,7 +1500,77 @@ func (al *AgentLoop) runLLMIteration(
 		})
 	}
 
+	if finalContent == "" && iteration >= agent.MaxIterations && agent.MaxIterations > 0 {
+		logger.WarnCF("agent", "Tool iteration limit reached, attempting direct answer without tools",
+			map[string]any{
+				"agent_id":       agent.ID,
+				"iteration":      iteration,
+				"max_iterations": agent.MaxIterations,
+			})
+
+		llmOpts := map[string]any{
+			"max_tokens":       agent.MaxTokens,
+			"temperature":      agent.Temperature,
+			"prompt_cache_key": agent.ID,
+		}
+		if agent.ThinkingLevel != ThinkingOff {
+			if tc, ok := agent.Provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
+				llmOpts["thinking_level"] = string(agent.ThinkingLevel)
+			}
+		}
+
+		directAnswer, recovered, err := al.requestDirectAnswerAfterToolLimit(ctx, agent, messages, activeModel, llmOpts)
+		switch {
+		case err != nil:
+			logger.WarnCF("agent", "Direct-answer fallback after tool limit failed",
+				map[string]any{
+					"agent_id":  agent.ID,
+					"iteration": iteration,
+					"error":     err.Error(),
+				})
+		case recovered:
+			finalContent = directAnswer
+		default:
+			logger.WarnCF("agent", "Direct-answer fallback produced no usable answer",
+				map[string]any{
+					"agent_id":  agent.ID,
+					"iteration": iteration,
+				})
+		}
+	}
+
 	return finalContent, iteration, nil
+}
+
+func (al *AgentLoop) requestDirectAnswerAfterToolLimit(
+	ctx context.Context,
+	agent *AgentInstance,
+	messages []providers.Message,
+	model string,
+	llmOpts map[string]any,
+) (string, bool, error) {
+	directMessages := append([]providers.Message{}, messages...)
+	directMessages = append(directMessages, providers.Message{
+		Role:    "user",
+		Content: "Tool iteration limit reached. Using the available context and tool results already in the conversation, answer the user's latest request directly without calling any more tools.",
+	})
+
+	response, err := agent.Provider.Chat(ctx, directMessages, nil, model, llmOpts)
+	if err != nil {
+		return "", false, err
+	}
+	if len(response.ToolCalls) > 0 {
+		return "", false, nil
+	}
+
+	content := response.Content
+	if content == "" && response.ReasoningContent != "" {
+		content = response.ReasoningContent
+	}
+	if content == "" {
+		return "", false, nil
+	}
+	return content, true, nil
 }
 
 // selectCandidates returns the model candidates and resolved model name to use
