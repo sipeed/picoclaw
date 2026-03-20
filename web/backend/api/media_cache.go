@@ -34,13 +34,19 @@ func (h *Handler) openMediaCache() (*mediacache.Cache, error) {
 	return mediacache.Open(filepath.Join(ws, "media_cache.db"))
 }
 
-// handleMediaCache lists all media cache entries.
+// handleMediaCache dispatches GET (list) and DELETE (clear all) for media cache.
 func (h *Handler) handleMediaCache(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		h.listMediaCache(w, r)
+	case http.MethodDelete:
+		h.deleteAllMediaCache(w, r)
+	default:
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
-		return
 	}
+}
 
+func (h *Handler) listMediaCache(w http.ResponseWriter, r *http.Request) {
 	mc, err := h.openMediaCache()
 	if err != nil {
 		http.Error(w, `{"error":"media cache not available"}`, http.StatusServiceUnavailable)
@@ -72,20 +78,51 @@ func (h *Handler) handleMediaCache(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// handleMediaCacheContent serves the full file content for a PDF OCR entry.
-// GET /api/media-cache/{hash}
-func (h *Handler) handleMediaCacheContent(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+func (h *Handler) deleteAllMediaCache(w http.ResponseWriter, _ *http.Request) {
+	mc, err := h.openMediaCache()
+	if err != nil {
+		http.Error(w, `{"error":"media cache not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+	defer mc.Close()
+
+	removed, err := mc.DeleteAll()
+	if err != nil {
+		http.Error(w, `{"error":"failed to delete cache"}`, http.StatusInternalServerError)
 		return
 	}
 
+	// Clean up .ocr_cache directory
+	cfg, _ := config.LoadConfig(h.configPath)
+	if cfg != nil {
+		ocrDir := filepath.Join(cfg.WorkspacePath(), ".ocr_cache")
+		os.RemoveAll(ocrDir)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"deleted": removed})
+}
+
+// handleMediaCacheContent dispatches GET (content) and DELETE (single entry).
+// /api/media-cache/{hash}
+func (h *Handler) handleMediaCacheContent(w http.ResponseWriter, r *http.Request) {
 	hash := filepath.Base(r.URL.Path)
 	if hash == "" || hash == "media-cache" {
 		http.Error(w, `{"error":"hash required"}`, http.StatusBadRequest)
 		return
 	}
 
+	switch r.Method {
+	case http.MethodGet:
+		h.getMediaCacheContent(w, hash)
+	case http.MethodDelete:
+		h.deleteMediaCacheEntry(w, hash)
+	default:
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) getMediaCacheContent(w http.ResponseWriter, hash string) {
 	mc, err := h.openMediaCache()
 	if err != nil {
 		http.Error(w, `{"error":"media cache not available"}`, http.StatusServiceUnavailable)
@@ -95,7 +132,9 @@ func (h *Handler) handleMediaCacheContent(w http.ResponseWriter, r *http.Request
 
 	entry, ok := mc.GetEntry(hash, mediacache.TypePDFOCR)
 	if !ok {
-		// Try image_desc
+		entry, ok = mc.GetEntry(hash, mediacache.TypePDFText)
+	}
+	if !ok {
 		result, ok := mc.Get(hash, mediacache.TypeImageDesc)
 		if !ok {
 			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
@@ -110,7 +149,6 @@ func (h *Handler) handleMediaCacheContent(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Read the full markdown file
 	content, err := os.ReadFile(entry.FilePath)
 	if err != nil {
 		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
@@ -125,4 +163,33 @@ func (h *Handler) handleMediaCacheContent(w http.ResponseWriter, r *http.Request
 		"file_path": entry.FilePath,
 		"pages":     entry.Pages,
 	})
+}
+
+func (h *Handler) deleteMediaCacheEntry(w http.ResponseWriter, hash string) {
+	mc, err := h.openMediaCache()
+	if err != nil {
+		http.Error(w, `{"error":"media cache not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+	defer mc.Close()
+
+	// Delete all types for this hash, clean up files
+	for _, t := range []string{mediacache.TypePDFOCR, mediacache.TypePDFText, mediacache.TypeImageDesc} {
+		entry, err := mc.Delete(hash, t)
+		if err != nil {
+			continue
+		}
+		if entry.FilePath != "" {
+			// Remove the per-hash subdirectory if it exists
+			dir := filepath.Dir(entry.FilePath)
+			if filepath.Base(dir) == hash {
+				os.RemoveAll(dir)
+			} else {
+				os.Remove(entry.FilePath)
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

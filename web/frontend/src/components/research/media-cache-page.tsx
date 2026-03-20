@@ -1,13 +1,16 @@
 import {
   IconFileText,
   IconPhoto,
+  IconTrash,
 } from "@tabler/icons-react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
 
 import {
   type MediaCacheContent,
   type MediaCacheEntry,
+  deleteAllMediaCache,
+  deleteMediaCacheEntry,
   getMediaCacheContent,
   getMediaCacheEntries,
 } from "@/api/media-cache"
@@ -24,6 +27,7 @@ import { cn } from "@/lib/utils"
 export function MediaCachePage() {
   const [typeFilter, setTypeFilter] = React.useState<string>("")
   const [expandedHash, setExpandedHash] = React.useState<string | null>(null)
+  const queryClient = useQueryClient()
 
   const { data: entries, isLoading, error } = useQuery({
     queryKey: ["media-cache", typeFilter],
@@ -31,11 +35,24 @@ export function MediaCachePage() {
     refetchInterval: 30000,
   })
 
+  const handleDeleteAll = async () => {
+    if (!confirm("Delete all cached media?")) return
+    await deleteAllMediaCache()
+    setExpandedHash(null)
+    queryClient.invalidateQueries({ queryKey: ["media-cache"] })
+  }
+
+  const handleDeleteEntry = async (hash: string) => {
+    await deleteMediaCacheEntry(hash)
+    if (expandedHash === hash) setExpandedHash(null)
+    queryClient.invalidateQueries({ queryKey: ["media-cache"] })
+  }
+
   return (
     <div className="flex-1 overflow-auto px-6 py-3">
       <div className="w-full max-w-6xl space-y-4">
-        {/* Type filter */}
-        <div className="flex gap-2">
+        {/* Type filter + clear all */}
+        <div className="flex items-center gap-2">
           <FilterButton
             active={typeFilter === ""}
             onClick={() => setTypeFilter("")}
@@ -56,6 +73,17 @@ export function MediaCachePage() {
             <IconFileText className="size-3.5" />
             PDF
           </FilterButton>
+          {entries && entries.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive ml-auto gap-1"
+              onClick={handleDeleteAll}
+            >
+              <IconTrash className="size-3.5" />
+              Clear All
+            </Button>
+          )}
         </div>
 
         {isLoading ? (
@@ -82,6 +110,7 @@ export function MediaCachePage() {
                     expandedHash === entry.hash ? null : entry.hash,
                   )
                 }
+                onDelete={() => handleDeleteEntry(entry.hash)}
               />
             ))}
           </div>
@@ -116,10 +145,12 @@ function MediaEntry({
   entry,
   expanded,
   onToggle,
+  onDelete,
 }: {
   entry: MediaCacheEntry
   expanded: boolean
   onToggle: () => void
+  onDelete: () => void
 }) {
   const isImage = entry.type === "image_desc"
   const Icon = isImage ? IconPhoto : IconFileText
@@ -163,14 +194,20 @@ function MediaEntry({
       </CardHeader>
       {expanded && (
         <CardContent className="border-t pt-3">
-          <ExpandedContent entry={entry} />
+          <ExpandedContent entry={entry} onDelete={onDelete} />
         </CardContent>
       )}
     </Card>
   )
 }
 
-function ExpandedContent({ entry }: { entry: MediaCacheEntry }) {
+function ExpandedContent({
+  entry,
+  onDelete,
+}: {
+  entry: MediaCacheEntry
+  onDelete: () => void
+}) {
   const isPDF = entry.type === "pdf_ocr"
 
   const { data, isLoading } = useQuery({
@@ -179,49 +216,58 @@ function ExpandedContent({ entry }: { entry: MediaCacheEntry }) {
     enabled: isPDF, // only fetch full content for PDFs
   })
 
-  if (!isPDF) {
-    // Image description: show full result inline
-    return (
-      <div className="space-y-2">
-        <div className="text-muted-foreground text-xs font-medium">
-          Description
-        </div>
-        <div className="bg-muted rounded-md p-3 text-sm whitespace-pre-wrap">
-          {entry.result}
-        </div>
-      </div>
-    )
-  }
-
-  // PDF OCR: show preview + full content on demand
   return (
     <div className="space-y-3">
-      <div className="space-y-1">
-        <div className="text-muted-foreground text-xs font-medium">Preview</div>
-        <div className="bg-muted rounded-md p-3 text-sm whitespace-pre-wrap">
-          {entry.result}
-        </div>
-      </div>
-      {entry.file_path && (
-        <div className="text-muted-foreground flex items-center gap-1 text-xs">
-          <IconFileText className="size-3" />
-          <span className="font-mono">{entry.file_path}</span>
-        </div>
-      )}
-      {isLoading ? (
-        <div className="text-muted-foreground py-2 text-sm">
-          Loading full content...
-        </div>
-      ) : data?.content ? (
-        <div className="space-y-1">
+      {!isPDF ? (
+        <div className="space-y-2">
           <div className="text-muted-foreground text-xs font-medium">
-            Full OCR Content
+            Description
           </div>
-          <div className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm whitespace-pre-wrap">
-            {data.content}
+          <div className="bg-muted rounded-md p-3 text-sm whitespace-pre-wrap">
+            {entry.result}
           </div>
         </div>
-      ) : null}
+      ) : (
+        <>
+          <div className="space-y-1">
+            <div className="text-muted-foreground text-xs font-medium">Preview</div>
+            <div className="bg-muted rounded-md p-3 text-sm whitespace-pre-wrap">
+              {entry.result}
+            </div>
+          </div>
+          {entry.file_path && (
+            <div className="text-muted-foreground flex items-center gap-1 text-xs">
+              <IconFileText className="size-3" />
+              <span className="font-mono">{entry.file_path}</span>
+            </div>
+          )}
+          {isLoading ? (
+            <div className="text-muted-foreground py-2 text-sm">
+              Loading full content...
+            </div>
+          ) : data?.content ? (
+            <div className="space-y-1">
+              <div className="text-muted-foreground text-xs font-medium">
+                Full OCR Content
+              </div>
+              <div className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-sm whitespace-pre-wrap">
+                {data.content}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+      <div className="flex justify-end">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-destructive gap-1"
+          onClick={onDelete}
+        >
+          <IconTrash className="size-3.5" />
+          Delete
+        </Button>
+      </div>
     </div>
   )
 }

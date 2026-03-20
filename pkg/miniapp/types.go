@@ -125,7 +125,7 @@ type MediaCacheEntry struct {
 	AccessedAt string `json:"accessed_at"`
 }
 
-// DataProvider is the read-only interface to agent state for the Mini App API.
+// DataProvider is the interface to agent state for the Mini App API.
 type DataProvider interface {
 	ListSkills() []skills.SkillInfo
 	GetPlanInfo() PlanInfo
@@ -137,6 +137,8 @@ type DataProvider interface {
 	GetContextInfo() ContextInfo
 	GetSystemPrompt() string
 	ListMediaCache(entryType string) []MediaCacheEntry
+	DeleteMediaCache(hash string) error
+	DeleteAllMediaCache() (int64, error)
 }
 
 // CommandSender injects a command into the message bus on behalf of a user.

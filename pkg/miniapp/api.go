@@ -286,12 +286,42 @@ func writeWorktreeAPIError(w http.ResponseWriter, err error) bool {
 
 // apiDevConsole receives console output from dev preview iframes.
 
-// apiCache returns a list of media cache entries.
+// apiCache dispatches GET (list) and DELETE (clear all) for media cache.
 func (h *Handler) apiCache(w http.ResponseWriter, r *http.Request) {
-	entryType := r.URL.Query().Get("type")
-	entries := h.provider.ListMediaCache(entryType)
-	if entries == nil {
-		entries = []MediaCacheEntry{}
+	switch r.Method {
+	case http.MethodGet:
+		entryType := r.URL.Query().Get("type")
+		entries := h.provider.ListMediaCache(entryType)
+		if entries == nil {
+			entries = []MediaCacheEntry{}
+		}
+		writeJSON(w, entries)
+	case http.MethodDelete:
+		n, err := h.provider.DeleteAllMediaCache()
+		if err != nil {
+			http.Error(w, `{"error":"failed to delete cache"}`, http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"deleted": n})
+	default:
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 	}
-	writeJSON(w, entries)
+}
+
+// apiCacheEntry handles DELETE for a single cache entry.
+func (h *Handler) apiCacheEntry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	hash := r.URL.Path[len("/miniapp/api/cache/"):]
+	if hash == "" {
+		http.Error(w, `{"error":"hash required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.provider.DeleteMediaCache(hash); err != nil {
+		http.Error(w, `{"error":"failed to delete entry"}`, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
 }

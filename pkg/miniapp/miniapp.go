@@ -112,6 +112,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/dev/console", h.apiDevConsole)
 	mux.HandleFunc("/miniapp/dev/", h.serveDevProxy)
 	h.handleProtectedFunc(mux, "/miniapp/api/cache", h.apiCache)
+	h.handleProtectedFunc(mux, "/miniapp/api/cache/", h.apiCacheEntry)
 	h.handleProtectedFunc(mux, "/miniapp/api/research", h.apiResearch)
 	h.handleProtectedFunc(mux, "/miniapp/api/research/focus", h.apiResearchFocus)
 	h.handleProtectedFunc(mux, "/miniapp/api/research/", h.apiResearchDetail)

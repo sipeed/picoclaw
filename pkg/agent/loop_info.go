@@ -3,6 +3,8 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/mediacache"
@@ -291,4 +293,43 @@ func (al *AgentLoop) ListMediaCache(entryType string) []mediacache.ListEntry {
 		return nil
 	}
 	return entries
+}
+
+// DeleteMediaCache deletes all cache entries for the given hash and cleans up files.
+func (al *AgentLoop) DeleteMediaCache(hash string) error {
+	if al.mediaCache == nil {
+		return nil
+	}
+	for _, t := range []string{mediacache.TypePDFOCR, mediacache.TypePDFText, mediacache.TypeImageDesc} {
+		entry, err := al.mediaCache.Delete(hash, t)
+		if err != nil {
+			continue
+		}
+		if entry.FilePath != "" {
+			dir := filepath.Dir(entry.FilePath)
+			if filepath.Base(dir) == hash {
+				os.RemoveAll(dir)
+			} else {
+				os.Remove(entry.FilePath)
+			}
+		}
+	}
+	return nil
+}
+
+// DeleteAllMediaCache deletes all cache entries and cleans up the OCR output directory.
+func (al *AgentLoop) DeleteAllMediaCache() (int64, error) {
+	if al.mediaCache == nil {
+		return 0, nil
+	}
+	n, err := al.mediaCache.DeleteAll()
+	if err != nil {
+		return 0, err
+	}
+	// Clean up .ocr_cache directory
+	registry := al.GetRegistry()
+	if agent := registry.GetDefaultAgent(); agent != nil {
+		os.RemoveAll(filepath.Join(agent.Workspace, ".ocr_cache"))
+	}
+	return n, nil
 }

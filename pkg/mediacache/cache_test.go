@@ -166,6 +166,60 @@ func TestCache_GetEntry_Miss(t *testing.T) {
 	}
 }
 
+func TestCache_Delete(t *testing.T) {
+	c := openTestCache(t)
+	hash := HashData([]byte("delete-me"))
+
+	_ = c.PutEntry(hash, TypePDFOCR, Entry{Result: "preview", FilePath: "/tmp/test.md", Pages: 3})
+
+	entry, err := c.Delete(hash, TypePDFOCR)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if entry.FilePath != "/tmp/test.md" {
+		t.Errorf("returned FilePath = %q", entry.FilePath)
+	}
+	if entry.Pages != 3 {
+		t.Errorf("returned Pages = %d", entry.Pages)
+	}
+
+	if _, ok := c.GetEntry(hash, TypePDFOCR); ok {
+		t.Error("entry should be deleted")
+	}
+}
+
+func TestCache_Delete_NotFound(t *testing.T) {
+	c := openTestCache(t)
+	entry, err := c.Delete("nonexistent", TypePDFOCR)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if entry.FilePath != "" {
+		t.Error("expected empty entry for not-found")
+	}
+}
+
+func TestCache_DeleteAll(t *testing.T) {
+	c := openTestCache(t)
+
+	_ = c.Put(HashData([]byte("a")), TypeImageDesc, "desc1")
+	_ = c.Put(HashData([]byte("b")), TypeImageDesc, "desc2")
+	_ = c.PutEntry(HashData([]byte("c")), TypePDFOCR, Entry{Result: "pdf"})
+
+	n, err := c.DeleteAll()
+	if err != nil {
+		t.Fatalf("DeleteAll: %v", err)
+	}
+	if n != 3 {
+		t.Errorf("deleted %d, want 3", n)
+	}
+
+	entries, _ := c.List("")
+	if len(entries) != 0 {
+		t.Errorf("list should be empty, got %d", len(entries))
+	}
+}
+
 func TestCache_SimpleGetIgnoresFilePath(t *testing.T) {
 	// Simple Get/Put should still work with the new schema
 	c := openTestCache(t)

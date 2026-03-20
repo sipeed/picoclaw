@@ -908,6 +908,14 @@ func (p *agentLoopDataProvider) ListMediaCache(entryType string) []miniapp.Media
 	return entries
 }
 
+func (p *agentLoopDataProvider) DeleteMediaCache(hash string) error {
+	return p.loop.DeleteMediaCache(hash)
+}
+
+func (p *agentLoopDataProvider) DeleteAllMediaCache() (int64, error) {
+	return p.loop.DeleteAllMediaCache()
+}
+
 func (p *agentLoopDataProvider) GetGitRepos() []miniapp.GitRepoSummary {
 	if time.Since(p.gitReposCacheAt) < gitCacheTTL {
 		return p.gitReposCache
