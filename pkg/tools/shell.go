@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/tools/shell"
 )
 
@@ -315,7 +317,11 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	// Use sanitized environment - merge cached env with exec time vars and LLM extra env
 	// Note: cachedEnv is NOT re-filtered - PICOCLAW_* vars are preserved
-	cmd.Env = shell.MapToEnvSlice(shell.MergeEnvVars(t.cachedEnv, execTimeEnv, extraEnv))
+	finalEnv := shell.MergeEnvVars(t.cachedEnv, execTimeEnv, extraEnv)
+	cmd.Env = shell.MapToEnvSlice(finalEnv)
+
+	// Debug: log final env keys being passed to command
+	logger.DebugCF("exec", "final env keys", map[string]any{"env_keys": maps.Keys(finalEnv)})
 
 	if cwd != "" {
 		cmd.Dir = cwd
