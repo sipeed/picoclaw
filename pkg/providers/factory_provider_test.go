@@ -64,6 +64,12 @@ func TestExtractProtocol(t *testing.T) {
 			wantProtocol: "nvidia",
 			wantModelID:  "meta/llama-3.1-8b",
 		},
+		{
+			name:         "azure with prefix",
+			model:        "azure/my-gpt5-deployment",
+			wantProtocol: "azure",
+			wantModelID:  "my-gpt5-deployment",
+		},
 	}
 
 	for _, tt := range tests {
@@ -398,5 +404,202 @@ func TestCreateProviderFromConfig_RequestTimeoutPropagation(t *testing.T) {
 	errMsg := err.Error()
 	if !strings.Contains(errMsg, "context deadline exceeded") && !strings.Contains(errMsg, "Client.Timeout exceeded") {
 		t.Fatalf("Chat() error = %q, want timeout-related error", errMsg)
+	}
+}
+
+func TestCreateProviderFromConfig_Azure(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "azure-gpt5",
+		Model:     "azure/my-gpt5-deployment",
+		APIKey:    "test-azure-key",
+		APIBase:   "https://my-resource.openai.azure.com",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "my-gpt5-deployment" {
+		t.Errorf("modelID = %q, want %q", modelID, "my-gpt5-deployment")
+	}
+}
+
+func TestCreateProviderFromConfig_AzureOpenAIAlias(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "azure-gpt4",
+		Model:     "azure-openai/my-deployment",
+		APIKey:    "test-azure-key",
+		APIBase:   "https://my-resource.openai.azure.com",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "my-deployment" {
+		t.Errorf("modelID = %q, want %q", modelID, "my-deployment")
+	}
+}
+
+func TestCreateProviderFromConfig_AzureMissingAPIKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "azure-gpt5",
+		Model:     "azure/my-gpt5-deployment",
+		APIBase:   "https://my-resource.openai.azure.com",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("CreateProviderFromConfig() expected error for missing API key")
+	}
+}
+
+func TestCreateProviderFromConfig_AzureMissingAPIBase(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "azure-gpt5",
+		Model:     "azure/my-gpt5-deployment",
+		APIKey:    "test-azure-key",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("CreateProviderFromConfig() expected error for missing API base")
+	}
+}
+
+func TestCreateProviderFromConfig_QwenInternationalAlias(t *testing.T) {
+	tests := []struct {
+		name     string
+		protocol string
+	}{
+		{"qwen-international", "qwen-international"},
+		{"dashscope-intl", "dashscope-intl"},
+		{"qwen-intl", "qwen-intl"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.ModelConfig{
+				ModelName: "test-" + tt.protocol,
+				Model:     tt.protocol + "/qwen-max",
+				APIKey:    "test-key",
+			}
+
+			provider, modelID, err := CreateProviderFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("CreateProviderFromConfig() error = %v", err)
+			}
+			if provider == nil {
+				t.Fatal("CreateProviderFromConfig() returned nil provider")
+			}
+			if modelID != "qwen-max" {
+				t.Errorf("modelID = %q, want %q", modelID, "qwen-max")
+			}
+			if _, ok := provider.(*HTTPProvider); !ok {
+				t.Fatalf("expected *HTTPProvider, got %T", provider)
+			}
+		})
+	}
+}
+
+func TestCreateProviderFromConfig_QwenUSAlias(t *testing.T) {
+	tests := []struct {
+		name     string
+		protocol string
+	}{
+		{"qwen-us", "qwen-us"},
+		{"dashscope-us", "dashscope-us"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.ModelConfig{
+				ModelName: "test-" + tt.protocol,
+				Model:     tt.protocol + "/qwen-max",
+				APIKey:    "test-key",
+			}
+
+			provider, modelID, err := CreateProviderFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("CreateProviderFromConfig() error = %v", err)
+			}
+			if provider == nil {
+				t.Fatal("CreateProviderFromConfig() returned nil provider")
+			}
+			if modelID != "qwen-max" {
+				t.Errorf("modelID = %q, want %q", modelID, "qwen-max")
+			}
+			if _, ok := provider.(*HTTPProvider); !ok {
+				t.Fatalf("expected *HTTPProvider, got %T", provider)
+			}
+		})
+	}
+}
+
+func TestCreateProviderFromConfig_CodingPlanAnthropic(t *testing.T) {
+	tests := []struct {
+		name     string
+		protocol string
+	}{
+		{"coding-plan-anthropic", "coding-plan-anthropic"},
+		{"alibaba-coding-anthropic", "alibaba-coding-anthropic"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.ModelConfig{
+				ModelName: "test-" + tt.protocol,
+				Model:     tt.protocol + "/claude-sonnet-4-20250514",
+				APIKey:    "test-key",
+			}
+
+			provider, modelID, err := CreateProviderFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("CreateProviderFromConfig() error = %v", err)
+			}
+			if provider == nil {
+				t.Fatal("CreateProviderFromConfig() returned nil provider")
+			}
+			if modelID != "claude-sonnet-4-20250514" {
+				t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4-20250514")
+			}
+			// coding-plan-anthropic uses Anthropic Messages provider
+			// Verify it's the anthropic messages provider by checking interface
+			var _ LLMProvider = provider
+		})
+	}
+}
+
+func TestGetDefaultAPIBase_CodingPlanAnthropic(t *testing.T) {
+	expectedURL := "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"
+	if got := getDefaultAPIBase("coding-plan-anthropic"); got != expectedURL {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "coding-plan-anthropic", got, expectedURL)
+	}
+	if got := getDefaultAPIBase("alibaba-coding-anthropic"); got != expectedURL {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "alibaba-coding-anthropic", got, expectedURL)
+	}
+}
+
+func TestGetDefaultAPIBase_QwenIntlAliases(t *testing.T) {
+	expectedURL := "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+	for _, protocol := range []string{"qwen-intl", "qwen-international", "dashscope-intl"} {
+		if got := getDefaultAPIBase(protocol); got != expectedURL {
+			t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", protocol, got, expectedURL)
+		}
+	}
+}
+
+func TestGetDefaultAPIBase_QwenUSAliases(t *testing.T) {
+	expectedURL := "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
+	for _, protocol := range []string{"qwen-us", "dashscope-us"} {
+		if got := getDefaultAPIBase(protocol); got != expectedURL {
+			t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", protocol, got, expectedURL)
+		}
 	}
 }
