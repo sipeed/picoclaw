@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 )
 
@@ -11,6 +12,9 @@ type SendCallback func(channel, chatID, content string) error
 type MessageTool struct {
 	sendCallback SendCallback
 	sentInRound  atomic.Bool // Tracks whether a message was sent in the current processing round
+
+	mu          sync.Mutex        // protects sentChatIDs
+	sentChatIDs map[string]struct{} // All chat_ids the message tool sent to in the current round
 }
 
 func NewMessageTool() *MessageTool {
@@ -50,11 +54,22 @@ func (t *MessageTool) Parameters() map[string]any {
 // Called by the agent loop at the start of each inbound message processing round.
 func (t *MessageTool) ResetSentInRound() {
 	t.sentInRound.Store(false)
+	t.mu.Lock()
+	t.sentChatIDs = nil
+	t.mu.Unlock()
 }
 
 // HasSentInRound returns true if the message tool sent a message during the current round.
 func (t *MessageTool) HasSentInRound() bool {
 	return t.sentInRound.Load()
+}
+
+// HasSentToChatID returns true if the message tool sent to the given chat_id in this round.
+func (t *MessageTool) HasSentToChatID(chatID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, ok := t.sentChatIDs[chatID]
+	return ok
 }
 
 func (t *MessageTool) SetSendCallback(callback SendCallback) {
@@ -94,6 +109,12 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	}
 
 	t.sentInRound.Store(true)
+	t.mu.Lock()
+	if t.sentChatIDs == nil {
+		t.sentChatIDs = make(map[string]struct{})
+	}
+	t.sentChatIDs[chatID] = struct{}{}
+	t.mu.Unlock()
 	// Silent: user already received the message directly
 	return &ToolResult{
 		ForLLM: fmt.Sprintf("Message sent to %s:%s", channel, chatID),
