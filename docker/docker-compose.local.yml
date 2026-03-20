@@ -1,5 +1,28 @@
 services:
   # ─────────────────────────────────────────────
+  # PicoClaw Agent (one-shot query)
+  #   docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Hello"
+  # ─────────────────────────────────────────────
+  picoclaw-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    userns_mode: "keep-id"
+    container_name: picoclaw-agent
+    security_opt:
+      - label=disable
+    profiles:
+      - agent
+    # Uncomment to access host network; leave commented unless needed.
+    #extra_hosts:
+    # - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/home/picoclaw/.picoclaw:Z
+    entrypoint: ["picoclaw", "agent"]
+    stdin_open: true
+    tty: true
+
+  # ─────────────────────────────────────────────
   # PicoClaw Gateway (Long-running Bot)
   #   docker compose -f docker/docker-compose.yml up picoclaw-gateway
   # ─────────────────────────────────────────────
