@@ -679,6 +679,12 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 		Content:    content,
 		SessionKey: sessionKey,
 	}
+	// Set peer so channel-based bindings (e.g. a specific Slack channel mapped
+	// to a named agent) are matched by the route resolver, exactly as they are
+	// for live inbound messages.
+	if chatID != "" && chatID != "direct" {
+		msg.Peer = bus.Peer{Kind: "channel", ID: chatID}
+	}
 
 	return al.processMessage(ctx, msg)
 }
