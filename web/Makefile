@@ -77,8 +77,9 @@ dev-backend:
 
 # Build frontend and embed into Go binary
 build:
-	cd frontend && pnpm build:backend
-	${WEB_GO} build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/picoclaw-launcher ./backend/
+	@echo "cd frontend && pnpm build:backend"
+	@echo "Building picoclaw-launcher for $(PLATFORM)/$(ARCH)..."
+	GOARCH=${ARCH} ${WEB_GO} build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/picoclaw-launcher ./backend/
 
 # Run all tests
 test:
