@@ -1,59 +1,97 @@
 ---
 name: weather
-description: Get current weather and forecasts with verified location matching (no API key required).
-homepage: https://wttr.in/:help
+description: Get current weather and forecasts (no API key required).
+homepage: https://open-meteo.com/en/docs
 metadata: {"nanobot":{"emoji":"🌤️","requires":{"bins":["curl"]}}}
 ---
 
 # Weather
 
-Use the most reliable location match first. For Chinese city names or other non-Latin input, prefer `wttr.in` with the original query because it resolves native names directly. Use Open-Meteo for structured current conditions and forecasts only after you have confirmed the exact city.
+Use coordinate-based weather lookup by default.
 
-## Accuracy Rules
+Important:
+- Always geocode place names first. Do not query weather providers with a raw city string when the place could be ambiguous.
+- This is especially important for short city names and Chinese place names such as `成都`, `上海`, `北京`, etc.
+- In the final answer, mention the resolved place name plus province/state/country so the user can verify the location is correct.
 
-- Always restate the matched location, region/country, and observation time in the final answer.
-- Do not trust the first geocoding hit blindly. Check `country`, `admin1`, `admin2`, and `population`.
-- For Chinese city queries, do not send Hanzi directly to Open-Meteo geocoding unless the top result is obviously correct. Prefer `wttr.in` with the original Chinese name, or geocode the English/pinyin city name instead.
-- If multiple plausible matches remain, ask a follow-up question or state the assumption clearly.
-- Use `timezone=auto` when calling Open-Meteo so the reported time matches the location.
+## Reliable Flow
 
-## wttr.in (best for direct city-name queries)
+1. Geocode the user-provided location with Open-Meteo's geocoding API.
+2. Pick the best match using `name`, `admin1`, `country`, and coordinates.
+3. If there are multiple plausible matches, ask a clarification question instead of guessing.
+4. Query weather by latitude/longitude with `timezone=auto`.
+5. Optionally use wttr.in only as a quick plain-text fallback or sanity check after the location is already disambiguated.
 
-Quick current conditions:
+## Open-Meteo Geocoding (Primary)
+
+Use `curl -sG` with `--data-urlencode` so non-ASCII place names work correctly.
+
+Example: Chinese city name
 ```bash
-curl -s "https://wttr.in/London?format=%l:+%c+%t+%h+%w"
+curl -sG "https://geocoding-api.open-meteo.com/v1/search" \
+  --data-urlencode "name=成都" \
+  --data "count=5" \
+  --data "language=zh" \
+  --data "format=json"
 ```
 
-Chinese city example:
+Example: English city name
 ```bash
-curl -s "https://wttr.in/%E6%88%90%E9%83%BD?format=%l:+%c+%t+%h+%w"
-curl -s "https://wttr.in/%E4%B8%8A%E6%B5%B7?format=%l:+%c+%t+%h+%w"
-```
-
-JSON output if you need more detail:
-```bash
-curl -s "https://wttr.in/Chengdu?format=j1"
+curl -sG "https://geocoding-api.open-meteo.com/v1/search" \
+  --data-urlencode "name=Chengdu" \
+  --data "count=5" \
+  --data "language=en" \
+  --data "format=json"
 ```
 
 Tips:
-- URL-encode spaces: `New York` -> `New+York`
-- URL-encode non-ASCII text before sending the request
-- Use `?m` for metric units and `?u` for US units
+- Prefer exact-name matches first.
+- Use `admin1` and `country` to avoid same-name city mistakes.
+- If the user already gave a province/state/country, include it in your reasoning when choosing the result.
 
-## Open-Meteo (best for structured forecasts)
+## Open-Meteo Forecast (Primary)
 
-1. Geocode the city and verify the returned location metadata:
+After choosing coordinates, query weather by latitude/longitude:
+
 ```bash
-curl -s "https://geocoding-api.open-meteo.com/v1/search?name=Chengdu&count=3&language=en&format=json"
+curl -sG "https://api.open-meteo.com/v1/forecast" \
+  --data "latitude=30.67" \
+  --data "longitude=104.07" \
+  --data "current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m" \
+  --data "daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" \
+  --data "forecast_days=3" \
+  --data "timezone=auto"
 ```
 
-2. Query current weather and today's forecast with the verified coordinates:
+Response guidance:
+- State the resolved location clearly, for example `Chengdu, Sichuan, China`.
+- Include current temperature, wind, humidity, and a short forecast.
+- If weather code interpretation is needed, translate it into plain language instead of dumping raw codes.
+
+## wttr.in (Fallback / Quick Text Output)
+
+wttr.in is useful for quick human-readable text, but it is less reliable for ambiguous city names.
+
+Use it only when:
+- the location is already disambiguated, or
+- you need a compact plain-text summary quickly.
+
+Preferred pattern:
 ```bash
-curl -s "https://api.open-meteo.com/v1/forecast?latitude=30.66667&longitude=104.06667&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto"
+curl -s "wttr.in/Chengdu,Sichuan?format=%l:+%c+%t+%h+%w&m"
 ```
 
-Important:
-- For Chinese inputs like `成都`, geocoding `name=%E6%88%90%E9%83%BD` may return smaller homonym locations first. Prefer `Chengdu` after verifying it matches Sichuan, China.
-- If geocoding looks suspicious, fall back to `wttr.in` for the original city name instead of presenting a likely wrong result.
+Avoid:
+```bash
+curl -s "wttr.in/成都?format=3"
+curl -s "wttr.in/Shanghai?format=3"
+```
 
-Docs: https://open-meteo.com/en/docs
+because short raw names can resolve to the wrong place.
+
+## Summary
+
+Preferred order:
+1. Open-Meteo geocoding
+2. Open-Meteo forecast by coordinates
+3. wttr.in only after the location is already verified
