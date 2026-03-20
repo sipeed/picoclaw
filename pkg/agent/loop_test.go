@@ -1381,6 +1381,52 @@ func TestHandleReasoning(t *testing.T) {
 	})
 }
 
+func TestAgentLoop_TransientProviderRetry(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &failFirstMockProvider{
+		failures:    1,
+		failError:   fmt.Errorf("API error: status: 500 temporary upstream failure"),
+		successResp: "Recovered after transient provider failure",
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"retry this request",
+		"test-session-transient",
+		"cli",
+		"direct",
+	)
+	if err != nil {
+		t.Fatalf("Expected success after transient retry, got error: %v", err)
+	}
+
+	if response != "Recovered after transient provider failure" {
+		t.Fatalf("response = %q, want %q", response, "Recovered after transient provider failure")
+	}
+	if provider.currentCall != 2 {
+		t.Fatalf("expected 2 calls (1 fail + 1 success), got %d", provider.currentCall)
+	}
+}
+
 func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()
