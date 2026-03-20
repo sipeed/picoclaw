@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
@@ -81,6 +82,7 @@ var (
 
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
 	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+	leadingRedirection  = regexp.MustCompile(`^[0-9]*[<>]+`)
 
 	// safePaths are kernel pseudo-devices that are always safe to reference in
 	// commands, regardless of workspace restriction. They contain no user data
@@ -415,6 +417,10 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		for _, loc := range matchIndices {
 			raw := cmd[loc[0]:loc[1]]
 
+			if !isPathTokenStart(cmd, loc[0]) {
+				continue
+			}
+
 			// Skip URL path components that look like they're from web URLs.
 			// When a URL like "https://github.com" is parsed, the regex captures
 			// "//github.com" as a match (the path portion after "https:").
@@ -457,9 +463,124 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				return "Command blocked by safety guard (path outside working dir)"
 			}
 		}
+
+		for _, token := range shellWords(cmd) {
+			candidate := leadingRedirection.ReplaceAllString(token, "")
+			if candidate == "" || filepath.IsAbs(candidate) {
+				continue
+			}
+			if strings.Contains(candidate, "://") {
+				continue
+			}
+			if !looksLikeRelativePathOperand(candidate) {
+				continue
+			}
+			if err := validateRelativeOperandPath(candidate, cwdPath, t.workingDir); err != nil {
+				return "Command blocked by safety guard (" + err.Error() + ")"
+			}
+		}
 	}
 
 	return ""
+}
+
+func shellWords(command string) []string {
+	var (
+		words    []string
+		current  strings.Builder
+		inSingle bool
+		inDouble bool
+		escaped  bool
+	)
+
+	flush := func() {
+		if current.Len() == 0 {
+			return
+		}
+		words = append(words, current.String())
+		current.Reset()
+	}
+
+	for _, r := range command {
+		switch {
+		case escaped:
+			current.WriteRune(r)
+			escaped = false
+		case r == '\\' && !inSingle:
+			escaped = true
+		case r == '\'' && !inDouble:
+			inSingle = !inSingle
+		case r == '"' && !inSingle:
+			inDouble = !inDouble
+		case unicode.IsSpace(r) && !inSingle && !inDouble:
+			flush()
+		default:
+			current.WriteRune(r)
+		}
+	}
+
+	flush()
+	return words
+}
+
+func isPathTokenStart(command string, start int) bool {
+	if start <= 0 {
+		return true
+	}
+
+	switch command[start-1] {
+	case ' ', '\t', '\n', '\r', '"', '\'', '=', ':', '(', ')', '[', ']', '{', '}', '|', '&', ';', '<', '>':
+		return true
+	default:
+		return false
+	}
+}
+
+func looksLikeRelativePathOperand(token string) bool {
+	if token == "" || token == "." || token == ".." {
+		return false
+	}
+	return strings.Contains(token, "/") || strings.Contains(token, "\\") ||
+		strings.HasPrefix(token, ".")
+}
+
+func validateRelativeOperandPath(pathToken, cwd, workspace string) error {
+	workspacePath, err := filepath.Abs(workspace)
+	if err != nil {
+		return fmt.Errorf("failed to resolve workspace path: %w", err)
+	}
+
+	absPath, err := filepath.Abs(filepath.Join(cwd, pathToken))
+	if err != nil {
+		return fmt.Errorf("failed to resolve file path: %w", err)
+	}
+
+	if !isWithinWorkspace(absPath, workspacePath) {
+		return fmt.Errorf("path outside working dir")
+	}
+
+	workspaceReal := workspacePath
+	if resolved, err := filepath.EvalSymlinks(workspacePath); err == nil {
+		workspaceReal = resolved
+	}
+
+	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+		if !isWithinWorkspace(resolved, workspaceReal) {
+			return fmt.Errorf("symlink resolves outside workspace")
+		}
+		return nil
+	} else if os.IsNotExist(err) {
+		parentResolved, parentErr := resolveExistingAncestor(filepath.Dir(absPath))
+		if parentErr == nil && !isWithinWorkspace(parentResolved, workspaceReal) {
+			return fmt.Errorf("symlink resolves outside workspace")
+		}
+		if parentErr != nil && !os.IsNotExist(parentErr) {
+			return fmt.Errorf("failed to resolve path: %w", parentErr)
+		}
+		return nil
+	} else {
+		return fmt.Errorf("failed to resolve path: %w", err)
+	}
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {
