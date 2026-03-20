@@ -7,6 +7,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/cron"
 )
 
+const maxMessageDisplay = 80
+
 func cronListCmd(storePath string) {
 	cs := cron.NewCronService(storePath, nil)
 	jobs := cs.ListJobs(true) // Show all jobs, including disabled
@@ -41,8 +43,20 @@ func cronListCmd(storePath string) {
 
 		fmt.Printf("  %s (%s)\n", job.Name, job.ID)
 		fmt.Printf("    Schedule: %s\n", schedule)
-		fmt.Printf("    Status: %s\n", status)
+		fmt.Printf("    Status:   %s\n", status)
 		fmt.Printf("    Next run: %s\n", nextRun)
+		fmt.Printf("    Channel:  %s\n", job.Payload.Channel)
+		fmt.Printf("    To:       %s\n", job.Payload.To)
+		fmt.Printf("    Deliver:  %v\n", job.Payload.Deliver)
+		if job.Payload.Command != "" {
+			fmt.Printf("    Command:  %s\n", job.Payload.Command)
+		} else {
+			msg := job.Payload.Message
+			if len(msg) > maxMessageDisplay {
+				msg = msg[:maxMessageDisplay] + "..."
+			}
+			fmt.Printf("    Message:  %s\n", msg)
+		}
 	}
 }
 
