@@ -697,11 +697,17 @@ func (al *AgentLoop) ocrPDF(
 	// Keep: .md files, figures/ directory (referenced by markdown output).
 	cleanupOCRPageImages(outputDir, pdfPath)
 
-	// Find the output markdown file
+	// Find the output markdown file and normalize its name to document.md
 	mdPath := findOCROutput(outputDir, pdfPath)
 	if mdPath == "" {
 		logger.WarnCF("agent", "OCR output not found", map[string]any{"output_dir": outputDir})
 		return fmt.Sprintf("[file:%s]", pdfPath)
+	}
+	canonical := filepath.Join(outputDir, "document.md")
+	if mdPath != canonical {
+		if renameErr := os.Rename(mdPath, canonical); renameErr == nil {
+			mdPath = canonical
+		}
 	}
 
 	// Read preview from first part of the markdown
