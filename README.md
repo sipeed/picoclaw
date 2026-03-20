@@ -22,6 +22,7 @@ The main project is maintained at [sipeed/picoclaw](https://github.com/sipeed/pi
 | [#1816](https://github.com/sipeed/picoclaw/pull/1816) | fix(cron): show all payload fields in cron list output | Open |
 | [#1839](https://github.com/sipeed/picoclaw/pull/1839) | fix(cron): route cron jobs to correct agent and publish response to channel | Open |
 | [#1842](https://github.com/sipeed/picoclaw/pull/1842) | fix(cron): reload store on external file change; only save when state changes | Open |
+| [#1847](https://github.com/sipeed/picoclaw/pull/1847) | fix(providers): honour request_timeout for CLI providers with clear timeout errors and fallback | Open |
 
 ---
 
