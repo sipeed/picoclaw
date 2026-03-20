@@ -1733,6 +1733,8 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	}
 
 	if len(validMessages) == 0 {
+		agent.Sessions.TruncateHistory(sessionKey, 4)
+		agent.Sessions.Save(sessionKey)
 		return
 	}
 
