@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,6 +52,24 @@ func WithRequestTimeout(timeout time.Duration) Option {
 	return func(p *Provider) {
 		if timeout > 0 {
 			p.httpClient.Timeout = timeout
+		}
+	}
+}
+
+func WithInsecureSkipVerify(skip bool) Option {
+	return func(p *Provider) {
+		if skip {
+			transport := p.httpClient.Transport
+			if transport == nil {
+				transport = &http.Transport{}
+			}
+			if tr, ok := transport.(*http.Transport); ok {
+				if tr.TLSClientConfig == nil {
+					tr.TLSClientConfig = &tls.Config{}
+				}
+				tr.TLSClientConfig.InsecureSkipVerify = true
+				p.httpClient.Transport = tr
+			}
 		}
 	}
 }
