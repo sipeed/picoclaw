@@ -178,7 +178,6 @@ func TestProcessPDFs_NilOCR(t *testing.T) {
 	}
 }
 
-//nolint:gosmopolitan // intentional CJK test data for Japanese reading order detection
 func TestDetectReadingOrder(t *testing.T) {
 	tests := []struct {
 		content    string
