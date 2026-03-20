@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // CodexCliProvider implements LLMProvider by wrapping the codex CLI as a subprocess.
 type CodexCliProvider struct {
 	command   string
 	workspace string
+	timeout   time.Duration
 }
 
 // NewCodexCliProvider creates a new Codex CLI provider.
@@ -24,12 +26,27 @@ func NewCodexCliProvider(workspace string) *CodexCliProvider {
 	}
 }
 
+// NewCodexCliProviderWithTimeout creates a new Codex CLI provider with a request timeout.
+func NewCodexCliProviderWithTimeout(workspace string, timeout time.Duration) *CodexCliProvider {
+	return &CodexCliProvider{
+		command:   "codex",
+		workspace: workspace,
+		timeout:   timeout,
+	}
+}
+
 // Chat implements LLMProvider.Chat by executing the codex CLI in non-interactive mode.
 func (p *CodexCliProvider) Chat(
 	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
 ) (*LLMResponse, error) {
 	if p.command == "" {
 		return nil, fmt.Errorf("codex command not configured")
+	}
+
+	if p.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.timeout)
+		defer cancel()
 	}
 
 	prompt := p.buildPrompt(messages, tools)

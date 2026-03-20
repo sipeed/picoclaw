@@ -180,6 +180,9 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if workspace == "" {
 			workspace = "."
 		}
+		if cfg.RequestTimeout > 0 {
+			return NewClaudeCliProviderWithTimeout(workspace, time.Duration(cfg.RequestTimeout)*time.Second), modelID, nil
+		}
 		return NewClaudeCliProvider(workspace), modelID, nil
 
 	case "codex-cli", "codexcli":
@@ -187,12 +190,18 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if workspace == "" {
 			workspace = "."
 		}
+		if cfg.RequestTimeout > 0 {
+			return NewCodexCliProviderWithTimeout(workspace, time.Duration(cfg.RequestTimeout)*time.Second), modelID, nil
+		}
 		return NewCodexCliProvider(workspace), modelID, nil
 
 	case "gemini-cli", "geminicli":
 		workspace := cfg.Workspace
 		if workspace == "" {
 			workspace = "."
+		}
+		if cfg.RequestTimeout > 0 {
+			return NewGeminiCliProviderWithTimeout(workspace, time.Duration(cfg.RequestTimeout)*time.Second), modelID, nil
 		}
 		return NewGeminiCliProvider(workspace), modelID, nil
 
