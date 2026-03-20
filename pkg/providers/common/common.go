@@ -36,7 +36,12 @@ type (
 	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
 
-const DefaultRequestTimeout = 120 * time.Second
+const (
+	DefaultRequestTimeout = 120 * time.Second
+
+	// set response size limit to prevent OOM if server returns a huge response (e.g., an HTML error page instead of JSON)
+	maxResponseSize = 10 * 1024 * 1024
+)
 
 // NewHTTPClient creates an *http.Client with an optional proxy and the default timeout.
 func NewHTTPClient(proxy string) *http.Client {
@@ -276,7 +281,9 @@ func HandleErrorResponse(resp *http.Response, apiBase string) error {
 // then parses the JSON response into an LLMResponse.
 func ReadAndParseResponse(resp *http.Response, apiBase string) (*LLMResponse, error) {
 	contentType := resp.Header.Get("Content-Type")
-	reader := bufio.NewReader(resp.Body)
+
+	safeReader := io.LimitReader(resp.Body, maxResponseSize)
+	reader := bufio.NewReader(safeReader)
 	prefix, err := reader.Peek(256)
 	if err != nil && err != io.EOF && err != bufio.ErrBufferFull {
 		return nil, fmt.Errorf("failed to inspect response: %w", err)
@@ -286,6 +293,10 @@ func ReadAndParseResponse(resp *http.Response, apiBase string) (*LLMResponse, er
 	}
 	out, err := ParseResponse(reader)
 	if err != nil {
+		// some APIs return 200 with an HTML error page, so check for that before giving up on JSON parsing
+		if LooksLikeHTML(prefix, contentType) {
+			return nil, WrapHTMLResponseError(resp.StatusCode, prefix, contentType, apiBase)
+		}
 		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 	return out, nil

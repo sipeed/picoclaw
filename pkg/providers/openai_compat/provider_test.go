@@ -12,9 +12,53 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
+
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
+
+func TestProviderChat_MaxTokensFieldNull(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "", WithMaxTokensField(""))
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"glm-4.7",
+		map[string]any{"max_tokens": 1234},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if _, ok := requestBody["max_tokens"]; !ok {
+		t.Fatalf("expected max_tokens in request body")
+	}
+}
 
 func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 	var requestBody map[string]any
@@ -41,7 +85,7 @@ func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewProvider("key", server.URL, "")
+	p := NewProvider("key", server.URL, "", WithMaxTokensField("max_completion_tokens"))
 	_, err := p.Chat(
 		t.Context(),
 		[]Message{{Role: "user", Content: "hi"}},
@@ -302,7 +346,7 @@ func TestProviderChat_HTMLResponsesReturnHelpfulError(t *testing.T) {
 		{
 			name:        "html error response",
 			contentType: "text/html; charset=utf-8",
-			statusCode:  http.StatusBadGateway,
+			statusCode:  http.StatusOK,
 			body:        "<!DOCTYPE html><html><body>bad gateway</body></html>",
 		},
 		{
@@ -322,7 +366,7 @@ func TestProviderChat_HTMLResponsesReturnHelpfulError(t *testing.T) {
 			}))
 			defer server.Close()
 
-			p := NewProvider("key", server.URL, "")
+			p := NewProvider("key", server.URL, "", WithRetry(0, time.Second*1, time.Second*3))
 			_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
 			if err == nil {
 				t.Fatal("expected error, got nil")
@@ -335,6 +379,65 @@ func TestProviderChat_HTMLResponsesReturnHelpfulError(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "check api_base or proxy configuration") {
 				t.Fatalf("expected configuration hint, got %v", err)
+			}
+		})
+	}
+}
+
+func TestProviderChatErrorPost(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		reTry      [3]int
+	}{
+		{
+			name:       "retry on 502 with html response",
+			statusCode: http.StatusBadGateway,
+			body:       "<!DOCTYPE html><html><body>gateway login</body></html>",
+			reTry:      [3]int{0, 2, 3},
+		},
+		{
+			name:       "retry times is 0",
+			statusCode: http.StatusBadGateway,
+			body:       "<!DOCTYPE html><html><body>bad gateway</body></html>",
+			reTry:      [3]int{1, 0, 0},
+		},
+		{
+			name:       "default retry 3 times with 502 and html response",
+			statusCode: http.StatusBadGateway,
+			body:       "   \r\n\t<!DOCTYPE html><html><body>gateway login</body></html>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			p := NewProvider(
+				"key",
+				server.URL,
+				"",
+				WithRetry(tt.reTry[0], time.Second*time.Duration(tt.reTry[1]), time.Second*time.Duration(tt.reTry[2])),
+			)
+			_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), "failed to send request") {
+				t.Fatalf("expected status code in error, got %v", err)
+			}
+			times := 1
+			if tt.reTry[0] != 0 {
+				times = tt.reTry[0] + 1
+			}
+
+			if !strings.Contains(err.Error(), fmt.Sprintf("giving up after %d attempt(s)", times)) {
+				t.Fatalf("expected retry count in error, got %v", err)
 			}
 		})
 	}
@@ -373,7 +476,7 @@ func TestProviderChat_LargeHTMLResponsePreviewIsTruncated(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusBadGateway)
+		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(body)
 	}))
 	defer server.Close()
@@ -519,12 +622,18 @@ func TestProvider_ProxyConfigured(t *testing.T) {
 	proxyURL := "http://127.0.0.1:8080"
 	p := NewProvider("key", "https://example.com", proxyURL)
 
-	transport, ok := p.httpClient.Transport.(*http.Transport)
+	transports, ok := p.httpClient.Transport.(*retryablehttp.RoundTripper)
+	if !ok || transports == nil {
+		t.Fatalf("expected retryablehttp transport, got %T", p.httpClient.Transport)
+	}
+
+	transport, ok := transports.Client.HTTPClient.Transport.(*http.Transport)
 	if !ok || transport == nil {
 		t.Fatalf("expected http transport with proxy, got %T", p.httpClient.Transport)
 	}
 
 	req := &http.Request{URL: &url.URL{Scheme: "https", Host: "api.example.com"}}
+
 	gotProxy, err := transport.Proxy(req)
 	if err != nil {
 		t.Fatalf("proxy function returned error: %v", err)
