@@ -11,22 +11,24 @@ import (
 	"github.com/rivo/tview"
 
 	configstore "github.com/sipeed/picoclaw/cmd/picoclaw-launcher-tui/internal/config"
+	"github.com/sipeed/picoclaw/cmd/picoclaw-launcher-tui/internal/daemon"
 	picoclawconfig "github.com/sipeed/picoclaw/pkg/config"
 )
 
 type appState struct {
-	app         *tview.Application
-	pages       *tview.Pages
-	stack       []string
-	config      *picoclawconfig.Config
-	configPath  string
-	gatewayCmd  *exec.Cmd
-	menus       map[string]*Menu
-	original    []byte
-	hasOriginal bool
-	backupPath  string
-	dirty       bool
-	logPath     string
+	app                   *tview.Application
+	pages                 *tview.Pages
+	stack                 []string
+	config                *picoclawconfig.Config
+	configPath            string
+	gatewayCmd            *exec.Cmd
+	menus                 map[string]*Menu
+	original              []byte
+	hasOriginal           bool
+	backupPath            string
+	dirty                 bool
+	logPath               string
+	daemonRestartRequired bool
 }
 
 func Run() error {
@@ -127,6 +129,8 @@ func (s *appState) refreshMenu(name string, menu *Menu) {
 		refreshModelMenuFromState(menu, s)
 	case "channel":
 		refreshChannelMenuFromState(menu, s)
+	case "daemon":
+		refreshDaemonMenuFromState(menu, s)
 	}
 }
 
@@ -232,6 +236,14 @@ func refreshMainMenu(menu *Menu, s *appState) {
 			Action: func() {
 				s.viewGatewayLog()
 			},
+		},
+		{
+			Label:       "Daemon Manager",
+			Description: daemonMenuDescription(),
+			Action: func() {
+				s.push("daemon", s.daemonMenu())
+			},
+			Disabled: !daemon.Supported(),
 		},
 		{
 			Label:       "Exit",
@@ -351,6 +363,13 @@ func rootChannelLabel(valid bool) string {
 		return "Channel (no channel enabled)"
 	}
 	return "Channel"
+}
+
+func daemonMenuDescription() string {
+	if !daemon.Supported() {
+		return "Linux only"
+	}
+	return "Manage systemd user service"
 }
 
 func (s *appState) startTalk() {
