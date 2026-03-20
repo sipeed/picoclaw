@@ -17,7 +17,7 @@ LDFLAGS=-X $(CONFIG_PKG).Version=$(VERSION) -X $(CONFIG_PKG).GitCommit=$(GIT_COM
 # Go variables
 GO?=CGO_ENABLED=0 go
 WEB_GO?=$(GO)
-GOFLAGS?=-v -tags stdjson
+GOFLAGS?=-v -tags goolm,stdjson
 
 # Patch MIPS LE ELF e_flags (offset 36) for NaN2008-only kernels (e.g. Ingenic X2600).
 #
