@@ -2004,6 +2004,13 @@ https://github.com/highlightjs/highlight.js/issues/2277`);
     }
     return res.json();
   }
+  async function apiDelete(path) {
+    const sep = path.includes("?") ? "&" : "?";
+    const res = await fetch(API_BASE + path + sep + "initData=" + encodeURIComponent(getInitData()), { method: "DELETE" });
+    if (!res.ok)
+      throw new Error("API error: " + res.status);
+    return res.json();
+  }
   async function sendCommand(cmd) {
     if (!cmd.startsWith("/"))
       return false;
@@ -10527,6 +10534,22 @@ Please report this to https://github.com/markedjs/marked.`, e3) {
       if (active)
         load();
     }, [active, filter]);
+    const deleteEntry = q2(async (hash) => {
+      try {
+        await apiDelete("/miniapp/api/cache/" + encodeURIComponent(hash));
+        setExpanded(null);
+        load();
+      } catch {}
+    }, [load]);
+    const deleteAll = q2(async () => {
+      if (!window.confirm("Delete all cached items?"))
+        return;
+      try {
+        await apiDelete("/miniapp/api/cache");
+        setExpanded(null);
+        load();
+      } catch {}
+    }, [load]);
     const formatDate = (iso) => {
       try {
         const d3 = new Date(iso);
@@ -10535,6 +10558,7 @@ Please report this to https://github.com/markedjs/marked.`, e3) {
         return iso;
       }
     };
+    const count = entries ? entries.length : 0;
     return /* @__PURE__ */ u5("div", {
       class: "card glass",
       children: [
@@ -10549,14 +10573,45 @@ Please report this to https://github.com/markedjs/marked.`, e3) {
             /* @__PURE__ */ u5("span", {
               class: "card-title",
               style: { margin: 0 },
-              children: "Media Cache"
-            }, undefined, false, undefined, this),
-            /* @__PURE__ */ u5("button", {
-              class: "send-btn",
-              style: { padding: "4px 12px", fontSize: "12px" },
-              onClick: load,
-              children: "Refresh"
-            }, undefined, false, undefined, this)
+              children: [
+                "Media Cache",
+                count > 0 && /* @__PURE__ */ u5("span", {
+                  style: {
+                    fontSize: "11px",
+                    fontWeight: 400,
+                    color: "var(--hint)",
+                    marginLeft: "6px"
+                  },
+                  children: [
+                    "(",
+                    count,
+                    ")"
+                  ]
+                }, undefined, true, undefined, this)
+              ]
+            }, undefined, true, undefined, this),
+            /* @__PURE__ */ u5("div", {
+              style: { display: "flex", gap: "6px" },
+              children: [
+                count > 0 && /* @__PURE__ */ u5("button", {
+                  class: "send-btn",
+                  style: {
+                    padding: "4px 12px",
+                    fontSize: "12px",
+                    background: "rgba(239,68,68,0.12)",
+                    color: "#ef4444"
+                  },
+                  onClick: deleteAll,
+                  children: "Clear All"
+                }, undefined, false, undefined, this),
+                /* @__PURE__ */ u5("button", {
+                  class: "send-btn",
+                  style: { padding: "4px 12px", fontSize: "12px" },
+                  onClick: load,
+                  children: "Refresh"
+                }, undefined, false, undefined, this)
+              ]
+            }, undefined, true, undefined, this)
           ]
         }, undefined, true, undefined, this),
         /* @__PURE__ */ u5("div", {
@@ -10709,6 +10764,24 @@ Please report this to https://github.com/markedjs/marked.`, e3) {
                       color: "var(--text)"
                     },
                     children: e3.result
+                  }, undefined, false, undefined, this),
+                  /* @__PURE__ */ u5("button", {
+                    style: {
+                      marginTop: "8px",
+                      padding: "4px 14px",
+                      fontSize: "12px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "rgba(239,68,68,0.12)",
+                      color: "#ef4444",
+                      fontWeight: 600,
+                      cursor: "pointer"
+                    },
+                    onClick: (ev) => {
+                      ev.stopPropagation();
+                      deleteEntry(e3.hash);
+                    },
+                    children: "Delete"
                   }, undefined, false, undefined, this)
                 ]
               }, undefined, true, undefined, this)
