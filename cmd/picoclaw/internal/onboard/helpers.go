@@ -6,25 +6,71 @@ import (
 	"os"
 	"path/filepath"
 
+	"golang.org/x/term"
+
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/credential"
 )
 
-func onboard() {
+func onboard(encrypt bool) {
 	configPath := internal.GetConfigPath()
 
+	configExists := false
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf("Config already exists at %s\n", configPath)
-		fmt.Print("Overwrite? (y/n): ")
-		var response string
-		fmt.Scanln(&response)
-		if response != "y" {
-			fmt.Println("Aborted.")
-			return
+		configExists = true
+		if encrypt {
+			// Only ask for confirmation when *both* config and SSH key already exist,
+			// indicating a full re-onboard that would reset the config to defaults.
+			sshKeyPath, _ := credential.DefaultSSHKeyPath()
+			if _, err := os.Stat(sshKeyPath); err == nil {
+				// Both exist — confirm a full reset.
+				fmt.Printf("Config already exists at %s\n", configPath)
+				fmt.Print("Overwrite config with defaults? (y/n): ")
+				var response string
+				fmt.Scanln(&response)
+				if response != "y" {
+					fmt.Println("Aborted.")
+					return
+				}
+				configExists = false // user agreed to reset; treat as fresh
+			}
+			// Config exists but SSH key is missing — keep existing config, only add SSH key.
 		}
 	}
 
-	cfg := config.DefaultConfig()
+	var err error
+	if encrypt {
+		fmt.Println("\nSet up credential encryption")
+		fmt.Println("-----------------------------")
+		passphrase, pErr := promptPassphrase()
+		if pErr != nil {
+			fmt.Printf("Error: %v\n", pErr)
+			os.Exit(1)
+		}
+		// Expose the passphrase to credential.PassphraseProvider (which calls
+		// os.Getenv by default) so that SaveConfig can encrypt api_keys.
+		// This process is a one-shot CLI tool; the env var is never exposed outside
+		// the current process and disappears when it exits.
+		os.Setenv(credential.PassphraseEnvVar, passphrase)
+
+		if err = setupSSHKey(); err != nil {
+			fmt.Printf("Error generating SSH key: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	var cfg *config.Config
+	if configExists {
+		// Preserve the existing config; SaveConfig will re-encrypt api_keys with the new passphrase.
+		cfg, err = config.LoadConfig(configPath)
+		if err != nil {
+			fmt.Printf("Error loading existing config: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		cfg = config.DefaultConfig()
+	}
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		fmt.Printf("Error saving config: %v\n", err)
 		os.Exit(1)
@@ -33,9 +79,17 @@ func onboard() {
 	workspace := cfg.WorkspacePath()
 	createWorkspaceTemplates(workspace)
 
-	fmt.Printf("%s picoclaw is ready!\n", internal.Logo)
+	fmt.Printf("\n%s picoclaw is ready!\n", internal.Logo)
 	fmt.Println("\nNext steps:")
-	fmt.Println("  1. Add your API key to", configPath)
+	if encrypt {
+		fmt.Println("  1. Set your encryption passphrase before starting picoclaw:")
+		fmt.Println("       export PICOCLAW_KEY_PASSPHRASE=<your-passphrase>   # Linux/macOS")
+		fmt.Println("       set PICOCLAW_KEY_PASSPHRASE=<your-passphrase>      # Windows cmd")
+		fmt.Println("")
+		fmt.Println("  2. Add your API key to", configPath)
+	} else {
+		fmt.Println("  1. Add your API key to", configPath)
+	}
 	fmt.Println("")
 	fmt.Println("     Recommended:")
 	fmt.Println("     - OpenRouter: https://openrouter.ai/keys (access 100+ models)")
@@ -43,7 +97,62 @@ func onboard() {
 	fmt.Println("")
 	fmt.Println("     See README.md for 17+ supported providers.")
 	fmt.Println("")
-	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
+	fmt.Println("  3. Chat: picoclaw agent -m \"Hello!\"")
+}
+
+// promptPassphrase reads the encryption passphrase twice from the terminal
+// (with echo disabled) and returns it. Returns an error if the passphrase is
+// empty or if the two inputs do not match.
+func promptPassphrase() (string, error) {
+	fmt.Print("Enter passphrase for credential encryption: ")
+	p1, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return "", fmt.Errorf("reading passphrase: %w", err)
+	}
+	if len(p1) == 0 {
+		return "", fmt.Errorf("passphrase must not be empty")
+	}
+
+	fmt.Print("Confirm passphrase: ")
+	p2, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return "", fmt.Errorf("reading passphrase confirmation: %w", err)
+	}
+
+	if string(p1) != string(p2) {
+		return "", fmt.Errorf("passphrases do not match")
+	}
+	return string(p1), nil
+}
+
+// setupSSHKey generates the picoclaw-specific SSH key at ~/.ssh/picoclaw_ed25519.key.
+// If the key already exists the user is warned and asked to confirm overwrite.
+// Answering anything other than "y" keeps the existing key (not an error).
+func setupSSHKey() error {
+	keyPath, err := credential.DefaultSSHKeyPath()
+	if err != nil {
+		return fmt.Errorf("cannot determine SSH key path: %w", err)
+	}
+
+	if _, err := os.Stat(keyPath); err == nil {
+		fmt.Printf("\n⚠️  WARNING: %s already exists.\n", keyPath)
+		fmt.Println("    Overwriting will invalidate any credentials previously encrypted with this key.")
+		fmt.Print("    Overwrite? (y/n): ")
+		var response string
+		fmt.Scanln(&response)
+		if response != "y" {
+			fmt.Println("Keeping existing SSH key.")
+			return nil
+		}
+	}
+
+	if err := credential.GenerateSSHKey(keyPath); err != nil {
+		return err
+	}
+	fmt.Printf("SSH key generated: %s\n", keyPath)
+	return nil
 }
 
 func createWorkspaceTemplates(workspace string) {

@@ -22,6 +22,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// responseURLHTTPClient is a shared HTTP client for posting to WeCom response_url.
+// Reusing it enables connection pooling across replies.
+var responseURLHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 // WeComAIBotChannel implements the Channel interface for WeCom AI Bot (企业微信智能机器人)
 type WeComAIBotChannel struct {
 	*channels.BaseChannel
@@ -134,13 +138,28 @@ type WeComAIBotEncryptedResponse struct {
 	Nonce        string `json:"nonce"`
 }
 
-// NewWeComAIBotChannel creates a new WeCom AI Bot channel instance
+// NewWeComAIBotChannel creates a WeCom AI Bot channel instance.
+// If cfg.BotID and cfg.Secret are both set, it returns a WeComAIBotWSChannel
+// using the WebSocket long-connection API.
+// Otherwise it returns the webhook-mode WeComAIBotChannel (requires Token +
+// EncodingAESKey).
 func NewWeComAIBotChannel(
 	cfg config.WeComAIBotConfig,
 	messageBus *bus.MessageBus,
-) (*WeComAIBotChannel, error) {
+) (channels.Channel, error) {
+	// WebSocket long-connection mode takes priority when BotID + Secret are set.
+	if cfg.BotID != "" && cfg.Secret != "" {
+		logger.InfoC("wecom_aibot", "BotID and Secret provided, using WebSocket mode")
+		return newWeComAIBotWSChannel(cfg, messageBus)
+	}
+	// Webhook (short-connection) mode.
 	if cfg.Token == "" || cfg.EncodingAESKey == "" {
-		return nil, fmt.Errorf("token and encoding_aes_key are required for WeCom AI Bot")
+		return nil, fmt.Errorf(
+			"WeCom AI Bot requires either (bot_id + secret) for WebSocket mode " +
+				"or (token + encoding_aes_key) for webhook mode")
+	}
+	if cfg.ProcessingMessage == "" {
+		cfg.ProcessingMessage = config.DefaultWeComAIBotProcessingMessage
 	}
 
 	base := channels.NewBaseChannel("wecom_aibot", cfg, messageBus, cfg.AllowFrom,
@@ -693,7 +712,7 @@ func (c *WeComAIBotChannel) getStreamResponse(task *streamTask, timestamp, nonce
 	default:
 		if time.Now().After(task.Deadline) {
 			// Deadline reached: close the stream with a notice, then wait for agent via response_url.
-			content = "⏳ Processing, please wait. The results will be sent shortly."
+			content = c.config.ProcessingMessage
 			finish = true
 			closeStreamOnly = true
 			logger.InfoCF(
@@ -782,8 +801,7 @@ func (c *WeComAIBotChannel) sendViaResponseURL(responseURL, content string) erro
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := responseURLHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("post to response_url failed: %w: %w", channels.ErrTemporary, err)
 	}
@@ -793,7 +811,8 @@ func (c *WeComAIBotChannel) sendViaResponseURL(responseURL, content string) erro
 		return nil
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
+	const maxErrBody = 64 << 10 // 64 KB is more than enough for any error response
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
 	if err != nil {
 		return fmt.Errorf("reading response_url body: %w: %w", channels.ErrTemporary, err)
 	}
@@ -895,15 +914,78 @@ func (c *WeComAIBotChannel) encryptMessage(plaintext, receiveid string) (string,
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-// generateStreamID generates a random stream ID
-func (c *WeComAIBotChannel) generateStreamID() string {
+// func (c *WeComAIBotChannel) downloadAndDecryptImage(
+// 	ctx context.Context,
+// 	imageURL string,
+// ) ([]byte, error) {
+// 	// Download image
+// 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to create request: %w", err)
+// 	}
+
+// 	client := &http.Client{
+// 		Timeout: 15 * time.Second,
+// 	}
+
+// 	resp, err := client.Do(req)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to download image: %w", err)
+// 	}
+// 	defer resp.Body.Close()
+
+// 	if resp.StatusCode != http.StatusOK {
+// 		return nil, fmt.Errorf("download failed with status: %d", resp.StatusCode)
+// 	}
+
+// 	// Limit image download to 20 MB to prevent memory exhaustion
+// 	const maxImageSize = 20 << 20 // 20 MB
+// 	encryptedData, err := io.ReadAll(io.LimitReader(resp.Body, maxImageSize+1))
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to read image data: %w", err)
+// 	}
+// 	if len(encryptedData) > maxImageSize {
+// 		return nil, fmt.Errorf("image too large (exceeds %d MB)", maxImageSize>>20)
+// 	}
+
+// 	logger.DebugCF("wecom_aibot", "Image downloaded", map[string]any{
+// 		"size": len(encryptedData),
+// 	})
+
+// 	// Decode AES key
+// 	aesKey, err := decodeWeComAESKey(c.config.EncodingAESKey)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	// Decrypt image (AES-CBC with IV = first 16 bytes of key, PKCS7 padding stripped)
+// 	decryptedData, err := decryptAESCBC(aesKey, encryptedData)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to decrypt image: %w", err)
+// 	}
+
+// 	logger.DebugCF("wecom_aibot", "Image decrypted", map[string]any{
+// 		"size": len(decryptedData),
+// 	})
+
+// 	return decryptedData, nil
+// }
+
+// generateRandomID generates a cryptographically random alphanumeric ID of
+// length n.  Used for stream IDs and WebSocket request IDs.
+func generateRandomID(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, 10)
+	b := make([]byte, n)
 	for i := range b {
-		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
-		b[i] = letters[n.Int64()]
+		num, _ := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+		b[i] = letters[num.Int64()]
 	}
 	return string(b)
+}
+
+// generateStreamID generates a random 10-character stream ID (webhook mode).
+func (c *WeComAIBotChannel) generateStreamID() string {
+	return generateRandomID(10)
 }
 
 // cleanupLoop periodically cleans up old streaming tasks

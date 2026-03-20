@@ -7,15 +7,23 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
-	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	userAgent       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	userAgentHonest = "picoclaw/%s (+https://github.com/sipeed/picoclaw; AI assistant bot)"
 
 	// HTTP client timeouts for web tool providers.
 	searchTimeout     = 10 * time.Second // Brave, Tavily, DuckDuckGo
@@ -39,41 +47,42 @@ var (
 	reDDGSnippet = regexp.MustCompile(`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`)
 )
 
-// createHTTPClient creates an HTTP client with optional proxy support
-func createHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  false,
-			TLSHandshakeTimeout: 15 * time.Second,
-		},
-	}
+type APIKeyPool struct {
+	keys    []string
+	current uint32
+}
 
-	if proxyURL != "" {
-		proxy, err := url.Parse(proxyURL)
-		if err != nil {
-			return nil, fmt.Errorf("invalid proxy URL: %w", err)
-		}
-		scheme := strings.ToLower(proxy.Scheme)
-		switch scheme {
-		case "http", "https", "socks5", "socks5h":
-		default:
-			return nil, fmt.Errorf(
-				"unsupported proxy scheme %q (supported: http, https, socks5, socks5h)",
-				proxy.Scheme,
-			)
-		}
-		if proxy.Host == "" {
-			return nil, fmt.Errorf("invalid proxy URL: missing host")
-		}
-		client.Transport.(*http.Transport).Proxy = http.ProxyURL(proxy)
-	} else {
-		client.Transport.(*http.Transport).Proxy = http.ProxyFromEnvironment
+func NewAPIKeyPool(keys []string) *APIKeyPool {
+	return &APIKeyPool{
+		keys: keys,
 	}
+}
 
-	return client, nil
+type APIKeyIterator struct {
+	pool     *APIKeyPool
+	startIdx uint32
+	attempt  uint32
+}
+
+func (p *APIKeyPool) NewIterator() *APIKeyIterator {
+	if len(p.keys) == 0 {
+		return &APIKeyIterator{pool: p}
+	}
+	idx := atomic.AddUint32(&p.current, 1) - 1
+	return &APIKeyIterator{
+		pool:     p,
+		startIdx: idx,
+	}
+}
+
+func (it *APIKeyIterator) Next() (string, bool) {
+	length := uint32(len(it.pool.keys))
+	if length == 0 || it.attempt >= length {
+		return "", false
+	}
+	key := it.pool.keys[(it.startIdx+it.attempt)%length]
+	it.attempt++
+	return key, true
 }
 
 type SearchProvider interface {
@@ -81,76 +90,97 @@ type SearchProvider interface {
 }
 
 type BraveSearchProvider struct {
-	apiKey string
-	proxy  string
-	client *http.Client
+	keyPool *APIKeyPool
+	proxy   string
+	client  *http.Client
 }
 
 func (p *BraveSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
 	searchURL := fmt.Sprintf("https://api.search.brave.com/res/v1/web/search?q=%s&count=%d",
 		url.QueryEscape(query), count)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
+	var lastErr error
+	iter := p.keyPool.NewIterator()
 
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Subscription-Token", p.apiKey)
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("brave api error (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	var searchResp struct {
-		Web struct {
-			Results []struct {
-				Title       string `json:"title"`
-				URL         string `json:"url"`
-				Description string `json:"description"`
-			} `json:"results"`
-		} `json:"web"`
-	}
-
-	if err := json.Unmarshal(body, &searchResp); err != nil {
-		// Log error body for debugging
-		fmt.Printf("Brave API Error Body: %s\n", string(body))
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	results := searchResp.Web.Results
-	if len(results) == 0 {
-		return fmt.Sprintf("No results for: %s", query), nil
-	}
-
-	var lines []string
-	lines = append(lines, fmt.Sprintf("Results for: %s", query))
-	for i, item := range results {
-		if i >= count {
+	for {
+		apiKey, ok := iter.Next()
+		if !ok {
 			break
 		}
-		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
-		if item.Description != "" {
-			lines = append(lines, fmt.Sprintf("   %s", item.Description))
+
+		req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
 		}
+
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("X-Subscription-Token", apiKey)
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response: %w", err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+			if resp.StatusCode == http.StatusTooManyRequests ||
+				resp.StatusCode == http.StatusUnauthorized ||
+				resp.StatusCode == http.StatusForbidden ||
+				resp.StatusCode >= 500 {
+				continue
+			}
+			return "", lastErr
+		}
+
+		var searchResp struct {
+			Web struct {
+				Results []struct {
+					Title       string `json:"title"`
+					URL         string `json:"url"`
+					Description string `json:"description"`
+				} `json:"results"`
+			} `json:"web"`
+		}
+
+		if err := json.Unmarshal(body, &searchResp); err != nil {
+			// Log error body for debugging
+			return "", fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		results := searchResp.Web.Results
+		if len(results) == 0 {
+			return fmt.Sprintf("No results for: %s", query), nil
+		}
+
+		var lines []string
+		lines = append(lines, fmt.Sprintf("Results for: %s", query))
+		for i, item := range results {
+			if i >= count {
+				break
+			}
+			lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+			if item.Description != "" {
+				lines = append(lines, fmt.Sprintf("   %s", item.Description))
+			}
+		}
+
+		return strings.Join(lines, "\n"), nil
 	}
 
-	return strings.Join(lines, "\n"), nil
+	return "", fmt.Errorf("all api keys failed, last error: %w", lastErr)
 }
 
 type TavilySearchProvider struct {
-	apiKey  string
+	keyPool *APIKeyPool
 	baseURL string
 	proxy   string
 	client  *http.Client
@@ -162,74 +192,96 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 		searchURL = "https://api.tavily.com/search"
 	}
 
-	payload := map[string]any{
-		"api_key":             p.apiKey,
-		"query":               query,
-		"search_depth":        "advanced",
-		"include_answer":      false,
-		"include_images":      false,
-		"include_raw_content": false,
-		"max_results":         count,
-	}
+	var lastErr error
+	iter := p.keyPool.NewIterator()
 
-	bodyBytes, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", userAgent)
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("tavily api error (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	var searchResp struct {
-		Results []struct {
-			Title   string `json:"title"`
-			URL     string `json:"url"`
-			Content string `json:"content"`
-		} `json:"results"`
-	}
-
-	if err := json.Unmarshal(body, &searchResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	results := searchResp.Results
-	if len(results) == 0 {
-		return fmt.Sprintf("No results for: %s", query), nil
-	}
-
-	var lines []string
-	lines = append(lines, fmt.Sprintf("Results for: %s (via Tavily)", query))
-	for i, item := range results {
-		if i >= count {
+	for {
+		apiKey, ok := iter.Next()
+		if !ok {
 			break
 		}
-		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
-		if item.Content != "" {
-			lines = append(lines, fmt.Sprintf("   %s", item.Content))
+
+		payload := map[string]any{
+			"api_key":             apiKey,
+			"query":               query,
+			"search_depth":        "advanced",
+			"include_answer":      false,
+			"include_images":      false,
+			"include_raw_content": false,
+			"max_results":         count,
 		}
+
+		bodyBytes, err := json.Marshal(payload)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal payload: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewBuffer(bodyBytes))
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", userAgent)
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response: %w", err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("tavily api error (status %d): %s", resp.StatusCode, string(body))
+			if resp.StatusCode == http.StatusTooManyRequests ||
+				resp.StatusCode == http.StatusUnauthorized ||
+				resp.StatusCode == http.StatusForbidden ||
+				resp.StatusCode >= 500 {
+				continue
+			}
+			return "", lastErr
+		}
+
+		var searchResp struct {
+			Results []struct {
+				Title   string `json:"title"`
+				URL     string `json:"url"`
+				Content string `json:"content"`
+			} `json:"results"`
+		}
+
+		if err := json.Unmarshal(body, &searchResp); err != nil {
+			return "", fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		results := searchResp.Results
+		if len(results) == 0 {
+			return fmt.Sprintf("No results for: %s", query), nil
+		}
+
+		var lines []string
+		lines = append(lines, fmt.Sprintf("Results for: %s (via Tavily)", query))
+		for i, item := range results {
+			if i >= count {
+				break
+			}
+			lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+			if item.Content != "" {
+				lines = append(lines, fmt.Sprintf("   %s", item.Content))
+			}
+		}
+
+		return strings.Join(lines, "\n"), nil
 	}
 
-	return strings.Join(lines, "\n"), nil
+	return "", fmt.Errorf("all api keys failed, last error: %w", lastErr)
 }
 
 type DuckDuckGoSearchProvider struct {
@@ -324,75 +376,97 @@ func stripTags(content string) string {
 }
 
 type PerplexitySearchProvider struct {
-	apiKey string
-	proxy  string
-	client *http.Client
+	keyPool *APIKeyPool
+	proxy   string
+	client  *http.Client
 }
 
 func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
 	searchURL := "https://api.perplexity.ai/chat/completions"
 
-	payload := map[string]any{
-		"model": "sonar",
-		"messages": []map[string]string{
-			{
-				"role":    "system",
-				"content": "You are a search assistant. Provide concise search results with titles, URLs, and brief descriptions in the following format:\n1. Title\n   URL\n   Description\n\nDo not add extra commentary.",
+	var lastErr error
+	iter := p.keyPool.NewIterator()
+
+	for {
+		apiKey, ok := iter.Next()
+		if !ok {
+			break
+		}
+
+		payload := map[string]any{
+			"model": "sonar",
+			"messages": []map[string]string{
+				{
+					"role":    "system",
+					"content": "You are a search assistant. Provide concise search results with titles, URLs, and brief descriptions in the following format:\n1. Title\n   URL\n   Description\n\nDo not add extra commentary.",
+				},
+				{
+					"role":    "user",
+					"content": fmt.Sprintf("Search for: %s. Provide up to %d relevant results.", query, count),
+				},
 			},
-			{
-				"role":    "user",
-				"content": fmt.Sprintf("Search for: %s. Provide up to %d relevant results.", query, count),
-			},
-		},
-		"max_tokens": 1000,
+			"max_tokens": 1000,
+		}
+
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", searchURL, strings.NewReader(string(payloadBytes)))
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("User-Agent", userAgent)
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response: %w", err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("Perplexity API error: %s", string(body))
+			if resp.StatusCode == http.StatusTooManyRequests ||
+				resp.StatusCode == http.StatusUnauthorized ||
+				resp.StatusCode == http.StatusForbidden ||
+				resp.StatusCode >= 500 {
+				continue
+			}
+			return "", lastErr
+		}
+
+		var searchResp struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+
+		if err := json.Unmarshal(body, &searchResp); err != nil {
+			return "", fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		if len(searchResp.Choices) == 0 {
+			return fmt.Sprintf("No results for: %s", query), nil
+		}
+
+		return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
 	}
 
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, strings.NewReader(string(payloadBytes)))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	req.Header.Set("User-Agent", userAgent)
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Perplexity API error: %s", string(body))
-	}
-
-	var searchResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-
-	if err := json.Unmarshal(body, &searchResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if len(searchResp.Choices) == 0 {
-		return fmt.Sprintf("No results for: %s", query), nil
-	}
-
-	return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
+	return "", fmt.Errorf("all api keys failed, last error: %w", lastErr)
 }
 
 type SearXNGSearchProvider struct {
@@ -545,16 +619,16 @@ type WebSearchTool struct {
 }
 
 type WebSearchToolOptions struct {
-	BraveAPIKey          string
+	BraveAPIKeys         []string
 	BraveMaxResults      int
 	BraveEnabled         bool
-	TavilyAPIKey         string
+	TavilyAPIKeys        []string
 	TavilyBaseURL        string
 	TavilyMaxResults     int
 	TavilyEnabled        bool
 	DuckDuckGoMaxResults int
 	DuckDuckGoEnabled    bool
-	PerplexityAPIKey     string
+	PerplexityAPIKeys    []string
 	PerplexityMaxResults int
 	PerplexityEnabled    bool
 	SearXNGBaseURL       string
@@ -571,23 +645,26 @@ type WebSearchToolOptions struct {
 func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	var provider SearchProvider
 	maxResults := 5
-
 	// Priority: Perplexity > Brave > SearXNG > Tavily > DuckDuckGo > GLM Search
-	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
-		client, err := createHTTPClient(opts.Proxy, perplexityTimeout)
+	if opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0 {
+		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Perplexity: %w", err)
 		}
-		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey, proxy: opts.Proxy, client: client}
+		provider = &PerplexitySearchProvider{
+			keyPool: NewAPIKeyPool(opts.PerplexityAPIKeys),
+			proxy:   opts.Proxy,
+			client:  client,
+		}
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = opts.PerplexityMaxResults
 		}
-	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+	} else if opts.BraveEnabled && len(opts.BraveAPIKeys) > 0 {
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Brave: %w", err)
 		}
-		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey, proxy: opts.Proxy, client: client}
+		provider = &BraveSearchProvider{keyPool: NewAPIKeyPool(opts.BraveAPIKeys), proxy: opts.Proxy, client: client}
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults
 		}
@@ -596,13 +673,13 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		if opts.SearXNGMaxResults > 0 {
 			maxResults = opts.SearXNGMaxResults
 		}
-	} else if opts.TavilyEnabled && opts.TavilyAPIKey != "" {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+	} else if opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0 {
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Tavily: %w", err)
 		}
 		provider = &TavilySearchProvider{
-			apiKey:  opts.TavilyAPIKey,
+			keyPool: NewAPIKeyPool(opts.TavilyAPIKeys),
 			baseURL: opts.TavilyBaseURL,
 			proxy:   opts.Proxy,
 			client:  client,
@@ -611,7 +688,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.TavilyMaxResults
 		}
 	} else if opts.DuckDuckGoEnabled {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for DuckDuckGo: %w", err)
 		}
@@ -620,7 +697,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.DuckDuckGoMaxResults
 		}
 	} else if opts.GLMSearchEnabled && opts.GLMSearchAPIKey != "" {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for GLM Search: %w", err)
 		}
@@ -703,25 +780,66 @@ type WebFetchTool struct {
 	maxChars        int
 	proxy           string
 	client          *http.Client
+	format          string
 	fetchLimitBytes int64
+	whitelist       *privateHostWhitelist
 }
 
-func NewWebFetchTool(maxChars int, fetchLimitBytes int64) (*WebFetchTool, error) {
+type privateHostWhitelist struct {
+	exact map[string]struct{}
+	cidrs []*net.IPNet
+}
+
+func NewWebFetchTool(maxChars int, format string, fetchLimitBytes int64) (*WebFetchTool, error) {
 	// createHTTPClient cannot fail with an empty proxy string.
-	return NewWebFetchToolWithProxy(maxChars, "", fetchLimitBytes)
+	return NewWebFetchToolWithConfig(maxChars, "", format, fetchLimitBytes, nil)
 }
 
-func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64) (*WebFetchTool, error) {
+// allowPrivateWebFetchHosts controls whether loopback/private hosts are allowed.
+// This is false in normal runtime to reduce SSRF exposure, and tests can override it temporarily.
+var allowPrivateWebFetchHosts atomic.Bool
+
+func NewWebFetchToolWithProxy(
+	maxChars int,
+	proxy string,
+	format string,
+	fetchLimitBytes int64,
+	privateHostWhitelist []string,
+) (*WebFetchTool, error) {
+	return NewWebFetchToolWithConfig(maxChars, proxy, format, fetchLimitBytes, privateHostWhitelist)
+}
+
+func NewWebFetchToolWithConfig(
+	maxChars int,
+	proxy string,
+	format string,
+	fetchLimitBytes int64,
+	privateHostWhitelist []string,
+) (*WebFetchTool, error) {
 	if maxChars <= 0 {
 		maxChars = defaultMaxChars
 	}
-	client, err := createHTTPClient(proxy, fetchTimeout)
+	whitelist, err := newPrivateHostWhitelist(privateHostWhitelist)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse web fetch private host whitelist: %w", err)
+	}
+	client, err := utils.CreateHTTPClient(proxy, fetchTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client for web fetch: %w", err)
+	}
+	if transport, ok := client.Transport.(*http.Transport); ok {
+		dialer := &net.Dialer{
+			Timeout:   15 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}
+		transport.DialContext = newSafeDialContext(dialer, whitelist)
 	}
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= maxRedirects {
 			return fmt.Errorf("stopped after %d redirects", maxRedirects)
+		}
+		if isObviousPrivateHost(req.URL.Hostname(), whitelist) {
+			return fmt.Errorf("redirect target is private or local network host")
 		}
 		return nil
 	}
@@ -732,7 +850,9 @@ func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64)
 		maxChars:        maxChars,
 		proxy:           proxy,
 		client:          client,
+		format:          format,
 		fetchLimitBytes: fetchLimitBytes,
+		whitelist:       whitelist,
 	}, nil
 }
 
@@ -781,6 +901,13 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("missing domain in URL")
 	}
 
+	// Lightweight pre-flight: block obvious localhost/literal-IP without DNS resolution.
+	// The real SSRF guard is newSafeDialContext at connect time.
+	hostname := parsedURL.Hostname()
+	if isObviousPrivateHost(hostname, t.whitelist) {
+		return ErrorResult("fetching private or local network hosts is not allowed")
+	}
+
 	maxChars := t.maxChars
 	if mc, ok := args["maxChars"].(float64); ok {
 		if int(mc) > 100 {
@@ -788,57 +915,128 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to create request: %v", err))
+	doFetch := func(ua string) (*http.Response, []byte, error) {
+		req, reqErr := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
+		if reqErr != nil {
+			return nil, nil, fmt.Errorf("failed to create request: %w", reqErr)
+		}
+		req.Header.Set("User-Agent", ua)
+		resp, doErr := t.client.Do(req)
+		if doErr != nil {
+			return nil, nil, fmt.Errorf("request failed: %w", doErr)
+		}
+		resp.Body = http.MaxBytesReader(nil, resp.Body, t.fetchLimitBytes)
+
+		b, readErr := io.ReadAll(resp.Body)
+		return resp, b, readErr
 	}
 
-	req.Header.Set("User-Agent", userAgent)
-
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("request failed: %v", err))
+	resp, body, err := doFetch(userAgent)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
 	}
 
-	resp.Body = http.MaxBytesReader(nil, resp.Body, t.fetchLimitBytes)
-
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
 			return ErrorResult(fmt.Sprintf("failed to read response: size exceeded %d bytes limit", t.fetchLimitBytes))
 		}
-		return ErrorResult(fmt.Sprintf("failed to read response: %v", err))
+		return ErrorResult(err.Error())
 	}
 
+	// Cloudflare (and similar WAFs) signal bot challenges with 403 + cf-mitigated: challenge.
+	// Retry once with an honest User-Agent that identifies picoclaw, which some
+	// operators explicitly allow-list for AI assistants.
+	if resp.StatusCode == http.StatusForbidden && resp.Header.Get("Cf-Mitigated") == "challenge" {
+		logger.DebugCF("tool", "Cloudflare challenge detected, retrying with honest User-Agent",
+			map[string]any{"url": urlStr})
+		honestUA := fmt.Sprintf(userAgentHonest, config.Version)
+		resp2, body2, err2 := doFetch(honestUA)
+		if resp2 != nil && resp2.Body != nil {
+			defer resp2.Body.Close()
+		}
+
+		if err2 == nil {
+			resp, body = resp2, body2
+		} else {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err2, &maxBytesErr) {
+				return ErrorResult(
+					fmt.Sprintf("failed to read response: size exceeded %d bytes limit", t.fetchLimitBytes),
+				)
+			}
+			return ErrorResult(err2.Error())
+		}
+	}
+
+	bodyStr := string(body)
 	contentType := resp.Header.Get("Content-Type")
+
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		// The most common error here is "mime: no media type" if the header is empty.
+		logger.WarnCF("tool", "Failed to parse Content-Type", map[string]any{
+			"raw_header": contentType,
+			"error":      err.Error(),
+		})
+
+		// security fallback
+		mediaType = "application/octet-stream"
+	}
+
+	charset, hasCharset := params["charset"]
+	if hasCharset {
+		// If the charset is not utf-8, we might have to convert the bodyStr
+		// before passing it to the HTML/Markdown parser
+		if strings.ToLower(charset) != "utf-8" {
+			logger.WarnCF("tool", "Note: the content is not in UTF-8", map[string]any{"charset": charset})
+		}
+	}
 
 	var text, extractor string
 
-	if strings.Contains(contentType, "application/json") {
+	switch {
+	case mediaType == "application/json":
 		var jsonData any
-		if err := json.Unmarshal(body, &jsonData); err == nil {
-			formatted, _ := json.MarshalIndent(jsonData, "", "  ")
-			text = string(formatted)
-			extractor = "json"
-		} else {
-			text = string(body)
+		if err := json.Unmarshal(body, &jsonData); err != nil {
+			text = bodyStr
 			extractor = "raw"
+			break
 		}
-	} else if strings.Contains(contentType, "text/html") || len(body) > 0 &&
-		(strings.HasPrefix(string(body), "<!DOCTYPE") || strings.HasPrefix(strings.ToLower(string(body)), "<html")) {
-		text = t.extractText(string(body))
-		extractor = "text"
-	} else {
-		text = string(body)
+
+		formatted, err := json.MarshalIndent(jsonData, "", "  ")
+		if err != nil {
+			text = bodyStr
+			extractor = "raw"
+			break
+		}
+
+		text = string(formatted)
+		extractor = "json"
+
+	case mediaType == "text/html" || looksLikeHTML(bodyStr):
+		switch strings.ToLower(t.format) {
+		case "markdown":
+			var err error
+			text, err = utils.HtmlToMarkdown(bodyStr)
+			if err != nil {
+				return ErrorResult(fmt.Sprintf("failed to HTML to markdown: %v", err))
+			}
+			extractor = "markdown"
+
+		default:
+			text = t.extractText(bodyStr)
+			extractor = "text"
+		}
+
+	default:
+		text = bodyStr
 		extractor = "raw"
 	}
 
 	truncated := len(text) > maxChars
 	if truncated {
-		text = text[:maxChars]
+		text = text[:maxChars] + "\n[Content truncated due to size limit]"
 	}
 
 	result := map[string]any{
@@ -864,6 +1062,17 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 }
 
+func looksLikeHTML(body string) bool {
+	if body == "" {
+		return false
+	}
+
+	lower := strings.ToLower(body)
+
+	return strings.HasPrefix(body, "<!doctype") ||
+		strings.HasPrefix(lower, "<html")
+}
+
 func (t *WebFetchTool) extractText(htmlContent string) string {
 	result := reScript.ReplaceAllLiteralString(htmlContent, "")
 	result = reStyle.ReplaceAllLiteralString(result, "")
@@ -884,4 +1093,193 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	}
 
 	return strings.Join(cleanLines, "\n")
+}
+
+// newSafeDialContext re-resolves DNS at connect time to mitigate DNS rebinding (TOCTOU)
+// where a hostname resolves to a public IP during pre-flight but a private IP at connect time.
+func newSafeDialContext(
+	dialer *net.Dialer,
+	whitelist *privateHostWhitelist,
+) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		if allowPrivateWebFetchHosts.Load() {
+			return dialer.DialContext(ctx, network, address)
+		}
+
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, fmt.Errorf("invalid target address %q: %w", address, err)
+		}
+		if host == "" {
+			return nil, fmt.Errorf("empty target host")
+		}
+
+		if ip := net.ParseIP(host); ip != nil {
+			if shouldBlockPrivateIP(ip, whitelist) {
+				return nil, fmt.Errorf("blocked private or local target: %s", host)
+			}
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		}
+
+		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve %s: %w", host, err)
+		}
+
+		attempted := 0
+		var lastErr error
+		for _, ipAddr := range ipAddrs {
+			if shouldBlockPrivateIP(ipAddr.IP, whitelist) {
+				continue
+			}
+			attempted++
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ipAddr.IP.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+
+		if attempted == 0 {
+			return nil, fmt.Errorf("all resolved addresses for %s are private, restricted, or not whitelisted", host)
+		}
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed connecting to public addresses for %s: %w", host, lastErr)
+		}
+		return nil, fmt.Errorf("failed connecting to public addresses for %s", host)
+	}
+}
+
+func newPrivateHostWhitelist(entries []string) (*privateHostWhitelist, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	whitelist := &privateHostWhitelist{
+		exact: make(map[string]struct{}),
+		cidrs: make([]*net.IPNet, 0, len(entries)),
+	}
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if ip := net.ParseIP(entry); ip != nil {
+			whitelist.exact[normalizeWhitelistIP(ip).String()] = struct{}{}
+			continue
+		}
+		_, network, err := net.ParseCIDR(entry)
+		if err != nil {
+			return nil, fmt.Errorf("invalid entry %q: expected IP or CIDR", entry)
+		}
+		whitelist.cidrs = append(whitelist.cidrs, network)
+	}
+
+	if len(whitelist.exact) == 0 && len(whitelist.cidrs) == 0 {
+		return nil, nil
+	}
+	return whitelist, nil
+}
+
+func (w *privateHostWhitelist) Contains(ip net.IP) bool {
+	if w == nil || ip == nil {
+		return false
+	}
+
+	normalized := normalizeWhitelistIP(ip)
+	if _, ok := w.exact[normalized.String()]; ok {
+		return true
+	}
+	for _, network := range w.cidrs {
+		if network.Contains(normalized) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeWhitelistIP(ip net.IP) net.IP {
+	if ip == nil {
+		return nil
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return ip4
+	}
+	return ip
+}
+
+func shouldBlockPrivateIP(ip net.IP, whitelist *privateHostWhitelist) bool {
+	return isPrivateOrRestrictedIP(ip) && !whitelist.Contains(ip)
+}
+
+// isObviousPrivateHost performs a lightweight, no-DNS check for obviously private hosts.
+// It catches localhost, literal private IPs, and empty hosts. It does NOT resolve DNS —
+// the real SSRF guard is newSafeDialContext which checks IPs at connect time.
+func isObviousPrivateHost(host string, whitelist *privateHostWhitelist) bool {
+	if allowPrivateWebFetchHosts.Load() {
+		return false
+	}
+
+	h := strings.ToLower(strings.TrimSpace(host))
+	h = strings.TrimSuffix(h, ".")
+	if h == "" {
+		return true
+	}
+
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+
+	if ip := net.ParseIP(h); ip != nil {
+		return shouldBlockPrivateIP(ip, whitelist)
+	}
+
+	return false
+}
+
+// isPrivateOrRestrictedIP returns true for IPs that should never be reached via web_fetch:
+// RFC 1918, loopback, link-local (incl. cloud metadata 169.254.x.x), carrier-grade NAT,
+// IPv6 unique-local (fc00::/7), 6to4 (2002::/16), and Teredo (2001:0000::/32).
+func isPrivateOrRestrictedIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified() {
+		return true
+	}
+
+	if ip4 := ip.To4(); ip4 != nil {
+		// IPv4 private, loopback, link-local, and carrier-grade NAT ranges.
+		if ip4[0] == 10 ||
+			ip4[0] == 127 ||
+			ip4[0] == 0 ||
+			(ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31) ||
+			(ip4[0] == 192 && ip4[1] == 168) ||
+			(ip4[0] == 169 && ip4[1] == 254) ||
+			(ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127) {
+			return true
+		}
+		return false
+	}
+
+	if len(ip) == net.IPv6len {
+		// IPv6 unique local addresses (fc00::/7)
+		if (ip[0] & 0xfe) == 0xfc {
+			return true
+		}
+		// 6to4 addresses (2002::/16): check the embedded IPv4 at bytes [2:6].
+		if ip[0] == 0x20 && ip[1] == 0x02 {
+			embedded := net.IPv4(ip[2], ip[3], ip[4], ip[5])
+			return isPrivateOrRestrictedIP(embedded)
+		}
+		// Teredo (2001:0000::/32): client IPv4 is at bytes [12:16], XOR-inverted.
+		if ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x00 && ip[3] == 0x00 {
+			client := net.IPv4(ip[12]^0xff, ip[13]^0xff, ip[14]^0xff, ip[15]^0xff)
+			return isPrivateOrRestrictedIP(client)
+		}
+	}
+
+	return false
 }

@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -28,11 +30,17 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// errCodeTenantTokenInvalid is the Feishu API error code for an expired/revoked
+// tenant_access_token. The Lark SDK's built-in retry does not clear its cache
+// on this error, so we do it ourselves.
+const errCodeTenantTokenInvalid = 99991663
+
 type FeishuChannel struct {
 	*channels.BaseChannel
-	config   config.FeishuConfig
-	client   *lark.Client
-	wsClient *larkws.Client
+	config     config.FeishuConfig
+	client     *lark.Client
+	wsClient   *larkws.Client
+	tokenCache *tokenCache // custom cache that supports invalidation
 
 	botOpenID atomic.Value // stores string; populated lazily for @mention detection
 
@@ -46,10 +54,16 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
 
+	tc := newTokenCache()
+	opts := []lark.ClientOptionFunc{lark.WithTokenCache(tc)}
+	if cfg.IsLark {
+		opts = append(opts, lark.WithOpenBaseUrl(lark.LarkBaseUrl))
+	}
 	ch := &FeishuChannel{
 		BaseChannel: base,
 		config:      cfg,
-		client:      lark.NewClient(cfg.AppID, cfg.AppSecret),
+		tokenCache:  tc,
+		client:      lark.NewClient(cfg.AppID, cfg.AppSecret, opts...),
 	}
 	ch.SetOwner(ch)
 	return ch, nil
@@ -74,10 +88,15 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 
 	c.mu.Lock()
 	c.cancel = cancel
+	domain := lark.FeishuBaseUrl
+	if c.config.IsLark {
+		domain = lark.LarkBaseUrl
+	}
 	c.wsClient = larkws.NewClient(
 		c.config.AppID,
 		c.config.AppSecret,
 		larkws.WithEventHandler(dispatcher),
+		larkws.WithDomain(domain),
 	)
 	wsClient := c.wsClient
 	c.mu.Unlock()
@@ -111,6 +130,7 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 }
 
 // Send sends a message using Interactive Card format for markdown rendering.
+// Falls back to plain text message if card sending fails (e.g., table limit exceeded).
 func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
@@ -123,9 +143,38 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	// Build interactive card with markdown content
 	cardContent, err := buildMarkdownCard(msg.Content)
 	if err != nil {
-		return fmt.Errorf("feishu send: card build failed: %w", err)
+		// If card build fails, fall back to plain text
+		return c.sendText(ctx, msg.ChatID, msg.Content)
 	}
-	return c.sendCard(ctx, msg.ChatID, cardContent)
+
+	// First attempt: try sending as interactive card
+	err = c.sendCard(ctx, msg.ChatID, cardContent)
+	if err == nil {
+		return nil
+	}
+
+	// Check if error is due to card table limit (error code 11310)
+	// See: https://open.feishu.cn/document/server-docs/im-api/message-content-description/create_json
+	errMsg := err.Error()
+	isCardLimitError := strings.Contains(errMsg, "11310")
+
+	if isCardLimitError {
+		logger.WarnCF("feishu", "Card send failed (table limit), falling back to text message", map[string]any{
+			"chat_id": msg.ChatID,
+			"error":   errMsg,
+		})
+
+		// Second attempt: fall back to plain text message
+		textErr := c.sendText(ctx, msg.ChatID, msg.Content)
+		if textErr == nil {
+			return nil
+		}
+		// If text also fails, return the text error
+		return textErr
+	}
+
+	// For other errors, return the original card error
+	return err
 }
 
 // EditMessage implements channels.MessageEditor.
@@ -146,6 +195,7 @@ func (c *FeishuChannel) EditMessage(ctx context.Context, chatID, messageID, cont
 		return fmt.Errorf("feishu edit: %w", err)
 	}
 	if !resp.Success() {
+		c.invalidateTokenOnAuthError(resp.Code)
 		return fmt.Errorf("feishu edit api error (code=%d msg=%s)", resp.Code, resp.Msg)
 	}
 	return nil
@@ -185,6 +235,7 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 		return "", fmt.Errorf("feishu placeholder send: %w", err)
 	}
 	if !resp.Success() {
+		c.invalidateTokenOnAuthError(resp.Code)
 		return "", fmt.Errorf("feishu placeholder api error (code=%d msg=%s)", resp.Code, resp.Msg)
 	}
 
@@ -195,25 +246,39 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 }
 
 // ReactToMessage implements channels.ReactionCapable.
-// Adds an "Pin" reaction and returns an undo function to remove it.
+// Adds a reaction (randomly chosen from config) and returns an undo function to remove it.
 func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
+	// Get emoji list from config
+	emojiList := c.config.RandomReactionEmoji
+	var chosenEmoji string
+	if len(emojiList) == 0 {
+		// Default to "Pin" if no config
+		chosenEmoji = "Pin"
+	} else {
+		idx := rand.Intn(len(emojiList))
+		chosenEmoji = emojiList[idx]
+	}
+
 	req := larkim.NewCreateMessageReactionReqBuilder().
 		MessageId(messageID).
 		Body(larkim.NewCreateMessageReactionReqBodyBuilder().
-			ReactionType(larkim.NewEmojiBuilder().EmojiType("Pin").Build()).
+			ReactionType(larkim.NewEmojiBuilder().EmojiType(chosenEmoji).Build()).
 			Build()).
 		Build()
 
 	resp, err := c.client.Im.V1.MessageReaction.Create(ctx, req)
 	if err != nil {
 		logger.ErrorCF("feishu", "Failed to add reaction", map[string]any{
+			"emoji":      chosenEmoji,
 			"message_id": messageID,
 			"error":      err.Error(),
 		})
 		return func() {}, fmt.Errorf("feishu react: %w", err)
 	}
 	if !resp.Success() {
+		c.invalidateTokenOnAuthError(resp.Code)
 		logger.ErrorCF("feishu", "Reaction API error", map[string]any{
+			"emoji":      chosenEmoji,
 			"message_id": messageID,
 			"code":       resp.Code,
 			"msg":        resp.Msg,
@@ -359,6 +424,15 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		mediaRefs = c.downloadInboundMedia(ctx, chatID, messageID, messageType, rawContent, store)
 	}
 
+	// For interactive cards, pass external image URLs via media refs.
+	// Keep content as valid raw JSON for downstream parsing.
+	if messageType == larkim.MsgTypeInteractive {
+		_, externalURLs := extractCardImageKeys(rawContent)
+		if len(externalURLs) > 0 {
+			mediaRefs = append(mediaRefs, externalURLs...)
+		}
+	}
+
 	// Append media tags to content (like Telegram does)
 	content = appendMediaTags(content, messageType, mediaRefs)
 
@@ -437,6 +511,7 @@ func (c *FeishuChannel) fetchBotOpenID(ctx context.Context) error {
 		return fmt.Errorf("bot info parse: %w", err)
 	}
 	if result.Code != 0 {
+		c.invalidateTokenOnAuthError(result.Code)
 		return fmt.Errorf("bot info api error (code=%d)", result.Code)
 	}
 	if result.Bot.OpenID == "" {
@@ -493,6 +568,10 @@ func extractContent(messageType, rawContent string) string {
 		// Pass raw JSON to LLM — structured rich text is more informative than flattened plain text
 		return rawContent
 
+	case larkim.MsgTypeInteractive:
+		// Pass raw JSON to LLM — structured card is more informative than flattened text
+		return rawContent
+
 	case larkim.MsgTypeImage:
 		// Image messages don't have text content
 		return ""
@@ -529,6 +608,18 @@ func (c *FeishuChannel) downloadInboundMedia(
 		if ref != "" {
 			refs = append(refs, ref)
 		}
+
+	case larkim.MsgTypeInteractive:
+		// Extract and download images embedded in interactive cards
+		feishuKeys, _ := extractCardImageKeys(rawContent)
+		// Download Feishu-hosted images via API
+		for _, imageKey := range feishuKeys {
+			ref := c.downloadResource(ctx, messageID, imageKey, "image", ".jpg", store, scope)
+			if ref != "" {
+				refs = append(refs, ref)
+			}
+		}
+		// External URLs are passed directly to LLM, not downloaded
 
 	case larkim.MsgTypeFile, larkim.MsgTypeAudio, larkim.MsgTypeMedia:
 		fileKey := extractFileKey(rawContent)
@@ -579,6 +670,7 @@ func (c *FeishuChannel) downloadResource(
 		return ""
 	}
 	if !resp.Success() {
+		c.invalidateTokenOnAuthError(resp.Code)
 		logger.ErrorCF("feishu", "Resource download api error", map[string]any{
 			"code": resp.Code,
 			"msg":  resp.Msg,
@@ -604,7 +696,7 @@ func (c *FeishuChannel) downloadResource(
 	}
 
 	// Write to the shared picoclaw_media directory using a unique name to avoid collisions.
-	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	mediaDir := media.TempDir()
 	if mkdirErr := os.MkdirAll(mediaDir, 0o700); mkdirErr != nil {
 		logger.ErrorCF("feishu", "Failed to create media directory", map[string]any{
 			"error": mkdirErr.Error(),
@@ -649,8 +741,15 @@ func (c *FeishuChannel) downloadResource(
 }
 
 // appendMediaTags appends media type tags to content (like Telegram's "[image: photo]").
+// For interactive cards, media tags are not appended because content is raw JSON
+// and appending would produce invalid JSON format.
 func appendMediaTags(content, messageType string, mediaRefs []string) string {
 	if len(mediaRefs) == 0 {
+		return content
+	}
+
+	// Don't append tags to JSON content (interactive cards) - would produce invalid JSON
+	if messageType == larkim.MsgTypeInteractive {
 		return content
 	}
 
@@ -691,10 +790,40 @@ func (c *FeishuChannel) sendCard(ctx context.Context, chatID, cardContent string
 	}
 
 	if !resp.Success() {
+		c.invalidateTokenOnAuthError(resp.Code)
 		return fmt.Errorf("feishu api error (code=%d msg=%s): %w", resp.Code, resp.Msg, channels.ErrTemporary)
 	}
 
 	logger.DebugCF("feishu", "Feishu card message sent", map[string]any{
+		"chat_id": chatID,
+	})
+
+	return nil
+}
+
+// sendText sends a plain text message to a chat (fallback when card fails).
+func (c *FeishuChannel) sendText(ctx context.Context, chatID, text string) error {
+	content, _ := json.Marshal(map[string]string{"text": text})
+
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(larkim.ReceiveIdTypeChatId).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(chatID).
+			MsgType(larkim.MsgTypeText).
+			Content(string(content)).
+			Build()).
+		Build()
+
+	resp, err := c.client.Im.V1.Message.Create(ctx, req)
+	if err != nil {
+		return fmt.Errorf("feishu send text: %w", channels.ErrTemporary)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("feishu text api error (code=%d msg=%s): %w", resp.Code, resp.Msg, channels.ErrTemporary)
+	}
+
+	logger.DebugCF("feishu", "Feishu text message sent (fallback)", map[string]any{
 		"chat_id": chatID,
 	})
 
@@ -716,6 +845,7 @@ func (c *FeishuChannel) sendImage(ctx context.Context, chatID string, file *os.F
 		return fmt.Errorf("feishu image upload: %w", err)
 	}
 	if !uploadResp.Success() {
+		c.invalidateTokenOnAuthError(uploadResp.Code)
 		return fmt.Errorf("feishu image upload api error (code=%d msg=%s)", uploadResp.Code, uploadResp.Msg)
 	}
 	if uploadResp.Data == nil || uploadResp.Data.ImageKey == nil {
@@ -740,6 +870,7 @@ func (c *FeishuChannel) sendImage(ctx context.Context, chatID string, file *os.F
 		return fmt.Errorf("feishu image send: %w", err)
 	}
 	if !resp.Success() {
+		c.invalidateTokenOnAuthError(resp.Code)
 		return fmt.Errorf("feishu image send api error (code=%d msg=%s)", resp.Code, resp.Msg)
 	}
 	return nil
@@ -770,6 +901,7 @@ func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.Fi
 		return fmt.Errorf("feishu file upload: %w", err)
 	}
 	if !uploadResp.Success() {
+		c.invalidateTokenOnAuthError(uploadResp.Code)
 		return fmt.Errorf("feishu file upload api error (code=%d msg=%s)", uploadResp.Code, uploadResp.Msg)
 	}
 	if uploadResp.Data == nil || uploadResp.Data.FileKey == nil {
@@ -794,6 +926,7 @@ func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.Fi
 		return fmt.Errorf("feishu file send: %w", err)
 	}
 	if !resp.Success() {
+		c.invalidateTokenOnAuthError(resp.Code)
 		return fmt.Errorf("feishu file send api error (code=%d msg=%s)", resp.Code, resp.Msg)
 	}
 	return nil
@@ -815,4 +948,15 @@ func extractFeishuSenderID(sender *larkim.EventSender) string {
 	}
 
 	return ""
+}
+
+// invalidateTokenOnAuthError clears the cached tenant_access_token when the
+// Feishu API reports it as invalid (99991663), so the next request fetches a
+// fresh one. The Lark SDK's built-in retry does not clear the cache, causing
+// all API calls to fail until the token naturally expires (~2 hours).
+func (c *FeishuChannel) invalidateTokenOnAuthError(code int) {
+	if code == errCodeTenantTokenInvalid {
+		c.tokenCache.InvalidateAll()
+		logger.WarnCF("feishu", "Invalidated cached token due to auth error", nil)
+	}
 }

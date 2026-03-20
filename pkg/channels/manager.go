@@ -61,7 +61,9 @@ var channelRateConfig = map[string]float64{
 	"telegram": 20,
 	"discord":  1,
 	"slack":    1,
+	"matrix":   2,
 	"line":     10,
+	"qq":       5,
 	"irc":      2,
 }
 
@@ -84,9 +86,10 @@ type Manager struct {
 	mux           *http.ServeMux
 	httpServer    *http.Server
 	mu            sync.RWMutex
-	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
-	typingStops   sync.Map // "channel:chatID" → func()
-	reactionUndos sync.Map // "channel:chatID" → reactionEntry
+	placeholders  sync.Map          // "channel:chatID" → placeholderID (string)
+	typingStops   sync.Map          // "channel:chatID" → func()
+	reactionUndos sync.Map          // "channel:chatID" → reactionEntry
+	channelHashes map[string]string // channel name → config hash
 }
 
 type asyncTask struct {
@@ -100,11 +103,50 @@ func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
 	m.placeholders.Store(key, placeholderEntry{id: placeholderID, createdAt: time.Now()})
 }
 
+// SendPlaceholder sends a "Thinking…" placeholder for the given channel/chatID
+// and records it for later editing. Returns true if a placeholder was sent.
+func (m *Manager) SendPlaceholder(ctx context.Context, channel, chatID string) bool {
+	m.mu.RLock()
+	ch, ok := m.channels[channel]
+	m.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	pc, ok := ch.(PlaceholderCapable)
+	if !ok {
+		return false
+	}
+	phID, err := pc.SendPlaceholder(ctx, chatID)
+	if err != nil || phID == "" {
+		return false
+	}
+	m.RecordPlaceholder(channel, chatID, phID)
+	return true
+}
+
 // RecordTypingStop registers a typing stop function for later invocation.
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
 	key := channel + ":" + chatID
-	m.typingStops.Store(key, typingEntry{stop: stop, createdAt: time.Now()})
+	entry := typingEntry{stop: stop, createdAt: time.Now()}
+	if previous, loaded := m.typingStops.Swap(key, entry); loaded {
+		if oldEntry, ok := previous.(typingEntry); ok && oldEntry.stop != nil {
+			oldEntry.stop()
+		}
+	}
+}
+
+// InvokeTypingStop invokes the registered typing stop function for the given channel and chatID.
+// It is safe to call even when no typing indicator is active (no-op).
+// Used by the agent loop to stop typing when processing completes (success, error, or panic),
+// regardless of whether an outbound message is published.
+func (m *Manager) InvokeTypingStop(channel, chatID string) {
+	key := channel + ":" + chatID
+	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
+		if entry, ok := v.(typingEntry); ok {
+			entry.stop()
+		}
+	}
 }
 
 // RecordReactionUndo registers a reaction undo function for later invocation.
@@ -150,16 +192,20 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 
 func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.MediaStore) (*Manager, error) {
 	m := &Manager{
-		channels:   make(map[string]Channel),
-		workers:    make(map[string]*channelWorker),
-		bus:        messageBus,
-		config:     cfg,
-		mediaStore: store,
+		channels:      make(map[string]Channel),
+		workers:       make(map[string]*channelWorker),
+		bus:           messageBus,
+		config:        cfg,
+		mediaStore:    store,
+		channelHashes: make(map[string]string),
 	}
 
-	if err := m.initChannels(); err != nil {
+	if err := m.initChannels(&cfg.Channels); err != nil {
 		return nil, err
 	}
+
+	// Store initial config hashes for all channels
+	m.channelHashes = toChannelHashes(cfg)
 
 	return m, nil
 }
@@ -204,15 +250,15 @@ func (m *Manager) initChannel(name, displayName string) {
 	}
 }
 
-func (m *Manager) initChannels() error {
+func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 	logger.InfoC("channels", "Initializing channel manager")
 
-	if m.config.Channels.Telegram.Enabled && m.config.Channels.Telegram.Token != "" {
+	if channels.Telegram.Enabled && channels.Telegram.Token != "" {
 		m.initChannel("telegram", "Telegram")
 	}
 
-	if m.config.Channels.WhatsApp.Enabled {
-		waCfg := m.config.Channels.WhatsApp
+	if channels.WhatsApp.Enabled {
+		waCfg := channels.WhatsApp
 		if waCfg.UseNative {
 			m.initChannel("whatsapp_native", "WhatsApp Native")
 		} else if waCfg.BridgeURL != "" {
@@ -220,59 +266,68 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
-	if m.config.Channels.Feishu.Enabled {
+	if channels.Feishu.Enabled {
 		m.initChannel("feishu", "Feishu")
 	}
 
-	if m.config.Channels.Discord.Enabled && m.config.Channels.Discord.Token != "" {
+	if channels.Discord.Enabled && channels.Discord.Token != "" {
 		m.initChannel("discord", "Discord")
 	}
 
-	if m.config.Channels.MaixCam.Enabled {
+	if channels.MaixCam.Enabled {
 		m.initChannel("maixcam", "MaixCam")
 	}
 
-	if m.config.Channels.QQ.Enabled {
+	if channels.QQ.Enabled {
 		m.initChannel("qq", "QQ")
 	}
 
-	if m.config.Channels.DingTalk.Enabled && m.config.Channels.DingTalk.ClientID != "" {
+	if channels.DingTalk.Enabled && channels.DingTalk.ClientID != "" {
 		m.initChannel("dingtalk", "DingTalk")
 	}
 
-	if m.config.Channels.Slack.Enabled && m.config.Channels.Slack.BotToken != "" {
+	if channels.Slack.Enabled && channels.Slack.BotToken != "" {
 		m.initChannel("slack", "Slack")
 	}
 
-	if m.config.Channels.LINE.Enabled && m.config.Channels.LINE.ChannelAccessToken != "" {
+	if channels.Matrix.Enabled &&
+		m.config.Channels.Matrix.Homeserver != "" &&
+		m.config.Channels.Matrix.UserID != "" &&
+		m.config.Channels.Matrix.AccessToken != "" {
+		m.initChannel("matrix", "Matrix")
+	}
+
+	if channels.LINE.Enabled && channels.LINE.ChannelAccessToken != "" {
 		m.initChannel("line", "LINE")
 	}
 
-	if m.config.Channels.OneBot.Enabled && m.config.Channels.OneBot.WSUrl != "" {
+	if channels.OneBot.Enabled && channels.OneBot.WSUrl != "" {
 		m.initChannel("onebot", "OneBot")
 	}
 
-	if m.config.Channels.WeCom.Enabled && m.config.Channels.WeCom.Token != "" {
+	if channels.WeCom.Enabled && channels.WeCom.Token != "" {
 		m.initChannel("wecom", "WeCom")
 	}
 
-	if m.config.Channels.WeComAIBot.Enabled && m.config.Channels.WeComAIBot.Token != "" {
+	if m.config.Channels.WeComAIBot.Enabled &&
+		((m.config.Channels.WeComAIBot.BotID != "" && m.config.Channels.WeComAIBot.Secret != "") ||
+			m.config.Channels.WeComAIBot.Token != "") {
 		m.initChannel("wecom_aibot", "WeCom AI Bot")
 	}
 
-	if m.config.Channels.WeComApp.Enabled && m.config.Channels.WeComApp.CorpID != "" {
+	if channels.WeComApp.Enabled && channels.WeComApp.CorpID != "" {
 		m.initChannel("wecom_app", "WeCom App")
 	}
 
-	if m.config.Channels.Pico.Enabled && m.config.Channels.Pico.Token != "" {
+	if channels.Pico.Enabled && channels.Pico.Token != "" {
 		m.initChannel("pico", "Pico")
 	}
 
-	if m.config.Channels.PicoClient.Enabled && m.config.Channels.PicoClient.URL != "" {
+	if channels.PicoClient.Enabled && channels.PicoClient.URL != "" {
 		m.initChannel("pico_client", "Pico Client")
 	}
 
-	if m.config.Channels.IRC.Enabled && m.config.Channels.IRC.Server != "" {
+	if channels.IRC.Enabled && channels.IRC.Server != "" {
 		m.initChannel("irc", "IRC")
 	}
 
@@ -326,7 +381,6 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	if len(m.channels) == 0 {
 		logger.WarnC("channels", "No channels enabled")
-		return errors.New("no channels enabled")
 	}
 
 	logger.InfoC("channels", "Starting all channels")
@@ -366,7 +420,7 @@ func (m *Manager) StartAll(ctx context.Context) error {
 				"addr": m.httpServer.Addr,
 			})
 			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.ErrorCF("channels", "Shared HTTP server error", map[string]any{
+				logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
 					"error": err.Error(),
 				})
 			}
@@ -555,7 +609,7 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 func dispatchLoop[M any](
 	ctx context.Context,
 	m *Manager,
-	subscribe func(context.Context) (M, bool),
+	ch <-chan M,
 	getChannel func(M) string,
 	enqueue func(context.Context, *channelWorker, M) bool,
 	startMsg, stopMsg, unknownMsg, noWorkerMsg string,
@@ -563,35 +617,41 @@ func dispatchLoop[M any](
 	logger.InfoC("channels", startMsg)
 
 	for {
-		msg, ok := subscribe(ctx)
-		if !ok {
+		select {
+		case <-ctx.Done():
 			logger.InfoC("channels", stopMsg)
 			return
-		}
 
-		channel := getChannel(msg)
-
-		// Silently skip internal channels
-		if constants.IsInternalChannel(channel) {
-			continue
-		}
-
-		m.mu.RLock()
-		_, exists := m.channels[channel]
-		w, wExists := m.workers[channel]
-		m.mu.RUnlock()
-
-		if !exists {
-			logger.WarnCF("channels", unknownMsg, map[string]any{"channel": channel})
-			continue
-		}
-
-		if wExists && w != nil {
-			if !enqueue(ctx, w, msg) {
+		case msg, ok := <-ch:
+			if !ok {
+				logger.InfoC("channels", stopMsg)
 				return
 			}
-		} else if exists {
-			logger.WarnCF("channels", noWorkerMsg, map[string]any{"channel": channel})
+
+			channel := getChannel(msg)
+
+			// Silently skip internal channels
+			if constants.IsInternalChannel(channel) {
+				continue
+			}
+
+			m.mu.RLock()
+			_, exists := m.channels[channel]
+			w, wExists := m.workers[channel]
+			m.mu.RUnlock()
+
+			if !exists {
+				logger.WarnCF("channels", unknownMsg, map[string]any{"channel": channel})
+				continue
+			}
+
+			if wExists && w != nil {
+				if !enqueue(ctx, w, msg) {
+					return
+				}
+			} else if exists {
+				logger.WarnCF("channels", noWorkerMsg, map[string]any{"channel": channel})
+			}
 		}
 	}
 }
@@ -599,7 +659,7 @@ func dispatchLoop[M any](
 func (m *Manager) dispatchOutbound(ctx context.Context) {
 	dispatchLoop(
 		ctx, m,
-		m.bus.SubscribeOutbound,
+		m.bus.OutboundChan(),
 		func(msg bus.OutboundMessage) string { return msg.Channel },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMessage) bool {
 			select {
@@ -619,7 +679,7 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 func (m *Manager) dispatchOutboundMedia(ctx context.Context) {
 	dispatchLoop(
 		ctx, m,
-		m.bus.SubscribeOutboundMedia,
+		m.bus.OutboundMediaChan(),
 		func(msg bus.OutboundMediaMessage) string { return msg.Channel },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMediaMessage) bool {
 			select {
@@ -789,6 +849,68 @@ func (m *Manager) GetEnabledChannels() []string {
 	return names
 }
 
+// Reload updates the config reference without restarting channels.
+// This is used when channel config hasn't changed but other parts of the config have.
+func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	list := toChannelHashes(cfg)
+	added, removed := compareChannels(m.channelHashes, list)
+	for _, name := range removed {
+		// Stop all channels
+		channel := m.channels[name]
+		logger.InfoCF("channels", "Stopping channel", map[string]any{
+			"channel": name,
+		})
+		if err := channel.Stop(ctx); err != nil {
+			logger.ErrorCF("channels", "Error stopping channel", map[string]any{
+				"channel": name,
+				"error":   err.Error(),
+			})
+		}
+		go func() {
+			m.UnregisterChannel(name)
+		}()
+	}
+	dispatchCtx, cancel := context.WithCancel(ctx)
+	m.dispatchTask = &asyncTask{cancel: cancel}
+	cc, err := toChannelConfig(cfg, added)
+	if err != nil {
+		logger.ErrorC("channels", fmt.Sprintf("toChannelConfig error: %v", err))
+		return err
+	}
+	err = m.initChannels(cc)
+	if err != nil {
+		logger.ErrorC("channels", fmt.Sprintf("initChannels error: %v", err))
+		return err
+	}
+	for _, name := range added {
+		channel := m.channels[name]
+		logger.InfoCF("channels", "Starting channel", map[string]any{
+			"channel": name,
+		})
+		if err := channel.Start(ctx); err != nil {
+			logger.ErrorCF("channels", "Failed to start channel", map[string]any{
+				"channel": name,
+				"error":   err.Error(),
+			})
+			continue
+		}
+		// Lazily create worker only after channel starts successfully
+		w := newChannelWorker(name, channel)
+		m.workers[name] = w
+		go m.runWorker(dispatchCtx, name, w)
+		go m.runMediaWorker(dispatchCtx, name, w)
+		go func() {
+			m.RegisterChannel(name, channel)
+		}()
+	}
+
+	m.config = cfg
+	m.channelHashes = toChannelHashes(cfg)
+	return nil
+}
+
 func (m *Manager) RegisterChannel(name string, channel Channel) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -806,6 +928,39 @@ func (m *Manager) UnregisterChannel(name string) {
 	}
 	delete(m.workers, name)
 	delete(m.channels, name)
+}
+
+// SendMessage sends an outbound message synchronously through the channel
+// worker's rate limiter and retry logic. It blocks until the message is
+// delivered (or all retries are exhausted), which preserves ordering when
+// a subsequent operation depends on the message having been sent.
+func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) error {
+	m.mu.RLock()
+	_, exists := m.channels[msg.Channel]
+	w, wExists := m.workers[msg.Channel]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("channel %s not found", msg.Channel)
+	}
+	if !wExists || w == nil {
+		return fmt.Errorf("channel %s has no active worker", msg.Channel)
+	}
+
+	maxLen := 0
+	if mlp, ok := w.ch.(MessageLengthProvider); ok {
+		maxLen = mlp.MaxMessageLength()
+	}
+	if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
+		for _, chunk := range SplitMessage(msg.Content, maxLen) {
+			chunkMsg := msg
+			chunkMsg.Content = chunk
+			m.sendWithRetry(ctx, msg.Channel, w, chunkMsg)
+		}
+	} else {
+		m.sendWithRetry(ctx, msg.Channel, w, msg)
+	}
+	return nil
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {

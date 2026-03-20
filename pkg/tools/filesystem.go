@@ -2,19 +2,25 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-// validatePath ensures the given path is within the workspace if restrict is true.
-func validatePath(path, workspace string, restrict bool) (string, error) {
+const MaxReadFileSize = 64 * 1024 // 64KB limit to avoid context overflow
+
+func validatePathWithAllowPaths(path, workspace string, restrict bool, patterns []*regexp.Regexp) (string, error) {
 	if workspace == "" {
 		return path, fmt.Errorf("workspace is not defined")
 	}
@@ -35,6 +41,10 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 	}
 
 	if restrict {
+		if isAllowedPath(absPath, patterns) {
+			return absPath, nil
+		}
+
 		if !isWithinWorkspace(absPath, absWorkspace) {
 			return "", fmt.Errorf("access denied: path is outside the workspace")
 		}
@@ -66,6 +76,137 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 	return absPath, nil
 }
 
+func isAllowedPath(path string, patterns []*regexp.Regexp) bool {
+	if len(patterns) == 0 {
+		return false
+	}
+
+	cleaned := filepath.Clean(path)
+	if !filepath.IsAbs(cleaned) {
+		return false
+	}
+	if !matchesAllowedPath(cleaned, patterns) {
+		return false
+	}
+
+	resolved, err := resolvePathAgainstExistingAncestor(cleaned)
+	if err != nil {
+		return false
+	}
+
+	return matchesAllowedPath(resolved, patterns)
+}
+
+func matchesAllowedPath(path string, patterns []*regexp.Regexp) bool {
+	cleaned := filepath.Clean(path)
+	for _, pattern := range patterns {
+		if pattern.MatchString(cleaned) {
+			return true
+		}
+		if root, ok := extractAllowedPathRoot(pattern); ok && isWithinAllowedRoot(cleaned, root) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractAllowedPathRoot(pattern *regexp.Regexp) (string, bool) {
+	raw := pattern.String()
+	if !strings.HasPrefix(raw, "^") {
+		return "", false
+	}
+
+	literal := strings.TrimPrefix(raw, "^")
+
+	// Recognize the common "directory prefix" form: ^<literal>(?:/|$)
+	literal = strings.TrimSuffix(literal, "(?:/|$)")
+	literal = strings.TrimSuffix(literal, `(?:\\|$)`)
+
+	// Reject patterns that still contain regex operators after removing the
+	// optional anchored-directory suffix. That keeps arbitrary regex behavior
+	// unchanged and only enables normalized prefix matching for literal paths.
+	if containsUnescapedRegexMeta(literal) {
+		return "", false
+	}
+
+	unescaped, ok := unescapeRegexLiteral(literal)
+	if !ok || unescaped == "" {
+		return "", false
+	}
+
+	return filepath.Clean(unescaped), filepath.IsAbs(unescaped)
+}
+
+func appendUniquePath(paths []string, path string) []string {
+	for _, existing := range paths {
+		if existing == path {
+			return paths
+		}
+	}
+	return append(paths, path)
+}
+
+func containsUnescapedRegexMeta(s string) bool {
+	escaped := false
+	for _, r := range s {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		switch r {
+		case '.', '+', '*', '?', '(', ')', '[', ']', '{', '}', '|':
+			return true
+		}
+	}
+	return escaped
+}
+
+func unescapeRegexLiteral(s string) (string, bool) {
+	var b strings.Builder
+	b.Grow(len(s))
+
+	escaped := false
+	for _, r := range s {
+		if escaped {
+			b.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		b.WriteRune(r)
+	}
+
+	if escaped {
+		return "", false
+	}
+
+	return b.String(), true
+}
+
+func isWithinAllowedRoot(path, root string) bool {
+	candidate := filepath.Clean(path)
+	allowedVariants := []string{filepath.Clean(root)}
+
+	if resolvedRoot, err := resolvePathAgainstExistingAncestor(root); err == nil {
+		allowedVariants = appendUniquePath(allowedVariants, filepath.Clean(resolvedRoot))
+	}
+
+	for _, allowedRoot := range allowedVariants {
+		if isWithinWorkspace(candidate, allowedRoot) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func resolveExistingAncestor(path string) (string, error) {
 	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
 		if resolved, err := filepath.EvalSymlinks(current); err == nil {
@@ -79,21 +220,59 @@ func resolveExistingAncestor(path string) (string, error) {
 	}
 }
 
+func resolvePathAgainstExistingAncestor(path string) (string, error) {
+	cleaned := filepath.Clean(path)
+	for current := cleaned; ; current = filepath.Dir(current) {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			suffix, relErr := filepath.Rel(current, cleaned)
+			if relErr != nil {
+				return "", relErr
+			}
+			if suffix == "." {
+				return filepath.Clean(resolved), nil
+			}
+			return filepath.Clean(filepath.Join(resolved, suffix)), nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		if filepath.Dir(current) == current {
+			return "", os.ErrNotExist
+		}
+	}
+}
+
 func isWithinWorkspace(candidate, workspace string) bool {
 	rel, err := filepath.Rel(filepath.Clean(workspace), filepath.Clean(candidate))
-	return err == nil && filepath.IsLocal(rel)
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }
 
 type ReadFileTool struct {
-	fs fileSystem
+	fs      fileSystem
+	maxSize int64
 }
 
-func NewReadFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *ReadFileTool {
+func NewReadFileTool(
+	workspace string,
+	restrict bool,
+	maxReadFileSize int,
+	allowPaths ...[]*regexp.Regexp,
+) *ReadFileTool {
 	var patterns []*regexp.Regexp
 	if len(allowPaths) > 0 {
 		patterns = allowPaths[0]
 	}
-	return &ReadFileTool{fs: buildFs(workspace, restrict, patterns)}
+
+	maxSize := int64(maxReadFileSize)
+	if maxSize <= 0 {
+		maxSize = MaxReadFileSize
+	}
+
+	return &ReadFileTool{
+		fs:      buildFs(workspace, restrict, patterns),
+		maxSize: maxSize,
+	}
 }
 
 func (t *ReadFileTool) Name() string {
@@ -101,7 +280,7 @@ func (t *ReadFileTool) Name() string {
 }
 
 func (t *ReadFileTool) Description() string {
-	return "Read the contents of a file"
+	return "Read the contents of a file. Supports pagination via `offset` and `length`."
 }
 
 func (t *ReadFileTool) Parameters() map[string]any {
@@ -110,7 +289,17 @@ func (t *ReadFileTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Path to the file to read",
+				"description": "Path to the file to read.",
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "Byte offset to start reading from.",
+				"default":     0,
+			},
+			"length": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of bytes to read.",
+				"default":     t.maxSize,
 			},
 		},
 		"required": []string{"path"},
@@ -123,11 +312,171 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("path is required")
 	}
 
-	content, err := t.fs.ReadFile(path)
+	// offset (optional, default 0)
+	offset, err := getInt64Arg(args, "offset", 0)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
-	return NewToolResult(string(content))
+	if offset < 0 {
+		return ErrorResult("offset must be >= 0")
+	}
+
+	// length (optional, capped at MaxReadFileSize)
+	length, err := getInt64Arg(args, "length", t.maxSize)
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	if length <= 0 {
+		return ErrorResult("length must be > 0")
+	}
+	if length > t.maxSize {
+		length = t.maxSize
+	}
+
+	file, err := t.fs.Open(path)
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	defer file.Close()
+
+	// measure total size
+	totalSize := int64(-1) // -1 means unknown
+	if info, statErr := file.Stat(); statErr == nil {
+		totalSize = info.Size()
+	}
+
+	// sniff the first 512 bytes to detect binary content before loading
+	// it into the LLM context. Seeking back to 0 afterwards restores state.
+	sniff := make([]byte, 512)
+	sniffN, _ := file.Read(sniff)
+
+	// Reset read position to beginning before applying the caller's offset.
+	if seeker, ok := file.(io.Seeker); ok {
+		_, err = seeker.Seek(0, io.SeekStart)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to reset file position after sniff: %v", err))
+		}
+	} else {
+		// Non-seekable: we consumed sniffN bytes above; account for them when
+		// discarding to reach the requested offset below.
+		// If offset < sniffN the data we already read covers it, which we
+		// cannot replay on a non-seekable stream — return a clear error.
+		if offset < int64(sniffN) && offset > 0 {
+			return ErrorResult(
+				"non-seekable file: cannot seek to an offset within the first 512 bytes after binary detection",
+			)
+		}
+	}
+
+	// Seek to the requested offset.
+	if seeker, ok := file.(io.Seeker); ok {
+		_, err = seeker.Seek(offset, io.SeekStart)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to seek to offset %d: %v", offset, err))
+		}
+	} else if offset > 0 {
+		// Fallback for non-seekable streams: discard leading bytes.
+		// sniffN bytes were already consumed above, so subtract them.
+		remaining := offset - int64(sniffN)
+		if remaining > 0 {
+			_, err = io.CopyN(io.Discard, file, remaining)
+			if err != nil {
+				return ErrorResult(fmt.Sprintf("failed to advance to offset %d: %v", offset, err))
+			}
+		}
+	}
+
+	// read length+1 bytes to reliably detect whether more content exists
+	// without relying on totalSize (which may be -1 for non-seekable streams).
+	// This avoids the false-positive TRUNCATED message on the last page.
+	probe := make([]byte, length+1)
+	n, err := io.ReadFull(file, probe)
+	// FIX: io.ReadFull returns io.ErrUnexpectedEOF for partial reads (0 < n < len),
+	// and io.EOF only when n == 0. Both are normal terminal conditions — only
+	// other errors are genuine failures.
+	if err != nil && err != io.EOF && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return ErrorResult(fmt.Sprintf("failed to read file content: %v", err))
+	}
+
+	// hasMore is true only when we actually got the extra probe byte.
+	hasMore := int64(n) > length
+	data := probe[:min(int64(n), length)]
+
+	if len(data) == 0 {
+		return NewToolResult("[END OF FILE - no content at this offset]")
+	}
+
+	// Build metadata header.
+	// use filepath.Base(path) instead of the raw path to avoid leaking
+	// internal filesystem structure into the LLM context.
+	readEnd := offset + int64(len(data))
+	// use ASCII hyphen-minus instead of en-dash (U+2013) to keep the
+	// header parseable by downstream tools and log processors.
+	readRange := fmt.Sprintf("bytes %d-%d", offset, readEnd-1)
+
+	displayPath := filepath.Base(path)
+	var header string
+	if totalSize >= 0 {
+		header = fmt.Sprintf(
+			"[file: %s | total: %d bytes | read: %s]",
+			displayPath, totalSize, readRange,
+		)
+	} else {
+		header = fmt.Sprintf(
+			"[file: %s | read: %s | total size unknown]",
+			displayPath, readRange,
+		)
+	}
+
+	if hasMore {
+		header += fmt.Sprintf(
+			"\n[TRUNCATED - file has more content. Call read_file again with offset=%d to continue.]",
+			readEnd,
+		)
+	} else {
+		header += "\n[END OF FILE - no further content.]"
+	}
+
+	logger.DebugCF("tool", "ReadFileTool execution completed successfully",
+		map[string]any{
+			"path":       path,
+			"bytes_read": len(data),
+			"has_more":   hasMore,
+		})
+
+	return NewToolResult(header + "\n\n" + string(data))
+}
+
+// getInt64Arg extracts an integer argument from the args map, returning the
+// provided default if the key is absent.
+func getInt64Arg(args map[string]any, key string, defaultVal int64) (int64, error) {
+	raw, exists := args[key]
+	if !exists {
+		return defaultVal, nil
+	}
+
+	switch v := raw.(type) {
+	case float64:
+		if v != math.Trunc(v) {
+			return 0, fmt.Errorf("%s must be an integer, got float %v", key, v)
+		}
+		if v > math.MaxInt64 || v < math.MinInt64 {
+			return 0, fmt.Errorf("%s value %v overflows int64", key, v)
+		}
+		return int64(v), nil
+	case int:
+		return int64(v), nil
+	case int64:
+		return v, nil
+	case string:
+		parsed, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid integer format for %s parameter: %w", key, err)
+		}
+		return parsed, nil
+	default:
+		return 0, fmt.Errorf("unsupported type %T for %s parameter", raw, key)
+	}
 }
 
 type WriteFileTool struct {
@@ -147,7 +496,7 @@ func (t *WriteFileTool) Name() string {
 }
 
 func (t *WriteFileTool) Description() string {
-	return "Write content to a file"
+	return "Write content to a file. If the file already exists, you must set overwrite=true to replace it."
 }
 
 func (t *WriteFileTool) Parameters() map[string]any {
@@ -161,6 +510,11 @@ func (t *WriteFileTool) Parameters() map[string]any {
 			"content": map[string]any{
 				"type":        "string",
 				"description": "Content to write to the file",
+			},
+			"overwrite": map[string]any{
+				"type":        "boolean",
+				"description": "Must be set to true to overwrite an existing file.",
+				"default":     false,
 			},
 		},
 		"required": []string{"path", "content"},
@@ -176,6 +530,14 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	content, ok := args["content"].(string)
 	if !ok {
 		return ErrorResult("content is required")
+	}
+
+	overwrite, _ := args["overwrite"].(bool)
+
+	if !overwrite {
+		if _, err := t.fs.Open(path); err == nil {
+			return ErrorResult(fmt.Sprintf("file: %s already exists. Set overwrite=true to replace.", path))
+		}
 	}
 
 	if err := t.fs.WriteFile(path, []byte(content)); err != nil {
@@ -249,6 +611,7 @@ type fileSystem interface {
 	ReadFile(path string) ([]byte, error)
 	WriteFile(path string, data []byte) error
 	ReadDir(path string) ([]os.DirEntry, error)
+	Open(path string) (fs.File, error)
 }
 
 // hostFs is an unrestricted fileReadWriter that operates directly on the host filesystem.
@@ -276,6 +639,20 @@ func (h *hostFs) WriteFile(path string, data []byte) error {
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	// Using 0o600 (owner read/write only) for secure default permissions.
 	return fileutil.WriteFileAtomic(path, data, 0o600)
+}
+
+func (h *hostFs) Open(path string) (fs.File, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to open file: file not found: %w", err)
+		}
+		if os.IsPermission(err) {
+			return nil, fmt.Errorf("failed to open file: access denied: %w", err)
+		}
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	return f, nil
 }
 
 // sandboxFs is a sandboxed fileSystem that operates within a strictly defined workspace using os.Root.
@@ -389,6 +766,26 @@ func (r *sandboxFs) ReadDir(path string) ([]os.DirEntry, error) {
 	return entries, err
 }
 
+func (r *sandboxFs) Open(path string) (fs.File, error) {
+	var f fs.File
+	err := r.execute(path, func(root *os.Root, relPath string) error {
+		file, err := root.Open(relPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("failed to open file: file not found: %w", err)
+			}
+			if os.IsPermission(err) || strings.Contains(err.Error(), "escapes from parent") ||
+				strings.Contains(err.Error(), "permission denied") {
+				return fmt.Errorf("failed to open file: access denied: %w", err)
+			}
+			return fmt.Errorf("failed to open file: %w", err)
+		}
+		f = file
+		return nil
+	})
+	return f, err
+}
+
 // whitelistFs wraps a sandboxFs and allows access to specific paths outside
 // the workspace when they match any of the provided patterns.
 type whitelistFs struct {
@@ -398,12 +795,7 @@ type whitelistFs struct {
 }
 
 func (w *whitelistFs) matches(path string) bool {
-	for _, p := range w.patterns {
-		if p.MatchString(path) {
-			return true
-		}
-	}
-	return false
+	return isAllowedPath(path, w.patterns)
 }
 
 func (w *whitelistFs) ReadFile(path string) ([]byte, error) {
@@ -425,6 +817,13 @@ func (w *whitelistFs) ReadDir(path string) ([]os.DirEntry, error) {
 		return w.host.ReadDir(path)
 	}
 	return w.sandbox.ReadDir(path)
+}
+
+func (w *whitelistFs) Open(path string) (fs.File, error) {
+	if w.matches(path) {
+		return w.host.Open(path)
+	}
+	return w.sandbox.Open(path)
 }
 
 // buildFs returns the appropriate fileSystem implementation based on restriction

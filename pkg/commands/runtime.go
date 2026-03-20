@@ -13,4 +13,6 @@ type Runtime struct {
 	GetEnabledChannels func() []string
 	SwitchModel        func(value string) (oldModel string, err error)
 	SwitchChannel      func(value string) error
+	ClearHistory       func() error
+	ReloadConfig       func() error
 }

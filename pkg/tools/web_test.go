@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,10 +15,15 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-const testFetchLimit = int64(10 * 1024 * 1024)
+const (
+	testFetchLimit = int64(10 * 1024 * 1024)
+	format         = "plaintext"
+)
 
 // TestWebTool_WebFetch_Success verifies successful URL fetching
 func TestWebTool_WebFetch_Success(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
@@ -25,7 +31,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		t.Fatalf("Failed to create web fetch tool: %v", err)
 	}
@@ -55,6 +61,8 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 
 // TestWebTool_WebFetch_JSON verifies JSON content handling
 func TestWebTool_WebFetch_JSON(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
 	testData := map[string]string{"key": "value", "number": "123"}
 	expectedJSON, _ := json.MarshalIndent(testData, "", "  ")
 
@@ -65,7 +73,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -90,7 +98,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 
 // TestWebTool_WebFetch_InvalidURL verifies error handling for invalid URL
 func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -115,7 +123,7 @@ func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
 
 // TestWebTool_WebFetch_UnsupportedScheme verifies error handling for non-http URLs
 func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -140,7 +148,7 @@ func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingURL verifies error handling for missing URL
 func TestWebTool_WebFetch_MissingURL(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -163,6 +171,8 @@ func TestWebTool_WebFetch_MissingURL(t *testing.T) {
 
 // TestWebTool_WebFetch_Truncation verifies content truncation
 func TestWebTool_WebFetch_Truncation(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
 	longContent := strings.Repeat("x", 20000)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -172,7 +182,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool, err := NewWebFetchTool(1000, testFetchLimit) // Limit to 1000 chars
+	tool, err := NewWebFetchTool(1000, format, testFetchLimit) // Limit to 1000 chars
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -202,9 +212,137 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	if truncated, ok := resultMap["truncated"].(bool); !ok || !truncated {
 		t.Errorf("Expected 'truncated' to be true in result")
 	}
+
+	// Text should end with the truncation notice
+	if text, ok := resultMap["text"].(string); ok {
+		if !strings.HasSuffix(text, "[Content truncated due to size limit]") {
+			t.Errorf("Expected text to end with truncation notice, got: %q", text[max(0, len(text)-60):])
+		}
+	}
+}
+
+// TestWebTool_WebFetch_TruncationNotice verifies the truncation notice is appended
+// for all content formats (text/plain, text/html, markdown, application/json).
+func TestWebTool_WebFetch_TruncationNotice(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	const truncationNotice = "[Content truncated due to size limit]"
+	const maxChars = 100
+
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		format      string
+	}{
+		{
+			name:        "plain text",
+			contentType: "text/plain",
+			body:        strings.Repeat("a", 500),
+			format:      "plaintext",
+		},
+		{
+			name:        "html plaintext extractor",
+			contentType: "text/html",
+			body:        "<html><body>" + strings.Repeat("b", 500) + "</body></html>",
+			format:      "plaintext",
+		},
+		{
+			name:        "html markdown extractor",
+			contentType: "text/html",
+			body:        "<html><body>" + strings.Repeat("c", 500) + "</body></html>",
+			format:      "markdown",
+		},
+		{
+			name:        "json",
+			contentType: "application/json",
+			body:        `"` + strings.Repeat("d", 500) + `"`,
+			format:      "plaintext",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tt.contentType)
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			tool, err := NewWebFetchTool(maxChars, tt.format, testFetchLimit)
+			if err != nil {
+				t.Fatalf("NewWebFetchTool() error: %v", err)
+			}
+
+			result := tool.Execute(context.Background(), map[string]any{"url": server.URL})
+			if result.IsError {
+				t.Fatalf("unexpected error: %s", result.ForLLM)
+			}
+
+			var resultMap map[string]any
+			if err := json.Unmarshal([]byte(result.ForLLM), &resultMap); err != nil {
+				t.Fatalf("failed to unmarshal result JSON: %v", err)
+			}
+
+			text, ok := resultMap["text"].(string)
+			if !ok {
+				t.Fatal("missing 'text' field in result")
+			}
+
+			if !strings.HasSuffix(text, truncationNotice) {
+				t.Errorf("expected text to end with %q, got suffix: %q", truncationNotice, text[max(0, len(text)-60):])
+			}
+
+			if truncated, ok := resultMap["truncated"].(bool); !ok || !truncated {
+				t.Errorf("expected truncated=true in result")
+			}
+		})
+	}
+}
+
+// TestWebTool_WebFetch_NoTruncationNoticeWhenFitsInLimit verifies that the notice
+// is NOT appended when the content fits within the limit.
+func TestWebTool_WebFetch_NoTruncationNoticeWhenFitsInLimit(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	const truncationNotice = "[Content truncated due to size limit]"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("short content"))
+	}))
+	defer server.Close()
+
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("NewWebFetchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{"url": server.URL})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+
+	var resultMap map[string]any
+	if err := json.Unmarshal([]byte(result.ForLLM), &resultMap); err != nil {
+		t.Fatalf("failed to unmarshal result JSON: %v", err)
+	}
+
+	text, _ := resultMap["text"].(string)
+	if strings.Contains(text, truncationNotice) {
+		t.Errorf("expected no truncation notice for content within limit, got: %q", text)
+	}
+
+	if truncated, _ := resultMap["truncated"].(bool); truncated {
+		t.Errorf("expected truncated=false for content within limit")
+	}
 }
 
 func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
 	// Create a mock HTTP server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -220,7 +358,7 @@ func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
 	defer ts.Close()
 
 	// Initialize the tool
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -249,7 +387,7 @@ func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
 
 // TestWebTool_WebSearch_NoApiKey verifies that no tool is created when API key is missing
 func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
-	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: ""})
+	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKeys: nil})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -269,7 +407,11 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
-	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: "test-key", BraveMaxResults: 5})
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		BraveEnabled:    true,
+		BraveAPIKeys:    []string{"test-key"},
+		BraveMaxResults: 5,
+	})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -286,6 +428,8 @@ func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
 
 // TestWebTool_WebFetch_HTMLExtraction verifies HTML text extraction
 func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
@@ -297,7 +441,7 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -400,9 +544,344 @@ func TestWebFetchTool_extractText(t *testing.T) {
 	}
 }
 
+func withPrivateWebFetchHostsAllowed(t *testing.T) {
+	t.Helper()
+	previous := allowPrivateWebFetchHosts.Load()
+	allowPrivateWebFetchHosts.Store(true)
+	t.Cleanup(func() {
+		allowPrivateWebFetchHosts.Store(previous)
+	})
+}
+
+func serverHostAndPort(t *testing.T, rawURL string) (string, string) {
+	t.Helper()
+	hostPort := strings.TrimPrefix(rawURL, "http://")
+	hostPort = strings.TrimPrefix(hostPort, "https://")
+	host, port, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		t.Fatalf("failed to split host/port from %q: %v", rawURL, err)
+	}
+	return host, port
+}
+
+func singleHostCIDR(t *testing.T, host string) string {
+	t.Helper()
+	ip := net.ParseIP(host)
+	if ip == nil {
+		t.Fatalf("failed to parse IP %q", host)
+	}
+	if ip.To4() != nil {
+		return ip.String() + "/32"
+	}
+	return ip.String() + "/128"
+}
+
+func TestWebTool_WebFetch_PrivateHostBlocked(t *testing.T) {
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://127.0.0.1:0",
+	})
+
+	if !result.IsError {
+		t.Errorf("expected error for private host URL, got success")
+	}
+	if !strings.Contains(result.ForLLM, "private or local network") &&
+		!strings.Contains(result.ForUser, "private or local network") {
+		t.Errorf("expected private host block message, got %q", result.ForLLM)
+	}
+}
+
+func TestWebTool_WebFetch_PrivateHostAllowedByExactWhitelist(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("exact whitelist ok"))
+	}))
+	defer server.Close()
+
+	host, _ := serverHostAndPort(t, server.URL)
+	tool, err := NewWebFetchToolWithConfig(50000, "", format, testFetchLimit, []string{host})
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": server.URL,
+	})
+	if result.IsError {
+		t.Fatalf("expected success for exact whitelisted private IP, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "exact whitelist ok") {
+		t.Fatalf("expected fetched content, got %q", result.ForLLM)
+	}
+}
+
+func TestWebTool_WebFetch_PrivateHostAllowedByCIDRWhitelist(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("cidr whitelist ok"))
+	}))
+	defer server.Close()
+
+	host, _ := serverHostAndPort(t, server.URL)
+	tool, err := NewWebFetchToolWithConfig(50000, "", format, testFetchLimit, []string{singleHostCIDR(t, host)})
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": server.URL,
+	})
+	if result.IsError {
+		t.Fatalf("expected success for CIDR-whitelisted private IP, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "cidr whitelist ok") {
+		t.Fatalf("expected fetched content, got %q", result.ForLLM)
+	}
+}
+
+func TestWebTool_WebFetch_PrivateHostAllowedForTests(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": server.URL,
+	})
+
+	if result.IsError {
+		t.Errorf("expected success when private host access is allowed in tests, got %q", result.ForLLM)
+	}
+}
+
+// TestWebFetch_BlocksIPv4MappedIPv6Loopback verifies ::ffff:127.0.0.1 is blocked
+func TestWebFetch_BlocksIPv4MappedIPv6Loopback(t *testing.T) {
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://[::ffff:127.0.0.1]:0",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for IPv4-mapped IPv6 loopback URL, got success")
+	}
+}
+
+// TestWebFetch_BlocksMetadataIP verifies 169.254.169.254 is blocked
+func TestWebFetch_BlocksMetadataIP(t *testing.T) {
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://169.254.169.254/latest/meta-data",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for cloud metadata IP, got success")
+	}
+}
+
+// TestWebFetch_BlocksIPv6UniqueLocal verifies fc00::/7 addresses are blocked
+func TestWebFetch_BlocksIPv6UniqueLocal(t *testing.T) {
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://[fd00::1]:0",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for IPv6 unique local address, got success")
+	}
+}
+
+// TestWebFetch_Blocks6to4WithPrivateEmbed verifies 6to4 with private embedded IPv4 is blocked
+func TestWebFetch_Blocks6to4WithPrivateEmbed(t *testing.T) {
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+	// 2002:7f00:0001::1 embeds 127.0.0.1
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://[2002:7f00:0001::1]:0",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for 6to4 with private embedded IPv4, got success")
+	}
+}
+
+// TestWebFetch_Allows6to4WithPublicEmbed verifies 6to4 with public embedded IPv4 is NOT blocked
+func TestWebFetch_Allows6to4WithPublicEmbed(t *testing.T) {
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+	// 2002:0801:0101::1 embeds 8.1.1.1 (public) — pre-flight should pass,
+	// connection will fail (no listener) but that's after the SSRF check.
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://[2002:0801:0101::1]:0",
+	})
+
+	// Should NOT be blocked by SSRF check — error should be connection failure, not "private"
+	if result.IsError && strings.Contains(result.ForLLM, "private") {
+		t.Error("6to4 with public embedded IPv4 should not be blocked as private")
+	}
+}
+
+// TestWebFetch_RedirectToPrivateBlocked verifies redirects to private IPs are blocked
+func TestWebFetch_RedirectToPrivateBlocked(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Redirect to a private IP
+		http.Redirect(w, r, "http://10.0.0.1/secret", http.StatusFound)
+	}))
+	defer server.Close()
+
+	// Temporarily disable private host allowance for the redirect check
+	allowPrivateWebFetchHosts.Store(false)
+	defer allowPrivateWebFetchHosts.Store(true)
+
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": server.URL,
+	})
+
+	if !result.IsError {
+		t.Error("expected error when redirecting to private IP, got success")
+	}
+}
+
+func TestNewSafeDialContext_BlocksPrivateDNSResolutionWithoutWhitelist(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen on loopback: %v", err)
+	}
+	defer listener.Close()
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("failed to split listener address: %v", err)
+	}
+
+	dialContext := newSafeDialContext(&net.Dialer{Timeout: time.Second}, nil)
+	_, err = dialContext(context.Background(), "tcp", net.JoinHostPort("localhost", port))
+	if err == nil {
+		t.Fatal("expected localhost DNS resolution to be blocked without whitelist")
+	}
+	if !strings.Contains(err.Error(), "private") && !strings.Contains(err.Error(), "whitelisted") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNewSafeDialContext_AllowsWhitelistedPrivateDNSResolution(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen on loopback: %v", err)
+	}
+	defer listener.Close()
+
+	accepted := make(chan struct{}, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		conn.Close()
+		accepted <- struct{}{}
+	}()
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("failed to split listener address: %v", err)
+	}
+
+	whitelist, err := newPrivateHostWhitelist([]string{"127.0.0.0/8"})
+	if err != nil {
+		t.Fatalf("failed to parse whitelist: %v", err)
+	}
+
+	dialContext := newSafeDialContext(&net.Dialer{Timeout: time.Second}, whitelist)
+	conn, err := dialContext(context.Background(), "tcp", net.JoinHostPort("localhost", port))
+	if err != nil {
+		t.Fatalf("expected localhost DNS resolution to succeed with whitelist, got %v", err)
+	}
+	conn.Close()
+
+	select {
+	case <-accepted:
+	case <-time.After(time.Second):
+		t.Fatal("expected localhost listener to accept a connection")
+	}
+}
+
+// TestIsPrivateOrRestrictedIP_Table tests IP classification logic
+func TestIsPrivateOrRestrictedIP_Table(t *testing.T) {
+	tests := []struct {
+		ip      string
+		blocked bool
+		desc    string
+	}{
+		{"127.0.0.1", true, "IPv4 loopback"},
+		{"10.0.0.1", true, "IPv4 private class A"},
+		{"172.16.0.1", true, "IPv4 private class B"},
+		{"192.168.1.1", true, "IPv4 private class C"},
+		{"169.254.169.254", true, "link-local / cloud metadata"},
+		{"100.64.0.1", true, "carrier-grade NAT"},
+		{"0.0.0.0", true, "unspecified"},
+		{"8.8.8.8", false, "public DNS"},
+		{"1.1.1.1", false, "public DNS"},
+		{"::1", true, "IPv6 loopback"},
+		{"::ffff:127.0.0.1", true, "IPv4-mapped IPv6 loopback"},
+		{"::ffff:10.0.0.1", true, "IPv4-mapped IPv6 private"},
+		{"fc00::1", true, "IPv6 unique local"},
+		{"fd00::1", true, "IPv6 unique local"},
+		{"2002:7f00:0001::1", true, "6to4 with embedded 127.x (private)"},
+		{"2002:0a00:0001::1", true, "6to4 with embedded 10.0.0.1 (private)"},
+		{"2002:0801:0101::1", false, "6to4 with embedded 8.1.1.1 (public)"},
+		{"2001:0000:4136:e378:8000:63bf:f5ff:fffe", true, "Teredo with client 10.0.0.1 (private)"},
+		{"2001:0000:4136:e378:8000:63bf:f7f6:fefe", false, "Teredo with client 8.9.1.1 (public)"},
+		{"2607:f8b0:4004:800::200e", false, "public IPv6 (Google)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			ip := net.ParseIP(tt.ip)
+			if ip == nil {
+				t.Fatalf("failed to parse IP: %s", tt.ip)
+			}
+			got := isPrivateOrRestrictedIP(ip)
+			if got != tt.blocked {
+				t.Errorf("isPrivateOrRestrictedIP(%s) = %v, want %v", tt.ip, got, tt.blocked)
+			}
+		})
+	}
+}
+
 // TestWebTool_WebFetch_MissingDomain verifies error handling for URL without domain
 func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
-	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -425,110 +904,8 @@ func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 	}
 }
 
-func TestCreateHTTPClient_ProxyConfigured(t *testing.T) {
-	client, err := createHTTPClient("http://127.0.0.1:7890", 12*time.Second)
-	if err != nil {
-		t.Fatalf("createHTTPClient() error: %v", err)
-	}
-	if client.Timeout != 12*time.Second {
-		t.Fatalf("client.Timeout = %v, want %v", client.Timeout, 12*time.Second)
-	}
-
-	tr, ok := client.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
-	}
-	if tr.Proxy == nil {
-		t.Fatal("transport.Proxy is nil, want non-nil")
-	}
-
-	req, err := http.NewRequest("GET", "https://example.com", nil)
-	if err != nil {
-		t.Fatalf("http.NewRequest() error: %v", err)
-	}
-	proxyURL, err := tr.Proxy(req)
-	if err != nil {
-		t.Fatalf("transport.Proxy(req) error: %v", err)
-	}
-	if proxyURL == nil || proxyURL.String() != "http://127.0.0.1:7890" {
-		t.Fatalf("proxy URL = %v, want %q", proxyURL, "http://127.0.0.1:7890")
-	}
-}
-
-func TestCreateHTTPClient_InvalidProxy(t *testing.T) {
-	_, err := createHTTPClient("://bad-proxy", 10*time.Second)
-	if err == nil {
-		t.Fatal("createHTTPClient() expected error for invalid proxy URL, got nil")
-	}
-}
-
-func TestCreateHTTPClient_Socks5ProxyConfigured(t *testing.T) {
-	client, err := createHTTPClient("socks5://127.0.0.1:1080", 8*time.Second)
-	if err != nil {
-		t.Fatalf("createHTTPClient() error: %v", err)
-	}
-
-	tr, ok := client.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
-	}
-	req, err := http.NewRequest("GET", "https://example.com", nil)
-	if err != nil {
-		t.Fatalf("http.NewRequest() error: %v", err)
-	}
-	proxyURL, err := tr.Proxy(req)
-	if err != nil {
-		t.Fatalf("transport.Proxy(req) error: %v", err)
-	}
-	if proxyURL == nil || proxyURL.String() != "socks5://127.0.0.1:1080" {
-		t.Fatalf("proxy URL = %v, want %q", proxyURL, "socks5://127.0.0.1:1080")
-	}
-}
-
-func TestCreateHTTPClient_UnsupportedProxyScheme(t *testing.T) {
-	_, err := createHTTPClient("ftp://127.0.0.1:21", 10*time.Second)
-	if err == nil {
-		t.Fatal("createHTTPClient() expected error for unsupported scheme, got nil")
-	}
-	if !strings.Contains(err.Error(), "unsupported proxy scheme") {
-		t.Fatalf("error = %q, want to contain %q", err.Error(), "unsupported proxy scheme")
-	}
-}
-
-func TestCreateHTTPClient_ProxyFromEnvironmentWhenConfigEmpty(t *testing.T) {
-	t.Setenv("HTTP_PROXY", "http://127.0.0.1:8888")
-	t.Setenv("http_proxy", "http://127.0.0.1:8888")
-	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:8888")
-	t.Setenv("https_proxy", "http://127.0.0.1:8888")
-	t.Setenv("ALL_PROXY", "")
-	t.Setenv("all_proxy", "")
-	t.Setenv("NO_PROXY", "")
-	t.Setenv("no_proxy", "")
-
-	client, err := createHTTPClient("", 10*time.Second)
-	if err != nil {
-		t.Fatalf("createHTTPClient() error: %v", err)
-	}
-
-	tr, ok := client.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
-	}
-	if tr.Proxy == nil {
-		t.Fatal("transport.Proxy is nil, want proxy function from environment")
-	}
-
-	req, err := http.NewRequest("GET", "https://example.com", nil)
-	if err != nil {
-		t.Fatalf("http.NewRequest() error: %v", err)
-	}
-	if _, err := tr.Proxy(req); err != nil {
-		t.Fatalf("transport.Proxy(req) error: %v", err)
-	}
-}
-
 func TestNewWebFetchToolWithProxy(t *testing.T) {
-	tool, err := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890", testFetchLimit)
+	tool, err := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890", format, testFetchLimit, nil)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	} else if tool.maxChars != 1024 {
@@ -539,7 +916,7 @@ func TestNewWebFetchToolWithProxy(t *testing.T) {
 		t.Fatalf("proxy = %q, want %q", tool.proxy, "http://127.0.0.1:7890")
 	}
 
-	tool, err = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890", testFetchLimit)
+	tool, err = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890", format, testFetchLimit, nil)
 	if err != nil {
 		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 	}
@@ -549,11 +926,21 @@ func TestNewWebFetchToolWithProxy(t *testing.T) {
 	}
 }
 
+func TestNewWebFetchToolWithConfig_InvalidPrivateHostWhitelist(t *testing.T) {
+	_, err := NewWebFetchToolWithConfig(1024, "", format, testFetchLimit, []string{"not-an-ip-or-cidr"})
+	if err == nil {
+		t.Fatal("expected invalid whitelist entry to fail")
+	}
+	if !strings.Contains(err.Error(), "invalid entry") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 	t.Run("perplexity", func(t *testing.T) {
 		tool, err := NewWebSearchTool(WebSearchToolOptions{
 			PerplexityEnabled:    true,
-			PerplexityAPIKey:     "k",
+			PerplexityAPIKeys:    []string{"k"},
 			PerplexityMaxResults: 3,
 			Proxy:                "http://127.0.0.1:7890",
 		})
@@ -572,7 +959,7 @@ func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 	t.Run("brave", func(t *testing.T) {
 		tool, err := NewWebSearchTool(WebSearchToolOptions{
 			BraveEnabled:    true,
-			BraveAPIKey:     "k",
+			BraveAPIKeys:    []string{"k"},
 			BraveMaxResults: 3,
 			Proxy:           "http://127.0.0.1:7890",
 		})
@@ -650,7 +1037,7 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 
 	tool, err := NewWebSearchTool(WebSearchToolOptions{
 		TavilyEnabled:    true,
-		TavilyAPIKey:     "test-key",
+		TavilyAPIKeys:    []string{"test-key"},
 		TavilyBaseURL:    server.URL,
 		TavilyMaxResults: 5,
 	})
@@ -679,6 +1066,234 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 	// Should mention via Tavily
 	if !strings.Contains(result.ForUser, "via Tavily") {
 		t.Errorf("Expected 'via Tavily' in output, got: %s", result.ForUser)
+	}
+}
+
+// TestWebFetchTool_CloudflareChallenge_RetryWithHonestUA verifies that a 403 response
+// with cf-mitigated: challenge triggers a retry using the honest picoclaw User-Agent,
+// and that the retry response is returned when it succeeds.
+func TestWebFetchTool_CloudflareChallenge_RetryWithHonestUA(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	requestCount := 0
+	var receivedUAs []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		receivedUAs = append(receivedUAs, r.Header.Get("User-Agent"))
+
+		if requestCount == 1 {
+			// First request: simulate Cloudflare challenge
+			w.Header().Set("Cf-Mitigated", "challenge")
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("<html><body>Cloudflare challenge</body></html>"))
+			return
+		}
+		// Second request (honest UA retry): success
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("real content"))
+	}))
+	defer server.Close()
+
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("NewWebFetchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{"url": server.URL})
+
+	if result.IsError {
+		t.Fatalf("expected success after retry, got error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "real content") {
+		t.Errorf("expected retry response content, got: %s", result.ForLLM)
+	}
+	if requestCount != 2 {
+		t.Errorf("expected exactly 2 requests, got %d", requestCount)
+	}
+
+	// First request must use the generic user agent
+	if receivedUAs[0] != userAgent {
+		t.Errorf("first request UA = %q, want %q", receivedUAs[0], userAgent)
+	}
+	// Second request must use the honest picoclaw user agent
+	if !strings.Contains(receivedUAs[1], "picoclaw") {
+		t.Errorf("retry request UA = %q, want it to contain 'picoclaw'", receivedUAs[1])
+	}
+}
+
+// TestWebFetchTool_CloudflareChallenge_NoRetryOnOtherErrors verifies that a plain 403
+// (without cf-mitigated: challenge) does NOT trigger a retry.
+func TestWebFetchTool_CloudflareChallenge_NoRetryOnOtherErrors(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	requestCount := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("plain forbidden"))
+	}))
+	defer server.Close()
+
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("NewWebFetchTool() error: %v", err)
+	}
+
+	tool.Execute(context.Background(), map[string]any{"url": server.URL})
+
+	if requestCount != 1 {
+		t.Errorf("expected exactly 1 request for plain 403, got %d", requestCount)
+	}
+}
+
+// TestWebFetchTool_CloudflareChallenge_RetryFailsToo verifies that if the honest-UA
+// retry also fails (e.g. still blocked), the error from the retry is returned.
+func TestWebFetchTool_CloudflareChallenge_RetryFailsToo(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Always return CF challenge regardless of UA
+		w.Header().Set("Cf-Mitigated", "challenge")
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("<html><body>still blocked</body></html>"))
+	}))
+	defer server.Close()
+
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("NewWebFetchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{"url": server.URL})
+
+	// Should not be an error — the retry response is used as-is (403 is a valid HTTP response)
+	if result.IsError {
+		t.Fatalf("expected non-error result even when retry is also blocked, got: %s", result.ForLLM)
+	}
+	// Status in the JSON result should reflect the 403
+	if !strings.Contains(result.ForLLM, "403") {
+		t.Errorf("expected status 403 in result, got: %s", result.ForLLM)
+	}
+}
+
+func TestAPIKeyPool(t *testing.T) {
+	pool := NewAPIKeyPool([]string{"key1", "key2", "key3"})
+	if len(pool.keys) != 3 {
+		t.Fatalf("expected 3 keys, got %d", len(pool.keys))
+	}
+	if pool.keys[0] != "key1" || pool.keys[1] != "key2" || pool.keys[2] != "key3" {
+		t.Fatalf("unexpected keys: %v", pool.keys)
+	}
+
+	// Test Iterator: each iterator should cover all keys exactly once
+	iter := pool.NewIterator()
+	expected := []string{"key1", "key2", "key3"}
+	for i, want := range expected {
+		k, ok := iter.Next()
+		if !ok {
+			t.Fatalf("iter.Next() returned false at step %d", i)
+		}
+		if k != want {
+			t.Errorf("step %d: expected %s, got %s", i, want, k)
+		}
+	}
+	// Should be exhausted
+	if _, ok := iter.Next(); ok {
+		t.Errorf("expected iterator exhausted after all keys")
+	}
+
+	// Second iterator starts at next position (load balancing)
+	iter2 := pool.NewIterator()
+	k, ok := iter2.Next()
+	if !ok {
+		t.Fatal("iter2.Next() returned false")
+	}
+	if k != "key2" {
+		t.Errorf("expected key2 (round-robin), got %s", k)
+	}
+
+	// Empty pool
+	emptyPool := NewAPIKeyPool([]string{})
+	emptyIter := emptyPool.NewIterator()
+	if _, ok := emptyIter.Next(); ok {
+		t.Errorf("expected false for empty pool")
+	}
+
+	// Single key pool
+	singlePool := NewAPIKeyPool([]string{"single"})
+	singleIter := singlePool.NewIterator()
+	if k, ok := singleIter.Next(); !ok || k != "single" {
+		t.Errorf("expected single, got %s (ok=%v)", k, ok)
+	}
+	if _, ok := singleIter.Next(); ok {
+		t.Errorf("expected exhausted after single key")
+	}
+}
+
+func TestWebTool_TavilySearch_Failover(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("failed to decode payload: %v", err)
+		}
+
+		apiKey := payload["api_key"].(string)
+
+		if apiKey == "key1" {
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte("Rate limited"))
+			return
+		}
+
+		if apiKey == "key2" {
+			// Success
+			response := map[string]any{
+				"results": []map[string]any{
+					{
+						"title":   "Success Result",
+						"url":     "https://example.com/success",
+						"content": "Success content",
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		TavilyEnabled:    true,
+		TavilyAPIKeys:    []string{"key1", "key2"},
+		TavilyBaseURL:    server.URL,
+		TavilyMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+
+	ctx := context.Background()
+	args := map[string]any{
+		"query": "test query",
+	}
+
+	result := tool.Execute(ctx, args)
+
+	if result.IsError {
+		t.Errorf("Expected success, got Error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForUser, "Success Result") {
+		t.Errorf("Expected failover to second key and success result, got: %s", result.ForUser)
 	}
 }
 

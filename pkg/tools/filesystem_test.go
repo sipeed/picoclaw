@@ -18,7 +18,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0o644)
 
-	tool := NewReadFileTool("", false)
+	tool := NewReadFileTool("", false, MaxReadFileSize)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": testFile,
@@ -45,7 +45,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 
 // TestFilesystemTool_ReadFile_NotFound verifies error handling for missing file
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
-	tool := NewReadFileTool("", false)
+	tool := NewReadFileTool("", false, MaxReadFileSize)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/nonexistent_file_12345.txt",
@@ -59,7 +59,7 @@ func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 	}
 
 	// Should contain error message
-	if !strings.Contains(result.ForLLM, "failed to read") && !strings.Contains(result.ForUser, "failed to read") {
+	if !strings.Contains(result.ForLLM, "failed to open file") && !strings.Contains(result.ForUser, "failed to read") {
 		t.Errorf("Expected error message, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
 	}
 }
@@ -189,6 +189,121 @@ func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
 	}
 }
 
+// TestFilesystemTool_WriteFile_OverwriteDefaultBlocked verifies that writing to an
+// existing file without overwrite=true returns an error.
+func TestFilesystemTool_WriteFile_OverwriteDefaultBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	os.WriteFile(testFile, []byte("original"), 0o644)
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": "new content",
+	})
+
+	assert.True(t, result.IsError, "expected error when overwriting without overwrite=true")
+	assert.Contains(t, result.ForLLM, "already exists")
+	assert.Contains(t, result.ForLLM, "overwrite=true")
+
+	// Original content must be untouched
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "original", string(data))
+}
+
+// TestFilesystemTool_WriteFile_OverwriteExplicitAllowed verifies that setting
+// overwrite=true replaces the existing file.
+func TestFilesystemTool_WriteFile_OverwriteExplicitAllowed(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	os.WriteFile(testFile, []byte("original"), 0o644)
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":      testFile,
+		"content":   "replaced",
+		"overwrite": true,
+	})
+
+	assert.False(t, result.IsError, "expected success with overwrite=true, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "replaced", string(data))
+}
+
+// TestFilesystemTool_WriteFile_NewFileNoOverwriteFlag verifies that a new (non-existing)
+// file can be written without setting overwrite=true.
+func TestFilesystemTool_WriteFile_NewFileNoOverwriteFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "newfile.txt")
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": "brand new",
+	})
+
+	assert.False(t, result.IsError, "expected success for new file, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "brand new", string(data))
+}
+
+// TestFilesystemTool_WriteFile_OverwriteFalseExplicitBlocked verifies that
+// explicitly passing overwrite=false also blocks overwriting.
+func TestFilesystemTool_WriteFile_OverwriteFalseExplicitBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	os.WriteFile(testFile, []byte("original"), 0o644)
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":      testFile,
+		"content":   "new content",
+		"overwrite": false,
+	})
+
+	assert.True(t, result.IsError, "expected error when overwrite=false")
+	assert.Contains(t, result.ForLLM, "already exists")
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "original", string(data))
+}
+
+// TestFilesystemTool_WriteFile_OverwriteSandboxed verifies the overwrite guard
+// works correctly in restricted (sandbox) mode.
+func TestFilesystemTool_WriteFile_OverwriteSandboxed(t *testing.T) {
+	workspace := t.TempDir()
+	testFile := "file.txt"
+	os.WriteFile(filepath.Join(workspace, testFile), []byte("original"), 0o644)
+
+	tool := NewWriteFileTool(workspace, true)
+
+	// Without overwrite=true → blocked
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": "new content",
+	})
+	assert.True(t, result.IsError, "expected error in sandbox mode without overwrite=true")
+	assert.Contains(t, result.ForLLM, "already exists")
+
+	// With overwrite=true → allowed
+	result = tool.Execute(context.Background(), map[string]any{
+		"path":      testFile,
+		"content":   "replaced in sandbox",
+		"overwrite": true,
+	})
+	assert.False(t, result.IsError, "expected success in sandbox mode with overwrite=true, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(filepath.Join(workspace, testFile))
+	assert.NoError(t, err)
+	assert.Equal(t, "replaced in sandbox", string(data))
+}
+
 // TestFilesystemTool_ListDir_Success verifies successful directory listing
 func TestFilesystemTool_ListDir_Success(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -271,7 +386,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 		t.Skipf("symlink not supported in this environment: %v", err)
 	}
 
-	tool := NewReadFileTool(workspace, true)
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path": link,
 	})
@@ -289,7 +404,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestFilesystemTool_EmptyWorkspace_AccessDenied(t *testing.T) {
-	tool := NewReadFileTool("", true) // restrict=true but workspace=""
+	tool := NewReadFileTool("", true, MaxReadFileSize) // restrict=true but workspace=""
 
 	// Try to read a sensitive file (simulated by a temp file outside workspace)
 	tmpDir := t.TempDir()
@@ -499,7 +614,7 @@ func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
 	// Pattern allows access to the outsideDir.
 	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(outsideDir))}
 
-	tool := NewReadFileTool(workspace, true, patterns)
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
 
 	// Read from whitelisted path should succeed.
 	result := tool.Execute(context.Background(), map[string]any{"path": outsideFile})
@@ -518,5 +633,213 @@ func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
 	result = tool.Execute(context.Background(), map[string]any{"path": otherFile})
 	if !result.IsError {
 		t.Errorf("expected non-whitelisted path to be blocked, got: %s", result.ForLLM)
+	}
+}
+
+func TestWhitelistFs_BlocksSymlinkEscapeInAllowedDir(t *testing.T) {
+	workspace := t.TempDir()
+	allowedDir := t.TempDir()
+	secretDir := t.TempDir()
+	secretFile := filepath.Join(secretDir, "secret.txt")
+	if err := os.WriteFile(secretFile, []byte("top secret"), 0o644); err != nil {
+		t.Fatalf("WriteFile(secretFile) error = %v", err)
+	}
+
+	linkPath := filepath.Join(allowedDir, "link_out")
+	if err := os.Symlink(secretDir, linkPath); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(allowedDir))}
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
+
+	result := tool.Execute(context.Background(), map[string]any{"path": filepath.Join(linkPath, "secret.txt")})
+	if !result.IsError {
+		t.Fatalf("expected symlink escape from allowed dir to be blocked, got: %s", result.ForLLM)
+	}
+}
+
+func TestWhitelistFs_WriteAllowsNewFileUnderAllowedDir(t *testing.T) {
+	workspace := t.TempDir()
+	rootDir := t.TempDir()
+	allowedDir := filepath.Join(rootDir, "allowed")
+	targetFile := filepath.Join(allowedDir, "nested", "file.txt")
+
+	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(allowedDir))}
+	tool := NewWriteFileTool(workspace, true, patterns)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    targetFile,
+		"content": "outside write",
+	})
+	if result.IsError {
+		t.Fatalf("expected whitelisted write to succeed, got: %s", result.ForLLM)
+	}
+
+	data, err := os.ReadFile(targetFile)
+	if err != nil {
+		t.Fatalf("ReadFile(targetFile) error = %v", err)
+	}
+	if string(data) != "outside write" {
+		t.Fatalf("target file content = %q, want %q", string(data), "outside write")
+	}
+}
+
+func TestWhitelistFs_AllowsResolvedAllowedRootAlias(t *testing.T) {
+	workspace := t.TempDir()
+	realDir := t.TempDir()
+	linkParent := t.TempDir()
+	allowedAlias := filepath.Join(linkParent, "allowed-link")
+
+	if err := os.Symlink(realDir, allowedAlias); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	targetFile := filepath.Join(allowedAlias, "nested", "alias.txt")
+	if err := os.MkdirAll(filepath.Dir(targetFile), 0o755); err != nil {
+		t.Fatalf("MkdirAll(targetFile dir) error = %v", err)
+	}
+	if err := os.WriteFile(targetFile, []byte("through alias"), 0o644); err != nil {
+		t.Fatalf("WriteFile(targetFile) error = %v", err)
+	}
+
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(
+			"^" + regexp.QuoteMeta(filepath.Clean(allowedAlias)) +
+				"(?:" + regexp.QuoteMeta(string(os.PathSeparator)) + "|$)",
+		),
+	}
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
+
+	result := tool.Execute(context.Background(), map[string]any{"path": targetFile})
+	if result.IsError {
+		t.Fatalf("expected symlink-backed allowed root to be readable, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "through alias") {
+		t.Fatalf("expected file content, got: %s", result.ForLLM)
+	}
+}
+
+// TestReadFileTool_ChunkedReading verifies the pagination logic of the tool
+// by reading a file in multiple chunks using 'offset' and 'length'.
+func TestReadFileTool_ChunkedReading(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "pagination_test.txt")
+
+	// Create a test file with exactly 26 bytes of content
+	fullContent := "abcdefghijklmnopqrstuvwxyz"
+	err := os.WriteFile(testFile, []byte(fullContent), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
+	ctx := context.Background()
+
+	// --- Step 1: Read the first chunk (10 bytes) ---
+	args1 := map[string]any{
+		"path":   testFile,
+		"offset": 0,
+		"length": 10,
+	}
+	result1 := tool.Execute(ctx, args1)
+
+	if result1.IsError {
+		t.Fatalf("Chunk 1 failed: %s", result1.ForLLM)
+	}
+
+	// Expect the first 10 characters
+	if !strings.Contains(result1.ForLLM, "abcdefghij") {
+		t.Errorf("Chunk 1 should contain 'abcdefghij', got: %s", result1.ForLLM)
+	}
+	// Expect the header to indicate the file is truncated
+	if !strings.Contains(result1.ForLLM, "[TRUNCATED") {
+		t.Errorf("Chunk 1 header should indicate truncation, got: %s", result1.ForLLM)
+	}
+	// Expect the header to suggest the next offset (10)
+	if !strings.Contains(result1.ForLLM, "offset=10") {
+		t.Errorf("Chunk 1 header should suggest next offset=10, got: %s", result1.ForLLM)
+	}
+
+	// Step 2: Read the second chunk (10 bytes) ---
+	args2 := map[string]any{
+		"path":   testFile,
+		"offset": 10,
+		"length": 10,
+	}
+	result2 := tool.Execute(ctx, args2)
+
+	if result2.IsError {
+		t.Fatalf("Chunk 2 failed: %s", result2.ForLLM)
+	}
+
+	// Expect the next 10 characters
+	if !strings.Contains(result2.ForLLM, "klmnopqrst") {
+		t.Errorf("Chunk 2 should contain 'klmnopqrst', got: %s", result2.ForLLM)
+	}
+	// Expect the header to suggest the next offset (20)
+	if !strings.Contains(result2.ForLLM, "offset=20") {
+		t.Errorf("Chunk 2 header should suggest next offset=20, got: %s", result2.ForLLM)
+	}
+
+	// Step 3: Read the final chunk (remaining 6 bytes) ---
+	// We ask for 10 bytes, but only 6 are left in the file
+	args3 := map[string]any{
+		"path":   testFile,
+		"offset": 20,
+		"length": 10,
+	}
+	result3 := tool.Execute(ctx, args3)
+
+	if result3.IsError {
+		t.Fatalf("Chunk 3 failed: %s", result3.ForLLM)
+	}
+
+	// Expect the last 6 characters
+	if !strings.Contains(result3.ForLLM, "uvwxyz") {
+		t.Errorf("Chunk 3 should contain 'uvwxyz', got: %s", result3.ForLLM)
+	}
+	// Expect the header to indicate the end of the file
+	if !strings.Contains(result3.ForLLM, "[END OF FILE") {
+		t.Errorf("Chunk 3 header should indicate end of file, got: %s", result3.ForLLM)
+	}
+
+	// Ensure no TRUNCATED message is present in the final chunk
+	if strings.Contains(result3.ForLLM, "[TRUNCATED") {
+		t.Errorf("Chunk 3 header should NOT indicate truncation, got: %s", result3.ForLLM)
+	}
+}
+
+// TestReadFileTool_OffsetBeyondEOF checks the behavior when requesting
+// An offset that exceeds the total file size.
+func TestReadFileTool_OffsetBeyondEOF(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "short.txt")
+
+	// create a file of only 5 bytes
+	err := os.WriteFile(testFile, []byte("12345"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
+	ctx := context.Background()
+
+	args := map[string]any{
+		"path":   testFile,
+		"offset": int64(100), // Offset beyond the end of the file
+	}
+
+	result := tool.Execute(ctx, args)
+
+	// It should not be classified as a tool execution error
+	if result.IsError {
+		t.Errorf("A mistake was not expected, obtained IsError=true: %s", result.ForLLM)
+	}
+
+	// Must return EXACTLY the string provided in the code
+	expectedMsg := "[END OF FILE - no content at this offset]"
+	if result.ForLLM != expectedMsg {
+		t.Errorf("The message %q was expected, obtained: %q", expectedMsg, result.ForLLM)
 	}
 }

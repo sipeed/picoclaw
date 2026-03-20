@@ -1,0 +1,138 @@
+name: Nightly Build
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nightly:
+    name: Nightly Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute version
+        id: version
+        run: |
+          DATE=$(date -u +%Y%m%d)
+          SHA=$(git rev-parse --short=8 HEAD)
+          BASE_VERSION=$(git describe --tags --match "v*" --exclude "*nightly*" --abbrev=0 2>/dev/null || true)
+          if [ -z "$BASE_VERSION" ] || [ "$BASE_VERSION" = "v0.0.0" ]; then
+            VERSION="v0.0.0-nightly.${DATE}.${SHA}"
+          else
+            VERSION="${BASE_VERSION}-nightly.${DATE}.${SHA}"
+          fi
+
+          COMPARE_URL="https://github.com/${{ github.repository }}/commits/main"
+          if [ -n "$BASE_VERSION" ] && [ "$BASE_VERSION" != "v0.0.0" ]; then
+            COMPARE_URL="https://github.com/${{ github.repository }}/compare/${BASE_VERSION}...main"
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "changelog=**Full Changelog**: $COMPARE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Go from go.mod
+        id: setup-go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        run: corepack enable && corepack prepare pnpm@latest --activate
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create local tag for GoReleaser
+        run: git tag "${{ steps.version.outputs.version }}"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: ~> v2
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY }}
+          GOVERSION: ${{ steps.setup-go.outputs.go-version }}
+          GORELEASER_CURRENT_TAG: ${{ steps.version.outputs.version }}
+          NIGHTLY_BUILD: "true"
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Update nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          CHANGELOG='${{ steps.version.outputs.changelog }}'
+          NOTES=$(cat <<EOF
+          Nightly build for **${VERSION}**
+
+          This is an automated build and may be unstable. Use with caution.
+
+          ${CHANGELOG}
+          EOF
+          )
+
+          # Delete existing nightly release and tag
+          gh release delete nightly --cleanup-tag -y 2>/dev/null || true
+
+          # Force-update nightly tag to current HEAD
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -fa nightly -m "Nightly build ${VERSION}"
+          git push origin nightly
+
+          # Collect release artifacts from goreleaser dist/
+          ASSETS=()
+          for f in dist/*.tar.gz dist/*.zip dist/*.deb dist/*.rpm dist/checksums.txt; do
+            [ -f "$f" ] && ASSETS+=("$f")
+          done
+
+          # Create nightly release (prerelease, NOT latest)
+          gh release create nightly \
+            --title "Nightly Build" \
+            --notes "$NOTES" \
+            --target "${{ github.sha }}" \
+            --prerelease \
+            --latest=false \
+            "${ASSETS[@]}"
+
