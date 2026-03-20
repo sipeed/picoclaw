@@ -183,6 +183,39 @@ func (c *Cache) Prune(ttl time.Duration) (int64, error) {
 	return res.RowsAffected()
 }
 
+// Delete removes a single cache entry by hash and type.
+// Returns the entry before deletion so callers can clean up associated files.
+func (c *Cache) Delete(hash, entryType string) (Entry, error) {
+	var entry Entry
+	var filePath sql.NullString
+	row := c.db.QueryRow(
+		`SELECT result, file_path, pages FROM media_cache WHERE hash = ? AND type = ?`,
+		hash, entryType,
+	)
+	if err := row.Scan(&entry.Result, &filePath, &entry.Pages); err != nil {
+		if err == sql.ErrNoRows {
+			return Entry{}, nil
+		}
+		return Entry{}, err
+	}
+	entry.FilePath = filePath.String
+
+	_, err := c.db.Exec(
+		`DELETE FROM media_cache WHERE hash = ? AND type = ?`,
+		hash, entryType,
+	)
+	return entry, err
+}
+
+// DeleteAll removes all cache entries. Returns the number of entries removed.
+func (c *Cache) DeleteAll() (int64, error) {
+	res, err := c.db.Exec(`DELETE FROM media_cache`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (c *Cache) touchAccessed(hash, entryType string) {
 	_, _ = c.db.Exec(
 		`UPDATE media_cache SET accessed_at = ? WHERE hash = ? AND type = ?`,

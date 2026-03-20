@@ -107,16 +107,14 @@ func pdfinfoPageCount(ctx context.Context, pdfPath string) int {
 	return 0
 }
 
-// savePdftotextResult writes extracted text to a .md file in the output
-// directory and caches it. Returns the document tag string.
+// savePdftotextResult writes extracted text to a .md file in the per-PDF
+// output directory and caches it. Returns the document tag string.
 func (al *AgentLoop) savePdftotextResult(
-	pdfPath, text string, pages int, hash string,
+	pdfPath, text string, pages int, hash, outputDir string,
 ) string {
-	outputDir := al.ocrOutputDir()
 	os.MkdirAll(outputDir, 0o755)
 
-	base := strings.TrimSuffix(filepath.Base(pdfPath), filepath.Ext(pdfPath))
-	mdPath := filepath.Join(outputDir, base+"_text.md")
+	mdPath := filepath.Join(outputDir, "document.md")
 
 	if err := os.WriteFile(mdPath, []byte(text), 0o644); err != nil {
 		logger.WarnCF("agent", "Failed to write pdftotext output", map[string]any{

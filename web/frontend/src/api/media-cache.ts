@@ -38,3 +38,16 @@ export async function getMediaCacheContent(
     `/api/media-cache/${encodeURIComponent(hash)}`,
   )
 }
+
+export async function deleteMediaCacheEntry(hash: string): Promise<void> {
+  const res = await fetch(`/api/media-cache/${encodeURIComponent(hash)}`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+}
+
+export async function deleteAllMediaCache(): Promise<{ deleted: number }> {
+  const res = await fetch("/api/media-cache", { method: "DELETE" })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json() as Promise<{ deleted: number }>
+}

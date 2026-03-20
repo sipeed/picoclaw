@@ -34,6 +34,7 @@ func mustMiniappStaticFS() fs.FS {
 // Handler serves the Mini App HTML and API endpoints.
 type Handler struct {
 	provider        DataProvider
+	cacheMutator    CacheMutator
 	sender          CommandSender
 	botToken        string
 	notifier        *StateNotifier
@@ -84,6 +85,11 @@ func (h *Handler) SetOrchBroadcaster(b *orch.Broadcaster) {
 	h.orchBroadcaster = b
 }
 
+// SetCacheMutator enables cache mutation operations (delete entry/clear all).
+func (h *Handler) SetCacheMutator(m CacheMutator) {
+	h.cacheMutator = m
+}
+
 func (h *Handler) handleProtectedFunc(mux *http.ServeMux, pattern string, handler http.HandlerFunc) {
 	mux.HandleFunc(pattern, h.requireAuth(handler))
 }
@@ -112,6 +118,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/dev/console", h.apiDevConsole)
 	mux.HandleFunc("/miniapp/dev/", h.serveDevProxy)
 	h.handleProtectedFunc(mux, "/miniapp/api/cache", h.apiCache)
+	h.handleProtectedFunc(mux, "/miniapp/api/cache/", h.apiCacheEntry)
 	h.handleProtectedFunc(mux, "/miniapp/api/research", h.apiResearch)
 	h.handleProtectedFunc(mux, "/miniapp/api/research/focus", h.apiResearchFocus)
 	h.handleProtectedFunc(mux, "/miniapp/api/research/", h.apiResearchDetail)
