@@ -135,6 +135,8 @@ OCR 実行中に以下のキーワードで中断:
 - `cancel`, `abort`, `stop`
 - `中止`, `キャンセル`, `やめ`
 
+> **Note**: figures と reading order のキーワードは `strings.ToLower` で比較。cancel キーワードも同様。
+
 ## Output Structure
 
 抽出結果は `.ocr_cache/<hash>/` に保存されます:
