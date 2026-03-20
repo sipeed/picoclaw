@@ -3,11 +3,21 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
+
+// attributedContent prepends "AgentName: " to content when agentID is non-empty.
+func attributedContent(agentID, content string) string {
+	if strings.TrimSpace(agentID) == "" {
+		return content
+	}
+	name := strings.ToUpper(agentID[:1]) + agentID[1:]
+	return "**" + name + ":** " + content
+}
 
 type SubagentTask struct {
 	ID            string
@@ -255,7 +265,7 @@ After completing the task, provide a clear summary of what was done.`
 				loopResult.Iterations,
 				loopResult.Content,
 			),
-			ForUser: loopResult.Content,
+			ForUser: attributedContent(task.AgentID, loopResult.Content),
 			Silent:  false,
 			IsError: false,
 			Async:   false,
@@ -326,6 +336,7 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	label, _ := args["label"].(string)
+	agentID, _ := args["agent_id"].(string)
 
 	if t.manager == nil {
 		return ErrorResult("Subagent manager not configured").WithError(fmt.Errorf("manager is nil"))
@@ -383,7 +394,7 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	return &ToolResult{
 		ForLLM:  llmContent,
-		ForUser: userContent,
+		ForUser: attributedContent(agentID, userContent),
 		Silent:  false,
 		IsError: false,
 		Async:   false,
