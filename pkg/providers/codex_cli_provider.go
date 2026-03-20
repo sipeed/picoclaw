@@ -86,6 +86,9 @@ func (p *CodexCliProvider) Chat(
 	}
 
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("codex cli timed out after %s: %w", p.timeout, context.DeadlineExceeded)
+		}
 		if ctx.Err() == context.Canceled {
 			return nil, ctx.Err()
 		}

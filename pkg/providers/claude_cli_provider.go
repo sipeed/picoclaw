@@ -63,6 +63,9 @@ func (p *ClaudeCliProvider) Chat(
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("claude cli timed out after %s: %w", p.timeout, context.DeadlineExceeded)
+		}
 		stderrStr := strings.TrimSpace(stderr.String())
 		stdoutStr := strings.TrimSpace(stdout.String())
 		switch {
