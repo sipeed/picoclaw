@@ -17,7 +17,7 @@ const pdfFollowUpWait = 5 * time.Second
 
 // pdfFollowUpHint is sent when a PDF arrives without text.
 const pdfFollowUpHint = "PDF received. You can send OCR options " +
-	"(e.g. \"figures\" / \"\u56f3\u7248\") within a few seconds, or processing will start automatically."
+	"(e.g. \"figures\" / \"\u56f3\u7248\", \"\u7e26\u66f8\u304d\" / \"\u6a2a\u66f8\u304d\") within a few seconds, or processing will start automatically."
 
 // pdfCancelKeywords triggers OCR cancellation when found in a message
 // received during Phase 2 (OCR in progress).

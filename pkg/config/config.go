@@ -247,10 +247,11 @@ type AgentDefaults struct {
 
 // OCRConfig configures the external OCR command for PDF text extraction.
 type OCRConfig struct {
-	Command string            `json:"command"`
-	Args    []string          `json:"args,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
-	Timeout int               `json:"timeout,omitempty"`
+	Command      string            `json:"command"`
+	Args         []string          `json:"args,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+	Timeout      int               `json:"timeout,omitempty"`
+	ReadingOrder string            `json:"reading_order,omitempty"`
 }
 
 // GetOCRTimeout returns the configured timeout or default (600s = 10min).

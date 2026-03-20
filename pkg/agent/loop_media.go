@@ -438,8 +438,42 @@ func wantFigures(content string) bool {
 	return false
 }
 
+// readingOrderKeywords maps message keywords to yomitoku --reading_order values.
+//
+//nolint:gosmopolitan // intentional CJK keywords for Japanese users
+var readingOrderKeywords = []struct {
+	keyword string
+	order   string
+}{
+	{"right2left", "right2left"},
+	{"top2bottom", "top2bottom"},
+	{"left2right", "left2right"},
+	{"縦書き", "right2left"},
+	{"たてがき", "right2left"},
+	{"vertical", "right2left"},
+	{"横書き", "top2bottom"},
+	{"よこがき", "top2bottom"},
+	{"horizontal", "top2bottom"},
+}
+
+// detectReadingOrder returns the reading order specified in the message content.
+// Falls back to the configured default, then "auto".
+func detectReadingOrder(content string, cfgDefault string) string {
+	lower := strings.ToLower(content)
+	for _, kw := range readingOrderKeywords {
+		if strings.Contains(lower, kw.keyword) {
+			return kw.order
+		}
+	}
+	if cfgDefault != "" {
+		return cfgDefault
+	}
+	return "auto"
+}
+
 const pdfHintMessage = "PDF OCR in progress. " +
-	"Tip: include \"figures\" or \"\u56f3\u7248\" in your message to extract images and in-figure text."
+	"Tip: include \"figures\" or \"\u56f3\u7248\" to extract images. " +
+	"Add \"\u7e26\u66f8\u304d\" or \"\u6a2a\u66f8\u304d\" to set reading order."
 
 // processPDFsInMessages finds [file:/path.pdf] tags in messages and replaces
 // them with [document: preview... (full: /path/to.md, N pages)] tags after
@@ -456,8 +490,13 @@ func (al *AgentLoop) processPDFsInMessages(
 			continue
 		}
 		withFigures := wantFigures(m.Content)
+		var cfgRO string
+		if ocrCfg != nil {
+			cfgRO = ocrCfg.ReadingOrder
+		}
+		readingOrder := detectReadingOrder(m.Content, cfgRO)
 		result[i].Content = al.replacePDFTags(
-			ctx, m.Content, ocrCfg, channel, chatID, withFigures,
+			ctx, m.Content, ocrCfg, channel, chatID, withFigures, readingOrder,
 		)
 	}
 
@@ -470,7 +509,7 @@ const pdfTagPrefix = "[file:"
 // replacePDFTags finds [file:*.pdf] tags and replaces them with OCR results.
 func (al *AgentLoop) replacePDFTags(
 	ctx context.Context, content string, ocrCfg *config.OCRConfig,
-	channel, chatID string, withFigures bool,
+	channel, chatID string, withFigures bool, readingOrder string,
 ) string {
 	var out strings.Builder
 	rest := content
@@ -494,7 +533,7 @@ func (al *AgentLoop) replacePDFTags(
 		out.WriteString(rest[:idx])
 
 		if strings.HasSuffix(strings.ToLower(path), ".pdf") {
-			out.WriteString(al.ocrPDF(ctx, path, ocrCfg, channel, chatID, withFigures))
+			out.WriteString(al.ocrPDF(ctx, path, ocrCfg, channel, chatID, withFigures, readingOrder))
 		} else {
 			out.WriteString(tag)
 		}
@@ -508,9 +547,10 @@ func (al *AgentLoop) replacePDFTags(
 // ocrPDF runs OCR on a PDF file and returns a document tag with preview.
 // Uses the media cache to avoid redundant OCR runs.
 // When withFigures is true, --figure and --figure_letter flags are added.
+// readingOrder is passed as --reading_order to yomitoku.
 func (al *AgentLoop) ocrPDF(
 	ctx context.Context, pdfPath string, ocrCfg *config.OCRConfig,
-	channel, chatID string, withFigures bool,
+	channel, chatID string, withFigures bool, readingOrder string,
 ) string {
 	// Hash the file content for cache lookup.
 	// Include figure mode in the hash so both variants are cached separately.
@@ -522,6 +562,9 @@ func (al *AgentLoop) ocrPDF(
 	hashInput := pdfData
 	if withFigures {
 		hashInput = append(hashInput, []byte(":figures")...)
+	}
+	if readingOrder != "" && readingOrder != "auto" {
+		hashInput = append(hashInput, []byte(":ro="+readingOrder)...)
 	}
 	hash := mediacache.HashData(hashInput)
 
@@ -564,8 +607,12 @@ func (al *AgentLoop) ocrPDF(
 	}
 
 	modeLabel := "Processing PDF"
-	if withFigures {
+	if withFigures && readingOrder != "" && readingOrder != "auto" {
+		modeLabel = fmt.Sprintf("Processing PDF (figures, %s)", readingOrder)
+	} else if withFigures {
 		modeLabel = "Processing PDF (with figures)"
+	} else if readingOrder != "" && readingOrder != "auto" {
+		modeLabel = fmt.Sprintf("Processing PDF (%s)", readingOrder)
 	}
 	indicator := al.processingIndicator(ctx, channel, chatID,
 		fmt.Sprintf("%s (0/%s)...", modeLabel, totalStr))
@@ -580,10 +627,13 @@ func (al *AgentLoop) ocrPDF(
 	cmdCtx, cmdCancel := context.WithTimeout(ctx, timeout)
 	defer cmdCancel()
 
-	args := make([]string, 0, len(ocrCfg.Args)+6)
+	args := make([]string, 0, len(ocrCfg.Args)+8)
 	args = append(args, ocrCfg.Args...)
 	if withFigures {
 		args = append(args, "--figure", "--figure_letter")
+	}
+	if readingOrder != "" && readingOrder != "auto" {
+		args = append(args, "--reading_order", readingOrder)
 	}
 	args = append(args, pdfPath, "-o", outputDir)
 
@@ -602,9 +652,10 @@ func (al *AgentLoop) ocrPDF(
 	}
 
 	logger.InfoCF("agent", "Starting PDF OCR", map[string]any{
-		"path":  pdfPath,
-		"pages": totalStr,
-		"cmd":   ocrCfg.Command,
+		"path":          pdfPath,
+		"pages":         totalStr,
+		"cmd":           ocrCfg.Command,
+		"reading_order": readingOrder,
 	})
 
 	if startErr := cmd.Start(); startErr != nil {
