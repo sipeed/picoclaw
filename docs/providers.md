@@ -39,6 +39,19 @@ This design also enables **multi-agent support** with flexible provider selectio
 - **Load balancing**: Distribute requests across multiple endpoints
 - **Centralized configuration**: Manage all providers in one place
 
+#### Quick Guide: `model_list` vs `providers`
+
+If you are configuring PicoClaw for the first time, this is the most important distinction:
+
+- `model_list` is the **recommended** and current configuration format.
+- `providers` is a **legacy compatibility** format.
+- Launcher UI writes model entries to `model_list`.
+
+Use this rule of thumb:
+
+- Using Launcher (`picoclaw-launcher` / `picoclaw-launcher-tui`): edit via UI, config is saved in `model_list`.
+- Editing JSON manually: prefer `model_list`; use `providers` only for legacy setups.
+
 #### 📋 All Supported Vendors
 
 | Vendor              | `model` Prefix    | Default API Base                                    | Protocol  | API Key                                                          |
