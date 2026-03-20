@@ -62,7 +62,7 @@ jobs:
         run: cd pkg/miniapp/frontend && bun install
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -85,7 +85,7 @@ jobs:
         run: git tag "${{ steps.version.outputs.version }}"
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: ~> v2

@@ -42,12 +42,13 @@ PicoClaw stocke les données dans votre workspace configuré (par défaut : `~/.
 ├── state/            # État persistant (dernier canal, etc.)
 ├── cron/             # Base de données des tâches planifiées
 ├── skills/           # Compétences personnalisées
-├── AGENTS.md         # Guide de comportement de l'agent
+├── AGENT.md          # Guide de comportement de l'agent
 ├── HEARTBEAT.md      # Invites de tâches périodiques (vérifiées toutes les 30 min)
-├── IDENTITY.md       # Identité de l'agent
 ├── SOUL.md           # Âme de l'agent
 └── USER.md           # Préférences utilisateur
 ```
+
+> **Remarque :** Les modifications apportées à `AGENT.md`, `SOUL.md`, `USER.md` et `memory/MEMORY.md` sont détectées automatiquement au moment de l'exécution via le suivi de la date de modification (mtime). Il n'est **pas nécessaire de redémarrer le gateway** après avoir modifié ces fichiers — l'agent charge le nouveau contenu à la prochaine requête.
 
 ### Sources de Compétences
 

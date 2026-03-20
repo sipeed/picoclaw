@@ -42,12 +42,14 @@ PicoClaw lưu trữ dữ liệu trong workspace đã cấu hình (mặc định:
 ├── state/            # Trạng thái bền vững (kênh cuối, v.v.)
 ├── cron/             # Cơ sở dữ liệu tác vụ lên lịch
 ├── skills/           # Skill tùy chỉnh
-├── AGENTS.md         # Hướng dẫn hành vi agent
+├── AGENT.md          # Hướng dẫn hành vi agent
 ├── HEARTBEAT.md      # Prompt tác vụ định kỳ (kiểm tra mỗi 30 phút)
 ├── IDENTITY.md       # Danh tính agent
 ├── SOUL.md           # Linh hồn agent
 └── USER.md           # Tùy chọn người dùng
 ```
+
+> **Lưu ý:** Các thay đổi đối với `AGENT.md`, `SOUL.md`, `USER.md` và `memory/MEMORY.md` được tự động phát hiện trong thời gian chạy thông qua theo dõi thời gian sửa đổi file (mtime). **Không cần khởi động lại gateway** sau khi chỉnh sửa các file này — agent sẽ tải nội dung mới vào yêu cầu tiếp theo.
 
 ### Nguồn Skill
 

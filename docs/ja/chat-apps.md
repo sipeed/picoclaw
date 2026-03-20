@@ -510,7 +510,8 @@ picoclaw gateway
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
       "webhook_path": "/webhook/wecom-aibot",
       "allow_from": [],
-      "welcome_message": "こんにちは！何かお手伝いできますか？"
+      "welcome_message": "こんにちは！何かお手伝いできますか？",
+      "processing_message": "⏳ Processing, please wait. The results will be sent shortly."
     }
   }
 }

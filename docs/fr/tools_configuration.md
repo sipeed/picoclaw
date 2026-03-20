@@ -70,8 +70,31 @@ L'outil exec est utilisé pour exécuter des commandes shell.
 
 | Config                 | Type  | Par défaut | Description                                    |
 |------------------------|-------|------------|------------------------------------------------|
+| `enabled`              | bool  | true       | Activer l'outil exec                           |
 | `enable_deny_patterns` | bool  | true       | Activer le blocage par défaut des commandes dangereuses |
 | `custom_deny_patterns` | array | []         | Modèles de refus personnalisés (expressions régulières) |
+
+### Désactivation de l'Outil Exec
+
+Pour désactiver complètement l'outil `exec`, définissez `enabled` à `false` :
+
+**Via le fichier de configuration :**
+```json
+{
+  "tools": {
+    "exec": {
+      "enabled": false
+    }
+  }
+}
+```
+
+**Via la variable d'environnement :**
+```bash
+PICOCLAW_TOOLS_EXEC_ENABLED=false
+```
+
+> **Note :** Lorsqu'il est désactivé, l'agent ne pourra pas exécuter de commandes shell. Cela affecte également la capacité de l'outil Cron à exécuter des commandes shell planifiées.
 
 ### Fonctionnalité
 
@@ -175,7 +198,6 @@ Au lieu de charger tous les outils, le LLM reçoit un outil de recherche léger 
 | `env_file` | string | non      | Chemin vers le fichier d'environnement pour le processus stdio |
 | `url`      | string | sse/http | URL du point de terminaison pour le transport `sse`/`http` |
 | `headers`  | object | non      | En-têtes HTTP pour le transport `sse`/`http` |
-| `timeout`  | int    | non      | Délai d'attente des appels d'outils en secondes (défaut : 60) |
 
 ### Comportement du transport
 
@@ -224,8 +246,7 @@ Au lieu de charger tous les outils, le LLM reçoit un outil de recherche léger 
           "url": "https://example.com/mcp",
           "headers": {
             "Authorization": "Bearer YOUR_TOKEN"
-          },
-          "timeout": 120
+          }
         }
       }
     }
@@ -331,6 +352,7 @@ Toutes les options de configuration peuvent être remplacées via des variables 
 Par exemple :
 
 - `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`
