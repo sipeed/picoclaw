@@ -245,6 +245,13 @@ func registerSharedTools(
 			// spawn_status which are added below — preventing recursive
 			// subagent spawning.
 			subagentManager.SetTools(agent.Tools.Clone())
+			subagentManager.SetAgentModelResolver(func(targetAgentID string) (string, bool) {
+				targetAgent, ok := registry.GetAgent(targetAgentID)
+				if !ok || targetAgent == nil || targetAgent.Model == "" {
+					return "", false
+				}
+				return targetAgent.Model, true
+			})
 			if spawnEnabled {
 				spawnTool := tools.NewSpawnTool(subagentManager)
 				currentAgentID := agentID
