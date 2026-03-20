@@ -248,6 +248,15 @@ docker compose -f docker/docker-compose.yml pull
 docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
+### Dokploy Template
+
+If you deploy PicoClaw on Dokploy, use the ready template files:
+
+- `docker/dokploy/docker-compose.yml`
+- `docker/dokploy/template.toml`
+
+See [docs/DOKPLOY.md](docs/DOKPLOY.md) for details.
+
 ### 🚀 Quick Start
 
 > [!TIP]
