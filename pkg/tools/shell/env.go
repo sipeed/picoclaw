@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,8 +34,11 @@ var DefaultEnvAllowlist = map[string]bool{
 	"EDITOR":      true,
 	"PAGER":       true,
 	"HTTP_PROXY":  true,
+	"http_proxy":  true,
 	"HTTPS_PROXY": true,
+	"https_proxy": true,
 	"NO_PROXY":    true,
+	"no_proxy":    true,
 
 	// Locale
 	"LC_ALL":            true,
@@ -93,8 +97,8 @@ var windowsEnvAllowlist = map[string]bool{
 // It starts with the provided env map, then adds allowed inherited vars (if not set).
 // extraAllowlist adds to the default allowlist.
 func WithAllowedEnv(envSet map[string]string, extraAllowlist []string) map[string]string {
-	// Start with provided envSet map
-	result := envSet
+	// Copy the map to avoid mutating the caller's map
+	result := maps.Clone(envSet)
 	if result == nil {
 		result = make(map[string]string)
 	}
@@ -203,37 +207,39 @@ func envKey(k string) string {
 // WithPicoclawEnvVars ensures PICOCLAW_* vars are set in envSet.
 // These are needed for child processes to locate config, workspace, etc.
 func WithPicoclawEnvVars(envSet map[string]string, workspace string) map[string]string {
-	if envSet == nil {
-		envSet = make(map[string]string)
+	// Copy the map to avoid mutating the caller's map
+	result := maps.Clone(envSet)
+	if result == nil {
+		result = make(map[string]string)
 	}
 
 	// Always compute PICOCLAW_* vars - priority: env var > default
 	if v := os.Getenv("PICOCLAW_HOME"); v != "" {
-		envSet["PICOCLAW_HOME"] = v
+		result["PICOCLAW_HOME"] = v
 	} else if home, _ := os.UserHomeDir(); home != "" {
-		envSet["PICOCLAW_HOME"] = filepath.Join(home, ".picoclaw")
+		result["PICOCLAW_HOME"] = filepath.Join(home, ".picoclaw")
 	}
 
 	if v := os.Getenv("PICOCLAW_CONFIG"); v != "" {
-		envSet["PICOCLAW_CONFIG"] = v
-	} else if home := envSet["PICOCLAW_HOME"]; home != "" {
-		envSet["PICOCLAW_CONFIG"] = filepath.Join(home, "config.json")
+		result["PICOCLAW_CONFIG"] = v
+	} else if home := result["PICOCLAW_HOME"]; home != "" {
+		result["PICOCLAW_CONFIG"] = filepath.Join(home, "config.json")
 	}
 
 	// Workspace - this is the agent's working directory
 	if workspace != "" {
-		envSet["PICOCLAW_AGENT_WORKSPACE"] = workspace
+		result["PICOCLAW_AGENT_WORKSPACE"] = workspace
 	}
 
 	if exe, err := os.Executable(); err == nil {
-		envSet["PICOCLAW_EXE"] = exe
+		result["PICOCLAW_EXE"] = exe
 	}
 
 	if v := os.Getenv("PICOCLAW_SERVICE_NAME"); v != "" {
-		envSet["PICOCLAW_SERVICE_NAME"] = v
+		result["PICOCLAW_SERVICE_NAME"] = v
 	} else {
-		envSet["PICOCLAW_SERVICE_NAME"] = "picoclaw"
+		result["PICOCLAW_SERVICE_NAME"] = "picoclaw"
 	}
 
-	return envSet
+	return result
 }
