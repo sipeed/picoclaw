@@ -1,14 +1,12 @@
 package agent
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-//nolint:unused // wired in PR4
 func buildModelListResolver(cfg *config.Config) func(raw string) (string, bool) {
 	ensureProtocol := func(model string) string {
 		model = strings.TrimSpace(model)
@@ -49,7 +47,6 @@ func buildModelListResolver(cfg *config.Config) func(raw string) (string, bool) 
 	}
 }
 
-//nolint:unused // wired in PR4
 func resolveModelCandidates(
 	cfg *config.Config,
 	defaultProvider string,
@@ -66,37 +63,9 @@ func resolveModelCandidates(
 	)
 }
 
-//nolint:unused // wired in PR4
-func resolvedCandidateModel(candidates []providers.FallbackCandidate, fallback string) string {
-	if len(candidates) > 0 && strings.TrimSpace(candidates[0].Model) != "" {
-		return candidates[0].Model
-	}
-	return fallback
-}
-
-//nolint:unused // wired in PR4
 func resolvedCandidateProvider(candidates []providers.FallbackCandidate, fallback string) string {
 	if len(candidates) > 0 && strings.TrimSpace(candidates[0].Provider) != "" {
 		return candidates[0].Provider
 	}
 	return fallback
-}
-
-//nolint:unused // wired in PR4
-func resolvedModelConfig(cfg *config.Config, modelName, workspace string) (*config.ModelConfig, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-
-	modelCfg, err := cfg.GetModelConfig(strings.TrimSpace(modelName))
-	if err != nil {
-		return nil, err
-	}
-
-	clone := *modelCfg
-	if clone.Workspace == "" {
-		clone.Workspace = workspace
-	}
-
-	return &clone, nil
 }

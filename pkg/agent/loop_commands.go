@@ -24,7 +24,10 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey strin
 			if agent == nil {
 				return "unknown", "unknown"
 			}
-			prov, _ := providers.ExtractProtocol(agent.Model)
+			prov := resolvedCandidateProvider(agent.Candidates, "")
+			if prov == "" {
+				prov, _ = providers.ExtractProtocol(agent.Model)
+			}
 			return agent.Model, prov
 		},
 		ListAgentIDs: func() []string {
