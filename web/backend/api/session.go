@@ -21,6 +21,7 @@ func (h *Handler) registerSessionRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/sessions", h.handleListSessions)
 	mux.HandleFunc("GET /api/sessions/{id}", h.handleGetSession)
 	mux.HandleFunc("DELETE /api/sessions/{id}", h.handleDeleteSession)
+	mux.HandleFunc("PATCH /api/sessions/{id}", h.handleRenameSession)
 }
 
 // sessionFile mirrors the on-disk session JSON structure from pkg/session.
@@ -503,4 +504,84 @@ func (h *Handler) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRenameSession updates the title/summary of a specific session.
+//
+//	PATCH /api/sessions/{id}
+func (h *Handler) handleRenameSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		http.Error(w, "missing session id", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	req.Title = strings.TrimSpace(req.Title)
+
+	dir, err := h.sessionsDir()
+	if err != nil {
+		http.Error(w, "failed to resolve sessions directory", http.StatusInternalServerError)
+		return
+	}
+
+	base := filepath.Join(dir, sanitizeSessionKey(picoSessionPrefix+sessionID))
+	jsonlPath := base + ".jsonl"
+	metaPath := base + ".meta.json"
+	legacyPath := base + ".json"
+
+	// Try JSONL session first (new format)
+	if _, statErr := os.Stat(jsonlPath); statErr == nil {
+		meta, readErr := h.readSessionMeta(metaPath, picoSessionPrefix+sessionID)
+		if readErr != nil {
+			http.Error(w, "failed to read session metadata", http.StatusInternalServerError)
+			return
+		}
+		meta.Summary = req.Title
+		data, marshalErr := json.Marshal(meta)
+		if marshalErr != nil {
+			http.Error(w, "failed to marshal metadata", http.StatusInternalServerError)
+			return
+		}
+		if writeErr := os.WriteFile(metaPath, data, 0o644); writeErr != nil {
+			http.Error(w, "failed to write metadata", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Try legacy JSON session
+	if _, statErr := os.Stat(legacyPath); statErr == nil {
+		data, readErr := os.ReadFile(legacyPath)
+		if readErr != nil {
+			http.Error(w, "failed to read session", http.StatusInternalServerError)
+			return
+		}
+		var sess sessionFile
+		if parseErr := json.Unmarshal(data, &sess); parseErr != nil {
+			http.Error(w, "failed to parse session", http.StatusInternalServerError)
+			return
+		}
+		sess.Summary = req.Title
+		data, marshalErr := json.Marshal(sess)
+		if marshalErr != nil {
+			http.Error(w, "failed to marshal session", http.StatusInternalServerError)
+			return
+		}
+		if writeErr := os.WriteFile(legacyPath, data, 0o644); writeErr != nil {
+			http.Error(w, "failed to write session", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	http.Error(w, "session not found", http.StatusNotFound)
 }

@@ -32,6 +32,7 @@
     "historyOpenFailed": "打开该历史会话失败",
     "loadingMore": "加载更多...",
     "deleteSession": "删除会话",
+    "renameSession": "重命名会话",
     "messagesCount": "{{count}} 条消息",
     "noModel": "选择模型",
     "empty": {

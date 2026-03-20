@@ -55,6 +55,7 @@ export function ChatPage() {
     observerRef,
     loadSessions,
     handleDeleteSession,
+    handleRenameSession,
   } = useSessionHistory({
     activeSessionId,
     onDeletedActiveSession: newChat,
@@ -129,6 +130,7 @@ export function ChatPage() {
           }}
           onSwitchSession={switchSession}
           onDeleteSession={handleDeleteSession}
+          onRenameSession={handleRenameSession}
         />
       </PageHeader>
 
