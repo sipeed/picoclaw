@@ -751,7 +751,7 @@ type CronToolsConfig struct {
 }
 
 type ExecConfig struct {
-	ToolConfig           `                  envPrefix:"PICOCLAW_TOOLS_EXEC_"`
+	ToolConfig          `                  envPrefix:"PICOCLAW_TOOLS_EXEC_"`
 	EnableDenyPatterns  bool              `                                 env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"  json:"enable_deny_patterns"`
 	AllowRemote         bool              `                                 env:"PICOCLAW_TOOLS_EXEC_ALLOW_REMOTE"          json:"allow_remote"`
 	CustomDenyPatterns  []string          `                                 env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"  json:"custom_deny_patterns"`
