@@ -255,6 +255,10 @@ func (r *ToolRegistry) ExecuteWithContext(
 			})
 	}
 
+	// Scrub secrets from tool output before it reaches the LLM or user.
+	// This is the single chokepoint for all tool execution results.
+	SanitizeResult(result)
+
 	return result
 }
 
