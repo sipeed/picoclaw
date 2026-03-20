@@ -64,12 +64,14 @@ func NewAgentInstance(
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
 
 	restrict := defaults.RestrictToWorkspace
+	if agentCfg != nil && agentCfg.RestrictToWorkspace != nil {
+		restrict = *agentCfg.RestrictToWorkspace
+	}
 	readRestrict := restrict && !defaults.AllowReadOutsideWorkspace
 
 	// Compile path whitelist patterns from config.
 	allowReadPaths := buildAllowReadPatterns(cfg)
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
-
 	toolsRegistry := tools.NewToolRegistry()
 
 	if cfg.Tools.IsToolEnabled("read_file") {
