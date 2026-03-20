@@ -274,7 +274,7 @@ The old `providers` configuration is **deprecated** but still supported for back
 }
 ```
 
-For detailed migration guide, see [docs/migration/model-list-migration.md](docs/migration/model-list-migration.md).
+For detailed migration guide, see [migration/model-list-migration.md](migration/model-list-migration.md).
 
 ### Provider Architecture
 

@@ -586,7 +586,7 @@ Cada mensagem SSE (`data: {...}`) é encapsulada em um campo `response`:
   ],
   "agents": {
     "defaults": {
-      "model": "gemini-flash"
+      "model_name": "gemini-flash"
     }
   }
 }

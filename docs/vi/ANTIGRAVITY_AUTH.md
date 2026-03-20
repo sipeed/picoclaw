@@ -586,7 +586,7 @@ Mỗi thông điệp SSE (`data: {...}`) được bao bọc trong trường `res
   ],
   "agents": {
     "defaults": {
-      "model": "gemini-flash"
+      "model_name": "gemini-flash"
     }
   }
 }

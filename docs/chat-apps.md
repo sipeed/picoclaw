@@ -326,7 +326,7 @@ PicoClaw supports three types of WeCom integration:
 **Option 2: WeCom App (Custom App)** - More features, proactive messaging, private chat only
 **Option 3: WeCom AI Bot (AI Bot)** - Official AI Bot, streaming replies, supports group & private chat
 
-See [WeCom AI Bot Configuration Guide](docs/channels/wecom/wecom_aibot/README.zh.md) for detailed setup instructions.
+See [WeCom AI Bot Configuration Guide](channels/wecom/wecom_aibot/README.zh.md) for detailed setup instructions.
 
 **Quick Setup - WeCom Bot:**
 

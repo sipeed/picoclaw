@@ -261,7 +261,7 @@ picoclaw gateway
 picoclaw gateway
 ```
 
-Para opções completas (`device_id`, `join_on_invite`, `group_trigger`, `placeholder`, `reasoning_channel_id`), veja o [Guia de Configuração do Canal Matrix](channels/matrix/README.md).
+Para opções completas (`device_id`, `join_on_invite`, `group_trigger`, `placeholder`, `reasoning_channel_id`), veja o [Guia de Configuração do Canal Matrix](../channels/matrix/README.md).
 
 </details>
 
@@ -322,7 +322,7 @@ O PicoClaw suporta três tipos de integração WeCom:
 **Opção 2: WeCom App (App Personalizado)** - Mais recursos, mensagens proativas, apenas chat privado
 **Opção 3: WeCom AI Bot (AI Bot)** - AI Bot oficial, respostas em streaming, suporta chat de grupo e privado
 
-Veja o [Guia de Configuração do WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) para instruções detalhadas de configuração.
+Veja o [Guia de Configuração do WeCom AI Bot](../channels/wecom/wecom_aibot/README.zh.md) para instruções detalhadas de configuração.
 
 **Configuração Rápida - WeCom Bot:**
 

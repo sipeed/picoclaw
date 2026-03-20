@@ -99,7 +99,7 @@ Produtos de consumo, roteadores e dispositivos industriais testados com o PicoCl
 
 Qualquer celular Android ARM64 (2015+) com 1GB+ de RAM. Instale o [Termux](https://github.com/termux/termux-app), use `proot` para rodar o PicoClaw.
 
-> Veja [README: Rodar em celulares Android antigos](../README.md#-run-on-old-android-phones) para instruções de configuração.
+> Veja [README: Rodar em celulares Android antigos](../../README.pt-br.md#-run-on-old-android-phones) para instruções de configuração.
 
 ### Desktop / Servidor / Nuvem
 

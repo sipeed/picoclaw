@@ -261,7 +261,7 @@ picoclaw gateway
 picoclaw gateway
 ```
 
-Để xem đầy đủ các tùy chọn (`device_id`, `join_on_invite`, `group_trigger`, `placeholder`, `reasoning_channel_id`), xem [Hướng Dẫn Cấu Hình Kênh Matrix](channels/matrix/README.md).
+Để xem đầy đủ các tùy chọn (`device_id`, `join_on_invite`, `group_trigger`, `placeholder`, `reasoning_channel_id`), xem [Hướng Dẫn Cấu Hình Kênh Matrix](../channels/matrix/README.md).
 
 </details>
 
@@ -322,7 +322,7 @@ PicoClaw hỗ trợ ba loại tích hợp WeCom:
 **Tùy chọn 2: WeCom App (App Tùy chỉnh)** - Nhiều tính năng hơn, nhắn tin chủ động, chỉ chat riêng
 **Tùy chọn 3: WeCom AI Bot (AI Bot)** - AI Bot chính thức, phản hồi streaming, hỗ trợ chat nhóm & riêng
 
-Xem [Hướng Dẫn Cấu Hình WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) để biết hướng dẫn thiết lập chi tiết.
+Xem [Hướng Dẫn Cấu Hình WeCom AI Bot](../channels/wecom/wecom_aibot/README.zh.md) để biết hướng dẫn thiết lập chi tiết.
 
 **Thiết Lập Nhanh - WeCom Bot:**
 

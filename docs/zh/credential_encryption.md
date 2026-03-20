@@ -31,6 +31,7 @@ enc://AAAA...base64...
   "model_list": [
     {
       "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
       "api_key": "enc://AAAA...base64...",
       "api_base": "https://api.openai.com/v1"
     }

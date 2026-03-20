@@ -99,7 +99,7 @@ Produits grand public, routeurs et appareils industriels testés avec PicoClaw.
 
 Tout téléphone Android ARM64 (2015+) avec 1 Go+ de RAM. Installez [Termux](https://github.com/termux/termux-app), utilisez `proot` pour exécuter PicoClaw.
 
-> Voir [README : Exécuter sur d'anciens téléphones Android](../README.md#-run-on-old-android-phones) pour les instructions de configuration.
+> Voir [README : Exécuter sur d'anciens téléphones Android](../../README.fr.md#-run-on-old-android-phones) pour les instructions de configuration.
 
 ### Bureau / Serveur / Cloud
 

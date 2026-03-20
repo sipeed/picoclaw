@@ -586,7 +586,7 @@ export function sanitizeAntigravityThinkingBlocks(
   ],
   "agents": {
     "defaults": {
-      "model": "gemini-flash"
+      "model_name": "gemini-flash"
     }
   }
 }
