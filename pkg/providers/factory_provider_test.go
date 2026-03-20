@@ -70,6 +70,12 @@ func TestExtractProtocol(t *testing.T) {
 			wantProtocol: "azure",
 			wantModelID:  "my-gpt5-deployment",
 		},
+		{
+			name:         "at-prefixed cloudflare model id",
+			model:        "@cf/qwen/qwen1.5-0.5b-chat",
+			wantProtocol: "openai",
+			wantModelID:  "@cf/qwen/qwen1.5-0.5b-chat",
+		},
 	}
 
 	for _, tt := range tests {
@@ -102,6 +108,26 @@ func TestCreateProviderFromConfig_OpenAI(t *testing.T) {
 	}
 	if modelID != "gpt-4o" {
 		t.Errorf("modelID = %q, want %q", modelID, "gpt-4o")
+	}
+}
+
+func TestCreateProviderFromConfig_OpenAIPreservesAtPrefixedModelID(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-cf-openai",
+		Model:     "@cf/qwen/qwen1.5-0.5b-chat",
+		APIKey:    "test-key",
+		APIBase:   "https://api.example.com/v1",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "@cf/qwen/qwen1.5-0.5b-chat" {
+		t.Fatalf("modelID = %q, want full @cf model id", modelID)
 	}
 }
 

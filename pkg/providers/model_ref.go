@@ -17,6 +17,15 @@ func ParseModelRef(raw string, defaultProvider string) *ModelRef {
 		return nil
 	}
 
+	// Providers like Cloudflare use model IDs such as "@cf/..." where the slash
+	// belongs to the model path, not a provider prefix.
+	if strings.HasPrefix(raw, "@") {
+		return &ModelRef{
+			Provider: NormalizeProvider(defaultProvider),
+			Model:    raw,
+		}
+	}
+
 	if idx := strings.Index(raw, "/"); idx > 0 {
 		provider := NormalizeProvider(raw[:idx])
 		model := strings.TrimSpace(raw[idx+1:])

@@ -46,6 +46,9 @@ func createCodexAuthProvider() (LLMProvider, error) {
 //   - "gpt-4o" -> ("openai", "gpt-4o")  // default protocol
 func ExtractProtocol(model string) (protocol, modelID string) {
 	model = strings.TrimSpace(model)
+	if strings.HasPrefix(model, "@") {
+		return "openai", model
+	}
 	protocol, modelID, found := strings.Cut(model, "/")
 	if !found {
 		return "openai", model
