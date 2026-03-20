@@ -165,6 +165,50 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 	}
 }
 
+func TestNewAgentInstance_ResolveImageCandidatesFromModelListAlias(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:           tmpDir,
+				Model:               "text-main",
+				ImageModel:          "vision-main",
+				ImageModelFallbacks: []string{"vision-backup"},
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "vision-main",
+				Model:     "gemini/gemini-2.5-flash-lite",
+			},
+			{
+				ModelName: "vision-backup",
+				Model:     "anthropic/claude-3-7-sonnet",
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if agent.ImageModel != "vision-main" {
+		t.Fatalf("ImageModel = %q, want %q", agent.ImageModel, "vision-main")
+	}
+	if len(agent.ImageCandidates) != 2 {
+		t.Fatalf("len(ImageCandidates) = %d, want 2", len(agent.ImageCandidates))
+	}
+	if agent.ImageCandidates[0].Provider != "gemini" || agent.ImageCandidates[0].Model != "gemini-2.5-flash-lite" {
+		t.Fatalf("first image candidate = %+v, want gemini/gemini-2.5-flash-lite", agent.ImageCandidates[0])
+	}
+	if agent.ImageCandidates[1].Provider != "anthropic" || agent.ImageCandidates[1].Model != "claude-3-7-sonnet" {
+		t.Fatalf("second image candidate = %+v, want anthropic/claude-3-7-sonnet", agent.ImageCandidates[1])
+	}
+}
+
 func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 	workspace := t.TempDir()
 	mediaDir := media.TempDir()
