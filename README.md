@@ -18,6 +18,7 @@ The main project is maintained at [sipeed/picoclaw](https://github.com/sipeed/pi
 | [#1811](https://github.com/sipeed/picoclaw/pull/1811) | fix(launcher): detect and display externally-managed gateway as running | Open |
 | [#1812](https://github.com/sipeed/picoclaw/pull/1812) | fix(claude-cli): pass system prompt via stdin instead of CLI argument | Open |
 | [#1813](https://github.com/sipeed/picoclaw/pull/1813) | fix(providers): robust CLI tool call extraction and mixed response handling | Open |
+| [#1814](https://github.com/sipeed/picoclaw/pull/1814) | fix(subagent): dispatch subagents through per-agent provider; enforce allowlist on self-spawn; attribute responses | Open |
 
 ---
 
