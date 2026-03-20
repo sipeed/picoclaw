@@ -124,7 +124,20 @@ func (p *Provider) Chat(
 				fieldName = "max_tokens"
 			}
 		}
-		requestBody[fieldName] = maxTokens
+		// Validate max_tokens range for deepseek model
+		if strings.Contains(strings.ToLower(model), "deepseek") {
+			// Clamp max_tokens to the valid range [1, 8192]
+			adjustedMaxTokens := maxTokens
+			if maxTokens > 8192 {
+				adjustedMaxTokens = 8192
+			}
+			if maxTokens < 1 {
+				adjustedMaxTokens = 1
+			}
+			requestBody[fieldName] = adjustedMaxTokens
+		} else {
+			requestBody[fieldName] = maxTokens
+		}
 	}
 
 	if temperature, ok := common.AsFloat(options["temperature"]); ok {

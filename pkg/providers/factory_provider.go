@@ -58,6 +58,13 @@ func ExtractProtocol(model string) (protocol, modelID string) {
 // Supported protocols: openai, litellm, novita, anthropic, anthropic-messages,
 // antigravity, claude-cli, codex-cli, github-copilot
 // Returns the provider, the model ID (without protocol prefix), and any error.
+// ExtractProtocol extracts the protocol prefix and model identifier from a model string.
+// If no prefix is specified, it defaults to "openai".
+// Examples:
+//   - "openai/gpt-4o" -> ("openai", "gpt-4o")
+//   - "anthropic/claude-sonnet-4.6" -> ("anthropic", "claude-sonnet-4.6")
+//   - "gpt-4o" -> ("openai", "gpt-4o")  // default protocol
+func ExtractProtocol(model string) (protocol, modelID string) {
 func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, error) {
 	if cfg == nil {
 		return nil, "", fmt.Errorf("config is nil")
@@ -87,12 +94,17 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
+		// For Ollama models, default to higher timeout if none specified
+		requestTimeout := cfg.RequestTimeout
+		if protocol == "ollama" && requestTimeout <= 0 {
+			requestTimeout = 300 // Ollama models often need more time, default to 300 seconds
+		}
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey,
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
-			cfg.RequestTimeout,
+            requestTimeout,
 		), modelID, nil
 
 	case "azure", "azure-openai":
@@ -126,12 +138,17 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
+		// For Ollama models, default to higher timeout if none specified
+		requestTimeout := cfg.RequestTimeout
+		if protocol == "ollama" && requestTimeout <= 0 {
+			requestTimeout = 300 // Ollama models often need more time, default to 300 seconds
+		}
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey,
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
-			cfg.RequestTimeout,
+            requestTimeout,
 		), modelID, nil
 
 	case "anthropic":
@@ -151,12 +168,17 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
+		// For Ollama models, default to higher timeout if none specified
+		requestTimeout := cfg.RequestTimeout
+		if protocol == "ollama" && requestTimeout <= 0 {
+			requestTimeout = 300 // Ollama models often need more time, default to 300 seconds
+		}
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey,
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
-			cfg.RequestTimeout,
+            requestTimeout,
 		), modelID, nil
 
 	case "anthropic-messages":
