@@ -12,6 +12,39 @@ import (
 	"github.com/sipeed/picoclaw/pkg/cron"
 )
 
+type stubJobExecutor struct {
+	response string
+	err      error
+	calls    []struct {
+		content    string
+		sessionKey string
+		channel    string
+		chatID     string
+	}
+}
+
+func (s *stubJobExecutor) ProcessDirectWithChannel(
+	_ context.Context,
+	content,
+	sessionKey,
+	channel,
+	chatID string,
+) (string, error) {
+	s.calls = append(s.calls, struct {
+		content    string
+		sessionKey string
+		channel    string
+		chatID     string
+	}{
+		content:    content,
+		sessionKey: sessionKey,
+		channel:    channel,
+		chatID:     chatID,
+	})
+
+	return s.response, s.err
+}
+
 func newTestCronToolWithConfig(t *testing.T, cfg *config.Config) *CronTool {
 	t.Helper()
 	storePath := filepath.Join(t.TempDir(), "cron.json")
@@ -235,5 +268,61 @@ func TestCronTool_ExecuteJobPublishesErrorWhenExecDisabled(t *testing.T) {
 	}
 	if !strings.Contains(msg.Content, "command execution is disabled") {
 		t.Fatalf("expected exec disabled message, got: %s", msg.Content)
+	}
+}
+
+func TestCronTool_ExecuteJobPublishesAgentReplyWhenDeliverFalse(t *testing.T) {
+	tool := newTestCronTool(t)
+	executor := &stubJobExecutor{response: "remember to stretch"}
+	tool.executor = executor
+
+	job := &cron.CronJob{ID: "job-123"}
+	job.Payload.Channel = "discord"
+	job.Payload.To = "chat-42"
+	job.Payload.Message = "stretch reminder"
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+	if len(executor.calls) != 1 {
+		t.Fatalf("executor calls = %d, want 1", len(executor.calls))
+	}
+	if executor.calls[0].sessionKey != "cron-job-123" {
+		t.Fatalf("sessionKey = %q, want %q", executor.calls[0].sessionKey, "cron-job-123")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	msg, ok := tool.msgBus.SubscribeOutbound(ctx)
+	if !ok {
+		t.Fatal("expected outbound message")
+	}
+	if msg.Channel != "discord" || msg.ChatID != "chat-42" {
+		t.Fatalf("message route = %s/%s, want discord/chat-42", msg.Channel, msg.ChatID)
+	}
+	if msg.Content != "remember to stretch" {
+		t.Fatalf("message content = %q, want %q", msg.Content, "remember to stretch")
+	}
+}
+
+func TestCronTool_ExecuteJobSkipsBlankAgentReplyWhenDeliverFalse(t *testing.T) {
+	tool := newTestCronTool(t)
+	tool.executor = &stubJobExecutor{response: "   \n\t"}
+
+	job := &cron.CronJob{ID: "job-blank"}
+	job.Payload.Channel = "discord"
+	job.Payload.To = "chat-blank"
+	job.Payload.Message = "stretch reminder"
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	if _, ok := tool.msgBus.SubscribeOutbound(ctx); ok {
+		t.Fatal("expected no outbound message for blank agent reply")
 	}
 }
