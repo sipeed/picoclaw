@@ -22,6 +22,7 @@ const (
 	providerTypeClaudeCLI
 	providerTypeCodexCLI
 	providerTypeGitHubCopilot
+	providerTypePicoLM
 )
 
 type providerSelection struct {
@@ -239,6 +240,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			}
 			sel.connectMode = cfg.Providers.GitHubCopilot.ConnectMode
 			return sel, nil
+		case "picolm":
+			// Local picolm provider - no API key required
+			workspace := cfg.WorkspacePath()
+			if workspace == "" {
+				workspace = "."
+			}
+			sel.providerType = providerTypePicoLM
+			sel.workspace = workspace
+			return sel, nil
 		}
 	}
 
@@ -372,6 +382,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.apiKey = cfg.Providers.VLLM.APIKey
 			sel.apiBase = cfg.Providers.VLLM.APIBase
 			sel.proxy = cfg.Providers.VLLM.Proxy
+		case strings.Contains(lowerModel, "picolm") || strings.HasPrefix(model, "picolm/"):
+			// Local picolm provider - no API key required
+			workspace := cfg.WorkspacePath()
+			if workspace == "" {
+				workspace = "."
+			}
+			sel.providerType = providerTypePicoLM
+			sel.workspace = workspace
+			return sel, nil
 		default:
 			if cfg.Providers.OpenRouter.APIKey != "" {
 				sel.apiKey = cfg.Providers.OpenRouter.APIKey
