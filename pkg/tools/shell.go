@@ -176,11 +176,8 @@ func NewExecToolWithConfig(
 		customAllowPatterns: customAllowPatterns,
 		allowedPathPatterns: allowedPathPatterns,
 		restrictToWorkspace: restrict,
-<<<<<<< HEAD
 		allowRemote:         allowRemote,
-=======
 		cachedEnv:           cachedEnv,
->>>>>>> 4b11ef32fe1c501baafc615da77c63b952339684
 	}, nil
 }
 
