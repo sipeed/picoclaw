@@ -203,9 +203,15 @@ docker compose -f docker/docker-compose.yml --profile gateway up
 # 3. Set your API keys
 vim docker/data/config.json   # Set provider API keys, bot tokens, etc.
 
+# Optional: add custom skills for this compose setup
+mkdir -p docker/data/workspace/skills/my-skill
+# put your SKILL.md at docker/data/workspace/skills/my-skill/SKILL.md
+
 # 4. Start
 docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
+
+In this compose setup, PicoClaw reads the workspace from `docker/data/workspace` on the host, so local skills must live under `docker/data/workspace/skills`. The repo checkout's `workspace/skills` directory is not mounted into the container.
 
 > [!TIP]
 > **Docker Users**: By default, the Gateway listens on `127.0.0.1` which is not accessible from the host. If you need to access the health endpoints or expose ports, set `PICOCLAW_GATEWAY_HOST=0.0.0.0` in your environment or update `config.json`.
