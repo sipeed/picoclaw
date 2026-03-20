@@ -405,7 +405,12 @@ func TestPlanCommand_ShowNoPlan(t *testing.T) {
 
 	defer cleanup()
 
-	response, handled := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan"}, al.registry.GetDefaultAgent(), "")
+	response, handled := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !handled {
 		t.Fatal("expected /plan to be handled")
@@ -548,7 +553,12 @@ func TestPlanCommand_StartNewPlan(t *testing.T) {
 
 	defer cleanup()
 
-	_, handled := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Set up monitoring"}, al.registry.GetDefaultAgent(), "")
+	_, handled := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan Set up monitoring"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if handled {
 		t.Fatal("expected /plan <task> NOT to be handled (should fall through to LLM)")
@@ -588,7 +598,12 @@ func TestPlanCommand_StartBlockedByExisting(t *testing.T) {
 
 	al.expandPlanCommand(bus.InboundMessage{Content: "/plan First task"})
 
-	response, handled := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Second task"}, al.registry.GetDefaultAgent(), "")
+	response, handled := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan Second task"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !handled {
 		t.Fatal("expected second /plan to be handled (blocked)")
@@ -606,7 +621,12 @@ func TestPlanCommand_Clear(t *testing.T) {
 
 	al.expandPlanCommand(bus.InboundMessage{Content: "/plan Test task"})
 
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan clear"}, al.registry.GetDefaultAgent(), "")
+	response, _ := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan clear"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !strings.Contains(response, "Plan cleared") {
 		t.Errorf("expected 'Plan cleared', got %q", response)
@@ -624,7 +644,12 @@ func TestPlanCommand_ClearNoPlan(t *testing.T) {
 
 	defer cleanup()
 
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan clear"}, al.registry.GetDefaultAgent(), "")
+	response, _ := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan clear"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !strings.Contains(response, "No active plan") {
 		t.Errorf("expected 'No active plan', got %q", response)
@@ -642,7 +667,12 @@ func TestPlanCommand_Start(t *testing.T) {
 
 	_ = agent.ContextBuilder.WriteMemory(plan)
 
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"}, al.registry.GetDefaultAgent(), "")
+	response, _ := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan start"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !strings.Contains(response, "approved") {
 		t.Errorf("expected 'approved', got %q", response)
@@ -668,7 +698,12 @@ func TestPlanCommand_StartFromReview(t *testing.T) {
 
 	_ = agent.ContextBuilder.WriteMemory(plan)
 
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"}, al.registry.GetDefaultAgent(), "")
+	response, _ := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan start"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !strings.Contains(response, "approved") {
 		t.Errorf("expected 'approved', got %q", response)
@@ -690,7 +725,12 @@ func TestPlanCommand_StartNoPhases(t *testing.T) {
 
 	al.expandPlanCommand(bus.InboundMessage{Content: "/plan Test task"})
 
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"}, al.registry.GetDefaultAgent(), "")
+	response, _ := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan start"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !strings.Contains(response, "no phases") {
 		t.Errorf("expected 'no phases' error, got %q", response)
@@ -718,11 +758,21 @@ func TestPlanCommand_StartAlreadyExecuting(t *testing.T) {
 
 	_ = agent.ContextBuilder.WriteMemory(plan)
 
-	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"}, al.registry.GetDefaultAgent(), "")
+	al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan start"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	al.planStartPending = false
 
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"}, al.registry.GetDefaultAgent(), "")
+	response, _ := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan start"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !strings.Contains(response, "already executing") {
 		t.Errorf("expected 'already executing', got %q", response)
@@ -768,7 +818,12 @@ Test context
 
 	agent.ContextBuilder.WriteMemory(plan)
 
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan done 1"}, al.registry.GetDefaultAgent(), "")
+	response, _ := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan done 1"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !strings.Contains(response, "Marked step 1") {
 		t.Errorf("expected confirmation, got %q", response)
@@ -782,7 +837,12 @@ func TestPlanCommand_DoneInvalidStep(t *testing.T) {
 
 	al.expandPlanCommand(bus.InboundMessage{Content: "/plan Test task"})
 
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan done abc"}, al.registry.GetDefaultAgent(), "")
+	response, _ := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan done abc"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !strings.Contains(response, "positive integer") {
 		t.Errorf("expected step validation error, got %q", response)
@@ -822,7 +882,12 @@ Test context
 
 	agent.ContextBuilder.WriteMemory(plan)
 
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan add New step here"}, al.registry.GetDefaultAgent(), "")
+	response, _ := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan add New step here"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !strings.Contains(response, "Added step") {
 		t.Errorf("expected 'Added step', got %q", response)
@@ -874,7 +939,12 @@ Test
 
 	agent.ContextBuilder.WriteMemory(plan)
 
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan next"}, al.registry.GetDefaultAgent(), "")
+	response, _ := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan next"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !strings.Contains(response, "phase 2") {
 		t.Errorf("expected 'phase 2', got %q", response)
@@ -920,7 +990,12 @@ Production server
 
 	agent.ContextBuilder.WriteMemory(plan)
 
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan"}, al.registry.GetDefaultAgent(), "")
+	response, _ := al.handleCommand(
+		context.Background(),
+		bus.InboundMessage{Content: "/plan"},
+		al.registry.GetDefaultAgent(),
+		"",
+	)
 
 	if !strings.Contains(response, "Deploy app") {
 		t.Errorf("expected task name in display, got %q", response)
