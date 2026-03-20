@@ -27,6 +27,7 @@ interface AddForm {
   apiBase: string
   apiKey: string
   proxy: string
+  stream: boolean
   authMethod: string
   connectMode: string
   workspace: string
@@ -42,6 +43,7 @@ const EMPTY_ADD_FORM: AddForm = {
   apiBase: "",
   apiKey: "",
   proxy: "",
+  stream: false,
   authMethod: "",
   connectMode: "",
   workspace: "",
@@ -120,6 +122,7 @@ export function AddModelSheet({
         api_base: form.apiBase.trim() || undefined,
         api_key: form.apiKey.trim() || undefined,
         proxy: form.proxy.trim() || undefined,
+        stream: form.stream || undefined,
         auth_method: form.authMethod.trim() || undefined,
         connect_mode: form.connectMode.trim() || undefined,
         workspace: form.workspace.trim() || undefined,
@@ -224,6 +227,15 @@ export function AddModelSheet({
                   placeholder="http://127.0.0.1:7890"
                 />
               </Field>
+
+              <SwitchCardField
+                label={t("models.field.stream")}
+                hint={t("models.field.streamHint")}
+                checked={form.stream}
+                onCheckedChange={(checked) =>
+                  setForm((f) => ({ ...f, stream: checked }))
+                }
+              />
 
               <Field
                 label={t("models.field.authMethod")}

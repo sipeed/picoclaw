@@ -636,6 +636,7 @@ type ModelConfig struct {
 	APIKey    string   `json:"api_key"`             // API authentication key (single key)
 	APIKeys   []string `json:"api_keys,omitempty"`  // API authentication keys (multiple keys for failover)
 	Proxy     string   `json:"proxy,omitempty"`     // HTTP proxy URL
+	Stream    bool     `json:"stream,omitempty"`    // Force Chat Completions SSE streaming
 	Fallbacks []string `json:"fallbacks,omitempty"` // Fallback model names for failover
 
 	// Special providers (CLI-based, OAuth, etc.)

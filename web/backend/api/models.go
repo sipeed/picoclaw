@@ -29,6 +29,7 @@ type modelResponse struct {
 	APIBase    string `json:"api_base,omitempty"`
 	APIKey     string `json:"api_key"`
 	Proxy      string `json:"proxy,omitempty"`
+	Stream     bool   `json:"stream,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"`
 	// Advanced fields
 	ConnectMode    string `json:"connect_mode,omitempty"`
@@ -74,6 +75,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			APIBase:        m.APIBase,
 			APIKey:         maskAPIKey(m.APIKey),
 			Proxy:          m.Proxy,
+			Stream:         m.Stream,
 			AuthMethod:     m.AuthMethod,
 			ConnectMode:    m.ConnectMode,
 			Workspace:      m.Workspace,

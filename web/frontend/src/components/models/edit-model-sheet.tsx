@@ -25,6 +25,7 @@ interface EditForm {
   apiKey: string
   apiBase: string
   proxy: string
+  stream: boolean
   authMethod: string
   connectMode: string
   workspace: string
@@ -52,6 +53,7 @@ export function EditModelSheet({
     apiKey: "",
     apiBase: "",
     proxy: "",
+    stream: false,
     authMethod: "",
     connectMode: "",
     workspace: "",
@@ -70,6 +72,7 @@ export function EditModelSheet({
         apiKey: "",
         apiBase: model.api_base ?? "",
         proxy: model.proxy ?? "",
+        stream: model.stream ?? false,
         authMethod: model.auth_method ?? "",
         connectMode: model.connect_mode ?? "",
         workspace: model.workspace ?? "",
@@ -100,6 +103,7 @@ export function EditModelSheet({
         api_base: form.apiBase || undefined,
         api_key: form.apiKey || undefined,
         proxy: form.proxy || undefined,
+        stream: form.stream || undefined,
         auth_method: form.authMethod || undefined,
         connect_mode: form.connectMode || undefined,
         workspace: form.workspace || undefined,
@@ -192,6 +196,15 @@ export function EditModelSheet({
                   placeholder="http://127.0.0.1:7890"
                 />
               </Field>
+
+              <SwitchCardField
+                label={t("models.field.stream")}
+                hint={t("models.field.streamHint")}
+                checked={form.stream}
+                onCheckedChange={(checked) =>
+                  setForm((f) => ({ ...f, stream: checked }))
+                }
+              />
 
               <Field
                 label={t("models.field.authMethod")}

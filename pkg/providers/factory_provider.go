@@ -93,6 +93,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			cfg.Stream,
 		), modelID, nil
 
 	case "azure", "azure-openai":
@@ -132,6 +133,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			cfg.Stream,
 		), modelID, nil
 
 	case "anthropic":
@@ -157,6 +159,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			cfg.Stream,
 		), modelID, nil
 
 	case "anthropic-messages":
