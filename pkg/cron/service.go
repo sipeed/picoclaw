@@ -59,13 +59,14 @@ type CronStore struct {
 type JobHandler func(job *CronJob) (string, error)
 
 type CronService struct {
-	storePath string
-	store     *CronStore
-	onJob     JobHandler
-	mu        sync.RWMutex
-	running   bool
-	stopChan  chan struct{}
-	gronx     *gronx.Gronx
+	storePath   string
+	store       *CronStore
+	onJob       JobHandler
+	mu          sync.RWMutex
+	running     bool
+	stopChan    chan struct{}
+	gronx       *gronx.Gronx
+	fileModTime time.Time // mtime of store file at last load or save
 }
 
 func NewCronService(storePath string, onJob JobHandler) *CronService {
@@ -140,6 +141,13 @@ func (cs *CronService) checkJobs() {
 		return
 	}
 
+	// Reload from disk if the file was modified externally (e.g. by the CLI).
+	if info, err := os.Stat(cs.storePath); err == nil && info.ModTime().After(cs.fileModTime) {
+		if err := cs.loadStore(); err != nil {
+			log.Printf("[cron] failed to reload store: %v", err)
+		}
+	}
+
 	now := time.Now().UnixMilli()
 	var dueJobIDs []string
 
@@ -151,19 +159,23 @@ func (cs *CronService) checkJobs() {
 		}
 	}
 
-	// Reset next run for due jobs before unlocking to avoid duplicate execution.
-	dueMap := make(map[string]bool, len(dueJobIDs))
-	for _, jobID := range dueJobIDs {
-		dueMap[jobID] = true
-	}
-	for i := range cs.store.Jobs {
-		if dueMap[cs.store.Jobs[i].ID] {
-			cs.store.Jobs[i].State.NextRunAtMS = nil
+	// Only persist state when there are due jobs to avoid clobbering
+	// concurrent writes from the CLI or other processes.
+	if len(dueJobIDs) > 0 {
+		// Reset next run before unlocking to prevent duplicate execution.
+		dueMap := make(map[string]bool, len(dueJobIDs))
+		for _, jobID := range dueJobIDs {
+			dueMap[jobID] = true
 		}
-	}
+		for i := range cs.store.Jobs {
+			if dueMap[cs.store.Jobs[i].ID] {
+				cs.store.Jobs[i].State.NextRunAtMS = nil
+			}
+		}
 
-	if err := cs.saveStoreUnsafe(); err != nil {
-		log.Printf("[cron] failed to save store: %v", err)
+		if err := cs.saveStoreUnsafe(); err != nil {
+			log.Printf("[cron] failed to save store: %v", err)
+		}
 	}
 
 	cs.mu.Unlock()
@@ -347,7 +359,13 @@ func (cs *CronService) loadStore() error {
 		return err
 	}
 
-	return json.Unmarshal(data, cs.store)
+	if err := json.Unmarshal(data, cs.store); err != nil {
+		return err
+	}
+	if info, err := os.Stat(cs.storePath); err == nil {
+		cs.fileModTime = info.ModTime()
+	}
+	return nil
 }
 
 func (cs *CronService) saveStoreUnsafe() error {
@@ -357,7 +375,13 @@ func (cs *CronService) saveStoreUnsafe() error {
 	}
 
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
-	return fileutil.WriteFileAtomic(cs.storePath, data, 0o600)
+	if err := fileutil.WriteFileAtomic(cs.storePath, data, 0o600); err != nil {
+		return err
+	}
+	if info, err := os.Stat(cs.storePath); err == nil {
+		cs.fileModTime = info.ModTime()
+	}
+	return nil
 }
 
 func (cs *CronService) AddJob(
