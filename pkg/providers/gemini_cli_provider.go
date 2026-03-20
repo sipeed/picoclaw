@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // GeminiCliProvider implements LLMProvider using the gemini CLI as a subprocess.
 type GeminiCliProvider struct {
 	command   string
 	workspace string
+	timeout   time.Duration
 }
 
 // NewGeminiCliProvider creates a new Gemini CLI provider.
@@ -23,10 +25,25 @@ func NewGeminiCliProvider(workspace string) *GeminiCliProvider {
 	}
 }
 
+// NewGeminiCliProviderWithTimeout creates a new Gemini CLI provider with a request timeout.
+func NewGeminiCliProviderWithTimeout(workspace string, timeout time.Duration) *GeminiCliProvider {
+	return &GeminiCliProvider{
+		command:   "gemini",
+		workspace: workspace,
+		timeout:   timeout,
+	}
+}
+
 // Chat implements LLMProvider.Chat by executing the gemini CLI.
 func (p *GeminiCliProvider) Chat(
 	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
 ) (*LLMResponse, error) {
+	if p.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.timeout)
+		defer cancel()
+	}
+
 	prompt := p.buildPrompt(messages, tools)
 
 	// --prompt "" triggers non-interactive stdin mode; the empty string is appended to stdin input.
@@ -46,6 +63,9 @@ func (p *GeminiCliProvider) Chat(
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("gemini cli timed out after %s: %w", p.timeout, context.DeadlineExceeded)
+		}
 		stderrStr := strings.TrimSpace(stderr.String())
 		stdoutStr := strings.TrimSpace(stdout.String())
 		switch {

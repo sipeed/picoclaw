@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // ClaudeCliProvider implements LLMProvider using the claude CLI as a subprocess.
 type ClaudeCliProvider struct {
 	command   string
 	workspace string
+	timeout   time.Duration
 }
 
 // NewClaudeCliProvider creates a new Claude CLI provider.
@@ -23,10 +25,25 @@ func NewClaudeCliProvider(workspace string) *ClaudeCliProvider {
 	}
 }
 
+// NewClaudeCliProviderWithTimeout creates a new Claude CLI provider with a request timeout.
+func NewClaudeCliProviderWithTimeout(workspace string, timeout time.Duration) *ClaudeCliProvider {
+	return &ClaudeCliProvider{
+		command:   "claude",
+		workspace: workspace,
+		timeout:   timeout,
+	}
+}
+
 // Chat implements LLMProvider.Chat by executing the claude CLI.
 func (p *ClaudeCliProvider) Chat(
 	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
 ) (*LLMResponse, error) {
+	if p.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.timeout)
+		defer cancel()
+	}
+
 	prompt := p.buildStdinPrompt(messages, tools)
 
 	args := []string{"-p", "--output-format", "json", "--dangerously-skip-permissions", "--no-chrome"}
@@ -46,6 +63,9 @@ func (p *ClaudeCliProvider) Chat(
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("claude cli timed out after %s: %w", p.timeout, context.DeadlineExceeded)
+		}
 		stderrStr := strings.TrimSpace(stderr.String())
 		stdoutStr := strings.TrimSpace(stdout.String())
 		switch {
