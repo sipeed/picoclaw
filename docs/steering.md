@@ -21,6 +21,18 @@ Agent Loop      ▼
   └─ new LLM turn with steering message
 ```
 
+## Scoped queues
+
+Steering is now isolated per resolved session scope, not stored in a single
+global queue.
+
+- The active turn writes and reads from its own scope key (usually the routed session key such as `agent:<agent_id>:...`)
+- `Steer()` still works outside an active turn through a legacy fallback queue
+- `Continue()` first dequeues messages for the requested session scope, then falls back to the legacy queue for backwards compatibility
+
+This prevents a message arriving from another chat, DM peer, or routed agent
+session from being injected into the wrong conversation.
+
 ## Configuration
 
 In `config.json`, under `agents.defaults`:
@@ -86,12 +98,18 @@ if response == "" {
 
 `Continue` internally uses `SkipInitialSteeringPoll: true` to avoid double-dequeuing the same messages (since it already extracted them and passes them directly as input).
 
+`Continue` also resolves the target agent from the provided session key, so
+agent-scoped sessions continue on the correct agent instead of always using
+the default one.
+
 ## Polling points in the loop
 
-Steering is checked at **two points** in the agent cycle:
+Steering is checked at the following points in the agent cycle:
 
 1. **At loop start** — before the first LLM call, to catch messages enqueued during setup
 2. **After every tool completes** — including the first and the last. If steering is found and there are remaining tools, they are all skipped immediately
+3. **After a direct LLM response** — if a new steering message arrived while the model was generating a non-tool response, the loop continues instead of returning a stale answer
+4. **Right before the turn is finalized** — if steering arrived at the very end of the turn, the agent immediately starts a continuation turn instead of leaving the message orphaned in the queue
 
 ## Why remaining tools are skipped
 
@@ -156,7 +174,21 @@ When the agent loop (`Run()`) starts processing a message, it spawns a backgroun
 
 - Users on any channel (Telegram, Discord, etc.) don't need to do anything special — their messages are automatically captured as steering when the agent is busy
 - Audio messages are transcribed before being steered, so the agent receives text. If transcription fails, the original (non-transcribed) message is steered as-is
+- Only messages that resolve to the **same steering scope** as the active turn are redirected. Messages for other chats/sessions are requeued onto the inbound bus so they can be processed normally
+- `system` inbound messages are not treated as steering input
 - When `processMessage` finishes, the drain goroutine is canceled and normal message consumption resumes
+
+## Steering with media
+
+Steering messages can include `Media` refs, just like normal inbound user
+messages.
+
+- The original `media://` refs are preserved in session history via `AddFullMessage`
+- Before the next provider call, steering messages go through the normal media resolution pipeline
+- Image refs are converted to data URLs for multimodal providers; non-image refs are resolved the same way as standard inbound media
+
+This applies both to in-turn steering and to idle-session continuation through
+`Continue()`.
 
 ## Notes
 
@@ -164,3 +196,4 @@ When the agent loop (`Run()`) starts processing a message, it spawns a backgroun
 - With `one-at-a-time` mode, if multiple messages are enqueued rapidly, they will be processed one per iteration. This gives the model the opportunity to react to each message individually.
 - With `all` mode, all pending messages are combined into a single injection. Useful when you want the agent to receive all the context at once.
 - The steering queue has a maximum capacity of 10 messages (`MaxQueueSize`). `Steer()` returns an error when the queue is full. In the bus drain path, the error is logged as a warning and the message is effectively dropped.
+- Manual `Steer()` calls made outside an active turn still go to the legacy fallback queue, so older integrations keep working.

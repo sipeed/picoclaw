@@ -64,11 +64,12 @@ type processOptions struct {
 	ChatID                  string   // Target chat ID for tool execution
 	UserMessage             string   // User message content (may include prefix)
 	Media                   []string // media:// refs from inbound message
-	DefaultResponse         string   // Response when LLM returns empty
-	EnableSummary           bool     // Whether to trigger summarization
-	SendResponse            bool     // Whether to send response via bus
-	NoHistory               bool     // If true, don't load session history (for heartbeat)
-	SkipInitialSteeringPoll bool     // If true, skip the steering poll at loop start (used by Continue)
+	InitialSteeringMessages []providers.Message
+	DefaultResponse         string // Response when LLM returns empty
+	EnableSummary           bool   // Whether to trigger summarization
+	SendResponse            bool   // Whether to send response via bus
+	NoHistory               bool   // If true, don't load session history (for heartbeat)
+	SkipInitialSteeringPoll bool   // If true, skip the steering poll at loop start (used by Continue)
 }
 
 type continuationTarget struct {
@@ -271,11 +272,14 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			}
 
 			// Start a goroutine that drains the bus while processMessage is
-			// running. Any inbound messages that arrive during processing are
-			// redirected into the steering queue so the agent loop can pick
-			// them up between tool calls.
-			drainCtx, drainCancel := context.WithCancel(ctx)
-			go al.drainBusToSteering(drainCtx)
+			// running. Only messages that resolve to the active turn scope are
+			// redirected into steering; other inbound messages are requeued.
+			drainCancel := func() {}
+			if activeScope, activeAgentID, ok := al.resolveSteeringTarget(msg); ok {
+				drainCtx, cancel := context.WithCancel(ctx)
+				drainCancel = cancel
+				go al.drainBusToSteering(drainCtx, activeScope, activeAgentID)
+			}
 
 			// Process message
 			func() {
@@ -292,16 +296,21 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				// 	}
 				// }()
 
-				defer drainCancel()
+				drainCanceled := false
+				cancelDrain := func() {
+					if drainCanceled {
+						return
+					}
+					drainCancel()
+					drainCanceled = true
+				}
+				defer cancelDrain()
 
 				response, err := al.processMessage(ctx, msg)
 				if err != nil {
 					response = fmt.Sprintf("Error processing message: %v", err)
 				}
-
-				if response != "" {
-					al.publishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, response)
-				}
+				finalResponse := response
 
 				target, targetErr := al.buildContinuationTarget(msg)
 				if targetErr != nil {
@@ -313,16 +322,20 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					return
 				}
 				if target == nil {
+					cancelDrain()
+					if finalResponse != "" {
+						al.publishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, finalResponse)
+					}
 					return
 				}
 
-				for al.pendingSteeringCount() > 0 {
+				for al.pendingSteeringCountForScope(target.SessionKey) > 0 {
 					logger.InfoCF("agent", "Continuing queued steering after turn end",
 						map[string]any{
 							"channel":     target.Channel,
 							"chat_id":     target.ChatID,
 							"session_key": target.SessionKey,
-							"queue_depth": al.pendingSteeringCount(),
+							"queue_depth": al.pendingSteeringCountForScope(target.SessionKey),
 						})
 
 					continued, continueErr := al.Continue(ctx, target.SessionKey, target.Channel, target.ChatID)
@@ -339,7 +352,39 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						return
 					}
 
-					al.publishResponseIfNeeded(ctx, target.Channel, target.ChatID, continued)
+					finalResponse = continued
+				}
+
+				cancelDrain()
+
+				for al.pendingSteeringCountForScope(target.SessionKey) > 0 {
+					logger.InfoCF("agent", "Draining steering queued during turn shutdown",
+						map[string]any{
+							"channel":     target.Channel,
+							"chat_id":     target.ChatID,
+							"session_key": target.SessionKey,
+							"queue_depth": al.pendingSteeringCountForScope(target.SessionKey),
+						})
+
+					continued, continueErr := al.Continue(ctx, target.SessionKey, target.Channel, target.ChatID)
+					if continueErr != nil {
+						logger.WarnCF("agent", "Failed to continue queued steering after shutdown drain",
+							map[string]any{
+								"channel": target.Channel,
+								"chat_id": target.ChatID,
+								"error":   continueErr.Error(),
+							})
+						return
+					}
+					if continued == "" {
+						break
+					}
+
+					finalResponse = continued
+				}
+
+				if finalResponse != "" {
+					al.publishResponseIfNeeded(ctx, target.Channel, target.ChatID, finalResponse)
 				}
 			}()
 		}
@@ -349,12 +394,24 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 }
 
 // drainBusToSteering continuously consumes inbound messages and redirects
-// them into the steering queue. It runs in a goroutine while processMessage
-// is active and stops when drainCtx is canceled (i.e., processMessage returns).
-func (al *AgentLoop) drainBusToSteering(ctx context.Context) {
+// messages from the active scope into the steering queue. Messages from other
+// scopes are requeued so they can be processed normally after the active turn.
+func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, activeAgentID string) {
 	for {
 		msg, ok := al.bus.ConsumeInbound(ctx)
 		if !ok {
+			return
+		}
+
+		msgScope, _, scopeOK := al.resolveSteeringTarget(msg)
+		if !scopeOK || msgScope != activeScope {
+			if err := al.requeueInboundMessage(msg); err != nil {
+				logger.WarnCF("agent", "Failed to requeue non-steering inbound message", map[string]any{
+					"error":     err.Error(),
+					"channel":   msg.Channel,
+					"sender_id": msg.SenderID,
+				})
+			}
 			return
 		}
 
@@ -366,11 +423,13 @@ func (al *AgentLoop) drainBusToSteering(ctx context.Context) {
 				"channel":     msg.Channel,
 				"sender_id":   msg.SenderID,
 				"content_len": len(msg.Content),
+				"scope":       activeScope,
 			})
 
-		if err := al.Steer(providers.Message{
+		if err := al.enqueueSteeringMessage(activeScope, activeAgentID, providers.Message{
 			Role:    "user",
 			Content: msg.Content,
+			Media:   append([]string(nil), msg.Media...),
 		}); err != nil {
 			logger.WarnCF("agent", "Failed to steer message, will be lost",
 				map[string]any{
@@ -420,13 +479,6 @@ func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, channel, chatI
 			"chat_id":     chatID,
 			"content_len": len(response),
 		})
-}
-
-func (al *AgentLoop) pendingSteeringCount() int {
-	if al.steering == nil {
-		return 0
-	}
-	return al.steering.len()
 }
 
 func (al *AgentLoop) buildContinuationTarget(msg bus.InboundMessage) (*continuationTarget, error) {
@@ -1085,6 +1137,25 @@ func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
 	return route.SessionKey
 }
 
+func (al *AgentLoop) resolveSteeringTarget(msg bus.InboundMessage) (string, string, bool) {
+	if msg.Channel == "system" {
+		return "", "", false
+	}
+
+	route, agent, err := al.resolveMessageRoute(msg)
+	if err != nil || agent == nil {
+		return "", "", false
+	}
+
+	return resolveScopeKey(route, msg.SessionKey), agent.ID, true
+}
+
+func (al *AgentLoop) requeueInboundMessage(msg bus.InboundMessage) error {
+	pubCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	return al.bus.PublishInbound(pubCtx, msg)
+}
+
 func (al *AgentLoop) processSystemMessage(
 	ctx context.Context,
 	msg bus.InboundMessage,
@@ -1346,16 +1417,25 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		}
 	}
 
-	if !ts.opts.NoHistory {
-		rootMsg := providers.Message{Role: "user", Content: ts.userMessage}
-		ts.agent.Sessions.AddMessage(ts.sessionKey, rootMsg.Role, rootMsg.Content)
+	if !ts.opts.NoHistory && (strings.TrimSpace(ts.userMessage) != "" || len(ts.media) > 0) {
+		rootMsg := providers.Message{
+			Role:    "user",
+			Content: ts.userMessage,
+			Media:   append([]string(nil), ts.media...),
+		}
+		if len(rootMsg.Media) > 0 {
+			ts.agent.Sessions.AddFullMessage(ts.sessionKey, rootMsg)
+		} else {
+			ts.agent.Sessions.AddMessage(ts.sessionKey, rootMsg.Role, rootMsg.Content)
+		}
 		ts.recordPersistedMessage(rootMsg)
 	}
 
 	activeCandidates, activeModel := al.selectCandidates(ts.agent, ts.userMessage, messages)
-	var pendingMessages []providers.Message
+	pendingMessages := append([]providers.Message(nil), ts.opts.InitialSteeringMessages...)
 	var finalContent string
 
+turnLoop:
 	for ts.currentIteration() < ts.agent.MaxIterations || len(pendingMessages) > 0 || func() bool {
 		graceful, _ := ts.gracefulInterruptRequested()
 		return graceful
@@ -1369,19 +1449,24 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.setIteration(iteration)
 		ts.setPhase(TurnPhaseRunning)
 
-		if iteration > 1 || !ts.opts.SkipInitialSteeringPoll {
-			if steerMsgs := al.dequeueSteeringMessages(); len(steerMsgs) > 0 {
+		if iteration > 1 {
+			if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+				pendingMessages = append(pendingMessages, steerMsgs...)
+			}
+		} else if !ts.opts.SkipInitialSteeringPoll {
+			if steerMsgs := al.dequeueSteeringMessagesForScopeWithFallback(ts.sessionKey); len(steerMsgs) > 0 {
 				pendingMessages = append(pendingMessages, steerMsgs...)
 			}
 		}
 
 		if len(pendingMessages) > 0 {
+			resolvedPending := resolveMediaRefs(pendingMessages, al.mediaStore, maxMediaSize)
 			totalContentLen := 0
-			for _, pm := range pendingMessages {
-				messages = append(messages, pm)
+			for i, pm := range pendingMessages {
+				messages = append(messages, resolvedPending[i])
 				totalContentLen += len(pm.Content)
 				if !ts.opts.NoHistory {
-					ts.agent.Sessions.AddMessage(ts.sessionKey, pm.Role, pm.Content)
+					ts.agent.Sessions.AddFullMessage(ts.sessionKey, pm)
 					ts.recordPersistedMessage(pm)
 				}
 				logger.InfoCF("agent", "Injected steering message into context",
@@ -1389,6 +1474,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 						"agent_id":    ts.agent.ID,
 						"iteration":   iteration,
 						"content_len": len(pm.Content),
+						"media_count": len(pm.Media),
 					})
 			}
 			al.emitEvent(
@@ -1660,10 +1746,21 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 			})
 
 		if len(response.ToolCalls) == 0 || gracefulTerminal {
-			finalContent = response.Content
-			if finalContent == "" && response.ReasoningContent != "" {
-				finalContent = response.ReasoningContent
+			responseContent := response.Content
+			if responseContent == "" && response.ReasoningContent != "" {
+				responseContent = response.ReasoningContent
 			}
+			if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+				logger.InfoCF("agent", "Steering arrived after direct LLM response; continuing turn",
+					map[string]any{
+						"agent_id":       ts.agent.ID,
+						"iteration":      iteration,
+						"steering_count": len(steerMsgs),
+					})
+				pendingMessages = append(pendingMessages, steerMsgs...)
+				continue
+			}
+			finalContent = responseContent
 			logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
 				map[string]any{
 					"agent_id":      ts.agent.ID,
@@ -1870,7 +1967,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 				ts.recordPersistedMessage(toolResultMsg)
 			}
 
-			if steerMsgs := al.dequeueSteeringMessages(); len(steerMsgs) > 0 {
+			if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
 				pendingMessages = append(pendingMessages, steerMsgs...)
 			}
 
@@ -1924,6 +2021,18 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		logger.DebugCF("agent", "TTL tick after tool execution", map[string]any{
 			"agent_id": ts.agent.ID, "iteration": iteration,
 		})
+	}
+
+	if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+		logger.InfoCF("agent", "Steering arrived after turn completion; continuing turn before finalizing",
+			map[string]any{
+				"agent_id":       ts.agent.ID,
+				"steering_count": len(steerMsgs),
+				"session_key":    ts.sessionKey,
+			})
+		pendingMessages = append(pendingMessages, steerMsgs...)
+		finalContent = ""
+		goto turnLoop
 	}
 
 	if ts.hardAbortRequested() {

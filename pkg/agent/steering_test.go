@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -337,6 +340,96 @@ func TestAgentLoop_Continue_WithMessages(t *testing.T) {
 	}
 }
 
+func TestDrainBusToSteering_RequeuesDifferentScopeMessage(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Session: config.SessionConfig{
+			DMScope: "per-peer",
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &mockProvider{})
+
+	activeMsg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "active turn",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+	activeScope, activeAgentID, ok := al.resolveSteeringTarget(activeMsg)
+	if !ok {
+		t.Fatal("expected active message to resolve to a steering scope")
+	}
+
+	otherMsg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user2",
+		ChatID:   "chat2",
+		Content:  "other session",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user2",
+		},
+	}
+	otherScope, _, ok := al.resolveSteeringTarget(otherMsg)
+	if !ok {
+		t.Fatal("expected other message to resolve to a steering scope")
+	}
+	if otherScope == activeScope {
+		t.Fatalf("expected different steering scopes, got same scope %q", activeScope)
+	}
+
+	if err := msgBus.PublishInbound(context.Background(), otherMsg); err != nil {
+		t.Fatalf("PublishInbound failed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		al.drainBusToSteering(ctx, activeScope, activeAgentID)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for drainBusToSteering to stop")
+	}
+
+	if msgs := al.dequeueSteeringMessagesForScope(activeScope); len(msgs) != 0 {
+		t.Fatalf("expected no steering messages for active scope, got %v", msgs)
+	}
+
+	requeued, ok := msgBus.ConsumeInbound(context.Background())
+	if !ok {
+		t.Fatal("expected message to be requeued on the inbound bus")
+	}
+	if requeued.Channel != otherMsg.Channel || requeued.ChatID != otherMsg.ChatID ||
+		requeued.SenderID != otherMsg.SenderID || requeued.Content != otherMsg.Content {
+		t.Fatalf("requeued message mismatch: got %+v want %+v", requeued, otherMsg)
+	}
+}
+
 // slowTool simulates a tool that takes some time to execute.
 type slowTool struct {
 	name     string
@@ -470,6 +563,52 @@ func (p *lateSteeringProvider) Chat(
 
 func (p *lateSteeringProvider) GetDefaultModel() string {
 	return "late-steering-mock"
+}
+
+type blockingDirectProvider struct {
+	mu           sync.Mutex
+	calls        int
+	firstStarted chan struct{}
+	releaseFirst chan struct{}
+	firstResp    string
+	finalResp    string
+}
+
+func (p *blockingDirectProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	p.mu.Lock()
+	p.calls++
+	call := p.calls
+	firstStarted := p.firstStarted
+	releaseFirst := p.releaseFirst
+	firstResp := p.firstResp
+	finalResp := p.finalResp
+	if call == 1 && p.firstStarted != nil {
+		close(p.firstStarted)
+		p.firstStarted = nil
+	}
+	p.mu.Unlock()
+
+	if call == 1 {
+		select {
+		case <-releaseFirst:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return &providers.LLMResponse{Content: firstResp}, nil
+	}
+
+	_ = firstStarted
+	return &providers.LLMResponse{Content: finalResp}, nil
+}
+
+func (p *blockingDirectProvider) GetDefaultModel() string {
+	return "blocking-direct-mock"
 }
 
 type interruptibleTool struct {
@@ -744,18 +883,16 @@ func TestAgentLoop_Run_AutoContinuesLateSteeringMessage(t *testing.T) {
 
 	out1, ok := msgBus.SubscribeOutbound(subCtx)
 	if !ok {
-		t.Fatal("expected first outbound response")
+		t.Fatal("expected outbound response")
 	}
-	if out1.Content != "first response" {
-		t.Fatalf("expected first response, got %q", out1.Content)
+	if out1.Content != "continued response" {
+		t.Fatalf("expected continued response, got %q", out1.Content)
 	}
 
-	out2, ok := msgBus.SubscribeOutbound(subCtx)
-	if !ok {
-		t.Fatal("expected continued outbound response")
-	}
-	if out2.Content != "continued response" {
-		t.Fatalf("expected continued response, got %q", out2.Content)
+	noExtraCtx, cancelNoExtra := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancelNoExtra()
+	if out2, ok := msgBus.SubscribeOutbound(noExtraCtx); ok {
+		t.Fatalf("expected stale direct response to be suppressed, got extra outbound %q", out2.Content)
 	}
 
 	cancelRun()
@@ -786,6 +923,191 @@ func TestAgentLoop_Run_AutoContinuesLateSteeringMessage(t *testing.T) {
 	}
 	if !foundLateMessage {
 		t.Fatal("expected queued late message to be processed in an automatic follow-up turn")
+	}
+}
+
+func TestAgentLoop_Steering_DirectResponseContinuesWithQueuedMessage(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	sessionKey := routing.BuildAgentMainSessionKey(routing.DefaultAgentID)
+	provider := &blockingDirectProvider{
+		firstStarted: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+		firstResp:    "stale direct response",
+		finalResp:    "fresh response after steering",
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	resultCh := make(chan struct {
+		resp string
+		err  error
+	}, 1)
+	go func() {
+		resp, err := al.ProcessDirectWithChannel(
+			context.Background(),
+			"initial request",
+			sessionKey,
+			"test",
+			"chat1",
+		)
+		resultCh <- struct {
+			resp string
+			err  error
+		}{resp: resp, err: err}
+	}()
+
+	select {
+	case <-provider.firstStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for first LLM call to start")
+	}
+
+	if err := al.Steer(providers.Message{Role: "user", Content: "follow-up instruction"}); err != nil {
+		t.Fatalf("Steer failed: %v", err)
+	}
+	close(provider.releaseFirst)
+
+	select {
+	case result := <-resultCh:
+		if result.err != nil {
+			t.Fatalf("unexpected error: %v", result.err)
+		}
+		if result.resp != "fresh response after steering" {
+			t.Fatalf("expected refreshed response, got %q", result.resp)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for ProcessDirectWithChannel")
+	}
+
+	provider.mu.Lock()
+	calls := provider.calls
+	provider.mu.Unlock()
+	if calls != 2 {
+		t.Fatalf("expected 2 provider calls, got %d", calls)
+	}
+
+	if msgs := al.dequeueSteeringMessagesForScope(sessionKey); len(msgs) != 0 {
+		t.Fatalf("expected steering queue to be empty after continuation, got %v", msgs)
+	}
+}
+
+func TestAgentLoop_Continue_PreservesSteeringMedia(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	store := media.NewFileMediaStore()
+	pngPath := filepath.Join(tmpDir, "steer.png")
+	pngHeader := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+		0x00, 0x00, 0x00, 0x0D,
+		0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
+		0x00, 0x00, 0x00,
+		0x90, 0x77, 0x53, 0xDE,
+	}
+	if err = os.WriteFile(pngPath, pngHeader, 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	ref, err := store.Store(pngPath, media.MediaMeta{Filename: "steer.png", ContentType: "image/png"}, "test")
+	if err != nil {
+		t.Fatalf("Store failed: %v", err)
+	}
+
+	var capturedMessages []providers.Message
+	var capMu sync.Mutex
+	provider := &capturingMockProvider{
+		response: "ack",
+		captureFn: func(msgs []providers.Message) {
+			capMu.Lock()
+			defer capMu.Unlock()
+			capturedMessages = append([]providers.Message(nil), msgs...)
+		},
+	}
+
+	sessionKey := routing.BuildAgentMainSessionKey(routing.DefaultAgentID)
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+	al.SetMediaStore(store)
+
+	if err = al.Steer(providers.Message{
+		Role:    "user",
+		Content: "describe this image",
+		Media:   []string{ref},
+	}); err != nil {
+		t.Fatalf("Steer failed: %v", err)
+	}
+
+	resp, err := al.Continue(context.Background(), sessionKey, "test", "chat1")
+	if err != nil {
+		t.Fatalf("Continue failed: %v", err)
+	}
+	if resp != "ack" {
+		t.Fatalf("expected ack, got %q", resp)
+	}
+
+	capMu.Lock()
+	msgs := append([]providers.Message(nil), capturedMessages...)
+	capMu.Unlock()
+
+	foundResolvedMedia := false
+	for _, msg := range msgs {
+		if msg.Role != "user" || msg.Content != "describe this image" || len(msg.Media) != 1 {
+			continue
+		}
+		if strings.HasPrefix(msg.Media[0], "data:image/png;base64,") {
+			foundResolvedMedia = true
+			break
+		}
+	}
+	if !foundResolvedMedia {
+		t.Fatal("expected continue path to inject steering media into the provider request")
+	}
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	foundOriginalRef := false
+	for _, msg := range history {
+		if msg.Role == "user" && len(msg.Media) == 1 && msg.Media[0] == ref {
+			foundOriginalRef = true
+			break
+		}
+	}
+	if !foundOriginalRef {
+		t.Fatal("expected original steering media ref to be preserved in session history")
 	}
 }
 
