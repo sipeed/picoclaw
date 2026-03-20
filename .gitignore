@@ -52,6 +52,9 @@ dist/
 # Windows Application Icon/Resource
 *.syso
 
+# Test telegram integration
+cmd/telegram/
+
 # Keep embedded backend dist directory placeholder in VCS
 !web/backend/dist/
 web/backend/dist/*

@@ -212,6 +212,132 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	if truncated, ok := resultMap["truncated"].(bool); !ok || !truncated {
 		t.Errorf("Expected 'truncated' to be true in result")
 	}
+
+	// Text should end with the truncation notice
+	if text, ok := resultMap["text"].(string); ok {
+		if !strings.HasSuffix(text, "[Content truncated due to size limit]") {
+			t.Errorf("Expected text to end with truncation notice, got: %q", text[max(0, len(text)-60):])
+		}
+	}
+}
+
+// TestWebTool_WebFetch_TruncationNotice verifies the truncation notice is appended
+// for all content formats (text/plain, text/html, markdown, application/json).
+func TestWebTool_WebFetch_TruncationNotice(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	const truncationNotice = "[Content truncated due to size limit]"
+	const maxChars = 100
+
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		format      string
+	}{
+		{
+			name:        "plain text",
+			contentType: "text/plain",
+			body:        strings.Repeat("a", 500),
+			format:      "plaintext",
+		},
+		{
+			name:        "html plaintext extractor",
+			contentType: "text/html",
+			body:        "<html><body>" + strings.Repeat("b", 500) + "</body></html>",
+			format:      "plaintext",
+		},
+		{
+			name:        "html markdown extractor",
+			contentType: "text/html",
+			body:        "<html><body>" + strings.Repeat("c", 500) + "</body></html>",
+			format:      "markdown",
+		},
+		{
+			name:        "json",
+			contentType: "application/json",
+			body:        `"` + strings.Repeat("d", 500) + `"`,
+			format:      "plaintext",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tt.contentType)
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			tool, err := NewWebFetchTool(maxChars, tt.format, testFetchLimit)
+			if err != nil {
+				t.Fatalf("NewWebFetchTool() error: %v", err)
+			}
+
+			result := tool.Execute(context.Background(), map[string]any{"url": server.URL})
+			if result.IsError {
+				t.Fatalf("unexpected error: %s", result.ForLLM)
+			}
+
+			var resultMap map[string]any
+			if err := json.Unmarshal([]byte(result.ForLLM), &resultMap); err != nil {
+				t.Fatalf("failed to unmarshal result JSON: %v", err)
+			}
+
+			text, ok := resultMap["text"].(string)
+			if !ok {
+				t.Fatal("missing 'text' field in result")
+			}
+
+			if !strings.HasSuffix(text, truncationNotice) {
+				t.Errorf("expected text to end with %q, got suffix: %q", truncationNotice, text[max(0, len(text)-60):])
+			}
+
+			if truncated, ok := resultMap["truncated"].(bool); !ok || !truncated {
+				t.Errorf("expected truncated=true in result")
+			}
+		})
+	}
+}
+
+// TestWebTool_WebFetch_NoTruncationNoticeWhenFitsInLimit verifies that the notice
+// is NOT appended when the content fits within the limit.
+func TestWebTool_WebFetch_NoTruncationNoticeWhenFitsInLimit(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	const truncationNotice = "[Content truncated due to size limit]"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("short content"))
+	}))
+	defer server.Close()
+
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("NewWebFetchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{"url": server.URL})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+
+	var resultMap map[string]any
+	if err := json.Unmarshal([]byte(result.ForLLM), &resultMap); err != nil {
+		t.Fatalf("failed to unmarshal result JSON: %v", err)
+	}
+
+	text, _ := resultMap["text"].(string)
+	if strings.Contains(text, truncationNotice) {
+		t.Errorf("expected no truncation notice for content within limit, got: %q", text)
+	}
+
+	if truncated, _ := resultMap["truncated"].(bool); truncated {
+		t.Errorf("expected truncated=false for content within limit")
+	}
 }
 
 func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
@@ -940,6 +1066,119 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 	// Should mention via Tavily
 	if !strings.Contains(result.ForUser, "via Tavily") {
 		t.Errorf("Expected 'via Tavily' in output, got: %s", result.ForUser)
+	}
+}
+
+// TestWebFetchTool_CloudflareChallenge_RetryWithHonestUA verifies that a 403 response
+// with cf-mitigated: challenge triggers a retry using the honest picoclaw User-Agent,
+// and that the retry response is returned when it succeeds.
+func TestWebFetchTool_CloudflareChallenge_RetryWithHonestUA(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	requestCount := 0
+	var receivedUAs []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		receivedUAs = append(receivedUAs, r.Header.Get("User-Agent"))
+
+		if requestCount == 1 {
+			// First request: simulate Cloudflare challenge
+			w.Header().Set("Cf-Mitigated", "challenge")
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("<html><body>Cloudflare challenge</body></html>"))
+			return
+		}
+		// Second request (honest UA retry): success
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("real content"))
+	}))
+	defer server.Close()
+
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("NewWebFetchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{"url": server.URL})
+
+	if result.IsError {
+		t.Fatalf("expected success after retry, got error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "real content") {
+		t.Errorf("expected retry response content, got: %s", result.ForLLM)
+	}
+	if requestCount != 2 {
+		t.Errorf("expected exactly 2 requests, got %d", requestCount)
+	}
+
+	// First request must use the generic user agent
+	if receivedUAs[0] != userAgent {
+		t.Errorf("first request UA = %q, want %q", receivedUAs[0], userAgent)
+	}
+	// Second request must use the honest picoclaw user agent
+	if !strings.Contains(receivedUAs[1], "picoclaw") {
+		t.Errorf("retry request UA = %q, want it to contain 'picoclaw'", receivedUAs[1])
+	}
+}
+
+// TestWebFetchTool_CloudflareChallenge_NoRetryOnOtherErrors verifies that a plain 403
+// (without cf-mitigated: challenge) does NOT trigger a retry.
+func TestWebFetchTool_CloudflareChallenge_NoRetryOnOtherErrors(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	requestCount := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("plain forbidden"))
+	}))
+	defer server.Close()
+
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("NewWebFetchTool() error: %v", err)
+	}
+
+	tool.Execute(context.Background(), map[string]any{"url": server.URL})
+
+	if requestCount != 1 {
+		t.Errorf("expected exactly 1 request for plain 403, got %d", requestCount)
+	}
+}
+
+// TestWebFetchTool_CloudflareChallenge_RetryFailsToo verifies that if the honest-UA
+// retry also fails (e.g. still blocked), the error from the retry is returned.
+func TestWebFetchTool_CloudflareChallenge_RetryFailsToo(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Always return CF challenge regardless of UA
+		w.Header().Set("Cf-Mitigated", "challenge")
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("<html><body>still blocked</body></html>"))
+	}))
+	defer server.Close()
+
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("NewWebFetchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{"url": server.URL})
+
+	// Should not be an error — the retry response is used as-is (403 is a valid HTTP response)
+	if result.IsError {
+		t.Fatalf("expected non-error result even when retry is also blocked, got: %s", result.ForLLM)
+	}
+	// Status in the JSON result should reflect the 403
+	if !strings.Contains(result.ForLLM, "403") {
+		t.Errorf("expected status 403 in result, got: %s", result.ForLLM)
 	}
 }
 

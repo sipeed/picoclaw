@@ -42,12 +42,14 @@ PicoClaw は設定されたワークスペース（デフォルト: `~/.picoclaw
 ├── state/            # 永続化状態 (最後のチャネルなど)
 ├── cron/             # スケジュールジョブデータベース
 ├── skills/           # カスタムスキル
-├── AGENTS.md         # Agent 動作ガイド
+├── AGENT.md          # Agent 動作ガイド
 ├── HEARTBEAT.md      # 定期タスクプロンプト (30 分ごとにチェック)
 ├── IDENTITY.md       # Agent アイデンティティ
 ├── SOUL.md           # Agent ソウル/性格
 └── USER.md           # ユーザー設定
 ```
+
+> **注意：** `AGENT.md`、`SOUL.md`、`USER.md` および `memory/MEMORY.md` への変更は、ファイル更新時刻（mtime）の追跡により実行時に自動検出されます。これらのファイルを編集した後に **gateway を再起動する必要はありません** — Agent は次のリクエスト時に最新の内容を自動的に読み込みます。
 
 ### スキルソース
 
@@ -55,7 +57,7 @@ PicoClaw は設定されたワークスペース（デフォルト: `~/.picoclaw
 
 1. `~/.picoclaw/workspace/skills`（ワークスペース）
 2. `~/.picoclaw/skills`（グローバル）
-3. `<current-working-directory>/skills`（ビルトイン）
+3. `<ビルド時埋め込みパス>/skills`（ビルトイン）
 
 高度な/テスト用セットアップでは、以下の環境変数でビルトインスキルのルートを上書きできます：
 

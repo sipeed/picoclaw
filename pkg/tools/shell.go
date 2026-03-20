@@ -311,13 +311,30 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	if err != nil {
 		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
 			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
+			if output != "" {
+				msg += "\n\nPartial output before timeout:\n" + output
+			}
 			return &ToolResult{
 				ForLLM:  msg,
 				ForUser: msg,
 				IsError: true,
+				Err:     fmt.Errorf("command timeout: %w", err),
 			}
 		}
-		output += fmt.Sprintf("\nExit code: %v", err)
+
+		// Extract detailed exit information
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode := exitErr.ExitCode()
+			output += fmt.Sprintf("\n\n[Command exited with code %d]", exitCode)
+
+			// Add signal information if killed by signal (Unix)
+			if exitCode == -1 {
+				output += " (killed by signal)"
+			}
+		} else {
+			output += fmt.Sprintf("\n\n[Command failed: %v]", err)
+		}
 	}
 
 	if output == "" {

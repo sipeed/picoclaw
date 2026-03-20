@@ -41,11 +41,12 @@ General settings for fetching and processing webpage content.
 
 ### Brave
 
-| Config        | Type   | Default | Description               |
-|---------------|--------|---------|---------------------------|
-| `enabled`     | bool   | false   | Enable Brave search       |
-| `api_key`     | string | -       | Brave Search API key      |
-| `max_results` | int    | 5       | Maximum number of results |
+| Config        | Type     | Default | Description                                    |
+|---------------|----------|---------|------------------------------------------------|
+| `enabled`     | bool     | false   | Enable Brave search                            |
+| `api_key`     | string   | -       | Brave Search API key                           |
+| `api_keys`    | string[] | -       | Multiple API keys for rotation (takes priority over `api_key`) |
+| `max_results` | int      | 5       | Maximum number of results                      |
 
 ### DuckDuckGo
 
@@ -56,11 +57,46 @@ General settings for fetching and processing webpage content.
 
 ### Perplexity
 
+| Config        | Type     | Default | Description                                    |
+|---------------|----------|---------|------------------------------------------------|
+| `enabled`     | bool     | false   | Enable Perplexity search                       |
+| `api_key`     | string   | -       | Perplexity API key                             |
+| `api_keys`    | string[] | -       | Multiple API keys for rotation (takes priority over `api_key`) |
+| `max_results` | int      | 5       | Maximum number of results                      |
+
+### Tavily
+
 | Config        | Type   | Default | Description               |
 |---------------|--------|---------|---------------------------|
-| `enabled`     | bool   | false   | Enable Perplexity search  |
-| `api_key`     | string | -       | Perplexity API key        |
-| `max_results` | int    | 5       | Maximum number of results |
+| `enabled`     | bool   | false   | Enable Tavily search      |
+| `api_key`     | string | -       | Tavily API key            |
+| `base_url`    | string | -       | Custom Tavily API base URL |
+| `max_results` | int    | 0       | Maximum number of results (0 = default) |
+
+### SearXNG
+
+| Config        | Type   | Default                  | Description               |
+|---------------|--------|--------------------------|---------------------------|
+| `enabled`     | bool   | false                    | Enable SearXNG search     |
+| `base_url`    | string | `http://localhost:8888`  | SearXNG instance URL      |
+| `max_results` | int    | 5                        | Maximum number of results |
+
+### GLM Search
+
+| Config          | Type   | Default                                              | Description               |
+|-----------------|--------|------------------------------------------------------|---------------------------|
+| `enabled`       | bool   | false                                                | Enable GLM Search         |
+| `api_key`       | string | -                                                    | GLM API key               |
+| `base_url`      | string | `https://open.bigmodel.cn/api/paas/v4/web_search`   | GLM Search API URL        |
+| `search_engine` | string | `search_std`                                         | Search engine type        |
+| `max_results`   | int    | 5                                                    | Maximum number of results |
+
+### Additional Web Settings
+
+| Config                   | Type     | Default | Description                                                    |
+|--------------------------|----------|---------|----------------------------------------------------------------|
+| `prefer_native`          | bool     | true    | Prefer provider's native search over configured search engines |
+| `private_host_whitelist` | string[] | `[]`    | Private/internal hosts allowed for web fetching                |
 
 ## Exec Tool
 
@@ -68,8 +104,31 @@ The exec tool is used to execute shell commands.
 
 | Config                 | Type  | Default | Description                                |
 |------------------------|-------|---------|--------------------------------------------|
+| `enabled`              | bool  | true    | Enable the exec tool                        |
 | `enable_deny_patterns` | bool  | true    | Enable default dangerous command blocking  |
 | `custom_deny_patterns` | array | []      | Custom deny patterns (regular expressions) |
+
+### Disabling the Exec Tool
+
+To completely disable the `exec` tool, set `enabled` to `false`:
+
+**Via config file:**
+```json
+{
+  "tools": {
+    "exec": {
+      "enabled": false
+    }
+  }
+}
+```
+
+**Via environment variable:**
+```bash
+PICOCLAW_TOOLS_EXEC_ENABLED=false
+```
+
+> **Note:** When disabled, the agent will not be able to execute shell commands. This also affects the Cron tool's ability to run scheduled shell commands.
 
 ### Functionality
 
@@ -132,6 +191,7 @@ The cron tool is used for scheduling periodic tasks.
 | Config                 | Type | Default | Description                                    |
 |------------------------|------|---------|------------------------------------------------|
 | `exec_timeout_minutes` | int  | 5       | Execution timeout in minutes, 0 means no limit |
+| `allow_command`        | bool | false   | Allow cron tasks to execute shell commands      |
 
 ## MCP Tool
 
@@ -158,7 +218,7 @@ and injected into the context for a configured number of turns (`ttl`).
 
 | Config               | Type | Default | Description                                                                                                                       |
 |----------------------|------|---------|-----------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`            | bool | false   | If true, MCP tools are hidden and loaded on-demand via search. If false, all tools are loaded                                     |
+| `enabled`            | bool | false   | Global default: if `true`, all MCP tools are hidden and loaded on-demand via search; if `false`, all tools are loaded into context. Individual servers can override this with the per-server `deferred` field. |
 | `ttl`                | int  | 5       | Number of conversational turns a discovered tool remains unlocked                                                                 |
 | `max_search_results` | int  | 5       | Maximum number of tools returned per search query                                                                                 |
 | `use_bm25`           | bool | true    | Enable the natural language/keyword search tool (`tool_search_tool_bm25`). **Warning**: consumes more resources than regex search |
@@ -169,16 +229,17 @@ and injected into the context for a configured number of turns (`ttl`).
 
 ### Per-Server Config
 
-| Config     | Type   | Required | Description                                |
-|------------|--------|----------|--------------------------------------------|
-| `enabled`  | bool   | yes      | Enable this MCP server                     |
-| `type`     | string | no       | Transport type: `stdio`, `sse`, `http`     |
-| `command`  | string | stdio    | Executable command for stdio transport     |
-| `args`     | array  | no       | Command arguments for stdio transport      |
-| `env`      | object | no       | Environment variables for stdio process    |
-| `env_file` | string | no       | Path to environment file for stdio process |
-| `url`      | string | sse/http | Endpoint URL for `sse`/`http` transport    |
-| `headers`  | object | no       | HTTP headers for `sse`/`http` transport    |
+| Config     | Type    | Required | Description                                                                                                                                                     |
+|------------|---------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `enabled`  | bool    | yes      | Enable this MCP server                                                                                                                                          |
+| `deferred` | bool    | no       | Override deferred mode for this server only. `true` = tools are hidden and discoverable via search; `false` = tools are always visible in context. When omitted, the global `discovery.enabled` value applies. |
+| `type`     | string  | no       | Transport type: `stdio`, `sse`, `http`                                                                                                                          |
+| `command`  | string  | stdio    | Executable command for stdio transport                                                                                                                          |
+| `args`     | array   | no       | Command arguments for stdio transport                                                                                                                           |
+| `env`      | object  | no       | Environment variables for stdio process                                                                                                                         |
+| `env_file` | string  | no       | Path to environment file for stdio process                                                                                                                      |
+| `url`      | string  | sse/http | Endpoint URL for `sse`/`http` transport                                                                                                                         |
+| `headers`  | object  | no       | HTTP headers for `sse`/`http` transport                                                                                                                         |
 
 ### Transport Behavior
 
@@ -291,6 +352,50 @@ dynamically only when requested by the user.*
 }
 ```
 
+#### 4) Mixed setup: per-server deferred override
+
+*Discovery is enabled globally, but `filesystem` is pinned as always-visible while `context7` follows the global
+default (deferred). `aws` explicitly opts in to deferred mode even though it is the same as the global default.*
+
+```json
+{
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "discovery": {
+        "enabled": true,
+        "ttl": 5,
+        "max_search_results": 5,
+        "use_bm25": true
+      },
+      "servers": {
+        "filesystem": {
+          "enabled": true,
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
+          "deferred": false
+        },
+        "context7": {
+          "enabled": true,
+          "command": "npx",
+          "args": ["-y", "@upstash/context7-mcp"]
+        },
+        "aws": {
+          "enabled": true,
+          "command": "npx",
+          "args": ["-y", "aws-mcp-server"],
+          "deferred": true
+        }
+      }
+    }
+  }
+}
+```
+
+> **Tip:** `deferred` on a per-server basis is independent of `discovery.enabled`. You can keep
+> `discovery.enabled: false` globally (all tools visible by default) and still mark individual
+> high-volume servers as `"deferred": true` to avoid polluting the context with their tools.
+
 ## Skills Tool
 
 The skills tool configures skill discovery and installation via registries like ClawHub.
@@ -302,9 +407,27 @@ The skills tool configures skill discovery and installation via registries like 
 | `registries.clawhub.enabled`       | bool   | true                 | Enable ClawHub registry                      |
 | `registries.clawhub.base_url`      | string | `https://clawhub.ai` | ClawHub base URL                             |
 | `registries.clawhub.auth_token`    | string | `""`                 | Optional Bearer token for higher rate limits |
-| `registries.clawhub.search_path`   | string | `/api/v1/search`     | Search API path                              |
-| `registries.clawhub.skills_path`   | string | `/api/v1/skills`     | Skills API path                              |
-| `registries.clawhub.download_path` | string | `/api/v1/download`   | Download API path                            |
+| `registries.clawhub.search_path`   | string | `""`                 | Search API path                              |
+| `registries.clawhub.skills_path`   | string | `""`                 | Skills API path                              |
+| `registries.clawhub.download_path` | string | `""`                 | Download API path                            |
+| `registries.clawhub.timeout`       | int    | 0                    | Request timeout in seconds (0 = default)     |
+| `registries.clawhub.max_zip_size`  | int    | 0                    | Max skill zip size in bytes (0 = default)    |
+| `registries.clawhub.max_response_size` | int | 0                   | Max API response size in bytes (0 = default) |
+
+### GitHub Integration
+
+| Config           | Type   | Default | Description                          |
+|------------------|--------|---------|--------------------------------------|
+| `github.proxy`   | string | `""`    | HTTP proxy for GitHub API requests   |
+| `github.token`   | string | `""`    | GitHub personal access token         |
+
+### Search Settings
+
+| Config                    | Type | Default | Description                                |
+|---------------------------|------|---------|--------------------------------------------|
+| `max_concurrent_searches` | int  | 2       | Max concurrent skill search requests       |
+| `search_cache.max_size`   | int  | 50      | Max cached search results                  |
+| `search_cache.ttl_seconds`| int  | 300     | Cache TTL in seconds                       |
 
 ### Configuration Example
 
@@ -316,11 +439,17 @@ The skills tool configures skill discovery and installation via registries like 
         "clawhub": {
           "enabled": true,
           "base_url": "https://clawhub.ai",
-          "auth_token": "",
-          "search_path": "/api/v1/search",
-          "skills_path": "/api/v1/skills",
-          "download_path": "/api/v1/download"
+          "auth_token": ""
         }
+      },
+      "github": {
+        "proxy": "",
+        "token": ""
+      },
+      "max_concurrent_searches": 2,
+      "search_cache": {
+        "max_size": 50,
+        "ttl_seconds": 300
       }
     }
   }
@@ -334,6 +463,7 @@ All configuration options can be overridden via environment variables with the f
 For example:
 
 - `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`

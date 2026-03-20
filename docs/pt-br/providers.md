@@ -93,7 +93,7 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-5.4"
+      "model_name": "gpt-5.4"
     }
   }
 }
@@ -266,13 +266,13 @@ A configuração antiga `providers` está **descontinuada** mas ainda é suporta
   ],
   "agents": {
     "defaults": {
-      "model": "glm-4.7"
+      "model_name": "glm-4.7"
     }
   }
 }
 ```
 
-Para guia de migração detalhado, veja [docs/migration/model-list-migration.md](docs/migration/model-list-migration.md).
+Para guia de migração detalhado, veja [migration/model-list-migration.md](../migration/model-list-migration.md).
 
 ### Arquitetura de Provedores
 
@@ -298,7 +298,7 @@ Isso mantém o runtime leve enquanto torna novos backends compatíveis com OpenA
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
+      "model_name": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -328,12 +328,11 @@ picoclaw agent -m "Hello"
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model_name": "anthropic/claude-opus-4-5"
     }
   },
   "session": {
-    "dm_scope": "per-channel-peer",
-    "backlog_limit": 20
+    "dm_scope": "per-channel-peer"
   },
   "providers": {
     "openrouter": {

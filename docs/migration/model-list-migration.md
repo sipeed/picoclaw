@@ -70,7 +70,7 @@ The new `model_list` configuration offers several advantages:
   ],
   "agents": {
     "defaults": {
-      "model": "gpt4"
+      "model_name": "gpt4"
     }
   }
 }
@@ -184,7 +184,7 @@ During the migration period, your existing `providers` configuration will contin
 - [ ] Identify all providers you're currently using
 - [ ] Create `model_list` entries for each provider
 - [ ] Use appropriate protocol prefixes
-- [ ] Update `agents.defaults.model` to reference the new `model_name`
+- [ ] Update `agents.defaults.model_name` to reference the new `model_name`
 - [ ] Test that all models work correctly
 - [ ] Remove or comment out the old `providers` section
 
@@ -196,7 +196,7 @@ During the migration period, your existing `providers` configuration will contin
 model "xxx" not found in model_list or providers
 ```
 
-**Solution**: Ensure the `model_name` in `model_list` matches the value in `agents.defaults.model`.
+**Solution**: Ensure the `model_name` in `model_list` matches the value in `agents.defaults.model_name`.
 
 ### Unknown protocol error
 

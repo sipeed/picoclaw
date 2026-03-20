@@ -16,7 +16,7 @@
 
 **Correção:** Em `~/.picoclaw/config.json` (ou seu caminho de configuração):
 
-1. **agents.defaults.model** deve corresponder a um `model_name` em `model_list` (ex.: `"openrouter-free"`).
+1. **agents.defaults.model_name** deve corresponder a um `model_name` em `model_list` (ex.: `"openrouter-free"`).
 2. O **model** dessa entrada deve ser um ID de modelo OpenRouter válido, por exemplo:
    - `"openrouter/free"` – nível gratuito automático
    - `"google/gemini-2.0-flash-exp:free"`
@@ -28,7 +28,7 @@ Exemplo:
 {
   "agents": {
     "defaults": {
-      "model": "openrouter-free"
+      "model_name": "openrouter-free"
     }
   },
   "model_list": [

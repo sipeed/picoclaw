@@ -189,6 +189,121 @@ func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
 	}
 }
 
+// TestFilesystemTool_WriteFile_OverwriteDefaultBlocked verifies that writing to an
+// existing file without overwrite=true returns an error.
+func TestFilesystemTool_WriteFile_OverwriteDefaultBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	os.WriteFile(testFile, []byte("original"), 0o644)
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": "new content",
+	})
+
+	assert.True(t, result.IsError, "expected error when overwriting without overwrite=true")
+	assert.Contains(t, result.ForLLM, "already exists")
+	assert.Contains(t, result.ForLLM, "overwrite=true")
+
+	// Original content must be untouched
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "original", string(data))
+}
+
+// TestFilesystemTool_WriteFile_OverwriteExplicitAllowed verifies that setting
+// overwrite=true replaces the existing file.
+func TestFilesystemTool_WriteFile_OverwriteExplicitAllowed(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	os.WriteFile(testFile, []byte("original"), 0o644)
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":      testFile,
+		"content":   "replaced",
+		"overwrite": true,
+	})
+
+	assert.False(t, result.IsError, "expected success with overwrite=true, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "replaced", string(data))
+}
+
+// TestFilesystemTool_WriteFile_NewFileNoOverwriteFlag verifies that a new (non-existing)
+// file can be written without setting overwrite=true.
+func TestFilesystemTool_WriteFile_NewFileNoOverwriteFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "newfile.txt")
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": "brand new",
+	})
+
+	assert.False(t, result.IsError, "expected success for new file, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "brand new", string(data))
+}
+
+// TestFilesystemTool_WriteFile_OverwriteFalseExplicitBlocked verifies that
+// explicitly passing overwrite=false also blocks overwriting.
+func TestFilesystemTool_WriteFile_OverwriteFalseExplicitBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	os.WriteFile(testFile, []byte("original"), 0o644)
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":      testFile,
+		"content":   "new content",
+		"overwrite": false,
+	})
+
+	assert.True(t, result.IsError, "expected error when overwrite=false")
+	assert.Contains(t, result.ForLLM, "already exists")
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "original", string(data))
+}
+
+// TestFilesystemTool_WriteFile_OverwriteSandboxed verifies the overwrite guard
+// works correctly in restricted (sandbox) mode.
+func TestFilesystemTool_WriteFile_OverwriteSandboxed(t *testing.T) {
+	workspace := t.TempDir()
+	testFile := "file.txt"
+	os.WriteFile(filepath.Join(workspace, testFile), []byte("original"), 0o644)
+
+	tool := NewWriteFileTool(workspace, true)
+
+	// Without overwrite=true → blocked
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": "new content",
+	})
+	assert.True(t, result.IsError, "expected error in sandbox mode without overwrite=true")
+	assert.Contains(t, result.ForLLM, "already exists")
+
+	// With overwrite=true → allowed
+	result = tool.Execute(context.Background(), map[string]any{
+		"path":      testFile,
+		"content":   "replaced in sandbox",
+		"overwrite": true,
+	})
+	assert.False(t, result.IsError, "expected success in sandbox mode with overwrite=true, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(filepath.Join(workspace, testFile))
+	assert.NoError(t, err)
+	assert.Equal(t, "replaced in sandbox", string(data))
+}
+
 // TestFilesystemTool_ListDir_Success verifies successful directory listing
 func TestFilesystemTool_ListDir_Success(t *testing.T) {
 	tmpDir := t.TempDir()

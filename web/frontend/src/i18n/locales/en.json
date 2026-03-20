@@ -259,6 +259,7 @@
       "placeholderText": "Placeholder Text",
       "groupTriggerMentionOnly": "Group Mention Only",
       "groupTriggerPrefixes": "Group Trigger Prefixes",
+      "isLark": "Lark (International)",
       "allowFrom": "Allow From",
       "allowFromPlaceholder": "e.g. 123456, 789012",
       "allowOrigins": "Allow Origins",
@@ -290,6 +291,7 @@
         "placeholderEnabled": "Enable temporary placeholder messages before the final reply is sent.",
         "groupTriggerMentionOnly": "In group chats, respond only when the bot is mentioned.",
         "groupTriggerPrefixes": "Custom group-chat trigger prefixes, separated by commas.",
+        "isLark": "Use Lark international domain (open.larksuite.com) instead of Feishu domain (open.feishu.cn).",
         "allowFrom": "Allowed user or group IDs, separated by commas.",
         "allowOrigins": "Allowed origin domains, separated by commas.",
         "wsUrl": "WebSocket service URL.",
@@ -325,6 +327,7 @@
         "realName": "Displayed real name.",
         "channels": "IRC channels to join.",
         "requestCaps": "IRC capability list requested on connect.",
+        "maxBase64FileSizeMiB": "Maximum size in MiB for converting local files to base64 before upload. 0 means unlimited. Applies only to local files, not URL uploads.",
         "genericField": "Used to configure {{field}}."
       }
     },

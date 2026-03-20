@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -111,6 +112,12 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 
 		for serverName, conn := range servers {
 			uniqueTools += len(conn.Tools)
+
+			// Determine whether this server's tools should be deferred (hidden).
+			// Per-server "deferred" field takes precedence over the global Discovery.Enabled.
+			serverCfg := al.cfg.Tools.MCP.Servers[serverName]
+			registerAsHidden := serverIsDeferred(al.cfg.Tools.MCP.Discovery.Enabled, serverCfg)
+
 			for _, tool := range conn.Tools {
 				for _, agentID := range agentIDs {
 					agent, ok := al.registry.GetAgent(agentID)
@@ -120,7 +127,7 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 
 					mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
 
-					if al.cfg.Tools.MCP.Discovery.Enabled {
+					if registerAsHidden {
 						agent.Tools.RegisterHidden(mcpTool)
 					} else {
 						agent.Tools.Register(mcpTool)
@@ -133,6 +140,7 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 							"server":   serverName,
 							"tool":     tool.Name,
 							"name":     mcpTool.Name(),
+							"deferred": registerAsHidden,
 						})
 				}
 			}
@@ -197,4 +205,19 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 	})
 
 	return al.mcp.getInitErr()
+}
+
+// serverIsDeferred reports whether an MCP server's tools should be registered
+// as hidden (deferred/discovery mode).
+//
+// The per-server Deferred field takes precedence over the global discoveryEnabled
+// default. When Deferred is nil, discoveryEnabled is used as the fallback.
+func serverIsDeferred(discoveryEnabled bool, serverCfg config.MCPServerConfig) bool {
+	if !discoveryEnabled {
+		return false
+	}
+	if serverCfg.Deferred != nil {
+		return *serverCfg.Deferred
+	}
+	return true
 }

@@ -16,7 +16,7 @@
 
 **修正方法：** `~/.picoclaw/config.json`（またはお使いの設定パス）で：
 
-1. **agents.defaults.model** は `model_list` 内の `model_name` と一致する必要があります（例：`"openrouter-free"`）。
+1. **agents.defaults.model_name** は `model_list` 内の `model_name` と一致する必要があります（例：`"openrouter-free"`）。
 2. そのエントリの **model** は有効な OpenRouter モデル ID である必要があります。例：
    - `"openrouter/free"` – 自動無料枠
    - `"google/gemini-2.0-flash-exp:free"`
@@ -28,7 +28,7 @@
 {
   "agents": {
     "defaults": {
-      "model": "openrouter-free"
+      "model_name": "openrouter-free"
     }
   },
   "model_list": [

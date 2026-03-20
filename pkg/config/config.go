@@ -219,32 +219,57 @@ type RoutingConfig struct {
 	Threshold  float64 `json:"threshold"`   // complexity score in [0,1]; score >= threshold → primary model
 }
 
-type AgentDefaults struct {
-	Workspace                 string         `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace       bool           `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	AllowReadOutsideWorkspace bool           `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
-	Provider                  string         `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	ModelName                 string         `json:"model_name"                      env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
-	Model                     string         `json:"model,omitempty"                 env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
-	ModelFallbacks            []string       `json:"model_fallbacks,omitempty"`
-	ImageModel                string         `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
-	ImageModelFallbacks       []string       `json:"image_model_fallbacks,omitempty"`
-	MaxTokens                 int            `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature               *float64       `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations         int            `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
-	SummarizeMessageThreshold int            `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
-	SummarizeTokenPercent     int            `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
-	MaxMediaSize              int            `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
-	Routing                   *RoutingConfig `json:"routing,omitempty"`
+// ToolFeedbackConfig controls whether tool execution details are sent to the
+// chat channel as real-time feedback messages. When enabled, every tool call
+// produces a short notification with the tool name and its parameters.
+type ToolFeedbackConfig struct {
+	Enabled       bool `json:"enabled"         env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
+	MaxArgsLength int  `json:"max_args_length" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
 }
 
-const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB
+type AgentDefaults struct {
+	Workspace                 string             `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace       bool               `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	AllowReadOutsideWorkspace bool               `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
+	Provider                  string             `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	ModelName                 string             `json:"model_name"                      env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
+	Model                     string             `json:"model,omitempty"                 env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
+	ModelFallbacks            []string           `json:"model_fallbacks,omitempty"`
+	ImageModel                string             `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks       []string           `json:"image_model_fallbacks,omitempty"`
+	MaxTokens                 int                `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature               *float64           `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations         int                `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	SummarizeMessageThreshold int                `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
+	SummarizeTokenPercent     int                `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
+	MaxMediaSize              int                `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
+	Routing                   *RoutingConfig     `json:"routing,omitempty"`
+	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
+}
+
+const (
+	DefaultMaxMediaSize                = 20 * 1024 * 1024 // 20 MB
+	DefaultWeComAIBotProcessingMessage = "⏳ Processing, please wait. The results will be sent shortly."
+)
 
 func (d *AgentDefaults) GetMaxMediaSize() int {
 	if d.MaxMediaSize > 0 {
 		return d.MaxMediaSize
 	}
 	return DefaultMaxMediaSize
+}
+
+// GetToolFeedbackMaxArgsLength returns the max args preview length for tool feedback messages.
+func (d *AgentDefaults) GetToolFeedbackMaxArgsLength() int {
+	if d.ToolFeedback.MaxArgsLength > 0 {
+		return d.ToolFeedback.MaxArgsLength
+	}
+	return 300
+}
+
+// IsToolFeedbackEnabled returns true when tool feedback messages should be sent to the chat.
+func (d *AgentDefaults) IsToolFeedbackEnabled() bool {
+	return d.ToolFeedback.Enabled
 }
 
 // GetModelName returns the effective model name for the agent defaults.
@@ -272,6 +297,7 @@ type ChannelsConfig struct {
 	WeComApp   WeComAppConfig   `json:"wecom_app"`
 	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
 	Pico       PicoConfig       `json:"pico"`
+	PicoClient PicoClientConfig `json:"pico_client"`
 	IRC        IRCConfig        `json:"irc"`
 }
 
@@ -292,6 +318,12 @@ type PlaceholderConfig struct {
 	Text    string `json:"text,omitempty"`
 }
 
+type StreamingConfig struct {
+	Enabled         bool `json:"enabled,omitempty"          env:"PICOCLAW_CHANNELS_TELEGRAM_STREAMING_ENABLED"`
+	ThrottleSeconds int  `json:"throttle_seconds,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_STREAMING_THROTTLE_SECONDS"`
+	MinGrowthChars  int  `json:"min_growth_chars,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_STREAMING_MIN_GROWTH_CHARS"`
+}
+
 type WhatsAppConfig struct {
 	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
 	BridgeURL          string              `json:"bridge_url"           env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
@@ -310,7 +342,9 @@ type TelegramConfig struct {
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
+	Streaming          StreamingConfig     `json:"streaming,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+	UseMarkdownV2      bool                `json:"use_markdown_v2"         env:"PICOCLAW_CHANNELS_TELEGRAM_USE_MARKDOWN_V2"`
 }
 
 type FeishuConfig struct {
@@ -324,6 +358,7 @@ type FeishuConfig struct {
 	Placeholder         PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID  string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
 	RandomReactionEmoji FlexibleStringSlice `json:"random_reaction_emoji"   env:"PICOCLAW_CHANNELS_FEISHU_RANDOM_REACTION_EMOJI"`
+	IsLark              bool                `json:"is_lark"                 env:"PICOCLAW_CHANNELS_FEISHU_IS_LARK"`
 }
 
 type DiscordConfig struct {
@@ -347,14 +382,15 @@ type MaixCamConfig struct {
 }
 
 type QQConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
-	AppID              string              `json:"app_id"                  env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
-	AppSecret          string              `json:"app_secret"              env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	MaxMessageLength   int                 `json:"max_message_length"      env:"PICOCLAW_CHANNELS_QQ_MAX_MESSAGE_LENGTH"`
-	SendMarkdown       bool                `json:"send_markdown"           env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
+	Enabled              bool                `json:"enabled"                  env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
+	AppID                string              `json:"app_id"                   env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
+	AppSecret            string              `json:"app_secret"               env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
+	AllowFrom            FlexibleStringSlice `json:"allow_from"               env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
+	GroupTrigger         GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	MaxMessageLength     int                 `json:"max_message_length"       env:"PICOCLAW_CHANNELS_QQ_MAX_MESSAGE_LENGTH"`
+	MaxBase64FileSizeMiB int64               `json:"max_base64_file_size_mib" env:"PICOCLAW_CHANNELS_QQ_MAX_BASE64_FILE_SIZE_MIB"`
+	SendMarkdown         bool                `json:"send_markdown"            env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
+	ReasoningChannelID   string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
 }
 
 type DingTalkConfig struct {
@@ -449,15 +485,18 @@ type WeComAppConfig struct {
 }
 
 type WeComAIBotConfig struct {
-	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENABLED"`
-	Token              string              `json:"token"                env:"PICOCLAW_CHANNELS_WECOM_AIBOT_TOKEN"`
-	EncodingAESKey     string              `json:"encoding_aes_key"     env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENCODING_AES_KEY"`
-	WebhookPath        string              `json:"webhook_path"         env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"        env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REPLY_TIMEOUT"`
-	MaxSteps           int                 `json:"max_steps"            env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"`       // Maximum streaming steps
-	WelcomeMessage     string              `json:"welcome_message"      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"` // Sent on enter_chat event; empty = no welcome
-	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"                      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENABLED"`
+	BotID              string              `json:"bot_id,omitempty"             env:"PICOCLAW_CHANNELS_WECOM_AIBOT_BOT_ID"`
+	Secret             string              `json:"secret,omitempty"             env:"PICOCLAW_CHANNELS_WECOM_AIBOT_SECRET"`
+	Token              string              `json:"token,omitempty"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_TOKEN"`
+	EncodingAESKey     string              `json:"encoding_aes_key,omitempty"   env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENCODING_AES_KEY"`
+	WebhookPath        string              `json:"webhook_path,omitempty"       env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WEBHOOK_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"                   env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ALLOW_FROM"`
+	ReplyTimeout       int                 `json:"reply_timeout"                env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REPLY_TIMEOUT"`
+	MaxSteps           int                 `json:"max_steps"                    env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"`       // Maximum streaming steps
+	WelcomeMessage     string              `json:"welcome_message"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"` // Sent on enter_chat event; empty = no welcome
+	ProcessingMessage  string              `json:"processing_message,omitempty" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_PROCESSING_MESSAGE"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"         env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
 }
 
 type PicoConfig struct {
@@ -471,6 +510,16 @@ type PicoConfig struct {
 	MaxConnections  int                 `json:"max_connections,omitempty"`
 	AllowFrom       FlexibleStringSlice `json:"allow_from"                  env:"PICOCLAW_CHANNELS_PICO_ALLOW_FROM"`
 	Placeholder     PlaceholderConfig   `json:"placeholder,omitempty"`
+}
+
+type PicoClientConfig struct {
+	Enabled      bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_PICO_CLIENT_ENABLED"`
+	URL          string              `json:"url"                     env:"PICOCLAW_CHANNELS_PICO_CLIENT_URL"`
+	Token        string              `json:"token"                   env:"PICOCLAW_CHANNELS_PICO_CLIENT_TOKEN"`
+	SessionID    string              `json:"session_id,omitempty"`
+	PingInterval int                 `json:"ping_interval,omitempty"`
+	ReadTimeout  int                 `json:"read_timeout,omitempty"`
+	AllowFrom    FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_PICO_CLIENT_ALLOW_FROM"`
 }
 
 type IRCConfig struct {
@@ -531,6 +580,7 @@ type ProvidersConfig struct {
 	Minimax       ProviderConfig       `json:"minimax"`
 	LongCat       ProviderConfig       `json:"longcat"`
 	ModelScope    ProviderConfig       `json:"modelscope"`
+	Novita        ProviderConfig       `json:"novita"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -559,7 +609,8 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.Avian.APIKey == "" && p.Avian.APIBase == "" &&
 		p.Minimax.APIKey == "" && p.Minimax.APIBase == "" &&
 		p.LongCat.APIKey == "" && p.LongCat.APIBase == "" &&
-		p.ModelScope.APIKey == "" && p.ModelScope.APIBase == ""
+		p.ModelScope.APIKey == "" && p.ModelScope.APIBase == "" &&
+		p.Novita.APIKey == "" && p.Novita.APIBase == ""
 }
 
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig
@@ -589,7 +640,9 @@ type OpenAIProviderConfig struct {
 // ModelConfig represents a model-centric provider configuration.
 // It allows adding new providers (especially OpenAI-compatible ones) via configuration only.
 // The model field uses protocol prefix format: [protocol/]model-identifier
-// Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot
+// Supported protocols include openai, anthropic, antigravity, claude-cli,
+// codex-cli, github-copilot, and named OpenAI-compatible protocols such as
+// groq, deepseek, modelscope, and novita.
 // Default protocol is "openai" if no prefix is specified.
 type ModelConfig struct {
 	// Required fields
@@ -597,9 +650,11 @@ type ModelConfig struct {
 	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
 
 	// HTTP-based providers
-	APIBase string `json:"api_base,omitempty"` // API endpoint URL
-	APIKey  string `json:"api_key"`            // API authentication key
-	Proxy   string `json:"proxy,omitempty"`    // HTTP proxy URL
+	APIBase   string   `json:"api_base,omitempty"`  // API endpoint URL
+	APIKey    string   `json:"api_key"`             // API authentication key (single key)
+	APIKeys   []string `json:"api_keys,omitempty"`  // API authentication keys (multiple keys for failover)
+	Proxy     string   `json:"proxy,omitempty"`     // HTTP proxy URL
+	Fallbacks []string `json:"fallbacks,omitempty"` // Fallback model names for failover
 
 	// Special providers (CLI-based, OAuth, etc.)
 	AuthMethod  string `json:"auth_method,omitempty"`  // Authentication method: oauth, token
@@ -797,6 +852,10 @@ type ClawHubRegistryConfig struct {
 type MCPServerConfig struct {
 	// Enabled indicates whether this MCP server is active
 	Enabled bool `json:"enabled"`
+	// Deferred controls whether this server's tools are registered as hidden (deferred/discovery mode).
+	// When nil, the global Discovery.Enabled setting applies.
+	// When explicitly set to true or false, it overrides the global setting for this server only.
+	Deferred *bool `json:"deferred,omitempty"`
 	// Command is the executable to run (e.g., "npx", "python", "/path/to/server")
 	Command string `json:"command"`
 	// Args are the arguments to pass to the command
@@ -868,12 +927,24 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// Expand multi-key configs into separate entries for key-level failover
+	cfg.ModelList = ExpandMultiKeyModels(cfg.ModelList)
+
 	// Migrate legacy channel config fields to new unified structures
 	cfg.migrateChannelConfigs()
 
 	// Auto-migrate: if only legacy providers config exists, convert to model_list
 	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
+	}
+
+	// Inherit credentials from providers to model_list entries (#1635).
+	// When both providers and model_list are present, model_list entries
+	// whose api_key/api_base are empty will inherit from the matching
+	// provider (matched by protocol prefix).  Explicit model_list values
+	// always take precedence.
+	if cfg.HasProvidersConfig() {
+		InheritProviderCredentials(cfg.ModelList, cfg.Providers)
 	}
 
 	// Validate model_list for uniqueness and required fields
@@ -914,14 +985,25 @@ func encryptPlaintextAPIKeys(models []ModelConfig, passphrase string) ([]ModelCo
 
 // resolveAPIKeys decrypts or dereferences each api_key in models in-place.
 // Supports plaintext (no-op), file:// (read from configDir), and enc:// (AES-GCM decrypt).
+// Also resolves api_keys array if present.
 func resolveAPIKeys(models []ModelConfig, configDir string) error {
 	cr := credential.NewResolver(configDir)
 	for i := range models {
+		// Resolve single APIKey
 		resolved, err := cr.Resolve(models[i].APIKey)
 		if err != nil {
 			return fmt.Errorf("model_list[%d] (%s): %w", i, models[i].ModelName, err)
 		}
 		models[i].APIKey = resolved
+
+		// Resolve APIKeys array
+		for j, key := range models[i].APIKeys {
+			resolved, err := cr.Resolve(key)
+			if err != nil {
+				return fmt.Errorf("model_list[%d] (%s): api_keys[%d]: %w", i, models[i].ModelName, j, err)
+			}
+			models[i].APIKeys[j] = resolved
+		}
 	}
 	return nil
 }
@@ -1090,6 +1172,89 @@ func MergeAPIKeys(apiKey string, apiKeys []string) []string {
 	}
 
 	return all
+}
+
+// ExpandMultiKeyModels expands ModelConfig entries with multiple API keys into
+// separate entries for key-level failover. Each key gets its own ModelConfig entry,
+// and the original entry's fallbacks are set up to chain through the expanded entries.
+//
+// Example: {"model_name": "gpt-4", "api_keys": ["k1", "k2", "k3"]}
+// Becomes:
+//   - {"model_name": "gpt-4", "api_key": "k1", "fallbacks": ["gpt-4__key_1", "gpt-4__key_2"]}
+//   - {"model_name": "gpt-4__key_1", "api_key": "k2"}
+//   - {"model_name": "gpt-4__key_2", "api_key": "k3"}
+func ExpandMultiKeyModels(models []ModelConfig) []ModelConfig {
+	var expanded []ModelConfig
+
+	for _, m := range models {
+		keys := MergeAPIKeys(m.APIKey, m.APIKeys)
+
+		// Single key or no keys: keep as-is
+		if len(keys) <= 1 {
+			// Ensure APIKey is set from APIKeys if needed
+			if m.APIKey == "" && len(keys) == 1 {
+				m.APIKey = keys[0]
+			}
+			m.APIKeys = nil // Clear APIKeys to avoid confusion
+			expanded = append(expanded, m)
+			continue
+		}
+
+		// Multiple keys: expand
+		originalName := m.ModelName
+
+		// Create entries for additional keys (key_1, key_2, ...)
+		var fallbackNames []string
+		for i := 1; i < len(keys); i++ {
+			suffix := fmt.Sprintf("__key_%d", i)
+			expandedName := originalName + suffix
+
+			// Create a copy for the additional key
+			additionalEntry := ModelConfig{
+				ModelName:      expandedName,
+				Model:          m.Model,
+				APIBase:        m.APIBase,
+				APIKey:         keys[i],
+				Proxy:          m.Proxy,
+				AuthMethod:     m.AuthMethod,
+				ConnectMode:    m.ConnectMode,
+				Workspace:      m.Workspace,
+				RPM:            m.RPM,
+				MaxTokensField: m.MaxTokensField,
+				RequestTimeout: m.RequestTimeout,
+				ThinkingLevel:  m.ThinkingLevel,
+			}
+			expanded = append(expanded, additionalEntry)
+			fallbackNames = append(fallbackNames, expandedName)
+		}
+
+		// Create the primary entry with first key and fallbacks
+		primaryEntry := ModelConfig{
+			ModelName:      originalName,
+			Model:          m.Model,
+			APIBase:        m.APIBase,
+			APIKey:         keys[0],
+			Proxy:          m.Proxy,
+			AuthMethod:     m.AuthMethod,
+			ConnectMode:    m.ConnectMode,
+			Workspace:      m.Workspace,
+			RPM:            m.RPM,
+			MaxTokensField: m.MaxTokensField,
+			RequestTimeout: m.RequestTimeout,
+			ThinkingLevel:  m.ThinkingLevel,
+		}
+
+		// Prepend new fallbacks to existing ones
+		if len(fallbackNames) > 0 {
+			primaryEntry.Fallbacks = append(fallbackNames, m.Fallbacks...)
+		} else if len(m.Fallbacks) > 0 {
+			primaryEntry.Fallbacks = m.Fallbacks
+		}
+
+		expanded = append(expanded, primaryEntry)
+	}
+
+	return expanded
 }
 
 func (t *ToolsConfig) IsToolEnabled(name string) bool {

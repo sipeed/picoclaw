@@ -42,12 +42,14 @@ PicoClaw lưu trữ dữ liệu trong workspace đã cấu hình (mặc định:
 ├── state/            # Trạng thái bền vững (kênh cuối, v.v.)
 ├── cron/             # Cơ sở dữ liệu tác vụ lên lịch
 ├── skills/           # Skill tùy chỉnh
-├── AGENTS.md         # Hướng dẫn hành vi agent
+├── AGENT.md          # Hướng dẫn hành vi agent
 ├── HEARTBEAT.md      # Prompt tác vụ định kỳ (kiểm tra mỗi 30 phút)
 ├── IDENTITY.md       # Danh tính agent
 ├── SOUL.md           # Linh hồn agent
 └── USER.md           # Tùy chọn người dùng
 ```
+
+> **Lưu ý:** Các thay đổi đối với `AGENT.md`, `SOUL.md`, `USER.md` và `memory/MEMORY.md` được tự động phát hiện trong thời gian chạy thông qua theo dõi thời gian sửa đổi file (mtime). **Không cần khởi động lại gateway** sau khi chỉnh sửa các file này — agent sẽ tải nội dung mới vào yêu cầu tiếp theo.
 
 ### Nguồn Skill
 
@@ -55,7 +57,7 @@ Mặc định, skill được tải từ:
 
 1. `~/.picoclaw/workspace/skills` (workspace)
 2. `~/.picoclaw/skills` (global)
-3. `<current-working-directory>/skills` (builtin)
+3. `<đường-dẫn-nhúng-khi-build>/skills` (tích hợp)
 
 Cho thiết lập nâng cao/test, bạn có thể ghi đè thư mục gốc skill builtin với:
 

@@ -42,12 +42,14 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 ├── state/            # 持久化状态 (最后一次频道等)
 ├── cron/             # 定时任务数据库
 ├── skills/           # 自定义技能
-├── AGENTS.md         # Agent 行为指南
+├── AGENT.md          # Agent 行为指南
 ├── HEARTBEAT.md      # 周期性任务提示词 (每 30 分钟检查一次)
 ├── IDENTITY.md       # Agent 身份设定
 ├── SOUL.md           # Agent 灵魂/性格
 └── USER.md           # 用户偏好
 ```
+
+> **提示：** 对 `AGENT.md`、`SOUL.md`、`USER.md` 和 `memory/MEMORY.md` 的修改会通过文件修改时间（mtime）在运行时自动检测。**无需重启 gateway**，Agent 将在下一次请求时自动加载最新内容。
 
 ### 技能来源 (Skill Sources)
 
@@ -55,7 +57,7 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 1. `~/.picoclaw/workspace/skills`（工作区）
 2. `~/.picoclaw/skills`（全局）
-3. `<current-working-directory>/skills`（内置）
+3. `<构建时嵌入路径>/skills`（内置）
 
 在高级/测试场景下，可通过以下环境变量覆盖内置技能目录：
 

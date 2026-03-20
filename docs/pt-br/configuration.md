@@ -42,12 +42,14 @@ O PicoClaw armazena dados no seu workspace configurado (padrão: `~/.picoclaw/wo
 ├── state/            # Estado persistente (último canal, etc.)
 ├── cron/             # Banco de dados de tarefas agendadas
 ├── skills/           # Skills personalizadas
-├── AGENTS.md         # Guia de comportamento do agente
+├── AGENT.md          # Guia de comportamento do agente
 ├── HEARTBEAT.md      # Prompts de tarefas periódicas (verificados a cada 30 min)
 ├── IDENTITY.md       # Identidade do agente
 ├── SOUL.md           # Alma do agente
 └── USER.md           # Preferências do usuário
 ```
+
+> **Nota:** Alterações em `AGENT.md`, `SOUL.md`, `USER.md` e `memory/MEMORY.md` são detectadas automaticamente em tempo de execução via rastreamento de data de modificação (mtime). **Não é necessário reiniciar o gateway** após editar esses arquivos — o agente carrega o novo conteúdo na próxima requisição.
 
 ### Fontes de Skills
 
@@ -55,7 +57,7 @@ Por padrão, as skills são carregadas de:
 
 1. `~/.picoclaw/workspace/skills` (workspace)
 2. `~/.picoclaw/skills` (global)
-3. `<current-working-directory>/skills` (builtin)
+3. `<caminho-embutido-na-compilação>/skills` (embutido)
 
 Para configurações avançadas/de teste, você pode substituir o diretório raiz de skills builtin com:
 

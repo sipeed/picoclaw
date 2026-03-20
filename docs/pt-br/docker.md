@@ -12,6 +12,7 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
 # 2. Primeira execução — gera automaticamente docker/data/config.json e encerra
+#    (só é acionado quando config.json e workspace/ estão ambos ausentes)
 docker compose -f docker/docker-compose.yml --profile gateway up
 # O contêiner exibe "First-run setup complete." e para.
 

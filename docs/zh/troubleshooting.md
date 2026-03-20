@@ -16,7 +16,7 @@
 
 **修复方法：** 在 `~/.picoclaw/config.json`（或你的配置路径）中：
 
-1. **agents.defaults.model** 必须匹配 `model_list` 中的某个 `model_name`（例如 `"openrouter-free"`）。
+1. **agents.defaults.model_name** 必须匹配 `model_list` 中的某个 `model_name`（例如 `"openrouter-free"`）。
 2. 该条目的 **model** 必须是有效的 OpenRouter 模型 ID，例如：
    - `"openrouter/free"` – 自动免费层
    - `"google/gemini-2.0-flash-exp:free"`
@@ -28,7 +28,7 @@
 {
   "agents": {
     "defaults": {
-      "model": "openrouter-free"
+      "model_name": "openrouter-free"
     }
   },
   "model_list": [

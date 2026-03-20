@@ -387,10 +387,10 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	// GetConfigPath() already reads, so the gateway sub-process uses the same
 	// config file without requiring a --config flag on the gateway subcommand.
 	if h.configPath != "" {
-		cmd.Env = append(cmd.Env, "PICOCLAW_CONFIG="+h.configPath)
+		cmd.Env = append(cmd.Env, config.EnvConfig+"="+h.configPath)
 	}
 	if host := h.gatewayHostOverride(); host != "" {
-		cmd.Env = append(cmd.Env, "PICOCLAW_GATEWAY_HOST="+host)
+		cmd.Env = append(cmd.Env, config.EnvGatewayHost+"="+host)
 	}
 
 	stdoutPipe, err := cmd.StdoutPipe()
@@ -566,6 +566,8 @@ func (h *Handler) handleGatewayStart(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGatewayStop stops the running gateway subprocess gracefully.
+// Note: Unlike StopGateway (which only stops self-started processes), this API endpoint
+// stops any gateway process, including attached ones. This is intentional for user control.
 //
 //	POST /api/gateway/stop
 func (h *Handler) handleGatewayStop(w http.ResponseWriter, r *http.Request) {

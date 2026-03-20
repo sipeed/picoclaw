@@ -259,6 +259,7 @@
       "placeholderText": "占位文案",
       "groupTriggerMentionOnly": "群聊仅提及时响应",
       "groupTriggerPrefixes": "群聊触发前缀",
+      "isLark": "Lark（国际版）",
       "allowFrom": "允许来源",
       "allowFromPlaceholder": "例如 123456, 789012",
       "allowOrigins": "允许来源域名",
@@ -290,6 +291,7 @@
         "placeholderEnabled": "在最终回复发送前，先发送临时占位消息。",
         "groupTriggerMentionOnly": "在群聊中仅当提及机器人时才响应。",
         "groupTriggerPrefixes": "群聊触发前缀，多个值用逗号分隔。",
+        "isLark": "使用 Lark 国际版域名（open.larksuite.com）替代飞书域名（open.feishu.cn）。",
         "allowFrom": "允许访问的用户或群组 ID，多个值用逗号分隔。",
         "allowOrigins": "允许访问的来源域名，多个值用逗号分隔。",
         "wsUrl": "WebSocket 服务地址。",
@@ -325,6 +327,7 @@
         "realName": "显示名称。",
         "channels": "要加入的 IRC 频道列表。",
         "requestCaps": "连接时请求的 IRC 扩展能力列表。",
+        "maxBase64FileSizeMiB": "本地文件转为 base64 上传的最大体积，单位 MiB；0 表示不限制，仅影响本地文件，不影响 URL 直传。",
         "genericField": "用于配置{{field}}。"
       }
     },
