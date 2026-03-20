@@ -81,6 +81,8 @@ type QQChannel struct {
 	done     chan struct{}
 	stopOnce sync.Once
 }
+	chatTypeMap     map[string]string  // Track whether a ChatID is group or C2C
+	chatTypeMu      sync.RWMutex       // Protects chatTypeMap
 
 func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
 	base := channels.NewBaseChannel("qq", cfg, messageBus, cfg.AllowFrom,

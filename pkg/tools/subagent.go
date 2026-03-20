@@ -19,6 +19,7 @@ type SubagentTask struct {
 	Status        string
 	Result        string
 	Created       int64
+	announcedOnce sync.Once  // Ensures the completion announcement is sent only once
 }
 
 type SubagentManager struct {

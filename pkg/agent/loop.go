@@ -874,7 +874,7 @@ func (al *AgentLoop) processSystemMessage(
 		UserMessage:     fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content),
 		DefaultResponse: "Background task completed.",
 		EnableSummary:   false,
-		SendResponse:    true,
+		SendResponse:    false,  // Prevent duplicate responses caused by system message processing
 	})
 }
 
@@ -1602,7 +1602,7 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	newHistory = append(newHistory, history[len(history)-1]) // Last message
 
 	// Update session
-	agent.Sessions.SetHistory(sessionKey, newHistory)
+	agent.Sessions.SetHistory(sessionKey, sanitizeToolPairs(newHistory))
 	agent.Sessions.Save(sessionKey)
 
 	logger.WarnCF("agent", "Forced compression executed", map[string]any{
