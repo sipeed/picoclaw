@@ -55,6 +55,34 @@ func TestResolveProviderSelection(t *testing.T) {
 			wantAPIBase: "localhost:4321",
 		},
 		{
+			name: "copilot stdio mode does not set default apiBase",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "copilot"
+				cfg.Providers.GitHubCopilot.ConnectMode = "stdio"
+			},
+			wantType: providerTypeGitHubCopilot,
+		},
+		{
+			name: "copilot stdio mode preserves custom cli path",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "copilot"
+				cfg.Providers.GitHubCopilot.ConnectMode = "stdio"
+				cfg.Providers.GitHubCopilot.APIBase = "/usr/local/bin/copilot"
+			},
+			wantType:    providerTypeGitHubCopilot,
+			wantAPIBase: "/usr/local/bin/copilot",
+		},
+		{
+			name: "copilot grpc mode with custom apiBase",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "copilot"
+				cfg.Providers.GitHubCopilot.ConnectMode = "grpc"
+				cfg.Providers.GitHubCopilot.APIBase = "myhost:5000"
+			},
+			wantType:    providerTypeGitHubCopilot,
+			wantAPIBase: "myhost:5000",
+		},
+		{
 			name: "explicit deepseek provider uses deepseek defaults",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Provider = "deepseek"

@@ -232,12 +232,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			}
 		case "github_copilot", "copilot":
 			sel.providerType = providerTypeGitHubCopilot
-			if cfg.Providers.GitHubCopilot.APIBase != "" {
-				sel.apiBase = cfg.Providers.GitHubCopilot.APIBase
-			} else {
+			sel.connectMode = cfg.Providers.GitHubCopilot.ConnectMode
+			sel.apiBase = cfg.Providers.GitHubCopilot.APIBase
+			// For grpc mode (or default), use localhost:4321 if no address is specified.
+			// For stdio mode, apiBase is the optional CLI binary path (empty = "copilot" from PATH).
+			if sel.apiBase == "" && sel.connectMode != "stdio" {
 				sel.apiBase = "localhost:4321"
 			}
-			sel.connectMode = cfg.Providers.GitHubCopilot.ConnectMode
 			return sel, nil
 		}
 	}
