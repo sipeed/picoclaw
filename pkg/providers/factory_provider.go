@@ -44,6 +44,10 @@ func createCodexAuthProvider() (LLMProvider, error) {
 //   - "openai/gpt-4o" -> ("openai", "gpt-4o")
 //   - "anthropic/claude-sonnet-4.6" -> ("anthropic", "claude-sonnet-4.6")
 //   - "gpt-4o" -> ("openai", "gpt-4o")  // default protocol
+//
+// Note: use CreateProviderFromConfig when a ModelConfig is available, as it
+// respects the explicit Provider override field (needed for models whose
+// identifiers contain slashes, e.g. Cloudflare "@cf/qwen/qwen3-30b-a3b-fp8").
 func ExtractProtocol(model string) (protocol, modelID string) {
 	model = strings.TrimSpace(model)
 	protocol, modelID, found := strings.Cut(model, "/")
@@ -67,7 +71,17 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return nil, "", fmt.Errorf("model is required")
 	}
 
-	protocol, modelID := ExtractProtocol(cfg.Model)
+	// If Provider is explicitly set, use it as the protocol and treat the entire
+	// Model string as the model identifier (no prefix stripping). This handles
+	// models whose names contain slashes that would otherwise be misinterpreted
+	// as a protocol prefix (e.g. Cloudflare AI: "@cf/qwen/qwen3-30b-a3b-fp8").
+	var protocol, modelID string
+	if cfg.Provider != "" {
+		protocol = strings.ToLower(strings.TrimSpace(cfg.Provider))
+		modelID = cfg.Model
+	} else {
+		protocol, modelID = ExtractProtocol(cfg.Model)
+	}
 
 	switch protocol {
 	case "openai":
