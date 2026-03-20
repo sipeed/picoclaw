@@ -555,6 +555,172 @@ func TestLoadConfig_WebToolsProxy(t *testing.T) {
 	}
 }
 
+func loadModelConfigFromJSON(t *testing.T, configJSON, modelName string) *ModelConfig {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	modelCfg, err := cfg.GetModelConfig(modelName)
+	if err != nil {
+		t.Fatalf("GetModelConfig() error: %v", err)
+	}
+
+	return modelCfg
+}
+
+func assertModelConfigProviderInheritance(
+	t *testing.T,
+	modelCfg *ModelConfig,
+	wantAPIKey, wantAPIBase, wantProxy string,
+	wantRequestTimeout int,
+) {
+	t.Helper()
+
+	if modelCfg.APIKey != wantAPIKey {
+		t.Fatalf("APIKey = %q, want %q", modelCfg.APIKey, wantAPIKey)
+	}
+	if modelCfg.APIBase != wantAPIBase {
+		t.Fatalf("APIBase = %q, want %q", modelCfg.APIBase, wantAPIBase)
+	}
+	if modelCfg.Proxy != wantProxy {
+		t.Fatalf("Proxy = %q, want %q", modelCfg.Proxy, wantProxy)
+	}
+	if modelCfg.RequestTimeout != wantRequestTimeout {
+		t.Fatalf("RequestTimeout = %d, want %d", modelCfg.RequestTimeout, wantRequestTimeout)
+	}
+}
+
+func TestLoadConfig_ModelListInheritsProviderFields(t *testing.T) {
+	configJSON := `{
+  "providers": {
+    "litellm": {
+      "api_key": "shared-key",
+      "api_base": "http://host:4000/v1",
+      "proxy": "http://proxy:8080",
+      "request_timeout": 45
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "kimi1",
+      "model": "litellm/kimi-1"
+    }
+  ]
+}`
+
+	modelCfg := loadModelConfigFromJSON(t, configJSON, "kimi1")
+	assertModelConfigProviderInheritance(t, modelCfg, "shared-key", "http://host:4000/v1", "http://proxy:8080", 45)
+}
+
+func TestLoadConfig_ModelListKeepsExplicitOverrides(t *testing.T) {
+	configJSON := `{
+  "providers": {
+    "litellm": {
+      "api_key": "shared-key",
+      "api_base": "http://host:4000/v1",
+      "proxy": "http://proxy:8080",
+      "request_timeout": 45
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "kimi1",
+      "model": "litellm/kimi-1",
+      "api_key": "model-key",
+      "request_timeout": 90
+    }
+  ]
+}`
+
+	modelCfg := loadModelConfigFromJSON(t, configJSON, "kimi1")
+	assertModelConfigProviderInheritance(t, modelCfg, "model-key", "http://host:4000/v1", "http://proxy:8080", 90)
+}
+
+func TestLoadConfig_ModelListInheritsOpenAIProviderForBareModel(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	configJSON := `{
+  "providers": {
+    "openai": {
+      "api_key": "openai-key",
+      "api_base": "https://api.example.com/v1"
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "gpt-4.1"
+    }
+  ]
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	modelCfg, err := cfg.GetModelConfig("gpt4")
+	if err != nil {
+		t.Fatalf("GetModelConfig() error: %v", err)
+	}
+	if modelCfg.APIKey != "openai-key" {
+		t.Fatalf("APIKey = %q, want %q", modelCfg.APIKey, "openai-key")
+	}
+	if modelCfg.APIBase != "https://api.example.com/v1" {
+		t.Fatalf("APIBase = %q, want %q", modelCfg.APIBase, "https://api.example.com/v1")
+	}
+}
+
+func TestLoadConfig_ModelListInheritsCopilotProviderAlias(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	configJSON := `{
+  "providers": {
+    "github_copilot": {
+      "api_base": "localhost:5000",
+      "connect_mode": "stdio"
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "copilot",
+      "model": "copilot/gpt-5"
+    }
+  ]
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	modelCfg, err := cfg.GetModelConfig("copilot")
+	if err != nil {
+		t.Fatalf("GetModelConfig() error: %v", err)
+	}
+	if modelCfg.APIBase != "localhost:5000" {
+		t.Fatalf("APIBase = %q, want %q", modelCfg.APIBase, "localhost:5000")
+	}
+	if modelCfg.ConnectMode != "stdio" {
+		t.Fatalf("ConnectMode = %q, want %q", modelCfg.ConnectMode, "stdio")
+	}
+}
+
 // TestDefaultConfig_DMScope verifies the default dm_scope value
 // TestDefaultConfig_SummarizationThresholds verifies summarization defaults
 func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
