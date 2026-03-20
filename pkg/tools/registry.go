@@ -19,15 +19,34 @@ type ToolEntry struct {
 }
 
 type ToolRegistry struct {
-	tools   map[string]*ToolEntry
-	mu      sync.RWMutex
-	version atomic.Uint64 // incremented on Register/RegisterHidden for cache invalidation
+	tools    map[string]*ToolEntry
+	mu       sync.RWMutex
+	version  atomic.Uint64 // incremented on Register/RegisterHidden for cache invalidation
+	maxTools int           // 0 means use DefaultMaxTools
 }
+
+const DefaultMaxTools = 128
 
 func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
 		tools: make(map[string]*ToolEntry),
 	}
+}
+
+// SetMaxTools configures the maximum number of tool definitions returned by
+// ToProviderDefs. This prevents exceeding LLM API tool array limits.
+// A value of 0 or negative means use DefaultMaxTools.
+func (r *ToolRegistry) SetMaxTools(n int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.maxTools = n
+}
+
+func (r *ToolRegistry) getMaxTools() int {
+	if r.maxTools > 0 {
+		return r.maxTools
+	}
+	return DefaultMaxTools
 }
 
 func (r *ToolRegistry) Register(tool Tool) {
@@ -291,41 +310,77 @@ func (r *ToolRegistry) GetDefinitions() []map[string]any {
 
 // ToProviderDefs converts tool definitions to provider-compatible format.
 // This is the format expected by LLM provider APIs.
+// The result is capped at maxTools (default 128) to respect LLM API limits.
+// Built-in tools are prioritized over MCP tools when truncation is needed.
 func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	sorted := r.sortedToolNames()
-	definitions := make([]providers.ToolDefinition, 0, len(sorted))
-	for _, name := range sorted {
-		entry := r.tools[name]
+	limit := r.getMaxTools()
 
-		if !entry.IsCore && entry.TTL <= 0 {
-			continue
-		}
-
+	toProviderDef := func(entry *ToolEntry) (providers.ToolDefinition, bool) {
 		schema := ToolToSchema(entry.Tool)
-
-		// Safely extract nested values with type checks
 		fn, ok := schema["function"].(map[string]any)
 		if !ok {
-			continue
+			return providers.ToolDefinition{}, false
 		}
-
 		name, _ := fn["name"].(string)
 		desc, _ := fn["description"].(string)
 		params, _ := fn["parameters"].(map[string]any)
-
-		definitions = append(definitions, providers.ToolDefinition{
+		return providers.ToolDefinition{
 			Type: "function",
 			Function: providers.ToolFunctionDefinition{
 				Name:        name,
 				Description: desc,
 				Parameters:  params,
 			},
-		})
+		}, true
 	}
-	return definitions
+
+	// Two-pass approach: built-in tools first, then MCP tools.
+	var builtinDefs, mcpDefs []providers.ToolDefinition
+	for _, name := range sorted {
+		entry := r.tools[name]
+		if !entry.IsCore && entry.TTL <= 0 {
+			continue
+		}
+		def, ok := toProviderDef(entry)
+		if !ok {
+			continue
+		}
+		if _, isMCP := entry.Tool.(*MCPTool); isMCP {
+			mcpDefs = append(mcpDefs, def)
+		} else {
+			builtinDefs = append(builtinDefs, def)
+		}
+	}
+
+	total := len(builtinDefs) + len(mcpDefs)
+	if total <= limit {
+		return append(builtinDefs, mcpDefs...)
+	}
+
+	// Truncation needed: keep all built-in tools, trim MCP tools.
+	remaining := limit - len(builtinDefs)
+	if remaining < 0 {
+		remaining = 0
+	}
+	dropped := len(mcpDefs) - remaining
+	if remaining < len(mcpDefs) {
+		mcpDefs = mcpDefs[:remaining]
+	}
+
+	logger.WarnCF("tools", "Tool count exceeds limit, MCP tools truncated",
+		map[string]any{
+			"total":    total,
+			"limit":    limit,
+			"builtin":  len(builtinDefs),
+			"mcp_kept": len(mcpDefs),
+			"dropped":  dropped,
+		})
+
+	return append(builtinDefs, mcpDefs...)
 }
 
 // List returns a list of all registered tool names.
