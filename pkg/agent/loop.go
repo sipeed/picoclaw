@@ -347,17 +347,17 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		<-workerDone
 	}()
 
+	inbound := al.bus.InboundChan()
 	for al.running.Load() {
+		var msg bus.InboundMessage
 		select {
 		case <-ctx.Done():
 			return nil
-		default:
-		}
-
-		msg, ok := al.bus.ConsumeInbound(ctx)
-
-		if !ok {
-			continue
+		case m, ok := <-inbound:
+			if !ok {
+				return nil
+			}
+			msg = m
 		}
 
 		// Echo commands sent from the Mini App so the user can see what was sent.
@@ -375,8 +375,8 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		}
 
 		// Fast path: handle slash commands immediately without blocking the LLM worker.
-
-		if response, handled := al.handleCommand(ctx, msg); handled {
+		defaultAgent := al.registry.GetDefaultAgent()
+		if response, handled := al.handleCommand(ctx, msg, defaultAgent, msg.SessionKey); handled {
 			if response != "" {
 				_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 					Channel: msg.Channel,
@@ -496,6 +496,14 @@ func (al *AgentLoop) llmWorker(ctx context.Context, queue <-chan bus.InboundMess
 
 // llmWorkerNormal processes a single non-PDF message.
 func (al *AgentLoop) llmWorkerNormal(ctx context.Context, msg bus.InboundMessage) {
+	al.activeRequests.Add(1)
+	defer al.activeRequests.Done()
+
+	// Ensure typing indicator is stopped when processing completes.
+	if al.channelManager != nil {
+		defer al.channelManager.InvokeTypingStop(msg.Channel, msg.ChatID)
+	}
+
 	// Reset per-round message-tool state so a previous round's
 	// tool-sent flag does not suppress this round's response.
 	if defaultAgent := al.registry.GetDefaultAgent(); defaultAgent != nil {
@@ -1041,6 +1049,54 @@ func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, cha
 	})
 }
 
+// resolveMessageRoute resolves the agent and routing info for an inbound message.
+// It looks up the agent registry to determine which agent handles the message
+// and resets the message tool context for the new round.
+func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
+	registry := al.GetRegistry()
+	route := registry.ResolveRoute(routing.RouteInput{
+		Channel:    msg.Channel,
+		AccountID:  msg.Metadata[metadataKeyAccountID],
+		Peer:       extractPeer(msg),
+		ParentPeer: extractParentPeer(msg),
+		GuildID:    msg.Metadata[metadataKeyGuildID],
+		TeamID:     msg.Metadata[metadataKeyTeamID],
+	})
+
+	agent, ok := registry.GetAgent(route.AgentID)
+	if !ok {
+		agent = registry.GetDefaultAgent()
+	}
+	if agent == nil {
+		return route, nil, fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
+	}
+
+	// Reset message-tool state for this round
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if mt, ok := tool.(tools.ContextualTool); ok {
+			mt.SetContext(msg.Channel, msg.ChatID)
+		}
+	}
+
+	logger.InfoCF("agent", "Routed message",
+		map[string]any{
+			"agent_id":    agent.ID,
+			"session_key": route.SessionKey,
+			"matched_by":  route.MatchedBy,
+		})
+
+	return route, agent, nil
+}
+
+// resolveScopeKey returns the session key to use: honors a pre-set key (from
+// ProcessDirect/cron) over the route-resolved key.
+func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
+	if msgSessionKey != "" {
+		return msgSessionKey
+	}
+	return route.SessionKey
+}
+
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
 	// Add message preview to log (show full content for error messages)
 	var logContent string
@@ -1091,62 +1147,18 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Expand fork-specific /skill and /plan commands
 	expansionCompact := al.expandForkCommands(&msg)
 
-	// Check for commands
-
-	if response, handled := al.handleCommand(ctx, msg); handled {
+	// Check for commands (using default agent, before routing)
+	if response, handled := al.handleCommand(ctx, msg, al.registry.GetDefaultAgent(), msg.SessionKey); handled {
 		return response, nil
 	}
 
 	// Route to determine agent and session key
-
-	registry := al.GetRegistry()
-	route := registry.ResolveRoute(routing.RouteInput{
-		Channel: msg.Channel,
-
-		AccountID: msg.Metadata["account_id"],
-
-		Peer: extractPeer(msg),
-
-		ParentPeer: extractParentPeer(msg),
-
-		GuildID: msg.Metadata["guild_id"],
-
-		TeamID: msg.Metadata["team_id"],
-	})
-
-	agent, ok := registry.GetAgent(route.AgentID)
-	if !ok {
-		agent = registry.GetDefaultAgent()
-	}
-	if agent == nil {
-		return "", fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
+	route, agent, err := al.resolveMessageRoute(msg)
+	if err != nil {
+		return "", err
 	}
 
-	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
-
-	if tool, ok := agent.Tools.Get("message"); ok {
-		if mt, ok := tool.(tools.ContextualTool); ok {
-			mt.SetContext(msg.Channel, msg.ChatID)
-		}
-	}
-
-	// Use routed session key, but honor ANY pre-set session key (for ProcessDirect/cron)
-
-	sessionKey := route.SessionKey
-
-	if msg.SessionKey != "" {
-		sessionKey = msg.SessionKey
-	}
-
-	logger.InfoCF("agent", "Routed message",
-
-		map[string]any{
-			"agent_id": agent.ID,
-
-			"session_key": sessionKey,
-
-			"matched_by": route.MatchedBy,
-		})
+	sessionKey := resolveScopeKey(route, msg.SessionKey)
 
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey: sessionKey,

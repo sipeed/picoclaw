@@ -8,164 +8,136 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/commands"
+	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/stats"
 )
 
-func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
-	content := strings.TrimSpace(msg.Content)
+// buildCommandsRuntime constructs a commands.Runtime wired to the current
+// agent and loop state. This is the upstream pattern for providing runtime
+// dependencies to command handlers.
+func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey string) *commands.Runtime {
+	return &commands.Runtime{
+		Config: al.GetConfig(),
+		GetModelInfo: func() (string, string) {
+			if agent == nil {
+				return "unknown", "unknown"
+			}
+			prov, _ := providers.ExtractProtocol(agent.Model)
+			return agent.Model, prov
+		},
+		ListAgentIDs: func() []string {
+			return al.GetRegistry().ListAgentIDs()
+		},
+		ListDefinitions: func() []commands.Definition {
+			return al.cmdRegistry.Definitions()
+		},
+		GetEnabledChannels: func() []string {
+			if al.channelManager == nil {
+				return nil
+			}
+			return al.channelManager.GetEnabledChannels()
+		},
+		SwitchModel: func(value string) (string, error) {
+			if agent == nil {
+				return "", fmt.Errorf("no default agent configured")
+			}
+			old := agent.Model
+			agent.Model = value
+			return old, nil
+		},
+		SwitchChannel: func(value string) error {
+			if al.channelManager == nil {
+				return fmt.Errorf("channel manager not initialized")
+			}
+			if _, exists := al.channelManager.GetChannel(value); !exists && value != "cli" {
+				return fmt.Errorf("channel '%s' not found or not enabled", value)
+			}
+			return nil
+		},
+		ClearHistory: func() error {
+			if agent == nil || sessionKey == "" {
+				return fmt.Errorf("no active session")
+			}
+			agent.Sessions.SetHistory(sessionKey, nil)
+			agent.Sessions.SetSummary(sessionKey, "")
+			return agent.Sessions.Save(sessionKey)
+		},
+		ReloadConfig: func() error {
+			if al.reloadFunc != nil {
+				return al.reloadFunc()
+			}
+			return fmt.Errorf("reload not available")
+		},
+	}
+}
 
-	if !strings.HasPrefix(content, "/") {
+// handleCommand processes slash commands. It first tries the upstream
+// commands.Executor (for /show, /list, /switch, /check, /clear, /reload, etc.),
+// then falls back to fork-specific commands (/session, /skills, /plan, /heartbeat).
+func (al *AgentLoop) handleCommand(
+	ctx context.Context,
+	msg bus.InboundMessage,
+	agent *AgentInstance,
+	sessionKey string,
+) (string, bool) {
+	content := strings.TrimSpace(msg.Content)
+	if !commands.HasCommandPrefix(content) {
 		return "", false
 	}
 
-	parts := strings.Fields(content)
+	// Build a reply collector — the Executor calls req.Reply with the response.
+	var response string
+	replyFn := func(text string) error {
+		response = text
+		return nil
+	}
 
+	rt := al.buildCommandsRuntime(agent, sessionKey)
+	exec := commands.NewExecutor(al.cmdRegistry, rt)
+	result := exec.Execute(ctx, commands.Request{
+		Channel:  msg.Channel,
+		ChatID:   msg.ChatID,
+		SenderID: msg.SenderID,
+		Text:     content,
+		Reply:    replyFn,
+	})
+
+	if result.Outcome == commands.OutcomeHandled {
+		if result.Err != nil {
+			return fmt.Sprintf("Command error: %v", result.Err), true
+		}
+		return response, true
+	}
+
+	// Fallback: fork-specific commands not in the upstream registry
+	parts := strings.Fields(content)
 	if len(parts) == 0 {
 		return "", false
 	}
-
 	cmd := parts[0]
-
 	args := parts[1:]
 
 	switch cmd {
-	case "/show":
-
-		if len(args) < 1 {
-			return "Usage: /show [model|channel|agents]", true
-		}
-
-		switch args[0] {
-		case "model":
-
-			defaultAgent := al.registry.GetDefaultAgent()
-
-			if defaultAgent == nil {
-				return "No default agent configured", true
-			}
-
-			return fmt.Sprintf("Current model: %s", defaultAgent.Model), true
-
-		case "channel":
-
-			return fmt.Sprintf("Current channel: %s", msg.Channel), true
-
-		case "agents":
-
-			agentIDs := al.registry.ListAgentIDs()
-
-			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
-
-		default:
-
-			return fmt.Sprintf("Unknown show target: %s", args[0]), true
-		}
-
-	case "/list":
-
-		if len(args) < 1 {
-			return "Usage: /list [models|channels|agents]", true
-		}
-
-		switch args[0] {
-		case "models":
-
-			return "Available models: configured in config.json per agent", true
-
-		case "channels":
-
-			if al.channelManager == nil {
-				return "Channel manager not initialized", true
-			}
-
-			channels := al.channelManager.GetEnabledChannels()
-
-			if len(channels) == 0 {
-				return "No channels enabled", true
-			}
-
-			return fmt.Sprintf("Enabled channels: %s", strings.Join(channels, ", ")), true
-
-		case "agents":
-
-			agentIDs := al.registry.ListAgentIDs()
-
-			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
-
-		default:
-
-			return fmt.Sprintf("Unknown list target: %s", args[0]), true
-		}
-
-	case "/switch":
-
-		if len(args) < 3 || args[1] != "to" {
-			return "Usage: /switch [model|channel] to <name>", true
-		}
-
-		target := args[0]
-
-		value := args[2]
-
-		switch target {
-		case "model":
-
-			defaultAgent := al.registry.GetDefaultAgent()
-
-			if defaultAgent == nil {
-				return "No default agent configured", true
-			}
-
-			oldModel := defaultAgent.Model
-
-			defaultAgent.Model = value
-
-			return fmt.Sprintf("Switched model from %s to %s", oldModel, value), true
-
-		case "channel":
-
-			if al.channelManager == nil {
-				return "Channel manager not initialized", true
-			}
-
-			if _, exists := al.channelManager.GetChannel(value); !exists && value != "cli" {
-				return fmt.Sprintf("Channel '%s' not found or not enabled", value), true
-			}
-
-			return fmt.Sprintf("Switched target channel to %s", value), true
-
-		default:
-
-			return fmt.Sprintf("Unknown switch target: %s", target), true
-		}
-
 	case "/session":
-
 		return al.handleSessionCommand(args, msg.SessionKey), true
 
 	case "/skills":
-
 		return al.handleSkillsCommand(), true
 
 	case "/plan":
-
 		resp, handled := al.handlePlanCommand(args, msg.SessionKey)
-
 		if handled {
 			al.notifyStateChange()
 		}
-
 		return resp, handled
 
 	case "/heartbeat":
-
 		resp, handled := al.handleHeartbeatCommand(args, msg)
-
 		if handled {
 			al.notifyStateChange()
 		}
-
 		return resp, handled
 	}
 

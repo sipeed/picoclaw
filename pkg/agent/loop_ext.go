@@ -39,7 +39,11 @@ type loopExt struct {
 
 	activeTasks sync.Map // sessionKey → *activeTask
 
+	activeRequests sync.WaitGroup // tracks in-flight LLM worker requests
+
 	done chan struct{} // closed by Close() to stop background goroutines
+
+	reloadFunc func() error // upstream compat: called by buildCommandsRuntime
 
 	saveConfig func(*config.Config) error
 
@@ -129,6 +133,12 @@ func (al *AgentLoop) pruneMediaCache() {
 	} else if n > 0 {
 		logger.InfoCF("agent", "media cache pruned", map[string]any{"removed": n})
 	}
+}
+
+// SetReloadFunc registers a callback to reload config from disk.
+// Used by buildCommandsRuntime to wire the /reload command.
+func (al *AgentLoop) SetReloadFunc(fn func() error) {
+	al.reloadFunc = fn
 }
 
 // SetConfigSaver registers a callback to persist config changes.

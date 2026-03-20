@@ -768,6 +768,26 @@ func (al *AgentLoop) redirectMessageToolForTask(agent *AgentInstance, task *acti
 	})
 }
 
+// selectCandidates resolves the model candidates for a turn. Called once per
+// turn (sticky) so the model doesn't change mid-iteration. Plan model hooks
+// may further override per-iteration via hooks.SelectModel().
+//
+// Uses the agent's pre-resolved Candidates/LightCandidates. When a Router is
+// configured, it scores the message and may select the light model tier.
+func (al *AgentLoop) selectCandidates(
+	agent *AgentInstance,
+	userMsg string,
+	history []providers.Message,
+) []providers.FallbackCandidate {
+	if agent.Router != nil && len(agent.LightCandidates) > 0 {
+		_, isLight, _ := agent.Router.SelectModel(userMsg, history, agent.Model)
+		if isLight {
+			return agent.LightCandidates
+		}
+	}
+	return agent.Candidates
+}
+
 // runLLMIteration executes the LLM call loop with tool handling using hooks.
 func (al *AgentLoop) runLLMIteration(
 	ctx context.Context,
@@ -778,6 +798,10 @@ func (al *AgentLoop) runLLMIteration(
 	planSnapshot string,
 ) (string, int, error) {
 	hooks := al.buildHooks(agent, opts, task, planSnapshot)
+
+	// Select candidates once per turn (sticky). Plan model hooks may
+	// override per-iteration via hooks.SelectModel().
+	turnCandidates := al.selectCandidates(agent, opts.UserMessage, messages)
 
 	iteration := 0
 	var finalContent string
@@ -799,8 +823,9 @@ func (al *AgentLoop) runLLMIteration(
 		// Build tool definitions
 		providerToolDefs := hooks.FilterTools(agent.Tools.ToProviderDefs())
 
-		// Resolve model and candidates for this call
-		candidates := agent.Candidates
+		// Resolve model and candidates for this call.
+		// Default to turn-level candidates; hooks may override per-iteration.
+		candidates := turnCandidates
 		activeModel := agent.Model
 		if m, c := hooks.SelectModel(); m != "" {
 			activeModel = m
@@ -938,6 +963,9 @@ func (al *AgentLoop) runLLMIteration(
 
 		// Execute tool calls and collect results
 		lastBlocker := al.executeToolCalls(ctx, agent, normalizedToolCalls, &messages, opts, hooks, iteration)
+
+		// Tick TTL-based tool expiry after execution
+		agent.Tools.TickTTL()
 
 		hooks.InjectReminders(iteration, &messages, lastBlocker)
 		hooks.RefreshSystemPrompt(messages)

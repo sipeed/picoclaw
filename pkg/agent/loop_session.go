@@ -97,9 +97,9 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 
 	tokenEstimate := al.estimateTokens(newHistory)
 
-	threshold := agent.ContextWindow * 75 / 100
+	threshold := agent.ContextWindow * agent.SummarizeTokenPercent / 100
 
-	if len(newHistory) > 20 || tokenEstimate > threshold {
+	if len(newHistory) > agent.SummarizeMessageThreshold || tokenEstimate > threshold {
 		summarizeKey := agent.ID + ":" + sessionKey
 
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
