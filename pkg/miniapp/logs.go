@@ -17,7 +17,7 @@ import (
 // apiLogsSnapshot creates a tar.gz snapshot of the current log buffer.
 func (h *Handler) apiLogsSnapshot(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 
@@ -25,7 +25,7 @@ func (h *Handler) apiLogsSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	snapshotDir := filepath.Join(h.workspace, "logs", "snapshots")
 	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
-		http.Error(w, `{"error":"cannot create snapshot dir"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "cannot create snapshot dir")
 		return
 	}
 
@@ -36,7 +36,7 @@ func (h *Handler) apiLogsSnapshot(w http.ResponseWriter, r *http.Request) {
 	// Create tar.gz
 	f, err := os.Create(snapshotPath)
 	if err != nil {
-		http.Error(w, `{"error":"cannot create snapshot file"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "cannot create snapshot file")
 		return
 	}
 
@@ -88,7 +88,7 @@ func (h *Handler) apiLogsSnapshot(w http.ResponseWriter, r *http.Request) {
 // apiLogsSnapshotDownload serves a snapshot tar.gz file.
 func (h *Handler) apiLogsSnapshotDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 
@@ -96,7 +96,7 @@ func (h *Handler) apiLogsSnapshotDownload(w http.ResponseWriter, r *http.Request
 	id = filepath.Base(id) // path traversal prevention
 
 	if id == "" || id == "." || id == ".." {
-		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 
@@ -104,7 +104,7 @@ func (h *Handler) apiLogsSnapshotDownload(w http.ResponseWriter, r *http.Request
 	snapshotPath := filepath.Join(h.workspace, "logs", "snapshots", filename)
 
 	if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
-		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 

@@ -160,7 +160,7 @@ func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
 //	{"type":"event","event":{...orch.Event}}       -- pushed on each state change
 func (h *Handler) wsOrchestration(w http.ResponseWriter, r *http.Request) {
 	if h.orchBroadcaster == nil {
-		http.Error(w, `{"error":"orchestration not enabled"}`, http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "orchestration not enabled")
 		return
 	}
 

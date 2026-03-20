@@ -49,6 +49,10 @@ type ResearchStore struct {
 	workspace string
 }
 
+func nowRFC3339() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}
+
 // OpenResearchStore opens (or creates) the research SQLite database.
 func OpenResearchStore(dbPath, workspace string) (*ResearchStore, error) {
 	connStr := "file:" + dbPath + "?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000"
@@ -254,7 +258,7 @@ func (s *ResearchStore) SetTaskStatus(id string, status TaskStatus) error {
 		return fmt.Errorf("invalid transition: %s → %s", task.Status, status)
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := nowRFC3339()
 	completedAt := ""
 	if status == StatusCompleted || status == StatusFailed {
 		completedAt = now
@@ -267,7 +271,7 @@ func (s *ResearchStore) SetTaskStatus(id string, status TaskStatus) error {
 
 // UpdateTask updates a task's title and/or description.
 func (s *ResearchStore) UpdateTask(id, title, description string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := nowRFC3339()
 	_, err := s.db.Exec(
 		`UPDATE research_tasks SET title = ?, description = ?, updated_at = ? WHERE id = ?`,
 		title, description, now, id)
@@ -373,7 +377,7 @@ func (s *ResearchStore) SearchTasks(query string) ([]*Task, error) {
 
 // TouchLastResearched updates the last_researched_at timestamp for a task.
 func (s *ResearchStore) TouchLastResearched(taskID string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := nowRFC3339()
 	_, err := s.db.Exec(
 		`UPDATE research_tasks SET last_researched_at = ?, updated_at = ? WHERE id = ?`,
 		now, now, taskID)
@@ -385,7 +389,7 @@ func (s *ResearchStore) SetInterval(taskID, interval string) error {
 	if _, err := ParseInterval(interval); err != nil {
 		return fmt.Errorf("invalid interval %q: %w", interval, err)
 	}
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := nowRFC3339()
 	_, err := s.db.Exec(
 		`UPDATE research_tasks SET interval = ?, updated_at = ? WHERE id = ?`,
 		interval, now, taskID)
@@ -395,24 +399,7 @@ func (s *ResearchStore) SetInterval(taskID, interval string) error {
 // --- helpers ---
 
 func scanTask(row *sql.Row) (*Task, error) {
-	var t Task
-	var statusStr, lastResearchedStr, createdStr, updatedStr, completedStr string
-	err := row.Scan(&t.ID, &t.Title, &t.Slug, &t.Description, &statusStr,
-		&t.OutputDir, &t.Interval, &lastResearchedStr, &createdStr, &updatedStr, &completedStr)
-	if err != nil {
-		return nil, err
-	}
-	t.Status = TaskStatus(statusStr)
-	if t.Interval == "" {
-		t.Interval = DefaultResearchInterval
-	}
-	t.LastResearchedAt, _ = time.Parse(time.RFC3339, lastResearchedStr)
-	t.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
-	t.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
-	if completedStr != "" {
-		t.CompletedAt, _ = time.Parse(time.RFC3339, completedStr)
-	}
-	return &t, nil
+	return scanTaskRow(row)
 }
 
 type rowScanner interface {

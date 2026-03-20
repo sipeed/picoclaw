@@ -37,6 +37,10 @@ type Cache struct {
 	db *sql.DB
 }
 
+func currentTimestamp() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}
+
 // Open opens (or creates) a media cache database at dbPath.
 func Open(dbPath string) (*Cache, error) {
 	connStr := "file:" + dbPath + "?_journal_mode=WAL&_busy_timeout=5000"
@@ -70,18 +74,13 @@ func (c *Cache) Get(hash, entryType string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	// Update accessed_at
-	now := time.Now().UTC().Format(time.RFC3339)
-	_, _ = c.db.Exec(
-		`UPDATE media_cache SET accessed_at = ? WHERE hash = ? AND type = ?`,
-		now, hash, entryType,
-	)
+	c.touchAccessed(hash, entryType)
 	return result, true
 }
 
 // Put stores a result in the cache.
 func (c *Cache) Put(hash, entryType, result string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := currentTimestamp()
 	_, err := c.db.Exec(
 		`INSERT INTO media_cache (hash, type, result, created_at, accessed_at)
 		 VALUES (?, ?, ?, ?, ?)
@@ -110,17 +109,13 @@ func (c *Cache) GetEntry(hash, entryType string) (Entry, bool) {
 	if err != nil {
 		return Entry{}, false
 	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	_, _ = c.db.Exec(
-		`UPDATE media_cache SET accessed_at = ? WHERE hash = ? AND type = ?`,
-		now, hash, entryType,
-	)
+	c.touchAccessed(hash, entryType)
 	return e, true
 }
 
 // PutEntry stores a full entry in the cache.
 func (c *Cache) PutEntry(hash, entryType string, entry Entry) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := currentTimestamp()
 	_, err := c.db.Exec(
 		`INSERT INTO media_cache (hash, type, result, file_path, pages, created_at, accessed_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -186,6 +181,13 @@ func (c *Cache) Prune(ttl time.Duration) (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+func (c *Cache) touchAccessed(hash, entryType string) {
+	_, _ = c.db.Exec(
+		`UPDATE media_cache SET accessed_at = ? WHERE hash = ? AND type = ?`,
+		currentTimestamp(), hash, entryType,
+	)
 }
 
 // HashData computes a fast FNV-1a 64-bit hash of the given data,

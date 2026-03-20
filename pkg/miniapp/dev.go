@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -45,9 +42,7 @@ func (h *Handler) RegisterDevTarget(name, target string) (string, error) {
 	id := strconv.Itoa(h.devNextID)
 
 	h.devTargets[id] = &DevTarget{ID: id, Name: name, Target: target}
-	if h.notifier != nil {
-		h.notifier.Notify()
-	}
+	h.notifyStateChanged()
 	return id, nil
 }
 
@@ -64,13 +59,9 @@ func (h *Handler) UnregisterDevTarget(id string) error {
 	delete(h.devTargets, id)
 
 	if h.devActiveID == id {
-		h.devActiveID = ""
-		h.devTarget = nil
-		h.devProxy = nil
+		h.clearActiveDevTargetLocked()
 	}
-	if h.notifier != nil {
-		h.notifier.Notify()
-	}
+	h.notifyStateChanged()
 	return nil
 }
 
@@ -86,59 +77,13 @@ func (h *Handler) ActivateDevTarget(id string) error {
 		return fmt.Errorf("target %q not found", id)
 	}
 
-	u, err := url.Parse(dt.Target)
+	u, proxy, err := buildDevProxy(dt)
 	if err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
+		return err
 	}
 
-	// Fix IPv6: resolve "localhost" to 127.0.0.1 to avoid connection refused on systems
-	// where localhost resolves to [::1] but the dev server only listens on IPv4.
-	if u.Hostname() == "localhost" {
-		u.Host = net.JoinHostPort("127.0.0.1", u.Port())
-	}
-
-	proxy := httputil.NewSingleHostReverseProxy(u)
-	proxy.ModifyResponse = func(resp *http.Response) error {
-		// Prevent browser/WebView from caching dev proxy responses (CSS, JS, etc.)
-		resp.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		resp.Header.Del("ETag")
-		resp.Header.Del("Last-Modified")
-
-		ct := resp.Header.Get("Content-Type")
-		if !strings.Contains(ct, "text/html") {
-			return nil
-		}
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		resp.Body.Close()
-		modified := injectDevProxyScript(body)
-		resp.Body = io.NopCloser(bytes.NewReader(modified))
-		resp.ContentLength = int64(len(modified))
-		resp.Header.Set("Content-Length", strconv.Itoa(len(modified)))
-		resp.Header.Del("Content-Encoding")
-		return nil
-	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusBadGateway)
-		fmt.Fprintf(w, `<!DOCTYPE html>
-<html><head><style>
-body{background:#1c1c1e;color:#fff;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-.box{text-align:center;padding:32px}
-h2{margin:0 0 12px;font-size:20px;font-weight:600}
-p{color:#8e8e93;font-size:14px;margin:0}
-</style></head><body><div class="box"><h2>Cannot connect</h2><p>%s</p><p style="margin-top:8px;font-size:12px">Target: %s</p></div></body></html>`,
-			escapeHTMLString(err.Error()), escapeHTMLString(dt.Target))
-	}
-
-	h.devTarget = u
-	h.devProxy = proxy
-	h.devActiveID = id
-	if h.notifier != nil {
-		h.notifier.Notify()
-	}
+	h.setActiveDevTargetLocked(id, u, proxy)
+	h.notifyStateChanged()
 	return nil
 }
 
@@ -149,12 +94,8 @@ func (h *Handler) DeactivateDevTarget() error {
 	h.devMu.Lock()
 	defer h.devMu.Unlock()
 
-	h.devActiveID = ""
-	h.devTarget = nil
-	h.devProxy = nil
-	if h.notifier != nil {
-		h.notifier.Notify()
-	}
+	h.clearActiveDevTargetLocked()
+	h.notifyStateChanged()
 	return nil
 }
 
@@ -176,14 +117,7 @@ func (h *Handler) GetDevTarget() string {
 func (h *Handler) ListDevTargets() []DevTarget {
 	h.devMu.RLock()
 	defer h.devMu.RUnlock()
-
-	targets := make([]DevTarget, 0, len(h.devTargets))
-	for _, dt := range h.devTargets {
-		targets = append(targets, *dt)
-	}
-	// Sort by ID for stable order
-	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
-	return targets
+	return h.sortedDevTargetsLocked()
 }
 
 // devProxyScript is the JavaScript injected into HTML responses from the dev proxy.
@@ -301,50 +235,45 @@ func (h *Handler) apiDev(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, h.devStatus())
 	case http.MethodPost:
-		body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
-		if err != nil {
-			http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
-			return
-		}
 		var req struct {
 			Action string `json:"action"`
 			ID     string `json:"id"`
 		}
-		if err := json.Unmarshal(body, &req); err != nil {
-			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+		if err := decodeJSONBody(r, 4096, &req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 		switch req.Action {
 		case "activate":
 			if req.ID == "" {
-				writeJSON(w, map[string]any{"error": "id is required"})
+				writeJSONError(w, http.StatusBadRequest, "id is required")
 				return
 			}
 			if err := h.ActivateDevTarget(req.ID); err != nil {
-				writeJSON(w, map[string]any{"error": err.Error()})
+				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 		case "deactivate":
 			if err := h.DeactivateDevTarget(); err != nil {
-				writeJSON(w, map[string]any{"error": err.Error()})
+				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 		case "unregister":
 			if req.ID == "" {
-				writeJSON(w, map[string]any{"error": "id is required"})
+				writeJSONError(w, http.StatusBadRequest, "id is required")
 				return
 			}
 			if err := h.UnregisterDevTarget(req.ID); err != nil {
-				writeJSON(w, map[string]any{"error": err.Error()})
+				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 		default:
-			writeJSON(w, map[string]any{"error": "unknown action"})
+			writeJSONError(w, http.StatusBadRequest, "unknown action")
 			return
 		}
 		writeJSON(w, h.devStatus())
 	default:
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -354,7 +283,7 @@ func (h *Handler) serveDevProxy(w http.ResponseWriter, r *http.Request) {
 	h.devMu.RUnlock()
 
 	if proxy == nil {
-		http.Error(w, "dev proxy not configured", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "dev proxy not configured")
 		return
 	}
 
@@ -379,30 +308,24 @@ func (h *Handler) devStatus() map[string]any {
 		target = h.devTargets[h.devActiveID].Target // original URL before IPv6 rewrite
 	}
 
-	targets := make([]DevTarget, 0, len(h.devTargets))
-	for _, dt := range h.devTargets {
-		targets = append(targets, *dt)
-	}
-	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
-
 	return map[string]any{
 		"active":    active,
 		"active_id": h.devActiveID,
 		"target":    target,
-		"targets":   targets,
+		"targets":   h.sortedDevTargetsLocked(),
 	}
 }
 
 // apiDevConsole receives console output from dev preview iframes.
 func (h *Handler) apiDevConsole(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 
 	// Only accept console posts when dev proxy is active
 	if h.GetDevTarget() == "" {
-		http.Error(w, `{"error":"not available"}`, http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "not available")
 		return
 	}
 
@@ -417,13 +340,13 @@ func (h *Handler) apiDevConsole(w http.ResponseWriter, r *http.Request) {
 	over := h.consoleReqCount > 10
 	h.consoleMu.Unlock()
 	if over {
-		http.Error(w, `{"error":"rate limit"}`, http.StatusTooManyRequests)
+		writeJSONError(w, http.StatusTooManyRequests, "rate limit")
 		return
 	}
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, 32*1024))
 	if err != nil {
-		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 
@@ -432,7 +355,7 @@ func (h *Handler) apiDevConsole(w http.ResponseWriter, r *http.Request) {
 		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(body, &entries); err != nil {
-		http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 

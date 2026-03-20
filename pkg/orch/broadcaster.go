@@ -76,11 +76,7 @@ func (b *Broadcaster) Unsubscribe(sub *Subscriber) {
 func (b *Broadcaster) Snapshot() []AgentInfo {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	out := make([]AgentInfo, 0, len(b.agents))
-	for _, a := range b.agents {
-		out = append(out, *a)
-	}
-	return out
+	return b.snapshotLocked()
 }
 
 // ReportSpawn implements AgentReporter.
@@ -110,6 +106,35 @@ func (b *Broadcaster) Publish(ev Event) {
 	}
 
 	b.mu.Lock()
+	b.applyEventLocked(ev)
+	subs := b.subscribersLocked()
+	b.mu.Unlock()
+
+	for _, sub := range subs {
+		select {
+		case sub.Ch <- ev:
+		default: // subscriber slow — drop (non-blocking)
+		}
+	}
+}
+
+func (b *Broadcaster) snapshotLocked() []AgentInfo {
+	out := make([]AgentInfo, 0, len(b.agents))
+	for _, a := range b.agents {
+		out = append(out, *a)
+	}
+	return out
+}
+
+func (b *Broadcaster) subscribersLocked() []*Subscriber {
+	subs := make([]*Subscriber, 0, len(b.subs))
+	for sub := range b.subs {
+		subs = append(subs, sub)
+	}
+	return subs
+}
+
+func (b *Broadcaster) applyEventLocked(ev Event) {
 	switch ev.Type {
 	case "agent_spawn":
 		b.agents[ev.ID] = &AgentInfo{
@@ -126,18 +151,5 @@ func (b *Broadcaster) Publish(ev Event) {
 		}
 	case "agent_gc":
 		delete(b.agents, ev.ID)
-	}
-	// snapshot subs while holding lock, then release before sending
-	subs := make([]*Subscriber, 0, len(b.subs))
-	for sub := range b.subs {
-		subs = append(subs, sub)
-	}
-	b.mu.Unlock()
-
-	for _, sub := range subs {
-		select {
-		case sub.Ch <- ev:
-		default: // subscriber slow — drop (non-blocking)
-		}
 	}
 }
