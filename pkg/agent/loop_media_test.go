@@ -151,7 +151,7 @@ func TestFormatDocumentTag_UnknownPages(t *testing.T) {
 func TestReplacePDFTags_NoPDF(t *testing.T) {
 	al := &AgentLoop{}
 	content := "Check this out [file:/path/to/audio.mp3]"
-	result := al.replacePDFTags(t.Context(), content, &config.OCRConfig{Command: "echo"}, "", "", false)
+	result := al.replacePDFTags(t.Context(), content, &config.OCRConfig{Command: "echo"}, "", "", false, "auto")
 	if result != content {
 		t.Errorf("non-PDF should be unchanged, got %q", result)
 	}
@@ -160,7 +160,7 @@ func TestReplacePDFTags_NoPDF(t *testing.T) {
 func TestReplacePDFTags_NoTags(t *testing.T) {
 	al := &AgentLoop{}
 	content := "Hello world"
-	result := al.replacePDFTags(t.Context(), content, &config.OCRConfig{Command: "echo"}, "", "", false)
+	result := al.replacePDFTags(t.Context(), content, &config.OCRConfig{Command: "echo"}, "", "", false, "auto")
 	if result != content {
 		t.Errorf("no tags should be unchanged, got %q", result)
 	}
@@ -175,6 +175,33 @@ func TestProcessPDFs_NilOCR(t *testing.T) {
 	result := al.processPDFsInMessages(t.Context(), messages, nil, "", "")
 	if result[0].Content != messages[0].Content {
 		t.Errorf("content should be unchanged when OCR config is nil")
+	}
+}
+
+func TestDetectReadingOrder(t *testing.T) {
+	tests := []struct {
+		content    string
+		cfgDefault string
+		want       string
+	}{
+		{"\u3053\u306e\u6587\u66f8\u3092\u8aad\u3093\u3067", "", "auto"},
+		{"\u7e26\u66f8\u304d\u3067\u8aad\u3093\u3067", "", "right2left"},
+		{"\u6a2a\u66f8\u304d\u306ePDF", "", "top2bottom"},
+		{"vertical layout", "", "right2left"},
+		{"horizontal doc", "", "top2bottom"},
+		{"right2left please", "", "right2left"},
+		{"top2bottom mode", "", "top2bottom"},
+		{"left2right table", "", "left2right"},
+		{"\u305f\u3066\u304c\u304d\u306e\u6587\u66f8", "", "right2left"},
+		{"\u3088\u3053\u304c\u304d\u306e\u6587\u66f8", "", "top2bottom"},
+		{"plain message", "right2left", "right2left"},
+		{"plain message", "", "auto"},
+		{"\u7e26\u66f8\u304d", "top2bottom", "right2left"}, // message keyword overrides config default
+	}
+	for _, tt := range tests {
+		if got := detectReadingOrder(tt.content, tt.cfgDefault); got != tt.want {
+			t.Errorf("detectReadingOrder(%q, %q) = %q, want %q", tt.content, tt.cfgDefault, got, tt.want)
+		}
 	}
 }
 
