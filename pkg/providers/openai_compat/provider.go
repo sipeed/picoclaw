@@ -1,10 +1,13 @@
 package openai_compat
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -85,17 +88,10 @@ func NewProviderWithMaxTokensFieldAndTimeout(
 	)
 }
 
-func (p *Provider) Chat(
-	ctx context.Context,
-	messages []Message,
-	tools []ToolDefinition,
-	model string,
-	options map[string]any,
-) (*LLMResponse, error) {
-	if p.apiBase == "" {
-		return nil, fmt.Errorf("API base not configured")
-	}
-
+// buildRequestBody constructs the common request body for Chat and ChatStream.
+func (p *Provider) buildRequestBody(
+	messages []Message, tools []ToolDefinition, model string, options map[string]any,
+) map[string]any {
 	model = normalizeModel(model, p.apiBase)
 
 	requestBody := map[string]any{
@@ -112,10 +108,8 @@ func (p *Provider) Chat(
 	}
 
 	if maxTokens, ok := common.AsInt(options["max_tokens"]); ok {
-		// Use configured maxTokensField if specified, otherwise fallback to model-based detection
 		fieldName := p.maxTokensField
 		if fieldName == "" {
-			// Fallback: detect from model name for backward compatibility
 			lowerModel := strings.ToLower(model)
 			if strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "o1") ||
 				strings.Contains(lowerModel, "gpt-5") {
@@ -129,7 +123,6 @@ func (p *Provider) Chat(
 
 	if temperature, ok := common.AsFloat(options["temperature"]); ok {
 		lowerModel := strings.ToLower(model)
-		// Kimi k2 models only support temperature=1.
 		if strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2") {
 			requestBody["temperature"] = 1.0
 		} else {
@@ -139,16 +132,29 @@ func (p *Provider) Chat(
 
 	// Prompt caching: pass a stable cache key so OpenAI can bucket requests
 	// with the same key and reuse prefix KV cache across calls.
-	// The key is typically the agent ID — stable per agent, shared across requests.
-	// See: https://platform.openai.com/docs/guides/prompt-caching
 	// Prompt caching is only supported by OpenAI-native endpoints.
-	// Non-OpenAI providers (Mistral, Gemini, DeepSeek, etc.) reject unknown
-	// fields with 422 errors, so only include it for OpenAI APIs.
+	// Non-OpenAI providers reject unknown fields with 422 errors.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
 		if supportsPromptCacheKey(p.apiBase) {
 			requestBody["prompt_cache_key"] = cacheKey
 		}
 	}
+
+	return requestBody
+}
+
+func (p *Provider) Chat(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
+	if p.apiBase == "" {
+		return nil, fmt.Errorf("API base not configured")
+	}
+
+	requestBody := p.buildRequestBody(messages, tools, model, options)
 
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
@@ -176,6 +182,195 @@ func (p *Provider) Chat(
 	}
 
 	return common.ReadAndParseResponse(resp, p.apiBase)
+}
+
+// ChatStream implements streaming via OpenAI-compatible SSE (stream: true).
+// onChunk receives the accumulated text so far on each text delta.
+func (p *Provider) ChatStream(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	if p.apiBase == "" {
+		return nil, fmt.Errorf("API base not configured")
+	}
+
+	requestBody := p.buildRequestBody(messages, tools, model, options)
+	requestBody["stream"] = true
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+
+	// Use a client without Timeout for streaming — the http.Client.Timeout covers
+	// the entire request lifecycle including body reads, which would kill long streams.
+	// Context cancellation still provides the safety net.
+	streamClient := &http.Client{Transport: p.httpClient.Transport}
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, common.HandleErrorResponse(resp, p.apiBase)
+	}
+
+	return parseStreamResponse(ctx, resp.Body, onChunk)
+}
+
+// parseStreamResponse parses an OpenAI-compatible SSE stream.
+func parseStreamResponse(
+	ctx context.Context,
+	reader io.Reader,
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	var textContent strings.Builder
+	var finishReason string
+	var usage *UsageInfo
+
+	// Tool call assembly: OpenAI streams tool calls as incremental deltas
+	type toolAccum struct {
+		id       string
+		name     string
+		argsJSON strings.Builder
+	}
+	activeTools := map[int]*toolAccum{}
+
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 1MB initial, 10MB max
+	for scanner.Scan() {
+		// Check for context cancellation between chunks
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		line := scanner.Text()
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function *struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"delta"`
+				FinishReason *string `json:"finish_reason"`
+			} `json:"choices"`
+			Usage *UsageInfo `json:"usage"`
+		}
+
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue // skip malformed chunks
+		}
+
+		if chunk.Usage != nil {
+			usage = chunk.Usage
+		}
+
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+
+		choice := chunk.Choices[0]
+
+		// Accumulate text content
+		if choice.Delta.Content != "" {
+			textContent.WriteString(choice.Delta.Content)
+			if onChunk != nil {
+				onChunk(textContent.String())
+			}
+		}
+
+		// Accumulate tool call deltas
+		for _, tc := range choice.Delta.ToolCalls {
+			acc, ok := activeTools[tc.Index]
+			if !ok {
+				acc = &toolAccum{}
+				activeTools[tc.Index] = acc
+			}
+			if tc.ID != "" {
+				acc.id = tc.ID
+			}
+			if tc.Function != nil {
+				if tc.Function.Name != "" {
+					acc.name = tc.Function.Name
+				}
+				if tc.Function.Arguments != "" {
+					acc.argsJSON.WriteString(tc.Function.Arguments)
+				}
+			}
+		}
+
+		if choice.FinishReason != nil {
+			finishReason = *choice.FinishReason
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("streaming read error: %w", err)
+	}
+
+	// Assemble tool calls from accumulated deltas
+	var toolCalls []ToolCall
+	for i := 0; i < len(activeTools); i++ {
+		acc, ok := activeTools[i]
+		if !ok {
+			continue
+		}
+		args := make(map[string]any)
+		raw := acc.argsJSON.String()
+		if raw != "" {
+			if err := json.Unmarshal([]byte(raw), &args); err != nil {
+				log.Printf("openai_compat stream: failed to decode tool call arguments for %q: %v", acc.name, err)
+				args["raw"] = raw
+			}
+		}
+		toolCalls = append(toolCalls, ToolCall{
+			ID:        acc.id,
+			Name:      acc.name,
+			Arguments: args,
+		})
+	}
+
+	if finishReason == "" {
+		finishReason = "stop"
+	}
+
+	return &LLMResponse{
+		Content:      textContent.String(),
+		ToolCalls:    toolCalls,
+		FinishReason: finishReason,
+		Usage:        usage,
+	}, nil
 }
 
 func normalizeModel(model, apiBase string) string {

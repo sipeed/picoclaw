@@ -8,22 +8,22 @@ Communiquez avec votre PicoClaw via Telegram, Discord, WhatsApp, Matrix, QQ, Din
 
 > **Note** : Tous les canaux basés sur les webhooks (LINE, WeCom, etc.) sont servis sur un seul serveur HTTP Gateway partagé (`gateway.host`:`gateway.port`, par défaut `127.0.0.1:18790`). Il n'y a pas de ports par canal à configurer. Note : Feishu utilise le mode WebSocket/SDK et n'utilise pas le serveur HTTP webhook partagé.
 
-| Canal        | Configuration                          |
-| ------------ | -------------------------------------- |
-| **Telegram** | Facile (juste un token)                |
-| **Discord**  | Facile (bot token + intents)           |
-| **WhatsApp** | Facile (natif : scan QR ; ou bridge URL) |
-| **Matrix**   | Moyen (homeserver + bot access token)  |
-| **QQ**       | Facile (AppID + AppSecret)             |
-| **DingTalk** | Moyen (identifiants de l'application)  |
-| **LINE**     | Moyen (identifiants + webhook URL)     |
-| **WeCom AI Bot** | Moyen (Token + clé AES)           |
-| **Feishu**   | Moyen (App ID + Secret, mode WebSocket) |
-| **Slack**    | Moyen (Bot token + App token)          |
-| **IRC**      | Moyen (serveur + configuration TLS)    |
-| **OneBot**   | Moyen (QQ via protocole OneBot)        |
-| **MaixCam**  | Facile (intégration matérielle Sipeed) |
-| **Pico**     | Native PicoClaw protocol           |
+| Canal                | Difficulté         | Description                                           | Documentation                                                                                                    |
+| -------------------- | ------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Telegram**         | ⭐ Facile          | Recommandé, transcription vocale, long polling (pas d'IP publique requise) | [Documentation](../channels/telegram/README.fr.md)                                                  |
+| **Discord**          | ⭐ Facile          | Socket Mode, groupes/DM, écosystème bot riche         | [Documentation](../channels/discord/README.fr.md)                                                               |
+| **WhatsApp**         | ⭐ Facile          | Natif (scan QR) ou Bridge URL                         | [Documentation](#whatsapp)                                                                                       |
+| **Slack**            | ⭐ Facile          | **Socket Mode** (pas d'IP publique requise), entreprise | [Documentation](../channels/slack/README.fr.md)                                                                |
+| **Matrix**           | ⭐⭐ Moyen         | Protocole fédéré, auto-hébergement possible           | [Documentation](../channels/matrix/README.fr.md)                                                                |
+| **QQ**               | ⭐⭐ Moyen         | API bot officielle, communauté chinoise               | [Documentation](../channels/qq/README.fr.md)                                                                    |
+| **DingTalk**         | ⭐⭐ Moyen         | Mode Stream (pas d'IP publique requise), entreprise   | [Documentation](../channels/dingtalk/README.fr.md)                                                              |
+| **LINE**             | ⭐⭐⭐ Avancé      | HTTPS Webhook requis                                  | [Documentation](../channels/line/README.fr.md)                                                                  |
+| **WeCom (企业微信)** | ⭐⭐⭐ Avancé      | Bot groupe (Webhook), app personnalisée (API), AI Bot | [Bot](../channels/wecom/wecom_bot/README.fr.md) / [App](../channels/wecom/wecom_app/README.fr.md) / [AI Bot](../channels/wecom/wecom_aibot/README.fr.md) |
+| **Feishu (飞书)**    | ⭐⭐⭐ Avancé      | Collaboration entreprise, fonctionnalités riches      | [Documentation](../channels/feishu/README.fr.md)                                                                |
+| **IRC**              | ⭐⭐ Moyen         | Serveur + configuration TLS                           | -                                                                                                                |
+| **OneBot**           | ⭐⭐ Moyen         | Compatible NapCat/Go-CQHTTP, écosystème communautaire | [Documentation](../channels/onebot/README.fr.md)                                                                |
+| **MaixCam**          | ⭐ Facile          | Canal d'intégration matérielle pour caméras AI Sipeed | [Documentation](../channels/maixcam/README.fr.md)                                                               |
+| **Pico**             | ⭐ Facile          | Canal protocole natif PicoClaw                        |                                                                                                                  |
 
 <details>
 <summary><b>Telegram</b> (Recommandé)</summary>
@@ -168,12 +168,13 @@ Si `session_store_path` est vide, la session est stockée dans `<workspace>/what
 <details>
 <summary><b>QQ</b></summary>
 
-**1. Créer un bot**
+**Configuration rapide (recommandée)**
 
-- Allez sur [QQ Open Platform](https://q.qq.com/#)
-- Créez une application → Obtenez **AppID** et **AppSecret**
+QQ Open Platform propose une page de configuration en un clic pour les bots compatibles OpenClaw :
 
-**2. Configurer**
+1. Ouvrez [QQ Bot Quick Start](https://q.qq.com/qqbot/openclaw/index.html) et scannez le QR code pour vous connecter
+2. Un bot est créé automatiquement — copiez l'**App ID** et l'**App Secret**
+3. Configurez PicoClaw :
 
 ```json
 {
@@ -188,13 +189,20 @@ Si `session_store_path` est vide, la session est stockée dans `<workspace>/what
 }
 ```
 
-> Définissez `allow_from` vide pour autoriser tous les utilisateurs, ou spécifiez des numéros QQ pour restreindre l'accès.
+4. Lancez `picoclaw gateway` et ouvrez QQ pour discuter avec votre bot
 
-**3. Lancer**
+> L'App Secret n'est affiché qu'une seule fois. Enregistrez-le immédiatement — le consulter à nouveau forcera une réinitialisation.
+>
+> Les bots créés via la page de configuration rapide sont initialement réservés au créateur et ne prennent pas en charge les discussions de groupe. Pour activer l'accès en groupe, configurez le mode sandbox sur la [QQ Open Platform](https://q.qq.com/).
 
-```bash
-picoclaw gateway
-```
+**Configuration manuelle**
+
+Si vous préférez créer le bot manuellement :
+
+* Connectez-vous sur [QQ Open Platform](https://q.qq.com/) pour vous inscrire en tant que développeur
+* Créez un bot QQ — personnalisez son avatar et son nom
+* Copiez l'**App ID** et l'**App Secret** depuis les paramètres du bot
+* Configurez comme indiqué ci-dessus et lancez `picoclaw gateway`
 
 </details>
 
@@ -261,7 +269,7 @@ picoclaw gateway
 picoclaw gateway
 ```
 
-Pour toutes les options (`device_id`, `join_on_invite`, `group_trigger`, `placeholder`, `reasoning_channel_id`), voir le [Guide de Configuration du Canal Matrix](docs/channels/matrix/README.md).
+Pour toutes les options (`device_id`, `join_on_invite`, `group_trigger`, `placeholder`, `reasoning_channel_id`), voir le [Guide de Configuration du Canal Matrix](../channels/matrix/README.md).
 
 </details>
 
@@ -322,7 +330,7 @@ PicoClaw prend en charge trois types d'intégration WeCom :
 **Option 2 : WeCom App (Application personnalisée)** - Plus de fonctionnalités, messagerie proactive, chat privé uniquement
 **Option 3 : WeCom AI Bot (Bot IA)** - Bot IA officiel, réponses en streaming, prend en charge les discussions de groupe et privées
 
-Voir le [Guide de Configuration WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) pour les instructions détaillées.
+Voir le [Guide de Configuration WeCom AI Bot](../channels/wecom/wecom_aibot/README.fr.md) pour les instructions détaillées.
 
 **Configuration rapide - WeCom Bot :**
 
@@ -396,7 +404,7 @@ picoclaw gateway
 **1. Créer un AI Bot**
 
 * Allez dans la console d'administration WeCom → Gestion des applications → AI Bot
-* Dans les paramètres du AI Bot, configurez l'URL de callback : `http://your-server:18791/webhook/wecom-aibot`
+* Dans les paramètres du AI Bot, configurez l'URL de callback : `http://your-server:18790/webhook/wecom-aibot`
 * Copiez **Token** et cliquez sur "Générer aléatoirement" pour **EncodingAESKey**
 
 **2. Configurer**
@@ -430,10 +438,14 @@ picoclaw gateway
 <details>
 <summary><b>Feishu (飞书)</b></summary>
 
+PicoClaw se connecte à Feishu via le mode WebSocket/SDK — aucune URL webhook publique ni serveur de callback nécessaire.
+
 **1. Créer une application**
 
-* Allez sur [Feishu Open Platform](https://open.feishu.cn/)
-* Créez une application → Obtenez **App ID** et **App Secret**
+* Allez sur [Feishu Open Platform](https://open.feishu.cn/) et créez une application
+* Dans les paramètres de l'application, activez la capacité **Bot**
+* Créez une version et publiez l'application (l'application doit être publiée pour prendre effet)
+* Copiez l'**App ID** (commence par `cli_`) et l'**App Secret**
 
 **2. Configurer**
 
@@ -443,22 +455,24 @@ picoclaw gateway
     "feishu": {
       "enabled": true,
       "app_id": "cli_xxx",
-      "app_secret": "xxx",
-      "encrypt_key": "",
-      "verification_token": "",
+      "app_secret": "YOUR_APP_SECRET",
       "allow_from": []
     }
   }
 }
 ```
 
-> Feishu utilise le mode WebSocket/SDK et ne nécessite pas de serveur webhook.
+Optionnel : `encrypt_key` et `verification_token` pour le chiffrement des événements (recommandé en production).
 
-**3. Lancer**
+**3. Lancer et discuter**
 
 ```bash
 picoclaw gateway
 ```
+
+Ouvrez Feishu, recherchez le nom de votre bot et commencez à discuter. Vous pouvez aussi ajouter le bot à un groupe — utilisez `group_trigger.mention_only: true` pour ne répondre que lorsqu'il est @mentionné.
+
+Pour toutes les options, voir le [Guide de Configuration du Canal Feishu](../channels/feishu/README.fr.md).
 
 </details>
 
@@ -467,9 +481,10 @@ picoclaw gateway
 
 **1. Créer une application Slack**
 
-* Allez sur [Slack API](https://api.slack.com/apps)
-* Créez une nouvelle application
-* Obtenez le **Bot Token** et l'**App Token**
+* Allez sur [Slack API](https://api.slack.com/apps) et créez une nouvelle application
+* Sous **OAuth & Permissions**, ajoutez les scopes bot : `chat:write`, `app_mentions:read`, `im:history`, `im:read`, `im:write`
+* Installez l'application dans votre workspace
+* Copiez le **Bot Token** (`xoxb-...`) et l'**App-Level Token** (`xapp-...`, activez Socket Mode pour l'obtenir)
 
 **2. Configurer**
 
@@ -478,8 +493,8 @@ picoclaw gateway
   "channels": {
     "slack": {
       "enabled": true,
-      "bot_token": "xoxb-your-bot-token",
-      "app_token": "xapp-your-app-token",
+      "bot_token": "xoxb-YOUR-BOT-TOKEN",
+      "app_token": "xapp-YOUR-APP-TOKEN",
       "allow_from": []
     }
   }
@@ -497,42 +512,44 @@ picoclaw gateway
 <details>
 <summary><b>IRC</b></summary>
 
-**1. Configurer le serveur IRC**
-
-* Préparez les informations de votre serveur IRC (adresse, port, canal)
-
-**2. Configurer**
+**1. Configurer**
 
 ```json
 {
   "channels": {
     "irc": {
       "enabled": true,
-      "server": "irc.example.com:6697",
+      "server": "irc.libera.chat:6697",
+      "tls": true,
       "nick": "picoclaw-bot",
-      "channel": "#your-channel",
-      "use_tls": true,
+      "channels": ["#your-channel"],
+      "password": "",
       "allow_from": []
     }
   }
 }
 ```
 
-**3. Lancer**
+Optionnel : `nickserv_password` pour l'authentification NickServ, `sasl_user`/`sasl_password` pour l'authentification SASL.
+
+**2. Lancer**
 
 ```bash
 picoclaw gateway
 ```
 
+Le bot se connectera au serveur IRC et rejoindra les canaux spécifiés.
+
 </details>
 
 <details>
-<summary><b>OneBot</b></summary>
+<summary><b>OneBot (QQ via protocole OneBot)</b></summary>
 
-**1. Configurer OneBot**
+OneBot est un protocole ouvert pour les bots QQ. PicoClaw se connecte à toute implémentation compatible OneBot v11 (par ex. [Lagrange](https://github.com/LagrangeDev/Lagrange.Core), [NapCat](https://github.com/NapNeko/NapCatQQ)) via WebSocket.
 
-* Installez une implémentation OneBot compatible (par ex. go-cqhttp, Lagrange)
-* Configurez la connexion WebSocket
+**1. Configurer une implémentation OneBot**
+
+Installez et exécutez un framework de bot QQ compatible OneBot v11. Activez son serveur WebSocket.
 
 **2. Configurer**
 
@@ -541,14 +558,19 @@ picoclaw gateway
   "channels": {
     "onebot": {
       "enabled": true,
-      "ws_url": "ws://localhost:8080",
+      "ws_url": "ws://127.0.0.1:8080",
+      "access_token": "",
       "allow_from": []
     }
   }
 }
 ```
 
-> OneBot permet d'utiliser QQ via le protocole OneBot standard.
+| Champ | Description |
+|-------|-------------|
+| `ws_url` | URL WebSocket de l'implémentation OneBot |
+| `access_token` | Token d'accès pour l'authentification (si configuré dans OneBot) |
+| `reconnect_interval` | Intervalle de reconnexion en secondes (par défaut : 5) |
 
 **3. Lancer**
 

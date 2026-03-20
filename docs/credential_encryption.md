@@ -30,8 +30,9 @@ enc://AAAA...base64...
   "model_list": [
     {
       "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
       "api_key": "enc://AAAA...base64...",
-      "base_url": "https://api.openai.com/v1"
+      "api_base": "https://api.openai.com/v1"
     }
   ]
 }
@@ -54,20 +55,12 @@ enc://AAAA...base64...
 
 ### Key Derivation
 
-Encryption uses **HKDF-SHA256** with an optional SSH private key as a second factor.
+Encryption uses **HKDF-SHA256** with an SSH private key as a second factor.
 
 ```
-Without SSH key (passphrase only):
-
-  ikm     = SHA256(passphrase)
-  aes_key = HKDF-SHA256(ikm, salt, info="picoclaw-credential-v1", 32 bytes)
-
-
-With SSH key (recommended):
-
-  sshHash = SHA256(ssh_private_key_file_bytes)
-  ikm     = HMAC-SHA256(key=sshHash, message=passphrase)
-  aes_key = HKDF-SHA256(ikm, salt, info="picoclaw-credential-v1", 32 bytes)
+sshHash = SHA256(ssh_private_key_file_bytes)
+ikm     = HMAC-SHA256(key=sshHash, message=passphrase)
+aes_key = HKDF-SHA256(ikm, salt, info="picoclaw-credential-v1", 32 bytes)
 ```
 
 ### Encryption
@@ -125,7 +118,7 @@ This means a leaked config file alone is not sufficient to recover the API key, 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `PICOCLAW_KEY_PASSPHRASE` | Yes (for `enc://`) | Passphrase used for key derivation |
-| `PICOCLAW_SSH_KEY_PATH` | No | Path to SSH private key. Set to `""` to disable auto-detection and use passphrase-only mode |
+| `PICOCLAW_SSH_KEY_PATH` | No | Path to SSH private key. If not set, auto-detects from `~/.ssh/picoclaw_ed25519.key` |
 
 ### SSH Key Auto-Detection
 
@@ -140,11 +133,7 @@ Run `picoclaw onboard` to generate it automatically.
 
 `os.UserHomeDir()` is used for cross-platform home directory resolution (reads `USERPROFILE` on Windows, `HOME` on Unix/macOS).
 
-To explicitly disable SSH key usage and use passphrase-only mode:
-
-```bash
-export PICOCLAW_SSH_KEY_PATH=""
-```
+> **Note:** An SSH key file is required for credential encryption. If no key is found and `PICOCLAW_SSH_KEY_PATH` is not set, encryption/decryption will fail. Run `picoclaw onboard` to generate the key automatically.
 
 ---
 
@@ -162,7 +151,7 @@ No re-encryption is needed.
 
 ## Security Considerations
 
-- **Passphrase strength matters in passphrase-only mode.** Without an SSH key, a weak passphrase can be brute-forced offline. Use `PICOCLAW_SSH_KEY_PATH=""` only in environments where no SSH key is available and the passphrase is sufficiently strong (≥ 32 random characters).
+- **Both passphrase and SSH key are required.** The SSH key acts as a second factor — without it, encryption/decryption will fail. Run `picoclaw onboard` to generate the key if it doesn't exist.
 - **The SSH key is read-only at runtime.** PicoClaw never writes to or modifies the SSH key file.
 - **Plaintext keys remain supported.** Existing configs without `enc://` are unaffected.
 - **The `enc://` format is versioned** via the HKDF `info` field (`picoclaw-credential-v1`), allowing future algorithm upgrades without breaking existing encrypted values.

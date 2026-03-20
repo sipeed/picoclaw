@@ -105,6 +105,8 @@ _*Versões recentes podem usar 10–20MB devido a merges rápidos de funcionalid
 
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
 
+> 📋 **[Lista de Compatibilidade de Hardware](docs/hardware-compatibility.md)** — Veja todas as placas testadas, de RISC-V de $5 a Raspberry Pi e telefones Android. Sua placa não está listada? Envie um PR!
+
 ## 🦾 Demonstração
 
 ### 🛠️ Fluxos de Trabalho Padrão do Assistente
@@ -139,7 +141,7 @@ Dê uma segunda vida ao seu celular de dez anos atrás! Transforme-o em um assis
 wget https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_arm64.tar.gz
 tar xzf picoclaw_Linux_arm64.tar.gz
 pkg install proot
-termux-chroot ./picoclaw onboard
+termux-chroot ./picoclaw onboard   # chroot fornece um layout padrão do sistema de arquivos Linux
 ```
 
 Depois siga as instruções na seção "Início Rápido" para completar a configuração!
@@ -160,11 +162,15 @@ O PicoClaw pode ser implantado em praticamente qualquer dispositivo Linux!
 
 ## 📦 Instalação
 
-### Instalar com binário pré-compilado
+### Baixar de picoclaw.io (Recomendado)
 
-Baixe o binário para sua plataforma na página de [Releases](https://github.com/sipeed/picoclaw/releases).
+Visite **[picoclaw.io](https://picoclaw.io)** — o site oficial detecta automaticamente sua plataforma e oferece download com um clique. Sem necessidade de escolher manualmente a arquitetura.
 
-### Instalar a partir do código-fonte (funcionalidades mais recentes, recomendado para desenvolvimento)
+### Baixar binário pré-compilado
+
+Alternativamente, baixe o binário para sua plataforma na página de [GitHub Releases](https://github.com/sipeed/picoclaw/releases).
+
+### Compilar a partir do código-fonte (para desenvolvimento)
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -200,6 +206,7 @@ Para guias detalhados, consulte a documentação abaixo. Este README cobre apena
 | 🔄 [Spawn & Tarefas Assíncronas](docs/pt-br/spawn-tasks.md) | Tarefas rápidas, tarefas longas com spawn, orquestração assíncrona de sub-agentes |
 | 🐛 [Solução de Problemas](docs/pt-br/troubleshooting.md) | Problemas comuns e soluções |
 | 🔧 [Configuração de Ferramentas](docs/pt-br/tools_configuration.md) | Habilitar/desabilitar por ferramenta, políticas de execução |
+| 📋 [Compatibilidade de Hardware](docs/hardware-compatibility.md) | Placas testadas, requisitos mínimos, como adicionar sua placa |
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Junte-se à Rede Social de Agentes
 
@@ -225,6 +232,7 @@ Conecte o PicoClaw à Rede Social de Agentes simplesmente enviando uma única me
 | `picoclaw skills install` | Instalar uma skill            |
 | `picoclaw migrate`        | Migrar dados de versões anteriores |
 | `picoclaw auth login`     | Autenticar com provedores     |
+| `picoclaw model`          | Ver ou trocar o modelo padrão |
 
 ### Tarefas Agendadas / Lembretes
 
