@@ -770,6 +770,7 @@ type CronToolsConfig struct {
 
 type ExecConfig struct {
 	ToolConfig          `         envPrefix:"PICOCLAW_TOOLS_EXEC_"`
+	Disabled            bool     `                                 env:"PICOCLAW_TOOLS_EXEC_DISABLED"              json:"disabled"`
 	EnableDenyPatterns  bool     `                                 env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"  json:"enable_deny_patterns"`
 	AllowRemote         bool     `                                 env:"PICOCLAW_TOOLS_EXEC_ALLOW_REMOTE"          json:"allow_remote"`
 	CustomDenyPatterns  []string `                                 env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"  json:"custom_deny_patterns"`
@@ -1264,7 +1265,7 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 	case "cron":
 		return t.Cron.Enabled
 	case "exec":
-		return t.Exec.Enabled
+		return t.Exec.Enabled && !t.Exec.Disabled
 	case "skills":
 		return t.Skills.Enabled
 	case "media_cleanup":

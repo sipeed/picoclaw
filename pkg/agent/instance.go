@@ -48,6 +48,11 @@ type AgentInstance struct {
 	// LightCandidates holds the resolved provider candidates for the light model.
 	// Pre-computed at agent creation to avoid repeated model_list lookups at runtime.
 	LightCandidates []providers.FallbackCandidate
+	// ImageModel holds the configured image model name from config.
+	ImageModel string
+	// ImageModelCandidates holds the resolved provider candidates for the image model.
+	// Pre-computed at agent creation to avoid repeated model_list lookups at runtime.
+	ImageModelCandidates []providers.FallbackCandidate
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -172,6 +177,21 @@ func NewAgentInstance(
 		}
 	}
 
+	// Image model setup: pre-resolve image model candidates at creation time
+	// to avoid repeated model_list lookups when processing image attachments.
+	var imageModelCandidates []providers.FallbackCandidate
+	imageModel := defaults.ImageModel
+	if imageModel != "" {
+		imageModelCfg := providers.ModelConfig{Primary: imageModel, Fallbacks: defaults.ImageModelFallbacks}
+		resolved := providers.ResolveCandidatesWithLookup(imageModelCfg, defaults.Provider, resolveFromModelList)
+		if len(resolved) > 0 {
+			imageModelCandidates = resolved
+		} else {
+			log.Printf("image_model %q not found in model_list — image attachments will use primary model",
+				imageModel)
+		}
+	}
+
 	return &AgentInstance{
 		ID:                        agentID,
 		Name:                      agentName,
@@ -194,6 +214,8 @@ func NewAgentInstance(
 		Candidates:                candidates,
 		Router:                    router,
 		LightCandidates:           lightCandidates,
+		ImageModel:                imageModel,
+		ImageModelCandidates:      imageModelCandidates,
 	}
 }
 

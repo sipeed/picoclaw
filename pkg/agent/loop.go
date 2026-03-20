@@ -1047,7 +1047,7 @@ func (al *AgentLoop) runLLMIteration(
 	// selectCandidates evaluates routing once and the decision is sticky for
 	// all tool-follow-up iterations within the same turn so that a multi-step
 	// tool chain doesn't switch models mid-way through.
-	activeCandidates, activeModel := al.selectCandidates(agent, opts.UserMessage, messages)
+	activeCandidates, activeModel := al.selectCandidates(agent, opts.UserMessage, messages, opts.Media)
 
 	for iteration < agent.MaxIterations {
 		iteration++
@@ -1508,6 +1508,9 @@ func (al *AgentLoop) runLLMIteration(
 // message scores below the complexity threshold, it returns the light model
 // candidates instead of the primary ones.
 //
+// If the message contains media attachments (images) and an image_model is
+// configured, the image model candidates are returned instead.
+//
 // The returned (candidates, model) pair is used for all LLM calls within one
 // turn — tool follow-up iterations use the same tier as the initial call so
 // that a multi-step tool chain doesn't switch models mid-way.
@@ -1515,7 +1518,19 @@ func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
 	userMsg string,
 	history []providers.Message,
+	media []string,
 ) (candidates []providers.FallbackCandidate, model string) {
+	// If image_model is configured and there are media attachments, route to image model
+	if len(media) > 0 && agent.ImageModel != "" && len(agent.ImageModelCandidates) > 0 {
+		logger.InfoCF("agent", "Image model routing: media attachments detected",
+			map[string]any{
+				"agent_id":    agent.ID,
+				"image_model": agent.ImageModel,
+				"media_count": len(media),
+			})
+		return agent.ImageModelCandidates, agent.ImageModel
+	}
+
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
 		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
 	}
