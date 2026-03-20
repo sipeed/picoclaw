@@ -34,6 +34,7 @@ func mustMiniappStaticFS() fs.FS {
 // Handler serves the Mini App HTML and API endpoints.
 type Handler struct {
 	provider        DataProvider
+	cacheMutator    CacheMutator
 	sender          CommandSender
 	botToken        string
 	notifier        *StateNotifier
@@ -82,6 +83,11 @@ func NewHandler(
 // push live agent state to the canvas UI via WebSocket.
 func (h *Handler) SetOrchBroadcaster(b *orch.Broadcaster) {
 	h.orchBroadcaster = b
+}
+
+// SetCacheMutator enables cache mutation operations (delete entry/clear all).
+func (h *Handler) SetCacheMutator(m CacheMutator) {
+	h.cacheMutator = m
 }
 
 func (h *Handler) handleProtectedFunc(mux *http.ServeMux, pattern string, handler http.HandlerFunc) {

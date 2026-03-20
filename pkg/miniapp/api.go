@@ -297,7 +297,11 @@ func (h *Handler) apiCache(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, entries)
 	case http.MethodDelete:
-		n, err := h.provider.DeleteAllMediaCache()
+		if h.cacheMutator == nil {
+			http.Error(w, `{"error":"not supported"}`, http.StatusNotImplemented)
+			return
+		}
+		n, err := h.cacheMutator.DeleteAllMediaCache()
 		if err != nil {
 			http.Error(w, `{"error":"failed to delete cache"}`, http.StatusInternalServerError)
 			return
@@ -314,12 +318,16 @@ func (h *Handler) apiCacheEntry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
+	if h.cacheMutator == nil {
+		http.Error(w, `{"error":"not supported"}`, http.StatusNotImplemented)
+		return
+	}
 	hash := r.URL.Path[len("/miniapp/api/cache/"):]
 	if hash == "" {
 		http.Error(w, `{"error":"hash required"}`, http.StatusBadRequest)
 		return
 	}
-	if err := h.provider.DeleteMediaCache(hash); err != nil {
+	if err := h.cacheMutator.DeleteMediaCache(hash); err != nil {
 		http.Error(w, `{"error":"failed to delete entry"}`, http.StatusInternalServerError)
 		return
 	}

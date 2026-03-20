@@ -215,10 +215,6 @@ func (m *mockDataProvider) ListMediaCache(entryType string) []MediaCacheEntry {
 	return nil
 }
 
-func (m *mockDataProvider) DeleteMediaCache(hash string) error { return nil }
-
-func (m *mockDataProvider) DeleteAllMediaCache() (int64, error) { return 0, nil }
-
 type mockSender struct{}
 
 func (m *mockSender) SendCommand(senderID, chatID, command string) {}
@@ -574,10 +570,6 @@ func (m *mutatingDataProvider) GetSystemPrompt() string {
 func (m *mutatingDataProvider) ListMediaCache(entryType string) []MediaCacheEntry {
 	return nil
 }
-
-func (m *mutatingDataProvider) DeleteMediaCache(hash string) error { return nil }
-
-func (m *mutatingDataProvider) DeleteAllMediaCache() (int64, error) { return 0, nil }
 
 // ── Dev proxy tests ──
 

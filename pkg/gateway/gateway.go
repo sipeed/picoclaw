@@ -324,6 +324,7 @@ func setupAndStartServices(
 				cfg.Channels.Telegram.AllowFrom,
 				cfg.WorkspacePath(),
 			)
+			handler.SetCacheMutator(dataProvider)
 			agentLoop.OnStateChange = miniappNotifier.Notify
 			if b := agentLoop.GetOrchBroadcaster(); b != nil {
 				handler.SetOrchBroadcaster(b)

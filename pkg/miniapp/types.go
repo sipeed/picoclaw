@@ -137,6 +137,10 @@ type DataProvider interface {
 	GetContextInfo() ContextInfo
 	GetSystemPrompt() string
 	ListMediaCache(entryType string) []MediaCacheEntry
+}
+
+// CacheMutator extends DataProvider with cache mutation operations.
+type CacheMutator interface {
 	DeleteMediaCache(hash string) error
 	DeleteAllMediaCache() (int64, error)
 }
