@@ -619,6 +619,9 @@ func (al *AgentLoop) Stop() {
 // and dirty session data). Should be called during graceful shutdown.
 
 func (al *AgentLoop) Close() {
+	// Wait for in-flight LLM requests to finish before releasing resources.
+	al.activeRequests.Wait()
+
 	al.closeExt()
 
 	mcpManager := al.mcp.takeManager()
