@@ -1,3 +1,6 @@
+// model_resolution.go provides model-list resolution helpers used by the upstream
+// loop refactor. These functions are currently unused but will be wired in PR4
+// (upstream-merge/core-loop).
 package agent
 
 import (
@@ -8,6 +11,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+//nolint:unused // wired in PR4
 func buildModelListResolver(cfg *config.Config) func(raw string) (string, bool) {
 	ensureProtocol := func(model string) string {
 		model = strings.TrimSpace(model)
@@ -48,6 +52,7 @@ func buildModelListResolver(cfg *config.Config) func(raw string) (string, bool) 
 	}
 }
 
+//nolint:unused // wired in PR4
 func resolveModelCandidates(
 	cfg *config.Config,
 	defaultProvider string,
@@ -64,6 +69,7 @@ func resolveModelCandidates(
 	)
 }
 
+//nolint:unused // wired in PR4
 func resolvedCandidateModel(candidates []providers.FallbackCandidate, fallback string) string {
 	if len(candidates) > 0 && strings.TrimSpace(candidates[0].Model) != "" {
 		return candidates[0].Model
@@ -71,6 +77,7 @@ func resolvedCandidateModel(candidates []providers.FallbackCandidate, fallback s
 	return fallback
 }
 
+//nolint:unused // wired in PR4
 func resolvedCandidateProvider(candidates []providers.FallbackCandidate, fallback string) string {
 	if len(candidates) > 0 && strings.TrimSpace(candidates[0].Provider) != "" {
 		return candidates[0].Provider
@@ -78,6 +85,7 @@ func resolvedCandidateProvider(candidates []providers.FallbackCandidate, fallbac
 	return fallback
 }
 
+//nolint:unused // wired in PR4
 func resolvedModelConfig(cfg *config.Config, modelName, workspace string) (*config.ModelConfig, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
