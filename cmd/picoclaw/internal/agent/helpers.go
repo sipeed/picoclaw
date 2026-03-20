@@ -23,6 +23,11 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 		sessionKey = "cli:default"
 	}
 
+	// If the user provides a plain name (no colon), treat it as a session label
+	if !strings.Contains(sessionKey, ":") {
+		sessionKey = fmt.Sprintf("agent:main:%s", sessionKey)
+	}
+
 	if debug {
 		logger.SetLevel(logger.DEBUG)
 		fmt.Println("🔍 Debug mode enabled")
