@@ -90,7 +90,10 @@ func (a *Agent) listenChunks(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case chunk := <-chunks:
+		case chunk, ok := <-chunks:
+			if !ok {
+				return
+			}
 			a.handleChunk(chunk)
 		}
 	}
