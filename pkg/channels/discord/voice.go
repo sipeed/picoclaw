@@ -2,6 +2,7 @@ package discord
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -17,7 +18,7 @@ func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.M
 		}
 
 		logger.InfoCF("discord", "Joining voice channel", map[string]any{"channel": vs.ChannelID})
-		vc, err := s.ChannelVoiceJoin(m.GuildID, vs.ChannelID, false, false)
+		vc, err := s.ChannelVoiceJoin(c.ctx, m.GuildID, vs.ChannelID, false, false)
 		if err != nil {
 			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Failed to join voice channel: %v", err))
 			return true
@@ -29,7 +30,7 @@ func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.M
 	} else if m.Content == "!vc leave" {
 		vc, exists := s.VoiceConnections[m.GuildID]
 		if exists && vc != nil {
-			vc.Disconnect()
+			vc.Disconnect(c.ctx)
 			s.ChannelMessageSend(m.ChannelID, "Left Voice Channel.")
 		} else {
 			s.ChannelMessageSend(m.ChannelID, "Not in a voice channel.")
@@ -41,6 +42,17 @@ func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.M
 
 func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID string, chatID string) {
 	logger.InfoCF("discord", "Started listening for voice", map[string]any{"guild": guildID})
+
+	go func() {
+		time.Sleep(250 * time.Millisecond) // Wait a bit for connection to settle
+		vc.Speaking(true)
+		for i := 0; i < 5; i++ {
+			vc.OpusSend <- []byte{0xF8, 0xFF, 0xFE}
+			time.Sleep(20 * time.Millisecond)
+		}
+		vc.Speaking(false)
+		logger.DebugCF("discord", "Sent wake-up silence frames", nil)
+	}()
 
 	sessionID := fmt.Sprintf("discord_vc_%s", guildID)
 
@@ -62,7 +74,13 @@ func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID str
 				return
 			}
 
-			if p == nil {
+			logger.DebugCF("discord", "Received Opus packet", map[string]any{
+				"seq":  p.Sequence,
+				"len":  len(p.Opus),
+				"ssrc": p.SSRC,
+			})
+
+			if p == nil || len(p.Opus) == 0 {
 				continue
 			}
 
