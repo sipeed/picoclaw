@@ -69,18 +69,42 @@ func extractFileKey(content string) string { return extractJSONStringField(conte
 // extractFileName extracts the file_name from a Feishu file message content JSON.
 func extractFileName(content string) string { return extractJSONStringField(content, "file_name") }
 
-// stripMentionPlaceholders removes @_user_N placeholders from the text content.
-// These are inserted by Feishu when users @mention someone in a message.
-func stripMentionPlaceholders(content string, mentions []*larkim.MentionEvent) string {
+// stripMentionPlaceholders replaces @_user_N placeholders in the text content.
+// Bot mentions are removed; other user mentions are replaced with @Name(open_id:xxx)
+// so downstream tools can still extract the user ID.
+func stripMentionPlaceholders(content string, mentions []*larkim.MentionEvent, botOpenID string) string {
 	if len(mentions) == 0 {
 		return content
 	}
 	for _, m := range mentions {
-		if m.Key != nil && *m.Key != "" {
-			content = strings.ReplaceAll(content, *m.Key, "")
+		if m.Key == nil || *m.Key == "" {
+			continue
 		}
+		// If this mention is the bot itself, strip it.
+		if botOpenID != "" && m.Id != nil && m.Id.OpenId != nil && *m.Id.OpenId == botOpenID {
+			content = strings.ReplaceAll(content, *m.Key, "")
+			continue
+		}
+		// Replace with @Name(open_id:xxx) to preserve identity for downstream use.
+		replacement := ""
+		name := ""
+		if m.Name != nil {
+			name = *m.Name
+		}
+		openID := ""
+		if m.Id != nil && m.Id.OpenId != nil {
+			openID = *m.Id.OpenId
+		}
+		if name != "" && openID != "" {
+			replacement = "@" + name + "(open_id:" + openID + ")"
+		} else if name != "" {
+			replacement = "@" + name
+		} else if openID != "" {
+			replacement = "@user(open_id:" + openID + ")"
+		}
+		content = strings.ReplaceAll(content, *m.Key, replacement)
 	}
-	// Also clean up any remaining @_user_N patterns
+	// Clean up any remaining @_user_N patterns not covered by mentions list
 	content = mentionPlaceholderRegex.ReplaceAllString(content, "")
 	return strings.TrimSpace(content)
 }

@@ -454,6 +454,19 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	if sender != nil && sender.TenantKey != nil {
 		metadata["tenant_key"] = *sender.TenantKey
 	}
+	if senderID != "" {
+		metadata["sender_open_id"] = senderID
+	}
+	// Store the full open_id for API use (senderID may be user_id instead)
+	if sender != nil && sender.SenderId != nil && sender.SenderId.OpenId != nil && *sender.SenderId.OpenId != "" {
+		metadata["sender_open_id"] = *sender.SenderId.OpenId
+	}
+
+	// Replace mention placeholders for all chat types: bot mentions are stripped, others become @Name(open_id:xxx)
+	if len(message.Mentions) > 0 {
+		knownBotID, _ := c.botOpenID.Load().(string)
+		content = stripMentionPlaceholders(content, message.Mentions, knownBotID)
+	}
 
 	var peer bus.Peer
 	if chatType == "p2p" {
@@ -464,17 +477,23 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		// Check if bot was mentioned
 		isMentioned := c.isBotMentioned(message)
 
-		// Strip mention placeholders from content before group trigger check
-		if len(message.Mentions) > 0 {
-			content = stripMentionPlaceholders(content, message.Mentions)
-		}
-
 		// In group chats, apply unified group trigger filtering
 		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
 		if !respond {
 			return nil
 		}
 		content = cleaned
+	}
+
+	// Prepend sender identity so the LLM knows who sent the message.
+	if sender != nil && sender.SenderId != nil {
+		openID := ""
+		if sender.SenderId.OpenId != nil {
+			openID = *sender.SenderId.OpenId
+		}
+		if openID != "" {
+			content = fmt.Sprintf("[sender: open_id=%s] %s", openID, content)
+		}
 	}
 
 	logger.InfoCF("feishu", "Feishu message received", map[string]any{
