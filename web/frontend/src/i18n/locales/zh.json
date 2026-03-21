@@ -63,7 +63,8 @@
       },
       "status": {
         "starting": "服务启动中...",
-        "restarting": "服务重启中..."
+        "restarting": "服务重启中...",
+        "stopping": "服务停止中..."
       },
       "restartRequired": "切换默认模型后需要重启服务才能生效。"
     }
@@ -258,6 +259,7 @@
       "placeholderText": "占位文案",
       "groupTriggerMentionOnly": "群聊仅提及时响应",
       "groupTriggerPrefixes": "群聊触发前缀",
+      "isLark": "Lark（国际版）",
       "allowFrom": "允许来源",
       "allowFromPlaceholder": "例如 123456, 789012",
       "allowOrigins": "允许来源域名",
@@ -289,6 +291,7 @@
         "placeholderEnabled": "在最终回复发送前，先发送临时占位消息。",
         "groupTriggerMentionOnly": "在群聊中仅当提及机器人时才响应。",
         "groupTriggerPrefixes": "群聊触发前缀，多个值用逗号分隔。",
+        "isLark": "使用 Lark 国际版域名（open.larksuite.com）替代飞书域名（open.feishu.cn）。",
         "allowFrom": "允许访问的用户或群组 ID，多个值用逗号分隔。",
         "allowOrigins": "允许访问的来源域名，多个值用逗号分隔。",
         "wsUrl": "WebSocket 服务地址。",
@@ -324,6 +327,7 @@
         "realName": "显示名称。",
         "channels": "要加入的 IRC 频道列表。",
         "requestCaps": "连接时请求的 IRC 扩展能力列表。",
+        "maxBase64FileSizeMiB": "本地文件转为 base64 上传的最大体积，单位 MiB；0 表示不限制，仅影响本地文件，不影响 URL 直传。",
         "genericField": "用于配置{{field}}。"
       }
     },
@@ -392,8 +396,23 @@
       "workspace_hint": "智能体执行文件读写操作时使用的基础目录。",
       "restrict_workspace": "限制工作目录访问",
       "restrict_workspace_hint": "仅允许在工作目录内执行文件操作。",
-      "allow_remote": "允许远程执行 Shell 命令",
-      "allow_remote_hint": "开启后，来自远程会话或非本地上下文的请求也可以执行 shell 命令；关闭后，仅允许本地安全上下文执行。",
+      "exec_enabled": "允许命令执行",
+      "exec_enabled_hint": "控制应用是否允许执行命令。关闭后，所有命令请求都不会执行。",
+      "allow_remote": "允许远程命令执行",
+      "allow_remote_hint": "开启后，来自远程会话或非本地上下文的请求也可以执行命令；关闭后，仅允许本地安全上下文执行命令。",
+      "enable_deny_patterns": "启用黑名单",
+      "enable_deny_patterns_hint": "开启后，应用会拦截匹配内置危险模式以及下方自定义命令黑名单的命令。",
+      "exec_timeout_seconds": "命令超时（秒）",
+      "exec_timeout_seconds_hint": "命令请求的最长运行时间。设置为 0 表示使用默认超时。",
+      "custom_deny_patterns": "命令黑名单",
+      "custom_deny_patterns_hint": "用于补充额外的命令拦截规则，每行一个正则表达式。命中任意一条规则的命令都会被阻止。",
+      "custom_allow_patterns": "命令白名单",
+      "custom_allow_patterns_hint": "用于补充额外的命令放行规则，每行一个正则表达式。命中任意一条规则的命令会跳过黑名单检查，但仍受其他安全限制约束。",
+      "custom_patterns_placeholder": "^rm\\s+-rf\\b\n^git\\s+push\\b",
+      "allow_shell_execution": "允许定时任务运行命令",
+      "allow_shell_execution_hint": "开启后，定时任务默认允许运行命令。关闭后，必须显式传入 command_confirm=true 才能创建运行命令的定时任务。",
+      "cron_exec_timeout": "定时命令超时（分钟）",
+      "cron_exec_timeout_hint": "定时任务中命令的最长运行时间。设置为 0 表示不限制超时。",
       "max_tokens": "最大 Token 数",
       "max_tokens_hint": "单次模型响应允许的最大 Token 数。",
       "max_tool_iterations": "最大工具迭代次数",
@@ -434,6 +453,8 @@
       "sections": {
         "agent": "智能体",
         "runtime": "运行时",
+        "exec": "运行命令",
+        "cron": "定时任务",
         "launcher": "服务参数",
         "devices": "设备"
       },

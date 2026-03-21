@@ -70,3 +70,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Launcher service parameters (port/public)
 	h.registerLauncherConfigRoutes(mux)
 }
+
+// Shutdown gracefully shuts down the handler, stopping the gateway if it was started by this handler.
+func (h *Handler) Shutdown() {
+	h.StopGateway()
+}

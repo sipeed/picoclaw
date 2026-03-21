@@ -37,7 +37,9 @@ export function useGatewayLogs() {
     const fetchLogs = async () => {
       if (
         !mounted ||
-        !["running", "starting", "restarting"].includes(gateway.status)
+        !["running", "starting", "restarting", "stopping"].includes(
+          gateway.status,
+        )
       ) {
         if (mounted) {
           timeout = setTimeout(fetchLogs, 1000)

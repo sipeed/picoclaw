@@ -489,6 +489,69 @@ func TestShellTool_SafePathsInWorkspaceRestriction(t *testing.T) {
 	}
 }
 
+// TestShellTool_ExitCodeDetails verifies that exit codes are captured with details
+func TestShellTool_ExitCodeDetails(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	ctx := context.Background()
+	args := map[string]any{
+		"command": "sh -c 'exit 42'",
+	}
+
+	result := tool.Execute(ctx, args)
+
+	if !result.IsError {
+		t.Error("expected error for non-zero exit code")
+	}
+
+	// Should contain the exit code in the message (new format: "exited with code 42")
+	if !strings.Contains(result.ForLLM, "42") {
+		t.Errorf("expected exit code 42 in error message, got: %s", result.ForLLM)
+	}
+
+	// Verify the new detailed message format
+	if !strings.Contains(result.ForLLM, "exited with code") {
+		t.Errorf("expected 'exited with code' in message, got: %s", result.ForLLM)
+	}
+
+	// Err field is set by the exec system (may or may not be set depending on implementation)
+	// The important thing is that IsError=true
+	t.Logf("Exit code result: %s", result.ForLLM)
+}
+
+// TestShellTool_TimeoutWithPartialOutput verifies timeout includes partial output
+func TestShellTool_TimeoutWithPartialOutput(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	tool.SetTimeout(1 * time.Second) // Give more time for echo to complete
+
+	ctx := context.Background()
+	// Use a command that outputs immediately then sleeps
+	args := map[string]any{
+		"command": "echo 'partial output before timeout' && sleep 30",
+	}
+
+	result := tool.Execute(ctx, args)
+
+	if !result.IsError {
+		t.Error("expected error for timeout")
+	}
+
+	// Should mention timeout
+	if !strings.Contains(result.ForLLM, "timed out") {
+		t.Errorf("expected 'timed out' in message, got: %s", result.ForLLM)
+	}
+
+	// Log the result for debugging (partial output depends on shell behavior)
+	t.Logf("Timeout result: %s", result.ForLLM)
+}
+
 // TestShellTool_CustomAllowPatterns verifies that custom allow patterns exempt
 // commands from deny pattern checks.
 func TestShellTool_CustomAllowPatterns(t *testing.T) {
