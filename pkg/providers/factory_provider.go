@@ -87,12 +87,17 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
+		// Special handling for Ollama models - extend timeout to 300 seconds
+		requestTimeout := cfg.RequestTimeout
+		if protocol == "ollama" && requestTimeout <= 0 {
+			requestTimeout = 300
+		}
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey,
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
-			cfg.RequestTimeout,
+			requestTimeout,
 		), modelID, nil
 
 	case "azure", "azure-openai":
@@ -126,12 +131,17 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
+		// Special handling for Ollama models - extend timeout to 300 seconds
+		requestTimeout := cfg.RequestTimeout
+		if protocol == "ollama" && requestTimeout <= 0 {
+			requestTimeout = 300
+		}
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey,
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
-			cfg.RequestTimeout,
+			requestTimeout,
 		), modelID, nil
 
 	case "anthropic":
