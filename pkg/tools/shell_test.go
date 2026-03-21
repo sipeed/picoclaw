@@ -301,6 +301,211 @@ func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
 	}
 }
 
+// TestShellTool_SymlinkOperandEscape verifies that symlinks in command operands
+// that resolve outside the workspace are blocked.
+func TestShellTool_SymlinkOperandEscape(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	outside := filepath.Join(root, "outside")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+	os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("top secret"), 0o600)
+
+	// Create a symlink inside workspace pointing to outside
+	link := filepath.Join(workspace, "leak")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Fatalf("NewExecTool: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": "cat leak/secret.txt",
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected symlink operand escape to be blocked, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "symlink resolves outside workspace") {
+		t.Errorf("expected symlink message, got: %s", result.ForLLM)
+	}
+}
+
+// TestShellTool_SymlinkOperandEscape_SymlinkedFile verifies blocking when a
+// direct file symlink is used as an operand.
+func TestShellTool_SymlinkOperandEscape_SymlinkedFile(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	outside := filepath.Join(root, "outside")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+	secretFile := filepath.Join(outside, "passwd")
+	os.WriteFile(secretFile, []byte("root:x:0:0"), 0o600)
+
+	// Symlink a file (not directory)
+	link := filepath.Join(workspace, "./stolen")
+	if err := os.Symlink(secretFile, link); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Fatalf("NewExecTool: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": "cat ./stolen",
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected symlinked file operand to be blocked, got: %s", result.ForLLM)
+	}
+}
+
+// TestShellTool_SymlinkOperandEscape_NestedSymlinks verifies that chains of
+// symlinks are fully resolved.
+func TestShellTool_SymlinkOperandEscape_NestedSymlinks(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	intermediate := filepath.Join(root, "intermediate")
+	outside := filepath.Join(root, "outside")
+	for _, d := range []string{workspace, intermediate, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	os.WriteFile(filepath.Join(outside, "data.txt"), []byte("sensitive"), 0o600)
+
+	// intermediate/hop -> outside
+	if err := os.Symlink(outside, filepath.Join(intermediate, "hop")); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+	// workspace/step1 -> intermediate
+	if err := os.Symlink(intermediate, filepath.Join(workspace, "step1")); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Fatalf("NewExecTool: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": "cat step1/hop/data.txt",
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected nested symlink escape to be blocked, got: %s", result.ForLLM)
+	}
+}
+
+// TestShellTool_SymlinkOperand_SafeSymlink verifies that symlinks within
+// the workspace are allowed.
+func TestShellTool_SymlinkOperand_SafeSymlink(t *testing.T) {
+	workspace := t.TempDir()
+	subdir := filepath.Join(workspace, "data")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	os.WriteFile(filepath.Join(subdir, "file.txt"), []byte("safe content"), 0o644)
+
+	// Symlink within workspace: workspace/link -> workspace/data
+	if err := os.Symlink(subdir, filepath.Join(workspace, "link")); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Fatalf("NewExecTool: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": "cat link/file.txt",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected safe symlink within workspace to be allowed, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "safe content") {
+		t.Errorf("expected file content in output, got: %s", result.ForLLM)
+	}
+}
+
+// TestShellTool_SymlinkOperand_QuotedPath verifies that quoted paths with
+// symlinks are also caught.
+func TestShellTool_SymlinkOperand_QuotedPath(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	outside := filepath.Join(root, "outside")
+	for _, d := range []string{workspace, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	os.WriteFile(filepath.Join(outside, "data.txt"), []byte("secret"), 0o600)
+
+	if err := os.Symlink(outside, filepath.Join(workspace, "escape")); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Fatalf("NewExecTool: %v", err)
+	}
+
+	// Test with double-quoted path
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": `cat "escape/data.txt"`,
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected quoted symlink operand to be blocked, got: %s", result.ForLLM)
+	}
+}
+
+// TestShellTool_SymlinkOperand_MultipleOperands verifies that when multiple
+// operands are present, a symlink escape in any one blocks the command.
+func TestShellTool_SymlinkOperand_MultipleOperands(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	outside := filepath.Join(root, "outside")
+	for _, d := range []string{workspace, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	os.WriteFile(filepath.Join(workspace, "safe.txt"), []byte("ok"), 0o644)
+	os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("stolen"), 0o600)
+
+	if err := os.Symlink(outside, filepath.Join(workspace, "leak")); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Fatalf("NewExecTool: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": "cat ./safe.txt leak/secret.txt",
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected mixed operands with one escape to be blocked, got: %s", result.ForLLM)
+	}
+}
+
 // TestShellTool_RemoteChannelBlockedByDefault verifies exec is blocked for remote channels
 func TestShellTool_RemoteChannelBlockedByDefault(t *testing.T) {
 	cfg := &config.Config{}

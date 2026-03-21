@@ -230,6 +230,10 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		return ErrorResult(guardError)
 	}
 
+	if guardError := t.guardSymlinkOperands(command, cwd); guardError != "" {
+		return ErrorResult(guardError)
+	}
+
 	// Re-resolve symlinks immediately before execution to shrink the TOCTOU window
 	// between validation and cmd.Dir assignment.
 	if t.restrictToWorkspace && t.workingDir != "" && cwd != t.workingDir {
@@ -460,6 +464,135 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	return ""
+}
+
+// guardSymlinkOperands extracts path-like tokens from the command and
+// checks whether any of them resolve (via symlinks) to a location
+// outside the workspace. This closes the gap where guardCommand
+// validates the textual path but the filesystem resolves a symlink
+// to a different location at execution time.
+func (t *ExecTool) guardSymlinkOperands(command, cwd string) string {
+	if !t.restrictToWorkspace || t.workingDir == "" {
+		return ""
+	}
+
+	absWorkspace, err := filepath.Abs(t.workingDir)
+	if err != nil {
+		return ""
+	}
+	workspaceReal := absWorkspace
+	if resolved, err := filepath.EvalSymlinks(absWorkspace); err == nil {
+		workspaceReal = resolved
+	}
+
+	tokens := extractPathTokens(command)
+	for _, token := range tokens {
+		// Absolute paths are already validated by guardCommand.
+		if filepath.IsAbs(token) {
+			continue
+		}
+
+		candidate := filepath.Join(cwd, token)
+
+		// Try resolving the full path first. If it exists, EvalSymlinks
+		// follows every symlink component in the path.
+		resolved, err := filepath.EvalSymlinks(candidate)
+		if err != nil {
+			// Path doesn't exist — try resolving the nearest existing
+			// ancestor to catch dangling paths under a symlinked dir.
+			if resolved, err = resolveExistingAncestor(candidate); err != nil {
+				continue
+			}
+		}
+
+		if !isWithinWorkspace(resolved, workspaceReal) {
+			return "Command blocked by safety guard (symlink resolves outside workspace)"
+		}
+	}
+
+	return ""
+}
+
+// extractPathTokens splits a shell command into tokens and returns
+// those that look like filesystem path operands (not flags, operators,
+// environment assignments, or URLs). This is intentionally a
+// best-effort heuristic — shell expansion and subshell constructs
+// cannot be statically analyzed, but this catches the common case of
+// `cat leak/secret.txt` where `leak` is a symlink.
+func extractPathTokens(command string) []string {
+	raw := tokenizeShellCommand(command)
+
+	var paths []string
+	for _, tok := range raw {
+		// Skip flags
+		if strings.HasPrefix(tok, "-") {
+			continue
+		}
+		// Skip environment variable assignments (VAR=value)
+		if strings.ContainsRune(tok, '=') {
+			continue
+		}
+		// Skip shell operators and keywords
+		if isShellOperator(tok) {
+			continue
+		}
+		// Skip URLs
+		if strings.Contains(tok, "://") {
+			continue
+		}
+		// Skip tokens that look like pure commands (no path separator
+		// and no dot-prefix). This avoids resolving "cat", "grep", etc.
+		if !strings.ContainsRune(tok, filepath.Separator) &&
+			!strings.ContainsRune(tok, '/') &&
+			!strings.HasPrefix(tok, ".") {
+			continue
+		}
+		paths = append(paths, tok)
+	}
+	return paths
+}
+
+// tokenizeShellCommand performs basic shell-like tokenization, handling
+// single and double quotes. It does not handle escape sequences,
+// variable expansion, or subshells — those are out of scope for a
+// best-effort safety guard.
+func tokenizeShellCommand(cmd string) []string {
+	var tokens []string
+	var current strings.Builder
+	inSingle := false
+	inDouble := false
+
+	for i := 0; i < len(cmd); i++ {
+		ch := cmd[i]
+		switch {
+		case ch == '\'' && !inDouble:
+			inSingle = !inSingle
+		case ch == '"' && !inSingle:
+			inDouble = !inDouble
+		case (ch == ' ' || ch == '\t') && !inSingle && !inDouble:
+			if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteByte(ch)
+		}
+	}
+	if current.Len() > 0 {
+		tokens = append(tokens, current.String())
+	}
+	return tokens
+}
+
+// isShellOperator returns true for common shell operators and control
+// characters that should not be treated as path operands.
+func isShellOperator(tok string) bool {
+	switch tok {
+	case "|", "||", "&&", ";", "&", ">", ">>", "<", "<<", "<<<",
+		"2>", "2>>", "&>", "2>&1", "1>&2":
+		return true
+	}
+	return false
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {
