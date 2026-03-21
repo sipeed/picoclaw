@@ -91,6 +91,8 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	c.botUserID = botUser.ID
 
 	c.session.AddHandler(c.handleMessage)
+	
+	go c.listenVoiceControl(c.ctx)
 
 	if err := c.session.Open(); err != nil {
 		return fmt.Errorf("failed to open discord session: %w", err)
@@ -617,4 +619,32 @@ func (c *DiscordChannel) stripBotMention(text string) string {
 	text = strings.ReplaceAll(text, fmt.Sprintf("<@%s>", c.botUserID), "")
 	text = strings.ReplaceAll(text, fmt.Sprintf("<@!%s>", c.botUserID), "")
 	return strings.TrimSpace(text)
+}
+
+func (c *DiscordChannel) listenVoiceControl(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ctrl := <-c.bus.VoiceControlsChan():
+			if ctrl.Type == "command" && ctrl.Action == "leave" {
+				var guildID string
+				if strings.HasPrefix(ctrl.SessionID, "discord_vc_") {
+					guildID = strings.TrimPrefix(ctrl.SessionID, "discord_vc_")
+				} else if ctrl.ChatID != "" {
+					ch, err := c.session.State.Channel(ctrl.ChatID)
+					if err == nil {
+						guildID = ch.GuildID
+					}
+				}
+
+				if guildID != "" {
+					vc, exists := c.session.VoiceConnections[guildID]
+					if exists && vc != nil {
+						vc.Disconnect(ctx)
+					}
+				}
+			}
+		}
+	}
 }
