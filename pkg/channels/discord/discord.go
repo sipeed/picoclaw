@@ -42,6 +42,7 @@ type DiscordChannel struct {
 	typingMu   sync.Mutex
 	typingStop map[string]chan struct{} // chatID → stop signal
 	botUserID  string                   // stored for mention checking
+	bus        *bus.MessageBus
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -73,6 +74,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		config:      cfg,
 		ctx:         context.Background(),
 		typingStop:  make(map[string]chan struct{}),
+		bus:         bus,
 	}, nil
 }
 
@@ -318,6 +320,10 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	if m.Author.ID == s.State.User.ID {
+		return
+	}
+
+	if c.handleVoiceCommand(s, m) {
 		return
 	}
 
