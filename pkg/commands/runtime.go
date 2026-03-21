@@ -11,6 +11,7 @@ type Runtime struct {
 	ListAgentIDs       func() []string
 	ListDefinitions    func() []Definition
 	GetEnabledChannels func() []string
+	GetActiveTurn      func() interface{} // Returning interface{} to avoid circular dependency with agent package
 	SwitchModel        func(value string) (oldModel string, err error)
 	SwitchChannel      func(value string) error
 	ClearHistory       func() error

@@ -214,9 +214,18 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 		Reasoning:        choice.Message.Reasoning,
 		ReasoningDetails: choice.Message.ReasoningDetails,
 		ToolCalls:        toolCalls,
-		FinishReason:     choice.FinishReason,
+		FinishReason:     normalizeFinishReason(choice.FinishReason),
 		Usage:            apiResponse.Usage,
 	}, nil
+}
+
+// normalizeFinishReason normalizes finish_reason values across providers.
+// Converts "length" to "truncated" for consistent handling.
+func normalizeFinishReason(reason string) string {
+	if reason == "length" {
+		return "truncated"
+	}
+	return reason
 }
 
 // DecodeToolCallArguments decodes a tool call's arguments from raw JSON.
