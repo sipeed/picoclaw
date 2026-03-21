@@ -6,6 +6,7 @@ require (
 	fyne.io/systray v1.12.0
 	github.com/BurntSushi/toml v1.6.0
 	github.com/adhocore/gronx v1.19.6
+	github.com/Etriti00/agent-telepathy/tpcp-go v0.4.1
 	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/caarlos0/env/v11 v11.4.0
