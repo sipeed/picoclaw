@@ -556,7 +556,8 @@ type AutonomousConfig struct {
 	Enabled bool `json:"enabled" env:"PICONOMOUS_AUTONOMOUS_ENABLED"`
 
 	// IntervalMinutes controls how often (in minutes) the autonomous heartbeat fires.
-	// Defaults to 5 minutes when autonomous mode is enabled. Minimum is 1 minute.
+	// Defaults to 5 minutes when autonomous mode is enabled. Minimum is 5 minutes
+	// (enforced by the heartbeat service).
 	IntervalMinutes int `json:"interval_minutes" env:"PICONOMOUS_AUTONOMOUS_INTERVAL_MINUTES"`
 
 	// AllowSelfSchedule lets the agent create cron jobs targeting its own internal
