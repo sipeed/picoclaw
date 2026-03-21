@@ -831,6 +831,8 @@ func TestSupportsPromptCacheKey(t *testing.T) {
 		{"https://api.groq.com/openai/v1", false},
 		{"http://localhost:11434/v1", false},
 		{"https://openrouter.ai/api/v1", false},
+		{"https://myfoundry.eastus.services.ai.azure.com/v1", true},
+		{"https://myfoundry.services.ai.azure.com", true},
 		// Edge cases: proxy URLs with openai.com in path should NOT match
 		{"https://my-proxy.com/api.openai.com/v1", false},
 		{"https://proxy.example.com/openai.azure.com/v1", false},
@@ -900,6 +902,7 @@ func TestIsNativeSearchHost(t *testing.T) {
 		{"https://api.deepseek.com/v1", false},
 		{"https://api.groq.com/openai/v1", false},
 		{"http://localhost:11434/v1", false},
+		{"https://myfoundry.eastus.services.ai.azure.com/v1", true},
 		{"", false},
 	}
 	for _, tt := range tests {

@@ -417,7 +417,9 @@ func isNativeSearchHost(apiBase string) bool {
 		return false
 	}
 	host := u.Hostname()
-	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+	return host == "api.openai.com" ||
+		strings.HasSuffix(host, ".openai.azure.com") ||
+		strings.HasSuffix(host, ".services.ai.azure.com")
 }
 
 // supportsPromptCacheKey reports whether the given API base is known to
@@ -430,5 +432,7 @@ func supportsPromptCacheKey(apiBase string) bool {
 		return false
 	}
 	host := u.Hostname()
-	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+	return host == "api.openai.com" ||
+		strings.HasSuffix(host, ".openai.azure.com") ||
+		strings.HasSuffix(host, ".services.ai.azure.com")
 }
