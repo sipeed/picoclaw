@@ -1,7 +1,8 @@
 services:
   # ─────────────────────────────────────────────
   # PicoClaw Agent (one-shot query)
-  #   docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Hello"
+  #   docker compose -f docker/docker-compose.local.yml --profile agent run --rm picoclaw-agent -m "Hello"
+  #   podman compose -f docker/docker-compose.local.yml --profile agent run --rm picoclaw-agent -m "Hello"
   # ─────────────────────────────────────────────
   picoclaw-agent:
     build:
@@ -24,7 +25,8 @@ services:
 
   # ─────────────────────────────────────────────
   # PicoClaw Gateway (Long-running Bot)
-  #   docker compose -f docker/docker-compose.yml up picoclaw-gateway
+  #   docker compose -f docker/docker-compose.local.yml --profile gateway up -d
+  #   podman compose -f docker/docker-compose.local.yml --profile gateway up -d
   # ─────────────────────────────────────────────
   picoclaw-gateway:
     build:
