@@ -9,6 +9,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     userns_mode: "keep-id"
+    user: "${UID:-1000}:${GID:-1000}"
     container_name: picoclaw-agent
     security_opt:
       - label=disable
@@ -33,6 +34,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     userns_mode: "keep-id"
+    user: "${UID:-1000}:${GID:-1000}"
     security_opt:
       - label=disable
     container_name: picoclaw-gateway
