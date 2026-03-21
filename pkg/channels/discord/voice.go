@@ -73,17 +73,46 @@ func streamOggOpusToDiscord(ctx context.Context, vc *discordgo.VoiceConnection, 
 func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID string, chatID string) {
 	logger.InfoCF("discord", "Started listening for voice", map[string]any{"guild": guildID})
 
-	go func() {
+	go func(ctx context.Context, vc *discordgo.VoiceConnection) {
+		// Recover from potential panics if OpusSend is closed mid-send.
+		defer func() {
+			if rec := recover(); rec != nil {
+				logger.WarnCF("discord", "Recovered from panic while sending wake-up frames", map[string]any{
+					"error": rec,
+					"guild": guildID,
+				})
+			}
+		}()
+
+		// If the voice connection or OpusSend are not available, nothing to do.
+		if vc == nil || vc.OpusSend == nil {
+			return
+		}
+
 		time.Sleep(250 * time.Millisecond) // Wait a bit for connection to settle
+
+		// Abort if the context has already been cancelled.
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		vc.Speaking(true)
+		defer vc.Speaking(false)
+
+		silenceFrame := []byte{0xF8, 0xFF, 0xFE}
 		for i := 0; i < 5; i++ {
-			vc.OpusSend <- []byte{0xF8, 0xFF, 0xFE}
+			select {
+			case <-ctx.Done():
+				return
+			case vc.OpusSend <- silenceFrame:
+			}
 			time.Sleep(20 * time.Millisecond)
 		}
-		vc.Speaking(false)
-		logger.DebugCF("discord", "Sent wake-up silence frames", nil)
-	}()
 
+		logger.DebugCF("discord", "Sent wake-up silence frames", map[string]any{"guild": guildID})
+	}(c.ctx, vc)
 	sessionID := fmt.Sprintf("discord_vc_%s", guildID)
 
 	c.bus.PublishVoiceControl(c.ctx, bus.VoiceControl{
