@@ -221,6 +221,10 @@ func buildRequestBody(
 
 			// Add tool_use blocks
 			for _, tc := range msg.ToolCalls {
+				if strings.TrimSpace(tc.Name) == "" {
+					continue
+				}
+
 				// Handle nil Arguments (GLM-4 may return null input)
 				input := tc.Arguments
 				if input == nil {

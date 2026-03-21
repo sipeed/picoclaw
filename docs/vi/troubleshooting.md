@@ -16,7 +16,7 @@
 
 **Cách sửa:** Trong `~/.picoclaw/config.json` (hoặc đường dẫn cấu hình của bạn):
 
-1. **agents.defaults.model** phải khớp với một `model_name` trong `model_list` (ví dụ: `"openrouter-free"`).
+1. **agents.defaults.model_name** phải khớp với một `model_name` trong `model_list` (ví dụ: `"openrouter-free"`).
 2. **model** của mục đó phải là ID mô hình OpenRouter hợp lệ, ví dụ:
    - `"openrouter/free"` – tầng miễn phí tự động
    - `"google/gemini-2.0-flash-exp:free"`
@@ -28,7 +28,7 @@ Ví dụ:
 {
   "agents": {
     "defaults": {
-      "model": "openrouter-free"
+      "model_name": "openrouter-free"
     }
   },
   "model_list": [

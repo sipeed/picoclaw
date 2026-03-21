@@ -8,22 +8,22 @@ Trò chuyện với picoclaw của bạn qua Telegram, Discord, WhatsApp, Matrix
 
 > **Lưu ý**: Tất cả các kênh dựa trên webhook (LINE, WeCom, v.v.) được phục vụ trên một máy chủ HTTP Gateway chung (`gateway.host`:`gateway.port`, mặc định `127.0.0.1:18790`). Không có port riêng cho từng kênh. Lưu ý: Feishu sử dụng chế độ WebSocket/SDK và không sử dụng máy chủ HTTP webhook chung.
 
-| Channel      | Setup                              |
-| ------------ | ---------------------------------- |
-| **Telegram** | Easy (just a token)                |
-| **Discord**  | Easy (bot token + intents)         |
-| **WhatsApp** | Easy (native: QR scan; or bridge URL) |
-| **Matrix**   | Medium (homeserver + bot access token) |
-| **QQ**       | Easy (AppID + AppSecret)           |
-| **DingTalk** | Medium (app credentials)           |
-| **LINE**     | Medium (credentials + webhook URL) |
-| **WeCom AI Bot** | Medium (Token + AES key)       |
-| **Feishu**   | Medium (App ID + Secret, WebSocket mode) |
-| **Slack**    | Medium (Bot token + App token) |
-| **IRC**      | Medium (server + TLS config)   |
-| **OneBot**   | Medium (QQ via OneBot protocol) |
-| **MaixCam**  | Easy (Sipeed hardware integration) |
-| **Pico**     | Native PicoClaw protocol           |
+| Kênh                 | Độ khó             | Mô tả                                                 | Tài liệu                                                                                                         |
+| -------------------- | ------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Telegram**         | ⭐ Dễ              | Khuyến nghị, chuyển giọng nói thành văn bản, long polling (không cần IP công khai) | [Tài liệu](../channels/telegram/README.vi.md)                                              |
+| **Discord**          | ⭐ Dễ              | Socket Mode, hỗ trợ nhóm/DM, hệ sinh thái bot phong phú | [Tài liệu](../channels/discord/README.vi.md)                                                                  |
+| **WhatsApp**         | ⭐ Dễ              | Bản địa (quét QR) hoặc Bridge URL                     | [Tài liệu](#whatsapp)                                                                                            |
+| **Slack**            | ⭐ Dễ              | **Socket Mode** (không cần IP công khai), doanh nghiệp | [Tài liệu](../channels/slack/README.vi.md)                                                                      |
+| **Matrix**           | ⭐⭐ Trung bình    | Giao thức liên kết, hỗ trợ tự lưu trữ                | [Tài liệu](../channels/matrix/README.vi.md)                                                                     |
+| **QQ**               | ⭐⭐ Trung bình    | API bot chính thức, cộng đồng Trung Quốc              | [Tài liệu](../channels/qq/README.vi.md)                                                                         |
+| **DingTalk**         | ⭐⭐ Trung bình    | Chế độ Stream (không cần IP công khai), doanh nghiệp  | [Tài liệu](../channels/dingtalk/README.vi.md)                                                                   |
+| **LINE**             | ⭐⭐⭐ Nâng cao    | Yêu cầu HTTPS Webhook                                 | [Tài liệu](../channels/line/README.vi.md)                                                                       |
+| **WeCom (企业微信)** | ⭐⭐⭐ Nâng cao    | Bot nhóm (Webhook), ứng dụng tùy chỉnh (API), AI Bot | [Bot](../channels/wecom/wecom_bot/README.vi.md) / [App](../channels/wecom/wecom_app/README.vi.md) / [AI Bot](../channels/wecom/wecom_aibot/README.vi.md) |
+| **Feishu (飞书)**    | ⭐⭐⭐ Nâng cao    | Cộng tác doanh nghiệp, nhiều tính năng                | [Tài liệu](../channels/feishu/README.vi.md)                                                                     |
+| **IRC**              | ⭐⭐ Trung bình    | Máy chủ + cấu hình TLS                                | -                                                                                                                |
+| **OneBot**           | ⭐⭐ Trung bình    | Tương thích NapCat/Go-CQHTTP, hệ sinh thái cộng đồng  | [Tài liệu](../channels/onebot/README.vi.md)                                                                     |
+| **MaixCam**          | ⭐ Dễ              | Kênh tích hợp phần cứng cho camera AI Sipeed          | [Tài liệu](../channels/maixcam/README.vi.md)                                                                    |
+| **Pico**             | ⭐ Dễ              | Kênh giao thức bản địa PicoClaw                       |                                                                                                                  |
 
 <details>
 <summary><b>Telegram</b> (Khuyến nghị)</summary>
@@ -168,12 +168,13 @@ Nếu `session_store_path` trống, phiên được lưu tại `<workspace>/what
 <details>
 <summary><b>QQ</b></summary>
 
-**1. Tạo bot**
+**Thiết lập nhanh (khuyến nghị)**
 
-- Truy cập [QQ Open Platform](https://q.qq.com/#)
-- Tạo ứng dụng → Lấy **AppID** và **AppSecret**
+QQ Open Platform cung cấp trang thiết lập một chạm cho bot tương thích OpenClaw:
 
-**2. Cấu hình**
+1. Mở [QQ Bot Quick Start](https://q.qq.com/qqbot/openclaw/index.html) và quét mã QR để đăng nhập
+2. Bot được tạo tự động — sao chép **App ID** và **App Secret**
+3. Cấu hình PicoClaw:
 
 ```json
 {
@@ -188,13 +189,20 @@ Nếu `session_store_path` trống, phiên được lưu tại `<workspace>/what
 }
 ```
 
-> Đặt `allow_from` trống để cho phép tất cả người dùng, hoặc chỉ định số QQ để giới hạn truy cập.
+4. Chạy `picoclaw gateway` và mở QQ để trò chuyện với bot của bạn
 
-**3. Chạy**
+> App Secret chỉ hiển thị một lần. Lưu ngay lập tức — xem lại sẽ buộc phải đặt lại.
+>
+> Bot được tạo qua trang thiết lập nhanh ban đầu chỉ dành cho người tạo và không hỗ trợ chat nhóm. Để bật quyền truy cập nhóm, cấu hình chế độ sandbox trên [QQ Open Platform](https://q.qq.com/).
 
-```bash
-picoclaw gateway
-```
+**Thiết lập thủ công**
+
+Nếu bạn muốn tạo bot thủ công:
+
+* Đăng nhập tại [QQ Open Platform](https://q.qq.com/) để đăng ký làm nhà phát triển
+* Tạo bot QQ — tùy chỉnh avatar và tên
+* Sao chép **App ID** và **App Secret** từ cài đặt bot
+* Cấu hình như trên và chạy `picoclaw gateway`
 
 </details>
 
@@ -229,7 +237,30 @@ picoclaw gateway
 ```bash
 picoclaw gateway
 ```
+
 </details>
+
+<details>
+<summary><b>MaixCam</b></summary>
+
+Kênh tích hợp được thiết kế đặc biệt cho phần cứng camera AI Sipeed.
+
+```json
+{
+  "channels": {
+    "maixcam": {
+      "enabled": true
+    }
+  }
+}
+```
+
+```bash
+picoclaw gateway
+```
+
+</details>
+
 
 <details>
 <summary><b>Matrix</b></summary>
@@ -261,7 +292,7 @@ picoclaw gateway
 picoclaw gateway
 ```
 
-Để xem đầy đủ các tùy chọn (`device_id`, `join_on_invite`, `group_trigger`, `placeholder`, `reasoning_channel_id`), xem [Hướng Dẫn Cấu Hình Kênh Matrix](docs/channels/matrix/README.md).
+Để xem đầy đủ các tùy chọn (`device_id`, `join_on_invite`, `group_trigger`, `placeholder`, `reasoning_channel_id`), xem [Hướng Dẫn Cấu Hình Kênh Matrix](../channels/matrix/README.md).
 
 </details>
 
@@ -322,7 +353,7 @@ PicoClaw hỗ trợ ba loại tích hợp WeCom:
 **Tùy chọn 2: WeCom App (App Tùy chỉnh)** - Nhiều tính năng hơn, nhắn tin chủ động, chỉ chat riêng
 **Tùy chọn 3: WeCom AI Bot (AI Bot)** - AI Bot chính thức, phản hồi streaming, hỗ trợ chat nhóm & riêng
 
-Xem [Hướng Dẫn Cấu Hình WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) để biết hướng dẫn thiết lập chi tiết.
+Xem [Hướng Dẫn Cấu Hình WeCom AI Bot](../channels/wecom/wecom_aibot/README.vi.md) để biết hướng dẫn thiết lập chi tiết.
 
 **Thiết Lập Nhanh - WeCom Bot:**
 
@@ -396,7 +427,7 @@ picoclaw gateway
 **1. Tạo AI Bot**
 
 * Truy cập Console Quản Trị WeCom → Quản Lý App → AI Bot
-* Trong cài đặt AI Bot, cấu hình callback URL: `http://your-server:18791/webhook/wecom-aibot`
+* Trong cài đặt AI Bot, cấu hình callback URL: `http://your-server:18790/webhook/wecom-aibot`
 * Sao chép **Token** và nhấp "Tạo Ngẫu Nhiên" cho **EncodingAESKey**
 
 **2. Cấu hình**
@@ -410,7 +441,8 @@ picoclaw gateway
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
       "webhook_path": "/webhook/wecom-aibot",
       "allow_from": [],
-      "welcome_message": "Hello! How can I help you?"
+      "welcome_message": "Hello! How can I help you?",
+      "processing_message": "⏳ Processing, please wait. The results will be sent shortly."
     }
   }
 }
@@ -423,5 +455,171 @@ picoclaw gateway
 ```
 
 > **Lưu ý**: WeCom AI Bot sử dụng giao thức streaming pull — không lo timeout phản hồi. Tác vụ dài (>30 giây) tự động chuyển sang gửi qua `response_url` push.
+
+</details>
+
+<details>
+<summary><b>Feishu (Lark)</b></summary>
+
+PicoClaw kết nối với Feishu qua chế độ WebSocket/SDK — không cần URL webhook công khai hay máy chủ callback.
+
+**1. Tạo ứng dụng**
+
+* Truy cập [Feishu Open Platform](https://open.feishu.cn/) và tạo ứng dụng
+* Trong cài đặt ứng dụng, bật khả năng **Bot**
+* Tạo phiên bản và xuất bản ứng dụng (ứng dụng phải được xuất bản mới có hiệu lực)
+* Sao chép **App ID** (bắt đầu bằng `cli_`) và **App Secret**
+
+**2. Cấu hình**
+
+```json
+{
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "app_id": "cli_xxx",
+      "app_secret": "YOUR_APP_SECRET",
+      "allow_from": []
+    }
+  }
+}
+```
+
+Tùy chọn: `encrypt_key` và `verification_token` để mã hóa sự kiện (khuyến nghị cho môi trường production).
+
+**3. Chạy và trò chuyện**
+
+```bash
+picoclaw gateway
+```
+
+Mở Feishu, tìm tên bot của bạn và bắt đầu trò chuyện. Bạn cũng có thể thêm bot vào nhóm — sử dụng `group_trigger.mention_only: true` để chỉ phản hồi khi được @mention.
+
+Để xem đầy đủ các tùy chọn, xem [Hướng Dẫn Cấu Hình Kênh Feishu](../channels/feishu/README.vi.md).
+
+</details>
+
+<details>
+<summary><b>Slack</b></summary>
+
+**1. Tạo ứng dụng Slack**
+
+* Truy cập [Slack API](https://api.slack.com/apps) và tạo ứng dụng mới
+* Trong **OAuth & Permissions**, thêm các scope bot: `chat:write`, `app_mentions:read`, `im:history`, `im:read`, `im:write`
+* Cài đặt ứng dụng vào workspace của bạn
+* Sao chép **Bot Token** (`xoxb-...`) và **App-Level Token** (`xapp-...`, bật Socket Mode để lấy token này)
+
+**2. Cấu hình**
+
+```json
+{
+  "channels": {
+    "slack": {
+      "enabled": true,
+      "bot_token": "xoxb-YOUR-BOT-TOKEN",
+      "app_token": "xapp-YOUR-APP-TOKEN",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**3. Chạy**
+
+```bash
+picoclaw gateway
+```
+
+</details>
+
+<details>
+<summary><b>IRC</b></summary>
+
+**1. Cấu hình**
+
+```json
+{
+  "channels": {
+    "irc": {
+      "enabled": true,
+      "server": "irc.libera.chat:6697",
+      "tls": true,
+      "nick": "picoclaw-bot",
+      "channels": ["#your-channel"],
+      "password": "",
+      "allow_from": []
+    }
+  }
+}
+```
+
+Tùy chọn: `nickserv_password` để xác thực NickServ, `sasl_user`/`sasl_password` để xác thực SASL.
+
+**2. Chạy**
+
+```bash
+picoclaw gateway
+```
+
+Bot sẽ kết nối đến máy chủ IRC và tham gia các kênh đã chỉ định.
+
+</details>
+
+<details>
+<summary><b>OneBot (QQ qua giao thức OneBot)</b></summary>
+
+OneBot là giao thức mở cho bot QQ. PicoClaw kết nối với bất kỳ triển khai tương thích OneBot v11 nào (ví dụ: [Lagrange](https://github.com/LagrangeDev/Lagrange.Core), [NapCat](https://github.com/NapNeko/NapCatQQ)) qua WebSocket.
+
+**1. Thiết lập triển khai OneBot**
+
+Cài đặt và chạy framework bot QQ tương thích OneBot v11. Bật máy chủ WebSocket của nó.
+
+**2. Cấu hình**
+
+```json
+{
+  "channels": {
+    "onebot": {
+      "enabled": true,
+      "ws_url": "ws://127.0.0.1:8080",
+      "access_token": "",
+      "allow_from": []
+    }
+  }
+}
+```
+
+| Trường | Mô tả |
+|--------|-------|
+| `ws_url` | URL WebSocket của triển khai OneBot |
+| `access_token` | Token truy cập để xác thực (nếu đã cấu hình trong OneBot) |
+| `reconnect_interval` | Khoảng thời gian kết nối lại tính bằng giây (mặc định: 5) |
+
+**3. Chạy**
+
+```bash
+picoclaw gateway
+```
+
+</details>
+
+<details>
+<summary><b>MaixCam</b></summary>
+
+Kênh tích hợp được thiết kế đặc biệt cho phần cứng camera AI Sipeed.
+
+```json
+{
+  "channels": {
+    "maixcam": {
+      "enabled": true
+    }
+  }
+}
+```
+
+```bash
+picoclaw gateway
+```
 
 </details>

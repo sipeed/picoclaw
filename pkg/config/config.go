@@ -219,32 +219,57 @@ type RoutingConfig struct {
 	Threshold  float64 `json:"threshold"`   // complexity score in [0,1]; score >= threshold → primary model
 }
 
-type AgentDefaults struct {
-	Workspace                 string         `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace       bool           `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	AllowReadOutsideWorkspace bool           `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
-	Provider                  string         `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	ModelName                 string         `json:"model_name"                      env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
-	Model                     string         `json:"model,omitempty"                 env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
-	ModelFallbacks            []string       `json:"model_fallbacks,omitempty"`
-	ImageModel                string         `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
-	ImageModelFallbacks       []string       `json:"image_model_fallbacks,omitempty"`
-	MaxTokens                 int            `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature               *float64       `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations         int            `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
-	SummarizeMessageThreshold int            `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
-	SummarizeTokenPercent     int            `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
-	MaxMediaSize              int            `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
-	Routing                   *RoutingConfig `json:"routing,omitempty"`
+// ToolFeedbackConfig controls whether tool execution details are sent to the
+// chat channel as real-time feedback messages. When enabled, every tool call
+// produces a short notification with the tool name and its parameters.
+type ToolFeedbackConfig struct {
+	Enabled       bool `json:"enabled"         env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
+	MaxArgsLength int  `json:"max_args_length" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
 }
 
-const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB
+type AgentDefaults struct {
+	Workspace                 string             `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace       bool               `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	AllowReadOutsideWorkspace bool               `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
+	Provider                  string             `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	ModelName                 string             `json:"model_name"                      env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
+	Model                     string             `json:"model,omitempty"                 env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
+	ModelFallbacks            []string           `json:"model_fallbacks,omitempty"`
+	ImageModel                string             `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks       []string           `json:"image_model_fallbacks,omitempty"`
+	MaxTokens                 int                `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature               *float64           `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations         int                `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	SummarizeMessageThreshold int                `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
+	SummarizeTokenPercent     int                `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
+	MaxMediaSize              int                `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
+	Routing                   *RoutingConfig     `json:"routing,omitempty"`
+	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
+}
+
+const (
+	DefaultMaxMediaSize                = 20 * 1024 * 1024 // 20 MB
+	DefaultWeComAIBotProcessingMessage = "⏳ Processing, please wait. The results will be sent shortly."
+)
 
 func (d *AgentDefaults) GetMaxMediaSize() int {
 	if d.MaxMediaSize > 0 {
 		return d.MaxMediaSize
 	}
 	return DefaultMaxMediaSize
+}
+
+// GetToolFeedbackMaxArgsLength returns the max args preview length for tool feedback messages.
+func (d *AgentDefaults) GetToolFeedbackMaxArgsLength() int {
+	if d.ToolFeedback.MaxArgsLength > 0 {
+		return d.ToolFeedback.MaxArgsLength
+	}
+	return 300
+}
+
+// IsToolFeedbackEnabled returns true when tool feedback messages should be sent to the chat.
+func (d *AgentDefaults) IsToolFeedbackEnabled() bool {
+	return d.ToolFeedback.Enabled
 }
 
 // GetModelName returns the effective model name for the agent defaults.
@@ -272,6 +297,7 @@ type ChannelsConfig struct {
 	WeComApp   WeComAppConfig   `json:"wecom_app"`
 	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
 	Pico       PicoConfig       `json:"pico"`
+	PicoClient PicoClientConfig `json:"pico_client"`
 	IRC        IRCConfig        `json:"irc"`
 }
 
@@ -292,6 +318,12 @@ type PlaceholderConfig struct {
 	Text    string `json:"text,omitempty"`
 }
 
+type StreamingConfig struct {
+	Enabled         bool `json:"enabled,omitempty"          env:"PICOCLAW_CHANNELS_TELEGRAM_STREAMING_ENABLED"`
+	ThrottleSeconds int  `json:"throttle_seconds,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_STREAMING_THROTTLE_SECONDS"`
+	MinGrowthChars  int  `json:"min_growth_chars,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_STREAMING_MIN_GROWTH_CHARS"`
+}
+
 type WhatsAppConfig struct {
 	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
 	BridgeURL          string              `json:"bridge_url"           env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
@@ -310,6 +342,7 @@ type TelegramConfig struct {
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
+	Streaming          StreamingConfig     `json:"streaming,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
 	UseMarkdownV2      bool                `json:"use_markdown_v2"         env:"PICOCLAW_CHANNELS_TELEGRAM_USE_MARKDOWN_V2"`
 }
@@ -349,14 +382,15 @@ type MaixCamConfig struct {
 }
 
 type QQConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
-	AppID              string              `json:"app_id"                  env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
-	AppSecret          string              `json:"app_secret"              env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	MaxMessageLength   int                 `json:"max_message_length"      env:"PICOCLAW_CHANNELS_QQ_MAX_MESSAGE_LENGTH"`
-	SendMarkdown       bool                `json:"send_markdown"           env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
+	Enabled              bool                `json:"enabled"                  env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
+	AppID                string              `json:"app_id"                   env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
+	AppSecret            string              `json:"app_secret"               env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
+	AllowFrom            FlexibleStringSlice `json:"allow_from"               env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
+	GroupTrigger         GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	MaxMessageLength     int                 `json:"max_message_length"       env:"PICOCLAW_CHANNELS_QQ_MAX_MESSAGE_LENGTH"`
+	MaxBase64FileSizeMiB int64               `json:"max_base64_file_size_mib" env:"PICOCLAW_CHANNELS_QQ_MAX_BASE64_FILE_SIZE_MIB"`
+	SendMarkdown         bool                `json:"send_markdown"            env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
+	ReasoningChannelID   string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
 }
 
 type DingTalkConfig struct {
@@ -451,15 +485,18 @@ type WeComAppConfig struct {
 }
 
 type WeComAIBotConfig struct {
-	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENABLED"`
-	Token              string              `json:"token"                env:"PICOCLAW_CHANNELS_WECOM_AIBOT_TOKEN"`
-	EncodingAESKey     string              `json:"encoding_aes_key"     env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENCODING_AES_KEY"`
-	WebhookPath        string              `json:"webhook_path"         env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"        env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REPLY_TIMEOUT"`
-	MaxSteps           int                 `json:"max_steps"            env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"`       // Maximum streaming steps
-	WelcomeMessage     string              `json:"welcome_message"      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"` // Sent on enter_chat event; empty = no welcome
-	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"                      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENABLED"`
+	BotID              string              `json:"bot_id,omitempty"             env:"PICOCLAW_CHANNELS_WECOM_AIBOT_BOT_ID"`
+	Secret             string              `json:"secret,omitempty"             env:"PICOCLAW_CHANNELS_WECOM_AIBOT_SECRET"`
+	Token              string              `json:"token,omitempty"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_TOKEN"`
+	EncodingAESKey     string              `json:"encoding_aes_key,omitempty"   env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENCODING_AES_KEY"`
+	WebhookPath        string              `json:"webhook_path,omitempty"       env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WEBHOOK_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"                   env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ALLOW_FROM"`
+	ReplyTimeout       int                 `json:"reply_timeout"                env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REPLY_TIMEOUT"`
+	MaxSteps           int                 `json:"max_steps"                    env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"`       // Maximum streaming steps
+	WelcomeMessage     string              `json:"welcome_message"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"` // Sent on enter_chat event; empty = no welcome
+	ProcessingMessage  string              `json:"processing_message,omitempty" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_PROCESSING_MESSAGE"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"         env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
 }
 
 type PicoConfig struct {
@@ -473,6 +510,16 @@ type PicoConfig struct {
 	MaxConnections  int                 `json:"max_connections,omitempty"`
 	AllowFrom       FlexibleStringSlice `json:"allow_from"                  env:"PICOCLAW_CHANNELS_PICO_ALLOW_FROM"`
 	Placeholder     PlaceholderConfig   `json:"placeholder,omitempty"`
+}
+
+type PicoClientConfig struct {
+	Enabled      bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_PICO_CLIENT_ENABLED"`
+	URL          string              `json:"url"                     env:"PICOCLAW_CHANNELS_PICO_CLIENT_URL"`
+	Token        string              `json:"token"                   env:"PICOCLAW_CHANNELS_PICO_CLIENT_TOKEN"`
+	SessionID    string              `json:"session_id,omitempty"`
+	PingInterval int                 `json:"ping_interval,omitempty"`
+	ReadTimeout  int                 `json:"read_timeout,omitempty"`
+	AllowFrom    FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_PICO_CLIENT_ALLOW_FROM"`
 }
 
 type IRCConfig struct {
@@ -805,6 +852,10 @@ type ClawHubRegistryConfig struct {
 type MCPServerConfig struct {
 	// Enabled indicates whether this MCP server is active
 	Enabled bool `json:"enabled"`
+	// Deferred controls whether this server's tools are registered as hidden (deferred/discovery mode).
+	// When nil, the global Discovery.Enabled setting applies.
+	// When explicitly set to true or false, it overrides the global setting for this server only.
+	Deferred *bool `json:"deferred,omitempty"`
 	// Command is the executable to run (e.g., "npx", "python", "/path/to/server")
 	Command string `json:"command"`
 	// Args are the arguments to pass to the command
@@ -885,6 +936,15 @@ func LoadConfig(path string) (*Config, error) {
 	// Auto-migrate: if only legacy providers config exists, convert to model_list
 	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
+	}
+
+	// Inherit credentials from providers to model_list entries (#1635).
+	// When both providers and model_list are present, model_list entries
+	// whose api_key/api_base are empty will inherit from the matching
+	// provider (matched by protocol prefix).  Explicit model_list values
+	// always take precedence.
+	if cfg.HasProvidersConfig() {
+		InheritProviderCredentials(cfg.ModelList, cfg.Providers)
 	}
 
 	// Validate model_list for uniqueness and required fields

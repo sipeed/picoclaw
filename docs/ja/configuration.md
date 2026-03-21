@@ -57,7 +57,7 @@ PicoClaw は設定されたワークスペース（デフォルト: `~/.picoclaw
 
 1. `~/.picoclaw/workspace/skills`（ワークスペース）
 2. `~/.picoclaw/skills`（グローバル）
-3. `<current-working-directory>/skills`（ビルトイン）
+3. `<ビルド時埋め込みパス>/skills`（ビルトイン）
 
 高度な/テスト用セットアップでは、以下の環境変数でビルトインスキルのルートを上書きできます：
 

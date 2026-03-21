@@ -70,8 +70,31 @@ Công cụ exec được sử dụng để thực thi các lệnh shell.
 
 | Cấu hình               | Kiểu  | Mặc định | Mô tả                                         |
 |--------------------------|-------|----------|------------------------------------------------|
+| `enabled`                | bool  | true     | Bật công cụ exec                             |
 | `enable_deny_patterns`   | bool  | true     | Bật chặn lệnh nguy hiểm mặc định             |
 | `custom_deny_patterns`   | array | []       | Mẫu từ chối tùy chỉnh (biểu thức chính quy)  |
+
+### Vô hiệu hóa Công cụ Exec
+
+Để hoàn toàn vô hiệu hóa công cụ `exec`, đặt `enabled` thành `false`:
+
+**Qua tệp cấu hình:**
+```json
+{
+  "tools": {
+    "exec": {
+      "enabled": false
+    }
+  }
+}
+```
+
+**Qua biến môi trường:**
+```bash
+PICOCLAW_TOOLS_EXEC_ENABLED=false
+```
+
+> **Lưu ý:** Khi bị vô hiệu hóa, agent sẽ không thể thực thi lệnh shell. Điều này cũng ảnh hưởng đến khả năng chạy lệnh shell theo lịch của công cụ Cron.
 
 ### Chức năng
 
@@ -329,6 +352,7 @@ Tất cả các tùy chọn cấu hình có thể được ghi đè qua biến m
 Ví dụ:
 
 - `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`

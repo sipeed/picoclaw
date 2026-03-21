@@ -327,6 +327,7 @@
         "realName": "显示名称。",
         "channels": "要加入的 IRC 频道列表。",
         "requestCaps": "连接时请求的 IRC 扩展能力列表。",
+        "maxBase64FileSizeMiB": "本地文件转为 base64 上传的最大体积，单位 MiB；0 表示不限制，仅影响本地文件，不影响 URL 直传。",
         "genericField": "用于配置{{field}}。"
       }
     },

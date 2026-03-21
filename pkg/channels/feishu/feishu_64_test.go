@@ -75,6 +75,24 @@ func TestExtractContent(t *testing.T) {
 			rawContent:  "",
 			want:        "",
 		},
+		{
+			name:        "interactive card returns raw JSON",
+			messageType: "interactive",
+			rawContent:  `{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"Hello from card"}]}}`,
+			want:        `{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"Hello from card"}]}}`,
+		},
+		{
+			name:        "interactive card with complex structure returns raw JSON",
+			messageType: "interactive",
+			rawContent:  `{"header":{"title":{"tag":"plain_text","content":"Title"}},"elements":[{"tag":"div","text":{"tag":"lark_md","content":"Card content"}}]}`,
+			want:        `{"header":{"title":{"tag":"plain_text","content":"Title"}},"elements":[{"tag":"div","text":{"tag":"lark_md","content":"Card content"}}]}`,
+		},
+		{
+			name:        "interactive card invalid JSON returns as-is",
+			messageType: "interactive",
+			rawContent:  `not valid json`,
+			want:        `not valid json`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -150,6 +168,13 @@ func TestAppendMediaTags(t *testing.T) {
 			messageType: "sticker",
 			mediaRefs:   []string{"ref1"},
 			want:        "something [attachment]",
+		},
+		{
+			name:        "interactive card with images returns content unchanged",
+			content:     `{"schema":"2.0","body":{"elements":[{"tag":"img","img_key":"img_123"}]}}`,
+			messageType: "interactive",
+			mediaRefs:   []string{"ref1"},
+			want:        `{"schema":"2.0","body":{"elements":[{"tag":"img","img_key":"img_123"}]}}`,
 		},
 	}
 

@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [English](README.md) | **Français**
+[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | **Français** | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [English](README.md)
 
 </div>
 
@@ -105,6 +105,8 @@ _*Les versions récentes peuvent utiliser 10–20 Mo en raison des fusions rapid
 
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
 
+> 📋 **[Liste de Compatibilité Matérielle](docs/hardware-compatibility.md)** — Voir toutes les cartes testées, du RISC-V à $5 au Raspberry Pi en passant par les téléphones Android. Votre carte n'est pas listée ? Soumettez une PR !
+
 ## 🦾 Démonstration
 
 ### 🛠️ Flux de Travail Standard de l'Assistant
@@ -139,7 +141,7 @@ Donnez une seconde vie à votre téléphone d'il y a dix ans ! Transformez-le en
 wget https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_arm64.tar.gz
 tar xzf picoclaw_Linux_arm64.tar.gz
 pkg install proot
-termux-chroot ./picoclaw onboard
+termux-chroot ./picoclaw onboard   # chroot fournit une disposition standard du système de fichiers Linux
 ```
 
 Puis suivez les instructions de la section « Démarrage Rapide » pour terminer la configuration !
@@ -160,11 +162,15 @@ PicoClaw peut être déployé sur pratiquement n'importe quel appareil Linux !
 
 ## 📦 Installation
 
-### Installer avec un binaire précompilé
+### Télécharger depuis picoclaw.io (Recommandé)
 
-Téléchargez le binaire pour votre plateforme depuis la page des [Releases](https://github.com/sipeed/picoclaw/releases).
+Visitez **[picoclaw.io](https://picoclaw.io)** — le site officiel détecte automatiquement votre plateforme et propose un téléchargement en un clic. Pas besoin de choisir manuellement une architecture.
 
-### Installer depuis les sources (dernières fonctionnalités, recommandé pour le développement)
+### Télécharger le binaire précompilé
+
+Vous pouvez aussi télécharger le binaire pour votre plateforme depuis la page [GitHub Releases](https://github.com/sipeed/picoclaw/releases).
+
+### Compiler depuis les sources (pour le développement)
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -200,6 +206,7 @@ Pour des guides détaillés, consultez la documentation ci-dessous. Ce README ne
 | 🔄 [Spawn & Tâches Asynchrones](docs/fr/spawn-tasks.md) | Tâches rapides, tâches longues avec spawn, orchestration asynchrone de sous-agents |
 | 🐛 [Dépannage](docs/fr/troubleshooting.md) | Problèmes courants et solutions |
 | 🔧 [Configuration des Outils](docs/fr/tools_configuration.md) | Activation/désactivation par outil, politiques exec |
+| 📋 [Compatibilité Matérielle](docs/hardware-compatibility.md) | Cartes testées, exigences minimales, comment ajouter votre carte |
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Rejoignez le Réseau Social d'Agents
 
@@ -225,6 +232,7 @@ Connectez PicoClaw au Réseau Social d'Agents simplement en envoyant un seul mes
 | `picoclaw skills install` | Installer une compétence           |
 | `picoclaw migrate`        | Migrer les données des anciennes versions |
 | `picoclaw auth login`     | S'authentifier auprès des fournisseurs |
+| `picoclaw model`          | Voir ou changer le modèle par défaut |
 
 ### Tâches Planifiées / Rappels
 

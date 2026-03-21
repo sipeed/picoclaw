@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -54,6 +55,8 @@ type services struct {
 	ChannelManager   *channels.Manager
 	DeviceService    *devices.Service
 	HealthServer     *health.Server
+	manualReloadChan chan struct{}
+	reloading        atomic.Bool
 }
 
 type startupBlockedProvider struct {
@@ -117,6 +120,25 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 		return err
 	}
 
+	// Setup manual reload channel for /reload endpoint
+	manualReloadChan := make(chan struct{}, 1)
+	runningServices.manualReloadChan = manualReloadChan
+	reloadTrigger := func() error {
+		if !runningServices.reloading.CompareAndSwap(false, true) {
+			return fmt.Errorf("reload already in progress")
+		}
+		select {
+		case manualReloadChan <- struct{}{}:
+			return nil
+		default:
+			// Should not happen, but reset flag if channel is full
+			runningServices.reloading.Store(false)
+			return fmt.Errorf("reload already queued")
+		}
+	}
+	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
+	agentLoop.SetReloadFunc(reloadTrigger)
+
 	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop")
 
@@ -143,12 +165,48 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 			shutdownGateway(runningServices, agentLoop, provider, true)
 			return nil
 		case newCfg := <-configReloadChan:
-			err := handleConfigReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
+			if !runningServices.reloading.CompareAndSwap(false, true) {
+				logger.Warn("Config reload skipped: another reload is in progress")
+				continue
+			}
+			err := executeReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
 			if err != nil {
 				logger.Errorf("Config reload failed: %v", err)
 			}
+		case <-manualReloadChan:
+			logger.Info("Manual reload triggered via /reload endpoint")
+			newCfg, err := config.LoadConfig(configPath)
+			if err != nil {
+				logger.Errorf("Error loading config for manual reload: %v", err)
+				runningServices.reloading.Store(false)
+				continue
+			}
+			if err = newCfg.ValidateModelList(); err != nil {
+				logger.Errorf("Config validation failed: %v", err)
+				runningServices.reloading.Store(false)
+				continue
+			}
+			err = executeReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
+			if err != nil {
+				logger.Errorf("Manual reload failed: %v", err)
+			} else {
+				logger.Info("Manual reload completed successfully")
+			}
 		}
 	}
+}
+
+func executeReload(
+	ctx context.Context,
+	agentLoop *agent.AgentLoop,
+	newCfg *config.Config,
+	provider *providers.LLMProvider,
+	runningServices *services,
+	msgBus *bus.MessageBus,
+	allowEmptyStartup bool,
+) error {
+	defer runningServices.reloading.Store(false)
+	return handleConfigReload(ctx, agentLoop, newCfg, provider, runningServices, msgBus, allowEmptyStartup)
 }
 
 func createStartupProvider(
@@ -245,7 +303,11 @@ func setupAndStartServices(
 		return nil, fmt.Errorf("error starting channels: %w", err)
 	}
 
-	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	fmt.Printf(
+		"✓ Health endpoints available at http://%s:%d/health, /ready and /reload (POST)\n",
+		cfg.Gateway.Host,
+		cfg.Gateway.Port,
+	)
 
 	stateManager := state.NewManager(cfg.WorkspacePath())
 	runningServices.DeviceService = devices.NewService(devices.Config{
@@ -262,11 +324,12 @@ func setupAndStartServices(
 	return runningServices, nil
 }
 
-func stopAndCleanupServices(runningServices *services, shutdownTimeout time.Duration) {
+func stopAndCleanupServices(runningServices *services, shutdownTimeout time.Duration, isReload bool) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
-	if runningServices.ChannelManager != nil {
+	// reload should not stop channel manager
+	if !isReload && runningServices.ChannelManager != nil {
 		runningServices.ChannelManager.StopAll(shutdownCtx)
 	}
 	if runningServices.DeviceService != nil {
@@ -295,7 +358,7 @@ func shutdownGateway(
 		cp.Close()
 	}
 
-	stopAndCleanupServices(runningServices, gracefulShutdownTimeout)
+	stopAndCleanupServices(runningServices, gracefulShutdownTimeout, false)
 
 	agentLoop.Stop()
 	agentLoop.Close()
@@ -322,7 +385,7 @@ func handleConfigReload(
 	logger.Infof(" New model is '%s', recreating provider...", newModel)
 
 	logger.Info("  Stopping all services...")
-	stopAndCleanupServices(runningServices, serviceShutdownTimeout)
+	stopAndCleanupServices(runningServices, serviceShutdownTimeout, true)
 
 	newProvider, newModelID, err := createStartupProvider(newCfg, allowEmptyStartup)
 	if err != nil {
@@ -426,17 +489,16 @@ func restartServices(
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
-	runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	// Reuse existing HealthServer to preserve reloadFunc
+	if runningServices.HealthServer == nil {
+		runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	}
 	runningServices.ChannelManager.SetupHTTPServer(addr, runningServices.HealthServer)
 
-	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
-		return fmt.Errorf("error restarting channels: %w", err)
+	if err = runningServices.ChannelManager.Reload(context.Background(), cfg); err != nil {
+		return fmt.Errorf("error reload channels: %w", err)
 	}
-	fmt.Printf(
-		"  ✓ Channels restarted, health endpoints at http://%s:%d/health and ready\n",
-		cfg.Gateway.Host,
-		cfg.Gateway.Port,
-	)
+	fmt.Println("  ✓ Channels restarted.")
 
 	stateManager := state.NewManager(cfg.WorkspacePath())
 	runningServices.DeviceService = devices.NewService(devices.Config{

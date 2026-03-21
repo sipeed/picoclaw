@@ -492,6 +492,20 @@ func TestBuildRequestBodyEdgeCases(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "skip tool calls with empty names",
+			messages: []Message{
+				{Role: "assistant", Content: "Calling tool", ToolCalls: []ToolCall{
+					{ID: "tool-empty", Name: "", Arguments: map[string]any{"ignored": true}},
+					{ID: "tool-valid", Name: "test_tool", Arguments: map[string]any{"arg": "value"}},
+				}},
+			},
+			model: "test-model",
+			options: map[string]any{
+				"max_tokens": 8192,
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -512,6 +526,37 @@ func TestBuildRequestBodyEdgeCases(t *testing.T) {
 			}
 			if got["model"] != tt.model {
 				t.Errorf("model = %v, want %v", got["model"], tt.model)
+			}
+
+			if tt.name == "skip tool calls with empty names" {
+				messages, ok := got["messages"].([]any)
+				if !ok || len(messages) != 1 {
+					t.Fatalf("messages = %#v, want single assistant message", got["messages"])
+				}
+
+				assistantMsg, ok := messages[0].(map[string]any)
+				if !ok {
+					t.Fatalf("assistant message = %#v, want map", messages[0])
+				}
+
+				content, ok := assistantMsg["content"].([]any)
+				if !ok {
+					t.Fatalf("assistant content = %#v, want []any", assistantMsg["content"])
+				}
+				if len(content) != 2 {
+					t.Fatalf("assistant content length = %d, want 2", len(content))
+				}
+
+				toolUse, ok := content[1].(map[string]any)
+				if !ok {
+					t.Fatalf("tool_use block = %#v, want map", content[1])
+				}
+				if gotName := toolUse["name"]; gotName != "test_tool" {
+					t.Fatalf("tool_use name = %v, want %q", gotName, "test_tool")
+				}
+				if gotID := toolUse["id"]; gotID != "tool-valid" {
+					t.Fatalf("tool_use id = %v, want %q", gotID, "tool-valid")
+				}
 			}
 		})
 	}

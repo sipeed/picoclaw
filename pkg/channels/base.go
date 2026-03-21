@@ -275,14 +275,18 @@ func (c *BaseChannel) HandleMessage(
 
 	// Auto-trigger typing indicator, message reaction, and placeholder before publishing.
 	// Each capability is independent — all three may fire for the same message.
+	// Note: even when streaming is available, we still show typing + placeholder on inbound.
+	// If streaming actually activates, preSend will skip the placeholder edit (streamActive map)
+	// and the typing stop will still be called. This avoids the problem of compile-time interface
+	// checks incorrectly skipping indicators when streaming may not work at runtime.
 	if c.owner != nil && c.placeholderRecorder != nil {
-		// Typing — independent pipeline
+		// Typing
 		if tc, ok := c.owner.(TypingCapable); ok {
 			if stop, err := tc.StartTyping(ctx, chatID); err == nil {
 				c.placeholderRecorder.RecordTypingStop(c.name, chatID, stop)
 			}
 		}
-		// Reaction — independent pipeline
+		// Reaction
 		if rc, ok := c.owner.(ReactionCapable); ok && messageID != "" {
 			if undo, err := rc.ReactToMessage(ctx, chatID, messageID); err == nil {
 				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, undo)

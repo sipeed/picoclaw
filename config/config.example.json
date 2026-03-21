@@ -8,7 +8,11 @@
       "temperature": 0.7,
       "max_tool_iterations": 20,
       "summarize_message_threshold": 20,
-      "summarize_token_percent": 75
+      "summarize_token_percent": 75,
+      "tool_feedback": {
+        "enabled": false,
+        "max_args_length": 300
+      }
     }
   },
   "model_list": [
@@ -80,7 +84,10 @@
       "proxy": "",
       "allow_from": ["YOUR_USER_ID"],
       "use_markdown_v2": false,
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "streaming": {
+        "enabled": true
+      }
     },
     "discord": {
       "enabled": false,
@@ -200,12 +207,33 @@
     "wecom_aibot": {
       "_comment": "WeCom AI Bot (智能机器人) - Official WeCom AI Bot integration, supports proactive messaging and private chats.",
       "enabled": false,
+      "bot_id": "YOUR_BOT_ID",
+      "secret": "YOUR_SECRET",
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
       "webhook_path": "/webhook/wecom-aibot",
       "max_steps": 10,
       "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
       "reasoning_channel_id": ""
+    },
+    "pico": {
+      "enabled": false,
+      "token": "YOUR_PICO_TOKEN",
+      "allow_token_query": false,
+      "allow_origins": [],
+      "ping_interval": 30,
+      "read_timeout": 60,
+      "max_connections": 100,
+      "allow_from": []
+    },
+    "pico_client": {
+      "enabled": false,
+      "url": "wss://remote-pico-server/pico/ws",
+      "token": "YOUR_PICO_TOKEN",
+      "session_id": "",
+      "ping_interval": 30,
+      "read_timeout": 60,
+      "allow_from": []
     },
     "irc": {
       "enabled": false,

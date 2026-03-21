@@ -12,6 +12,7 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
 # 2. Lần chạy đầu tiên — tự động tạo docker/data/config.json rồi thoát
+#    (chỉ kích hoạt khi cả config.json và workspace/ đều không tồn tại)
 docker compose -f docker/docker-compose.yml --profile gateway up
 # Container hiển thị "First-run setup complete." và dừng lại.
 

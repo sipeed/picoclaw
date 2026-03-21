@@ -1,3 +1,5 @@
+> 返回 [README](../../../README.zh.md)
+
 # Telegram
 
 Telegram Channel 通过 Telegram 机器人 API 使用长轮询实现基于机器人的通信。它支持文本消息、媒体附件（照片、语音、音频、文档）、通过 Groq Whisper 进行语音转录以及内置命令处理器。
