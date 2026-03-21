@@ -70,5 +70,5 @@ type AudioChunk struct {
 type VoiceControl struct {
 	SessionID string `json:"session_id"`
 	Type      string `json:"type"`   // "state", "command"
-	Action    string `json:"action"` // "idle", "listening", "start", "stop"
+	Action    string `json:"action"` // "idle", "listening", "start", "stop", "leave"
 }
