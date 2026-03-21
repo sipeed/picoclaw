@@ -242,6 +242,77 @@ func TestExecutor_SubCommand_UnknownArg_RepliesError(t *testing.T) {
 	}
 }
 
+func TestExecutor_SubCommandShortcut_UniqueMatch_RoutesToHandler(t *testing.T) {
+	called := false
+	defs := []Definition{
+		{
+			Name: "check",
+			SubCommands: []SubCommand{
+				{Name: "health", Handler: func(_ context.Context, _ Request, _ *Runtime) error {
+					called = true
+					return nil
+				}},
+			},
+		},
+	}
+	ex := NewExecutor(NewRegistry(defs), nil)
+
+	res := ex.Execute(context.Background(), Request{Text: "/health"})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if !called {
+		t.Fatal("expected sub-command handler to be called via shortcut")
+	}
+}
+
+func TestExecutor_SubCommandShortcut_AmbiguousMatch_RepliesAlternatives(t *testing.T) {
+	defs := []Definition{
+		{
+			Name: "show",
+			SubCommands: []SubCommand{
+				{Name: "model", Handler: func(_ context.Context, _ Request, _ *Runtime) error { return nil }},
+			},
+		},
+		{
+			Name: "switch",
+			SubCommands: []SubCommand{
+				{Name: "model", Handler: func(_ context.Context, _ Request, _ *Runtime) error { return nil }},
+			},
+		},
+	}
+	ex := NewExecutor(NewRegistry(defs), nil)
+
+	var reply string
+	res := ex.Execute(context.Background(), Request{
+		Text:  "/model",
+		Reply: func(text string) error { reply = text; return nil },
+	})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if !strings.Contains(reply, "/show model") || !strings.Contains(reply, "/switch model") {
+		t.Fatalf("reply=%q, expected both /show model and /switch model", reply)
+	}
+}
+
+func TestExecutor_SubCommandShortcut_NoMatch_ReturnsPassthrough(t *testing.T) {
+	defs := []Definition{
+		{
+			Name: "show",
+			SubCommands: []SubCommand{
+				{Name: "model"},
+			},
+		},
+	}
+	ex := NewExecutor(NewRegistry(defs), nil)
+
+	res := ex.Execute(context.Background(), Request{Text: "/nonexistent"})
+	if res.Outcome != OutcomePassthrough {
+		t.Fatalf("outcome=%v, want=%v", res.Outcome, OutcomePassthrough)
+	}
+}
+
 func TestExecutor_SubCommand_NilHandler_ReturnsPassthrough(t *testing.T) {
 	defs := []Definition{
 		{
