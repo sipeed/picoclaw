@@ -65,9 +65,9 @@ func (t *GroqTranscriber) TranscribeData(
 		return nil, fmt.Errorf("failed to create form file: %w", err)
 	}
 
-	if _, err := io.Copy(part, bytes.NewReader(data)); err != nil {
-		logger.ErrorCF("voice", "Failed to copy file content", map[string]any{"error": err})
-		return nil, fmt.Errorf("failed to copy file content: %w", err)
+	if _, copyErr := io.Copy(part, bytes.NewReader(data)); copyErr != nil {
+		logger.ErrorCF("voice", "Failed to copy file content", map[string]any{"error": copyErr})
+		return nil, fmt.Errorf("failed to copy file content: %w", copyErr)
 	}
 
 	if err = writer.WriteField("model", "whisper-large-v3-turbo"); err != nil {
