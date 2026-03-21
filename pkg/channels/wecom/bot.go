@@ -32,52 +32,52 @@ type WeComBotChannel struct {
 
 // WeComBotMessage represents the JSON message structure from WeCom Bot (AIBOT)
 type WeComBotMessage struct {
-	MsgID    string `json:"msgid"`
-	AIBotID  string `json:"aibotid"`
-	ChatID   string `json:"chatid"`   // Session ID, only present for group chats
-	ChatType string `json:"chattype"` // "single" for DM, "group" for group chat
+	MsgID    string `json:"msgid" xml:"MsgId"`
+	AIBotID  string `json:"aibotid" xml:"AIBotID"`
+	ChatID   string `json:"chatid" xml:"ChatId"`     // Session ID, only present for group chats
+	ChatType string `json:"chattype" xml:"ChatType"` // "single" for DM, "group" for group chat
 	From     struct {
-		UserID string `json:"userid"`
-	} `json:"from"`
-	ResponseURL string `json:"response_url"`
-	MsgType     string `json:"msgtype"` // text, image, voice, file, mixed
+		UserID string `json:"userid" xml:"UserId"`
+	} `json:"from" xml:"From"`
+	ResponseURL string `json:"response_url" xml:"ResponseURL"`
+	MsgType     string `json:"msgtype" xml:"MsgType"` // text, image, voice, file, mixed
 	Text        struct {
-		Content string `json:"content"`
-	} `json:"text"`
+		Content string `json:"content" xml:"Content"`
+	} `json:"text" xml:"Text"`
 	Image struct {
-		URL string `json:"url"`
-	} `json:"image"`
+		URL string `json:"url" xml:"ImageUrl"`
+	} `json:"image" xml:"Image"`
 	Voice struct {
-		Content string `json:"content"` // Voice to text content
-	} `json:"voice"`
+		Content string `json:"content" xml:"Content"` // Voice to text content
+	} `json:"voice" xml:"Voice"`
 	File struct {
-		URL string `json:"url"`
-	} `json:"file"`
+		URL string `json:"url" xml:"URL"`
+	} `json:"file" xml:"File"`
 	Mixed struct {
 		MsgItem []struct {
-			MsgType string `json:"msgtype"`
+			MsgType string `json:"msgtype" xml:"MsgType"`
 			Text    struct {
-				Content string `json:"content"`
-			} `json:"text"`
+				Content string `json:"content" xml:"Content"`
+			} `json:"text" xml:"Text"`
 			Image struct {
-				URL string `json:"url"`
-			} `json:"image"`
-		} `json:"msg_item"`
-	} `json:"mixed"`
+				URL string `json:"url" xml:"ImageUrl"`
+			} `json:"image" xml:"Image"`
+		} `json:"msg_item" xml:"MsgItem"`
+	} `json:"mixed" xml:"MixedMessage"`
 	Quote struct {
-		MsgType string `json:"msgtype"`
+		MsgType string `json:"msgtype" xml:"MsgId"`
 		Text    struct {
-			Content string `json:"content"`
-		} `json:"text"`
-	} `json:"quote"`
+			Content string `json:"content" xml:"Content"`
+		} `json:"text" xml:"Text"`
+	} `json:"quote" xml:"Quote"`
 }
 
 // WeComBotReplyMessage represents the reply message structure
 type WeComBotReplyMessage struct {
-	MsgType string `json:"msgtype"`
+	MsgType string `json:"msgtype" xml:"MsgType"`
 	Text    struct {
-		Content string `json:"content"`
-	} `json:"text,omitempty"`
+		Content string `json:"content" xml:"Content"`
+	} `json:"text,omitempty" xml:"Text,omitempty"`
 }
 
 // NewWeComBotChannel creates a new WeCom Bot channel instance
@@ -297,8 +297,9 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	}
 
 	// Parse decrypted JSON message (AIBOT uses JSON format)
+	// Reference: https://developer.work.weixin.qq.com/document/path/90968#%E4%B8%BE%E4%BE%8B%E8%AF%B4%E6%98%8E
 	var msg WeComBotMessage
-	if err := json.Unmarshal([]byte(decryptedMsg), &msg); err != nil {
+	if err := xml.Unmarshal([]byte(decryptedMsg), &msg); err != nil {
 		logger.ErrorCF("wecom", "Failed to parse decrypted message", map[string]any{
 			"error": err.Error(),
 		})
@@ -367,10 +368,13 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 			if item.MsgType == "text" {
 				content += item.Text.Content
 			}
+			if item.MsgType == "image" {
+				content += " Don't support image yet: " + item.Image.URL
+			}
 		}
 	case "image", "file":
 		// For image and file, we don't have text content
-		content = ""
+		content += "Don't support image or file yet: " + msg.MsgType
 	}
 
 	// Build metadata
