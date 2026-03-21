@@ -1379,6 +1379,9 @@ func (al *AgentLoop) runLLMIteration(
 						Channel: opts.Channel,
 						ChatID:  opts.ChatID,
 						Content: feedbackMsg,
+						Metadata: map[string]string{
+							"is_tool_call": "true",
+						},
 					})
 					fbCancel()
 				}
@@ -1397,6 +1400,9 @@ func (al *AgentLoop) runLLMIteration(
 							Channel: opts.Channel,
 							ChatID:  opts.ChatID,
 							Content: result.ForUser,
+							Metadata: map[string]string{
+								"is_tool_call": "true",
+							},
 						})
 					}
 
@@ -1447,6 +1453,9 @@ func (al *AgentLoop) runLLMIteration(
 					Channel: opts.Channel,
 					ChatID:  opts.ChatID,
 					Content: r.result.ForUser,
+					Metadata: map[string]string{
+						"is_tool_call": "true",
+					},
 				})
 				logger.DebugCF("agent", "Sent tool result to user",
 					map[string]any{

@@ -154,7 +154,14 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 		return nil
 	}
 
-	if c.tts != nil {
+	isToolCall := false
+	if msg.Metadata != nil {
+		if val, ok := msg.Metadata["is_tool_call"]; ok && val == "true" {
+			isToolCall = true
+		}
+	}
+
+	if c.tts != nil && !isToolCall {
 		if ch, err := c.session.State.Channel(channelID); err == nil && ch.GuildID != "" {
 			if vc, ok := c.session.VoiceConnections[ch.GuildID]; ok && vc != nil {
 				// Cancel any previous TTS playback
