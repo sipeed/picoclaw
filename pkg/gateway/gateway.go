@@ -668,13 +668,21 @@ func createHeartbeatHandler(agentLoop *agent.AgentLoop) func(prompt, channel, ch
 			channel, chatID = "cli", "direct"
 		}
 
-		response, err := agentLoop.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
+		// Always run the agent session on the "autonomous" internal channel so that
+		// tools like exec (which require an internal channel) work in autonomous mode.
+		// The original channel/chatID is only used for sending responses back to the user.
+		response, err := agentLoop.ProcessHeartbeat(context.Background(), prompt, "autonomous", chatID)
 		if err != nil {
 			return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
 		}
 		if response == "HEARTBEAT_OK" {
 			return tools.SilentResult("Heartbeat OK")
 		}
-		return tools.SilentResult(response)
+		// Real work was done — signal the heartbeat service to re-trigger immediately
+		return &tools.ToolResult{
+			ForLLM:   response,
+			Silent:   true,
+			WorkDone: true,
+		}
 	}
 }

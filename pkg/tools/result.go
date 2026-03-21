@@ -27,6 +27,11 @@ type ToolResult struct {
 	// When true, the tool will complete later and notify via callback.
 	Async bool `json:"async"`
 
+	// WorkDone indicates that meaningful work was performed.
+	// Used by the heartbeat service to decide whether to re-trigger immediately
+	// rather than waiting for the next scheduled interval.
+	WorkDone bool `json:"work_done,omitempty"`
+
 	// Err is the underlying error (not JSON serialized).
 	// Used for internal error handling and logging.
 	Err error `json:"-"`

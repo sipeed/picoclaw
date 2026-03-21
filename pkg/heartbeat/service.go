@@ -26,6 +26,11 @@ import (
 const (
 	minIntervalMinutes     = 5
 	defaultIntervalMinutes = 30
+	// continuousCooldown is the pause between cycles when the agent did real work.
+	// Short enough to feel continuous, long enough to avoid hammering the LLM.
+	continuousCooldown = 5 * time.Second
+	// maxConsecutiveCycles caps back-to-back productive cycles before a longer pause.
+	maxConsecutiveCycles = 20
 )
 
 // HeartbeatHandler is the function type for handling heartbeat.
@@ -44,6 +49,9 @@ type HeartbeatService struct {
 	autonomousEnabled bool // when true, heartbeat drives goal-pursuit loop
 	mu                sync.RWMutex
 	stopChan          chan struct{}
+	// retrigger is signalled by executeHeartbeat when WorkDone=true
+	// so the runLoop can immediately schedule the next cycle instead of waiting.
+	retrigger chan struct{}
 }
 
 // NewHeartbeatService creates a new heartbeat service
@@ -62,6 +70,7 @@ func NewHeartbeatService(workspace string, intervalMinutes int, enabled bool) *H
 		interval:  time.Duration(intervalMinutes) * time.Minute,
 		enabled:   enabled,
 		state:     state.NewManager(workspace),
+		retrigger: make(chan struct{}, 1),
 	}
 }
 
@@ -140,34 +149,74 @@ func (hs *HeartbeatService) runLoop(stopChan chan struct{}) {
 	ticker := time.NewTicker(hs.interval)
 	defer ticker.Stop()
 
-	// Run first heartbeat after initial delay
+	consecutiveCycles := 0
+
+	// Run first heartbeat after a brief startup delay
 	time.AfterFunc(time.Second, func() {
-		hs.executeHeartbeat()
+		select {
+		case hs.retrigger <- struct{}{}:
+		default:
+		}
 	})
 
 	for {
 		select {
 		case <-stopChan:
 			return
+
+		case <-hs.retrigger:
+			// Drain the ticker so it doesn't fire again right after
+			select {
+			case <-ticker.C:
+			default:
+			}
+			ticker.Reset(hs.interval)
+
+			workDone := hs.executeHeartbeat()
+
+			if workDone && hs.autonomousEnabled {
+				consecutiveCycles++
+				if consecutiveCycles >= maxConsecutiveCycles {
+					// Take a longer rest to avoid runaway loops
+					consecutiveCycles = 0
+					logger.InfoC("heartbeat", "Reached max consecutive cycles, pausing before next cycle")
+					ticker.Reset(hs.interval)
+					continue
+				}
+				// Schedule next cycle almost immediately
+				time.AfterFunc(continuousCooldown, func() {
+					select {
+					case hs.retrigger <- struct{}{}:
+					default:
+					}
+				})
+			} else {
+				consecutiveCycles = 0
+			}
+
 		case <-ticker.C:
+			consecutiveCycles = 0
 			hs.executeHeartbeat()
+			ticker.Reset(hs.interval)
 		}
 	}
 }
 
-// executeHeartbeat performs a single heartbeat check
-func (hs *HeartbeatService) executeHeartbeat() {
+// executeHeartbeat performs a single heartbeat check.
+// Returns true if meaningful work was done (WorkDone=true in the result),
+// which signals the caller to re-trigger the next cycle immediately.
+func (hs *HeartbeatService) executeHeartbeat() bool {
 	hs.mu.RLock()
 	enabled := hs.enabled
 	handler := hs.handler
 	if !hs.enabled || hs.stopChan == nil {
 		hs.mu.RUnlock()
-		return
+		return false
 	}
 	hs.mu.RUnlock()
 
 	if !enabled {
-		return
+		return false
 	}
 
 	logger.DebugC("heartbeat", "Executing heartbeat")
@@ -175,12 +224,12 @@ func (hs *HeartbeatService) executeHeartbeat() {
 	prompt := hs.buildPrompt()
 	if prompt == "" {
 		logger.InfoC("heartbeat", "No heartbeat prompt (HEARTBEAT.md empty or missing)")
-		return
+		return false
 	}
 
 	if handler == nil {
 		hs.logErrorf("Heartbeat handler not configured")
-		return
+		return false
 	}
 
 	// Get last channel info for context
@@ -194,13 +243,13 @@ func (hs *HeartbeatService) executeHeartbeat() {
 
 	if result == nil {
 		hs.logInfof("Heartbeat handler returned nil result")
-		return
+		return false
 	}
 
 	// Handle different result types
 	if result.IsError {
 		hs.logErrorf("Heartbeat error: %s", result.ForLLM)
-		return
+		return false
 	}
 
 	if result.Async {
@@ -209,23 +258,24 @@ func (hs *HeartbeatService) executeHeartbeat() {
 			map[string]any{
 				"message": result.ForLLM,
 			})
-		return
+		return false
 	}
 
-	// Check if silent
-	if result.Silent {
-		hs.logInfof("Heartbeat OK - silent")
-		return
+	// Send result to user if not silent
+	if !result.Silent {
+		if result.ForUser != "" {
+			hs.sendResponse(result.ForUser)
+		} else if result.ForLLM != "" {
+			hs.sendResponse(result.ForLLM)
+		}
 	}
 
-	// Send result to user
-	if result.ForUser != "" {
-		hs.sendResponse(result.ForUser)
-	} else if result.ForLLM != "" {
-		hs.sendResponse(result.ForLLM)
+	if result.WorkDone {
+		hs.logInfof("Heartbeat cycle: work done, re-triggering immediately")
+	} else {
+		hs.logInfof("Heartbeat OK - idle")
 	}
-
-	hs.logInfof("Heartbeat completed: %s", result.ForLLM)
+	return result.WorkDone
 }
 
 // buildPrompt builds the heartbeat prompt from HEARTBEAT.md and optionally GOALS.md.
