@@ -92,25 +92,38 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 
 	audioFile, err := os.Open(audioFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open audio file: %w", err)
+		return nil, fmt.Errorf("failed to open audio file %s: %w", audioFilePath, err)
 	}
 	defer audioFile.Close()
 
 	fileInfo, err := audioFile.Stat()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to stat audio file %s: %w", audioFilePath, err)
 	}
 
 	var requestBody bytes.Buffer
 	writer := multipart.NewWriter(&requestBody)
+
 	part, err := writer.CreateFormFile("file", filepath.Base(audioFilePath))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create form file: %w", err)
 	}
-	io.Copy(part, audioFile)
-	writer.WriteField("model", "whisper-large-v3")
-	writer.WriteField("response_format", "json")
-	writer.Close()
+
+	if _, copyErr := io.Copy(part, audioFile); copyErr != nil {
+		return nil, fmt.Errorf("failed to copy audio data: %w", copyErr)
+	}
+
+	if err = writer.WriteField("model", "whisper-large-v3-turbo"); err != nil {
+		return nil, fmt.Errorf("failed to write model field: %w", err)
+	}
+
+	if err = writer.WriteField("response_format", "json"); err != nil {
+		return nil, fmt.Errorf("failed to write response_format field: %w", err)
+	}
+
+	if err = writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
 
 	return t.doRequest(ctx, &requestBody, writer.FormDataContentType(), fileInfo.Size())
 }
