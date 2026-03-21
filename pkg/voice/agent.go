@@ -243,6 +243,7 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 		SenderID: acc.speakerID,
 		ChatID:   acc.chatID,
 		Content:  res.Text + oralPrompt,
+		Content:  res.Text + oralPrompt,
 		Peer:     bus.Peer{Kind: "channel", ID: acc.chatID},
 		Metadata: map[string]string{
 			"is_voice": "true",

@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -165,4 +167,20 @@ func (t *GroqTranscriber) doRequest(ctx context.Context, requestBody *bytes.Buff
 
 func (t *GroqTranscriber) Name() string {
 	return "groq"
+}
+
+// DetectTranscriber inspects cfg and returns the appropriate Transcriber, or
+// nil if no supported transcription provider is configured.
+func DetectTranscriber(cfg *config.Config) Transcriber {
+	// Direct Groq provider config takes priority.
+	if key := cfg.Providers.Groq.APIKey; key != "" {
+		return NewGroqTranscriber(key)
+	}
+	// Fall back to any model-list entry that uses the groq/ protocol or is explicitly named groq.
+	for _, mc := range cfg.ModelList {
+		if (strings.HasPrefix(mc.Model, "groq/") || mc.ModelName == "groq" || mc.Model == "whisper-large-v3-turbo") && mc.APIKey != "" {
+			return NewGroqTranscriber(mc.APIKey)
+		}
+	}
+	return nil
 }

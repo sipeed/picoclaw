@@ -23,6 +23,7 @@ func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.M
 
 		logger.InfoCF("discord", "Joining voice channel", map[string]any{"channel": vs.ChannelID})
 		vc, err := s.ChannelVoiceJoin(c.ctx, m.GuildID, vs.ChannelID, false, false)
+		vc, err := s.ChannelVoiceJoin(c.ctx, m.GuildID, vs.ChannelID, false, false)
 		if err != nil {
 			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Failed to join voice channel: %v", err))
 			return true
@@ -34,6 +35,7 @@ func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.M
 	} else if m.Content == "!vc leave" {
 		vc, exists := s.VoiceConnections[m.GuildID]
 		if exists && vc != nil {
+			vc.Disconnect(c.ctx)
 			vc.Disconnect(c.ctx)
 			s.ChannelMessageSend(m.ChannelID, "Left Voice Channel.")
 		} else {

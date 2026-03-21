@@ -246,6 +246,9 @@ func registerSharedTools(
 			agent.Tools.Register(messageTool)
 		}
 
+		// Always register Voice Leave Tool (it inherently checks if channel == "discord")
+		agent.Tools.Register(tools.NewVoiceLeaveTool(msgBus))
+
 		// Send file tool (outbound media via MediaStore — store injected later by SetMediaStore)
 		if cfg.Tools.IsToolEnabled("send_file") {
 			sendFileTool := tools.NewSendFileTool(
