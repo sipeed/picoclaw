@@ -1,7 +1,9 @@
 package discord
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -38,6 +40,59 @@ func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.M
 		return true
 	}
 	return false
+}
+
+func VoiceReceiveActive(vc *discordgo.VoiceConnection) bool {
+	return vc != nil && vc.OpusRecv != nil
+}
+
+func streamOggOpusToDiscord(vc *discordgo.VoiceConnection, r io.Reader) error {
+	// Wait for the speaking transition to register
+	vc.Speaking(true)
+	defer vc.Speaking(false)
+
+	var packet []byte
+	header := make([]byte, 27)
+
+	for {
+		if _, err := io.ReadFull(r, header); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return nil
+			}
+			return fmt.Errorf("failed to read ogg header: %w", err)
+		}
+		if string(header[:4]) != "OggS" {
+			return fmt.Errorf("invalid ogg magic string")
+		}
+
+		pageSegments := int(header[26])
+		segmentTable := make([]byte, pageSegments)
+		if _, err := io.ReadFull(r, segmentTable); err != nil {
+			return fmt.Errorf("failed to read segment table: %w", err)
+		}
+
+		for _, lacing := range segmentTable {
+			segment := make([]byte, lacing)
+			if _, err := io.ReadFull(r, segment); err != nil {
+				return fmt.Errorf("failed to read segment data: %w", err)
+			}
+
+			packet = append(packet, segment...)
+
+			// If lacing is less than 255, the packet is complete
+			if lacing < 255 {
+				if len(packet) > 0 {
+					// Ignore Ogg Opus headers
+					if !bytes.HasPrefix(packet, []byte("OpusHead")) && !bytes.HasPrefix(packet, []byte("OpusTags")) {
+						// Pacing is handled natively by vc.OpusSend blocking (it has an internal ticker)
+						vc.OpusSend <- packet
+					}
+					// Start new packet
+					packet = nil
+				}
+			}
+		}
+	}
 }
 
 func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID string, chatID string) {
