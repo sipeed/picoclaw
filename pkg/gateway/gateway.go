@@ -79,14 +79,16 @@ func (p *startupBlockedProvider) GetDefaultModel() string {
 
 // Run starts the gateway runtime using the configuration loaded from configPath.
 func Run(debug bool, configPath string, allowEmptyStartup bool) error {
-	if debug {
-		logger.SetLevel(logger.DEBUG)
-		fmt.Println("🔍 Debug mode enabled")
-	}
-
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("error loading config: %w", err)
+	}
+
+	logger.SetLevelFromString(cfg.Agents.Defaults.LogLevel)
+
+	if debug {
+		logger.SetLevel(logger.DEBUG)
+		fmt.Println("🔍 Debug mode enabled")
 	}
 
 	provider, modelID, err := createStartupProvider(cfg, allowEmptyStartup)

@@ -245,6 +245,7 @@ type AgentDefaults struct {
 	MaxMediaSize              int                `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
 	Routing                   *RoutingConfig     `json:"routing,omitempty"`
 	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
+	LogLevel                  string             `json:"log_level,omitempty"             env:"PICOCLAW_LOG_LEVEL"`
 }
 
 const (
