@@ -38,4 +38,4 @@ WeCom Bot là phương thức tích hợp nhanh do WeCom cung cấp, có thể n
 3. (Để nhận tin nhắn) Cấu hình địa chỉ API nhận tin nhắn (URL callback), Token và EncodingAESKey trên trang cấu hình bot
 4. Nhập thông tin liên quan vào file cấu hình
 
-   Lưu ý: PicoClaw hiện sử dụng máy chủ HTTP Gateway dùng chung để nhận callback webhook cho tất cả các kênh. Địa chỉ lắng nghe mặc định là 127.0.0.1:18790. Để nhận callback từ internet công cộng, hãy cấu hình reverse proxy từ tên miền bên ngoài của bạn đến Gateway (cổng mặc định 18790).
+   Lưu ý: Piconomous hiện sử dụng máy chủ HTTP Gateway dùng chung để nhận callback webhook cho tất cả các kênh. Địa chỉ lắng nghe mặc định là 127.0.0.1:18790. Để nhận callback từ internet công cộng, hãy cấu hình reverse proxy từ tên miền bên ngoài của bạn đến Gateway (cổng mặc định 18790).

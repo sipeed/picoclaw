@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="assets/logo.webp" alt="PicoClaw" width="512">
+  <img src="assets/logo.webp" alt="Piconomous" width="512">
 
-  <h1>PicoClaw: Asisten AI Super Ringan berbasis Go</h1>
+  <h1>Piconomous: Asisten AI Super Ringan berbasis Go</h1>
 
   <h3>Perangkat Keras $10 · RAM <10MB · Boot <1 Detik · Ayo, Berangkat!</h3>
   <p>
@@ -9,9 +9,9 @@
     <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V%2C%20LoongArch-blue" alt="Hardware">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
-    <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
-    <a href="https://docs.picoclaw.io/"><img src="https://img.shields.io/badge/Docs-Official-007acc?style=flat&logo=read-the-docs&logoColor=white" alt="Docs"></a>
-    <a href="https://deepwiki.com/sipeed/picoclaw"><img src="https://img.shields.io/badge/Wiki-DeepWiki-FFA500?style=flat&logo=wikipedia&logoColor=white" alt="Wiki"></a>
+    <a href="https://piconomous.io"><img src="https://img.shields.io/badge/Website-piconomous.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
+    <a href="https://docs.piconomous.io/"><img src="https://img.shields.io/badge/Docs-Official-007acc?style=flat&logo=read-the-docs&logoColor=white" alt="Docs"></a>
+    <a href="https://deepwiki.com/sipeed/piconomous"><img src="https://img.shields.io/badge/Wiki-DeepWiki-FFA500?style=flat&logo=wikipedia&logoColor=white" alt="Wiki"></a>
     <br>
     <a href="https://x.com/SipeedIO"><img src="https://img.shields.io/badge/X_(Twitter)-SipeedIO-black?style=flat&logo=x&logoColor=white" alt="Twitter"></a>
     <a href="./assets/wechat.png"><img src="https://img.shields.io/badge/WeChat-Group-41d56b?style=flat&logo=wechat&logoColor=white"></a>
@@ -24,9 +24,9 @@
 
 ---
 
-> **PicoClaw** adalah proyek open-source independen yang diinisiasi oleh [Sipeed](https://sipeed.com). Ditulis sepenuhnya dalam **Go** — bukan fork dari OpenClaw, NanoBot, atau proyek lainnya.
+> **Piconomous** adalah proyek open-source independen yang diinisiasi oleh [Sipeed](https://sipeed.com). Ditulis sepenuhnya dalam **Go** — bukan fork dari OpenClaw, NanoBot, atau proyek lainnya.
 
-🦐 PicoClaw adalah asisten AI pribadi yang super ringan, terinspirasi dari [NanoBot](https://github.com/HKUDS/nanobot), ditulis ulang sepenuhnya dalam Go melalui proses "self-bootstrapping" — di mana AI Agent itu sendiri yang memandu seluruh migrasi arsitektur dan optimasi kode.
+🦐 Piconomous adalah asisten AI pribadi yang super ringan, terinspirasi dari [NanoBot](https://github.com/HKUDS/nanobot), ditulis ulang sepenuhnya dalam Go melalui proses "self-bootstrapping" — di mana AI Agent itu sendiri yang memandu seluruh migrasi arsitektur dan optimasi kode.
 
 ⚡️ Berjalan di perangkat keras $10 dengan RAM <10MB: Hemat 99% memori dibanding OpenClaw dan 98% lebih murah dibanding Mac mini!
 
@@ -34,7 +34,7 @@
   <tr align="center">
     <td align="center" valign="top">
       <p align="center">
-        <img src="assets/picoclaw_mem.gif" width="360" height="240">
+        <img src="assets/piconomous_mem.gif" width="360" height="240">
       </p>
     </td>
     <td align="center" valign="top">
@@ -48,31 +48,31 @@
 > [!CAUTION]
 > **🚨 KEAMANAN & SALURAN RESMI**
 >
-> * **TANPA KRIPTO:** PicoClaw **TIDAK** memiliki token/koin resmi. Semua klaim di `pump.fun` atau platform trading lainnya adalah **PENIPUAN**.
+> * **TANPA KRIPTO:** Piconomous **TIDAK** memiliki token/koin resmi. Semua klaim di `pump.fun` atau platform trading lainnya adalah **PENIPUAN**.
 >
-> * **DOMAIN RESMI:** Satu-satunya website resmi adalah **[picoclaw.io](https://picoclaw.io)**, dan website perusahaan adalah **[sipeed.com](https://sipeed.com)**
+> * **DOMAIN RESMI:** Satu-satunya website resmi adalah **[piconomous.io](https://piconomous.io)**, dan website perusahaan adalah **[sipeed.com](https://sipeed.com)**
 > * **Peringatan:** Banyak domain `.ai/.org/.com/.net/...` yang didaftarkan oleh pihak ketiga.
-> * **Peringatan:** PicoClaw masih dalam tahap pengembangan awal dan mungkin memiliki masalah keamanan jaringan yang belum teratasi. Jangan deploy ke lingkungan produksi sebelum rilis v1.0.
-> * **Catatan:** PicoClaw baru-baru ini menggabungkan banyak PR, yang mungkin mengakibatkan penggunaan memori lebih besar (10–20MB) pada versi terbaru. Kami berencana untuk memprioritaskan optimasi sumber daya segera setelah fitur saat ini mencapai kondisi stabil.
+> * **Peringatan:** Piconomous masih dalam tahap pengembangan awal dan mungkin memiliki masalah keamanan jaringan yang belum teratasi. Jangan deploy ke lingkungan produksi sebelum rilis v1.0.
+> * **Catatan:** Piconomous baru-baru ini menggabungkan banyak PR, yang mungkin mengakibatkan penggunaan memori lebih besar (10–20MB) pada versi terbaru. Kami berencana untuk memprioritaskan optimasi sumber daya segera setelah fitur saat ini mencapai kondisi stabil.
 
 ## 📢 Berita
 
-2026-03-17 🚀 **v0.2.3 Dirilis!** UI system tray (Windows & Linux), pelacakan status sub-agent (`spawn_status`), eksperimental gateway hot-reload, gerbang keamanan cron, dan 2 perbaikan keamanan. PicoClaw kini di **25K ⭐**!
+2026-03-17 🚀 **v0.2.3 Dirilis!** UI system tray (Windows & Linux), pelacakan status sub-agent (`spawn_status`), eksperimental gateway hot-reload, gerbang keamanan cron, dan 2 perbaikan keamanan. Piconomous kini di **25K ⭐**!
 
 2026-03-09 🎉 **v0.2.1 — Update terbesar!** Dukungan protokol MCP, 4 channel baru (Matrix/IRC/WeCom/Discord Proxy), 3 provider baru (Kimi/Minimax/Avian), pipeline vision, penyimpanan memori JSONL, dan routing model.
 
 2026-02-28 📦 **v0.2.0** dirilis dengan dukungan Docker Compose dan launcher Web UI.
 
-2026-02-26 🎉 PicoClaw mencapai **20K bintang** hanya dalam 17 hari! Orkestrasi channel otomatis dan antarmuka kapabilitas diluncurkan.
+2026-02-26 🎉 Piconomous mencapai **20K bintang** hanya dalam 17 hari! Orkestrasi channel otomatis dan antarmuka kapabilitas diluncurkan.
 
 <details>
 <summary>Berita lama...</summary>
 
-2026-02-16 🎉 PicoClaw mencapai 12K bintang dalam satu minggu! Peran maintainer komunitas dan [roadmap](ROADMAP.md) resmi diposting.
+2026-02-16 🎉 Piconomous mencapai 12K bintang dalam satu minggu! Peran maintainer komunitas dan [roadmap](ROADMAP.md) resmi diposting.
 
-2026-02-13 🎉 PicoClaw mencapai 5000 bintang dalam 4 hari! Roadmap Proyek dan pengaturan Grup Pengembang sedang berjalan.
+2026-02-13 🎉 Piconomous mencapai 5000 bintang dalam 4 hari! Roadmap Proyek dan pengaturan Grup Pengembang sedang berjalan.
 
-2026-02-09 🎉 **PicoClaw Diluncurkan!** Dibangun dalam 1 hari untuk menghadirkan AI Agent ke perangkat keras $10 dengan RAM <10MB. 🦐 PicoClaw, Ayo Berangkat!
+2026-02-09 🎉 **Piconomous Diluncurkan!** Dibangun dalam 1 hari untuk menghadirkan AI Agent ke perangkat keras $10 dengan RAM <10MB. 🦐 Piconomous, Ayo Berangkat!
 
 </details>
 
@@ -96,14 +96,14 @@
 
 _*Versi terbaru mungkin menggunakan 10–20MB karena penggabungan fitur yang cepat. Optimasi sumber daya direncanakan. Perbandingan startup berdasarkan benchmark prosesor single-core 0,8GHz (lihat tabel di bawah)._
 
-|                               | OpenClaw      | NanoBot                  | **PicoClaw**                              |
+|                               | OpenClaw      | NanoBot                  | **Piconomous**                              |
 | ----------------------------- | ------------- | ------------------------ | ----------------------------------------- |
 | **Bahasa**                    | TypeScript    | Python                   | **Go**                                    |
 | **RAM**                       | >1GB          | >100MB                   | **< 10MB***                               |
 | **Startup**</br>(0,8GHz core) | >500d         | >30d                     | **<1d**                                   |
 | **Biaya**                     | Mac Mini $599 | Kebanyakan Linux SBC </br>~$50 | **Semua Board Linux**</br>**Mulai dari $10** |
 
-<img src="assets/compare.jpg" alt="PicoClaw" width="512">
+<img src="assets/compare.jpg" alt="Piconomous" width="512">
 
 ## 🦾 Demonstrasi
 
@@ -116,9 +116,9 @@ _*Versi terbaru mungkin menggunakan 10–20MB karena penggabungan fitur yang cep
     <th><p align="center">🔎 Pencarian Web & Pembelajaran</p></th>
   </tr>
   <tr>
-    <td align="center"><p align="center"><img src="assets/picoclaw_code.gif" width="240" height="180"></p></td>
-    <td align="center"><p align="center"><img src="assets/picoclaw_memory.gif" width="240" height="180"></p></td>
-    <td align="center"><p align="center"><img src="assets/picoclaw_search.gif" width="240" height="180"></p></td>
+    <td align="center"><p align="center"><img src="assets/piconomous_code.gif" width="240" height="180"></p></td>
+    <td align="center"><p align="center"><img src="assets/piconomous_memory.gif" width="240" height="180"></p></td>
+    <td align="center"><p align="center"><img src="assets/piconomous_search.gif" width="240" height="180"></p></td>
   </tr>
   <tr>
     <td align="center">Develop • Deploy • Scale</td>
@@ -129,26 +129,26 @@ _*Versi terbaru mungkin menggunakan 10–20MB karena penggabungan fitur yang cep
 
 ### 📱 Jalankan di HP Android Lama
 
-Berikan kehidupan kedua untuk HP lama Anda! Ubah menjadi Asisten AI pintar dengan PicoClaw. Panduan Cepat:
+Berikan kehidupan kedua untuk HP lama Anda! Ubah menjadi Asisten AI pintar dengan Piconomous. Panduan Cepat:
 
 1. **Instal [Termux](https://github.com/termux/termux-app)** (Unduh dari [GitHub Releases](https://github.com/termux/termux-app/releases), atau cari di F-Droid / Google Play).
 2. **Jalankan perintah**
 
 ```bash
-# Unduh rilis terbaru dari https://github.com/sipeed/picoclaw/releases
-wget https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_arm64.tar.gz
-tar xzf picoclaw_Linux_arm64.tar.gz
+# Unduh rilis terbaru dari https://github.com/sipeed/piconomous/releases
+wget https://github.com/sipeed/piconomous/releases/latest/download/piconomous_Linux_arm64.tar.gz
+tar xzf piconomous_Linux_arm64.tar.gz
 pkg install proot
-termux-chroot ./picoclaw onboard
+termux-chroot ./piconomous onboard
 ```
 
 Kemudian ikuti instruksi di bagian "Panduan Cepat" untuk menyelesaikan konfigurasi!
 
-<img src="assets/termux.jpg" alt="PicoClaw" width="512">
+<img src="assets/termux.jpg" alt="Piconomous" width="512">
 
 ### 🐜 Deploy Inovatif dengan Footprint Rendah
 
-PicoClaw dapat di-deploy di hampir semua perangkat Linux!
+Piconomous dapat di-deploy di hampir semua perangkat Linux!
 
 - $9,9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) versi E(Ethernet) atau W(WiFi6), untuk Home Assistant Minimal
 - $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html), atau $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) untuk Pemeliharaan Server Otomatis
@@ -162,14 +162,14 @@ PicoClaw dapat di-deploy di hampir semua perangkat Linux!
 
 ### Instal dengan binary yang sudah dikompilasi
 
-Unduh binary untuk platform Anda dari halaman [Releases](https://github.com/sipeed/picoclaw/releases).
+Unduh binary untuk platform Anda dari halaman [Releases](https://github.com/sipeed/piconomous/releases).
 
 ### Instal dari source (fitur terbaru, disarankan untuk pengembangan)
 
 ```bash
-git clone https://github.com/sipeed/picoclaw.git
+git clone https://github.com/sipeed/piconomous.git
 
-cd picoclaw
+cd piconomous
 make deps
 
 # Build, tidak perlu instal
@@ -211,24 +211,24 @@ Hubungkan Picoclaw ke Jaringan Sosial Agent hanya dengan mengirim satu pesan mel
 
 | Perintah                  | Deskripsi                        |
 | ------------------------- | -------------------------------- |
-| `picoclaw onboard`        | Inisialisasi konfigurasi & workspace |
-| `picoclaw agent -m "..."` | Chat dengan agent                |
-| `picoclaw agent`          | Mode chat interaktif             |
-| `picoclaw gateway`        | Mulai gateway                    |
-| `picoclaw status`         | Tampilkan status                 |
-| `picoclaw version`        | Tampilkan info versi             |
-| `picoclaw cron list`      | Daftar semua tugas terjadwal     |
-| `picoclaw cron add ...`   | Tambah tugas terjadwal           |
-| `picoclaw cron disable`   | Nonaktifkan tugas terjadwal      |
-| `picoclaw cron remove`    | Hapus tugas terjadwal            |
-| `picoclaw skills list`    | Daftar skill yang terinstal      |
-| `picoclaw skills install` | Instal skill                     |
-| `picoclaw migrate`        | Migrasi data dari versi lama     |
-| `picoclaw auth login`     | Autentikasi dengan provider      |
+| `piconomous onboard`        | Inisialisasi konfigurasi & workspace |
+| `piconomous agent -m "..."` | Chat dengan agent                |
+| `piconomous agent`          | Mode chat interaktif             |
+| `piconomous gateway`        | Mulai gateway                    |
+| `piconomous status`         | Tampilkan status                 |
+| `piconomous version`        | Tampilkan info versi             |
+| `piconomous cron list`      | Daftar semua tugas terjadwal     |
+| `piconomous cron add ...`   | Tambah tugas terjadwal           |
+| `piconomous cron disable`   | Nonaktifkan tugas terjadwal      |
+| `piconomous cron remove`    | Hapus tugas terjadwal            |
+| `piconomous skills list`    | Daftar skill yang terinstal      |
+| `piconomous skills install` | Instal skill                     |
+| `piconomous migrate`        | Migrasi data dari versi lama     |
+| `piconomous auth login`     | Autentikasi dengan provider      |
 
 ### Tugas Terjadwal / Pengingat
 
-PicoClaw mendukung pengingat terjadwal dan tugas berulang melalui tool `cron`:
+Piconomous mendukung pengingat terjadwal dan tugas berulang melalui tool `cron`:
 
 * **Pengingat satu kali**: "Ingatkan saya dalam 10 menit" → terpicu sekali setelah 10 menit
 * **Tugas berulang**: "Ingatkan saya setiap 2 jam" → terpicu setiap 2 jam
@@ -238,7 +238,7 @@ PicoClaw mendukung pengingat terjadwal dan tugas berulang melalui tool `cron`:
 
 PR sangat diterima! Codebase sengaja dibuat kecil dan mudah dibaca. 🤗
 
-Lihat [Roadmap Komunitas](https://github.com/sipeed/picoclaw/blob/main/ROADMAP.md) lengkap kami.
+Lihat [Roadmap Komunitas](https://github.com/sipeed/piconomous/blob/main/ROADMAP.md) lengkap kami.
 
 Grup pengembang sedang dibangun, bergabunglah setelah PR pertama Anda di-merge!
 
@@ -246,4 +246,4 @@ Grup Pengguna:
 
 discord: <https://discord.gg/V4sAZ9XWpN>
 
-<img src="assets/wechat.png" alt="PicoClaw" width="512">
+<img src="assets/wechat.png" alt="Piconomous" width="512">

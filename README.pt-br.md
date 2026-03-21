@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="assets/logo.webp" alt="PicoClaw" width="512">
+  <img src="assets/logo.webp" alt="Piconomous" width="512">
 
-  <h1>PicoClaw: Assistente de IA Ultra-Eficiente em Go</h1>
+  <h1>Piconomous: Assistente de IA Ultra-Eficiente em Go</h1>
 
   <h3>Hardware de $10 · <10MB de RAM · Boot em <1s · 皮皮虾，我们走！</h3>
   <p>
@@ -9,9 +9,9 @@
     <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V%2C%20LoongArch-blue" alt="Hardware">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
-    <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
-    <a href="https://docs.picoclaw.io/"><img src="https://img.shields.io/badge/Docs-Official-007acc?style=flat&logo=read-the-docs&logoColor=white" alt="Docs"></a>
-    <a href="https://deepwiki.com/sipeed/picoclaw"><img src="https://img.shields.io/badge/Wiki-DeepWiki-FFA500?style=flat&logo=wikipedia&logoColor=white" alt="Wiki"></a>
+    <a href="https://piconomous.io"><img src="https://img.shields.io/badge/Website-piconomous.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
+    <a href="https://docs.piconomous.io/"><img src="https://img.shields.io/badge/Docs-Official-007acc?style=flat&logo=read-the-docs&logoColor=white" alt="Docs"></a>
+    <a href="https://deepwiki.com/sipeed/piconomous"><img src="https://img.shields.io/badge/Wiki-DeepWiki-FFA500?style=flat&logo=wikipedia&logoColor=white" alt="Wiki"></a>
     <br>
     <a href="https://x.com/SipeedIO"><img src="https://img.shields.io/badge/X_(Twitter)-SipeedIO-black?style=flat&logo=x&logoColor=white" alt="Twitter"></a>
     <a href="./assets/wechat.png"><img src="https://img.shields.io/badge/WeChat-Group-41d56b?style=flat&logo=wechat&logoColor=white"></a>
@@ -24,9 +24,9 @@
 
 ---
 
-> **PicoClaw** é um projeto open-source independente iniciado pela [Sipeed](https://sipeed.com). É escrito inteiramente em **Go** — não é um fork do OpenClaw, NanoBot ou qualquer outro projeto.
+> **Piconomous** é um projeto open-source independente iniciado pela [Sipeed](https://sipeed.com). É escrito inteiramente em **Go** — não é um fork do OpenClaw, NanoBot ou qualquer outro projeto.
 
-🦐 PicoClaw é um assistente pessoal de IA ultra-leve inspirado no [NanoBot](https://github.com/HKUDS/nanobot), reescrito do zero em Go por meio de um processo de auto-inicialização (self-bootstrapping), onde o próprio agente de IA conduziu toda a migração de arquitetura e otimização de código.
+🦐 Piconomous é um assistente pessoal de IA ultra-leve inspirado no [NanoBot](https://github.com/HKUDS/nanobot), reescrito do zero em Go por meio de um processo de auto-inicialização (self-bootstrapping), onde o próprio agente de IA conduziu toda a migração de arquitetura e otimização de código.
 
 ⚡️ Roda em hardware de $10 com <10MB de RAM: Isso é 99% menos memória que o OpenClaw e 98% mais barato que um Mac mini!
 
@@ -34,7 +34,7 @@
   <tr align="center">
     <td align="center" valign="top">
       <p align="center">
-        <img src="assets/picoclaw_mem.gif" width="360" height="240">
+        <img src="assets/piconomous_mem.gif" width="360" height="240">
       </p>
     </td>
     <td align="center" valign="top">
@@ -48,31 +48,31 @@
 > [!CAUTION]
 > **🚨 DECLARAÇÃO DE SEGURANÇA & CANAIS OFICIAIS**
 >
-> * **SEM CRIPTOMOEDAS:** O PicoClaw **NÃO** possui nenhum token/moeda oficial. Todas as alegações no `pump.fun` ou outras plataformas de negociação são **GOLPES**.
+> * **SEM CRIPTOMOEDAS:** O Piconomous **NÃO** possui nenhum token/moeda oficial. Todas as alegações no `pump.fun` ou outras plataformas de negociação são **GOLPES**.
 >
-> * **DOMÍNIO OFICIAL:** O **ÚNICO** site oficial é o **[picoclaw.io](https://picoclaw.io)**, e o site da empresa é o **[sipeed.com](https://sipeed.com)**
+> * **DOMÍNIO OFICIAL:** O **ÚNICO** site oficial é o **[piconomous.io](https://piconomous.io)**, e o site da empresa é o **[sipeed.com](https://sipeed.com)**
 > * **Aviso:** Muitos domínios `.ai/.org/.com/.net/...` foram registrados por terceiros.
-> * **Aviso:** O PicoClaw está em fase inicial de desenvolvimento e pode ter problemas de segurança de rede não resolvidos. Não implante em ambientes de produção antes da versão v1.0.
-> * **Nota:** O PicoClaw recentemente fez merge de muitos PRs, o que pode resultar em maior consumo de memória (10–20MB) nas versões mais recentes. Planejamos priorizar a otimização de recursos assim que o conjunto de funcionalidades estiver estável.
+> * **Aviso:** O Piconomous está em fase inicial de desenvolvimento e pode ter problemas de segurança de rede não resolvidos. Não implante em ambientes de produção antes da versão v1.0.
+> * **Nota:** O Piconomous recentemente fez merge de muitos PRs, o que pode resultar em maior consumo de memória (10–20MB) nas versões mais recentes. Planejamos priorizar a otimização de recursos assim que o conjunto de funcionalidades estiver estável.
 
 ## 📢 Novidades
 
-2026-03-17 🚀 **v0.2.3 Lançado!** Interface de bandeja do sistema (Windows & Linux), rastreamento de status de sub-agentes (`spawn_status`), hot-reload experimental do gateway, portões de segurança para cron e 2 correções de segurança. PicoClaw agora com **25K ⭐**!
+2026-03-17 🚀 **v0.2.3 Lançado!** Interface de bandeja do sistema (Windows & Linux), rastreamento de status de sub-agentes (`spawn_status`), hot-reload experimental do gateway, portões de segurança para cron e 2 correções de segurança. Piconomous agora com **25K ⭐**!
 
 2026-03-09 🎉 **v0.2.1 — Maior atualização até agora!** Suporte ao protocolo MCP, 4 novos canais (Matrix/IRC/WeCom/Discord Proxy), 3 novos provedores (Kimi/Minimax/Avian), pipeline de visão, armazenamento de memória JSONL e roteamento de modelos.
 
 2026-02-28 📦 **v0.2.0** lançado com suporte a Docker Compose e launcher Web UI.
 
-2026-02-26 🎉 PicoClaw atingiu **20K stars** em apenas 17 dias! Orquestração automática de canais e interfaces de capacidade implementadas.
+2026-02-26 🎉 Piconomous atingiu **20K stars** em apenas 17 dias! Orquestração automática de canais e interfaces de capacidade implementadas.
 
 <details>
 <summary>Novidades anteriores...</summary>
 
-2026-02-16 🎉 PicoClaw atingiu 12K stars em uma semana! Papéis de maintainers da comunidade e [roadmap](ROADMAP.md) publicados oficialmente.
+2026-02-16 🎉 Piconomous atingiu 12K stars em uma semana! Papéis de maintainers da comunidade e [roadmap](ROADMAP.md) publicados oficialmente.
 
-2026-02-13 🎉 PicoClaw atingiu 5000 stars em 4 dias! Roadmap do Projeto e Grupo de Desenvolvedores em preparação.
+2026-02-13 🎉 Piconomous atingiu 5000 stars em 4 dias! Roadmap do Projeto e Grupo de Desenvolvedores em preparação.
 
-2026-02-09 🎉 **PicoClaw Lançado!** Construído em 1 dia para trazer Agentes de IA para hardware de $10 com <10MB de RAM. 🦐 PicoClaw, Partiu!
+2026-02-09 🎉 **Piconomous Lançado!** Construído em 1 dia para trazer Agentes de IA para hardware de $10 com <10MB de RAM. 🦐 Piconomous, Partiu!
 
 </details>
 
@@ -96,14 +96,14 @@
 
 _*Versões recentes podem usar 10–20MB devido a merges rápidos de funcionalidades. Otimização de recursos está planejada. Comparação de inicialização baseada em benchmarks de single-core a 0.8GHz (veja tabela abaixo)._
 
-|                               | OpenClaw      | NanoBot                  | **PicoClaw**                              |
+|                               | OpenClaw      | NanoBot                  | **Piconomous**                              |
 | ----------------------------- | ------------- | ------------------------ | ----------------------------------------- |
 | **Linguagem**                 | TypeScript    | Python                   | **Go**                                    |
 | **RAM**                       | >1GB          | >100MB                   | **< 10MB***                               |
 | **Inicialização**</br>(CPU 0.8GHz) | >500s         | >30s                     | **<1s**                                   |
 | **Custo**                     | Mac Mini $599 | Maioria dos SBC Linux </br>~$50 | **Qualquer placa Linux**</br>**A partir de $10** |
 
-<img src="assets/compare.jpg" alt="PicoClaw" width="512">
+<img src="assets/compare.jpg" alt="Piconomous" width="512">
 
 > 📋 **[Lista de Compatibilidade de Hardware](docs/hardware-compatibility.md)** — Veja todas as placas testadas, de RISC-V de $5 a Raspberry Pi e telefones Android. Sua placa não está listada? Envie um PR!
 
@@ -118,9 +118,9 @@ _*Versões recentes podem usar 10–20MB devido a merges rápidos de funcionalid
     <th><p align="center">🔎 Busca Web & Aprendizado</p></th>
   </tr>
   <tr>
-    <td align="center"><p align="center"><img src="assets/picoclaw_code.gif" width="240" height="180"></p></td>
-    <td align="center"><p align="center"><img src="assets/picoclaw_memory.gif" width="240" height="180"></p></td>
-    <td align="center"><p align="center"><img src="assets/picoclaw_search.gif" width="240" height="180"></p></td>
+    <td align="center"><p align="center"><img src="assets/piconomous_code.gif" width="240" height="180"></p></td>
+    <td align="center"><p align="center"><img src="assets/piconomous_memory.gif" width="240" height="180"></p></td>
+    <td align="center"><p align="center"><img src="assets/piconomous_search.gif" width="240" height="180"></p></td>
   </tr>
   <tr>
     <td align="center">Desenvolver • Implantar • Escalar</td>
@@ -131,26 +131,26 @@ _*Versões recentes podem usar 10–20MB devido a merges rápidos de funcionalid
 
 ### 📱 Rode em celulares Android antigos
 
-Dê uma segunda vida ao seu celular de dez anos atrás! Transforme-o em um assistente de IA inteligente com o PicoClaw. Início rápido:
+Dê uma segunda vida ao seu celular de dez anos atrás! Transforme-o em um assistente de IA inteligente com o Piconomous. Início rápido:
 
 1. **Instale o [Termux](https://github.com/termux/termux-app)** (Baixe em [GitHub Releases](https://github.com/termux/termux-app/releases), ou busque no F-Droid / Google Play).
 2. **Execute os comandos**
 
 ```bash
-# Baixe a versão mais recente em https://github.com/sipeed/picoclaw/releases
-wget https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_arm64.tar.gz
-tar xzf picoclaw_Linux_arm64.tar.gz
+# Baixe a versão mais recente em https://github.com/sipeed/piconomous/releases
+wget https://github.com/sipeed/piconomous/releases/latest/download/piconomous_Linux_arm64.tar.gz
+tar xzf piconomous_Linux_arm64.tar.gz
 pkg install proot
-termux-chroot ./picoclaw onboard   # chroot fornece um layout padrão do sistema de arquivos Linux
+termux-chroot ./piconomous onboard   # chroot fornece um layout padrão do sistema de arquivos Linux
 ```
 
 Depois siga as instruções na seção "Início Rápido" para completar a configuração!
 
-<img src="assets/termux.jpg" alt="PicoClaw" width="512">
+<img src="assets/termux.jpg" alt="Piconomous" width="512">
 
 ### 🐜 Implantação Inovadora com Baixo Consumo
 
-O PicoClaw pode ser implantado em praticamente qualquer dispositivo Linux!
+O Piconomous pode ser implantado em praticamente qualquer dispositivo Linux!
 
 - $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) versão E(Ethernet) ou W(WiFi6), para Assistente Doméstico Minimalista
 - $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html), ou $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) para Manutenção Automatizada de Servidores
@@ -162,20 +162,20 @@ O PicoClaw pode ser implantado em praticamente qualquer dispositivo Linux!
 
 ## 📦 Instalação
 
-### Baixar de picoclaw.io (Recomendado)
+### Baixar de piconomous.io (Recomendado)
 
-Visite **[picoclaw.io](https://picoclaw.io)** — o site oficial detecta automaticamente sua plataforma e oferece download com um clique. Sem necessidade de escolher manualmente a arquitetura.
+Visite **[piconomous.io](https://piconomous.io)** — o site oficial detecta automaticamente sua plataforma e oferece download com um clique. Sem necessidade de escolher manualmente a arquitetura.
 
 ### Baixar binário pré-compilado
 
-Alternativamente, baixe o binário para sua plataforma na página de [GitHub Releases](https://github.com/sipeed/picoclaw/releases).
+Alternativamente, baixe o binário para sua plataforma na página de [GitHub Releases](https://github.com/sipeed/piconomous/releases).
 
 ### Compilar a partir do código-fonte (para desenvolvimento)
 
 ```bash
-git clone https://github.com/sipeed/picoclaw.git
+git clone https://github.com/sipeed/piconomous.git
 
-cd picoclaw
+cd piconomous
 make deps
 
 # Build, sem necessidade de instalar
@@ -210,7 +210,7 @@ Para guias detalhados, consulte a documentação abaixo. Este README cobre apena
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Junte-se à Rede Social de Agentes
 
-Conecte o PicoClaw à Rede Social de Agentes simplesmente enviando uma única mensagem via CLI ou qualquer App de Chat integrado.
+Conecte o Piconomous à Rede Social de Agentes simplesmente enviando uma única mensagem via CLI ou qualquer App de Chat integrado.
 
 **Leia `https://clawdchat.ai/skill.md` e siga as instruções para entrar no [ClawdChat.ai](https://clawdchat.ai)**
 
@@ -218,25 +218,25 @@ Conecte o PicoClaw à Rede Social de Agentes simplesmente enviando uma única me
 
 | Comando                   | Descrição                     |
 | ------------------------- | ----------------------------- |
-| `picoclaw onboard`        | Inicializar configuração & workspace |
-| `picoclaw agent -m "..."` | Conversar com o agente        |
-| `picoclaw agent`          | Modo de chat interativo       |
-| `picoclaw gateway`        | Iniciar o gateway             |
-| `picoclaw status`         | Mostrar status                |
-| `picoclaw version`        | Mostrar informações de versão |
-| `picoclaw cron list`      | Listar todas as tarefas agendadas |
-| `picoclaw cron add ...`   | Adicionar uma tarefa agendada |
-| `picoclaw cron disable`   | Desabilitar uma tarefa agendada |
-| `picoclaw cron remove`    | Remover uma tarefa agendada   |
-| `picoclaw skills list`    | Listar skills instaladas      |
-| `picoclaw skills install` | Instalar uma skill            |
-| `picoclaw migrate`        | Migrar dados de versões anteriores |
-| `picoclaw auth login`     | Autenticar com provedores     |
-| `picoclaw model`          | Ver ou trocar o modelo padrão |
+| `piconomous onboard`        | Inicializar configuração & workspace |
+| `piconomous agent -m "..."` | Conversar com o agente        |
+| `piconomous agent`          | Modo de chat interativo       |
+| `piconomous gateway`        | Iniciar o gateway             |
+| `piconomous status`         | Mostrar status                |
+| `piconomous version`        | Mostrar informações de versão |
+| `piconomous cron list`      | Listar todas as tarefas agendadas |
+| `piconomous cron add ...`   | Adicionar uma tarefa agendada |
+| `piconomous cron disable`   | Desabilitar uma tarefa agendada |
+| `piconomous cron remove`    | Remover uma tarefa agendada   |
+| `piconomous skills list`    | Listar skills instaladas      |
+| `piconomous skills install` | Instalar uma skill            |
+| `piconomous migrate`        | Migrar dados de versões anteriores |
+| `piconomous auth login`     | Autenticar com provedores     |
+| `piconomous model`          | Ver ou trocar o modelo padrão |
 
 ### Tarefas Agendadas / Lembretes
 
-O PicoClaw suporta lembretes agendados e tarefas recorrentes por meio da ferramenta `cron`:
+O Piconomous suporta lembretes agendados e tarefas recorrentes por meio da ferramenta `cron`:
 
 * **Lembretes únicos**: "Me lembre em 10 minutos" → dispara uma vez após 10min
 * **Tarefas recorrentes**: "Me lembre a cada 2 horas" → dispara a cada 2 horas
@@ -246,7 +246,7 @@ O PicoClaw suporta lembretes agendados e tarefas recorrentes por meio da ferrame
 
 PRs são bem-vindos! O código-fonte é intencionalmente pequeno e legível. 🤗
 
-Veja nosso [Roadmap da Comunidade](https://github.com/sipeed/picoclaw/blob/main/ROADMAP.md) completo.
+Veja nosso [Roadmap da Comunidade](https://github.com/sipeed/piconomous/blob/main/ROADMAP.md) completo.
 
 Grupo de desenvolvedores em formação. Junte-se após seu primeiro PR com merge!
 
@@ -254,4 +254,4 @@ Grupos de usuários:
 
 discord: <https://discord.gg/V4sAZ9XWpN>
 
-<img src="assets/wechat.png" alt="PicoClaw" width="512">
+<img src="assets/wechat.png" alt="Piconomous" width="512">

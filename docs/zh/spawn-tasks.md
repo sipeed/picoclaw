@@ -2,7 +2,7 @@
 
 > 返回 [README](../../README.zh.md)
 
-PicoClaw 通过 `spawn` 工具支持**异步任务执行**。主要由 **Heartbeat（心跳）** 系统使用，在不阻塞主 Agent 循环的情况下运行耗时任务。
+Piconomous 通过 `spawn` 工具支持**异步任务执行**。主要由 **Heartbeat（心跳）** 系统使用，在不阻塞主 Agent 循环的情况下运行耗时任务。
 
 ## Heartbeat
 
@@ -66,5 +66,5 @@ Agent 读取 HEARTBEAT.md
 
 **环境变量:**
 
-- `PICOCLAW_HEARTBEAT_ENABLED=false` 禁用
-- `PICOCLAW_HEARTBEAT_INTERVAL=60` 更改间隔
+- `PICONOMOUS_HEARTBEAT_ENABLED=false` 禁用
+- `PICONOMOUS_HEARTBEAT_INTERVAL=60` 更改间隔

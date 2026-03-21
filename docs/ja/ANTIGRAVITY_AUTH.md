@@ -4,7 +4,7 @@
 
 ## 概要
 
-**Antigravity**（Google Cloud Code Assist）は、Google が提供する AI モデルプロバイダーで、Google のクラウドインフラストラクチャを通じて Claude Opus 4.6 や Gemini などのモデルへのアクセスを提供します。本ドキュメントでは、認証の仕組み、モデルの取得方法、PicoClaw での新しいプロバイダーの実装方法について完全なガイドを提供します。
+**Antigravity**（Google Cloud Code Assist）は、Google が提供する AI モデルプロバイダーで、Google のクラウドインフラストラクチャを通じて Claude Opus 4.6 や Gemini などのモデルへのアクセスを提供します。本ドキュメントでは、認証の仕組み、モデルの取得方法、Piconomous での新しいプロバイダーの実装方法について完全なガイドを提供します。
 
 ---
 
@@ -19,7 +19,7 @@
 7. [統合要件](#統合要件)
 8. [API エンドポイント](#api-エンドポイント)
 9. [設定](#設定)
-10. [PicoClaw での新しいプロバイダーの作成](#picoclaw-での新しいプロバイダーの作成)
+10. [Piconomous での新しいプロバイダーの作成](#piconomous-での新しいプロバイダーの作成)
 
 ---
 
@@ -380,7 +380,7 @@ const antigravityPlugin = {
   description: "OAuth flow for Google Antigravity (Cloud Code Assist)",
   configSchema: emptyPluginConfigSchema(),
   
-  register(api: PicoClawPluginApi) {
+  register(api: PiconomousPluginApi) {
     api.registerProvider({
       id: "google-antigravity",
       label: "Google Antigravity",
@@ -407,7 +407,7 @@ const antigravityPlugin = {
 
 ```typescript
 type ProviderAuthContext = {
-  config: PicoClawConfig;
+  config: PiconomousConfig;
   agentDir?: string;
   workspaceDir?: string;
   prompter: WizardPrompter;      // UI プロンプト/通知
@@ -428,7 +428,7 @@ type ProviderAuthResult = {
     profileId: string;
     credential: AuthProfileCredential;
   }>;
-  configPatch?: Partial<PicoClawConfig>;
+  configPatch?: Partial<PiconomousConfig>;
   defaultModel?: string;
   notes?: string[];
 };
@@ -441,7 +441,7 @@ type ProviderAuthResult = {
 ### 1. 必要な環境/依存関係
 
 - Go ≥ 1.25
-- PicoClaw コードベース（`pkg/providers/` および `pkg/auth/`）
+- Piconomous コードベース（`pkg/providers/` および `pkg/auth/`）
 - `crypto` および `net/http` 標準ライブラリパッケージ
 
 ### 2. API 呼び出しに必要なヘッダー
@@ -594,7 +594,7 @@ export function sanitizeAntigravityThinkingBlocks(
 
 ### 認証プロファイルの保存
 
-認証プロファイルは `~/.picoclaw/auth.json` に保存されます：
+認証プロファイルは `~/.piconomous/auth.json` に保存されます：
 
 ```json
 {
@@ -614,9 +614,9 @@ export function sanitizeAntigravityThinkingBlocks(
 
 ---
 
-## PicoClaw での新しいプロバイダーの作成
+## Piconomous での新しいプロバイダーの作成
 
-PicoClaw のプロバイダーは `pkg/providers/` 配下の Go パッケージとして実装されます。新しいプロバイダーを追加するには：
+Piconomous のプロバイダーは `pkg/providers/` 配下の Go パッケージとして実装されます。新しいプロバイダーを追加するには：
 
 ### ステップバイステップの実装
 
@@ -676,7 +676,7 @@ case "your-provider":
 
 #### 5. 認証サポートの追加（オプション）
 
-プロバイダーが OAuth や特別な認証を必要とする場合、`cmd/picoclaw/internal/auth/helpers.go` にケースを追加します：
+プロバイダーが OAuth や特別な認証を必要とする場合、`cmd/piconomous/internal/auth/helpers.go` にケースを追加します：
 
 ```go
 case "your-provider":
@@ -706,26 +706,26 @@ case "your-provider":
 
 ```bash
 # プロバイダーで認証
-picoclaw auth login --provider your-provider
+piconomous auth login --provider your-provider
 
 # モデルの一覧表示（Antigravity 用）
-picoclaw auth models
+piconomous auth models
 
 # ゲートウェイの起動
-picoclaw gateway
+piconomous gateway
 
 # 特定のモデルでエージェントを実行
-picoclaw agent -m "Hello" --model your-model
+piconomous agent -m "Hello" --model your-model
 ```
 
 ### テスト用環境変数
 
 ```bash
 # デフォルトモデルの上書き
-export PICOCLAW_AGENTS_DEFAULTS_MODEL=your-model
+export PICONOMOUS_AGENTS_DEFAULTS_MODEL=your-model
 
 # プロバイダー設定の上書き
-export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/model-name","api_key":"..."}]'
+export PICONOMOUS_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/model-name","api_key":"..."}]'
 ```
 
 ---
@@ -735,10 +735,10 @@ export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/m
 - **ソースファイル：**
   - `pkg/providers/antigravity_provider.go` - Antigravity プロバイダー実装
   - `pkg/auth/oauth.go` - OAuth フロー実装
-  - `pkg/auth/store.go` - 認証情報ストレージ（`~/.picoclaw/auth.json`）
+  - `pkg/auth/store.go` - 認証情報ストレージ（`~/.piconomous/auth.json`）
   - `pkg/providers/factory.go` - プロバイダーファクトリーとプロトコルルーティング
   - `pkg/providers/types.go` - プロバイダーインターフェース定義
-  - `cmd/picoclaw/internal/auth/helpers.go` - 認証 CLI コマンド
+  - `cmd/piconomous/internal/auth/helpers.go` - 認証 CLI コマンド
 
 - **ドキュメント：**
   - `docs/ANTIGRAVITY_USAGE.md` - Antigravity 使用ガイド
@@ -794,7 +794,7 @@ export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/m
 ## トラブルシューティング
 
 ### "Token expired"（トークン期限切れ）
-- OAuth トークンを更新：`picoclaw auth login --provider antigravity`
+- OAuth トークンを更新：`piconomous auth login --provider antigravity`
 
 ### "Gemini for Google Cloud is not enabled"（Gemini for Google Cloud が有効になっていない）
 - Google Cloud Console で API を有効にしてください
@@ -805,5 +805,5 @@ export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/m
 
 ### モデルがリストに表示されない
 - OAuth 認証が正常に完了したことを確認してください
-- 認証プロファイルストレージを確認：`~/.picoclaw/auth.json`
-- `picoclaw auth login --provider antigravity` を再実行してください
+- 認証プロファイルストレージを確認：`~/.piconomous/auth.json`
+- `piconomous auth login --provider antigravity` を再実行してください

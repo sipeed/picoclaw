@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/logger"
 )
 
 // botGoLogger preserves useful SDK info logs while demoting noisy heartbeat

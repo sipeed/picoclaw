@@ -17,10 +17,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/health"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/web/backend/utils"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/pkg/health"
+	"github.com/sipeed/piconomous/pkg/logger"
+	"github.com/sipeed/piconomous/web/backend/utils"
 )
 
 // gateway holds the state for the managed gateway process.
@@ -378,7 +378,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	}
 
 	// Start new process
-	// Locate the picoclaw executable
+	// Locate the piconomous executable
 	execPath := utils.FindPicoclawBinary()
 
 	cmd = exec.Command(execPath, "gateway", "-E")
@@ -421,7 +421,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	gateway.bootDefaultModel = defaultModelName
 	setGatewayRuntimeStatusLocked(initialStatus)
 	pid = cmd.Process.Pid
-	logger.InfoC("gateway", fmt.Sprintf("Started picoclaw gateway (PID: %d) from %s", pid, execPath))
+	logger.InfoC("gateway", fmt.Sprintf("Started piconomous gateway (PID: %d) from %s", pid, execPath))
 
 	// Capture stdout/stderr in background
 	go scanPipe(stdoutPipe, gateway.logs)
@@ -476,7 +476,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	return pid, nil
 }
 
-// handleGatewayStart starts the picoclaw gateway subprocess.
+// handleGatewayStart starts the piconomous gateway subprocess.
 //
 //	POST /api/gateway/start
 func (h *Handler) handleGatewayStart(w http.ResponseWriter, r *http.Request) {

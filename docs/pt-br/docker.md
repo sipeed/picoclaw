@@ -4,12 +4,12 @@
 
 ## 🐳 Docker Compose
 
-Você também pode executar o PicoClaw usando Docker Compose sem instalar nada localmente.
+Você também pode executar o Piconomous usando Docker Compose sem instalar nada localmente.
 
 ```bash
 # 1. Clone este repositório
-git clone https://github.com/sipeed/picoclaw.git
-cd picoclaw
+git clone https://github.com/sipeed/piconomous.git
+cd piconomous
 
 # 2. Primeira execução — gera automaticamente docker/data/config.json e encerra
 #    (só é acionado quando config.json e workspace/ estão ambos ausentes)
@@ -24,11 +24,11 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 > [!TIP]
-> **Usuários Docker**: Por padrão, o Gateway escuta em `127.0.0.1`, que não é acessível a partir do host. Se você precisar acessar os endpoints de saúde ou expor portas, defina `PICOCLAW_GATEWAY_HOST=0.0.0.0` no seu ambiente ou atualize o `config.json`.
+> **Usuários Docker**: Por padrão, o Gateway escuta em `127.0.0.1`, que não é acessível a partir do host. Se você precisar acessar os endpoints de saúde ou expor portas, defina `PICONOMOUS_GATEWAY_HOST=0.0.0.0` no seu ambiente ou atualize o `config.json`.
 
 ```bash
 # 5. Verificar logs
-docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
+docker compose -f docker/docker-compose.yml logs -f piconomous-gateway
 
 # 6. Parar
 docker compose -f docker/docker-compose.yml --profile gateway down
@@ -36,7 +36,7 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ### Modo Launcher (Console Web)
 
-A imagem `launcher` inclui os três binários (`picoclaw`, `picoclaw-launcher`, `picoclaw-launcher-tui`) e inicia o console web por padrão, que fornece uma interface baseada em navegador para configuração e chat.
+A imagem `launcher` inclui os três binários (`piconomous`, `piconomous-launcher`, `piconomous-launcher-tui`) e inicia o console web por padrão, que fornece uma interface baseada em navegador para configuração e chat.
 
 ```bash
 docker compose -f docker/docker-compose.yml --profile launcher up -d
@@ -51,10 +51,10 @@ Abra http://localhost:18800 no seu navegador. O launcher gerencia o processo do 
 
 ```bash
 # Fazer uma pergunta
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "What is 2+2?"
+docker compose -f docker/docker-compose.yml run --rm piconomous-agent -m "What is 2+2?"
 
 # Modo interativo
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm piconomous-agent
 ```
 
 ### Atualização
@@ -67,21 +67,21 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 ### 🚀 Início Rápido
 
 > [!TIP]
-> Configure sua chave de API em `~/.picoclaw/config.json`. Obtenha chaves de API: [Volcengine (CodingPlan)](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) (LLM) · [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM). A busca na web é opcional — obtenha gratuitamente uma [API Tavily](https://tavily.com) (1000 consultas gratuitas/mês) ou [API Brave Search](https://brave.com/search/api) (2000 consultas gratuitas/mês).
+> Configure sua chave de API em `~/.piconomous/config.json`. Obtenha chaves de API: [Volcengine (CodingPlan)](https://www.volcengine.com/activity/codingplan?utm_campaign=Piconomous&utm_content=Piconomous&utm_medium=devrel&utm_source=OWO&utm_term=Piconomous) (LLM) · [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM). A busca na web é opcional — obtenha gratuitamente uma [API Tavily](https://tavily.com) (1000 consultas gratuitas/mês) ou [API Brave Search](https://brave.com/search/api) (2000 consultas gratuitas/mês).
 
 **1. Inicializar**
 
 ```bash
-picoclaw onboard
+piconomous onboard
 ```
 
-**2. Configurar** (`~/.picoclaw/config.json`)
+**2. Configurar** (`~/.piconomous/config.json`)
 
 ```json
 {
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
+      "workspace": "~/.piconomous/workspace",
       "model_name": "gpt-5.4",
       "max_tokens": 8192,
       "temperature": 0.7,
@@ -142,7 +142,7 @@ picoclaw onboard
 ```
 
 > **Novo**: O formato de configuração `model_list` permite adicionar provedores sem alteração de código. Veja [Configuração de Modelos](#configuração-de-modelos-model_list) para detalhes.
-> `request_timeout` é opcional e usa segundos. Se omitido ou definido como `<= 0`, o PicoClaw usa o timeout padrão (120s).
+> `request_timeout` é opcional e usa segundos. Se omitido ou definido como `<= 0`, o Piconomous usa o timeout padrão (120s).
 
 **3. Obter chaves de API**
 
@@ -159,7 +159,7 @@ picoclaw onboard
 **4. Conversar**
 
 ```bash
-picoclaw agent -m "What is 2+2?"
+piconomous agent -m "What is 2+2?"
 ```
 
 Pronto! Você tem um assistente de IA funcionando em 2 minutos.

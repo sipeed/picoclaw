@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/utils"
 )
 
 type Transcriber interface {

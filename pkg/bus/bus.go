@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/logger"
 )
 
 // ErrBusClosed is returned when publishing to a closed MessageBus.

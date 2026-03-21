@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/piconomous/pkg/config"
 )
 
 // registerModelRoutes binds model list management endpoints to the ServeMux.

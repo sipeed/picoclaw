@@ -12,9 +12,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/channels"
+	"github.com/sipeed/piconomous/pkg/config"
 )
 
 func TestNewPicoClientChannel_MissingURL(t *testing.T) {

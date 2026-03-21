@@ -28,8 +28,8 @@ MaixCam est un canal dédié à la connexion aux caméras AI Sipeed MaixCAM et M
 
 ## Cas d'utilisation
 
-Le canal MaixCam permet à PicoClaw de fonctionner comme backend IA pour les appareils en périphérie :
+Le canal MaixCam permet à Piconomous de fonctionner comme backend IA pour les appareils en périphérie :
 
-- **Surveillance intelligente** : MaixCAM envoie des images ; PicoClaw les analyse via des modèles de vision
-- **Contrôle IoT** : Les appareils envoient des données de capteurs ; PicoClaw coordonne les réponses
-- **IA hors ligne** : Déployer PicoClaw sur un réseau local pour une inférence à faible latence
+- **Surveillance intelligente** : MaixCAM envoie des images ; Piconomous les analyse via des modèles de vision
+- **Contrôle IoT** : Les appareils envoient des données de capteurs ; Piconomous coordonne les réponses
+- **IA hors ligne** : Déployer Piconomous sur un réseau local pour une inférence à faible latence

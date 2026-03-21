@@ -2,7 +2,7 @@
 
 # Slack
 
-Slack is a leading enterprise instant messaging platform. PicoClaw uses Slack's Socket Mode for real-time bidirectional communication, with no need to configure a public webhook endpoint.
+Slack is a leading enterprise instant messaging platform. Piconomous uses Slack's Socket Mode for real-time bidirectional communication, with no need to configure a public webhook endpoint.
 
 ## Configuration
 

@@ -2,7 +2,7 @@
 
 > Back to [README](../README.md)
 
-PicoClaw supports **asynchronous task execution** via the `spawn` tool. This is primarily used by the **Heartbeat** system to run long-running tasks without blocking the main agent loop.
+Piconomous supports **asynchronous task execution** via the `spawn` tool. This is primarily used by the **Heartbeat** system to run long-running tasks without blocking the main agent loop.
 
 ## Heartbeat
 
@@ -66,5 +66,5 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 
 **Environment variables:**
 
-* `PICOCLAW_HEARTBEAT_ENABLED=false` to disable
-* `PICOCLAW_HEARTBEAT_INTERVAL=60` to change interval
+* `PICONOMOUS_HEARTBEAT_ENABLED=false` to disable
+* `PICONOMOUS_HEARTBEAT_INTERVAL=60` to change interval

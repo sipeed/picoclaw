@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/skills"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/providers"
+	"github.com/sipeed/piconomous/pkg/skills"
+	"github.com/sipeed/piconomous/pkg/utils"
 )
 
 type ContextBuilder struct {
@@ -59,7 +59,7 @@ func getGlobalConfigDir() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".picoclaw")
+	return filepath.Join(home, ".piconomous")
 }
 
 func NewContextBuilder(workspace string) *ContextBuilder {
@@ -85,9 +85,9 @@ func (cb *ContextBuilder) getIdentity() string {
 	version := config.FormatVersion()
 
 	return fmt.Sprintf(
-		`# picoclaw 🦞 (%s)
+		`# piconomous 🦞 (%s)
 
-You are picoclaw, a helpful AI assistant.
+You are piconomous, a helpful AI assistant.
 
 ## Workspace
 Your workspace is at: %s

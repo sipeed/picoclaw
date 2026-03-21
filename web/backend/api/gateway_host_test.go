@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/web/backend/launcherconfig"
 )
 
 func TestGatewayHostOverrideUsesExplicitRuntimePublic(t *testing.T) {

@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/channels"
+	"github.com/sipeed/piconomous/pkg/config"
 )
 
 func TestHandleIncomingMessage_DoesNotConsumeGenericCommandsLocally(t *testing.T) {

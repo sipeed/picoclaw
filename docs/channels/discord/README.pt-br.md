@@ -2,7 +2,7 @@
 
 # Discord
 
-Discord é um aplicativo gratuito de chat de voz, vídeo e texto projetado para comunidades. O PicoClaw se conecta a servidores Discord via Discord Bot API, com suporte para receber e enviar mensagens.
+Discord é um aplicativo gratuito de chat de voz, vídeo e texto projetado para comunidades. O Piconomous se conecta a servidores Discord via Discord Bot API, com suporte para receber e enviar mensagens.
 
 ## Configuração
 

@@ -44,4 +44,4 @@ go run ./examples/pico-echo-server -addr :9090 -token secret
    }
    ```
 
-3. Start picoclaw — the client connects and you can exchange messages interactively via stdin/stdout.
+3. Start piconomous — the client connects and you can exchange messages interactively via stdin/stdout.

@@ -64,5 +64,5 @@ HEARTBEAT_OK を応答          ユーザーが直接結果を受信
 
 **環境変数:**
 
-- `PICOCLAW_HEARTBEAT_ENABLED=false` で無効化
-- `PICOCLAW_HEARTBEAT_INTERVAL=60` で間隔を変更
+- `PICONOMOUS_HEARTBEAT_ENABLED=false` で無効化
+- `PICONOMOUS_HEARTBEAT_INTERVAL=60` で間隔を変更

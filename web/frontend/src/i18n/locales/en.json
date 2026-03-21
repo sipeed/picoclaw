@@ -339,7 +339,7 @@
     "agent": {
       "load_error": "Failed to load agent support information.",
       "skills": {
-        "description": "Skills are loaded from the workspace, global PicoClaw home, and builtin directories.",
+        "description": "Skills are loaded from the workspace, global Piconomous home, and builtin directories.",
         "empty": "No skills are currently available.",
         "import": "Import Skill",
         "import_success": "Skill imported.",
@@ -440,11 +440,11 @@
       "monitor_usb": "Monitor USB",
       "monitor_usb_hint": "Watch USB plug/unplug events when devices are enabled.",
       "autostart_label": "Launch at Login",
-      "autostart_hint": "Start PicoClaw Web automatically when you log in.",
+      "autostart_hint": "Start Piconomous Web automatically when you log in.",
       "autostart_unsupported": "Launch at login is not supported on this platform.",
       "autostart_load_error": "Failed to load launch-at-login status.",
       "server_port": "Service Port",
-      "server_port_hint": "HTTP port used by PicoClaw Web.",
+      "server_port_hint": "HTTP port used by Piconomous Web.",
       "lan_access": "Enable LAN Access",
       "lan_access_hint": "Allow access from other devices on your local network.",
       "allowed_cidrs": "Allowed Network CIDRs",

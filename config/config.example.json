@@ -1,7 +1,7 @@
 {
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
+      "workspace": "~/.piconomous/workspace",
       "restrict_to_workspace": true,
       "model_name": "gpt-5.4",
       "max_tokens": 8192,

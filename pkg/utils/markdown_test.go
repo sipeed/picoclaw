@@ -3,7 +3,7 @@ package utils
 import (
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/logger"
 )
 
 func TestHtmlToMarkdown(t *testing.T) {

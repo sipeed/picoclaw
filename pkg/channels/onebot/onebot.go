@@ -12,13 +12,13 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/identity"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/media"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/channels"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/pkg/identity"
+	"github.com/sipeed/piconomous/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/media"
+	"github.com/sipeed/piconomous/pkg/utils"
 )
 
 type OneBotChannel struct {

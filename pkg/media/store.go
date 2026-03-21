@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/logger"
 )
 
 // MediaMeta holds metadata about a stored media file.
@@ -51,7 +51,7 @@ type MediaCleanerConfig struct {
 }
 
 // FileMediaStore is a pure in-memory implementation of MediaStore.
-// Files are expected to already exist on disk (e.g. in /tmp/picoclaw_media/).
+// Files are expected to already exist on disk (e.g. in /tmp/piconomous_media/).
 type FileMediaStore struct {
 	mu          sync.RWMutex
 	refs        map[string]mediaEntry

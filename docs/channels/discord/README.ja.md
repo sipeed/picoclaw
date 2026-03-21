@@ -2,7 +2,7 @@
 
 # Discord
 
-Discord はコミュニティ向けに設計された無料の音声・ビデオ・テキストチャットアプリケーションです。PicoClaw は Discord Bot API を通じて Discord サーバーに接続し、メッセージの受信と送信をサポートします。
+Discord はコミュニティ向けに設計された無料の音声・ビデオ・テキストチャットアプリケーションです。Piconomous は Discord Bot API を通じて Discord サーバーに接続し、メッセージの受信と送信をサポートします。
 
 ## 設定
 

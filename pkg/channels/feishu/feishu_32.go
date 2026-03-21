@@ -6,9 +6,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/channels"
+	"github.com/sipeed/piconomous/pkg/config"
 )
 
 // FeishuChannel is a stub implementation for 32-bit architectures

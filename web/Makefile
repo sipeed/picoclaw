@@ -13,7 +13,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT=$(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date +%FT%T%z)
 GO_VERSION=$(shell $(WEB_GO) version | awk '{print $$3}')
-CONFIG_PKG=github.com/sipeed/picoclaw/pkg/config
+CONFIG_PKG=github.com/sipeed/piconomous/pkg/config
 LDFLAGS=-X $(CONFIG_PKG).Version=$(VERSION) -X $(CONFIG_PKG).GitCommit=$(GIT_COMMIT) -X $(CONFIG_PKG).BuildTime=$(BUILD_TIME) -X $(CONFIG_PKG).GoVersion=$(GO_VERSION) -s -w
 
 
@@ -60,7 +60,7 @@ endif
 
 # Run both frontend and backend dev servers
 dev:
-	@if [ ! -f $(BUILD_DIR)/picoclaw-launcher ] || [ ! -d backend/dist ]; then \
+	@if [ ! -f $(BUILD_DIR)/piconomous-launcher ] || [ ! -d backend/dist ]; then \
 		echo "Build artifacts not found, building..."; \
 		$(MAKE) build; \
 	fi
@@ -78,7 +78,7 @@ dev-backend:
 # Build frontend and embed into Go binary
 build:
 	cd frontend && pnpm build:backend
-	${WEB_GO} build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/picoclaw-launcher ./backend/
+	${WEB_GO} build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/piconomous-launcher ./backend/
 
 # Run all tests
 test:

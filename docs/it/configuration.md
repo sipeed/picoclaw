@@ -4,39 +4,39 @@
 
 ## ⚙️ Configurazione
 
-File di configurazione: `~/.picoclaw/config.json`
+File di configurazione: `~/.piconomous/config.json`
 
 ### Variabili d'Ambiente
 
-Puoi sovrascrivere i percorsi predefiniti usando variabili d'ambiente. Questo è utile per installazioni portatili, distribuzioni containerizzate, o per eseguire picoclaw come servizio di sistema. Queste variabili sono indipendenti e controllano percorsi diversi.
+Puoi sovrascrivere i percorsi predefiniti usando variabili d'ambiente. Questo è utile per installazioni portatili, distribuzioni containerizzate, o per eseguire piconomous come servizio di sistema. Queste variabili sono indipendenti e controllano percorsi diversi.
 
 | Variabile         | Descrizione                                                                                                                             | Percorso Predefinito      |
 |-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
-| `PICOCLAW_CONFIG` | Sovrascrive il percorso al file di configurazione. Indica direttamente a picoclaw quale `config.json` caricare, ignorando tutte le altre posizioni. | `~/.picoclaw/config.json` |
-| `PICOCLAW_HOME`   | Sovrascrive la directory radice per i dati di picoclaw. Modifica la posizione predefinita del `workspace` e delle altre directory dati.  | `~/.picoclaw`             |
+| `PICONOMOUS_CONFIG` | Sovrascrive il percorso al file di configurazione. Indica direttamente a piconomous quale `config.json` caricare, ignorando tutte le altre posizioni. | `~/.piconomous/config.json` |
+| `PICONOMOUS_HOME`   | Sovrascrive la directory radice per i dati di piconomous. Modifica la posizione predefinita del `workspace` e delle altre directory dati.  | `~/.piconomous`             |
 
 **Esempi:**
 
 ```bash
-# Esegui picoclaw usando un file di configurazione specifico
+# Esegui piconomous usando un file di configurazione specifico
 # Il percorso del workspace verrà letto da quel file di configurazione
-PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+PICONOMOUS_CONFIG=/etc/piconomous/production.json piconomous gateway
 
-# Esegui picoclaw con tutti i dati salvati in /opt/picoclaw
-# La configurazione verrà caricata dal percorso predefinito ~/.picoclaw/config.json
-# Il workspace verrà creato in /opt/picoclaw/workspace
-PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+# Esegui piconomous con tutti i dati salvati in /opt/piconomous
+# La configurazione verrà caricata dal percorso predefinito ~/.piconomous/config.json
+# Il workspace verrà creato in /opt/piconomous/workspace
+PICONOMOUS_HOME=/opt/piconomous piconomous agent
 
 # Usa entrambi per un setup completamente personalizzato
-PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+PICONOMOUS_HOME=/srv/piconomous PICONOMOUS_CONFIG=/srv/piconomous/main.json piconomous gateway
 ```
 
 ### Struttura del Workspace
 
-PicoClaw salva i dati nel workspace configurato (predefinito: `~/.picoclaw/workspace`):
+Piconomous salva i dati nel workspace configurato (predefinito: `~/.piconomous/workspace`):
 
 ```
-~/.picoclaw/workspace/
+~/.piconomous/workspace/
 ├── sessions/          # Sessioni di conversazione e cronologia
 ├── memory/           # Memoria a lungo termine (MEMORY.md)
 ├── state/            # Stato persistente (ultimo canale, ecc.)
@@ -55,14 +55,14 @@ PicoClaw salva i dati nel workspace configurato (predefinito: `~/.picoclaw/works
 
 Per impostazione predefinita, le skill vengono caricate da:
 
-1. `~/.picoclaw/workspace/skills` (workspace)
-2. `~/.picoclaw/skills` (globale)
+1. `~/.piconomous/workspace/skills` (workspace)
+2. `~/.piconomous/skills` (globale)
 3. `<current-working-directory>/skills` (builtin)
 
 Per configurazioni avanzate/di test, puoi sovrascrivere la directory radice delle skill builtin con:
 
 ```bash
-export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
+export PICONOMOUS_BUILTIN_SKILLS=/path/to/skills
 ```
 
 ### Politica Unificata di Esecuzione dei Comandi
@@ -74,7 +74,7 @@ export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 
 ### 🔒 Sandbox di Sicurezza
 
-PicoClaw esegue in un ambiente sandboxed per impostazione predefinita. L'agent può accedere solo ai file ed eseguire comandi all'interno del workspace configurato.
+Piconomous esegue in un ambiente sandboxed per impostazione predefinita. L'agent può accedere solo ai file ed eseguire comandi all'interno del workspace configurato.
 
 #### Configurazione Predefinita
 
@@ -82,7 +82,7 @@ PicoClaw esegue in un ambiente sandboxed per impostazione predefinita. L'agent p
 {
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
+      "workspace": "~/.piconomous/workspace",
       "restrict_to_workspace": true
     }
   }
@@ -91,7 +91,7 @@ PicoClaw esegue in un ambiente sandboxed per impostazione predefinita. L'agent p
 
 | Opzione                 | Predefinito             | Descrizione                                          |
 | ----------------------- | ----------------------- | ---------------------------------------------------- |
-| `workspace`             | `~/.picoclaw/workspace` | Directory di lavoro dell'agent                       |
+| `workspace`             | `~/.piconomous/workspace` | Directory di lavoro dell'agent                       |
 | `restrict_to_workspace` | `true`                  | Limita l'accesso a file/comandi al workspace         |
 
 #### Strumenti Protetti
@@ -138,7 +138,7 @@ Anche con `restrict_to_workspace: false`, lo strumento `exec` blocca questi coma
 
 #### Limitazione Nota: Processi Figlio degli Strumenti di Build
 
-Il controllo di sicurezza exec ispeziona solo la riga di comando avviata direttamente da PicoClaw. Non ispeziona ricorsivamente i processi figlio generati da strumenti di sviluppo consentiti come `make`, `go run`, `cargo`, `npm run` o script di build personalizzati.
+Il controllo di sicurezza exec ispeziona solo la riga di comando avviata direttamente da Piconomous. Non ispeziona ricorsivamente i processi figlio generati da strumenti di sviluppo consentiti come `make`, `go run`, `cargo`, `npm run` o script di build personalizzati.
 
 Ciò significa che un comando di primo livello può comunque compilare o avviare altri binari dopo aver superato il controllo iniziale. In pratica, tratta gli script di build, i Makefile, gli script di pacchetti e i binari generati come codice eseguibile che richiede lo stesso livello di revisione di un comando shell diretto.
 
@@ -146,7 +146,7 @@ Per ambienti ad alto rischio:
 
 * Esamina gli script di build prima dell'esecuzione.
 * Preferisci l'approvazione/revisione manuale per i workflow di compilazione ed esecuzione.
-* Esegui PicoClaw in un container o VM se hai bisogno di un isolamento più forte di quello fornito dal controllo integrato.
+* Esegui Piconomous in un container o VM se hai bisogno di un isolamento più forte di quello fornito dal controllo integrato.
 
 #### Esempi di Errore
 
@@ -179,7 +179,7 @@ Se hai bisogno che l'agent acceda a percorsi al di fuori del workspace:
 **Metodo 2: Variabile d'ambiente**
 
 ```bash
-export PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false
+export PICONOMOUS_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false
 ```
 
 > ⚠️ **Attenzione**: Disabilitare questa restrizione consente all'agent di accedere a qualsiasi percorso sul tuo sistema. Usare con cautela solo in ambienti controllati.
@@ -198,7 +198,7 @@ Tutti i percorsi condividono la stessa restrizione del workspace — non è poss
 
 ### Heartbeat (Task Periodici)
 
-PicoClaw può eseguire task periodici automaticamente. Crea un file `HEARTBEAT.md` nel tuo workspace:
+Piconomous può eseguire task periodici automaticamente. Crea un file `HEARTBEAT.md` nel tuo workspace:
 
 ```markdown
 # Periodic Tasks

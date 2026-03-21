@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/constants"
-	"github.com/sipeed/picoclaw/pkg/devices/events"
-	"github.com/sipeed/picoclaw/pkg/devices/sources"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/state"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/constants"
+	"github.com/sipeed/piconomous/pkg/devices/events"
+	"github.com/sipeed/piconomous/pkg/devices/sources"
+	"github.com/sipeed/piconomous/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/state"
 )
 
 type Service struct {

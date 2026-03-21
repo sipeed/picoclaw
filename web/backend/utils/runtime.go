@@ -8,20 +8,20 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/piconomous/pkg/config"
 )
 
-// GetPicoclawHome returns the picoclaw home directory.
-// Priority: $PICOCLAW_HOME > ~/.picoclaw
+// GetPicoclawHome returns the piconomous home directory.
+// Priority: $PICONOMOUS_HOME > ~/.piconomous
 func GetPicoclawHome() string {
 	if home := os.Getenv(config.EnvHome); home != "" {
 		return home
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw")
+	return filepath.Join(home, ".piconomous")
 }
 
-// GetDefaultConfigPath returns the default path to the picoclaw config file.
+// GetDefaultConfigPath returns the default path to the piconomous config file.
 func GetDefaultConfigPath() string {
 	if configPath := os.Getenv(config.EnvConfig); configPath != "" {
 		return configPath
@@ -29,15 +29,15 @@ func GetDefaultConfigPath() string {
 	return filepath.Join(GetPicoclawHome(), "config.json")
 }
 
-// FindPicoclawBinary locates the picoclaw executable.
+// FindPicoclawBinary locates the piconomous executable.
 // Search order:
-//  1. PICOCLAW_BINARY environment variable (explicit override)
+//  1. PICONOMOUS_BINARY environment variable (explicit override)
 //  2. Same directory as the current executable
-//  3. Falls back to "picoclaw" and relies on $PATH
+//  3. Falls back to "piconomous" and relies on $PATH
 func FindPicoclawBinary() string {
-	binaryName := "picoclaw"
+	binaryName := "piconomous"
 	if runtime.GOOS == "windows" {
-		binaryName = "picoclaw.exe"
+		binaryName = "piconomous.exe"
 	}
 
 	if p := os.Getenv(config.EnvBinary); p != "" {
@@ -53,7 +53,7 @@ func FindPicoclawBinary() string {
 		}
 	}
 
-	return "picoclaw"
+	return "piconomous"
 }
 
 // GetLocalIP returns the local IP address of the machine.

@@ -103,7 +103,7 @@ func TestGenerateSSHKey_OverwritesExisting(t *testing.T) {
 func TestGenerateSSHKey_CreatesDirectory(t *testing.T) {
 	dir := t.TempDir()
 	// Nested directory that does not yet exist.
-	keyPath := filepath.Join(dir, "subdir", ".ssh", "picoclaw_ed25519.key")
+	keyPath := filepath.Join(dir, "subdir", ".ssh", "piconomous_ed25519.key")
 
 	if err := GenerateSSHKey(keyPath); err != nil {
 		t.Fatalf("GenerateSSHKey() error = %v", err)

@@ -50,7 +50,7 @@ O WeCom AI Bot é uma forma oficial de integração de conversas com IA fornecid
    - **URL**: `http://<your-server-ip>:18790/webhook/wecom-aibot`
    - **Token**: Gerado aleatoriamente ou personalizado
    - **EncodingAESKey**: Clique em "Gerar Aleatoriamente" para obter uma chave de 43 caracteres
-4. Insira o Token e o EncodingAESKey no arquivo de configuração do PicoClaw, inicie o serviço e volte ao console de administração para salvar (o WeCom enviará uma requisição de verificação)
+4. Insira o Token e o EncodingAESKey no arquivo de configuração do Piconomous, inicie o serviço e volte ao console de administração para salvar (o WeCom enviará uma requisição de verificação)
 
 > [!TIP]
 > O servidor precisa ser acessível pelos servidores do WeCom. Se estiver em uma intranet ou desenvolvendo localmente, use [ngrok](https://ngrok.com) ou frp para tunelamento.
@@ -63,7 +63,7 @@ O WeCom AI Bot usa um protocolo de "pull em streaming", diferente da resposta ú
 Usuário envia uma mensagem
   │
   ▼
-PicoClaw retorna imediatamente {finish: false} (Agente começa a processar)
+Piconomous retorna imediatamente {finish: false} (Agente começa a processar)
   │
   ▼
 WeCom faz pull aproximadamente a cada 1 segundo com {msgtype: "stream", stream: {id: "..."}}
@@ -75,7 +75,7 @@ WeCom faz pull aproximadamente a cada 1 segundo com {msgtype: "stream", stream: 
 
 **Tratamento de timeout** (tarefa excede 30 segundos):
 
-Se o processamento do agente demorar mais de aproximadamente 30 segundos (a janela máxima de polling do WeCom é de 6 minutos), o PicoClaw irá:
+Se o processamento do agente demorar mais de aproximadamente 30 segundos (a janela máxima de polling do WeCom é de 6 minutos), o Piconomous irá:
 
 1. Fechar imediatamente o stream e exibir ao usuário: "⏳ 正在处理中，请稍候，结果将稍后发送。"
 2. O agente continua executando em segundo plano
@@ -85,10 +85,10 @@ Se o processamento do agente demorar mais de aproximadamente 30 segundos (a jane
 
 ## Mensagem de boas-vindas
 
-Quando `welcome_message` está configurado, o PicoClaw responde automaticamente com essa mensagem quando um usuário abre a janela de chat com o AI Bot (evento `enter_chat`). Deixe vazio para ignorar silenciosamente.
+Quando `welcome_message` está configurado, o Piconomous responde automaticamente com essa mensagem quando um usuário abre a janela de chat com o AI Bot (evento `enter_chat`). Deixe vazio para ignorar silenciosamente.
 
 ```json
-"welcome_message": "你好！我是 PicoClaw AI 助手，有什么可以帮你？"
+"welcome_message": "你好！我是 Piconomous AI 助手，有什么可以帮你？"
 ```
 
 ## Perguntas frequentes
@@ -97,7 +97,7 @@ Quando `welcome_message` está configurado, o PicoClaw responde automaticamente 
 
 - Confirme que o firewall do servidor tem a porta correspondente aberta (padrão 18790)
 - Confirme que `token` e `encoding_aes_key` estão preenchidos corretamente
-- Verifique os logs do PicoClaw para ver se uma requisição GET do WeCom foi recebida
+- Verifique os logs do Piconomous para ver se uma requisição GET do WeCom foi recebida
 
 ### Mensagens sem resposta
 

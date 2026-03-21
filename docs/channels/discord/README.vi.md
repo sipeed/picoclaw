@@ -2,7 +2,7 @@
 
 # Discord
 
-Discord là ứng dụng chat thoại, video và văn bản miễn phí được thiết kế cho cộng đồng. PicoClaw kết nối với máy chủ Discord qua Discord Bot API, hỗ trợ nhận và gửi tin nhắn.
+Discord là ứng dụng chat thoại, video và văn bản miễn phí được thiết kế cho cộng đồng. Piconomous kết nối với máy chủ Discord qua Discord Bot API, hỗ trợ nhận và gửi tin nhắn.
 
 ## Cấu hình
 

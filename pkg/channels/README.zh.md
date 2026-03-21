@@ -1,6 +1,6 @@
-# PicoClaw Channel System：完整开发指南
+# Piconomous Channel System：完整开发指南
 
-> **影响范围**: `pkg/channels/`, `pkg/bus/`, `pkg/media/`, `pkg/identity/`, `cmd/picoclaw/internal/gateway/`
+> **影响范围**: `pkg/channels/`, `pkg/bus/`, `pkg/media/`, `pkg/identity/`, `cmd/piconomous/internal/gateway/`
 
 ---
 
@@ -162,19 +162,19 @@ pkg/identity/
 package channels
 
 import (
-    "github.com/sipeed/picoclaw/pkg/bus"
-    "github.com/sipeed/picoclaw/pkg/config"
+    "github.com/sipeed/piconomous/pkg/bus"
+    "github.com/sipeed/piconomous/pkg/config"
 )
 
 // 新代码（重构分支）
 package telegram
 
 import (
-    "github.com/sipeed/picoclaw/pkg/bus"
-    "github.com/sipeed/picoclaw/pkg/channels"     // 引用父包
-    "github.com/sipeed/picoclaw/pkg/config"
-    "github.com/sipeed/picoclaw/pkg/identity"      // 新增
-    "github.com/sipeed/picoclaw/pkg/media"          // 新增（如需媒体）
+    "github.com/sipeed/piconomous/pkg/bus"
+    "github.com/sipeed/piconomous/pkg/channels"     // 引用父包
+    "github.com/sipeed/piconomous/pkg/config"
+    "github.com/sipeed/piconomous/pkg/identity"      // 新增
+    "github.com/sipeed/piconomous/pkg/media"          // 新增（如需媒体）
 )
 ```
 
@@ -321,9 +321,9 @@ c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaRefs, meta
 package telegram
 
 import (
-    "github.com/sipeed/picoclaw/pkg/bus"
-    "github.com/sipeed/picoclaw/pkg/channels"
-    "github.com/sipeed/picoclaw/pkg/config"
+    "github.com/sipeed/piconomous/pkg/bus"
+    "github.com/sipeed/piconomous/pkg/channels"
+    "github.com/sipeed/piconomous/pkg/config"
 )
 
 func init() {
@@ -336,11 +336,11 @@ func init() {
 **3h. 在 Gateway 中导入子包**
 
 ```go
-// cmd/picoclaw/internal/gateway/helpers.go
+// cmd/piconomous/internal/gateway/helpers.go
 import (
-    _ "github.com/sipeed/picoclaw/pkg/channels/telegram"   // 触发 init() 注册
-    _ "github.com/sipeed/picoclaw/pkg/channels/discord"
-    _ "github.com/sipeed/picoclaw/pkg/channels/your_new_channel"  // 新增
+    _ "github.com/sipeed/piconomous/pkg/channels/telegram"   // 触发 init() 注册
+    _ "github.com/sipeed/piconomous/pkg/channels/discord"
+    _ "github.com/sipeed/piconomous/pkg/channels/your_new_channel"  // 新增
 )
 ```
 
@@ -421,9 +421,9 @@ Agent Loop 的主要变化：
 package matrix
 
 import (
-    "github.com/sipeed/picoclaw/pkg/bus"
-    "github.com/sipeed/picoclaw/pkg/channels"
-    "github.com/sipeed/picoclaw/pkg/config"
+    "github.com/sipeed/piconomous/pkg/bus"
+    "github.com/sipeed/piconomous/pkg/channels"
+    "github.com/sipeed/piconomous/pkg/config"
 )
 
 func init() {
@@ -442,11 +442,11 @@ import (
     "context"
     "fmt"
 
-    "github.com/sipeed/picoclaw/pkg/bus"
-    "github.com/sipeed/picoclaw/pkg/channels"
-    "github.com/sipeed/picoclaw/pkg/config"
-    "github.com/sipeed/picoclaw/pkg/identity"
-    "github.com/sipeed/picoclaw/pkg/logger"
+    "github.com/sipeed/piconomous/pkg/bus"
+    "github.com/sipeed/piconomous/pkg/channels"
+    "github.com/sipeed/piconomous/pkg/config"
+    "github.com/sipeed/piconomous/pkg/identity"
+    "github.com/sipeed/piconomous/pkg/logger"
 )
 
 // MatrixChannel implements channels.Channel for the Matrix protocol.
@@ -809,9 +809,9 @@ if m.config.Channels.Matrix.Enabled && m.config.Channels.Matrix.Token != "" {
 #### 在 Gateway 中添加 blank import
 
 ```go
-// cmd/picoclaw/internal/gateway/helpers.go
+// cmd/piconomous/internal/gateway/helpers.go
 import (
-    _ "github.com/sipeed/picoclaw/pkg/channels/matrix"
+    _ "github.com/sipeed/piconomous/pkg/channels/matrix"
 )
 ```
 
@@ -1372,7 +1372,7 @@ agentLoop.Stop()               // 停止 Agent
 
 3. **WeCom 有两个工厂**：`"wecom"`（Bot 模式，纯 webhook）和 `"wecom_app"`（应用模式，支持 MediaSender）分别注册。两者都实现了 `WebhookHandler` 和 `HealthChecker`。
 
-4. **Pico Protocol**：`pkg/channels/pico/` 实现了一个自定义的 PicoClaw 原生协议 channel，通过 WebSocket webhook (`/pico/ws`) 接收消息。
+4. **Pico Protocol**：`pkg/channels/pico/` 实现了一个自定义的 Piconomous 原生协议 channel，通过 WebSocket webhook (`/pico/ws`) 接收消息。
 
 5. **WhatsApp 有两种模式**：`"whatsapp"`（Bridge 模式，通过外部 bridge URL 通信）和 `"whatsapp_native"`（原生 whatsmeow 模式，直接连接 WhatsApp）。Manager 根据 `WhatsAppConfig.UseNative` 决定初始化哪个。
 

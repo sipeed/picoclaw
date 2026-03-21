@@ -8,7 +8,7 @@ func startCommand() Definition {
 		Description: "Start the bot",
 		Usage:       "/start",
 		Handler: func(_ context.Context, req Request, _ *Runtime) error {
-			return req.Reply("Hello! I am PicoClaw 🦞")
+			return req.Reply("Hello! I am Piconomous 🦞")
 		},
 	}
 }

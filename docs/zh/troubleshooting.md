@@ -14,7 +14,7 @@
 - **错误：** `"model": "free"` → OpenRouter 收到 `free` 并拒绝。
 - **正确：** `"model": "openrouter/free"` → OpenRouter 收到 `openrouter/free`（自动免费层路由）。
 
-**修复方法：** 在 `~/.picoclaw/config.json`（或你的配置路径）中：
+**修复方法：** 在 `~/.piconomous/config.json`（或你的配置路径）中：
 
 1. **agents.defaults.model_name** 必须匹配 `model_list` 中的某个 `model_name`（例如 `"openrouter-free"`）。
 2. 该条目的 **model** 必须是有效的 OpenRouter 模型 ID，例如：

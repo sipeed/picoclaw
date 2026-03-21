@@ -41,9 +41,9 @@ jobs:
           aws configure set default.s3.addressing_style virtual
           TOS_ENDPOINT="https://tos-s3-cn-beijing.volces.com"
           # Upload to versioned directory
-          aws s3 sync artifacts/ "s3://picoclaw-downloads/${{ inputs.tag }}/" \
+          aws s3 sync artifacts/ "s3://piconomous-downloads/${{ inputs.tag }}/" \
             --endpoint-url "$TOS_ENDPOINT"
           # Upload to latest (overwrite)
-          aws s3 sync artifacts/ "s3://picoclaw-downloads/latest/" \
+          aws s3 sync artifacts/ "s3://piconomous-downloads/latest/" \
             --endpoint-url "$TOS_ENDPOINT" \
             --delete

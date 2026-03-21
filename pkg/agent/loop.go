@@ -1,8 +1,8 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// Piconomous - Ultra-lightweight personal AI agent
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 Piconomous contributors
 
 package agent
 
@@ -19,20 +19,20 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/commands"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/constants"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/media"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/routing"
-	"github.com/sipeed/picoclaw/pkg/skills"
-	"github.com/sipeed/picoclaw/pkg/state"
-	"github.com/sipeed/picoclaw/pkg/tools"
-	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/sipeed/picoclaw/pkg/voice"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/channels"
+	"github.com/sipeed/piconomous/pkg/commands"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/pkg/constants"
+	"github.com/sipeed/piconomous/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/media"
+	"github.com/sipeed/piconomous/pkg/providers"
+	"github.com/sipeed/piconomous/pkg/routing"
+	"github.com/sipeed/piconomous/pkg/skills"
+	"github.com/sipeed/piconomous/pkg/state"
+	"github.com/sipeed/piconomous/pkg/tools"
+	"github.com/sipeed/piconomous/pkg/utils"
+	"github.com/sipeed/piconomous/pkg/voice"
 )
 
 type AgentLoop struct {
@@ -259,6 +259,13 @@ func registerSharedTools(
 			}
 		} else if (spawnEnabled || spawnStatusEnabled) && !cfg.Tools.IsToolEnabled("subagent") {
 			logger.WarnCF("agent", "spawn/spawn_status tools require subagent to be enabled", nil)
+		}
+
+		// Goal management tool — always available when autonomous mode is enabled,
+		// or when explicitly enabled via tools.goal config.
+		if cfg.Autonomous.Enabled || cfg.Tools.IsToolEnabled("goal") {
+			maxGoals := cfg.Autonomous.MaxGoals
+			agent.Tools.Register(tools.NewGoalTool(agent.Workspace, maxGoals))
 		}
 	}
 }

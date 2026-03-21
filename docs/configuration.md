@@ -4,39 +4,39 @@
 
 ## ⚙️ Configuration
 
-Config file: `~/.picoclaw/config.json`
+Config file: `~/.piconomous/config.json`
 
 ### Environment Variables
 
-You can override default paths using environment variables. This is useful for portable installations, containerized deployments, or running picoclaw as a system service. These variables are independent and control different paths.
+You can override default paths using environment variables. This is useful for portable installations, containerized deployments, or running piconomous as a system service. These variables are independent and control different paths.
 
 | Variable          | Description                                                                                                                             | Default Path              |
 |-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
-| `PICOCLAW_CONFIG` | Overrides the path to the configuration file. This directly tells picoclaw which `config.json` to load, ignoring all other locations. | `~/.picoclaw/config.json` |
-| `PICOCLAW_HOME`   | Overrides the root directory for picoclaw data. This changes the default location of the `workspace` and other data directories.          | `~/.picoclaw`             |
+| `PICONOMOUS_CONFIG` | Overrides the path to the configuration file. This directly tells piconomous which `config.json` to load, ignoring all other locations. | `~/.piconomous/config.json` |
+| `PICONOMOUS_HOME`   | Overrides the root directory for piconomous data. This changes the default location of the `workspace` and other data directories.          | `~/.piconomous`             |
 
 **Examples:**
 
 ```bash
-# Run picoclaw using a specific config file
+# Run piconomous using a specific config file
 # The workspace path will be read from within that config file
-PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+PICONOMOUS_CONFIG=/etc/piconomous/production.json piconomous gateway
 
-# Run picoclaw with all its data stored in /opt/picoclaw
-# Config will be loaded from the default ~/.picoclaw/config.json
-# Workspace will be created at /opt/picoclaw/workspace
-PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+# Run piconomous with all its data stored in /opt/piconomous
+# Config will be loaded from the default ~/.piconomous/config.json
+# Workspace will be created at /opt/piconomous/workspace
+PICONOMOUS_HOME=/opt/piconomous piconomous agent
 
 # Use both for a fully customized setup
-PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+PICONOMOUS_HOME=/srv/piconomous PICONOMOUS_CONFIG=/srv/piconomous/main.json piconomous gateway
 ```
 
 ### Workspace Layout
 
-PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspace`):
+Piconomous stores data in your configured workspace (default: `~/.piconomous/workspace`):
 
 ```
-~/.picoclaw/workspace/
+~/.piconomous/workspace/
 ├── sessions/          # Conversation sessions and history
 ├── memory/           # Long-term memory (MEMORY.md)
 ├── state/            # Persistent state (last channel, etc.)
@@ -55,14 +55,14 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 
 By default, skills are loaded from:
 
-1. `~/.picoclaw/workspace/skills` (workspace)
-2. `~/.picoclaw/skills` (global)
+1. `~/.piconomous/workspace/skills` (workspace)
+2. `~/.piconomous/skills` (global)
 3. `<binary-embedded-path>/skills` (builtin, set at build time)
 
 For advanced/test setups, you can override the builtin skills root with:
 
 ```bash
-export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
+export PICONOMOUS_BUILTIN_SKILLS=/path/to/skills
 ```
 
 ### Unified Command Execution Policy
@@ -80,7 +80,7 @@ Use `bindings` in `config.json` to route incoming messages to different agents b
 {
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
+      "workspace": "~/.piconomous/workspace",
       "model_name": "gpt-4o-mini"
     },
     "list": [
@@ -123,7 +123,7 @@ Use `bindings` in `config.json` to route incoming messages to different agents b
 
 #### Matching priority
 
-When multiple bindings exist, PicoClaw resolves in this order:
+When multiple bindings exist, Piconomous resolves in this order:
 
 1. `peer`
 2. `parent_peer` (for thread/topic parent contexts)
@@ -133,11 +133,11 @@ When multiple bindings exist, PicoClaw resolves in this order:
 6. channel wildcard (`account_id: "*"`)
 7. default agent
 
-If a binding points to a missing `agent_id`, PicoClaw falls back to the default agent.
+If a binding points to a missing `agent_id`, Piconomous falls back to the default agent.
 
 #### How matching works (step-by-step)
 
-1. PicoClaw first filters bindings by `match.channel` (must equal current channel).
+1. Piconomous first filters bindings by `match.channel` (must equal current channel).
 2. It then filters by `match.account_id`:
    - omitted: match only the channel's default account
    - `"*"`: match all accounts on this channel
@@ -202,7 +202,7 @@ In other words: **channel + account form the candidate set; peer/guild/team then
 
 ### 🔒 Security Sandbox
 
-PicoClaw runs in a sandboxed environment by default. The agent can only access files and execute commands within the configured workspace.
+Piconomous runs in a sandboxed environment by default. The agent can only access files and execute commands within the configured workspace.
 
 #### Default Configuration
 
@@ -210,7 +210,7 @@ PicoClaw runs in a sandboxed environment by default. The agent can only access f
 {
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
+      "workspace": "~/.piconomous/workspace",
       "restrict_to_workspace": true
     }
   }
@@ -219,7 +219,7 @@ PicoClaw runs in a sandboxed environment by default. The agent can only access f
 
 | Option                  | Default                 | Description                               |
 | ----------------------- | ----------------------- | ----------------------------------------- |
-| `workspace`             | `~/.picoclaw/workspace` | Working directory for the agent           |
+| `workspace`             | `~/.piconomous/workspace` | Working directory for the agent           |
 | `restrict_to_workspace` | `true`                  | Restrict file/command access to workspace |
 
 #### Protected Tools
@@ -266,7 +266,7 @@ Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous
 
 #### Known Limitation: Child Processes From Build Tools
 
-The exec safety guard only inspects the command line PicoClaw launches directly. It does not recursively inspect child
+The exec safety guard only inspects the command line Piconomous launches directly. It does not recursively inspect child
 processes spawned by allowed developer tools such as `make`, `go run`, `cargo`, `npm run`, or custom build scripts.
 
 That means a top-level command can still compile or launch other binaries after it passes the initial guard check. In
@@ -277,7 +277,7 @@ For higher-risk environments:
 
 * Review build scripts before execution.
 * Prefer approval/manual review for compile-and-run workflows.
-* Run PicoClaw inside a container or VM if you need stronger isolation than the built-in guard provides.
+* Run Piconomous inside a container or VM if you need stronger isolation than the built-in guard provides.
 
 #### Error Examples
 
@@ -310,7 +310,7 @@ If you need the agent to access paths outside the workspace:
 **Method 2: Environment variable**
 
 ```bash
-export PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false
+export PICONOMOUS_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false
 ```
 
 > ⚠️ **Warning**: Disabling this restriction allows the agent to access any path on your system. Use with caution in controlled environments only.
@@ -329,7 +329,7 @@ All paths share the same workspace restriction — there's no way to bypass the 
 
 ### Heartbeat (Periodic Tasks)
 
-PicoClaw can perform periodic tasks automatically. Create a `HEARTBEAT.md` file in your workspace:
+Piconomous can perform periodic tasks automatically. Create a `HEARTBEAT.md` file in your workspace:
 
 ```markdown
 # Periodic Tasks

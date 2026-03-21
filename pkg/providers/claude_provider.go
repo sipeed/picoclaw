@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	anthropicprovider "github.com/sipeed/picoclaw/pkg/providers/anthropic"
+	anthropicprovider "github.com/sipeed/piconomous/pkg/providers/anthropic"
 )
 
 type ClaudeProvider struct {
@@ -62,7 +62,7 @@ func createClaudeTokenSource() func() (string, error) {
 			return "", fmt.Errorf("loading auth credentials: %w", err)
 		}
 		if cred == nil {
-			return "", fmt.Errorf("no credentials for anthropic. Run: picoclaw auth login --provider anthropic")
+			return "", fmt.Errorf("no credentials for anthropic. Run: piconomous auth login --provider anthropic")
 		}
 		return cred.AccessToken, nil
 	}

@@ -1,8 +1,8 @@
 > Quay lại [README](../../README.vi.md)
 
-# 🖥️ PicoClaw Danh sách tương thích phần cứng
+# 🖥️ Piconomous Danh sách tương thích phần cứng
 
-PicoClaw chạy được trên hầu hết mọi thiết bị Linux. Trang này ghi nhận các chip, sản phẩm và bo mạch phát triển đã được xác minh.
+Piconomous chạy được trên hầu hết mọi thiết bị Linux. Trang này ghi nhận các chip, sản phẩm và bo mạch phát triển đã được xác minh.
 
 **Phần cứng của bạn chưa có trong danh sách?** Gửi PR để thêm vào! Các nhà sản xuất phần cứng được hoan nghênh đóng góp và đồng quảng bá.
 
@@ -59,7 +59,7 @@ PicoClaw chạy được trên hầu hết mọi thiết bị Linux. Trang này 
 
 ## 2. Sản phẩm đã xác minh (theo ngày phát hành)
 
-Sản phẩm tiêu dùng, router và thiết bị công nghiệp đã được kiểm thử với PicoClaw.
+Sản phẩm tiêu dùng, router và thiết bị công nghiệp đã được kiểm thử với Piconomous.
 
 | Năm | Sản phẩm | Kiến trúc | SoC | RAM | Danh mục |
 |-----|----------|-----------|-----|-----|----------|
@@ -97,7 +97,7 @@ Sản phẩm tiêu dùng, router và thiết bị công nghiệp đã được k
 
 ### Điện thoại Android (qua Termux)
 
-Bất kỳ điện thoại Android ARM64 nào (2015+) với 1GB+ RAM. Cài đặt [Termux](https://github.com/termux/termux-app), sử dụng `proot` để chạy PicoClaw.
+Bất kỳ điện thoại Android ARM64 nào (2015+) với 1GB+ RAM. Cài đặt [Termux](https://github.com/termux/termux-app), sử dụng `proot` để chạy Piconomous.
 
 > Xem [README: Chạy trên điện thoại Android cũ](../../README.vi.md#-run-on-old-android-phones) để biết hướng dẫn cài đặt.
 
@@ -130,14 +130,14 @@ Bất kỳ điện thoại Android ARM64 nào (2015+) với 1GB+ RAM. Cài đặ
 
 ```bash
 # 1. Tải xuống cho kiến trúc của bạn
-wget https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_arm64.tar.gz
-tar xzf picoclaw_Linux_arm64.tar.gz
+wget https://github.com/sipeed/piconomous/releases/latest/download/piconomous_Linux_arm64.tar.gz
+tar xzf piconomous_Linux_arm64.tar.gz
 
 # 2. Khởi tạo
-./picoclaw onboard
+./piconomous onboard
 
 # 3. Kiểm thử
-./picoclaw agent -m "Hello, what board am I running on?"
+./piconomous agent -m "Hello, what board am I running on?"
 ```
 
 Các bản dựng có sẵn: `linux-amd64`, `linux-arm64`, `linux-arm`, `linux-riscv64`, `linux-loong64`, `linux-mipsle`

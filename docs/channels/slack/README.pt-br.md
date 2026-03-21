@@ -2,7 +2,7 @@
 
 # Slack
 
-O Slack é uma das principais plataformas de mensagens instantâneas para empresas. O PicoClaw usa o Socket Mode do Slack para comunicação bidirecional em tempo real, sem necessidade de configurar um endpoint de webhook público.
+O Slack é uma das principais plataformas de mensagens instantâneas para empresas. O Piconomous usa o Socket Mode do Slack para comunicação bidirecional em tempo real, sem necessidade de configurar um endpoint de webhook público.
 
 ## Configuração
 

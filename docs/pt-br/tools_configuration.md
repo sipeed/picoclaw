@@ -2,7 +2,7 @@
 
 > Voltar ao [README](../../README.pt-br.md)
 
-A configuração de ferramentas do PicoClaw está localizada no campo `tools` do `config.json`.
+A configuração de ferramentas do Piconomous está localizada no campo `tools` do `config.json`.
 
 ## Estrutura de diretórios
 
@@ -91,7 +91,7 @@ Para desabilitar completamente a ferramenta `exec`, defina `enabled` como `false
 
 **Via variável de ambiente:**
 ```bash
-PICOCLAW_TOOLS_EXEC_ENABLED=false
+PICONOMOUS_TOOLS_EXEC_ENABLED=false
 ```
 
 > **Nota:** Quando desabilitada, o agent não poderá executar comandos shell. Isso também afeta a capacidade da ferramenta Cron de executar comandos shell agendados.
@@ -103,7 +103,7 @@ PICOCLAW_TOOLS_EXEC_ENABLED=false
 
 ### Padrões de comandos bloqueados por padrão
 
-Por padrão, o PicoClaw bloqueia os seguintes comandos perigosos:
+Por padrão, o Piconomous bloqueia os seguintes comandos perigosos:
 
 - Comandos de exclusão: `rm -rf`, `del /f/q`, `rmdir /s`
 - Operações de disco: `format`, `mkfs`, `diskpart`, `dd if=`, escrita em `/dev/sd*`
@@ -120,7 +120,7 @@ Por padrão, o PicoClaw bloqueia os seguintes comandos perigosos:
 
 ### Limitação arquitetural conhecida
 
-O guarda exec apenas valida o comando de nível superior enviado ao PicoClaw. Ele **não** inspeciona recursivamente processos filhos gerados por ferramentas de build ou scripts após o início desse comando.
+O guarda exec apenas valida o comando de nível superior enviado ao Piconomous. Ele **não** inspeciona recursivamente processos filhos gerados por ferramentas de build ou scripts após o início desse comando.
 
 Exemplos de fluxos de trabalho que podem contornar o guarda de comando direto uma vez que o comando inicial é permitido:
 
@@ -347,14 +347,14 @@ A ferramenta skills configura a descoberta e instalação de habilidades via reg
 
 ## Variáveis de ambiente
 
-Todas as opções de configuração podem ser substituídas via variáveis de ambiente com o formato `PICOCLAW_TOOLS_<SECTION>_<KEY>`:
+Todas as opções de configuração podem ser substituídas via variáveis de ambiente com o formato `PICONOMOUS_TOOLS_<SECTION>_<KEY>`:
 
 Por exemplo:
 
-- `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
-- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
-- `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
-- `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
-- `PICOCLAW_TOOLS_MCP_ENABLED=true`
+- `PICONOMOUS_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICONOMOUS_TOOLS_EXEC_ENABLED=false`
+- `PICONOMOUS_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
+- `PICONOMOUS_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
+- `PICONOMOUS_TOOLS_MCP_ENABLED=true`
 
 Nota: Configuração de tipo mapa aninhado (por exemplo `tools.mcp.servers.<name>.*`) é configurada no `config.json` em vez de variáveis de ambiente.

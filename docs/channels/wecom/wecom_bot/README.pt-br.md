@@ -38,4 +38,4 @@ O WeCom Bot é um método de integração rápida fornecido pelo WeCom que pode 
 3. (Para receber mensagens) Configure o endereço da API de recebimento de mensagens (URL de callback), Token e EncodingAESKey na página de configuração do bot
 4. Insira as informações relevantes no arquivo de configuração
 
-   Nota: O PicoClaw agora usa um servidor HTTP Gateway compartilhado para receber callbacks de webhook de todos os canais. O endereço de escuta padrão é 127.0.0.1:18790. Para receber callbacks da internet pública, configure um reverse proxy do seu domínio externo para o Gateway (porta padrão 18790).
+   Nota: O Piconomous agora usa um servidor HTTP Gateway compartilhado para receber callbacks de webhook de todos os canais. O endereço de escuta padrão é 127.0.0.1:18790. Para receber callbacks da internet pública, configure um reverse proxy do seu domínio externo para o Gateway (porta padrão 18790).

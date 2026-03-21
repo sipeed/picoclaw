@@ -2,7 +2,7 @@
 
 # Slack
 
-Slack là nền tảng nhắn tin tức thì hàng đầu dành cho doanh nghiệp. PicoClaw sử dụng Socket Mode của Slack để giao tiếp hai chiều theo thời gian thực, không cần cấu hình endpoint webhook công khai.
+Slack là nền tảng nhắn tin tức thì hàng đầu dành cho doanh nghiệp. Piconomous sử dụng Socket Mode của Slack để giao tiếp hai chiều theo thời gian thực, không cần cấu hình endpoint webhook công khai.
 
 ## Cấu hình
 

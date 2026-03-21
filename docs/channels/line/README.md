@@ -2,7 +2,7 @@
 
 # Line
 
-PicoClaw supports LINE through the LINE Messaging API with webhook callbacks.
+Piconomous supports LINE through the LINE Messaging API with webhook callbacks.
 
 ## Configuration
 
@@ -34,7 +34,7 @@ PicoClaw supports LINE through the LINE Messaging API with webhook callbacks.
 2. Obtain the Channel Secret and Channel Access Token
 3. Configure the webhook:
    - LINE requires webhooks to use HTTPS, so you need to deploy a server with HTTPS support, or use a reverse proxy tool like ngrok to expose your local server to the internet
-   - PicoClaw uses a shared Gateway HTTP server to receive webhook callbacks for all channels, listening on 127.0.0.1:18790 by default
+   - Piconomous uses a shared Gateway HTTP server to receive webhook callbacks for all channels, listening on 127.0.0.1:18790 by default
    - Set the Webhook URL to `https://your-domain.com/webhook/line`, then reverse-proxy your external domain to the local Gateway (default port 18790)
    - Enable the webhook and verify the URL
 4. Fill in the Channel Secret and Channel Access Token in the configuration file

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build macOS .app bundle for PicoClaw Launcher
+# Build macOS .app bundle for Piconomous Launcher
 
 set -e
 
@@ -12,12 +12,12 @@ fi
 
 echo "executable: $EXECUTABLE"
 
-APP_NAME="PicoClaw Launcher"
+APP_NAME="Piconomous Launcher"
 APP_PATH="./build/${APP_NAME}.app"
 APP_CONTENTS="${APP_PATH}/Contents"
 APP_MACOS="${APP_CONTENTS}/MacOS"
 APP_RESOURCES="${APP_CONTENTS}/Resources"
-APP_EXECUTABLE="picoclaw-launcher"
+APP_EXECUTABLE="piconomous-launcher"
 ICON_SOURCE="./scripts/icon.icns"
 
 # Clean up existing .app
@@ -40,10 +40,10 @@ else
     echo "Run: make build in web dir"
     exit 1
 fi
-if [ -f "./build/picoclaw" ]; then
-    cp "./build/picoclaw" "${APP_MACOS}/"
+if [ -f "./build/piconomous" ]; then
+    cp "./build/piconomous" "${APP_MACOS}/"
 else
-    echo "Error: ./build/picoclaw not found. Please build the main file first."
+    echo "Error: ./build/piconomous not found. Please build the main file first."
     echo "Run: make build"
     exit 1
 fi
@@ -57,13 +57,13 @@ cat > "${APP_CONTENTS}/Info.plist" << 'EOF'
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>picoclaw-launcher</string>
+    <string>piconomous-launcher</string>
     <key>CFBundleIdentifier</key>
-    <string>com.picoclaw.launcher</string>
+    <string>com.piconomous.launcher</string>
     <key>CFBundleName</key>
-    <string>PicoClaw Launcher</string>
+    <string>Piconomous Launcher</string>
     <key>CFBundleDisplayName</key>
-    <string>PicoClaw Launcher</string>
+    <string>Piconomous Launcher</string>
     <key>CFBundleIconFile</key>
     <string>icon.icns</string>
     <key>CFBundlePackageType</key>
@@ -98,7 +98,7 @@ echo "=========================================="
 echo "Successfully created: ${APP_PATH}"
 echo "=========================================="
 echo ""
-echo "To launch PicoClaw:"
+echo "To launch Piconomous:"
 echo "  1. Double-click ${APP_NAME}.app in Finder"
 echo "  2. Or use: open ${APP_PATH}"
 echo ""

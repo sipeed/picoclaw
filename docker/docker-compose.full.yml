@@ -1,44 +1,44 @@
 services:
   # ─────────────────────────────────────────────
-  # PicoClaw Agent (one-shot query) - Full MCP Support
-  #   docker compose -f docker/docker-compose.full.yml run --rm picoclaw-agent -m "Hello"
+  # Piconomous Agent (one-shot query) - Full MCP Support
+  #   docker compose -f docker/docker-compose.full.yml run --rm piconomous-agent -m "Hello"
   # ─────────────────────────────────────────────
-  picoclaw-agent:
+  piconomous-agent:
     build:
       context: ..
       dockerfile: docker/Dockerfile.full
-    container_name: picoclaw-agent-full
+    container_name: piconomous-agent-full
     profiles:
       - agent
     volumes:
-      - ../config/config.json:/root/.picoclaw/config.json:ro
-      - picoclaw-workspace:/root/.picoclaw/workspace
-      - picoclaw-npm-cache:/root/.npm # npm cache for faster MCP server installs
-    entrypoint: ["picoclaw", "agent"]
+      - ../config/config.json:/root/.piconomous/config.json:ro
+      - piconomous-workspace:/root/.piconomous/workspace
+      - piconomous-npm-cache:/root/.npm # npm cache for faster MCP server installs
+    entrypoint: ["piconomous", "agent"]
     stdin_open: true
     tty: true
 
   # ─────────────────────────────────────────────
-  # PicoClaw Gateway (Long-running Bot) - Full MCP Support
+  # Piconomous Gateway (Long-running Bot) - Full MCP Support
   #   docker compose -f docker/docker-compose.full.yml --profile gateway up
   # ─────────────────────────────────────────────
-  picoclaw-gateway:
+  piconomous-gateway:
     build:
       context: ..
       dockerfile: docker/Dockerfile.full
-    container_name: picoclaw-gateway-full
+    container_name: piconomous-gateway-full
     restart: unless-stopped
     profiles:
       - gateway
     volumes:
       # Configuration file
-      - ../config/config.json:/root/.picoclaw/config.json:ro
+      - ../config/config.json:/root/.piconomous/config.json:ro
       # Persistent workspace (sessions, memory, logs)
-      - picoclaw-workspace:/root/.picoclaw/workspace
+      - piconomous-workspace:/root/.piconomous/workspace
       # NPM cache for faster MCP server installs
-      - picoclaw-npm-cache:/root/.npm
+      - piconomous-npm-cache:/root/.npm
     command: ["gateway"]
 
 volumes:
-  picoclaw-workspace:
-  picoclaw-npm-cache: # Cache npm packages to speed up MCP server installations
+  piconomous-workspace:
+  piconomous-npm-cache: # Cache npm packages to speed up MCP server installations

@@ -37,11 +37,11 @@ Feishu (international name: Lark) is an enterprise collaboration platform by Byt
 2. Enable the **Bot** capability in the application settings
 3. Create a version and publish the application (configuration takes effect only after publishing)
 4. Obtain the **App ID** (starts with `cli_`) and **App Secret**
-5. Fill in the App ID and App Secret in the PicoClaw configuration file
-6. Run `picoclaw gateway` to start the service
+5. Fill in the App ID and App Secret in the Piconomous configuration file
+6. Run `piconomous gateway` to start the service
 7. Search for the bot name in Feishu and start a conversation
 
-> PicoClaw connects to Feishu using WebSocket/SDK mode — no public callback address or Webhook URL is required.
+> Piconomous connects to Feishu using WebSocket/SDK mode — no public callback address or Webhook URL is required.
 >
 > `encrypt_key` and `verification_token` are optional; enabling event encryption is recommended for production environments.
 >

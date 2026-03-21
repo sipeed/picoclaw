@@ -3,8 +3,8 @@ package channels
 import (
 	"context"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/commands"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/commands"
 )
 
 // TypingCapable — channels that can show a typing/thinking indicator.

@@ -8,10 +8,10 @@
     "#1": {
       "0409": {
         "identity": {
-          "name": "PicoClaw Launcher",
+          "name": "Piconomous Launcher",
           "version": "0.0.0.0"
         },
-        "description": "PicoClaw Launcher - Web-based configuration editor",
+        "description": "Piconomous Launcher - Web-based configuration editor",
         "minimum-os": "win7",
         "execution-level": "asInvoker",
         "dpi-awareness": "system",

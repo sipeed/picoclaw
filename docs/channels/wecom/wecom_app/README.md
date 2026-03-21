@@ -44,4 +44,4 @@ A WeCom Internal App is an application created by an enterprise within WeCom, pr
 5. Set the callback URL to `http://<your-server-ip>:<port>/webhook/wecom-app`
 6. Enter the CorpID, Secret, AgentID, and other details into the config file
 
-   Note: PicoClaw now uses a shared Gateway HTTP server to receive webhook callbacks for all channels. The default listening address is 127.0.0.1:18790. To receive callbacks from the public internet, reverse-proxy your external domain to the Gateway (default port 18790).
+   Note: Piconomous now uses a shared Gateway HTTP server to receive webhook callbacks for all channels. The default listening address is 127.0.0.1:18790. To receive callbacks from the public internet, reverse-proxy your external domain to the Gateway (default port 18790).

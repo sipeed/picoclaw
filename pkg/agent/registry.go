@@ -3,11 +3,11 @@ package agent
 import (
 	"sync"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/routing"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/providers"
+	"github.com/sipeed/piconomous/pkg/routing"
+	"github.com/sipeed/piconomous/pkg/tools"
 )
 
 // AgentRegistry manages multiple agent instances and routes messages to them.

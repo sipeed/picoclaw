@@ -4,12 +4,12 @@
 
 ## 🐳 Docker Compose
 
-Docker Compose を使用して PicoClaw を実行できます。ローカルに何もインストールする必要はありません。
+Docker Compose を使用して Piconomous を実行できます。ローカルに何もインストールする必要はありません。
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/sipeed/picoclaw.git
-cd picoclaw
+git clone https://github.com/sipeed/piconomous.git
+cd piconomous
 
 # 2. 初回実行 — docker/data/config.json を自動生成して終了
 #    （config.json と workspace/ の両方が存在しない場合のみ実行）
@@ -24,11 +24,11 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 > [!TIP]
-> **Docker ユーザー**: デフォルトでは Gateway は `127.0.0.1` でリッスンしており、コンテナ外からはアクセスできません。ヘルスチェックエンドポイントへのアクセスやポート公開が必要な場合は、環境変数で `PICOCLAW_GATEWAY_HOST=0.0.0.0` を設定するか、`config.json` を更新してください。
+> **Docker ユーザー**: デフォルトでは Gateway は `127.0.0.1` でリッスンしており、コンテナ外からはアクセスできません。ヘルスチェックエンドポイントへのアクセスやポート公開が必要な場合は、環境変数で `PICONOMOUS_GATEWAY_HOST=0.0.0.0` を設定するか、`config.json` を更新してください。
 
 ```bash
 # 5. ログを確認
-docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
+docker compose -f docker/docker-compose.yml logs -f piconomous-gateway
 
 # 6. 停止
 docker compose -f docker/docker-compose.yml --profile gateway down
@@ -36,7 +36,7 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ### Launcher モード (Web コンソール)
 
-`launcher` イメージには 3 つのバイナリ（`picoclaw`、`picoclaw-launcher`、`picoclaw-launcher-tui`）がすべて含まれており、デフォルトで Web コンソールを起動します。ブラウザベースの設定・チャット画面を提供します。
+`launcher` イメージには 3 つのバイナリ（`piconomous`、`piconomous-launcher`、`piconomous-launcher-tui`）がすべて含まれており、デフォルトで Web コンソールを起動します。ブラウザベースの設定・チャット画面を提供します。
 
 ```bash
 docker compose -f docker/docker-compose.yml --profile launcher up -d
@@ -51,10 +51,10 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 
 ```bash
 # 質問する
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "2+2は？"
+docker compose -f docker/docker-compose.yml run --rm piconomous-agent -m "2+2は？"
 
 # インタラクティブモード
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm piconomous-agent
 ```
 
 ### イメージの更新
@@ -69,21 +69,21 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 ## 🚀 クイックスタート
 
 > [!TIP]
-> `~/.picoclaw/config.json` に API Key を設定してください。API Key の取得先: [Volcengine (CodingPlan)](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) (LLM) · [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)。Web 検索は**オプション**です — 無料の [Tavily API](https://tavily.com) (月 1000 回無料) または [Brave Search API](https://brave.com/search/api) (月 2000 回無料) を取得できます。
+> `~/.piconomous/config.json` に API Key を設定してください。API Key の取得先: [Volcengine (CodingPlan)](https://www.volcengine.com/activity/codingplan?utm_campaign=Piconomous&utm_content=Piconomous&utm_medium=devrel&utm_source=OWO&utm_term=Piconomous) (LLM) · [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)。Web 検索は**オプション**です — 無料の [Tavily API](https://tavily.com) (月 1000 回無料) または [Brave Search API](https://brave.com/search/api) (月 2000 回無料) を取得できます。
 
 **1. 初期化**
 
 ```bash
-picoclaw onboard
+piconomous onboard
 ```
 
-**2. 設定** (`~/.picoclaw/config.json`)
+**2. 設定** (`~/.piconomous/config.json`)
 
 ```json
 {
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
+      "workspace": "~/.piconomous/workspace",
       "model_name": "gpt-5.4",
       "max_tokens": 8192,
       "temperature": 0.7,
@@ -144,7 +144,7 @@ picoclaw onboard
 ```
 
 > **新機能**: `model_list` 設定形式により、コード変更なしで provider を追加できます。詳細は[モデル設定](providers.md#モデル設定-model_list)を参照してください。
-> `request_timeout` はオプションで、単位は秒です。省略または `<= 0` に設定した場合、PicoClaw はデフォルトのタイムアウト（120 秒）を使用します。
+> `request_timeout` はオプションで、単位は秒です。省略または `<= 0` に設定した場合、Piconomous はデフォルトのタイムアウト（120 秒）を使用します。
 
 **3. API Key の取得**
 
@@ -161,7 +161,7 @@ picoclaw onboard
 **4. チャット**
 
 ```bash
-picoclaw agent -m "2+2は？"
+piconomous agent -m "2+2は？"
 ```
 
 以上です！2 分で動作する AI アシスタントが手に入ります。

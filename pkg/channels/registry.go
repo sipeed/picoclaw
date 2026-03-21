@@ -3,8 +3,8 @@ package channels
 import (
 	"sync"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/config"
 )
 
 // ChannelFactory is a constructor function that creates a Channel from config and message bus.

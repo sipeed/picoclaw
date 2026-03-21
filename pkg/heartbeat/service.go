@@ -1,8 +1,8 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// Piconomous - Ultra-lightweight personal AI agent
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 Piconomous contributors
 
 package heartbeat
 
@@ -15,12 +15,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/constants"
-	"github.com/sipeed/picoclaw/pkg/fileutil"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/state"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/constants"
+	"github.com/sipeed/piconomous/pkg/fileutil"
+	"github.com/sipeed/piconomous/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/state"
+	"github.com/sipeed/piconomous/pkg/tools"
 )
 
 const (
@@ -35,14 +35,15 @@ type HeartbeatHandler func(prompt, channel, chatID string) *tools.ToolResult
 
 // HeartbeatService manages periodic heartbeat checks
 type HeartbeatService struct {
-	workspace string
-	bus       *bus.MessageBus
-	state     *state.Manager
-	handler   HeartbeatHandler
-	interval  time.Duration
-	enabled   bool
-	mu        sync.RWMutex
-	stopChan  chan struct{}
+	workspace         string
+	bus               *bus.MessageBus
+	state             *state.Manager
+	handler           HeartbeatHandler
+	interval          time.Duration
+	enabled           bool
+	autonomousEnabled bool // when true, heartbeat drives goal-pursuit loop
+	mu                sync.RWMutex
+	stopChan          chan struct{}
 }
 
 // NewHeartbeatService creates a new heartbeat service
@@ -76,6 +77,16 @@ func (hs *HeartbeatService) SetHandler(handler HeartbeatHandler) {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 	hs.handler = handler
+}
+
+// SetAutonomous activates the fully autonomous goal-driven operating mode.
+// When enabled, each heartbeat cycle reads GOALS.md and builds a richer prompt
+// that instructs the agent to make concrete progress toward its active goals,
+// create follow-up cron tasks for itself, and write new goals as it discovers work.
+func (hs *HeartbeatService) SetAutonomous(enabled bool) {
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	hs.autonomousEnabled = enabled
 }
 
 // Start begins the heartbeat service
@@ -217,26 +228,38 @@ func (hs *HeartbeatService) executeHeartbeat() {
 	hs.logInfof("Heartbeat completed: %s", result.ForLLM)
 }
 
-// buildPrompt builds the heartbeat prompt from HEARTBEAT.md
+// buildPrompt builds the heartbeat prompt from HEARTBEAT.md and optionally GOALS.md.
+// When autonomous mode is enabled, a richer goal-pursuit prompt is included.
 func (hs *HeartbeatService) buildPrompt() string {
-	heartbeatPath := filepath.Join(hs.workspace, "HEARTBEAT.md")
+	hs.mu.RLock()
+	autonomous := hs.autonomousEnabled
+	hs.mu.RUnlock()
 
+	heartbeatPath := filepath.Join(hs.workspace, "HEARTBEAT.md")
 	data, err := os.ReadFile(heartbeatPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			hs.createDefaultHeartbeatTemplate()
+		} else {
+			hs.logErrorf("Error reading HEARTBEAT.md: %v", err)
+		}
+		// In autonomous mode, still produce a prompt even without HEARTBEAT.md
+		if !autonomous {
 			return ""
 		}
-		hs.logErrorf("Error reading HEARTBEAT.md: %v", err)
-		return ""
+		data = nil
+	}
+
+	now := time.Now().Format("2006-01-02 15:04:05")
+
+	if autonomous {
+		return hs.buildAutonomousPrompt(now, string(data))
 	}
 
 	content := string(data)
 	if len(content) == 0 {
 		return ""
 	}
-
-	now := time.Now().Format("2006-01-02 15:04:05")
 	return fmt.Sprintf(`# Heartbeat Check
 
 Current time: %s
@@ -247,6 +270,112 @@ If there is nothing that requires attention, respond ONLY with: HEARTBEAT_OK
 
 %s
 `, now, content)
+}
+
+// buildAutonomousPrompt constructs a goal-driven autonomous operation prompt.
+// It includes active goals from GOALS.md so the agent can make measurable progress
+// toward them, self-schedule next steps, and update goal status.
+func (hs *HeartbeatService) buildAutonomousPrompt(now, heartbeatContent string) string {
+	goalsPath := filepath.Join(hs.workspace, "GOALS.md")
+	goalsData, err := os.ReadFile(goalsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			hs.createDefaultGoalsTemplate()
+		} else {
+			hs.logErrorf("Error reading GOALS.md: %v", err)
+		}
+	}
+	goalsContent := strings.TrimSpace(string(goalsData))
+	heartbeatSection := strings.TrimSpace(heartbeatContent)
+
+	var extras string
+	if heartbeatSection != "" {
+		extras = fmt.Sprintf("\n## Periodic Tasks (HEARTBEAT.md)\n\n%s\n", heartbeatSection)
+	}
+	if goalsContent == "" {
+		goalsContent = "*No active goals. Use the `goal` tool with action='set' to define goals.*"
+	}
+
+	return fmt.Sprintf(`# Autonomous Operation Cycle
+
+Current time: %s
+
+You are operating in **fully autonomous mode**. No human is present — act independently and continuously.
+
+## Your Active Goals (GOALS.md)
+
+%s
+%s
+## Autonomous Operating Instructions
+
+You are a fully autonomous software agent. Follow the complete development lifecycle without waiting for human input:
+
+### Every Cycle — Do ALL of the following:
+
+1. **Review active goals**: Pick the highest-priority active goal. Determine the single most impactful action you can take toward it RIGHT NOW.
+
+2. **Execute immediately**: Use available tools to make concrete, measurable progress:
+   - Write/edit code files (write_file, edit_file, append_file)
+   - Run tests and checks (exec)
+   - Search documentation or web (web_fetch, web_search)
+   - Manage project structure (list_dir, read_file)
+
+3. **Project development lifecycle** — when working on software projects:
+   - **Feature development**: Write clean, working code. Add new features incrementally.
+   - **Testing**: After writing code, always run tests (exec: go test, pytest, npm test, etc.). Fix any failures before proceeding.
+   - **Code quality**: After tests pass, check for obvious inefficiencies. Refactor only when it improves correctness or maintainability.
+   - **Do not break working code**: Read existing code before changing it. Make changes incrementally and verify each step with tests.
+   - **Commit progress**: Use exec to git commit when a meaningful increment is complete.
+
+4. **Self-schedule next steps**: Use the `cron` tool to schedule follow-up actions:
+   - After writing code → schedule a test run
+   - After tests pass → schedule code review/optimization
+   - For recurring checks → schedule at an appropriate interval
+
+5. **Update goals**:
+   - Use `goal` with action='complete' when a goal is fully done (tested and working).
+   - Use `goal` with action='update' to add progress notes to a goal.
+   - Use `goal` with action='set' to capture newly discovered work.
+   - Use `goal` with action='drop' only if a goal is truly no longer relevant.
+
+6. **Report only when needed**: Send a message to the user ONLY if:
+   - A major milestone was completed (feature shipped, tests all passing)
+   - You are blocked and need human input
+   - Something went wrong that requires attention
+   - Otherwise respond ONLY with: HEARTBEAT_OK
+
+### Key Principles:
+- **Never idle**: There is always something useful to do. If current goals are done, create new improvement goals.
+- **Test before claiming done**: A goal is complete only when its implementation is tested and verified.
+- **Incremental progress**: Small, safe changes with verification at each step.
+- **Continuity**: Each cycle builds on the last. Read your own previous work before adding to it.
+
+Think step-by-step. Be decisive. Make progress every cycle.
+`, now, goalsContent, extras)
+}
+
+// createDefaultGoalsTemplate writes an initial GOALS.md so the agent has a starting point.
+func (hs *HeartbeatService) createDefaultGoalsTemplate() {
+	goalsPath := filepath.Join(hs.workspace, "GOALS.md")
+	defaultContent := "# Goals\n\n" +
+		"*Managed automatically by Piconomous in autonomous mode.*\n" +
+		"*Use the `goal` tool (action: set/list/complete/update/drop) to manage goals.*\n\n" +
+		"## How Autonomous Mode Works\n\n" +
+		"The agent checks this file every heartbeat cycle and:\n" +
+		"1. Picks the highest-priority active goal\n" +
+		"2. Takes immediate action toward it (writes code, runs tests, commits progress)\n" +
+		"3. Schedules follow-up steps with the cron tool\n" +
+		"4. Marks goals complete only when tested and working\n" +
+		"5. Creates new improvement goals when current ones are done\n\n" +
+		"## Active Goals\n\n" +
+		"*No active goals yet. Add goals with: goal(action='set', title='...', description='...', priority=1-5)*\n\n" +
+		"## Completed Goals\n\n" +
+		"## Dropped Goals\n"
+	if err := fileutil.WriteFileAtomic(goalsPath, []byte(defaultContent), 0o644); err != nil {
+		hs.logErrorf("Failed to create default GOALS.md: %v", err)
+	} else {
+		hs.logInfof("Created default GOALS.md template")
+	}
 }
 
 // createDefaultHeartbeatTemplate creates the default HEARTBEAT.md file

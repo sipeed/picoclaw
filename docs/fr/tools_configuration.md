@@ -2,7 +2,7 @@
 
 > Retour au [README](../../README.fr.md)
 
-La configuration des outils de PicoClaw se trouve dans le champ `tools` de `config.json`.
+La configuration des outils de Piconomous se trouve dans le champ `tools` de `config.json`.
 
 ## Structure du répertoire
 
@@ -91,7 +91,7 @@ Pour désactiver complètement l'outil `exec`, définissez `enabled` à `false` 
 
 **Via la variable d'environnement :**
 ```bash
-PICOCLAW_TOOLS_EXEC_ENABLED=false
+PICONOMOUS_TOOLS_EXEC_ENABLED=false
 ```
 
 > **Note :** Lorsqu'il est désactivé, l'agent ne pourra pas exécuter de commandes shell. Cela affecte également la capacité de l'outil Cron à exécuter des commandes shell planifiées.
@@ -103,7 +103,7 @@ PICOCLAW_TOOLS_EXEC_ENABLED=false
 
 ### Modèles de commandes bloquées par défaut
 
-Par défaut, PicoClaw bloque les commandes dangereuses suivantes :
+Par défaut, Piconomous bloque les commandes dangereuses suivantes :
 
 - Commandes de suppression : `rm -rf`, `del /f/q`, `rmdir /s`
 - Opérations disque : `format`, `mkfs`, `diskpart`, `dd if=`, écriture vers `/dev/sd*`
@@ -120,7 +120,7 @@ Par défaut, PicoClaw bloque les commandes dangereuses suivantes :
 
 ### Limitation architecturale connue
 
-Le garde exec ne valide que la commande de niveau supérieur envoyée à PicoClaw. Il n'inspecte **pas** récursivement les processus enfants générés par les outils de build ou les scripts après le démarrage de cette commande.
+Le garde exec ne valide que la commande de niveau supérieur envoyée à Piconomous. Il n'inspecte **pas** récursivement les processus enfants générés par les outils de build ou les scripts après le démarrage de cette commande.
 
 Exemples de workflows pouvant contourner le garde de commande directe une fois la commande initiale autorisée :
 
@@ -347,14 +347,14 @@ L'outil skills configure la découverte et l'installation de compétences via de
 
 ## Variables d'environnement
 
-Toutes les options de configuration peuvent être remplacées via des variables d'environnement au format `PICOCLAW_TOOLS_<SECTION>_<KEY>` :
+Toutes les options de configuration peuvent être remplacées via des variables d'environnement au format `PICONOMOUS_TOOLS_<SECTION>_<KEY>` :
 
 Par exemple :
 
-- `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
-- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
-- `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
-- `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
-- `PICOCLAW_TOOLS_MCP_ENABLED=true`
+- `PICONOMOUS_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICONOMOUS_TOOLS_EXEC_ENABLED=false`
+- `PICONOMOUS_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
+- `PICONOMOUS_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
+- `PICONOMOUS_TOOLS_MCP_ENABLED=true`
 
 Note : La configuration de type map imbriquée (par exemple `tools.mcp.servers.<name>.*`) est configurée dans `config.json` plutôt que via des variables d'environnement.

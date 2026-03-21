@@ -11,7 +11,7 @@
 | ------------ | --------------------------------------- | ------------------------------------------------------------ |
 | `gemini`     | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)           |
 | `zhipu`      | LLM (Zhipu direct)                      | [bigmodel.cn](https://bigmodel.cn)                           |
-| `volcengine` | LLM(Volcengine direct)                  | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw)                 |
+| `volcengine` | LLM(Volcengine direct)                  | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=Piconomous&utm_content=Piconomous&utm_medium=devrel&utm_source=OWO&utm_term=Piconomous)                 |
 | `openrouter` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                       |
 | `anthropic`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com)       |
 | `openai`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)           |
@@ -30,7 +30,7 @@
 
 ### Model Configuration (model_list)
 
-> **What's New?** PicoClaw now uses a **model-centric** configuration approach. Simply specify `vendor/model` format (e.g., `zhipu/glm-4.7`) to add new providers—**zero code changes required!**
+> **What's New?** Piconomous now uses a **model-centric** configuration approach. Simply specify `vendor/model` format (e.g., `zhipu/glm-4.7`) to add new providers—**zero code changes required!**
 
 This design also enables **multi-agent support** with flexible provider selection:
 
@@ -57,7 +57,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                            |
 | **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
-| **VolcEngine (Doubao)** | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw)                        |
+| **VolcEngine (Doubao)** | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://www.volcengine.com/activity/codingplan?utm_campaign=Piconomous&utm_content=Piconomous&utm_medium=devrel&utm_source=OWO&utm_term=Piconomous)                        |
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
 | **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Get Key](https://www.byteplus.com)                        |
 | **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
@@ -153,7 +153,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 }
 ```
 
-> Run `picoclaw auth login --provider anthropic` to paste your API token.
+> Run `piconomous auth login --provider anthropic` to paste your API token.
 
 **Anthropic Messages API (native format)**
 
@@ -207,11 +207,11 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 }
 ```
 
-PicoClaw strips only the outer `litellm/` prefix before sending the request, so proxy aliases like `litellm/lite-gpt4` send `lite-gpt4`, while `litellm/openai/gpt-4o` sends `openai/gpt-4o`.
+Piconomous strips only the outer `litellm/` prefix before sending the request, so proxy aliases like `litellm/lite-gpt4` send `lite-gpt4`, while `litellm/openai/gpt-4o` sends `openai/gpt-4o`.
 
 #### Load Balancing
 
-Configure multiple endpoints for the same model name—PicoClaw will automatically round-robin between them:
+Configure multiple endpoints for the same model name—Piconomous will automatically round-robin between them:
 
 ```json
 {
@@ -278,7 +278,7 @@ For detailed migration guide, see [migration/model-list-migration.md](migration/
 
 ### Provider Architecture
 
-PicoClaw routes providers by protocol family:
+Piconomous routes providers by protocol family:
 
 - OpenAI-compatible protocol: OpenRouter, OpenAI-compatible gateways, Groq, Zhipu, and vLLM-style endpoints.
 - Anthropic protocol: Claude-native API behavior.
@@ -299,7 +299,7 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
 {
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
+      "workspace": "~/.piconomous/workspace",
       "model_name": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
@@ -318,7 +318,7 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
 **3. Run**
 
 ```bash
-picoclaw agent -m "Hello"
+piconomous agent -m "Hello"
 ```
 
 </details>
@@ -431,5 +431,5 @@ picoclaw agent -m "Hello"
 ---
 
 <div align="center">
-  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
+  <img src="assets/logo.jpg" alt="Piconomous Meme" width="512">
 </div>

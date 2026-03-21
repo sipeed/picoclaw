@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/piconomous/pkg/config"
 )
 
 func TestHandleUpdateConfig_PreservesExecAllowRemoteDefaultWhenOmitted(t *testing.T) {
@@ -20,7 +20,7 @@ func TestHandleUpdateConfig_PreservesExecAllowRemoteDefaultWhenOmitted(t *testin
 	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(`{
 		"agents": {
 			"defaults": {
-				"workspace": "~/.picoclaw/workspace"
+				"workspace": "~/.piconomous/workspace"
 			}
 		},
 		"model_list": [
@@ -59,7 +59,7 @@ func TestHandleUpdateConfig_DoesNotInheritDefaultModelFields(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(`{
 		"agents": {
 			"defaults": {
-				"workspace": "~/.picoclaw/workspace"
+				"workspace": "~/.piconomous/workspace"
 			}
 		},
 		"model_list": [

@@ -11,35 +11,35 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/agent"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
-	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
-	_ "github.com/sipeed/picoclaw/pkg/channels/discord"
-	_ "github.com/sipeed/picoclaw/pkg/channels/feishu"
-	_ "github.com/sipeed/picoclaw/pkg/channels/irc"
-	_ "github.com/sipeed/picoclaw/pkg/channels/line"
-	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
-	_ "github.com/sipeed/picoclaw/pkg/channels/matrix"
-	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
-	_ "github.com/sipeed/picoclaw/pkg/channels/pico"
-	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
-	_ "github.com/sipeed/picoclaw/pkg/channels/slack"
-	_ "github.com/sipeed/picoclaw/pkg/channels/telegram"
-	_ "github.com/sipeed/picoclaw/pkg/channels/wecom"
-	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp"
-	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp_native"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/cron"
-	"github.com/sipeed/picoclaw/pkg/devices"
-	"github.com/sipeed/picoclaw/pkg/health"
-	"github.com/sipeed/picoclaw/pkg/heartbeat"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/media"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/state"
-	"github.com/sipeed/picoclaw/pkg/tools"
-	"github.com/sipeed/picoclaw/pkg/voice"
+	"github.com/sipeed/piconomous/pkg/agent"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/channels"
+	_ "github.com/sipeed/piconomous/pkg/channels/dingtalk"
+	_ "github.com/sipeed/piconomous/pkg/channels/discord"
+	_ "github.com/sipeed/piconomous/pkg/channels/feishu"
+	_ "github.com/sipeed/piconomous/pkg/channels/irc"
+	_ "github.com/sipeed/piconomous/pkg/channels/line"
+	_ "github.com/sipeed/piconomous/pkg/channels/maixcam"
+	_ "github.com/sipeed/piconomous/pkg/channels/matrix"
+	_ "github.com/sipeed/piconomous/pkg/channels/onebot"
+	_ "github.com/sipeed/piconomous/pkg/channels/pico"
+	_ "github.com/sipeed/piconomous/pkg/channels/qq"
+	_ "github.com/sipeed/piconomous/pkg/channels/slack"
+	_ "github.com/sipeed/piconomous/pkg/channels/telegram"
+	_ "github.com/sipeed/piconomous/pkg/channels/wecom"
+	_ "github.com/sipeed/piconomous/pkg/channels/whatsapp"
+	_ "github.com/sipeed/piconomous/pkg/channels/whatsapp_native"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/pkg/cron"
+	"github.com/sipeed/piconomous/pkg/devices"
+	"github.com/sipeed/piconomous/pkg/health"
+	"github.com/sipeed/piconomous/pkg/heartbeat"
+	"github.com/sipeed/piconomous/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/media"
+	"github.com/sipeed/piconomous/pkg/providers"
+	"github.com/sipeed/piconomous/pkg/state"
+	"github.com/sipeed/piconomous/pkg/tools"
+	"github.com/sipeed/piconomous/pkg/voice"
 )
 
 const (
@@ -251,17 +251,32 @@ func setupAndStartServices(
 	}
 	fmt.Println("✓ Cron service started")
 
+	// When autonomous mode is enabled, use its interval (default 5 min) so the
+	// goal-pursuit loop fires frequently enough to be useful.
+	hbInterval := cfg.Heartbeat.Interval
+	hbEnabled := cfg.Heartbeat.Enabled
+	if cfg.Autonomous.Enabled {
+		hbEnabled = true
+		if cfg.Autonomous.GetIntervalMinutes() < hbInterval || hbInterval == 0 {
+			hbInterval = cfg.Autonomous.GetIntervalMinutes()
+		}
+	}
 	runningServices.HeartbeatService = heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
-		cfg.Heartbeat.Interval,
-		cfg.Heartbeat.Enabled,
+		hbInterval,
+		hbEnabled,
 	)
 	runningServices.HeartbeatService.SetBus(msgBus)
 	runningServices.HeartbeatService.SetHandler(createHeartbeatHandler(agentLoop))
+	runningServices.HeartbeatService.SetAutonomous(cfg.Autonomous.Enabled)
 	if err = runningServices.HeartbeatService.Start(); err != nil {
 		return nil, fmt.Errorf("error starting heartbeat service: %w", err)
 	}
-	fmt.Println("✓ Heartbeat service started")
+	if cfg.Autonomous.Enabled {
+		fmt.Println("✓ Heartbeat service started (autonomous mode, interval:", hbInterval, "min)")
+	} else {
+		fmt.Println("✓ Heartbeat service started")
+	}
 
 	runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
 		Enabled:  cfg.Tools.MediaCleanup.Enabled,
@@ -453,13 +468,22 @@ func restartServices(
 	}
 	fmt.Println("  ✓ Cron service restarted")
 
+	hbIntervalReload := cfg.Heartbeat.Interval
+	hbEnabledReload := cfg.Heartbeat.Enabled
+	if cfg.Autonomous.Enabled {
+		hbEnabledReload = true
+		if cfg.Autonomous.GetIntervalMinutes() < hbIntervalReload || hbIntervalReload == 0 {
+			hbIntervalReload = cfg.Autonomous.GetIntervalMinutes()
+		}
+	}
 	runningServices.HeartbeatService = heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
-		cfg.Heartbeat.Interval,
-		cfg.Heartbeat.Enabled,
+		hbIntervalReload,
+		hbEnabledReload,
 	)
 	runningServices.HeartbeatService.SetBus(msgBus)
 	runningServices.HeartbeatService.SetHandler(createHeartbeatHandler(al))
+	runningServices.HeartbeatService.SetAutonomous(cfg.Autonomous.Enabled)
 	if err = runningServices.HeartbeatService.Start(); err != nil {
 		return fmt.Errorf("error restarting heartbeat service: %w", err)
 	}

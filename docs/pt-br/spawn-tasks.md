@@ -57,5 +57,5 @@ O subagente tem acesso a ferramentas (message, web_search, etc.) e pode se comun
 
 **Variáveis de ambiente:**
 
-* `PICOCLAW_HEARTBEAT_ENABLED=false` para desabilitar
-* `PICOCLAW_HEARTBEAT_INTERVAL=60` para alterar o intervalo
+* `PICONOMOUS_HEARTBEAT_ENABLED=false` para desabilitar
+* `PICONOMOUS_HEARTBEAT_INTERVAL=60` para alterar o intervalo

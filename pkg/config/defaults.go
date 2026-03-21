@@ -1,7 +1,7 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// Piconomous - Ultra-lightweight personal AI agent
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 Piconomous contributors
 
 package config
 
@@ -10,16 +10,16 @@ import (
 	"path/filepath"
 )
 
-// DefaultConfig returns the default configuration for PicoClaw.
+// DefaultConfig returns the default configuration for Piconomous.
 func DefaultConfig() *Config {
 	// Determine the base path for the workspace.
-	// Priority: $PICOCLAW_HOME > ~/.picoclaw
+	// Priority: $PICONOMOUS_HOME > ~/.piconomous
 	var homePath string
-	if picoclawHome := os.Getenv(EnvHome); picoclawHome != "" {
-		homePath = picoclawHome
+	if piconomousHome := os.Getenv(EnvHome); piconomousHome != "" {
+		homePath = piconomousHome
 	} else {
 		userHome, _ := os.UserHomeDir()
-		homePath = filepath.Join(userHome, ".picoclaw")
+		homePath = filepath.Join(userHome, ".piconomous")
 	}
 	workspacePath := filepath.Join(homePath, "workspace")
 
@@ -552,6 +552,12 @@ func DefaultConfig() *Config {
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
 			Interval: 30,
+		},
+		Autonomous: AutonomousConfig{
+			Enabled:           false,
+			IntervalMinutes:   5,
+			AllowSelfSchedule: true,
+			MaxGoals:          20,
 		},
 		Devices: DevicesConfig{
 			Enabled:    false,

@@ -1,6 +1,6 @@
-# Using Antigravity Provider in PicoClaw
+# Using Antigravity Provider in Piconomous
 
-This guide explains how to set up and use the **Antigravity** (Google Cloud Code Assist) provider in PicoClaw.
+This guide explains how to set up and use the **Antigravity** (Google Cloud Code Assist) provider in Piconomous.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ This guide explains how to set up and use the **Antigravity** (Google Cloud Code
 To authenticate with Antigravity, run the following command:
 
 ```bash
-picoclaw auth login --provider antigravity
+piconomous auth login --provider antigravity
 ```
 
 ### Manual Authentication (Headless/VPS)
@@ -22,9 +22,9 @@ If you are running on a server (Coolify/Docker) and cannot reach `localhost`, fo
 3.  Complete the login.
 4.  Your browser will redirect to a `localhost:51121` URL (which will fail to load).
 5.  **Copy that final URL** from your browser's address bar.
-6.  **Paste it back into the terminal** where PicoClaw is waiting.
+6.  **Paste it back into the terminal** where Piconomous is waiting.
 
-PicoClaw will extract the authorization code and complete the process automatically.
+Piconomous will extract the authorization code and complete the process automatically.
 
 ## 2. Managing Models
 
@@ -32,15 +32,15 @@ PicoClaw will extract the authorization code and complete the process automatica
 To see which models your project has access to and check their quotas:
 
 ```bash
-picoclaw auth models
+piconomous auth models
 ```
 
 ### Switch Models
-You can change the default model in `~/.picoclaw/config.json` or override it via the CLI:
+You can change the default model in `~/.piconomous/config.json` or override it via the CLI:
 
 ```bash
 # Override for a single command
-picoclaw agent -m "Hello" --model claude-opus-4-6-thinking
+piconomous agent -m "Hello" --model claude-opus-4-6-thinking
 ```
 
 ## 3. Real-world Usage (Coolify/Docker)
@@ -48,19 +48,19 @@ picoclaw agent -m "Hello" --model claude-opus-4-6-thinking
 If you are deploying via Coolify or Docker, follow these steps to test:
 
 1.  **Environment Variables**:
-    *   `PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-flash`
+    *   `PICONOMOUS_AGENTS_DEFAULTS_MODEL=gemini-flash`
 2.  **Authentication persistence**: 
     If you've logged in locally, you can copy your credentials to the server:
     ```bash
-    scp ~/.picoclaw/auth.json user@your-server:~/.picoclaw/
+    scp ~/.piconomous/auth.json user@your-server:~/.piconomous/
     ```
     *Alternatively*, run the `auth login` command once on the server if you have terminal access.
 
 ## 4. Troubleshooting
 
 *   **Empty Response**: If a model returns an empty reply, it may be restricted for your project. Try `gemini-3-flash` or `claude-opus-4-6-thinking`.
-*   **429 Rate Limit**: Antigravity has strict quotas. PicoClaw will display the "reset time" in the error message if you hit a limit.
-*   **404 Not Found**: Ensure you are using a model ID from the `picoclaw auth models` list. Use the short ID (e.g., `gemini-3-flash`) not the full path.
+*   **429 Rate Limit**: Antigravity has strict quotas. Piconomous will display the "reset time" in the error message if you hit a limit.
+*   **404 Not Found**: Ensure you are using a model ID from the `piconomous auth models` list. Use the short ID (e.g., `gemini-3-flash`) not the full path.
 
 ## 5. Summary of Working Models
 

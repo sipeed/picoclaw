@@ -44,4 +44,4 @@
 5. 设置回调 URL 为 `http://<your-server-ip>:<port>/webhook/wecom-app`
 6. 将 CorpID, Secret, AgentID 等信息填入配置文件
 
-   注意: PicoClaw 现在使用共享的 Gateway HTTP 服务器来接收所有渠道的 webhook 回调，默认监听地址为 127.0.0.1:18790。如需从公网接收回调，请把外部域名反向代理到 Gateway（默认端口 18790）。
+   注意: Piconomous 现在使用共享的 Gateway HTTP 服务器来接收所有渠道的 webhook 回调，默认监听地址为 127.0.0.1:18790。如需从公网接收回调，请把外部域名反向代理到 Gateway（默认端口 18790）。

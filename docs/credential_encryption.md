@@ -1,6 +1,6 @@
 # Credential Encryption
 
-PicoClaw supports encrypting `api_key` values in `model_list` configuration entries.
+Piconomous supports encrypting `api_key` values in `model_list` configuration entries.
 Encrypted keys are stored as `enc://<base64>` strings and decrypted automatically at startup.
 
 ---
@@ -10,12 +10,12 @@ Encrypted keys are stored as `enc://<base64>` strings and decrypted automaticall
 **1. Set your passphrase**
 
 ```bash
-export PICOCLAW_KEY_PASSPHRASE="your-passphrase"
+export PICONOMOUS_KEY_PASSPHRASE="your-passphrase"
 ```
 
 **2. Encrypt an API key**
 
-Run `picoclaw onboard` — it prompts for your passphrase and generates the SSH key,
+Run `piconomous onboard` — it prompts for your passphrase and generates the SSH key,
 then automatically re-encrypts any plaintext `api_key` entries in your config on
 the next `SaveConfig` call. The resulting `enc://` value will look like:
 
@@ -46,7 +46,7 @@ enc://AAAA...base64...
 |--------|---------|-----------|
 | Plaintext | `sk-abc123` | Used as-is |
 | File reference | `file://openai.key` | Content read from the same directory as the config file |
-| Encrypted | `enc://<base64>` | Decrypted at startup using `PICOCLAW_KEY_PASSPHRASE` |
+| Encrypted | `enc://<base64>` | Decrypted at startup using `PICONOMOUS_KEY_PASSPHRASE` |
 | Empty | `""` | Passed through unchanged (used with `auth_method: oauth`) |
 
 ---
@@ -60,7 +60,7 @@ Encryption uses **HKDF-SHA256** with an SSH private key as a second factor.
 ```
 sshHash = SHA256(ssh_private_key_file_bytes)
 ikm     = HMAC-SHA256(key=sshHash, message=passphrase)
-aes_key = HKDF-SHA256(ikm, salt, info="picoclaw-credential-v1", 32 bytes)
+aes_key = HKDF-SHA256(ikm, salt, info="piconomous-credential-v1", 32 bytes)
 ```
 
 ### Encryption
@@ -97,7 +97,7 @@ The GCM authentication tag is appended to the ciphertext automatically. Any tamp
 
 When a SSH private key is provided, breaking the encryption requires **both**:
 
-1. The **passphrase** (`PICOCLAW_KEY_PASSPHRASE`)
+1. The **passphrase** (`PICONOMOUS_KEY_PASSPHRASE`)
 2. The **SSH private key file**
 
 This means a leaked config file alone is not sufficient to recover the API key, even if the passphrase is weak. The SSH key contributes 256 bits of entropy (Ed25519) regardless of passphrase strength.
@@ -117,33 +117,33 @@ This means a leaked config file alone is not sufficient to recover the API key, 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `PICOCLAW_KEY_PASSPHRASE` | Yes (for `enc://`) | Passphrase used for key derivation |
-| `PICOCLAW_SSH_KEY_PATH` | No | Path to SSH private key. If not set, auto-detects from `~/.ssh/picoclaw_ed25519.key` |
+| `PICONOMOUS_KEY_PASSPHRASE` | Yes (for `enc://`) | Passphrase used for key derivation |
+| `PICONOMOUS_SSH_KEY_PATH` | No | Path to SSH private key. If not set, auto-detects from `~/.ssh/piconomous_ed25519.key` |
 
 ### SSH Key Auto-Detection
 
-If `PICOCLAW_SSH_KEY_PATH` is not set, PicoClaw looks for the picoclaw-specific key:
+If `PICONOMOUS_SSH_KEY_PATH` is not set, Piconomous looks for the piconomous-specific key:
 
 ```
-~/.ssh/picoclaw_ed25519.key
+~/.ssh/piconomous_ed25519.key
 ```
 
 This dedicated file avoids conflicts with the user's existing SSH keys.
-Run `picoclaw onboard` to generate it automatically.
+Run `piconomous onboard` to generate it automatically.
 
 `os.UserHomeDir()` is used for cross-platform home directory resolution (reads `USERPROFILE` on Windows, `HOME` on Unix/macOS).
 
-> **Note:** An SSH key file is required for credential encryption. If no key is found and `PICOCLAW_SSH_KEY_PATH` is not set, encryption/decryption will fail. Run `picoclaw onboard` to generate the key automatically.
+> **Note:** An SSH key file is required for credential encryption. If no key is found and `PICONOMOUS_SSH_KEY_PATH` is not set, encryption/decryption will fail. Run `piconomous onboard` to generate the key automatically.
 
 ---
 
 ## Migration
 
-Because the only secret material is `PICOCLAW_KEY_PASSPHRASE` and the SSH private key file, migration is straightforward:
+Because the only secret material is `PICONOMOUS_KEY_PASSPHRASE` and the SSH private key file, migration is straightforward:
 
 1. Copy the config file to the new machine.
-2. Set `PICOCLAW_KEY_PASSPHRASE` to the same value.
-3. Copy the SSH private key file to the same path (or set `PICOCLAW_SSH_KEY_PATH` to its new location).
+2. Set `PICONOMOUS_KEY_PASSPHRASE` to the same value.
+3. Copy the SSH private key file to the same path (or set `PICONOMOUS_SSH_KEY_PATH` to its new location).
 
 No re-encryption is needed.
 
@@ -151,7 +151,7 @@ No re-encryption is needed.
 
 ## Security Considerations
 
-- **Both passphrase and SSH key are required.** The SSH key acts as a second factor — without it, encryption/decryption will fail. Run `picoclaw onboard` to generate the key if it doesn't exist.
-- **The SSH key is read-only at runtime.** PicoClaw never writes to or modifies the SSH key file.
+- **Both passphrase and SSH key are required.** The SSH key acts as a second factor — without it, encryption/decryption will fail. Run `piconomous onboard` to generate the key if it doesn't exist.
+- **The SSH key is read-only at runtime.** Piconomous never writes to or modifies the SSH key file.
 - **Plaintext keys remain supported.** Existing configs without `enc://` are unaffected.
-- **The `enc://` format is versioned** via the HKDF `info` field (`picoclaw-credential-v1`), allowing future algorithm upgrades without breaking existing encrypted values.
+- **The `enc://` format is versioned** via the HKDF `info` field (`piconomous-credential-v1`), allowing future algorithm upgrades without breaking existing encrypted values.

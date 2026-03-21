@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/piconomous/pkg/providers"
 )
 
 // ── ExtractFeatures ──────────────────────────────────────────────────────────

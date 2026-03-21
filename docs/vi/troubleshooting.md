@@ -14,7 +14,7 @@
 - **Sai:** `"model": "free"` → OpenRouter nhận được `free` và từ chối.
 - **Đúng:** `"model": "openrouter/free"` → OpenRouter nhận được `openrouter/free` (định tuyến tự động tầng miễn phí).
 
-**Cách sửa:** Trong `~/.picoclaw/config.json` (hoặc đường dẫn cấu hình của bạn):
+**Cách sửa:** Trong `~/.piconomous/config.json` (hoặc đường dẫn cấu hình của bạn):
 
 1. **agents.defaults.model_name** phải khớp với một `model_name` trong `model_list` (ví dụ: `"openrouter-free"`).
 2. **model** của mục đó phải là ID mô hình OpenRouter hợp lệ, ví dụ:

@@ -6,7 +6,7 @@
 
 set -e
 
-CONTAINER_NAME="picoclaw-test-ergo"
+CONTAINER_NAME="piconomous-test-ergo"
 IRC_PORT=6667
 
 # Clean up any previous instance
@@ -32,7 +32,7 @@ done
 echo ""
 echo "IRC server ready on localhost:$IRC_PORT"
 echo ""
-echo "Add this to your ~/.picoclaw/config.json under \"channels\":"
+echo "Add this to your ~/.piconomous/config.json under \"channels\":"
 echo ""
 echo '  "irc": {'
 echo '    "enabled": true,'
@@ -44,8 +44,8 @@ echo '    "allow_from": [],'
 echo '    "group_trigger": { "mention_only": true }'
 echo '  }'
 echo ""
-echo "Then run picoclaw:"
-echo "  cd packages/picoclaw && go run ./cmd/picoclaw gateway"
+echo "Then run piconomous:"
+echo "  cd packages/piconomous && go run ./cmd/piconomous gateway"
 echo ""
 echo "Connect with an IRC client:"
 echo "  irssi:   /connect localhost $IRC_PORT"

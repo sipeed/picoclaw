@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/memory"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/session"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/pkg/memory"
+	"github.com/sipeed/piconomous/pkg/providers"
+	"github.com/sipeed/piconomous/pkg/session"
 )
 
 func sessionsTestDir(t *testing.T, configPath string) string {

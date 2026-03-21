@@ -15,13 +15,13 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/identity"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/media"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/channels"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/pkg/identity"
+	"github.com/sipeed/piconomous/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/media"
+	"github.com/sipeed/piconomous/pkg/utils"
 )
 
 // Long-connection WebSocket endpoint.
@@ -1196,7 +1196,7 @@ func (c *WeComAIBotWSChannel) storeWSMedia(
 
 	// Write to a temp file. The file is owned by the MediaStore and deleted by
 	// store.ReleaseAll — no caller-side cleanup needed.
-	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	mediaDir := filepath.Join(os.TempDir(), "piconomous_media")
 	if err = os.MkdirAll(mediaDir, 0o700); err != nil {
 		return "", fmt.Errorf("mkdir: %w", err)
 	}

@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	autoStartEntryName = "PicoClawLauncher"
-	launchAgentLabel   = "io.picoclaw.launcher"
+	autoStartEntryName = "PiconomousLauncher"
+	launchAgentLabel   = "io.piconomous.launcher"
 )
 
 type autoStartRequest struct {
@@ -215,7 +215,7 @@ func buildDarwinPlist(exePath string, args []string) string {
 
 func linuxAutoStartPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "autostart", "picoclaw-web.desktop")
+	return filepath.Join(home, ".config", "autostart", "piconomous-web.desktop")
 }
 
 func shellQuote(s string) string {
@@ -247,8 +247,8 @@ func setLinuxAutoStart(enabled bool, exePath string, args []string) error {
 			"[Desktop Entry]",
 			"Type=Application",
 			"Version=1.0",
-			"Name=PicoClaw Web",
-			"Comment=Start PicoClaw Web on login",
+			"Name=Piconomous Web",
+			"Comment=Start Piconomous Web on login",
 			"Exec=" + buildLinuxExecLine(exePath, args),
 			"Terminal=false",
 			"X-GNOME-Autostart-enabled=true",

@@ -37,11 +37,11 @@
 2. アプリケーション設定で**ボット**機能を有効にする
 3. バージョンを作成してアプリケーションを公開する（公開後に設定が有効になる）
 4. **App ID**（`cli_` で始まる）と **App Secret** を取得する
-5. PicoClaw 設定ファイルに App ID と App Secret を入力する
-6. `picoclaw gateway` を実行してサービスを起動する
+5. Piconomous 設定ファイルに App ID と App Secret を入力する
+6. `piconomous gateway` を実行してサービスを起動する
 7. 飛書でボット名を検索して会話を始める
 
-> PicoClaw は WebSocket/SDK モードで飛書に接続するため、公開コールバックアドレスや Webhook URL の設定は不要です。
+> Piconomous は WebSocket/SDK モードで飛書に接続するため、公開コールバックアドレスや Webhook URL の設定は不要です。
 >
 > `encrypt_key` と `verification_token` はオプションですが、本番環境ではイベント暗号化を有効にすることを推奨します。
 >

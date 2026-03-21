@@ -50,7 +50,7 @@ The WeCom AI Bot is an official AI conversation integration provided by WeCom. I
    - **URL**: `http://<your-server-ip>:18790/webhook/wecom-aibot`
    - **Token**: Randomly generated or custom
    - **EncodingAESKey**: Click "Random Generate" to get a 43-character key
-4. Enter the Token and EncodingAESKey into the PicoClaw config file, start the service, then return to the admin console to save (WeCom will send a verification request)
+4. Enter the Token and EncodingAESKey into the Piconomous config file, start the service, then return to the admin console to save (WeCom will send a verification request)
 
 > [!TIP]
 > The server must be accessible by WeCom's servers. If you are on an intranet or developing locally, use [ngrok](https://ngrok.com) or frp for tunneling.
@@ -63,7 +63,7 @@ WeCom AI Bot uses a "streaming pull" protocol, which differs from the one-shot r
 User sends a message
   │
   ▼
-PicoClaw immediately returns {finish: false} (Agent starts processing)
+Piconomous immediately returns {finish: false} (Agent starts processing)
   │
   ▼
 WeCom pulls approximately every 1 second with {msgtype: "stream", stream: {id: "..."}}
@@ -75,7 +75,7 @@ WeCom pulls approximately every 1 second with {msgtype: "stream", stream: {id: "
 
 **Timeout Handling** (task exceeds 30 seconds):
 
-If the Agent takes longer than approximately 30 seconds (WeCom's maximum polling window is 6 minutes), PicoClaw will:
+If the Agent takes longer than approximately 30 seconds (WeCom's maximum polling window is 6 minutes), Piconomous will:
 
 1. Immediately close the stream and show the user: "⏳ 正在处理中，请稍候，结果将稍后发送。"
 2. The Agent continues running in the background
@@ -85,10 +85,10 @@ If the Agent takes longer than approximately 30 seconds (WeCom's maximum polling
 
 ## Welcome Message
 
-When `welcome_message` is configured, PicoClaw will automatically reply with it when a user opens the chat window with the AI Bot (`enter_chat` event). Leave it empty to silently ignore the event.
+When `welcome_message` is configured, Piconomous will automatically reply with it when a user opens the chat window with the AI Bot (`enter_chat` event). Leave it empty to silently ignore the event.
 
 ```json
-"welcome_message": "你好！我是 PicoClaw AI 助手，有什么可以帮你？"
+"welcome_message": "你好！我是 Piconomous AI 助手，有什么可以帮你？"
 ```
 
 ## FAQ
@@ -97,7 +97,7 @@ When `welcome_message` is configured, PicoClaw will automatically reply with it 
 
 - Confirm the server firewall has the relevant port open (default 18790)
 - Confirm `token` and `encoding_aes_key` are entered correctly
-- Check PicoClaw logs to see if a GET request from WeCom was received
+- Check Piconomous logs to see if a GET request from WeCom was received
 
 ### Messages Not Getting a Reply
 

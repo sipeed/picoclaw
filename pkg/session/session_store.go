@@ -1,6 +1,6 @@
 package session
 
-import "github.com/sipeed/picoclaw/pkg/providers"
+import "github.com/sipeed/piconomous/pkg/providers"
 
 // SessionStore defines the persistence operations used by the agent loop.
 // Both SessionManager (legacy JSON backend) and JSONLBackend satisfy this

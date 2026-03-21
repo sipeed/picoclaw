@@ -44,4 +44,4 @@
 5. Đặt URL callback thành `http://<your-server-ip>:<port>/webhook/wecom-app`
 6. Nhập CorpID, Secret, AgentID và các thông tin khác vào file cấu hình
 
-   Lưu ý: PicoClaw hiện sử dụng máy chủ HTTP Gateway dùng chung để nhận callback webhook cho tất cả các kênh. Địa chỉ lắng nghe mặc định là 127.0.0.1:18790. Để nhận callback từ internet công cộng, hãy cấu hình reverse proxy từ tên miền bên ngoài của bạn đến Gateway (cổng mặc định 18790).
+   Lưu ý: Piconomous hiện sử dụng máy chủ HTTP Gateway dùng chung để nhận callback webhook cho tất cả các kênh. Địa chỉ lắng nghe mặc định là 127.0.0.1:18790. Để nhận callback từ internet công cộng, hãy cấu hình reverse proxy từ tên miền bên ngoài của bạn đến Gateway (cổng mặc định 18790).

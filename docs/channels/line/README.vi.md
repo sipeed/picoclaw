@@ -2,7 +2,7 @@
 
 # Line
 
-PicoClaw hỗ trợ LINE thông qua LINE Messaging API kết hợp với webhook callback.
+Piconomous hỗ trợ LINE thông qua LINE Messaging API kết hợp với webhook callback.
 
 ## Cấu hình
 
@@ -34,7 +34,7 @@ PicoClaw hỗ trợ LINE thông qua LINE Messaging API kết hợp với webhook
 2. Lấy Channel Secret và Channel Access Token
 3. Cấu hình webhook:
    - LINE yêu cầu webhook phải sử dụng HTTPS, vì vậy bạn cần triển khai máy chủ hỗ trợ HTTPS hoặc dùng công cụ reverse proxy như ngrok để expose máy chủ cục bộ ra internet
-   - PicoClaw sử dụng máy chủ HTTP Gateway dùng chung để nhận webhook callback cho tất cả các kênh, mặc định lắng nghe tại 127.0.0.1:18790
+   - Piconomous sử dụng máy chủ HTTP Gateway dùng chung để nhận webhook callback cho tất cả các kênh, mặc định lắng nghe tại 127.0.0.1:18790
    - Đặt Webhook URL thành `https://your-domain.com/webhook/line`, sau đó reverse proxy tên miền bên ngoài về Gateway cục bộ (cổng mặc định 18790)
    - Bật webhook và xác minh URL
 4. Điền Channel Secret và Channel Access Token vào file cấu hình

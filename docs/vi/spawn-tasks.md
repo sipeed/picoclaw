@@ -57,5 +57,5 @@ Subagent có quyền truy cập công cụ (message, web_search, v.v.) và có t
 
 **Biến môi trường:**
 
-* `PICOCLAW_HEARTBEAT_ENABLED=false` để tắt
-* `PICOCLAW_HEARTBEAT_INTERVAL=60` để thay đổi khoảng thời gian
+* `PICONOMOUS_HEARTBEAT_ENABLED=false` để tắt
+* `PICONOMOUS_HEARTBEAT_INTERVAL=60` để thay đổi khoảng thời gian

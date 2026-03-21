@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/migrate/internal"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/pkg/migrate/internal"
 )
 
 // OpenclawHomeEnvVar is the environment variable that overrides the source
-// openclaw home directory when migrating from openclaw to picoclaw.
+// openclaw home directory when migrating from openclaw to piconomous.
 // Default: ~/.openclaw
 const OpenclawHomeEnvVar = "OPENCLAW_HOME"
 
@@ -96,7 +96,7 @@ func (o *OpenclawHandler) ExecuteConfigMigration(srcConfigPath, dstConfigPath st
 		return err
 	}
 
-	picoCfg, warnings, err := openclawCfg.ConvertToPicoClaw(o.opts.SourceHome)
+	picoCfg, warnings, err := openclawCfg.ConvertToPiconomous(o.opts.SourceHome)
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func findSourceConfig(sourceHome string) (string, error) {
 }
 
 func rewriteWorkspacePath(path string) string {
-	path = strings.Replace(path, ".openclaw", ".picoclaw", 1)
+	path = strings.Replace(path, ".openclaw", ".piconomous", 1)
 	return path
 }
 

@@ -14,7 +14,7 @@
 - **誤り：** `"model": "free"` → OpenRouter は `free` を受け取り、拒否します。
 - **正しい：** `"model": "openrouter/free"` → OpenRouter は `openrouter/free` を受け取ります（自動無料枠ルーティング）。
 
-**修正方法：** `~/.picoclaw/config.json`（またはお使いの設定パス）で：
+**修正方法：** `~/.piconomous/config.json`（またはお使いの設定パス）で：
 
 1. **agents.defaults.model_name** は `model_list` 内の `model_name` と一致する必要があります（例：`"openrouter-free"`）。
 2. そのエントリの **model** は有効な OpenRouter モデル ID である必要があります。例：

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/constants"
-	"github.com/sipeed/picoclaw/pkg/cron"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/piconomous/pkg/bus"
+	"github.com/sipeed/piconomous/pkg/config"
+	"github.com/sipeed/piconomous/pkg/constants"
+	"github.com/sipeed/piconomous/pkg/cron"
+	"github.com/sipeed/piconomous/pkg/utils"
 )
 
 // JobExecutor is the interface for executing cron jobs through the agent
@@ -20,12 +20,13 @@ type JobExecutor interface {
 
 // CronTool provides scheduling capabilities for the agent
 type CronTool struct {
-	cronService  *cron.CronService
-	executor     JobExecutor
-	msgBus       *bus.MessageBus
-	execTool     *ExecTool
-	allowCommand bool
-	execEnabled  bool
+	cronService      *cron.CronService
+	executor         JobExecutor
+	msgBus           *bus.MessageBus
+	execTool         *ExecTool
+	allowCommand     bool
+	execEnabled      bool
+	autonomousMode   bool // when true, self-scheduling without command_confirm is allowed
 }
 
 // NewCronTool creates a new CronTool
@@ -36,9 +37,11 @@ func NewCronTool(
 ) (*CronTool, error) {
 	allowCommand := true
 	execEnabled := true
+	autonomousMode := false
 	if config != nil {
 		allowCommand = config.Tools.Cron.AllowCommand
 		execEnabled = config.Tools.Exec.Enabled
+		autonomousMode = config.Autonomous.Enabled
 	}
 
 	var execTool *ExecTool
@@ -54,12 +57,13 @@ func NewCronTool(
 		execTool.SetTimeout(execTimeout)
 	}
 	return &CronTool{
-		cronService:  cronService,
-		executor:     executor,
-		msgBus:       msgBus,
-		execTool:     execTool,
-		allowCommand: allowCommand,
-		execEnabled:  execEnabled,
+		cronService:    cronService,
+		executor:       executor,
+		msgBus:         msgBus,
+		execTool:       execTool,
+		allowCommand:   allowCommand,
+		execEnabled:    execEnabled,
+		autonomousMode: autonomousMode,
 	}, nil
 }
 
@@ -200,6 +204,9 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 	// GHSA-pv8c-p6jf-3fpp: command scheduling requires internal channel. When
 	// allow_command is disabled, explicit confirmation is required as an override.
 	// Non-command reminders remain open to all channels.
+	// In autonomous mode the agent is permitted to self-schedule on its own
+	// internal channels without requiring command_confirm, since the entire
+	// execution context is already an autonomous/internal invocation.
 	command, _ := args["command"].(string)
 	commandConfirm, _ := args["command_confirm"].(bool)
 	if command != "" {
@@ -209,7 +216,7 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		if !constants.IsInternalChannel(channel) {
 			return ErrorResult("scheduling command execution is restricted to internal channels")
 		}
-		if !t.allowCommand && !commandConfirm {
+		if !t.allowCommand && !commandConfirm && !t.autonomousMode {
 			return ErrorResult("command_confirm=true is required when allow_command is disabled")
 		}
 		deliver = false

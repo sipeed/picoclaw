@@ -1,31 +1,31 @@
-# 调试 PicoClaw
+# 调试 Piconomous
 
 > 返回 [README](../../README.zh.md)
 
-PicoClaw 在处理每一个请求时，都会在后台执行多个复杂的交互操作——从消息路由和复杂度评估，到工具执行和模型故障适配。能够准确地看到正在发生什么至关重要，这不仅有助于排查潜在问题，也有助于真正理解代理的运作方式。
+Piconomous 在处理每一个请求时，都会在后台执行多个复杂的交互操作——从消息路由和复杂度评估，到工具执行和模型故障适配。能够准确地看到正在发生什么至关重要，这不仅有助于排查潜在问题，也有助于真正理解代理的运作方式。
 
-## 以调试模式启动 PicoClaw
+## 以调试模式启动 Piconomous
 
-要获取代理运行的详细信息（LLM 请求、工具调用、消息路由），可以使用调试标志启动 PicoClaw 网关：
+要获取代理运行的详细信息（LLM 请求、工具调用、消息路由），可以使用调试标志启动 Piconomous 网关：
 
 ```bash
-picoclaw gateway --debug
+piconomous gateway --debug
 # or
-picoclaw gateway -d
+piconomous gateway -d
 ```
 
 在此模式下，系统会对日志进行详细格式化，并显示系统提示词和工具执行结果的预览。
 
 ## 禁用日志截断（完整日志）
 
-默认情况下，PicoClaw 会在调试日志中截断过长的字符串（例如*系统提示词*或大型 JSON 输出结果），以保持控制台的可读性。
+默认情况下，Piconomous 会在调试日志中截断过长的字符串（例如*系统提示词*或大型 JSON 输出结果），以保持控制台的可读性。
 
 如果你需要检查某个命令的完整输出，或发送给 LLM 模型的确切载荷，可以使用 `--no-truncate` 标志。
 
 **注意：** 此标志*仅*在与 `--debug` 模式组合使用时有效。
 
 ```bash
-picoclaw gateway --debug --no-truncate
+piconomous gateway --debug --no-truncate
 
 ```
 

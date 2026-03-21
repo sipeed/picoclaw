@@ -145,7 +145,7 @@ export function useCredentialsPage() {
       const data = event.data as
         | { type?: string; flowId?: string; status?: string }
         | undefined
-      if (!data || data.type !== "picoclaw-oauth-result" || !data.flowId) {
+      if (!data || data.type !== "piconomous-oauth-result" || !data.flowId) {
         return
       }
 

@@ -1,6 +1,6 @@
 # Tools Configuration
 
-PicoClaw's tools configuration is located in the `tools` field of `config.json`.
+Piconomous's tools configuration is located in the `tools` field of `config.json`.
 
 ## Directory Structure
 
@@ -125,7 +125,7 @@ To completely disable the `exec` tool, set `enabled` to `false`:
 
 **Via environment variable:**
 ```bash
-PICOCLAW_TOOLS_EXEC_ENABLED=false
+PICONOMOUS_TOOLS_EXEC_ENABLED=false
 ```
 
 > **Note:** When disabled, the agent will not be able to execute shell commands. This also affects the Cron tool's ability to run scheduled shell commands.
@@ -137,7 +137,7 @@ PICOCLAW_TOOLS_EXEC_ENABLED=false
 
 ### Default Blocked Command Patterns
 
-By default, PicoClaw blocks the following dangerous commands:
+By default, Piconomous blocks the following dangerous commands:
 
 - Delete commands: `rm -rf`, `del /f/q`, `rmdir /s`
 - Disk operations: `format`, `mkfs`, `diskpart`, `dd if=`, writing to `/dev/sd*`
@@ -154,7 +154,7 @@ By default, PicoClaw blocks the following dangerous commands:
 
 ### Known Architectural Limitation
 
-The exec guard only validates the top-level command sent to PicoClaw. It does **not** recursively inspect child
+The exec guard only validates the top-level command sent to Piconomous. It does **not** recursively inspect child
 processes spawned by build tools or scripts after that command starts running.
 
 Examples of workflows that can bypass the direct command guard once the initial command is allowed:
@@ -458,15 +458,15 @@ The skills tool configures skill discovery and installation via registries like 
 
 ## Environment Variables
 
-All configuration options can be overridden via environment variables with the format `PICOCLAW_TOOLS_<SECTION>_<KEY>`:
+All configuration options can be overridden via environment variables with the format `PICONOMOUS_TOOLS_<SECTION>_<KEY>`:
 
 For example:
 
-- `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
-- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
-- `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
-- `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
-- `PICOCLAW_TOOLS_MCP_ENABLED=true`
+- `PICONOMOUS_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICONOMOUS_TOOLS_EXEC_ENABLED=false`
+- `PICONOMOUS_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
+- `PICONOMOUS_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
+- `PICONOMOUS_TOOLS_MCP_ENABLED=true`
 
 Note: Nested map-style config (for example `tools.mcp.servers.<name>.*`) is configured in `config.json` rather than
 environment variables.

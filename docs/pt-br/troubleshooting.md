@@ -14,7 +14,7 @@
 - **Errado:** `"model": "free"` → OpenRouter recebe `free` e rejeita.
 - **Correto:** `"model": "openrouter/free"` → OpenRouter recebe `openrouter/free` (roteamento automático do nível gratuito).
 
-**Correção:** Em `~/.picoclaw/config.json` (ou seu caminho de configuração):
+**Correção:** Em `~/.piconomous/config.json` (ou seu caminho de configuração):
 
 1. **agents.defaults.model_name** deve corresponder a um `model_name` em `model_list` (ex.: `"openrouter-free"`).
 2. O **model** dessa entrada deve ser um ID de modelo OpenRouter válido, por exemplo:

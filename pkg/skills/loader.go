@@ -15,7 +15,7 @@ import (
 	"github.com/gomarkdown/markdown/parser"
 	"gopkg.in/yaml.v3"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/logger"
 )
 
 var namePattern = regexp.MustCompile(`^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`)
@@ -61,7 +61,7 @@ func (info SkillInfo) validate() error {
 type SkillsLoader struct {
 	workspace       string
 	workspaceSkills string // workspace skills (project-level)
-	globalSkills    string // global skills (~/.picoclaw/skills)
+	globalSkills    string // global skills (~/.piconomous/skills)
 	builtinSkills   string // builtin skills
 }
 
@@ -92,7 +92,7 @@ func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string
 	return &SkillsLoader{
 		workspace:       workspace,
 		workspaceSkills: filepath.Join(workspace, "skills"),
-		globalSkills:    globalSkills, // ~/.picoclaw/skills
+		globalSkills:    globalSkills, // ~/.piconomous/skills
 		builtinSkills:   builtinSkills,
 	}
 }
@@ -156,7 +156,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 		}
 	}
 
-	// 2. then load from global skills (~/.picoclaw/skills)
+	// 2. then load from global skills (~/.piconomous/skills)
 	if sl.globalSkills != "" {
 		skillFile := filepath.Join(sl.globalSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {

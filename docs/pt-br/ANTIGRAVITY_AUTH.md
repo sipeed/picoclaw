@@ -4,7 +4,7 @@
 
 ## Visão Geral
 
-**Antigravity** (Google Cloud Code Assist) é um provedor de modelos de IA apoiado pelo Google que oferece acesso a modelos como Claude Opus 4.6 e Gemini através da infraestrutura de nuvem do Google. Este documento fornece um guia completo sobre como a autenticação funciona, como buscar modelos e como implementar um novo provedor no PicoClaw.
+**Antigravity** (Google Cloud Code Assist) é um provedor de modelos de IA apoiado pelo Google que oferece acesso a modelos como Claude Opus 4.6 e Gemini através da infraestrutura de nuvem do Google. Este documento fornece um guia completo sobre como a autenticação funciona, como buscar modelos e como implementar um novo provedor no Piconomous.
 
 ---
 
@@ -19,7 +19,7 @@
 7. [Requisitos de Integração](#requisitos-de-integração)
 8. [Endpoints da API](#endpoints-da-api)
 9. [Configuração](#configuração)
-10. [Criando um Novo Provedor no PicoClaw](#criando-um-novo-provedor-no-picoclaw)
+10. [Criando um Novo Provedor no Piconomous](#criando-um-novo-provedor-no-piconomous)
 
 ---
 
@@ -380,7 +380,7 @@ const antigravityPlugin = {
   description: "OAuth flow for Google Antigravity (Cloud Code Assist)",
   configSchema: emptyPluginConfigSchema(),
   
-  register(api: PicoClawPluginApi) {
+  register(api: PiconomousPluginApi) {
     api.registerProvider({
       id: "google-antigravity",
       label: "Google Antigravity",
@@ -407,7 +407,7 @@ const antigravityPlugin = {
 
 ```typescript
 type ProviderAuthContext = {
-  config: PicoClawConfig;
+  config: PiconomousConfig;
   agentDir?: string;
   workspaceDir?: string;
   prompter: WizardPrompter;      // Prompts/notificações da UI
@@ -428,7 +428,7 @@ type ProviderAuthResult = {
     profileId: string;
     credential: AuthProfileCredential;
   }>;
-  configPatch?: Partial<PicoClawConfig>;
+  configPatch?: Partial<PiconomousConfig>;
   defaultModel?: string;
   notes?: string[];
 };
@@ -441,7 +441,7 @@ type ProviderAuthResult = {
 ### 1. Ambiente/Dependências Necessários
 
 - Go ≥ 1.25
-- Base de código do PicoClaw (`pkg/providers/` e `pkg/auth/`)
+- Base de código do Piconomous (`pkg/providers/` e `pkg/auth/`)
 - Pacotes da biblioteca padrão `crypto` e `net/http`
 
 ### 2. Cabeçalhos Necessários para Chamadas de API
@@ -594,7 +594,7 @@ Cada mensagem SSE (`data: {...}`) é encapsulada em um campo `response`:
 
 ### Armazenamento do Perfil de Autenticação
 
-Os perfis de autenticação são armazenados em `~/.picoclaw/auth.json`:
+Os perfis de autenticação são armazenados em `~/.piconomous/auth.json`:
 
 ```json
 {
@@ -614,9 +614,9 @@ Os perfis de autenticação são armazenados em `~/.picoclaw/auth.json`:
 
 ---
 
-## Criando um Novo Provedor no PicoClaw
+## Criando um Novo Provedor no Piconomous
 
-Os provedores do PicoClaw são implementados como pacotes Go em `pkg/providers/`. Para adicionar um novo provedor:
+Os provedores do Piconomous são implementados como pacotes Go em `pkg/providers/`. Para adicionar um novo provedor:
 
 ### Implementação Passo a Passo
 
@@ -676,7 +676,7 @@ Adicione uma entrada padrão em `pkg/config/defaults.go`:
 
 #### 5. Adicionar Suporte de Autenticação (Opcional)
 
-Se seu provedor requer OAuth ou autenticação especial, adicione um caso em `cmd/picoclaw/internal/auth/helpers.go`:
+Se seu provedor requer OAuth ou autenticação especial, adicione um caso em `cmd/piconomous/internal/auth/helpers.go`:
 
 ```go
 case "your-provider":
@@ -706,26 +706,26 @@ case "your-provider":
 
 ```bash
 # Autenticar com um provedor
-picoclaw auth login --provider your-provider
+piconomous auth login --provider your-provider
 
 # Listar modelos (para Antigravity)
-picoclaw auth models
+piconomous auth models
 
 # Iniciar o gateway
-picoclaw gateway
+piconomous gateway
 
 # Executar um agente com um modelo específico
-picoclaw agent -m "Hello" --model your-model
+piconomous agent -m "Hello" --model your-model
 ```
 
 ### Variáveis de Ambiente para Testes
 
 ```bash
 # Substituir o modelo padrão
-export PICOCLAW_AGENTS_DEFAULTS_MODEL=your-model
+export PICONOMOUS_AGENTS_DEFAULTS_MODEL=your-model
 
 # Substituir configurações do provedor
-export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/model-name","api_key":"..."}]'
+export PICONOMOUS_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/model-name","api_key":"..."}]'
 ```
 
 ---
@@ -735,10 +735,10 @@ export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/m
 - **Arquivos Fonte:**
   - `pkg/providers/antigravity_provider.go` - Implementação do provedor Antigravity
   - `pkg/auth/oauth.go` - Implementação do fluxo OAuth
-  - `pkg/auth/store.go` - Armazenamento de credenciais de autenticação (`~/.picoclaw/auth.json`)
+  - `pkg/auth/store.go` - Armazenamento de credenciais de autenticação (`~/.piconomous/auth.json`)
   - `pkg/providers/factory.go` - Factory de provedores e roteamento de protocolo
   - `pkg/providers/types.go` - Definições da interface do provedor
-  - `cmd/picoclaw/internal/auth/helpers.go` - Comandos CLI de autenticação
+  - `cmd/piconomous/internal/auth/helpers.go` - Comandos CLI de autenticação
 
 - **Documentação:**
   - `docs/ANTIGRAVITY_USAGE.md` - Guia de uso do Antigravity
@@ -794,7 +794,7 @@ Alguns modelos podem aparecer na lista de modelos disponíveis, mas retornar uma
 ## Solução de Problemas
 
 ### "Token expired" (token expirado)
-- Atualizar tokens OAuth: `picoclaw auth login --provider antigravity`
+- Atualizar tokens OAuth: `piconomous auth login --provider antigravity`
 
 ### "Gemini for Google Cloud is not enabled" (Gemini for Google Cloud não está habilitado)
 - Habilitar a API no seu Google Cloud Console
@@ -805,5 +805,5 @@ Alguns modelos podem aparecer na lista de modelos disponíveis, mas retornar uma
 
 ### Modelos não aparecem na lista
 - Verificar se a autenticação OAuth foi concluída com sucesso
-- Verificar o armazenamento do perfil de autenticação: `~/.picoclaw/auth.json`
-- Executar novamente `picoclaw auth login --provider antigravity`
+- Verificar o armazenamento do perfil de autenticação: `~/.piconomous/auth.json`
+- Executar novamente `piconomous auth login --provider antigravity`

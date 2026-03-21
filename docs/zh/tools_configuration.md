@@ -2,7 +2,7 @@
 
 > 返回 [README](../../README.zh.md)
 
-PicoClaw 的工具配置位于 `config.json` 的 `tools` 字段中。
+Piconomous 的工具配置位于 `config.json` 的 `tools` 字段中。
 
 ## 目录结构
 
@@ -127,7 +127,7 @@ Exec 工具用于执行 shell 命令。
 
 **通过环境变量：**
 ```bash
-PICOCLAW_TOOLS_EXEC_ENABLED=false
+PICONOMOUS_TOOLS_EXEC_ENABLED=false
 ```
 
 > **注意：** 禁用后，代理将无法执行 shell 命令。这也会影响 Cron 工具运行计划 shell 命令的能力。
@@ -139,7 +139,7 @@ PICOCLAW_TOOLS_EXEC_ENABLED=false
 
 ### 默认拦截的命令模式
 
-默认情况下，PicoClaw 会拦截以下危险命令：
+默认情况下，Piconomous 会拦截以下危险命令：
 
 - 删除命令：`rm -rf`、`del /f/q`、`rmdir /s`
 - 磁盘操作：`format`、`mkfs`、`diskpart`、`dd if=`、写入 `/dev/sd*`
@@ -156,7 +156,7 @@ PICOCLAW_TOOLS_EXEC_ENABLED=false
 
 ### 已知架构限制
 
-exec 守卫仅验证发送给 PicoClaw 的顶层命令。它**不会**递归检查该命令启动后由构建工具或脚本生成的子进程。
+exec 守卫仅验证发送给 Piconomous 的顶层命令。它**不会**递归检查该命令启动后由构建工具或脚本生成的子进程。
 
 以下工作流在初始命令被允许后可以绕过直接命令守卫：
 
@@ -408,14 +408,14 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
 
 ## 环境变量
 
-所有配置选项都可以通过格式为 `PICOCLAW_TOOLS_<SECTION>_<KEY>` 的环境变量覆盖：
+所有配置选项都可以通过格式为 `PICONOMOUS_TOOLS_<SECTION>_<KEY>` 的环境变量覆盖：
 
 例如：
 
-- `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
-- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
-- `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
-- `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
-- `PICOCLAW_TOOLS_MCP_ENABLED=true`
+- `PICONOMOUS_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICONOMOUS_TOOLS_EXEC_ENABLED=false`
+- `PICONOMOUS_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
+- `PICONOMOUS_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
+- `PICONOMOUS_TOOLS_MCP_ENABLED=true`
 
 注意：嵌套的映射式配置（例如 `tools.mcp.servers.<name>.*`）在 `config.json` 中配置，而非通过环境变量。

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 )
 
-const TempDirName = "picoclaw_media"
+const TempDirName = "piconomous_media"
 
 // TempDir returns the shared temporary directory used for downloaded media.
 func TempDir() string {

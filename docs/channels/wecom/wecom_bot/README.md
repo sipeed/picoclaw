@@ -38,4 +38,4 @@ WeCom Bot is a quick integration method provided by WeCom that can receive messa
 3. (To receive messages) Configure the message receiving API address (callback URL), Token, and EncodingAESKey on the bot configuration page
 4. Enter the relevant information into the config file
 
-   Note: PicoClaw now uses a shared Gateway HTTP server to receive webhook callbacks for all channels. The default listening address is 127.0.0.1:18790. To receive callbacks from the public internet, reverse-proxy your external domain to the Gateway (default port 18790).
+   Note: Piconomous now uses a shared Gateway HTTP server to receive webhook callbacks for all channels. The default listening address is 127.0.0.1:18790. To receive callbacks from the public internet, reverse-proxy your external domain to the Gateway (default port 18790).

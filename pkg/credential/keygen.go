@@ -11,14 +11,14 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// DefaultSSHKeyPath returns the canonical path for the picoclaw-specific SSH key.
-// The path is always ~/.ssh/picoclaw_ed25519.key (os.UserHomeDir is cross-platform).
+// DefaultSSHKeyPath returns the canonical path for the piconomous-specific SSH key.
+// The path is always ~/.ssh/piconomous_ed25519.key (os.UserHomeDir is cross-platform).
 func DefaultSSHKeyPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("credential: cannot determine home directory: %w", err)
 	}
-	return filepath.Join(home, ".ssh", "picoclaw_ed25519.key"), nil
+	return filepath.Join(home, ".ssh", "piconomous_ed25519.key"), nil
 }
 
 // GenerateSSHKey generates an Ed25519 SSH key pair and writes the private key

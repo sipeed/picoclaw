@@ -1,4 +1,4 @@
-// this file is for compatible with 3rd party loggers, should not be called in PicoClaw project
+// this file is for compatible with 3rd party loggers, should not be called in Piconomous project
 
 package logger
 

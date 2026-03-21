@@ -2,7 +2,7 @@
 
 # Chiffrement des identifiants
 
-PicoClaw prend en charge le chiffrement des valeurs `api_key` dans les entrées de configuration `model_list`.
+Piconomous prend en charge le chiffrement des valeurs `api_key` dans les entrées de configuration `model_list`.
 Les clés chiffrées sont stockées sous forme de chaînes `enc://<base64>` et déchiffrées automatiquement au démarrage.
 
 ---
@@ -12,12 +12,12 @@ Les clés chiffrées sont stockées sous forme de chaînes `enc://<base64>` et d
 **1. Définir votre phrase secrète**
 
 ```bash
-export PICOCLAW_KEY_PASSPHRASE="your-passphrase"
+export PICONOMOUS_KEY_PASSPHRASE="your-passphrase"
 ```
 
 **2. Chiffrer une clé API**
 
-Exécutez `picoclaw onboard` — il vous demande votre phrase secrète et génère la clé SSH,
+Exécutez `piconomous onboard` — il vous demande votre phrase secrète et génère la clé SSH,
 puis re-chiffre automatiquement toutes les entrées `api_key` en clair dans votre configuration
 lors du prochain appel à `SaveConfig`. La valeur `enc://` résultante ressemblera à :
 
@@ -48,7 +48,7 @@ enc://AAAA...base64...
 |--------|---------|--------------|
 | Texte clair | `sk-abc123` | Utilisé tel quel |
 | Référence fichier | `file://openai.key` | Contenu lu depuis le même répertoire que le fichier de configuration |
-| Chiffré | `enc://<base64>` | Déchiffré au démarrage avec `PICOCLAW_KEY_PASSPHRASE` |
+| Chiffré | `enc://<base64>` | Déchiffré au démarrage avec `PICONOMOUS_KEY_PASSPHRASE` |
 | Vide | `""` | Transmis tel quel (utilisé avec `auth_method: oauth`) |
 
 ---
@@ -62,7 +62,7 @@ Le chiffrement utilise **HKDF-SHA256** avec une clé privée SSH comme second fa
 ```
 sshHash = SHA256(ssh_private_key_file_bytes)
 ikm     = HMAC-SHA256(key=sshHash, message=passphrase)
-aes_key = HKDF-SHA256(ikm, salt, info="picoclaw-credential-v1", 32 bytes)
+aes_key = HKDF-SHA256(ikm, salt, info="piconomous-credential-v1", 32 bytes)
 ```
 
 ### Chiffrement
@@ -99,7 +99,7 @@ Le tag d'authentification GCM est automatiquement ajouté au texte chiffré. Tou
 
 Lorsqu'une clé privée SSH est fournie, casser le chiffrement nécessite **les deux** :
 
-1. La **phrase secrète** (`PICOCLAW_KEY_PASSPHRASE`)
+1. La **phrase secrète** (`PICONOMOUS_KEY_PASSPHRASE`)
 2. Le **fichier de clé privée SSH**
 
 Cela signifie qu'un fichier de configuration divulgué seul ne suffit pas pour récupérer la clé API, même si la phrase secrète est faible. La clé SSH apporte 256 bits d'entropie (Ed25519) indépendamment de la force de la phrase secrète.
@@ -119,33 +119,33 @@ Cela signifie qu'un fichier de configuration divulgué seul ne suffit pas pour r
 
 | Variable | Requis | Description |
 |----------|--------|-------------|
-| `PICOCLAW_KEY_PASSPHRASE` | Oui (pour `enc://`) | Phrase secrète utilisée pour la dérivation de clé |
-| `PICOCLAW_SSH_KEY_PATH` | Non | Chemin vers la clé privée SSH. Si non défini, détection automatique depuis `~/.ssh/picoclaw_ed25519.key` |
+| `PICONOMOUS_KEY_PASSPHRASE` | Oui (pour `enc://`) | Phrase secrète utilisée pour la dérivation de clé |
+| `PICONOMOUS_SSH_KEY_PATH` | Non | Chemin vers la clé privée SSH. Si non défini, détection automatique depuis `~/.ssh/piconomous_ed25519.key` |
 
 ### Détection automatique de la clé SSH
 
-Si `PICOCLAW_SSH_KEY_PATH` n'est pas défini, PicoClaw recherche la clé dédiée :
+Si `PICONOMOUS_SSH_KEY_PATH` n'est pas défini, Piconomous recherche la clé dédiée :
 
 ```
-~/.ssh/picoclaw_ed25519.key
+~/.ssh/piconomous_ed25519.key
 ```
 
 Ce fichier dédié évite les conflits avec les clés SSH existantes de l'utilisateur.
-Exécutez `picoclaw onboard` pour le générer automatiquement.
+Exécutez `piconomous onboard` pour le générer automatiquement.
 
 `os.UserHomeDir()` est utilisé pour la résolution multiplateforme du répertoire personnel (lit `USERPROFILE` sous Windows, `HOME` sous Unix/macOS).
 
-> **Remarque :** Un fichier de clé SSH est requis pour le chiffrement des identifiants. Si aucune clé n'est trouvée et que `PICOCLAW_SSH_KEY_PATH` n'est pas défini, le chiffrement/déchiffrement échouera. Exécutez `picoclaw onboard` pour générer la clé automatiquement.
+> **Remarque :** Un fichier de clé SSH est requis pour le chiffrement des identifiants. Si aucune clé n'est trouvée et que `PICONOMOUS_SSH_KEY_PATH` n'est pas défini, le chiffrement/déchiffrement échouera. Exécutez `piconomous onboard` pour générer la clé automatiquement.
 
 ---
 
 ## Migration
 
-Étant donné que les seuls éléments secrets sont `PICOCLAW_KEY_PASSPHRASE` et le fichier de clé privée SSH, la migration est simple :
+Étant donné que les seuls éléments secrets sont `PICONOMOUS_KEY_PASSPHRASE` et le fichier de clé privée SSH, la migration est simple :
 
 1. Copiez le fichier de configuration sur la nouvelle machine.
-2. Définissez `PICOCLAW_KEY_PASSPHRASE` avec la même valeur.
-3. Copiez le fichier de clé privée SSH au même chemin (ou définissez `PICOCLAW_SSH_KEY_PATH` vers son nouvel emplacement).
+2. Définissez `PICONOMOUS_KEY_PASSPHRASE` avec la même valeur.
+3. Copiez le fichier de clé privée SSH au même chemin (ou définissez `PICONOMOUS_SSH_KEY_PATH` vers son nouvel emplacement).
 
 Aucun re-chiffrement n'est nécessaire.
 
@@ -153,7 +153,7 @@ Aucun re-chiffrement n'est nécessaire.
 
 ## Considérations de sécurité
 
-- **La phrase secrète et la clé SSH sont toutes deux requises.** La clé SSH agit comme un second facteur — sans elle, le chiffrement/déchiffrement échouera. Exécutez `picoclaw onboard` pour générer la clé si elle n'existe pas.
-- **La clé SSH est en lecture seule à l'exécution.** PicoClaw n'écrit ni ne modifie jamais le fichier de clé SSH.
+- **La phrase secrète et la clé SSH sont toutes deux requises.** La clé SSH agit comme un second facteur — sans elle, le chiffrement/déchiffrement échouera. Exécutez `piconomous onboard` pour générer la clé si elle n'existe pas.
+- **La clé SSH est en lecture seule à l'exécution.** Piconomous n'écrit ni ne modifie jamais le fichier de clé SSH.
 - **Les clés en texte clair restent prises en charge.** Les configurations existantes sans `enc://` ne sont pas affectées.
-- **Le format `enc://` est versionné** via le champ `info` de HKDF (`picoclaw-credential-v1`), permettant de futures mises à niveau d'algorithme sans casser les valeurs chiffrées existantes.
+- **Le format `enc://` est versionné** via le champ `info` de HKDF (`piconomous-credential-v1`), permettant de futures mises à niveau d'algorithme sans casser les valeurs chiffrées existantes.

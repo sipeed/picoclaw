@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
+	"github.com/sipeed/piconomous/web/backend/launcherconfig"
 )
 
 func TestResolveLaunchCommandUsesConfigFileDefaults(t *testing.T) {
@@ -46,7 +46,7 @@ func TestResolveLaunchCommandUsesConfigFileDefaults(t *testing.T) {
 }
 
 func TestBuildDarwinPlistIncludesRunAtLoad(t *testing.T) {
-	plist := buildDarwinPlist("/tmp/picoclaw-web", []string{"-no-browser", "/tmp/config.json"})
+	plist := buildDarwinPlist("/tmp/piconomous-web", []string{"-no-browser", "/tmp/config.json"})
 	if !strings.Contains(plist, "<key>RunAtLoad</key>") {
 		t.Fatalf("plist missing RunAtLoad key:\n%s", plist)
 	}

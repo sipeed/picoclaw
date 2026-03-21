@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/piconomous/pkg/logger"
 )
 
 // DownloadToFile streams an HTTP response body to a temporary file in small
@@ -46,7 +46,7 @@ func DownloadToFile(ctx context.Context, client *http.Client, req *http.Request,
 	}
 
 	// Create temp file.
-	tmpFile, err := os.CreateTemp("", "picoclaw-dl-*")
+	tmpFile, err := os.CreateTemp("", "piconomous-dl-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}

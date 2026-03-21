@@ -11,17 +11,17 @@ before:
     - go-winres make --in web/backend/winres/winres.json --out web/backend/rsrc --product-version={{ .Version }} --file-version={{ .Version }}
 
 builds:
-  - id: picoclaw
+  - id: piconomous
     env:
       - CGO_ENABLED=0
     tags:
       - stdjson
     ldflags:
       - -s -w
-      - -X github.com/sipeed/picoclaw/pkg/config.Version={{ .Version }}
-      - -X github.com/sipeed/picoclaw/pkg/config.GitCommit={{ .ShortCommit }}
-      - -X github.com/sipeed/picoclaw/pkg/config.BuildTime={{ .Date }}
-      - -X github.com/sipeed/picoclaw/pkg/config.GoVersion={{ .Env.GOVERSION }}
+      - -X github.com/sipeed/piconomous/pkg/config.Version={{ .Version }}
+      - -X github.com/sipeed/piconomous/pkg/config.GitCommit={{ .ShortCommit }}
+      - -X github.com/sipeed/piconomous/pkg/config.BuildTime={{ .Date }}
+      - -X github.com/sipeed/piconomous/pkg/config.GoVersion={{ .Env.GOVERSION }}
     goos:
       - linux
       - windows
@@ -41,7 +41,7 @@ builds:
       - "7"
     gomips:
       - softfloat
-    main: ./cmd/picoclaw
+    main: ./cmd/piconomous
     ignore:
       - goos: windows
         goarch: arm
@@ -52,8 +52,8 @@ builds:
       - goos: netbsd
         goarch: arm
 
-  - id: picoclaw-launcher
-    binary: picoclaw-launcher
+  - id: piconomous-launcher
+    binary: piconomous-launcher
     env:
       - CGO_ENABLED=0
     tags:
@@ -90,8 +90,8 @@ builds:
       - goos: netbsd
         goarch: arm
 
-  - id: picoclaw-launcher-tui
-    binary: picoclaw-launcher-tui
+  - id: piconomous-launcher-tui
+    binary: piconomous-launcher-tui
     env:
       - CGO_ENABLED=0
     tags:
@@ -117,7 +117,7 @@ builds:
       - "7"
     gomips:
       - softfloat
-    main: ./cmd/picoclaw-launcher-tui
+    main: ./cmd/piconomous-launcher-tui
     ignore:
       - goos: windows
         goarch: arm
@@ -129,14 +129,14 @@ builds:
         goarch: arm
 
 dockers_v2:
-  - id: picoclaw
+  - id: piconomous
     dockerfile: docker/Dockerfile.goreleaser
     extra_files:
       - docker/entrypoint.sh
     ids:
-      - picoclaw
+      - piconomous
     images:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/piconomous"
       - 'docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}'
     tags:
       - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly{{ else }}{{ .Tag }}{{ end }}'
@@ -146,14 +146,14 @@ dockers_v2:
       - linux/arm64
       - linux/riscv64
 
-  - id: picoclaw-launcher
+  - id: piconomous-launcher
     dockerfile: docker/Dockerfile.goreleaser.launcher
     ids:
-      - picoclaw
-      - picoclaw-launcher
-      - picoclaw-launcher-tui
+      - piconomous
+      - piconomous-launcher
+      - piconomous-launcher-tui
     images:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/piconomous"
       - 'docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}'
     tags:
       - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly-launcher{{ else }}{{ .Tag }}-launcher{{ end }}'
@@ -167,9 +167,9 @@ notarize:
   macos:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
       ids:
-        - picoclaw
-        - picoclaw-launcher
-        - picoclaw-launcher-tui
+        - piconomous
+        - piconomous-launcher
+        - piconomous-launcher-tui
       sign:
         certificate: "{{.Env.MACOS_SIGN_P12}}"
         password: "{{.Env.MACOS_SIGN_PASSWORD}}"
@@ -196,32 +196,32 @@ archives:
         formats: [zip]
 
 nfpms:
-  - id: picoclaw
+  - id: piconomous
     ids:
-      - picoclaw
-      - picoclaw-launcher
-      - picoclaw-launcher-tui
-    package_name: picoclaw
+      - piconomous
+      - piconomous-launcher
+      - piconomous-launcher-tui
+    package_name: piconomous
     file_name_template: >-
       {{ .PackageName }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "arm64" }}aarch64
       {{- else if eq .Arch "arm" }}armv{{ .Arm }}
       {{- else }}{{ .Arch }}{{ end }}
-    vendor: picoclaw
-    homepage: https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw
-    maintainer: picoclaw contributors
-    description: picoclaw - a tool for managing and running tasks
+    vendor: piconomous
+    homepage: https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/piconomous
+    maintainer: piconomous contributors
+    description: piconomous - a tool for managing and running tasks
     license: MIT
     formats:
       - rpm
       - deb
     bindir: /usr/bin
     contents:
-      - src: web/picoclaw-launcher.desktop
-        dst: /usr/share/applications/picoclaw-launcher.desktop
-      - src: web/picoclaw-launcher.png
-        dst: /usr/share/icons/hicolor/512x512/apps/picoclaw-launcher.png
+      - src: web/piconomous-launcher.desktop
+        dst: /usr/share/applications/piconomous-launcher.desktop
+      - src: web/piconomous-launcher.png
+        dst: /usr/share/icons/hicolor/512x512/apps/piconomous-launcher.png
 
 changelog:
   sort: asc

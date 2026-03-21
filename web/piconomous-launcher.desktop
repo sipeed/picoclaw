@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Piconomous Launcher
+Comment=Web-based configuration and management UI for Piconomous
+Exec=piconomous-launcher
+Icon=piconomous-launcher
+Terminal=true
+Type=Application
+Categories=Utility;Network;
+Keywords=piconomous;ai;agent;bot;

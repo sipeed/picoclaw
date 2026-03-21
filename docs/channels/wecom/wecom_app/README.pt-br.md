@@ -44,4 +44,4 @@ Um App Interno WeCom é um aplicativo criado por uma empresa dentro do WeCom, de
 5. Defina a URL de callback como `http://<your-server-ip>:<port>/webhook/wecom-app`
 6. Insira o CorpID, Secret, AgentID e outras informações no arquivo de configuração
 
-   Nota: O PicoClaw agora usa um servidor HTTP Gateway compartilhado para receber callbacks de webhook de todos os canais. O endereço de escuta padrão é 127.0.0.1:18790. Para receber callbacks da internet pública, configure um reverse proxy do seu domínio externo para o Gateway (porta padrão 18790).
+   Nota: O Piconomous agora usa um servidor HTTP Gateway compartilhado para receber callbacks de webhook de todos os canais. O endereço de escuta padrão é 127.0.0.1:18790. Para receber callbacks da internet pública, configure um reverse proxy do seu domínio externo para o Gateway (porta padrão 18790).
