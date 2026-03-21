@@ -91,7 +91,7 @@ func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID str
 
 		time.Sleep(250 * time.Millisecond) // Wait a bit for connection to settle
 
-		// Abort if the context has already been cancelled.
+		// Abort if the context has already been canceled.
 		select {
 		case <-ctx.Done():
 			return

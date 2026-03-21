@@ -82,6 +82,19 @@ func (a *Agent) Start(ctx context.Context) {
 	logger.InfoCF("voice-agent", "Started Voice Agent orchestrator", nil)
 	go a.listenChunks(ctx)
 	go a.vadTick(ctx)
+
+	// Cleanup sessions on shutdown
+	go func() {
+		<-ctx.Done()
+		a.mu.Lock()
+		for key, acc := range a.sessions {
+			acc.Close()
+			os.Remove(acc.file)
+			delete(a.sessions, key)
+		}
+		a.mu.Unlock()
+		logger.InfoCF("voice-agent", "Cleaned up voice sessions on shutdown", nil)
+	}()
 }
 
 func (a *Agent) listenChunks(ctx context.Context) {
@@ -100,6 +113,12 @@ func (a *Agent) listenChunks(ctx context.Context) {
 }
 
 func (a *Agent) handleChunk(chunk bus.AudioChunk) {
+	// Only accept Opus-encoded audio
+	if chunk.Format != "opus" {
+		logger.DebugCF("voice-agent", "Ignoring unsupported audio format", map[string]any{"format": chunk.Format})
+		return
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -197,24 +216,29 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 
 	text := strings.ToLower(strings.TrimSpace(res.Text))
 	if strings.Contains(text, "leave the voice channel") || strings.Contains(text, "leave voice") ||
-		strings.Contains(text, "disconnect voice") {
+		strings.Contains(text, "disconnect voice") || strings.Contains(text, "leave the channel") ||
+		strings.Contains(text, "leave channel") {
 		logger.InfoCF("voice-agent", "Voice command triggered: leave", nil)
-		a.bus.PublishVoiceControl(ctx, bus.VoiceControl{
+		if err := a.bus.PublishVoiceControl(ctx, bus.VoiceControl{
 			SessionID: acc.sessionID,
 			Type:      "command",
 			Action:    "leave",
-		})
-		a.bus.PublishOutbound(ctx, bus.OutboundMessage{
+		}); err != nil {
+			logger.ErrorCF("voice-agent", "Failed to publish leave control", map[string]any{"error": err})
+		}
+		if err := a.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: channelType,
 			ChatID:  acc.chatID,
 			Content: "Goodbye! Leaving the voice channel.",
-		})
+		}); err != nil {
+			logger.ErrorCF("voice-agent", "Failed to publish goodbye message", map[string]any{"error": err})
+		}
 		return
 	}
 
 	oralPrompt := "\n\n[SYSTEM]: The user just spoke this to you over voice chat. Please reply in a highly concise, conversational, oral style suitable for text-to-speech. Do not use markdown, emojis, asterisks, or code blocks. Speak naturally."
 
-	a.bus.PublishInbound(ctx, bus.InboundMessage{
+	if err := a.bus.PublishInbound(ctx, bus.InboundMessage{
 		Channel:  channelType,
 		SenderID: acc.speakerID,
 		ChatID:   acc.chatID,
@@ -223,5 +247,7 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 		Metadata: map[string]string{
 			"is_voice": "true",
 		},
-	})
+	}); err != nil {
+		logger.ErrorCF("voice-agent", "Failed to publish inbound message", map[string]any{"error": err})
+	}
 }
