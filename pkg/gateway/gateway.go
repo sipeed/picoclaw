@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/agent"
+	"github.com/sipeed/picoclaw/pkg/asr"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
@@ -284,7 +285,7 @@ func setupAndStartServices(
 	agentLoop.SetChannelManager(runningServices.ChannelManager)
 	agentLoop.SetMediaStore(runningServices.MediaStore)
 
-	if transcriber := voice.DetectTranscriber(cfg); transcriber != nil {
+	if transcriber := asr.DetectTranscriber(cfg); transcriber != nil {
 		agentLoop.SetTranscriber(transcriber)
 		logger.InfoCF("voice", "Transcription enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
 
@@ -522,7 +523,7 @@ func restartServices(
 		fmt.Println("  ✓ Device event service restarted")
 	}
 
-	transcriber := voice.DetectTranscriber(cfg)
+	transcriber := asr.DetectTranscriber(cfg)
 	al.SetTranscriber(transcriber)
 	if transcriber != nil {
 		logger.InfoCF("voice", "Transcription re-enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
