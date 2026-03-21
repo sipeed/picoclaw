@@ -11,6 +11,7 @@ import (
 
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3/pkg/media/oggwriter"
+
 	"github.com/sipeed/picoclaw/pkg/asr"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -187,7 +188,8 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 	channelType := "discord"
 
 	text := strings.ToLower(strings.TrimSpace(res.Text))
-	if strings.Contains(text, "leave the voice channel") || strings.Contains(text, "leave voice") || strings.Contains(text, "disconnect voice") {
+	if strings.Contains(text, "leave the voice channel") || strings.Contains(text, "leave voice") ||
+		strings.Contains(text, "disconnect voice") {
 		logger.InfoCF("voice-agent", "Voice command triggered: leave", nil)
 		a.bus.PublishVoiceControl(ctx, bus.VoiceControl{
 			SessionID: acc.sessionID,

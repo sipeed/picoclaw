@@ -48,7 +48,11 @@ func NewGroqTranscriber(apiKey string) *GroqTranscriber {
 	}
 }
 
-func (t *GroqTranscriber) TranscribeData(ctx context.Context, data []byte, filename string) (*TranscriptionResponse, error) {
+func (t *GroqTranscriber) TranscribeData(
+	ctx context.Context,
+	data []byte,
+	filename string,
+) (*TranscriptionResponse, error) {
 	logger.InfoCF("voice", "Starting memory transcription", map[string]any{"filename": filename, "bytes": len(data)})
 
 	var requestBody bytes.Buffer
@@ -111,7 +115,12 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 	return t.doRequest(ctx, &requestBody, writer.FormDataContentType(), fileInfo.Size())
 }
 
-func (t *GroqTranscriber) doRequest(ctx context.Context, requestBody *bytes.Buffer, contentType string, fileSize int64) (*TranscriptionResponse, error) {
+func (t *GroqTranscriber) doRequest(
+	ctx context.Context,
+	requestBody *bytes.Buffer,
+	contentType string,
+	fileSize int64,
+) (*TranscriptionResponse, error) {
 	url := t.apiBase + "/audio/transcriptions"
 	req, err := http.NewRequestWithContext(ctx, "POST", url, requestBody)
 	if err != nil {
@@ -193,7 +202,8 @@ func DetectTranscriber(cfg *config.Config) Transcriber {
 	}
 	// Fall back to any model-list entry that uses the groq/ protocol.
 	for _, mc := range cfg.ModelList {
-		if (strings.HasPrefix(mc.Model, "groq/") || mc.ModelName == "groq" || mc.Model == "whisper-large-v3-turbo") && mc.APIKey != "" {
+		if (strings.HasPrefix(mc.Model, "groq/") || mc.ModelName == "groq" || mc.Model == "whisper-large-v3-turbo") &&
+			mc.APIKey != "" {
 			return NewGroqTranscriber(mc.APIKey)
 		}
 	}
