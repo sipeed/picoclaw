@@ -1,0 +1,184 @@
+# PicoClaw Security Configuration
+# This file stores all sensitive data (API keys, tokens, secrets, passwords)
+# Keep this file secure and never commit it to version control
+# Copy this file to security.yml and fill in your actual values
+
+# Model API Keys
+# Use dot notation references in config.json like: "ref:model_list.gpt-5.4.api_key"
+# IMPORTANT: Use 'api_keys' (array) format - both single and multiple keys
+model_list:
+  # Example: OpenAI GPT-5.4 (multiple keys for load balancing/failover)
+  gpt-5.4:
+    api_keys:
+      - "your-openai-api-key-1"
+      - "your-openai-api-key-2"  # Optional: failover key
+
+  # Example: Claude Sonnet (single key in array format)
+  claude-sonnet-4.6:
+    api_keys:
+      - "your-anthropic-api-key-here"  # Single key MUST be in array format
+
+  # Example: Zhipu GLM
+  glm-4.7:
+    api_key: "your-zhipu-api-key-here"
+
+  # Example: DeepSeek
+  deepseek-chat:
+    api_key: "your-deepseek-api-key-here"
+
+  # Example: Google Gemini
+  gemini-2.0-flash:
+    api_key: "your-gemini-api-key-here"
+
+  # Example: Qwen
+  qwen-plus:
+    api_key: "your-qwen-api-key-here"
+
+  # Example: Moonshot
+  moonshot-v1-8k:
+    api_key: "your-moonshot-api-key-here"
+
+  # Example: Groq
+  llama-3.3-70b:
+    api_key: "your-groq-api-key-here"
+
+  # Example: OpenRouter
+  openrouter-auto:
+    api_key: "your-openrouter-api-key-here"
+  openrouter-gpt-5.4:
+    api_key: "your-openrouter-api-key-here"
+
+  # Example: NVIDIA
+  nemotron-4-340b:
+    api_key: "your-nvidia-api-key-here"
+
+  # Example: Cerebras
+  cerebras-llama-3.3-70b:
+    api_key: "your-cerebras-api-key-here"
+
+  # Example: Vivgrid
+  vivgrid-auto:
+    api_key: "your-vivgrid-api-key-here"
+
+  # Example: Volcengine
+  ark-code-latest:
+    api_key: "your-volcengine-api-key-here"
+  doubao-pro:
+    api_key: "your-volcengine-api-key-here"
+
+  # Example: ShengsuanYun
+  deepseek-v3:
+    api_key: "your-shengsuanyun-api-key-here"
+
+  # Example: Mistral
+  mistral-small:
+    api_key: "your-mistral-api-key-here"
+
+  # Example: Avian
+  deepseek-v3.2:
+    api_key: "your-avian-api-key-here"
+  kimi-k2.5:
+    api_key: "your-avian-api-key-here"
+
+  # Example: Minimax
+  MiniMax-M2.5:
+    api_key: "your-minimax-api-key-here"
+
+  # Example: LongCat
+  LongCat-Flash-Thinking:
+    api_key: "your-longcat-api-key-here"
+
+  # Example: ModelScope
+  modelscope-qwen:
+    api_key: "your-modelscope-api-key-here"
+
+  # Example: VLLM (local, usually no real key needed)
+  local-model:
+    api_key: ""
+
+  # Example: Azure OpenAI
+  azure-gpt5:
+    api_key: "your-azure-api-key-here"
+
+# Channel Tokens and Secrets
+channels:
+  telegram:
+    token: "your-telegram-bot-token"
+
+  feishu:
+    app_secret: "your-feishu-app-secret"
+    encrypt_key: "your-feishu-encrypt-key"
+    verification_token: "your-feishu-verification-token"
+
+  discord:
+    token: "your-discord-bot-token"
+
+  qq:
+    app_secret: "your-qq-app-secret"
+
+  dingtalk:
+    client_secret: "your-dingtalk-client-secret"
+
+  slack:
+    bot_token: "your-slack-bot-token"
+    app_token: "your-slack-app-token"
+
+  matrix:
+    access_token: "your-matrix-access-token"
+
+  line:
+    channel_secret: "your-line-channel-secret"
+    channel_access_token: "your-line-channel-access-token"
+
+  onebot:
+    access_token: "your-onebot-access-token"
+
+  wecom:
+    token: "your-wecom-token"
+    encoding_aes_key: "your-wecom-encoding-aes-key"
+
+  wecom_app:
+    corp_secret: "your-wecom-app-corp-secret"
+    token: "your-wecom-app-token"
+    encoding_aes_key: "your-wecom-app-encoding-aes-key"
+
+  wecom_aibot:
+    token: "your-wecom-aibot-token"
+    encoding_aes_key: "your-wecom-aibot-encoding-aes-key"
+
+  pico:
+    token: "your-pico-token"
+
+  irc:
+    password: "your-irc-password"
+    nickserv_password: "your-irc-nickserv-password"
+    sasl_password: "your-irc-sasl-password"
+
+# Web Tool API Keys
+# IMPORTANT: Use 'api_keys' (array) for Brave, Tavily, Perplexity
+# Use 'api_key' (single string) for GLMSearch only
+web:
+  brave:
+    api_keys:
+      - "your-brave-api-key-1"
+      - "your-brave-api-key-2"  # Optional: failover key
+
+  tavily:
+    api_keys:
+      - "your-tavily-api-key"  # Single key MUST be in array format
+
+  perplexity:
+    api_keys:
+      - "your-perplexity-api-key-1"
+      - "your-perplexity-api-key-2"
+
+  glm_search:
+    api_key: "your-glm-search-api-key"  # GLMSearch uses single string format (NOT array)
+
+# Skills Registry Tokens
+skills:
+  github:
+    token: "your-github-token"
+
+  clawhub:
+    auth_token: "your-clawhub-auth-token"

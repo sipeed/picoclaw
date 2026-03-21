@@ -10,8 +10,10 @@ import (
 
 	"github.com/caarlos0/env/v11"
 
+	"github.com/sipeed/picoclaw/pkg"
 	"github.com/sipeed/picoclaw/pkg/credential"
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // rrCounter is a global counter for round-robin load balancing across models.
@@ -76,13 +78,17 @@ func (f *FlexibleStringSlice) UnmarshalText(text []byte) error {
 	return nil
 }
 
+// CurrentVersion is the latest config schema version
+const CurrentVersion = 1
+
+// Config is the current config structure with version support
 type Config struct {
+	Version   int             `json:"version"` // Config schema version for migration
 	Agents    AgentsConfig    `json:"agents"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
 	Session   SessionConfig   `json:"session,omitempty"`
 	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
-	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
+	ModelList []*ModelConfig  `json:"model_list"` // New model-centric provider configuration
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
@@ -90,6 +96,21 @@ type Config struct {
 	Voice     VoiceConfig     `json:"voice"`
 	// BuildInfo contains build-time version information
 	BuildInfo BuildInfo `json:"build_info,omitempty"`
+
+	security *SecurityConfig
+}
+
+func (c *Config) WithSecurity(sec *SecurityConfig) *Config {
+	if sec == nil {
+		c.security = sec
+		return c
+	}
+	err := applySecurityConfig(c, sec)
+	if err != nil {
+		return nil
+	}
+	c.security = sec
+	return c
 }
 
 // BuildInfo contains build-time version information
@@ -102,19 +123,13 @@ type BuildInfo struct {
 
 // MarshalJSON implements custom JSON marshaling for Config
 // to omit providers section when empty and session when empty
-func (c Config) MarshalJSON() ([]byte, error) {
+func (c *Config) MarshalJSON() ([]byte, error) {
 	type Alias Config
 	aux := &struct {
-		Providers *ProvidersConfig `json:"providers,omitempty"`
-		Session   *SessionConfig   `json:"session,omitempty"`
+		Session *SessionConfig `json:"session,omitempty"`
 		*Alias
 	}{
-		Alias: (*Alias)(&c),
-	}
-
-	// Only include providers if not empty
-	if !c.Providers.IsEmpty() {
-		aux.Providers = &c.Providers
+		Alias: (*Alias)(c),
 	}
 
 	// Only include session if not empty
@@ -233,7 +248,6 @@ type AgentDefaults struct {
 	AllowReadOutsideWorkspace bool               `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
 	Provider                  string             `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
 	ModelName                 string             `json:"model_name"                      env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
-	Model                     string             `json:"model,omitempty"                 env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
 	ModelFallbacks            []string           `json:"model_fallbacks,omitempty"`
 	ImageModel                string             `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks       []string           `json:"image_model_fallbacks,omitempty"`
@@ -275,10 +289,7 @@ func (d *AgentDefaults) IsToolFeedbackEnabled() bool {
 // GetModelName returns the effective model name for the agent defaults.
 // It prefers the new "model_name" field but falls back to "model" for backward compatibility.
 func (d *AgentDefaults) GetModelName() string {
-	if d.ModelName != "" {
-		return d.ModelName
-	}
-	return d.Model
+	return d.ModelName
 }
 
 type ChannelsConfig struct {
@@ -334,8 +345,8 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	Enabled            bool `json:"enabled"                 env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	token              string
 	BaseURL            string              `json:"base_url"                env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
 	Proxy              string              `json:"proxy"                   env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
@@ -345,25 +356,71 @@ type TelegramConfig struct {
 	Streaming          StreamingConfig     `json:"streaming,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
 	UseMarkdownV2      bool                `json:"use_markdown_v2"         env:"PICOCLAW_CHANNELS_TELEGRAM_USE_MARKDOWN_V2"`
+	secDirty           bool
+}
+
+// Token returns the Telegram bot token
+func (c *TelegramConfig) Token() string {
+	return c.token
+}
+
+// SetToken sets the Telegram bot token
+func (c *TelegramConfig) SetToken(token string) {
+	c.token = token
+	c.secDirty = true
 }
 
 type FeishuConfig struct {
-	Enabled             bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
-	AppID               string              `json:"app_id"                  env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
-	AppSecret           string              `json:"app_secret"              env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
-	EncryptKey          string              `json:"encrypt_key"             env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
-	VerificationToken   string              `json:"verification_token"      env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
+	Enabled             bool   `json:"enabled"                 env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
+	AppID               string `json:"app_id"                  env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
+	appSecret           string
+	encryptKey          string
+	verificationToken   string
 	AllowFrom           FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
 	GroupTrigger        GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Placeholder         PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID  string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
 	RandomReactionEmoji FlexibleStringSlice `json:"random_reaction_emoji"   env:"PICOCLAW_CHANNELS_FEISHU_RANDOM_REACTION_EMOJI"`
 	IsLark              bool                `json:"is_lark"                 env:"PICOCLAW_CHANNELS_FEISHU_IS_LARK"`
+	secDirty            bool
+}
+
+// AppSecret returns the Feishu app secret
+func (c *FeishuConfig) AppSecret() string {
+	return c.appSecret
+}
+
+// SetAppSecret sets the Feishu app secret
+func (c *FeishuConfig) SetAppSecret(secret string) {
+	c.appSecret = secret
+	c.secDirty = true
+}
+
+// EncryptKey returns the Feishu encrypt key
+func (c *FeishuConfig) EncryptKey() string {
+	return c.encryptKey
+}
+
+// SetEncryptKey sets the Feishu encrypt key
+func (c *FeishuConfig) SetEncryptKey(key string) {
+	c.encryptKey = key
+	c.secDirty = true
+}
+
+// VerificationToken returns the Feishu verification token
+func (c *FeishuConfig) VerificationToken() string {
+	return c.verificationToken
+}
+
+// SetVerificationToken sets the Feishu verification token
+func (c *FeishuConfig) SetVerificationToken(token string) {
+	c.verificationToken = token
+	c.secDirty = true
 }
 
 type DiscordConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	Enabled            bool `json:"enabled"                 env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
+	token              string
 	Proxy              string              `json:"proxy"                   env:"PICOCLAW_CHANNELS_DISCORD_PROXY"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
 	MentionOnly        bool                `json:"mention_only"            env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
@@ -371,6 +428,18 @@ type DiscordConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
+	secDirty           bool
+}
+
+// Token returns the Discord bot token
+func (c *DiscordConfig) Token() string {
+	return c.token
+}
+
+// SetToken sets the Discord bot token
+func (c *DiscordConfig) SetToken(token string) {
+	c.token = token
+	c.secDirty = true
 }
 
 type MaixCamConfig struct {
@@ -382,42 +451,89 @@ type MaixCamConfig struct {
 }
 
 type QQConfig struct {
-	Enabled              bool                `json:"enabled"                  env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
-	AppID                string              `json:"app_id"                   env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
-	AppSecret            string              `json:"app_secret"               env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
+	Enabled              bool   `json:"enabled"                  env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
+	AppID                string `json:"app_id"                   env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
+	appSecret            string
 	AllowFrom            FlexibleStringSlice `json:"allow_from"               env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
 	GroupTrigger         GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	MaxMessageLength     int                 `json:"max_message_length"       env:"PICOCLAW_CHANNELS_QQ_MAX_MESSAGE_LENGTH"`
 	MaxBase64FileSizeMiB int64               `json:"max_base64_file_size_mib" env:"PICOCLAW_CHANNELS_QQ_MAX_BASE64_FILE_SIZE_MIB"`
 	SendMarkdown         bool                `json:"send_markdown"            env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
 	ReasoningChannelID   string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
+	secDirty             bool
+}
+
+// AppSecret returns the QQ app secret
+func (c *QQConfig) AppSecret() string {
+	return c.appSecret
+}
+
+// SetAppSecret sets the QQ app secret
+func (c *QQConfig) SetAppSecret(secret string) {
+	c.appSecret = secret
+	c.secDirty = true
 }
 
 type DingTalkConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
-	ClientID           string              `json:"client_id"               env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
-	ClientSecret       string              `json:"client_secret"           env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
+	Enabled            bool   `json:"enabled"                 env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
+	ClientID           string `json:"client_id"               env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
+	clientSecret       string
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_DINGTALK_REASONING_CHANNEL_ID"`
+	secDirty           bool
+}
+
+// ClientSecret returns the DingTalk client secret
+func (c *DingTalkConfig) ClientSecret() string {
+	return c.clientSecret
+}
+
+// SetClientSecret sets the DingTalk client secret
+func (c *DingTalkConfig) SetClientSecret(secret string) {
+	c.clientSecret = secret
+	c.secDirty = true
 }
 
 type SlackConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
-	BotToken           string              `json:"bot_token"               env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
-	AppToken           string              `json:"app_token"               env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
+	Enabled            bool `json:"enabled"                 env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
+	botToken           string
+	appToken           string
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_SLACK_REASONING_CHANNEL_ID"`
+	secDirty           bool
+}
+
+// BotToken returns the Slack bot token
+func (c *SlackConfig) BotToken() string {
+	return c.botToken
+}
+
+// SetBotToken sets the Slack bot token
+func (c *SlackConfig) SetBotToken(token string) {
+	c.botToken = token
+	c.secDirty = true
+}
+
+// AppToken returns the Slack app token
+func (c *SlackConfig) AppToken() string {
+	return c.appToken
+}
+
+// SetAppToken sets the Slack app token
+func (c *SlackConfig) SetAppToken(token string) {
+	c.appToken = token
+	c.secDirty = true
 }
 
 type MatrixConfig struct {
-	Enabled            bool                `json:"enabled"                  env:"PICOCLAW_CHANNELS_MATRIX_ENABLED"`
-	Homeserver         string              `json:"homeserver"               env:"PICOCLAW_CHANNELS_MATRIX_HOMESERVER"`
-	UserID             string              `json:"user_id"                  env:"PICOCLAW_CHANNELS_MATRIX_USER_ID"`
-	AccessToken        string              `json:"access_token"             env:"PICOCLAW_CHANNELS_MATRIX_ACCESS_TOKEN"`
+	Enabled            bool   `json:"enabled"                  env:"PICOCLAW_CHANNELS_MATRIX_ENABLED"`
+	Homeserver         string `json:"homeserver"               env:"PICOCLAW_CHANNELS_MATRIX_HOMESERVER"`
+	UserID             string `json:"user_id"                  env:"PICOCLAW_CHANNELS_MATRIX_USER_ID"`
+	accessToken        string
 	DeviceID           string              `json:"device_id,omitempty"      env:"PICOCLAW_CHANNELS_MATRIX_DEVICE_ID"`
 	JoinOnInvite       bool                `json:"join_on_invite"           env:"PICOCLAW_CHANNELS_MATRIX_JOIN_ON_INVITE"`
 	MessageFormat      string              `json:"message_format,omitempty" env:"PICOCLAW_CHANNELS_MATRIX_MESSAGE_FORMAT"`
@@ -425,12 +541,24 @@ type MatrixConfig struct {
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
+	secDirty           bool
+}
+
+// AccessToken returns the Matrix access token
+func (c *MatrixConfig) AccessToken() string {
+	return c.accessToken
+}
+
+// SetAccessToken sets the Matrix access token
+func (c *MatrixConfig) SetAccessToken(token string) {
+	c.accessToken = token
+	c.secDirty = true
 }
 
 type LINEConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_LINE_ENABLED"`
-	ChannelSecret      string              `json:"channel_secret"          env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
-	ChannelAccessToken string              `json:"channel_access_token"    env:"PICOCLAW_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
+	Enabled            bool `json:"enabled"                 env:"PICOCLAW_CHANNELS_LINE_ENABLED"`
+	channelSecret      string
+	channelAccessToken string
 	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_HOST"`
 	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
 	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
@@ -439,12 +567,35 @@ type LINEConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_LINE_REASONING_CHANNEL_ID"`
+	secDirty           bool
+}
+
+// ChannelSecret returns the LINE channel secret
+func (c *LINEConfig) ChannelSecret() string {
+	return c.channelSecret
+}
+
+// SetChannelSecret sets the LINE channel secret
+func (c *LINEConfig) SetChannelSecret(secret string) {
+	c.channelSecret = secret
+	c.secDirty = true
+}
+
+// ChannelAccessToken returns the LINE channel access token
+func (c *LINEConfig) ChannelAccessToken() string {
+	return c.channelAccessToken
+}
+
+// SetChannelAccessToken sets the LINE channel access token
+func (c *LINEConfig) SetChannelAccessToken(token string) {
+	c.channelAccessToken = token
+	c.secDirty = true
 }
 
 type OneBotConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_ONEBOT_ENABLED"`
-	WSUrl              string              `json:"ws_url"                  env:"PICOCLAW_CHANNELS_ONEBOT_WS_URL"`
-	AccessToken        string              `json:"access_token"            env:"PICOCLAW_CHANNELS_ONEBOT_ACCESS_TOKEN"`
+	Enabled            bool   `json:"enabled"                 env:"PICOCLAW_CHANNELS_ONEBOT_ENABLED"`
+	WSUrl              string `json:"ws_url"                  env:"PICOCLAW_CHANNELS_ONEBOT_WS_URL"`
+	accessToken        string
 	ReconnectInterval  int                 `json:"reconnect_interval"      env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
 	GroupTriggerPrefix []string            `json:"group_trigger_prefix"    env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
@@ -452,12 +603,24 @@ type OneBotConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_ONEBOT_REASONING_CHANNEL_ID"`
+	secDirty           bool
+}
+
+// AccessToken returns the OneBot access token
+func (c *OneBotConfig) AccessToken() string {
+	return c.accessToken
+}
+
+// SetAccessToken sets the OneBot access token
+func (c *OneBotConfig) SetAccessToken(token string) {
+	c.accessToken = token
+	c.secDirty = true
 }
 
 type WeComConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_ENABLED"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_WECOM_TOKEN"`
-	EncodingAESKey     string              `json:"encoding_aes_key"        env:"PICOCLAW_CHANNELS_WECOM_ENCODING_AES_KEY"`
+	Enabled            bool `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_ENABLED"`
+	token              string
+	encodingAESKey     string
 	WebhookURL         string              `json:"webhook_url"             env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_URL"`
 	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_HOST"`
 	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PORT"`
@@ -466,15 +629,38 @@ type WeComConfig struct {
 	ReplyTimeout       int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_REPLY_TIMEOUT"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_REASONING_CHANNEL_ID"`
+	secDirty           bool
+}
+
+// Token returns the WeCom token
+func (c *WeComConfig) Token() string {
+	return c.token
+}
+
+// SetToken sets the WeCom token
+func (c *WeComConfig) SetToken(token string) {
+	c.token = token
+	c.secDirty = true
+}
+
+// EncodingAESKey returns the WeCom encoding AES key
+func (c *WeComConfig) EncodingAESKey() string {
+	return c.encodingAESKey
+}
+
+// SetEncodingAESKey sets the WeCom encoding AES key
+func (c *WeComConfig) SetEncodingAESKey(key string) {
+	c.encodingAESKey = key
+	c.secDirty = true
 }
 
 type WeComAppConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_APP_ENABLED"`
-	CorpID             string              `json:"corp_id"                 env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_ID"`
-	CorpSecret         string              `json:"corp_secret"             env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_SECRET"`
-	AgentID            int64               `json:"agent_id"                env:"PICOCLAW_CHANNELS_WECOM_APP_AGENT_ID"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_WECOM_APP_TOKEN"`
-	EncodingAESKey     string              `json:"encoding_aes_key"        env:"PICOCLAW_CHANNELS_WECOM_APP_ENCODING_AES_KEY"`
+	Enabled            bool   `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_APP_ENABLED"`
+	CorpID             string `json:"corp_id"                 env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_ID"`
+	corpSecret         string
+	AgentID            int64 `json:"agent_id"                env:"PICOCLAW_CHANNELS_WECOM_APP_AGENT_ID"`
+	token              string
+	encodingAESKey     string
 	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_HOST"`
 	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PORT"`
 	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PATH"`
@@ -482,14 +668,48 @@ type WeComAppConfig struct {
 	ReplyTimeout       int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_APP_REASONING_CHANNEL_ID"`
+	secDirty           bool
+}
+
+// CorpSecret returns the corporate secret for WeCom app
+func (c *WeComAppConfig) CorpSecret() string {
+	return c.corpSecret
+}
+
+// SetCorpSecret sets the corporate secret for WeCom app
+func (c *WeComAppConfig) SetCorpSecret(secret string) {
+	c.corpSecret = secret
+	c.secDirty = true
+}
+
+// Token returns the webhook token for WeCom app
+func (c *WeComAppConfig) Token() string {
+	return c.token
+}
+
+// SetToken sets the webhook token for WeCom app
+func (c *WeComAppConfig) SetToken(token string) {
+	c.token = token
+	c.secDirty = true
+}
+
+// EncodingAESKey returns the encoding AES key for WeCom app
+func (c *WeComAppConfig) EncodingAESKey() string {
+	return c.encodingAESKey
+}
+
+// SetEncodingAESKey sets the encoding AES key for WeCom app
+func (c *WeComAppConfig) SetEncodingAESKey(key string) {
+	c.encodingAESKey = key
+	c.secDirty = true
 }
 
 type WeComAIBotConfig struct {
-	Enabled            bool                `json:"enabled"                      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENABLED"`
-	BotID              string              `json:"bot_id,omitempty"             env:"PICOCLAW_CHANNELS_WECOM_AIBOT_BOT_ID"`
-	Secret             string              `json:"secret,omitempty"             env:"PICOCLAW_CHANNELS_WECOM_AIBOT_SECRET"`
-	Token              string              `json:"token,omitempty"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_TOKEN"`
-	EncodingAESKey     string              `json:"encoding_aes_key,omitempty"   env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENCODING_AES_KEY"`
+	Enabled            bool   `json:"enabled"                      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENABLED"`
+	BotID              string `json:"bot_id,omitempty"             env:"PICOCLAW_CHANNELS_WECOM_AIBOT_BOT_ID"`
+	secret             string
+	token              string
+	encodingAESKey     string
 	WebhookPath        string              `json:"webhook_path,omitempty"       env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WEBHOOK_PATH"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"                   env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ALLOW_FROM"`
 	ReplyTimeout       int                 `json:"reply_timeout"                env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REPLY_TIMEOUT"`
@@ -497,11 +717,43 @@ type WeComAIBotConfig struct {
 	WelcomeMessage     string              `json:"welcome_message"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"` // Sent on enter_chat event; empty = no welcome
 	ProcessingMessage  string              `json:"processing_message,omitempty" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_PROCESSING_MESSAGE"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"         env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
+	secDirty           bool
+}
+
+// Token returns the webhook token for WeCom AI bot
+func (c *WeComAIBotConfig) Token() string {
+	return c.token
+}
+
+// EncodingAESKey returns the encoding AES key for WeCom AI bot
+func (c *WeComAIBotConfig) EncodingAESKey() string {
+	return c.encodingAESKey
+}
+
+// SetToken sets the token for WeCom AI bot
+func (c *WeComAIBotConfig) SetToken(token string) {
+	c.token = token
+	c.secDirty = true
+}
+
+// SetEncodingAESKey sets the encoding AES key for WeCom AI bot
+func (c *WeComAIBotConfig) SetEncodingAESKey(key string) {
+	c.encodingAESKey = key
+	c.secDirty = true
+}
+
+func (c *WeComAIBotConfig) Secret() string {
+	return c.secret
+}
+
+func (c *WeComAIBotConfig) SetSecret(secret string) {
+	c.secret = secret
+	c.secDirty = true
 }
 
 type PicoConfig struct {
-	Enabled         bool                `json:"enabled"                     env:"PICOCLAW_CHANNELS_PICO_ENABLED"`
-	Token           string              `json:"token"                       env:"PICOCLAW_CHANNELS_PICO_TOKEN"`
+	Enabled         bool `json:"enabled"                     env:"PICOCLAW_CHANNELS_PICO_ENABLED"`
+	token           string
 	AllowTokenQuery bool                `json:"allow_token_query,omitempty"`
 	AllowOrigins    []string            `json:"allow_origins,omitempty"`
 	PingInterval    int                 `json:"ping_interval,omitempty"`
@@ -510,6 +762,18 @@ type PicoConfig struct {
 	MaxConnections  int                 `json:"max_connections,omitempty"`
 	AllowFrom       FlexibleStringSlice `json:"allow_from"                  env:"PICOCLAW_CHANNELS_PICO_ALLOW_FROM"`
 	Placeholder     PlaceholderConfig   `json:"placeholder,omitempty"`
+	secDirty        bool
+}
+
+// Token returns the Pico channel token
+func (c *PicoConfig) Token() string {
+	return c.token
+}
+
+// SetToken sets the Pico channel token
+func (c *PicoConfig) SetToken(token string) {
+	c.token = token
+	c.secDirty = true
 }
 
 type PicoClientConfig struct {
@@ -523,22 +787,53 @@ type PicoClientConfig struct {
 }
 
 type IRCConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_IRC_ENABLED"`
-	Server             string              `json:"server"                  env:"PICOCLAW_CHANNELS_IRC_SERVER"`
-	TLS                bool                `json:"tls"                     env:"PICOCLAW_CHANNELS_IRC_TLS"`
-	Nick               string              `json:"nick"                    env:"PICOCLAW_CHANNELS_IRC_NICK"`
-	User               string              `json:"user,omitempty"          env:"PICOCLAW_CHANNELS_IRC_USER"`
-	RealName           string              `json:"real_name,omitempty"     env:"PICOCLAW_CHANNELS_IRC_REAL_NAME"`
-	Password           string              `json:"password"                env:"PICOCLAW_CHANNELS_IRC_PASSWORD"`
-	NickServPassword   string              `json:"nickserv_password"       env:"PICOCLAW_CHANNELS_IRC_NICKSERV_PASSWORD"`
-	SASLUser           string              `json:"sasl_user"               env:"PICOCLAW_CHANNELS_IRC_SASL_USER"`
-	SASLPassword       string              `json:"sasl_password"           env:"PICOCLAW_CHANNELS_IRC_SASL_PASSWORD"`
+	Enabled            bool   `json:"enabled"                 env:"PICOCLAW_CHANNELS_IRC_ENABLED"`
+	Server             string `json:"server"                  env:"PICOCLAW_CHANNELS_IRC_SERVER"`
+	TLS                bool   `json:"tls"                     env:"PICOCLAW_CHANNELS_IRC_TLS"`
+	Nick               string `json:"nick"                    env:"PICOCLAW_CHANNELS_IRC_NICK"`
+	User               string `json:"user,omitempty"          env:"PICOCLAW_CHANNELS_IRC_USER"`
+	RealName           string `json:"real_name,omitempty"     env:"PICOCLAW_CHANNELS_IRC_REAL_NAME"`
+	password           string
+	nickServPassword   string
+	SASLUser           string `json:"sasl_user"               env:"PICOCLAW_CHANNELS_IRC_SASL_USER"`
+	saslPassword       string
 	Channels           FlexibleStringSlice `json:"channels"                env:"PICOCLAW_CHANNELS_IRC_CHANNELS"`
 	RequestCaps        FlexibleStringSlice `json:"request_caps,omitempty"  env:"PICOCLAW_CHANNELS_IRC_REQUEST_CAPS"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_IRC_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_IRC_REASONING_CHANNEL_ID"`
+	secDirty           bool
+}
+
+// Password returns the IRC password
+func (c *IRCConfig) Password() string {
+	return c.password
+}
+
+// NickServPassword returns the NickServ password
+func (c *IRCConfig) NickServPassword() string {
+	return c.nickServPassword
+}
+
+// SASLPassword returns the SASL password
+func (c *IRCConfig) SASLPassword() string {
+	return c.saslPassword
+}
+
+func (c *IRCConfig) SetPassword(password string) {
+	c.password = password
+	c.secDirty = true
+}
+
+func (c *IRCConfig) SetNickServPassword(password string) {
+	c.nickServPassword = password
+	c.secDirty = true
+}
+
+func (c *IRCConfig) SetSASLPassword(password string) {
+	c.saslPassword = password
+	c.secDirty = true
 }
 
 type HeartbeatConfig struct {
@@ -555,88 +850,6 @@ type VoiceConfig struct {
 	EchoTranscription bool `json:"echo_transcription" env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
 }
 
-type ProvidersConfig struct {
-	Anthropic     ProviderConfig       `json:"anthropic"`
-	OpenAI        OpenAIProviderConfig `json:"openai"`
-	LiteLLM       ProviderConfig       `json:"litellm"`
-	OpenRouter    ProviderConfig       `json:"openrouter"`
-	Groq          ProviderConfig       `json:"groq"`
-	Zhipu         ProviderConfig       `json:"zhipu"`
-	VLLM          ProviderConfig       `json:"vllm"`
-	Gemini        ProviderConfig       `json:"gemini"`
-	Nvidia        ProviderConfig       `json:"nvidia"`
-	Ollama        ProviderConfig       `json:"ollama"`
-	Moonshot      ProviderConfig       `json:"moonshot"`
-	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
-	DeepSeek      ProviderConfig       `json:"deepseek"`
-	Cerebras      ProviderConfig       `json:"cerebras"`
-	Vivgrid       ProviderConfig       `json:"vivgrid"`
-	VolcEngine    ProviderConfig       `json:"volcengine"`
-	GitHubCopilot ProviderConfig       `json:"github_copilot"`
-	Antigravity   ProviderConfig       `json:"antigravity"`
-	Qwen          ProviderConfig       `json:"qwen"`
-	Mistral       ProviderConfig       `json:"mistral"`
-	Avian         ProviderConfig       `json:"avian"`
-	Minimax       ProviderConfig       `json:"minimax"`
-	LongCat       ProviderConfig       `json:"longcat"`
-	ModelScope    ProviderConfig       `json:"modelscope"`
-	Novita        ProviderConfig       `json:"novita"`
-}
-
-// IsEmpty checks if all provider configs are empty (no API keys or API bases set)
-// Note: WebSearch is an optimization option and doesn't count as "non-empty"
-func (p ProvidersConfig) IsEmpty() bool {
-	return p.Anthropic.APIKey == "" && p.Anthropic.APIBase == "" &&
-		p.OpenAI.APIKey == "" && p.OpenAI.APIBase == "" &&
-		p.LiteLLM.APIKey == "" && p.LiteLLM.APIBase == "" &&
-		p.OpenRouter.APIKey == "" && p.OpenRouter.APIBase == "" &&
-		p.Groq.APIKey == "" && p.Groq.APIBase == "" &&
-		p.Zhipu.APIKey == "" && p.Zhipu.APIBase == "" &&
-		p.VLLM.APIKey == "" && p.VLLM.APIBase == "" &&
-		p.Gemini.APIKey == "" && p.Gemini.APIBase == "" &&
-		p.Nvidia.APIKey == "" && p.Nvidia.APIBase == "" &&
-		p.Ollama.APIKey == "" && p.Ollama.APIBase == "" &&
-		p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" &&
-		p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" &&
-		p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" &&
-		p.Cerebras.APIKey == "" && p.Cerebras.APIBase == "" &&
-		p.Vivgrid.APIKey == "" && p.Vivgrid.APIBase == "" &&
-		p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" &&
-		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
-		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
-		p.Qwen.APIKey == "" && p.Qwen.APIBase == "" &&
-		p.Mistral.APIKey == "" && p.Mistral.APIBase == "" &&
-		p.Avian.APIKey == "" && p.Avian.APIBase == "" &&
-		p.Minimax.APIKey == "" && p.Minimax.APIBase == "" &&
-		p.LongCat.APIKey == "" && p.LongCat.APIBase == "" &&
-		p.ModelScope.APIKey == "" && p.ModelScope.APIBase == "" &&
-		p.Novita.APIKey == "" && p.Novita.APIBase == ""
-}
-
-// MarshalJSON implements custom JSON marshaling for ProvidersConfig
-// to omit the entire section when empty
-func (p ProvidersConfig) MarshalJSON() ([]byte, error) {
-	if p.IsEmpty() {
-		return []byte("null"), nil
-	}
-	type Alias ProvidersConfig
-	return json.Marshal((*Alias)(&p))
-}
-
-type ProviderConfig struct {
-	APIKey         string `json:"api_key"                   env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase        string `json:"api_base"                  env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy          string `json:"proxy,omitempty"           env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	RequestTimeout int    `json:"request_timeout,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_REQUEST_TIMEOUT"`
-	AuthMethod     string `json:"auth_method,omitempty"     env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	ConnectMode    string `json:"connect_mode,omitempty"    env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
-}
-
-type OpenAIProviderConfig struct {
-	ProviderConfig
-	WebSearch bool `json:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
-}
-
 // ModelConfig represents a model-centric provider configuration.
 // It allows adding new providers (especially OpenAI-compatible ones) via configuration only.
 // The model field uses protocol prefix format: [protocol/]model-identifier
@@ -651,8 +864,6 @@ type ModelConfig struct {
 
 	// HTTP-based providers
 	APIBase   string   `json:"api_base,omitempty"`  // API endpoint URL
-	APIKey    string   `json:"api_key"`             // API authentication key (single key)
-	APIKeys   []string `json:"api_keys,omitempty"`  // API authentication keys (multiple keys for failover)
 	Proxy     string   `json:"proxy,omitempty"`     // HTTP proxy URL
 	Fallbacks []string `json:"fallbacks,omitempty"` // Fallback model names for failover
 
@@ -666,6 +877,19 @@ type ModelConfig struct {
 	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
 	RequestTimeout int    `json:"request_timeout,omitempty"`
 	ThinkingLevel  string `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
+
+	// from security
+	secModelName string
+	apiKeys      []string
+	secDirty     bool
+}
+
+// APIKey returns the first API key from apiKeys
+func (c *ModelConfig) APIKey() string {
+	if len(c.apiKeys) > 0 {
+		return c.apiKeys[0]
+	}
+	return ""
 }
 
 // Validate checks if the ModelConfig has all required fields.
@@ -677,6 +901,15 @@ func (c *ModelConfig) Validate() error {
 		return fmt.Errorf("model is required")
 	}
 	return nil
+}
+
+func (c *ModelConfig) SetAPIKey(value string) {
+	if len(c.apiKeys) > 0 {
+		c.apiKeys[0] = value
+	} else {
+		c.apiKeys = append(c.apiKeys, value)
+	}
+	c.secDirty = true
 }
 
 type GatewayConfig struct {
@@ -698,18 +931,68 @@ type ToolConfig struct {
 }
 
 type BraveConfig struct {
-	Enabled    bool     `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_BRAVE_ENABLED"`
-	APIKey     string   `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEY"`
-	APIKeys    []string `json:"api_keys"    env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEYS"`
-	MaxResults int      `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
+	Enabled    bool `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_BRAVE_ENABLED"`
+	apiKeys    []string
+	secDirty   bool
+	MaxResults int `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
+}
+
+// APIKey returns the Brave API key
+func (c *BraveConfig) APIKey() string {
+	if len(c.apiKeys) == 0 {
+		return ""
+	}
+	return c.apiKeys[0]
+}
+
+// APIKeys returns the Brave API keys
+func (c *BraveConfig) APIKeys() []string {
+	return c.apiKeys
+}
+
+// SetAPIKey sets the Brave API key
+func (c *BraveConfig) SetAPIKey(key string) {
+	c.apiKeys = []string{key}
+	c.secDirty = true
+}
+
+// SetAPIKeys sets the Brave API keys
+func (c *BraveConfig) SetAPIKeys(keys []string) {
+	c.apiKeys = keys
+	c.secDirty = true
 }
 
 type TavilyConfig struct {
-	Enabled    bool     `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_TAVILY_ENABLED"`
-	APIKey     string   `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_TAVILY_API_KEY"`
-	APIKeys    []string `json:"api_keys"    env:"PICOCLAW_TOOLS_WEB_TAVILY_API_KEYS"`
-	BaseURL    string   `json:"base_url"    env:"PICOCLAW_TOOLS_WEB_TAVILY_BASE_URL"`
-	MaxResults int      `json:"max_results" env:"PICOCLAW_TOOLS_WEB_TAVILY_MAX_RESULTS"`
+	Enabled    bool `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_TAVILY_ENABLED"`
+	apiKeys    []string
+	secDirty   bool
+	BaseURL    string `json:"base_url"    env:"PICOCLAW_TOOLS_WEB_TAVILY_BASE_URL"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_TAVILY_MAX_RESULTS"`
+}
+
+// APIKey returns the Tavily API key
+func (c *TavilyConfig) APIKey() string {
+	if len(c.apiKeys) == 0 {
+		return ""
+	}
+	return c.apiKeys[0]
+}
+
+// APIKeys returns the Tavily API keys
+func (c *TavilyConfig) APIKeys() []string {
+	return c.apiKeys
+}
+
+// SetAPIKey sets the Tavily API key
+func (c *TavilyConfig) SetAPIKey(key string) {
+	c.apiKeys = []string{key}
+	c.secDirty = true
+}
+
+// SetAPIKeys sets the Tavily API keys
+func (c *TavilyConfig) SetAPIKeys(keys []string) {
+	c.apiKeys = keys
+	c.secDirty = true
 }
 
 type DuckDuckGoConfig struct {
@@ -718,10 +1001,35 @@ type DuckDuckGoConfig struct {
 }
 
 type PerplexityConfig struct {
-	Enabled    bool     `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
-	APIKey     string   `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEY"`
-	APIKeys    []string `json:"api_keys"    env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEYS"`
-	MaxResults int      `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
+	Enabled    bool `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
+	apiKeys    []string
+	secDirty   bool
+	MaxResults int `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
+}
+
+// APIKey returns the Perplexity API key
+func (c *PerplexityConfig) APIKey() string {
+	if len(c.apiKeys) == 0 {
+		return ""
+	}
+	return c.apiKeys[0]
+}
+
+// SetAPIKey sets the Perplexity API key
+func (c *PerplexityConfig) SetAPIKey(key string) {
+	c.apiKeys = []string{key}
+	c.secDirty = true
+}
+
+// APIKeys returns the Perplexity API keys
+func (c *PerplexityConfig) APIKeys() []string {
+	return c.apiKeys
+}
+
+// SetAPIKeys sets the Perplexity API keys
+func (c *PerplexityConfig) SetAPIKeys(keys []string) {
+	c.apiKeys = keys
+	c.secDirty = true
 }
 
 type SearXNGConfig struct {
@@ -731,13 +1039,25 @@ type SearXNGConfig struct {
 }
 
 type GLMSearchConfig struct {
-	Enabled bool   `json:"enabled"  env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
-	APIKey  string `json:"api_key"  env:"PICOCLAW_TOOLS_WEB_GLM_API_KEY"`
-	BaseURL string `json:"base_url" env:"PICOCLAW_TOOLS_WEB_GLM_BASE_URL"`
+	Enabled  bool `json:"enabled"  env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
+	apiKey   string
+	secDirty bool
+	BaseURL  string `json:"base_url" env:"PICOCLAW_TOOLS_WEB_GLM_BASE_URL"`
 	// SearchEngine specifies the search backend: "search_std" (default),
 	// "search_pro", "search_pro_sogou", or "search_pro_quark".
 	SearchEngine string `json:"search_engine" env:"PICOCLAW_TOOLS_WEB_GLM_SEARCH_ENGINE"`
 	MaxResults   int    `json:"max_results"   env:"PICOCLAW_TOOLS_WEB_GLM_MAX_RESULTS"`
+}
+
+// APIKey returns the GLM search API key
+func (c *GLMSearchConfig) APIKey() string {
+	return c.apiKey
+}
+
+// SetAPIKey sets the GLM search API key (internal use only)
+func (c *GLMSearchConfig) SetAPIKey(key string) {
+	c.apiKey = key
+	c.secDirty = true
 }
 
 type WebToolsConfig struct {
@@ -832,20 +1152,44 @@ type SkillsRegistriesConfig struct {
 }
 
 type SkillsGithubConfig struct {
-	Token string `json:"token,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_AUTH_TOKEN"`
-	Proxy string `json:"proxy,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_PROXY"`
+	token    string
+	secDirty bool
+	Proxy    string `json:"proxy,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_PROXY"`
+}
+
+// Token returns the GitHub token
+func (c *SkillsGithubConfig) Token() string {
+	return c.token
+}
+
+// SetToken sets the GitHub token
+func (c *SkillsGithubConfig) SetToken(token string) {
+	c.token = token
+	c.secDirty = true
 }
 
 type ClawHubRegistryConfig struct {
 	Enabled         bool   `json:"enabled"           env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_ENABLED"`
 	BaseURL         string `json:"base_url"          env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_BASE_URL"`
-	AuthToken       string `json:"auth_token"        env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_AUTH_TOKEN"`
+	authToken       string
+	secDirty        bool
 	SearchPath      string `json:"search_path"       env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SEARCH_PATH"`
 	SkillsPath      string `json:"skills_path"       env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SKILLS_PATH"`
 	DownloadPath    string `json:"download_path"     env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_DOWNLOAD_PATH"`
 	Timeout         int    `json:"timeout"           env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_TIMEOUT"`
 	MaxZipSize      int    `json:"max_zip_size"      env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_ZIP_SIZE"`
 	MaxResponseSize int    `json:"max_response_size" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_RESPONSE_SIZE"`
+}
+
+// AuthToken returns the ClawHub auth token
+func (c *ClawHubRegistryConfig) AuthToken() string {
+	return c.authToken
+}
+
+// SetAuthToken sets the ClawHub auth token
+func (c *ClawHubRegistryConfig) SetAuthToken(token string) {
+	c.authToken = token
+	c.secDirty = true
 }
 
 // MCPServerConfig defines configuration for a single MCP server
@@ -881,78 +1225,307 @@ type MCPConfig struct {
 }
 
 func LoadConfig(path string) (*Config, error) {
-	cfg := DefaultConfig()
-
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return cfg, nil
+			return DefaultConfig(), nil
 		}
 		return nil, err
 	}
 
-	// Pre-scan the JSON to check how many model_list entries the user provided.
-	// Go's JSON decoder reuses existing slice backing-array elements rather than
-	// zero-initializing them, so fields absent from the user's JSON (e.g. api_base)
-	// would silently inherit values from the DefaultConfig template at the same
-	// index position. We only reset cfg.ModelList when the user actually provides
-	// entries; when count is 0 we keep DefaultConfig's built-in list as fallback.
-	var tmp Config
-	if err := json.Unmarshal(data, &tmp); err != nil {
-		return nil, err
+	// First, try to detect config version by reading the version field
+	var versionInfo struct {
+		Version int `json:"version"`
 	}
-	if len(tmp.ModelList) > 0 {
-		cfg.ModelList = nil
+	if e := json.Unmarshal(data, &versionInfo); e != nil {
+		return nil, fmt.Errorf("failed to detect config version: %w", e)
 	}
 
-	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, err
+	// Load config based on detected version
+	var cfg *Config
+	switch versionInfo.Version {
+	case 0:
+		logger.InfoF("config migrate start", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		// Legacy config (no version field)
+		v, e := loadConfigV0(data)
+		if e != nil {
+			return nil, e
+		}
+		cfg, e = v.Migrate()
+		if e != nil {
+			logger.DebugF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+			return nil, e
+		}
+		logger.DebugF("config migrate success", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		defer func() {
+			_ = SaveConfig(path, cfg)
+		}()
+	case CurrentVersion:
+		// Current version
+		cfg, err = loadConfig(data)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unsupported config version: %d", versionInfo.Version)
+	}
+
+	// Load security configuration
+	securityPath := securityPath(path)
+	sec, err := loadSecurityConfig(securityPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load security config: %w", err)
+	}
+	logger.Infof("sec: %#v", sec.ModelList)
+
+	// Apply security references from security.yml BEFORE resolveAPIKeys
+	// This resolves ref: references to actual values
+	if err := applySecurityConfig(cfg, sec); err != nil {
+		return nil, fmt.Errorf("failed to apply security config: %w", err)
 	}
 
 	if passphrase := credential.PassphraseProvider(); passphrase != "" {
 		for _, m := range cfg.ModelList {
-			if m.APIKey != "" && !strings.HasPrefix(m.APIKey, "enc://") && !strings.HasPrefix(m.APIKey, "file://") {
-				fmt.Fprintf(os.Stderr,
-					"picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n",
-					m.ModelName)
+			for _, k := range m.apiKeys {
+				if k != "" && !strings.HasPrefix(k, "enc://") && !strings.HasPrefix(k, "file://") {
+					fmt.Fprintf(os.Stderr,
+						"picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n",
+						m.ModelName)
+					break // Only warn once per model
+				}
 			}
 		}
 	}
 
+	// logger.Infof("cfg: %#v", cfg.ModelList[0])
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
 
+	// logger.Infof("cfg: %#v", cfg.ModelList[0])
 	if err := resolveAPIKeys(cfg.ModelList, filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 
-	// Expand multi-key configs into separate entries for key-level failover
-	cfg.ModelList = ExpandMultiKeyModels(cfg.ModelList)
+	// Resolve security fields like authToken that may contain file:// references
+	if err := resolveSecurityFields(cfg, filepath.Dir(path)); err != nil {
+		return nil, err
+	}
 
+	// logger.Infof("cfg: %#v", cfg.ModelList[0])
+	// Expand multi-key configs into separate entries for key-level failover
+	cfg.ModelList = expandMultiKeyModels(cfg.ModelList)
+
+	// logger.Infof("cfg: %#v", cfg.ModelList[0])
 	// Migrate legacy channel config fields to new unified structures
 	cfg.migrateChannelConfigs()
-
-	// Auto-migrate: if only legacy providers config exists, convert to model_list
-	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
-		cfg.ModelList = ConvertProvidersToModelList(cfg)
-	}
-
-	// Inherit credentials from providers to model_list entries (#1635).
-	// When both providers and model_list are present, model_list entries
-	// whose api_key/api_base are empty will inherit from the matching
-	// provider (matched by protocol prefix).  Explicit model_list values
-	// always take precedence.
-	if cfg.HasProvidersConfig() {
-		InheritProviderCredentials(cfg.ModelList, cfg.Providers)
-	}
 
 	// Validate model_list for uniqueness and required fields
 	if err := cfg.ValidateModelList(); err != nil {
 		return nil, err
 	}
 
+	// Ensure Workspace has a default if not set
+	if cfg.Agents.Defaults.Workspace == "" {
+		homePath, _ := os.UserHomeDir()
+		if picoclawHome := os.Getenv(EnvHome); picoclawHome != "" {
+			homePath = picoclawHome
+		} else if homePath != "" {
+			homePath = filepath.Join(homePath, pkg.DefaultPicoClawHome)
+		}
+		cfg.Agents.Defaults.Workspace = filepath.Join(homePath, pkg.WorkspaceName)
+	}
+
 	return cfg, nil
+}
+
+func copyArray[T any](dst, src *[]T) {
+	*dst = make([]T, len(*src))
+	copy(*dst, *src)
+}
+
+// applySecurityConfig resolves all security references in config
+// It checks each field for "ref:" prefixed values and resolves them from security.yml
+func applySecurityConfig(cfg *Config, sec *SecurityConfig) error {
+	if sec == nil {
+		return nil
+	}
+
+	if sec.Web.Brave != nil && len(sec.Web.Brave.APIKeys) > 0 {
+		copyArray(&cfg.Tools.Web.Brave.apiKeys, &sec.Web.Brave.APIKeys)
+	}
+
+	if sec.Web.Tavily != nil && len(sec.Web.Tavily.APIKeys) > 0 {
+		copyArray(&cfg.Tools.Web.Tavily.apiKeys, &sec.Web.Tavily.APIKeys)
+	}
+
+	if sec.Web.Perplexity != nil && len(sec.Web.Perplexity.APIKeys) > 0 {
+		copyArray(&cfg.Tools.Web.Perplexity.apiKeys, &sec.Web.Perplexity.APIKeys)
+	}
+
+	if sec.Web.GLMSearch != nil && sec.Web.GLMSearch.APIKey != "" {
+		cfg.Tools.Web.GLMSearch.apiKey = sec.Web.GLMSearch.APIKey
+	}
+
+	if sec.Skills.Github != nil && sec.Skills.Github.Token != "" {
+		cfg.Tools.Skills.Github.token = sec.Skills.Github.Token
+	}
+
+	if sec.Skills.ClawHub != nil && sec.Skills.ClawHub.AuthToken != "" {
+		cfg.Tools.Skills.Registries.ClawHub.authToken = sec.Skills.ClawHub.AuthToken
+	}
+
+	names := toNameIndex(cfg.ModelList)
+	for i, model := range cfg.ModelList {
+		// Try exact match first (e.g., "abc:0" -> "abc:0")
+		if entry, exists := sec.ModelList[names[i]]; exists {
+			copyArray(&model.apiKeys, &entry.APIKeys)
+			model.secModelName = names[i]
+			continue
+		}
+
+		// Try match without index suffix (e.g., "abc" -> "abc")
+		// This allows security.yml to use simpler keys like "test-model" instead of "test-model:0"
+		baseName := model.ModelName
+		if entry, exists := sec.ModelList[baseName]; exists {
+			copyArray(&model.apiKeys, &entry.APIKeys)
+			model.secModelName = baseName
+			continue
+		}
+	}
+
+	// Handle Telegram token
+	if sec.Channels.Telegram != nil && sec.Channels.Telegram.Token != "" {
+		cfg.Channels.Telegram.SetToken(sec.Channels.Telegram.Token)
+	}
+
+	// Handle Feishu credentials
+	if sec.Channels.Feishu != nil {
+		if sec.Channels.Feishu.AppSecret != "" {
+			cfg.Channels.Feishu.SetAppSecret(sec.Channels.Feishu.AppSecret)
+		}
+		if sec.Channels.Feishu.EncryptKey != "" {
+			cfg.Channels.Feishu.SetEncryptKey(sec.Channels.Feishu.EncryptKey)
+		}
+		if sec.Channels.Feishu.VerificationToken != "" {
+			cfg.Channels.Feishu.SetVerificationToken(sec.Channels.Feishu.VerificationToken)
+		}
+	}
+
+	// Handle Discord token
+	if sec.Channels.Discord != nil && sec.Channels.Discord.Token != "" {
+		cfg.Channels.Discord.SetToken(sec.Channels.Discord.Token)
+	}
+
+	// Handle DingTalk client secret
+	if sec.Channels.DingTalk != nil && sec.Channels.DingTalk.ClientSecret != "" {
+		cfg.Channels.DingTalk.SetClientSecret(sec.Channels.DingTalk.ClientSecret)
+	}
+
+	// Handle Slack tokens
+	if sec.Channels.Slack != nil {
+		if sec.Channels.Slack.BotToken != "" {
+			cfg.Channels.Slack.SetBotToken(sec.Channels.Slack.BotToken)
+		}
+		if sec.Channels.Slack.AppToken != "" {
+			cfg.Channels.Slack.SetAppToken(sec.Channels.Slack.AppToken)
+		}
+	}
+
+	// Handle Matrix access token
+	if sec.Channels.Matrix != nil && sec.Channels.Matrix.AccessToken != "" {
+		cfg.Channels.Matrix.SetAccessToken(sec.Channels.Matrix.AccessToken)
+	}
+
+	// Handle LINE credentials
+	if sec.Channels.LINE != nil {
+		if sec.Channels.LINE.ChannelSecret != "" {
+			cfg.Channels.LINE.SetChannelSecret(sec.Channels.LINE.ChannelSecret)
+		}
+		if sec.Channels.LINE.ChannelAccessToken != "" {
+			cfg.Channels.LINE.SetChannelAccessToken(sec.Channels.LINE.ChannelAccessToken)
+		}
+	}
+
+	// Handle OneBot access token
+	if sec.Channels.OneBot != nil && sec.Channels.OneBot.AccessToken != "" {
+		cfg.Channels.OneBot.SetAccessToken(sec.Channels.OneBot.AccessToken)
+	}
+
+	// Handle WeCom token and encoding key
+	if sec.Channels.WeCom != nil {
+		if sec.Channels.WeCom.Token != "" {
+			cfg.Channels.WeCom.SetToken(sec.Channels.WeCom.Token)
+		}
+		if sec.Channels.WeCom.EncodingAESKey != "" {
+			cfg.Channels.WeCom.SetEncodingAESKey(sec.Channels.WeCom.EncodingAESKey)
+		}
+	}
+
+	// Handle WeCom App credentials
+	if sec.Channels.WeComApp != nil {
+		if sec.Channels.WeComApp.CorpSecret != "" {
+			cfg.Channels.WeComApp.SetCorpSecret(sec.Channels.WeComApp.CorpSecret)
+		}
+		if sec.Channels.WeComApp.Token != "" {
+			cfg.Channels.WeComApp.SetToken(sec.Channels.WeComApp.Token)
+		}
+		if sec.Channels.WeComApp.EncodingAESKey != "" {
+			cfg.Channels.WeComApp.SetEncodingAESKey(sec.Channels.WeComApp.EncodingAESKey)
+		}
+	}
+
+	// Handle WeCom AI Bot credentials
+	if sec.Channels.WeComAIBot != nil {
+		if sec.Channels.WeComAIBot.Token != "" {
+			cfg.Channels.WeComAIBot.token = sec.Channels.WeComAIBot.Token
+		}
+		if sec.Channels.WeComAIBot.EncodingAESKey != "" {
+			cfg.Channels.WeComAIBot.encodingAESKey = sec.Channels.WeComAIBot.EncodingAESKey
+		}
+		if sec.Channels.WeComAIBot.Secret != "" {
+			cfg.Channels.WeComAIBot.secret = sec.Channels.WeComAIBot.Secret
+		}
+	}
+
+	// Handle Pico channel token
+	if sec.Channels.Pico != nil && sec.Channels.Pico.Token != "" {
+		cfg.Channels.Pico.SetToken(sec.Channels.Pico.Token)
+	}
+
+	// Handle IRC passwords
+	if sec.Channels.IRC != nil {
+		if sec.Channels.IRC.Password != "" {
+			cfg.Channels.IRC.password = sec.Channels.IRC.Password
+		}
+		if sec.Channels.IRC.NickServPassword != "" {
+			cfg.Channels.IRC.nickServPassword = sec.Channels.IRC.NickServPassword
+		}
+		if sec.Channels.IRC.SASLPassword != "" {
+			cfg.Channels.IRC.saslPassword = sec.Channels.IRC.SASLPassword
+		}
+	}
+
+	// Handle QQ app secret
+	if sec.Channels.QQ != nil && sec.Channels.QQ.AppSecret != "" {
+		cfg.Channels.QQ.SetAppSecret(sec.Channels.QQ.AppSecret)
+	}
+
+	cfg.security = sec
+
+	return nil
+}
+
+func toNameIndex(list []*ModelConfig) []string {
+	nameList := make([]string, 0, len(list))
+	countMap := make(map[string]int)
+	for _, model := range list {
+		name := model.ModelName
+		index := countMap[name]
+		nameList = append(nameList, fmt.Sprintf("%s:%d", name, index))
+		countMap[name]++
+	}
+	return nameList
 }
 
 // encryptPlaintextAPIKeys returns a copy of models with plaintext api_key values
@@ -961,21 +1534,30 @@ func LoadConfig(path string) (*Config, error) {
 // this as a hard failure to prevent a mixed plaintext/ciphertext state on disk.
 // Symmetric counterpart of resolveAPIKeys: both operate purely on []ModelConfig
 // and leave JSON marshaling to the caller.
-func encryptPlaintextAPIKeys(models []ModelConfig, passphrase string) ([]ModelConfig, error) {
-	sealed := make([]ModelConfig, len(models))
-	copy(sealed, models)
+func encryptPlaintextAPIKeys(
+	models map[string]ModelSecurityEntry,
+	passphrase string,
+) (map[string]ModelSecurityEntry, error) {
+	sealed := make(map[string]ModelSecurityEntry, len(models))
 	changed := false
-	for i := range sealed {
-		m := &sealed[i]
-		if m.APIKey == "" || strings.HasPrefix(m.APIKey, "enc://") || strings.HasPrefix(m.APIKey, "file://") {
-			continue
+	for k, m := range models {
+		sealedEntry := ModelSecurityEntry{APIKeys: make([]string, len(m.APIKeys))}
+
+		// Encrypt each key in APIKeys
+		for i, key := range m.APIKeys {
+			if key == "" || strings.HasPrefix(key, "enc://") || strings.HasPrefix(key, "file://") {
+				sealedEntry.APIKeys[i] = key
+				continue
+			}
+			encrypted, err := credential.Encrypt(passphrase, "", key)
+			if err != nil {
+				return nil, fmt.Errorf("cannot seal api_key for model %q: %w", k, err)
+			}
+			sealedEntry.APIKeys[i] = encrypted
+			changed = true
 		}
-		encrypted, err := credential.Encrypt(passphrase, "", m.APIKey)
-		if err != nil {
-			return nil, fmt.Errorf("cannot seal api_key for model %q: %w", m.ModelName, err)
-		}
-		m.APIKey = encrypted
-		changed = true
+
+		sealed[k] = sealedEntry
 	}
 	if !changed {
 		return nil, nil
@@ -985,24 +1567,16 @@ func encryptPlaintextAPIKeys(models []ModelConfig, passphrase string) ([]ModelCo
 
 // resolveAPIKeys decrypts or dereferences each api_key in models in-place.
 // Supports plaintext (no-op), file:// (read from configDir), and enc:// (AES-GCM decrypt).
-// Also resolves api_keys array if present.
-func resolveAPIKeys(models []ModelConfig, configDir string) error {
+func resolveAPIKeys(models []*ModelConfig, configDir string) error {
 	cr := credential.NewResolver(configDir)
 	for i := range models {
-		// Resolve single APIKey
-		resolved, err := cr.Resolve(models[i].APIKey)
-		if err != nil {
-			return fmt.Errorf("model_list[%d] (%s): %w", i, models[i].ModelName, err)
-		}
-		models[i].APIKey = resolved
-
 		// Resolve APIKeys array
-		for j, key := range models[i].APIKeys {
+		for j, key := range models[i].apiKeys {
 			resolved, err := cr.Resolve(key)
 			if err != nil {
 				return fmt.Errorf("model_list[%d] (%s): api_keys[%d]: %w", i, models[i].ModelName, j, err)
 			}
-			models[i].APIKeys[j] = resolved
+			models[i].apiKeys[j] = resolved
 		}
 	}
 	return nil
@@ -1022,16 +1596,174 @@ func (c *Config) migrateChannelConfigs() {
 }
 
 func SaveConfig(path string, cfg *Config) error {
+	if cfg.security == nil {
+		logger.Errorf("config %#v", *cfg)
+		if len(cfg.ModelList) > 0 {
+			logger.Errorf("model[0] %#v", cfg.ModelList[0])
+		}
+		logger.ErrorC("config", "security is nil")
+		return fmt.Errorf("security is nil")
+	}
+	// Ensure version is always set when saving
+	if cfg.Version == 0 {
+		cfg.Version = CurrentVersion
+	}
+	names := toNameIndex(cfg.ModelList)
+	for i, m := range cfg.ModelList {
+		if m.secDirty {
+			if m.secModelName == "" {
+				m.secModelName = names[i]
+			}
+			cfg.security.ModelList[m.secModelName] = ModelSecurityEntry{
+				APIKeys: m.apiKeys,
+			}
+			m.secDirty = false
+		}
+	}
+	if cfg.Channels.Pico.secDirty {
+		cfg.security.Channels.Pico = &PicoSecurity{
+			Token: cfg.Channels.Pico.Token(),
+		}
+		cfg.Channels.Pico.secDirty = false
+	}
+	if cfg.Channels.IRC.secDirty {
+		cfg.security.Channels.IRC = &IRCSecurity{
+			Password:         cfg.Channels.IRC.password,
+			NickServPassword: cfg.Channels.IRC.nickServPassword,
+			SASLPassword:     cfg.Channels.IRC.saslPassword,
+		}
+		cfg.Channels.IRC.secDirty = false
+	}
+	if cfg.Channels.Telegram.secDirty {
+		cfg.security.Channels.Telegram = &TelegramSecurity{
+			Token: cfg.Channels.Telegram.Token(),
+		}
+		cfg.Channels.Telegram.secDirty = false
+	}
+	if cfg.Channels.Feishu.secDirty {
+		cfg.security.Channels.Feishu = &FeishuSecurity{
+			AppSecret:         cfg.Channels.Feishu.AppSecret(),
+			EncryptKey:        cfg.Channels.Feishu.EncryptKey(),
+			VerificationToken: cfg.Channels.Feishu.VerificationToken(),
+		}
+		cfg.Channels.Feishu.secDirty = false
+	}
+	if cfg.Channels.Discord.secDirty {
+		cfg.security.Channels.Discord = &DiscordSecurity{
+			Token: cfg.Channels.Discord.Token(),
+		}
+		cfg.Channels.Discord.secDirty = false
+	}
+	if cfg.Channels.QQ.secDirty {
+		cfg.security.Channels.QQ = &QQSecurity{
+			AppSecret: cfg.Channels.QQ.AppSecret(),
+		}
+		cfg.Channels.QQ.secDirty = false
+	}
+	if cfg.Channels.DingTalk.secDirty {
+		cfg.security.Channels.DingTalk = &DingTalkSecurity{
+			ClientSecret: cfg.Channels.DingTalk.ClientSecret(),
+		}
+		cfg.Channels.DingTalk.secDirty = false
+	}
+	if cfg.Channels.Slack.secDirty {
+		cfg.security.Channels.Slack = &SlackSecurity{
+			BotToken: cfg.Channels.Slack.BotToken(),
+			AppToken: cfg.Channels.Slack.AppToken(),
+		}
+		cfg.Channels.Slack.secDirty = false
+	}
+	if cfg.Channels.Matrix.secDirty {
+		cfg.security.Channels.Matrix = &MatrixSecurity{
+			AccessToken: cfg.Channels.Matrix.AccessToken(),
+		}
+		cfg.Channels.Matrix.secDirty = false
+	}
+	if cfg.Channels.LINE.secDirty {
+		cfg.security.Channels.LINE = &LINESecurity{
+			ChannelSecret:      cfg.Channels.LINE.ChannelSecret(),
+			ChannelAccessToken: cfg.Channels.LINE.ChannelAccessToken(),
+		}
+		cfg.Channels.LINE.secDirty = false
+	}
+	if cfg.Channels.OneBot.secDirty {
+		cfg.security.Channels.OneBot = &OneBotSecurity{
+			AccessToken: cfg.Channels.OneBot.AccessToken(),
+		}
+		cfg.Channels.OneBot.secDirty = false
+	}
+	if cfg.Channels.WeCom.secDirty {
+		cfg.security.Channels.WeCom = &WeComSecurity{
+			Token:          cfg.Channels.WeCom.Token(),
+			EncodingAESKey: cfg.Channels.WeCom.EncodingAESKey(),
+		}
+		cfg.Channels.WeCom.secDirty = false
+	}
+	if cfg.Channels.WeComApp.secDirty {
+		cfg.security.Channels.WeComApp = &WeComAppSecurity{
+			CorpSecret:     cfg.Channels.WeComApp.CorpSecret(),
+			Token:          cfg.Channels.WeComApp.Token(),
+			EncodingAESKey: cfg.Channels.WeComApp.EncodingAESKey(),
+		}
+		cfg.Channels.WeComApp.secDirty = false
+	}
+	if cfg.Channels.WeComAIBot.secDirty {
+		cfg.security.Channels.WeComAIBot = &WeComAIBotSecurity{
+			Token:          cfg.Channels.WeComAIBot.Token(),
+			EncodingAESKey: cfg.Channels.WeComAIBot.EncodingAESKey(),
+			Secret:         cfg.Channels.WeComAIBot.Secret(),
+		}
+		cfg.Channels.WeComAIBot.secDirty = false
+	}
+	if cfg.Tools.Web.Brave.secDirty {
+		cfg.security.Web.Brave = &BraveSecurity{
+			APIKeys: cfg.Tools.Web.Brave.APIKeys(),
+		}
+		cfg.Tools.Web.Brave.secDirty = false
+	}
+	if cfg.Tools.Web.Tavily.secDirty {
+		cfg.security.Web.Tavily = &TavilySecurity{
+			APIKeys: cfg.Tools.Web.Tavily.APIKeys(),
+		}
+		cfg.Tools.Web.Tavily.secDirty = false
+	}
+	if cfg.Tools.Web.Perplexity.secDirty {
+		cfg.security.Web.Perplexity = &PerplexitySecurity{
+			APIKeys: cfg.Tools.Web.Perplexity.APIKeys(),
+		}
+		cfg.Tools.Web.Perplexity.secDirty = false
+	}
+	if cfg.Tools.Web.GLMSearch.secDirty {
+		cfg.security.Web.GLMSearch = &GLMSearchSecurity{
+			APIKey: cfg.Tools.Web.GLMSearch.APIKey(),
+		}
+		cfg.Tools.Web.GLMSearch.secDirty = false
+	}
+	if cfg.Tools.Skills.Github.secDirty {
+		cfg.security.Skills.Github = &GithubSecurity{
+			Token: cfg.Tools.Skills.Github.Token(),
+		}
+		cfg.Tools.Skills.Github.secDirty = false
+	}
+	if cfg.Tools.Skills.Registries.ClawHub.secDirty {
+		cfg.security.Skills.ClawHub = &ClawHubSecurity{
+			AuthToken: cfg.Tools.Skills.Registries.ClawHub.AuthToken(),
+		}
+		cfg.Tools.Skills.Registries.ClawHub.secDirty = false
+	}
+
 	if passphrase := credential.PassphraseProvider(); passphrase != "" {
-		sealed, err := encryptPlaintextAPIKeys(cfg.ModelList, passphrase)
+		sealed, err := encryptPlaintextAPIKeys(cfg.security.ModelList, passphrase)
 		if err != nil {
 			return err
 		}
 		if sealed != nil {
-			tmp := *cfg
-			tmp.ModelList = sealed
-			cfg = &tmp
+			cfg.security.ModelList = sealed
 		}
+	}
+	if err := saveSecurityConfig(securityPath(path), cfg.security); err != nil {
+		logger.ErrorCF("config", "cannot save security.yml", map[string]any{"error": err})
+		return err
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -1043,53 +1775,6 @@ func SaveConfig(path string, cfg *Config) error {
 
 func (c *Config) WorkspacePath() string {
 	return expandHome(c.Agents.Defaults.Workspace)
-}
-
-func (c *Config) GetAPIKey() string {
-	if c.Providers.OpenRouter.APIKey != "" {
-		return c.Providers.OpenRouter.APIKey
-	}
-	if c.Providers.Anthropic.APIKey != "" {
-		return c.Providers.Anthropic.APIKey
-	}
-	if c.Providers.OpenAI.APIKey != "" {
-		return c.Providers.OpenAI.APIKey
-	}
-	if c.Providers.Gemini.APIKey != "" {
-		return c.Providers.Gemini.APIKey
-	}
-	if c.Providers.Zhipu.APIKey != "" {
-		return c.Providers.Zhipu.APIKey
-	}
-	if c.Providers.Groq.APIKey != "" {
-		return c.Providers.Groq.APIKey
-	}
-	if c.Providers.VLLM.APIKey != "" {
-		return c.Providers.VLLM.APIKey
-	}
-	if c.Providers.ShengSuanYun.APIKey != "" {
-		return c.Providers.ShengSuanYun.APIKey
-	}
-	if c.Providers.Cerebras.APIKey != "" {
-		return c.Providers.Cerebras.APIKey
-	}
-	return ""
-}
-
-func (c *Config) GetAPIBase() string {
-	if c.Providers.OpenRouter.APIKey != "" {
-		if c.Providers.OpenRouter.APIBase != "" {
-			return c.Providers.OpenRouter.APIBase
-		}
-		return "https://openrouter.ai/api/v1"
-	}
-	if c.Providers.Zhipu.APIKey != "" {
-		return c.Providers.Zhipu.APIBase
-	}
-	if c.Providers.VLLM.APIKey != "" && c.Providers.VLLM.APIBase != "" {
-		return c.Providers.VLLM.APIBase
-	}
-	return ""
 }
 
 func expandHome(path string) string {
@@ -1115,28 +1800,23 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 		return nil, fmt.Errorf("model %q not found in model_list or providers", modelName)
 	}
 	if len(matches) == 1 {
-		return &matches[0], nil
+		return matches[0], nil
 	}
 
 	// Multiple configs - use round-robin for load balancing
 	idx := (rrCounter.Add(1) - 1) % uint64(len(matches))
-	return &matches[idx], nil
+	return matches[idx], nil
 }
 
 // findMatches finds all ModelConfig entries with the given model_name.
-func (c *Config) findMatches(modelName string) []ModelConfig {
-	var matches []ModelConfig
+func (c *Config) findMatches(modelName string) []*ModelConfig {
+	var matches []*ModelConfig
 	for i := range c.ModelList {
 		if c.ModelList[i].ModelName == modelName {
 			matches = append(matches, c.ModelList[i])
 		}
 	}
 	return matches
-}
-
-// HasProvidersConfig checks if any provider in the old providers config has configuration.
-func (c *Config) HasProvidersConfig() bool {
-	return !c.Providers.IsEmpty()
 }
 
 // ValidateModelList validates all ModelConfig entries in the model_list.
@@ -1149,6 +1829,10 @@ func (c *Config) ValidateModelList() error {
 		}
 	}
 	return nil
+}
+
+func (c *Config) SecurityCopyFrom(cfg *Config) {
+	c.security = cfg.security
 }
 
 func MergeAPIKeys(apiKey string, apiKeys []string) []string {
@@ -1174,28 +1858,93 @@ func MergeAPIKeys(apiKey string, apiKeys []string) []string {
 	return all
 }
 
-// ExpandMultiKeyModels expands ModelConfig entries with multiple API keys into
+// resolveSecurityFields resolves file:// and enc:// references in security-sensitive fields
+// like authToken and token that are not part of ModelConfig's apiKeys
+func resolveSecurityFields(cfg *Config, configDir string) error {
+	cr := credential.NewResolver(configDir)
+
+	// Resolve Web tool API keys - set apiKey field to first resolved apiKeys entry
+	if len(cfg.Tools.Web.Brave.apiKeys) > 0 {
+		keys := cfg.Tools.Web.Brave.apiKeys
+		for i, key := range keys {
+			resolved, err := cr.Resolve(key)
+			if err != nil {
+				return fmt.Errorf("brave api_keys[%d]: %w", i, err)
+			}
+			keys[i] = resolved
+		}
+	}
+
+	if len(cfg.Tools.Web.Tavily.apiKeys) > 0 {
+		keys := cfg.Tools.Web.Tavily.apiKeys
+		for i, key := range keys {
+			resolved, err := cr.Resolve(key)
+			if err != nil {
+				return fmt.Errorf("tavily api_keys[%d]: %w", i, err)
+			}
+			keys[i] = resolved
+		}
+	}
+
+	if len(cfg.Tools.Web.Perplexity.apiKeys) > 0 {
+		keys := cfg.Tools.Web.Perplexity.apiKeys
+		for i, key := range keys {
+			resolved, err := cr.Resolve(key)
+			if err != nil {
+				return fmt.Errorf("perplexity api_keys[%d]: %w", i, err)
+			}
+			keys[i] = resolved
+		}
+	}
+
+	// GLMSearch has a private apiKey field
+	if cfg.Tools.Web.GLMSearch.apiKey != "" {
+		resolved, err := cr.Resolve(cfg.Tools.Web.GLMSearch.apiKey)
+		if err != nil {
+			return fmt.Errorf("glm api_key: %w", err)
+		}
+		cfg.Tools.Web.GLMSearch.apiKey = resolved
+	}
+
+	// Resolve Skills tokens
+	if cfg.Tools.Skills.Github.token != "" {
+		resolved, err := cr.Resolve(cfg.Tools.Skills.Github.token)
+		if err != nil {
+			return fmt.Errorf("github token: %w", err)
+		}
+		cfg.Tools.Skills.Github.token = resolved
+	}
+
+	if cfg.Tools.Skills.Registries.ClawHub.authToken != "" {
+		resolved, err := cr.Resolve(cfg.Tools.Skills.Registries.ClawHub.authToken)
+		if err != nil {
+			return fmt.Errorf("clawhub auth_token: %w", err)
+		}
+		cfg.Tools.Skills.Registries.ClawHub.authToken = resolved
+	}
+
+	return nil
+}
+
+// expandMultiKeyModels expands ModelConfig entries with multiple API keys into
 // separate entries for key-level failover. Each key gets its own ModelConfig entry,
 // and the original entry's fallbacks are set up to chain through the expanded entries.
 //
 // Example: {"model_name": "gpt-4", "api_keys": ["k1", "k2", "k3"]}
 // Becomes:
-//   - {"model_name": "gpt-4", "api_key": "k1", "fallbacks": ["gpt-4__key_1", "gpt-4__key_2"]}
-//   - {"model_name": "gpt-4__key_1", "api_key": "k2"}
-//   - {"model_name": "gpt-4__key_2", "api_key": "k3"}
-func ExpandMultiKeyModels(models []ModelConfig) []ModelConfig {
-	var expanded []ModelConfig
+//   - {"model_name": "gpt-4", "api_keys": ["k1"], "fallbacks": ["gpt-4__key_1", "gpt-4__key_2"]}
+//   - {"model_name": "gpt-4__key_1", "api_keys": {"k2"}}
+//   - {"model_name": "gpt-4__key_2", "api_keys": {"k3"}}
+func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
+	var expanded []*ModelConfig
 
 	for _, m := range models {
-		keys := MergeAPIKeys(m.APIKey, m.APIKeys)
+		keys := MergeAPIKeys("", m.apiKeys)
 
 		// Single key or no keys: keep as-is
 		if len(keys) <= 1 {
-			// Ensure APIKey is set from APIKeys if needed
-			if m.APIKey == "" && len(keys) == 1 {
-				m.APIKey = keys[0]
-			}
-			m.APIKeys = nil // Clear APIKeys to avoid confusion
+			m.apiKeys = keys
+			logger.Infof("keys:%v", keys)
 			expanded = append(expanded, m)
 			continue
 		}
@@ -1210,11 +1959,11 @@ func ExpandMultiKeyModels(models []ModelConfig) []ModelConfig {
 			expandedName := originalName + suffix
 
 			// Create a copy for the additional key
-			additionalEntry := ModelConfig{
+			additionalEntry := &ModelConfig{
 				ModelName:      expandedName,
 				Model:          m.Model,
 				APIBase:        m.APIBase,
-				APIKey:         keys[i],
+				apiKeys:        []string{keys[i]},
 				Proxy:          m.Proxy,
 				AuthMethod:     m.AuthMethod,
 				ConnectMode:    m.ConnectMode,
@@ -1229,11 +1978,10 @@ func ExpandMultiKeyModels(models []ModelConfig) []ModelConfig {
 		}
 
 		// Create the primary entry with first key and fallbacks
-		primaryEntry := ModelConfig{
+		primaryEntry := &ModelConfig{
 			ModelName:      originalName,
 			Model:          m.Model,
 			APIBase:        m.APIBase,
-			APIKey:         keys[0],
 			Proxy:          m.Proxy,
 			AuthMethod:     m.AuthMethod,
 			ConnectMode:    m.ConnectMode,
@@ -1242,6 +1990,7 @@ func ExpandMultiKeyModels(models []ModelConfig) []ModelConfig {
 			MaxTokensField: m.MaxTokensField,
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,
+			apiKeys:        []string{keys[0]},
 		}
 
 		// Prepend new fallbacks to existing ones

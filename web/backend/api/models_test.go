@@ -59,7 +59,7 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.ModelList = []config.ModelConfig{
+	cfg.ModelList = []*config.ModelConfig{
 		{
 			ModelName:  "openai-oauth",
 			Model:      "openai/gpt-5.4",
@@ -78,7 +78,6 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 			ModelName: "vllm-remote",
 			Model:     "vllm/custom-model",
 			APIBase:   "https://models.example.com/v1",
-			APIKey:    "remote-key",
 		},
 		{
 			ModelName:  "copilot-gpt-5.4",
@@ -87,6 +86,11 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 			AuthMethod: "oauth",
 		},
 	}
+	cfg.WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
+		"vllm-remote": {
+			APIKeys: []string{"remote-key"},
+		},
+	}})
 	cfg.Agents.Defaults.ModelName = "openai-oauth"
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
@@ -152,7 +156,7 @@ func TestHandleListModels_ConfiguredStatusForOAuthModelWithCredential(t *testing
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.ModelList = []config.ModelConfig{{
+	cfg.ModelList = []*config.ModelConfig{{
 		ModelName:  "claude-oauth",
 		Model:      "anthropic/claude-sonnet-4.6",
 		AuthMethod: "oauth",
@@ -215,7 +219,7 @@ func TestHandleListModels_ProbesLocalModelsConcurrently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.ModelList = []config.ModelConfig{
+	cfg.ModelList = []*config.ModelConfig{
 		{
 			ModelName: "local-vllm-a",
 			Model:     "vllm/custom-a",
@@ -274,7 +278,7 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.ModelList = []config.ModelConfig{{
+	cfg.ModelList = []*config.ModelConfig{{
 		ModelName: "vllm-local",
 		Model:     "vllm/custom-model",
 		APIBase:   "http://0.0.0.0:8000/v1",

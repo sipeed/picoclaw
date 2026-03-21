@@ -35,43 +35,46 @@ func TestDetectTranscriber(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			name: "groq provider key",
-			cfg: &config.Config{
-				Providers: config.ProvidersConfig{
-					Groq: config.ProviderConfig{APIKey: "sk-groq-direct"},
-				},
-			},
-			wantName: "groq",
-		},
-		{
 			name: "groq via model list",
-			cfg: &config.Config{
-				ModelList: []config.ModelConfig{
-					{Model: "openai/gpt-4o", APIKey: "sk-openai"},
-					{Model: "groq/llama-3.3-70b", APIKey: "sk-groq-model"},
+			cfg: (&config.Config{
+				ModelList: []*config.ModelConfig{
+					{ModelName: "openai", Model: "openai/gpt-4o"},
+					{ModelName: "groq", Model: "groq/llama-3.3-70b"},
 				},
-			},
+			}).WithSecurity(&config.SecurityConfig{
+				ModelList: map[string]config.ModelSecurityEntry{
+					"openai": {
+						APIKeys: []string{"sk-openai"},
+					},
+					"groq": {
+						APIKeys: []string{"sk-groq-model"},
+					},
+				},
+			}),
 			wantName: "groq",
 		},
 		{
 			name: "groq model list entry without key is skipped",
 			cfg: &config.Config{
-				ModelList: []config.ModelConfig{
-					{Model: "groq/llama-3.3-70b", APIKey: ""},
+				ModelList: []*config.ModelConfig{
+					{Model: "groq/llama-3.3-70b"},
 				},
 			},
 			wantNil: true,
 		},
 		{
 			name: "provider key takes priority over model list",
-			cfg: &config.Config{
-				Providers: config.ProvidersConfig{
-					Groq: config.ProviderConfig{APIKey: "sk-groq-direct"},
+			cfg: (&config.Config{
+				ModelList: []*config.ModelConfig{
+					{ModelName: "groq", Model: "groq/llama-3.3-70b"},
 				},
-				ModelList: []config.ModelConfig{
-					{Model: "groq/llama-3.3-70b", APIKey: "sk-groq-model"},
+			}).WithSecurity(&config.SecurityConfig{
+				ModelList: map[string]config.ModelSecurityEntry{
+					"groq": {
+						APIKeys: []string{"sk-groq-model"},
+					},
 				},
-			},
+			}),
 			wantName: "groq",
 		},
 	}

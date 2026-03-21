@@ -20,9 +20,9 @@ var (
 	probeOpenAICompatibleModelFunc = probeOpenAICompatibleModel
 )
 
-func hasModelConfiguration(m config.ModelConfig) bool {
+func hasModelConfiguration(m *config.ModelConfig) bool {
 	authMethod := strings.ToLower(strings.TrimSpace(m.AuthMethod))
-	apiKey := strings.TrimSpace(m.APIKey)
+	apiKey := strings.TrimSpace(m.APIKey())
 
 	if authMethod == "oauth" || authMethod == "token" {
 		if provider, ok := oauthProviderForModel(m.Model); ok {
@@ -44,7 +44,7 @@ func hasModelConfiguration(m config.ModelConfig) bool {
 
 // isModelConfigured reports whether a model is currently available to use.
 // Local models must be reachable; remote/API-key models only need saved config.
-func isModelConfigured(m config.ModelConfig) bool {
+func isModelConfigured(m *config.ModelConfig) bool {
 	if !hasModelConfiguration(m) {
 		return false
 	}
@@ -54,7 +54,7 @@ func isModelConfigured(m config.ModelConfig) bool {
 	return true
 }
 
-func requiresRuntimeProbe(m config.ModelConfig) bool {
+func requiresRuntimeProbe(m *config.ModelConfig) bool {
 	authMethod := strings.ToLower(strings.TrimSpace(m.AuthMethod))
 	if authMethod == "local" {
 		return true
@@ -75,7 +75,7 @@ func requiresRuntimeProbe(m config.ModelConfig) bool {
 	return false
 }
 
-func probeLocalModelAvailability(m config.ModelConfig) bool {
+func probeLocalModelAvailability(m *config.ModelConfig) bool {
 	apiBase := modelProbeAPIBase(m)
 	protocol, modelID := splitModel(m.Model)
 	switch protocol {
@@ -95,7 +95,7 @@ func probeLocalModelAvailability(m config.ModelConfig) bool {
 	}
 }
 
-func modelProbeAPIBase(m config.ModelConfig) string {
+func modelProbeAPIBase(m *config.ModelConfig) string {
 	if apiBase := strings.TrimSpace(m.APIBase); apiBase != "" {
 		return normalizeModelProbeAPIBase(apiBase)
 	}

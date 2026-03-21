@@ -37,13 +37,13 @@ type slackMessageRef struct {
 }
 
 func NewSlackChannel(cfg config.SlackConfig, messageBus *bus.MessageBus) (*SlackChannel, error) {
-	if cfg.BotToken == "" || cfg.AppToken == "" {
+	if cfg.BotToken() == "" || cfg.AppToken() == "" {
 		return nil, fmt.Errorf("slack bot_token and app_token are required")
 	}
 
 	api := slack.New(
-		cfg.BotToken,
-		slack.OptionAppLevelToken(cfg.AppToken),
+		cfg.BotToken(),
+		slack.OptionAppLevelToken(cfg.AppToken()),
 	)
 
 	socketClient := socketmode.New(api)
@@ -515,7 +515,7 @@ func (c *SlackChannel) downloadSlackFile(file slack.File) string {
 	return utils.DownloadFile(downloadURL, file.Name, utils.DownloadOptions{
 		LoggerPrefix: "slack",
 		ExtraHeaders: map[string]string{
-			"Authorization": "Bearer " + c.config.BotToken,
+			"Authorization": "Bearer " + c.config.BotToken(),
 		},
 	})
 }

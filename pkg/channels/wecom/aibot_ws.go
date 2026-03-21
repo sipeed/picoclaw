@@ -225,7 +225,7 @@ func newWeComAIBotWSChannel(
 	cfg config.WeComAIBotConfig,
 	messageBus *bus.MessageBus,
 ) (*WeComAIBotWSChannel, error) {
-	if cfg.BotID == "" || cfg.Secret == "" {
+	if cfg.BotID == "" || cfg.Secret() == "" {
 		return nil, fmt.Errorf("bot_id and secret are required for WeCom AI Bot WebSocket mode")
 	}
 
@@ -433,7 +433,7 @@ func (c *WeComAIBotWSChannel) runConnection() error {
 		Headers: wsHeaders{ReqID: reqID},
 		Body: map[string]string{
 			"bot_id": c.config.BotID,
-			"secret": c.config.Secret,
+			"secret": c.config.Secret(),
 		},
 	}, wsSubscribeTimeout)
 	if err != nil {

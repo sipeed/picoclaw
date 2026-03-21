@@ -98,7 +98,7 @@ func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, 
 }
 
 func (c *QQChannel) Start(ctx context.Context) error {
-	if c.config.AppID == "" || c.config.AppSecret == "" {
+	if c.config.AppID == "" || c.config.AppSecret() == "" {
 		return fmt.Errorf("QQ app_id and app_secret not configured")
 	}
 
@@ -112,7 +112,7 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	// create token source
 	credentials := &token.QQBotCredentials{
 		AppID:     c.config.AppID,
-		AppSecret: c.config.AppSecret,
+		AppSecret: c.config.AppSecret(),
 	}
 	c.tokenSource = token.NewQQBotTokenSource(credentials)
 

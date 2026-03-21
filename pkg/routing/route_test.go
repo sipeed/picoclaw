@@ -11,7 +11,7 @@ func testConfig(agents []config.AgentConfig, bindings []config.AgentBinding) *co
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace: "/tmp/picoclaw-test",
-				Model:     "gpt-4",
+				ModelName: "gpt-4",
 			},
 			List: agents,
 		},
