@@ -425,6 +425,8 @@ type MatrixConfig struct {
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
+	CryptoDatabasePath string              `json:"crypto_database_path,omitempty" env:"PICOCLAW_CHANNELS_MATRIX_CRYPTO_DATABASE_PATH"`
+	CryptoPassphrase   string              `json:"crypto_passphrase,omitempty" env:"PICOCLAW_CHANNELS_MATRIX_CRYPTO_PASSPHRASE"`
 }
 
 type LINEConfig struct {

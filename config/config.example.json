@@ -161,7 +161,9 @@
         "enabled": true,
         "text": "Thinking... 💭"
       },
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "crypto_database_path": "",
+      "crypto_passphrase": "YOUR_MATRIX_CRYPTO_PICKLE_KEY"
     },
     "line": {
       "enabled": false,
