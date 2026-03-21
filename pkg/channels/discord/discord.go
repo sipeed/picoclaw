@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,12 +15,14 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
 
+	"github.com/sipeed/picoclaw/pkg/audio"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/tts"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -42,6 +45,12 @@ type DiscordChannel struct {
 	typingMu   sync.Mutex
 	typingStop map[string]chan struct{} // chatID → stop signal
 	botUserID  string                   // stored for mention checking
+	bus        *bus.MessageBus
+	tts        tts.TTSProvider
+
+	// TTS interruption: cancel active playback when user speaks
+	ttsMu     sync.Mutex
+	cancelTTS context.CancelFunc
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -73,6 +82,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		config:      cfg,
 		ctx:         context.Background(),
 		typingStop:  make(map[string]chan struct{}),
+		bus:         bus,
 	}, nil
 }
 
@@ -89,6 +99,8 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	c.botUserID = botUser.ID
 
 	c.session.AddHandler(c.handleMessage)
+
+	go c.listenVoiceControl(c.ctx)
 
 	if err := c.session.Open(); err != nil {
 		return fmt.Errorf("failed to open discord session: %w", err)
@@ -140,6 +152,30 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 
 	if len([]rune(msg.Content)) == 0 {
 		return nil
+	}
+
+	isToolCall := false
+	if msg.Metadata != nil {
+		if val, ok := msg.Metadata["is_tool_call"]; ok && val == "true" {
+			isToolCall = true
+		}
+	}
+
+	if c.tts != nil && !isToolCall {
+		if ch, err := c.session.State.Channel(channelID); err == nil && ch.GuildID != "" {
+			if vc, ok := c.session.VoiceConnections[ch.GuildID]; ok && vc != nil {
+				// Cancel any previous TTS playback
+				c.ttsMu.Lock()
+				if c.cancelTTS != nil {
+					c.cancelTTS()
+				}
+				ttsCtx, ttsCancel := context.WithCancel(c.ctx)
+				c.cancelTTS = ttsCancel
+				c.ttsMu.Unlock()
+
+				go c.playTTS(ttsCtx, vc, msg.Content)
+			}
+		}
 	}
 
 	return c.sendChunk(ctx, channelID, msg.Content, msg.ReplyToMessageID)
@@ -318,6 +354,10 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	if m.Author.ID == s.State.User.ID {
+		return
+	}
+
+	if c.handleVoiceCommand(s, m) {
 		return
 	}
 
@@ -611,4 +651,107 @@ func (c *DiscordChannel) stripBotMention(text string) string {
 	text = strings.ReplaceAll(text, fmt.Sprintf("<@%s>", c.botUserID), "")
 	text = strings.ReplaceAll(text, fmt.Sprintf("<@!%s>", c.botUserID), "")
 	return strings.TrimSpace(text)
+}
+
+func (c *DiscordChannel) listenVoiceControl(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ctrl, ok := <-c.bus.VoiceControlsChan():
+			if !ok {
+				return
+			}
+			if ctrl.Type == "command" && ctrl.Action == "leave" {
+				if strings.HasPrefix(ctrl.SessionID, "discord_vc_") {
+					guildID := strings.TrimPrefix(ctrl.SessionID, "discord_vc_")
+					vc, exists := c.session.VoiceConnections[guildID]
+					if exists && vc != nil {
+						vc.Disconnect(ctx)
+					}
+				}
+			}
+		}
+	}
+}
+
+func (c *DiscordChannel) playTTS(ctx context.Context, vc *discordgo.VoiceConnection, text string) {
+	// Clear cancelTTS when playback finishes (normal or interrupted)
+	defer func() {
+		c.ttsMu.Lock()
+		c.cancelTTS = nil
+		c.ttsMu.Unlock()
+	}()
+
+	sentences := audio.SplitSentences(text)
+	if len(sentences) == 0 {
+		return
+	}
+
+	logger.InfoCF("discord", "Starting streamed TTS", map[string]any{"sentences": len(sentences)})
+
+	// Pipeline: prefetch next sentence's audio while playing current
+	type ttResult struct {
+		stream io.ReadCloser
+		err    error
+	}
+
+	var prefetch chan ttResult
+
+	// Ensure any in-flight prefetch is drained on exit to prevent stream leaks
+	defer func() {
+		if prefetch != nil {
+			result := <-prefetch
+			if result.stream != nil {
+				result.stream.Close()
+			}
+		}
+	}()
+
+	for i, sentence := range sentences {
+		// Check for cancellation (interruption)
+		select {
+		case <-ctx.Done():
+			logger.InfoCF("discord", "TTS interrupted", map[string]any{"at_sentence": i})
+			return
+		default:
+		}
+
+		// Start prefetching the NEXT sentence while we process the current one
+		var nextPrefetch chan ttResult
+		if i+1 < len(sentences) {
+			nextPrefetch = make(chan ttResult, 1)
+			nextSentence := sentences[i+1]
+			go func() {
+				s, e := c.tts.Synthesize(ctx, nextSentence)
+				nextPrefetch <- ttResult{s, e}
+			}()
+		}
+
+		// Get the current sentence's audio
+		var stream io.ReadCloser
+		var err error
+
+		if prefetch != nil {
+			// Use prefetched result from previous iteration
+			result := <-prefetch
+			stream, err = result.stream, result.err
+		} else {
+			// First sentence: synthesize directly
+			stream, err = c.tts.Synthesize(ctx, sentence)
+		}
+
+		if err != nil {
+			logger.ErrorCF("discord", "TTS synthesize failed", map[string]any{"error": err.Error(), "sentence": i})
+			prefetch = nextPrefetch
+			continue
+		}
+
+		if err := streamOggOpusToDiscord(ctx, vc, stream); err != nil {
+			logger.ErrorCF("discord", "TTS playback failed", map[string]any{"error": err.Error(), "sentence": i})
+		}
+		stream.Close()
+
+		prefetch = nextPrefetch
+	}
 }
