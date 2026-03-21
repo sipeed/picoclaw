@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -184,7 +185,23 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 
 	channelType := "discord"
 
-	oralPrompt := "\n\n[SYSTEM]: The user just spoke this to you over voice chat. Please reply in a highly concise, conversational, oral style suitable for text-to-speech. Do not use markdown, emojis, asterisks, or code blocks. Speak naturally. If the user expresses that they want to end the call, say goodbye and use the voice_leave tool."
+	text := strings.ToLower(strings.TrimSpace(res.Text))
+	if strings.Contains(text, "leave the voice channel") || strings.Contains(text, "leave voice") || strings.Contains(text, "disconnect voice") {
+		logger.InfoCF("voice-agent", "Voice command triggered: leave", nil)
+		a.bus.PublishVoiceControl(ctx, bus.VoiceControl{
+			SessionID: acc.sessionID,
+			Type:      "command",
+			Action:    "leave",
+		})
+		a.bus.PublishOutbound(ctx, bus.OutboundMessage{
+			Channel: channelType,
+			ChatID:  acc.chatID,
+			Content: "Goodbye! Leaving the voice channel.",
+		})
+		return
+	}
+
+	oralPrompt := "\n\n[SYSTEM]: The user just spoke this to you over voice chat. Please reply in a highly concise, conversational, oral style suitable for text-to-speech. Do not use markdown, emojis, asterisks, or code blocks. Speak naturally."
 
 	a.bus.PublishInbound(ctx, bus.InboundMessage{
 		Channel:  channelType,

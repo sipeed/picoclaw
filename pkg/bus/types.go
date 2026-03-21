@@ -68,7 +68,6 @@ type AudioChunk struct {
 // VoiceControl represents state or commands for voice sessions.
 type VoiceControl struct {
 	SessionID string `json:"session_id"`
-	ChatID    string `json:"chat_id"`
-	Type      string `json:"type"`   // "state", "command"
+	Type      string `json:"type"`  // "state", "command"
 	Action    string `json:"action"` // "idle", "listening", "start", "stop"
 }

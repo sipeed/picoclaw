@@ -629,17 +629,8 @@ func (c *DiscordChannel) listenVoiceControl(ctx context.Context) {
 			return
 		case ctrl := <-c.bus.VoiceControlsChan():
 			if ctrl.Type == "command" && ctrl.Action == "leave" {
-				var guildID string
 				if strings.HasPrefix(ctrl.SessionID, "discord_vc_") {
-					guildID = strings.TrimPrefix(ctrl.SessionID, "discord_vc_")
-				} else if ctrl.ChatID != "" {
-					ch, err := c.session.State.Channel(ctrl.ChatID)
-					if err == nil {
-						guildID = ch.GuildID
-					}
-				}
-
-				if guildID != "" {
+					guildID := strings.TrimPrefix(ctrl.SessionID, "discord_vc_")
 					vc, exists := c.session.VoiceConnections[guildID]
 					if exists && vc != nil {
 						vc.Disconnect(ctx)
