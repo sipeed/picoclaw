@@ -21,6 +21,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 const (
@@ -43,6 +44,7 @@ type DiscordChannel struct {
 	typingStop map[string]chan struct{} // chatID → stop signal
 	botUserID  string                   // stored for mention checking
 	bus        *bus.MessageBus
+	tts        voice.TTSProvider
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -144,6 +146,14 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 
 	if len([]rune(msg.Content)) == 0 {
 		return nil
+	}
+
+	if c.tts != nil {
+		if ch, err := c.session.State.Channel(channelID); err == nil && ch.GuildID != "" {
+			if vc, ok := c.session.VoiceConnections[ch.GuildID]; ok && vc != nil {
+				go c.playTTS(context.Background(), vc, msg.Content)
+			}
+		}
 	}
 
 	return c.sendChunk(ctx, channelID, msg.Content, msg.ReplyToMessageID)
@@ -637,5 +647,18 @@ func (c *DiscordChannel) listenVoiceControl(ctx context.Context) {
 				}
 			}
 		}
+	}
+}
+
+func (c *DiscordChannel) playTTS(ctx context.Context, vc *discordgo.VoiceConnection, text string) {
+	stream, err := c.tts.Synthesize(ctx, text)
+	if err != nil {
+		logger.ErrorCF("discord", "TTS synthesize failed", map[string]any{"error": err.Error()})
+		return
+	}
+	defer stream.Close()
+
+	if err := streamOggOpusToDiscord(vc, stream); err != nil {
+		logger.ErrorCF("discord", "TTS playback failed", map[string]any{"error": err.Error()})
 	}
 }
