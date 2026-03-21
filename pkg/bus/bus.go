@@ -34,6 +34,8 @@ type MessageBus struct {
 	inbound       chan InboundMessage
 	outbound      chan OutboundMessage
 	outboundMedia chan OutboundMediaMessage
+	audioChunks   chan AudioChunk
+	voiceControls chan VoiceControl
 
 	closeOnce      sync.Once
 	done           chan struct{}
@@ -47,6 +49,8 @@ func NewMessageBus() *MessageBus {
 		inbound:       make(chan InboundMessage, defaultBusBufferSize),
 		outbound:      make(chan OutboundMessage, defaultBusBufferSize),
 		outboundMedia: make(chan OutboundMediaMessage, defaultBusBufferSize),
+		audioChunks:   make(chan AudioChunk, defaultBusBufferSize*4), // Audio chunks need more buffer
+		voiceControls: make(chan VoiceControl, defaultBusBufferSize),
 		done:          make(chan struct{}),
 	}
 }
@@ -103,6 +107,22 @@ func (mb *MessageBus) OutboundMediaChan() <-chan OutboundMediaMessage {
 	return mb.outboundMedia
 }
 
+func (mb *MessageBus) PublishAudioChunk(ctx context.Context, chunk AudioChunk) error {
+	return publish(ctx, mb, mb.audioChunks, chunk)
+}
+
+func (mb *MessageBus) AudioChunksChan() <-chan AudioChunk {
+	return mb.audioChunks
+}
+
+func (mb *MessageBus) PublishVoiceControl(ctx context.Context, ctrl VoiceControl) error {
+	return publish(ctx, mb, mb.voiceControls, ctrl)
+}
+
+func (mb *MessageBus) VoiceControlsChan() <-chan VoiceControl {
+	return mb.voiceControls
+}
+
 // SetStreamDelegate registers a StreamDelegate (typically the channel Manager).
 func (mb *MessageBus) SetStreamDelegate(d StreamDelegate) {
 	mb.streamDelegate.Store(d)
@@ -132,6 +152,8 @@ func (mb *MessageBus) Close() {
 		close(mb.inbound)
 		close(mb.outbound)
 		close(mb.outboundMedia)
+		close(mb.audioChunks)
+		close(mb.voiceControls)
 
 		// clean up any remaining messages in channels
 		drained := 0
@@ -142,6 +164,12 @@ func (mb *MessageBus) Close() {
 			drained++
 		}
 		for range mb.outboundMedia {
+			drained++
+		}
+		for range mb.audioChunks {
+			drained++
+		}
+		for range mb.voiceControls {
 			drained++
 		}
 
