@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/asr"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/commands"
@@ -31,7 +32,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 type AgentLoop struct {
@@ -51,7 +51,7 @@ type AgentLoop struct {
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
-	transcriber    voice.Transcriber
+	transcriber    asr.Transcriber
 	cmdRegistry    *commands.Registry
 	mcp            mcpRuntime
 	hookRuntime    hookRuntime
@@ -1040,7 +1040,7 @@ func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 }
 
 // SetTranscriber injects a voice transcriber for agent-level audio transcription.
-func (al *AgentLoop) SetTranscriber(t voice.Transcriber) {
+func (al *AgentLoop) SetTranscriber(t asr.Transcriber) {
 	al.transcriber = t
 }
 
