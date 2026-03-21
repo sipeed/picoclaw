@@ -670,6 +670,13 @@ func (c *DiscordChannel) listenVoiceControl(ctx context.Context) {
 }
 
 func (c *DiscordChannel) playTTS(ctx context.Context, vc *discordgo.VoiceConnection, text string) {
+	// Clear cancelTTS when playback finishes (normal or interrupted)
+	defer func() {
+		c.ttsMu.Lock()
+		c.cancelTTS = nil
+		c.ttsMu.Unlock()
+	}()
+
 	sentences := audio.SplitSentences(text)
 	if len(sentences) == 0 {
 		return
@@ -684,6 +691,16 @@ func (c *DiscordChannel) playTTS(ctx context.Context, vc *discordgo.VoiceConnect
 	}
 
 	var prefetch chan ttResult
+
+	// Ensure any in-flight prefetch is drained on exit to prevent stream leaks
+	defer func() {
+		if prefetch != nil {
+			result := <-prefetch
+			if result.stream != nil {
+				result.stream.Close()
+			}
+		}
+	}()
 
 	for i, sentence := range sentences {
 		// Check for cancellation (interruption)
@@ -730,13 +747,5 @@ func (c *DiscordChannel) playTTS(ctx context.Context, vc *discordgo.VoiceConnect
 		stream.Close()
 
 		prefetch = nextPrefetch
-	}
-
-	// Drain any leftover prefetch
-	if prefetch != nil {
-		result := <-prefetch
-		if result.stream != nil {
-			result.stream.Close()
-		}
 	}
 }
