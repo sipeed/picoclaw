@@ -57,6 +57,7 @@ type AudioChunk struct {
 	SessionID  string `json:"session_id"`
 	SpeakerID  string `json:"speaker_id"` // User ID or SSRC
 	ChatID     string `json:"chat_id"`    // Where to respond
+	Channel    string `json:"channel"`    // Source channel type (e.g. "discord")
 	Sequence   uint64 `json:"sequence"`
 	Timestamp  uint32 `json:"timestamp"`
 	SampleRate int    `json:"sample_rate"`
