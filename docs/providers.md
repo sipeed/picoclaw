@@ -95,7 +95,9 @@ This design also enables **multi-agent support** with flexible provider selectio
   ],
   "agents": {
     "defaults": {
-      "model_name": "gpt-5.4"
+      "model_name": "gpt-5.4",
+      "max_tokens": 8192,
+      "context_window": 131072
     }
   }
 }

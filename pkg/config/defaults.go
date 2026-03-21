@@ -31,6 +31,7 @@ func DefaultConfig() *Config {
 				Provider:                  "",
 				Model:                     "",
 				MaxTokens:                 32768,
+				ContextWindow:             131072,
 				Temperature:               nil, // nil means use provider default
 				MaxToolIterations:         50,
 				SummarizeMessageThreshold: 20,

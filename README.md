@@ -274,6 +274,7 @@ picoclaw onboard
       "workspace": "~/.picoclaw/workspace",
       "model_name": "gpt-5.4",
       "max_tokens": 8192,
+      "context_window": 131072,
       "temperature": 0.7,
       "max_tool_iterations": 20
     }
@@ -1019,6 +1020,7 @@ picoclaw onboard
       "workspace": "~/.picoclaw/workspace",
       "model_name": "gpt-5.4",
       "max_tokens": 8192,
+      "context_window": 131072,
       "temperature": 0.7,
       "max_tool_iterations": 20
     }
