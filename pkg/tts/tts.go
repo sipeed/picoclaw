@@ -29,11 +29,47 @@ type OpenAITTSProvider struct {
 }
 
 func NewOpenAITTSProvider(apiKey string, apiBase string, proxyURL string) *OpenAITTSProvider {
-	if apiBase == "" || apiBase == "https://api.openai.com/v1" {
+	// Normalize apiBase to avoid malformed endpoints like
+	// "https://api.openai.com/audio/speech" when "/v1" is required.
+	if apiBase == "" {
 		apiBase = "https://api.openai.com/v1/audio/speech"
-	} else if !strings.HasSuffix(apiBase, "/audio/speech") {
-		// Just in case they provide openrouter base or standard base
-		apiBase = strings.TrimSuffix(apiBase, "/") + "/audio/speech"
+	} else {
+		if u, err := url.Parse(apiBase); err == nil && u.Scheme != "" && u.Host != "" {
+			path := u.Path
+			if u.Host == "api.openai.com" {
+				// For the official OpenAI host, ensure exactly one /v1 prefix and
+				// that the path ends with /audio/speech.
+				if path == "" || path == "/" || path == "/v1" {
+					path = "/v1/audio/speech"
+				} else {
+					if !strings.HasPrefix(path, "/") {
+						path = "/" + path
+					}
+					if !strings.HasPrefix(path, "/v1/") {
+						path = "/v1" + strings.TrimSuffix(path, "/")
+					}
+					if !strings.HasSuffix(path, "/audio/speech") {
+						path = strings.TrimSuffix(path, "/") + "/audio/speech"
+					}
+				}
+			} else {
+				// For non-OpenAI hosts (e.g., proxies), preserve the existing base
+				// path and only ensure it ends with /audio/speech.
+				if !strings.HasSuffix(path, "/audio/speech") {
+					path = strings.TrimSuffix(path, "/") + "/audio/speech"
+				}
+			}
+			u.Path = path
+			apiBase = u.String()
+		} else {
+			// Fallback to the previous string-based behavior if parsing fails.
+			if apiBase == "https://api.openai.com/v1" {
+				apiBase = "https://api.openai.com/v1/audio/speech"
+			} else if !strings.HasSuffix(apiBase, "/audio/speech") {
+				// Just in case they provide openrouter base or standard base
+				apiBase = strings.TrimSuffix(apiBase, "/") + "/audio/speech"
+			}
+		}
 	}
 
 	client := &http.Client{
