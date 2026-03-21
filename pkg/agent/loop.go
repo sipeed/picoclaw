@@ -211,6 +211,12 @@ func registerSharedTools(
 			agent.Tools.Register(sendFileTool)
 		}
 
+		// Read image tool (converts local images to base64 for LLM recognition)
+		if cfg.Tools.IsToolEnabled("read_image") {
+			readImageTool := tools.NewReadImageTool(int64(cfg.Agents.Defaults.GetMaxMediaSize()))
+			agent.Tools.Register(readImageTool)
+		}
+
 		// Skill discovery and installation tools
 		skills_enabled := cfg.Tools.IsToolEnabled("skills")
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
@@ -1455,25 +1461,55 @@ func (al *AgentLoop) runLLMIteration(
 					})
 			}
 
-			// If tool returned media refs, publish them as outbound media
+			// Handle media data based on MediaDispatch type
 			if len(r.result.Media) > 0 {
-				parts := make([]bus.MediaPart, 0, len(r.result.Media))
-				for _, ref := range r.result.Media {
-					part := bus.MediaPart{Ref: ref}
-					if al.mediaStore != nil {
-						if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
-							part.Filename = meta.Filename
-							part.ContentType = meta.ContentType
-							part.Type = inferMediaType(meta.Filename, meta.ContentType)
+				switch r.result.MediaDispatch {
+				case tools.MediaDispatchToLLM:
+					// Media is base64-encoded data for LLM analysis
+					// The data will be included in the tool result message for LLM context
+					logger.DebugCF("agent", "Tool returned media for LLM analysis",
+						map[string]any{
+							"tool":        r.tc.Name,
+							"media_count": len(r.result.Media),
+						})
+
+				case tools.MediaDispatchOutbound, "":
+					// Default: media refs for external channels
+					parts := make([]bus.MediaPart, 0, len(r.result.Media))
+					for _, ref := range r.result.Media {
+						part := bus.MediaPart{Ref: ref}
+						if al.mediaStore != nil {
+							if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
+								part.Filename = meta.Filename
+								part.ContentType = meta.ContentType
+								part.Type = inferMediaType(meta.Filename, meta.ContentType)
+							}
 						}
+						parts = append(parts, part)
 					}
-					parts = append(parts, part)
+					al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
+						Channel: opts.Channel,
+						ChatID:  opts.ChatID,
+						Parts:   parts,
+					})
+
+				default:
+					// Unknown dispatch type, log warning and default to outbound
+					logger.WarnCF("agent", "Unknown media dispatch type, defaulting to outbound",
+						map[string]any{
+							"tool":          r.tc.Name,
+							"dispatch_type": r.result.MediaDispatch,
+						})
+					parts := make([]bus.MediaPart, 0, len(r.result.Media))
+					for _, ref := range r.result.Media {
+						parts = append(parts, bus.MediaPart{Ref: ref})
+					}
+					al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
+						Channel: opts.Channel,
+						ChatID:  opts.ChatID,
+						Parts:   parts,
+					})
 				}
-				al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
-					Channel: opts.Channel,
-					ChatID:  opts.ChatID,
-					Parts:   parts,
-				})
 			}
 
 			// Determine content for LLM based on tool result
@@ -1482,11 +1518,24 @@ func (al *AgentLoop) runLLMIteration(
 				contentForLLM = r.result.Err.Error()
 			}
 
+			// Build tool result message based on MediaDispatch
 			toolResultMsg := providers.Message{
 				Role:       "tool",
-				Content:    contentForLLM,
 				ToolCallID: r.tc.ID,
 			}
+
+			// Set Content and Media based on dispatch type
+			if r.result.MediaDispatch == tools.MediaDispatchToLLM && len(r.result.Media) > 0 {
+				// For LLM-bound media, mark content as [image] and include base64 data
+				toolResultMsg.Content = "[image]"
+				toolResultMsg.Media = r.result.Media
+			} else {
+				toolResultMsg.Content = contentForLLM
+				if len(r.result.Media) > 0 && r.result.MediaDispatch != tools.MediaDispatchToLLM {
+					toolResultMsg.Media = r.result.Media
+				}
+			}
+
 			messages = append(messages, toolResultMsg)
 
 			// Save tool result message to session
