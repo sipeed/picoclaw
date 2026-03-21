@@ -70,7 +70,8 @@ type processOptions struct {
 }
 
 const (
-	defaultResponse           = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
+	defaultResponse           = "The model returned an empty response. This may indicate a provider error or token limit."
+	toolLimitResponse         = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
 	sessionKeyAgentPrefix     = "agent:"
 	metadataKeyAccountID      = "account_id"
 	metadataKeyGuildID        = "guild_id"
@@ -935,7 +936,11 @@ func (al *AgentLoop) runAgentLoop(
 
 	// 4. Handle empty response
 	if finalContent == "" {
-		finalContent = opts.DefaultResponse
+		if iteration >= agent.MaxIterations && agent.MaxIterations > 0 {
+			finalContent = toolLimitResponse
+		} else {
+			finalContent = opts.DefaultResponse
+		}
 	}
 
 	// 5. Save final assistant message to session

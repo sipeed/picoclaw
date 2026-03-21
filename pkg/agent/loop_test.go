@@ -420,6 +420,29 @@ func (m *countingMockProvider) GetDefaultModel() string {
 	return "counting-mock-model"
 }
 
+type toolLimitOnlyProvider struct{}
+
+func (m *toolLimitOnlyProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	return &providers.LLMResponse{
+		ToolCalls: []providers.ToolCall{{
+			ID:        "call_tool_limit_test",
+			Type:      "function",
+			Name:      "tool_limit_test_tool",
+			Arguments: map[string]any{"value": "x"},
+		}},
+	}, nil
+}
+
+func (m *toolLimitOnlyProvider) GetDefaultModel() string {
+	return "tool-limit-only-model"
+}
+
 // mockCustomTool is a simple mock tool for registration testing
 type mockCustomTool struct{}
 
@@ -440,6 +463,29 @@ func (m *mockCustomTool) Parameters() map[string]any {
 
 func (m *mockCustomTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
 	return tools.SilentResult("Custom tool executed")
+}
+
+type toolLimitTestTool struct{}
+
+func (m *toolLimitTestTool) Name() string {
+	return "tool_limit_test_tool"
+}
+
+func (m *toolLimitTestTool) Description() string {
+	return "Tool used to exhaust the iteration budget in tests"
+}
+
+func (m *toolLimitTestTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"value": map[string]any{"type": "string"},
+		},
+	}
+}
+
+func (m *toolLimitTestTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	return tools.SilentResult("tool limit test result")
 }
 
 // testHelper executes a message and returns the response
@@ -1080,6 +1126,89 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+func TestAgentLoop_EmptyModelResponseUsesAccurateFallback(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 3,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: ""}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.ProcessDirectWithChannel(context.Background(), "hello", "empty-response", "test", "chat1")
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+	if response != defaultResponse {
+		t.Fatalf("response = %q, want %q", response, defaultResponse)
+	}
+}
+
+func TestAgentLoop_ToolLimitUsesDedicatedFallback(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 1,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &toolLimitOnlyProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	al.RegisterTool(&toolLimitTestTool{})
+
+	response, err := al.ProcessDirectWithChannel(context.Background(), "hello", "tool-limit", "test", "chat1")
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+	if response != toolLimitResponse {
+		t.Fatalf("response = %q, want %q", response, toolLimitResponse)
+	}
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: "test",
+		Peer: &routing.RoutePeer{
+			Kind: "direct",
+			ID:   "cron",
+		},
+	})
+	history := defaultAgent.Sessions.GetHistory(route.SessionKey)
+	if len(history) != 4 {
+		t.Fatalf("history len = %d, want 4", len(history))
+	}
+	assertRoles(t, history, "user", "assistant", "tool", "assistant")
+	if history[3].Content != toolLimitResponse {
+		t.Fatalf("final assistant content = %q, want %q", history[3].Content, toolLimitResponse)
 	}
 }
 
