@@ -48,7 +48,14 @@ func VoiceReceiveActive(vc *discordgo.VoiceConnection) bool {
 	return vc != nil && vc.OpusRecv != nil
 }
 
-func streamOggOpusToDiscord(ctx context.Context, vc *discordgo.VoiceConnection, r io.Reader) error {
+func streamOggOpusToDiscord(ctx context.Context, vc *discordgo.VoiceConnection, r io.Reader) (retErr error) {
+	// Recover from panic if vc.OpusSend is closed mid-send (e.g. on disconnect)
+	defer func() {
+		if rec := recover(); rec != nil {
+			retErr = fmt.Errorf("voice connection closed during playback")
+		}
+	}()
+
 	// Wait for the speaking transition to register
 	vc.Speaking(true)
 	defer vc.Speaking(false)
@@ -140,6 +147,13 @@ func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID str
 		case p, ok := <-vc.OpusRecv:
 			if !ok {
 				logger.InfoCF("discord", "Voice channel closed", map[string]any{"guild": guildID})
+				// Cancel any TTS that may still be playing
+				c.ttsMu.Lock()
+				if c.cancelTTS != nil {
+					c.cancelTTS()
+					c.cancelTTS = nil
+				}
+				c.ttsMu.Unlock()
 				return
 			}
 
