@@ -21,6 +21,7 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
 	_ "github.com/sipeed/picoclaw/pkg/channels/matrix"
+	_ "github.com/sipeed/picoclaw/pkg/channels/mqtt"
 	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
 	_ "github.com/sipeed/picoclaw/pkg/channels/pico"
 	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
@@ -43,20 +44,29 @@ import (
 )
 
 const (
-	serviceShutdownTimeout  = 30 * time.Second
-	providerReloadTimeout   = 30 * time.Second
+	serviceShutdownTimeout = 30 * time.Second
+
+	providerReloadTimeout = 30 * time.Second
+
 	gracefulShutdownTimeout = 15 * time.Second
 )
 
 type services struct {
-	CronService      *cron.CronService
+	CronService *cron.CronService
+
 	HeartbeatService *heartbeat.HeartbeatService
-	MediaStore       media.MediaStore
-	ChannelManager   *channels.Manager
-	DeviceService    *devices.Service
-	HealthServer     *health.Server
+
+	MediaStore media.MediaStore
+
+	ChannelManager *channels.Manager
+
+	DeviceService *devices.Service
+
+	HealthServer *health.Server
+
 	manualReloadChan chan struct{}
-	reloading        atomic.Bool
+
+	reloading atomic.Bool
 }
 
 type startupBlockedProvider struct {
@@ -105,6 +115,7 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 	startupInfo := agentLoop.GetStartupInfo()
 	toolsInfo := startupInfo["tools"].(map[string]any)
 	skillsInfo := startupInfo["skills"].(map[string]any)
+
 	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
 	fmt.Printf("  • Skills: %d/%d available\n", skillsInfo["available"], skillsInfo["total"])
 
@@ -123,6 +134,7 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 	// Setup manual reload channel for /reload endpoint
 	manualReloadChan := make(chan struct{}, 1)
 	runningServices.manualReloadChan = manualReloadChan
+
 	reloadTrigger := func() error {
 		if !runningServices.reloading.CompareAndSwap(false, true) {
 			return fmt.Errorf("reload already in progress")
@@ -136,6 +148,7 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 			return fmt.Errorf("reload already queued")
 		}
 	}
+
 	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
 	agentLoop.SetReloadFunc(reloadTrigger)
 
@@ -149,6 +162,7 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 
 	var configReloadChan <-chan *config.Config
 	stopWatch := func() {}
+
 	if cfg.Gateway.HotReload {
 		configReloadChan, stopWatch = setupConfigWatcherPolling(configPath, debug)
 		logger.Info("Config hot reload enabled")
@@ -164,6 +178,7 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 			logger.Info("Shutting down...")
 			shutdownGateway(runningServices, agentLoop, provider, true)
 			return nil
+
 		case newCfg := <-configReloadChan:
 			if !runningServices.reloading.CompareAndSwap(false, true) {
 				logger.Warn("Config reload skipped: another reload is in progress")
@@ -173,6 +188,7 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 			if err != nil {
 				logger.Errorf("Config reload failed: %v", err)
 			}
+
 		case <-manualReloadChan:
 			logger.Info("Manual reload triggered via /reload endpoint")
 			newCfg, err := config.LoadConfig(configPath)
@@ -222,7 +238,6 @@ func createStartupProvider(
 		})
 		return &startupBlockedProvider{reason: reason}, "", nil
 	}
-
 	return providers.CreateProvider(cfg)
 }
 
@@ -232,8 +247,8 @@ func setupAndStartServices(
 	msgBus *bus.MessageBus,
 ) (*services, error) {
 	runningServices := &services{}
-
 	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
+
 	var err error
 	runningServices.CronService, err = setupCronTool(
 		agentLoop,
@@ -279,7 +294,6 @@ func setupAndStartServices(
 		}
 		return nil, fmt.Errorf("error creating channel manager: %w", err)
 	}
-
 	agentLoop.SetChannelManager(runningServices.ChannelManager)
 	agentLoop.SetMediaStore(runningServices.MediaStore)
 
@@ -298,11 +312,9 @@ func setupAndStartServices(
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
 	runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
 	runningServices.ChannelManager.SetupHTTPServer(addr, runningServices.HealthServer)
-
 	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
 		return nil, fmt.Errorf("error starting channels: %w", err)
 	}
-
 	fmt.Printf(
 		"✓ Health endpoints available at http://%s:%d/health, /ready and /reload (POST)\n",
 		cfg.Gateway.Host,
@@ -332,15 +344,19 @@ func stopAndCleanupServices(runningServices *services, shutdownTimeout time.Dura
 	if !isReload && runningServices.ChannelManager != nil {
 		runningServices.ChannelManager.StopAll(shutdownCtx)
 	}
+
 	if runningServices.DeviceService != nil {
 		runningServices.DeviceService.Stop()
 	}
+
 	if runningServices.HeartbeatService != nil {
 		runningServices.HeartbeatService.Stop()
 	}
+
 	if runningServices.CronService != nil {
 		runningServices.CronService.Stop()
 	}
+
 	if runningServices.MediaStore != nil {
 		if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
 			fms.Stop()
@@ -357,12 +373,9 @@ func shutdownGateway(
 	if cp, ok := provider.(providers.StatefulProvider); ok && fullShutdown {
 		cp.Close()
 	}
-
 	stopAndCleanupServices(runningServices, gracefulShutdownTimeout, false)
-
 	agentLoop.Stop()
 	agentLoop.Close()
-
 	logger.Info("✓ Gateway stopped")
 }
 
@@ -383,7 +396,6 @@ func handleConfigReload(
 	}
 
 	logger.Infof(" New model is '%s', recreating provider...", newModel)
-
 	logger.Info("  Stopping all services...")
 	stopAndCleanupServices(runningServices, serviceShutdownTimeout, true)
 
@@ -434,8 +446,8 @@ func restartServices(
 	msgBus *bus.MessageBus,
 ) error {
 	cfg := al.GetConfig()
-
 	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
+
 	var err error
 	runningServices.CronService, err = setupCronTool(
 		al,
@@ -489,6 +501,7 @@ func restartServices(
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
+
 	// Reuse existing HealthServer to preserve reloadFunc
 	if runningServices.HealthServer == nil {
 		runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
@@ -514,6 +527,7 @@ func restartServices(
 
 	transcriber := voice.DetectTranscriber(cfg)
 	al.SetTranscriber(transcriber)
+
 	if transcriber != nil {
 		logger.InfoCF("voice", "Transcription re-enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
 	} else {
@@ -534,7 +548,6 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 
 		lastModTime := getFileModTime(configPath)
 		lastSize := getFileSize(configPath)
-
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 
@@ -550,7 +563,6 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 					}
 
 					time.Sleep(500 * time.Millisecond)
-
 					lastModTime = currentModTime
 					lastSize = currentSize
 
@@ -614,7 +626,6 @@ func setupCronTool(
 	cfg *config.Config,
 ) (*cron.CronService, error) {
 	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
-
 	cronService := cron.NewCronService(cronStorePath, nil)
 
 	var cronTool *tools.CronTool
@@ -624,7 +635,6 @@ func setupCronTool(
 		if err != nil {
 			return nil, fmt.Errorf("critical error during CronTool initialization: %w", err)
 		}
-
 		agentLoop.RegisterTool(cronTool)
 	}
 
@@ -648,9 +658,11 @@ func createHeartbeatHandler(agentLoop *agent.AgentLoop) func(prompt, channel, ch
 		if err != nil {
 			return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
 		}
+
 		if response == "HEARTBEAT_OK" {
 			return tools.SilentResult("Heartbeat OK")
 		}
+
 		return tools.SilentResult(response)
 	}
 }

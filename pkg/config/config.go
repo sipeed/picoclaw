@@ -299,6 +299,7 @@ type ChannelsConfig struct {
 	Pico       PicoConfig       `json:"pico"`
 	PicoClient PicoClientConfig `json:"pico_client"`
 	IRC        IRCConfig        `json:"irc"`
+	MQTT       MQTTConfig       `json:"mqtt"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
@@ -539,6 +540,29 @@ type IRCConfig struct {
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_IRC_REASONING_CHANNEL_ID"`
+}
+
+type MQTTConfig struct {
+	Enabled            bool                `json:"enabled"                      env:"PICOCLAW_CHANNELS_MQTT_ENABLED"`
+	Broker             string              `json:"broker"                       env:"PICOCLAW_CHANNELS_MQTT_BROKER"`
+	ClientID           string              `json:"client_id"                    env:"PICOCLAW_CHANNELS_MQTT_CLIENT_ID"`
+	Username           string              `json:"username"                     env:"PICOCLAW_CHANNELS_MQTT_USERNAME"`
+	Password           string              `json:"password"                     env:"PICOCLAW_CHANNELS_MQTT_PASSWORD"`
+	SubscribeTopics    []string            `json:"subscribe_topics"             env:"PICOCLAW_CHANNELS_MQTT_SUBSCRIBE_TOPICS"`
+	SubscribeJSONKey   *string             `json:"subscribe_json_key,omitempty"`
+	ReplyTopic         string              `json:"reply_topic"                  env:"PICOCLAW_CHANNELS_MQTT_REPLY_TOPIC"`
+	ReplyJSONKey       *string             `json:"reply_json_key,omitempty"`
+	TLS                bool                `json:"tls"                          env:"PICOCLAW_CHANNELS_MQTT_TLS"`
+	TLSCA              string              `json:"tls_ca"                       env:"PICOCLAW_CHANNELS_MQTT_TLS_CA"`
+	TLSCert            string              `json:"tls_cert"                     env:"PICOCLAW_CHANNELS_MQTT_TLS_CERT"`
+	TLSKey             string              `json:"tls_key"                      env:"PICOCLAW_CHANNELS_MQTT_TLS_KEY"`
+	QoS                int                 `json:"qos"                          env:"PICOCLAW_CHANNELS_MQTT_QOS"`
+	Retain             bool                `json:"retain"                       env:"PICOCLAW_CHANNELS_MQTT_RETAIN"`
+	Prefix             string              `json:"prefix"                       env:"PICOCLAW_CHANNELS_MQTT_PREFIX"`
+	Instruction        string              `json:"instruction"                  env:"PICOCLAW_CHANNELS_MQTT_INSTRUCTION"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"                   env:"PICOCLAW_CHANNELS_MQTT_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"         env:"PICOCLAW_CHANNELS_MQTT_REASONING_CHANNEL_ID"`
 }
 
 type HeartbeatConfig struct {
@@ -911,10 +935,13 @@ func LoadConfig(path string) (*Config, error) {
 
 	if passphrase := credential.PassphraseProvider(); passphrase != "" {
 		for _, m := range cfg.ModelList {
-			if m.APIKey != "" && !strings.HasPrefix(m.APIKey, "enc://") && !strings.HasPrefix(m.APIKey, "file://") {
-				fmt.Fprintf(os.Stderr,
+			if m.APIKey != "" && !strings.HasPrefix(m.APIKey, "enc://") &&
+				!strings.HasPrefix(m.APIKey, "file://") {
+				fmt.Fprintf(
+					os.Stderr,
 					"picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n",
-					m.ModelName)
+					m.ModelName,
+				)
 			}
 		}
 	}
@@ -967,7 +994,8 @@ func encryptPlaintextAPIKeys(models []ModelConfig, passphrase string) ([]ModelCo
 	changed := false
 	for i := range sealed {
 		m := &sealed[i]
-		if m.APIKey == "" || strings.HasPrefix(m.APIKey, "enc://") || strings.HasPrefix(m.APIKey, "file://") {
+		if m.APIKey == "" || strings.HasPrefix(m.APIKey, "enc://") ||
+			strings.HasPrefix(m.APIKey, "file://") {
 			continue
 		}
 		encrypted, err := credential.Encrypt(passphrase, "", m.APIKey)
@@ -1000,7 +1028,13 @@ func resolveAPIKeys(models []ModelConfig, configDir string) error {
 		for j, key := range models[i].APIKeys {
 			resolved, err := cr.Resolve(key)
 			if err != nil {
-				return fmt.Errorf("model_list[%d] (%s): api_keys[%d]: %w", i, models[i].ModelName, j, err)
+				return fmt.Errorf(
+					"model_list[%d] (%s): api_keys[%d]: %w",
+					i,
+					models[i].ModelName,
+					j,
+					err,
+				)
 			}
 			models[i].APIKeys[j] = resolved
 		}
