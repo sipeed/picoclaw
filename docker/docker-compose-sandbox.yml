@@ -1,0 +1,96 @@
+services:
+  # ─────────────────────────────────────────────
+  # PicoClaw Agent (one-shot query) - Sandboxed
+  #   docker compose -f docker/docker-compose-sandbox.yml run --rm picoclaw-agent -m "Hello"
+  # ─────────────────────────────────────────────
+  picoclaw-agent:
+    image: docker.io/sipeed/picoclaw:latest
+    container_name: picoclaw-agent-sandbox
+    profiles:
+      - agent
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/root/.picoclaw
+    entrypoint: ["picoclaw", "agent"]
+    stdin_open: true
+    tty: true
+    # ── Sandbox ──
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M
+      - /run:size=10M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 500
+    networks:
+      - picoclaw-net
+
+  # ─────────────────────────────────────────────
+  # PicoClaw Gateway (Long-running Bot) - Sandboxed
+  #   docker compose -f docker/docker-compose-sandbox.yml --profile gateway up
+  # ─────────────────────────────────────────────
+  picoclaw-gateway:
+    image: docker.io/sipeed/picoclaw:latest
+    container_name: picoclaw-gateway-sandbox
+    restart: on-failure
+    profiles:
+      - gateway
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/root/.picoclaw
+    # ── Sandbox ──
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M
+      - /run:size=10M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 500
+    networks:
+      - picoclaw-net
+
+  # ─────────────────────────────────────────────
+  # PicoClaw Launcher (Web Console + Gateway) - Sandboxed
+  #   docker compose -f docker/docker-compose-sandbox.yml --profile launcher up
+  # ─────────────────────────────────────────────
+  picoclaw-launcher:
+    image: docker.io/sipeed/picoclaw:launcher
+    container_name: picoclaw-launcher-sandbox
+    restart: on-failure
+    profiles:
+      - launcher
+    environment:
+      - PICOCLAW_GATEWAY_HOST=0.0.0.0
+    ports:
+      - "127.0.0.1:18800:18800"
+      - "127.0.0.1:18790:18790"
+    volumes:
+      - ./data:/root/.picoclaw
+    # ── Sandbox ──
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M
+      - /run:size=10M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 500
+    networks:
+      - picoclaw-net
+
+networks:
+  picoclaw-net:
+    driver: bridge

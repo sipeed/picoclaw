@@ -64,6 +64,53 @@ docker compose -f docker/docker-compose.yml pull
 docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
+## 🐳 Docker Compose - Sandbox
+
+您可以在沙箱化的 Docker 环境中运行 PicoClaw，以增强与宿主机的隔离。沙箱 compose 文件增加了安全加固：只读文件系统、移除 capabilities、资源限制（2 GB 内存、2 CPU、500 PID）和专用网络。
+
+```bash
+# 1. 首次运行 — 自动生成 docker/data/config.json 后退出
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up
+# 容器打印 "First-run setup complete." 后自动停止
+
+# 2. 填写 API Key 等配置
+vim docker/data/config.json   # 设置 provider API key、Bot Token 等
+
+# 3. 正式启动
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up -d
+```
+
+```bash
+# 4. 查看日志
+docker compose -f docker/docker-compose-sandbox.yml logs -f picoclaw-gateway
+
+# 5. 停止
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway down
+```
+
+### Launcher 模式 (Web 控制台)
+
+```bash
+docker compose -f docker/docker-compose-sandbox.yml --profile launcher up -d
+```
+
+### Agent 模式 (一次性运行)
+
+```bash
+# 提问
+docker compose -f docker/docker-compose-sandbox.yml run --rm picoclaw-agent -m "2+2 等于几？"
+
+# 交互模式
+docker compose -f docker/docker-compose-sandbox.yml run --rm picoclaw-agent
+```
+
+### 更新镜像
+
+```bash
+docker compose -f docker/docker-compose-sandbox.yml pull
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up -d
+```
+
 ---
 
 ## 🚀 快速开始
