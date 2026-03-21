@@ -2,6 +2,7 @@ package discord
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"time"
@@ -46,7 +47,7 @@ func VoiceReceiveActive(vc *discordgo.VoiceConnection) bool {
 	return vc != nil && vc.OpusRecv != nil
 }
 
-func streamOggOpusToDiscord(vc *discordgo.VoiceConnection, r io.Reader) error {
+func streamOggOpusToDiscord(ctx context.Context, vc *discordgo.VoiceConnection, r io.Reader) error {
 	// Wait for the speaking transition to register
 	vc.Speaking(true)
 	defer vc.Speaking(false)
@@ -55,6 +56,13 @@ func streamOggOpusToDiscord(vc *discordgo.VoiceConnection, r io.Reader) error {
 	header := make([]byte, 27)
 
 	for {
+		// Check for interruption
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if _, err := io.ReadFull(r, header); err != nil {
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				return nil
@@ -84,8 +92,11 @@ func streamOggOpusToDiscord(vc *discordgo.VoiceConnection, r io.Reader) error {
 				if len(packet) > 0 {
 					// Ignore Ogg Opus headers
 					if !bytes.HasPrefix(packet, []byte("OpusHead")) && !bytes.HasPrefix(packet, []byte("OpusTags")) {
-						// Pacing is handled natively by vc.OpusSend blocking (it has an internal ticker)
-						vc.OpusSend <- packet
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						case vc.OpusSend <- packet:
+						}
 					}
 					// Start new packet
 					packet = nil
@@ -118,6 +129,8 @@ func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID str
 	})
 
 	var sequence uint64 = 0
+	var interruptCount int
+	var lastInterruptAt time.Time
 
 	for {
 		select {
@@ -137,6 +150,26 @@ func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID str
 
 			if p == nil || len(p.Opus) == 0 {
 				continue
+			}
+
+			// Interruption detection: if user sends voice while TTS is playing,
+			// cancel TTS after a short debounce (3 packets in 200ms)
+			now := time.Now()
+			if now.Sub(lastInterruptAt) > 500*time.Millisecond {
+				interruptCount = 0
+			}
+			interruptCount++
+			lastInterruptAt = now
+
+			if interruptCount >= 3 {
+				c.ttsMu.Lock()
+				if c.cancelTTS != nil {
+					c.cancelTTS()
+					c.cancelTTS = nil
+					logger.InfoCF("discord", "TTS interrupted by user voice", nil)
+				}
+				c.ttsMu.Unlock()
+				interruptCount = 0
 			}
 
 			sequence++
