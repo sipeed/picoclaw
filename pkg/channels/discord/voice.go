@@ -113,16 +113,24 @@ func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID str
 				return
 			}
 
+			if p == nil {
+				logger.DebugCF("discord", "Received nil Opus packet", nil)
+				continue
+			}
+
+			if len(p.Opus) == 0 {
+				logger.DebugCF("discord", "Received empty Opus packet", map[string]any{
+					"seq":  p.Sequence,
+					"ssrc": p.SSRC,
+				})
+				continue
+			}
+
 			logger.DebugCF("discord", "Received Opus packet", map[string]any{
 				"seq":  p.Sequence,
 				"len":  len(p.Opus),
 				"ssrc": p.SSRC,
 			})
-
-			if p == nil || len(p.Opus) == 0 {
-				continue
-			}
-
 			// Interruption detection: if user sends voice while TTS is playing,
 			// cancel TTS after a short debounce (3 packets in 200ms)
 			now := time.Now()
@@ -158,7 +166,17 @@ func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID str
 				Data:       p.Opus,
 			}
 
-			c.bus.PublishAudioChunk(c.ctx, chunk)
+			ctx, cancel := context.WithTimeout(c.ctx, 100*time.Millisecond)
+			err := c.bus.PublishAudioChunk(ctx, chunk)
+			cancel()
+			if err != nil {
+				logger.ErrorCF("discord", "Failed to publish audio chunk", map[string]any{
+					"guild":     guildID,
+					"sessionID": sessionID,
+					"sequence":  sequence,
+					"error":     err.Error(),
+				})
+			}
 		}
 	}
 }
