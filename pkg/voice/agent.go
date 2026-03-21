@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ type speechAccumulator struct {
 	closed      bool
 	chatID      string
 	speakerID   string
+	sessionID   string
 }
 
 func (a *speechAccumulator) Push(chunk bus.AudioChunk) {
@@ -112,6 +114,7 @@ func (a *Agent) handleChunk(chunk bus.AudioChunk) {
 			lastAudioAt: time.Now(),
 			chatID:      chunk.ChatID,
 			speakerID:   chunk.SpeakerID,
+			sessionID:   chunk.SessionID,
 		}
 		a.sessions[key] = acc
 		logger.DebugCF("voice-agent", "Started accumulating voice", map[string]any{"key": key, "file": filename})
@@ -182,11 +185,13 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 
 	channelType := "discord"
 
+	oralPrompt := "\n\n[SYSTEM]: The user just spoke this to you over voice chat. Please reply in a highly concise, conversational, oral style suitable for text-to-speech. Do not use markdown, emojis, asterisks, or code blocks. Speak naturally. If the user expresses that they want to end the call, say goodbye and use the voice_leave tool."
+
 	a.bus.PublishInbound(ctx, bus.InboundMessage{
 		Channel:  channelType,
 		SenderID: acc.speakerID,
 		ChatID:   acc.chatID,
-		Content:  res.Text,
+		Content:  res.Text + oralPrompt,
 		Peer:     bus.Peer{Kind: "channel", ID: acc.chatID},
 		Metadata: map[string]string{
 			"is_voice": "true",
