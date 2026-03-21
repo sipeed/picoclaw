@@ -11,6 +11,7 @@ import (
 
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3/pkg/media/oggwriter"
+	"github.com/sipeed/picoclaw/pkg/asr"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
@@ -61,13 +62,13 @@ func (a *speechAccumulator) Close() {
 
 type Agent struct {
 	bus         *bus.MessageBus
-	transcriber Transcriber
+	transcriber asr.Transcriber
 
 	mu       sync.Mutex
 	sessions map[string]*speechAccumulator // keyed by sessionID_speakerID
 }
 
-func NewAgent(mb *bus.MessageBus, t Transcriber) *Agent {
+func NewAgent(mb *bus.MessageBus, t asr.Transcriber) *Agent {
 	return &Agent{
 		bus:         mb,
 		transcriber: t,

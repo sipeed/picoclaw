@@ -20,8 +20,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/tts"
 	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 const (
@@ -44,7 +44,7 @@ type DiscordChannel struct {
 	typingStop map[string]chan struct{} // chatID → stop signal
 	botUserID  string                   // stored for mention checking
 	bus        *bus.MessageBus
-	tts        voice.TTSProvider
+	tts        tts.TTSProvider
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -93,7 +93,7 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	c.botUserID = botUser.ID
 
 	c.session.AddHandler(c.handleMessage)
-	
+
 	go c.listenVoiceControl(c.ctx)
 
 	if err := c.session.Open(); err != nil {
