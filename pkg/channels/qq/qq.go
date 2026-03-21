@@ -41,6 +41,20 @@ const (
 	typingResend  = 8 * time.Second
 	typingSeconds = 10
 	bytesPerMiB   = 1024 * 1024
+
+	// Reconnection constants (used as defaults when config values are 0)
+	reconnectInitialDefault = 5 * time.Second
+	reconnectMaxDefault     = 5 * time.Minute
+	reconnectMultiplier     = 2.0
+
+	// Retry constants (used as defaults when config values are 0)
+	maxRetriesDefault        = 3
+	retryInitialDelayDefault = 500 * time.Millisecond
+	retryMaxDelayDefault     = 10 * time.Second
+
+	// Rate limit defaults
+	rateLimitGroupDefault  = 500 * time.Millisecond
+	rateLimitDirectDefault = 200 * time.Millisecond
 )
 
 type qqAPI interface {
@@ -80,6 +94,15 @@ type QQChannel struct {
 	// done is closed on Stop to shut down the dedup janitor.
 	done     chan struct{}
 	stopOnce sync.Once
+
+	// Reconnection state
+	reconnectMu   sync.Mutex
+	reconnecting  bool
+	stopReconnect chan struct{}
+
+	// Rate limiting
+	groupRateLimiter  *rateLimiter
+	directRateLimiter *rateLimiter
 }
 
 func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
@@ -89,11 +112,23 @@ func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, 
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
 
+	// Use config values with defaults for rate limiters
+	groupRateMs := cfg.RateLimitGroupMs
+	if groupRateMs <= 0 {
+		groupRateMs = int(rateLimitGroupDefault / time.Millisecond)
+	}
+	directRateMs := cfg.RateLimitDirectMs
+	if directRateMs <= 0 {
+		directRateMs = int(rateLimitDirectDefault / time.Millisecond)
+	}
+
 	return &QQChannel{
-		BaseChannel: base,
-		config:      cfg,
-		dedup:       make(map[string]time.Time),
-		done:        make(chan struct{}),
+		BaseChannel:       base,
+		config:            cfg,
+		dedup:             make(map[string]time.Time),
+		done:              make(chan struct{}),
+		groupRateLimiter:  newRateLimiter(time.Duration(groupRateMs) * time.Millisecond),
+		directRateLimiter: newRateLimiter(time.Duration(directRateMs) * time.Millisecond),
 	}, nil
 }
 
@@ -105,9 +140,13 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	botgo.SetLogger(newBotGoLogger("botgo"))
 	logger.InfoC("qq", "Starting QQ bot (WebSocket mode)")
 
-	// Reinitialize shutdown signal for clean restart.
+	// Reinitialize shutdown signals for clean restart.
 	c.done = make(chan struct{})
 	c.stopOnce = sync.Once{}
+	c.stopReconnect = make(chan struct{})
+	c.reconnectMu.Lock()
+	c.reconnecting = false
+	c.reconnectMu.Unlock()
 
 	// create token source
 	credentials := &token.QQBotCredentials{
@@ -127,43 +166,11 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	// initialize OpenAPI client
 	c.api = botgo.NewOpenAPI(c.config.AppID, c.tokenSource).WithTimeout(5 * time.Second)
 
-	// register event handlers
-	intent := event.RegisterHandlers(
-		c.handleC2CMessage(),
-		c.handleGroupATMessage(),
-	)
-
-	// get WebSocket endpoint
-	wsInfo, err := c.api.WS(c.ctx, nil, "")
-	if err != nil {
-		return fmt.Errorf("failed to get websocket info: %w", err)
-	}
-
-	logger.InfoCF("qq", "Got WebSocket info", map[string]any{
-		"shards": wsInfo.Shards,
-	})
-
-	// create and save sessionManager
-	c.sessionManager = botgo.NewSessionManager()
-
-	// start WebSocket connection in goroutine to avoid blocking
-	go func() {
-		if err := c.sessionManager.Start(wsInfo, c.tokenSource, &intent); err != nil {
-			logger.ErrorCF("qq", "WebSocket session error", map[string]any{
-				"error": err.Error(),
-			})
-			c.SetRunning(false)
-		}
-	}()
+	// start session with reconnection support
+	go c.startSession()
 
 	// start dedup janitor goroutine
 	go c.dedupJanitor()
-
-	// Pre-register reasoning_channel_id as group chat if configured,
-	// so outbound-only destinations are routed correctly.
-	if c.config.ReasoningChannelID != "" {
-		c.chatType.Store(c.config.ReasoningChannelID, "group")
-	}
 
 	c.SetRunning(true)
 	logger.InfoC("qq", "QQ bot started successfully")
@@ -174,6 +181,16 @@ func (c *QQChannel) Start(ctx context.Context) error {
 func (c *QQChannel) Stop(ctx context.Context) error {
 	logger.InfoC("qq", "Stopping QQ bot")
 	c.SetRunning(false)
+
+	// Signal reconnection loop to stop
+	c.reconnectMu.Lock()
+	c.reconnecting = false
+	c.reconnectMu.Unlock()
+
+	// Close stop channel to terminate reconnect goroutine
+	if c.stopReconnect != nil {
+		close(c.stopReconnect)
+	}
 
 	// Signal the dedup janitor to stop (idempotent).
 	c.stopOnce.Do(func() { close(c.done) })
@@ -207,6 +224,17 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 
 	chatKind := c.getChatKind(msg.ChatID)
 
+	// Apply rate limiting before sending
+	if chatKind == "group" {
+		if err := c.groupRateLimiter.waitWithContext(msg.ChatID, ctx); err != nil {
+			return fmt.Errorf("qq send: %w", err)
+		}
+	} else {
+		if err := c.directRateLimiter.waitWithContext(msg.ChatID, ctx); err != nil {
+			return fmt.Errorf("qq send: %w", err)
+		}
+	}
+
 	// Build message with content.
 	msgToCreate := &dto.MessageToCreate{
 		Content: msg.Content,
@@ -235,19 +263,54 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		}
 	}
 
-	// Route to group or C2C.
-	var err error
-	if chatKind == "group" {
-		_, err = c.api.PostGroupMessage(ctx, msg.ChatID, msgToCreate)
-	} else {
-		_, err = c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
-	}
+	// Route to group or C2C with retry.
+	maxRetries := c.maxRetries()
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := c.calculateBackoff(attempt - 1)
+			logger.InfoCF("qq", "Retrying send", map[string]any{
+				"attempt": attempt,
+				"chat_id": msg.ChatID,
+				"backoff": backoff.String(),
+			})
 
-	if err != nil {
-		logger.ErrorCF("qq", "Failed to send message", map[string]any{
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+
+		var err error
+		if chatKind == "group" {
+			_, err = c.api.PostGroupMessage(ctx, msg.ChatID, msgToCreate)
+		} else {
+			_, err = c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
+		}
+
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+		logger.WarnCF("qq", "Send attempt failed", map[string]any{
+			"attempt":   attempt + 1,
 			"chat_id":   msg.ChatID,
 			"chat_kind": chatKind,
 			"error":     err.Error(),
+		})
+
+		if !isRetryableError(err) {
+			break
+		}
+	}
+
+	if lastErr != nil {
+		logger.ErrorCF("qq", "Failed to send message after retries", map[string]any{
+			"chat_id":   msg.ChatID,
+			"chat_kind": chatKind,
+			"error":     lastErr.Error(),
 		})
 		return fmt.Errorf("qq send: %w", channels.ErrTemporary)
 	}
@@ -914,4 +977,214 @@ func sanitizeURLs(text string) string {
 
 		return scheme + domain + path
 	})
+}
+
+// startSession starts the WebSocket session with reconnection support.
+func (c *QQChannel) startSession() {
+	go func() {
+		for {
+			select {
+			case <-c.ctx.Done():
+				return
+			case <-c.stopReconnect:
+				return
+			default:
+				c.runSession()
+				// Session ended unexpectedly, attempt reconnect
+				if c.IsRunning() {
+					c.reconnect()
+				}
+			}
+		}
+	}()
+}
+
+// runSession runs a single WebSocket session.
+func (c *QQChannel) runSession() {
+	// Get WebSocket endpoint
+	wsInfo, err := c.api.WS(c.ctx, nil, "")
+	if err != nil {
+		logger.ErrorCF("qq", "Failed to get websocket info", map[string]any{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	logger.InfoCF("qq", "Got WebSocket info", map[string]any{
+		"shards": wsInfo.Shards,
+	})
+
+	// Create and start session
+	c.sessionManager = botgo.NewSessionManager()
+	intent := event.RegisterHandlers(
+		c.handleC2CMessage(),
+		c.handleGroupATMessage(),
+	)
+
+	if err := c.sessionManager.Start(wsInfo, c.tokenSource, &intent); err != nil {
+		logger.ErrorCF("qq", "WebSocket session error", map[string]any{
+			"error": err.Error(),
+		})
+		c.SetRunning(false)
+	}
+}
+
+// reconnect attempts to reconnect with exponential backoff.
+func (c *QQChannel) reconnect() {
+	c.reconnectMu.Lock()
+	if c.reconnecting {
+		c.reconnectMu.Unlock()
+		return
+	}
+	c.reconnecting = true
+	c.reconnectMu.Unlock()
+
+	defer func() {
+		c.reconnectMu.Lock()
+		c.reconnecting = false
+		c.reconnectMu.Unlock()
+	}()
+
+	backoff := c.reconnectInitial()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-c.stopReconnect:
+			return
+		default:
+		}
+
+		logger.InfoCF("qq", "Attempting to reconnect", map[string]any{
+			"backoff": backoff.String(),
+		})
+
+		// Reset internal state for new session
+		c.resetSessionState()
+
+		c.runSession()
+
+		if c.IsRunning() {
+			logger.InfoC("qq", "Reconnected successfully")
+			return
+		}
+
+		logger.WarnCF("qq", "Reconnect failed, retrying", map[string]any{
+			"backoff": backoff.String(),
+		})
+
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-c.stopReconnect:
+			return
+		case <-time.After(backoff):
+			reconnectMax := c.reconnectMax()
+			if backoff < reconnectMax {
+				backoff = time.Duration(float64(backoff) * reconnectMultiplier)
+				if backoff > reconnectMax {
+					backoff = reconnectMax
+				}
+			}
+		}
+	}
+}
+
+// resetSessionState clears transient state that may be invalid after reconnection.
+func (c *QQChannel) resetSessionState() {
+	// Clear transient state that may be invalid after reconnection
+	c.chatType.Range(func(key, value any) bool {
+		c.chatType.Delete(key)
+		return true
+	})
+	c.lastMsgID.Range(func(key, value any) bool {
+		c.lastMsgID.Delete(key)
+		return true
+	})
+	c.msgSeqCounters.Range(func(key, value any) bool {
+		c.msgSeqCounters.Delete(key)
+		return true
+	})
+
+	// Clear rate limiters to allow immediate sending after reconnection
+	if c.groupRateLimiter != nil {
+		c.groupRateLimiter.clearAll()
+	}
+	if c.directRateLimiter != nil {
+		c.directRateLimiter.clearAll()
+	}
+
+	// Re-register reasoning channel if configured
+	if c.config.ReasoningChannelID != "" {
+		c.chatType.Store(c.config.ReasoningChannelID, "group")
+	}
+}
+
+// isRetryableError returns true if the error should be retried.
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// Common transient error patterns
+	return strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "context deadline") ||
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "temporary failure") ||
+		strings.Contains(errStr, "429") ||
+		strings.Contains(errStr, "500") ||
+		strings.Contains(errStr, "502") ||
+		strings.Contains(errStr, "503")
+}
+
+// calculateBackoff returns the next backoff duration with exponential increase.
+func (c *QQChannel) calculateBackoff(attempt int) time.Duration {
+	initialDelay := c.retryInitialDelay()
+	maxDelay := c.retryMaxDelay()
+	backoff := initialDelay * time.Duration(1<<uint(attempt))
+	if backoff > maxDelay {
+		backoff = maxDelay
+	}
+	return backoff
+}
+
+// reconnectInitial returns the configured or default initial reconnect interval.
+func (c *QQChannel) reconnectInitial() time.Duration {
+	if c.config.ReconnectInitialMs > 0 {
+		return time.Duration(c.config.ReconnectInitialMs) * time.Millisecond
+	}
+	return reconnectInitialDefault
+}
+
+// reconnectMax returns the configured or default max reconnect interval.
+func (c *QQChannel) reconnectMax() time.Duration {
+	if c.config.ReconnectMaxMs > 0 {
+		return time.Duration(c.config.ReconnectMaxMs) * time.Millisecond
+	}
+	return reconnectMaxDefault
+}
+
+// maxRetries returns the configured or default max retry count.
+func (c *QQChannel) maxRetries() int {
+	if c.config.MaxRetries > 0 {
+		return c.config.MaxRetries
+	}
+	return maxRetriesDefault
+}
+
+// retryInitialDelay returns the configured or default initial retry delay.
+func (c *QQChannel) retryInitialDelay() time.Duration {
+	if c.config.RetryInitialDelayMs > 0 {
+		return time.Duration(c.config.RetryInitialDelayMs) * time.Millisecond
+	}
+	return retryInitialDelayDefault
+}
+
+// retryMaxDelay returns the configured or default max retry delay.
+func (c *QQChannel) retryMaxDelay() time.Duration {
+	if c.config.RetryMaxDelayMs > 0 {
+		return time.Duration(c.config.RetryMaxDelayMs) * time.Millisecond
+	}
+	return retryMaxDelayDefault
 }
