@@ -19,6 +19,8 @@ import (
 )
 
 func agentCmd(message, sessionKey, model string, debug bool) error {
+	logger.ConfigureFromEnv()
+
 	if sessionKey == "" {
 		sessionKey = "cli:default"
 	}
