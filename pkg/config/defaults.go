@@ -177,6 +177,14 @@ func DefaultConfig() *Config {
 				AllowFrom:      FlexibleStringSlice{},
 			},
 		},
+		Hooks: HooksConfig{
+			Enabled: true,
+			Defaults: HookDefaultsConfig{
+				ObserverTimeoutMS:    500,
+				InterceptorTimeoutMS: 5000,
+				ApprovalTimeoutMS:    60000,
+			},
+		},
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{WebSearch: true},
 		},

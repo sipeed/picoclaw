@@ -511,6 +511,14 @@
   "voice": {
     "echo_transcription": false
   },
+  "hooks": {
+    "enabled": true,
+    "defaults": {
+      "observer_timeout_ms": 500,
+      "interceptor_timeout_ms": 5000,
+      "approval_timeout_ms": 60000
+    }
+  },
   "gateway": {
     "host": "127.0.0.1",
     "port": 18790

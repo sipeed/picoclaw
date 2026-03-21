@@ -82,12 +82,43 @@ type Config struct {
 	Providers ProvidersConfig `json:"providers,omitempty"`
 	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
 	Gateway   GatewayConfig   `json:"gateway"`
+	Hooks     HooksConfig     `json:"hooks,omitempty"`
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
 	Voice     VoiceConfig     `json:"voice"`
 	// BuildInfo contains build-time version information
 	BuildInfo BuildInfo `json:"build_info,omitempty"`
+}
+
+type HooksConfig struct {
+	Enabled   bool                         `json:"enabled"`
+	Defaults  HookDefaultsConfig           `json:"defaults,omitempty"`
+	Builtins  map[string]BuiltinHookConfig `json:"builtins,omitempty"`
+	Processes map[string]ProcessHookConfig `json:"processes,omitempty"`
+}
+
+type HookDefaultsConfig struct {
+	ObserverTimeoutMS    int `json:"observer_timeout_ms,omitempty"`
+	InterceptorTimeoutMS int `json:"interceptor_timeout_ms,omitempty"`
+	ApprovalTimeoutMS    int `json:"approval_timeout_ms,omitempty"`
+}
+
+type BuiltinHookConfig struct {
+	Enabled  bool            `json:"enabled"`
+	Priority int             `json:"priority,omitempty"`
+	Config   json.RawMessage `json:"config,omitempty"`
+}
+
+type ProcessHookConfig struct {
+	Enabled   bool              `json:"enabled"`
+	Priority  int               `json:"priority,omitempty"`
+	Transport string            `json:"transport,omitempty"`
+	Command   []string          `json:"command,omitempty"`
+	Dir       string            `json:"dir,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	Observe   []string          `json:"observe,omitempty"`
+	Intercept []string          `json:"intercept,omitempty"`
 }
 
 // BuildInfo contains build-time version information

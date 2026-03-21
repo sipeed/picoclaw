@@ -183,6 +183,12 @@ func (al *AgentLoop) Continue(ctx context.Context, sessionKey, channel, chatID s
 	if active := al.GetActiveTurn(); active != nil {
 		return "", fmt.Errorf("turn %s is still active", active.TurnID)
 	}
+	if err := al.ensureHooksInitialized(ctx); err != nil {
+		return "", err
+	}
+	if err := al.ensureMCPInitialized(ctx); err != nil {
+		return "", err
+	}
 
 	steeringMsgs := al.dequeueSteeringMessages()
 	if len(steeringMsgs) == 0 {
