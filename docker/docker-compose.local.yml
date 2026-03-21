@@ -20,6 +20,8 @@ services:
     # - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/home/picoclaw/.picoclaw:Z
+    environment:
+      - PICOCLAW_GATEWAY_HOST=0.0.0.0 # needed to make healtcheck works on podman pod model
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
     tty: true
@@ -44,5 +46,7 @@ services:
     # Uncomment to access host network; leave commented unless needed.
     #extra_hosts:
     # - "host.docker.internal:host-gateway"
+    environment:
+      - PICOCLAW_GATEWAY_HOST=0.0.0.0 # needed to make healtcheck works on podman pod model
     volumes:
       - ./data:/home/picoclaw/.picoclaw:Z
