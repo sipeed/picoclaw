@@ -26,6 +26,7 @@ type speechAccumulator struct {
 	chatID      string
 	speakerID   string
 	sessionID   string
+	channel     string
 }
 
 func (a *speechAccumulator) Push(chunk bus.AudioChunk) {
@@ -117,6 +118,7 @@ func (a *Agent) handleChunk(chunk bus.AudioChunk) {
 			chatID:      chunk.ChatID,
 			speakerID:   chunk.SpeakerID,
 			sessionID:   chunk.SessionID,
+			channel:     chunk.Channel,
 		}
 		a.sessions[key] = acc
 		logger.DebugCF("voice-agent", "Started accumulating voice", map[string]any{"key": key, "file": filename})
@@ -185,7 +187,10 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 
 	logger.InfoCF("voice-agent", "Transcription result", map[string]any{"text": res.Text, "duration": res.Duration})
 
-	channelType := "discord"
+	channelType := acc.channel
+	if channelType == "" {
+		channelType = "discord" // fallback for legacy chunks
+	}
 
 	text := strings.ToLower(strings.TrimSpace(res.Text))
 	if strings.Contains(text, "leave the voice channel") || strings.Contains(text, "leave voice") ||

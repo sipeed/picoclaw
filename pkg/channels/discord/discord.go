@@ -162,7 +162,7 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 				if c.cancelTTS != nil {
 					c.cancelTTS()
 				}
-				ttsCtx, ttsCancel := context.WithCancel(context.Background())
+				ttsCtx, ttsCancel := context.WithCancel(c.ctx)
 				c.cancelTTS = ttsCancel
 				c.ttsMu.Unlock()
 
@@ -651,7 +651,10 @@ func (c *DiscordChannel) listenVoiceControl(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case ctrl := <-c.bus.VoiceControlsChan():
+		case ctrl, ok := <-c.bus.VoiceControlsChan():
+			if !ok {
+				return
+			}
 			if ctrl.Type == "command" && ctrl.Action == "leave" {
 				if strings.HasPrefix(ctrl.SessionID, "discord_vc_") {
 					guildID := strings.TrimPrefix(ctrl.SessionID, "discord_vc_")
