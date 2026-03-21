@@ -151,8 +151,9 @@ func NewAgentInstance(
 		summarizeTokenPercent = 75
 	}
 
-	// Resolve fallback candidates
+	// Resolve fallback candidates.
 	candidates := resolveModelCandidates(cfg, defaults.Provider, model, fallbacks)
+	candidates = applyCooldownKeys(cfg, candidates)
 
 	// Model routing setup: pre-resolve light model candidates at creation time
 	// to avoid repeated model_list lookups on every incoming message.
@@ -165,7 +166,7 @@ func NewAgentInstance(
 				LightModel: rc.LightModel,
 				Threshold:  rc.Threshold,
 			})
-			lightCandidates = resolved
+			lightCandidates = applyCooldownKeys(cfg, resolved)
 		} else {
 			logger.WarnCF("agent", "Routing light model not found; routing disabled",
 				map[string]any{"light_model": rc.LightModel, "agent_id": agentID})
@@ -195,6 +196,60 @@ func NewAgentInstance(
 		Router:                    router,
 		LightCandidates:           lightCandidates,
 	}
+}
+
+func applyCooldownKeys(cfg *config.Config, candidates []providers.FallbackCandidate) []providers.FallbackCandidate {
+	if len(candidates) == 0 {
+		return candidates
+	}
+
+	strategyLookup := buildCooldownStrategyLookup(cfg)
+	resolved := make([]providers.FallbackCandidate, len(candidates))
+	copy(resolved, candidates)
+
+	for i := range resolved {
+		resolved[i].CooldownKey = resolveCooldownKey(strategyLookup, resolved[i])
+	}
+
+	return resolved
+}
+
+func buildCooldownStrategyLookup(cfg *config.Config) map[string]string {
+	if cfg == nil || len(cfg.ModelList) == 0 {
+		return nil
+	}
+
+	strategyLookup := make(map[string]string, len(cfg.ModelList))
+	for i := range cfg.ModelList {
+		ref := providers.ParseModelRef(cfg.ModelList[i].Model, "openai")
+		if ref == nil {
+			continue
+		}
+
+		strategy := config.NormalizeCooldownStrategy(cfg.ModelList[i].CooldownStrategy)
+		if strategy == "" {
+			continue
+		}
+		strategyLookup[providers.ModelKey(ref.Provider, ref.Model)] = strategy
+	}
+
+	return strategyLookup
+}
+
+func resolveCooldownKey(strategyLookup map[string]string, candidate providers.FallbackCandidate) string {
+	if strings.TrimSpace(candidate.Provider) == "" {
+		if strings.TrimSpace(candidate.Model) == "" {
+			return ""
+		}
+		return providers.ModelKey(candidate.Provider, candidate.Model)
+	}
+
+	candidateKey := providers.ModelKey(candidate.Provider, candidate.Model)
+	if strategyLookup[candidateKey] == "model" {
+		return candidateKey
+	}
+
+	return candidate.Provider
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.
