@@ -57,7 +57,7 @@ Mặc định, skill được tải từ:
 
 1. `~/.picoclaw/workspace/skills` (workspace)
 2. `~/.picoclaw/skills` (global)
-3. `<current-working-directory>/skills` (builtin)
+3. `<đường-dẫn-nhúng-khi-build>/skills` (tích hợp)
 
 Cho thiết lập nâng cao/test, bạn có thể ghi đè thư mục gốc skill builtin với:
 

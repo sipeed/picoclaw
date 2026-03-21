@@ -43,11 +43,12 @@ Web 工具用于网页搜索和抓取。
 
 ### Brave
 
-| 配置项        | 类型   | 默认值 | 描述               |
-|---------------|--------|--------|--------------------|
-| `enabled`     | bool   | false  | 启用 Brave 搜索    |
-| `api_key`     | string | -      | Brave Search API 密钥 |
-| `max_results` | int    | 5      | 最大结果数         |
+| 配置项        | 类型     | 默认值 | 描述                                           |
+|---------------|----------|--------|------------------------------------------------|
+| `enabled`     | bool     | false  | 启用 Brave 搜索                                |
+| `api_key`     | string   | -      | Brave Search API 密钥                          |
+| `api_keys`    | string[] | -      | 多个 API 密钥轮换（优先于 `api_key`）          |
+| `max_results` | int      | 5      | 最大结果数                                     |
 
 ### DuckDuckGo
 
@@ -58,11 +59,46 @@ Web 工具用于网页搜索和抓取。
 
 ### Perplexity
 
-| 配置项        | 类型   | 默认值 | 描述                  |
-|---------------|--------|--------|-----------------------|
-| `enabled`     | bool   | false  | 启用 Perplexity 搜索  |
-| `api_key`     | string | -      | Perplexity API 密钥   |
-| `max_results` | int    | 5      | 最大结果数            |
+| 配置项        | 类型     | 默认值 | 描述                                           |
+|---------------|----------|--------|------------------------------------------------|
+| `enabled`     | bool     | false  | 启用 Perplexity 搜索                           |
+| `api_key`     | string   | -      | Perplexity API 密钥                            |
+| `api_keys`    | string[] | -      | 多个 API 密钥轮换（优先于 `api_key`）          |
+| `max_results` | int      | 5      | 最大结果数                                     |
+
+### Tavily
+
+| 配置项        | 类型   | 默认值 | 描述                              |
+|---------------|--------|--------|-----------------------------------|
+| `enabled`     | bool   | false  | 启用 Tavily 搜索                  |
+| `api_key`     | string | -      | Tavily API 密钥                   |
+| `base_url`    | string | -      | 自定义 Tavily API 基础 URL        |
+| `max_results` | int    | 0      | 最大结果数（0 = 默认）            |
+
+### SearXNG
+
+| 配置项        | 类型   | 默认值                   | 描述                  |
+|---------------|--------|--------------------------|-----------------------|
+| `enabled`     | bool   | false                    | 启用 SearXNG 搜索     |
+| `base_url`    | string | `http://localhost:8888`  | SearXNG 实例 URL      |
+| `max_results` | int    | 5                        | 最大结果数            |
+
+### GLM Search
+
+| 配置项          | 类型   | 默认值                                               | 描述                  |
+|-----------------|--------|------------------------------------------------------|-----------------------|
+| `enabled`       | bool   | false                                                | 启用 GLM 搜索        |
+| `api_key`       | string | -                                                    | GLM API 密钥          |
+| `base_url`      | string | `https://open.bigmodel.cn/api/paas/v4/web_search`   | GLM Search API URL    |
+| `search_engine` | string | `search_std`                                         | 搜索引擎类型          |
+| `max_results`   | int    | 5                                                    | 最大结果数            |
+
+### 其他 Web 设置
+
+| 配置项                   | 类型     | 默认值 | 描述                                           |
+|--------------------------|----------|--------|-------------------------------------------------|
+| `prefer_native`          | bool     | true   | 优先使用 provider 原生搜索而非配置的搜索引擎    |
+| `private_host_whitelist` | string[] | `[]`   | 允许 Web 抓取的私有/内部主机白名单              |
 
 ## Exec 工具
 
@@ -154,6 +190,7 @@ Cron 工具用于调度周期性任务。
 | 配置项                 | 类型 | 默认值 | 描述                                |
 |------------------------|------|--------|-------------------------------------|
 | `exec_timeout_minutes` | int  | 5      | 执行超时时间（分钟），0 表示无限制  |
+| `allow_command`        | bool | false  | 允许 cron 任务执行 shell 命令       |
 
 ## MCP 工具
 
@@ -320,9 +357,27 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
 | `registries.clawhub.enabled`       | bool   | true                 | 启用 ClawHub 注册表                  |
 | `registries.clawhub.base_url`      | string | `https://clawhub.ai` | ClawHub 基础 URL                     |
 | `registries.clawhub.auth_token`    | string | `""`                 | 可选的 Bearer 令牌，用于更高速率限制 |
-| `registries.clawhub.search_path`   | string | `/api/v1/search`     | 搜索 API 路径                        |
-| `registries.clawhub.skills_path`   | string | `/api/v1/skills`     | Skills API 路径                      |
-| `registries.clawhub.download_path` | string | `/api/v1/download`   | 下载 API 路径                        |
+| `registries.clawhub.search_path`   | string | `""`                 | 搜索 API 路径                        |
+| `registries.clawhub.skills_path`   | string | `""`                 | Skills API 路径                      |
+| `registries.clawhub.download_path` | string | `""`                 | 下载 API 路径                        |
+| `registries.clawhub.timeout`       | int    | 0                    | 请求超时时间（秒），0 = 默认         |
+| `registries.clawhub.max_zip_size`  | int    | 0                    | 技能 zip 最大大小（字节），0 = 默认  |
+| `registries.clawhub.max_response_size` | int | 0                   | API 响应最大大小（字节），0 = 默认   |
+
+### GitHub 集成
+
+| 配置项           | 类型   | 默认值 | 描述                          |
+|------------------|--------|--------|-------------------------------|
+| `github.proxy`   | string | `""`   | GitHub API 请求的 HTTP 代理   |
+| `github.token`   | string | `""`   | GitHub 个人访问令牌           |
+
+### 搜索设置
+
+| 配置项                     | 类型 | 默认值 | 描述                     |
+|----------------------------|------|--------|--------------------------|
+| `max_concurrent_searches`  | int  | 2      | 最大并发技能搜索请求数   |
+| `search_cache.max_size`    | int  | 50     | 最大缓存搜索结果数       |
+| `search_cache.ttl_seconds` | int  | 300    | 缓存 TTL（秒）           |
 
 ### 配置示例
 
@@ -334,11 +389,17 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
         "clawhub": {
           "enabled": true,
           "base_url": "https://clawhub.ai",
-          "auth_token": "",
-          "search_path": "/api/v1/search",
-          "skills_path": "/api/v1/skills",
-          "download_path": "/api/v1/download"
+          "auth_token": ""
         }
+      },
+      "github": {
+        "proxy": "",
+        "token": ""
+      },
+      "max_concurrent_searches": 2,
+      "search_cache": {
+        "max_size": 50,
+        "ttl_seconds": 300
       }
     }
   }
