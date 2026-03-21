@@ -83,6 +83,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		ctx:         context.Background(),
 		typingStop:  make(map[string]chan struct{}),
 		bus:         bus,
+		bus:         bus,
 	}, nil
 }
 
