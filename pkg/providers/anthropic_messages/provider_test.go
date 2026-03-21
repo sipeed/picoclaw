@@ -179,6 +179,26 @@ func TestBuildRequestBody(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "dotted model ID is normalized to dashes",
+			messages: []Message{
+				{Role: "user", Content: "Hi"},
+			},
+			model: "claude-sonnet-4.6",
+			options: map[string]any{
+				"max_tokens": 1024,
+			},
+			want: map[string]any{
+				"model":      "claude-sonnet-4-6",
+				"max_tokens": int64(1024),
+				"messages": []any{
+					map[string]any{
+						"role":    "user",
+						"content": "Hi",
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
