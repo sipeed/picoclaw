@@ -9,6 +9,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 // sessionSemaphore is a per-session mutex using a buffered channel.
@@ -36,6 +37,7 @@ func (al *AgentLoop) gcLoop() {
 
 			al.gcSessionLocks()
 			al.pruneMediaCache()
+			tools.CleanupTempFiles()
 
 		case <-al.done:
 
