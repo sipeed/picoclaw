@@ -46,3 +46,7 @@
 > `encrypt_key` と `verification_token` はオプションですが、本番環境ではイベント暗号化を有効にすることを推奨します。
 >
 > カスタム絵文字の参考：[飛書絵文字リスト](https://open.larkoffice.com/document/server-docs/im-v1/message-reaction/emojis-introduce)
+
+## プラットフォーム制限
+
+> ⚠️ **飛書チャネルは 32 ビットデバイスをサポートしていません。** 飛書 SDK は 64 ビットビルドのみ提供しています。armv6 / armv7 / mipsle などの 32 ビットアーキテクチャでは飛書チャネルを使用できません。32 ビットデバイスでのメッセージングには、Telegram、Discord、または OneBot をご利用ください。

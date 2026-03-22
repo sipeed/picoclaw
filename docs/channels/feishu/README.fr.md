@@ -46,3 +46,7 @@ Feishu (nom international : Lark) est une plateforme de collaboration d'entrepri
 > `encrypt_key` et `verification_token` sont optionnels ; l'activation du chiffrement des événements est recommandée pour les environnements de production.
 >
 > Pour les références d'emojis personnalisés, voir : [Liste des emojis Feishu](https://open.larkoffice.com/document/server-docs/im-v1/message-reaction/emojis-introduce)
+
+## Limitations de plateforme
+
+> ⚠️ **Le canal Feishu ne prend pas en charge les appareils 32 bits.** Le SDK Feishu ne fournit que des builds 64 bits. Les architectures 32 bits (armv6, armv7, mipsle, etc.) ne peuvent pas utiliser le canal Feishu. Pour la messagerie sur des appareils 32 bits, utilisez Telegram, Discord ou OneBot.

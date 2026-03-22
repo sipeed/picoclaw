@@ -35,16 +35,13 @@
 
 ## 设置流程
 
-1. 前往 [飞书开放平台](https://open.feishu.cn/)（国际版用户请前往 [Lark 开放平台](https://open.larksuite.com/)）创建应用
-2. 在应用设置中启用**机器人**能力
-3. 创建版本并发布应用（应用发布后配置才会生效）
-4. 获取 **App ID**（以 `cli_` 开头）和 **App Secret**
-5. 将 App ID 和 App Secret 填入 PicoClaw 配置文件
-6. 运行 `picoclaw gateway` 启动服务
-7. 在飞书中搜索机器人名称，开始对话
+1. 前往 [飞书开放平台](https://open.feishu.cn/)（国际版用户请前往 [Lark 开放平台](https://open.larksuite.com/)）创建应用程序
+2. 获取 App ID 和 App Secret
+3. 配置事件订阅和Webhook URL
+4. 设置加密(可选,生产环境建议启用)
+5. 将 App ID、App Secret、Encrypt Key 和 Verification Token(如果启用加密) 填入配置文件中
+6. 自定义你希望 PicoClaw react 你消息时的表情（可选, Reference URL: [Feishu Emoji List](https://open.larkoffice.com/document/server-docs/im-v1/message-reaction/emojis-introduce))
 
-> PicoClaw 使用 WebSocket/SDK 模式连接飞书，无需配置公网回调地址或 Webhook URL。
->
-> `encrypt_key` 和 `verification_token` 为可选项，生产环境建议启用事件加密。
->
-> 自定义表情参考：[飞书表情列表](https://open.larkoffice.com/document/server-docs/im-v1/message-reaction/emojis-introduce)
+## 平台限制
+
+> ⚠️ **飞书通道不支持 32 位设备。** 飞书官方 SDK 仅提供 64 位构建，armv6 / armv7 / mipsle 等 32 位架构无法使用飞书通道。如需在 32 位设备上接入即时通讯，请改用 Telegram、Discord 或 OneBot 等通道。
