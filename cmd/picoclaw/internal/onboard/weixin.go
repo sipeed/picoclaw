@@ -2,9 +2,7 @@ package onboard
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -51,6 +49,7 @@ func runWeixinOnboard(baseURL, proxy string, timeout time.Duration) error {
 		weixin.AuthFlowOpts{
 			BaseURL: baseURL,
 			Timeout: timeout,
+			Proxy:   proxy,
 		},
 	)
 	if err != nil {
@@ -91,15 +90,9 @@ func runWeixinOnboard(baseURL, proxy string, timeout time.Duration) error {
 func saveWeixinConfig(token, baseURL, proxy string) error {
 	cfgPath := internal.GetConfigPath()
 
-	raw, err := os.ReadFile(cfgPath)
+	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
-		// Config doesn't exist yet — create a minimal one
-		return writeMinimalWeixinConfig(cfgPath, token, baseURL, proxy)
-	}
-
-	var cfg config.Config
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return fmt.Errorf("failed to parse config: %w", err)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	cfg.Channels.Weixin.Enabled = true
@@ -112,36 +105,7 @@ func saveWeixinConfig(token, baseURL, proxy string) error {
 		cfg.Channels.Weixin.Proxy = proxy
 	}
 
-	return config.SaveConfig(cfgPath, &cfg)
-}
-
-func writeMinimalWeixinConfig(cfgPath, token, baseURL, proxy string) error {
-	if err := os.MkdirAll(internal.GetPicoclawHome(), 0o755); err != nil {
-		return err
-	}
-
-	weixinCfg := map[string]any{"enabled": true, "token": token}
-	const defaultBase = "https://ilinkai.weixin.qq.com/"
-	if baseURL != "" && baseURL != defaultBase {
-		weixinCfg["base_url"] = baseURL
-	}
-	if proxy != "" {
-		weixinCfg["proxy"] = proxy
-	}
-
-	minimal := map[string]any{
-		"channels": map[string]any{"weixin": weixinCfg},
-	}
-
-	data, err := json.MarshalIndent(minimal, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(cfgPath, data, 0o600); err != nil {
-		return err
-	}
-	fmt.Printf("✓ Created config at %s\n", cfgPath)
-	return nil
+	return config.SaveConfig(cfgPath, cfg)
 }
 
 func printManualWeixinConfig(token, baseURL string) {

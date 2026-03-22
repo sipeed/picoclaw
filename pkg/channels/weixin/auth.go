@@ -16,6 +16,7 @@ type AuthFlowOpts struct {
 	BaseURL string
 	BotType string
 	Timeout time.Duration
+	Proxy   string
 }
 
 // PerformLoginInteractive starts the Weixin QR login flow and blocks until login is successful or times out.
@@ -35,7 +36,7 @@ func PerformLoginInteractive(
 		opts.Timeout = 5 * time.Minute
 	}
 
-	api, err := NewApiClient(opts.BaseURL, "", "")
+	api, err := NewApiClient(opts.BaseURL, "", opts.Proxy)
 	if err != nil {
 		return "", "", "", "", fmt.Errorf("failed to create api client: %w", err)
 	}
