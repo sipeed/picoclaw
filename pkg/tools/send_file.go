@@ -124,13 +124,15 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	// Handle URL downloads
 	var resolved string
+	var dlResult downloadResult
 	var isURL bool
 	if isHTTPURL(path) {
 		var err error
-		resolved, err = downloadToTemp(ctx, path)
+		dlResult, err = downloadToTemp(ctx, path)
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("download failed: %v", err))
 		}
+		resolved = dlResult.Path
 		isURL = true
 		// Do NOT delete the temp file here — MediaStore only stores a path
 		// reference, so the file must survive until the channel sends it.
@@ -160,13 +162,17 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	filename, _ := args["filename"].(string)
 	if filename == "" {
 		if isURL {
-			filename = filenameFromURL(path)
+			filename = filenameForDownload(path, dlResult.ContentDisposition, dlResult.ContentType)
 		} else {
 			filename = filepath.Base(resolved)
 		}
 	}
 
 	mediaType := detectMediaType(resolved)
+	// If magic bytes and extension both failed, use Content-Type from HTTP response
+	if isURL && mediaType == "application/octet-stream" && dlResult.ContentType != "" {
+		mediaType = dlResult.ContentType
+	}
 	scope := fmt.Sprintf("tool:send_file:%s:%s", channel, chatID)
 
 	ref, err := t.mediaStore.Store(resolved, media.MediaMeta{
@@ -186,41 +192,57 @@ func isHTTPURL(path string) bool {
 	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
 }
 
+// downloadResult holds the downloaded temp file path and HTTP response metadata.
+type downloadResult struct {
+	Path               string
+	ContentType        string // from Content-Type header (media type only, no params)
+	ContentDisposition string // raw Content-Disposition header
+}
+
 // downloadToTemp downloads a URL to a temporary file under sendFileTempDir().
 // The file must persist until the channel has sent it; cleanup is handled by
 // CleanupTempFiles (periodic) rather than the caller.
-func downloadToTemp(ctx context.Context, rawURL string) (string, error) {
+func downloadToTemp(ctx context.Context, rawURL string) (downloadResult, error) {
 	dir := sendFileTempDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("create temp dir: %w", err)
+		return downloadResult{}, fmt.Errorf("create temp dir: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("build request: %w", err)
+		return downloadResult{}, fmt.Errorf("build request: %w", err)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("HTTP GET: %w", err)
+		return downloadResult{}, fmt.Errorf("HTTP GET: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("HTTP %d %s", resp.StatusCode, resp.Status)
+		return downloadResult{}, fmt.Errorf("HTTP %d %s", resp.StatusCode, resp.Status)
+	}
+
+	// Extract Content-Type (media type only)
+	respCT := resp.Header.Get("Content-Type")
+	mediaType, _, _ := mime.ParseMediaType(respCT)
+
+	// Determine file extension: prefer URL path, then Content-Type header
+	ext := extFromURL(rawURL)
+	if ext == "" && mediaType != "" {
+		ext = preferredExtension(mediaType)
 	}
 
 	// Generate a random temp filename to avoid collisions
 	var randBytes [8]byte
 	if _, err := rand.Read(randBytes[:]); err != nil {
-		return "", err
+		return downloadResult{}, err
 	}
-	ext := extFromURL(rawURL)
 	tmpPath := filepath.Join(dir, fmt.Sprintf("dl_%x%s", randBytes, ext))
 
 	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
-		return "", fmt.Errorf("create temp file: %w", err)
+		return downloadResult{}, fmt.Errorf("create temp file: %w", err)
 	}
 
 	n, copyErr := io.Copy(f, io.LimitReader(resp.Body, sendFileDownloadLimit+1))
@@ -229,14 +251,18 @@ func downloadToTemp(ctx context.Context, rawURL string) (string, error) {
 	}
 	if copyErr != nil {
 		os.Remove(tmpPath)
-		return "", fmt.Errorf("write temp file: %w", copyErr)
+		return downloadResult{}, fmt.Errorf("write temp file: %w", copyErr)
 	}
 	if n > sendFileDownloadLimit {
 		os.Remove(tmpPath)
-		return "", fmt.Errorf("download exceeds %d byte limit", sendFileDownloadLimit)
+		return downloadResult{}, fmt.Errorf("download exceeds %d byte limit", sendFileDownloadLimit)
 	}
 
-	return tmpPath, nil
+	return downloadResult{
+		Path:               tmpPath,
+		ContentType:        mediaType,
+		ContentDisposition: resp.Header.Get("Content-Disposition"),
+	}, nil
 }
 
 // extFromURL extracts a file extension from a URL path, e.g. ".jpg".
@@ -248,17 +274,75 @@ func extFromURL(rawURL string) string {
 	return filepath.Ext(u.Path)
 }
 
-// filenameFromURL derives a display filename from a URL.
-func filenameFromURL(rawURL string) string {
+// filenameForDownload derives a display filename using Content-Disposition,
+// the URL path, and Content-Type as progressive fallbacks.
+func filenameForDownload(rawURL, contentDisposition, contentType string) string {
+	// 1. Try Content-Disposition header
+	if contentDisposition != "" {
+		_, params, err := mime.ParseMediaType(contentDisposition)
+		if err == nil {
+			if fn := params["filename"]; fn != "" {
+				return fn
+			}
+		}
+	}
+
+	// 2. Try URL path basename
 	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "download"
+	if err == nil {
+		base := filepath.Base(u.Path)
+		if base != "" && base != "." && base != "/" {
+			// If basename has no extension, try to add one from Content-Type
+			if filepath.Ext(base) == "" && contentType != "" {
+				if ext := preferredExtension(contentType); ext != "" {
+					return base + ext
+				}
+			}
+			return base
+		}
 	}
-	base := filepath.Base(u.Path)
-	if base == "" || base == "." || base == "/" {
-		return "download"
+
+	// 3. Fallback
+	if contentType != "" {
+		if ext := preferredExtension(contentType); ext != "" {
+			return "download" + ext
+		}
 	}
-	return base
+	return "download"
+}
+
+// preferredExtension returns a file extension (with dot) for a MIME type.
+// Uses a short map of common types for deterministic results, then falls back
+// to mime.ExtensionsByType.
+func preferredExtension(mediaType string) string {
+	// mime.ExtensionsByType returns multiple options in undefined order;
+	// hardcode the most common ones for determinism.
+	preferred := map[string]string{
+		"image/png":       ".png",
+		"image/jpeg":      ".jpg",
+		"image/gif":       ".gif",
+		"image/webp":      ".webp",
+		"image/svg+xml":   ".svg",
+		"image/bmp":       ".bmp",
+		"image/tiff":      ".tiff",
+		"video/mp4":       ".mp4",
+		"video/webm":      ".webm",
+		"audio/mpeg":      ".mp3",
+		"audio/ogg":       ".ogg",
+		"application/pdf": ".pdf",
+		"application/zip": ".zip",
+		"text/plain":      ".txt",
+		"text/html":       ".html",
+		"application/json": ".json",
+	}
+	if ext, ok := preferred[mediaType]; ok {
+		return ext
+	}
+	exts, err := mime.ExtensionsByType(mediaType)
+	if err == nil && len(exts) > 0 {
+		return exts[0]
+	}
+	return ""
 }
 
 // CleanupTempFiles removes old temp files from the sendfile temp directory.
