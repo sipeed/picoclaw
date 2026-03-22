@@ -78,7 +78,7 @@ func runWeixinOnboard(baseURL, proxy string, timeout time.Duration) error {
 
 	fmt.Println("✓ Config updated. Start the gateway with:")
 	fmt.Println()
-	fmt.Println("  picoclaw gateway start")
+	fmt.Println("  picoclaw gateway")
 	fmt.Println()
 	fmt.Println("To restrict which WeChat users can send messages, add their user IDs")
 	fmt.Println("to channels.weixin.allow_from in your config.")

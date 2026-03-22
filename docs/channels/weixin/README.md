@@ -18,7 +18,7 @@ This command will:
 After onboarding, you can start the gateway:
 
 ```bash
-picoclaw gateway start
+picoclaw gateway
 ```
 
 ---

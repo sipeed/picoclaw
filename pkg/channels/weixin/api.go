@@ -32,10 +32,19 @@ func NewApiClient(baseURL, token string, proxy string) (*ApiClient, error) {
 	if proxy != "" {
 		proxyURL, err := url.Parse(proxy)
 		if err != nil {
-			return nil, fmt.Errorf("invalid proxy URL %q: %v", proxy, err)
+			return nil, fmt.Errorf("invalid proxy URL %q: %w", proxy, err)
 		}
-		client.Transport = &http.Transport{
-			Proxy: http.ProxyURL(proxyURL),
+
+		// Clone the default transport so we preserve all default settings (TLS, HTTP/2, timeouts, keep-alives)
+		if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+			transport := defaultTransport.Clone()
+			transport.Proxy = http.ProxyURL(proxyURL)
+			client.Transport = transport
+		} else {
+			// Fallback: preserve previous behavior if DefaultTransport is not the expected type
+			client.Transport = &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			}
 		}
 	}
 

@@ -18,7 +18,7 @@ picoclaw onboard weixin
 配置完成后，即可启动网关：
 
 ```bash
-picoclaw gateway start
+picoclaw gateway
 ```
 
 ---

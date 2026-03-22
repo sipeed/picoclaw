@@ -292,7 +292,7 @@ func (c *WeixinChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		logger.ErrorCF("weixin", "Missing context token, cannot send message", map[string]any{
 			"to_user_id": toUserID,
 		})
-		return fmt.Errorf("weixin send: missing context token for chat %s", toUserID)
+		return fmt.Errorf("weixin send: %w: missing context token for chat %s", channels.ErrSendFailed, toUserID)
 	}
 	clientID := "picoclaw-" + uuid.New().String()
 

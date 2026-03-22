@@ -183,7 +183,7 @@ picoclaw onboard weixin
 Scan the printed QR code with your WeChat mobile app. On success, the token is saved to your config.
 
 **2. Configure**
-（Optional) Update `allow_from` with your WeChat User ID to restrict who can message the bot:
+(Optional) Update `allow_from` with your WeChat User ID to restrict who can message the bot:
 ```json
 {
   "channels": {
