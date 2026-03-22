@@ -24,7 +24,7 @@ func NewApiClient(baseURL, token string, proxy string) (*ApiClient, error) {
 	if baseURL == "" {
 		baseURL = "https://ilinkai.weixin.qq.com/"
 	}
-	
+
 	client := &http.Client{
 		// Default timeout; will be overridden per context
 	}
@@ -53,7 +53,7 @@ func randomWechatUIN() string {
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", uint32Val)))
 }
 
-func (c *ApiClient) post(ctx context.Context, endpoint string, body interface{}, responseObj interface{}) error {
+func (c *ApiClient) post(ctx context.Context, endpoint string, body any, responseObj any) error {
 	u, err := url.Parse(c.BaseURL)
 	if err != nil {
 		return err
@@ -72,16 +72,17 @@ func (c *ApiClient) post(ctx context.Context, endpoint string, body interface{},
 
 	req.Header.Set("Content-Type", "application/json")
 	if endpoint == "ilink/bot/get_bot_qrcode" || endpoint == "ilink/bot/get_qrcode_status" {
-	    // QR routes have different headers sometimes, but let's stick to base ones
-	    if endpoint == "ilink/bot/get_qrcode_status" {
-	        req.Header.Set("iLink-App-ClientVersion", "1")
-	    }
+		// QR routes have different headers sometimes, but let's stick to base ones
+		if endpoint == "ilink/bot/get_qrcode_status" {
+			// Use direct map assignment to send exact header name the Tencent API expects
+			req.Header["iLink-App-ClientVersion"] = []string{"1"}
+		}
 	} else {
-	    req.Header.Set("AuthorizationType", "ilink_bot_token")
-	    req.Header.Set("X-WECHAT-UIN", randomWechatUIN())
-	    if c.Token != "" {
-	    	req.Header.Set("Authorization", "Bearer "+c.Token)
-	    }
+		req.Header["AuthorizationType"] = []string{"ilink_bot_token"}
+		req.Header["X-WECHAT-UIN"] = []string{randomWechatUIN()}
+		if c.Token != "" {
+			req.Header.Set("Authorization", "Bearer "+c.Token)
+		}
 	}
 
 	resp, err := c.HttpClient.Do(req)
@@ -140,7 +141,7 @@ func (c *ApiClient) SendTyping(ctx context.Context, req SendTypingReq) error {
 }
 
 func (c *ApiClient) GetQRCode(ctx context.Context, botType string) (*QRCodeResponse, error) {
-    // get_bot_qrcode is GET, not POST
+	// get_bot_qrcode is GET, not POST
 	u, err := url.Parse(c.BaseURL)
 	if err != nil {
 		return nil, err
@@ -149,18 +150,18 @@ func (c *ApiClient) GetQRCode(ctx context.Context, botType string) (*QRCodeRespo
 	q := u.Query()
 	q.Set("bot_type", botType)
 	u.RawQuery = q.Encode()
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	resp, err := c.HttpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -168,7 +169,7 @@ func (c *ApiClient) GetQRCode(ctx context.Context, botType string) (*QRCodeRespo
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("get_bot_qrcode failed: %d %s", resp.StatusCode, string(respBody))
 	}
-	
+
 	var qrcodeResp QRCodeResponse
 	if err := json.Unmarshal(respBody, &qrcodeResp); err != nil {
 		return nil, err
@@ -177,7 +178,7 @@ func (c *ApiClient) GetQRCode(ctx context.Context, botType string) (*QRCodeRespo
 }
 
 func (c *ApiClient) GetQRCodeStatus(ctx context.Context, qrcode string) (*StatusResponse, error) {
-    // get_qrcode_status is GET
+	// get_qrcode_status is GET
 	u, err := url.Parse(c.BaseURL)
 	if err != nil {
 		return nil, err
@@ -186,19 +187,19 @@ func (c *ApiClient) GetQRCodeStatus(ctx context.Context, qrcode string) (*Status
 	q := u.Query()
 	q.Set("qrcode", qrcode)
 	u.RawQuery = q.Encode()
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("iLink-App-ClientVersion", "1")
-	
+	req.Header["iLink-App-ClientVersion"] = []string{"1"}
+
 	resp, err := c.HttpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -206,7 +207,7 @@ func (c *ApiClient) GetQRCodeStatus(ctx context.Context, qrcode string) (*Status
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("get_qrcode_status failed: %d %s", resp.StatusCode, string(respBody))
 	}
-	
+
 	var statusResp StatusResponse
 	if err := json.Unmarshal(respBody, &statusResp); err != nil {
 		return nil, err

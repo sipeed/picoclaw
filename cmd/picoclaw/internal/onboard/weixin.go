@@ -116,7 +116,7 @@ func saveWeixinConfig(token, baseURL, proxy string) error {
 }
 
 func writeMinimalWeixinConfig(cfgPath, token, baseURL, proxy string) error {
-	if err := os.MkdirAll(internal.GetPicoclawHome(), 0755); err != nil {
+	if err := os.MkdirAll(internal.GetPicoclawHome(), 0o755); err != nil {
 		return err
 	}
 
@@ -137,7 +137,7 @@ func writeMinimalWeixinConfig(cfgPath, token, baseURL, proxy string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(cfgPath, data, 0600); err != nil {
+	if err := os.WriteFile(cfgPath, data, 0o600); err != nil {
 		return err
 	}
 	fmt.Printf("✓ Created config at %s\n", cfgPath)

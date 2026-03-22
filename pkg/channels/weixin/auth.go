@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/mdp/qrterminal/v3"
+
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-// AuthFlow opts
+// AuthFlowOpts configures the interactive QR login flow.
 type AuthFlowOpts struct {
 	BaseURL string
 	BotType string
@@ -20,7 +21,10 @@ type AuthFlowOpts struct {
 // PerformLoginInteractive starts the Weixin QR login flow and blocks until login is successful or times out.
 // It prints a QR code to the terminal for the user to scan.
 // Returns the BotToken, UserID, AccountID, and BaseUrl on success.
-func PerformLoginInteractive(ctx context.Context, opts AuthFlowOpts) (botToken, userID, accountID, baseUrl string, err error) {
+func PerformLoginInteractive(
+	ctx context.Context,
+	opts AuthFlowOpts,
+) (botToken, userID, accountID, baseUrl string, err error) {
 	if opts.BaseURL == "" {
 		opts.BaseURL = "https://ilinkai.weixin.qq.com/"
 	}
@@ -46,11 +50,11 @@ func PerformLoginInteractive(ctx context.Context, opts AuthFlowOpts) (botToken, 
 	fmt.Println("Please scan the following QR code with WeChat to login:")
 	fmt.Println("=======================================================")
 	fmt.Println()
-	
+
 	// Create Small QR
 	qrconfig := qrterminal.Config{
-		Level:     qrterminal.L,
-		Writer:    os.Stdout,
+		Level:      qrterminal.L,
+		Writer:     os.Stdout,
 		HalfBlocks: true,
 	}
 	qrterminal.GenerateWithConfig(qrResp.QrcodeImgContent, qrconfig)
@@ -89,15 +93,15 @@ func PerformLoginInteractive(ctx context.Context, opts AuthFlowOpts) (botToken, 
 				if statusResp.BotToken == "" || statusResp.IlinkBotID == "" {
 					return "", "", "", "", fmt.Errorf("login confirmed but missing bot_token or ilink_bot_id")
 				}
-				logger.InfoCF("weixin", "Login successful", map[string]interface{}{
+				logger.InfoCF("weixin", "Login successful", map[string]any{
 					"account_id": statusResp.IlinkBotID,
 				})
-				
+
 				return statusResp.BotToken, statusResp.IlinkUserID, statusResp.IlinkBotID, statusResp.Baseurl, nil
 			case "expired":
 				return "", "", "", "", fmt.Errorf("qrcode expired, please try again")
 			default:
-				logger.WarnCF("weixin", "Unknown QR code status", map[string]interface{}{
+				logger.WarnCF("weixin", "Unknown QR code status", map[string]any{
 					"status": statusResp.Status,
 				})
 			}

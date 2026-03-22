@@ -35,4 +35,3 @@ func NewOnboardCommand() *cobra.Command {
 
 	return cmd
 }
-

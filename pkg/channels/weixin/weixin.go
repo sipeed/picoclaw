@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -18,11 +19,11 @@ import (
 // WeixinChannel is the Weixin channel implementation over Tencent iLink REST API.
 type WeixinChannel struct {
 	*channels.BaseChannel
-	api           *ApiClient
-	config        config.WeixinConfig
-	ctx           context.Context
-	cancel        context.CancelFunc
-	bus           *bus.MessageBus
+	api    *ApiClient
+	config config.WeixinConfig
+	ctx    context.Context
+	cancel context.CancelFunc
+	bus    *bus.MessageBus
 	// contextTokens stores the last context_token per user (from_user_id → context_token).
 	// This is required by the iLink API to associate replies with the right chat session.
 	contextTokens sync.Map
@@ -76,7 +77,7 @@ func (c *WeixinChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-// pollLoop is the long-poll receive loop. It runs until ctx is cancelled.
+// pollLoop is the long-poll receive loop. It runs until ctx is canceled.
 func (c *WeixinChannel) pollLoop(ctx context.Context) {
 	const (
 		defaultPollTimeoutMs = 35_000

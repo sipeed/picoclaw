@@ -14,18 +14,18 @@ const (
 )
 
 type GetUploadUrlReq struct {
-	Filekey        string `json:"filekey,omitempty"`
-	MediaType      int    `json:"media_type,omitempty"`
-	ToUserID       string `json:"to_user_id,omitempty"`
-	Rawsize        int64  `json:"rawsize,omitempty"`
-	RawfileMD5     string `json:"rawfilemd5,omitempty"`
-	Filesize       int64  `json:"filesize,omitempty"`
-	ThumbRawsize   int64  `json:"thumb_rawsize,omitempty"`
-	ThumbRawfileMD5 string `json:"thumb_rawfilemd5,omitempty"`
-	ThumbFilesize  int64  `json:"thumb_filesize,omitempty"`
-	NoNeedThumb    bool   `json:"no_need_thumb,omitempty"`
-	Aeskey         string `json:"aeskey,omitempty"` // base64
-	BaseInfo       BaseInfo `json:"base_info,omitempty"`
+	Filekey         string   `json:"filekey,omitempty"`
+	MediaType       int      `json:"media_type,omitempty"`
+	ToUserID        string   `json:"to_user_id,omitempty"`
+	Rawsize         int64    `json:"rawsize,omitempty"`
+	RawfileMD5      string   `json:"rawfilemd5,omitempty"`
+	Filesize        int64    `json:"filesize,omitempty"`
+	ThumbRawsize    int64    `json:"thumb_rawsize,omitempty"`
+	ThumbRawfileMD5 string   `json:"thumb_rawfilemd5,omitempty"`
+	ThumbFilesize   int64    `json:"thumb_filesize,omitempty"`
+	NoNeedThumb     bool     `json:"no_need_thumb,omitempty"`
+	Aeskey          string   `json:"aeskey,omitempty"` // base64
+	BaseInfo        BaseInfo `json:"base_info,omitempty"`
 }
 
 type GetUploadUrlResp struct {
@@ -77,12 +77,12 @@ type ImageItem struct {
 }
 
 type VoiceItem struct {
-	Media          *CDNMedia `json:"media,omitempty"`
-	EncodeType     int       `json:"encode_type,omitempty"`
-	BitsPerSample  int       `json:"bits_per_sample,omitempty"`
-	SampleRate     int       `json:"sample_rate,omitempty"`
-	Playtime       int       `json:"playtime,omitempty"`
-	Text           string    `json:"text,omitempty"`
+	Media         *CDNMedia `json:"media,omitempty"`
+	EncodeType    int       `json:"encode_type,omitempty"`
+	BitsPerSample int       `json:"bits_per_sample,omitempty"`
+	SampleRate    int       `json:"sample_rate,omitempty"`
+	Playtime      int       `json:"playtime,omitempty"`
+	Text          string    `json:"text,omitempty"`
 }
 
 type FileItem struct {
@@ -109,34 +109,34 @@ type RefMessage struct {
 }
 
 type MessageItem struct {
-	Type          int         `json:"type,omitempty"`
-	CreateTimeMs  int64       `json:"create_time_ms,omitempty"`
-	UpdateTimeMs  int64       `json:"update_time_ms,omitempty"`
-	IsCompleted   bool        `json:"is_completed,omitempty"`
-	MsgID         string      `json:"msg_id,omitempty"`
-	RefMsg        *RefMessage `json:"ref_msg,omitempty"`
-	TextItem      *TextItem   `json:"text_item,omitempty"`
-	ImageItem     *ImageItem  `json:"image_item,omitempty"`
-	VoiceItem     *VoiceItem  `json:"voice_item,omitempty"`
-	FileItem      *FileItem   `json:"file_item,omitempty"`
-	VideoItem     *VideoItem  `json:"video_item,omitempty"`
+	Type         int         `json:"type,omitempty"`
+	CreateTimeMs int64       `json:"create_time_ms,omitempty"`
+	UpdateTimeMs int64       `json:"update_time_ms,omitempty"`
+	IsCompleted  bool        `json:"is_completed,omitempty"`
+	MsgID        string      `json:"msg_id,omitempty"`
+	RefMsg       *RefMessage `json:"ref_msg,omitempty"`
+	TextItem     *TextItem   `json:"text_item,omitempty"`
+	ImageItem    *ImageItem  `json:"image_item,omitempty"`
+	VoiceItem    *VoiceItem  `json:"voice_item,omitempty"`
+	FileItem     *FileItem   `json:"file_item,omitempty"`
+	VideoItem    *VideoItem  `json:"video_item,omitempty"`
 }
 
 type WeixinMessage struct {
-	Seq           int           `json:"seq,omitempty"`
-	MessageID     int64         `json:"message_id,omitempty"`
-	FromUserID    string        `json:"from_user_id,omitempty"`
-	ToUserID      string        `json:"to_user_id,omitempty"`
-	ClientID      string        `json:"client_id,omitempty"`
-	CreateTimeMs  int64         `json:"create_time_ms,omitempty"`
-	UpdateTimeMs  int64         `json:"update_time_ms,omitempty"`
-	DeleteTimeMs  int64         `json:"delete_time_ms,omitempty"`
-	SessionID     string        `json:"session_id,omitempty"`
-	GroupID       string        `json:"group_id,omitempty"`
-	MessageType   int           `json:"message_type,omitempty"`
-	MessageState  int           `json:"message_state,omitempty"`
-	ItemList      []MessageItem `json:"item_list,omitempty"`
-	ContextToken  string        `json:"context_token,omitempty"`
+	Seq          int           `json:"seq,omitempty"`
+	MessageID    int64         `json:"message_id,omitempty"`
+	FromUserID   string        `json:"from_user_id,omitempty"`
+	ToUserID     string        `json:"to_user_id,omitempty"`
+	ClientID     string        `json:"client_id,omitempty"`
+	CreateTimeMs int64         `json:"create_time_ms,omitempty"`
+	UpdateTimeMs int64         `json:"update_time_ms,omitempty"`
+	DeleteTimeMs int64         `json:"delete_time_ms,omitempty"`
+	SessionID    string        `json:"session_id,omitempty"`
+	GroupID      string        `json:"group_id,omitempty"`
+	MessageType  int           `json:"message_type,omitempty"`
+	MessageState int           `json:"message_state,omitempty"`
+	ItemList     []MessageItem `json:"item_list,omitempty"`
+	ContextToken string        `json:"context_token,omitempty"`
 }
 
 type GetUpdatesReq struct {
