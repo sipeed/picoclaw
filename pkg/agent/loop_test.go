@@ -1080,9 +1080,9 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 
 	// Inject some history to simulate a full context
 	sessionKey := "test-session-context"
-	// Create dummy history
+	// Create realistic persisted history: session storage contains conversation
+	// turns only, not the synthetic system prompt built at request time.
 	history := []providers.Message{
-		{Role: "system", Content: "System prompt"},
 		{Role: "user", Content: "Old message 1"},
 		{Role: "assistant", Content: "Old response 1"},
 		{Role: "user", Content: "Old message 2"},
@@ -1119,13 +1119,62 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 
 	// Check final history length
 	finalHistory := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(finalHistory) == 0 {
+		t.Fatal("expected compressed history to be preserved")
+	}
+	for _, msg := range finalHistory {
+		if msg.Role == "system" {
+			t.Fatalf("persisted history must not contain system messages: %+v", msg)
+		}
+	}
+	if strings.Contains(finalHistory[0].Content, "[System Note:") {
+		t.Fatalf("first persisted message was incorrectly rewritten as system note: %q", finalHistory[0].Content)
+	}
 	// We verify that the history has been modified (compressed)
-	// Original length: 6
+	// Original length: 5
 	// Expected behavior: compression drops ~50% of history (mid slice)
 	// We can assert that the length is NOT what it would be without compression.
-	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
-	if len(finalHistory) >= 8 {
-		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	// Without compression: 5 + 1 (new user msg) + 1 (assistant msg) = 7
+	if len(finalHistory) >= 7 {
+		t.Errorf("Expected history to be compressed (len < 7), got %d", len(finalHistory))
+	}
+}
+
+func TestAgentLoop_ForceCompression_DoesNotTreatFirstMessageAsSystem(t *testing.T) {
+	al, _, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	sessionKey := "force-compression-no-system"
+	defaultAgent.Sessions.SetHistory(sessionKey, []providers.Message{
+		{Role: "user", Content: "Old message 1"},
+		{Role: "assistant", Content: "Old response 1"},
+		{Role: "user", Content: "Old message 2"},
+		{Role: "assistant", Content: "Old response 2"},
+		{Role: "user", Content: "Trigger message"},
+	})
+
+	al.forceCompression(defaultAgent, sessionKey)
+
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 3 {
+		t.Fatalf("compressed history len = %d, want 3", len(history))
+	}
+	assertRoles(t, history, "user", "assistant", "user")
+	if history[0].Content != "Old message 2" {
+		t.Fatalf("compressed history[0] = %q, want %q", history[0].Content, "Old message 2")
+	}
+	if strings.Contains(history[0].Content, "Compression note") {
+		t.Fatalf("compression note must not be injected into persisted conversation message: %q", history[0].Content)
+	}
+
+	summary := defaultAgent.Sessions.GetSummary(sessionKey)
+	if !strings.Contains(summary, "dropped 2 oldest conversation messages") {
+		t.Fatalf("summary missing compression note: %q", summary)
 	}
 }
 

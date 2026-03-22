@@ -1565,46 +1565,49 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 }
 
 // forceCompression aggressively reduces context when the limit is hit.
-// It drops the oldest 50% of messages (keeping system prompt and last user message).
+// Session history only stores conversation messages; system prompt is rebuilt
+// per request by ContextBuilder and must never be persisted into history.
 func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	history := agent.Sessions.GetHistory(sessionKey)
 	if len(history) <= 4 {
 		return
 	}
 
-	// Keep system prompt (usually [0]) and the very last message (user's trigger)
-	// We want to drop the oldest half of the *conversation*
-	// Assuming [0] is system, [1:] is conversation
-	conversation := history[1 : len(history)-1]
-	if len(conversation) == 0 {
+	// Drop the oldest half of the actual conversation while preserving the most
+	// recent context window. If historical test data injected system messages
+	// directly into the session, strip them here rather than treating them as
+	// special persisted state.
+	cleanedHistory := make([]providers.Message, 0, len(history))
+	for _, msg := range history {
+		if msg.Role == "system" {
+			continue
+		}
+		cleanedHistory = append(cleanedHistory, msg)
+	}
+	if len(cleanedHistory) <= 4 {
+		if len(cleanedHistory) != len(history) {
+			agent.Sessions.SetHistory(sessionKey, cleanedHistory)
+			agent.Sessions.Save(sessionKey)
+		}
 		return
 	}
 
-	// Helper to find the mid-point of the conversation
-	mid := len(conversation) / 2
+	dropCount := len(cleanedHistory) / 2
+	if dropCount == 0 {
+		return
+	}
 
-	// New history structure:
-	// 1. System Prompt (with compression note appended)
-	// 2. Second half of conversation
-	// 3. Last message
+	newHistory := append([]providers.Message(nil), cleanedHistory[dropCount:]...)
 
-	droppedCount := mid
-	keptConversation := conversation[mid:]
-
-	newHistory := make([]providers.Message, 0, 1+len(keptConversation)+1)
-
-	// Append compression note to the original system prompt instead of adding a new system message
-	// This avoids having two consecutive system messages which some APIs (like Zhipu) reject
 	compressionNote := fmt.Sprintf(
-		"\n\n[System Note: Emergency compression dropped %d oldest messages due to context limit]",
-		droppedCount,
+		"[Compression note: dropped %d oldest conversation messages due to context limit.]",
+		dropCount,
 	)
-	enhancedSystemPrompt := history[0]
-	enhancedSystemPrompt.Content = enhancedSystemPrompt.Content + compressionNote
-	newHistory = append(newHistory, enhancedSystemPrompt)
-
-	newHistory = append(newHistory, keptConversation...)
-	newHistory = append(newHistory, history[len(history)-1]) // Last message
+	if summary := strings.TrimSpace(agent.Sessions.GetSummary(sessionKey)); summary != "" {
+		agent.Sessions.SetSummary(sessionKey, summary+"\n"+compressionNote)
+	} else {
+		agent.Sessions.SetSummary(sessionKey, compressionNote)
+	}
 
 	// Update session
 	agent.Sessions.SetHistory(sessionKey, newHistory)
@@ -1612,7 +1615,7 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 
 	logger.WarnCF("agent", "Forced compression executed", map[string]any{
 		"session_key":  sessionKey,
-		"dropped_msgs": droppedCount,
+		"dropped_msgs": dropCount,
 		"new_count":    len(newHistory),
 	})
 }
