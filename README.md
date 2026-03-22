@@ -363,6 +363,7 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk,
 | **Telegram** | Easy (just a token)                |
 | **Discord**  | Easy (bot token + intents)         |
 | **WhatsApp** | Easy (native: QR scan; or bridge URL) |
+| **Weixin**   | Easy (Native QR scan)                 |
 | **Matrix**   | Medium (homeserver + bot access token) |
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
@@ -506,6 +507,39 @@ PicoClaw can connect to WhatsApp in two ways:
 ```
 
 If `session_store_path` is empty, the session is stored in `&lt;workspace&gt;/whatsapp/`. Run `picoclaw gateway`; on first run, scan the QR code printed in the terminal with WhatsApp → Linked Devices.
+
+</details>
+
+<details>
+<summary><b>Weixin</b> (WeChat Personal)</summary>
+
+PicoClaw supports connecting to your personal WeChat account using the official Tencent iLink API.
+
+**1. Login**
+Run the interactive QR login flow:
+```bash
+picoclaw onboard weixin
+```
+Scan the printed QR code with your WeChat mobile app. On success, the token is saved to your config.
+
+**2. Configure**
+（Optional) Update `allow_from` with your WeChat User ID to restrict who can message the bot:
+```json
+{
+  "channels": {
+    "weixin": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "allow_from": ["YOUR_USER_ID"]
+    }
+  }
+}
+```
+
+**3. Run**
+```bash
+picoclaw gateway
+```
 
 </details>
 
@@ -713,6 +747,7 @@ Connect Picoclaw to the Agent Social Network simply by sending a single message 
 | Command                   | Description                   |
 | ------------------------- | ----------------------------- |
 | `picoclaw onboard`        | Initialize config & workspace |
+| `picoclaw onboard weixin` | Connect WeChat account via QR |
 | `picoclaw agent -m "..."` | Chat with the agent           |
 | `picoclaw agent`          | Interactive chat mode         |
 | `picoclaw gateway`        | Start the gateway             |
