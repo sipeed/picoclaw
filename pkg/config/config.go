@@ -691,6 +691,10 @@ func (c *ModelConfig) Validate() error {
 	return nil
 }
 
+type ToolConfig struct {
+	Enabled bool `json:"enabled" env:"ENABLED"`
+}
+
 type GatewayConfig struct {
 	Host      string `json:"host"       env:"PICOCLAW_GATEWAY_HOST"`
 	Port      int    `json:"port"       env:"PICOCLAW_GATEWAY_PORT"`
@@ -950,6 +954,10 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
 	}
 
+	// If model_list is still empty and no legacy providers, use default model list
+	// This ensures new users get a working config template on first run
+	if len(cfg.ModelList) == 0 && !cfg.HasProvidersConfig() {
+		cfg.ModelList = GetDefaultModelList()
 	// Inherit credentials from providers to model_list entries (#1635).
 	// When both providers and model_list are present, model_list entries
 	// whose api_key/api_base are empty will inherit from the matching
