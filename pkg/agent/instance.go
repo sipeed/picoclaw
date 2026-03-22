@@ -91,6 +91,9 @@ func NewAgentInstance(
 			toolsRegistry.Register(execTool)
 		}
 	}
+	if cfg.Tools.IsToolEnabled("execline") {
+		toolsRegistry.Register(tools.NewExeclineTool(cfg))
+	}
 
 	if cfg.Tools.IsToolEnabled("edit_file") {
 		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))

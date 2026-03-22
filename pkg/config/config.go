@@ -829,6 +829,16 @@ type ExecConfig struct {
 	TimeoutSeconds      int      `                                 env:"PICOCLAW_TOOLS_EXEC_TIMEOUT_SECONDS"       json:"timeout_seconds"` // 0 means use default (60s)
 }
 
+type ExeclineConfig struct {
+	ToolConfig         `                  json:","`
+	DenyDefaultsEnable bool              `json:"deny_defaults_enable"`
+	Deny               []string          `json:"deny"`
+	Allow              []string          `json:"allow"`
+	TimeoutSeconds     int               `json:"timeout_seconds"`
+	EnvSet             map[string]string `json:"env_set"`
+	EnvAllowlist       []string          `json:"env_allowlist"`
+}
+
 type SkillsToolsConfig struct {
 	ToolConfig            `                       envPrefix:"PICOCLAW_TOOLS_SKILLS_"`
 	Registries            SkillsRegistriesConfig `                                   json:"registries"`
@@ -854,6 +864,7 @@ type ToolsConfig struct {
 	Web             WebToolsConfig     `json:"web"`
 	Cron            CronToolsConfig    `json:"cron"`
 	Exec            ExecConfig         `json:"exec"`
+	Execline        ExeclineConfig     `json:"execline"`
 	Skills          SkillsToolsConfig  `json:"skills"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 	MCP             MCPConfig          `json:"mcp"`
@@ -1327,6 +1338,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.Cron.Enabled
 	case "exec":
 		return t.Exec.Enabled
+	case "execline":
+		return t.Execline.Enabled
 	case "skills":
 		return t.Skills.Enabled
 	case "media_cleanup":
