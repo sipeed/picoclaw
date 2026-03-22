@@ -239,7 +239,7 @@ func TestSendFileTool_URLDownloadHTTPError(t *testing.T) {
 	}
 }
 
-func TestSendFileTool_URLTempFileCleanedUp(t *testing.T) {
+func TestSendFileTool_URLTempFilePersistsForMediaStore(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("data"))
 	}))
@@ -249,31 +249,32 @@ func TestSendFileTool_URLTempFileCleanedUp(t *testing.T) {
 	tool := NewSendFileTool(t.TempDir(), false, 0, store)
 	tool.SetContext("telegram", "chat123")
 
-	// Execute should download and clean up temp file
-	tool.Execute(context.Background(), map[string]any{
+	result := tool.Execute(context.Background(), map[string]any{
 		"path": srv.URL + "/photo.jpg",
 	})
-
-	// Verify no temp files remain with dl_ prefix in the temp dir
-	entries, _ := os.ReadDir(sendFileTempDir)
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "dl_") {
-			info, _ := e.Info()
-			// Only flag files created very recently (within this test)
-			if info != nil && time.Since(info.ModTime()) < 5*time.Second {
-				t.Errorf("temp file not cleaned up: %s", e.Name())
-			}
-		}
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
 	}
+
+	// The temp file must still exist so MediaStore can resolve and read it
+	ref := result.Media[0]
+	resolved, err := store.Resolve(ref)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if _, err := os.Stat(resolved); err != nil {
+		t.Errorf("temp file should persist for MediaStore, but got: %v", err)
+	}
+	t.Cleanup(func() { os.Remove(resolved) })
 }
 
 func TestCleanupTempFiles(t *testing.T) {
-	if err := os.MkdirAll(sendFileTempDir, 0o700); err != nil {
+	if err := os.MkdirAll(sendFileTempDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create an "old" temp file
-	oldFile := filepath.Join(sendFileTempDir, "dl_test_old.tmp")
+	oldFile := filepath.Join(sendFileTempDir(), "dl_test_old.tmp")
 	if err := os.WriteFile(oldFile, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +283,7 @@ func TestCleanupTempFiles(t *testing.T) {
 	os.Chtimes(oldFile, past, past)
 
 	// Create a "new" temp file
-	newFile := filepath.Join(sendFileTempDir, "dl_test_new.tmp")
+	newFile := filepath.Join(sendFileTempDir(), "dl_test_new.tmp")
 	if err := os.WriteFile(newFile, []byte("new"), 0o600); err != nil {
 		t.Fatal(err)
 	}
