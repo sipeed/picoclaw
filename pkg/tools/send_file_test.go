@@ -198,6 +198,7 @@ func TestSendFileTool_URLDownload(t *testing.T) {
 
 func TestSendFileTool_URLDownloadDefaultFilename(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
 		w.Write([]byte("data"))
 	}))
 	defer srv.Close()
@@ -212,10 +213,67 @@ func TestSendFileTool_URLDownloadDefaultFilename(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("unexpected error: %s", result.ForLLM)
 	}
-	// filename should be derived from URL path: "42"
-	if !strings.Contains(result.ForLLM, `"42"`) {
-		t.Errorf("expected filename '42' in result, got %q", result.ForLLM)
+	// filename should be "42.png" (URL basename + extension from Content-Type)
+	if !strings.Contains(result.ForLLM, `"42.png"`) {
+		t.Errorf("expected filename '42.png' in result, got %q", result.ForLLM)
 	}
+}
+
+func TestSendFileTool_URLDownloadContentDisposition(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Content-Disposition", `attachment; filename="sunset.jpg"`)
+		w.Write([]byte("data"))
+	}))
+	defer srv.Close()
+
+	store := media.NewFileMediaStore()
+	tool := NewSendFileTool(t.TempDir(), false, 0, store)
+	tool.SetContext("telegram", "chat123")
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"path": srv.URL + "/mcp/photos/99",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	// filename should come from Content-Disposition
+	if !strings.Contains(result.ForLLM, `"sunset.jpg"`) {
+		t.Errorf("expected filename 'sunset.jpg' from Content-Disposition, got %q", result.ForLLM)
+	}
+}
+
+func TestSendFileTool_URLDownloadContentTypeAsMIME(t *testing.T) {
+	// Server returns image/png Content-Type but file has no magic bytes match
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Write([]byte("not-real-png-data"))
+	}))
+	defer srv.Close()
+
+	store := media.NewFileMediaStore()
+	tool := NewSendFileTool(t.TempDir(), false, 0, store)
+	tool.SetContext("telegram", "chat123")
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"path": srv.URL + "/api/image/5",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	// The media should have been registered — check it resolves
+	if len(result.Media) != 1 {
+		t.Fatalf("expected 1 media ref, got %d", len(result.Media))
+	}
+	resolved, err := store.Resolve(result.Media[0])
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	// Temp file should have .png extension from Content-Type
+	if filepath.Ext(resolved) != ".png" {
+		t.Errorf("expected temp file to have .png extension, got %q", filepath.Base(resolved))
+	}
+	t.Cleanup(func() { os.Remove(resolved) })
 }
 
 func TestSendFileTool_URLDownloadHTTPError(t *testing.T) {
@@ -299,21 +357,27 @@ func TestCleanupTempFiles(t *testing.T) {
 	}
 }
 
-func TestFilenameFromURL(t *testing.T) {
+func TestFilenameForDownload(t *testing.T) {
 	tests := []struct {
-		url  string
-		want string
+		name               string
+		url                string
+		contentDisposition string
+		contentType        string
+		want               string
 	}{
-		{"https://example.com/photos/cat.jpg", "cat.jpg"},
-		{"https://example.com/mcp/photos/42", "42"},
-		{"https://example.com/", "download"},
-		{"https://example.com", "download"},
+		{"url with extension", "https://example.com/photos/cat.jpg", "", "", "cat.jpg"},
+		{"url no ext + content-type", "https://example.com/mcp/photos/42", "", "image/png", "42.png"},
+		{"url no ext no content-type", "https://example.com/mcp/photos/42", "", "", "42"},
+		{"root path", "https://example.com/", "", "image/jpeg", "download.jpg"},
+		{"root no content-type", "https://example.com", "", "", "download"},
+		{"content-disposition wins", "https://example.com/mcp/photos/42", `attachment; filename="photo.png"`, "image/jpeg", "photo.png"},
+		{"content-disposition inline", "https://example.com/x", `inline; filename="report.pdf"`, "application/pdf", "report.pdf"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.url, func(t *testing.T) {
-			got := filenameFromURL(tt.url)
+		t.Run(tt.name, func(t *testing.T) {
+			got := filenameForDownload(tt.url, tt.contentDisposition, tt.contentType)
 			if got != tt.want {
-				t.Errorf("filenameFromURL(%q) = %q, want %q", tt.url, got, tt.want)
+				t.Errorf("filenameForDownload() = %q, want %q", got, tt.want)
 			}
 		})
 	}
