@@ -692,6 +692,9 @@ func (c *MatrixChannel) extractInboundMedia(
 
 func (c *MatrixChannel) storeMedia(localPath string, meta media.MediaMeta, scope string) string {
 	if store := c.GetMediaStore(); store != nil {
+		if meta.CleanupPolicy == "" {
+			meta.CleanupPolicy = media.CleanupPolicyDeleteOnCleanup
+		}
 		ref, err := store.Store(localPath, meta, scope)
 		if err == nil {
 			return ref
