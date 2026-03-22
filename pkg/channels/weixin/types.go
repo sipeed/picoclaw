@@ -5,6 +5,12 @@ type BaseInfo struct {
 	ChannelVersion string `json:"channel_version,omitempty"`
 }
 
+type APIStatus struct {
+	Ret     int    `json:"ret,omitempty"`
+	Errcode int    `json:"errcode,omitempty"`
+	Errmsg  string `json:"errmsg,omitempty"`
+}
+
 // UploadMediaType constants
 const (
 	UploadMediaTypeImage = 1
@@ -24,11 +30,12 @@ type GetUploadUrlReq struct {
 	ThumbRawfileMD5 string   `json:"thumb_rawfilemd5,omitempty"`
 	ThumbFilesize   int64    `json:"thumb_filesize,omitempty"`
 	NoNeedThumb     bool     `json:"no_need_thumb,omitempty"`
-	Aeskey          string   `json:"aeskey,omitempty"` // base64
+	Aeskey          string   `json:"aeskey,omitempty"` // hex-encoded 16-byte AES key
 	BaseInfo        BaseInfo `json:"base_info,omitempty"`
 }
 
 type GetUploadUrlResp struct {
+	APIStatus
 	UploadParam      string `json:"upload_param,omitempty"`
 	ThumbUploadParam string `json:"thumb_upload_param,omitempty"`
 }
@@ -146,9 +153,7 @@ type GetUpdatesReq struct {
 }
 
 type GetUpdatesResp struct {
-	Ret                  int             `json:"ret,omitempty"`
-	Errcode              int             `json:"errcode,omitempty"`
-	Errmsg               string          `json:"errmsg,omitempty"`
+	APIStatus
 	Msgs                 []WeixinMessage `json:"msgs,omitempty"`
 	SyncBuf              string          `json:"sync_buf,omitempty"`
 	GetUpdatesBuf        string          `json:"get_updates_buf,omitempty"`
@@ -161,20 +166,34 @@ type SendMessageReq struct {
 }
 
 type SendMessageResp struct {
-	// Usually empty
+	APIStatus
+}
+
+type GetConfigReq struct {
+	IlinkUserID  string   `json:"ilink_user_id,omitempty"`
+	ContextToken string   `json:"context_token,omitempty"`
+	BaseInfo     BaseInfo `json:"base_info,omitempty"`
 }
 
 type GetConfigResp struct {
-	Ret          int    `json:"ret,omitempty"`
-	Errmsg       string `json:"errmsg,omitempty"`
+	APIStatus
 	TypingTicket string `json:"typing_ticket,omitempty"`
 }
+
+const (
+	TypingStatusTyping = 1
+	TypingStatusCancel = 2
+)
 
 type SendTypingReq struct {
 	IlinkUserID  string   `json:"ilink_user_id,omitempty"`
 	TypingTicket string   `json:"typing_ticket,omitempty"`
 	Status       int      `json:"status,omitempty"` // 1=typing, 2=cancel
 	BaseInfo     BaseInfo `json:"base_info,omitempty"`
+}
+
+type SendTypingResp struct {
+	APIStatus
 }
 
 type QRCodeResponse struct {

@@ -128,10 +128,13 @@ func (c *ApiClient) GetUpdates(ctx context.Context, req GetUpdatesReq) (*GetUpda
 	return &resp, nil
 }
 
-func (c *ApiClient) SendMessage(ctx context.Context, req SendMessageReq) error {
+func (c *ApiClient) SendMessage(ctx context.Context, req SendMessageReq) (*SendMessageResp, error) {
 	req.BaseInfo = BaseInfo{ChannelVersion: "1.0.2"}
 	var resp SendMessageResp
-	return c.post(ctx, "ilink/bot/sendmessage", req, &resp)
+	if err := c.post(ctx, "ilink/bot/sendmessage", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 func (c *ApiClient) GetUploadUrl(ctx context.Context, req GetUploadUrlReq) (*GetUploadUrlResp, error) {
@@ -144,9 +147,22 @@ func (c *ApiClient) GetUploadUrl(ctx context.Context, req GetUploadUrlReq) (*Get
 	return &resp, nil
 }
 
-func (c *ApiClient) SendTyping(ctx context.Context, req SendTypingReq) error {
+func (c *ApiClient) GetConfig(ctx context.Context, req GetConfigReq) (*GetConfigResp, error) {
 	req.BaseInfo = BaseInfo{ChannelVersion: "1.0.2"}
-	return c.post(ctx, "ilink/bot/sendtyping", req, nil)
+	var resp GetConfigResp
+	if err := c.post(ctx, "ilink/bot/getconfig", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *ApiClient) SendTyping(ctx context.Context, req SendTypingReq) (*SendTypingResp, error) {
+	req.BaseInfo = BaseInfo{ChannelVersion: "1.0.2"}
+	var resp SendTypingResp
+	if err := c.post(ctx, "ilink/bot/sendtyping", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 func (c *ApiClient) GetQRCode(ctx context.Context, botType string) (*QRCodeResponse, error) {

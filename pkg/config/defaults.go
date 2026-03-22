@@ -174,6 +174,14 @@ func DefaultConfig() *Config {
 				WelcomeMessage:    "Hello! I'm your AI assistant. How can I help you today?",
 				ProcessingMessage: DefaultWeComAIBotProcessingMessage,
 			},
+			Weixin: WeixinConfig{
+				Enabled:    false,
+				Token:      "",
+				BaseURL:    "https://ilinkai.weixin.qq.com/",
+				CDNBaseURL: "https://novac2c.cdn.weixin.qq.com/c2c",
+				AllowFrom:  FlexibleStringSlice{},
+				Proxy:      "",
+			},
 			Pico: PicoConfig{
 				Enabled:        false,
 				Token:          "",

@@ -27,6 +27,11 @@ type WeixinChannel struct {
 	// contextTokens stores the last context_token per user (from_user_id → context_token).
 	// This is required by the iLink API to associate replies with the right chat session.
 	contextTokens sync.Map
+	typingMu      sync.Mutex
+	typingCache   map[string]typingTicketCacheEntry
+	pauseMu       sync.Mutex
+	pauseUntil    time.Time
+	syncBufPath   string
 }
 
 func init() {
@@ -56,6 +61,8 @@ func NewWeixinChannel(cfg config.WeixinConfig, messageBus *bus.MessageBus) (*Wei
 		api:         api,
 		config:      cfg,
 		bus:         messageBus,
+		typingCache: make(map[string]typingTicketCacheEntry),
+		syncBufPath: buildWeixinSyncBufPath(cfg),
 	}, nil
 }
 
@@ -87,7 +94,20 @@ func (c *WeixinChannel) pollLoop(ctx context.Context) {
 	)
 
 	consecutiveFails := 0
-	getUpdatesBuf := ""
+	getUpdatesBuf, err := loadGetUpdatesBuf(c.syncBufPath)
+	if err != nil {
+		logger.WarnCF("weixin", "Failed to load persisted get_updates_buf", map[string]any{
+			"path":  c.syncBufPath,
+			"error": err.Error(),
+		})
+		getUpdatesBuf = ""
+	} else if getUpdatesBuf != "" {
+		logger.InfoCF("weixin", "Resuming persisted get_updates_buf", map[string]any{
+			"path":   c.syncBufPath,
+			"bytes":  len(getUpdatesBuf),
+			"source": "disk",
+		})
+	}
 	nextTimeoutMs := defaultPollTimeoutMs
 
 	for {
@@ -96,6 +116,13 @@ func (c *WeixinChannel) pollLoop(ctx context.Context) {
 			logger.InfoC("weixin", "Weixin poll loop stopped")
 			return
 		default:
+		}
+
+		if err := c.waitWhileSessionPaused(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			continue
 		}
 
 		// Build a context with timeout slightly longer than the long-poll
@@ -138,9 +165,17 @@ func (c *WeixinChannel) pollLoop(ctx context.Context) {
 			continue
 		}
 
-		// Check for API-level error codes (-14 = session expired)
-		const sessionExpiredErrcode = -14
-		if resp.Errcode != 0 || (resp.Ret != 0 && resp.Ret != sessionExpiredErrcode) {
+		if isSessionExpiredStatus(resp.Ret, resp.Errcode) {
+			remaining := c.pauseSession("getupdates", resp.Ret, resp.Errcode, resp.Errmsg)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(remaining):
+			}
+			continue
+		}
+
+		if resp.Errcode != 0 || resp.Ret != 0 {
 			consecutiveFails++
 			logger.ErrorCF("weixin", "getUpdates API error", map[string]any{
 				"ret":     resp.Ret,
@@ -155,17 +190,6 @@ func (c *WeixinChannel) pollLoop(ctx context.Context) {
 			continue
 		}
 
-		if resp.Errcode == sessionExpiredErrcode || resp.Ret == sessionExpiredErrcode {
-			logger.ErrorC("weixin", "Session expired — please re-run login")
-			// Pause for a long time to avoid hammering with a bad token
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(10 * time.Minute):
-			}
-			continue
-		}
-
 		consecutiveFails = 0
 
 		// Update the long-poll timeout from server hint
@@ -176,6 +200,12 @@ func (c *WeixinChannel) pollLoop(ctx context.Context) {
 		// Advance cursor
 		if resp.GetUpdatesBuf != "" {
 			getUpdatesBuf = resp.GetUpdatesBuf
+			if err := saveGetUpdatesBuf(c.syncBufPath, getUpdatesBuf); err != nil {
+				logger.WarnCF("weixin", "Failed to persist get_updates_buf", map[string]any{
+					"path":  c.syncBufPath,
+					"error": err.Error(),
+				})
+			}
 		}
 
 		// Dispatch messages
@@ -192,6 +222,11 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 		return
 	}
 
+	messageID := msg.ClientID
+	if messageID == "" {
+		messageID = uuid.New().String()
+	}
+
 	// Build text content from item_list
 	var parts []string
 	for _, item := range msg.ItemList {
@@ -205,7 +240,7 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 				// Use voice → text transcription from server
 				parts = append(parts, item.VoiceItem.Text)
 			} else {
-				parts = append(parts, "[voice message]")
+				parts = append(parts, "[audio]")
 			}
 		case MessageItemTypeImage:
 			parts = append(parts, "[image]")
@@ -220,8 +255,23 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 		}
 	}
 
+	var mediaRefs []string
+	if mediaItem := selectInboundMediaItem(msg); mediaItem != nil {
+		ref, err := c.downloadMediaFromItem(ctx, fromUserID, messageID, mediaItem)
+		if err != nil {
+			logger.ErrorCF("weixin", "Failed to download inbound media", map[string]any{
+				"from_user_id": fromUserID,
+				"message_id":   messageID,
+				"type":         mediaItem.Type,
+				"error":        err.Error(),
+			})
+		} else if ref != "" {
+			mediaRefs = append(mediaRefs, ref)
+		}
+	}
+
 	content := strings.Join(parts, "\n")
-	if content == "" {
+	if content == "" && len(mediaRefs) == 0 {
 		return
 	}
 
@@ -240,11 +290,6 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 		return
 	}
 
-	messageID := msg.ClientID
-	if messageID == "" {
-		messageID = uuid.New().String()
-	}
-
 	peer := bus.Peer{Kind: "direct", ID: fromUserID}
 
 	metadata := map[string]string{
@@ -256,6 +301,7 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 	logger.DebugCF("weixin", "Received message", map[string]any{
 		"from_user_id": fromUserID,
 		"content_len":  len(content),
+		"media_count":  len(mediaRefs),
 	})
 
 	// Store context_token for outbound reply association
@@ -263,13 +309,16 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 		c.contextTokens.Store(fromUserID, msg.ContextToken)
 	}
 
-	c.HandleMessage(ctx, peer, messageID, fromUserID, fromUserID, content, nil, metadata, sender)
+	c.HandleMessage(ctx, peer, messageID, fromUserID, fromUserID, content, mediaRefs, metadata, sender)
 }
 
 // Send implements channels.Channel by sending a text message to the WeChat user.
 func (c *WeixinChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
+	}
+	if err := c.ensureSessionActive(); err != nil {
+		return err
 	}
 
 	if msg.Content == "" {
@@ -294,32 +343,15 @@ func (c *WeixinChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		})
 		return fmt.Errorf("weixin send: %w: missing context token for chat %s", channels.ErrSendFailed, toUserID)
 	}
-	clientID := "picoclaw-" + uuid.New().String()
 
-	req := SendMessageReq{
-		Msg: WeixinMessage{
-			FromUserID:   "",
-			ToUserID:     toUserID,
-			ClientID:     clientID,
-			MessageType:  MessageTypeBot,
-			MessageState: MessageStateFinish,
-			ItemList: []MessageItem{
-				{
-					Type: MessageItemTypeText,
-					TextItem: &TextItem{
-						Text: msg.Content,
-					},
-				},
-			},
-			ContextToken: contextToken,
-		},
-	}
-
-	if err := c.api.SendMessage(ctx, req); err != nil {
+	if err := c.sendTextMessage(ctx, toUserID, contextToken, msg.Content); err != nil {
 		logger.ErrorCF("weixin", "Failed to send message", map[string]any{
 			"to_user_id": toUserID,
 			"error":      err.Error(),
 		})
+		if c.remainingPause() > 0 {
+			return fmt.Errorf("weixin send: %w", channels.ErrSendFailed)
+		}
 		return fmt.Errorf("weixin send: %w", channels.ErrTemporary)
 	}
 
