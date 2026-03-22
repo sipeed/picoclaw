@@ -46,45 +46,68 @@ func buildCLIToolsPrompt(tools []ToolDefinition) string {
 // NormalizeToolCall normalizes a ToolCall to ensure all fields are properly populated.
 // It handles cases where Name/Arguments might be in different locations (top-level vs Function)
 // and ensures both are populated consistently.
-func NormalizeToolCall(tc ToolCall) ToolCall {
-	normalized := tc
-
-	// Ensure Name is populated from Function if not set
-	if normalized.Name == "" && normalized.Function != nil {
-		normalized.Name = normalized.Function.Name
+// (Addition: It also ensures that each tool call ID is unique across the set for strict providers.)
+func NormalizeToolCall(calls []ToolCall) []ToolCall {
+	if len(calls) == 0 {
+		return calls
 	}
 
-	// Ensure Arguments is not nil
-	if normalized.Arguments == nil {
-		normalized.Arguments = map[string]any{}
-	}
+	used := make(map[string]bool)
+	sanitized := make([]ToolCall, 0, len(calls))
 
-	// Parse Arguments from Function.Arguments if not already set
-	if len(normalized.Arguments) == 0 && normalized.Function != nil && normalized.Function.Arguments != "" {
-		var parsed map[string]any
-		if err := json.Unmarshal([]byte(normalized.Function.Arguments), &parsed); err == nil && parsed != nil {
-			normalized.Arguments = parsed
-		}
-	}
+	for i, tc := range calls {
+		normalized := tc
 
-	// Ensure Function is populated with consistent values
-	argsJSON, _ := json.Marshal(normalized.Arguments)
-	if normalized.Function == nil {
-		normalized.Function = &FunctionCall{
-			Name:      normalized.Name,
-			Arguments: string(argsJSON),
-		}
-	} else {
-		if normalized.Function.Name == "" {
-			normalized.Function.Name = normalized.Name
-		}
-		if normalized.Name == "" {
+		// Ensure Name is populated from Function if not set
+		if normalized.Name == "" && normalized.Function != nil {
 			normalized.Name = normalized.Function.Name
 		}
-		if normalized.Function.Arguments == "" {
-			normalized.Function.Arguments = string(argsJSON)
+
+		// Ensure Arguments is not nil
+		if normalized.Arguments == nil {
+			normalized.Arguments = map[string]any{}
 		}
+
+		// Parse Arguments from Function.Arguments if not already set
+		if len(normalized.Arguments) == 0 && normalized.Function != nil && normalized.Function.Arguments != "" {
+			var parsed map[string]any
+			if err := json.Unmarshal([]byte(normalized.Function.Arguments), &parsed); err == nil && parsed != nil {
+				normalized.Arguments = parsed
+			}
+		}
+
+		// Ensure Function is populated with consistent values
+		argsJSON, _ := json.Marshal(normalized.Arguments)
+		if normalized.Function == nil {
+			normalized.Function = &FunctionCall{
+				Name:      normalized.Name,
+				Arguments: string(argsJSON),
+			}
+		} else {
+			if normalized.Function.Name == "" {
+				normalized.Function.Name = normalized.Name
+			}
+			if normalized.Name == "" {
+				normalized.Name = normalized.Function.Name
+			}
+			if normalized.Function.Arguments == "" {
+				normalized.Function.Arguments = string(argsJSON)
+			}
+		}
+
+		// ID uniqueness normalization fix
+		id := strings.TrimSpace(normalized.ID)
+		if id == "" || used[id] {
+			id = fmt.Sprintf("call_auto_%d", i)
+			for used[id] {
+				id += "_x"
+			}
+		}
+		used[id] = true
+		normalized.ID = id
+
+		sanitized = append(sanitized, normalized)
 	}
 
-	return normalized
+	return sanitized
 }

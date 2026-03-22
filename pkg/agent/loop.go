@@ -1291,10 +1291,7 @@ func (al *AgentLoop) runLLMIteration(
 			streamer.Cancel(ctx)
 		}
 
-		normalizedToolCalls := make([]providers.ToolCall, 0, len(response.ToolCalls))
-		for _, tc := range response.ToolCalls {
-			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
-		}
+		normalizedToolCalls := providers.NormalizeToolCall(response.ToolCalls)
 
 		// Log tool calls
 		toolNames := make([]string, 0, len(normalizedToolCalls))

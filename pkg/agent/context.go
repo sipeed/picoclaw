@@ -708,6 +708,56 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 		final = append(final, msg)
 	}
 
+	// Third pass (occurrence-aware): ensure all tool_call_id values are unique
+	// across the entire transcript. This prevents 400 errors from strict
+	// non-OpenAI providers when the same ID appears in different turns or
+	// is duplicated within a single assistant message.
+	type callResolver struct {
+		rewritten []string
+		usedCount int
+	}
+	resolver := make(map[string]*callResolver)
+	globalUsed := make(map[string]bool)
+
+	for i := range final {
+		msg := &final[i]
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			for j := range msg.ToolCalls {
+				originalID := msg.ToolCalls[j].ID
+				if _, ok := resolver[originalID]; !ok {
+					resolver[originalID] = &callResolver{}
+				}
+				res := resolver[originalID]
+				occ := len(res.rewritten)
+
+				rewrittenID := originalID
+				// If ID was used globally or this is an occurrence repeat, make it unique.
+				if occ > 0 || globalUsed[rewrittenID] {
+					rewrittenID = fmt.Sprintf("%s:%d", originalID, occ)
+					for globalUsed[rewrittenID] {
+						// Extremely unlikely collision with another ID's suffix
+						rewrittenID += "_x"
+					}
+				}
+
+				msg.ToolCalls[j].ID = rewrittenID
+				res.rewritten = append(res.rewritten, rewrittenID)
+				globalUsed[rewrittenID] = true
+			}
+		} else if msg.Role == "tool" {
+			originalID := msg.ToolCallID
+			if res, ok := resolver[originalID]; ok && res.usedCount < len(res.rewritten) {
+				msg.ToolCallID = res.rewritten[res.usedCount]
+				res.usedCount++
+			} else {
+				// Orphan result: assign unique fallback ID but preserve original prefix for context.
+				fallback := fmt.Sprintf("orphan_%s_%d", originalID, i)
+				msg.ToolCallID = fallback
+				globalUsed[fallback] = true
+			}
+		}
+	}
+
 	return final
 }
 
