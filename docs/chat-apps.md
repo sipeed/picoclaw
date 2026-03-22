@@ -13,6 +13,7 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk,
 | **Telegram**         | ⭐ Easy            | Recommended, voice-to-text, long polling (no public IP needed) | [Docs](../channels/telegram/README.md)                                                                  |
 | **Discord**          | ⭐ Easy            | Socket Mode, group/DM support, rich bot ecosystem     | [Docs](../channels/discord/README.md)                                                                           |
 | **WhatsApp**         | ⭐ Easy            | Native (QR scan) or Bridge URL                        | [Docs](#whatsapp)                                                                                                |
+| **Weixin**           | ⭐ Easy            | Native QR scan (Tencent iLink API)                    | [Docs](../channels/weixin/README.md)                                                                            |
 | **Slack**            | ⭐ Easy            | **Socket Mode** (no public IP needed), enterprise     | [Docs](../channels/slack/README.md)                                                                             |
 | **Matrix**           | ⭐⭐ Medium        | Federated protocol, self-hosting supported            | [Docs](../channels/matrix/README.md)                                                                            |
 | **QQ**               | ⭐⭐ Medium        | Official bot API, Chinese community                   | [Docs](../channels/qq/README.md)                                                                                |
@@ -166,6 +167,39 @@ PicoClaw can connect to WhatsApp in two ways:
 ```
 
 If `session_store_path` is empty, the session is stored in `<workspace>/whatsapp/`. Run `picoclaw gateway`; on first run, scan the QR code printed in the terminal with WhatsApp → Linked Devices.
+
+</details>
+
+<details>
+<summary><b>Weixin</b> (WeChat Personal)</summary>
+
+PicoClaw supports connecting to your personal WeChat account using the official Tencent iLink API.
+
+**1. Login**
+Run the interactive QR login flow:
+```bash
+picoclaw onboard weixin
+```
+Scan the printed QR code with your WeChat mobile app. On success, the token is saved to your config.
+
+**2. Configure**
+(Optional) Update `allow_from` with your WeChat User ID to restrict who can message the bot:
+```json
+{
+  "channels": {
+    "weixin": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "allow_from": ["YOUR_USER_ID"]
+    }
+  }
+}
+```
+
+**3. Run**
+```bash
+picoclaw gateway
+```
 
 </details>
 

@@ -1,6 +1,7 @@
 {
   "agents": {
     "defaults": {
+      "log_level": "fatal",
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
       "model_name": "gpt-5.4",
