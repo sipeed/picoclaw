@@ -356,7 +356,7 @@ type TypingConfig struct {
 
 // PlaceholderConfig controls placeholder message behavior (Phase 10).
 type PlaceholderConfig struct {
-	Enabled bool   `json:"enabled,omitempty"`
+	Enabled bool   `json:"enabled"`
 	Text    string `json:"text,omitempty"`
 }
 
