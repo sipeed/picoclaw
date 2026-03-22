@@ -21,10 +21,16 @@ import (
 )
 
 const (
-	sendFileTempDir       = "/tmp/picoclaw-sendfile"
 	sendFileTempMaxAge    = 1 * time.Hour
 	sendFileDownloadLimit = 50 * 1024 * 1024 // 50 MB download limit
 )
+
+// sendFileTempDir returns the directory for URL-downloaded temp files.
+// Uses the shared media temp directory so that MediaStore can resolve paths
+// after Execute returns (MediaStore only stores a path reference, not a copy).
+func sendFileTempDir() string {
+	return filepath.Join(media.TempDir(), "sendfile")
+}
 
 // SendFileTool allows the LLM to send a local file (image, document, etc.)
 // to the user on the current chat channel via the MediaStore pipeline.
@@ -118,15 +124,17 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	// Handle URL downloads
 	var resolved string
-	var tempFile string // non-empty when we downloaded a URL
+	var isURL bool
 	if isHTTPURL(path) {
 		var err error
 		resolved, err = downloadToTemp(ctx, path)
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("download failed: %v", err))
 		}
-		tempFile = resolved
-		defer os.Remove(tempFile)
+		isURL = true
+		// Do NOT delete the temp file here — MediaStore only stores a path
+		// reference, so the file must survive until the channel sends it.
+		// CleanupTempFiles() handles stale files periodically.
 	} else {
 		var err error
 		resolved, err = validatePathWithAllowPaths(path, t.workspace, t.restrict, t.allowPaths)
@@ -151,7 +159,7 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	filename, _ := args["filename"].(string)
 	if filename == "" {
-		if tempFile != "" {
+		if isURL {
 			filename = filenameFromURL(path)
 		} else {
 			filename = filepath.Base(resolved)
@@ -178,10 +186,12 @@ func isHTTPURL(path string) bool {
 	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
 }
 
-// downloadToTemp downloads a URL to a temporary file under sendFileTempDir.
-// The caller is responsible for removing the returned file.
+// downloadToTemp downloads a URL to a temporary file under sendFileTempDir().
+// The file must persist until the channel has sent it; cleanup is handled by
+// CleanupTempFiles (periodic) rather than the caller.
 func downloadToTemp(ctx context.Context, rawURL string) (string, error) {
-	if err := os.MkdirAll(sendFileTempDir, 0o700); err != nil {
+	dir := sendFileTempDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create temp dir: %w", err)
 	}
 
@@ -206,7 +216,7 @@ func downloadToTemp(ctx context.Context, rawURL string) (string, error) {
 		return "", err
 	}
 	ext := extFromURL(rawURL)
-	tmpPath := filepath.Join(sendFileTempDir, fmt.Sprintf("dl_%x%s", randBytes, ext))
+	tmpPath := filepath.Join(dir, fmt.Sprintf("dl_%x%s", randBytes, ext))
 
 	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
@@ -254,7 +264,8 @@ func filenameFromURL(rawURL string) string {
 // CleanupTempFiles removes old temp files from the sendfile temp directory.
 // Files older than sendFileTempMaxAge are deleted.
 func CleanupTempFiles() {
-	entries, err := os.ReadDir(sendFileTempDir)
+	dir := sendFileTempDir()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
@@ -268,7 +279,7 @@ func CleanupTempFiles() {
 			continue
 		}
 		if info.ModTime().Before(cutoff) {
-			os.Remove(filepath.Join(sendFileTempDir, e.Name()))
+			os.Remove(filepath.Join(dir, e.Name()))
 		}
 	}
 }
