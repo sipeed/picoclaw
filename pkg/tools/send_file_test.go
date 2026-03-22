@@ -2,11 +2,15 @@ package tools
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
@@ -164,6 +168,190 @@ func TestSendFileTool_AllowsWhitelistedMediaTempPath(t *testing.T) {
 	}
 	if len(result.Media) != 1 {
 		t.Fatalf("expected 1 media ref, got %d", len(result.Media))
+	}
+}
+
+func TestSendFileTool_URLDownload(t *testing.T) {
+	// Start a test HTTP server serving a fake image
+	fakeImage := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A} // PNG header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(fakeImage)
+	}))
+	defer srv.Close()
+
+	store := media.NewFileMediaStore()
+	tool := NewSendFileTool(t.TempDir(), false, 0, store)
+	tool.SetContext("telegram", "chat123")
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":     srv.URL + "/photos/42.png",
+		"filename": "cat.png",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if len(result.Media) != 1 {
+		t.Fatalf("expected 1 media ref, got %d", len(result.Media))
+	}
+}
+
+func TestSendFileTool_URLDownloadDefaultFilename(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("data"))
+	}))
+	defer srv.Close()
+
+	store := media.NewFileMediaStore()
+	tool := NewSendFileTool(t.TempDir(), false, 0, store)
+	tool.SetContext("telegram", "chat123")
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"path": srv.URL + "/mcp/photos/42",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	// filename should be derived from URL path: "42"
+	if !strings.Contains(result.ForLLM, `"42"`) {
+		t.Errorf("expected filename '42' in result, got %q", result.ForLLM)
+	}
+}
+
+func TestSendFileTool_URLDownloadHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	store := media.NewFileMediaStore()
+	tool := NewSendFileTool(t.TempDir(), false, 0, store)
+	tool.SetContext("telegram", "chat123")
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"path": srv.URL + "/missing.jpg",
+	})
+	if !result.IsError {
+		t.Fatal("expected error for HTTP 404")
+	}
+	if !strings.Contains(result.ForLLM, "404") {
+		t.Errorf("expected 404 in error, got %q", result.ForLLM)
+	}
+}
+
+func TestSendFileTool_URLTempFileCleanedUp(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("data"))
+	}))
+	defer srv.Close()
+
+	store := media.NewFileMediaStore()
+	tool := NewSendFileTool(t.TempDir(), false, 0, store)
+	tool.SetContext("telegram", "chat123")
+
+	// Execute should download and clean up temp file
+	tool.Execute(context.Background(), map[string]any{
+		"path": srv.URL + "/photo.jpg",
+	})
+
+	// Verify no temp files remain with dl_ prefix in the temp dir
+	entries, _ := os.ReadDir(sendFileTempDir)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "dl_") {
+			info, _ := e.Info()
+			// Only flag files created very recently (within this test)
+			if info != nil && time.Since(info.ModTime()) < 5*time.Second {
+				t.Errorf("temp file not cleaned up: %s", e.Name())
+			}
+		}
+	}
+}
+
+func TestCleanupTempFiles(t *testing.T) {
+	if err := os.MkdirAll(sendFileTempDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create an "old" temp file
+	oldFile := filepath.Join(sendFileTempDir, "dl_test_old.tmp")
+	if err := os.WriteFile(oldFile, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Set mtime to 2 hours ago
+	past := time.Now().Add(-2 * time.Hour)
+	os.Chtimes(oldFile, past, past)
+
+	// Create a "new" temp file
+	newFile := filepath.Join(sendFileTempDir, "dl_test_new.tmp")
+	if err := os.WriteFile(newFile, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(newFile) })
+
+	CleanupTempFiles()
+
+	if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
+		t.Error("expected old temp file to be deleted")
+	}
+	if _, err := os.Stat(newFile); err != nil {
+		t.Error("expected new temp file to remain")
+	}
+}
+
+func TestFilenameFromURL(t *testing.T) {
+	tests := []struct {
+		url  string
+		want string
+	}{
+		{"https://example.com/photos/cat.jpg", "cat.jpg"},
+		{"https://example.com/mcp/photos/42", "42"},
+		{"https://example.com/", "download"},
+		{"https://example.com", "download"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			got := filenameFromURL(tt.url)
+			if got != tt.want {
+				t.Errorf("filenameFromURL(%q) = %q, want %q", tt.url, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsHTTPURL(t *testing.T) {
+	if !isHTTPURL("https://example.com/photo.jpg") {
+		t.Error("expected true for https URL")
+	}
+	if !isHTTPURL("http://localhost:8080/file") {
+		t.Error("expected true for http URL")
+	}
+	if isHTTPURL("/tmp/file.jpg") {
+		t.Error("expected false for local path")
+	}
+	if isHTTPURL("file:///tmp/file.jpg") {
+		t.Error("expected false for file:// URL")
+	}
+}
+
+func TestSendFileTool_URLDownloadTooLarge(t *testing.T) {
+	// maxFileSize を小さくして、ダウンロード自体は成功するがファイルサイズチェックで弾かれるケース
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(make([]byte, 1024))
+	}))
+	defer srv.Close()
+
+	store := media.NewFileMediaStore()
+	tool := NewSendFileTool(t.TempDir(), false, 512, store) // 512 byte limit
+	tool.SetContext("telegram", "chat123")
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"path": fmt.Sprintf("%s/big.bin", srv.URL),
+	})
+	if !result.IsError {
+		t.Fatal("expected error for oversized downloaded file")
+	}
+	if !strings.Contains(result.ForLLM, "too large") {
+		t.Errorf("expected 'too large' in error, got %q", result.ForLLM)
 	}
 }
 

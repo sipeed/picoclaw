@@ -2,17 +2,28 @@ package tools
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"io"
 	"mime"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/h2non/filetype"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
+)
+
+const (
+	sendFileTempDir       = "/tmp/picoclaw-sendfile"
+	sendFileTempMaxAge    = 1 * time.Hour
+	sendFileDownloadLimit = 50 * 1024 * 1024 // 50 MB download limit
 )
 
 // SendFileTool allows the LLM to send a local file (image, document, etc.)
@@ -53,7 +64,7 @@ func NewSendFileTool(
 
 func (t *SendFileTool) Name() string { return "send_file" }
 func (t *SendFileTool) Description() string {
-	return "Send a local file (image, document, etc.) to the user on the current chat channel."
+	return "Send a file to the user on the current chat channel. Accepts a local file path or an HTTP(S) URL (the URL will be downloaded automatically)."
 }
 
 func (t *SendFileTool) Parameters() map[string]any {
@@ -62,7 +73,7 @@ func (t *SendFileTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Path to the local file. Relative paths are resolved from workspace.",
+				"description": "Path to a local file or an HTTP(S) URL. Relative paths are resolved from workspace. URLs are downloaded automatically.",
 			},
 			"filename": map[string]any{
 				"type":        "string",
@@ -105,9 +116,23 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("media store not configured")
 	}
 
-	resolved, err := validatePathWithAllowPaths(path, t.workspace, t.restrict, t.allowPaths)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("invalid path: %v", err))
+	// Handle URL downloads
+	var resolved string
+	var tempFile string // non-empty when we downloaded a URL
+	if isHTTPURL(path) {
+		var err error
+		resolved, err = downloadToTemp(ctx, path)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("download failed: %v", err))
+		}
+		tempFile = resolved
+		defer os.Remove(tempFile)
+	} else {
+		var err error
+		resolved, err = validatePathWithAllowPaths(path, t.workspace, t.restrict, t.allowPaths)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("invalid path: %v", err))
+		}
 	}
 
 	info, err := os.Stat(resolved)
@@ -126,7 +151,11 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	filename, _ := args["filename"].(string)
 	if filename == "" {
-		filename = filepath.Base(resolved)
+		if tempFile != "" {
+			filename = filenameFromURL(path)
+		} else {
+			filename = filepath.Base(resolved)
+		}
 	}
 
 	mediaType := detectMediaType(resolved)
@@ -142,6 +171,106 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	return MediaResult(fmt.Sprintf("File %q sent to user", filename), []string{ref})
+}
+
+// isHTTPURL returns true if the path looks like an HTTP(S) URL.
+func isHTTPURL(path string) bool {
+	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
+}
+
+// downloadToTemp downloads a URL to a temporary file under sendFileTempDir.
+// The caller is responsible for removing the returned file.
+func downloadToTemp(ctx context.Context, rawURL string) (string, error) {
+	if err := os.MkdirAll(sendFileTempDir, 0o700); err != nil {
+		return "", fmt.Errorf("create temp dir: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("build request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("HTTP GET: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("HTTP %d %s", resp.StatusCode, resp.Status)
+	}
+
+	// Generate a random temp filename to avoid collisions
+	var randBytes [8]byte
+	if _, err := rand.Read(randBytes[:]); err != nil {
+		return "", err
+	}
+	ext := extFromURL(rawURL)
+	tmpPath := filepath.Join(sendFileTempDir, fmt.Sprintf("dl_%x%s", randBytes, ext))
+
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+
+	n, copyErr := io.Copy(f, io.LimitReader(resp.Body, sendFileDownloadLimit+1))
+	if closeErr := f.Close(); closeErr != nil && copyErr == nil {
+		copyErr = closeErr
+	}
+	if copyErr != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("write temp file: %w", copyErr)
+	}
+	if n > sendFileDownloadLimit {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("download exceeds %d byte limit", sendFileDownloadLimit)
+	}
+
+	return tmpPath, nil
+}
+
+// extFromURL extracts a file extension from a URL path, e.g. ".jpg".
+func extFromURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return filepath.Ext(u.Path)
+}
+
+// filenameFromURL derives a display filename from a URL.
+func filenameFromURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "download"
+	}
+	base := filepath.Base(u.Path)
+	if base == "" || base == "." || base == "/" {
+		return "download"
+	}
+	return base
+}
+
+// CleanupTempFiles removes old temp files from the sendfile temp directory.
+// Files older than sendFileTempMaxAge are deleted.
+func CleanupTempFiles() {
+	entries, err := os.ReadDir(sendFileTempDir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-sendFileTempMaxAge)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
+			os.Remove(filepath.Join(sendFileTempDir, e.Name()))
+		}
+	}
 }
 
 // detectMediaType determines the MIME type of a file.
