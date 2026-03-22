@@ -2,6 +2,20 @@ package tools
 
 import "encoding/json"
 
+// MediaDispatchType defines how media data should be dispatched.
+// It determines whether media is sent to external channels or to the LLM for analysis.
+type MediaDispatchType string
+
+const (
+	// MediaDispatchOutbound sends media to external channels (e.g., Feishu, Discord).
+	// This is the default behavior for media store refs.
+	MediaDispatchOutbound MediaDispatchType = "OutboundMediaMessage"
+
+	// MediaDispatchToLLM sends media to the LLM for recognition and analysis.
+	// Used when media contains base64-encoded data for multimodal LLMs.
+	MediaDispatchToLLM MediaDispatchType = "SendToLLM"
+)
+
 // ToolResult represents the structured return value from tool execution.
 // It provides clear semantics for different types of results and supports
 // async operations, user-facing messages, and error handling.
@@ -31,9 +45,16 @@ type ToolResult struct {
 	// Used for internal error handling and logging.
 	Err error `json:"-"`
 
-	// Media contains media store refs produced by this tool.
-	// When non-empty, the agent will publish these as OutboundMediaMessage.
+	// Media contains media data produced by this tool.
+	// The content type depends on MediaDispatch:
+	// - MediaDispatchOutbound: media store refs (original behavior)
+	// - MediaDispatchToLLM: base64-encoded media data (e.g., "data:image/png;base64,xxx")
 	Media []string `json:"media,omitempty"`
+
+	// MediaDispatch specifies how media should be dispatched.
+	// - "OutboundMediaMessage": send to external channels (default)
+	// - "SendToLLM": inject into LLM context for analysis
+	MediaDispatch MediaDispatchType `json:"media_dispatch,omitempty"`
 }
 
 // NewToolResult creates a basic ToolResult with content for the LLM.
