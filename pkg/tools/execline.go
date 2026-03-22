@@ -100,7 +100,7 @@ func (t *ExeclineTool) Parameters() map[string]any {
 			},
 			"env": map[string]any{
 				"type":        "object",
-				"description": "Additional environment variables to set for this command",
+				"description": "Additional environment variables to set for this command. Do not try to set PICOCLAW*, PATH, HOME, USER, LOGNAME, SHELL, LD_PRELOAD, or LD_LIBRARY_PATH",
 				"additionalProperties": map[string]any{
 					"type": "string",
 				},
@@ -174,7 +174,7 @@ func (t *ExeclineTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		"PICOCLAW_EXEC_TIME":    time.Now().Format(time.RFC3339),
 		"PICOCLAW_EXEC_TIMEOUT": t.timeout.String(),
 	}
-	execEnv = shell.MergeEnvVars(execEnv, execTimeEnv, nil)
+	execEnv := shell.MergeEnvVars(baseEnv, execTimeEnv, extraEnv)
 
 	// Use execlineb to execute
 	// execlineb -c takes a command string and executes it

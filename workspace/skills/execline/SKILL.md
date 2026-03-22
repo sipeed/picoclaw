@@ -63,7 +63,7 @@ cd $home
 ls
 ```
 
-### backtick - Command output to variable
+### backtick - Command output to variable (with -E flag!)
 ```bash
 backtick DATE { date +%Y-%m-%d }
 echo $DATE
@@ -75,6 +75,16 @@ echo $DATE
 - Captures stdout
 - Stores it in an environment variable
 - Then execs into the next command
+
+### backtick -E - Auto-import command substitution
+The `-E` flag makes backtick automatically import the result as a variable, enabling true command substitution (like `$()` in bash):
+
+```bash
+backtick -E DATE { date } echo $DATE
+# Output: Sun Mar 22 08:08:58 PM GMT 2026
+```
+
+Without `-E`, you need `importas` to access the variable. With `-E`, it's auto-imported directly.
 
 ## Sequencing Commands
 
@@ -194,8 +204,8 @@ wc -l
 |---------|---------|----------|
 | $VAR expansion | Yes | Yes (via substitution) |
 | ${VAR} expansion | Yes | Yes |
-| $(cmd) substitution | Yes | **No** - use backtick |
-| `cmd` substitution | Yes | **No** |
+| $(cmd) substitution | Yes | **Yes** - use `backtick -E VAR { cmd }` |
+| `cmd` substitution | Yes | **No** (use backtick) |
 | &&, \|\| | Yes | **No** - use if/foreground |
 | ; | Yes | **No** - use foreground |
 | Variable assignment | VAR=value | define VAR value |
@@ -205,10 +215,13 @@ wc -l
 
 ## Usage in picoclaw
 
-### Via ExeclineTool:
+The picoclaw agent has a built-in `execline` tool that you can call directly:
+
 ```
-Use the `execline` tool for commands that don't need shell features.
+Tool: execline
+ToolInput: { "command": "define FOO bar echo $FOO" }
 ```
+→ Output: bar
 
 The ExeclineTool validates:
 - No `&&`, `||` (use `if`, `foreground` instead)
@@ -225,9 +238,13 @@ execlineb -c 'define FOO bar echo $FOO'
 HOME=/tmp execlineb -c 'importas h HOME cd $h pwd'
 # Output: /tmp
 
-# Command substitution is LITERAL (not executed):
-execlineb -c 'echo $(whoami)'
-# Output: $(whoami)
+# backtick -E enables command substitution (like $()):
+execlineb -c 'backtick -E DATE { date } echo $DATE'
+# Output: current date/time
+
+# backtick without -E requires importas:
+execlineb -c 'backtick DATE { date } importas D DATE echo $D'
+# Output: current date/time
 ```
 
 ## Recommendations
