@@ -12,6 +12,7 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
 # 2. 初回実行 — docker/data/config.json を自動生成して終了
+#    （config.json と workspace/ の両方が存在しない場合のみ実行）
 docker compose -f docker/docker-compose.yml --profile gateway up
 # コンテナが "First-run setup complete." と表示して停止します
 

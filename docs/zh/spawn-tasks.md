@@ -2,13 +2,15 @@
 
 > 返回 [README](../../README.zh.md)
 
-### 使用 Spawn 的异步任务
+PicoClaw 通过 `spawn` 工具支持**异步任务执行**。主要由 **Heartbeat（心跳）** 系统使用，在不阻塞主 Agent 循环的情况下运行耗时任务。
 
-对于耗时较长的任务（网络搜索、API 调用），使用 `spawn` 工具创建一个 **子 Agent (subagent)**：
+## Heartbeat
+
+心跳系统会定期检查 `workspace/HEARTBEAT.md` 中的计划任务。首次运行时会自动生成默认模板，你可以自定义它来定义快速任务（内联处理）和长任务（通过 `spawn` 委派）。
+
+**`HEARTBEAT.md` 示例：**
 
 ```markdown
-# Periodic Tasks
-
 ## Quick Tasks (respond directly)
 
 - Report current time

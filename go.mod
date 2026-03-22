@@ -3,6 +3,7 @@ module github.com/sipeed/picoclaw
 go 1.25.8
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	fyne.io/systray v1.12.0
 	github.com/adhocore/gronx v1.19.6
 	github.com/anthropics/anthropic-sdk-go v1.26.0

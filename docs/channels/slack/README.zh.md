@@ -1,3 +1,5 @@
+> 返回 [README](../../../README.zh.md)
+
 # Slack
 
 Slack 是全球领先的企业级即时通讯平台。PicoClaw 采用 Slack 的 Socket Mode 实现实时双向通信，无需配置公开的 Webhook 端点。

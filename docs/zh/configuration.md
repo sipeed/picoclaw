@@ -57,7 +57,7 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 1. `~/.picoclaw/workspace/skills`（工作区）
 2. `~/.picoclaw/skills`（全局）
-3. `<current-working-directory>/skills`（内置）
+3. `<构建时嵌入路径>/skills`（内置）
 
 在高级/测试场景下，可通过以下环境变量覆盖内置技能目录：
 
