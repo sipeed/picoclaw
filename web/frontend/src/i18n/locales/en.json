@@ -17,7 +17,7 @@
   "chat": {
     "welcome": "How can I help you today?",
     "welcomeDesc": "Ask me about weather, settings, or any other tasks. I'm here to assist you.",
-    "placeholder": "Start a new message...",
+    "placeholder": "Start a new message...\nPress Enter to send, Shift + Enter for a new line",
     "newChat": "New Chat",
     "notConnected": "Gateway is not running. Start it to chat.",
     "thinking": {

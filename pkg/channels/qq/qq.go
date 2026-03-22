@@ -387,12 +387,11 @@ func (c *QQChannel) uploadMedia(
 }
 
 func (c *QQChannel) buildMediaUpload(part bus.MediaPart) (*qqMediaUpload, error) {
-	payload := &qqMediaUpload{
-		FileType: qqFileType(part.Type),
-	}
+	payload := &qqMediaUpload{}
 
 	mediaRef := part.Ref
 	if isHTTPURL(mediaRef) {
+		payload.FileType = qqFileType(c.outboundMediaType(part, ""))
 		payload.URL = mediaRef
 		return payload, nil
 	}
@@ -402,15 +401,23 @@ func (c *QQChannel) buildMediaUpload(part bus.MediaPart) (*qqMediaUpload, error)
 		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
-	resolved, err := store.Resolve(part.Ref)
+	resolved, meta, err := store.ResolveWithMeta(part.Ref)
 	if err != nil {
 		return nil, fmt.Errorf("qq resolve media ref %q: %v: %w", part.Ref, err, channels.ErrSendFailed)
 	}
+	if part.Filename == "" {
+		part.Filename = meta.Filename
+	}
+	if part.ContentType == "" {
+		part.ContentType = meta.ContentType
+	}
 
 	if isHTTPURL(resolved) {
+		payload.FileType = qqFileType(c.outboundMediaType(part, ""))
 		payload.URL = resolved
 		return payload, nil
 	}
+	payload.FileType = qqFileType(c.outboundMediaType(part, resolved))
 
 	if limitBytes := c.maxBase64FileSizeBytes(); limitBytes > 0 {
 		info, statErr := os.Stat(resolved)
@@ -435,6 +442,48 @@ func (c *QQChannel) buildMediaUpload(part bus.MediaPart) (*qqMediaUpload, error)
 
 	payload.FileData = base64.StdEncoding.EncodeToString(data)
 	return payload, nil
+}
+
+func (c *QQChannel) outboundMediaType(part bus.MediaPart, localPath string) string {
+	if part.Type != "audio" {
+		return part.Type
+	}
+
+	if localPath == "" {
+		logger.InfoCF("qq", "Sending audio as file because duration is unavailable", map[string]any{
+			"ref":      part.Ref,
+			"filename": part.Filename,
+		})
+		return "file"
+	}
+
+	duration, ok, err := qqAudioDuration(localPath, part.Filename, part.ContentType)
+	if err != nil {
+		logger.WarnCF("qq", "Failed to detect audio duration, sending as file", map[string]any{
+			"ref":      part.Ref,
+			"filename": part.Filename,
+			"error":    err.Error(),
+		})
+		return "file"
+	}
+	if !ok {
+		logger.InfoCF("qq", "Sending audio as file because duration is unavailable", map[string]any{
+			"ref":      part.Ref,
+			"filename": part.Filename,
+		})
+		return "file"
+	}
+	if duration > qqVoiceMaxDuration {
+		logger.InfoCF("qq", "Sending audio as file because it exceeds QQ voice limit", map[string]any{
+			"ref":              part.Ref,
+			"filename":         part.Filename,
+			"duration_seconds": duration.Seconds(),
+			"limit_seconds":    qqVoiceMaxDuration.Seconds(),
+		})
+		return "file"
+	}
+
+	return "audio"
 }
 
 func (c *QQChannel) sendUploadedMedia(

@@ -17,7 +17,7 @@
   "chat": {
     "welcome": "今天我能为您做些什么？",
     "welcomeDesc": "您可以询问我天气、设置或其他任何任务，我随时为您效劳。",
-    "placeholder": "输入新消息...",
+    "placeholder": "输入新消息...\n按 Enter 发送，Shift + Enter 换行",
     "newChat": "新建对话",
     "notConnected": "服务未运行，请先启动以进行对话。",
     "thinking": {

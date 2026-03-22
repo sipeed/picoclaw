@@ -470,6 +470,13 @@ func TestDefaultConfig_CronAllowCommandEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_LogLevel(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Agents.Defaults.LogLevel != "fatal" {
+		t.Errorf("LogLevel = %q, want \"fatal\"", cfg.Agents.Defaults.LogLevel)
+	}
+}
+
 func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
@@ -1055,5 +1062,40 @@ func TestLoadConfig_UsesPassphraseProvider(t *testing.T) {
 	}
 	if cfg.ModelList[0].APIKey != plainKey {
 		t.Errorf("api_key = %q, want %q", cfg.ModelList[0].APIKey, plainKey)
+	}
+}
+
+func TestConfigParsesLogLevel(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	data := `{"agents":{"defaults":{"log_level":"debug"}}}`
+	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Agents.Defaults.LogLevel != "debug" {
+		t.Errorf("LogLevel = %q, want \"debug\"", cfg.Agents.Defaults.LogLevel)
+	}
+}
+
+func TestConfigLogLevelEmpty(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	data := `{}`
+	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	// When config omits log_level, the DefaultConfig value ("fatal") is preserved.
+	if cfg.Agents.Defaults.LogLevel != "fatal" {
+		t.Errorf("LogLevel = %q, want \"fatal\"", cfg.Agents.Defaults.LogLevel)
 	}
 }
