@@ -87,7 +87,7 @@ func (t *ElevenLabsTranscriber) Transcribe(ctx context.Context, audioFilePath st
 	}
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("xi-api-key", t.apiKey)
+	req.Header.Set("Xi-Api-Key", t.apiKey)
 
 	logger.DebugCF("voice", "Sending transcription request to ElevenLabs API", map[string]any{
 		"url":                url,

@@ -32,8 +32,8 @@ func TestElevenLabsTranscribe(t *testing.T) {
 			if r.URL.Path != "/v1/speech-to-text" {
 				t.Errorf("unexpected path: %s", r.URL.Path)
 			}
-			if r.Header.Get("xi-api-key") != "sk_test" {
-				t.Errorf("unexpected xi-api-key header: %s", r.Header.Get("xi-api-key"))
+			if r.Header.Get("Xi-Api-Key") != "sk_test" {
+				t.Errorf("unexpected xi-api-key header: %s", r.Header.Get("Xi-Api-Key"))
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(TranscriptionResponse{
