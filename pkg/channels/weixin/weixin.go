@@ -286,6 +286,14 @@ func (c *WeixinChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		contextToken, _ = ct.(string)
 	}
 
+	// If we don't have a context token for this user, we cannot send a valid reply.
+	// Treat this as a non-temporary error so the manager doesn't keep retrying.
+	if contextToken == "" {
+		logger.ErrorCF("weixin", "Missing context token, cannot send message", map[string]any{
+			"to_user_id": toUserID,
+		})
+		return fmt.Errorf("weixin send: missing context token for chat %s", toUserID)
+	}
 	clientID := "picoclaw-" + uuid.New().String()
 
 	req := SendMessageReq{
