@@ -97,7 +97,7 @@ func TestAgentLoop_ProcessDirect_EmitsSpawnWaitingGC(t *testing.T) {
 
 	defer b.Unsubscribe(sub)
 
-	const sessionKey = "orch-test-session"
+	const sessionKey = "agent:orch-test-session"
 
 	_, err := al.ProcessDirect(context.Background(), "hello", sessionKey)
 	if err != nil {

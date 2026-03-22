@@ -1,3 +1,5 @@
+> 返回 [README](../../../README.zh.md)
+
 # 飞书
 
 飞书（国际版名称：Lark）是字节跳动旗下的企业协作平台。它通过事件驱动的 Webhook 同时支持中国和全球市场。
@@ -39,3 +41,7 @@
 4. 设置加密(可选,生产环境建议启用)
 5. 将 App ID、App Secret、Encrypt Key 和 Verification Token(如果启用加密) 填入配置文件中
 6. 自定义你希望 PicoClaw react 你消息时的表情（可选, Reference URL: [Feishu Emoji List](https://open.larkoffice.com/document/server-docs/im-v1/message-reaction/emojis-introduce))
+
+## 平台限制
+
+> ⚠️ **飞书通道不支持 32 位设备。** 飞书官方 SDK 仅提供 64 位构建，armv6 / armv7 / mipsle 等 32 位架构无法使用飞书通道。如需在 32 位设备上接入即时通讯，请改用 Telegram、Discord 或 OneBot 等通道。

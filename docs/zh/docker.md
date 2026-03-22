@@ -12,6 +12,7 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
 # 2. 首次运行 — 自动生成 docker/data/config.json 后退出
+#    （仅在 config.json 和 workspace/ 都不存在时触发）
 docker compose -f docker/docker-compose.yml --profile gateway up
 # 容器打印 "First-run setup complete." 后自动停止
 

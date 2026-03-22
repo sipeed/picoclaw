@@ -154,12 +154,12 @@ func (r *telegramRenderer) renderCodeBlock(n *ast.CodeBlock) {
 	} else {
 		if lang != "" {
 			r.buf.WriteString("<pre><code class=\"language-")
-			r.buf.WriteString(escapeHTML(lang))
+			r.buf.WriteString(escapeHTMLFull(lang))
 			r.buf.WriteString("\">")
 		} else {
 			r.buf.WriteString("<pre><code>")
 		}
-		r.buf.WriteString(escapeHTML(content))
+		r.buf.WriteString(escapeHTMLFull(content))
 		r.buf.WriteString("</code></pre>\n")
 	}
 }
@@ -260,7 +260,7 @@ func (r *telegramRenderer) renderTable(n *ast.Table) {
 			r.buf.WriteString("\n```\n")
 		} else {
 			r.buf.WriteString("<pre>")
-			r.buf.WriteString(escapeHTML(mono))
+			r.buf.WriteString(escapeHTMLFull(mono))
 			r.buf.WriteString("</pre>\n")
 		}
 	} else {
@@ -380,7 +380,7 @@ func (r *telegramRenderer) renderInlineCode(n *ast.Code) {
 		r.buf.WriteString("`")
 	} else {
 		r.buf.WriteString("<code>")
-		r.buf.WriteString(escapeHTML(content))
+		r.buf.WriteString(escapeHTMLFull(content))
 		r.buf.WriteString("</code>")
 	}
 }
@@ -395,7 +395,7 @@ func (r *telegramRenderer) renderLink(n *ast.Link) {
 		r.buf.WriteString(")")
 	} else {
 		r.buf.WriteString(`<a href="`)
-		r.buf.WriteString(escapeHTML(url))
+		r.buf.WriteString(escapeHTMLFull(url))
 		r.buf.WriteString(`">`)
 		r.walkChildren(n)
 		r.buf.WriteString("</a>")
@@ -432,7 +432,7 @@ func (r *telegramRenderer) writeEscaped(text string) {
 	if r.mdv2 {
 		r.buf.WriteString(escapeMarkdownV2(text))
 	} else {
-		r.buf.WriteString(escapeHTML(text))
+		r.buf.WriteString(escapeHTMLFull(text))
 	}
 }
 
@@ -482,8 +482,8 @@ func escapeMarkdownV2(s string) string {
 	return b.String()
 }
 
-// escapeHTML escapes &, <, > for Telegram HTML mode.
-func escapeHTML(text string) string {
+// escapeHTMLFull escapes &, <, > for Telegram HTML mode.
+func escapeHTMLFull(text string) string {
 	text = strings.ReplaceAll(text, "&", "&amp;")
 	text = strings.ReplaceAll(text, "<", "&lt;")
 	text = strings.ReplaceAll(text, ">", "&gt;")

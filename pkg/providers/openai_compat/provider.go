@@ -177,7 +177,6 @@ func (p *Provider) buildHTTPRequest(
 		// Use configured maxTokensField if specified, otherwise fallback to model-based detection
 		fieldName := p.maxTokensField
 		if fieldName == "" {
-			// Fallback: detect from model name for backward compatibility
 			lowerModel := strings.ToLower(model)
 			if strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "o1") ||
 				strings.Contains(lowerModel, "gpt-5") {
@@ -191,7 +190,6 @@ func (p *Provider) buildHTTPRequest(
 
 	if temperature, ok := asFloat(options["temperature"]); ok {
 		lowerModel := strings.ToLower(model)
-		// Kimi k2 models only support temperature=1.
 		if strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2") {
 			requestBody["temperature"] = 1.0
 		} else {
@@ -208,8 +206,7 @@ func (p *Provider) buildHTTPRequest(
 	// The key is typically the agent ID -- stable per agent, shared across requests.
 	// See: https://platform.openai.com/docs/guides/prompt-caching
 	// Prompt caching is only supported by OpenAI-native endpoints.
-	// Non-OpenAI providers (Mistral, Gemini, DeepSeek, etc.) reject unknown
-	// fields with 422 errors, so only include it for OpenAI APIs.
+	// Non-OpenAI providers reject unknown fields with 422 errors.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
 		if supportsPromptCacheKey(p.apiBase) {
 			requestBody["prompt_cache_key"] = cacheKey

@@ -541,7 +541,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 5c. Handle empty response
 
 	if finalContent == "" {
-		finalContent = opts.DefaultResponse
+		if iteration >= agent.MaxIterations && agent.MaxIterations > 0 {
+			finalContent = toolLimitResponse
+		} else {
+			finalContent = opts.DefaultResponse
+		}
 	}
 
 	// 5d. Store result summary for task completion notification

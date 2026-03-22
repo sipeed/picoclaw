@@ -42,7 +42,7 @@ func TestResolveScopeKey_PresetOverridesRoute(t *testing.T) {
 		Channel:    "telegram",
 		SenderID:   "user1",
 		ChatID:     "chat1",
-		SessionKey: "custom-session",
+		SessionKey: "agent:custom-session",
 		Peer:       bus.Peer{Kind: "direct", ID: "user1"},
 	}
 
@@ -52,7 +52,7 @@ func TestResolveScopeKey_PresetOverridesRoute(t *testing.T) {
 	}
 
 	key := resolveScopeKey(route, msg.SessionKey)
-	if key != "custom-session" {
+	if key != "agent:custom-session" {
 		t.Errorf("expected custom-session, got %q", key)
 	}
 

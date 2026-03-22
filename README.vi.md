@@ -105,6 +105,8 @@ _*Các phiên bản gần đây có thể sử dụng 10–20MB do merge tính n
 
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
 
+> 📋 **[Danh Sách Tương Thích Phần Cứng](docs/hardware-compatibility.md)** — Xem tất cả các board đã được kiểm tra, từ RISC-V $5 đến Raspberry Pi và điện thoại Android. Board của bạn chưa có? Gửi PR!
+
 ## 🦾 Demo
 
 ### 🛠️ Quy trình trợ lý tiêu chuẩn
@@ -139,7 +141,7 @@ Hãy cho chiếc điện thoại cũ một cuộc sống mới! Biến nó thàn
 wget https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_arm64.tar.gz
 tar xzf picoclaw_Linux_arm64.tar.gz
 pkg install proot
-termux-chroot ./picoclaw onboard
+termux-chroot ./picoclaw onboard   # chroot cung cấp bố cục hệ thống tệp Linux tiêu chuẩn
 ```
 
 Sau đó làm theo hướng dẫn trong phần "Bắt đầu nhanh" để hoàn tất cấu hình!
@@ -160,11 +162,15 @@ PicoClaw có thể triển khai trên hầu hết mọi thiết bị Linux!
 
 ## 📦 Cài đặt
 
-### Cài đặt bằng binary biên dịch sẵn
+### Tải từ picoclaw.io (Khuyến nghị)
 
-Tải file binary cho nền tảng của bạn từ [trang Releases](https://github.com/sipeed/picoclaw/releases).
+Truy cập **[picoclaw.io](https://picoclaw.io)** — trang web chính thức tự động phát hiện nền tảng của bạn và cung cấp tải xuống một cú nhấp. Không cần chọn kiến trúc thủ công.
 
-### Cài đặt từ mã nguồn (có tính năng mới nhất, khuyên dùng cho phát triển)
+### Tải binary đã biên dịch sẵn
+
+Hoặc tải binary cho nền tảng của bạn từ trang [GitHub Releases](https://github.com/sipeed/picoclaw/releases).
+
+### Biên dịch từ mã nguồn (cho phát triển)
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -200,6 +206,7 @@ make install
 | 🔄 [Spawn & Tác vụ bất đồng bộ](docs/vi/spawn-tasks.md) | Tác vụ nhanh, tác vụ dài với spawn, điều phối sub-agent bất đồng bộ |
 | 🐛 [Xử lý sự cố](docs/vi/troubleshooting.md) | Các vấn đề thường gặp và giải pháp |
 | 🔧 [Cấu hình Công cụ](docs/vi/tools_configuration.md) | Bật/tắt từng công cụ, chính sách thực thi |
+| 📋 [Tương Thích Phần Cứng](docs/hardware-compatibility.md) | Các board đã kiểm tra, yêu cầu tối thiểu, cách thêm board |
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Tham gia Mạng xã hội Agent
 
@@ -225,6 +232,7 @@ Kết nối PicoClaw với Mạng xã hội Agent chỉ bằng cách gửi một
 | `picoclaw skills install`  | Cài đặt một skill              |
 | `picoclaw migrate`         | Di chuyển dữ liệu từ phiên bản cũ |
 | `picoclaw auth login`      | Xác thực với nhà cung cấp     |
+| `picoclaw model`           | Xem hoặc chuyển đổi model mặc định |
 
 ### Tác vụ định kỳ / Nhắc nhở
 
