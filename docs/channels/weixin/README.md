@@ -4,10 +4,11 @@ PicoClaw supports connecting to your personal WeChat account using the official 
 
 ## 🚀 Quick Onboarding
 
-The easiest way to set up the Weixin channel is using the interactive onboarding command:
+The easiest way to set up the Weixin channel is using the interactive onboarding command or the direct channel login command:
 
 ```bash
 picoclaw onboard weixin
+picoclaw channels weixin login
 ```
 
 This command will:
@@ -33,6 +34,8 @@ You can also manually configure the filter rules in `config.json` under the `cha
     "weixin": {
       "enabled": true,
       "token": "YOUR_WEIXIN_TOKEN",
+      "base_url": "https://ilinkai.weixin.qq.com/",
+      "cdn_base_url": "https://novac2c.cdn.weixin.qq.com/c2c",
       "allow_from": [
         "user_id_1",
         "user_id_2"
@@ -49,6 +52,8 @@ You can also manually configure the filter rules in `config.json` under the `cha
 |---|---|
 | `enabled` | Set to `true` to enable the channel at startup. |
 | `token` | The authentication token obtained via QR login. |
+| `base_url` | Tencent iLink API base URL. Keep the default unless the login flow returns a region-specific endpoint. |
+| `cdn_base_url` | Tencent CDN base URL used for image, file, video, and voice transfer. |
 | `allow_from` | (Optional) List of WeChat User IDs permitted to interact with the bot. If empty, anyone who can send messages to the connected account can trigger the bot. |
 | `proxy` | (Optional) HTTP proxy address (e.g. `http://localhost:7890`) for environments where connection to `ilinkai.weixin.qq.com` is restricted. |
 

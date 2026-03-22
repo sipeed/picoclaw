@@ -218,6 +218,16 @@
       "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
       "reasoning_channel_id": ""
     },
+    "weixin": {
+      "_comment": "Weixin (WeChat personal) - Native QR login via Tencent iLink API.",
+      "enabled": false,
+      "token": "YOUR_WEIXIN_TOKEN",
+      "base_url": "https://ilinkai.weixin.qq.com/",
+      "cdn_base_url": "https://novac2c.cdn.weixin.qq.com/c2c",
+      "proxy": "",
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
     "pico": {
       "enabled": false,
       "token": "YOUR_PICO_TOKEN",

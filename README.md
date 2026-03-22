@@ -1391,6 +1391,7 @@ picoclaw agent -m "Hello"
 | ------------------------- | ----------------------------- |
 | `picoclaw onboard`        | Initialize config & workspace |
 | `picoclaw onboard weixin` | Connect WeChat account via QR |
+| `picoclaw channels weixin login` | Connect WeChat account via QR |
 | `picoclaw agent -m "..."` | Chat with the agent           |
 | `picoclaw agent`          | Interactive chat mode         |
 | `picoclaw gateway`        | Start the gateway             |

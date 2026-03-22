@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/agent"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/auth"
+	internalchannels "github.com/sipeed/picoclaw/cmd/picoclaw/internal/channels"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cron"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/gateway"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/migrate"
@@ -37,6 +38,7 @@ func NewPicoclawCommand() *cobra.Command {
 
 	cmd.AddCommand(
 		onboard.NewOnboardCommand(),
+		internalchannels.NewChannelsCommand(),
 		agent.NewAgentCommand(),
 		auth.NewAuthCommand(),
 		gateway.NewGatewayCommand(),

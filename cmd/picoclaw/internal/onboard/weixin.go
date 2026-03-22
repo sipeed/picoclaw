@@ -18,7 +18,8 @@ func newWeixinCommand() *cobra.Command {
 	var timeout int
 
 	cmd := &cobra.Command{
-		Use:   "weixin",
+		Use:     "weixin",
+		Aliases: []string{"wechat", "wx"},
 		Short: "Connect a WeChat personal account via QR code",
 		Long: `Start the interactive Weixin (WeChat personal) QR code login flow.
 
@@ -29,7 +30,7 @@ config so you can start the gateway immediately.
 Example:
   picoclaw onboard weixin`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runWeixinOnboard(baseURL, proxy, time.Duration(timeout)*time.Second)
+			return RunWeixinOnboard(baseURL, proxy, time.Duration(timeout)*time.Second)
 		},
 	}
 
@@ -40,7 +41,7 @@ Example:
 	return cmd
 }
 
-func runWeixinOnboard(baseURL, proxy string, timeout time.Duration) error {
+func RunWeixinOnboard(baseURL, proxy string, timeout time.Duration) error {
 	fmt.Println("Starting Weixin (WeChat personal) login...")
 	fmt.Println()
 
