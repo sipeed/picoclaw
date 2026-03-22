@@ -36,11 +36,11 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 	var ollamaProbes []string
 	var tcpProbes []string
 
-	probeOpenAICompatibleModelFunc = func(apiBase, modelID string) bool {
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
 		mu.Lock()
-		openAIProbes = append(openAIProbes, apiBase+"|"+modelID)
+		openAIProbes = append(openAIProbes, apiBase+"|"+modelID+"|"+apiKey)
 		mu.Unlock()
-		return apiBase == "http://127.0.0.1:8000/v1" && modelID == "custom-model"
+		return apiBase == "http://127.0.0.1:8000/v1" && modelID == "custom-model" && apiKey == ""
 	}
 	probeOllamaModelFunc = func(apiBase, modelID string) bool {
 		mu.Lock()
@@ -131,7 +131,7 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 	if !got["copilot-gpt-5.4"] {
 		t.Fatalf("copilot model configured = false, want true when local bridge probe succeeds")
 	}
-	if len(openAIProbes) != 1 || openAIProbes[0] != "http://127.0.0.1:8000/v1|custom-model" {
+	if len(openAIProbes) != 1 || openAIProbes[0] != "http://127.0.0.1:8000/v1|custom-model|" {
 		t.Fatalf("openAI probes = %#v, want only local vllm probe", openAIProbes)
 	}
 	if len(ollamaProbes) != 1 || ollamaProbes[0] != "http://localhost:11434/v1|llama3" {
@@ -205,7 +205,7 @@ func TestHandleListModels_ProbesLocalModelsConcurrently(t *testing.T) {
 	started := make(chan string, 2)
 	release := make(chan struct{})
 
-	probeOpenAICompatibleModelFunc = func(apiBase, modelID string) bool {
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
 		started <- apiBase + "|" + modelID
 		<-release
 		return true
@@ -265,9 +265,9 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	resetModelProbeHooks(t)
 
 	var gotProbe string
-	probeOpenAICompatibleModelFunc = func(apiBase, modelID string) bool {
-		gotProbe = apiBase + "|" + modelID
-		return apiBase == "http://127.0.0.1:8000/v1" && modelID == "custom-model"
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
+		gotProbe = apiBase + "|" + modelID + "|" + apiKey
+		return apiBase == "http://127.0.0.1:8000/v1" && modelID == "custom-model" && apiKey == ""
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -307,7 +307,7 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	if !resp.Models[0].Configured {
 		t.Fatal("wildcard-bound local model configured = false, want true after probe host normalization")
 	}
-	if gotProbe != "http://127.0.0.1:8000/v1|custom-model" {
-		t.Fatalf("probe api base = %q, want %q", gotProbe, "http://127.0.0.1:8000/v1|custom-model")
+	if gotProbe != "http://127.0.0.1:8000/v1|custom-model|" {
+		t.Fatalf("probe api base = %q, want %q", gotProbe, "http://127.0.0.1:8000/v1|custom-model|")
 	}
 }

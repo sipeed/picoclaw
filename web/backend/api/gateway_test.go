@@ -169,7 +169,7 @@ func TestGatewayStartReady_LocalModelWithoutAPIKey(t *testing.T) {
 	defer cleanup()
 	resetModelProbeHooks(t)
 
-	probeOpenAICompatibleModelFunc = func(apiBase, modelID string) bool {
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
 		return false
 	}
 
@@ -206,8 +206,8 @@ func TestGatewayStartReady_LocalModelWithRunningService(t *testing.T) {
 	defer cleanup()
 	resetModelProbeHooks(t)
 
-	probeOpenAICompatibleModelFunc = func(apiBase, modelID string) bool {
-		return apiBase == "http://127.0.0.1:8000/v1" && modelID == "custom-model"
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
+		return apiBase == "http://127.0.0.1:8000/v1" && modelID == "custom-model" && apiKey == ""
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -240,7 +240,7 @@ func TestGatewayStartReady_RemoteVLLMWithAPIKeyDoesNotProbe(t *testing.T) {
 	defer cleanup()
 	resetModelProbeHooks(t)
 
-	probeOpenAICompatibleModelFunc = func(apiBase, modelID string) bool {
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
 		t.Fatalf("unexpected OpenAI-compatible probe for %q (%q)", apiBase, modelID)
 		return false
 	}
