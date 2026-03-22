@@ -480,6 +480,14 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 				}
 				_, err = c.bot.SendDocument(ctx, docParams)
 			}
+		case "voice":
+			params := &telego.SendVoiceParams{
+				ChatID:          tu.ID(chatID),
+				MessageThreadID: threadID,
+				Voice:           telego.InputFile{File: file},
+				Caption:         part.Caption,
+			}
+			_, err = c.bot.SendVoice(ctx, params)
 		case "audio":
 			params := &telego.SendAudioParams{
 				ChatID:          tu.ID(chatID),

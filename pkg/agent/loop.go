@@ -1152,6 +1152,12 @@ func inferMediaType(filename, contentType string) string {
 	ct := strings.ToLower(contentType)
 	fn := strings.ToLower(filename)
 
+	// Detect voice messages: OGG files with "voice" in the filename.
+	// These are sent as Telegram voice bubbles rather than audio attachments.
+	if strings.Contains(fn, "voice") && (strings.HasSuffix(fn, ".ogg") || strings.HasSuffix(fn, ".oga")) {
+		return "voice"
+	}
+
 	if strings.HasPrefix(ct, "image/") {
 		return "image"
 	}
