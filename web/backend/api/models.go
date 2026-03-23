@@ -31,12 +31,13 @@ type modelResponse struct {
 	Proxy      string `json:"proxy,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"`
 	// Advanced fields
-	ConnectMode    string `json:"connect_mode,omitempty"`
-	Workspace      string `json:"workspace,omitempty"`
-	RPM            int    `json:"rpm,omitempty"`
-	MaxTokensField string `json:"max_tokens_field,omitempty"`
-	RequestTimeout int    `json:"request_timeout,omitempty"`
-	ThinkingLevel  string `json:"thinking_level,omitempty"`
+	ConnectMode    string         `json:"connect_mode,omitempty"`
+	Workspace      string         `json:"workspace,omitempty"`
+	RPM            int            `json:"rpm,omitempty"`
+	MaxTokensField string         `json:"max_tokens_field,omitempty"`
+	RequestTimeout int            `json:"request_timeout,omitempty"`
+	ThinkingLevel  string         `json:"thinking_level,omitempty"`
+	ExtraBody      map[string]any `json:"extra_body,omitempty"`
 	// Meta
 	Configured bool `json:"configured"`
 	IsDefault  bool `json:"is_default"`
@@ -81,6 +82,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			MaxTokensField: m.MaxTokensField,
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,
+			ExtraBody:      m.ExtraBody,
 			Configured:     configured[i],
 			IsDefault:      m.ModelName == defaultModel,
 		})
@@ -182,6 +184,9 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	// This lets the UI update api_base / proxy without clearing the stored secret.
 	if mc.APIKey() == "" {
 		mc.SetAPIKey(cfg.ModelList[idx].APIKey())
+	}
+	if mc.ExtraBody == nil {
+		mc.ExtraBody = cfg.ModelList[idx].ExtraBody
 	}
 
 	cfg.ModelList[idx] = &mc

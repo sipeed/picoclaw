@@ -1193,3 +1193,62 @@ func TestConfigLogLevelEmpty(t *testing.T) {
 		t.Errorf("LogLevel = %q, want \"fatal\"", cfg.Gateway.LogLevel)
 	}
 }
+
+func TestModelConfig_ExtraBodyRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	cfg := &Config{
+		ModelList: []*ModelConfig{
+			{
+				ModelName: "test-model",
+				Model:     "openai/test",
+				apiKeys:   []string{"sk-test"},
+				ExtraBody: map[string]any{"custom_field": "value", "num_field": 42},
+			},
+		},
+		security: &SecurityConfig{
+			ModelList: map[string]ModelSecurityEntry{"test-model:0": {APIKeys: []string{"sk-test"}}},
+		},
+	}
+
+	if err := SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("SaveConfig error: %v", err)
+	}
+
+	loaded, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if loaded.ModelList[0].ExtraBody == nil {
+		t.Fatal("ExtraBody should not be nil after round-trip")
+	}
+	if got := loaded.ModelList[0].ExtraBody["custom_field"]; got != "value" {
+		t.Errorf("ExtraBody[custom_field] = %v, want value", got)
+	}
+	if got := loaded.ModelList[0].ExtraBody["num_field"]; got != float64(42) {
+		t.Errorf("ExtraBody[num_field] = %v, want 42", got)
+	}
+}
+
+func TestDefaultConfig_MinimaxExtraBody(t *testing.T) {
+	cfg := DefaultConfig()
+
+	var minimaxCfg *ModelConfig
+	for i := range cfg.ModelList {
+		if cfg.ModelList[i].Model == "minimax/MiniMax-M2.5" {
+			minimaxCfg = cfg.ModelList[i]
+			break
+		}
+	}
+	if minimaxCfg == nil {
+		t.Fatal("Minimax model not found in ModelList")
+	}
+	if minimaxCfg.ExtraBody == nil {
+		t.Fatal("Minimax ExtraBody should not be nil")
+	}
+	if got, ok := minimaxCfg.ExtraBody["reasoning_split"]; !ok || got != true {
+		t.Fatalf("Minimax ExtraBody[reasoning_split] = %v, want true", got)
+	}
+}
