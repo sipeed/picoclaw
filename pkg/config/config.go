@@ -793,14 +793,22 @@ type GLMSearchConfig struct {
 	MaxResults   int    `json:"max_results"   env:"PICOCLAW_TOOLS_WEB_GLM_MAX_RESULTS"`
 }
 
+type BaiduSearchConfig struct {
+	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_BAIDU_ENABLED"`
+	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_BAIDU_API_KEY"`
+	BaseURL    string `json:"base_url"    env:"PICOCLAW_TOOLS_WEB_BAIDU_BASE_URL"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BAIDU_MAX_RESULTS"`
+}
+
 type WebToolsConfig struct {
-	ToolConfig `                 envPrefix:"PICOCLAW_TOOLS_WEB_"`
-	Brave      BraveConfig      `                                json:"brave"`
-	Tavily     TavilyConfig     `                                json:"tavily"`
-	DuckDuckGo DuckDuckGoConfig `                                json:"duckduckgo"`
-	Perplexity PerplexityConfig `                                json:"perplexity"`
-	SearXNG    SearXNGConfig    `                                json:"searxng"`
-	GLMSearch  GLMSearchConfig  `                                json:"glm_search"`
+	ToolConfig  `                  envPrefix:"PICOCLAW_TOOLS_WEB_"`
+	Brave       BraveConfig       `                                json:"brave"`
+	Tavily      TavilyConfig      `                                json:"tavily"`
+	DuckDuckGo  DuckDuckGoConfig  `                                json:"duckduckgo"`
+	Perplexity  PerplexityConfig  `                                json:"perplexity"`
+	SearXNG     SearXNGConfig     `                                json:"searxng"`
+	GLMSearch   GLMSearchConfig   `                                json:"glm_search"`
+	BaiduSearch BaiduSearchConfig `                                json:"baidu_search"`
 	// PreferNative controls whether to use provider-native web search when
 	// the active LLM supports it (e.g. OpenAI web_search_preview). When true,
 	// the client-side web_search tool is hidden to avoid duplicate search surfaces,
