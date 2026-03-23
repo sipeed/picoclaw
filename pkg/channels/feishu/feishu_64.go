@@ -725,7 +725,19 @@ func formatReplyContext(parentID, repliedContent, content string) string {
 	if content == "" {
 		return header + "\n" + repliedContent + "\n" + footer
 	}
+	if hasLeadingCommandPrefix(content) {
+		return content + "\n\n" + header + "\n" + repliedContent + "\n" + footer
+	}
 	return header + "\n" + repliedContent + "\n" + footer + "\n\n[current_message]\n" + content + "\n[/current_message]"
+}
+
+func hasLeadingCommandPrefix(s string) bool {
+	tokens := strings.Fields(strings.TrimSpace(s))
+	if len(tokens) == 0 {
+		return false
+	}
+	first := tokens[0]
+	return strings.HasPrefix(first, "/") || strings.HasPrefix(first, "!")
 }
 
 func sanitizeReplyContextContent(s string) string {

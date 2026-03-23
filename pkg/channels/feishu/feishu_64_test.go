@@ -412,6 +412,22 @@ func TestFormatReplyContext(t *testing.T) {
 			t.Fatalf("escaped replied tag missing: %q", got)
 		}
 	})
+
+	t.Run("preserves leading slash command prefix", func(t *testing.T) {
+		got := formatReplyContext("om_parent_1", "original message", "/help")
+		want := "/help\n\n[replied_message id=\"om_parent_1\"]\noriginal message\n[/replied_message]"
+		if got != want {
+			t.Fatalf("formatReplyContext() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("preserves leading bang command prefix", func(t *testing.T) {
+		got := formatReplyContext("om_parent_1", "original message", "!status now")
+		want := "!status now\n\n[replied_message id=\"om_parent_1\"]\noriginal message\n[/replied_message]"
+		if got != want {
+			t.Fatalf("formatReplyContext() = %q, want %q", got, want)
+		}
+	})
 }
 
 func TestReplyTargetMessageID(t *testing.T) {
@@ -460,4 +476,26 @@ func TestNormalizeRepliedContent(t *testing.T) {
 			t.Fatalf("normalizeRepliedContent() = %q, want %q", got, "[replied file]")
 		}
 	})
+}
+
+func TestHasLeadingCommandPrefix(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{name: "slash command", input: "/help", want: true},
+		{name: "bang command", input: "!status", want: true},
+		{name: "leading spaces slash", input: "   /ping arg", want: true},
+		{name: "normal text", input: "hello /help", want: false},
+		{name: "empty", input: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasLeadingCommandPrefix(tt.input); got != tt.want {
+				t.Fatalf("hasLeadingCommandPrefix(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
 }
