@@ -1942,6 +1942,9 @@ func (c *Config) ValidateModelList() error {
 
 func (c *Config) SecurityCopyFrom(cfg *Config) {
 	c.security = cfg.security
+	if c.security != nil {
+		_ = applySecurityConfig(c, c.security)
+	}
 }
 
 func MergeAPIKeys(apiKey string, apiKeys []string) []string {
