@@ -1,3 +1,12 @@
+// Tirith pre-exec security scanning.
+//
+// Tirith (https://github.com/sheeki03/tirith) is a terminal security tool
+// that scans commands for content-level threats: homograph/punycode URLs,
+// pipe-to-interpreter patterns, terminal injection (ANSI escapes, bidi
+// Unicode, zero-width chars), typosquatted packages, and insecure transport.
+//
+// Exit code is the verdict source of truth: 0=allow, 1=block, 2=warn.
+// Auto-installed from GitHub releases with SHA-256 checksum verification.
 package tools
 
 import (
