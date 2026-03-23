@@ -54,15 +54,11 @@ func DetectTranscriber(cfg *config.Config) Transcriber {
 		}
 	}
 
-	// Direct Groq provider config takes priority.
-	if key := cfg.Providers.Groq.APIKey; key != "" {
-		return NewGroqTranscriber(key)
-	}
 	// Fall back to any model-list entry that uses the groq/ protocol or is explicitly named groq.
 	for _, mc := range cfg.ModelList {
 		if (strings.HasPrefix(mc.Model, "groq/") || mc.ModelName == "groq" || mc.Model == "whisper-large-v3-turbo") &&
-			mc.APIKey != "" {
-			return NewGroqTranscriber(mc.APIKey)
+			mc.APIKey() != "" {
+			return NewGroqTranscriber(mc.APIKey())
 		}
 	}
 	return nil
