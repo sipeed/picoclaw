@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/tencent-connect/botgo/log"
@@ -35,6 +38,9 @@ type SecurityConfig struct {
 
 	Web    WebToolsSecurity `yaml:"web,omitempty"`
 	Skills SkillsSecurity   `yaml:"skills,omitempty"`
+
+	// cache for sensitive values and compiled regex (computed once)
+	sensitiveCache *SensitiveDataCache
 }
 
 // ModelSecurityEntry stores security data for a model
@@ -217,4 +223,92 @@ func saveSecurityConfig(securityPath string, sec *SecurityConfig) error {
 		return fmt.Errorf("failed to marshal security config: %w", err)
 	}
 	return fileutil.WriteFileAtomic(securityPath, buf.Bytes(), 0o600)
+}
+
+// SensitiveDataCache caches the compiled regex for filtering sensitive data.
+// SensitiveDataCache caches the strings.Replacer for filtering sensitive data.
+// Computed once on first access via sync.Once.
+type SensitiveDataCache struct {
+	replacer *strings.Replacer
+	once     sync.Once
+}
+
+// SensitiveDataReplacer returns the strings.Replacer for filtering sensitive data.
+// It is computed once on first access via sync.Once.
+func (sec *SecurityConfig) SensitiveDataReplacer() *strings.Replacer {
+	sec.initSensitiveCache()
+	return sec.sensitiveCache.replacer
+}
+
+// initSensitiveCache initializes the sensitive data cache if not already done.
+func (sec *SecurityConfig) initSensitiveCache() {
+	if sec.sensitiveCache == nil {
+		sec.sensitiveCache = &SensitiveDataCache{}
+	}
+	sec.sensitiveCache.once.Do(func() {
+		values := sec.collectSensitiveValues()
+		if len(values) == 0 {
+			sec.sensitiveCache.replacer = strings.NewReplacer()
+			return
+		}
+
+		// Build old/new pairs for strings.Replacer
+		var pairs []string
+		for _, v := range values {
+			if len(v) > 3 {
+				pairs = append(pairs, v, "[FILTERED]")
+			}
+		}
+		if len(pairs) == 0 {
+			sec.sensitiveCache.replacer = strings.NewReplacer()
+			return
+		}
+		sec.sensitiveCache.replacer = strings.NewReplacer(pairs...)
+	})
+}
+
+// collectSensitiveValues collects all sensitive strings from SecurityConfig using reflection.
+func (sec *SecurityConfig) collectSensitiveValues() []string {
+	var values []string
+	collectSensitive(reflect.ValueOf(sec), &values)
+	return values
+}
+
+// collectSensitive recursively traverses the value and collects all non-empty string fields.
+func collectSensitive(v reflect.Value, values *[]string) {
+	// Dereference pointers/interfaces to get the underlying value
+	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+
+	switch v.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Field(i)
+			fieldType := v.Type().Field(i)
+			if !fieldType.IsExported() {
+				continue
+			}
+			collectSensitive(field, values)
+		}
+	case reflect.String:
+		if v.String() != "" {
+			*values = append(*values, v.String())
+		}
+	case reflect.Slice:
+		if v.Type().Elem().Kind() == reflect.String {
+			for i := 0; i < v.Len(); i++ {
+				if s := v.Index(i).String(); s != "" {
+					*values = append(*values, s)
+				}
+			}
+		}
+	case reflect.Map:
+		for _, key := range v.MapKeys() {
+			collectSensitive(v.MapIndex(key), values)
+		}
+	}
 }

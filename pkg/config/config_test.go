@@ -436,6 +436,40 @@ func TestDefaultConfig_ExecAllowRemoteEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_FilterSensitiveDataEnabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Tools.FilterSensitiveData {
+		t.Fatal("DefaultConfig().Tools.FilterSensitiveData should be true")
+	}
+}
+
+func TestDefaultConfig_FilterMinLength(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Tools.FilterMinLength != 8 {
+		t.Fatalf("DefaultConfig().Tools.FilterMinLength = %d, want 8", cfg.Tools.FilterMinLength)
+	}
+}
+
+func TestToolsConfig_GetFilterMinLength(t *testing.T) {
+	tests := []struct {
+		name     string
+		minLen   int
+		expected int
+	}{
+		{"zero returns default", 0, 8},
+		{"negative returns default", -1, 8},
+		{"positive returns value", 16, 16},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &ToolsConfig{FilterMinLength: tt.minLen}
+			if got := cfg.GetFilterMinLength(); got != tt.expected {
+				t.Errorf("GetFilterMinLength() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestDefaultConfig_CronAllowCommandEnabled(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Tools.Cron.AllowCommand {
@@ -1250,5 +1284,185 @@ func TestDefaultConfig_MinimaxExtraBody(t *testing.T) {
 	}
 	if got, ok := minimaxCfg.ExtraBody["reasoning_split"]; !ok || got != true {
 		t.Fatalf("Minimax ExtraBody[reasoning_split] = %v, want true", got)
+	}
+}
+
+func TestFilterSensitiveData(t *testing.T) {
+	// Test with nil security config
+	cfg := &Config{}
+	if got := cfg.FilterSensitiveData("hello sk-key123 world"); got != "hello sk-key123 world" {
+		t.Errorf("nil security: got %q, want original", got)
+	}
+
+	// Test with empty content
+	cfg.security = &SecurityConfig{}
+	if got := cfg.FilterSensitiveData(""); got != "" {
+		t.Errorf("empty content: got %q, want empty", got)
+	}
+
+	// Test short content (less than FilterMinLength=8, should skip filtering)
+	cfg.security.ModelList = map[string]ModelSecurityEntry{
+		"test": {APIKeys: []string{"sk-long-key-12345"}},
+	}
+	cfg.Tools.FilterSensitiveData = true
+	cfg.Tools.FilterMinLength = 8
+
+	// Debug: check if sensitive values are collected
+	values := cfg.security.collectSensitiveValues()
+	t.Logf("collected %d sensitive values: %v", len(values), values)
+
+	if got := cfg.FilterSensitiveData("sk-key"); got != "sk-key" {
+		t.Errorf("short content should not be filtered: got %q", got)
+	}
+
+	// Test filtering works
+	content := "Your API key is sk-long-key-12345 and token abc123"
+	// abc123 is not in sensitive values, only sk-long-key-12345 should be filtered
+	expected := "Your API key is [FILTERED] and token abc123"
+	if got := cfg.FilterSensitiveData(content); got != expected {
+		t.Errorf("filtering failed: got %q, want %q", got, expected)
+	}
+
+	// Test disabled filtering
+	cfg.Tools.FilterSensitiveData = false
+	if got := cfg.FilterSensitiveData(content); got != content {
+		t.Errorf("disabled filtering: got %q, want original %q", got, content)
+	}
+}
+
+func TestFilterSensitiveData_MultipleKeys(t *testing.T) {
+	cfg := &Config{
+		Tools: ToolsConfig{
+			FilterSensitiveData: true,
+			FilterMinLength:     8,
+		},
+	}
+	cfg.security = &SecurityConfig{
+		ModelList: map[string]ModelSecurityEntry{
+			"model1": {APIKeys: []string{"key-one", "key-two"}},
+			"model2": {APIKeys: []string{"key-three"}},
+		},
+	}
+
+	content := "key-one and key-two and key-three should be filtered"
+	expected := "[FILTERED] and [FILTERED] and [FILTERED] should be filtered"
+	if got := cfg.FilterSensitiveData(content); got != expected {
+		t.Errorf("multiple keys: got %q, want %q", got, expected)
+	}
+}
+
+func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
+	cfg := &Config{
+		Tools: ToolsConfig{
+			FilterSensitiveData: true,
+			FilterMinLength:     8,
+		},
+	}
+	cfg.security = &SecurityConfig{
+		// Model API keys
+		ModelList: map[string]ModelSecurityEntry{
+			"test-model": {APIKeys: []string{"sk-model-key-12345"}},
+		},
+		// Channel tokens
+		Channels: ChannelsSecurity{
+			Telegram: &TelegramSecurity{Token: "telegram-bot-token-abcdef"},
+			Discord:  &DiscordSecurity{Token: "discord-bot-token-xyz789"},
+			Slack:    &SlackSecurity{BotToken: "xoxb-slack-bot-token", AppToken: "xapp-slack-app-token"},
+			Matrix:   &MatrixSecurity{AccessToken: "matrix-access-token-abc"},
+			Feishu:   &FeishuSecurity{AppSecret: "feishu-app-secret-123", EncryptKey: "feishu-encrypt-key"},
+			DingTalk: &DingTalkSecurity{ClientSecret: "dingtalk-client-secret"},
+			OneBot:   &OneBotSecurity{AccessToken: "onebot-access-token"},
+			WeCom:    &WeComSecurity{Token: "wecom-token", EncodingAESKey: "wecom-aes-key"},
+			WeComApp: &WeComAppSecurity{CorpSecret: "wecom-app-secret", Token: "wecom-app-token"},
+			Pico:     &PicoSecurity{Token: "pico-token-abc123"},
+			IRC: &IRCSecurity{
+				Password:         "irc-password",
+				NickServPassword: "nickserv-pass",
+				SASLPassword:     "sasl-pass",
+			},
+		},
+		// Web tool API keys
+		Web: WebToolsSecurity{
+			Brave:       &BraveSecurity{APIKeys: []string{"brave-api-key"}},
+			Tavily:      &TavilySecurity{APIKeys: []string{"tavily-api-key"}},
+			Perplexity:  &PerplexitySecurity{APIKeys: []string{"perplexity-api-key"}},
+			GLMSearch:   &GLMSearchSecurity{APIKey: "glm-search-key"},
+			BaiduSearch: &BaiduSearchSecurity{APIKey: "baidu-search-key"},
+		},
+		// Skills tokens
+		Skills: SkillsSecurity{
+			Github:  &GithubSecurity{Token: "github-token-xyz"},
+			ClawHub: &ClawHubSecurity{AuthToken: "clawhub-auth-token"},
+		},
+	}
+
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "model_api_key",
+			content: "Using model with key sk-model-key-12345",
+			want:    "Using model with key [FILTERED]",
+		},
+		{
+			name:    "telegram_token",
+			content: "Telegram token: telegram-bot-token-abcdef",
+			want:    "Telegram token: [FILTERED]",
+		},
+		{
+			name:    "discord_token",
+			content: "Discord token: discord-bot-token-xyz789",
+			want:    "Discord token: [FILTERED]",
+		},
+		{
+			name:    "slack_tokens",
+			content: "Slack bot: xoxb-slack-bot-token, app: xapp-slack-app-token",
+			want:    "Slack bot: [FILTERED], app: [FILTERED]",
+		},
+		{
+			name:    "matrix_token",
+			content: "Matrix access token: matrix-access-token-abc",
+			want:    "Matrix access token: [FILTERED]",
+		},
+		{
+			name:    "brave_api_key",
+			content: "Brave key: brave-api-key",
+			want:    "Brave key: [FILTERED]",
+		},
+		{
+			name:    "tavily_api_key",
+			content: "Tavily key: tavily-api-key",
+			want:    "Tavily key: [FILTERED]",
+		},
+		{
+			name:    "github_token",
+			content: "GitHub token: github-token-xyz",
+			want:    "GitHub token: [FILTERED]",
+		},
+		{
+			name:    "irc_passwords",
+			content: "IRC password: irc-password, nickserv: nickserv-pass",
+			want:    "IRC password: [FILTERED], nickserv: [FILTERED]",
+		},
+		{
+			name:    "mixed_content",
+			content: "Model key sk-model-key-12345 and Telegram token telegram-bot-token-abcdef",
+			want:    "Model key [FILTERED] and Telegram token [FILTERED]",
+		},
+		{
+			name:    "short_key_not_filtered",
+			content: "Key abc not filtered because length < 8",
+			want:    "Key abc not filtered because length < 8",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cfg.FilterSensitiveData(tt.content); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
