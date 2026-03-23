@@ -20,6 +20,45 @@ if [ -f "$BSKY_SCRIPT" ] && [ ! -e /usr/local/bin/bsky ]; then
     echo "bsky CLI symlinked to PATH"
 fi
 
+# Bluesky: persist session config inside mounted volume and auto-login
+BSKY_CONFIG_DIR="${HOME}/.picoclaw/bsky"
+mkdir -p "$BSKY_CONFIG_DIR"
+export XDG_CONFIG_HOME="${HOME}/.picoclaw"
+# bsky.py stores config at ~/.config/bsky/config.json — symlink to mounted volume
+if [ ! -e "${HOME}/.config/bsky" ]; then
+    mkdir -p "${HOME}/.config"
+    ln -sf "$BSKY_CONFIG_DIR" "${HOME}/.config/bsky"
+fi
+
+# Auto-login to Bluesky if credentials provided and no valid session exists
+if [ -n "$BSKY_HANDLE" ] && [ -n "$BSKY_APP_PASSWORD" ]; then
+    BSKY_SCRIPT="${HOME}/.picoclaw/workspace/skills/bluesky/scripts/bsky.py"
+    if [ -f "$BSKY_SCRIPT" ]; then
+        # Check if already logged in (whoami prints "Not logged in" when no session)
+        WHOAMI_OUT=$(python3 "$BSKY_SCRIPT" whoami 2>&1 || true)
+        if echo "$WHOAMI_OUT" | grep -qi "not logged in\|error\|failed\|expired"; then
+            echo "Logging in to Bluesky as $BSKY_HANDLE..."
+            python3 "$BSKY_SCRIPT" login --handle "$BSKY_HANDLE" --password "$BSKY_APP_PASSWORD" && \
+                echo "Bluesky login successful" || \
+                echo "WARNING: Bluesky login failed, continuing without it"
+        elif echo "$WHOAMI_OUT" | grep -qi "Handle:"; then
+            echo "Bluesky: already logged in ($WHOAMI_OUT)"
+        else
+            echo "Logging in to Bluesky as $BSKY_HANDLE..."
+            python3 "$BSKY_SCRIPT" login --handle "$BSKY_HANDLE" --password "$BSKY_APP_PASSWORD" && \
+                echo "Bluesky login successful" || \
+                echo "WARNING: Bluesky login failed, continuing without it"
+        fi
+    fi
+fi
+
+# Clean stale Chromium lock files from previous container sessions
+CHROME_PROFILE="${AGENT_BROWSER_PROFILE:-${HOME}/.picoclaw/workspace/browser/picoclaw}"
+if [ -d "$CHROME_PROFILE" ]; then
+    rm -f "$CHROME_PROFILE/SingletonLock" "$CHROME_PROFILE/SingletonCookie" "$CHROME_PROFILE/SingletonSocket"
+    echo "Chromium profile lock files cleaned"
+fi
+
 # Start virtual framebuffer for headed chromium (agent-browser)
 if [ -n "$DISPLAY" ] && command -v Xvfb >/dev/null 2>&1; then
     Xvfb "$DISPLAY" -screen 0 1280x1024x24 -ac &

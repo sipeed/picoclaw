@@ -38,6 +38,8 @@ services:
       - AGENT_BROWSER_HEADED=true
       - AGENT_BROWSER_ARGS=--no-sandbox,--disable-blink-features=AutomationControlled
       - DISPLAY=:99
+      - BSKY_HANDLE=${BSKY_HANDLE}
+      - BSKY_APP_PASSWORD=${BSKY_APP_PASSWORD}
     ports:
       - "127.0.0.1:18790:18790"
       - "192.168.1.169:18790:18790"
