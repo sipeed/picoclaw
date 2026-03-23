@@ -522,6 +522,9 @@
     "read_file": {
       "enabled": true
     },
+    "send_tts": {
+      "enabled": false
+    },
     "spawn": {
       "enabled": true
     },

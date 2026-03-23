@@ -31,6 +31,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/tts"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -155,6 +156,13 @@ func registerSharedTools(
 	provider providers.LLMProvider,
 ) {
 	allowReadPaths := buildAllowReadPatterns(cfg)
+	var ttsProvider tts.TTSProvider
+	if cfg.Tools.IsToolEnabled("send_tts") {
+		ttsProvider = tts.DetectTTS(cfg)
+		if ttsProvider == nil {
+			logger.WarnCF("voice-tts", "send_tts enabled but no TTS provider configured", nil)
+		}
+	}
 
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
@@ -249,6 +257,10 @@ func registerSharedTools(
 				allowReadPaths,
 			)
 			agent.Tools.Register(sendFileTool)
+		}
+
+		if ttsProvider != nil {
+			agent.Tools.Register(tools.NewSendTTSTool(ttsProvider, nil))
 		}
 
 		// Skill discovery and installation tools
@@ -1036,6 +1048,11 @@ func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	registry.ForEachTool("send_file", func(t tools.Tool) {
 		if sf, ok := t.(*tools.SendFileTool); ok {
 			sf.SetMediaStore(s)
+		}
+	})
+	registry.ForEachTool("send_tts", func(t tools.Tool) {
+		if st, ok := t.(*tools.SendTTSTool); ok {
+			st.SetMediaStore(s)
 		}
 	})
 }
