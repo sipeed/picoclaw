@@ -201,8 +201,14 @@ func (c *QQChannel) getChatKind(chatID string) string {
 }
 
 func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	_, err := c.SendMessageWithIDs(ctx, msg)
+	return err
+}
+
+// SendMessageWithIDs implements channels.MessageIDsSender.
+func (c *QQChannel) SendMessageWithIDs(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	chatKind := c.getChatKind(msg.ChatID)
@@ -236,11 +242,14 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	}
 
 	// Route to group or C2C.
-	var err error
+	var (
+		sentMsg *dto.Message
+		err     error
+	)
 	if chatKind == "group" {
-		_, err = c.api.PostGroupMessage(ctx, msg.ChatID, msgToCreate)
+		sentMsg, err = c.api.PostGroupMessage(ctx, msg.ChatID, msgToCreate)
 	} else {
-		_, err = c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
+		sentMsg, err = c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
 	}
 
 	if err != nil {
@@ -249,10 +258,13 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 			"chat_kind": chatKind,
 			"error":     err.Error(),
 		})
-		return fmt.Errorf("qq send: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("qq send: %w", channels.ErrTemporary)
 	}
 
-	return nil
+	if sentMsg == nil {
+		return nil, nil
+	}
+	return []string{sentMsg.ID}, nil
 }
 
 // StartTyping implements channels.TypingCapable.

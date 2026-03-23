@@ -292,7 +292,7 @@ func (al *AgentLoop) continueWithSteeringMessages(
 	sessionKey, channel, chatID string,
 	steeringMsgs []providers.Message,
 ) (string, error) {
-	return al.runAgentLoop(ctx, agent, processOptions{
+	response, err := al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:              sessionKey,
 		Channel:                 channel,
 		ChatID:                  chatID,
@@ -302,6 +302,13 @@ func (al *AgentLoop) continueWithSteeringMessages(
 		InitialSteeringMessages: steeringMsgs,
 		SkipInitialSteeringPoll: true,
 	})
+	if err != nil {
+		return "", err
+	}
+	if response.OnDelivered != nil {
+		response.OnDelivered(nil)
+	}
+	return response.Content, nil
 }
 
 func (al *AgentLoop) agentForSession(sessionKey string) *AgentInstance {

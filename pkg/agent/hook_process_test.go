@@ -52,8 +52,8 @@ func TestAgentLoop_MountProcessHook_LLMAndObserver(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
 	}
-	if resp != "provider content|ipc" {
-		t.Fatalf("expected process-hooked llm content, got %q", resp)
+	if resp.Content != "provider content|ipc" {
+		t.Fatalf("expected process-hooked llm content, got %q", resp.Content)
 	}
 
 	provider.mu.Lock()
@@ -92,8 +92,8 @@ func TestAgentLoop_MountProcessHook_ToolRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
 	}
-	if resp != "ipc:ipc" {
-		t.Fatalf("expected rewritten process-hook tool result, got %q", resp)
+	if resp.Content != "ipc:ipc" {
+		t.Fatalf("expected rewritten process-hook tool result, got %q", resp.Content)
 	}
 }
 
@@ -160,8 +160,8 @@ func TestAgentLoop_MountProcessHook_ApprovalDeny(t *testing.T) {
 	}
 
 	expected := "Tool execution denied by approval hook: blocked by ipc hook"
-	if resp != expected {
-		t.Fatalf("expected %q, got %q", expected, resp)
+	if resp.Content != expected {
+		t.Fatalf("expected %q, got %q", expected, resp.Content)
 	}
 
 	events := collectEventStream(sub.C)

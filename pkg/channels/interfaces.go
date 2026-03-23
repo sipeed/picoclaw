@@ -62,6 +62,12 @@ type PlaceholderRecorder interface {
 	RecordReactionUndo(channel, chatID string, undo func())
 }
 
+// MessageIDsSender is implemented by channels that can return the platform
+// message IDs for a delivered outbound text message.
+type MessageIDsSender interface {
+	SendMessageWithIDs(ctx context.Context, msg bus.OutboundMessage) (messageIDs []string, err error)
+}
+
 // CommandRegistrarCapable is implemented by channels that can register
 // command menus with their upstream platform (e.g. Telegram BotCommand).
 // Channels that do not support platform-level command menus can ignore it.

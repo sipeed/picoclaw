@@ -169,19 +169,25 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 }
 
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	_, err := c.SendMessageWithIDs(ctx, msg)
+	return err
+}
+
+// SendMessageWithIDs implements channels.MessageIDsSender.
+func (c *TelegramChannel) SendMessageWithIDs(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	useMarkdownV2 := c.config.Channels.Telegram.UseMarkdownV2
 
 	chatID, threadID, err := parseTelegramChatID(msg.ChatID)
 	if err != nil {
-		return fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
+		return nil, fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
 
 	if msg.Content == "" {
-		return nil
+		return nil, nil
 	}
 
 	// The Manager already splits messages to ≤4000 chars (WithMaxMessageLength),
@@ -189,6 +195,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	// check if HTML expansion pushes it beyond Telegram's 4096-char API limit.
 	replyToID := msg.ReplyToMessageID
 	queue := []string{msg.Content}
+	var messageIDs []string
 	for len(queue) > 0 {
 		chunk := queue[0]
 		queue = queue[1:]
@@ -206,16 +213,18 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			}
 
 			if smallerLen <= 0 {
-				if err := c.sendChunk(ctx, sendChunkParams{
+				msgID, err := c.sendChunk(ctx, sendChunkParams{
 					chatID:        chatID,
 					threadID:      threadID,
 					content:       content,
 					replyToID:     replyToID,
 					mdFallback:    chunk,
 					useMarkdownV2: useMarkdownV2,
-				}); err != nil {
-					return err
+				})
+				if err != nil {
+					return nil, err
 				}
+				messageIDs = append(messageIDs, msgID)
 				replyToID = ""
 				continue
 			}
@@ -244,21 +253,23 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			continue
 		}
 
-		if err := c.sendChunk(ctx, sendChunkParams{
+		msgID, err := c.sendChunk(ctx, sendChunkParams{
 			chatID:        chatID,
 			threadID:      threadID,
 			content:       content,
 			replyToID:     replyToID,
 			mdFallback:    chunk,
 			useMarkdownV2: useMarkdownV2,
-		}); err != nil {
-			return err
+		})
+		if err != nil {
+			return nil, err
 		}
+		messageIDs = append(messageIDs, msgID)
 		// Only the first chunk should be a reply; subsequent chunks are normal messages.
 		replyToID = ""
 	}
 
-	return nil
+	return messageIDs, nil
 }
 
 type sendChunkParams struct {
@@ -275,7 +286,7 @@ type sendChunkParams struct {
 func (c *TelegramChannel) sendChunk(
 	ctx context.Context,
 	params sendChunkParams,
-) error {
+) (string, error) {
 	tgMsg := tu.Message(tu.ID(params.chatID), params.content)
 	tgMsg.MessageThreadID = params.threadID
 	if params.useMarkdownV2 {
@@ -292,17 +303,19 @@ func (c *TelegramChannel) sendChunk(
 		}
 	}
 
-	if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
+	msg, err := c.bot.SendMessage(ctx, tgMsg)
+	if err != nil {
 		logParseFailed(err, params.useMarkdownV2)
 
 		tgMsg.Text = params.mdFallback
 		tgMsg.ParseMode = ""
-		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
+		msg, err = c.bot.SendMessage(ctx, tgMsg)
+		if err != nil {
+			return "", fmt.Errorf("telegram send: %w", channels.ErrTemporary)
 		}
 	}
 
-	return nil
+	return strconv.Itoa(msg.MessageID), nil
 }
 
 // maxTypingDuration limits how long the typing indicator can run.
@@ -547,6 +560,8 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		CanonicalID: identity.BuildCanonicalID("telegram", platformID),
 		Username:    user.Username,
 		DisplayName: user.FirstName,
+		FirstName:   user.FirstName,
+		LastName:    user.LastName,
 	}
 
 	// check allowlist to avoid downloading attachments for rejected users
