@@ -6,6 +6,7 @@
 package providers
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -602,5 +603,100 @@ func TestGetDefaultAPIBase_QwenUSAliases(t *testing.T) {
 		if got := getDefaultAPIBase(protocol); got != expectedURL {
 			t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", protocol, got, expectedURL)
 		}
+	}
+}
+
+func TestCreateProviderFromConfig_MinimaxInjectsReasoningSplit(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.ModelConfig{
+		ModelName: "test-minimax",
+		Model:     "minimax/MiniMax-M2.5",
+		APIBase:   server.URL,
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "MiniMax-M2.5" {
+		t.Errorf("modelID = %q, want %q", modelID, "MiniMax-M2.5")
+	}
+
+	_, err = provider.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		modelID,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	// Verify reasoning_split is automatically injected
+	if got, ok := requestBody["reasoning_split"]; !ok || got != true {
+		t.Fatalf("reasoning_split = %v, want true", got)
+	}
+}
+
+func TestCreateProviderFromConfig_MinimaxPreservesUserExtraBody(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.ModelConfig{
+		ModelName: "test-minimax-custom",
+		Model:     "minimax/MiniMax-M2.5",
+		APIBase:   server.URL,
+		ExtraBody: map[string]any{"custom_field": "test"},
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+
+	_, err = provider.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		modelID,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	// Verify reasoning_split is automatically injected
+	if got, ok := requestBody["reasoning_split"]; !ok || got != true {
+		t.Fatalf("reasoning_split = %v, want true", got)
+	}
+	// Verify user's custom field is preserved
+	if got, ok := requestBody["custom_field"]; !ok || got != "test" {
+		t.Fatalf("custom_field = %v, want test", got)
 	}
 }

@@ -678,8 +678,21 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 	// like DeepSeek that enforce: "An assistant message with 'tool_calls' must
 	// be followed by tool messages responding to each 'tool_call_id'."
 	final := make([]providers.Message, 0, len(sanitized))
+	seenToolCallID := make(map[string]bool)
 	for i := 0; i < len(sanitized); i++ {
 		msg := sanitized[i]
+
+		// Deduplicate tool results by ToolCallID
+		if msg.Role == "tool" && msg.ToolCallID != "" {
+			if seenToolCallID[msg.ToolCallID] {
+				logger.DebugCF("agent", "Dropping duplicate tool result", map[string]any{
+					"tool_call_id": msg.ToolCallID,
+				})
+				continue
+			}
+			seenToolCallID[msg.ToolCallID] = true
+		}
+
 		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
 			// Collect expected tool_call IDs
 			expected := make(map[string]bool, len(msg.ToolCalls))
