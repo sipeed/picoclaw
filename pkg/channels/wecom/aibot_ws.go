@@ -1218,8 +1218,9 @@ func (c *WeComAIBotWSChannel) storeWSMedia(
 
 	scope := channels.BuildMediaScope("wecom_aibot", chatID, msgID)
 	ref, err := store.Store(tmpPath, media.MediaMeta{
-		Filename: msgID + ext,
-		Source:   "wecom_aibot",
+		Filename:      msgID + ext,
+		Source:        "wecom_aibot",
+		CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 	}, scope)
 	if err != nil {
 		os.Remove(tmpPath)

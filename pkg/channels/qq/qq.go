@@ -719,9 +719,10 @@ func (c *QQChannel) extractInboundAttachments(
 	storeMedia := func(localPath string, attachment *dto.MessageAttachment) string {
 		if store := c.GetMediaStore(); store != nil {
 			ref, err := store.Store(localPath, media.MediaMeta{
-				Filename:    qqAttachmentFilename(attachment),
-				ContentType: attachment.ContentType,
-				Source:      "qq",
+				Filename:      qqAttachmentFilename(attachment),
+				ContentType:   attachment.ContentType,
+				Source:        "qq",
+				CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 			}, scope)
 			if err == nil {
 				return ref
