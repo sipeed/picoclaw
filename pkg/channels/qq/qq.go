@@ -357,6 +357,7 @@ type qqMediaUpload struct {
 	FileType   uint64 `json:"file_type"`
 	URL        string `json:"url,omitempty"`
 	FileData   string `json:"file_data,omitempty"`
+	FileName   string `json:"file_name,omitempty"`
 	SrvSendMsg bool   `json:"srv_send_msg,omitempty"`
 }
 
@@ -393,6 +394,7 @@ func (c *QQChannel) buildMediaUpload(part bus.MediaPart) (*qqMediaUpload, error)
 	if isHTTPURL(mediaRef) {
 		payload.FileType = qqFileType(c.outboundMediaType(part, ""))
 		payload.URL = mediaRef
+		payload.FileName = qqUploadFilename(part, mediaRef, payload.FileType)
 		return payload, nil
 	}
 
@@ -415,9 +417,11 @@ func (c *QQChannel) buildMediaUpload(part bus.MediaPart) (*qqMediaUpload, error)
 	if isHTTPURL(resolved) {
 		payload.FileType = qqFileType(c.outboundMediaType(part, ""))
 		payload.URL = resolved
+		payload.FileName = qqUploadFilename(part, resolved, payload.FileType)
 		return payload, nil
 	}
 	payload.FileType = qqFileType(c.outboundMediaType(part, resolved))
+	payload.FileName = qqUploadFilename(part, resolved, payload.FileType)
 
 	if limitBytes := c.maxBase64FileSizeBytes(); limitBytes > 0 {
 		info, statErr := os.Stat(resolved)
@@ -442,6 +446,28 @@ func (c *QQChannel) buildMediaUpload(part bus.MediaPart) (*qqMediaUpload, error)
 
 	payload.FileData = base64.StdEncoding.EncodeToString(data)
 	return payload, nil
+}
+
+func qqUploadFilename(part bus.MediaPart, resolved string, fileType uint64) string {
+	if fileType != qqFileType("file") {
+		return ""
+	}
+	if part.Filename != "" {
+		return part.Filename
+	}
+	if isHTTPURL(resolved) {
+		if parsed, err := url.Parse(resolved); err == nil {
+			if base := path.Base(parsed.Path); base != "" && base != "." && base != "/" {
+				return base
+			}
+		}
+		return ""
+	}
+
+	if base := filepath.Base(resolved); base != "" && base != "." {
+		return base
+	}
+	return ""
 }
 
 func (c *QQChannel) outboundMediaType(part bus.MediaPart, localPath string) string {
