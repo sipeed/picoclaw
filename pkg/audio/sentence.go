@@ -7,7 +7,7 @@ import (
 
 // SplitSentences splits text into sentence-sized chunks suitable for TTS synthesis.
 // It splits on sentence-ending punctuation (.!?\n) while avoiding false splits
-// on abbreviations and decimal numbers. Very short fragments are merged with
+// on decimal numbers. Very short fragments are merged with
 // the next sentence to prevent choppy playback.
 func SplitSentences(text string) []string {
 	if text == "" {
