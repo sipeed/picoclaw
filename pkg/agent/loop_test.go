@@ -467,6 +467,59 @@ func TestProcessMessage_AssistantSavedOnDelivered(t *testing.T) {
 	}
 }
 
+func TestProcessMessage_SavesReplyToMessageIDFromInboundField(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	sessionKey := "agent:test-reply-to"
+	_, err = al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:          "telegram",
+		SenderID:         "telegram:123",
+		ChatID:           "chat-1",
+		Content:          "hello",
+		SessionKey:       sessionKey,
+		MessageID:        "in-42",
+		ReplyToMessageID: "in-41",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 1 {
+		t.Fatalf("expected only user message before delivery, got %d", len(history))
+	}
+	if len(history[0].MessageIDs) != 1 || history[0].MessageIDs[0] != "in-42" {
+		t.Fatalf("expected user message_ids [in-42], got %v", history[0].MessageIDs)
+	}
+	if history[0].ReplyToMessageID != "in-41" {
+		t.Fatalf("expected ReplyToMessageID in-41, got %q", history[0].ReplyToMessageID)
+	}
+}
+
 func TestRecordLastChannel(t *testing.T) {
 	al, cfg, msgBus, provider, cleanup := newTestAgentLoop(t)
 	defer cleanup()

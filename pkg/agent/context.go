@@ -611,7 +611,7 @@ func (cb *ContextBuilder) BuildMessages(
 	// so the LLM can navigate thread structure from persisted sessions.
 	for _, msg := range history {
 		annotated := msg
-		if prefix := messageThreadAnnotation(msg); prefix != "" {
+		if prefix := messageHistoryAnnotation(msg); prefix != "" {
 			annotated.Content = prefix + msg.Content
 		}
 		messages = append(messages, annotated)
@@ -865,9 +865,62 @@ func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
 	}
 }
 
+func messageHistoryAnnotation(msg providers.Message) string {
+	parts := make([]string, 0, 2)
+	if sender := messageSenderAnnotation(msg.Sender); sender != "" {
+		parts = append(parts, sender)
+	}
+	if thread := messageThreadAnnotationBody(msg); thread != "" {
+		parts = append(parts, thread)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("[%s] ", strings.Join(parts, ", "))
+}
+
+func messageSenderAnnotation(sender *providers.MessageSender) string {
+	if sender == nil {
+		return ""
+	}
+
+	nameParts := make([]string, 0, 2)
+	if first := strings.TrimSpace(sender.FirstName); first != "" {
+		nameParts = append(nameParts, first)
+	}
+	if last := strings.TrimSpace(sender.LastName); last != "" {
+		nameParts = append(nameParts, last)
+	}
+	name := strings.TrimSpace(strings.Join(nameParts, " "))
+
+	username := strings.TrimSpace(sender.Username)
+	if username != "" && !strings.HasPrefix(username, "@") {
+		username = "@" + username
+	}
+
+	switch {
+	case name != "" && username != "":
+		return fmt.Sprintf("from:%s (%s)", name, username)
+	case name != "":
+		return fmt.Sprintf("from:%s", name)
+	case username != "":
+		return fmt.Sprintf("from:%s", username)
+	default:
+		return ""
+	}
+}
+
 // messageThreadAnnotation returns the thread annotation prefix for a message,
 // e.g. "[msg:#5, reply_to:#3] " or "" if the message has no threading IDs.
 func messageThreadAnnotation(msg providers.Message) string {
+	body := messageThreadAnnotationBody(msg)
+	if body == "" {
+		return ""
+	}
+	return fmt.Sprintf("[%s] ", body)
+}
+
+func messageThreadAnnotationBody(msg providers.Message) string {
 	msgIDs := msg.MessageIDs
 	formattedIDs := strings.Join(msgIDs, ",#")
 	if formattedIDs != "" {
@@ -875,15 +928,15 @@ func messageThreadAnnotation(msg providers.Message) string {
 	}
 	switch {
 	case len(msgIDs) > 1 && msg.ReplyToMessageID != "":
-		return fmt.Sprintf("[msgs:%s, reply_to:#%s] ", formattedIDs, msg.ReplyToMessageID)
+		return fmt.Sprintf("msgs:%s, reply_to:#%s", formattedIDs, msg.ReplyToMessageID)
 	case len(msgIDs) > 1:
-		return fmt.Sprintf("[msgs:%s] ", formattedIDs)
+		return fmt.Sprintf("msgs:%s", formattedIDs)
 	case len(msgIDs) == 1 && msg.ReplyToMessageID != "":
-		return fmt.Sprintf("[msg:%s, reply_to:#%s] ", formattedIDs, msg.ReplyToMessageID)
+		return fmt.Sprintf("msg:%s, reply_to:#%s", formattedIDs, msg.ReplyToMessageID)
 	case len(msgIDs) == 1:
-		return fmt.Sprintf("[msg:%s] ", formattedIDs)
+		return fmt.Sprintf("msg:%s", formattedIDs)
 	case msg.ReplyToMessageID != "":
-		return fmt.Sprintf("[reply_to:#%s] ", msg.ReplyToMessageID)
+		return fmt.Sprintf("reply_to:#%s", msg.ReplyToMessageID)
 	default:
 		return ""
 	}

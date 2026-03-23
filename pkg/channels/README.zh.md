@@ -880,6 +880,7 @@ type InboundMessage struct {
     Media      []string          // 媒体引用列表（media://...）
     Peer       Peer              // 路由对等体（一等字段）
     MessageID  string            // 平台消息 ID（一等字段）
+    ReplyToMessageID string      // 父消息 ID（一等字段）
     MediaScope string            // 媒体生命周期作用域
     SessionKey string            // 会话键
     Metadata   map[string]string // 仅用于 channel 特有扩展
@@ -1190,10 +1191,11 @@ Manager 创建单一 `http.Server`，自动发现和注册：
 **不要再把以下信息放入 Metadata**：
 - `peer_kind` / `peer_id` → 使用 `InboundMessage.Peer`
 - `message_id` → 使用 `InboundMessage.MessageID`
+- `reply_to_message_id` → 使用 `InboundMessage.ReplyToMessageID`
 - `sender_platform` / `sender_username` → 使用 `InboundMessage.Sender`
 
 **Metadata 仅用于**：
-- Channel 特有的扩展信息（如 Telegram 的 `reply_to_message_id`）
+- 尚未有结构化字段承载的 Channel 特有扩展信息
 - 不适合放入结构化字段的临时信息
 
 ### 5.3 并发安全约定
@@ -1379,4 +1381,4 @@ agentLoop.Stop()               // 停止 Agent
 
 7. **PlaceholderConfig 的配置与实现**：`PlaceholderConfig` 出现在 6 个 channel config 中（Telegram、Discord、Slack、LINE、OneBot、Pico），但只有实现了 `PlaceholderCapable` + `MessageEditor` 的 channel（Telegram、Discord、Pico）能真正使用占位消息编辑功能。其余 channel 的 `PlaceholderConfig` 为预留字段。
 
-8. **ReasoningChannelID**：大多数 channel config 都包含 `reasoning_channel_id` 字段，用于将 LLM 的思维链（reasoning/thinking）路由到指定 channel（WhatsApp、Telegram、Feishu、Discord、MaixCam、QQ、DingTalk、Slack、LINE、OneBot、WeCom）。注意：`PicoConfig` 目前不包含该字段。`BaseChannel` 通过 `WithReasoningChannelID` 选项和 `ReasoningChannelID()` 方法暴露此配置。
+8. **ReasoningChannelID**：大多数 channel config 都包含 `reasoning_channel_id` 字段，用于将 LLM 的思维链（reasoning/thinking）路由到指定 channel（WhatsApp、Telegram、Feishu、Discord、MaixCam、QQ、DingTalk、Slack、LINE、OneBot、WeCom、WeComApp）。注意：`PicoConfig` 目前不包含该字段。`BaseChannel` 通过 `WithReasoningChannelID` 选项和 `ReasoningChannelID()` 方法暴露此配置。

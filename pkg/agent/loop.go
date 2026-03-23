@@ -494,8 +494,6 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						ChatID:  msg.ChatID,
 					}
 				}
-				finalResponse := response.Content
-
 				target, targetErr := al.buildContinuationTarget(msg)
 				if targetErr != nil {
 					logger.WarnCF("agent", "Failed to build steering continuation target",
@@ -513,12 +511,8 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					return
 				}
 
-				responsePersisted := false
-				continuedOnce := false
-				if al.pendingSteeringCountForScope(target.SessionKey) > 0 &&
-					response.Content != "" && response.OnDelivered != nil {
-					response.OnDelivered(nil)
-					responsePersisted = true
+				if response.Content != "" {
+					al.publishAgentResponseIfNeeded(ctx, response, target.Channel, target.ChatID)
 				}
 
 				for al.pendingSteeringCountForScope(target.SessionKey) > 0 {
@@ -530,7 +524,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							"queue_depth": al.pendingSteeringCountForScope(target.SessionKey),
 						})
 
-					continued, continueErr := al.Continue(ctx, target.SessionKey, target.Channel, target.ChatID)
+					continued, continueErr := al.continueResponse(ctx, target.SessionKey, target.Channel, target.ChatID)
 					if continueErr != nil {
 						logger.WarnCF("agent", "Failed to continue queued steering",
 							map[string]any{
@@ -540,20 +534,13 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							})
 						return
 					}
-					if continued == "" {
+					if continued.Content == "" {
 						return
 					}
-
-					finalResponse = continued
-					continuedOnce = true
+					al.publishAgentResponseIfNeeded(ctx, continued, target.Channel, target.ChatID)
 				}
 
 				cancelDrain()
-
-				if al.pendingSteeringCountForScope(target.SessionKey) > 0 &&
-					!responsePersisted && response.Content != "" && response.OnDelivered != nil {
-					response.OnDelivered(nil)
-				}
 
 				for al.pendingSteeringCountForScope(target.SessionKey) > 0 {
 					logger.InfoCF("agent", "Draining steering queued during turn shutdown",
@@ -564,7 +551,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							"queue_depth": al.pendingSteeringCountForScope(target.SessionKey),
 						})
 
-					continued, continueErr := al.Continue(ctx, target.SessionKey, target.Channel, target.ChatID)
+					continued, continueErr := al.continueResponse(ctx, target.SessionKey, target.Channel, target.ChatID)
 					if continueErr != nil {
 						logger.WarnCF("agent", "Failed to continue queued steering after shutdown drain",
 							map[string]any{
@@ -574,20 +561,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							})
 						return
 					}
-					if continued == "" {
+					if continued.Content == "" {
 						break
 					}
-
-					finalResponse = continued
-					continuedOnce = true
-				}
-
-				if finalResponse != "" {
-					if continuedOnce {
-						al.publishResponseIfNeeded(ctx, target.Channel, target.ChatID, finalResponse)
-					} else {
-						al.publishAgentResponseIfNeeded(ctx, response, target.Channel, target.ChatID)
-					}
+					al.publishAgentResponseIfNeeded(ctx, continued, target.Channel, target.ChatID)
 				}
 			}()
 		default:
@@ -655,10 +632,17 @@ func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, active
 				"scope":       activeScope,
 			})
 
+		replyToMessageID := msg.ReplyToMessageID
+		if replyToMessageID == "" {
+			replyToMessageID = inboundMetadata(msg, metadataKeyReplyToMessage)
+		}
 		if err := al.enqueueSteeringMessage(activeScope, activeAgentID, providers.Message{
-			Role:    "user",
-			Content: msg.Content,
-			Media:   append([]string(nil), msg.Media...),
+			Role:             "user",
+			Content:          msg.Content,
+			Media:            append([]string(nil), msg.Media...),
+			MessageIDs:       singleMessageIDs(msg.MessageID),
+			ReplyToMessageID: replyToMessageID,
+			Sender:           messageSenderFromInbound(msg.Sender),
 		}); err != nil {
 			logger.WarnCF("agent", "Failed to steer message, will be lost",
 				map[string]any{
@@ -1448,8 +1432,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		EnableSummary:     true,
 		SendResponse:      false,
 		MessageID:         msg.MessageID,
-		ReplyToMessageID:  inboundMetadata(msg, metadataKeyReplyToMessage),
+		ReplyToMessageID:  msg.ReplyToMessageID,
 		Sender:            messageSenderFromInbound(msg.Sender),
+	}
+	if opts.ReplyToMessageID == "" {
+		opts.ReplyToMessageID = inboundMetadata(msg, metadataKeyReplyToMessage)
 	}
 
 	// context-dependent commands check their own Runtime fields and report

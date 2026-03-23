@@ -1,6 +1,7 @@
 package channels
 
 import (
+	"context"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -261,5 +262,34 @@ func TestIsAllowedSender(t *testing.T) {
 				t.Fatalf("IsAllowedSender(%+v) = %v, want %v", tt.sender, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBaseChannelHandleMessage_PopulatesReplyToMessageID(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	defer msgBus.Close()
+
+	ch := NewBaseChannel("test", nil, msgBus, nil)
+	ch.HandleMessage(
+		context.Background(),
+		bus.Peer{Kind: "direct", ID: "user1"},
+		"msg-2",
+		"user1",
+		"chat1",
+		"hello",
+		nil,
+		map[string]string{"reply_to_message_id": "msg-1"},
+	)
+
+	select {
+	case got := <-msgBus.InboundChan():
+		if got.MessageID != "msg-2" {
+			t.Fatalf("expected MessageID msg-2, got %q", got.MessageID)
+		}
+		if got.ReplyToMessageID != "msg-1" {
+			t.Fatalf("expected ReplyToMessageID msg-1, got %q", got.ReplyToMessageID)
+		}
+	case <-context.Background().Done():
+		t.Fatal("expected inbound message")
 	}
 }

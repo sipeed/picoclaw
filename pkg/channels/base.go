@@ -259,18 +259,23 @@ func (c *BaseChannel) HandleMessage(
 	}
 
 	scope := BuildMediaScope(c.name, chatID, messageID)
+	replyToMessageID := ""
+	if metadata != nil {
+		replyToMessageID = metadata["reply_to_message_id"]
+	}
 
 	msg := bus.InboundMessage{
-		Channel:    c.name,
-		SenderID:   resolvedSenderID,
-		Sender:     sender,
-		ChatID:     chatID,
-		Content:    content,
-		Media:      media,
-		Peer:       peer,
-		MessageID:  messageID,
-		MediaScope: scope,
-		Metadata:   metadata,
+		Channel:          c.name,
+		SenderID:         resolvedSenderID,
+		Sender:           sender,
+		ChatID:           chatID,
+		Content:          content,
+		Media:            media,
+		Peer:             peer,
+		MessageID:        messageID,
+		ReplyToMessageID: replyToMessageID,
+		MediaScope:       scope,
+		Metadata:         metadata,
 	}
 
 	// Auto-trigger typing indicator, message reaction, and placeholder before publishing.

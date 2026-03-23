@@ -881,6 +881,7 @@ type InboundMessage struct {
     Media      []string          // Media reference list (media://...)
     Peer       Peer              // Routing peer (first-class field)
     MessageID  string            // Platform message ID (first-class field)
+    ReplyToMessageID string      // Parent platform message ID (first-class field)
     MediaScope string            // Media lifecycle scope
     SessionKey string            // Session key
     Metadata   map[string]string // Only for channel-specific extensions
@@ -1191,10 +1192,11 @@ Timeout configuration: ReadTimeout = 30s, WriteTimeout = 30s
 **Do NOT put the following information in Metadata anymore**:
 - `peer_kind` / `peer_id` → Use `InboundMessage.Peer`
 - `message_id` → Use `InboundMessage.MessageID`
+- `reply_to_message_id` → Use `InboundMessage.ReplyToMessageID`
 - `sender_platform` / `sender_username` → Use `InboundMessage.Sender`
 
 **Metadata should only be used for**:
-- Channel-specific extension information (e.g., Telegram's `reply_to_message_id`)
+- Channel-specific extension information that has no structured field yet
 - Temporary information that doesn't fit into structured fields
 
 ### 5.3 Concurrency Safety Conventions
@@ -1380,4 +1382,4 @@ agentLoop.Stop()               // Stop Agent
 
 7. **PlaceholderConfig vs implementation**: `PlaceholderConfig` appears in 6 channel configs (Telegram, Discord, Slack, LINE, OneBot, Pico), but only channels that implement both `PlaceholderCapable` + `MessageEditor` (Telegram, Discord, Pico) can actually use placeholder message editing. The rest are reserved fields.
 
-8. **ReasoningChannelID**: Most channel configs include a `reasoning_channel_id` field to route LLM reasoning/thinking output to a designated channel (WhatsApp, Telegram, Feishu, Discord, MaixCam, QQ, DingTalk, Slack, LINE, OneBot, WeCom). Note: `PicoConfig` does not currently expose this field. `BaseChannel` exposes this via the `WithReasoningChannelID` option and `ReasoningChannelID()` method.
+8. **ReasoningChannelID**: Most channel configs include a `reasoning_channel_id` field to route LLM reasoning/thinking output to a designated channel (WhatsApp, Telegram, Feishu, Discord, MaixCam, QQ, DingTalk, Slack, LINE, OneBot, WeCom, WeComApp). Note: `PicoConfig` does not currently expose this field. `BaseChannel` exposes this via the `WithReasoningChannelID` option and `ReasoningChannelID()` method.

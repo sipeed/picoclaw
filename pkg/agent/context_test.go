@@ -213,6 +213,38 @@ func TestSanitizeHistoryForProvider_DuplicateToolResults(t *testing.T) {
 	}
 }
 
+func TestMessageHistoryAnnotation_IncludesSenderAndThreading(t *testing.T) {
+	msg := providers.Message{
+		Role:             "user",
+		Content:          "hello",
+		MessageIDs:       []string{"m1"},
+		ReplyToMessageID: "p0",
+		Sender: &providers.MessageSender{
+			Username:  "alice",
+			FirstName: "Alice",
+			LastName:  "Example",
+		},
+	}
+
+	if got := messageHistoryAnnotation(msg); got != "[from:Alice Example (@alice), msg:#m1, reply_to:#p0] " {
+		t.Fatalf("messageHistoryAnnotation() = %q", got)
+	}
+}
+
+func TestMessageHistoryAnnotation_UsesUsernameWhenNameMissing(t *testing.T) {
+	msg := providers.Message{
+		Role:    "user",
+		Content: "hello",
+		Sender: &providers.MessageSender{
+			Username: "alice",
+		},
+	}
+
+	if got := messageHistoryAnnotation(msg); got != "[from:@alice] " {
+		t.Fatalf("messageHistoryAnnotation() = %q", got)
+	}
+}
+
 func roles(msgs []providers.Message) []string {
 	r := make([]string, len(msgs))
 	for i, m := range msgs {
