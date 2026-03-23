@@ -47,10 +47,13 @@ type DiscordChannel struct {
 	botUserID  string                   // stored for mention checking
 	bus        *bus.MessageBus
 	tts        tts.TTSProvider
+	voiceMu    sync.RWMutex
+	voiceSSRC  map[string]map[uint32]string // guildID -> ssrc -> userID
 
 	// TTS interruption: cancel active playback when user speaks
 	ttsMu     sync.Mutex
 	cancelTTS context.CancelFunc
+	ttsPlayID uint64
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -83,6 +86,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		ctx:         context.Background(),
 		typingStop:  make(map[string]chan struct{}),
 		bus:         bus,
+		voiceSSRC:   make(map[string]map[uint32]string),
 	}, nil
 }
 
@@ -154,14 +158,7 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 		return nil
 	}
 
-	isToolCall := false
-	if msg.Metadata != nil {
-		if val, ok := msg.Metadata["is_tool_call"]; ok && val == "true" {
-			isToolCall = true
-		}
-	}
-
-	if c.tts != nil && !isToolCall {
+	if c.tts != nil {
 		if ch, err := c.session.State.Channel(channelID); err == nil && ch.GuildID != "" {
 			if vc, ok := c.session.VoiceConnections[ch.GuildID]; ok && vc != nil {
 				// Cancel any previous TTS playback
@@ -170,10 +167,12 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 					c.cancelTTS()
 				}
 				ttsCtx, ttsCancel := context.WithCancel(c.ctx)
+				c.ttsPlayID++
+				playID := c.ttsPlayID
 				c.cancelTTS = ttsCancel
 				c.ttsMu.Unlock()
 
-				go c.playTTS(ttsCtx, vc, msg.Content)
+				go c.playTTS(ttsCtx, vc, msg.Content, playID)
 			}
 		}
 	}
@@ -676,17 +675,13 @@ func (c *DiscordChannel) listenVoiceControl(ctx context.Context) {
 	}
 }
 
-func (c *DiscordChannel) playTTS(ctx context.Context, vc *discordgo.VoiceConnection, text string) {
+func (c *DiscordChannel) playTTS(ctx context.Context, vc *discordgo.VoiceConnection, text string, playID uint64) {
 	// Capture the cancel func associated with this playback (if any).
-	c.ttsMu.Lock()
-	playbackCancel := c.cancelTTS
-	c.ttsMu.Unlock()
-
 	// Clear cancelTTS when playback finishes (normal or interrupted),
 	// but only if it still refers to this playback's cancel func.
 	defer func() {
 		c.ttsMu.Lock()
-		if c.cancelTTS == playbackCancel {
+		if c.ttsPlayID == playID {
 			c.cancelTTS = nil
 		}
 		c.ttsMu.Unlock()

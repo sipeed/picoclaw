@@ -10,14 +10,45 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/audio"
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
+
+func (c *DiscordChannel) setVoiceUserID(guildID string, ssrc uint32, userID string) {
+	if userID == "" {
+		return
+	}
+
+	c.voiceMu.Lock()
+	defer c.voiceMu.Unlock()
+
+	ssrcMap, ok := c.voiceSSRC[guildID]
+	if !ok {
+		ssrcMap = make(map[uint32]string)
+		c.voiceSSRC[guildID] = ssrcMap
+	}
+	ssrcMap[ssrc] = userID
+}
+
+func (c *DiscordChannel) voiceUserID(guildID string, ssrc uint32) string {
+	c.voiceMu.RLock()
+	defer c.voiceMu.RUnlock()
+
+	ssrcMap, ok := c.voiceSSRC[guildID]
+	if !ok {
+		return ""
+	}
+	return ssrcMap[ssrc]
+}
 
 func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.MessageCreate) bool {
 	if m.Content == "!vc join" {
 		vs, err := s.State.VoiceState(m.GuildID, m.Author.ID)
 		if err != nil || vs == nil {
-			if _, sendErr := s.ChannelMessageSend(m.ChannelID, "You need to be in a voice channel first!"); sendErr != nil {
+			if _, sendErr := s.ChannelMessageSend(
+				m.ChannelID,
+				"You need to be in a voice channel first!",
+			); sendErr != nil {
 				logger.InfoCF("discord", "Failed to send voice channel requirement message", map[string]any{
 					"channel": m.ChannelID,
 					"error":   sendErr,
@@ -29,7 +60,10 @@ func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.M
 		logger.InfoCF("discord", "Joining voice channel", map[string]any{"channel": vs.ChannelID})
 		vc, err := s.ChannelVoiceJoin(c.ctx, m.GuildID, vs.ChannelID, false, false)
 		if err != nil {
-			if _, sendErr := s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Failed to join voice channel: %v", err)); sendErr != nil {
+			if _, sendErr := s.ChannelMessageSend(
+				m.ChannelID,
+				fmt.Sprintf("Failed to join voice channel: %v", err),
+			); sendErr != nil {
 				logger.InfoCF("discord", "Failed to send voice join error message", map[string]any{
 					"channel": m.ChannelID,
 					"error":   sendErr,
@@ -39,7 +73,10 @@ func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.M
 		}
 
 		go c.receiveVoice(vc, m.GuildID, m.ChannelID)
-		if _, sendErr := s.ChannelMessageSend(m.ChannelID, "Joined Voice Channel! Listening for audio..."); sendErr != nil {
+		if _, sendErr := s.ChannelMessageSend(
+			m.ChannelID,
+			"Joined Voice Channel! Listening for audio...",
+		); sendErr != nil {
 			logger.InfoCF("discord", "Failed to send voice join success message", map[string]any{
 				"channel": m.ChannelID,
 				"error":   sendErr,
@@ -51,8 +88,8 @@ func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.M
 		if exists && vc != nil {
 			if err := vc.Disconnect(c.ctx); err != nil {
 				logger.InfoCF("discord", "Failed to disconnect from voice channel", map[string]any{
-					"guild":  m.GuildID,
-					"error":  err,
+					"guild": m.GuildID,
+					"error": err,
 				})
 			}
 			if _, sendErr := s.ChannelMessageSend(m.ChannelID, "Left Voice Channel."); sendErr != nil {
@@ -102,6 +139,19 @@ func streamOggOpusToDiscord(ctx context.Context, vc *discordgo.VoiceConnection, 
 
 func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID string, chatID string) {
 	logger.InfoCF("discord", "Started listening for voice", map[string]any{"guild": guildID})
+
+	vc.AddHandler(func(_ *discordgo.VoiceConnection, vs *discordgo.VoiceSpeakingUpdate) {
+		if vs == nil {
+			return
+		}
+		c.setVoiceUserID(guildID, uint32(vs.SSRC), vs.UserID)
+	})
+
+	defer func() {
+		c.voiceMu.Lock()
+		delete(c.voiceSSRC, guildID)
+		c.voiceMu.Unlock()
+	}()
 
 	go func(ctx context.Context, vc *discordgo.VoiceConnection) {
 		// Recover from potential panics if OpusSend is closed mid-send.
@@ -210,11 +260,33 @@ func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID str
 				interruptCount = 0
 			}
 
+			userID := c.voiceUserID(guildID, p.SSRC)
+			if userID == "" {
+				logger.DebugCF("discord", "Dropping voice packet without user mapping", map[string]any{
+					"ssrc":  p.SSRC,
+					"guild": guildID,
+				})
+				continue
+			}
+
+			sender := bus.SenderInfo{
+				Platform:    "discord",
+				PlatformID:  userID,
+				CanonicalID: identity.BuildCanonicalID("discord", userID),
+			}
+			if !c.IsAllowedSender(sender) {
+				logger.DebugCF("discord", "Voice packet rejected by allowlist", map[string]any{
+					"user_id": userID,
+					"guild":   guildID,
+				})
+				continue
+			}
+
 			sequence++
 
 			chunk := bus.AudioChunk{
 				SessionID:  sessionID,
-				SpeakerID:  fmt.Sprintf("%d", p.SSRC),
+				SpeakerID:  userID,
 				ChatID:     chatID,
 				Channel:    "discord",
 				Sequence:   sequence,

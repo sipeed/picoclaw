@@ -119,16 +119,15 @@ func (a *Agent) handleChunk(chunk bus.AudioChunk) {
 		return
 	}
 
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	key := fmt.Sprintf("%s_%s", chunk.SessionID, chunk.SpeakerID)
 
+	a.mu.Lock()
 	acc, exists := a.sessions[key]
 	if !exists {
 		filename := filepath.Join(os.TempDir(), fmt.Sprintf("voice_%s_%d.ogg", key, time.Now().UnixNano()))
 		writer, err := oggwriter.New(filename, uint32(chunk.SampleRate), uint16(chunk.Channels))
 		if err != nil {
+			a.mu.Unlock()
 			logger.ErrorCF("voice-agent", "Failed to create OggWriter", map[string]any{"error": err})
 			return
 		}
@@ -145,6 +144,7 @@ func (a *Agent) handleChunk(chunk bus.AudioChunk) {
 		a.sessions[key] = acc
 		logger.DebugCF("voice-agent", "Started accumulating voice", map[string]any{"key": key, "file": filename})
 	}
+	a.mu.Unlock()
 
 	acc.Push(chunk)
 }
@@ -242,11 +242,10 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 		Channel:  channelType,
 		SenderID: acc.speakerID,
 		ChatID:   acc.chatID,
-		Content:  res.Text,
+		Content:  res.Text + oralPrompt,
 		Peer:     bus.Peer{Kind: "channel", ID: acc.chatID},
 		Metadata: map[string]string{
-			"is_voice":    "true",
-			"oral_prompt": oralPrompt,
+			"is_voice": "true",
 		},
 	}); err != nil {
 		logger.ErrorCF("voice-agent", "Failed to publish inbound message", map[string]any{"error": err})
