@@ -43,6 +43,7 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 		session, err := client.CreateSession(context.Background(), &copilot.SessionConfig{
 			Model: model,
 			Hooks: &copilot.SessionHooks{},
+			OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
 		})
 		if err != nil {
 			client.Stop()

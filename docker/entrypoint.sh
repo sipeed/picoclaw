@@ -12,6 +12,14 @@ if [ ! -d "${HOME}/.picoclaw/workspace" ] && [ ! -f "${HOME}/.picoclaw/config.js
     exit 0
 fi
 
+# Ensure bsky CLI is on PATH (symlink from skill scripts)
+BSKY_SCRIPT="${HOME}/.picoclaw/workspace/skills/bluesky/scripts/bsky.py"
+if [ -f "$BSKY_SCRIPT" ] && [ ! -e /usr/local/bin/bsky ]; then
+    chmod +x "$BSKY_SCRIPT"
+    ln -sf "$BSKY_SCRIPT" /usr/local/bin/bsky
+    echo "bsky CLI symlinked to PATH"
+fi
+
 # Start virtual framebuffer for headed chromium (agent-browser)
 if [ -n "$DISPLAY" ] && command -v Xvfb >/dev/null 2>&1; then
     Xvfb "$DISPLAY" -screen 0 1280x1024x24 -ac &
@@ -35,6 +43,12 @@ fi
 
 # Start launcher (web UI) if available, otherwise fall back to gateway only.
 # The launcher auto-starts its own gateway subprocess.
+# Tail log files to stdout so they appear in `docker logs`.
+LOG_DIR="${HOME}/.picoclaw/logs"
+mkdir -p "$LOG_DIR"
+touch "$LOG_DIR/launcher.log" "$LOG_DIR/gateway.log"
+tail -F "$LOG_DIR/launcher.log" "$LOG_DIR/gateway.log" &
+
 if command -v picoclaw-launcher >/dev/null 2>&1; then
     exec picoclaw-launcher -public -no-browser "$@"
 else
