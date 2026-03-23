@@ -1,3 +1,5 @@
+> 返回 [README](../../../README.zh.md)
+
 # Matrix 通道配置指南
 
 ## 1. 配置示例

@@ -33,6 +33,10 @@ import (
 
 const (
 	appName = "PicoClaw"
+
+	logPath   = "logs"
+	panicFile = "launcher_panic.log"
+	logFile   = "launcher.log"
 )
 
 var (
@@ -72,6 +76,14 @@ func main() {
 
 	// Initialize logger
 	picoHome := utils.GetPicoclawHome()
+
+	f := filepath.Join(picoHome, logPath, panicFile)
+	panicFunc, err := logger.InitPanic(f)
+	if err != nil {
+		panic(fmt.Sprintf("error initializing panic log: %v", err))
+	}
+	defer panicFunc()
+
 	// By default, detect terminal to decide console log behavior
 	// If -console-logs flag is explicitly set, it overrides the detection
 	enableConsole := *console
@@ -79,11 +91,9 @@ func main() {
 		// Disable console logging by setting level to Fatal (no output)
 		logger.SetConsoleLevel(logger.FATAL)
 
-		logPath := filepath.Join(picoHome, "logs", "web.log")
-		if err := logger.EnableFileLogging(logPath); err != nil {
-			// FIXME: https://github.com/sipeed/picoclaw/issues/1734
-			fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-			os.Exit(1)
+		f := filepath.Join(picoHome, logPath, logFile)
+		if err = logger.EnableFileLogging(f); err != nil {
+			panic(fmt.Sprintf("error enabling file logging: %v", err))
 		}
 		defer logger.DisableFileLogging()
 	}

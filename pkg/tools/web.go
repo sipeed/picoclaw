@@ -613,39 +613,124 @@ func (p *GLMSearchProvider) Search(ctx context.Context, query string, count int)
 	return strings.Join(lines, "\n"), nil
 }
 
+type BaiduSearchProvider struct {
+	apiKey  string
+	baseURL string
+	proxy   string
+	client  *http.Client
+}
+
+func (p *BaiduSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := p.baseURL
+	if searchURL == "" {
+		searchURL = "https://qianfan.baidubce.com/v2/ai_search/web_search"
+	}
+
+	payload := map[string]any{
+		"messages": []map[string]string{
+			{
+				"role":    "user",
+				"content": query,
+			},
+		},
+		"search_source":        "baidu_search_v2",
+		"resource_type_filter": []map[string]any{{"type": "web", "top_k": count}},
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("baidu search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("baidu search API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		References []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"references"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(result.References) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	lines := []string{fmt.Sprintf("Results for: %s (via Baidu Search)", query)}
+	for i, item := range result.References {
+		if i >= count {
+			break
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+		if item.Content != "" {
+			lines = append(lines, fmt.Sprintf("   %s", item.Content))
+		}
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
 type WebSearchTool struct {
 	provider   SearchProvider
 	maxResults int
 }
 
 type WebSearchToolOptions struct {
-	BraveAPIKeys         []string
-	BraveMaxResults      int
-	BraveEnabled         bool
-	TavilyAPIKeys        []string
-	TavilyBaseURL        string
-	TavilyMaxResults     int
-	TavilyEnabled        bool
-	DuckDuckGoMaxResults int
-	DuckDuckGoEnabled    bool
-	PerplexityAPIKeys    []string
-	PerplexityMaxResults int
-	PerplexityEnabled    bool
-	SearXNGBaseURL       string
-	SearXNGMaxResults    int
-	SearXNGEnabled       bool
-	GLMSearchAPIKey      string
-	GLMSearchBaseURL     string
-	GLMSearchEngine      string
-	GLMSearchMaxResults  int
-	GLMSearchEnabled     bool
-	Proxy                string
+	BraveAPIKeys          []string
+	BraveMaxResults       int
+	BraveEnabled          bool
+	TavilyAPIKeys         []string
+	TavilyBaseURL         string
+	TavilyMaxResults      int
+	TavilyEnabled         bool
+	DuckDuckGoMaxResults  int
+	DuckDuckGoEnabled     bool
+	PerplexityAPIKeys     []string
+	PerplexityMaxResults  int
+	PerplexityEnabled     bool
+	SearXNGBaseURL        string
+	SearXNGMaxResults     int
+	SearXNGEnabled        bool
+	GLMSearchAPIKey       string
+	GLMSearchBaseURL      string
+	GLMSearchEngine       string
+	GLMSearchMaxResults   int
+	GLMSearchEnabled      bool
+	BaiduSearchAPIKey     string
+	BaiduSearchBaseURL    string
+	BaiduSearchMaxResults int
+	BaiduSearchEnabled    bool
+	Proxy                 string
 }
 
 func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	var provider SearchProvider
 	maxResults := 5
-	// Priority: Perplexity > Brave > SearXNG > Tavily > DuckDuckGo > GLM Search
+	// Priority: Perplexity > Brave > SearXNG > Tavily > DuckDuckGo > Baidu Search > GLM Search
 	if opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0 {
 		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
@@ -695,6 +780,20 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		provider = &DuckDuckGoSearchProvider{proxy: opts.Proxy, client: client}
 		if opts.DuckDuckGoMaxResults > 0 {
 			maxResults = opts.DuckDuckGoMaxResults
+		}
+	} else if opts.BaiduSearchEnabled && opts.BaiduSearchAPIKey != "" {
+		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create HTTP client for Baidu Search: %w", err)
+		}
+		provider = &BaiduSearchProvider{
+			apiKey:  opts.BaiduSearchAPIKey,
+			baseURL: opts.BaiduSearchBaseURL,
+			proxy:   opts.Proxy,
+			client:  client,
+		}
+		if opts.BaiduSearchMaxResults > 0 {
+			maxResults = opts.BaiduSearchMaxResults
 		}
 	} else if opts.GLMSearchEnabled && opts.GLMSearchAPIKey != "" {
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)

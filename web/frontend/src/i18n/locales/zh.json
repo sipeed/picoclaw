@@ -17,7 +17,7 @@
   "chat": {
     "welcome": "今天我能为您做些什么？",
     "welcomeDesc": "您可以询问我天气、设置或其他任何任务，我随时为您效劳。",
-    "placeholder": "输入新消息...",
+    "placeholder": "输入新消息...\n按 Enter 发送，Shift + Enter 换行",
     "newChat": "新建对话",
     "notConnected": "服务未运行，请先启动以进行对话。",
     "thinking": {
@@ -415,6 +415,8 @@
       "cron_exec_timeout_hint": "定时任务中命令的最长运行时间。设置为 0 表示不限制超时。",
       "max_tokens": "最大 Token 数",
       "max_tokens_hint": "单次模型响应允许的最大 Token 数。",
+      "context_window": "上下文窗口",
+      "context_window_hint": "模型输入上下文容量（Token 数）。留空使用默认值（最大 Token 数的 4 倍）。",
       "max_tool_iterations": "最大工具迭代次数",
       "max_tool_iterations_hint": "单个任务中允许的工具调用循环上限。",
       "summarize_threshold": "触发摘要的消息阈值",

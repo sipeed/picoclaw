@@ -1,8 +1,10 @@
 package qq
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"os"
@@ -264,6 +266,142 @@ func TestSendMedia_UploadsLocalFileAsBase64(t *testing.T) {
 	}
 }
 
+func TestSendMedia_AudioAt60SecondsUsesVoiceUpload(t *testing.T) {
+	assertAudioWAVUploadType(t, 60*time.Second, 3)
+}
+
+func TestSendMedia_AudioOver60SecondsFallsBackToFileUpload(t *testing.T) {
+	assertAudioWAVUploadType(t, 61*time.Second, 4)
+}
+
+func assertAudioWAVUploadType(t *testing.T, duration time.Duration, wantFileType uint64) {
+	t.Helper()
+
+	messageBus := bus.NewMessageBus()
+	store := media.NewFileMediaStore()
+
+	localPath := writeWAVFile(t, t.TempDir(), "voice.wav", duration)
+	ref, err := store.Store(localPath, media.MediaMeta{
+		Filename:    "voice.wav",
+		ContentType: "audio/wav",
+	}, "qq:test")
+	if err != nil {
+		t.Fatalf("Store() error = %v", err)
+	}
+
+	api := &fakeQQAPI{
+		transportResp: mustJSON(t, dto.Message{FileInfo: []byte("file-info")}),
+	}
+	ch := &QQChannel{
+		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		api:         api,
+		dedup:       make(map[string]time.Time),
+		done:        make(chan struct{}),
+		ctx:         context.Background(),
+	}
+	ch.SetRunning(true)
+	ch.SetMediaStore(store)
+	ch.chatType.Store("group-1", "group")
+
+	err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		ChatID: "group-1",
+		Parts: []bus.MediaPart{{
+			Type: "audio",
+			Ref:  ref,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("SendMedia() error = %v", err)
+	}
+
+	if len(api.transportCalls) != 1 {
+		t.Fatalf("transportCalls = %d, want 1", len(api.transportCalls))
+	}
+	if api.transportCalls[0].body.FileType != wantFileType {
+		t.Fatalf("upload file_type = %d, want %d", api.transportCalls[0].body.FileType, wantFileType)
+	}
+}
+
+func TestSendMedia_RemoteAudioFallsBackToFileUpload(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	api := &fakeQQAPI{
+		transportResp: mustJSON(t, dto.Message{FileInfo: []byte("remote-file-info")}),
+	}
+	ch := &QQChannel{
+		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		api:         api,
+		dedup:       make(map[string]time.Time),
+		done:        make(chan struct{}),
+		ctx:         context.Background(),
+	}
+	ch.SetRunning(true)
+	ch.chatType.Store("user-1", "direct")
+
+	err := ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		ChatID: "user-1",
+		Parts: []bus.MediaPart{{
+			Type: "audio",
+			Ref:  "https://cdn.example.com/voice.ogg",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("SendMedia() error = %v", err)
+	}
+
+	if len(api.transportCalls) != 1 {
+		t.Fatalf("transportCalls = %d, want 1", len(api.transportCalls))
+	}
+	if api.transportCalls[0].body.FileType != 4 {
+		t.Fatalf("upload file_type = %d, want 4", api.transportCalls[0].body.FileType)
+	}
+}
+
+func TestSendMedia_LocalAudioWithUnknownDurationFallsBackToFileUpload(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	store := media.NewFileMediaStore()
+
+	localPath := writeTempFile(t, t.TempDir(), "voice.mp3", []byte("not-a-real-mp3"))
+	ref, err := store.Store(localPath, media.MediaMeta{
+		Filename:    "voice.mp3",
+		ContentType: "audio/mpeg",
+	}, "qq:test")
+	if err != nil {
+		t.Fatalf("Store() error = %v", err)
+	}
+
+	api := &fakeQQAPI{
+		transportResp: mustJSON(t, dto.Message{FileInfo: []byte("file-info")}),
+	}
+	ch := &QQChannel{
+		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		api:         api,
+		dedup:       make(map[string]time.Time),
+		done:        make(chan struct{}),
+		ctx:         context.Background(),
+	}
+	ch.SetRunning(true)
+	ch.SetMediaStore(store)
+	ch.chatType.Store("group-1", "group")
+
+	err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		ChatID: "group-1",
+		Parts: []bus.MediaPart{{
+			Type: "audio",
+			Ref:  ref,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("SendMedia() error = %v", err)
+	}
+
+	if len(api.transportCalls) != 1 {
+		t.Fatalf("transportCalls = %d, want 1", len(api.transportCalls))
+	}
+	if api.transportCalls[0].body.FileType != 4 {
+		t.Fatalf("upload file_type = %d, want 4", api.transportCalls[0].body.FileType)
+	}
+}
+
 func TestSendMedia_UsesRemoteURLUploadForC2C(t *testing.T) {
 	messageBus := bus.NewMessageBus()
 	api := &fakeQQAPI{
@@ -493,4 +631,54 @@ func writeTempFile(t *testing.T, dir, name string, content []byte) string {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	return path
+}
+
+func writeWAVFile(t *testing.T, dir, name string, duration time.Duration) string {
+	t.Helper()
+
+	const (
+		sampleRate    = 8000
+		numChannels   = 1
+		bitsPerSample = 8
+	)
+
+	dataSize := uint32(duration / time.Second * sampleRate * numChannels * (bitsPerSample / 8))
+	byteRate := uint32(sampleRate * numChannels * (bitsPerSample / 8))
+	blockAlign := uint16(numChannels * (bitsPerSample / 8))
+
+	var buf bytes.Buffer
+	buf.WriteString("RIFF")
+	if err := binary.Write(&buf, binary.LittleEndian, uint32(36)+dataSize); err != nil {
+		t.Fatalf("binary.Write(riff size) error = %v", err)
+	}
+	buf.WriteString("WAVE")
+	buf.WriteString("fmt ")
+	if err := binary.Write(&buf, binary.LittleEndian, uint32(16)); err != nil {
+		t.Fatalf("binary.Write(fmt chunk size) error = %v", err)
+	}
+	if err := binary.Write(&buf, binary.LittleEndian, uint16(1)); err != nil {
+		t.Fatalf("binary.Write(audio format) error = %v", err)
+	}
+	if err := binary.Write(&buf, binary.LittleEndian, uint16(numChannels)); err != nil {
+		t.Fatalf("binary.Write(channels) error = %v", err)
+	}
+	if err := binary.Write(&buf, binary.LittleEndian, uint32(sampleRate)); err != nil {
+		t.Fatalf("binary.Write(sample rate) error = %v", err)
+	}
+	if err := binary.Write(&buf, binary.LittleEndian, byteRate); err != nil {
+		t.Fatalf("binary.Write(byte rate) error = %v", err)
+	}
+	if err := binary.Write(&buf, binary.LittleEndian, blockAlign); err != nil {
+		t.Fatalf("binary.Write(block align) error = %v", err)
+	}
+	if err := binary.Write(&buf, binary.LittleEndian, uint16(bitsPerSample)); err != nil {
+		t.Fatalf("binary.Write(bits per sample) error = %v", err)
+	}
+	buf.WriteString("data")
+	if err := binary.Write(&buf, binary.LittleEndian, dataSize); err != nil {
+		t.Fatalf("binary.Write(data size) error = %v", err)
+	}
+	buf.Write(make([]byte, dataSize))
+
+	return writeTempFile(t, dir, name, buf.Bytes())
 }

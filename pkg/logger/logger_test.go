@@ -1,7 +1,12 @@
 package logger
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"testing"
+
+	"github.com/rs/zerolog"
 )
 
 func TestLogLevelFiltering(t *testing.T) {
@@ -250,5 +255,113 @@ func TestFormatFieldValue(t *testing.T) {
 				t.Errorf("formatFieldValue() = %q, expected %q", actual, tt.expected)
 			}
 		})
+	}
+}
+
+func TestDefaultLevelIsInfo(t *testing.T) {
+	// The package-level default (before any SetLevel call) should be INFO.
+	// Because earlier tests may have changed it, we just verify the constant is wired correctly.
+	if logLevelNames[INFO] != "INFO" {
+		t.Errorf("INFO constant mapped to %q, want \"INFO\"", logLevelNames[INFO])
+	}
+}
+
+func TestParseLevelValid(t *testing.T) {
+	tests := []struct {
+		input string
+		want  LogLevel
+	}{
+		{"debug", DEBUG},
+		{"DEBUG", DEBUG},
+		{"Debug", DEBUG},
+		{"info", INFO},
+		{"INFO", INFO},
+		{"warn", WARN},
+		{"WARN", WARN},
+		{"warning", WARN},
+		{"WARNING", WARN},
+		{"error", ERROR},
+		{"ERROR", ERROR},
+		{"fatal", FATAL},
+		{"FATAL", FATAL},
+		{"  info  ", INFO},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, ok := ParseLevel(tt.input)
+			if !ok {
+				t.Fatalf("ParseLevel(%q) returned ok=false, want true", tt.input)
+			}
+			if got != tt.want {
+				t.Errorf("ParseLevel(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseLevelInvalid(t *testing.T) {
+	tests := []string{"", "garbage", "verbose", "trace", "critical"}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			_, ok := ParseLevel(input)
+			if ok {
+				t.Errorf("ParseLevel(%q) returned ok=true, want false", input)
+			}
+		})
+	}
+}
+
+func TestSetLevelFromString(t *testing.T) {
+	initialLevel := GetLevel()
+	defer SetLevel(initialLevel)
+
+	// Valid string changes the level
+	SetLevel(INFO)
+	SetLevelFromString("error")
+	if got := GetLevel(); got != ERROR {
+		t.Errorf("after SetLevelFromString(\"error\"): GetLevel() = %v, want ERROR", got)
+	}
+
+	// Empty string is a no-op
+	SetLevelFromString("")
+	if got := GetLevel(); got != ERROR {
+		t.Errorf("after SetLevelFromString(\"\"): GetLevel() = %v, want ERROR (unchanged)", got)
+	}
+
+	// Invalid string is a no-op
+	SetLevelFromString("garbage")
+	if got := GetLevel(); got != ERROR {
+		t.Errorf("after SetLevelFromString(\"garbage\"): GetLevel() = %v, want ERROR (unchanged)", got)
+	}
+
+	// Case-insensitive
+	SetLevelFromString("FATAL")
+	if got := GetLevel(); got != FATAL {
+		t.Errorf("after SetLevelFromString(\"FATAL\"): GetLevel() = %v, want FATAL", got)
+	}
+}
+
+func TestAppendFields_ErrorUsesErrorString(t *testing.T) {
+	var buf bytes.Buffer
+	l := zerolog.New(&buf)
+
+	event := l.Info()
+	appendFields(event, map[string]any{"error": errors.New("transcription request failed")})
+	event.Msg("test")
+
+	lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))
+	if len(lines) == 0 {
+		t.Fatal("expected log output, got none")
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(lines[0], &got); err != nil {
+		t.Fatalf("unmarshal log line: %v", err)
+	}
+
+	if got["error"] != "transcription request failed" {
+		t.Fatalf("error field = %#v, want %q", got["error"], "transcription request failed")
 	}
 }

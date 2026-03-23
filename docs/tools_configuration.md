@@ -55,6 +55,31 @@ General settings for fetching and processing webpage content.
 | `enabled`     | bool | true    | Enable DuckDuckGo search  |
 | `max_results` | int  | 5       | Maximum number of results |
 
+### Baidu Search
+
+Baidu Search uses the [Qianfan AI Search API](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5), which is AI-powered and optimized for Chinese-language queries.
+
+| Config        | Type   | Default                                                          | Description               |
+|---------------|--------|------------------------------------------------------------------|---------------------------|
+| `enabled`     | bool   | false                                                            | Enable Baidu Search       |
+| `api_key`     | string | -                                                                | Qianfan API key           |
+| `base_url`    | string | `https://qianfan.baidubce.com/v2/ai_search/web_search`          | Baidu Search API URL      |
+| `max_results` | int    | 10                                                               | Maximum number of results |
+
+```json
+{
+  "tools": {
+    "web": {
+      "baidu_search": {
+        "enabled": true,
+        "api_key": "YOUR_BAIDU_QIANFAN_API_KEY",
+        "max_results": 10
+      }
+    }
+  }
+}
+```
+
 ### Perplexity
 
 | Config        | Type     | Default | Description                                    |

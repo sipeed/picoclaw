@@ -83,7 +83,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	}
 	opts = append(opts, telego.WithLogger(logger.NewLogger("telego")))
 
-	bot, err := telego.NewBot(telegramCfg.Token, opts...)
+	bot, err := telego.NewBot(telegramCfg.Token(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}
@@ -561,8 +561,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	storeMedia := func(localPath, filename string) string {
 		if store := c.GetMediaStore(); store != nil {
 			ref, err := store.Store(localPath, media.MediaMeta{
-				Filename: filename,
-				Source:   "telegram",
+				Filename:      filename,
+				Source:        "telegram",
+				CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 			}, scope)
 			if err == nil {
 				return ref

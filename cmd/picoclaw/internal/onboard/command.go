@@ -16,14 +16,22 @@ func NewOnboardCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "onboard",
 		Aliases: []string{"o"},
-		Short:   "Initialize picoclaw configuration and workspace",
+		Short:   "Initialize picoclaw configuration, workspace, and channel accounts",
+		// Run without subcommands → original onboard flow
 		Run: func(cmd *cobra.Command, args []string) {
-			onboard(encrypt)
+			if len(args) == 0 {
+				onboard(encrypt)
+			} else {
+				_ = cmd.Help()
+			}
 		},
 	}
 
 	cmd.Flags().BoolVar(&encrypt, "enc", false,
 		"Enable credential encryption (generates SSH key and prompts for passphrase)")
+
+	// Channel onboarding subcommands
+	cmd.AddCommand(newWeixinCommand())
 
 	return cmd
 }

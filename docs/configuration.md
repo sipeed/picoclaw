@@ -65,6 +65,24 @@ For advanced/test setups, you can override the builtin skills root with:
 export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 ```
 
+### Using Skills From Chat Channels
+
+Once skills are installed, you can inspect and force them directly from a chat channel:
+
+- `/list skills` shows the installed skill names available to the current agent.
+- `/use <skill> <message>` forces a specific skill for a single request.
+- `/use <skill>` arms that skill for your next message in the same chat session.
+- `/use clear` cancels a pending skill override created by `/use <skill>`.
+
+Examples:
+
+```text
+/list skills
+/use git explain how to squash the last 3 commits
+/use italiapersonalfinance
+dammi le ultime news
+```
+
 ### Unified Command Execution Policy
 
 - Generic slash commands are executed through a single path in `pkg/agent/loop.go` via `commands.Executor`.
@@ -347,3 +365,396 @@ For long-running tasks (web search, API calls), use the `spawn` tool to create a
 
 ```markdown
 # Periodic Tasks
+
+## Quick Tasks (respond directly)
+
+- Report current time
+
+## Long Tasks (use spawn for async)
+
+- Search the web for AI news and summarize
+- Check email and report important messages
+```
+
+**Key behaviors:**
+
+| Feature                 | Description                                               |
+| ----------------------- | --------------------------------------------------------- |
+| **spawn**               | Creates async subagent, doesn't block heartbeat           |
+| **Independent context** | Subagent has its own context, no session history          |
+| **message tool**        | Subagent communicates with user directly via message tool |
+| **Non-blocking**        | After spawning, heartbeat continues to next task          |
+
+#### How Subagent Communication Works
+
+```
+Heartbeat triggers
+    ↓
+Agent reads HEARTBEAT.md
+    ↓
+For long task: spawn subagent
+    ↓                           ↓
+Continue to next task      Subagent works independently
+    ↓                           ↓
+All tasks done            Subagent uses "message" tool
+    ↓                           ↓
+Respond HEARTBEAT_OK      User receives result directly
+```
+
+The subagent has access to tools (message, web_search, etc.) and can communicate with the user independently without going through the main agent.
+
+**Configuration:**
+
+```json
+{
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
+  }
+}
+```
+
+| Option     | Default | Description                        |
+| ---------- | ------- | ---------------------------------- |
+| `enabled`  | `true`  | Enable/disable heartbeat           |
+| `interval` | `30`    | Check interval in minutes (min: 5) |
+
+**Environment variables:**
+
+* `PICOCLAW_HEARTBEAT_ENABLED=false` to disable
+* `PICOCLAW_HEARTBEAT_INTERVAL=60` to change interval
+
+### Providers
+
+> [!NOTE]
+> Groq provides free voice transcription via Whisper. If configured, audio messages from any channel will be automatically transcribed at the agent level.
+
+| Provider     | Purpose                                 | Get API Key                                                  |
+| ------------ | --------------------------------------- | ------------------------------------------------------------ |
+| `gemini`     | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)           |
+| `zhipu`      | LLM (Zhipu direct)                      | [bigmodel.cn](https://bigmodel.cn)                           |
+| `volcengine` | LLM (Volcengine direct)                 | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
+| `openrouter` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                       |
+| `anthropic`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com)       |
+| `openai`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)           |
+| `deepseek`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)       |
+| `qwen`       | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
+| `groq`       | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                 |
+| `cerebras`   | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                           |
+| `vivgrid`    | LLM (Vivgrid direct)                    | [vivgrid.com](https://vivgrid.com)                           |
+
+### Model Configuration (model_list)
+
+> **What's New?** PicoClaw now uses a **model-centric** configuration approach. Simply specify `vendor/model` format (e.g., `zhipu/glm-4.7`) to add new providers — **zero code changes required!**
+
+This design also enables **multi-agent support** with flexible provider selection:
+
+- **Different agents, different providers**: Each agent can use its own LLM provider
+- **Model fallbacks**: Configure primary and fallback models for resilience
+- **Load balancing**: Distribute requests across multiple endpoints
+- **Centralized configuration**: Manage all providers in one place
+
+#### All Supported Vendors
+
+| Vendor                  | `model` Prefix    | Default API Base                                    | Protocol  | API Key                                                          |
+| ----------------------- | ----------------- | --------------------------------------------------- | --------- | ---------------------------------------------------------------- |
+| **OpenAI**              | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
+| **Anthropic**           | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
+| **智谱 AI (GLM)**       | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek**            | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [Get Key](https://platform.deepseek.com)                         |
+| **Google Gemini**       | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Get Key](https://aistudio.google.com/api-keys)                  |
+| **Groq**                | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [Get Key](https://console.groq.com)                              |
+| **Moonshot**            | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [Get Key](https://platform.moonshot.cn)                          |
+| **通义千问 (Qwen)**     | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
+| **NVIDIA**              | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
+| **Ollama**              | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
+| **OpenRouter**          | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
+| **LiteLLM Proxy**       | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                           |
+| **VLLM**                | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
+| **Cerebras**            | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
+| **VolcEngine (Doubao)** | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
+| **神算云**              | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | —                                                                |
+| **BytePlus**            | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Get Key](https://www.byteplus.com)                              |
+| **Vivgrid**             | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
+| **LongCat**             | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Get Key](https://longcat.chat/platform)                         |
+| **ModelScope (魔搭)**   | `modelscope/`     | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [Get Token](https://modelscope.cn/my/tokens)                     |
+| **Antigravity**         | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
+| **GitHub Copilot**      | `github-copilot/` | `localhost:4321`                                    | gRPC      | —                                                                |
+
+#### Basic Configuration
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "ark-code-latest",
+      "model": "volcengine/ark-code-latest",
+      "api_key": "sk-your-api-key"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
+      "api_key": "sk-your-openai-key"
+    },
+    {
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
+      "api_key": "sk-ant-your-key"
+    },
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "gpt-5.4"
+    }
+  }
+}
+```
+
+#### Vendor-Specific Examples
+
+<details>
+<summary><b>OpenAI</b></summary>
+
+```json
+{
+  "model_name": "gpt-5.4",
+  "model": "openai/gpt-5.4",
+  "api_key": "sk-..."
+}
+```
+
+</details>
+
+<details>
+<summary><b>VolcEngine (Doubao)</b></summary>
+
+```json
+{
+  "model_name": "ark-code-latest",
+  "model": "volcengine/ark-code-latest",
+  "api_key": "sk-..."
+}
+```
+
+</details>
+
+<details>
+<summary><b>智谱 AI (GLM)</b></summary>
+
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+</details>
+
+<details>
+<summary><b>DeepSeek</b></summary>
+
+```json
+{
+  "model_name": "deepseek-chat",
+  "model": "deepseek/deepseek-chat",
+  "api_key": "sk-..."
+}
+```
+
+</details>
+
+<details>
+<summary><b>Anthropic</b></summary>
+
+```json
+{
+  "model_name": "claude-sonnet-4.6",
+  "model": "anthropic/claude-sonnet-4.6",
+  "api_key": "sk-ant-your-key"
+}
+```
+
+> Run `picoclaw auth login --provider anthropic` to paste your API token.
+
+For direct Anthropic API access or custom endpoints that only support Anthropic's native message format:
+
+```json
+{
+  "model_name": "claude-opus-4-6",
+  "model": "anthropic-messages/claude-opus-4-6",
+  "api_key": "sk-ant-your-key",
+  "api_base": "https://api.anthropic.com"
+}
+```
+
+> Use `anthropic-messages` when the endpoint requires Anthropic's native `/v1/messages` format instead of OpenAI-compatible `/v1/chat/completions`.
+
+</details>
+
+<details>
+<summary><b>Ollama (local)</b></summary>
+
+```json
+{
+  "model_name": "llama3",
+  "model": "ollama/llama3"
+}
+```
+
+</details>
+
+<details>
+<summary><b>Custom Proxy / LiteLLM</b></summary>
+
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-..."
+}
+```
+
+PicoClaw strips only the outer `litellm/` prefix before sending the request, so `litellm/lite-gpt4` sends `lite-gpt4`, while `litellm/openai/gpt-4o` sends `openai/gpt-4o`.
+
+</details>
+
+#### Load Balancing
+
+Configure multiple endpoints for the same model name — PicoClaw will automatically round-robin between them:
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
+      "api_base": "https://api1.example.com/v1",
+      "api_key": "sk-key1"
+    },
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
+      "api_base": "https://api2.example.com/v1",
+      "api_key": "sk-key2"
+    }
+  ]
+}
+```
+
+#### Migration from Legacy `providers` Config
+
+The old `providers` configuration is **deprecated** but still supported for backward compatibility. See [docs/migration/model-list-migration.md](../migration/model-list-migration.md) for the full guide.
+
+### Provider Architecture
+
+PicoClaw routes providers by protocol family:
+
+- **OpenAI-compatible**: OpenRouter, Groq, Zhipu, vLLM-style endpoints, and most others.
+- **Anthropic**: Claude-native API behavior.
+- **Codex/OAuth**: OpenAI OAuth/token authentication route.
+
+This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_key`).
+
+<details>
+<summary><b>Zhipu (legacy providers format)</b></summary>
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.picoclaw/workspace",
+      "model": "glm-4.7",
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "max_tool_iterations": 20
+    }
+  },
+  "providers": {
+    "zhipu": {
+      "api_key": "Your API Key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Full config example</b></summary>
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-opus-4-5"
+    }
+  },
+  "session": {
+    "dm_scope": "per-channel-peer",
+    "backlog_limit": 20
+  },
+  "providers": {
+    "openrouter": {
+      "api_key": "sk-or-v1-xxx"
+    },
+    "groq": {
+      "api_key": "gsk_xxx"
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "123456:ABC...",
+      "allow_from": ["123456789"]
+    }
+  },
+  "tools": {
+    "web": {
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
+      }
+    }
+  },
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
+  }
+}
+```
+
+</details>
+
+### Scheduled Tasks / Reminders
+
+PicoClaw supports cron-style scheduled tasks via the `cron` tool. The agent can set, list, and cancel reminders or recurring jobs that trigger at specified times.
+
+```json
+{
+  "tools": {
+    "cron": {
+      "enabled": true,
+      "exec_timeout_minutes": 5
+    }
+  }
+}
+```
+
+Scheduled tasks persist across restarts and are stored in `~/.picoclaw/workspace/cron/`.
+
+### Advanced Topics
+
+| Topic | Description |
+| ----- | ----------- |
+| [Hook System](hooks/README.md) | Event-driven hooks: observers, interceptors, approval hooks |
+| [Steering](steering.md) | Inject messages into a running agent loop between tool calls |
+| [SubTurn](subturn.md) | Subagent coordination, concurrency control, lifecycle |
+| [Context Management](agent-refactor/context.md) | Context boundary detection, proactive budget check, compression |

@@ -130,6 +130,17 @@ func NewAgentInstance(
 		maxTokens = 8192
 	}
 
+	contextWindow := defaults.ContextWindow
+	if contextWindow == 0 {
+		// Default heuristic: 4x the output token limit.
+		// Most models have context windows well above their output limits
+		// (e.g., GPT-4o 128k ctx / 16k out, Claude 200k ctx / 8k out).
+		// 4x is a conservative lower bound that avoids premature
+		// summarization while remaining safe — the reactive
+		// forceCompression handles any overshoot.
+		contextWindow = maxTokens * 4
+	}
+
 	temperature := 0.7
 	if defaults.Temperature != nil {
 		temperature = *defaults.Temperature
@@ -182,7 +193,7 @@ func NewAgentInstance(
 		MaxTokens:                 maxTokens,
 		Temperature:               temperature,
 		ThinkingLevel:             thinkingLevel,
-		ContextWindow:             maxTokens,
+		ContextWindow:             contextWindow,
 		SummarizeMessageThreshold: summarizeMessageThreshold,
 		SummarizeTokenPercent:     summarizeTokenPercent,
 		Provider:                  provider,

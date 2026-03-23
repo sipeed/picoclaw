@@ -186,7 +186,7 @@ type MatrixChannel struct {
 func NewMatrixChannel(cfg config.MatrixConfig, messageBus *bus.MessageBus) (*MatrixChannel, error) {
 	homeserver := strings.TrimSpace(cfg.Homeserver)
 	userID := strings.TrimSpace(cfg.UserID)
-	accessToken := strings.TrimSpace(cfg.AccessToken)
+	accessToken := strings.TrimSpace(cfg.AccessToken())
 	if homeserver == "" {
 		return nil, fmt.Errorf("matrix homeserver is required")
 	}
@@ -692,6 +692,9 @@ func (c *MatrixChannel) extractInboundMedia(
 
 func (c *MatrixChannel) storeMedia(localPath string, meta media.MediaMeta, scope string) string {
 	if store := c.GetMediaStore(); store != nil {
+		if meta.CleanupPolicy == "" {
+			meta.CleanupPolicy = media.CleanupPolicyDeleteOnCleanup
+		}
 		ref, err := store.Store(localPath, meta, scope)
 		if err == nil {
 			return ref

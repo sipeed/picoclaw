@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
+
 	"github.com/sipeed/picoclaw/pkg/credential"
 )
 
@@ -78,18 +81,19 @@ func TestAgentModelConfig_MarshalObject(t *testing.T) {
 }
 
 func TestProvidersConfig_IsEmpty(t *testing.T) {
-	var empty ProvidersConfig
+	var empty providersConfigV0
+	t.Logf("empty: %+v", empty)
 	if !empty.IsEmpty() {
-		t.Fatal("empty ProvidersConfig should report empty")
+		t.Fatal("empty providersConfig should report empty")
 	}
 
-	novita := ProvidersConfig{
-		Novita: ProviderConfig{
+	novita := providersConfigV0{
+		Novita: providerConfigV0{
 			APIKey: "test-key",
 		},
 	}
 	if novita.IsEmpty() {
-		t.Fatal("ProvidersConfig with novita settings should not report empty")
+		t.Fatal("providersConfig with novita settings should not report empty")
 	}
 }
 
@@ -237,15 +241,6 @@ func TestDefaultConfig_WorkspacePath(t *testing.T) {
 	}
 }
 
-// TestDefaultConfig_Model verifies model is set
-func TestDefaultConfig_Model(t *testing.T) {
-	cfg := DefaultConfig()
-
-	if cfg.Agents.Defaults.Model != "" {
-		t.Error("Model should be empty")
-	}
-}
-
 // TestDefaultConfig_MaxTokens verifies max tokens has default value
 func TestDefaultConfig_MaxTokens(t *testing.T) {
 	cfg := DefaultConfig()
@@ -288,21 +283,6 @@ func TestDefaultConfig_Gateway(t *testing.T) {
 	}
 }
 
-// TestDefaultConfig_Providers verifies provider structure
-func TestDefaultConfig_Providers(t *testing.T) {
-	cfg := DefaultConfig()
-
-	if cfg.Providers.Anthropic.APIKey != "" {
-		t.Error("Anthropic API key should be empty by default")
-	}
-	if cfg.Providers.OpenAI.APIKey != "" {
-		t.Error("OpenAI API key should be empty by default")
-	}
-	if cfg.Providers.OpenRouter.APIKey != "" {
-		t.Error("OpenRouter API key should be empty by default")
-	}
-}
-
 // TestDefaultConfig_Channels verifies channels are disabled by default
 func TestDefaultConfig_Channels(t *testing.T) {
 	cfg := DefaultConfig()
@@ -329,7 +309,7 @@ func TestDefaultConfig_WebTools(t *testing.T) {
 	if cfg.Tools.Web.Brave.MaxResults != 5 {
 		t.Error("Expected Brave MaxResults 5, got ", cfg.Tools.Web.Brave.MaxResults)
 	}
-	if len(cfg.Tools.Web.Brave.APIKeys) != 0 {
+	if len(cfg.Tools.Web.Brave.APIKeys()) != 0 {
 		t.Error("Brave API key should be empty by default")
 	}
 	if cfg.Tools.Web.DuckDuckGo.MaxResults != 5 {
@@ -387,9 +367,6 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.Workspace == "" {
 		t.Error("Workspace should not be empty")
 	}
-	if cfg.Agents.Defaults.Model != "" {
-		t.Error("Model should be empty")
-	}
 	if cfg.Agents.Defaults.Temperature != nil {
 		t.Error("Temperature should be nil when not provided")
 	}
@@ -408,12 +385,8 @@ func TestConfig_Complete(t *testing.T) {
 	if !cfg.Heartbeat.Enabled {
 		t.Error("Heartbeat should be enabled by default")
 	}
-}
-
-func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
-	cfg := DefaultConfig()
-	if !cfg.Providers.OpenAI.WebSearch {
-		t.Fatal("DefaultConfig().Providers.OpenAI.WebSearch should be true")
+	if !cfg.Tools.Exec.AllowRemote {
+		t.Error("Exec.AllowRemote should be true by default")
 	}
 }
 
@@ -427,7 +400,7 @@ func TestDefaultConfig_WebPreferNativeEnabled(t *testing.T) {
 func TestLoadConfig_WebPreferNativeDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"tools":{"web":{"enabled":true}}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"version":1,"tools":{"web":{"enabled":true}}}`), 0o600); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -470,26 +443,34 @@ func TestDefaultConfig_CronAllowCommandEnabled(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"api_base":""}}}`), 0o600); err != nil {
-		t.Fatalf("WriteFile() error: %v", err)
+func TestDefaultConfig_HooksDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Hooks.Enabled {
+		t.Fatal("DefaultConfig().Hooks.Enabled should be true")
 	}
+	if cfg.Hooks.Defaults.ObserverTimeoutMS != 500 {
+		t.Fatalf("ObserverTimeoutMS = %d, want 500", cfg.Hooks.Defaults.ObserverTimeoutMS)
+	}
+	if cfg.Hooks.Defaults.InterceptorTimeoutMS != 5000 {
+		t.Fatalf("InterceptorTimeoutMS = %d, want 5000", cfg.Hooks.Defaults.InterceptorTimeoutMS)
+	}
+	if cfg.Hooks.Defaults.ApprovalTimeoutMS != 60000 {
+		t.Fatalf("ApprovalTimeoutMS = %d, want 60000", cfg.Hooks.Defaults.ApprovalTimeoutMS)
+	}
+}
 
-	cfg, err := LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error: %v", err)
-	}
-	if !cfg.Providers.OpenAI.WebSearch {
-		t.Fatal("OpenAI codex web search should remain true when unset in config file")
+func TestDefaultConfig_LogLevel(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Gateway.LogLevel != "fatal" {
+		t.Errorf("LogLevel = %q, want \"fatal\"", cfg.Gateway.LogLevel)
 	}
 }
 
 func TestLoadConfig_ExecAllowRemoteDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"tools":{"exec":{"enable_deny_patterns":true}}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"version":1,"tools":{"exec":{"enable_deny_patterns":true}}}`),
+		0o600); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -505,7 +486,11 @@ func TestLoadConfig_ExecAllowRemoteDefaultsTrueWhenUnset(t *testing.T) {
 func TestLoadConfig_CronAllowCommandDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"tools":{"cron":{"exec_timeout_minutes":5}}}`), 0o600); err != nil {
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"version":1,"tools":{"cron":{"exec_timeout_minutes":5}}}`),
+		0o600,
+	); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -515,22 +500,6 @@ func TestLoadConfig_CronAllowCommandDefaultsTrueWhenUnset(t *testing.T) {
 	}
 	if !cfg.Tools.Cron.AllowCommand {
 		t.Fatal("tools.cron.allow_command should remain true when unset in config file")
-	}
-}
-
-func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"web_search":false}}}`), 0o600); err != nil {
-		t.Fatalf("WriteFile() error: %v", err)
-	}
-
-	cfg, err := LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error: %v", err)
-	}
-	if cfg.Providers.OpenAI.WebSearch {
-		t.Fatal("OpenAI codex web search should be false when disabled in config file")
 	}
 }
 
@@ -552,6 +521,89 @@ func TestLoadConfig_WebToolsProxy(t *testing.T) {
 	}
 	if cfg.Tools.Web.Proxy != "http://127.0.0.1:7890" {
 		t.Fatalf("Tools.Web.Proxy = %q, want %q", cfg.Tools.Web.Proxy, "http://127.0.0.1:7890")
+	}
+}
+
+func TestLoadConfig_HooksProcessConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	configJSON := `{
+  "version": 1,
+  "hooks": {
+    "processes": {
+      "review-gate": {
+        "enabled": true,
+        "transport": "stdio",
+        "command": ["uvx", "picoclaw-hook-reviewer"],
+        "dir": "/tmp/hooks",
+        "env": {
+          "HOOK_MODE": "rewrite"
+        },
+        "observe": ["turn_start", "turn_end"],
+        "intercept": ["before_tool", "approve_tool"]
+      }
+    },
+    "builtins": {
+      "audit": {
+        "enabled": true,
+        "priority": 5,
+        "config": {
+          "label": "audit"
+        }
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	processCfg, ok := cfg.Hooks.Processes["review-gate"]
+	if !ok {
+		t.Fatal("expected review-gate process hook")
+	}
+	if !processCfg.Enabled {
+		t.Fatal("expected review-gate process hook to be enabled")
+	}
+	if processCfg.Transport != "stdio" {
+		t.Fatalf("Transport = %q, want stdio", processCfg.Transport)
+	}
+	if len(processCfg.Command) != 2 || processCfg.Command[0] != "uvx" {
+		t.Fatalf("Command = %v", processCfg.Command)
+	}
+	if processCfg.Dir != "/tmp/hooks" {
+		t.Fatalf("Dir = %q, want /tmp/hooks", processCfg.Dir)
+	}
+	if processCfg.Env["HOOK_MODE"] != "rewrite" {
+		t.Fatalf("HOOK_MODE = %q, want rewrite", processCfg.Env["HOOK_MODE"])
+	}
+	if len(processCfg.Observe) != 2 || processCfg.Observe[1] != "turn_end" {
+		t.Fatalf("Observe = %v", processCfg.Observe)
+	}
+	if len(processCfg.Intercept) != 2 || processCfg.Intercept[1] != "approve_tool" {
+		t.Fatalf("Intercept = %v", processCfg.Intercept)
+	}
+
+	builtinCfg, ok := cfg.Hooks.Builtins["audit"]
+	if !ok {
+		t.Fatal("expected audit builtin hook")
+	}
+	if !builtinCfg.Enabled {
+		t.Fatal("expected audit builtin hook to be enabled")
+	}
+	if builtinCfg.Priority != 5 {
+		t.Fatalf("Priority = %d, want 5", builtinCfg.Priority)
+	}
+	if !strings.Contains(string(builtinCfg.Config), `"audit"`) {
+		t.Fatalf("Config = %s", string(builtinCfg.Config))
+	}
+	if cfg.Hooks.Defaults.ApprovalTimeoutMS != 60000 {
+		t.Fatalf("ApprovalTimeoutMS = %d, want 60000", cfg.Hooks.Defaults.ApprovalTimeoutMS)
 	}
 }
 
@@ -729,7 +781,20 @@ func TestFlexibleStringSlice_UnmarshalText_EmptySliceConsistency(t *testing.T) {
 func TestLoadConfig_WarnsForPlaintextAPIKey(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
-	const original = `{"model_list":[{"model_name":"test","model":"openai/gpt-4","api_key":"sk-plaintext"}]}`
+	const original = `{"version":1,"model_list":[{"model_name":"test","model":"openai/gpt-4","api_key":"sk-plaintext"}]}`
+	if err := os.WriteFile(cfgPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	secPath := filepath.Join(dir, SecurityConfigFile)
+	const securityConfig = `
+model_list:
+  test:0:
+    api_keys:
+      - "sk-plaintext"
+`
+	if err := os.WriteFile(secPath, []byte(securityConfig), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 	if err := os.WriteFile(cfgPath, []byte(original), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -742,10 +807,10 @@ func TestLoadConfig_WarnsForPlaintextAPIKey(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	// In-memory value must be the resolved plaintext.
-	if cfg.ModelList[0].APIKey != "sk-plaintext" {
-		t.Errorf("in-memory api_key = %q, want %q", cfg.ModelList[0].APIKey, "sk-plaintext")
+	if cfg.ModelList[0].APIKey() != "sk-plaintext" {
+		t.Errorf("in-memory api_key = %q, want %q", cfg.ModelList[0].APIKey(), "sk-plaintext")
 	}
-	// The file on disk must remain unchanged — LoadConfig must not write anything.
+	// The file on disk must remain unchanged — no need upgrade version
 	raw, _ := os.ReadFile(cfgPath)
 	if string(raw) != original {
 		t.Errorf("LoadConfig must not modify the config file; got:\n%s", string(raw))
@@ -762,15 +827,19 @@ func TestSaveConfig_EncryptsPlaintextAPIKey(t *testing.T) {
 	mustSetupSSHKey(t)
 
 	cfg := DefaultConfig()
-	cfg.ModelList = []ModelConfig{
-		{ModelName: "test", Model: "openai/gpt-4", APIKey: "sk-plaintext"},
+	cfg.ModelList = []*ModelConfig{
+		{ModelName: "test", Model: "openai/gpt-4", apiKeys: []string{"sk-plaintext"}},
+	}
+	cfg.security = &SecurityConfig{
+		ModelList: map[string]ModelSecurityEntry{"test:0": {APIKeys: []string{"sk-plaintext"}}},
 	}
 	if err := SaveConfig(cfgPath, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
 	// Disk must contain enc://, not the raw key.
-	raw, _ := os.ReadFile(cfgPath)
+	secPath := filepath.Join(dir, SecurityConfigFile)
+	raw, _ := os.ReadFile(secPath)
 	if !strings.Contains(string(raw), "enc://") {
 		t.Errorf("saved file should contain enc://, got:\n%s", string(raw))
 	}
@@ -783,8 +852,8 @@ func TestSaveConfig_EncryptsPlaintextAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig after SaveConfig: %v", err)
 	}
-	if cfg2.ModelList[0].APIKey != "sk-plaintext" {
-		t.Errorf("loaded api_key = %q, want %q", cfg2.ModelList[0].APIKey, "sk-plaintext")
+	if cfg2.ModelList[0].APIKey() != "sk-plaintext" {
+		t.Errorf("loaded api_key = %q, want %q", cfg2.ModelList[0].APIKey(), "sk-plaintext")
 	}
 }
 
@@ -820,9 +889,16 @@ func TestLoadConfig_FileRefNotSealed(t *testing.T) {
 	if err := os.WriteFile(keyFile, []byte("sk-from-file"), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	data := `{"model_list":[{"model_name":"test","model":"openai/gpt-4","api_key":"file://openai.key"}]}`
+	data := `{"version":1,"model_list":[{"model_name":"test","model":"openai/gpt-4"}]}`
 	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
+	}
+	secPath := filepath.Join(dir, SecurityConfigFile)
+	if err := saveSecurityConfig(
+		secPath,
+		&SecurityConfig{ModelList: map[string]ModelSecurityEntry{"test:0": {APIKeys: []string{"file://openai.key"}}}},
+	); err != nil {
+		t.Fatalf("saveSecurityConfig: %v", err)
 	}
 
 	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "test-passphrase")
@@ -832,7 +908,7 @@ func TestLoadConfig_FileRefNotSealed(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 
-	raw, _ := os.ReadFile(cfgPath)
+	raw, _ := os.ReadFile(secPath)
 	if !strings.Contains(string(raw), "file://openai.key") {
 		t.Error("file:// reference should be preserved unchanged in the config file")
 	}
@@ -852,23 +928,28 @@ func TestSaveConfig_MixedKeys(t *testing.T) {
 
 	// Pre-encrypt one key so we have a genuine enc:// value to put in the config.
 	if err := SaveConfig(cfgPath, &Config{
-		ModelList: []ModelConfig{
-			{ModelName: "pre", Model: "openai/gpt-4", APIKey: "sk-already-plain"},
+		ModelList: []*ModelConfig{
+			{ModelName: "pre", Model: "openai/gpt-4"},
+		},
+		security: &SecurityConfig{
+			ModelList: map[string]ModelSecurityEntry{
+				"pre:0": {APIKeys: []string{"sk-already-plain"}},
+			},
 		},
 	}); err != nil {
 		t.Fatalf("setup SaveConfig: %v", err)
 	}
-	raw, _ := os.ReadFile(cfgPath)
+	raw, _ := os.ReadFile(filepath.Join(dir, SecurityConfigFile))
 	// Extract the enc:// value from the saved file.
 	var tmp struct {
-		ModelList []struct {
-			APIKey string `json:"api_key"`
-		} `json:"model_list"`
+		ModelList map[string]struct {
+			APIKeys []string `yaml:"api_keys"`
+		} `yaml:"model_list"`
 	}
-	if err := json.Unmarshal(raw, &tmp); err != nil || len(tmp.ModelList) == 0 {
+	if err := yaml.Unmarshal(raw, &tmp); err != nil || len(tmp.ModelList) == 0 {
 		t.Fatalf("setup: could not parse saved config: %v", err)
 	}
-	alreadyEncrypted := tmp.ModelList[0].APIKey
+	alreadyEncrypted := tmp.ModelList["pre:0"].APIKeys[0]
 	if !strings.HasPrefix(alreadyEncrypted, "enc://") {
 		t.Fatalf("setup: expected enc:// key, got %q", alreadyEncrypted)
 	}
@@ -882,18 +963,27 @@ func TestSaveConfig_MixedKeys(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 	cfg := &Config{
-		ModelList: []ModelConfig{
-			{ModelName: "plain", Model: "openai/gpt-4", APIKey: "sk-new-plaintext"},
-			{ModelName: "enc", Model: "openai/gpt-4", APIKey: alreadyEncrypted},
-			{ModelName: "file", Model: "openai/gpt-4", APIKey: "file://api.key"},
+		ModelList: []*ModelConfig{
+			{ModelName: "plain", Model: "openai/gpt-4", apiKeys: []string{"sk-new-plaintext"}},
+			{ModelName: "enc", Model: "openai/gpt-4", apiKeys: []string{alreadyEncrypted}},
+			{ModelName: "file", Model: "openai/gpt-4", apiKeys: []string{"file://api.key"}},
+		},
+		security: &SecurityConfig{
+			ModelList: map[string]ModelSecurityEntry{
+				"plain:0": {APIKeys: []string{"sk-new-plaintext"}},
+				"enc:0":   {APIKeys: []string{alreadyEncrypted}},
+				"file:0":  {APIKeys: []string{"file://api.key"}},
+			},
 		},
 	}
 	if err := SaveConfig(cfgPath, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	raw, _ = os.ReadFile(cfgPath)
+	raw, _ = os.ReadFile(filepath.Join(dir, SecurityConfigFile))
 	s := string(raw)
+
+	t.Logf("saved file:\n%s", s)
 
 	// 1. Plaintext must be encrypted.
 	if strings.Contains(s, "sk-new-plaintext") {
@@ -915,7 +1005,7 @@ func TestSaveConfig_MixedKeys(t *testing.T) {
 	}
 	byName := make(map[string]string)
 	for _, m := range cfg2.ModelList {
-		byName[m.ModelName] = m.APIKey
+		byName[m.ModelName] = m.APIKey()
 	}
 	if byName["plain"] != "sk-new-plaintext" {
 		t.Errorf("plain model api_key = %q, want %q", byName["plain"], "sk-new-plaintext")
@@ -939,26 +1029,26 @@ func TestLoadConfig_MixedKeys_NoPassphrase(t *testing.T) {
 	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "test-passphrase")
 	mustSetupSSHKey(t)
 	if err := SaveConfig(cfgPath, &Config{
-		ModelList: []ModelConfig{
-			{ModelName: "m", Model: "openai/gpt-4", APIKey: "sk-secret"},
+		ModelList: []*ModelConfig{
+			{ModelName: "m", Model: "openai/gpt-4", apiKeys: []string{"sk-secret"}},
+		},
+		security: &SecurityConfig{
+			ModelList: map[string]ModelSecurityEntry{
+				"m:0": {APIKeys: []string{"sk-secret"}},
+			},
 		},
 	}); err != nil {
 		t.Fatalf("setup SaveConfig: %v", err)
 	}
-	raw, _ := os.ReadFile(cfgPath)
-	var tmp struct {
-		ModelList []struct {
-			APIKey string `json:"api_key"`
-		} `json:"model_list"`
-	}
-	if err := json.Unmarshal(raw, &tmp); err != nil {
-		t.Fatalf("setup parse: %v", err)
-	}
-	encValue := tmp.ModelList[0].APIKey
+	raw, err := LoadConfig(cfgPath)
+	assert.NoError(t, err)
+	encValue := raw.security.ModelList["m:0"].APIKeys[0]
+	assert.NotEmpty(t, encValue)
+	assert.Equal(t, "enc://", encValue[:6])
 
 	// Write a mixed config: enc:// + plaintext + file://
 	keyFile := filepath.Join(dir, "api.key")
-	if err := os.WriteFile(keyFile, []byte("sk-from-file"), 0o600); err != nil {
+	if err = os.WriteFile(keyFile, []byte("sk-from-file"), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 	mixed, _ := json.Marshal(map[string]any{
@@ -968,14 +1058,24 @@ func TestLoadConfig_MixedKeys_NoPassphrase(t *testing.T) {
 			{"model_name": "file", "model": "openai/gpt-4", "api_key": "file://api.key"},
 		},
 	})
-	if err := os.WriteFile(cfgPath, mixed, 0o600); err != nil {
+	if err = os.WriteFile(cfgPath, mixed, 0o600); err != nil {
 		t.Fatalf("setup write: %v", err)
+	}
+	secs, _ := yaml.Marshal(map[string]any{
+		"model_list": map[string]map[string]any{
+			"enc:0":   {"api_keys": []string{encValue}},
+			"plain:0": {"api_keys": []string{"sk-plain"}},
+			"file:0":  {"api_keys": []string{"file://api.key"}},
+		},
+	})
+	if err = os.WriteFile(filepath.Join(dir, SecurityConfigFile), secs, 0o600); err != nil {
+		t.Fatalf("security write: %v", err)
 	}
 
 	// Now clear the passphrase — LoadConfig must fail because enc:// cannot be decrypted.
 	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "")
 
-	_, err := LoadConfig(cfgPath)
+	_, err = LoadConfig(cfgPath)
 	if err == nil {
 		t.Fatal("LoadConfig should fail when enc:// key is present and no passphrase is set")
 	}
@@ -1003,14 +1103,15 @@ func TestSaveConfig_UsesPassphraseProvider(t *testing.T) {
 	t.Cleanup(func() { credential.PassphraseProvider = orig })
 
 	cfg := DefaultConfig()
-	cfg.ModelList = []ModelConfig{
-		{ModelName: "test", Model: "openai/gpt-4", APIKey: "sk-plaintext"},
+	cfg.ModelList = []*ModelConfig{
+		{ModelName: "test", Model: "openai/gpt-4"},
 	}
+	cfg.security.ModelList["test:0"] = ModelSecurityEntry{APIKeys: []string{"sk-plaintext"}}
 	if err := SaveConfig(cfgPath, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	raw, _ := os.ReadFile(cfgPath)
+	raw, _ := os.ReadFile(filepath.Join(dir, SecurityConfigFile))
 	if !strings.Contains(string(raw), "enc://") {
 		t.Errorf("SaveConfig should have encrypted plaintext key via PassphraseProvider; got:\n%s", raw)
 	}
@@ -1053,7 +1154,101 @@ func TestLoadConfig_UsesPassphraseProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.ModelList[0].APIKey != plainKey {
-		t.Errorf("api_key = %q, want %q", cfg.ModelList[0].APIKey, plainKey)
+	if cfg.ModelList[0].APIKey() != plainKey {
+		t.Errorf("api_key = %q, want %q", cfg.ModelList[0].APIKey(), plainKey)
+	}
+}
+
+func TestConfigParsesLogLevel(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	data := `{"version":1,"gateway":{"log_level":"debug"}}`
+	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Gateway.LogLevel != "debug" {
+		t.Errorf("LogLevel = %q, want \"debug\"", cfg.Gateway.LogLevel)
+	}
+}
+
+func TestConfigLogLevelEmpty(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	data := `{"version":1}`
+	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	// When config omits log_level, the DefaultConfig value ("fatal") is preserved.
+	if cfg.Gateway.LogLevel != "fatal" {
+		t.Errorf("LogLevel = %q, want \"fatal\"", cfg.Gateway.LogLevel)
+	}
+}
+
+func TestModelConfig_ExtraBodyRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	cfg := &Config{
+		ModelList: []*ModelConfig{
+			{
+				ModelName: "test-model",
+				Model:     "openai/test",
+				apiKeys:   []string{"sk-test"},
+				ExtraBody: map[string]any{"custom_field": "value", "num_field": 42},
+			},
+		},
+		security: &SecurityConfig{
+			ModelList: map[string]ModelSecurityEntry{"test-model:0": {APIKeys: []string{"sk-test"}}},
+		},
+	}
+
+	if err := SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("SaveConfig error: %v", err)
+	}
+
+	loaded, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if loaded.ModelList[0].ExtraBody == nil {
+		t.Fatal("ExtraBody should not be nil after round-trip")
+	}
+	if got := loaded.ModelList[0].ExtraBody["custom_field"]; got != "value" {
+		t.Errorf("ExtraBody[custom_field] = %v, want value", got)
+	}
+	if got := loaded.ModelList[0].ExtraBody["num_field"]; got != float64(42) {
+		t.Errorf("ExtraBody[num_field] = %v, want 42", got)
+	}
+}
+
+func TestDefaultConfig_MinimaxExtraBody(t *testing.T) {
+	cfg := DefaultConfig()
+
+	var minimaxCfg *ModelConfig
+	for i := range cfg.ModelList {
+		if cfg.ModelList[i].Model == "minimax/MiniMax-M2.5" {
+			minimaxCfg = cfg.ModelList[i]
+			break
+		}
+	}
+	if minimaxCfg == nil {
+		t.Fatal("Minimax model not found in ModelList")
+	}
+	if minimaxCfg.ExtraBody == nil {
+		t.Fatal("Minimax ExtraBody should not be nil")
+	}
+	if got, ok := minimaxCfg.ExtraBody["reasoning_split"]; !ok || got != true {
+		t.Fatalf("Minimax ExtraBody[reasoning_split] = %v, want true", got)
 	}
 }
