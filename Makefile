@@ -125,6 +125,17 @@ build-launcher:
 	@ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher
 	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher"
 
+## build-launcher-android: Build picoclaw-launcher for Android ARM64
+build-launcher-android:
+	@echo "Building picoclaw-launcher for android/arm64..."
+	@mkdir -p $(BUILD_DIR)
+	@if [ ! -f web/backend/dist/index.html ]; then \
+		echo "Building frontend..."; \
+		cd web/frontend && pnpm install && pnpm build:backend; \
+	fi
+	GOOS=android GOARCH=arm64 $(GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-android-arm64 ./web/backend
+	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher-android-arm64"
+
 ## build-whatsapp-native: Build with WhatsApp native (whatsmeow) support; larger binary
 build-whatsapp-native: generate
 ## @echo "Building $(BINARY_NAME) with WhatsApp native for $(PLATFORM)/$(ARCH)..."
@@ -168,6 +179,13 @@ build-linux-mipsle: generate
 ## build-pi-zero: Build for Raspberry Pi Zero 2 W (32-bit and 64-bit)
 build-pi-zero: build-linux-arm build-linux-arm64
 	@echo "Pi Zero 2 W builds: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm (32-bit), $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 (64-bit)"
+
+## build-android-arm64: Build for Android ARM64
+build-android: generate
+	@echo "Building for android/arm64..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=android GOARCH=arm64 $(GO) build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-android-arm64 ./$(CMD_DIR)
+	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-android-arm64"
 
 ## build-all: Build picoclaw for all platforms
 build-all: generate
