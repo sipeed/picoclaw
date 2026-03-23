@@ -11,6 +11,9 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    # Uncomment for manual image builds
+    # Necessary when Podman requires SELinux to be disabled during the build stage
+    #image: picoclaw-agent
     userns_mode: "keep-id"
     user: "${UID:-1000}:${GID:-1000}"
     container_name: picoclaw-agent
@@ -42,6 +45,9 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    # Uncomment for manual image builds
+    # Necessary when Podman requires SELinux to be disabled during the build stage
+    #image: picoclaw-gateway
     userns_mode: "keep-id"
     user: "${UID:-1000}:${GID:-1000}"
     # Default: SELinux disabled for testing. In production, remove 'label=disable'
