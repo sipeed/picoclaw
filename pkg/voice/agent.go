@@ -242,10 +242,11 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 		Channel:  channelType,
 		SenderID: acc.speakerID,
 		ChatID:   acc.chatID,
-		Content:  res.Text + oralPrompt,
+		Content:  res.Text,
 		Peer:     bus.Peer{Kind: "channel", ID: acc.chatID},
 		Metadata: map[string]string{
-			"is_voice": "true",
+			"is_voice":    "true",
+			"oral_prompt": oralPrompt,
 		},
 	}); err != nil {
 		logger.ErrorCF("voice-agent", "Failed to publish inbound message", map[string]any{"error": err})

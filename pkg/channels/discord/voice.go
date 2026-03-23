@@ -17,27 +17,57 @@ func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.M
 	if m.Content == "!vc join" {
 		vs, err := s.State.VoiceState(m.GuildID, m.Author.ID)
 		if err != nil || vs == nil {
-			s.ChannelMessageSend(m.ChannelID, "You need to be in a voice channel first!")
+			if _, sendErr := s.ChannelMessageSend(m.ChannelID, "You need to be in a voice channel first!"); sendErr != nil {
+				logger.InfoCF("discord", "Failed to send voice channel requirement message", map[string]any{
+					"channel": m.ChannelID,
+					"error":   sendErr,
+				})
+			}
 			return true
 		}
 
 		logger.InfoCF("discord", "Joining voice channel", map[string]any{"channel": vs.ChannelID})
 		vc, err := s.ChannelVoiceJoin(c.ctx, m.GuildID, vs.ChannelID, false, false)
 		if err != nil {
-			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Failed to join voice channel: %v", err))
+			if _, sendErr := s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Failed to join voice channel: %v", err)); sendErr != nil {
+				logger.InfoCF("discord", "Failed to send voice join error message", map[string]any{
+					"channel": m.ChannelID,
+					"error":   sendErr,
+				})
+			}
 			return true
 		}
 
 		go c.receiveVoice(vc, m.GuildID, m.ChannelID)
-		s.ChannelMessageSend(m.ChannelID, "Joined Voice Channel! Listening for audio...")
+		if _, sendErr := s.ChannelMessageSend(m.ChannelID, "Joined Voice Channel! Listening for audio..."); sendErr != nil {
+			logger.InfoCF("discord", "Failed to send voice join success message", map[string]any{
+				"channel": m.ChannelID,
+				"error":   sendErr,
+			})
+		}
 		return true
 	} else if m.Content == "!vc leave" {
 		vc, exists := s.VoiceConnections[m.GuildID]
 		if exists && vc != nil {
-			vc.Disconnect(c.ctx)
-			s.ChannelMessageSend(m.ChannelID, "Left Voice Channel.")
+			if err := vc.Disconnect(c.ctx); err != nil {
+				logger.InfoCF("discord", "Failed to disconnect from voice channel", map[string]any{
+					"guild":  m.GuildID,
+					"error":  err,
+				})
+			}
+			if _, sendErr := s.ChannelMessageSend(m.ChannelID, "Left Voice Channel."); sendErr != nil {
+				logger.InfoCF("discord", "Failed to send voice leave success message", map[string]any{
+					"channel": m.ChannelID,
+					"error":   sendErr,
+				})
+			}
 		} else {
-			s.ChannelMessageSend(m.ChannelID, "Not in a voice channel.")
+			if _, sendErr := s.ChannelMessageSend(m.ChannelID, "Not in a voice channel."); sendErr != nil {
+				logger.InfoCF("discord", "Failed to send voice not-in-channel message", map[string]any{
+					"channel": m.ChannelID,
+					"error":   sendErr,
+				})
+			}
 		}
 		return true
 	}

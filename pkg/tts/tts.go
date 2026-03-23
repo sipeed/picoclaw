@@ -81,6 +81,8 @@ func NewOpenAITTSProvider(apiKey string, apiBase string, proxyURL string) *OpenA
 			client.Transport = &http.Transport{
 				Proxy: http.ProxyURL(pURL),
 			}
+		} else {
+			logger.Warnf("NewOpenAITTSProvider: invalid proxy URL %q: %v; proceeding without proxy", proxyURL, err)
 		}
 	}
 

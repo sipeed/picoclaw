@@ -677,10 +677,18 @@ func (c *DiscordChannel) listenVoiceControl(ctx context.Context) {
 }
 
 func (c *DiscordChannel) playTTS(ctx context.Context, vc *discordgo.VoiceConnection, text string) {
-	// Clear cancelTTS when playback finishes (normal or interrupted)
+	// Capture the cancel func associated with this playback (if any).
+	c.ttsMu.Lock()
+	playbackCancel := c.cancelTTS
+	c.ttsMu.Unlock()
+
+	// Clear cancelTTS when playback finishes (normal or interrupted),
+	// but only if it still refers to this playback's cancel func.
 	defer func() {
 		c.ttsMu.Lock()
-		c.cancelTTS = nil
+		if c.cancelTTS == playbackCancel {
+			c.cancelTTS = nil
+		}
 		c.ttsMu.Unlock()
 	}()
 
@@ -699,12 +707,17 @@ func (c *DiscordChannel) playTTS(ctx context.Context, vc *discordgo.VoiceConnect
 
 	var prefetch chan ttResult
 
-	// Ensure any in-flight prefetch is drained on exit to prevent stream leaks
+	// Ensure any in-flight prefetch is drained on exit to prevent stream leaks,
+	// but avoid blocking indefinitely if the prefetch goroutine is stuck or never sends.
 	defer func() {
 		if prefetch != nil {
-			result := <-prefetch
-			if result.stream != nil {
-				result.stream.Close()
+			select {
+			case result := <-prefetch:
+				if result.stream != nil {
+					result.stream.Close()
+				}
+			default:
+				// No prefetched result available to drain; avoid blocking on exit.
 			}
 		}
 	}()
