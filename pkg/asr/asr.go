@@ -15,6 +15,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -33,6 +34,28 @@ type TranscriptionResponse struct {
 	Text     string  `json:"text"`
 	Language string  `json:"language,omitempty"`
 	Duration float64 `json:"duration,omitempty"`
+}
+
+func supportsAudioTranscription(model string) bool {
+	protocol, _ := providers.ExtractProtocol(model)
+
+	switch protocol {
+	case "openai", "azure", "azure-openai",
+		"litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
+		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
+		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
+		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
+		"coding-plan", "alibaba-coding", "qwen-coding":
+		// These protocols all go through the OpenAI-compatible or Azure provider path in
+		// providers.CreateProviderFromConfig, so they are the only ones that can supply
+		// the audio media payload shape expected by NewAudioModelTranscriber.
+
+		// TODO: Further restrict this by modelID, since not every model under these
+		// protocols supports audio transcription.
+		return true
+	default:
+		return false
+	}
 }
 
 func NewGroqTranscriber(apiKey string) *GroqTranscriber {

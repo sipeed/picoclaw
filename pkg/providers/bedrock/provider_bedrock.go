@@ -113,7 +113,9 @@ func NewProvider(ctx context.Context, opts ...Option) (*Provider, error) {
 
 	// Validate region is set - required for Bedrock request signing
 	if cfg.Region == "" {
-		return nil, fmt.Errorf("AWS region not configured: set AWS_REGION, AWS_DEFAULT_REGION, or use WithRegion option")
+		return nil, fmt.Errorf(
+			"AWS region not configured: set AWS_REGION, AWS_DEFAULT_REGION, or use WithRegion option",
+		)
 	}
 
 	// Build client options
