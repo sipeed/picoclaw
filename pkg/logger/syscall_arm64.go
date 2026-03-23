@@ -1,5 +1,6 @@
-//go:build linux && arm64
-// +build linux,arm64
+//go:build linux && (arm64 || arm64be || arm || armbe)
+// +build linux
+// +build arm64 arm64be arm armbe
 
 package logger
 
