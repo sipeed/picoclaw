@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/asr"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/commands"
@@ -31,7 +32,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 type AgentLoop struct {
@@ -51,7 +51,7 @@ type AgentLoop struct {
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
-	transcriber    voice.Transcriber
+	transcriber    asr.Transcriber
 	cmdRegistry    *commands.Registry
 	mcp            mcpRuntime
 	hookRuntime    hookRuntime
@@ -1020,7 +1020,7 @@ func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 }
 
 // SetTranscriber injects a voice transcriber for agent-level audio transcription.
-func (al *AgentLoop) SetTranscriber(t voice.Transcriber) {
+func (al *AgentLoop) SetTranscriber(t asr.Transcriber) {
 	al.transcriber = t
 }
 
@@ -2155,146 +2155,73 @@ turnLoop:
 			})
 		}
 		messages = append(messages, assistantMsg)
-		if !ts.opts.NoHistory {
-			ts.agent.Sessions.AddFullMessage(ts.sessionKey, assistantMsg)
-			ts.recordPersistedMessage(assistantMsg)
+
+		// Save assistant message with tool calls to session
+		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
+
+		// Execute tool calls in parallel
+		type indexedAgentResult struct {
+			result *tools.ToolResult
+			tc     providers.ToolCall
 		}
 
-		ts.setPhase(TurnPhaseTools)
+		agentResults := make([]indexedAgentResult, len(normalizedToolCalls))
+		var wg sync.WaitGroup
+
 		for i, tc := range normalizedToolCalls {
-			if ts.hardAbortRequested() {
-				turnStatus = TurnEndStatusAborted
-				return al.abortTurn(ts)
-			}
+			agentResults[i].tc = tc
 
-			toolName := tc.Name
-			toolArgs := cloneStringAnyMap(tc.Arguments)
+			wg.Add(1)
+			go func(idx int, tc providers.ToolCall) {
+				defer wg.Done()
 
-			if al.hooks != nil {
-				toolReq, decision := al.hooks.BeforeTool(turnCtx, &ToolCallHookRequest{
-					Meta:      ts.eventMeta("runTurn", "turn.tool.before"),
-					Tool:      toolName,
-					Arguments: toolArgs,
-					Channel:   ts.channel,
-					ChatID:    ts.chatID,
-				})
-				switch decision.normalizedAction() {
-				case HookActionContinue, HookActionModify:
-					if toolReq != nil {
-						toolName = toolReq.Tool
-						toolArgs = toolReq.Arguments
-					}
-				case HookActionDenyTool:
-					denyContent := hookDeniedToolContent("Tool execution denied by hook", decision.Reason)
-					al.emitEvent(
-						EventKindToolExecSkipped,
-						ts.eventMeta("runTurn", "turn.tool.skipped"),
-						ToolExecSkippedPayload{
-							Tool:   toolName,
-							Reason: denyContent,
-						},
-					)
-					deniedMsg := providers.Message{
-						Role:       "tool",
-						Content:    denyContent,
-						ToolCallID: tc.ID,
-					}
-					messages = append(messages, deniedMsg)
-					if !ts.opts.NoHistory {
-						ts.agent.Sessions.AddFullMessage(ts.sessionKey, deniedMsg)
-						ts.recordPersistedMessage(deniedMsg)
-					}
-					continue
-				case HookActionAbortTurn:
-					turnStatus = TurnEndStatusError
-					return turnResult{}, al.hookAbortError(ts, "before_tool", decision)
-				case HookActionHardAbort:
-					_ = ts.requestHardAbort()
-					turnStatus = TurnEndStatusAborted
-					return al.abortTurn(ts)
-				}
-			}
-
-			if al.hooks != nil {
-				approval := al.hooks.ApproveTool(turnCtx, &ToolApprovalRequest{
-					Meta:      ts.eventMeta("runTurn", "turn.tool.approve"),
-					Tool:      toolName,
-					Arguments: toolArgs,
-					Channel:   ts.channel,
-					ChatID:    ts.chatID,
-				})
-				if !approval.Approved {
-					denyContent := hookDeniedToolContent("Tool execution denied by approval hook", approval.Reason)
-					al.emitEvent(
-						EventKindToolExecSkipped,
-						ts.eventMeta("runTurn", "turn.tool.skipped"),
-						ToolExecSkippedPayload{
-							Tool:   toolName,
-							Reason: denyContent,
-						},
-					)
-					deniedMsg := providers.Message{
-						Role:       "tool",
-						Content:    denyContent,
-						ToolCallID: tc.ID,
-					}
-					messages = append(messages, deniedMsg)
-					if !ts.opts.NoHistory {
-						ts.agent.Sessions.AddFullMessage(ts.sessionKey, deniedMsg)
-						ts.recordPersistedMessage(deniedMsg)
-					}
-					continue
-				}
-			}
-
-			argsJSON, _ := json.Marshal(toolArgs)
-			argsPreview := utils.Truncate(string(argsJSON), 200)
-			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", toolName, argsPreview),
-				map[string]any{
-					"agent_id":  ts.agent.ID,
-					"tool":      toolName,
-					"iteration": iteration,
-				})
-			al.emitEvent(
-				EventKindToolExecStart,
-				ts.eventMeta("runTurn", "turn.tool.start"),
-				ToolExecStartPayload{
-					Tool:      toolName,
-					Arguments: cloneEventArguments(toolArgs),
-				},
-			)
-
-			// Send tool feedback to chat channel if enabled (from HEAD)
-			if al.cfg.Agents.Defaults.IsToolFeedbackEnabled() && ts.channel != "" {
-				feedbackPreview := utils.Truncate(
-					string(argsJSON),
-					al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
-				)
-				feedbackMsg := fmt.Sprintf("\U0001f527 `%s`\n```\n%s\n```", tc.Name, feedbackPreview)
-				fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
-				_ = al.bus.PublishOutbound(fbCtx, bus.OutboundMessage{
-					Channel: ts.channel,
-					ChatID:  ts.chatID,
-					Content: feedbackMsg,
-				})
-				fbCancel()
-			}
-
-			toolCallID := tc.ID
-			toolIteration := iteration
-			asyncToolName := toolName
-			asyncCallback := func(_ context.Context, result *tools.ToolResult) {
-				// Send ForUser content directly to the user (immediate feedback),
-				// mirroring the synchronous tool execution path.
-				if !result.Silent && result.ForUser != "" {
-					outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer outCancel()
-					_ = al.bus.PublishOutbound(outCtx, bus.OutboundMessage{
-						Channel: ts.channel,
-						ChatID:  ts.chatID,
-						Content: result.ForUser,
+				argsJSON, _ := json.Marshal(tc.Arguments)
+				argsPreview := utils.Truncate(string(argsJSON), 200)
+				logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
+					map[string]any{
+						"agent_id":  agent.ID,
+						"tool":      tc.Name,
+						"iteration": iteration,
 					})
+
+				// Send tool feedback to chat channel if enabled
+				if al.cfg.Agents.Defaults.IsToolFeedbackEnabled() && opts.Channel != "" {
+					feedbackPreview := utils.Truncate(
+						string(argsJSON),
+						al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
+					)
+					feedbackMsg := fmt.Sprintf("\U0001f527 `%s`\n```\n%s\n```", tc.Name, feedbackPreview)
+					fbCtx, fbCancel := context.WithTimeout(ctx, 3*time.Second)
+					_ = al.bus.PublishOutbound(fbCtx, bus.OutboundMessage{
+						Channel: opts.Channel,
+						ChatID:  opts.ChatID,
+						Content: feedbackMsg,
+						Metadata: map[string]string{
+							"is_tool_call": "true",
+						},
+					})
+					fbCancel()
 				}
+
+				// Create async callback for tools that implement AsyncExecutor.
+				// When the background work completes, this publishes the result
+				// as an inbound system message so processSystemMessage routes it
+				// back to the user via the normal agent loop.
+				asyncCallback := func(_ context.Context, result *tools.ToolResult) {
+					// Send ForUser content directly to the user (immediate feedback),
+					// mirroring the synchronous tool execution path.
+					if !result.Silent && result.ForUser != "" {
+						outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
+						defer outCancel()
+						_ = al.bus.PublishOutbound(outCtx, bus.OutboundMessage{
+							Channel: opts.Channel,
+							ChatID:  opts.ChatID,
+							Content: result.ForUser,
+							Metadata: map[string]string{
+								"is_tool_call": "true",
+							},
+						})
+					}
 
 				// Determine content for the agent loop (ForLLM or error).
 				content := result.ForLLM
@@ -2384,9 +2311,12 @@ turnLoop:
 
 			if !toolResult.Silent && toolResult.ForUser != "" && ts.opts.SendResponse {
 				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-					Channel: ts.channel,
-					ChatID:  ts.chatID,
-					Content: toolResult.ForUser,
+					Channel: opts.Channel,
+					ChatID:  opts.ChatID,
+					Content: r.result.ForUser,
+					Metadata: map[string]string{
+						"is_tool_call": "true",
+					},
 				})
 				logger.DebugCF("agent", "Sent tool result to user",
 					map[string]any{
