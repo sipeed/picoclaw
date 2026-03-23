@@ -18,7 +18,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
-func TestProviderChat_MaxTokensFieldNull(t *testing.T) {
+func TestProviderChat_EmptyMaxTokensFieldUsesDefault(t *testing.T) {
 	var requestBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +48,7 @@ func TestProviderChat_MaxTokensFieldNull(t *testing.T) {
 		t.Context(),
 		[]Message{{Role: "user", Content: "hi"}},
 		nil,
-		"glm-4.7",
+		"gemini-3.0",
 		map[string]any{"max_tokens": 1234},
 	)
 	if err != nil {
