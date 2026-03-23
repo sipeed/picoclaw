@@ -452,6 +452,24 @@ PicoClaw can search the web to provide up-to-date information. Configure in `too
 | [SearXNG](https://github.com/searxng/searxng) | Not needed | Self-hosted | Free metasearch engine |
 | [GLM Search](https://open.bigmodel.cn/) | Required | Varies | Zhipu web search |
 
+### 🛡️ Tirith Security Scanning
+
+Shell commands are pre-screened by [Tirith](https://github.com/sheeki03/tirith) before execution. Tirith detects homograph/punycode URLs, pipe-to-shell patterns, terminal injection, typosquatted packages, and insecure transport. Auto-installed on first use with SHA-256 checksum verification. Also integrated in [Hermes Agent](https://github.com/NousResearch/hermes-agent/pull/1256).
+
+Configure via `config.json`:
+```json
+{
+  "tools": {
+    "exec": {
+      "tirith_enabled": true,
+      "tirith_bin": "tirith",
+      "tirith_timeout": 5,
+      "tirith_fail_open": true
+    }
+  }
+}
+```
+
 ### ⚙️ Other Tools
 
 PicoClaw includes built-in tools for file operations, code execution, scheduling, and more. See [Tools Configuration](docs/tools_configuration.md) for details.
