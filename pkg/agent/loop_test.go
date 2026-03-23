@@ -1717,7 +1717,7 @@ func TestProcessMessage_PublishesReasoningContentToReasoningChannel(t *testing.T
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
