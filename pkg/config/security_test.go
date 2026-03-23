@@ -59,12 +59,12 @@ func TestSaveAndLoadSecurityConfig(t *testing.T) {
 				APIKeys: []string{"key1", "key2"},
 			},
 		},
-		Channels: ChannelsSecurity{
+		Channels: &ChannelsSecurity{
 			Telegram: &TelegramSecurity{
 				Token: "telegram-token",
 			},
 		},
-		Web: WebToolsSecurity{
+		Web: &WebToolsSecurity{
 			Brave: &BraveSecurity{
 				APIKeys: []string{"brave-api-key"},
 			},

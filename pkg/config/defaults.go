@@ -537,8 +537,9 @@ func DefaultConfig() *Config {
 		},
 		security: &SecurityConfig{
 			ModelList: map[string]ModelSecurityEntry{},
-			Channels:  ChannelsSecurity{},
-			Web:       WebToolsSecurity{},
+			Channels:  &ChannelsSecurity{},
+			Web:       &WebToolsSecurity{},
+			Skills:    &SkillsSecurity{},
 		},
 	}
 }

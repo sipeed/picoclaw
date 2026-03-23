@@ -5,7 +5,9 @@
 
 package config
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 type agentDefaultsV0 struct {
 	Workspace                 string         `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
@@ -139,21 +141,21 @@ func (v *channelsConfigV0) ToChannelsConfig() (ChannelsConfig, ChannelsSecurity)
 			Pico:       pico,
 			IRC:        irc,
 		}, ChannelsSecurity{
-			Telegram:   &telegramSecurity,
-			Feishu:     &feishuSecurity,
-			Discord:    &discordSecurity,
-			QQ:         &qqSecurity,
-			Weixin:     &weixinSecurity,
-			DingTalk:   &dingtalkSecurity,
-			Slack:      &slackSecurity,
-			Matrix:     &matrixSecurity,
-			LINE:       &lineSecurity,
-			OneBot:     &onebotSecurity,
-			WeCom:      &wecomSecurity,
-			WeComApp:   &wecomappSecurity,
-			WeComAIBot: &wecomaibotSecurity,
-			Pico:       &picoSecurity,
-			IRC:        &ircSecurity,
+			Telegram:   telegramSecurity,
+			Feishu:     feishuSecurity,
+			Discord:    discordSecurity,
+			QQ:         qqSecurity,
+			Weixin:     weixinSecurity,
+			DingTalk:   dingtalkSecurity,
+			Slack:      slackSecurity,
+			Matrix:     matrixSecurity,
+			LINE:       lineSecurity,
+			OneBot:     onebotSecurity,
+			WeCom:      wecomSecurity,
+			WeComApp:   wecomappSecurity,
+			WeComAIBot: wecomaibotSecurity,
+			Pico:       picoSecurity,
+			IRC:        ircSecurity,
 		}
 }
 
@@ -169,19 +171,23 @@ type qqConfigV0 struct {
 	ReasoningChannelID   string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
 }
 
-func (v *qqConfigV0) ToQQConfig() (QQConfig, QQSecurity) {
-	return QQConfig{
-			Enabled:              v.Enabled,
-			AppID:                v.AppID,
-			AllowFrom:            v.AllowFrom,
-			GroupTrigger:         v.GroupTrigger,
-			MaxMessageLength:     v.MaxMessageLength,
-			MaxBase64FileSizeMiB: v.MaxBase64FileSizeMiB,
-			SendMarkdown:         v.SendMarkdown,
-			ReasoningChannelID:   v.ReasoningChannelID,
-		}, QQSecurity{
+func (v *qqConfigV0) ToQQConfig() (QQConfig, *QQSecurity) {
+	var sec *QQSecurity
+	if v.AppSecret != "" {
+		sec = &QQSecurity{
 			AppSecret: v.AppSecret,
 		}
+	}
+	return QQConfig{
+		Enabled:              v.Enabled,
+		AppID:                v.AppID,
+		AllowFrom:            v.AllowFrom,
+		GroupTrigger:         v.GroupTrigger,
+		MaxMessageLength:     v.MaxMessageLength,
+		MaxBase64FileSizeMiB: v.MaxBase64FileSizeMiB,
+		SendMarkdown:         v.SendMarkdown,
+		ReasoningChannelID:   v.ReasoningChannelID,
+	}, sec
 }
 
 type telegramConfigV0 struct {
@@ -197,21 +203,25 @@ type telegramConfigV0 struct {
 	UseMarkdownV2      bool                `json:"use_markdown_v2"         env:"PICOCLAW_CHANNELS_TELEGRAM_USE_MARKDOWN_V2"`
 }
 
-func (v *telegramConfigV0) ToTelegramConfig() (TelegramConfig, TelegramSecurity) {
-	return TelegramConfig{
-			Enabled:            v.Enabled,
-			token:              v.Token,
-			BaseURL:            v.BaseURL,
-			Proxy:              v.Proxy,
-			AllowFrom:          v.AllowFrom,
-			GroupTrigger:       v.GroupTrigger,
-			Typing:             v.Typing,
-			Placeholder:        v.Placeholder,
-			ReasoningChannelID: v.ReasoningChannelID,
-			UseMarkdownV2:      v.UseMarkdownV2,
-		}, TelegramSecurity{
+func (v *telegramConfigV0) ToTelegramConfig() (TelegramConfig, *TelegramSecurity) {
+	var sec *TelegramSecurity
+	if v.Token != "" {
+		sec = &TelegramSecurity{
 			Token: v.Token,
 		}
+	}
+	return TelegramConfig{
+		Enabled:            v.Enabled,
+		token:              v.Token,
+		BaseURL:            v.BaseURL,
+		Proxy:              v.Proxy,
+		AllowFrom:          v.AllowFrom,
+		GroupTrigger:       v.GroupTrigger,
+		Typing:             v.Typing,
+		Placeholder:        v.Placeholder,
+		ReasoningChannelID: v.ReasoningChannelID,
+		UseMarkdownV2:      v.UseMarkdownV2,
+	}, sec
 }
 
 type feishuConfigV0 struct {
@@ -228,20 +238,24 @@ type feishuConfigV0 struct {
 	IsLark              bool                `json:"is_lark"                 env:"PICOCLAW_CHANNELS_FEISHU_IS_LARK"`
 }
 
-func (v *feishuConfigV0) ToFeishuConfig() (FeishuConfig, FeishuSecurity) {
-	return FeishuConfig{
-			Enabled:            v.Enabled,
-			AppID:              v.AppID,
-			appSecret:          v.AppSecret,
-			AllowFrom:          v.AllowFrom,
-			GroupTrigger:       v.GroupTrigger,
-			Placeholder:        v.Placeholder,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, FeishuSecurity{
+func (v *feishuConfigV0) ToFeishuConfig() (FeishuConfig, *FeishuSecurity) {
+	var sec *FeishuSecurity
+	if v.AppSecret != "" || v.EncryptKey != "" || v.VerificationToken != "" {
+		sec = &FeishuSecurity{
 			AppSecret:         v.AppSecret,
 			EncryptKey:        v.EncryptKey,
 			VerificationToken: v.VerificationToken,
 		}
+	}
+	return FeishuConfig{
+		Enabled:            v.Enabled,
+		AppID:              v.AppID,
+		appSecret:          v.AppSecret,
+		AllowFrom:          v.AllowFrom,
+		GroupTrigger:       v.GroupTrigger,
+		Placeholder:        v.Placeholder,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type discordConfigV0 struct {
@@ -256,20 +270,24 @@ type discordConfigV0 struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
 }
 
-func (v *discordConfigV0) ToDiscordConfig() (DiscordConfig, DiscordSecurity) {
-	return DiscordConfig{
-			Enabled:            v.Enabled,
-			token:              v.Token,
-			Proxy:              v.Proxy,
-			AllowFrom:          v.AllowFrom,
-			MentionOnly:        v.MentionOnly,
-			GroupTrigger:       v.GroupTrigger,
-			Typing:             v.Typing,
-			Placeholder:        v.Placeholder,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, DiscordSecurity{
+func (v *discordConfigV0) ToDiscordConfig() (DiscordConfig, *DiscordSecurity) {
+	var sec *DiscordSecurity
+	if v.Token != "" {
+		sec = &DiscordSecurity{
 			Token: v.Token,
 		}
+	}
+	return DiscordConfig{
+		Enabled:            v.Enabled,
+		token:              v.Token,
+		Proxy:              v.Proxy,
+		AllowFrom:          v.AllowFrom,
+		MentionOnly:        v.MentionOnly,
+		GroupTrigger:       v.GroupTrigger,
+		Typing:             v.Typing,
+		Placeholder:        v.Placeholder,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type maixcamConfigV0 struct {
@@ -299,17 +317,21 @@ type dingtalkConfigV0 struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_DINGTALK_REASONING_CHANNEL_ID"`
 }
 
-func (v *dingtalkConfigV0) ToDingTalkConfig() (DingTalkConfig, DingTalkSecurity) {
-	return DingTalkConfig{
-			Enabled:            v.Enabled,
-			ClientID:           v.ClientID,
-			clientSecret:       v.ClientSecret,
-			AllowFrom:          v.AllowFrom,
-			GroupTrigger:       v.GroupTrigger,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, DingTalkSecurity{
+func (v *dingtalkConfigV0) ToDingTalkConfig() (DingTalkConfig, *DingTalkSecurity) {
+	var sec *DingTalkSecurity
+	if v.ClientSecret != "" {
+		sec = &DingTalkSecurity{
 			ClientSecret: v.ClientSecret,
 		}
+	}
+	return DingTalkConfig{
+		Enabled:            v.Enabled,
+		ClientID:           v.ClientID,
+		clientSecret:       v.ClientSecret,
+		AllowFrom:          v.AllowFrom,
+		GroupTrigger:       v.GroupTrigger,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type slackConfigV0 struct {
@@ -323,20 +345,24 @@ type slackConfigV0 struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_SLACK_REASONING_CHANNEL_ID"`
 }
 
-func (v *slackConfigV0) ToSlackConfig() (SlackConfig, SlackSecurity) {
-	return SlackConfig{
-			Enabled:            v.Enabled,
-			botToken:           v.BotToken,
-			appToken:           v.AppToken,
-			AllowFrom:          v.AllowFrom,
-			GroupTrigger:       v.GroupTrigger,
-			Typing:             v.Typing,
-			Placeholder:        v.Placeholder,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, SlackSecurity{
+func (v *slackConfigV0) ToSlackConfig() (SlackConfig, *SlackSecurity) {
+	var sec *SlackSecurity
+	if v.BotToken != "" || v.AppToken != "" {
+		sec = &SlackSecurity{
 			BotToken: v.BotToken,
 			AppToken: v.AppToken,
 		}
+	}
+	return SlackConfig{
+		Enabled:            v.Enabled,
+		botToken:           v.BotToken,
+		appToken:           v.AppToken,
+		AllowFrom:          v.AllowFrom,
+		GroupTrigger:       v.GroupTrigger,
+		Typing:             v.Typing,
+		Placeholder:        v.Placeholder,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type matrixConfigV0 struct {
@@ -353,22 +379,26 @@ type matrixConfigV0 struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
 }
 
-func (v *matrixConfigV0) ToMatrixConfig() (MatrixConfig, MatrixSecurity) {
-	return MatrixConfig{
-			Enabled:            v.Enabled,
-			Homeserver:         v.Homeserver,
-			UserID:             v.UserID,
-			accessToken:        v.AccessToken,
-			DeviceID:           v.DeviceID,
-			JoinOnInvite:       v.JoinOnInvite,
-			MessageFormat:      v.MessageFormat,
-			AllowFrom:          v.AllowFrom,
-			GroupTrigger:       v.GroupTrigger,
-			Placeholder:        v.Placeholder,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, MatrixSecurity{
+func (v *matrixConfigV0) ToMatrixConfig() (MatrixConfig, *MatrixSecurity) {
+	var sec *MatrixSecurity
+	if v.AccessToken != "" {
+		sec = &MatrixSecurity{
 			AccessToken: v.AccessToken,
 		}
+	}
+	return MatrixConfig{
+		Enabled:            v.Enabled,
+		Homeserver:         v.Homeserver,
+		UserID:             v.UserID,
+		accessToken:        v.AccessToken,
+		DeviceID:           v.DeviceID,
+		JoinOnInvite:       v.JoinOnInvite,
+		MessageFormat:      v.MessageFormat,
+		AllowFrom:          v.AllowFrom,
+		GroupTrigger:       v.GroupTrigger,
+		Placeholder:        v.Placeholder,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type lineConfigV0 struct {
@@ -385,23 +415,27 @@ type lineConfigV0 struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_LINE_REASONING_CHANNEL_ID"`
 }
 
-func (v *lineConfigV0) ToLINEConfig() (LINEConfig, LINESecurity) {
-	return LINEConfig{
-			Enabled:            v.Enabled,
-			channelSecret:      v.ChannelSecret,
-			channelAccessToken: v.ChannelAccessToken,
-			WebhookHost:        v.WebhookHost,
-			WebhookPort:        v.WebhookPort,
-			WebhookPath:        v.WebhookPath,
-			AllowFrom:          v.AllowFrom,
-			GroupTrigger:       v.GroupTrigger,
-			Typing:             v.Typing,
-			Placeholder:        v.Placeholder,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, LINESecurity{
+func (v *lineConfigV0) ToLINEConfig() (LINEConfig, *LINESecurity) {
+	var sec *LINESecurity
+	if v.ChannelSecret != "" || v.ChannelAccessToken != "" {
+		sec = &LINESecurity{
 			ChannelSecret:      v.ChannelSecret,
 			ChannelAccessToken: v.ChannelAccessToken,
 		}
+	}
+	return LINEConfig{
+		Enabled:            v.Enabled,
+		channelSecret:      v.ChannelSecret,
+		channelAccessToken: v.ChannelAccessToken,
+		WebhookHost:        v.WebhookHost,
+		WebhookPort:        v.WebhookPort,
+		WebhookPath:        v.WebhookPath,
+		AllowFrom:          v.AllowFrom,
+		GroupTrigger:       v.GroupTrigger,
+		Typing:             v.Typing,
+		Placeholder:        v.Placeholder,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type onebotConfigV0 struct {
@@ -417,21 +451,25 @@ type onebotConfigV0 struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_ONEBOT_REASONING_CHANNEL_ID"`
 }
 
-func (v *onebotConfigV0) ToOneBotConfig() (OneBotConfig, OneBotSecurity) {
-	return OneBotConfig{
-			Enabled:            v.Enabled,
-			WSUrl:              v.WSUrl,
-			accessToken:        v.AccessToken,
-			ReconnectInterval:  v.ReconnectInterval,
-			GroupTriggerPrefix: v.GroupTriggerPrefix,
-			AllowFrom:          v.AllowFrom,
-			GroupTrigger:       v.GroupTrigger,
-			Typing:             v.Typing,
-			Placeholder:        v.Placeholder,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, OneBotSecurity{
+func (v *onebotConfigV0) ToOneBotConfig() (OneBotConfig, *OneBotSecurity) {
+	var sec *OneBotSecurity
+	if v.AccessToken != "" {
+		sec = &OneBotSecurity{
 			AccessToken: v.AccessToken,
 		}
+	}
+	return OneBotConfig{
+		Enabled:            v.Enabled,
+		WSUrl:              v.WSUrl,
+		accessToken:        v.AccessToken,
+		ReconnectInterval:  v.ReconnectInterval,
+		GroupTriggerPrefix: v.GroupTriggerPrefix,
+		AllowFrom:          v.AllowFrom,
+		GroupTrigger:       v.GroupTrigger,
+		Typing:             v.Typing,
+		Placeholder:        v.Placeholder,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type wecomConfigV0 struct {
@@ -448,23 +486,27 @@ type wecomConfigV0 struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_REASONING_CHANNEL_ID"`
 }
 
-func (v *wecomConfigV0) ToWeComConfig() (WeComConfig, WeComSecurity) {
-	return WeComConfig{
-			Enabled:            v.Enabled,
-			token:              v.Token,
-			encodingAESKey:     v.EncodingAESKey,
-			WebhookURL:         v.WebhookURL,
-			WebhookHost:        v.WebhookHost,
-			WebhookPort:        v.WebhookPort,
-			WebhookPath:        v.WebhookPath,
-			AllowFrom:          v.AllowFrom,
-			ReplyTimeout:       v.ReplyTimeout,
-			GroupTrigger:       v.GroupTrigger,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, WeComSecurity{
+func (v *wecomConfigV0) ToWeComConfig() (WeComConfig, *WeComSecurity) {
+	var sec *WeComSecurity
+	if v.Token != "" || v.EncodingAESKey != "" {
+		sec = &WeComSecurity{
 			Token:          v.Token,
 			EncodingAESKey: v.EncodingAESKey,
 		}
+	}
+	return WeComConfig{
+		Enabled:            v.Enabled,
+		token:              v.Token,
+		encodingAESKey:     v.EncodingAESKey,
+		WebhookURL:         v.WebhookURL,
+		WebhookHost:        v.WebhookHost,
+		WebhookPort:        v.WebhookPort,
+		WebhookPath:        v.WebhookPath,
+		AllowFrom:          v.AllowFrom,
+		ReplyTimeout:       v.ReplyTimeout,
+		GroupTrigger:       v.GroupTrigger,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type weixinConfigV0 struct {
@@ -477,18 +519,22 @@ type weixinConfigV0 struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_WEIXIN_REASONING_CHANNEL_ID"`
 }
 
-func (v *weixinConfigV0) ToWeiXinConfig() (WeixinConfig, WeixinSecurity) {
-	return WeixinConfig{
-			Enabled:            v.Enabled,
-			token:              v.Token,
-			BaseURL:            v.BaseURL,
-			CDNBaseURL:         v.CDNBaseURL,
-			Proxy:              v.Proxy,
-			AllowFrom:          v.AllowFrom,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, WeixinSecurity{
+func (v *weixinConfigV0) ToWeiXinConfig() (WeixinConfig, *WeixinSecurity) {
+	var sec *WeixinSecurity
+	if v.Token != "" {
+		sec = &WeixinSecurity{
 			Token: v.Token,
 		}
+	}
+	return WeixinConfig{
+		Enabled:            v.Enabled,
+		token:              v.Token,
+		BaseURL:            v.BaseURL,
+		CDNBaseURL:         v.CDNBaseURL,
+		Proxy:              v.Proxy,
+		AllowFrom:          v.AllowFrom,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type wecomappConfigV0 struct {
@@ -507,26 +553,30 @@ type wecomappConfigV0 struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_APP_REASONING_CHANNEL_ID"`
 }
 
-func (v *wecomappConfigV0) ToWeComAppConfig() (WeComAppConfig, WeComAppSecurity) {
-	return WeComAppConfig{
-			Enabled:            v.Enabled,
-			CorpID:             v.CorpID,
-			corpSecret:         v.CorpSecret,
-			AgentID:            v.AgentID,
-			token:              v.Token,
-			encodingAESKey:     v.EncodingAESKey,
-			WebhookHost:        v.WebhookHost,
-			WebhookPort:        v.WebhookPort,
-			WebhookPath:        v.WebhookPath,
-			AllowFrom:          v.AllowFrom,
-			ReplyTimeout:       v.ReplyTimeout,
-			GroupTrigger:       v.GroupTrigger,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, WeComAppSecurity{
+func (v *wecomappConfigV0) ToWeComAppConfig() (WeComAppConfig, *WeComAppSecurity) {
+	var sec *WeComAppSecurity
+	if v.CorpSecret != "" || v.Token != "" || v.EncodingAESKey != "" {
+		sec = &WeComAppSecurity{
 			CorpSecret:     v.CorpSecret,
 			Token:          v.Token,
 			EncodingAESKey: v.EncodingAESKey,
 		}
+	}
+	return WeComAppConfig{
+		Enabled:            v.Enabled,
+		CorpID:             v.CorpID,
+		corpSecret:         v.CorpSecret,
+		AgentID:            v.AgentID,
+		token:              v.Token,
+		encodingAESKey:     v.EncodingAESKey,
+		WebhookHost:        v.WebhookHost,
+		WebhookPort:        v.WebhookPort,
+		WebhookPath:        v.WebhookPath,
+		AllowFrom:          v.AllowFrom,
+		ReplyTimeout:       v.ReplyTimeout,
+		GroupTrigger:       v.GroupTrigger,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type wecomaibotConfigV0 struct {
@@ -542,20 +592,24 @@ type wecomaibotConfigV0 struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
 }
 
-func (v *wecomaibotConfigV0) ToWeComAIBotConfig() (WeComAIBotConfig, WeComAIBotSecurity) {
-	return WeComAIBotConfig{
-			Enabled:            v.Enabled,
-			WebhookPath:        v.WebhookPath,
-			AllowFrom:          v.AllowFrom,
-			ReplyTimeout:       v.ReplyTimeout,
-			MaxSteps:           v.MaxSteps,
-			WelcomeMessage:     v.WelcomeMessage,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, WeComAIBotSecurity{
+func (v *wecomaibotConfigV0) ToWeComAIBotConfig() (WeComAIBotConfig, *WeComAIBotSecurity) {
+	var sec *WeComAIBotSecurity
+	if v.Token != "" || v.Secret != "" || v.EncodingAESKey != "" {
+		sec = &WeComAIBotSecurity{
 			Token:          v.Token,
 			Secret:         v.Secret,
 			EncodingAESKey: v.EncodingAESKey,
 		}
+	}
+	return WeComAIBotConfig{
+		Enabled:            v.Enabled,
+		WebhookPath:        v.WebhookPath,
+		AllowFrom:          v.AllowFrom,
+		ReplyTimeout:       v.ReplyTimeout,
+		MaxSteps:           v.MaxSteps,
+		WelcomeMessage:     v.WelcomeMessage,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type picoConfigV0 struct {
@@ -571,21 +625,25 @@ type picoConfigV0 struct {
 	Placeholder     PlaceholderConfig   `json:"placeholder,omitempty"`
 }
 
-func (v *picoConfigV0) ToPicoConfig() (PicoConfig, PicoSecurity) {
-	return PicoConfig{
-			Enabled:         v.Enabled,
-			token:           v.Token,
-			AllowTokenQuery: v.AllowTokenQuery,
-			AllowOrigins:    v.AllowOrigins,
-			PingInterval:    v.PingInterval,
-			ReadTimeout:     v.ReadTimeout,
-			WriteTimeout:    v.WriteTimeout,
-			MaxConnections:  v.MaxConnections,
-			AllowFrom:       v.AllowFrom,
-			Placeholder:     v.Placeholder,
-		}, PicoSecurity{
+func (v *picoConfigV0) ToPicoConfig() (PicoConfig, *PicoSecurity) {
+	var sec *PicoSecurity
+	if v.Token != "" {
+		sec = &PicoSecurity{
 			Token: v.Token,
 		}
+	}
+	return PicoConfig{
+		Enabled:         v.Enabled,
+		token:           v.Token,
+		AllowTokenQuery: v.AllowTokenQuery,
+		AllowOrigins:    v.AllowOrigins,
+		PingInterval:    v.PingInterval,
+		ReadTimeout:     v.ReadTimeout,
+		WriteTimeout:    v.WriteTimeout,
+		MaxConnections:  v.MaxConnections,
+		AllowFrom:       v.AllowFrom,
+		Placeholder:     v.Placeholder,
+	}, sec
 }
 
 type ircConfigV0 struct {
@@ -607,29 +665,33 @@ type ircConfigV0 struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_IRC_REASONING_CHANNEL_ID"`
 }
 
-func (v *ircConfigV0) ToIRCConfig() (IRCConfig, IRCSecurity) {
-	return IRCConfig{
-			Enabled:            v.Enabled,
-			Server:             v.Server,
-			TLS:                v.TLS,
-			Nick:               v.Nick,
-			User:               v.User,
-			RealName:           v.RealName,
-			password:           v.Password,
-			nickServPassword:   v.NickServPassword,
-			SASLUser:           v.SASLUser,
-			saslPassword:       v.SASLPassword,
-			Channels:           v.Channels,
-			RequestCaps:        v.RequestCaps,
-			AllowFrom:          v.AllowFrom,
-			GroupTrigger:       v.GroupTrigger,
-			Typing:             v.Typing,
-			ReasoningChannelID: v.ReasoningChannelID,
-		}, IRCSecurity{
+func (v *ircConfigV0) ToIRCConfig() (IRCConfig, *IRCSecurity) {
+	var sec *IRCSecurity
+	if v.Password != "" || v.NickServPassword != "" || v.SASLPassword != "" {
+		sec = &IRCSecurity{
 			Password:         v.Password,
 			NickServPassword: v.NickServPassword,
 			SASLPassword:     v.SASLPassword,
 		}
+	}
+	return IRCConfig{
+		Enabled:            v.Enabled,
+		Server:             v.Server,
+		TLS:                v.TLS,
+		Nick:               v.Nick,
+		User:               v.User,
+		RealName:           v.RealName,
+		password:           v.Password,
+		nickServPassword:   v.NickServPassword,
+		SASLUser:           v.SASLUser,
+		saslPassword:       v.SASLPassword,
+		Channels:           v.Channels,
+		RequestCaps:        v.RequestCaps,
+		AllowFrom:          v.AllowFrom,
+		GroupTrigger:       v.GroupTrigger,
+		Typing:             v.Typing,
+		ReasoningChannelID: v.ReasoningChannelID,
+	}, sec
 }
 
 type providersConfigV0 struct {
@@ -783,7 +845,7 @@ func (c *configV0) Migrate() (*Config, error) {
 	cfg.Tools.Web, secWeb = c.Tools.Web.ToWebToolsConfig()
 	cfg.Tools.Cron = c.Tools.Cron
 	cfg.Tools.Exec = c.Tools.Exec
-	var secSkills SkillsSecurity
+	var secSkills *SkillsSecurity
 	cfg.Tools.Skills, secSkills = c.Tools.Skills.ToSkillsToolsConfig()
 	cfg.Tools.MediaCleanup = c.Tools.MediaCleanup
 	cfg.Tools.MCP = c.Tools.MCP
@@ -835,16 +897,18 @@ func (c *configV0) Migrate() (*Config, error) {
 		for i, m := range c.ModelList {
 			// Merge APIKey and APIKeys, deduplicating
 			mergedKeys := MergeAPIKeys(m.APIKey, m.APIKeys)
-			secModels[names[i]] = ModelSecurityEntry{
-				APIKeys: mergedKeys,
+			if len(mergedKeys) > 0 {
+				secModels[names[i]] = ModelSecurityEntry{
+					APIKeys: mergedKeys,
+				}
 			}
 		}
 	}
 
 	cfg.WithSecurity(&SecurityConfig{
 		ModelList: secModels,
-		Channels:  secChannels,
-		Web:       secWeb,
+		Channels:  &secChannels,
+		Web:       &secWeb,
 		Skills:    secSkills,
 	})
 	cfg.Version = CurrentVersion
@@ -873,13 +937,17 @@ type braveConfigV0 struct {
 	MaxResults int      `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
 }
 
-func (v *braveConfigV0) ToBraveConfig() (BraveConfig, BraveSecurity) {
-	return BraveConfig{
-			Enabled:    v.Enabled,
-			MaxResults: v.MaxResults,
-		}, BraveSecurity{
+func (v *braveConfigV0) ToBraveConfig() (BraveConfig, *BraveSecurity) {
+	var sec *BraveSecurity
+	if k := MergeAPIKeys(v.APIKey, v.APIKeys); len(k) > 0 {
+		sec = &BraveSecurity{
 			APIKeys: MergeAPIKeys(v.APIKey, v.APIKeys),
 		}
+	}
+	return BraveConfig{
+		Enabled:    v.Enabled,
+		MaxResults: v.MaxResults,
+	}, sec
 }
 
 type tavilyConfigV0 struct {
@@ -890,14 +958,18 @@ type tavilyConfigV0 struct {
 	MaxResults int      `json:"max_results" env:"PICOCLAW_TOOLS_WEB_TAVILY_MAX_RESULTS"`
 }
 
-func (v *tavilyConfigV0) ToTavilyConfig() (TavilyConfig, TavilySecurity) {
-	return TavilyConfig{
-			Enabled:    v.Enabled,
-			BaseURL:    v.BaseURL,
-			MaxResults: v.MaxResults,
-		}, TavilySecurity{
-			APIKeys: MergeAPIKeys(v.APIKey, v.APIKeys),
+func (v *tavilyConfigV0) ToTavilyConfig() (TavilyConfig, *TavilySecurity) {
+	var sec *TavilySecurity
+	if k := MergeAPIKeys(v.APIKey, v.APIKeys); len(k) > 0 {
+		sec = &TavilySecurity{
+			APIKeys: k,
 		}
+	}
+	return TavilyConfig{
+		Enabled:    v.Enabled,
+		BaseURL:    v.BaseURL,
+		MaxResults: v.MaxResults,
+	}, sec
 }
 
 type perplexityConfigV0 struct {
@@ -907,13 +979,17 @@ type perplexityConfigV0 struct {
 	MaxResults int      `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
 }
 
-func (v *perplexityConfigV0) ToPerplexityConfig() (PerplexityConfig, PerplexitySecurity) {
-	return PerplexityConfig{
-			Enabled:    v.Enabled,
-			MaxResults: v.MaxResults,
-		}, PerplexitySecurity{
-			APIKeys: MergeAPIKeys(v.APIKey, v.APIKeys),
+func (v *perplexityConfigV0) ToPerplexityConfig() (PerplexityConfig, *PerplexitySecurity) {
+	var sec *PerplexitySecurity
+	if k := MergeAPIKeys(v.APIKey, v.APIKeys); len(k) > 0 {
+		sec = &PerplexitySecurity{
+			APIKeys: k,
 		}
+	}
+	return PerplexityConfig{
+		Enabled:    v.Enabled,
+		MaxResults: v.MaxResults,
+	}, sec
 }
 
 type glmSearchConfigV0 struct {
@@ -923,15 +999,19 @@ type glmSearchConfigV0 struct {
 	SearchEngine string `json:"search_engine" env:"PICOCLAW_TOOLS_WEB_GLM_SEARCH_ENGINE"`
 }
 
-func (v *glmSearchConfigV0) ToGLMSearchConfig() (GLMSearchConfig, GLMSearchSecurity) {
-	return GLMSearchConfig{
-			Enabled:      v.Enabled,
-			apiKey:       v.APIKey,
-			BaseURL:      v.BaseURL,
-			SearchEngine: v.SearchEngine,
-		}, GLMSearchSecurity{
+func (v *glmSearchConfigV0) ToGLMSearchConfig() (GLMSearchConfig, *GLMSearchSecurity) {
+	var sec *GLMSearchSecurity
+	if v.APIKey != "" {
+		sec = &GLMSearchSecurity{
 			APIKey: v.APIKey,
 		}
+	}
+	return GLMSearchConfig{
+		Enabled:      v.Enabled,
+		apiKey:       v.APIKey,
+		BaseURL:      v.BaseURL,
+		SearchEngine: v.SearchEngine,
+	}, sec
 }
 
 func (v *webToolsConfigV0) ToWebToolsConfig() (WebToolsConfig, WebToolsSecurity) {
@@ -954,10 +1034,10 @@ func (v *webToolsConfigV0) ToWebToolsConfig() (WebToolsConfig, WebToolsSecurity)
 			Format:               v.Format,
 			PrivateHostWhitelist: v.PrivateHostWhitelist,
 		}, WebToolsSecurity{
-			Brave:      &braveSecurity,
-			Tavily:     &tavilySecurity,
-			Perplexity: &perplexitySecurity,
-			GLMSearch:  &glmSearchSecurity,
+			Brave:      braveSecurity,
+			Tavily:     tavilySecurity,
+			Perplexity: perplexitySecurity,
+			GLMSearch:  glmSearchSecurity,
 		}
 }
 
@@ -981,16 +1061,20 @@ type clawHubRegistryConfigV0 struct {
 	SkillsPath string `json:"skills_path" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SKILLS_PATH"`
 }
 
-func (v *clawHubRegistryConfigV0) ToClawHubRegistryConfig() (ClawHubRegistryConfig, ClawHubSecurity) {
-	return ClawHubRegistryConfig{
-			Enabled:    v.Enabled,
-			BaseURL:    v.BaseURL,
-			authToken:  v.AuthToken,
-			SearchPath: v.SearchPath,
-			SkillsPath: v.SkillsPath,
-		}, ClawHubSecurity{
+func (v *clawHubRegistryConfigV0) ToClawHubRegistryConfig() (ClawHubRegistryConfig, *ClawHubSecurity) {
+	var sec *ClawHubSecurity
+	if v.AuthToken != "" {
+		sec = &ClawHubSecurity{
 			AuthToken: v.AuthToken,
 		}
+	}
+	return ClawHubRegistryConfig{
+		Enabled:    v.Enabled,
+		BaseURL:    v.BaseURL,
+		authToken:  v.AuthToken,
+		SearchPath: v.SearchPath,
+		SkillsPath: v.SkillsPath,
+	}, sec
 }
 
 type skillsGithubConfigV0 struct {
@@ -998,13 +1082,17 @@ type skillsGithubConfigV0 struct {
 	Proxy string `json:"proxy,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_PROXY"`
 }
 
-func (v *skillsGithubConfigV0) ToSkillsGithubConfig() (SkillsGithubConfig, GithubSecurity) {
-	return SkillsGithubConfig{
-			token: v.Token,
-			Proxy: v.Proxy,
-		}, GithubSecurity{
+func (v *skillsGithubConfigV0) ToSkillsGithubConfig() (SkillsGithubConfig, *GithubSecurity) {
+	var sec *GithubSecurity
+	if v.Token != "" {
+		sec = &GithubSecurity{
 			Token: v.Token,
 		}
+	}
+	return SkillsGithubConfig{
+		token: v.Token,
+		Proxy: v.Proxy,
+	}, sec
 }
 
 func (v *skillsRegistriesConfigV0) ToSkillsRegistriesConfig() (SkillsRegistriesConfig, *ClawHubSecurity) {
@@ -1012,21 +1100,25 @@ func (v *skillsRegistriesConfigV0) ToSkillsRegistriesConfig() (SkillsRegistriesC
 
 	return SkillsRegistriesConfig{
 		ClawHub: clawHub,
-	}, &clawHubSecurity
+	}, clawHubSecurity
 }
 
-func (v *skillsToolsConfigV0) ToSkillsToolsConfig() (SkillsToolsConfig, SkillsSecurity) {
+func (v *skillsToolsConfigV0) ToSkillsToolsConfig() (SkillsToolsConfig, *SkillsSecurity) {
 	registries, registriesSecurity := v.Registries.ToSkillsRegistriesConfig()
 	github, githubSecurity := v.Github.ToSkillsGithubConfig()
 
-	return SkillsToolsConfig{
-			ToolConfig:            v.ToolConfig,
-			Registries:            registries,
-			Github:                github,
-			MaxConcurrentSearches: v.MaxConcurrentSearches,
-			SearchCache:           v.SearchCache,
-		}, SkillsSecurity{
-			Github:  &githubSecurity,
+	var sec *SkillsSecurity
+	if githubSecurity != nil || registriesSecurity != nil {
+		sec = &SkillsSecurity{
+			Github:  githubSecurity,
 			ClawHub: registriesSecurity,
 		}
+	}
+	return SkillsToolsConfig{
+		ToolConfig:            v.ToolConfig,
+		Registries:            registries,
+		Github:                github,
+		MaxConcurrentSearches: v.MaxConcurrentSearches,
+		SearchCache:           v.SearchCache,
+	}, sec
 }
