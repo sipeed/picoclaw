@@ -59,7 +59,6 @@ func (c *DiscordChannel) handleVoiceCommand(s *discordgo.Session, m *discordgo.M
 
 		logger.InfoCF("discord", "Joining voice channel", map[string]any{"channel": vs.ChannelID})
 		vc, err := s.ChannelVoiceJoin(c.ctx, m.GuildID, vs.ChannelID, false, false)
-		vc, err := s.ChannelVoiceJoin(c.ctx, m.GuildID, vs.ChannelID, false, false)
 		if err != nil {
 			if _, sendErr := s.ChannelMessageSend(
 				m.ChannelID,

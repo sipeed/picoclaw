@@ -65,7 +65,6 @@ func (a *speechAccumulator) Close() {
 type Agent struct {
 	bus         *bus.MessageBus
 	transcriber asr.Transcriber
-	transcriber asr.Transcriber
 
 	mu       sync.Mutex
 	sessions map[string]*speechAccumulator // keyed by sessionID_speakerID
