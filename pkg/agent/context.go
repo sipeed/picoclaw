@@ -876,7 +876,7 @@ func messageHistoryAnnotation(msg providers.Message) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("[%s] ", strings.Join(parts, ", "))
+	return fmt.Sprintf("[%s] ", strings.Join(parts, "; "))
 }
 
 func messageSenderAnnotation(sender *providers.MessageSender) string {
