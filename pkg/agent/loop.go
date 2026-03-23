@@ -87,6 +87,7 @@ type processOptions struct {
 	SendResponse            bool                // Whether to send response via bus
 	NoHistory               bool                // If true, don't load session history (for heartbeat)
 	SkipInitialSteeringPoll bool                // If true, skip the steering poll at loop start (used by Continue)
+	IsVoice                 bool                // If true, treat the message as voice input (transcribe before steering)
 }
 
 type continuationTarget struct {
