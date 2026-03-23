@@ -79,6 +79,7 @@ type processOptions struct {
 	UserMessage             string              // User message content (may include prefix)
 	SystemPromptOverride    string              // Override the default system prompt (Used by SubTurns)
 	Media                   []string            // media:// refs from inbound message
+	IsVoice                 bool                // True if this message comes from an audio/voice call
 	InitialSteeringMessages []providers.Message // Steering messages from refactor/agent
 	DefaultResponse         string              // Response when LLM returns empty
 	EnableSummary           bool                // Whether to trigger summarization
@@ -1295,17 +1296,25 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"route_channel": route.Channel,
 		})
 
+	isVoice := msg.Metadata != nil && msg.Metadata["is_voice"] == "true"
+	var systemPromptOverride string
+	if isVoice {
+		systemPromptOverride = "You are a helpful AI assistant. The user is speaking to you over voice chat. Reply in a concise, conversational, and natural oral style suitable for text-to-speech. Get straight to the point. Do not use Markdown, emojis, asterisks, or code blocks."
+	}
+
 	opts := processOptions{
-		SessionKey:        sessionKey,
-		Channel:           msg.Channel,
-		ChatID:            msg.ChatID,
-		SenderID:          msg.SenderID,
-		SenderDisplayName: msg.Sender.DisplayName,
-		UserMessage:       msg.Content,
-		Media:             msg.Media,
-		DefaultResponse:   defaultResponse,
-		EnableSummary:     true,
-		SendResponse:      false,
+		SessionKey:           sessionKey,
+		Channel:              msg.Channel,
+		ChatID:               msg.ChatID,
+		SenderID:             msg.SenderID,
+		SenderDisplayName:    msg.Sender.DisplayName,
+		UserMessage:          msg.Content,
+		SystemPromptOverride: systemPromptOverride,
+		Media:                msg.Media,
+		IsVoice:              isVoice,
+		DefaultResponse:      defaultResponse,
+		EnableSummary:        true,
+		SendResponse:         false,
 	}
 
 	// context-dependent commands check their own Runtime fields and report
@@ -1598,23 +1607,48 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 	}
 	ts.captureRestorePoint(history, summary)
 
-	messages := ts.agent.ContextBuilder.BuildMessages(
-		history,
-		summary,
-		ts.userMessage,
-		ts.media,
-		ts.channel,
-		ts.chatID,
-		ts.opts.SenderID,
-		ts.opts.SenderDisplayName,
-	)
+	var messages []providers.Message
+	if ts.opts.SystemPromptOverride != "" {
+		messages = append(messages, providers.Message{
+			Role:    "system",
+			Content: ts.opts.SystemPromptOverride,
+		})
+		messages = append(messages, history...)
+		if summary != "" {
+			messages = append(messages, providers.Message{
+				Role:    "system",
+				Content: "CONTEXT_SUMMARY: " + summary,
+			})
+		}
+		if ts.userMessage != "" || len(ts.media) > 0 {
+			messages = append(messages, providers.Message{
+				Role:    "user",
+				Content: ts.userMessage,
+				Media:   ts.media,
+			})
+		}
+	} else {
+		messages = ts.agent.ContextBuilder.BuildMessages(
+			history,
+			summary,
+			ts.userMessage,
+			ts.media,
+			ts.channel,
+			ts.chatID,
+			ts.opts.SenderID,
+			ts.opts.SenderDisplayName,
+		)
+	}
 
 	cfg := al.GetConfig()
 	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 
 	if !ts.opts.NoHistory {
-		toolDefs := ts.agent.Tools.ToProviderDefs()
+		var toolDefs []providers.ToolDefinition
+		if !ts.opts.IsVoice {
+			toolDefs = ts.agent.Tools.ToProviderDefs()
+		}
 		if isOverContextBudget(ts.agent.ContextWindow, messages, toolDefs, ts.agent.MaxTokens) {
 			logger.WarnCF("agent", "Proactive compression: context budget exceeded before LLM call",
 				map[string]any{"session_key": ts.sessionKey})
@@ -1752,7 +1786,10 @@ turnLoop:
 			})
 
 		gracefulTerminal, _ := ts.gracefulInterruptRequested()
-		providerToolDefs := ts.agent.Tools.ToProviderDefs()
+		var providerToolDefs []providers.ToolDefinition
+		if !ts.opts.IsVoice {
+			providerToolDefs = ts.agent.Tools.ToProviderDefs()
+		}
 
 		// Native web search support (from HEAD)
 		_, hasWebSearch := ts.agent.Tools.Get("web_search")
