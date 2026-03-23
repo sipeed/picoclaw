@@ -1,7 +1,12 @@
 package logger
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"testing"
+
+	"github.com/rs/zerolog"
 )
 
 func TestLogLevelFiltering(t *testing.T) {
@@ -335,5 +340,28 @@ func TestSetLevelFromString(t *testing.T) {
 	SetLevelFromString("FATAL")
 	if got := GetLevel(); got != FATAL {
 		t.Errorf("after SetLevelFromString(\"FATAL\"): GetLevel() = %v, want FATAL", got)
+	}
+}
+
+func TestAppendFields_ErrorUsesErrorString(t *testing.T) {
+	var buf bytes.Buffer
+	l := zerolog.New(&buf)
+
+	event := l.Info()
+	appendFields(event, map[string]any{"error": errors.New("transcription request failed")})
+	event.Msg("test")
+
+	lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))
+	if len(lines) == 0 {
+		t.Fatal("expected log output, got none")
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(lines[0], &got); err != nil {
+		t.Fatalf("unmarshal log line: %v", err)
+	}
+
+	if got["error"] != "transcription request failed" {
+		t.Fatalf("error field = %#v, want %q", got["error"], "transcription request failed")
 	}
 }

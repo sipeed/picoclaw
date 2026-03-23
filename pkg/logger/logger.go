@@ -256,6 +256,8 @@ func appendFields(event *zerolog.Event, fields map[string]any) {
 	for k, v := range fields {
 		// Type switch to avoid double JSON serialization of strings
 		switch val := v.(type) {
+		case error:
+			event.Str(k, val.Error())
 		case string:
 			event.Str(k, val)
 		case int:

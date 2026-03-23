@@ -604,7 +604,8 @@ type DevicesConfig struct {
 }
 
 type VoiceConfig struct {
-	EchoTranscription bool `json:"echo_transcription" env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
+	ModelName         string `json:"model_name,omitempty" env:"PICOCLAW_VOICE_MODEL_NAME"`
+	EchoTranscription bool   `json:"echo_transcription"   env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
 }
 
 type ProvidersConfig struct {

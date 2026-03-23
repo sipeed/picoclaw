@@ -548,6 +548,7 @@
     "monitor_usb": true
   },
   "voice": {
+    "model_name": "",
     "echo_transcription": false
   },
   "hooks": {
