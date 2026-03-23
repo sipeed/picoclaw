@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // mockSpawner implements SubTurnSpawner for testing
@@ -26,7 +28,7 @@ func (m *mockSpawner) SpawnSubTurn(ctx context.Context, cfg SubTurnConfig) (*Too
 
 func TestSpawnTool_Execute_EmptyTask(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 	tool := NewSpawnTool(manager)
 
 	ctx := context.Background()
@@ -60,7 +62,7 @@ func TestSpawnTool_Execute_EmptyTask(t *testing.T) {
 
 func TestSpawnTool_Execute_ValidTask(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 	tool := NewSpawnTool(manager)
 	tool.SetSpawner(&mockSpawner{})
 

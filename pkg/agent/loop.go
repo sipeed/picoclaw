@@ -268,12 +268,36 @@ func registerSharedTools(
 			}
 		}
 
+		// Team and spawn_sub_agent tools
+		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Candidates, agent.Workspace, cfg.Tools.Team, msgBus)
+		subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+
+		teamTool := tools.NewTeamTool(subagentManager, cfg)
+		if cfg.Tools.IsToolEnabled("team") {
+			agent.Tools.Register(teamTool)
+		}
+
+		spawnSubAgentTool := tools.NewSpawnSubAgentTool(subagentManager)
+		if cfg.Tools.IsToolEnabled("spawn_sub_agent") {
+			agent.Tools.Register(spawnSubAgentTool)
+		}
+
+		// Share the fully-built registry back to subagent manager
+		subagentManager.SetTools(agent.Tools)
+
 		// Spawn and spawn_status tools share a SubagentManager.
 		// Construct it when either tool is enabled (both require subagent).
 		spawnEnabled := cfg.Tools.IsToolEnabled("spawn")
 		spawnStatusEnabled := cfg.Tools.IsToolEnabled("spawn_status")
 		if (spawnEnabled || spawnStatusEnabled) && cfg.Tools.IsToolEnabled("subagent") {
-			subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace)
+			subagentManager := tools.NewSubagentManager(
+				provider,
+				agent.Model,
+				agent.Candidates,
+				agent.Workspace,
+				cfg.Tools.Team,
+				msgBus,
+			)
 			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 
 			// Set the spawner that links into AgentLoop's turnState

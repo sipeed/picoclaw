@@ -6,12 +6,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestSpawnStatusTool_Name(t *testing.T) {
 	provider := &MockLLMProvider{}
 	workspace := t.TempDir()
-	manager := NewSubagentManager(provider, "test-model", workspace)
+	manager := NewSubagentManager(provider, "test-model", nil, workspace, config.TeamToolsConfig{}, nil)
 	tool := NewSpawnStatusTool(manager)
 
 	if tool.Name() != "spawn_status" {
@@ -22,7 +24,7 @@ func TestSpawnStatusTool_Name(t *testing.T) {
 func TestSpawnStatusTool_Description(t *testing.T) {
 	provider := &MockLLMProvider{}
 	workspace := t.TempDir()
-	manager := NewSubagentManager(provider, "test-model", workspace)
+	manager := NewSubagentManager(provider, "test-model", nil, workspace, config.TeamToolsConfig{}, nil)
 	tool := NewSpawnStatusTool(manager)
 
 	desc := tool.Description()
@@ -37,7 +39,7 @@ func TestSpawnStatusTool_Description(t *testing.T) {
 func TestSpawnStatusTool_Parameters(t *testing.T) {
 	provider := &MockLLMProvider{}
 	workspace := t.TempDir()
-	manager := NewSubagentManager(provider, "test-model", workspace)
+	manager := NewSubagentManager(provider, "test-model", nil, workspace, config.TeamToolsConfig{}, nil)
 	tool := NewSpawnStatusTool(manager)
 
 	params := tool.Parameters()
@@ -64,7 +66,7 @@ func TestSpawnStatusTool_NilManager(t *testing.T) {
 func TestSpawnStatusTool_Empty(t *testing.T) {
 	provider := &MockLLMProvider{}
 	workspace := t.TempDir()
-	manager := NewSubagentManager(provider, "test-model", workspace)
+	manager := NewSubagentManager(provider, "test-model", nil, workspace, config.TeamToolsConfig{}, nil)
 	tool := NewSpawnStatusTool(manager)
 
 	result := tool.Execute(context.Background(), map[string]any{})
@@ -79,7 +81,7 @@ func TestSpawnStatusTool_Empty(t *testing.T) {
 func TestSpawnStatusTool_ListAll(t *testing.T) {
 	provider := &MockLLMProvider{}
 	workspace := t.TempDir()
-	manager := NewSubagentManager(provider, "test-model", workspace)
+	manager := NewSubagentManager(provider, "test-model", nil, workspace, config.TeamToolsConfig{}, nil)
 
 	now := time.Now().UnixMilli()
 	manager.mu.Lock()
@@ -140,7 +142,7 @@ func TestSpawnStatusTool_ListAll(t *testing.T) {
 
 func TestSpawnStatusTool_GetByID(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 
 	manager.mu.Lock()
 	manager.tasks["subagent-42"] = &SubagentTask{
@@ -175,7 +177,7 @@ func TestSpawnStatusTool_GetByID(t *testing.T) {
 
 func TestSpawnStatusTool_GetByID_NotFound(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 	tool := NewSpawnStatusTool(manager)
 
 	result := tool.Execute(context.Background(), map[string]any{"task_id": "nonexistent-999"})
@@ -189,7 +191,7 @@ func TestSpawnStatusTool_GetByID_NotFound(t *testing.T) {
 
 func TestSpawnStatusTool_TaskID_NonString(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 	tool := NewSpawnStatusTool(manager)
 
 	for _, badVal := range []any{42, 3.14, true, map[string]any{"x": 1}, []string{"a"}} {
@@ -205,7 +207,7 @@ func TestSpawnStatusTool_TaskID_NonString(t *testing.T) {
 
 func TestSpawnStatusTool_ResultTruncation(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 
 	longResult := strings.Repeat("X", 500)
 	manager.mu.Lock()
@@ -234,7 +236,7 @@ func TestSpawnStatusTool_ResultTruncation(t *testing.T) {
 
 func TestSpawnStatusTool_ResultTruncation_Unicode(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 
 	// Each CJK rune is 3 bytes; 400 runes = 1200 bytes — well over the 300-rune limit.
 	cjkChar := string(rune(0x5b57))
@@ -265,7 +267,7 @@ func TestSpawnStatusTool_ResultTruncation_Unicode(t *testing.T) {
 
 func TestSpawnStatusTool_StatusCounts(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 
 	manager.mu.Lock()
 	for i, status := range []string{"running", "running", "completed", "failed", "canceled"} {
@@ -290,7 +292,7 @@ func TestSpawnStatusTool_StatusCounts(t *testing.T) {
 
 func TestSpawnStatusTool_SortByCreatedTimestamp(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 
 	now := time.Now().UnixMilli()
 	manager.mu.Lock()
@@ -325,7 +327,7 @@ func TestSpawnStatusTool_SortByCreatedTimestamp(t *testing.T) {
 
 func TestSpawnStatusTool_ChannelFiltering_ListAll(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 
 	manager.mu.Lock()
 	manager.tasks["subagent-1"] = &SubagentTask{
@@ -357,7 +359,7 @@ func TestSpawnStatusTool_ChannelFiltering_ListAll(t *testing.T) {
 
 func TestSpawnStatusTool_ChannelFiltering_GetByID(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 
 	manager.mu.Lock()
 	manager.tasks["subagent-99"] = &SubagentTask{
@@ -379,7 +381,7 @@ func TestSpawnStatusTool_ChannelFiltering_GetByID(t *testing.T) {
 
 func TestSpawnStatusTool_ChannelFiltering_NoContext(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager := NewSubagentManager(provider, "test-model", nil, "/tmp/test", config.TeamToolsConfig{}, nil)
 
 	manager.mu.Lock()
 	manager.tasks["subagent-1"] = &SubagentTask{

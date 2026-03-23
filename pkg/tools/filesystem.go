@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
@@ -306,6 +307,13 @@ func (t *ReadFileTool) Parameters() map[string]any {
 	}
 }
 
+func (t *ReadFileTool) UpgradeToConcurrent() Tool {
+	return &ReadFileTool{
+		fs:      &ConcurrentFS{baseFS: t.fs},
+		maxSize: t.maxSize,
+	}
+}
+
 func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
@@ -521,6 +529,12 @@ func (t *WriteFileTool) Parameters() map[string]any {
 	}
 }
 
+func (t *WriteFileTool) UpgradeToConcurrent() Tool {
+	return &WriteFileTool{
+		fs: &ConcurrentFS{baseFS: t.fs},
+	}
+}
+
 func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
@@ -610,6 +624,7 @@ func formatDirEntries(entries []os.DirEntry) *ToolResult {
 type fileSystem interface {
 	ReadFile(path string) ([]byte, error)
 	WriteFile(path string, data []byte) error
+	EditFile(path string, editFn func([]byte) ([]byte, error)) error
 	ReadDir(path string) ([]os.DirEntry, error)
 	Open(path string) (fs.File, error)
 }
@@ -653,6 +668,18 @@ func (h *hostFs) Open(path string) (fs.File, error) {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	return f, nil
+}
+
+func (h *hostFs) EditFile(path string, editFn func([]byte) ([]byte, error)) error {
+	data, err := h.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	newData, err := editFn(data)
+	if err != nil {
+		return err
+	}
+	return h.WriteFile(path, newData)
 }
 
 // sandboxFs is a sandboxed fileSystem that operates within a strictly defined workspace using os.Root.
@@ -786,6 +813,18 @@ func (r *sandboxFs) Open(path string) (fs.File, error) {
 	return f, err
 }
 
+func (r *sandboxFs) EditFile(path string, editFn func([]byte) ([]byte, error)) error {
+	data, err := r.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	newData, err := editFn(data)
+	if err != nil {
+		return err
+	}
+	return r.WriteFile(path, newData)
+}
+
 // whitelistFs wraps a sandboxFs and allows access to specific paths outside
 // the workspace when they match any of the provided patterns.
 type whitelistFs struct {
@@ -826,6 +865,13 @@ func (w *whitelistFs) Open(path string) (fs.File, error) {
 	return w.sandbox.Open(path)
 }
 
+func (w *whitelistFs) EditFile(path string, editFn func([]byte) ([]byte, error)) error {
+	if w.matches(path) {
+		return w.host.EditFile(path, editFn)
+	}
+	return w.sandbox.EditFile(path, editFn)
+}
+
 // buildFs returns the appropriate fileSystem implementation based on restriction
 // settings and optional path whitelist patterns.
 func buildFs(workspace string, restrict bool, patterns []*regexp.Regexp) fileSystem {
@@ -859,4 +905,57 @@ func getSafeRelPath(workspace, path string) (string, error) {
 	}
 
 	return rel, nil
+}
+
+// ConcurrencyUpgradeable indicates a Tool operates on files and can be upgraded
+// to use a thread-safe locking proxy backend (`ConcurrentFS`) for Parallel or DAG agent teams.
+type ConcurrencyUpgradeable interface {
+	UpgradeToConcurrent() Tool
+}
+
+// Global file locks explicitly for concurrent agent strategies
+var globalFileLocks sync.Map // map[string]*sync.RWMutex
+
+func getPathLock(path string) *sync.RWMutex {
+	cleanPath := filepath.Clean(path)
+	actual, _ := globalFileLocks.LoadOrStore(cleanPath, &sync.RWMutex{})
+	return actual.(*sync.RWMutex)
+}
+
+// ConcurrentFS is a lightweight proxy wrapper around any `fileSystem`.
+// It guarantees thread-safe, race-condition-free access by locking the absolute file path globally.
+type ConcurrentFS struct {
+	baseFS fileSystem
+}
+
+func (c *ConcurrentFS) ReadFile(path string) ([]byte, error) {
+	lock := getPathLock(path)
+	lock.RLock()
+	defer lock.RUnlock()
+	return c.baseFS.ReadFile(path)
+}
+
+func (c *ConcurrentFS) WriteFile(path string, data []byte) error {
+	lock := getPathLock(path)
+	lock.Lock()
+	defer lock.Unlock()
+	return c.baseFS.WriteFile(path, data)
+}
+
+func (c *ConcurrentFS) EditFile(path string, editFn func([]byte) ([]byte, error)) error {
+	lock := getPathLock(path)
+	lock.Lock()
+	defer lock.Unlock()
+	return c.baseFS.EditFile(path, editFn)
+}
+
+func (c *ConcurrentFS) ReadDir(path string) ([]os.DirEntry, error) {
+	return c.baseFS.ReadDir(path)
+}
+
+func (c *ConcurrentFS) Open(path string) (fs.File, error) {
+	lock := getPathLock(path)
+	lock.RLock()
+	defer lock.RUnlock()
+	return c.baseFS.Open(path)
 }
