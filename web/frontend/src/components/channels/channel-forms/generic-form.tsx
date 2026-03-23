@@ -31,6 +31,9 @@ const SECRET_FIELDS = new Set([
   "password",
   "nickserv_password",
   "sasl_password",
+  "tls_ca",
+  "tls_cert",
+  "tls_key",
 ])
 
 // Fields to skip in the generic form (handled by enabled toggle or internal).
@@ -139,6 +142,15 @@ export function GenericForm({
       channels: t("channels.form.desc.channels"),
       request_caps: t("channels.form.desc.requestCaps"),
       max_base64_file_size_mib: t("channels.form.desc.maxBase64FileSizeMiB"),
+      broker: t("channels.form.desc.broker"),
+      subscribe_topics: t("channels.form.desc.subscribeTopics"),
+      subscribe_json_key: t("channels.form.desc.subscribeJsonKey"),
+      reply_topic: t("channels.form.desc.replyTopic"),
+      reply_json_key: t("channels.form.desc.replyJsonKey"),
+      qos: t("channels.form.desc.qos"),
+      retain: t("channels.form.desc.retain"),
+      prefix: t("channels.form.desc.prefix"),
+      instruction: t("channels.form.desc.instruction"),
     }
     return (
       descriptions[key] ??

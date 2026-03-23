@@ -29,6 +29,7 @@ var channelCatalog = []channelCatalogItem{
 	{Name: "maixcam", ConfigKey: "maixcam"},
 	{Name: "matrix", ConfigKey: "matrix"},
 	{Name: "irc", ConfigKey: "irc"},
+	{Name: "mqtt", ConfigKey: "mqtt"},
 }
 
 // registerChannelRoutes binds read-only channel catalog endpoints to the ServeMux.

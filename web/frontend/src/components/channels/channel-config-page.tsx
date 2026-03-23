@@ -166,6 +166,8 @@ function isConfigured(
       )
     case "irc":
       return asString(config.server) !== ""
+    case "mqtt":
+      return asString(config.broker) !== "" && asString(config.client_id) !== ""
     default:
       return false
   }
@@ -205,6 +207,8 @@ function getRequiredFieldKeys(channelName: string): string[] {
       return ["homeserver", "user_id", "access_token"]
     case "irc":
       return ["server"]
+    case "mqtt":
+      return ["broker", "client_id", "subscribe_topics"]
     default:
       return []
   }

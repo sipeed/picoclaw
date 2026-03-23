@@ -189,6 +189,19 @@ func validateConfig(cfg *config.Config) []string {
 		errs = append(errs, "channels.discord.token is required when discord channel is enabled")
 	}
 
+	// MQTT: broker and client_id required when enabled
+	if cfg.Channels.MQTT.Enabled {
+		if cfg.Channels.MQTT.Broker == "" {
+			errs = append(errs, "channels.mqtt.broker is required when mqtt channel is enabled")
+		}
+		if cfg.Channels.MQTT.ClientID == "" {
+			errs = append(errs, "channels.mqtt.client_id is required when mqtt channel is enabled")
+		}
+		if len(cfg.Channels.MQTT.SubscribeTopics) == 0 {
+			errs = append(errs, "channels.mqtt.subscribe_topics is required when mqtt channel is enabled")
+		}
+	}
+
 	if cfg.Tools.Exec.Enabled {
 		if cfg.Tools.Exec.EnableDenyPatterns {
 			errs = append(
