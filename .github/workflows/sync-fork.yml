@@ -1,0 +1,19 @@
+name: Sync Fork
+
+on:
+  schedule:
+    - cron: "0 * * * *" # Every hour at minute 0
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync fork with upstream
+        run: gh repo sync ${{ github.repository }} --source sipeed/picoclaw --branch main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
