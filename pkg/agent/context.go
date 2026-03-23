@@ -910,16 +910,6 @@ func messageSenderAnnotation(sender *providers.MessageSender) string {
 	}
 }
 
-// messageThreadAnnotation returns the thread annotation prefix for a message,
-// e.g. "[msg:#5, reply_to:#3] " or "" if the message has no threading IDs.
-func messageThreadAnnotation(msg providers.Message) string {
-	body := messageThreadAnnotationBody(msg)
-	if body == "" {
-		return ""
-	}
-	return fmt.Sprintf("[%s] ", body)
-}
-
 func messageThreadAnnotationBody(msg providers.Message) string {
 	msgIDs := msg.MessageIDs
 	formattedIDs := strings.Join(msgIDs, ",#")

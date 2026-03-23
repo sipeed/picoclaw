@@ -522,9 +522,10 @@ func TestContinueWithSteeringMessages_ReturnsTrackedAssistantDelivery(t *testing
 	}
 
 	sessionKey := "agent:test-continue-delivery"
-	response, err := al.continueWithSteeringMessages(context.Background(), defaultAgent, sessionKey, "test", "chat1", []providers.Message{
-		{Role: "user", Content: "new direction"},
-	})
+	response, err := al.continueWithSteeringMessages(
+		context.Background(), defaultAgent, sessionKey, "test", "chat1",
+		[]providers.Message{{Role: "user", Content: "new direction"}},
+	)
 	if err != nil {
 		t.Fatalf("continueWithSteeringMessages failed: %v", err)
 	}
