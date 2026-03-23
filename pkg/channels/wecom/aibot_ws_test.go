@@ -21,8 +21,8 @@ func newTestWSChannel(t *testing.T) *WeComAIBotWSChannel {
 	cfg := config.WeComAIBotConfig{
 		Enabled: true,
 		BotID:   "test_bot_id",
-		Secret:  "test_secret",
 	}
+	cfg.SetSecret("test_secret")
 	ch, err := newWeComAIBotWSChannel(cfg, bus.NewMessageBus())
 	if err != nil {
 		t.Fatalf("create WS channel: %v", err)

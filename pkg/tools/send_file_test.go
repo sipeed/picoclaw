@@ -104,6 +104,14 @@ func TestSendFileTool_Success(t *testing.T) {
 	if result.Media[0][:8] != "media://" {
 		t.Errorf("expected media:// ref, got %q", result.Media[0])
 	}
+
+	_, meta, err := store.ResolveWithMeta(result.Media[0])
+	if err != nil {
+		t.Fatalf("ResolveWithMeta failed: %v", err)
+	}
+	if meta.CleanupPolicy != media.CleanupPolicyForgetOnly {
+		t.Errorf("CleanupPolicy = %q, want %q", meta.CleanupPolicy, media.CleanupPolicyForgetOnly)
+	}
 }
 
 func TestSendFileTool_CustomFilename(t *testing.T) {

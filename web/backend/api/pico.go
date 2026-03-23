@@ -57,7 +57,7 @@ func (h *Handler) handleGetPicoToken(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":   cfg.Channels.Pico.Token,
+		"token":   cfg.Channels.Pico.Token(),
 		"ws_url":  wsURL,
 		"enabled": cfg.Channels.Pico.Enabled,
 	})
@@ -74,7 +74,7 @@ func (h *Handler) handleRegenPicoToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := generateSecureToken()
-	cfg.Channels.Pico.Token = token
+	cfg.Channels.Pico.SetToken(token)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -110,8 +110,8 @@ func (h *Handler) ensurePicoChannel(callerOrigin string) (bool, error) {
 		changed = true
 	}
 
-	if cfg.Channels.Pico.Token == "" {
-		cfg.Channels.Pico.Token = generateSecureToken()
+	if cfg.Channels.Pico.Token() == "" {
+		cfg.Channels.Pico.SetToken(generateSecureToken())
 		changed = true
 	}
 
@@ -150,7 +150,7 @@ func (h *Handler) handlePicoSetup(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":   cfg.Channels.Pico.Token,
+		"token":   cfg.Channels.Pico.Token(),
 		"ws_url":  wsURL,
 		"enabled": true,
 		"changed": changed,

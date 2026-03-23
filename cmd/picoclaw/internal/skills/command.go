@@ -31,7 +31,7 @@ func NewSkillsCommand() *cobra.Command {
 			d.workspace = cfg.WorkspacePath()
 			installer, err := skills.NewSkillInstaller(
 				d.workspace,
-				cfg.Tools.Skills.Github.Token,
+				cfg.Tools.Skills.Github.Token(),
 				cfg.Tools.Skills.Github.Proxy,
 			)
 			if err != nil {

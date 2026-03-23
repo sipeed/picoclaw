@@ -60,5 +60,6 @@ cmd/telegram/
 web/backend/dist/*
 !web/backend/dist/.gitkeep
 
+.claude/
 
 docker/data

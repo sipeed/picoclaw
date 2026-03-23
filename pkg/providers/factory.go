@@ -1,14 +1,8 @@
 package providers
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/sipeed/picoclaw/pkg/auth"
-	"github.com/sipeed/picoclaw/pkg/config"
 )
-
-const defaultAnthropicAPIBase = "https://api.anthropic.com/v1"
 
 var getCredential = auth.GetCredential
 

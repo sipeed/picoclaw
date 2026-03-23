@@ -147,6 +147,9 @@ export function ConfigPage() {
         const maxTokens = parseIntField(form.maxTokens, "Max tokens", {
           min: 1,
         })
+        const contextWindow = form.contextWindow.trim()
+          ? parseIntField(form.contextWindow, "Context window", { min: 1 })
+          : undefined
         const maxToolIterations = parseIntField(
           form.maxToolIterations,
           "Max tool iterations",
@@ -201,6 +204,7 @@ export function ConfigPage() {
               workspace,
               restrict_to_workspace: form.restrictToWorkspace,
               max_tokens: maxTokens,
+              context_window: contextWindow,
               max_tool_iterations: maxToolIterations,
               summarize_message_threshold: summarizeMessageThreshold,
               summarize_token_percent: summarizeTokenPercent,

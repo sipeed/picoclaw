@@ -107,6 +107,20 @@ export function AgentDefaultsSection({
       </Field>
 
       <Field
+        label={t("pages.config.context_window")}
+        hint={t("pages.config.context_window_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={1}
+          value={form.contextWindow}
+          onChange={(e) => onFieldChange("contextWindow", e.target.value)}
+          placeholder="131072"
+        />
+      </Field>
+
+      <Field
         label={t("pages.config.max_tool_iterations")}
         hint={t("pages.config.max_tool_iterations_hint")}
         layout="setting-row"

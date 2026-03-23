@@ -5,7 +5,7 @@
 ### Providers
 
 > [!NOTE]
-> Groq provides free voice transcription via Whisper. If configured, audio messages from any channel will be automatically transcribed at the agent level.
+> Voice transcription can use a configured multimodal model via `voice.model_name`. Groq Whisper remains available as a fallback when no voice model is configured.
 
 | Provider     | Purpose                                 | Get API Key                                                  |
 | ------------ | --------------------------------------- | ------------------------------------------------------------ |
@@ -96,6 +96,33 @@ This design also enables **multi-agent support** with flexible provider selectio
   "agents": {
     "defaults": {
       "model_name": "gpt-5.4"
+    }
+  }
+}
+```
+
+#### Voice Transcription
+
+You can configure a dedicated model for audio transcription with `voice.model_name`. This lets you reuse existing multimodal providers that support audio input instead of relying only on Groq.
+
+If `voice.model_name` is not configured, PicoClaw will continue to fall back to Groq transcription when a Groq API key is available.
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "voice-gemini",
+      "model": "gemini/gemini-2.5-flash",
+      "api_key": "your-gemini-key"
+    }
+  ],
+  "voice": {
+    "model_name": "voice-gemini",
+    "echo_transcription": false
+  },
+  "providers": {
+    "groq": {
+      "api_key": "gsk_xxx"
     }
   }
 }
@@ -343,6 +370,10 @@ picoclaw agent -m "Hello"
     "groq": {
       "api_key": "gsk_xxx"
     }
+  },
+  "voice": {
+    "model_name": "voice-gemini",
+    "echo_transcription": false
   },
   "channels": {
     "telegram": {
