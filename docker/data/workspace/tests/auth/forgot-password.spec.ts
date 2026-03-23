@@ -103,7 +103,7 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
     console.log('✅ PASS: Step 2 - Forgot password link clicked');
 
     // Step 3: Enter email and click Send Email
-    console.log('\n📍 Step 3: Enter email test@intnt.ai and click Send Email');
+    console.log('\n📍 Step 3: Enter email heidi@intnt.ai and click Send Email');
     const emailInputField = page.locator('.forgot-password-card .v-input input').first();
     await expect(emailInputField).toBeVisible();
     await emailInputField.fill(testEmail);
