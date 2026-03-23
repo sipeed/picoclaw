@@ -1577,7 +1577,9 @@ func (al *AgentLoop) processSystemMessage(
 		UserMessage:     fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content),
 		DefaultResponse: "Background task completed.",
 		EnableSummary:   false,
-		SendResponse:    true,
+		// System messages are synthetic inbound events, so there is no delivery
+		// callback chain from a channel send to feed assistant message IDs back.
+		SendResponse: true,
 	})
 }
 
