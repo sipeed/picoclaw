@@ -65,8 +65,3 @@ func DerefStr(s *string, fallback string) string {
 	}
 	return *s
 }
-
-// IsTruncationDisabled returns whether truncation is disabled globally
-func IsTruncationDisabled() bool {
-return disableTruncation.Load()
-}
