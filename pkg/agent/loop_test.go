@@ -554,6 +554,29 @@ func (m *simpleMockProvider) GetDefaultModel() string {
 	return "mock-model"
 }
 
+type reasoningContentProvider struct {
+	response         string
+	reasoningContent string
+}
+
+func (m *reasoningContentProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	return &providers.LLMResponse{
+		Content:          m.response,
+		ReasoningContent: m.reasoningContent,
+		ToolCalls:        []providers.ToolCall{},
+	}, nil
+}
+
+func (m *reasoningContentProvider) GetDefaultModel() string {
+	return "reasoning-content-model"
+}
+
 type countingMockProvider struct {
 	response string
 	calls    int
@@ -1686,6 +1709,62 @@ func TestHandleReasoning(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestProcessMessage_PublishesReasoningContentToReasoningChannel(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &reasoningContentProvider{
+		response:         "final answer",
+		reasoningContent: "thinking trace",
+	}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	chManager, err := channels.NewManager(&config.Config{}, msgBus, nil)
+	if err != nil {
+		t.Fatalf("Failed to create channel manager: %v", err)
+	}
+	chManager.RegisterChannel("telegram", &fakeChannel{id: "reason-chat"})
+	al.SetChannelManager(chManager)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "final answer" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "final answer")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Channel != "telegram" {
+			t.Fatalf("reasoning channel = %q, want %q", outbound.Channel, "telegram")
+		}
+		if outbound.ChatID != "reason-chat" {
+			t.Fatalf("reasoning chatID = %q, want %q", outbound.ChatID, "reason-chat")
+		}
+		if outbound.Content != "thinking trace" {
+			t.Fatalf("reasoning content = %q, want %q", outbound.Content, "thinking trace")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected reasoning content to be published to reasoning channel")
+	}
 }
 
 func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {

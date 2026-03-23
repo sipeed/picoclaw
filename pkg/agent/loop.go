@@ -2092,9 +2092,13 @@ turnLoop:
 			}
 		}
 
+		reasoningContent := response.Reasoning
+		if reasoningContent == "" {
+			reasoningContent = response.ReasoningContent
+		}
 		go al.handleReasoning(
 			turnCtx,
-			response.Reasoning,
+			reasoningContent,
 			ts.channel,
 			al.targetReasoningChannelID(ts.channel),
 		)
