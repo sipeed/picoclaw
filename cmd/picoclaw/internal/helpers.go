@@ -32,7 +32,7 @@ func LoadConfig() (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	logger.SetLevelFromString(cfg.Agents.Defaults.LogLevel)
+	logger.SetLevelFromString(cfg.Gateway.LogLevel)
 	return cfg, nil
 }
 

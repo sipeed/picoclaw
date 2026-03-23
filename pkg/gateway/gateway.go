@@ -85,7 +85,7 @@ func Run(debug bool, configPath string, allowEmptyStartup bool) error {
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
-	logger.SetLevelFromString(cfg.Agents.Defaults.LogLevel)
+	logger.SetLevelFromString(cfg.Gateway.LogLevel)
 
 	if debug {
 		logger.SetLevel(logger.DEBUG)

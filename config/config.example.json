@@ -1,7 +1,6 @@
 {
   "agents": {
     "defaults": {
-      "log_level": "fatal",
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
       "model_name": "gpt-5.4",
@@ -562,6 +561,7 @@
   "gateway": {
     "host": "127.0.0.1",
     "port": 18790,
-    "hot_reload": false
+    "hot_reload": false,
+    "log_level": "fatal"
   }
 }

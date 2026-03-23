@@ -285,7 +285,6 @@ type AgentDefaults struct {
 	SteeringMode              string             `json:"steering_mode,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_STEERING_MODE"` // "one-at-a-time" (default) or "all"
 	SubTurn                   SubTurnConfig      `json:"subturn"                                                                                     envPrefix:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_"`
 	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
-	LogLevel                  string             `json:"log_level,omitempty"             env:"PICOCLAW_LOG_LEVEL"`
 }
 
 const (
@@ -733,9 +732,10 @@ func (c *ModelConfig) Validate() error {
 }
 
 type GatewayConfig struct {
-	Host      string `json:"host"       env:"PICOCLAW_GATEWAY_HOST"`
-	Port      int    `json:"port"       env:"PICOCLAW_GATEWAY_PORT"`
-	HotReload bool   `json:"hot_reload" env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
+	Host		string	`json:"host"				env:"PICOCLAW_GATEWAY_HOST"`
+	Port		int		`json:"port"				env:"PICOCLAW_GATEWAY_PORT"`
+	HotReload	bool	`json:"hot_reload"			env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
+	LogLevel	string	`json:"log_level,omitempty"	env:"PICOCLAW_LOG_LEVEL"`
 }
 
 type ToolDiscoveryConfig struct {
