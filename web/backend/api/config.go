@@ -73,7 +73,7 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Infof("new config: %+v", cfg)
+	logger.Infof("configuration updated successfully")
 
 	if err := config.SaveConfig(h.configPath, &cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)

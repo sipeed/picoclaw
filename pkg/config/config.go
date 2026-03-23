@@ -1943,7 +1943,9 @@ func (c *Config) ValidateModelList() error {
 func (c *Config) SecurityCopyFrom(cfg *Config) {
 	c.security = cfg.security
 	if c.security != nil {
-		_ = applySecurityConfig(c, c.security)
+		if err := applySecurityConfig(c, c.security); err != nil {
+			logger.Errorf("failed to apply security config in SecurityCopyFrom: %v", err)
+		}
 	}
 }
 
