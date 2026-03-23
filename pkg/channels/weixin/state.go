@@ -46,7 +46,7 @@ func picoclawHomeDir() string {
 
 func buildWeixinSyncBufPath(cfg config.WeixinConfig) string {
 	key := "default"
-	token := strings.TrimSpace(cfg.Token())
+	token := strings.TrimSpace(cfg.Token.String())
 	if token != "" {
 		sum := sha256.Sum256([]byte(strings.TrimSpace(cfg.BaseURL) + "|" + token))
 		key = hex.EncodeToString(sum[:8])

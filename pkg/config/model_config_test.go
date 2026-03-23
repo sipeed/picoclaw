@@ -13,20 +13,13 @@ import (
 )
 
 func TestGetModelConfig_Found(t *testing.T) {
-	cfg := (&Config{
+	cfg := &Config{
 		Version: CurrentVersion,
 		ModelList: []*ModelConfig{
-			{ModelName: "test-model", Model: "openai/gpt-4o"},
-			{ModelName: "other-model", Model: "anthropic/claude"},
+			{ModelName: "test-model", Model: "openai/gpt-4o", APIKeys: SimpleSecureStrings("key1")},
+			{ModelName: "other-model", Model: "anthropic/claude", APIKeys: SimpleSecureStrings("key2")},
 		},
-	}).WithSecurity(&SecurityConfig{ModelList: map[string]ModelSecurityEntry{
-		"test-model:0": {
-			APIKeys: []string{"key1"},
-		},
-		"other-model:0": {
-			APIKeys: []string{"key2"},
-		},
-	}})
+	}
 
 	result, err := cfg.GetModelConfig("test-model")
 	if err != nil {
@@ -38,17 +31,11 @@ func TestGetModelConfig_Found(t *testing.T) {
 }
 
 func TestGetModelConfig_NotFound(t *testing.T) {
-	cfg := (&Config{
+	cfg := &Config{
 		ModelList: []*ModelConfig{
-			{ModelName: "test-model", Model: "openai/gpt-4o"},
+			{ModelName: "test-model", Model: "openai/gpt-4o", APIKeys: SimpleSecureStrings("key1")},
 		},
-	}).WithSecurity(&SecurityConfig{
-		ModelList: map[string]ModelSecurityEntry{
-			"test-model:0": {
-				APIKeys: []string{"key1"},
-			},
-		},
-	})
+	}
 
 	_, err := cfg.GetModelConfig("nonexistent")
 	if err == nil {
@@ -68,25 +55,13 @@ func TestGetModelConfig_EmptyList(t *testing.T) {
 }
 
 func TestGetModelConfig_RoundRobin(t *testing.T) {
-	cfg := (&Config{
+	cfg := &Config{
 		ModelList: []*ModelConfig{
-			{ModelName: "lb-model", Model: "openai/gpt-4o-1"},
-			{ModelName: "lb-model", Model: "openai/gpt-4o-2"},
-			{ModelName: "lb-model", Model: "openai/gpt-4o-3"},
+			{ModelName: "lb-model", Model: "openai/gpt-4o-1", APIKeys: SimpleSecureStrings("key1")},
+			{ModelName: "lb-model", Model: "openai/gpt-4o-2", APIKeys: SimpleSecureStrings("key2")},
+			{ModelName: "lb-model", Model: "openai/gpt-4o-3", APIKeys: SimpleSecureStrings("key3")},
 		},
-	}).WithSecurity(&SecurityConfig{
-		ModelList: map[string]ModelSecurityEntry{
-			"lb-model:0": {
-				APIKeys: []string{"key1"},
-			},
-			"lb-model:1": {
-				APIKeys: []string{"key2"},
-			},
-			"lb-model:2": {
-				APIKeys: []string{"key3"},
-			},
-		},
-	})
+	}
 
 	// Test round-robin distribution
 	results := make(map[string]int)
@@ -111,9 +86,9 @@ func TestGetModelConfig_RoundRobinStartsFromFirstMatch(t *testing.T) {
 
 	cfg := &Config{
 		ModelList: []*ModelConfig{
-			{ModelName: "lb-model", Model: "openai/gpt-4o-1", apiKeys: []string{"key1"}},
-			{ModelName: "lb-model", Model: "openai/gpt-4o-2", apiKeys: []string{"key2"}},
-			{ModelName: "lb-model", Model: "openai/gpt-4o-3", apiKeys: []string{"key3"}},
+			{ModelName: "lb-model", Model: "openai/gpt-4o-1", APIKeys: SimpleSecureStrings("key1")},
+			{ModelName: "lb-model", Model: "openai/gpt-4o-2", APIKeys: SimpleSecureStrings("key2")},
+			{ModelName: "lb-model", Model: "openai/gpt-4o-3", APIKeys: SimpleSecureStrings("key3")},
 		},
 	}
 
@@ -139,8 +114,8 @@ func TestGetModelConfig_RoundRobinStartsFromFirstMatch(t *testing.T) {
 func TestGetModelConfig_Concurrent(t *testing.T) {
 	cfg := &Config{
 		ModelList: []*ModelConfig{
-			{ModelName: "concurrent-model", Model: "openai/gpt-4o-1", apiKeys: []string{"key1"}},
-			{ModelName: "concurrent-model", Model: "openai/gpt-4o-2", apiKeys: []string{"key2"}},
+			{ModelName: "concurrent-model", Model: "openai/gpt-4o-1", APIKeys: SimpleSecureStrings("key1")},
+			{ModelName: "concurrent-model", Model: "openai/gpt-4o-2", APIKeys: SimpleSecureStrings("key2")},
 		},
 	}
 

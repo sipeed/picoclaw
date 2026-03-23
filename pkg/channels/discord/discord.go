@@ -53,7 +53,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 			discordgo.LogDebug:         logger.DEBUG,
 		}).Log
 
-	session, err := discordgo.New("Bot " + cfg.Token())
+	session, err := discordgo.New("Bot " + cfg.Token.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
 	}

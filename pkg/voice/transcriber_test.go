@@ -20,89 +20,72 @@ func TestDetectTranscriber(t *testing.T) {
 		},
 		{
 			name: "voice model name selects audio model transcriber",
-			cfg: (&config.Config{
+			cfg: &config.Config{
 				Voice: config.VoiceConfig{ModelName: "voice-gemini"},
 				ModelList: []*config.ModelConfig{
-					{ModelName: "voice-gemini", Model: "gemini/gemini-2.5-flash"},
-				},
-			}).WithSecurity(&config.SecurityConfig{
-				ModelList: map[string]config.ModelSecurityEntry{
-					"voice-gemini": {
-						APIKeys: []string{"sk-gemini-model"},
+					{
+						ModelName: "voice-gemini",
+						Model:     "gemini/gemini-2.5-flash",
+						APIKeys:   config.SimpleSecureStrings("sk-gemini-model"),
 					},
 				},
-			}),
+			},
 			wantName: "audio-model",
 		},
 		{
 			name: "groq via model list",
-			cfg: (&config.Config{
+			cfg: &config.Config{
 				ModelList: []*config.ModelConfig{
-					{ModelName: "openai", Model: "openai/gpt-4o"},
-					{ModelName: "groq", Model: "groq/llama-3.3-70b"},
-				},
-			}).WithSecurity(&config.SecurityConfig{
-				ModelList: map[string]config.ModelSecurityEntry{
-					"openai": {
-						APIKeys: []string{"sk-openai"},
-					},
-					"groq": {
-						APIKeys: []string{"sk-groq-model"},
+					{ModelName: "openai", Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("sk-openai")},
+					{
+						ModelName: "groq",
+						Model:     "groq/llama-3.3-70b",
+						APIKeys:   config.SimpleSecureStrings("sk-groq-model"),
 					},
 				},
-			}),
+			},
 			wantName: "groq",
 		},
 		{
 			name: "voice model name selects non-gemini audio model transcriber",
-			cfg: (&config.Config{
+			cfg: &config.Config{
 				Voice: config.VoiceConfig{ModelName: "voice-openai-audio"},
 				ModelList: []*config.ModelConfig{
-					{ModelName: "voice-openai-audio", Model: "openai/gpt-4o-audio-preview"},
-				},
-			}).WithSecurity(&config.SecurityConfig{
-				ModelList: map[string]config.ModelSecurityEntry{
-					"voice-openai-audio": {
-						APIKeys: []string{"sk-openai"},
+					{
+						ModelName: "voice-openai-audio",
+						Model:     "openai/gpt-4o-audio-preview",
+						APIKeys:   config.SimpleSecureStrings("sk-openai"),
 					},
 				},
-			}),
+			},
 			wantName: "audio-model",
 		},
 		{
 			name: "voice model name selects azure audio model transcriber",
-			cfg: (&config.Config{
+			cfg: &config.Config{
 				Voice: config.VoiceConfig{ModelName: "voice-azure-audio"},
 				ModelList: []*config.ModelConfig{
 					{
 						ModelName: "voice-azure-audio",
-						Model:     "azure/my-audio-deployment",
-						APIBase:   "https://example.openai.azure.com",
+						Model:     "azure/my-audio-deployment", APIKeys: config.SimpleSecureStrings("sk-azure"),
+						APIBase: "https://example.openai.azure.com",
 					},
 				},
-			}).WithSecurity(&config.SecurityConfig{
-				ModelList: map[string]config.ModelSecurityEntry{
-					"voice-azure-audio": {
-						APIKeys: []string{"sk-azure"},
-					},
-				},
-			}),
+			},
 			wantName: "audio-model",
 		},
 		{
 			name: "voice model name with non openai compatible protocol does not select audio model transcriber",
-			cfg: (&config.Config{
+			cfg: &config.Config{
 				Voice: config.VoiceConfig{ModelName: "voice-anthropic"},
 				ModelList: []*config.ModelConfig{
-					{ModelName: "voice-anthropic", Model: "anthropic/claude-sonnet-4.6"},
-				},
-			}).WithSecurity(&config.SecurityConfig{
-				ModelList: map[string]config.ModelSecurityEntry{
-					"voice-anthropic": {
-						APIKeys: []string{"sk-anthropic"},
+					{
+						ModelName: "voice-anthropic",
+						Model:     "anthropic/claude-sonnet-4.6",
+						APIKeys:   config.SimpleSecureStrings("sk-anthropic"),
 					},
 				},
-			}),
+			},
 			wantNil: true,
 		},
 		{
@@ -116,33 +99,29 @@ func TestDetectTranscriber(t *testing.T) {
 		},
 		{
 			name: "provider key takes priority over model list",
-			cfg: (&config.Config{
+			cfg: &config.Config{
 				ModelList: []*config.ModelConfig{
-					{ModelName: "groq", Model: "groq/llama-3.3-70b"},
-				},
-			}).WithSecurity(&config.SecurityConfig{
-				ModelList: map[string]config.ModelSecurityEntry{
-					"groq": {
-						APIKeys: []string{"sk-groq-model"},
+					{
+						ModelName: "groq",
+						Model:     "groq/llama-3.3-70b",
+						APIKeys:   config.SimpleSecureStrings("sk-groq-model"),
 					},
 				},
-			}),
+			},
 			wantName: "groq",
 		},
 		{
 			name: "missing voice model name config returns nil",
-			cfg: (&config.Config{
+			cfg: &config.Config{
 				Voice: config.VoiceConfig{ModelName: "missing"},
 				ModelList: []*config.ModelConfig{
-					{ModelName: "other", Model: "gemini/gemini-2.5-flash"},
-				},
-			}).WithSecurity(&config.SecurityConfig{
-				ModelList: map[string]config.ModelSecurityEntry{
-					"other": {
-						APIKeys: []string{"sk-other-model"},
+					{
+						ModelName: "other",
+						Model:     "gemini/gemini-2.5-flash",
+						APIKeys:   config.SimpleSecureStrings("sk-other-model"),
 					},
 				},
-			}),
+			},
 			wantNil: true,
 		},
 		{
@@ -154,37 +133,33 @@ func TestDetectTranscriber(t *testing.T) {
 		},
 		{
 			name: "elevenlabs takes priority over groq model list",
-			cfg: (&config.Config{
+			cfg: &config.Config{
 				Voice: config.VoiceConfig{ElevenLabsAPIKey: "sk_elevenlabs_test"},
 				ModelList: []*config.ModelConfig{
-					{ModelName: "groq", Model: "groq/llama-3.3-70b"},
-				},
-			}).WithSecurity(&config.SecurityConfig{
-				ModelList: map[string]config.ModelSecurityEntry{
-					"groq": {
-						APIKeys: []string{"sk-groq-direct"},
+					{
+						ModelName: "groq",
+						Model:     "groq/llama-3.3-70b",
+						APIKeys:   config.SimpleSecureStrings("sk-groq-model"),
 					},
 				},
-			}),
+			},
 			wantName: "elevenlabs",
 		},
 		{
 			name: "voice model name takes priority over elevenlabs",
-			cfg: (&config.Config{
+			cfg: &config.Config{
 				Voice: config.VoiceConfig{
 					ModelName:        "voice-gemini",
 					ElevenLabsAPIKey: "sk_elevenlabs_test",
 				},
 				ModelList: []*config.ModelConfig{
-					{ModelName: "voice-gemini", Model: "gemini/gemini-2.5-flash"},
-				},
-			}).WithSecurity(&config.SecurityConfig{
-				ModelList: map[string]config.ModelSecurityEntry{
-					"voice-gemini": {
-						APIKeys: []string{"sk-gemini-model"},
+					{
+						ModelName: "voice-gemini",
+						Model:     "gemini/gemini-2.5-flash",
+						APIKeys:   config.SimpleSecureStrings("sk-gemini-model"),
 					},
 				},
-			}),
+			},
 			wantName: "audio-model",
 		},
 	}

@@ -9,7 +9,7 @@ func TestExpandMultiKeyModels_SingleKey(t *testing.T) {
 		{
 			ModelName: "gpt-4",
 			Model:     "openai/gpt-4o",
-			apiKeys:   []string{"single-key"},
+			APIKeys:   SimpleSecureStrings("single-key"),
 		},
 	}
 
@@ -38,7 +38,7 @@ func TestExpandMultiKeyModels_APIKeysOnly(t *testing.T) {
 			ModelName: "glm-4.7",
 			Model:     "zhipu/glm-4.7",
 			APIBase:   "https://api.example.com",
-			apiKeys:   []string{"key1", "key2", "key3"},
+			APIKeys:   SimpleSecureStrings("key1", "key2", "key3"),
 		},
 	}
 
@@ -91,7 +91,7 @@ func TestExpandMultiKeyModels_APIKeyAndAPIKeys(t *testing.T) {
 		{
 			ModelName: "gpt-4",
 			Model:     "openai/gpt-4o",
-			apiKeys:   []string{"key0", "key1", "key2"},
+			APIKeys:   SimpleSecureStrings("key0", "key1", "key2"),
 		},
 	}
 
@@ -117,7 +117,7 @@ func TestExpandMultiKeyModels_WithExistingFallbacks(t *testing.T) {
 		ModelName: "gpt-4",
 		Model:     "openai/gpt-4o",
 	}
-	modelCfg.apiKeys = []string{"key0", "key1"} // Use internal field for multi-key testing
+	modelCfg.APIKeys = SimpleSecureStrings("key0", "key1") // Use internal field for multi-key testing
 	modelCfg.Fallbacks = []string{"claude-3"}
 	models := []*ModelConfig{modelCfg}
 
@@ -143,7 +143,7 @@ func TestExpandMultiKeyModels_EmptyAPIKeys(t *testing.T) {
 		{
 			ModelName: "gpt-4",
 			Model:     "openai/gpt-4o",
-			apiKeys:   []string{},
+			APIKeys:   SimpleSecureStrings(),
 		},
 	}
 
@@ -164,7 +164,7 @@ func TestExpandMultiKeyModels_Deduplication(t *testing.T) {
 		{
 			ModelName: "gpt-4",
 			Model:     "openai/gpt-4o",
-			apiKeys:   []string{"key1", "key2", "key1"}, // Duplicate key1
+			APIKeys:   SimpleSecureStrings("key1", "key2", "key1"), // Duplicate key1
 		},
 	}
 
@@ -196,7 +196,7 @@ func TestExpandMultiKeyModels_PreservesOtherFields(t *testing.T) {
 		RequestTimeout: 30,
 		ThinkingLevel:  "high",
 	}
-	modelCfg.apiKeys = []string{"key0", "key1"} // Use internal field for multi-key testing
+	modelCfg.APIKeys = SimpleSecureStrings("key0", "key1") // Use internal field for multi-key testing
 	models := []*ModelConfig{modelCfg}
 
 	result := expandMultiKeyModels(models)
@@ -237,7 +237,7 @@ func TestExpandMultiKeyModels_IsVirtualFlag(t *testing.T) {
 		{
 			ModelName: "gpt-4",
 			Model:     "openai/gpt-4o",
-			apiKeys:   []string{"key1", "key2", "key3"},
+			APIKeys:   SimpleSecureStrings("key1", "key2", "key3"),
 		},
 	}
 
@@ -288,7 +288,7 @@ func TestExpandMultiKeyModels_SingleKey_NotVirtual(t *testing.T) {
 		{
 			ModelName: "gpt-4",
 			Model:     "openai/gpt-4o",
-			apiKeys:   []string{"single-key"},
+			APIKeys:   SimpleSecureStrings("single-key"),
 		},
 	}
 

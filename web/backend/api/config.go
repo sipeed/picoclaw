@@ -58,12 +58,11 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Load existing config and copy security credentials before validation,
 	// so that security-managed fields (e.g. pico token) are available.
-	oldCfg, err := config.LoadConfig(h.configPath)
+	err = cfg.SecurityCopyFrom(h.configPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Failed to apply security config: %v", err), http.StatusInternalServerError)
 		return
 	}
-	cfg.SecurityCopyFrom(oldCfg)
 
 	if errs := validateConfig(&cfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -149,15 +148,14 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var newCfg config.Config
-	if err := json.Unmarshal(merged, &newCfg); err != nil {
+	if err = json.Unmarshal(merged, &newCfg); err != nil {
 		http.Error(w, fmt.Sprintf("Merged config is invalid: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	// Restore security fields (tokens/keys) from the loaded config before validation,
 	// because private fields are lost during JSON round-trip.
-	newCfg.SecurityCopyFrom(cfg)
-	if err := newCfg.ApplySecurity(); err != nil {
+	if err = newCfg.SecurityCopyFrom(h.configPath); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to apply security config: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -261,17 +259,17 @@ func validateConfig(cfg *config.Config) []string {
 	}
 
 	// Pico channel: token required when enabled
-	if cfg.Channels.Pico.Enabled && cfg.Channels.Pico.Token() == "" {
+	if cfg.Channels.Pico.Enabled && cfg.Channels.Pico.Token.String() == "" {
 		errs = append(errs, "channels.pico.token is required when pico channel is enabled")
 	}
 
 	// Telegram: token required when enabled
-	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token() == "" {
+	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token.String() == "" {
 		errs = append(errs, "channels.telegram.token is required when telegram channel is enabled")
 	}
 
 	// Discord: token required when enabled
-	if cfg.Channels.Discord.Enabled && cfg.Channels.Discord.Token() == "" {
+	if cfg.Channels.Discord.Enabled && cfg.Channels.Discord.Token.String() == "" {
 		errs = append(errs, "channels.discord.token is required when discord channel is enabled")
 	}
 
@@ -279,7 +277,7 @@ func validateConfig(cfg *config.Config) []string {
 		if cfg.Channels.WeCom.BotID == "" {
 			errs = append(errs, "channels.wecom.bot_id is required when wecom channel is enabled")
 		}
-		if cfg.Channels.WeCom.Secret() == "" {
+		if cfg.Channels.WeCom.Secret.String() == "" {
 			errs = append(errs, "channels.wecom.secret is required when wecom channel is enabled")
 		}
 	}

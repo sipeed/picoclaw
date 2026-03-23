@@ -200,7 +200,7 @@ func NewMatrixChannel(
 ) (*MatrixChannel, error) {
 	homeserver := strings.TrimSpace(cfg.Homeserver)
 	userID := strings.TrimSpace(cfg.UserID)
-	accessToken := strings.TrimSpace(cfg.AccessToken())
+	accessToken := strings.TrimSpace(cfg.AccessToken.String())
 	if homeserver == "" {
 		return nil, fmt.Errorf("matrix homeserver is required")
 	}

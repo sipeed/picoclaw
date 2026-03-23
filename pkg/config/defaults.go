@@ -519,11 +519,5 @@ func DefaultConfig() *Config {
 			BuildTime: BuildTime,
 			GoVersion: GoVersion,
 		},
-		security: &SecurityConfig{
-			ModelList: map[string]ModelSecurityEntry{},
-			Channels:  &ChannelsSecurity{},
-			Web:       &WebToolsSecurity{},
-			Skills:    &SkillsSecurity{},
-		},
 	}
 }

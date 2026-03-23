@@ -70,7 +70,7 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) er
 		ClawHub: skills.ClawHubConfig{
 			Enabled:         clawHubConfig.Enabled,
 			BaseURL:         clawHubConfig.BaseURL,
-			AuthToken:       clawHubConfig.AuthToken(),
+			AuthToken:       clawHubConfig.AuthToken.String(),
 			SearchPath:      clawHubConfig.SearchPath,
 			SkillsPath:      clawHubConfig.SkillsPath,
 			DownloadPath:    clawHubConfig.DownloadPath,
@@ -243,7 +243,7 @@ func skillsSearchCmd(query string) {
 		ClawHub: skills.ClawHubConfig{
 			Enabled:         clawHubConfig.Enabled,
 			BaseURL:         clawHubConfig.BaseURL,
-			AuthToken:       clawHubConfig.AuthToken(),
+			AuthToken:       clawHubConfig.AuthToken.String(),
 			SearchPath:      clawHubConfig.SearchPath,
 			SkillsPath:      clawHubConfig.SkillsPath,
 			DownloadPath:    clawHubConfig.DownloadPath,

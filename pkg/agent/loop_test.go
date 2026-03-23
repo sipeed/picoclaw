@@ -1467,24 +1467,16 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 				ModelName: "local",
 				Model:     "openai/local-model",
 				APIBase:   "https://local.example.invalid/v1",
+				APIKeys:   config.SimpleSecureStrings("test-key"),
 			},
 			{
 				ModelName: "deepseek",
 				Model:     "openrouter/deepseek/deepseek-v3.2",
 				APIBase:   "https://openrouter.ai/api/v1",
+				APIKeys:   config.SimpleSecureStrings("test-key"),
 			},
 		},
 	}
-	cfg.WithSecurity(&config.SecurityConfig{
-		ModelList: map[string]config.ModelSecurityEntry{
-			"local": {
-				APIKeys: []string{"test-key"},
-			},
-			"deepseek": {
-				APIKeys: []string{"test-key"},
-			},
-		},
-	})
 
 	msgBus := bus.NewMessageBus()
 	provider := &countingMockProvider{response: "LLM reply"}
@@ -1546,16 +1538,10 @@ func TestProcessMessage_SwitchModelRejectsUnknownAlias(t *testing.T) {
 				ModelName: "local",
 				Model:     "openai/local-model",
 				APIBase:   "https://local.example.invalid/v1",
+				APIKeys:   config.SimpleSecureStrings("test-key"),
 			},
 		},
 	}
-	cfg.WithSecurity(&config.SecurityConfig{
-		ModelList: map[string]config.ModelSecurityEntry{
-			"local": {
-				APIKeys: []string{"test-key"},
-			},
-		},
-	})
 
 	msgBus := bus.NewMessageBus()
 	provider := &countingMockProvider{response: "LLM reply"}
@@ -1627,24 +1613,16 @@ func TestProcessMessage_SwitchModelRoutesSubsequentRequestsToSelectedProvider(t 
 				ModelName: "local",
 				Model:     "openai/Qwen3.5-35B-A3B",
 				APIBase:   localServer.URL,
+				APIKeys:   config.SimpleSecureStrings("local-key"),
 			},
 			{
 				ModelName: "deepseek",
 				Model:     "openrouter/deepseek/deepseek-v3.2",
 				APIBase:   remoteServer.URL,
+				APIKeys:   config.SimpleSecureStrings("remote-key"),
 			},
 		},
 	}
-	cfg.WithSecurity(&config.SecurityConfig{
-		ModelList: map[string]config.ModelSecurityEntry{
-			"local": {
-				APIKeys: []string{"local-key"},
-			},
-			"deepseek": {
-				APIKeys: []string{"remote-key"},
-			},
-		},
-	})
 
 	msgBus := bus.NewMessageBus()
 	provider, _, err := providers.CreateProvider(cfg)
