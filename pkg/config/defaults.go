@@ -440,6 +440,12 @@ func DefaultConfig() *Config {
 				EnableDenyPatterns: true,
 				AllowRemote:        true,
 				TimeoutSeconds:     60,
+				Tirith: TirithConfig{
+					Enabled:  true,
+					BinPath:  "tirith",
+					Timeout:  5,
+					FailOpen: true,
+				},
 			},
 			Skills: SkillsToolsConfig{
 				ToolConfig: ToolConfig{

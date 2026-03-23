@@ -26,6 +26,7 @@ type ExecTool struct {
 	allowedPathPatterns []*regexp.Regexp
 	restrictToWorkspace bool
 	allowRemote         bool
+	tirithConfig        TirithConfig
 }
 
 var (
@@ -150,6 +151,22 @@ func NewExecToolWithConfig(
 		timeout = time.Duration(config.Tools.Exec.TimeoutSeconds) * time.Second
 	}
 
+	tirithCfg := TirithConfig{
+		Enabled:  true,
+		BinPath:  "tirith",
+		Timeout:  5,
+		FailOpen: true,
+	}
+	if config != nil {
+		tc := config.Tools.Exec.Tirith
+		tirithCfg = TirithConfig{
+			Enabled:  tc.Enabled,
+			BinPath:  tc.BinPath,
+			Timeout:  tc.Timeout,
+			FailOpen: tc.FailOpen,
+		}
+	}
+
 	return &ExecTool{
 		workingDir:          workingDir,
 		timeout:             timeout,
@@ -159,6 +176,7 @@ func NewExecToolWithConfig(
 		allowedPathPatterns: allowedPathPatterns,
 		restrictToWorkspace: restrict,
 		allowRemote:         allowRemote,
+		tirithConfig:        tirithCfg,
 	}, nil
 }
 
@@ -228,6 +246,11 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	if guardError := t.guardCommand(command, cwd); guardError != "" {
 		return ErrorResult(guardError)
+	}
+
+	// Tirith content-level security gate (after cheap regex guards)
+	if tirithError := tirithGuard(command, t.tirithConfig); tirithError != "" {
+		return ErrorResult(tirithError)
 	}
 
 	// Re-resolve symlinks immediately before execution to shrink the TOCTOU window
