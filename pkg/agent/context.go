@@ -927,14 +927,10 @@ func messageThreadAnnotationBody(msg providers.Message) string {
 		formattedIDs = "#" + formattedIDs
 	}
 	switch {
-	case len(msgIDs) > 1 && msg.ReplyToMessageID != "":
+	case len(msgIDs) > 0 && msg.ReplyToMessageID != "":
 		return fmt.Sprintf("msgs:%s, reply_to:#%s", formattedIDs, msg.ReplyToMessageID)
-	case len(msgIDs) > 1:
+	case len(msgIDs) > 0:
 		return fmt.Sprintf("msgs:%s", formattedIDs)
-	case len(msgIDs) == 1 && msg.ReplyToMessageID != "":
-		return fmt.Sprintf("msg:%s, reply_to:#%s", formattedIDs, msg.ReplyToMessageID)
-	case len(msgIDs) == 1:
-		return fmt.Sprintf("msg:%s", formattedIDs)
 	case msg.ReplyToMessageID != "":
 		return fmt.Sprintf("reply_to:#%s", msg.ReplyToMessageID)
 	default:

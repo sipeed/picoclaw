@@ -226,7 +226,7 @@ func TestMessageHistoryAnnotation_IncludesSenderAndThreading(t *testing.T) {
 		},
 	}
 
-	if got := messageHistoryAnnotation(msg); got != "[from:Alice Example (@alice), msg:#m1, reply_to:#p0] " {
+	if got := messageHistoryAnnotation(msg); got != "[from:Alice Example (@alice), msgs:#m1, reply_to:#p0] " {
 		t.Fatalf("messageHistoryAnnotation() = %q", got)
 	}
 }
