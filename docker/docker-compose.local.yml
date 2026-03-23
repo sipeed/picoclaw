@@ -14,8 +14,8 @@ services:
     userns_mode: "keep-id"
     user: "${UID:-1000}:${GID:-1000}"
     container_name: picoclaw-agent
-    # default: turns off SELinux for easier to run and test
-    # change or remove label=disable on production and employ seccomp policy instead
+    # Default: SELinux disabled for testing. In production, remove 'label=disable'
+    # and implement a seccomp profile for better security.
     security_opt:
       - label=disable
     profiles:
@@ -25,7 +25,7 @@ services:
     #  - "host.docker.internal:host-gateway"
     environment:
       - PICOCLAW_HOME=/home/picoclaw/.picoclaw
-    # Uncomment to make healtcheck works on podman pod model
+    # Uncomment for Podman pod health check compatibility
     #  - PICOCLAW_GATEWAY_HOST=0.0.0.0
     volumes:
       - ./data:/home/picoclaw/.picoclaw:Z
@@ -44,8 +44,8 @@ services:
       dockerfile: docker/Dockerfile
     userns_mode: "keep-id"
     user: "${UID:-1000}:${GID:-1000}"
-    # default: turns off SELinux for easier to run and test
-    # change or remove label=disable on production and employ seccomp policy instead
+    # Default: SELinux disabled for testing. In production, remove 'label=disable'
+    # and implement a seccomp profile for better security.
     security_opt:
       - label=disable
     container_name: picoclaw-gateway
@@ -57,7 +57,7 @@ services:
     #  - "host.docker.internal:host-gateway"
     environment:
       - PICOCLAW_HOME=/home/picoclaw/.picoclaw
-    # Uncomment to make healtcheck works on podman pod model
+    # Uncomment for Podman pod health check compatibility
     #  - PICOCLAW_GATEWAY_HOST=0.0.0.0
     volumes:
       - ./data:/home/picoclaw/.picoclaw:Z
