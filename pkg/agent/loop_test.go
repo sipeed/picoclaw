@@ -1018,6 +1018,40 @@ func (m *artifactThenSendProvider) GetDefaultModel() string {
 	return "artifact-then-send-model"
 }
 
+type toolFeedbackProvider struct {
+	filePath string
+	calls    int
+}
+
+func (m *toolFeedbackProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_heartbeat_read_file",
+				Type:      "function",
+				Name:      "read_file",
+				Arguments: map[string]any{"path": m.filePath},
+			}},
+		}, nil
+	}
+
+	return &providers.LLMResponse{
+		Content:   "HEARTBEAT_OK",
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *toolFeedbackProvider) GetDefaultModel() string {
+	return "heartbeat-tool-feedback-model"
+}
+
 type toolLimitOnlyProvider struct{}
 
 func (m *toolLimitOnlyProvider) Chat(
@@ -2310,6 +2344,112 @@ func TestProcessMessage_PublishesReasoningContentToReasoningChannel(t *testing.T
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected reasoning content to be published to reasoning channel")
+	}
+}
+
+func TestProcessHeartbeat_DoesNotPublishToolFeedback(t *testing.T) {
+	tmpDir := t.TempDir()
+	heartbeatFile := filepath.Join(tmpDir, "heartbeat-task.txt")
+	if err := os.WriteFile(heartbeatFile, []byte("heartbeat task"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ToolFeedback: config.ToolFeedbackConfig{
+					Enabled:       true,
+					MaxArgsLength: 300,
+				},
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{
+				Enabled: true,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &toolFeedbackProvider{filePath: heartbeatFile}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.ProcessHeartbeat(context.Background(), "check heartbeat tasks", "telegram", "chat-1")
+	if err != nil {
+		t.Fatalf("ProcessHeartbeat() error = %v", err)
+	}
+	if response != "HEARTBEAT_OK" {
+		t.Fatalf("ProcessHeartbeat() response = %q, want %q", response, "HEARTBEAT_OK")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		t.Fatalf("expected no outbound tool feedback during heartbeat, got %+v", outbound)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestProcessMessage_PublishesToolFeedbackWhenEnabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	heartbeatFile := filepath.Join(tmpDir, "tool-feedback.txt")
+	if err := os.WriteFile(heartbeatFile, []byte("tool feedback task"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ToolFeedback: config.ToolFeedbackConfig{
+					Enabled:       true,
+					MaxArgsLength: 300,
+				},
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{
+				Enabled: true,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &toolFeedbackProvider{filePath: heartbeatFile}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user-1",
+		ChatID:   "chat-1",
+		Content:  "check tool feedback",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "HEARTBEAT_OK" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "HEARTBEAT_OK")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Channel != "telegram" {
+			t.Fatalf("tool feedback channel = %q, want %q", outbound.Channel, "telegram")
+		}
+		if outbound.ChatID != "chat-1" {
+			t.Fatalf("tool feedback chatID = %q, want %q", outbound.ChatID, "chat-1")
+		}
+		if !strings.Contains(outbound.Content, "`read_file`") {
+			t.Fatalf("tool feedback content = %q, want read_file preview", outbound.Content)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected outbound tool feedback for regular messages")
 	}
 }
 
