@@ -11,17 +11,21 @@ services:
     userns_mode: "keep-id"
     user: "${UID:-1000}:${GID:-1000}"
     container_name: picoclaw-agent
+    # default: turns off SELinux for easier to run and test
+    # change or remove label=disable on production and employ seccomp policy instead
     security_opt:
       - label=disable
     profiles:
       - agent
     # Uncomment to access host network; leave commented unless needed.
     #extra_hosts:
-    # - "host.docker.internal:host-gateway"
+    #  - "host.docker.internal:host-gateway"
+    environment:
+      - PICOCLAW_HOME=/home/picoclaw/.picoclaw
+    # Uncomment to make healtcheck works on podman pod model
+    #  - PICOCLAW_GATEWAY_HOST=0.0.0.0
     volumes:
       - ./data:/home/picoclaw/.picoclaw:Z
-    environment:
-      - PICOCLAW_GATEWAY_HOST=0.0.0.0 # needed to make healtcheck works on podman pod model
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
     tty: true
@@ -37,6 +41,8 @@ services:
       dockerfile: docker/Dockerfile
     userns_mode: "keep-id"
     user: "${UID:-1000}:${GID:-1000}"
+    # default: turns off SELinux for easier to run and test
+    # change or remove label=disable on production and employ seccomp policy instead
     security_opt:
       - label=disable
     container_name: picoclaw-gateway
@@ -45,8 +51,10 @@ services:
       - gateway
     # Uncomment to access host network; leave commented unless needed.
     #extra_hosts:
-    # - "host.docker.internal:host-gateway"
+    #  - "host.docker.internal:host-gateway"
     environment:
-      - PICOCLAW_GATEWAY_HOST=0.0.0.0 # needed to make healtcheck works on podman pod model
+      - PICOCLAW_HOME=/home/picoclaw/.picoclaw
+    # Uncomment to make healtcheck works on podman pod model
+    #  - PICOCLAW_GATEWAY_HOST=0.0.0.0
     volumes:
       - ./data:/home/picoclaw/.picoclaw:Z
