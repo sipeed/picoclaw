@@ -132,6 +132,163 @@ func TestProcessMessage_IncludesCurrentSenderInDynamicContext(t *testing.T) {
 	}
 }
 
+func TestProcessMessage_UseCommandLoadsRequestedSkill(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillDir := filepath.Join(tmpDir, "skills", "shell")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDir, "SKILL.md"),
+		[]byte("# shell\n\nPrefer concise shell commands and explain them briefly."),
+		0o644,
+	); err != nil {
+		t.Fatalf("write skill file: %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/use shell explain how to list files",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "Mock response")
+	}
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("provider did not receive any messages")
+	}
+
+	systemPrompt := provider.lastMessages[0].Content
+	if !strings.Contains(systemPrompt, "# Active Skills") {
+		t.Fatalf("system prompt missing active skills section:\n%s", systemPrompt)
+	}
+	if !strings.Contains(systemPrompt, "### Skill: shell") {
+		t.Fatalf("system prompt missing requested skill content:\n%s", systemPrompt)
+	}
+
+	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
+	if lastMessage.Role != "user" || lastMessage.Content != "explain how to list files" {
+		t.Fatalf("last provider message = %+v, want rewritten user message", lastMessage)
+	}
+}
+
+func TestHandleCommand_UseCommandRejectsUnknownSkill(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.GetRegistry().GetDefaultAgent()
+
+	opts := processOptions{}
+	reply, handled := al.handleCommand(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/use missing explain how to list files",
+	}, agent, &opts)
+	if !handled {
+		t.Fatal("expected /use with unknown skill to be handled")
+	}
+	if !strings.Contains(reply, "Unknown skill: missing") {
+		t.Fatalf("reply = %q, want unknown skill error", reply)
+	}
+}
+
+func TestProcessMessage_UseCommandArmsSkillForNextMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillDir := filepath.Join(tmpDir, "skills", "shell")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDir, "SKILL.md"),
+		[]byte("# shell\n\nPrefer concise shell commands and explain them briefly."),
+		0o644,
+	); err != nil {
+		t.Fatalf("write skill file: %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/use shell",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() arm error = %v", err)
+	}
+	if !strings.Contains(response, `Skill "shell" is armed for your next message.`) {
+		t.Fatalf("arm response = %q, want armed confirmation", response)
+	}
+
+	response, err = al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "explain how to list files",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() follow-up error = %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("follow-up response = %q, want %q", response, "Mock response")
+	}
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("provider did not receive any messages")
+	}
+
+	systemPrompt := provider.lastMessages[0].Content
+	if !strings.Contains(systemPrompt, "### Skill: shell") {
+		t.Fatalf("system prompt missing pending skill content:\n%s", systemPrompt)
+	}
+	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
+	if lastMessage.Role != "user" || lastMessage.Content != "explain how to list files" {
+		t.Fatalf("last provider message = %+v, want unchanged follow-up user message", lastMessage)
+	}
+}
+
 func TestRecordLastChannel(t *testing.T) {
 	al, cfg, msgBus, provider, cleanup := newTestAgentLoop(t)
 	defer cleanup()

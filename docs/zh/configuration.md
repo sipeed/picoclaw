@@ -65,6 +65,24 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 ```
 
+### 在聊天频道中使用技能
+
+技能安装完成后，可以直接在聊天频道里查看并显式启用它们：
+
+- `/list skills`：显示当前 Agent 可用的已安装技能名称。
+- `/use <skill> <message>`：只对当前这一条请求强制使用指定技能。
+- `/use <skill>`：为同一会话中的下一条消息预先启用该技能。
+- `/use clear`：取消通过 `/use <skill>` 设置的待应用技能。
+
+示例：
+
+```text
+/list skills
+/use git explain how to squash the last 3 commits
+/use italiapersonalfinance
+dammi le ultime news
+```
+
 ### 统一命令执行策略
 
 - 通用斜杠命令通过 `pkg/agent/loop.go` 中的 `commands.Executor` 统一执行。

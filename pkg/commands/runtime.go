@@ -10,6 +10,7 @@ type Runtime struct {
 	GetModelInfo       func() (name, provider string)
 	ListAgentIDs       func() []string
 	ListDefinitions    func() []Definition
+	ListSkillNames     func() []string
 	GetEnabledChannels func() []string
 	GetActiveTurn      func() any // Returning any to avoid circular dependency with agent package
 	SwitchModel        func(value string) (oldModel string, err error)

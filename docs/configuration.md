@@ -65,6 +65,24 @@ For advanced/test setups, you can override the builtin skills root with:
 export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 ```
 
+### Using Skills From Chat Channels
+
+Once skills are installed, you can inspect and force them directly from a chat channel:
+
+- `/list skills` shows the installed skill names available to the current agent.
+- `/use <skill> <message>` forces a specific skill for a single request.
+- `/use <skill>` arms that skill for your next message in the same chat session.
+- `/use clear` cancels a pending skill override created by `/use <skill>`.
+
+Examples:
+
+```text
+/list skills
+/use git explain how to squash the last 3 commits
+/use italiapersonalfinance
+dammi le ultime news
+```
+
 ### Unified Command Execution Policy
 
 - Generic slash commands are executed through a single path in `pkg/agent/loop.go` via `commands.Executor`.
