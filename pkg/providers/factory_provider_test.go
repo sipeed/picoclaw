@@ -700,3 +700,78 @@ func TestCreateProviderFromConfig_MinimaxPreservesUserExtraBody(t *testing.T) {
 		t.Fatalf("custom_field = %v, want test", got)
 	}
 }
+
+func TestCreateProviderFromConfig_Bedrock(t *testing.T) {
+	// Set dummy AWS env vars to make test deterministic
+	t.Setenv("AWS_ACCESS_KEY_ID", "test-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	// Clear profile-related env vars to avoid loading shared config
+	t.Setenv("AWS_PROFILE", "")
+	t.Setenv("AWS_DEFAULT_PROFILE", "")
+	t.Setenv("AWS_SDK_LOAD_CONFIG", "")
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", "")
+
+	cfg := &config.ModelConfig{
+		ModelName: "bedrock-claude",
+		Model:     "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",
+		APIBase:   "us-west-2", // Region (also sets AWS region)
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		// Provider created successfully (built with -tags bedrock)
+		if provider == nil {
+			t.Error("provider is nil on success")
+		}
+		if modelID != "us.anthropic.claude-sonnet-4-20250514-v1:0" {
+			t.Errorf("modelID = %q, want %q", modelID, "us.anthropic.claude-sonnet-4-20250514-v1:0")
+		}
+		return
+	}
+	errMsg := err.Error()
+	// When built without -tags bedrock, expect stub error
+	if strings.Contains(errMsg, "build with -tags bedrock") {
+		return // Expected stub error
+	}
+	// Unexpected error - fail the test
+	t.Errorf("unexpected error from bedrock provider: %v", err)
+}
+
+func TestCreateProviderFromConfig_BedrockWithEndpointURL(t *testing.T) {
+	// Set dummy AWS env vars to make test deterministic
+	t.Setenv("AWS_ACCESS_KEY_ID", "test-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
+	t.Setenv("AWS_REGION", "us-east-1") // Required when using endpoint URL
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	// Clear profile-related env vars to avoid loading shared config
+	t.Setenv("AWS_PROFILE", "")
+	t.Setenv("AWS_DEFAULT_PROFILE", "")
+	t.Setenv("AWS_SDK_LOAD_CONFIG", "")
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", "")
+
+	cfg := &config.ModelConfig{
+		ModelName: "bedrock-claude",
+		Model:     "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",
+		APIBase:   "https://bedrock-runtime.us-east-1.amazonaws.com", // Full endpoint URL
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		// Provider created successfully (built with -tags bedrock)
+		if provider == nil {
+			t.Error("provider is nil on success")
+		}
+		if modelID != "us.anthropic.claude-sonnet-4-20250514-v1:0" {
+			t.Errorf("modelID = %q, want %q", modelID, "us.anthropic.claude-sonnet-4-20250514-v1:0")
+		}
+		return
+	}
+	errMsg := err.Error()
+	// When built without -tags bedrock, expect stub error
+	if strings.Contains(errMsg, "build with -tags bedrock") {
+		return // Expected stub error
+	}
+	// Unexpected error - fail the test
+	t.Errorf("unexpected error from bedrock provider: %v", err)
+}
