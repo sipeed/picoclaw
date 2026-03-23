@@ -1,3 +1,6 @@
+# ─────────────────────────────────────────────
+# PicoClaw Agent and PicoClaw Gateway should not be run together
+# ─────────────────────────────────────────────
 services:
   # ─────────────────────────────────────────────
   # PicoClaw Agent (one-shot query)
