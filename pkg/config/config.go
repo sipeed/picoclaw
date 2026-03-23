@@ -114,6 +114,25 @@ func (c *Config) WithSecurity(sec *SecurityConfig) *Config {
 	return c
 }
 
+// FilterSensitiveData filters sensitive values from content before sending to LLM.
+// This prevents the LLM from seeing its own credentials.
+// Uses strings.Replacer for O(n+m) performance (computed once per SecurityConfig).
+// Short content (below FilterMinLength) is returned unchanged for performance.
+func (c *Config) FilterSensitiveData(content string) string {
+	if c.security == nil || content == "" {
+		return content
+	}
+	// Check if filtering is enabled (default: true)
+	if !c.Tools.IsFilterSensitiveDataEnabled() {
+		return content
+	}
+	// Fast path: skip filtering for short content
+	if len(content) < c.Tools.GetFilterMinLength() {
+		return content
+	}
+	return c.security.SensitiveDataReplacer().Replace(content)
+}
+
 type HooksConfig struct {
 	Enabled   bool                         `json:"enabled"`
 	Defaults  HookDefaultsConfig           `json:"defaults,omitempty"`
@@ -1201,8 +1220,16 @@ type ReadFileToolConfig struct {
 }
 
 type ToolsConfig struct {
-	AllowReadPaths  []string           `json:"allow_read_paths"  env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
-	AllowWritePaths []string           `json:"allow_write_paths" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
+	AllowReadPaths  []string `json:"allow_read_paths"  env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
+	AllowWritePaths []string `json:"allow_write_paths" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
+	// FilterSensitiveData controls whether to filter sensitive values (API keys,
+	// tokens, secrets) from tool results before sending to the LLM.
+	// Default: true (enabled)
+	FilterSensitiveData bool `json:"filter_sensitive_data" env:"PICOCLAW_TOOLS_FILTER_SENSITIVE_DATA"`
+	// FilterMinLength is the minimum content length required for filtering.
+	// Content shorter than this will be returned unchanged for performance.
+	// Default: 8
+	FilterMinLength int                `json:"filter_min_length" env:"PICOCLAW_TOOLS_FILTER_MIN_LENGTH"`
 	Web             WebToolsConfig     `json:"web"`
 	Cron            CronToolsConfig    `json:"cron"`
 	Exec            ExecConfig         `json:"exec"`
@@ -1224,6 +1251,19 @@ type ToolsConfig struct {
 	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
 	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig         `json:"write_file"                                               envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
+}
+
+// IsFilterSensitiveDataEnabled returns true if sensitive data filtering is enabled
+func (c *ToolsConfig) IsFilterSensitiveDataEnabled() bool {
+	return c.FilterSensitiveData
+}
+
+// GetFilterMinLength returns the minimum content length for filtering (default: 8)
+func (c *ToolsConfig) GetFilterMinLength() int {
+	if c.FilterMinLength <= 0 {
+		return 8
+	}
+	return c.FilterMinLength
 }
 
 type SearchCacheConfig struct {
