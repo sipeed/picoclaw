@@ -78,7 +78,8 @@ func (t *SendTTSTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	}
 	defer stream.Close()
 
-	if err := os.MkdirAll(media.TempDir(), 0o755); err != nil {
+	err = os.MkdirAll(media.TempDir(), 0o755)
+	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to create media temp dir: %v", err)).WithError(err)
 	}
 
@@ -88,7 +89,8 @@ func (t *SendTTSTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	}
 	defer file.Close()
 
-	if _, err := io.Copy(file, stream); err != nil {
+	_, err = io.Copy(file, stream)
+	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to write tts audio: %v", err)).WithError(err)
 	}
 
