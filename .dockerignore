@@ -8,3 +8,4 @@ config/
 *.md
 LICENSE
 assets/
+docker/data/

@@ -9,44 +9,45 @@ services:
     profiles:
       - agent
     # Uncomment to access host network; leave commented unless needed.
-    #extra_hosts:
-    #  - "host.docker.internal:host-gateway"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/root/.picoclaw
+    networks:
+        - picoclaw_net
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
     tty: true
 
   # ─────────────────────────────────────────────
-  # PicoClaw Gateway (Long-running Bot)
-  #   docker compose -f docker/docker-compose.yml --profile gateway up
+  # PicoClaw Gateway + Launcher (Long-running Bot + Web Console)
+  #   docker compose -f docker/docker-compose.yml up
   # ─────────────────────────────────────────────
   picoclaw-gateway:
-    image: docker.io/sipeed/picoclaw:latest
-    container_name: picoclaw-gateway
-    restart: on-failure
-    profiles:
-      - gateway
-    # Uncomment to access host network; leave commented unless needed.
-    #extra_hosts:
-    #  - "host.docker.internal:host-gateway"
-    volumes:
-      - ./data:/root/.picoclaw
-
-  # ─────────────────────────────────────────────
-  # PicoClaw Launcher (Web Console + Gateway)
-  #   docker compose -f docker/docker-compose.yml --profile launcher up
-  # ─────────────────────────────────────────────
-  picoclaw-launcher:
-    image: docker.io/sipeed/picoclaw:launcher
-    container_name: picoclaw-launcher
-    restart: on-failure
-    profiles:
-      - launcher
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.heavy
+    container_name: picoclaw-gateway-full
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      - PICOCLAW_GATEWAY_HOST=0.0.0.0
+      - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}
+      - AGENT_BROWSER_PROFILE=/root/.picoclaw/workspace/browser/picoclaw
+      - AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+      - AGENT_BROWSER_HEADED=true
+      - AGENT_BROWSER_ARGS=--no-sandbox,--disable-blink-features=AutomationControlled
+      - DISPLAY=:99
     ports:
-      - "127.0.0.1:18800:18800"
       - "127.0.0.1:18790:18790"
+      - "192.168.1.169:18790:18790"
+      - "127.0.0.1:18800:18800"
+      - "192.168.1.169:18800:18800"
     volumes:
       - ./data:/root/.picoclaw
+    networks:
+        - picoclaw_net
+
+networks:
+  picoclaw_net:
+    external: false

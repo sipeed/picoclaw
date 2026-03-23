@@ -1,9 +1,10 @@
 # ============================================================
-# Stage 1: Build the picoclaw binary
+# Stage 1: Build picoclaw + picoclaw-launcher
 # ============================================================
 FROM golang:1.26.0-alpine AS builder
 
-RUN apk add --no-cache git make
+RUN apk add --no-cache git make nodejs npm && \
+    npm install -g pnpm
 
 WORKDIR /src
 
@@ -11,29 +12,59 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source and build
+# Copy source and build picoclaw gateway binary
 COPY . .
 RUN make build
 
-# ============================================================
-# Stage 2: Node.js runtime with Python + MCP support
-# ============================================================
-FROM node:24-alpine3.23
+# Build the launcher (frontend + backend)
+RUN cd web/frontend && pnpm install --frozen-lockfile && pnpm build:backend
+RUN CGO_ENABLED=0 go build -v -tags stdjson -o build/picoclaw-launcher ./web/backend
 
-RUN apk add --no-cache \
+# ============================================================
+# Stage 2: Node.js runtime with Python + MCP + Homebrew support
+# ============================================================
+FROM node:24-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
   git \
   python3 \
-  py3-pip \
+  python3-pip \
   chromium \
-  jq
+  jq \
+  tmux \
+  ffmpeg \
+  wget \
+  build-essential \
+  procps \
+  file \
+  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+     | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+     | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+  && apt-get update && apt-get install -y gh \
+  && rm -rf /var/lib/apt/lists/*
 
-# Install Playwright browsers for agent-browser
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
-RUN npm install -g agent-browser && \
-    npx playwright install chromium && \
-    chmod -R o+rx $PLAYWRIGHT_BROWSERS_PATH
+# Install Homebrew (requires non-root user)
+ENV NONINTERACTIVE=1
+RUN useradd -m -s /bin/bash linuxbrew && \
+    mkdir -p /home/linuxbrew/.linuxbrew && \
+    chown -R linuxbrew: /home/linuxbrew
+USER linuxbrew
+RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+USER root
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$PATH"
+
+# Install agent-browser CLI (uses system chromium via AGENT_BROWSER_EXECUTABLE_PATH)
+RUN npm install -g agent-browser
+
+# Virtual framebuffer for headed chromium in headless container
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install GitHub Copilot CLI (headless proxy)
+RUN npm install -g @github/copilot@1.0.10
 
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
@@ -41,27 +72,25 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
   ln -s /root/.local/bin/uvx /usr/local/bin/uvx && \
   uv --version
 
+# Install Python packages (system-wide via uv to avoid PEP 668 issues)
+RUN uv pip install --system --break-system-packages atproto
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget -q --spider http://localhost:18790/health || exit 1
 
-# Copy binary
+# Copy binaries
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
-
-# Reuse existing node user (UID/GID 1000) — rename to picoclaw
-RUN deluser node 2>/dev/null; delgroup node 2>/dev/null; \
-    addgroup -g 1000 picoclaw 2>/dev/null; \
-    adduser -D -u 1000 -G picoclaw -h /home/picoclaw picoclaw 2>/dev/null || true
-
-USER picoclaw
+COPY --from=builder /src/build/picoclaw-launcher /usr/local/bin/picoclaw-launcher
 
 # Run onboard to create initial directories and config
 RUN /usr/local/bin/picoclaw onboard
 
 # Copy default workspace
-COPY --chown=picoclaw:picoclaw workspace/ /home/picoclaw/.picoclaw/workspace/
+COPY workspace/ /root/.picoclaw/workspace/
 
-VOLUME /home/picoclaw/.picoclaw/workspace
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
-ENTRYPOINT ["picoclaw"]
-CMD ["gateway"]
+ENTRYPOINT ["/entrypoint.sh"]
+CMD []
