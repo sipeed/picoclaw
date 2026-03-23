@@ -440,7 +440,7 @@ func TestReplyTargetMessageID(t *testing.T) {
 
 func TestNormalizeRepliedContent(t *testing.T) {
 	t.Run("filters feishu upgrade placeholder for interactive", func(t *testing.T) {
-		got := normalizeRepliedContent("interactive", `{"text":"请升级至最新版本客户端，以查看内容"}`, nil)
+		got := normalizeRepliedContent("interactive", `{"text":"\u8bf7\u5347\u7ea7\u81f3\u6700\u65b0\u7248\u672c\u5ba2\u6237\u7aef\uff0c\u4ee5\u67e5\u770b\u5185\u5bb9"}`, nil)
 		if got != "[replied interactive card]" {
 			t.Fatalf("normalizeRepliedContent() = %q, want %q", got, "[replied interactive card]")
 		}

@@ -703,7 +703,9 @@ func normalizeRepliedContent(messageType, rawContent string, mediaRefs []string)
 }
 
 func containsFeishuUpgradePlaceholder(s string) bool {
-	return strings.Contains(s, "请升级至最新版本客户端")
+	const upgradePromptPrefix = "\u8bf7\u5347\u7ea7\u81f3\u6700\u65b0\u7248\u672c\u5ba2\u6237\u7aef"
+	const upgradePromptPrefixEscaped = "\\u8bf7\\u5347\\u7ea7\\u81f3\\u6700\\u65b0\\u7248\\u672c\\u5ba2\\u6237\\u7aef"
+	return strings.Contains(s, upgradePromptPrefix) || strings.Contains(s, upgradePromptPrefixEscaped)
 }
 
 func formatReplyContext(parentID, repliedContent, content string) string {
