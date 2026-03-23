@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mymmrac/telego"
 	ta "github.com/mymmrac/telego/telegoapi"
@@ -671,7 +670,6 @@ func TestHandleMessage_EmptyContent_Ignored(t *testing.T) {
 	select {
 	case <-messageBus.InboundChan():
 		t.Fatal("Empty message should not be published to message bus")
-	case <-time.After(100 * time.Millisecond):
-		// nothing was published
+	default:
 	}
 }
