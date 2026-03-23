@@ -1613,7 +1613,13 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 			Role:    "system",
 			Content: ts.opts.SystemPromptOverride,
 		})
-		messages = append(messages, history...)
+        
+		if ts.opts.IsVoice && len(history) > 2 {
+			messages = append(messages, history[len(history)-2:]...)
+		} else {
+			messages = append(messages, history...)
+		}
+
 		if summary != "" {
 			messages = append(messages, providers.Message{
 				Role:    "system",
