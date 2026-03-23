@@ -6,6 +6,7 @@ services:
   picoclaw-agent:
     image: docker.io/sipeed/picoclaw:latest
     container_name: picoclaw-agent
+    shm_size: '4gb'
     profiles:
       - agent
     # Uncomment to access host network; leave commented unless needed.
@@ -29,6 +30,8 @@ services:
       dockerfile: docker/Dockerfile.heavy
     container_name: picoclaw-gateway-full
     restart: unless-stopped
+    init: true
+    shm_size: '4gb'
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -36,7 +39,7 @@ services:
       - AGENT_BROWSER_PROFILE=/root/.picoclaw/workspace/browser/picoclaw
       - AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
       - AGENT_BROWSER_HEADED=true
-      - AGENT_BROWSER_ARGS=--no-sandbox,--disable-blink-features=AutomationControlled
+      - AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage,--disable-blink-features=AutomationControlled
       - DISPLAY=:99
       - BSKY_HANDLE=${BSKY_HANDLE}
       - BSKY_APP_PASSWORD=${BSKY_APP_PASSWORD}
