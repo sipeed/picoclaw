@@ -22,7 +22,9 @@ type SubTurnSpawner interface {
 // SubTurnConfig holds configuration for spawning a sub-turn.
 type SubTurnConfig struct {
 	Model              string
+	Provider           providers.LLMProvider // non-nil overrides the child agent's provider
 	Tools              []Tool
+	EmptyTools         bool          // true: child agent gets an empty ToolRegistry (overrides Tools)
 	SystemPrompt       string
 	MaxTokens          int
 	Temperature        float64
@@ -432,10 +434,12 @@ func (sm *SubagentManager) BuildBaseWorkerConfig(ctx context.Context) ToolLoopCo
 // SubagentTool executes a subagent task synchronously and returns the result.
 // It directly calls SubTurnSpawner with Async=false for synchronous execution.
 type SubagentTool struct {
-	spawner      SubTurnSpawner
-	defaultModel string
-	maxTokens    int
-	temperature  float64
+	spawner        SubTurnSpawner
+	defaultModel   string
+	maxTokens      int
+	temperature    float64
+	isModelAllowed func(string) bool // nil means no allowlist check
+	modelHint      func() string     // nil means no model hint in description
 }
 
 func NewSubagentTool(manager *SubagentManager) *SubagentTool {
@@ -443,9 +447,11 @@ func NewSubagentTool(manager *SubagentManager) *SubagentTool {
 		return &SubagentTool{}
 	}
 	return &SubagentTool{
-		defaultModel: manager.defaultModel,
-		maxTokens:    manager.maxTokens,
-		temperature:  manager.temperature,
+		defaultModel:   manager.defaultModel,
+		maxTokens:      manager.maxTokens,
+		temperature:    manager.temperature,
+		isModelAllowed: manager.IsModelAllowed,
+		modelHint:      manager.ModelCapabilityHint,
 	}
 }
 
@@ -459,7 +465,13 @@ func (t *SubagentTool) Name() string {
 }
 
 func (t *SubagentTool) Description() string {
-	return "Execute a subagent task synchronously and return the result. Use this for delegating specific tasks to an independent agent instance. Returns execution summary to user and full details to LLM."
+	base := "Execute a subagent task synchronously and return the result. Use this for delegating specific tasks to an independent agent instance with an optional role (system prompt) and model. Returns execution summary to user and full details to LLM."
+	if t.modelHint != nil {
+		if hint := t.modelHint(); hint != "" {
+			return base + "\n\n" + hint
+		}
+	}
+	return base
 }
 
 func (t *SubagentTool) Parameters() map[string]any {
@@ -474,6 +486,14 @@ func (t *SubagentTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional short label for the task (for display)",
 			},
+			"role": map[string]any{
+				"type":        "string",
+				"description": "Optional system prompt / role assignment for the subagent (e.g. 'You are an expert code reviewer'). If omitted, a default subagent prompt is used.",
+			},
+			"model": map[string]any{
+				"type":        "string",
+				"description": "Optional specific LLM model ID to route this task to. If omitted, inherits the parent's model.",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -486,15 +506,35 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	label, _ := args["label"].(string)
+	role, _ := args["role"].(string)
+	modelParam, _ := args["model"].(string)
+	modelParam = strings.TrimSpace(modelParam)
 
-	// Build system prompt for subagent
+	// Validate model against allowlist if provided
+	if modelParam != "" && t.isModelAllowed != nil && !t.isModelAllowed(modelParam) {
+		return ErrorResult(fmt.Sprintf("requested model '%s' is not in the allowed models list", modelParam)).
+			WithError(fmt.Errorf("model %s not allowed", modelParam))
+	}
+
+	// Determine the model to use
+	targetModel := t.defaultModel
+	if modelParam != "" {
+		targetModel = modelParam
+	}
+
+	// Build ActualSystemPrompt: prefer explicit role, fall back to auto-generated prompt
+	var actualSystemPrompt string
+	if role != "" {
+		actualSystemPrompt = role
+	}
+
+	// Build SystemPrompt (task description, becomes first user message in sub-turn)
 	systemPrompt := fmt.Sprintf(
 		`You are a subagent. Complete the given task independently and provide a clear, concise result.
 
 Task: %s`,
 		task,
 	)
-
 	if label != "" {
 		systemPrompt = fmt.Sprintf(
 			`You are a subagent labeled "%s". Complete the given task independently and provide a clear, concise result.
@@ -508,12 +548,13 @@ Task: %s`,
 	// Use spawner if available (direct SpawnSubTurn call)
 	if t.spawner != nil {
 		result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
-			Model:        t.defaultModel,
-			Tools:        nil, // Will inherit from parent via context
-			SystemPrompt: systemPrompt,
-			MaxTokens:    t.maxTokens,
-			Temperature:  t.temperature,
-			Async:        false, // Synchronous execution
+			Model:              targetModel,
+			Tools:              nil, // Will inherit from parent via context
+			SystemPrompt:       systemPrompt,
+			ActualSystemPrompt: actualSystemPrompt,
+			MaxTokens:          t.maxTokens,
+			Temperature:        t.temperature,
+			Async:              false, // Synchronous execution
 		})
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)

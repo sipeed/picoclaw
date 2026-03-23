@@ -268,22 +268,18 @@ func registerSharedTools(
 			}
 		}
 
-		// Team and spawn_sub_agent tools
-		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Candidates, agent.Workspace, cfg.Tools.Team, msgBus)
-		subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+		// Team tool
+		teamSubagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Candidates, agent.Workspace, cfg.Tools.Team, msgBus)
+		teamSubagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 
-		teamTool := tools.NewTeamTool(subagentManager, cfg)
+		teamTool := tools.NewTeamTool(teamSubagentManager, cfg)
 		if cfg.Tools.IsToolEnabled("team") {
+			teamTool.SetSpawner(NewSubTurnSpawner(al))
 			agent.Tools.Register(teamTool)
 		}
 
-		spawnSubAgentTool := tools.NewSpawnSubAgentTool(subagentManager)
-		if cfg.Tools.IsToolEnabled("spawn_sub_agent") {
-			agent.Tools.Register(spawnSubAgentTool)
-		}
-
-		// Share the fully-built registry back to subagent manager
-		subagentManager.SetTools(agent.Tools)
+		// Share the fully-built registry back to team subagent manager
+		teamSubagentManager.SetTools(agent.Tools)
 
 		// Spawn and spawn_status tools share a SubagentManager.
 		// Construct it when either tool is enabled (both require subagent).
@@ -2595,6 +2591,7 @@ turnLoop:
 		finalContent: finalContent,
 		status:       turnStatus,
 		followUps:    append([]bus.InboundMessage(nil), ts.followUps...),
+		messages:     append([]providers.Message(nil), messages...),
 	}, nil
 }
 

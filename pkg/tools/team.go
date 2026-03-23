@@ -15,6 +15,7 @@ import (
 
 type TeamTool struct {
 	manager       *SubagentManager
+	spawner       SubTurnSpawner
 	cfg           *config.Config
 	originChannel string
 	originChatID  string
@@ -36,6 +37,11 @@ func NewTeamTool(manager *SubagentManager, cfg *config.Config) *TeamTool {
 		originChannel: "cli",
 		originChatID:  "direct",
 	}
+}
+
+// SetSpawner sets the SubTurnSpawner used to execute team members as sub-turns.
+func (t *TeamTool) SetSpawner(spawner SubTurnSpawner) {
+	t.spawner = spawner
 }
 
 func (t *TeamTool) Name() string {
@@ -214,11 +220,11 @@ func (t *TeamTool) maybeRunAutoReviewer(
 		"model": teamConfig.ReviewerModel,
 	})
 
-	loopResult, err := RunToolLoop(ctx, reviewerConfig, reviewerMessages, t.originChannel, t.originChatID)
+	loopContent, _, err := t.spawnWorker(ctx, reviewerConfig, reviewerMessages, nil)
 	if err != nil {
 		return fmt.Sprintf("[Auto-Reviewer] Failed to run: %v", err)
 	}
-	return "[Auto-Reviewer Result]\n" + loopResult.Content
+	return "[Auto-Reviewer Result]\n" + loopContent
 }
 
 func (t *TeamTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
@@ -412,7 +418,121 @@ func upgradeRegistryForConcurrency(original *ToolRegistry) *ToolRegistry {
 	return upgraded
 }
 
-// buildWorkerConfig creates a ToolLoopConfig for a specific team member,
+// spawnWorker executes a single team member's turn, routing through SubTurnSpawner when available.
+// Returns (content, messages, error). The messages slice is non-nil only for stateful workers
+// (evaluator_optimizer) and can be passed as InitialMessages for the next iteration.
+func (t *TeamTool) spawnWorker(ctx context.Context, cfg ToolLoopConfig, messages []providers.Message, budget *atomic.Int64) (string, []providers.Message, error) {
+	if t.spawner == nil {
+		// Fallback: direct RunToolLoop (no turnState integration)
+		res, err := RunToolLoop(ctx, cfg, messages, t.originChannel, t.originChatID)
+		if err != nil {
+			return "", nil, err
+		}
+		return res.Content, res.Messages, nil
+	}
+
+	// Convert ToolLoopConfig + messages into SubTurnConfig for SubTurnSpawner.
+	var toolSlice []Tool
+	if cfg.Tools != nil {
+		for _, name := range cfg.Tools.ListTools() {
+			if tool, ok := cfg.Tools.Get(name); ok {
+				toolSlice = append(toolSlice, tool)
+			}
+		}
+	}
+
+	// Extract system prompt and non-system messages
+	var actualSystemPrompt string
+	var initialMessages []providers.Message
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			actualSystemPrompt = msg.Content
+		} else {
+			initialMessages = append(initialMessages, msg)
+		}
+	}
+
+	maxTokens, temperature := getLLMOptionsFromConfig(cfg)
+
+	subCfg := SubTurnConfig{
+		Model:              cfg.Model,
+		Provider:           cfg.Provider,
+		Tools:              toolSlice,
+		ActualSystemPrompt: actualSystemPrompt,
+		InitialMessages:    initialMessages,
+		MaxTokens:          maxTokens,
+		Temperature:        temperature,
+		Async:              false,
+		InitialTokenBudget: budget,
+	}
+
+	res, err := t.spawner.SpawnSubTurn(ctx, subCfg)
+	if err != nil {
+		return "", nil, err
+	}
+	return res.ForLLM, res.Messages, nil
+}
+
+// spawnWorkerEmptyTools is like spawnWorker but forces an empty tool registry on the sub-turn.
+// Used for the evaluator in evaluator_optimizer to prevent side effects.
+func (t *TeamTool) spawnWorkerEmptyTools(ctx context.Context, cfg ToolLoopConfig, messages []providers.Message) (string, error) {
+	if t.spawner == nil {
+		// Fallback: direct RunToolLoop with empty registry
+		emptyConfig := cfg
+		emptyConfig.Tools = NewToolRegistry()
+		res, err := RunToolLoop(ctx, emptyConfig, messages, t.originChannel, t.originChatID)
+		if err != nil {
+			return "", err
+		}
+		return res.Content, nil
+	}
+
+	var actualSystemPrompt string
+	var initialMessages []providers.Message
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			actualSystemPrompt = msg.Content
+		} else {
+			initialMessages = append(initialMessages, msg)
+		}
+	}
+
+	maxTokens, temperature := getLLMOptionsFromConfig(cfg)
+
+	subCfg := SubTurnConfig{
+		Model:              cfg.Model,
+		Provider:           cfg.Provider,
+		EmptyTools:         true,
+		ActualSystemPrompt: actualSystemPrompt,
+		InitialMessages:    initialMessages,
+		MaxTokens:          maxTokens,
+		Temperature:        temperature,
+		Async:              false,
+	}
+
+	res, err := t.spawner.SpawnSubTurn(ctx, subCfg)
+	if err != nil {
+		return "", err
+	}
+	return res.ForLLM, nil
+}
+
+// getLLMOptionsFromConfig extracts MaxTokens and Temperature from a ToolLoopConfig's LLMOptions map.
+func getLLMOptionsFromConfig(cfg ToolLoopConfig) (int, float64) {
+	var maxTokens int
+	var temperature float64
+	if cfg.LLMOptions != nil {
+		if v, ok := cfg.LLMOptions["max_tokens"].(int); ok {
+			maxTokens = v
+		}
+		if v, ok := cfg.LLMOptions["temperature"].(float64); ok {
+			temperature = v
+		}
+	}
+	return maxTokens, temperature
+}
+
+
 // potentially overriding the model based on the member's definition.
 func (t *TeamTool) buildWorkerConfig(baseConfig ToolLoopConfig, registry *ToolRegistry, m TeamMember) (ToolLoopConfig, error) {
 	cfg := baseConfig
@@ -487,14 +607,14 @@ func (t *TeamTool) executeSequential(ctx context.Context, baseConfig ToolLoopCon
 			return ErrorResult(errStr).WithError(err)
 		}
 
-		loopResult, err := RunToolLoop(ctx, workerConfig, messages, t.originChannel, t.originChatID)
+		content, _, err := t.spawnWorker(ctx, workerConfig, messages, baseConfig.RemainingTokenBudget)
 		if err != nil {
 			errStr := fmt.Sprintf("Phase %d (Role: %s) failed: %v", i+1, m.Role, err)
 			finalOutput.WriteString(errStr + "\n")
 			return ErrorResult(errStr).WithError(err) // Fail fast
 		}
 
-		previousResult = loopResult.Content
+		previousResult = content
 
 		finalOutput.WriteString(fmt.Sprintf("### Phase %d completed by Role: [%s]\n%s\n\n", i+1, m.Role, previousResult))
 	}
@@ -537,13 +657,13 @@ func (t *TeamTool) executeParallel(ctx context.Context, baseConfig ToolLoopConfi
 				return
 			}
 
-			loopResult, err := RunToolLoop(ctx, workerConfig, messages, t.originChannel, t.originChatID)
+			content, _, err := t.spawnWorker(ctx, workerConfig, messages, baseConfig.RemainingTokenBudget)
 
 			if err != nil {
 				resultsChan <- workResult{index: index, role: member.Role, err: err}
 				return
 			}
-			resultsChan <- workResult{index: index, role: member.Role, res: loopResult.Content}
+			resultsChan <- workResult{index: index, role: member.Role, res: content}
 			logger.InfoCF("team", fmt.Sprintf("[%s] Parallel worker finished", member.Role), map[string]any{
 				"member_index": index,
 			})
@@ -648,7 +768,7 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig Too
 		logger.InfoCF("team", fmt.Sprintf("Evaluator-Optimizer attempt %d/%d", attempt, maxLoops), map[string]any{})
 
 		// 2. Trigger Worker (resumes from its exact previous state!)
-		workerResult, err := RunToolLoop(ctx, workerConfig, workerMessages, t.originChannel, t.originChatID)
+		workerContent, workerMsgs, err := t.spawnWorker(ctx, workerConfig, workerMessages, baseConfig.RemainingTokenBudget)
 		if err != nil {
 			errStr := fmt.Sprintf("Worker failed on attempt %d: %v", attempt, err)
 			finalOutput.WriteString(errStr + "\n")
@@ -656,31 +776,33 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig Too
 		}
 
 		// Save the worker's cognitive state so it remembers its thought process for the next loop
-		workerMessages = workerResult.Messages
+		if workerMsgs != nil {
+			workerMessages = workerMsgs
+		}
 
-		finalOutput.WriteString(fmt.Sprintf("### Worker Output:\n%s\n\n", workerResult.Content))
+		finalOutput.WriteString(fmt.Sprintf("### Worker Output:\n%s\n\n", workerContent))
 
 		// 3. Trigger Evaluator (Ephemeral, stateless evaluation)
 		// The evaluator only needs to reason about text — give it no tools to avoid
 		// unnecessary tool calls, wasted tokens, and potential side effects.
-		evalContext := fmt.Sprintf("%s\n\n--- Worker's Output to Evaluate ---\n%s\n\nIf the output is completely correct and fulfills the task, you MUST reply starting with strictly '[PASS]'. Otherwise, explain the issues in detail.", evaluator.Task, truncateContextN(workerResult.Content, contextLimit))
+		evalContext := fmt.Sprintf("%s\n\n--- Worker's Output to Evaluate ---\n%s\n\nIf the output is completely correct and fulfills the task, you MUST reply starting with strictly '[PASS]'. Otherwise, explain the issues in detail.", evaluator.Task, truncateContextN(workerContent, contextLimit))
 
 		evalMessages := []providers.Message{
 			{Role: "system", Content: evaluator.Role},
 			{Role: "user", Content: evalContext},
 		}
 
-		evalResult, err := RunToolLoop(ctx, evalConfig, evalMessages, t.originChannel, t.originChatID)
+		evalContent, err := t.spawnWorkerEmptyTools(ctx, evalConfig, evalMessages)
 		if err != nil {
 			errStr := fmt.Sprintf("Evaluator failed on attempt %d: %v", attempt, err)
 			finalOutput.WriteString(errStr + "\n")
 			return ErrorResult(errStr).WithError(err)
 		}
 
-		finalOutput.WriteString(fmt.Sprintf("### Evaluator Feedback:\n%s\n\n", evalResult.Content))
+		finalOutput.WriteString(fmt.Sprintf("### Evaluator Feedback:\n%s\n\n", evalContent))
 
 		// 4. Check for PASS condition
-		if strings.HasPrefix(strings.TrimSpace(evalResult.Content), "[PASS]") {
+		if strings.HasPrefix(strings.TrimSpace(evalContent), "[PASS]") {
 			finalOutput.WriteString("✅ Evaluation Passed! Loop finished successfully.\n")
 			logger.InfoCF("team", "Evaluator-Optimizer passed", map[string]any{"attempt": attempt})
 			return &ToolResult{
@@ -693,7 +815,7 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig Too
 
 		// 5. If not passed, and not the last attempt, inject feedback into Worker's stateful memory
 		if attempt < maxLoops {
-			injection := fmt.Sprintf("The evaluator rejected your previous attempt. Please fix the issues based on this feedback:\n\n%s", evalResult.Content)
+			injection := fmt.Sprintf("The evaluator rejected your previous attempt. Please fix the issues based on this feedback:\n\n%s", evalContent)
 			workerMessages = append(workerMessages, providers.Message{
 				Role:    "user",
 				Content: injection,
@@ -834,7 +956,7 @@ func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, ba
 					return
 				}
 
-				loopResult, err := RunToolLoop(ctx, workerConfig, messages, t.originChannel, t.originChatID)
+				content, _, err := t.spawnWorker(ctx, workerConfig, messages, baseConfig.RemainingTokenBudget)
 
 				if err != nil {
 					masterErrMu.Lock()
@@ -848,11 +970,11 @@ func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, ba
 
 				// Store result for final output
 				finalResultsMu.Lock()
-				finalResults[id] = loopResult.Content
+				finalResults[id] = content
 				finalResultsMu.Unlock()
 
 				// Pass result to dependents
-				resultChan <- nodeResult{id: id, res: loopResult.Content}
+				resultChan <- nodeResult{id: id, res: content}
 			}(memberID)
 
 		case res := <-resultChan:
