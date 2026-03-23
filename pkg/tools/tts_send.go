@@ -87,11 +87,16 @@ func (t *SendTTSTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to create temp file: %v", err)).WithError(err)
 	}
-	defer file.Close()
 
 	_, err = io.Copy(file, stream)
 	if err != nil {
+		file.Close()
 		return ErrorResult(fmt.Sprintf("failed to write tts audio: %v", err)).WithError(err)
+	}
+
+	err = file.Close()
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("failed to close tts audio file: %v", err)).WithError(err)
 	}
 
 	filename, _ := args["filename"].(string)

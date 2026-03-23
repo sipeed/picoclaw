@@ -304,15 +304,10 @@ func setupAndStartServices(
 	agentLoop.SetChannelManager(runningServices.ChannelManager)
 	agentLoop.SetMediaStore(runningServices.MediaStore)
 
-	if transcriber := asr.DetectTranscriber(cfg); transcriber != nil {
+	transcriber := asr.DetectTranscriber(cfg)
+	if transcriber != nil {
 		agentLoop.SetTranscriber(transcriber)
 		logger.InfoCF("voice", "Transcription enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
-
-		// Start Voice Agent Orchestrator
-		vaCtx, vaCancel := context.WithCancel(context.Background())
-		runningServices.VoiceAgentCancel = vaCancel
-		voiceAgent := voice.NewAgent(msgBus, transcriber)
-		voiceAgent.Start(vaCtx)
 	}
 
 	enabledChannels := runningServices.ChannelManager.GetEnabledChannels()
@@ -328,6 +323,14 @@ func setupAndStartServices(
 
 	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
 		return nil, fmt.Errorf("error starting channels: %w", err)
+	}
+
+	if transcriber != nil {
+		// Start Voice Agent Orchestrator after channels are ready.
+		vaCtx, vaCancel := context.WithCancel(context.Background())
+		runningServices.VoiceAgentCancel = vaCancel
+		voiceAgent := voice.NewAgent(msgBus, transcriber)
+		voiceAgent.Start(vaCtx)
 	}
 
 	fmt.Printf(

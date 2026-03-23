@@ -82,7 +82,10 @@ func NewOpenAITTSProvider(apiKey string, apiBase string, proxyURL string) *OpenA
 				Proxy: http.ProxyURL(pURL),
 			}
 		} else {
-			logger.Warnf("NewOpenAITTSProvider: invalid proxy URL %q: %v; proceeding without proxy", proxyURL, err)
+			logger.WarnF(
+				"NewOpenAITTSProvider: invalid proxy URL; proceeding without proxy",
+				map[string]any{"proxyURL": proxyURL, "error": err},
+			)
 		}
 	}
 

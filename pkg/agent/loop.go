@@ -2443,6 +2443,9 @@ turnLoop:
 					Channel: ts.channel,
 					ChatID:  ts.chatID,
 					Content: toolResult.ForUser,
+					Metadata: map[string]string{
+						"is_tool_call": "true",
+					},
 				})
 				logger.DebugCF("agent", "Sent tool result to user",
 					map[string]any{
