@@ -136,8 +136,8 @@ func (t *OpenAITTSProvider) Synthesize(ctx context.Context, text string) (io.Rea
 
 func DetectTTS(cfg *config.Config) TTSProvider {
 	for _, mc := range cfg.ModelList {
-		if strings.Contains(strings.ToLower(mc.ModelName), "tts") && mc.APIKey != "" {
-			return NewOpenAITTSProvider(mc.APIKey, mc.APIBase, mc.Proxy)
+		if strings.Contains(strings.ToLower(mc.ModelName), "tts") && mc.APIKey() != "" {
+			return NewOpenAITTSProvider(mc.APIKey(), mc.APIBase, mc.Proxy)
 		}
 	}
 	return nil
