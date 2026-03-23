@@ -1,5 +1,4 @@
 //go:build !windows
-// +build !windows
 
 package logger
 
@@ -7,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"golang.org/x/sys/unix"
 )
 
 func initPanicFile(panicFile string) io.WriteCloser {
@@ -14,7 +15,7 @@ func initPanicFile(panicFile string) io.WriteCloser {
 	if err != nil {
 		panic(fmt.Sprintf("error in open panic: %v", err))
 	}
-	if err = Dup2(int(file.Fd()), int(os.Stderr.Fd())); err != nil {
+	if err = unix.Dup2(int(file.Fd()), int(os.Stderr.Fd())); err != nil {
 		panic(fmt.Sprintf("error in syscall.Dup2: %v", err))
 	}
 	return file
