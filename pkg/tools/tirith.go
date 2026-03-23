@@ -3,6 +3,9 @@ package tools
 import (
 	"bytes"
 	"context"
+	"archive/tar"
+	"archive/zip"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -371,43 +374,71 @@ func tirithExtract(tmpDir, archivePath, ext, binName string) string {
 }
 
 func tirithExtractTarGz(tmpDir, archivePath, binName string) string {
-	cmd := exec.Command("tar", "xzf", archivePath, "-C", tmpDir)
-	if err := cmd.Run(); err != nil {
+	f, err := os.Open(archivePath)
+	if err != nil {
 		return ""
 	}
-	// Find the binary
-	candidates := []string{
-		filepath.Join(tmpDir, binName),
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return ""
 	}
-	for _, c := range candidates {
-		if isExecutable(c) {
-			return c
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			break
+		}
+		name := filepath.Base(hdr.Name)
+		if name == binName && hdr.Typeflag == tar.TypeReg {
+			dest := filepath.Join(tmpDir, binName)
+			out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY, 0o755)
+			if err != nil {
+				return ""
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
+				return ""
+			}
+			out.Close()
+			return dest
 		}
 	}
-	// Walk for it
-	var found string
-	_ = filepath.Walk(tmpDir, func(path string, info os.FileInfo, err error) error {
-		if err == nil && info.Name() == binName && !info.IsDir() {
-			found = path
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	return found
+	return ""
 }
 
 func tirithExtractZip(tmpDir, archivePath, binName string) string {
-	cmd := exec.Command("unzip", "-o", archivePath, "-d", tmpDir)
-	if err := cmd.Run(); err != nil {
+	r, err := zip.OpenReader(archivePath)
+	if err != nil {
 		return ""
 	}
-	var found string
-	_ = filepath.Walk(tmpDir, func(path string, info os.FileInfo, err error) error {
-		if err == nil && info.Name() == binName && !info.IsDir() {
-			found = path
-			return filepath.SkipAll
+	defer r.Close()
+
+	for _, f := range r.File {
+		name := filepath.Base(f.Name)
+		if name == binName && !f.FileInfo().IsDir() {
+			rc, err := f.Open()
+			if err != nil {
+				return ""
+			}
+			dest := filepath.Join(tmpDir, binName)
+			out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY, 0o755)
+			if err != nil {
+				rc.Close()
+				return ""
+			}
+			if _, err := io.Copy(out, rc); err != nil {
+				out.Close()
+				rc.Close()
+				return ""
+			}
+			out.Close()
+			rc.Close()
+			return dest
 		}
-		return nil
-	})
-	return found
+	}
+	return ""
 }
