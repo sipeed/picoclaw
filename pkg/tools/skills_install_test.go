@@ -102,6 +102,7 @@ func TestInstallSkillToolMissingRegistry(t *testing.T) {
 	assert.True(t, result.IsError)
 	assert.Contains(t, result.ForLLM, "invalid registry")
 }
+
 func TestInstallSkillToolWhitelist(t *testing.T) {
 	workspace := t.TempDir()
 	rm := skills.NewRegistryManager()

@@ -26,13 +26,18 @@ type InstallSkillTool struct {
 // NewInstallSkillTool creates a new InstallSkillTool.
 // registryMgr is the shared registry manager (same instance as FindSkillsTool).
 // workspace is the root workspace directory; skills install to {workspace}/skills/{slug}/.
-func NewInstallSkillTool(registryMgr *skills.RegistryManager, workspace string, whitelist []string, whitelistEnabled bool) *InstallSkillTool {
+func NewInstallSkillTool(
+	registryMgr *skills.RegistryManager,
+	workspace string,
+	whitelist []string,
+	whitelistEnabled bool,
+) *InstallSkillTool {
 	return &InstallSkillTool{
-		registryMgr: registryMgr,
-		workspace:   workspace,
-		whitelist:   whitelist,
+		registryMgr:      registryMgr,
+		workspace:        workspace,
+		whitelist:        whitelist,
 		whitelistEnabled: whitelistEnabled,
-		mu:          sync.Mutex{},
+		mu:               sync.Mutex{},
 	}
 }
 
