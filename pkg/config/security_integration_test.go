@@ -34,8 +34,9 @@ func TestJSONUnmarshalPrivateFields(t *testing.T) {
 	if s.PublicField != "pub" {
 		t.Errorf("PublicField = %q, want 'pub'", s.PublicField)
 	}
+	// Private fields cannot be unmarshaled from JSON
 	if s.privateField != "" {
-		t.Errorf("privateField = %q, want empty because unexported fields are ignored", s.privateField)
+		t.Errorf("privateField = %q, want empty string (private fields are not unmarshaled)", s.privateField)
 	}
 }
 

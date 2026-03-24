@@ -91,4 +91,3 @@ func (p *HTTPProvider) SetUseAzureHeaders(use bool) {
 func (p *HTTPProvider) SupportsNativeSearch() bool {
 	return p.delegate.SupportsNativeSearch()
 }
-

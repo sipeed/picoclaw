@@ -216,7 +216,6 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		})
 	}
 
-
 	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop")
 

@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
+
 
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
@@ -31,13 +33,17 @@ type (
 )
 
 type Provider struct {
-	apiKey         string
-	apiBase        string
-	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
-	httpClient     *http.Client
-	extraBody      map[string]any // Additional fields to inject into request body
-	userAgent      string
+	apiKey          string
+	apiBase         string
+	maxTokensField  string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	httpClient      *http.Client
+	extraBody       map[string]any // Additional fields to inject into request body
+	userAgent       string
+	useAzureHeaders bool         // Use api-key header instead of Authorization: Bearer
+	mu              sync.RWMutex // Protect useAzureHeaders
 }
+
+
 
 type Option func(*Provider)
 
@@ -89,6 +95,19 @@ func WithExtraBody(extraBody map[string]any) Option {
 		p.extraBody = extraBody
 	}
 }
+
+func WithAzureHeaders(use bool) Option {
+	return func(p *Provider) {
+		p.useAzureHeaders = use
+	}
+}
+
+func (p *Provider) SetUseAzureHeaders(use bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.useAzureHeaders = use
+}
+
 
 func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 	p := &Provider{
@@ -459,7 +478,7 @@ func isNativeSearchHost(apiBase string) bool {
 		return false
 	}
 	host := u.Hostname()
-	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+	return host == "api.openai.com"
 }
 
 // supportsPromptCacheKey reports whether the given API base is known to
@@ -472,5 +491,5 @@ func supportsPromptCacheKey(apiBase string) bool {
 		return false
 	}
 	host := u.Hostname()
-	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+	return host == "api.openai.com"
 }

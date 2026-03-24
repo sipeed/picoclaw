@@ -893,7 +893,7 @@ type ToolsConfig struct {
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"     yaml:"-"`
 	Whitelist        FlexibleStringSlice `json:"whitelist,omitempty"         yaml:"-" env:"PICOCLAW_TOOLS_WHITELIST"`
 	WhitelistEnabled bool                `json:"whitelist_enabled,omitempty" yaml:"-" env:"PICOCLAW_TOOLS_WHITELIST_ENABLED"`
-	MCP             MCPConfig          `json:"mcp"               yaml:"-""`
+	MCP             MCPConfig          `json:"mcp"               yaml:"-"`
 	AppendFile      ToolConfig         `json:"append_file"       yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_APPEND_FILE_"`
 	EditFile        ToolConfig         `json:"edit_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_EDIT_FILE_"`
 	FindSkills      ToolConfig         `json:"find_skills"       yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_FIND_SKILLS_"`

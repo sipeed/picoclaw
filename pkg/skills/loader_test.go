@@ -417,6 +417,7 @@ func TestGetSkillMetadata_IgnoresHTMLCommentBlocks(t *testing.T) {
 	assert.Equal(t, "biomed-skill", meta.Name)
 	assert.Equal(t, "Summarize biomedical papers.", meta.Description)
 }
+
 func TestListSkillsWithWhitelist(t *testing.T) {
 	tmp := t.TempDir()
 	ws := filepath.Join(tmp, "workspace")
