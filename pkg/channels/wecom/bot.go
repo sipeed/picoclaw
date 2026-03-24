@@ -6,16 +6,21 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"image"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/h2non/filetype"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -356,21 +361,65 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 
 	// Extract content based on message type
 	var content string
+	var mediaRefs []string
+
+	scope := channels.BuildMediaScope("wecom", chatID, msg.MsgID)
+
 	switch msg.MsgType {
 	case "text":
 		content = msg.Text.Content
 	case "voice":
 		content = msg.Voice.Content // Voice to text content
 	case "mixed":
-		// For mixed messages, concatenate text items
+		// For mixed messages, process text and image items
 		for _, item := range msg.Mixed.MsgItem {
 			if item.MsgType == "text" {
 				content += item.Text.Content
 			}
 		}
-	case "image", "file":
-		// For image and file, we don't have text content
-		content = ""
+		// Download images from mixed messages
+		if store := c.GetMediaStore(); store != nil {
+			for _, item := range msg.Mixed.MsgItem {
+				if item.MsgType == "image" && item.Image.URL != "" {
+					ref := c.downloadMediaFromURL(ctx, item.Image.URL, "image.jpg", store, scope, msg.MsgID)
+					if ref != "" {
+						mediaRefs = append(mediaRefs, ref)
+					}
+				}
+			}
+		}
+	case "image":
+		// Download image from URL
+		if msg.Image.URL != "" {
+			if store := c.GetMediaStore(); store != nil {
+				ref := c.downloadMediaFromURL(ctx, msg.Image.URL, "image.jpg", store, scope, msg.MsgID)
+				if ref != "" {
+					mediaRefs = append(mediaRefs, ref)
+				}
+			}
+		}
+		content = "[image]"
+	case "file":
+		// Download file from URL
+		if msg.File.URL != "" {
+			if store := c.GetMediaStore(); store != nil {
+				ref := c.downloadMediaFromURL(ctx, msg.File.URL, "file", store, scope, msg.MsgID)
+				if ref != "" {
+					mediaRefs = append(mediaRefs, ref)
+				}
+			}
+		}
+		content = "[file]"
+	}
+
+	// Append media tags to content if needed
+	if len(mediaRefs) > 0 && content == "" {
+		switch msg.MsgType {
+		case "image":
+			content = "[image]"
+		case "file":
+			content = "[file]"
+		}
 	}
 
 	// Build metadata
@@ -416,7 +465,7 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 	}
 
 	// Handle the message through the base channel
-	c.HandleMessage(ctx, peer, msg.MsgID, senderID, chatID, content, nil, metadata, sender)
+	c.HandleMessage(ctx, peer, msg.MsgID, senderID, chatID, content, mediaRefs, metadata, sender)
 }
 
 // sendWebhookReply sends a reply using the webhook URL
@@ -496,4 +545,196 @@ func (c *WeComBotChannel) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+// downloadMediaFromURL downloads media from a URL and stores it in MediaStore.
+func (c *WeComBotChannel) downloadMediaFromURL(
+	ctx context.Context,
+	mediaURL, filename string,
+	store media.MediaStore,
+	scope string,
+	msgID string,
+) string {
+	// Download the media file from the URL
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mediaURL, nil)
+	if err != nil {
+		logger.ErrorCF("wecom", "Failed to create media download request", map[string]any{
+			"error": err.Error(),
+			"url":    mediaURL,
+		})
+		return ""
+	}
+
+	// Add User-Agent header for WeCom/COS to properly serve the image
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		logger.ErrorCF("wecom", "Failed to download media", map[string]any{
+			"error": err.Error(),
+			"url":  mediaURL,
+		})
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		logger.ErrorCF("wecom", "Media download failed with status", map[string]any{
+			"status": resp.StatusCode,
+			"url":    mediaURL,
+		})
+		return ""
+	}
+
+	// Read the media body first
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logger.ErrorCF("wecom", "Failed to read media body", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	// Determine actual file type from content (magic bytes)
+	contentType := resp.Header.Get("Content-Type")
+	if kind, err := filetype.Match(body); err == nil && kind != filetype.Unknown {
+		// Use the detected type from content
+		contentType = kind.MIME.Value
+		filename = "image." + kind.Extension
+		logger.DebugCF("wecom", "Filetype detected from content", map[string]any{
+			"detected_type": kind.MIME.Value,
+			"extension":     kind.Extension,
+			"size":          len(body),
+		})
+	} else {
+		// Filetype detection failed, try to determine from header or extension
+		logger.WarnCF("wecom", "Filetype detection failed, using extension inference", map[string]any{
+			"header_content_type": contentType,
+			"error":              err,
+		})
+		// Try to determine from file extension
+		ext := filepath.Ext(filename)
+		if ext == "" {
+			// No extension, try header
+			switch {
+			case strings.Contains(contentType, "image/jpeg"):
+				filename += ".jpg"
+				contentType = "image/jpeg"
+			case strings.Contains(contentType, "image/png"):
+				filename += ".png"
+				contentType = "image/png"
+			case strings.Contains(contentType, "image/gif"):
+				filename += ".gif"
+				contentType = "image/gif"
+			case strings.Contains(contentType, "image/webp"):
+				filename += ".webp"
+				contentType = "image/webp"
+			case strings.Contains(contentType, "audio/amr"):
+				filename += ".amr"
+				contentType = "audio/amr"
+			case strings.Contains(contentType, "audio/mp3") || strings.Contains(contentType, "audio/mpeg"):
+				filename += ".mp3"
+				contentType = "audio/mpeg"
+			case strings.Contains(contentType, "video/mp4"):
+				filename += ".mp4"
+				contentType = "video/mp4"
+			case strings.Contains(contentType, "application/pdf"):
+				filename += ".pdf"
+				contentType = "application/pdf"
+			default:
+				filename += ".bin"
+			}
+		} else {
+			// Has extension, set correct MIME type based on extension
+			switch ext {
+			case ".jpg", ".jpeg":
+				contentType = "image/jpeg"
+			case ".png":
+				contentType = "image/png"
+			case ".gif":
+				contentType = "image/gif"
+			case ".webp":
+				contentType = "image/webp"
+			case ".amr":
+				contentType = "audio/amr"
+			case ".mp3":
+				contentType = "audio/mpeg"
+			case ".mp4":
+				contentType = "video/mp4"
+			case ".pdf":
+				contentType = "application/pdf"
+			}
+		}
+	}
+
+	// Generate temp file path
+	tempDir := os.TempDir()
+	mediaDir := filepath.Join(tempDir, "picoclaw_media", "wecom")
+	if mkdirErr := os.MkdirAll(mediaDir, 0o755); mkdirErr != nil {
+		logger.ErrorCF("wecom", "Failed to create media directory", map[string]any{
+			"error": mkdirErr.Error(),
+		})
+		return ""
+	}
+
+	// Create a unique filename to avoid collisions
+	uniqueFilename := fmt.Sprintf("%s-%d-%s", msgID, time.Now().Unix(), filename)
+	localPath := filepath.Join(mediaDir, uniqueFilename)
+
+	// Write the file
+	err = os.WriteFile(localPath, body, 0o644)
+	if err != nil {
+		logger.ErrorCF("wecom", "Failed to write media file", map[string]any{
+			"error": err.Error(),
+			"path":  localPath,
+		})
+		return ""
+	}
+
+	// Verify the image is valid by decoding it
+	f, err := os.Open(localPath)
+	if err == nil {
+		_, _, decodeErr := image.Decode(f)
+		f.Close()
+		if decodeErr != nil {
+			logger.ErrorCF("wecom", "Downloaded file is not a valid image", map[string]any{
+				"path":   localPath,
+				"error":  decodeErr.Error(),
+				"size":   len(body),
+				"header": fmt.Sprintf("%x", body[:min(20, len(body))]),
+			})
+			// Remove invalid file
+			os.Remove(localPath)
+			return ""
+		}
+	} else {
+		logger.WarnCF("wecom", "Failed to open file for verification", map[string]any{
+			"error": err.Error(),
+			"path":  localPath,
+		})
+	}
+
+	// Store in media store
+	ref, err := store.Store(localPath, media.MediaMeta{
+		Filename:    filename,
+		ContentType: contentType,
+		Source:      "wecom",
+	}, scope)
+	if err != nil {
+		logger.ErrorCF("wecom", "Failed to store media", map[string]any{
+			"error": err.Error(),
+			"path":  localPath,
+		})
+		os.Remove(localPath)
+		return ""
+	}
+
+	logger.DebugCF("wecom", "Media downloaded successfully", map[string]any{
+		"url":  mediaURL,
+		"path": localPath,
+		"size": len(body),
+	})
+
+	return ref
 }
