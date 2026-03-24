@@ -31,12 +31,12 @@ type (
 )
 
 type Provider struct {
-	apiKey         string
-	apiBase        string
-	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
-	httpClient     *http.Client
-	extraBody      map[string]any // Additional fields to inject into request body
-	useAzureHeaders bool          // Use api-key header instead of Authorization: Bearer
+	apiKey          string
+	apiBase         string
+	maxTokensField  string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	httpClient      *http.Client
+	extraBody       map[string]any // Additional fields to inject into request body
+	useAzureHeaders bool           // Use api-key header instead of Authorization: Bearer
 }
 
 type Option func(*Provider)

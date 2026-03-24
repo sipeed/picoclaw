@@ -124,8 +124,12 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if mc.APIKey != "" {
-		mc.ModelConfig.SetAPIKey(mc.APIKey)
+	apiKey := mc.APIKey
+	if apiKey == "" {
+		apiKey = mc.ModelConfig.APIKey()
+	}
+	if apiKey != "" {
+		mc.ModelConfig.SetAPIKey(apiKey)
 	}
 
 	cfg, err := config.LoadConfig(h.configPath)
@@ -195,13 +199,14 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Preserve the existing API key when the caller omits it (empty string).
-	// This lets the UI update api_base / proxy without clearing the stored secret.
-	if mc.APIKey == "" {
-		mc.ModelConfig.SetAPIKey(cfg.ModelList[idx].APIKey())
-	} else {
-		mc.ModelConfig.SetAPIKey(mc.APIKey)
+	apiKey := mc.APIKey
+	if apiKey == "" {
+		apiKey = mc.ModelConfig.APIKey()
 	}
+	if apiKey == "" {
+		apiKey = cfg.ModelList[idx].APIKey()
+	}
+	mc.ModelConfig.SetAPIKey(apiKey)
 	if mc.ExtraBody == nil {
 		mc.ExtraBody = cfg.ModelList[idx].ExtraBody
 	}

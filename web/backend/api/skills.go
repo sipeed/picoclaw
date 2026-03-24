@@ -194,6 +194,8 @@ func newSkillsLoader(workspace string) *skills.SkillsLoader {
 		workspace,
 		filepath.Join(globalConfigDir(), "skills"),
 		builtinSkillsDir(),
+		nil,
+		false,
 	)
 }
 

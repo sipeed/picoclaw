@@ -59,10 +59,10 @@ func (info SkillInfo) validate() error {
 }
 
 type SkillsLoader struct {
-	workspace       string
-	workspaceSkills string // workspace skills (project-level)
-	globalSkills    string // global skills (~/.picoclaw/skills)
-	builtinSkills   string // builtin skills
+	workspace        string
+	workspaceSkills  string // workspace skills (project-level)
+	globalSkills     string // global skills (~/.picoclaw/skills)
+	builtinSkills    string // builtin skills
 	whitelist        []string
 	whitelistEnabled bool
 }
@@ -90,13 +90,19 @@ func (sl *SkillsLoader) SkillRoots() []string {
 	return out
 }
 
-func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string, whitelist []string, whitelistEnabled bool) *SkillsLoader {
+func NewSkillsLoader(
+	workspace string,
+	globalSkills string,
+	builtinSkills string,
+	whitelist []string,
+	whitelistEnabled bool,
+) *SkillsLoader {
 	return &SkillsLoader{
-		workspace:       workspace,
-		workspaceSkills: filepath.Join(workspace, "skills"),
-		globalSkills:    globalSkills, // ~/.picoclaw/skills
-		builtinSkills:   builtinSkills,
-		whitelist:       whitelist,
+		workspace:        workspace,
+		workspaceSkills:  filepath.Join(workspace, "skills"),
+		globalSkills:     globalSkills, // ~/.picoclaw/skills
+		builtinSkills:    builtinSkills,
+		whitelist:        whitelist,
 		whitelistEnabled: whitelistEnabled,
 	}
 }
@@ -196,7 +202,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 			return sl.stripFrontmatter(string(content)), true
 		}
 	}
-// ...
+	// ...
 
 	// 2. then load from global skills (~/.picoclaw/skills)
 	if sl.globalSkills != "" {
