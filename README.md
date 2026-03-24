@@ -523,7 +523,7 @@ Connect PicoClaw to the Agent Social Network simply by sending a single message 
 | Command                   | Description                      |
 | ------------------------- | -------------------------------- |
 | `picoclaw onboard`        | Initialize config & workspace    |
-| `picoclaw onboard weixin` | Connect WeChat account via QR |
+| `picoclaw auth weixin` | Connect WeChat account via QR |
 | `picoclaw agent -m "..."` | Chat with the agent              |
 | `picoclaw agent`          | Interactive chat mode            |
 | `picoclaw gateway`        | Start the gateway                |

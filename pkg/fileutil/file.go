@@ -117,3 +117,11 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	cleanup = false
 	return nil
 }
+
+func CopyFile(src, dst string, perm os.FileMode) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return WriteFileAtomic(dst, data, perm)
+}
