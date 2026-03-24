@@ -31,7 +31,7 @@ type SecurityConfig struct {
 	// Model API keys. Map key is model_name, can include suffix like "abc:0", "abc:1"
 	// for load balancing with same model_name. The suffix ":N" is used to distinguish
 	// multiple configs that share the same base model_name.
-	ModelList map[string]ModelSecurityEntry `yaml:"model_list,omitempty"`
+	ModelList map[string]ModelSecurityEntry `yaml:"model_list"`
 
 	// Channel tokens/secrets
 	Channels *ChannelsSecurity `yaml:"channels,omitempty"`

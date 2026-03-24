@@ -1946,6 +1946,7 @@ func SaveConfig(path string, cfg *Config) error {
 	if err != nil {
 		return err
 	}
+	logger.Infof("saving config to %s", path)
 	return fileutil.WriteFileAtomic(path, data, 0o600)
 }
 
