@@ -14,9 +14,15 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
+func testPicoConfig(token string) config.PicoConfig {
+	var c config.PicoConfig
+	c.SetToken(token)
+	return c
+}
+
 func TestPicoChannel_PostSend_Unauthorized(t *testing.T) {
 	t.Parallel()
-	ch, err := NewPicoChannel(config.PicoConfig{Token: "tok"}, bus.NewMessageBus())
+	ch, err := NewPicoChannel(testPicoConfig("tok"), bus.NewMessageBus())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +43,7 @@ func TestPicoChannel_PostSend_Unauthorized(t *testing.T) {
 
 func TestPicoChannel_PostSend_EmptyContent(t *testing.T) {
 	t.Parallel()
-	ch, err := NewPicoChannel(config.PicoConfig{Token: "tok"}, bus.NewMessageBus())
+	ch, err := NewPicoChannel(testPicoConfig("tok"), bus.NewMessageBus())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +72,7 @@ func TestPicoChannel_PostSend_EmptyContent(t *testing.T) {
 
 func TestPicoChannel_PostSend_MissingSession(t *testing.T) {
 	t.Parallel()
-	ch, err := NewPicoChannel(config.PicoConfig{Token: "tok"}, bus.NewMessageBus())
+	ch, err := NewPicoChannel(testPicoConfig("tok"), bus.NewMessageBus())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +94,7 @@ func TestPicoChannel_PostSend_MissingSession(t *testing.T) {
 
 func TestPicoChannel_PostSend_OK(t *testing.T) {
 	t.Parallel()
-	ch, err := NewPicoChannel(config.PicoConfig{Token: "tok"}, bus.NewMessageBus())
+	ch, err := NewPicoChannel(testPicoConfig("tok"), bus.NewMessageBus())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +116,7 @@ func TestPicoChannel_PostSend_OK(t *testing.T) {
 
 func TestPicoChannel_GetEvents_Unauthorized(t *testing.T) {
 	t.Parallel()
-	ch, err := NewPicoChannel(config.PicoConfig{Token: "tok"}, bus.NewMessageBus())
+	ch, err := NewPicoChannel(testPicoConfig("tok"), bus.NewMessageBus())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +135,7 @@ func TestPicoChannel_GetEvents_Unauthorized(t *testing.T) {
 }
 
 func TestPicoChannel_SSE_ReceivesBroadcast(t *testing.T) {
-	ch, err := NewPicoChannel(config.PicoConfig{Token: "tok"}, bus.NewMessageBus())
+	ch, err := NewPicoChannel(testPicoConfig("tok"), bus.NewMessageBus())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +178,7 @@ func TestPicoChannel_SSE_ReceivesBroadcast(t *testing.T) {
 }
 
 func TestPicoChannel_SSE_SecondConnectionSameSessionReplacesFirst(t *testing.T) {
-	ch, err := NewPicoChannel(config.PicoConfig{Token: "tok"}, bus.NewMessageBus())
+	ch, err := NewPicoChannel(testPicoConfig("tok"), bus.NewMessageBus())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -67,7 +67,7 @@ func (h *Handler) handleGetPicoToken(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":      cfg.Channels.Pico.Token,
+		"token":      cfg.Channels.Pico.Token(),
 		"ws_url":     wsURL,
 		"events_url": eventsURL,
 		"send_url":   sendURL,
@@ -168,7 +168,7 @@ func (h *Handler) handlePicoSetup(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":      cfg.Channels.Pico.Token,
+		"token":      cfg.Channels.Pico.Token(),
 		"ws_url":     wsURL,
 		"events_url": eventsURL,
 		"send_url":   sendURL,

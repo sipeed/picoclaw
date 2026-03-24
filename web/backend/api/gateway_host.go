@@ -93,6 +93,19 @@ func requestWSScheme(r *http.Request) string {
 	return "ws"
 }
 
+func requestHTTPScheme(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
+		proto := strings.ToLower(strings.TrimSpace(strings.Split(forwarded, ",")[0]))
+		if proto == "https" {
+			return "https"
+		}
+	}
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
 func (h *Handler) buildWsURL(r *http.Request, cfg *config.Config) string {
 	host := h.effectiveGatewayBindHost(cfg)
 	if host == "" || host == "0.0.0.0" {
@@ -105,4 +118,28 @@ func (h *Handler) buildWsURL(r *http.Request, cfg *config.Config) string {
 		wsPort = 18800 // default web server port
 	}
 	return requestWSScheme(r) + "://" + net.JoinHostPort(host, strconv.Itoa(wsPort)) + "/pico/ws"
+}
+
+func (h *Handler) buildPicoEventsURL(r *http.Request, cfg *config.Config) string {
+	host := h.effectiveGatewayBindHost(cfg)
+	if host == "" || host == "0.0.0.0" {
+		host = requestHostName(r)
+	}
+	webPort := h.serverPort
+	if webPort == 0 {
+		webPort = 18800
+	}
+	return requestHTTPScheme(r) + "://" + net.JoinHostPort(host, strconv.Itoa(webPort)) + "/pico/events"
+}
+
+func (h *Handler) buildPicoSendURL(r *http.Request, cfg *config.Config) string {
+	host := h.effectiveGatewayBindHost(cfg)
+	if host == "" || host == "0.0.0.0" {
+		host = requestHostName(r)
+	}
+	webPort := h.serverPort
+	if webPort == 0 {
+		webPort = 18800
+	}
+	return requestHTTPScheme(r) + "://" + net.JoinHostPort(host, strconv.Itoa(webPort)) + "/pico/send"
 }
