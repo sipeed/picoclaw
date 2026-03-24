@@ -2229,7 +2229,10 @@ func TestProcessHeartbeat_ProceedsAfterTurnClears(t *testing.T) {
 
 	// Second call — should proceed (not skip)
 	resp2, err2 := al.ProcessHeartbeat(context.Background(), "heartbeat prompt", "cli", "direct")
-	if err2 != nil && resp2 == "HEARTBEAT_OK" {
-		t.Fatal("ProcessHeartbeat skipped after turn was cleared")
+	if err2 != nil {
+		t.Fatalf("second ProcessHeartbeat returned error: %v", err2)
+	}
+	if resp2 != "Mock response" {
+		t.Fatalf("expected heartbeat to proceed and return %q, got %q", "Mock response", resp2)
 	}
 }
