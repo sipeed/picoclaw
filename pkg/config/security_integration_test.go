@@ -17,13 +17,12 @@ import (
 
 // Test JSON unmarshal of private fields
 func TestJSONUnmarshalPrivateFields(t *testing.T) {
-	//nolint: govet
 	type testStruct struct {
 		PublicField  string `json:"public"`
-		privateField string `json:"private"`
+		privateField string
 	}
 
-	data := `{"public": "pub", "private": "priv"}`
+	data := `{"public": "pub", "privateField": "priv"}`
 	var s testStruct
 	if err := json.Unmarshal([]byte(data), &s); err != nil {
 		t.Fatalf("JSON unmarshal failed: %v", err)
@@ -35,9 +34,8 @@ func TestJSONUnmarshalPrivateFields(t *testing.T) {
 	if s.PublicField != "pub" {
 		t.Errorf("PublicField = %q, want 'pub'", s.PublicField)
 	}
-	// This should fail because privateField is unexported
-	if s.privateField != "priv" {
-		t.Logf("privateField = %q, want 'priv' - THIS IS EXPECTED TO FAIL", s.privateField)
+	if s.privateField != "" {
+		t.Errorf("privateField = %q, want empty because unexported fields are ignored", s.privateField)
 	}
 }
 

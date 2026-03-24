@@ -25,6 +25,25 @@ const (
 	SecurityConfigFile = ".security.yml"
 )
 
+func normalizeSecurityConfig(sec *SecurityConfig) *SecurityConfig {
+	if sec == nil {
+		sec = &SecurityConfig{}
+	}
+	if sec.ModelList == nil {
+		sec.ModelList = map[string]ModelSecurityEntry{}
+	}
+	if sec.Channels == nil {
+		sec.Channels = &ChannelsSecurity{}
+	}
+	if sec.Web == nil {
+		sec.Web = &WebToolsSecurity{}
+	}
+	if sec.Skills == nil {
+		sec.Skills = &SkillsSecurity{}
+	}
+	return sec
+}
+
 // SecurityConfig stores all sensitive data (API keys, tokens, secrets, passwords)
 // This data is loaded from security.yml and kept separate from the main config
 type SecurityConfig struct {
@@ -191,7 +210,7 @@ func loadSecurityConfig(securityPath string) (*SecurityConfig, error) {
 	data, err := os.ReadFile(securityPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &SecurityConfig{}, nil
+			return normalizeSecurityConfig(nil), nil
 		}
 		return nil, fmt.Errorf("failed to read security config: %w", err)
 	}
@@ -210,7 +229,7 @@ func loadSecurityConfig(securityPath string) (*SecurityConfig, error) {
 		return nil, err
 	}
 
-	return &sec, nil
+	return normalizeSecurityConfig(&sec), nil
 }
 
 // saveSecurityConfig saves the security configuration to security.yml
