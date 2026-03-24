@@ -4,7 +4,7 @@ import { loginAndSelectOrg } from '../utils/auth';
 test('Change email flow', async ({ page }) => {
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
-  const organizationName = 'Testing2026';
+  const organizationName = 'Testing2026!';
   const newEmail = 'heidi2@intnt.ai';
 
   // Step 1-2: Perform the login and select org flow

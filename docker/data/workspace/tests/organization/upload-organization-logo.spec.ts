@@ -5,7 +5,7 @@ import path from 'path';
 test('Organization logo upload flow', async ({ page }) => {
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
-  const organizationName = 'Testing2026';
+  const organizationName = 'Testing2026!';
   const downloadsDir = path.join(process.env.HOME || '/home/picoclaw', 'Downloads');
   const logoFile1 = path.join(downloadsDir, 'test2.png');
   const logoFile2 = path.join(downloadsDir, 'test.png');

@@ -4,7 +4,7 @@ import { loginAndSelectOrg } from '../utils/auth';
 test('Create API Key flow', async ({ page }) => {
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
-  const organizationName = 'Testing2026';
+  const organizationName = 'Testing2026!';
   const expiresInDays = '30';
   const description = 'Test Internal API Key';
 

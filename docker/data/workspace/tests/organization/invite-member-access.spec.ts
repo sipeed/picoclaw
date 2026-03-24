@@ -13,7 +13,7 @@ test('Invite member to organization flow', async ({ page }) => {
   const primaryPassword = 'testing2026!';
   const invitedEmail = 'heidi+22222@intnt.ai';
   const invitedPassword = 'testing2026!!';
-  const organizationName = 'Testing2026';
+  const organizationName = 'Testing2026!';
   const adminRole = 'admin';
 
   // Helper function to retrieve invitation email using IMAP

@@ -6,7 +6,7 @@ test('Invite existing user to organization flow', async ({ page }) => {
     const primaryPassword = 'testing2026!';
     const secondaryEmail = 'heidi+1@intnt.ai';
     const secondaryPassword = 'testing2026!!';
-    const organizationName = 'Testing2026';
+    const organizationName = 'Testing2026!';
     const adminRole = 'admin';
 
     // Step 1 & 2: Login and select organization

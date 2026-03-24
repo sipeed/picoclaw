@@ -4,7 +4,7 @@ import { loginAndSelectOrg } from '../utils/auth';
 test('API Key revoke flow', async ({ page }) => {
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
-  const organizationName = 'Testing2026';
+  const organizationName = 'Testing2026!';
 
   // Step 1-2: Perform the login and select org flow
   await loginAndSelectOrg(page, primaryEmail, primaryPassword, organizationName);

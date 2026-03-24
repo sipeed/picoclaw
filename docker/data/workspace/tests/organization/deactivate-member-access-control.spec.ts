@@ -6,7 +6,7 @@ test('Deactivate organization member flow and disabled organization access', asy
   const adminPassword = 'testing2026!';
   const memberEmail = 'heidi+1@intnt.ai';
   const memberPassword = 'testing2026!!';
-  const organizationName = 'Testing2026';
+  const organizationName = 'Testing2026!';
 
   // Step 1: Login and select organization
   await loginAndSelectOrg(page, adminEmail, adminPassword, organizationName);
