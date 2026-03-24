@@ -327,11 +327,11 @@ func registerSharedTools(
 					cfg.Tools.Skills.SearchCache.MaxSize,
 					time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second,
 				)
-				agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
+				agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache, cfg.Tools.Skills.Whitelist, cfg.Tools.Skills.WhitelistEnabled))
 			}
 
 			if install_skills_enable {
-				agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
+				agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace, cfg.Tools.Skills.Whitelist, cfg.Tools.Skills.WhitelistEnabled))
 			}
 		}
 
@@ -437,6 +437,8 @@ func registerSharedTools(
 		} else if (spawnEnabled || spawnStatusEnabled) && !cfg.Tools.IsToolEnabled("subagent") {
 			logger.WarnCF("agent", "spawn/spawn_status tools require subagent to be enabled", nil)
 		}
+		// Apply global tools whitelist
+		agent.Tools.Filter(cfg.Tools.Whitelist, cfg.Tools.WhitelistEnabled)
 	}
 }
 
@@ -446,7 +448,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	if err := al.ensureHooksInitialized(ctx); err != nil {
 		return err
 	}
-	if err := al.ensureMCPInitialized(ctx); err != nil {
+	if err := al.EnsureMCPInitialized(ctx); err != nil {
 		return err
 	}
 
@@ -1293,7 +1295,7 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 	if err := al.ensureHooksInitialized(ctx); err != nil {
 		return "", err
 	}
-	if err := al.ensureMCPInitialized(ctx); err != nil {
+	if err := al.EnsureMCPInitialized(ctx); err != nil {
 		return "", err
 	}
 
@@ -1317,7 +1319,7 @@ func (al *AgentLoop) ProcessHeartbeat(
 	if err := al.ensureHooksInitialized(ctx); err != nil {
 		return "", err
 	}
-	if err := al.ensureMCPInitialized(ctx); err != nil {
+	if err := al.EnsureMCPInitialized(ctx); err != nil {
 		return "", err
 	}
 

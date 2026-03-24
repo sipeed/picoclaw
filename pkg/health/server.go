@@ -19,7 +19,10 @@ type Server struct {
 	startTime  time.Time
 	reloadFunc func() error
 	authToken  string // optional bearer token for protected endpoints
+	chatFunc   func(ctx context.Context, message, sessionID string) (string, error)
+	apiKey     string
 }
+
 
 type Check struct {
 	Name      string    `json:"name"`
@@ -46,6 +49,8 @@ func NewServer(host string, port int, token string) *Server {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
+	mux.HandleFunc("/chat", s.chatHandler)
+
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	s.server = &http.Server{
@@ -247,4 +252,90 @@ func extractBearerToken(header string) string {
 		return ""
 	}
 	return header[len(prefix):]
+}
+
+// SetChatFunc sets the callback that processes /chat requests.
+func (s *Server) SetChatFunc(fn func(ctx context.Context, message, sessionID string) (string, error)) {
+s.mu.Lock()
+defer s.mu.Unlock()
+s.chatFunc = fn
+}
+
+// SetAPIKey sets the expected X-API-Key header value.
+func (s *Server) SetAPIKey(key string) {
+s.mu.Lock()
+defer s.mu.Unlock()
+s.apiKey = key
+}
+
+func (s *Server) verifyAPIKey(r *http.Request) bool {
+s.mu.RLock()
+defer s.mu.RUnlock()
+if s.apiKey == "" {
+ true
+}
+return r.Header.Get("X-API-Key") == s.apiKey
+}
+
+// ChatRequest is the JSON body for POST /chat.
+type ChatRequest struct {
+Message   string `json:"message"`
+SessionID string `json:"session_id,omitempty"`
+}
+
+// ChatResponse is the JSON response from POST /chat.
+type ChatResponse struct {
+Response string `json:"response"`
+}
+
+func (s *Server) chatHandler(w http.ResponseWriter, r *http.Request) {
+if !s.verifyAPIKey(r) {
+tent-Type", "application/json")
+authorized)
+.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+
+}
+if r.Method != http.MethodPost {
+tent-Type", "application/json")
+otAllowed)
+.NewEncoder(w).Encode(map[string]string{"error": "method not allowed, use POST"})
+
+}
+
+s.mu.RLock()
+chatFunc := s.chatFunc
+s.mu.RUnlock()
+
+if chatFunc == nil {
+tent-Type", "application/json")
+available)
+.NewEncoder(w).Encode(map[string]string{"error": "chat not configured"})
+
+}
+
+var req ChatRequest
+if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+tent-Type", "application/json")
+uest)
+.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON: " + err.Error()})
+
+}
+if req.Message == "" {
+tent-Type", "application/json")
+uest)
+.NewEncoder(w).Encode(map[string]string{"error": "message field is required"})
+
+}
+
+reply, err := chatFunc(r.Context(), req.Message, req.SessionID)
+if err != nil {
+tent-Type", "application/json")
+ternalServerError)
+.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+
+}
+
+w.Header().Set("Content-Type", "application/json")
+w.WriteHeader(http.StatusOK)
+json.NewEncoder(w).Encode(ChatResponse{Response: reply})
 }

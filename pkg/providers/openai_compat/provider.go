@@ -57,9 +57,12 @@ var stripModelPrefixProviders = map[string]struct{}{
 	"mistral":    {},
 	"vivgrid":    {},
 	"minimax":    {},
-	"novita":     {},
-	"lmstudio":   {},
+	"novita":        {},
+	"lmstudio":      {},
+	"azure-ai":      {},
+	"azure-foundry": {},
 }
+
 
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {

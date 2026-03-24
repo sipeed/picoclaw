@@ -59,7 +59,7 @@ func (r *mcpRuntime) hasManager() bool {
 
 // ensureMCPInitialized loads MCP servers/tools once so both Run() and direct
 // agent mode share the same initialization path.
-func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
+func (al *AgentLoop) EnsureMCPInitialized(ctx context.Context) error {
 	if !al.cfg.Tools.IsToolEnabled("mcp") {
 		return nil
 	}
