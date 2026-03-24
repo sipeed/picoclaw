@@ -30,8 +30,5 @@ func NewOnboardCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&encrypt, "enc", false,
 		"Enable credential encryption (generates SSH key and prompts for passphrase)")
 
-	// Channel onboarding subcommands
-	cmd.AddCommand(newWeixinCommand())
-
 	return cmd
 }

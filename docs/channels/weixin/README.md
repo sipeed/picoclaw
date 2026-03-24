@@ -7,7 +7,7 @@ PicoClaw supports connecting to your personal WeChat account using the official 
 The easiest way to set up the Weixin channel is using the interactive onboarding command:
 
 ```bash
-picoclaw onboard weixin
+picoclaw auth weixin
 ```
 
 This command will:
