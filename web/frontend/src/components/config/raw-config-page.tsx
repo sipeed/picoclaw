@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { refreshGatewayState } from "@/store/gateway"
 
 export function RawConfigPage() {
   const { t } = useTranslation()
@@ -56,6 +57,7 @@ export function RawConfigPage() {
       } catch {
         queryClient.invalidateQueries({ queryKey: ["config"] })
       }
+      void refreshGatewayState({ force: true })
     },
     onError: () => {
       toast.error(t("pages.config.save_error"))
