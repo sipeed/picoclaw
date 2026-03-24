@@ -4,7 +4,7 @@ import { loginAndSelectOrg } from '../utils/auth';
 test('API Key edit description flow', async ({ page }) => {
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
-  const organizationName = 'Testing2026';
+  const organizationName = 'Testing2026!';
   const newDescription = 'Test Internal API Key Edit';
 
   // Step 1-2: Perform the login and select org flow

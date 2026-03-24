@@ -5,7 +5,7 @@ test('Change member role from Admin to Developer flow', async ({ page }) => {
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
   const memberEmail = 'heidi+1@intnt.ai';
-  const organizationName = 'Testing2026';
+  const organizationName = 'Testing2026!';
   const newRole = 'developer';
 
   // Step 1 & 2: Login and select organization

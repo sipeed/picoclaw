@@ -4,7 +4,7 @@ import { loginAndSelectOrg } from '../utils/auth';
 test('Update profile name flow', async ({ page }) => {
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
-  const organizationName = 'Testing2026';
+  const organizationName = 'Testing2026!';
   const firstName = 'heidi';
   const lastName = 'lau';
 

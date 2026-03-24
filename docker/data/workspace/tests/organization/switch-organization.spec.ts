@@ -5,7 +5,7 @@ test('Organization switching flow', async ({ page }) => {
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
   const firstOrganization = 'Testing';
-  const secondOrganization = 'Testing2026';
+  const secondOrganization = 'Testing2026!';
 
   // Step 1 & 2: Login and select first organization
   await loginAndSelectOrg(page, primaryEmail, primaryPassword, firstOrganization);

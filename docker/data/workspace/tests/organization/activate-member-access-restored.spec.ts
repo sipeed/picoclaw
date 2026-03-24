@@ -6,7 +6,7 @@ test('Activate organization member flow and restored organization access', async
   const adminPassword = 'testing2026!';
   const memberEmail = 'heidi+1@intnt.ai';
   const memberPassword = 'testing2026!!';
-  const organizationName = 'Testing2026';
+  const organizationName = 'Testing2026!';
 
   // Step 1: Login and select organization
   await loginAndSelectOrg(page, adminEmail, adminPassword, organizationName);
@@ -108,7 +108,7 @@ test('Activate organization member flow and restored organization access', async
 
   // Wait for dashboard to load (no select_org query)
   await page.waitForURL(url => url.pathname === '/' && !url.searchParams.has('select_org'), { timeout: 15000 });
-  
+
   const dashboardContent = page.locator('main, [role="main"]').first();
   await expect(dashboardContent).toBeVisible({ timeout: 10000 });
   console.log('✅ PASS: Step 11 - Dashboard access restored successfully');

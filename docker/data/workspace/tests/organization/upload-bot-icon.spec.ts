@@ -5,7 +5,7 @@ import path from 'path';
 test('Bot icon upload flow', async ({ page }) => {
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
-  const organizationName = 'Testing2026';
+  const organizationName = 'Testing2026!';
   const downloadsDir = path.join(process.env.HOME || '/home/picoclaw', 'Downloads');
   const iconFile = path.join(downloadsDir, 'test.png');
 
