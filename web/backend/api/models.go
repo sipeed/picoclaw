@@ -108,7 +108,12 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var mc config.ModelConfig
+	type custom struct {
+		config.ModelConfig
+		APIKey string `json:"api_key"`
+	}
+
+	var mc custom
 	if err = json.Unmarshal(body, &mc); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
@@ -119,13 +124,17 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if mc.APIKey != "" {
+		mc.ModelConfig.SetAPIKey(mc.APIKey)
+	}
+
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	cfg.ModelList = append(cfg.ModelList, &mc)
+	cfg.ModelList = append(cfg.ModelList, &mc.ModelConfig)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)

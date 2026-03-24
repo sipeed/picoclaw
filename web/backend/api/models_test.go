@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -314,6 +315,44 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	}
 	if gotProbe != "http://127.0.0.1:8000/v1|custom-model|" {
 		t.Fatalf("probe api base = %q, want %q", gotProbe, "http://127.0.0.1:8000/v1|custom-model|")
+	}
+}
+
+func TestHandleAddModel_PersistsAPIKey(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"new-model",
+		"model":"openai/gpt-4o-mini",
+		"api_key":"sk-new-model-key"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if len(cfg.ModelList) != 2 {
+		t.Fatalf("len(model_list) = %d, want 2", len(cfg.ModelList))
+	}
+
+	added := cfg.ModelList[1]
+	if added.ModelName != "new-model" {
+		t.Fatalf("model_name = %q, want %q", added.ModelName, "new-model")
+	}
+	if added.APIKey() != "sk-new-model-key" {
+		t.Fatalf("api_key = %q, want %q", added.APIKey(), "sk-new-model-key")
 	}
 }
 
