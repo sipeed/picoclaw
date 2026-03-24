@@ -15,6 +15,7 @@ const PROVIDER_ICON_SLUGS: Record<string, string> = {
   ollama: "ollama",
   mistral: "mistralai",
   zhipu: "zhipu",
+  modelscope: "modelscope",
 }
 
 const PROVIDER_DOMAINS: Record<string, string> = {
@@ -37,6 +38,7 @@ const PROVIDER_DOMAINS: Record<string, string> = {
   avian: "avian.io",
   vllm: "vllm.ai",
   zhipu: "zhipuai.cn",
+  modelscope: "modelscope.cn",
 }
 
 interface ProviderIconProps {
