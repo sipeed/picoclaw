@@ -59,7 +59,6 @@ type PicoChannel struct {
 	connections        map[string]*picoConn            // connID -> *picoConn
 	sessionConnections map[string]map[string]*picoConn // sessionID -> connID -> *picoConn
 	connsMu            sync.RWMutex
-	connCount          int
 	ctx                context.Context
 	cancel             context.CancelFunc
 }
@@ -103,8 +102,8 @@ func NewPicoChannel(cfg config.PicoConfig, messageBus *bus.MessageBus) (*PicoCha
 func (c *PicoChannel) createAndAddConnection(conn *websocket.Conn, sessionID string, maxConns int) (*picoConn, error) {
 	c.connsMu.Lock()
 	defer c.connsMu.Unlock()
-	if c.connCount >= maxConns {
-		return nil, channels.ErrSendFailed
+	if len(c.connections) >= maxConns {
+		return nil, channels.ErrTemporary
 	}
 
 	var connID string
@@ -128,7 +127,6 @@ func (c *PicoChannel) createAndAddConnection(conn *websocket.Conn, sessionID str
 		c.sessionConnections[pc.sessionID] = bySession
 	}
 	bySession[pc.id] = pc
-	c.connCount++
 
 	return pc, nil
 }
@@ -150,7 +148,6 @@ func (c *PicoChannel) removeConnection(connID string) *picoConn {
 			delete(c.sessionConnections, pc.sessionID)
 		}
 	}
-	c.connCount--
 
 	return pc
 }
@@ -166,7 +163,6 @@ func (c *PicoChannel) takeAllConnections() []*picoConn {
 	}
 	clear(c.connections)
 	clear(c.sessionConnections)
-	c.connCount = 0
 
 	return all
 }
@@ -192,7 +188,7 @@ func (c *PicoChannel) sessionConnectionsSnapshot(sessionID string) []*picoConn {
 func (c *PicoChannel) currentConnCount() int {
 	c.connsMu.RLock()
 	defer c.connsMu.RUnlock()
-	return c.connCount
+	return len(c.connections)
 }
 
 // Start implements Channel.
