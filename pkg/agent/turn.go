@@ -43,6 +43,7 @@ type turnResult struct {
 	finalContent string
 	status       TurnEndStatus
 	followUps    []bus.InboundMessage
+	messages     []providers.Message // ephemeral session history after execution (for state continuation)
 }
 
 type turnState struct {

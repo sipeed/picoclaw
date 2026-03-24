@@ -3,10 +3,13 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -19,7 +22,9 @@ type SubTurnSpawner interface {
 // SubTurnConfig holds configuration for spawning a sub-turn.
 type SubTurnConfig struct {
 	Model              string
+	Provider           providers.LLMProvider // non-nil overrides the child agent's provider
 	Tools              []Tool
+	EmptyTools         bool // true: child agent gets an empty ToolRegistry (overrides Tools)
 	SystemPrompt       string
 	MaxTokens          int
 	Temperature        float64
@@ -30,6 +35,30 @@ type SubTurnConfig struct {
 	ActualSystemPrompt string
 	InitialMessages    []providers.Message
 	InitialTokenBudget *atomic.Int64 // Shared token budget for team members; nil if no budget
+}
+
+// ModelTag constants define the recognized capability labels for models in config.json.
+// These are set via `"tags": ["vision", "code"]` under each model in the model list.
+const (
+	ModelTagVision      = "vision"       // Supports image/screenshot input (multimodal)
+	ModelTagImageGen    = "image-gen"    // Supports image generation output (e.g. DALL-E, Stable Diffusion)
+	ModelTagCode        = "code"         // Specialized for code generation and analysis
+	ModelTagFast        = "fast"         // Low-latency model, suited for lightweight tasks
+	ModelTagLongContext = "long-context" // Supports very long context windows (>100k tokens)
+	ModelTagReasoning   = "reasoning"    // Strong logical/math reasoning (e.g., o1, deepseek-r1)
+)
+
+// modelTagDescriptions provides LLM-readable explanations of each known tag,
+// injected at runtime into the tool description to guide model selection.
+//
+//nolint:unused // Reserved for future use in dynamic tool descriptions
+var modelTagDescriptions = map[string]string{
+	ModelTagVision:      "can analyze images and screenshots (multimodal input)",
+	ModelTagImageGen:    "can generate images from text descriptions (e.g. DALL-E, Stable Diffusion)",
+	ModelTagCode:        "specialized in code generation and debugging",
+	ModelTagFast:        "fast and lightweight, ideal for simple or high-frequency tasks",
+	ModelTagLongContext: "handles very long inputs (>100k tokens)",
+	ModelTagReasoning:   "excels at logical reasoning, math, and multi-step planning",
 }
 
 type SubagentTask struct {
@@ -58,8 +87,11 @@ type SubagentManager struct {
 	mu             sync.RWMutex
 	provider       providers.LLMProvider
 	defaultModel   string
+	allowedModels  []providers.FallbackCandidate
+	bus            *bus.MessageBus
 	workspace      string
 	tools          *ToolRegistry
+	teamConfig     config.TeamToolsConfig
 	maxIterations  int
 	maxTokens      int
 	temperature    float64
@@ -71,17 +103,83 @@ type SubagentManager struct {
 
 func NewSubagentManager(
 	provider providers.LLMProvider,
-	defaultModel, workspace string,
+	defaultModel string,
+	candidates []providers.FallbackCandidate,
+	workspace string,
+	teamConfig config.TeamToolsConfig,
+	bus *bus.MessageBus,
 ) *SubagentManager {
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,
 		defaultModel:  defaultModel,
+		allowedModels: candidates,
+		teamConfig:    teamConfig,
+		bus:           bus,
 		workspace:     workspace,
 		tools:         NewToolRegistry(),
 		maxIterations: 10,
 		nextID:        1,
 	}
+}
+
+// IsModelAllowed checks if a specific requested model exists in the permitted candidates list.
+func (sm *SubagentManager) IsModelAllowed(model string) bool {
+	// If the user requested the default model directly, that's automatically allowed
+	if model == sm.defaultModel {
+		return true
+	}
+
+	// 1. Check against explicitly allowed models in team config
+	for _, cand := range sm.teamConfig.AllowedModels {
+		if cand.Name == model {
+			return true
+		}
+	}
+
+	// 2. Otherwise, check against the resolved candidates (primary + fallbacks + explicitly configured)
+	// If teamConfig.AllowedModels is set, we strictly enforce it and DO NOT fall back to candidates
+	// unless the candidate model has tags that overlap with AllowedTags. But since AllowedTags
+	// was not implemented yet, just check fallback for backwards compatibility if teamConfig is empty.
+	if len(sm.teamConfig.AllowedModels) > 0 {
+		return false
+	}
+
+	for _, cand := range sm.allowedModels {
+		if cand.Model == model {
+			return true
+		}
+	}
+	return false
+}
+
+// ModelCapabilityHint generates a human-readable summary of allowed models and their tags.
+// This is injected into the coordinator's tool descriptions so the LLM can make better routing decisions.
+func (sm *SubagentManager) ModelCapabilityHint() string {
+	if len(sm.allowedModels) == 0 {
+		return ""
+	}
+
+	var modelLines []string
+	for _, cand := range sm.allowedModels {
+		modelLines = append(modelLines, fmt.Sprintf("  - %s (general purpose)", cand.Model))
+	}
+
+	hint := "When selecting a 'model' for sub-agents, use ONLY these configured models:\n"
+	if len(sm.teamConfig.AllowedModels) > 0 {
+		for _, cand := range sm.teamConfig.AllowedModels {
+			tagsStr := ""
+			if len(cand.Tags) > 0 {
+				tagsStr = fmt.Sprintf(" [%s]", strings.Join(cand.Tags, ", "))
+			}
+			hint += fmt.Sprintf("  - %s%s\n", cand.Name, tagsStr)
+		}
+	} else {
+		hint += strings.Join(modelLines, "\n")
+	}
+
+	hint += "\nIf a task requires vision/image analysis, you MUST select a model with the 'vision' tag. If no suitable model is available, omit the 'model' field to use the default."
+	return hint
 }
 
 func (sm *SubagentManager) SetSpawner(spawner SpawnSubTurnFunc) {
@@ -154,9 +252,6 @@ func (sm *SubagentManager) runTask(
 ) {
 	task.Status = "running"
 	task.Created = time.Now().UnixMilli()
-	// TODO(eventbus): once subagents are modeled as child turns inside
-	// pkg/agent, emit SubTurnEnd and SubTurnResultDelivered from the parent
-	// AgentLoop instead of this legacy manager.
 
 	// Check if context is already canceled before starting
 	select {
@@ -244,7 +339,6 @@ After completing the task, provide a clear summary of what was done.`
 	sm.mu.Lock()
 	defer func() {
 		sm.mu.Unlock()
-		// Call callback if provided and result is set
 		if callback != nil && result != nil {
 			callback(ctx, result)
 		}
@@ -253,7 +347,6 @@ After completing the task, provide a clear summary of what was done.`
 	if err != nil {
 		task.Status = "failed"
 		task.Result = fmt.Sprintf("Error: %v", err)
-		// Check if it was canceled
 		if ctx.Err() != nil {
 			task.Status = "canceled"
 			task.Result = "Task canceled during execution"
@@ -315,13 +408,40 @@ func (sm *SubagentManager) ListTaskCopies() []SubagentTask {
 	return copies
 }
 
+// BuildBaseWorkerConfig returns a base ToolLoopConfig that can be customized for isolated workers.
+func (sm *SubagentManager) BuildBaseWorkerConfig(ctx context.Context) ToolLoopConfig {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	var llmOptions map[string]any
+	if sm.hasMaxTokens || sm.hasTemperature {
+		llmOptions = map[string]any{}
+		if sm.hasMaxTokens {
+			llmOptions["max_tokens"] = sm.maxTokens
+		}
+		if sm.hasTemperature {
+			llmOptions["temperature"] = sm.temperature
+		}
+	}
+
+	return ToolLoopConfig{
+		Provider:      sm.provider,
+		Model:         sm.defaultModel,
+		Tools:         sm.tools,
+		MaxIterations: sm.maxIterations,
+		LLMOptions:    llmOptions,
+	}
+}
+
 // SubagentTool executes a subagent task synchronously and returns the result.
 // It directly calls SubTurnSpawner with Async=false for synchronous execution.
 type SubagentTool struct {
-	spawner      SubTurnSpawner
-	defaultModel string
-	maxTokens    int
-	temperature  float64
+	spawner        SubTurnSpawner
+	defaultModel   string
+	maxTokens      int
+	temperature    float64
+	isModelAllowed func(string) bool // nil means no allowlist check
+	modelHint      func() string     // nil means no model hint in description
 }
 
 func NewSubagentTool(manager *SubagentManager) *SubagentTool {
@@ -329,9 +449,11 @@ func NewSubagentTool(manager *SubagentManager) *SubagentTool {
 		return &SubagentTool{}
 	}
 	return &SubagentTool{
-		defaultModel: manager.defaultModel,
-		maxTokens:    manager.maxTokens,
-		temperature:  manager.temperature,
+		defaultModel:   manager.defaultModel,
+		maxTokens:      manager.maxTokens,
+		temperature:    manager.temperature,
+		isModelAllowed: manager.IsModelAllowed,
+		modelHint:      manager.ModelCapabilityHint,
 	}
 }
 
@@ -345,7 +467,13 @@ func (t *SubagentTool) Name() string {
 }
 
 func (t *SubagentTool) Description() string {
-	return "Execute a subagent task synchronously and return the result. Use this for delegating specific tasks to an independent agent instance. Returns execution summary to user and full details to LLM."
+	base := "Execute a subagent task synchronously and return the result. Use this for delegating specific tasks to an independent agent instance with an optional role (system prompt) and model. Returns execution summary to user and full details to LLM."
+	if t.modelHint != nil {
+		if hint := t.modelHint(); hint != "" {
+			return base + "\n\n" + hint
+		}
+	}
+	return base
 }
 
 func (t *SubagentTool) Parameters() map[string]any {
@@ -360,6 +488,14 @@ func (t *SubagentTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional short label for the task (for display)",
 			},
+			"role": map[string]any{
+				"type":        "string",
+				"description": "Optional system prompt / role assignment for the subagent (e.g. 'You are an expert code reviewer'). If omitted, a default subagent prompt is used.",
+			},
+			"model": map[string]any{
+				"type":        "string",
+				"description": "Optional specific LLM model ID to route this task to. If omitted, inherits the parent's model.",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -372,15 +508,35 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	label, _ := args["label"].(string)
+	role, _ := args["role"].(string)
+	modelParam, _ := args["model"].(string)
+	modelParam = strings.TrimSpace(modelParam)
 
-	// Build system prompt for subagent
+	// Validate model against allowlist if provided
+	if modelParam != "" && t.isModelAllowed != nil && !t.isModelAllowed(modelParam) {
+		return ErrorResult(fmt.Sprintf("requested model '%s' is not in the allowed models list", modelParam)).
+			WithError(fmt.Errorf("model %s not allowed", modelParam))
+	}
+
+	// Determine the model to use
+	targetModel := t.defaultModel
+	if modelParam != "" {
+		targetModel = modelParam
+	}
+
+	// Build ActualSystemPrompt: prefer explicit role, fall back to auto-generated prompt
+	var actualSystemPrompt string
+	if role != "" {
+		actualSystemPrompt = role
+	}
+
+	// Build SystemPrompt (task description, becomes first user message in sub-turn)
 	systemPrompt := fmt.Sprintf(
 		`You are a subagent. Complete the given task independently and provide a clear, concise result.
 
 Task: %s`,
 		task,
 	)
-
 	if label != "" {
 		systemPrompt = fmt.Sprintf(
 			`You are a subagent labeled "%s". Complete the given task independently and provide a clear, concise result.
@@ -394,12 +550,13 @@ Task: %s`,
 	// Use spawner if available (direct SpawnSubTurn call)
 	if t.spawner != nil {
 		result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
-			Model:        t.defaultModel,
-			Tools:        nil, // Will inherit from parent via context
-			SystemPrompt: systemPrompt,
-			MaxTokens:    t.maxTokens,
-			Temperature:  t.temperature,
-			Async:        false, // Synchronous execution
+			Model:              targetModel,
+			Tools:              nil, // Will inherit from parent via context
+			SystemPrompt:       systemPrompt,
+			ActualSystemPrompt: actualSystemPrompt,
+			MaxTokens:          t.maxTokens,
+			Temperature:        t.temperature,
+			Async:              false, // Synchronous execution
 		})
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)

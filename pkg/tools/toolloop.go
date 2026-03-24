@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -19,17 +20,19 @@ import (
 
 // ToolLoopConfig configures the tool execution loop.
 type ToolLoopConfig struct {
-	Provider      providers.LLMProvider
-	Model         string
-	Tools         *ToolRegistry
-	MaxIterations int
-	LLMOptions    map[string]any
+	Provider             providers.LLMProvider
+	Model                string
+	Tools                *ToolRegistry
+	MaxIterations        int
+	LLMOptions           map[string]any
+	RemainingTokenBudget *atomic.Int64
 }
 
 // ToolLoopResult contains the result of running the tool loop.
 type ToolLoopResult struct {
 	Content    string
 	Iterations int
+	Messages   []providers.Message // Allows caller to retain stateful context across executions
 }
 
 // RunToolLoop executes the LLM + tool call iteration loop.
@@ -64,7 +67,13 @@ func RunToolLoop(
 			llmOpts = map[string]any{}
 		}
 		// 3. Call LLM
-		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
+		response, err := config.Provider.Chat(
+			ctx,
+			messages,
+			providerToolDefs,
+			config.Model,
+			llmOpts,
+		)
 		if err != nil {
 			logger.ErrorCF("toolloop", "LLM call failed",
 				map[string]any{
@@ -74,14 +83,89 @@ func RunToolLoop(
 			return nil, fmt.Errorf("LLM call failed: %w", err)
 		}
 
+		// 3.5 Token Budget: Soft enforcement with graceful degradation.
+		// Budget exhaustion is NOT a hard error — workers get a chance to wrap up gracefully.
+		if response.Usage != nil && config.RemainingTokenBudget != nil {
+			newBudget := config.RemainingTokenBudget.Add(-int64(response.Usage.TotalTokens))
+			originalBudget := newBudget + int64(response.Usage.TotalTokens)
+
+			if newBudget <= 0 {
+				// Budget exhausted: signal the worker to wrap up and return partial result.
+				logger.WarnCF("toolloop", "Token budget exhausted, injecting wrap-up signal",
+					map[string]any{
+						"deficit":   -newBudget,
+						"iteration": iteration,
+					})
+				finalContent = response.Content
+				messages = append(messages, providers.Message{
+					Role:             "assistant",
+					Content:          response.Content,
+					ReasoningContent: response.ReasoningContent, // [Fix] Preserve reasoning content to maintain context
+				})
+				messages = append(messages, providers.Message{
+					Role:    "user",
+					Content: "[SYSTEM] Token budget has been exhausted. Stop all tool calls immediately and return the best result you have completed so far. Do not call any more tools.",
+				})
+				// One final LLM call to get a summary/wrap-up from the model
+				if finalResp, err := config.Provider.Chat(
+					ctx, messages, nil, config.Model, config.LLMOptions,
+				); err == nil {
+					finalContent = finalResp.Content
+				}
+				break
+			} else if originalBudget > 0 && newBudget < originalBudget/2 {
+				// Budget below 50%: soft warning injected into next iteration's context.
+				logger.WarnCF("toolloop", "Token budget below 50%, injecting advisory",
+					map[string]any{"remaining": newBudget, "iteration": iteration})
+				messages = append(messages, providers.Message{
+					Role:    "user",
+					Content: "[SYSTEM] Advisory: token budget is running low. Please prioritize completing the most critical parts of your task and avoid unnecessary tool calls.",
+				})
+			}
+		}
+
+		// 3.6 Truncation Recovery: LLM response was cut off (max_tokens hit or malformed JSON).
+		// Inject a recovery message so the LLM knows to retry with a shorter, complete response.
+		if response.FinishReason == "truncated" {
+			logger.WarnCF(
+				"toolloop",
+				"LLM response was truncated (max_tokens hit), injecting recovery message",
+				map[string]any{"iteration": iteration},
+			)
+			messages = append(messages, providers.Message{
+				Role:             "assistant",
+				Content:          response.Content,
+				ReasoningContent: response.ReasoningContent, // [Fix] Preserve reasoning content to prevent broken chain of thought
+			})
+			messages = append(messages, providers.Message{
+				Role:    "user",
+				Content: "[SYSTEM] Your previous response was cut off because it exceeded the token limit. Please retry by producing a shorter, complete response. If you were about to call a tool, make sure the full JSON arguments are included without truncation.",
+			})
+			continue
+		}
+
 		// 4. If no tool calls, we're done
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
+			// [Fix] Fallback for models (like Gemini 2.0 Pro Thinking) that put output in reasoning block
+			if finalContent == "" && response.ReasoningContent != "" {
+				finalContent = response.ReasoningContent
+			}
+
 			logger.InfoCF("toolloop", "LLM response without tool calls (direct answer)",
 				map[string]any{
 					"iteration":     iteration,
 					"content_chars": len(finalContent),
 				})
+
+			// [Fix] Append the final answer to the messages array!
+			// Essential for Team's evaluator_optimizer strategy to retain state in the next loop.
+			messages = append(messages, providers.Message{
+				Role:             "assistant",
+				Content:          finalContent,
+				ReasoningContent: response.ReasoningContent,
+			})
+
 			break
 		}
 
@@ -104,20 +188,32 @@ func RunToolLoop(
 
 		// 6. Build assistant message with tool calls
 		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
+			Role:             "assistant",
+			Content:          response.Content,
+			ReasoningContent: response.ReasoningContent, // [Fix] Include ReasoningContent
 		}
 		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
+
+			// [Fix] Preserve ThoughtSignature and ExtraContent for compatibility with models like Gemini 2.0/3.0
+			extraContent := tc.ExtraContent
+			thoughtSignature := ""
+			if tc.Function != nil {
+				thoughtSignature = tc.Function.ThoughtSignature
+			}
+
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
 				ID:        tc.ID,
 				Type:      "function",
 				Name:      tc.Name,
 				Arguments: tc.Arguments,
 				Function: &providers.FunctionCall{
-					Name:      tc.Name,
-					Arguments: string(argumentsJSON),
+					Name:             tc.Name,
+					Arguments:        string(argumentsJSON),
+					ThoughtSignature: thoughtSignature, // [Fix] Preserve thought signature
 				},
+				ExtraContent:     extraContent,     // [Fix] Preserve extra content
+				ThoughtSignature: thoughtSignature, // [Fix] Preserve thought signature
 			})
 		}
 		messages = append(messages, assistantMsg)
@@ -148,7 +244,14 @@ func RunToolLoop(
 
 				var toolResult *ToolResult
 				if config.Tools != nil {
-					toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, channel, chatID, nil)
+					toolResult = config.Tools.ExecuteWithContext(
+						ctx,
+						tc.Name,
+						tc.Arguments,
+						channel,
+						chatID,
+						nil,
+					)
 				} else {
 					toolResult = ErrorResult("No tools available")
 				}
@@ -175,5 +278,6 @@ func RunToolLoop(
 	return &ToolLoopResult{
 		Content:    finalContent,
 		Iterations: iteration,
+		Messages:   messages,
 	}, nil
 }

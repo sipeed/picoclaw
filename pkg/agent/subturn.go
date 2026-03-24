@@ -102,7 +102,9 @@ type subTurnRuntimeConfig struct {
 //	// Parent turn will poll and process it in a later iteration
 type SubTurnConfig struct {
 	Model        string
+	Provider     providers.LLMProvider // non-nil overrides the child agent's provider
 	Tools        []tools.Tool
+	EmptyTools   bool // true: child agent gets an empty ToolRegistry (overrides Tools)
 	SystemPrompt string
 	MaxTokens    int
 
@@ -220,7 +222,9 @@ func (s *AgentLoopSpawner) SpawnSubTurn(
 	// Convert tools.SubTurnConfig to agent.SubTurnConfig
 	agentCfg := SubTurnConfig{
 		Model:              cfg.Model,
+		Provider:           cfg.Provider,
 		Tools:              cfg.Tools,
+		EmptyTools:         cfg.EmptyTools,
 		SystemPrompt:       cfg.SystemPrompt,
 		ActualSystemPrompt: cfg.ActualSystemPrompt,
 		InitialMessages:    cfg.InitialMessages,
@@ -230,6 +234,17 @@ func (s *AgentLoopSpawner) SpawnSubTurn(
 		Critical:           cfg.Critical,
 		Timeout:            cfg.Timeout,
 		MaxContextRunes:    cfg.MaxContextRunes,
+	}
+
+	// Resolve model → provider when only a model name is given (no explicit provider).
+	// This enables heterogeneous model routing from tool-layer callers (e.g. subagent tool).
+	if agentCfg.Provider == nil && agentCfg.Model != "" {
+		if modelCfg, err := s.al.GetConfig().GetModelConfig(agentCfg.Model); err == nil {
+			if p, m, err := providers.CreateProviderFromConfig(modelCfg); err == nil {
+				agentCfg.Provider = p
+				agentCfg.Model = m
+			}
+		}
 	}
 
 	return spawnSubTurn(ctx, s.al, parentTS, agentCfg)
@@ -344,9 +359,25 @@ func spawnSubTurn(
 	ephemeralStore := newEphemeralSession(nil)
 	agent := *baseAgent // shallow copy
 	agent.Sessions = ephemeralStore
+	// Apply model/provider override for heterogeneous agents.
+	if cfg.Model != "" {
+		agent.Model = cfg.Model
+	}
+	if cfg.Provider != nil {
+		agent.Provider = cfg.Provider
+	}
 	// Clone the tool registry so child turn's tool registrations
 	// don't pollute the parent's registry.
-	if baseAgent.Tools != nil {
+	if cfg.EmptyTools {
+		agent.Tools = tools.NewToolRegistry()
+	} else if cfg.Tools != nil {
+		// Tools override will be applied via processOptions below.
+		// Clone parent registry as base, then replace with cfg.Tools entries.
+		agent.Tools = tools.NewToolRegistry()
+		for _, t := range cfg.Tools {
+			agent.Tools.Register(t)
+		}
+	} else if baseAgent.Tools != nil {
 		agent.Tools = baseAgent.Tools.Clone()
 	}
 
@@ -477,8 +508,9 @@ func spawnSubTurn(
 		}
 	} else {
 		result = &tools.ToolResult{
-			ForLLM:  turnRes.finalContent,
-			ForUser: turnRes.finalContent,
+			ForLLM:   turnRes.finalContent,
+			ForUser:  turnRes.finalContent,
+			Messages: turnRes.messages,
 		}
 	}
 

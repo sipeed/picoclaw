@@ -78,6 +78,24 @@ func (f *FlexibleStringSlice) UnmarshalText(text []byte) error {
 	return nil
 }
 
+type TeamModelConfig struct {
+	Name string   `json:"name"`
+	Tags []string `json:"tags,omitempty"`
+}
+
+type TeamToolsConfig struct {
+	ToolConfig
+	MaxMembers          int               `json:"max_members"`
+	MaxTeamTokens       int               `json:"max_team_tokens"`
+	MaxEvaluatorLoops   int               `json:"max_evaluator_loops"`
+	MaxTimeoutMinutes   int               `json:"max_timeout_minutes"`
+	MaxContextRunes     int               `json:"max_context_runes"`
+	DisableAutoReviewer bool              `json:"disable_auto_reviewer"`
+	ReviewerModel       string            `json:"reviewer_model"`
+	AllowedStrategies   []string          `json:"allowed_strategies"`
+	AllowedModels       []TeamModelConfig `json:"allowed_models"`
+}
+
 // CurrentVersion is the latest config schema version
 const CurrentVersion = 1
 
@@ -997,10 +1015,12 @@ func (c *ModelConfig) SetAPIKey(value string) {
 }
 
 type GatewayConfig struct {
-	Host      string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
-	Port      int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
-	HotReload bool   `json:"hot_reload"          env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
-	LogLevel  string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
+	Host      string `json:"host"       env:"PICOCLAW_GATEWAY_HOST"`
+	Port      int    `json:"port"       env:"PICOCLAW_GATEWAY_PORT"`
+	HotReload bool   `json:"hot_reload" env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
+	// LogLevel controls the logging verbosity for the gateway server.
+	// Valid values: "debug", "info", "warn", "error", "fatal" (default: "fatal")
+	LogLevel string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
 }
 
 type ToolDiscoveryConfig struct {
@@ -1250,6 +1270,8 @@ type ToolsConfig struct {
 	SpawnStatus     ToolConfig         `json:"spawn_status"                                             envPrefix:"PICOCLAW_TOOLS_SPAWN_STATUS_"`
 	SPI             ToolConfig         `json:"spi"                                                      envPrefix:"PICOCLAW_TOOLS_SPI_"`
 	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
+	SpawnSubAgent   ToolConfig         `json:"spawn_sub_agent"                                          envPrefix:"PICOCLAW_TOOLS_SPAWN_SUB_AGENT_"`
+	Team            TeamToolsConfig    `json:"team"                                                     envPrefix:"PICOCLAW_TOOLS_TEAM_"`
 	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig         `json:"write_file"                                               envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
 }
@@ -1377,7 +1399,10 @@ func LoadConfig(path string) (*Config, error) {
 	var cfg *Config
 	switch versionInfo.Version {
 	case 0:
-		logger.InfoF("config migrate start", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		logger.InfoF(
+			"config migrate start",
+			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+		)
 		// Legacy config (no version field)
 		v, e := loadConfigV0(data)
 		if e != nil {
@@ -1422,9 +1447,11 @@ func LoadConfig(path string) (*Config, error) {
 		for _, m := range cfg.ModelList {
 			for _, k := range m.apiKeys {
 				if k != "" && !strings.HasPrefix(k, "enc://") && !strings.HasPrefix(k, "file://") {
-					fmt.Fprintf(os.Stderr,
+					fmt.Fprintf(
+						os.Stderr,
 						"picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n",
-						m.ModelName)
+						m.ModelName,
+					)
 					break // Only warn once per model
 				}
 			}

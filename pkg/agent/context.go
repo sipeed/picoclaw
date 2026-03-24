@@ -106,6 +106,8 @@ Your workspace is at: %s
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
 
+5. **Team delegation** - For any task that is non-trivial, multi-step, or involves distinct concerns (e.g. "convert React to Vue", "build a feature", "analyze and report"), you MUST use the 'team' tool to delegate and parallelize. Do NOT attempt to handle complex tasks inline by calling tools one by one yourself. Decompose first, delegate second, then report the outcome.
+
 %s`,
 		version, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
 }
