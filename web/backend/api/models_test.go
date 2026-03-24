@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -313,5 +314,76 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	}
 	if gotProbe != "http://127.0.0.1:8000/v1|custom-model|" {
 		t.Fatalf("probe api base = %q, want %q", gotProbe, "http://127.0.0.1:8000/v1|custom-model|")
+	}
+}
+
+func TestMaskAPIKey(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{
+			name: "empty key",
+			key:  "",
+			want: "",
+		},
+		{
+			name: "short key fully masked",
+			key:  "abcd",
+			want: "****",
+		},
+		{
+			name: "length 8 boundary fully masked",
+			key:  "12345678",
+			want: "****",
+		},
+		{
+			name: "length 9 boundary shows last 2",
+			key:  "123456789",
+			want: "123****89",
+		},
+		{
+			name: "length 12 boundary shows last 2",
+			key:  "abcdefghijkl",
+			want: "abc****kl",
+		},
+		{
+			name: "length 13 boundary shows last 4",
+			key:  "abcdefghijklm",
+			want: "abc****jklm",
+		},
+		{
+			name: "typical api key",
+			key:  "sk-1234567890abcd",
+			want: "sk-****abcd",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := maskAPIKey(tc.key)
+			if got != tc.want {
+				t.Fatalf("maskAPIKey(%q) = %q, want %q", tc.key, got, tc.want)
+			}
+
+			if tc.key != "" {
+				displayed := strings.Replace(tc.want, "****", "", 1)
+				if len(tc.key) <= 8 {
+					if displayed != "" {
+						t.Fatalf("maskAPIKey(%q) displayed part = %q, want empty", tc.key, displayed)
+					}
+				} else {
+					if len(displayed)*10 > len(tc.key)*6 {
+						t.Fatalf(
+							"maskAPIKey(%q) displayed length = %d, want at most 60%% of %d",
+							tc.key,
+							len(displayed),
+							len(tc.key),
+						)
+					}
+				}
+			}
+		})
 	}
 }
