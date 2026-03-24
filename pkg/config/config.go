@@ -1015,9 +1015,9 @@ func (c *ModelConfig) SetAPIKey(value string) {
 }
 
 type GatewayConfig struct {
-	Host      string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
-	Port      int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
-	HotReload bool   `json:"hot_reload"          env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
+	Host      string `json:"host"       env:"PICOCLAW_GATEWAY_HOST"`
+	Port      int    `json:"port"       env:"PICOCLAW_GATEWAY_PORT"`
+	HotReload bool   `json:"hot_reload" env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
 	// LogLevel controls the logging verbosity for the gateway server.
 	// Valid values: "debug", "info", "warn", "error", "fatal" (default: "fatal")
 	LogLevel string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
@@ -1395,7 +1395,10 @@ func LoadConfig(path string) (*Config, error) {
 	var cfg *Config
 	switch versionInfo.Version {
 	case 0:
-		logger.InfoF("config migrate start", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		logger.InfoF(
+			"config migrate start",
+			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+		)
 		// Legacy config (no version field)
 		v, e := loadConfigV0(data)
 		if e != nil {
@@ -1403,10 +1406,16 @@ func LoadConfig(path string) (*Config, error) {
 		}
 		cfg, e = v.Migrate()
 		if e != nil {
-			logger.DebugF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+			logger.DebugF(
+				"config migrate fail",
+				map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+			)
 			return nil, e
 		}
-		logger.DebugF("config migrate success", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		logger.DebugF(
+			"config migrate success",
+			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+		)
 		defer func() {
 			_ = SaveConfig(path, cfg)
 		}()
@@ -1437,9 +1446,11 @@ func LoadConfig(path string) (*Config, error) {
 		for _, m := range cfg.ModelList {
 			for _, k := range m.apiKeys {
 				if k != "" && !strings.HasPrefix(k, "enc://") && !strings.HasPrefix(k, "file://") {
-					fmt.Fprintf(os.Stderr,
+					fmt.Fprintf(
+						os.Stderr,
 						"picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n",
-						m.ModelName)
+						m.ModelName,
+					)
 					break // Only warn once per model
 				}
 			}

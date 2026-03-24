@@ -67,7 +67,13 @@ func RunToolLoop(
 			llmOpts = map[string]any{}
 		}
 		// 3. Call LLM
-		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
+		response, err := config.Provider.Chat(
+			ctx,
+			messages,
+			providerToolDefs,
+			config.Model,
+			llmOpts,
+		)
 		if err != nil {
 			logger.ErrorCF("toolloop", "LLM call failed",
 				map[string]any{
@@ -119,8 +125,11 @@ func RunToolLoop(
 		// 3.6 Truncation Recovery: LLM response was cut off (max_tokens hit or malformed JSON).
 		// Inject a recovery message so the LLM knows to retry with a shorter, complete response.
 		if response.FinishReason == "truncated" {
-			logger.WarnCF("toolloop", "LLM response was truncated (max_tokens hit), injecting recovery message",
-				map[string]any{"iteration": iteration})
+			logger.WarnCF(
+				"toolloop",
+				"LLM response was truncated (max_tokens hit), injecting recovery message",
+				map[string]any{"iteration": iteration},
+			)
 			messages = append(messages, providers.Message{
 				Role:             "assistant",
 				Content:          response.Content,
@@ -233,7 +242,14 @@ func RunToolLoop(
 
 				var toolResult *ToolResult
 				if config.Tools != nil {
-					toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, channel, chatID, nil)
+					toolResult = config.Tools.ExecuteWithContext(
+						ctx,
+						tc.Name,
+						tc.Arguments,
+						channel,
+						chatID,
+						nil,
+					)
 				} else {
 					toolResult = ErrorResult("No tools available")
 				}
