@@ -125,6 +125,7 @@ func (c *PicoChannel) createAndAddConnection(conn *websocket.Conn, sessionID str
 		c.sessionConnections[pc.sessionID] = bySession
 	}
 	bySession[pc.id] = pc
+	c.connCount.Add(1)
 
 	return pc
 }
@@ -146,6 +147,7 @@ func (c *PicoChannel) removeConnection(connID string) *picoConn {
 			delete(c.sessionConnections, pc.sessionID)
 		}
 	}
+	c.connCount.Add(-1)
 
 	return pc
 }
@@ -161,6 +163,7 @@ func (c *PicoChannel) takeAllConnections() []*picoConn {
 	}
 	clear(c.connections)
 	clear(c.sessionConnections)
+	c.connCount.Store(0)
 
 	return all
 }
@@ -200,7 +203,6 @@ func (c *PicoChannel) Stop(ctx context.Context) error {
 	for _, pc := range c.takeAllConnections() {
 		pc.close()
 	}
-	c.connCount.Store(0)
 
 	if c.cancel != nil {
 		c.cancel()
@@ -353,7 +355,6 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pc := c.createAndAddConnection(conn, sessionID)
-	c.connCount.Add(1)
 
 	logger.InfoCF("pico", "WebSocket client connected", map[string]any{
 		"conn_id":    pc.id,
@@ -413,7 +414,6 @@ func (c *PicoChannel) readLoop(pc *picoConn) {
 	defer func() {
 		pc.close()
 		if removed := c.removeConnection(pc.id); removed != nil {
-			c.connCount.Add(-1)
 			logger.InfoCF("pico", "WebSocket client disconnected", map[string]any{
 				"conn_id":    removed.id,
 				"session_id": removed.sessionID,
