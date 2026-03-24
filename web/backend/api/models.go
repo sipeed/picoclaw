@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // registerModelRoutes binds model list management endpoints to the ServeMux.
@@ -107,7 +108,12 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var mc config.ModelConfig
+	type custom struct {
+		config.ModelConfig
+		APIKey string `json:"api_key"`
+	}
+
+	var mc custom
 	if err = json.Unmarshal(body, &mc); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
@@ -118,13 +124,17 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if mc.APIKey != "" {
+		mc.ModelConfig.SetAPIKey(mc.APIKey)
+	}
+
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	cfg.ModelList = append(cfg.ModelList, &mc)
+	cfg.ModelList = append(cfg.ModelList, &mc.ModelConfig)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -158,7 +168,12 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var mc config.ModelConfig
+	type custom struct {
+		config.ModelConfig
+		APIKey string `json:"api_key"`
+	}
+
+	var mc custom
 	if err = json.Unmarshal(body, &mc); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
@@ -182,14 +197,18 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 
 	// Preserve the existing API key when the caller omits it (empty string).
 	// This lets the UI update api_base / proxy without clearing the stored secret.
-	if mc.APIKey() == "" {
-		mc.SetAPIKey(cfg.ModelList[idx].APIKey())
+	if mc.APIKey == "" {
+		mc.ModelConfig.SetAPIKey(cfg.ModelList[idx].APIKey())
+	} else {
+		mc.ModelConfig.SetAPIKey(mc.APIKey)
 	}
 	if mc.ExtraBody == nil {
 		mc.ExtraBody = cfg.ModelList[idx].ExtraBody
 	}
 
-	cfg.ModelList[idx] = &mc
+	cfg.ModelList[idx] = &mc.ModelConfig
+
+	logger.Debugf("update model config: %#v", mc.ModelConfig)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -297,16 +316,25 @@ func (h *Handler) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) 
 }
 
 // maskAPIKey returns a masked version of an API key for safe display.
-// Keys longer than 8 chars show prefix + last 4 chars: "sk-****abcd"
+// Keys longer than 12 chars show prefix + last 4 chars: "sk-****abcd".
+// Keys 9-12 chars show prefix + last 2 chars: "sk-****cd".
 // Shorter keys are fully masked as "****".
 // Empty keys return empty string.
+// Ensure at least 40% of the key will not be displayed.
 func maskAPIKey(key string) string {
 	if key == "" {
 		return ""
 	}
+
 	if len(key) <= 8 {
 		return "****"
 	}
+
+	// Show first 3 chars and last 2 chars
+	if len(key) <= 12 {
+		return key[:3] + "****" + key[len(key)-2:]
+	}
+
 	// Show first 3 chars and last 4 chars
 	return key[:3] + "****" + key[len(key)-4:]
 }

@@ -240,7 +240,26 @@
       "pico": "Web",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
-      "irc": "IRC"
+      "irc": "IRC",
+      "weixin": "微信"
+    },
+    "weixin": {
+      "warningTitle": "测试阶段，请谨慎使用",
+      "warningDesc": "微信 Channel 当前仍处于测试阶段，存在封号风险。请仅在充分了解风险的前提下使用。",
+      "bindEnableSuccess": "微信已连接，频道已自动启用。",
+      "bindTitle": "微信账号绑定",
+      "bindDesc": "使用微信扫描二维码以绑定您的个人微信账号。",
+      "bind": "绑定微信",
+      "rebind": "重新绑定",
+      "bound": "微信已绑定",
+      "notBound": "尚未绑定微信账号。",
+      "generating": "正在生成二维码...",
+      "scanHint": "打开微信，扫描二维码",
+      "scanned": "已扫码 — 请在微信中确认",
+      "expired": "二维码已过期",
+      "retry": "重试",
+      "refresh": "刷新二维码",
+      "errorGeneric": "发生错误，请重试。"
     },
     "field": {
       "token": "Bot Token",
@@ -273,7 +292,9 @@
       "saveError": "保存频道配置失败",
       "enabled": "已启用",
       "docLink": "配置文档",
-      "enableLabel": "启用频道"
+      "enableLabel": "启用频道",
+      "restartRequiredTitle": "需要重启服务",
+      "restartRequiredDesc": "{{name}} 的最新配置已保存。重启服务后才能正式生效。"
     },
     "form": {
       "desc": {
@@ -396,6 +417,10 @@
       "workspace_hint": "智能体执行文件读写操作时使用的基础目录。",
       "restrict_workspace": "限制工作目录访问",
       "restrict_workspace_hint": "仅允许在工作目录内执行文件操作。",
+      "tool_feedback_enabled": "工具反馈",
+      "tool_feedback_enabled_hint": "在每次执行工具前，先向当前会话发送一条简短的工具调用预览。",
+      "tool_feedback_max_args_length": "工具反馈参数预览长度",
+      "tool_feedback_max_args_length_hint": "每条工具反馈消息中展示的参数字符上限。设为 0 时使用默认值。",
       "exec_enabled": "允许命令执行",
       "exec_enabled_hint": "控制应用是否允许执行命令。关闭后，所有命令请求都不会执行。",
       "allow_remote": "允许远程命令执行",

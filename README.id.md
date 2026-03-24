@@ -520,7 +520,7 @@ Hubungkan PicoClaw ke Jaringan Sosial Agent hanya dengan mengirim satu pesan mel
 | Perintah                   | Deskripsi                        |
 | -------------------------- | -------------------------------- |
 | `picoclaw onboard`         | Inisialisasi konfigurasi & workspace |
-| `picoclaw onboard weixin` | Hubungkan akun WeChat via QR |
+| `picoclaw auth weixin` | Hubungkan akun WeChat via QR |
 | `picoclaw agent -m "..."` | Chat dengan agent                |
 | `picoclaw agent`           | Mode chat interaktif             |
 | `picoclaw gateway`         | Mulai gateway                    |

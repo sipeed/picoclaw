@@ -28,6 +28,17 @@ PicoClaw 的工具配置位于 `config.json` 的 `tools` 字段中。
 }
 ```
 
+## 敏感数据过滤
+
+在将工具结果发送给 LLM 之前，PicoClaw 可以从输出中过滤敏感值（API 密钥、令牌、密码）。这可以防止 LLM 看到自己的凭据。
+
+详细说明请参阅[敏感数据过滤](../sensitive_data_filtering.md)。
+
+| 配置项 | 类型 | 默认值 | 描述 |
+|--------|------|--------|------|
+| `filter_sensitive_data` | bool | `true` | 启用/禁用过滤 |
+| `filter_min_length` | int | `8` | 触发过滤的最小内容长度 |
+
 ## Web 工具
 
 Web 工具用于网页搜索和抓取。

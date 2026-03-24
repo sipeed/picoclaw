@@ -20,6 +20,9 @@ func TestSecurityConfig(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, sec)
 		assert.Empty(t, sec.ModelList)
+		assert.NotNil(t, sec.Channels)
+		assert.NotNil(t, sec.Web)
+		assert.NotNil(t, sec.Skills)
 	})
 }
 
@@ -59,12 +62,12 @@ func TestSaveAndLoadSecurityConfig(t *testing.T) {
 				APIKeys: []string{"key1", "key2"},
 			},
 		},
-		Channels: ChannelsSecurity{
+		Channels: &ChannelsSecurity{
 			Telegram: &TelegramSecurity{
 				Token: "telegram-token",
 			},
 		},
-		Web: WebToolsSecurity{
+		Web: &WebToolsSecurity{
 			Brave: &BraveSecurity{
 				APIKeys: []string{"brave-api-key"},
 			},

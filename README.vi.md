@@ -520,7 +520,7 @@ Kết nối PicoClaw với Mạng xã hội Agent chỉ bằng cách gửi một
 | Lệnh                      | Mô tả                                    |
 | ------------------------- | ---------------------------------------- |
 | `picoclaw onboard`        | Khởi tạo cấu hình & workspace           |
-| `picoclaw onboard weixin` | Kết nối tài khoản WeChat qua QR |
+| `picoclaw auth weixin` | Kết nối tài khoản WeChat qua QR |
 | `picoclaw agent -m "..."` | Trò chuyện với agent                     |
 | `picoclaw agent`          | Chế độ trò chuyện tương tác             |
 | `picoclaw gateway`        | Khởi động gateway                        |

@@ -240,7 +240,26 @@
       "pico": "Web",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
-      "irc": "IRC"
+      "irc": "IRC",
+      "weixin": "WeChat"
+    },
+    "weixin": {
+      "warningTitle": "Testing phase, use with caution",
+      "warningDesc": "The WeChat channel is still experimental and may carry a risk of account suspension. Use it only if you understand and accept the risk.",
+      "bindEnableSuccess": "WeChat connected and the channel has been enabled automatically.",
+      "bindTitle": "WeChat Account Binding",
+      "bindDesc": "Scan the QR code with WeChat to bind your personal account.",
+      "bind": "Bind WeChat",
+      "rebind": "Re-bind",
+      "bound": "WeChat Bound",
+      "notBound": "WeChat account not bound yet.",
+      "generating": "Generating QR code...",
+      "scanHint": "Open WeChat and scan the QR code",
+      "scanned": "Scanned — please confirm in WeChat",
+      "expired": "QR code expired",
+      "retry": "Try Again",
+      "refresh": "Refresh QR",
+      "errorGeneric": "An error occurred. Please try again."
     },
     "field": {
       "token": "Bot Token",
@@ -273,7 +292,9 @@
       "saveError": "Failed to save channel configuration",
       "enabled": "enabled",
       "docLink": "Documentation",
-      "enableLabel": "Enable channel"
+      "enableLabel": "Enable channel",
+      "restartRequiredTitle": "Gateway restart required",
+      "restartRequiredDesc": "The latest {{name}} configuration has been saved. Restart the gateway for it to take effect."
     },
     "form": {
       "desc": {
@@ -396,6 +417,10 @@
       "workspace_hint": "Base directory for agent file operations.",
       "restrict_workspace": "Restrict to Workspace",
       "restrict_workspace_hint": "Only allow file operations inside workspace.",
+      "tool_feedback_enabled": "Tool Feedback",
+      "tool_feedback_enabled_hint": "Send a short tool-call preview into the current chat before each tool execution.",
+      "tool_feedback_max_args_length": "Tool Feedback Args Preview Length",
+      "tool_feedback_max_args_length_hint": "Maximum number of argument characters shown in each tool feedback message. Set to 0 to use the default.",
       "exec_enabled": "Allow Commands",
       "exec_enabled_hint": "Enable or disable command execution for the app. When disabled, no command requests will run.",
       "allow_remote": "Allow Remote Commands",

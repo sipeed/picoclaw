@@ -754,6 +754,7 @@ Scheduled tasks persist across restarts and are stored in `~/.picoclaw/workspace
 
 | Topic | Description |
 | ----- | ----------- |
+| [Sensitive Data Filtering](sensitive_data_filtering.md) | Filter API keys and tokens from tool results before sending to LLM |
 | [Hook System](hooks/README.md) | Event-driven hooks: observers, interceptors, approval hooks |
 | [Steering](steering.md) | Inject messages into a running agent loop between tool calls |
 | [SubTurn](subturn.md) | Subagent coordination, concurrency control, lifecycle |

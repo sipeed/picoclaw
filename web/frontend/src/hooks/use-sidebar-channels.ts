@@ -28,10 +28,7 @@ import { getChannelDisplayName } from "@/components/channels/channel-display-nam
 import { gatewayAtom } from "@/store/gateway"
 
 const DEFAULT_VISIBLE_CHANNELS = 4
-const CHANNEL_IMPORTANCE_ORDER = [
-  "discord",
-  "feishu",
-  "telegram",
+const CHANNEL_IMPORTANCE_TAIL = [
   "slack",
   "line",
   "wecom",
@@ -47,9 +44,13 @@ const CHANNEL_IMPORTANCE_ORDER = [
   "whatsapp",
   "whatsapp_native",
 ]
-const CHANNEL_IMPORTANCE_INDEX = new Map(
-  CHANNEL_IMPORTANCE_ORDER.map((name, index) => [name, index]),
-)
+
+function getChannelImportanceOrder(language: string): string[] {
+  const priority = language.startsWith("zh")
+    ? ["feishu", "weixin", "discord", "telegram"]
+    : ["discord", "telegram", "feishu", "weixin"]
+  return [...priority, ...CHANNEL_IMPORTANCE_TAIL]
+}
 
 function IconLark({ className }: { className?: string }) {
   return React.createElement("span", {
@@ -75,6 +76,7 @@ const CHANNEL_ICON_MAP: Record<
   dingtalk: IconBrandDingtalk,
   line: IconBrandLine,
   qq: IconBrandQq,
+  weixin: IconBrandWechat,
   wecom: IconBrandWechat,
   wecom_app: IconBrandWechat,
   wecom_aibot: IconBrandWechat,
@@ -134,10 +136,11 @@ export interface SidebarChannelNavItem {
 }
 
 interface UseSidebarChannelsOptions {
+  language: string
   t: TFunction
 }
 
-export function useSidebarChannels({ t }: UseSidebarChannelsOptions) {
+export function useSidebarChannels({ language, t }: UseSidebarChannelsOptions) {
   const gateway = useAtomValue(gatewayAtom)
   const [channels, setChannels] = React.useState<SupportedChannel[]>([])
   const [enabledMap, setEnabledMap] = React.useState<Record<string, boolean>>(
@@ -183,6 +186,12 @@ export function useSidebarChannels({ t }: UseSidebarChannelsOptions) {
     previousGatewayStatusRef.current = gateway.status
   }, [gateway.status, reloadChannels])
 
+  const channelImportanceIndex = React.useMemo(() => {
+    return new Map(
+      getChannelImportanceOrder(language).map((name, index) => [name, index]),
+    )
+  }, [language])
+
   const sortedChannels = React.useMemo(() => {
     const list = [...channels]
     list.sort((a, b) => {
@@ -193,9 +202,9 @@ export function useSidebarChannels({ t }: UseSidebarChannelsOptions) {
       }
 
       const aImportance =
-        CHANNEL_IMPORTANCE_INDEX.get(a.name) ?? Number.MAX_SAFE_INTEGER
+        channelImportanceIndex.get(a.name) ?? Number.MAX_SAFE_INTEGER
       const bImportance =
-        CHANNEL_IMPORTANCE_INDEX.get(b.name) ?? Number.MAX_SAFE_INTEGER
+        channelImportanceIndex.get(b.name) ?? Number.MAX_SAFE_INTEGER
       if (aImportance !== bImportance) {
         return aImportance - bImportance
       }
@@ -205,7 +214,7 @@ export function useSidebarChannels({ t }: UseSidebarChannelsOptions) {
       )
     })
     return list
-  }, [channels, enabledMap, t])
+  }, [channelImportanceIndex, channels, enabledMap, t])
 
   const hasMoreChannels = sortedChannels.length > DEFAULT_VISIBLE_CHANNELS
   const visibleChannels = showAllChannels

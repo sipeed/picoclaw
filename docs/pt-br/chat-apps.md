@@ -179,7 +179,7 @@ O PicoClaw suporta conexão com sua conta pessoal do WeChat usando a API oficial
 
 Execute o fluxo de login interativo por QR code:
 ```bash
-picoclaw onboard weixin
+picoclaw auth weixin
 ```
 Escaneie o QR code exibido com seu aplicativo WeChat mobile. Após o login bem-sucedido, o token é salvo na sua configuração.
 

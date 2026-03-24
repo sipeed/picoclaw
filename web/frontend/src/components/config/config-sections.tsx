@@ -93,6 +93,33 @@ export function AgentDefaultsSection({
         }
       />
 
+      <SwitchCardField
+        label={t("pages.config.tool_feedback_enabled")}
+        hint={t("pages.config.tool_feedback_enabled_hint")}
+        layout="setting-row"
+        checked={form.toolFeedbackEnabled}
+        onCheckedChange={(checked) =>
+          onFieldChange("toolFeedbackEnabled", checked)
+        }
+      />
+
+      {form.toolFeedbackEnabled && (
+        <Field
+          label={t("pages.config.tool_feedback_max_args_length")}
+          hint={t("pages.config.tool_feedback_max_args_length_hint")}
+          layout="setting-row"
+        >
+          <Input
+            type="number"
+            min={0}
+            value={form.toolFeedbackMaxArgsLength}
+            onChange={(e) =>
+              onFieldChange("toolFeedbackMaxArgsLength", e.target.value)
+            }
+          />
+        </Field>
+      )}
+
       <Field
         label={t("pages.config.max_tokens")}
         hint={t("pages.config.max_tokens_hint")}

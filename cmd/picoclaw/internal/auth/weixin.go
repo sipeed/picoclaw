@@ -1,4 +1,4 @@
-package onboard
+package auth
 
 import (
 	"context"
@@ -27,7 +27,7 @@ to authorize your account. On success, the bot token is saved to the picoclaw
 config so you can start the gateway immediately.
 
 Example:
-  picoclaw onboard weixin`,
+  picoclaw auth weixin`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runWeixinOnboard(baseURL, proxy, time.Duration(timeout)*time.Second)
 		},
