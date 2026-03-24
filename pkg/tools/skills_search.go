@@ -19,7 +19,12 @@ type FindSkillsTool struct {
 // NewFindSkillsTool creates a new FindSkillsTool.
 // registryMgr is the shared registry manager (built from config in createToolRegistry).
 // cache is the search cache for deduplicating similar queries.
-func NewFindSkillsTool(registryMgr *skills.RegistryManager, cache *skills.SearchCache, whitelist []string, enabled bool) *FindSkillsTool {
+func NewFindSkillsTool(
+	registryMgr *skills.RegistryManager,
+	cache *skills.SearchCache,
+	whitelist []string,
+	enabled bool,
+) *FindSkillsTool {
 	return &FindSkillsTool{
 		registryMgr: registryMgr,
 		cache:       cache,
@@ -97,7 +102,6 @@ func (t *FindSkillsTool) Execute(ctx context.Context, args map[string]any) *Tool
 		}
 		results = filtered
 	}
-
 
 	// Cache the results.
 	if t.cache != nil && len(results) > 0 {
