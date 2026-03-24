@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,6 +28,8 @@ const (
 	responseIdleWindow  = 250 * time.Millisecond
 	responseWaitTimeout = 5 * time.Minute
 )
+
+var defaultAllowedOrigins = []string{"localhost"}
 
 type responseTask struct {
 	ctx     context.Context
@@ -67,16 +70,17 @@ type translatedConversation struct {
 
 type OpenAIAPIChannel struct {
 	*channels.BaseChannel
-	config     config.OpenAIAPIConfig
-	listenHost string
-	models     []config.ModelConfig
-	messageBus *bus.MessageBus
-	server     *http.Server
-	listener   net.Listener
-	ctx        context.Context
-	cancel     context.CancelFunc
-	taskMu     sync.RWMutex
-	tasks      map[string]*responseTask
+	config         config.OpenAIAPIConfig
+	allowedOrigins []string
+	listenHost     string
+	models         []config.ModelConfig
+	messageBus     *bus.MessageBus
+	server         *http.Server
+	listener       net.Listener
+	ctx            context.Context
+	cancel         context.CancelFunc
+	taskMu         sync.RWMutex
+	tasks          map[string]*responseTask
 }
 
 func NewOpenAIAPIChannel(cfg *config.Config, messageBus *bus.MessageBus) (*OpenAIAPIChannel, error) {
@@ -87,20 +91,24 @@ func NewOpenAIAPIChannel(cfg *config.Config, messageBus *bus.MessageBus) (*OpenA
 		return nil, fmt.Errorf("openai_api api_key is required")
 	}
 
+	channelConfig := cfg.Channels.OpenAIAPI
+	channelConfig.AllowOrigins = normalizeAllowedOrigins(channelConfig.AllowOrigins)
+
 	listenHost := strings.TrimSpace(cfg.Gateway.Host)
 	if listenHost == "" {
 		listenHost = "127.0.0.1"
 	}
 
-	base := channels.NewBaseChannel("openai_api", cfg.Channels.OpenAIAPI, messageBus, nil)
+	base := channels.NewBaseChannel("openai_api", channelConfig, messageBus, nil)
 
 	return &OpenAIAPIChannel{
-		BaseChannel: base,
-		config:      cfg.Channels.OpenAIAPI,
-		listenHost:  listenHost,
-		models:      append([]config.ModelConfig(nil), cfg.ModelList...),
-		messageBus:  messageBus,
-		tasks:       make(map[string]*responseTask),
+		BaseChannel:    base,
+		config:         channelConfig,
+		allowedOrigins: append([]string(nil), channelConfig.AllowOrigins...),
+		listenHost:     listenHost,
+		models:         append([]config.ModelConfig(nil), cfg.ModelList...),
+		messageBus:     messageBus,
+		tasks:          make(map[string]*responseTask),
 	}, nil
 }
 
@@ -197,19 +205,30 @@ func (c *OpenAIAPIChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 }
 
 func (c *OpenAIAPIChannel) handleOptions(w http.ResponseWriter, r *http.Request) {
-	setCORSHeaders(w)
+	if !c.applyCORSHeaders(w, r) {
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (c *OpenAIAPIChannel) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if !c.applyCORSHeaders(w, r) {
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	if err := writeJSONResponse(w, http.StatusOK, map[string]any{"status": "ok"}); err != nil {
+		return
+	}
 }
 
 func (c *OpenAIAPIChannel) handleModels(w http.ResponseWriter, r *http.Request) {
-	setCORSHeaders(w)
+	if !c.applyCORSHeaders(w, r) {
+		return
+	}
 	if !c.authenticate(r) {
-		writeOpenAIError(w, http.StatusUnauthorized, "Invalid API key", "invalid_request_error", "invalid_api_key")
+		if err := writeOpenAIError(w, http.StatusUnauthorized, "Invalid API key", "invalid_request_error", "invalid_api_key"); err != nil {
+			return
+		}
 		return
 	}
 
@@ -241,42 +260,64 @@ func (c *OpenAIAPIChannel) handleModels(w http.ResponseWriter, r *http.Request) 
 	})
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	if err := writeJSONResponse(w, http.StatusOK, map[string]any{
 		"object": "list",
 		"data":   items,
-	})
+	}); err != nil {
+		return
+	}
 }
 
 func (c *OpenAIAPIChannel) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	setCORSHeaders(w)
+	if !c.applyCORSHeaders(w, r) {
+		return
+	}
 	if !c.authenticate(r) {
-		writeOpenAIError(w, http.StatusUnauthorized, "Invalid API key", "invalid_request_error", "invalid_api_key")
+		if err := writeOpenAIError(w, http.StatusUnauthorized, "Invalid API key", "invalid_request_error", "invalid_api_key"); err != nil {
+			return
+		}
 		return
 	}
 
 	var req chatCompletionRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBodySize))
 	if err := decoder.Decode(&req); err != nil {
-		writeOpenAIError(w, http.StatusBadRequest, "Invalid JSON request body", "invalid_request_error", "invalid_json")
+		logger.WarnCF("openai_api", "Invalid chat completion request body", map[string]any{
+			"error": err.Error(),
+		})
+		if err := writeOpenAIError(w, http.StatusBadRequest, "Invalid JSON request body", "invalid_request_error", "invalid_json"); err != nil {
+			return
+		}
 		return
 	}
 
 	if strings.TrimSpace(req.Model) == "" {
-		writeOpenAIError(w, http.StatusBadRequest, "model is required", "invalid_request_error", "missing_model")
+		if err := writeOpenAIError(w, http.StatusBadRequest, "model is required", "invalid_request_error", "missing_model"); err != nil {
+			return
+		}
 		return
 	}
 	if !c.supportsModel(req.Model) {
-		writeOpenAIError(w, http.StatusBadRequest, fmt.Sprintf("model %q is not configured", req.Model), "invalid_request_error", "model_not_found")
+		if err := writeOpenAIError(w, http.StatusBadRequest, fmt.Sprintf("model %q is not configured", req.Model), "invalid_request_error", "model_not_found"); err != nil {
+			return
+		}
 		return
 	}
 	if len(req.Messages) == 0 {
-		writeOpenAIError(w, http.StatusBadRequest, "messages must not be empty", "invalid_request_error", "missing_messages")
+		if err := writeOpenAIError(w, http.StatusBadRequest, "messages must not be empty", "invalid_request_error", "missing_messages"); err != nil {
+			return
+		}
 		return
 	}
 
 	translated, err := translateConversation(req.Messages)
 	if err != nil {
-		writeOpenAIError(w, http.StatusBadRequest, err.Error(), "invalid_request_error", "invalid_messages")
+		logger.WarnCF("openai_api", "Invalid chat completion message sequence", map[string]any{
+			"error": err.Error(),
+		})
+		if err := writeOpenAIError(w, http.StatusBadRequest, err.Error(), "invalid_request_error", "invalid_messages"); err != nil {
+			return
+		}
 		return
 	}
 
@@ -302,7 +343,12 @@ func (c *OpenAIAPIChannel) handleChatCompletions(w http.ResponseWriter, r *http.
 	if len(translated.InjectedHistory) > 0 {
 		rawHistory, err := json.Marshal(translated.InjectedHistory)
 		if err != nil {
-			writeOpenAIError(w, http.StatusInternalServerError, "Failed to encode conversation history", "server_error", "history_encode_failed")
+			logger.ErrorCF("openai_api", "Failed to encode injected history", map[string]any{
+				"error": err.Error(),
+			})
+			if err := writeOpenAIError(w, http.StatusInternalServerError, "Failed to encode conversation history", "server_error", "history_encode_failed"); err != nil {
+				return
+			}
 			return
 		}
 		metadata["injected_history"] = string(rawHistory)
@@ -327,13 +373,23 @@ func (c *OpenAIAPIChannel) handleChatCompletions(w http.ResponseWriter, r *http.
 		Peer:     bus.Peer{Kind: "direct", ID: senderID},
 		Metadata: metadata,
 	}); err != nil {
-		writeOpenAIError(w, http.StatusBadGateway, fmt.Sprintf("Failed to submit request: %v", err), "server_error", "publish_failed")
+		logger.ErrorCF("openai_api", "Failed to publish inbound OpenAI API request", map[string]any{
+			"error": err.Error(),
+		})
+		if err := writeOpenAIError(w, http.StatusBadGateway, fmt.Sprintf("Failed to submit request: %v", err), "server_error", "publish_failed"); err != nil {
+			return
+		}
 		return
 	}
 
 	firstChunk, err := waitForFirstChunk(reqCtx, task)
 	if err != nil {
-		writeOpenAIError(w, http.StatusGatewayTimeout, "Timed out waiting for assistant response", "server_error", "response_timeout")
+		logger.ErrorCF("openai_api", "Timed out waiting for first assistant chunk", map[string]any{
+			"error": err.Error(),
+		})
+		if err := writeOpenAIError(w, http.StatusGatewayTimeout, "Timed out waiting for assistant response", "server_error", "response_timeout"); err != nil {
+			return
+		}
 		return
 	}
 
@@ -343,7 +399,9 @@ func (c *OpenAIAPIChannel) handleChatCompletions(w http.ResponseWriter, r *http.
 	if req.Stream {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
-			writeOpenAIError(w, http.StatusInternalServerError, "Streaming is not supported by this server", "server_error", "stream_not_supported")
+			if err := writeOpenAIError(w, http.StatusInternalServerError, "Streaming is not supported by this server", "server_error", "stream_not_supported"); err != nil {
+				return
+			}
 			return
 		}
 
@@ -352,28 +410,49 @@ func (c *OpenAIAPIChannel) handleChatCompletions(w http.ResponseWriter, r *http.
 		w.Header().Set("Connection", "keep-alive")
 
 		if err := writeChatCompletionChunk(w, completionID, createdAt, req.Model, firstChunk, true, false); err != nil {
+			logger.ErrorCF("openai_api", "Failed to write first streaming chunk", map[string]any{
+				"error": err.Error(),
+			})
 			return
 		}
 		flusher.Flush()
 
 		if err := streamRemainingChunks(reqCtx, task, w, flusher, completionID, createdAt, req.Model); err != nil {
+			logger.ErrorCF("openai_api", "Failed to stream assistant chunks", map[string]any{
+				"error": err.Error(),
+			})
 			return
 		}
 
-		_ = writeChatCompletionChunk(w, completionID, createdAt, req.Model, "", false, true)
-		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		if err := writeChatCompletionChunk(w, completionID, createdAt, req.Model, "", false, true); err != nil {
+			logger.ErrorCF("openai_api", "Failed to write final streaming chunk", map[string]any{
+				"error": err.Error(),
+			})
+			return
+		}
+		if _, err := fmt.Fprint(w, "data: [DONE]\n\n"); err != nil {
+			logger.ErrorCF("openai_api", "Failed to write stream terminator", map[string]any{
+				"error": err.Error(),
+			})
+			return
+		}
 		flusher.Flush()
 		return
 	}
 
 	chunks, err := collectRemainingChunks(reqCtx, task, []string{firstChunk})
 	if err != nil {
-		writeOpenAIError(w, http.StatusGatewayTimeout, "Timed out waiting for assistant response", "server_error", "response_timeout")
+		logger.ErrorCF("openai_api", "Timed out collecting assistant response chunks", map[string]any{
+			"error": err.Error(),
+		})
+		if err := writeOpenAIError(w, http.StatusGatewayTimeout, "Timed out waiting for assistant response", "server_error", "response_timeout"); err != nil {
+			return
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	if err := writeJSONResponse(w, http.StatusOK, map[string]any{
 		"id":      completionID,
 		"object":  "chat.completion",
 		"created": createdAt,
@@ -388,7 +467,9 @@ func (c *OpenAIAPIChannel) handleChatCompletions(w http.ResponseWriter, r *http.
 				"finish_reason": "stop",
 			},
 		},
-	})
+	}); err != nil {
+		return
+	}
 }
 
 func translateConversation(messages []chatCompletionMessage) (translatedConversation, error) {
@@ -432,21 +513,17 @@ func translateConversation(messages []chatCompletionMessage) (translatedConversa
 	out.ExtraSystemPrompt = strings.Join(systemPrompts, "\n\n")
 	last := nonSystem[len(nonSystem)-1]
 
-	if last.Role == "user" && strings.TrimSpace(last.Content) != "" {
-		out.CurrentMessage = last.Content
-		out.InjectedHistory = append([]providers.Message(nil), nonSystem[:len(nonSystem)-1]...)
-		return out, nil
-	}
-
-	out.InjectedHistory = append([]providers.Message(nil), nonSystem...)
 	switch last.Role {
 	case "assistant":
-		out.CurrentMessage = "Continue the conversation with the next assistant response."
+		return translatedConversation{}, fmt.Errorf("last message must be a user message, got assistant")
 	case "tool":
-		out.CurrentMessage = "Continue the conversation after the tool result above."
-	default:
-		out.CurrentMessage = "Continue the conversation based on the previous messages."
+		return translatedConversation{}, fmt.Errorf("last message must be a user message, got tool")
 	}
+	if strings.TrimSpace(last.Content) == "" {
+		return translatedConversation{}, fmt.Errorf("last user message must not be empty")
+	}
+	out.CurrentMessage = last.Content
+	out.InjectedHistory = append([]providers.Message(nil), nonSystem[:len(nonSystem)-1]...)
 	return out, nil
 }
 
@@ -675,11 +752,9 @@ func writeChatCompletionChunk(
 	return err
 }
 
-func writeOpenAIError(w http.ResponseWriter, status int, message, errorType, code string) {
-	setCORSHeaders(w)
+func writeOpenAIError(w http.ResponseWriter, status int, message, errorType, code string) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	return writeJSONResponse(w, status, map[string]any{
 		"error": map[string]any{
 			"message": message,
 			"type":    errorType,
@@ -688,10 +763,94 @@ func writeOpenAIError(w http.ResponseWriter, status int, message, errorType, cod
 	})
 }
 
-func setCORSHeaders(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+func writeJSONResponse(w http.ResponseWriter, status int, payload any) error {
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		logger.ErrorCF("openai_api", "Failed to write JSON response", map[string]any{
+			"error": err.Error(),
+		})
+		return err
+	}
+	return nil
+}
+
+func normalizeAllowedOrigins(origins []string) []string {
+	normalized := make([]string, 0, len(origins))
+	for _, origin := range origins {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		normalized = append(normalized, origin)
+	}
+	if len(normalized) == 0 {
+		return append([]string(nil), defaultAllowedOrigins...)
+	}
+	return normalized
+}
+
+func (c *OpenAIAPIChannel) applyCORSHeaders(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	if !originAllowed(c.allowedOrigins, origin) {
+		logger.WarnCF("openai_api", "Rejected request from disallowed origin", map[string]any{
+			"origin": origin,
+		})
+		if err := writeOpenAIError(w, http.StatusForbidden, "Origin is not allowed", "invalid_request_error", "origin_not_allowed"); err != nil {
+			return false
+		}
+		return false
+	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	addVaryHeader(w.Header(), "Origin")
+	return true
+}
+
+func originAllowed(allowedOrigins []string, origin string) bool {
+	parsedOrigin, err := url.Parse(origin)
+	if err != nil || parsedOrigin.Scheme == "" || parsedOrigin.Host == "" {
+		return false
+	}
+
+	requestHost := strings.ToLower(parsedOrigin.Hostname())
+	for _, allowed := range allowedOrigins {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "" {
+			continue
+		}
+
+		if strings.Contains(allowed, "://") {
+			parsedAllowed, err := url.Parse(allowed)
+			if err != nil || parsedAllowed.Scheme == "" || parsedAllowed.Host == "" {
+				continue
+			}
+			if strings.EqualFold(parsedAllowed.Scheme, parsedOrigin.Scheme) && strings.EqualFold(parsedAllowed.Host, parsedOrigin.Host) {
+				return true
+			}
+			continue
+		}
+
+		if strings.EqualFold(allowed, requestHost) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func addVaryHeader(headers http.Header, value string) {
+	for _, existing := range headers.Values("Vary") {
+		for _, part := range strings.Split(existing, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), value) {
+				return
+			}
+		}
+	}
+	headers.Add("Vary", value)
 }
 
 func (c *OpenAIAPIChannel) authenticate(r *http.Request) bool {

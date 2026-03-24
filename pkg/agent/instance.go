@@ -154,47 +154,9 @@ func NewAgentInstance(
 		Primary:   model,
 		Fallbacks: fallbacks,
 	}
-	resolveFromModelList := func(raw string) (string, bool) {
-		ensureProtocol := func(model string) string {
-			model = strings.TrimSpace(model)
-			if model == "" {
-				return ""
-			}
-			if strings.Contains(model, "/") {
-				return model
-			}
-			return "openai/" + model
-		}
-
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			return "", false
-		}
-
-		if cfg != nil {
-			if mc, err := cfg.GetModelConfig(raw); err == nil && mc != nil && strings.TrimSpace(mc.Model) != "" {
-				return ensureProtocol(mc.Model), true
-			}
-
-			for i := range cfg.ModelList {
-				fullModel := strings.TrimSpace(cfg.ModelList[i].Model)
-				if fullModel == "" {
-					continue
-				}
-				if fullModel == raw {
-					return ensureProtocol(fullModel), true
-				}
-				_, modelID := providers.ExtractProtocol(fullModel)
-				if modelID == raw {
-					return ensureProtocol(fullModel), true
-				}
-			}
-		}
-
-		return "", false
-	}
-
-	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
+	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, func(raw string) (string, bool) {
+		return resolveFromModelList(cfg, raw)
+	})
 
 	// Model routing setup: pre-resolve light model candidates at creation time
 	// to avoid repeated model_list lookups on every incoming message.
@@ -202,7 +164,9 @@ func NewAgentInstance(
 	var lightCandidates []providers.FallbackCandidate
 	if rc := defaults.Routing; rc != nil && rc.Enabled && rc.LightModel != "" {
 		lightModelCfg := providers.ModelConfig{Primary: rc.LightModel}
-		resolved := providers.ResolveCandidatesWithLookup(lightModelCfg, defaults.Provider, resolveFromModelList)
+		resolved := providers.ResolveCandidatesWithLookup(lightModelCfg, defaults.Provider, func(raw string) (string, bool) {
+			return resolveFromModelList(cfg, raw)
+		})
 		if len(resolved) > 0 {
 			router = routing.New(routing.RouterConfig{
 				LightModel: rc.LightModel,

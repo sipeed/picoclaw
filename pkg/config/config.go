@@ -475,9 +475,10 @@ type PicoConfig struct {
 }
 
 type OpenAIAPIConfig struct {
-	Enabled bool   `json:"enabled" env:"PICOCLAW_CHANNELS_OPENAI_API_ENABLED"`
-	Port    int    `json:"port"    env:"PICOCLAW_CHANNELS_OPENAI_API_PORT"`
-	APIKey  string `json:"api_key" env:"PICOCLAW_CHANNELS_OPENAI_API_API_KEY"`
+	Enabled      bool     `json:"enabled" env:"PICOCLAW_CHANNELS_OPENAI_API_ENABLED"`
+	Port         int      `json:"port"    env:"PICOCLAW_CHANNELS_OPENAI_API_PORT"`
+	APIKey       string   `json:"api_key" env:"PICOCLAW_CHANNELS_OPENAI_API_API_KEY"`
+	AllowOrigins []string `json:"allow_origins,omitempty"`
 }
 
 type IRCConfig struct {

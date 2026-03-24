@@ -176,9 +176,10 @@ func DefaultConfig() *Config {
 				AllowFrom:      FlexibleStringSlice{},
 			},
 			OpenAIAPI: OpenAIAPIConfig{
-				Enabled: false,
-				Port:    18794,
-				APIKey:  "",
+				Enabled:      false,
+				Port:         18794,
+				APIKey:       "",
+				AllowOrigins: []string{"localhost"},
 			},
 		},
 		Providers: ProvidersConfig{

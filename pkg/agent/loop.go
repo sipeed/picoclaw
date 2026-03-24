@@ -1514,47 +1514,13 @@ func (al *AgentLoop) resolveRequestedModelCandidates(
 	}
 
 	cfg := al.GetConfig()
-	resolveFromModelList := func(raw string) (string, bool) {
-		ensureProtocol := func(model string) string {
-			if model == "" {
-				return ""
-			}
-			if strings.Contains(model, "/") {
-				return model
-			}
-			return "openai/" + model
-		}
-
-		raw = strings.TrimSpace(raw)
-		if raw == "" || cfg == nil {
-			return "", false
-		}
-
-		if mc, err := cfg.GetModelConfig(raw); err == nil && mc != nil && strings.TrimSpace(mc.Model) != "" {
-			return ensureProtocol(mc.Model), true
-		}
-
-		for i := range cfg.ModelList {
-			fullModel := strings.TrimSpace(cfg.ModelList[i].Model)
-			if fullModel == "" {
-				continue
-			}
-			if fullModel == raw {
-				return ensureProtocol(fullModel), true
-			}
-			_, modelID := providers.ExtractProtocol(fullModel)
-			if modelID == raw {
-				return ensureProtocol(fullModel), true
-			}
-		}
-
-		return "", false
-	}
 
 	candidates := providers.ResolveCandidatesWithLookup(
 		providers.ModelConfig{Primary: requestedModel},
 		al.cfg.Agents.Defaults.Provider,
-		resolveFromModelList,
+		func(raw string) (string, bool) {
+			return resolveFromModelList(cfg, raw)
+		},
 	)
 	if len(candidates) == 0 {
 		return nil, "", fmt.Errorf("requested model %q not found in model_list", requestedModel)
