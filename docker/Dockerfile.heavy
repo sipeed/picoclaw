@@ -73,11 +73,24 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
   uv --version
 
 # Install Python packages (system-wide via uv to avoid PEP 668 issues)
-RUN uv pip install --system --break-system-packages atproto
+# atproto: Bluesky AT Protocol SDK
+# moviepy: Programmatic video editing (timed text overlays, compositing)
+# librosa: Audio analysis (beat detection, loudness, onset detection)
+# pydub: Simple audio slicing/mixing
+# srt: SRT subtitle generation for ffmpeg lyric burn-in
+RUN uv pip install --system --break-system-packages atproto moviepy librosa pydub srt
 
 # Install bsky CLI (Python wrapper around atproto SDK)
 COPY docker/bsky.py /usr/local/bin/bsky
 RUN sed -i 's/\r$//' /usr/local/bin/bsky && chmod +x /usr/local/bin/bsky
+
+# Install threads CLI (Threads API wrapper)
+COPY docker/threads.py /usr/local/bin/threads
+RUN sed -i 's/\r$//' /usr/local/bin/threads && chmod +x /usr/local/bin/threads
+
+# Install instagram CLI (Instagram Graph API wrapper)
+COPY docker/instagram.py /usr/local/bin/instagram
+RUN sed -i 's/\r$//' /usr/local/bin/instagram && chmod +x /usr/local/bin/instagram
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

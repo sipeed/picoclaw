@@ -10,11 +10,15 @@ Config is stored at $XDG_CONFIG_HOME/bsky/config.json (defaults to ~/.config/bsk
 import argparse
 import json
 import os
+import re
 import sys
 import textwrap
 from pathlib import Path
 
-from atproto import Client, models
+from atproto import Client, client_utils, models
+
+# URL regex for detecting links in post text
+_URL_RE = re.compile(r'https?://[^\s)>"]+')
 
 # ---------------------------------------------------------------------------
 # Config helpers
@@ -190,8 +194,25 @@ def cmd_post(args) -> None:
     if images:
         embed = models.AppBskyEmbedImages.Main(images=images)
 
-    resp = client.send_post(text=text, embed=embed)
+    # Build rich text with clickable links
+    tb = _build_rich_text(text)
+    resp = client.send_post(text=tb, embed=embed)
     print(f"Posted: {resp.uri}")
+
+
+def _build_rich_text(text: str) -> client_utils.TextBuilder:
+    """Parse URLs in text and return a TextBuilder with link facets."""
+    tb = client_utils.TextBuilder()
+    last_end = 0
+    for m in _URL_RE.finditer(text):
+        if m.start() > last_end:
+            tb.text(text[last_end:m.start()])
+        url = m.group(0)
+        tb.link(url, url)
+        last_end = m.end()
+    if last_end < len(text):
+        tb.text(text[last_end:])
+    return tb
 
 
 def cmd_create_thread(args) -> None:
