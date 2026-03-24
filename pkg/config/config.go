@@ -928,8 +928,9 @@ type DevicesConfig struct {
 }
 
 type VoiceConfig struct {
-	ModelName         string `json:"model_name,omitempty" env:"PICOCLAW_VOICE_MODEL_NAME"`
-	EchoTranscription bool   `json:"echo_transcription"   env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
+	ModelName         string `json:"model_name,omitempty"         env:"PICOCLAW_VOICE_MODEL_NAME"`
+	EchoTranscription bool   `json:"echo_transcription"           env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
+	ElevenLabsAPIKey  string `json:"elevenlabs_api_key,omitempty" env:"PICOCLAW_VOICE_ELEVENLABS_API_KEY"`
 }
 
 // ModelConfig represents a model-centric provider configuration.
@@ -1570,7 +1571,7 @@ func applySecurityConfig(cfg *Config, sec *SecurityConfig) error {
 
 		// Handle Weixin token
 		if sec.Channels.Weixin != nil && sec.Channels.Weixin.Token != "" {
-			cfg.Channels.Discord.token = sec.Channels.Discord.Token
+			cfg.Channels.Weixin.token = sec.Channels.Weixin.Token
 		}
 
 		// Handle DingTalk client secret

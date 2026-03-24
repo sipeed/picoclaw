@@ -481,13 +481,26 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 				_, err = c.bot.SendDocument(ctx, docParams)
 			}
 		case "audio":
-			params := &telego.SendAudioParams{
-				ChatID:          tu.ID(chatID),
-				MessageThreadID: threadID,
-				Audio:           telego.InputFile{File: file},
-				Caption:         part.Caption,
+			// Send OGG files with "voice" in the filename as Telegram voice
+			// bubbles (SendVoice) instead of audio attachments (SendAudio).
+			fn := strings.ToLower(part.Filename)
+			if strings.Contains(fn, "voice") && (strings.HasSuffix(fn, ".ogg") || strings.HasSuffix(fn, ".oga")) {
+				vparams := &telego.SendVoiceParams{
+					ChatID:          tu.ID(chatID),
+					MessageThreadID: threadID,
+					Voice:           telego.InputFile{File: file},
+					Caption:         part.Caption,
+				}
+				_, err = c.bot.SendVoice(ctx, vparams)
+			} else {
+				params := &telego.SendAudioParams{
+					ChatID:          tu.ID(chatID),
+					MessageThreadID: threadID,
+					Audio:           telego.InputFile{File: file},
+					Caption:         part.Caption,
+				}
+				_, err = c.bot.SendAudio(ctx, params)
 			}
-			_, err = c.bot.SendAudio(ctx, params)
 		case "video":
 			params := &telego.SendVideoParams{
 				ChatID:          tu.ID(chatID),
