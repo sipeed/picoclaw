@@ -29,18 +29,30 @@ export function handlePicoMessage(
           ? normalizeUnixTimestamp(Number(message.timestamp))
           : Date.now()
 
-      updateChatStore((prev) => ({
-        messages: [
-          ...prev.messages,
-          {
-            id: messageId,
-            role: "assistant",
-            content,
-            timestamp,
-          },
-        ],
-        isTyping: false,
-      }))
+      updateChatStore((prev) => {
+        const exists = prev.messages.some((m) => m.id === messageId)
+        if (exists) {
+          return {
+            ...prev,
+            messages: prev.messages.map((m) =>
+              m.id === messageId ? { ...m, content, timestamp } : m,
+            ),
+            isTyping: false,
+          }
+        }
+        return {
+          messages: [
+            ...prev.messages,
+            {
+              id: messageId,
+              role: "assistant",
+              content,
+              timestamp,
+            },
+          ],
+          isTyping: false,
+        }
+      })
       break
     }
 

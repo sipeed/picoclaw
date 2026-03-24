@@ -79,9 +79,9 @@ export function ChatPage() {
     }
   }, [messages, isTyping, isAtBottom])
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!input.trim() || !canSend) return
-    if (sendMessage(input.trim())) {
+    if (await sendMessage(input.trim())) {
       setInput("")
     }
   }

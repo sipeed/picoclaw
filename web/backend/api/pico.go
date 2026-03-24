@@ -22,6 +22,9 @@ func (h *Handler) registerPicoRoutes(mux *http.ServeMux) {
 	// This allows the frontend to connect via the same port as the web UI,
 	// avoiding the need to expose extra ports for WebSocket communication.
 	mux.HandleFunc("GET /pico/ws", h.handleWebSocketProxy())
+	// SSE and HTTP send fallback (same gateway Pico channel).
+	mux.HandleFunc("GET /pico/events", h.handleGatewayProxy())
+	mux.HandleFunc("POST /pico/send", h.handleGatewayProxy())
 }
 
 // createWsProxy creates a reverse proxy to the current gateway WebSocket endpoint.
@@ -37,6 +40,11 @@ func (h *Handler) createWsProxy() *httputil.ReverseProxy {
 // handleWebSocketProxy wraps a reverse proxy to handle WebSocket connections.
 // The reverse proxy forwards the incoming upgrade handshake as-is.
 func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
+	return h.handleGatewayProxy()
+}
+
+// handleGatewayProxy forwards /pico/ws, /pico/events, and /pico/send to the gateway HTTP server.
+func (h *Handler) handleGatewayProxy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		proxy := h.createWsProxy()
 		proxy.ServeHTTP(w, r)
@@ -54,12 +62,16 @@ func (h *Handler) handleGetPicoToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wsURL := h.buildWsURL(r, cfg)
+	eventsURL := h.buildPicoEventsURL(r, cfg)
+	sendURL := h.buildPicoSendURL(r, cfg)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":   cfg.Channels.Pico.Token(),
-		"ws_url":  wsURL,
-		"enabled": cfg.Channels.Pico.Enabled,
+		"token":      cfg.Channels.Pico.Token,
+		"ws_url":     wsURL,
+		"events_url": eventsURL,
+		"send_url":   sendURL,
+		"enabled":    cfg.Channels.Pico.Enabled,
 	})
 }
 
@@ -82,11 +94,15 @@ func (h *Handler) handleRegenPicoToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wsURL := h.buildWsURL(r, cfg)
+	eventsURL := h.buildPicoEventsURL(r, cfg)
+	sendURL := h.buildPicoSendURL(r, cfg)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":  token,
-		"ws_url": wsURL,
+		"token":      token,
+		"ws_url":     wsURL,
+		"events_url": eventsURL,
+		"send_url":   sendURL,
 	})
 }
 
@@ -147,13 +163,17 @@ func (h *Handler) handlePicoSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wsURL := h.buildWsURL(r, cfg)
+	eventsURL := h.buildPicoEventsURL(r, cfg)
+	sendURL := h.buildPicoSendURL(r, cfg)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":   cfg.Channels.Pico.Token(),
-		"ws_url":  wsURL,
-		"enabled": true,
-		"changed": changed,
+		"token":      cfg.Channels.Pico.Token,
+		"ws_url":     wsURL,
+		"events_url": eventsURL,
+		"send_url":   sendURL,
+		"enabled":    true,
+		"changed":    changed,
 	})
 }
 

@@ -1,12 +1,14 @@
 import { getDefaultStore } from "jotai"
 import { toast } from "sonner"
 
+import { launcherFetch } from "@/api/http"
 import { getPicoToken } from "@/api/pico"
 import {
   loadSessionMessages,
   mergeHistoryMessages,
 } from "@/features/chat/history"
 import { type PicoMessage, handlePicoMessage } from "@/features/chat/protocol"
+import { parsePicoSSEData, readPicoSSEStream } from "@/features/chat/sse"
 import {
   clearStoredSessionId,
   generateSessionId,
@@ -23,6 +25,8 @@ import { type GatewayState, gatewayAtom } from "@/store/gateway"
 
 const store = getDefaultStore()
 
+const WS_CONNECT_TIMEOUT_MS = 8000
+
 let wsRef: WebSocket | null = null
 let isConnecting = false
 let msgIdCounter = 0
@@ -35,11 +39,25 @@ let reconnectTimer: number | null = null
 let reconnectAttempts = 0
 let shouldMaintainConnection = false
 
+/** SSE long-poll stream active (fetch returned 200 and body is being read). */
+let sseActive = false
+let sseAbort: AbortController | null = null
+let picoTokenRef: string | null = null
+let picoSendUrlRef: string | null = null
+
 function clearReconnectTimer() {
   if (reconnectTimer !== null) {
     window.clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
+}
+
+function stopSSE() {
+  sseAbort?.abort()
+  sseAbort = null
+  sseActive = false
+  picoSendUrlRef = null
+  picoTokenRef = null
 }
 
 function shouldReconnectFor(generation: number, sessionId: string): boolean {
@@ -73,8 +91,8 @@ function needsActiveSessionHydration(): boolean {
 
   return Boolean(
     storedSessionId &&
-    storedSessionId === state.activeSessionId &&
-    !state.hasHydratedActiveSession,
+      storedSessionId === state.activeSessionId &&
+      !state.hasHydratedActiveSession,
   )
 }
 
@@ -100,11 +118,234 @@ function disconnectChatInternal({
   isConnecting = false
 
   invalidateSocket(socket)
+  stopSSE()
 
   updateChatStore({
     connectionState: "disconnected",
     isTyping: false,
   })
+}
+
+function attachWebSocketHandlers(
+  socket: WebSocket,
+  generation: number,
+  sessionId: string,
+) {
+  socket.onmessage = (event) => {
+    if (
+      !isCurrentSocket({
+        socket,
+        currentSocket: wsRef,
+        generation,
+        currentGeneration: connectionGeneration,
+        sessionId,
+        currentSessionId: activeSessionIdRef,
+      })
+    ) {
+      return
+    }
+
+    try {
+      const message = JSON.parse(event.data) as PicoMessage
+      handlePicoMessage(message, sessionId)
+    } catch {
+      console.warn("Non-JSON message from pico:", event.data)
+    }
+  }
+
+  socket.onclose = () => {
+    if (
+      !isCurrentSocket({
+        socket,
+        currentSocket: wsRef,
+        generation,
+        currentGeneration: connectionGeneration,
+        sessionId,
+        currentSessionId: activeSessionIdRef,
+      })
+    ) {
+      return
+    }
+    wsRef = null
+    isConnecting = false
+    updateChatStore({
+      connectionState: "disconnected",
+      isTyping: false,
+    })
+    scheduleReconnect(generation, sessionId)
+  }
+
+  socket.onerror = () => {
+    if (
+      !isCurrentSocket({
+        socket,
+        currentSocket: wsRef,
+        generation,
+        currentGeneration: connectionGeneration,
+        sessionId,
+        currentSessionId: activeSessionIdRef,
+      })
+    ) {
+      return
+    }
+    isConnecting = false
+    updateChatStore({ connectionState: "error" })
+    scheduleReconnect(generation, sessionId)
+  }
+}
+
+/**
+ * Try WebSocket first. Resolves false if connection fails or times out (then caller may use SSE).
+ */
+function tryOpenWebSocket(
+  generation: number,
+  sessionId: string,
+  token: string,
+  wsUrl: string,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const finalWsUrl = normalizeWsUrlForBrowser(wsUrl)
+    const url = `${finalWsUrl}?session_id=${encodeURIComponent(sessionId)}`
+    const socket = new WebSocket(url, [`token.${token}`])
+
+    if (generation !== connectionGeneration) {
+      invalidateSocket(socket)
+      resolve(false)
+      return
+    }
+
+    let settled = false
+    const finishFail = () => {
+      if (settled) {
+        return
+      }
+      settled = true
+      window.clearTimeout(timer)
+      invalidateSocket(socket)
+      try {
+        socket.close()
+      } catch {
+        /* ignore */
+      }
+      resolve(false)
+    }
+
+    const timer = window.setTimeout(() => {
+      if (socket.readyState !== WebSocket.OPEN) {
+        finishFail()
+      }
+    }, WS_CONNECT_TIMEOUT_MS)
+
+    socket.onerror = () => {
+      if (socket.readyState !== WebSocket.OPEN) {
+        finishFail()
+      }
+    }
+
+    socket.onopen = () => {
+      window.clearTimeout(timer)
+      if (settled || generation !== connectionGeneration) {
+        invalidateSocket(socket)
+        resolve(false)
+        return
+      }
+      settled = true
+      wsRef = socket
+      updateChatStore({ connectionState: "connected" })
+      isConnecting = false
+      reconnectAttempts = 0
+      attachWebSocketHandlers(socket, generation, sessionId)
+      resolve(true)
+    }
+  })
+}
+
+async function openSSETransport(
+  generation: number,
+  sessionId: string,
+  token: string,
+  eventsUrlRaw: string | undefined,
+  sendUrlRaw: string | undefined,
+): Promise<void> {
+  const eventsPath = eventsUrlRaw?.trim() || "/pico/events"
+  const sendPath = sendUrlRaw?.trim() || "/pico/send"
+
+  const eventsURL = new URL(eventsPath, window.location.origin)
+  eventsURL.searchParams.set("session_id", sessionId)
+
+  const sendURL = new URL(sendPath, window.location.origin)
+
+  picoTokenRef = token
+  picoSendUrlRef = sendURL.toString()
+
+  sseAbort = new AbortController()
+  const signal = sseAbort.signal
+
+  let res: Response
+  try {
+    res = await launcherFetch(eventsURL.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+      signal,
+      credentials: "same-origin",
+    })
+  } catch {
+    if (generation !== connectionGeneration) {
+      return
+    }
+    stopSSE()
+    isConnecting = false
+    updateChatStore({ connectionState: "error" })
+    scheduleReconnect(generation, sessionId)
+    return
+  }
+
+  if (generation !== connectionGeneration) {
+    stopSSE()
+    return
+  }
+
+  if (!res.ok || !res.body) {
+    stopSSE()
+    isConnecting = false
+    updateChatStore({ connectionState: "error" })
+    scheduleReconnect(generation, sessionId)
+    return
+  }
+
+  sseActive = true
+  isConnecting = false
+  reconnectAttempts = 0
+  updateChatStore({ connectionState: "connected" })
+
+  try {
+    await readPicoSSEStream(res.body, signal, (data) => {
+      if (generation !== connectionGeneration) {
+        return
+      }
+      const message = parsePicoSSEData(data)
+      if (message) {
+        handlePicoMessage(message, sessionId)
+      }
+    })
+  } catch {
+    /* aborted or read error */
+  } finally {
+    sseActive = false
+    sseAbort = null
+    picoSendUrlRef = null
+    picoTokenRef = null
+
+    if (
+      generation === connectionGeneration &&
+      shouldReconnectFor(generation, sessionId)
+    ) {
+      updateChatStore({
+        connectionState: "disconnected",
+        isTyping: false,
+      })
+      scheduleReconnect(generation, sessionId)
+    }
+  }
 }
 
 export async function connectChat() {
@@ -115,11 +356,16 @@ export async function connectChat() {
     return
   }
 
+  if (isConnecting) {
+    return
+  }
+  if (sseActive) {
+    return
+  }
   if (
-    isConnecting ||
-    (wsRef &&
-      (wsRef.readyState === WebSocket.OPEN ||
-        wsRef.readyState === WebSocket.CONNECTING))
+    wsRef &&
+    (wsRef.readyState === WebSocket.OPEN ||
+      wsRef.readyState === WebSocket.CONNECTING)
   ) {
     return
   }
@@ -128,11 +374,17 @@ export async function connectChat() {
   connectionGeneration = generation
   isConnecting = true
   clearReconnectTimer()
+
+  invalidateSocket(wsRef)
+  wsRef = null
+  stopSSE()
+
   updateChatStore({ connectionState: "connecting" })
 
+  const sessionId = activeSessionIdRef
+
   try {
-    const { token, ws_url } = await getPicoToken()
-    const sessionId = activeSessionIdRef
+    const { token, ws_url, events_url, send_url } = await getPicoToken()
 
     if (generation !== connectionGeneration) {
       isConnecting = false
@@ -147,103 +399,32 @@ export async function connectChat() {
       return
     }
 
-    const finalWsUrl = normalizeWsUrlForBrowser(ws_url)
-    const url = `${finalWsUrl}?session_id=${encodeURIComponent(sessionId)}`
-    const socket = new WebSocket(url, [`token.${token}`])
+    const wsOk = await tryOpenWebSocket(
+      generation,
+      sessionId,
+      token,
+      ws_url,
+    )
 
     if (generation !== connectionGeneration) {
       isConnecting = false
-      invalidateSocket(socket)
       return
     }
 
-    socket.onopen = () => {
-      if (
-        !isCurrentSocket({
-          socket,
-          currentSocket: wsRef,
-          generation,
-          currentGeneration: connectionGeneration,
-          sessionId,
-          currentSessionId: activeSessionIdRef,
-        })
-      ) {
-        return
-      }
-      updateChatStore({ connectionState: "connected" })
-      isConnecting = false
-      reconnectAttempts = 0
+    if (wsOk) {
+      return
     }
 
-    socket.onmessage = (event) => {
-      if (
-        !isCurrentSocket({
-          socket,
-          currentSocket: wsRef,
-          generation,
-          currentGeneration: connectionGeneration,
-          sessionId,
-          currentSessionId: activeSessionIdRef,
-        })
-      ) {
-        return
-      }
-
-      try {
-        const message = JSON.parse(event.data) as PicoMessage
-        handlePicoMessage(message, sessionId)
-      } catch {
-        console.warn("Non-JSON message from pico:", event.data)
-      }
-    }
-
-    socket.onclose = () => {
-      if (
-        !isCurrentSocket({
-          socket,
-          currentSocket: wsRef,
-          generation,
-          currentGeneration: connectionGeneration,
-          sessionId,
-          currentSessionId: activeSessionIdRef,
-        })
-      ) {
-        return
-      }
-      wsRef = null
-      isConnecting = false
-      updateChatStore({
-        connectionState: "disconnected",
-        isTyping: false,
-      })
-      scheduleReconnect(generation, sessionId)
-    }
-
-    socket.onerror = () => {
-      if (
-        !isCurrentSocket({
-          socket,
-          currentSocket: wsRef,
-          generation,
-          currentGeneration: connectionGeneration,
-          sessionId,
-          currentSessionId: activeSessionIdRef,
-        })
-      ) {
-        return
-      }
-      isConnecting = false
-      updateChatStore({ connectionState: "error" })
-      scheduleReconnect(generation, sessionId)
-    }
-
-    wsRef = socket
+    isConnecting = true
+    updateChatStore({ connectionState: "connecting" })
+    await openSSETransport(generation, sessionId, token, events_url, send_url)
   } catch (error) {
     if (generation !== connectionGeneration) {
       isConnecting = false
       return
     }
     console.error("Failed to connect to pico:", error)
+    stopSSE()
     updateChatStore({ connectionState: "error" })
     isConnecting = false
     scheduleReconnect(generation, activeSessionIdRef)
@@ -324,40 +505,73 @@ export async function hydrateActiveSession() {
   return hydratePromise
 }
 
-export function sendChatMessage(content: string) {
-  if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
-    console.warn("WebSocket not connected")
-    return false
-  }
-
-  const socket = wsRef
+export async function sendChatMessage(content: string): Promise<boolean> {
   const id = `msg-${++msgIdCounter}-${Date.now()}`
 
-  updateChatStore((prev) => ({
-    messages: [
-      ...prev.messages,
-      { id, role: "user", content, timestamp: Date.now() },
-    ],
-    isTyping: true,
-  }))
+  const optimistic = () =>
+    updateChatStore((prev) => ({
+      messages: [
+        ...prev.messages,
+        { id, role: "user" as const, content, timestamp: Date.now() },
+      ],
+      isTyping: true,
+    }))
 
-  try {
-    socket.send(
-      JSON.stringify({
-        type: "message.send",
-        id,
-        payload: { content },
-      }),
-    )
-    return true
-  } catch (error) {
-    console.error("Failed to send pico message:", error)
+  const rollback = () =>
     updateChatStore((prev) => ({
       messages: prev.messages.filter((message) => message.id !== id),
       isTyping: false,
     }))
-    return false
+
+  if (wsRef && wsRef.readyState === WebSocket.OPEN) {
+    optimistic()
+    try {
+      wsRef.send(
+        JSON.stringify({
+          type: "message.send",
+          id,
+          payload: { content },
+        }),
+      )
+      return true
+    } catch (error) {
+      console.error("Failed to send pico message:", error)
+      rollback()
+      return false
+    }
   }
+
+  if (sseActive && picoSendUrlRef && picoTokenRef) {
+    optimistic()
+    try {
+      const res = await launcherFetch(picoSendUrlRef, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          Authorization: `Bearer ${picoTokenRef}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "message.send",
+          id,
+          session_id: activeSessionIdRef,
+          payload: { content },
+        }),
+      })
+      if (!res.ok) {
+        rollback()
+        return false
+      }
+      return true
+    } catch (error) {
+      console.error("Failed to send pico message:", error)
+      rollback()
+      return false
+    }
+  }
+
+  console.warn("Pico chat not connected")
+  return false
 }
 
 export async function switchChatSession(sessionId: string) {

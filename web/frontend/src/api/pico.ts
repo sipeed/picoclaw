@@ -3,12 +3,16 @@
 interface PicoTokenResponse {
   token: string
   ws_url: string
+  events_url?: string
+  send_url?: string
   enabled: boolean
 }
 
 interface PicoSetupResponse {
   token: string
   ws_url: string
+  events_url?: string
+  send_url?: string
   enabled: boolean
   changed: boolean
 }

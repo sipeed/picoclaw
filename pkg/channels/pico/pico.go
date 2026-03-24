@@ -40,6 +40,20 @@ func (pc *picoConn) writeJSON(v any) error {
 	return pc.conn.WriteJSON(v)
 }
 
+// ID returns the connection id (picoSubscriber).
+func (pc *picoConn) ID() string { return pc.id }
+
+// SessionID returns the bound session (picoSubscriber).
+func (pc *picoConn) SessionID() string { return pc.sessionID }
+
+// Deliver sends a Pico message over the WebSocket (picoSubscriber).
+func (pc *picoConn) Deliver(msg PicoMessage) error {
+	return pc.writeJSON(msg)
+}
+
+// Close shuts down the WebSocket (picoSubscriber).
+func (pc *picoConn) Close() { pc.close() }
+
 // close closes the connection.
 func (pc *picoConn) close() {
 	if pc.closed.CompareAndSwap(false, true) {
@@ -50,13 +64,13 @@ func (pc *picoConn) close() {
 	}
 }
 
-// PicoChannel implements the native Pico Protocol WebSocket channel.
+// PicoChannel implements the native Pico Protocol channel (WebSocket plus HTTP SSE fallback).
 // It serves as the reference implementation for all optional capability interfaces.
 type PicoChannel struct {
 	*channels.BaseChannel
 	config      config.PicoConfig
 	upgrader    websocket.Upgrader
-	connections sync.Map // connID → *picoConn
+	subscribers sync.Map // connID → picoSubscriber (*picoConn or *picoSSEConn)
 	connCount   atomic.Int32
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -109,12 +123,12 @@ func (c *PicoChannel) Stop(ctx context.Context) error {
 	logger.InfoC("pico", "Stopping Pico Protocol channel")
 	c.SetRunning(false)
 
-	// Close all connections
-	c.connections.Range(func(key, value any) bool {
-		if pc, ok := value.(*picoConn); ok {
-			pc.close()
+	// Close all subscribers (WebSocket + SSE)
+	c.subscribers.Range(func(key, value any) bool {
+		if sub, ok := value.(picoSubscriber); ok {
+			sub.Close()
 		}
-		c.connections.Delete(key)
+		c.subscribers.Delete(key)
 		return true
 	})
 
@@ -136,6 +150,18 @@ func (c *PicoChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case path == "/ws" || path == "/ws/":
 		c.handleWebSocket(w, r)
+	case path == "/events" || path == "/events/":
+		if r.Method == http.MethodGet {
+			c.handleSSE(w, r)
+		} else {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	case path == "/send" || path == "/send/":
+		if r.Method == http.MethodPost {
+			c.handlePostSend(w, r)
+		} else {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
 	default:
 		http.NotFound(w, r)
 	}
@@ -208,20 +234,21 @@ func (c *PicoChannel) broadcastToSession(chatID string, msg PicoMessage) error {
 	msg.SessionID = sessionID
 
 	var sent bool
-	c.connections.Range(func(key, value any) bool {
-		pc, ok := value.(*picoConn)
+	c.subscribers.Range(func(key, value any) bool {
+		sub, ok := value.(picoSubscriber)
 		if !ok {
 			return true
 		}
-		if pc.sessionID == sessionID {
-			if err := pc.writeJSON(msg); err != nil {
-				logger.DebugCF("pico", "Write to connection failed", map[string]any{
-					"conn_id": pc.id,
-					"error":   err.Error(),
-				})
-			} else {
-				sent = true
-			}
+		if sub.SessionID() != sessionID {
+			return true
+		}
+		if err := sub.Deliver(msg); err != nil {
+			logger.DebugCF("pico", "Write to subscriber failed", map[string]any{
+				"conn_id": sub.ID(),
+				"error":   err.Error(),
+			})
+		} else {
+			sent = true
 		}
 		return true
 	})
@@ -230,6 +257,25 @@ func (c *PicoChannel) broadcastToSession(chatID string, msg PicoMessage) error {
 		return fmt.Errorf("no active connections for session %s: %w", sessionID, channels.ErrSendFailed)
 	}
 	return nil
+}
+
+// disconnectSubscribersForSession closes and removes every subscriber for the given session so
+// a new WebSocket or SSE connection does not overlap with the previous one (avoids duplicate pushes).
+func (c *PicoChannel) disconnectSubscribersForSession(sessionID string) {
+	c.subscribers.Range(func(key, value any) bool {
+		sub, ok := value.(picoSubscriber)
+		if !ok || sub.SessionID() != sessionID {
+			return true
+		}
+		c.subscribers.Delete(key)
+		c.connCount.Add(-1)
+		sub.Close()
+		logger.InfoCF("pico", "Disconnected prior subscriber (single session)", map[string]any{
+			"conn_id":    sub.ID(),
+			"session_id": sessionID,
+		})
+		return true
+	})
 }
 
 // handleWebSocket upgrades the HTTP connection and manages the WebSocket lifecycle.
@@ -244,6 +290,13 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	sessionID := r.URL.Query().Get("session_id")
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+	}
+	// Drop any prior connection for this session before enforcing the global cap.
+	c.disconnectSubscribersForSession(sessionID)
 
 	// Check connection limit
 	maxConns := c.config.MaxConnections
@@ -269,19 +322,13 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine session ID from query param or generate one
-	sessionID := r.URL.Query().Get("session_id")
-	if sessionID == "" {
-		sessionID = uuid.New().String()
-	}
-
 	pc := &picoConn{
 		id:        uuid.New().String(),
 		conn:      conn,
 		sessionID: sessionID,
 	}
 
-	c.connections.Store(pc.id, pc)
+	c.subscribers.Store(pc.id, pc)
 	c.connCount.Add(1)
 
 	logger.InfoCF("pico", "WebSocket client connected", map[string]any{
@@ -341,8 +388,9 @@ func (c *PicoChannel) matchedSubprotocol(r *http.Request) string {
 func (c *PicoChannel) readLoop(pc *picoConn) {
 	defer func() {
 		pc.close()
-		c.connections.Delete(pc.id)
-		c.connCount.Add(-1)
+		if _, loaded := c.subscribers.LoadAndDelete(pc.id); loaded {
+			c.connCount.Add(-1)
+		}
 		logger.InfoCF("pico", "WebSocket client disconnected", map[string]any{
 			"conn_id":    pc.id,
 			"session_id": pc.sessionID,
@@ -452,6 +500,11 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		sessionID = pc.sessionID
 	}
 
+	c.publishUserMessage(pc.id, sessionID, msg.ID, content)
+}
+
+// publishUserMessage forwards validated user text into the message bus.
+func (c *PicoChannel) publishUserMessage(connID, sessionID, msgID, content string) {
 	chatID := "pico:" + sessionID
 	senderID := "pico-user"
 
@@ -460,7 +513,7 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	metadata := map[string]string{
 		"platform":   "pico",
 		"session_id": sessionID,
-		"conn_id":    pc.id,
+		"conn_id":    connID,
 	}
 
 	logger.DebugCF("pico", "Received message", map[string]any{
@@ -478,7 +531,7 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		return
 	}
 
-	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, nil, metadata, sender)
+	c.HandleMessage(c.ctx, peer, msgID, senderID, chatID, content, nil, metadata, sender)
 }
 
 // truncate truncates a string to maxLen runes.
