@@ -307,6 +307,11 @@ docker-clean:
 	docker rmi picoclaw:latest picoclaw:full 2>/dev/null || true
 
 
+## build-web: Build the web frontend and backend
+build-web:
+	@echo "Building web interface..."
+	@cd web && $(MAKE) build
+
 ## build-macos-app: Build PicoClaw macOS .app bundle (no terminal window)
 build-macos-app:
 	@echo "Building macOS .app bundle..."
