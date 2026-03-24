@@ -196,6 +196,9 @@ install: build
 	@chmod +x $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX)
 	@mv -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX) $(INSTALL_BIN_DIR)/$(BINARY_NAME)
 	@echo "Installed binary to $(INSTALL_BIN_DIR)/$(BINARY_NAME)"
+	@cp scripts/uninstall.sh $(INSTALL_BIN_DIR)/$(BINARY_NAME)-uninstall
+	@chmod +x $(INSTALL_BIN_DIR)/$(BINARY_NAME)-uninstall
+	@echo "Installed uninstaller script to $(INSTALL_BIN_DIR)/$(BINARY_NAME)-uninstall"
 	@echo "Installation complete!"
 
 ## uninstall: Remove picoclaw from system

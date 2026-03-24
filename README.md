@@ -346,6 +346,16 @@ picoclaw gateway
 
 </details>
 
+### Uninstallation
+
+To completely remove PicoClaw and all of its associated data (including configuration and workspace), you can use the uninstall script that was installed alongside the application:
+
+```bash
+picoclaw-uninstall
+```
+
+This will automatically remove the executable, your `~/.picoclaw` directory, and the uninstaller script itself.
+
 ## 🔌 Providers (LLM)
 
 PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use the `protocol/model` format:
