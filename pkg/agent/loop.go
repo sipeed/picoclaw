@@ -1234,7 +1234,7 @@ func (al *AgentLoop) ProcessHeartbeat(
 	if ts := al.getAnyActiveTurnState(); ts != nil {
 		logger.InfoCF("heartbeat", "Skipping heartbeat — agent is busy",
 			map[string]any{
-				"active_session": ts.sessionKey,
+				"session_key": ts.sessionKey,
 			})
 		return "HEARTBEAT_SKIPPED", nil
 	}
