@@ -1236,7 +1236,7 @@ func (al *AgentLoop) ProcessHeartbeat(
 			map[string]any{
 				"active_session": ts.sessionKey,
 			})
-		return "HEARTBEAT_OK", nil
+		return "HEARTBEAT_SKIPPED", nil
 	}
 
 	if err := al.ensureHooksInitialized(ctx); err != nil {
