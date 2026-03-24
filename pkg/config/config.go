@@ -1546,7 +1546,7 @@ func applySecurityConfig(cfg *Config, sec *SecurityConfig) error {
 
 	// Handle Weixin token
 	if sec.Channels.Weixin != nil && sec.Channels.Weixin.Token != "" {
-		cfg.Channels.Discord.token = sec.Channels.Discord.Token
+		cfg.Channels.Weixin.token = sec.Channels.Weixin.Token
 	}
 
 	// Handle DingTalk client secret

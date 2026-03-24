@@ -155,6 +155,11 @@ export function ConfigPage() {
           "Max tool iterations",
           { min: 1 },
         )
+        const toolFeedbackMaxArgsLength = parseIntField(
+          form.toolFeedbackMaxArgsLength,
+          "Tool feedback max args length",
+          { min: 0 },
+        )
         const summarizeMessageThreshold = parseIntField(
           form.summarizeMessageThreshold,
           "Summarize message threshold",
@@ -203,6 +208,10 @@ export function ConfigPage() {
             defaults: {
               workspace,
               restrict_to_workspace: form.restrictToWorkspace,
+              tool_feedback: {
+                enabled: form.toolFeedbackEnabled,
+                max_args_length: toolFeedbackMaxArgsLength,
+              },
               max_tokens: maxTokens,
               context_window: contextWindow,
               max_tool_iterations: maxToolIterations,
