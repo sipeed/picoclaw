@@ -18,8 +18,9 @@ from pathlib import Path
 from atproto import Client, client_utils, models
 
 # URL regex for detecting links in post text
-_URL_RE = re.compile(r'https?://[^\s)>"]+')
-
+_URL_RE = re.compile(r'https?://[^\s)>"]+') 
+# Hashtag regex: #word (must be preceded by start-of-string or whitespace)
+_TAG_RE = re.compile(r'(?:^|(?<=\s))#([A-Za-z][A-Za-z0-9_]*)', re.UNICODE)
 # ---------------------------------------------------------------------------
 # Config helpers
 # ---------------------------------------------------------------------------
@@ -201,15 +202,28 @@ def cmd_post(args) -> None:
 
 
 def _build_rich_text(text: str) -> client_utils.TextBuilder:
-    """Parse URLs in text and return a TextBuilder with link facets."""
+    """Parse URLs and hashtags in text and return a TextBuilder with facets."""
     tb = client_utils.TextBuilder()
-    last_end = 0
+    # Collect all matches (urls and tags) with their positions
+    spans = []
     for m in _URL_RE.finditer(text):
-        if m.start() > last_end:
-            tb.text(text[last_end:m.start()])
-        url = m.group(0)
-        tb.link(url, url)
-        last_end = m.end()
+        spans.append((m.start(), m.end(), 'link', m.group(0)))
+    for m in _TAG_RE.finditer(text):
+        # m.start() points to '#' (or the space before it if lookbehind matched)
+        tag_start = m.start() if text[m.start()] == '#' else m.start()
+        spans.append((tag_start, m.end(), 'tag', m.group(1)))
+    spans.sort(key=lambda s: s[0])
+    last_end = 0
+    for start, end, kind, value in spans:
+        if start < last_end:
+            continue  # overlapping, skip
+        if start > last_end:
+            tb.text(text[last_end:start])
+        if kind == 'link':
+            tb.link(text[start:end], value)
+        elif kind == 'tag':
+            tb.tag(text[start:end], value)
+        last_end = end
     if last_end < len(text):
         tb.text(text[last_end:])
     return tb
@@ -244,14 +258,16 @@ def cmd_create_thread(args) -> None:
         ))
 
     embed = models.AppBskyEmbedImages.Main(images=images) if images else None
-    parent = client.send_post(text=texts[0], embed=embed)
+    tb = _build_rich_text(texts[0])
+    parent = client.send_post(text=tb, embed=embed)
     print(f"[1/{len(texts)}] {parent.uri}")
     root_ref = models.create_strong_ref(parent)
     parent_ref = root_ref
 
     for i, text in enumerate(texts[1:], 2):
         reply_to = models.AppBskyFeedPost.ReplyRef(root=root_ref, parent=parent_ref)
-        resp = client.send_post(text=text, reply_to=reply_to)
+        tb = _build_rich_text(text)
+        resp = client.send_post(text=tb, reply_to=reply_to)
         print(f"[{i}/{len(texts)}] {resp.uri}")
         parent_ref = models.create_strong_ref(resp)
 
@@ -268,7 +284,8 @@ def cmd_reply(args) -> None:
     if hasattr(post, "record") and hasattr(post.record, "reply") and post.record.reply:
         root_ref = post.record.reply.root
     reply_to = models.AppBskyFeedPost.ReplyRef(root=root_ref, parent=post_ref)
-    resp = client.send_post(text=args.text, reply_to=reply_to)
+    tb = _build_rich_text(args.text)
+    resp = client.send_post(text=tb, reply_to=reply_to)
     print(f"Replied: {resp.uri}")
 
 
@@ -279,7 +296,8 @@ def cmd_quote(args) -> None:
     post = thread.thread.post
     ref = models.create_strong_ref(post)
     embed = models.AppBskyEmbedRecord.Main(record=ref)
-    resp = client.send_post(text=args.text, embed=embed)
+    tb = _build_rich_text(args.text)
+    resp = client.send_post(text=tb, embed=embed)
     print(f"Quoted: {resp.uri}")
 
 

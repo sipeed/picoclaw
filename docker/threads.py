@@ -307,6 +307,60 @@ def _wait_for_container(token: str, container_id: str, max_wait: int = 30) -> No
     sys.exit(1)
 
 
+def cmd_token_exchange(args) -> None:
+    token = _get_token(args)
+    app_secret = args.app_secret or os.environ.get("THREADS_APP_SECRET", "")
+    params = {
+        "grant_type": "th_exchange_token",
+        "client_secret": app_secret,
+        "access_token": token,
+    }
+    qs = urllib.parse.urlencode(params)
+    url = f"https://graph.threads.net/access_token?{qs}"
+    req = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"Token exchange failed ({e.code}): {body}", file=sys.stderr)
+        sys.exit(1)
+    new_token = data.get("access_token", "")
+    expires_in = data.get("expires_in", 0)
+    days = expires_in // 86400
+    if args.json_output:
+        print(json.dumps(data, indent=2))
+    else:
+        print(f"Long-lived token: {new_token}")
+        print(f"Expires in: {days} days ({expires_in} seconds)")
+
+
+def cmd_token_refresh(args) -> None:
+    token = _get_token(args)
+    params = {
+        "grant_type": "th_refresh_token",
+        "access_token": token,
+    }
+    qs = urllib.parse.urlencode(params)
+    url = f"https://graph.threads.net/refresh_access_token?{qs}"
+    req = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"Token refresh failed ({e.code}): {body}", file=sys.stderr)
+        sys.exit(1)
+    new_token = data.get("access_token", "")
+    expires_in = data.get("expires_in", 0)
+    days = expires_in // 86400
+    if args.json_output:
+        print(json.dumps(data, indent=2))
+    else:
+        print(f"Refreshed token: {new_token}")
+        print(f"Expires in: {days} days ({expires_in} seconds)")
+
+
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
@@ -357,6 +411,13 @@ def main() -> None:
     p = sub.add_parser("post-insights", help="Get insights for a post")
     p.add_argument("post_id", help="Post ID")
 
+    # token-exchange
+    p = sub.add_parser("token-exchange", help="Exchange short-lived token for a long-lived one (60 days)")
+    p.add_argument("--app-secret", dest="app_secret", help="Threads app secret (or set THREADS_APP_SECRET env var)")
+
+    # token-refresh
+    p = sub.add_parser("token-refresh", help="Refresh a long-lived token before it expires")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -372,6 +433,8 @@ def main() -> None:
         "insights": cmd_insights,
         "posts": cmd_posts,
         "post-insights": cmd_post_insights,
+        "token-exchange": cmd_token_exchange,
+        "token-refresh": cmd_token_refresh,
     }
 
     try:
