@@ -1,0 +1,9 @@
+include Makefile
+
+## Override build-whatsapp-native to build only for linux/amd64
+build-whatsapp-native: generate
+	@echo "Building for linux/amd64 only..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=amd64 $(GO) build -tags $(GO_BUILD_TAGS),whatsapp_native -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
+	@ln -sf $(BINARY_NAME)-linux-amd64 $(BUILD_DIR)/$(BINARY_NAME)
+	@echo "Build complete"
