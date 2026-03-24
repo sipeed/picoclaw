@@ -13,7 +13,31 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Sync fork with upstream
+      - name: Sync main with upstream
         run: gh repo sync ${{ github.repository }} --source sipeed/picoclaw --branch main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create PR from main to my-custom-setup
+        run: |
+          # Check if there's already an open PR from main to my-custom-setup
+          EXISTING=$(gh pr list --repo ${{ github.repository }} --base my-custom-setup --head main --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already open — skipping."
+          else
+            # Check if main has commits not in my-custom-setup
+            BEHIND=$(gh api repos/${{ github.repository }}/compare/my-custom-setup...main --jq '.ahead_by')
+            if [ "$BEHIND" -gt 0 ] 2>/dev/null; then
+              gh pr create \
+                --repo ${{ github.repository }} \
+                --base my-custom-setup \
+                --head main \
+                --title "Sync upstream changes into my-custom-setup" \
+                --body "Automated PR to merge latest upstream changes from \`main\` into \`my-custom-setup\`."
+              echo "PR created."
+            else
+              echo "No new upstream commits — skipping PR."
+            fi
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
