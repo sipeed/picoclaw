@@ -2166,14 +2166,21 @@ func TestProcessHeartbeat_RunsWhenIdle(t *testing.T) {
 	}
 
 	// ProcessHeartbeat should proceed (not return early with HEARTBEAT_OK skip)
-	// It will either succeed or fail depending on agent setup, but it should NOT
-	// return the skip sentinel.
+	// and, with the mock provider used in newTestAgentLoop, return a deterministic
+	// mock response.
 	resp, err := al.ProcessHeartbeat(context.Background(), "heartbeat prompt", "cli", "direct")
 
-	// With no default agent registered, it returns an error — that's fine,
-	// the point is it didn't skip due to busy check.
-	if err != nil && resp == "HEARTBEAT_OK" {
+	// Must not skip due to busy check.
+	if resp == "HEARTBEAT_OK" {
 		t.Fatal("ProcessHeartbeat skipped despite no active turns")
+	}
+
+	// Given the mock provider, the heartbeat call should succeed with a fixed response.
+	if err != nil {
+		t.Fatalf("expected no error from ProcessHeartbeat when idle, got: %v", err)
+	}
+	if resp != "Mock response" {
+		t.Fatalf("expected mock provider response %q, got %q", "Mock response", resp)
 	}
 }
 
