@@ -815,6 +815,7 @@ func (c *WeComAIBotConfig) SetSecret(secret string) {
 type WeixinConfig struct {
 	Enabled            bool `json:"enabled"              env:"PICOCLAW_CHANNELS_WEIXIN_ENABLED"`
 	token              string
+	AccountID          string              `json:"account_id,omitempty" env:"PICOCLAW_CHANNELS_WEIXIN_ACCOUNT_ID"`
 	BaseURL            string              `json:"base_url"             env:"PICOCLAW_CHANNELS_WEIXIN_BASE_URL"`
 	CDNBaseURL         string              `json:"cdn_base_url"         env:"PICOCLAW_CHANNELS_WEIXIN_CDN_BASE_URL"`
 	Proxy              string              `json:"proxy"                env:"PICOCLAW_CHANNELS_WEIXIN_PROXY"`
@@ -2017,6 +2018,12 @@ func (c *Config) SecurityCopyFrom(cfg *Config) {
 			logger.Errorf("failed to apply security config in SecurityCopyFrom: %v", err)
 		}
 	}
+}
+
+// ApplySecurity re-applies the stored security config to populate private fields (tokens, API keys, etc.).
+// Call this after SecurityCopyFrom when you need private fields to be accessible for validation or use.
+func (c *Config) ApplySecurity() error {
+	return applySecurityConfig(c, c.security)
 }
 
 func MergeAPIKeys(apiKey string, apiKeys []string) []string {

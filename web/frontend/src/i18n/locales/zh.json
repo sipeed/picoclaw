@@ -240,7 +240,23 @@
       "pico": "Web",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
-      "irc": "IRC"
+      "irc": "IRC",
+      "weixin": "微信"
+    },
+    "weixin": {
+      "bindTitle": "微信账号绑定",
+      "bindDesc": "使用微信扫描二维码以绑定您的个人微信账号。",
+      "bind": "绑定微信",
+      "rebind": "重新绑定",
+      "bound": "微信已绑定",
+      "notBound": "尚未绑定微信账号。",
+      "generating": "正在生成二维码...",
+      "scanHint": "打开微信，扫描二维码",
+      "scanned": "已扫码 — 请在微信中确认",
+      "expired": "二维码已过期",
+      "retry": "重试",
+      "refresh": "刷新二维码",
+      "errorGeneric": "发生错误，请重试。"
     },
     "field": {
       "token": "Bot Token",

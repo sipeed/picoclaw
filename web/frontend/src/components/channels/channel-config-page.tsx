@@ -17,6 +17,7 @@ import { FeishuForm } from "@/components/channels/channel-forms/feishu-form"
 import { GenericForm } from "@/components/channels/channel-forms/generic-form"
 import { SlackForm } from "@/components/channels/channel-forms/slack-form"
 import { TelegramForm } from "@/components/channels/channel-forms/telegram-form"
+import { WeixinForm } from "@/components/channels/channel-forms/weixin-form"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -142,6 +143,8 @@ function isConfigured(
       )
     case "onebot":
       return asString(config.ws_url) !== ""
+    case "weixin":
+      return asString(config.account_id) !== ""
     case "wecom":
       return asString(config.token) !== ""
     case "wecom_app":
@@ -251,8 +254,8 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const [editConfig, setEditConfig] = useState<ChannelConfig>({})
   const [enabled, setEnabled] = useState(false)
 
-  const loadData = useCallback(async () => {
-    setLoading(true)
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const [catalog, appConfig] = await Promise.all([
         getChannelsCatalog(),
@@ -285,7 +288,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : t("channels.loadError"))
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [channelName, t])
 
@@ -444,6 +447,15 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
             onChange={handleChange}
             isEdit={isEdit}
             fieldErrors={fieldErrors}
+          />
+        )
+      case "weixin":
+        return (
+          <WeixinForm
+            config={editConfig}
+            onChange={handleChange}
+            isEdit={isEdit}
+            onBindSuccess={() => void loadData(true)}
           />
         )
       default:

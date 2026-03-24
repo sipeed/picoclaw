@@ -240,7 +240,23 @@
       "pico": "Web",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
-      "irc": "IRC"
+      "irc": "IRC",
+      "weixin": "WeChat"
+    },
+    "weixin": {
+      "bindTitle": "WeChat Account Binding",
+      "bindDesc": "Scan the QR code with WeChat to bind your personal account.",
+      "bind": "Bind WeChat",
+      "rebind": "Re-bind",
+      "bound": "WeChat Bound",
+      "notBound": "WeChat account not bound yet.",
+      "generating": "Generating QR code...",
+      "scanHint": "Open WeChat and scan the QR code",
+      "scanned": "Scanned — please confirm in WeChat",
+      "expired": "QR code expired",
+      "retry": "Try Again",
+      "refresh": "Refresh QR",
+      "errorGeneric": "An error occurred. Please try again."
     },
     "field": {
       "token": "Bot Token",
