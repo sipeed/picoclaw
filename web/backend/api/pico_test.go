@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -151,6 +152,44 @@ func TestEnsurePicoChannel_PreservesUserSettings(t *testing.T) {
 	}
 	if len(cfg.Channels.Pico.AllowOrigins) != 1 || cfg.Channels.Pico.AllowOrigins[0] != "https://myapp.example.com" {
 		t.Errorf("allow_origins = %v, want [https://myapp.example.com]", cfg.Channels.Pico.AllowOrigins)
+	}
+}
+
+func TestEnsurePicoChannel_ExistingConfigWithoutSecurityFile(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+
+	cfg := config.DefaultConfig()
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if err = os.WriteFile(configPath, raw, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+
+	changed, err := h.ensurePicoChannel("")
+	if err != nil {
+		t.Fatalf("ensurePicoChannel() error = %v", err)
+	}
+	if !changed {
+		t.Fatal("ensurePicoChannel() should report changed when pico is missing")
+	}
+
+	cfg, err = config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if !cfg.Channels.Pico.Enabled {
+		t.Error("expected Pico to be enabled after setup")
+	}
+	if cfg.Channels.Pico.Token() == "" {
+		t.Error("expected a non-empty token after setup")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(configPath), config.SecurityConfigFile)); err != nil {
+		t.Fatalf("expected .security.yml to be created: %v", err)
 	}
 }
 

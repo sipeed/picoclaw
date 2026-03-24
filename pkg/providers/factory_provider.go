@@ -6,12 +6,15 @@
 package providers
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	anthropicmessages "github.com/sipeed/picoclaw/pkg/providers/anthropic_messages"
 	"github.com/sipeed/picoclaw/pkg/providers/azure"
+	"github.com/sipeed/picoclaw/pkg/providers/bedrock"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -113,6 +116,42 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.Proxy,
 			cfg.RequestTimeout,
 		), modelID, nil
+
+	case "bedrock":
+		// AWS Bedrock uses AWS SDK credentials (env vars, profiles, IAM roles, etc.)
+		// api_base can be:
+		//   - A full endpoint URL: https://bedrock-runtime.us-east-1.amazonaws.com
+		//   - A region name: us-east-1 (AWS SDK resolves endpoint automatically)
+		var opts []bedrock.Option
+		if cfg.APIBase != "" {
+			if !strings.Contains(cfg.APIBase, "://") {
+				// Treat as region: let AWS SDK resolve the correct endpoint
+				// (supports all AWS partitions: aws, aws-cn, aws-us-gov, etc.)
+				opts = append(opts, bedrock.WithRegion(cfg.APIBase))
+			} else {
+				// Full endpoint URL provided (for custom endpoints or testing)
+				opts = append(opts, bedrock.WithBaseEndpoint(cfg.APIBase))
+			}
+		}
+		// Use a separate timeout for AWS config loading (credential resolution can block)
+		initTimeout := 30 * time.Second
+		if cfg.RequestTimeout > 0 {
+			reqTimeout := time.Duration(cfg.RequestTimeout) * time.Second
+			// Set request timeout for API calls
+			opts = append(opts, bedrock.WithRequestTimeout(reqTimeout))
+			// Ensure init timeout is at least as large as request timeout
+			if reqTimeout > initTimeout {
+				initTimeout = reqTimeout
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), initTimeout)
+		defer cancel()
+		// Note: AWS_PROFILE env var is automatically used by AWS SDK
+		provider, err := bedrock.NewProvider(ctx, opts...)
+		if err != nil {
+			return nil, "", fmt.Errorf("creating bedrock provider: %w", err)
+		}
+		return provider, modelID, nil
 
 	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",

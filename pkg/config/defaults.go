@@ -384,6 +384,8 @@ func DefaultConfig() *Config {
 			LogLevel:  "fatal",
 		},
 		Tools: ToolsConfig{
+			FilterSensitiveData: true,
+			FilterMinLength:     8,
 			MediaCleanup: MediaCleanupConfig{
 				ToolConfig: ToolConfig{
 					Enabled: true,
@@ -543,8 +545,9 @@ func DefaultConfig() *Config {
 		},
 		security: &SecurityConfig{
 			ModelList: map[string]ModelSecurityEntry{},
-			Channels:  ChannelsSecurity{},
-			Web:       WebToolsSecurity{},
+			Channels:  &ChannelsSecurity{},
+			Web:       &WebToolsSecurity{},
+			Skills:    &SkillsSecurity{},
 		},
 	}
 }

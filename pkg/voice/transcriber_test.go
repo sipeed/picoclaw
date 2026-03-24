@@ -145,6 +145,48 @@ func TestDetectTranscriber(t *testing.T) {
 			}),
 			wantNil: true,
 		},
+		{
+			name: "elevenlabs voice config key",
+			cfg: &config.Config{
+				Voice: config.VoiceConfig{ElevenLabsAPIKey: "sk_elevenlabs_test"},
+			},
+			wantName: "elevenlabs",
+		},
+		{
+			name: "elevenlabs takes priority over groq model list",
+			cfg: (&config.Config{
+				Voice: config.VoiceConfig{ElevenLabsAPIKey: "sk_elevenlabs_test"},
+				ModelList: []*config.ModelConfig{
+					{ModelName: "groq", Model: "groq/llama-3.3-70b"},
+				},
+			}).WithSecurity(&config.SecurityConfig{
+				ModelList: map[string]config.ModelSecurityEntry{
+					"groq": {
+						APIKeys: []string{"sk-groq-direct"},
+					},
+				},
+			}),
+			wantName: "elevenlabs",
+		},
+		{
+			name: "voice model name takes priority over elevenlabs",
+			cfg: (&config.Config{
+				Voice: config.VoiceConfig{
+					ModelName:        "voice-gemini",
+					ElevenLabsAPIKey: "sk_elevenlabs_test",
+				},
+				ModelList: []*config.ModelConfig{
+					{ModelName: "voice-gemini", Model: "gemini/gemini-2.5-flash"},
+				},
+			}).WithSecurity(&config.SecurityConfig{
+				ModelList: map[string]config.ModelSecurityEntry{
+					"voice-gemini": {
+						APIKeys: []string{"sk-gemini-model"},
+					},
+				},
+			}),
+			wantName: "audio-model",
+		},
 	}
 
 	for _, tc := range tests {

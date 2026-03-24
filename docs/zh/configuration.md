@@ -623,6 +623,7 @@ PicoClaw 通过 `cron` 工具支持 cron 风格的定时任务。Agent 可以设
 
 | 主题 | 说明 |
 | ---- | ---- |
+| [敏感数据过滤](../sensitive_data_filtering.md) | 在发送给 LLM 前，从工具结果中过滤 API 密钥和令牌 |
 | [Hook 系统](../hooks/README.zh.md) | 事件驱动 Hook：观察者、拦截器、审批 Hook |
 | [Steering](../steering.md) | 在工具调用间向运行中的 Agent 注入消息 |
 | [SubTurn](../subturn.md) | 子 Agent 协调、并发控制、生命周期管理 |
