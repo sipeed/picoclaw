@@ -423,6 +423,15 @@ export function LauncherSection({
         onCheckedChange={(checked) => onFieldChange("publicAccess", checked)}
       />
 
+      <SwitchCardField
+        label={t("pages.config.auth_enabled")}
+        hint={t("pages.config.auth_enabled_hint")}
+        layout="setting-row"
+        checked={launcherForm.authEnabled}
+        disabled={disabled}
+        onCheckedChange={(checked) => onFieldChange("authEnabled", checked)}
+      />
+
       <Field
         label={t("pages.config.server_port")}
         hint={t("pages.config.server_port_hint")}

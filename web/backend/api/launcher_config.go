@@ -12,6 +12,7 @@ type launcherConfigPayload struct {
 	Port         int      `json:"port"`
 	Public       bool     `json:"public"`
 	AllowedCIDRs []string `json:"allowed_cidrs"`
+	AuthEnabled  bool     `json:"auth_enabled"`
 }
 
 func (h *Handler) registerLauncherConfigRoutes(mux *http.ServeMux) {
@@ -32,6 +33,7 @@ func (h *Handler) launcherFallbackConfig() launcherconfig.Config {
 		Port:         port,
 		Public:       h.serverPublic,
 		AllowedCIDRs: append([]string(nil), h.serverCIDRs...),
+		AuthEnabled:  false,
 	}
 }
 
@@ -51,6 +53,7 @@ func (h *Handler) handleGetLauncherConfig(w http.ResponseWriter, r *http.Request
 		Port:         cfg.Port,
 		Public:       cfg.Public,
 		AllowedCIDRs: append([]string(nil), cfg.AllowedCIDRs...),
+		AuthEnabled:  cfg.AuthEnabled,
 	})
 }
 
@@ -65,6 +68,7 @@ func (h *Handler) handleUpdateLauncherConfig(w http.ResponseWriter, r *http.Requ
 		Port:         payload.Port,
 		Public:       payload.Public,
 		AllowedCIDRs: append([]string(nil), payload.AllowedCIDRs...),
+		AuthEnabled:  payload.AuthEnabled,
 	}
 	if err := launcherconfig.Validate(cfg); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -81,5 +85,6 @@ func (h *Handler) handleUpdateLauncherConfig(w http.ResponseWriter, r *http.Requ
 		Port:         cfg.Port,
 		Public:       cfg.Public,
 		AllowedCIDRs: append([]string(nil), cfg.AllowedCIDRs...),
+		AuthEnabled:  cfg.AuthEnabled,
 	})
 }

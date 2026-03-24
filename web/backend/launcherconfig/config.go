@@ -21,6 +21,7 @@ type Config struct {
 	Port         int      `json:"port"`
 	Public       bool     `json:"public"`
 	AllowedCIDRs []string `json:"allowed_cidrs,omitempty"`
+	AuthEnabled  bool     `json:"auth_enabled,omitempty"`
 }
 
 // Default returns default launcher settings.

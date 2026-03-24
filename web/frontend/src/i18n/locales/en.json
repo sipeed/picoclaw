@@ -472,6 +472,8 @@
       "allowed_cidrs": "Allowed Network CIDRs",
       "allowed_cidrs_hint": "Only clients from these CIDR ranges can access the service. One per line or comma-separated. Leave empty to allow all.",
       "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
+      "auth_enabled": "Enable Authentication",
+      "auth_enabled_hint": "Require login to access the web console. After enabling, you will need to create an admin account on first access.",
       "sections": {
         "agent": "Agent",
         "runtime": "Runtime",
@@ -499,5 +501,37 @@
       "clear": "Clear logs",
       "empty": "Waiting for logs..."
     }
+  },
+  "auth": {
+    "username": "Username",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "login": "Login",
+    "logout": "Logout",
+    "loggingIn": "Logging in...",
+    "loginFailed": "Invalid username or password",
+    "loginDescription": "Enter your credentials to access the console",
+    "setup": "Create Account",
+    "settingUp": "Setting up...",
+    "setupFailed": "Setup failed",
+    "setupDescription": "Create an admin account to secure your instance",
+    "passwordMismatch": "Passwords do not match",
+    "passwordTooShort": "Password must be at least 6 characters",
+    "usernameTooShort": "Username must be at least 2 characters",
+    "networkError": "Network error",
+    "changePassword": "Change Password",
+    "currentPassword": "Current Password",
+    "newPassword": "New Password",
+    "passwordChanged": "Password changed successfully",
+    "passwordChangeFailed": "Failed to change password",
+    "usernamePlaceholder": "Enter your username",
+    "passwordPlaceholder": "Enter your password",
+    "confirmPasswordPlaceholder": "Confirm your password",
+    "usernameRequirement": "At least 2 characters",
+    "passwordRequirement": "At least 6 characters",
+    "passwordValid": "Password is valid",
+    "passwordsMatch": "Passwords match",
+    "passwordsDoNotMatch": "Passwords do not match",
+    "insecureConnection": "Warning: Connection is not secure. Passwords will be sent in plain text."
   }
 }

@@ -9,6 +9,7 @@ export interface LauncherConfig {
   port: number
   public: boolean
   allowed_cidrs: string[]
+  auth_enabled: boolean
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {

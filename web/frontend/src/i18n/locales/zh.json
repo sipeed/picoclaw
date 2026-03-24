@@ -472,6 +472,8 @@
       "allowed_cidrs": "允许访问网段",
       "allowed_cidrs_hint": "仅允许这些 CIDR 网段的客户端访问服务。可按行或逗号分隔；留空表示允许所有来源。",
       "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
+      "auth_enabled": "启用登录认证",
+      "auth_enabled_hint": "要求登录后才能访问 Web 控制台。启用后，首次访问时需要创建管理员账户。",
       "sections": {
         "agent": "智能体",
         "runtime": "运行时",
@@ -499,5 +501,37 @@
       "clear": "清空日志",
       "empty": "等待日志中..."
     }
+  },
+  "auth": {
+    "username": "用户名",
+    "password": "密码",
+    "confirmPassword": "确认密码",
+    "login": "登录",
+    "logout": "退出登录",
+    "loggingIn": "登录中...",
+    "loginFailed": "用户名或密码错误",
+    "loginDescription": "请输入凭据以访问控制台",
+    "setup": "创建账户",
+    "settingUp": "设置中...",
+    "setupFailed": "设置失败",
+    "setupDescription": "创建管理员账户以保护您的实例",
+    "passwordMismatch": "两次密码不一致",
+    "passwordTooShort": "密码至少需要6个字符",
+    "usernameTooShort": "用户名至少需要2个字符",
+    "networkError": "网络错误",
+    "changePassword": "修改密码",
+    "currentPassword": "当前密码",
+    "newPassword": "新密码",
+    "passwordChanged": "密码修改成功",
+    "passwordChangeFailed": "密码修改失败",
+    "usernamePlaceholder": "请输入用户名",
+    "passwordPlaceholder": "请输入密码",
+    "confirmPasswordPlaceholder": "请再次输入密码",
+    "usernameRequirement": "至少2个字符",
+    "passwordRequirement": "至少6个字符",
+    "passwordValid": "密码有效",
+    "passwordsMatch": "密码匹配",
+    "passwordsDoNotMatch": "密码不匹配",
+    "insecureConnection": "警告：连接不安全。密码将以明文形式传输。"
   }
 }

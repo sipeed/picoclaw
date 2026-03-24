@@ -84,6 +84,7 @@ export function ConfigPage() {
       port: String(launcherConfig.port),
       publicAccess: launcherConfig.public,
       allowedCIDRsText: (launcherConfig.allowed_cidrs ?? []).join("\n"),
+      authEnabled: launcherConfig.auth_enabled ?? false,
     }
     setLauncherForm(parsed)
     setLauncherBaseline(parsed)
@@ -253,6 +254,7 @@ export function ConfigPage() {
           port,
           public: launcherForm.publicAccess,
           allowed_cidrs: allowedCIDRs,
+          auth_enabled: launcherForm.authEnabled,
         })
         const parsedLauncher: LauncherForm = {
           port: String(savedLauncherConfig.port),
@@ -260,6 +262,7 @@ export function ConfigPage() {
           allowedCIDRsText: (savedLauncherConfig.allowed_cidrs ?? []).join(
             "\n",
           ),
+          authEnabled: savedLauncherConfig.auth_enabled ?? false,
         }
         setLauncherForm(parsedLauncher)
         setLauncherBaseline(parsedLauncher)

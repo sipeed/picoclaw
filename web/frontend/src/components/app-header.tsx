@@ -2,6 +2,7 @@ import {
   IconBook,
   IconLanguage,
   IconLoader2,
+  IconLogout,
   IconMenu2,
   IconMoon,
   IconPlayerPlay,
@@ -39,6 +40,7 @@ import {
 } from "@/components/ui/tooltip"
 import { useGateway } from "@/hooks/use-gateway.ts"
 import { useTheme } from "@/hooks/use-theme.ts"
+import { useAuth } from "@/features/auth"
 
 export function AppHeader() {
   const { i18n, t } = useTranslation()
@@ -52,6 +54,7 @@ export function AppHeader() {
     restart,
     stop,
   } = useGateway()
+  const { status: authStatus, logout } = useAuth()
 
   const isRunning = gwState === "running"
   const isStarting = gwState === "starting"
@@ -245,6 +248,22 @@ export function AppHeader() {
             <IconMoon className="size-4.5" />
           )}
         </Button>
+
+        {/* User Menu (only show when auth is enabled) */}
+        {authStatus.enabled && authStatus.configured && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8">
+                <IconLogout className="size-4.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={logout}>
+                {t("auth.logout")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </header>
   )

@@ -26,6 +26,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/web/backend/api"
+	"github.com/sipeed/picoclaw/web/backend/auth"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 	"github.com/sipeed/picoclaw/web/backend/middleware"
 	"github.com/sipeed/picoclaw/web/backend/utils"
@@ -167,6 +168,24 @@ func main() {
 	// Initialize Server components
 	mux := http.NewServeMux()
 
+	// Initialize authentication system
+	authConfigPath := auth.PathForAuthConfig(absPath)
+	authConfigStore := auth.NewAuthConfigStore(authConfigPath)
+	if err := authConfigStore.Load(); err != nil {
+		logger.ErrorC("web", fmt.Sprintf("Warning: Failed to load auth config: %v", err))
+	}
+	// Sync auth enabled state from launcher config
+	if launcherCfg.AuthEnabled && !authConfigStore.Get().Enabled {
+		cfg := authConfigStore.Get()
+		cfg.Enabled = true
+		if err := authConfigStore.Set(cfg); err != nil {
+			logger.ErrorC("web", fmt.Sprintf("Warning: Failed to enable auth: %v", err))
+		}
+	}
+	sessionStore := auth.NewMemorySessionStore()
+	authMiddleware := auth.NewAuthMiddleware(authConfigStore, sessionStore)
+	authHandler := api.NewAuthHandler(authConfigStore, sessionStore)
+
 	// API Routes (e.g. /api/status)
 	apiHandler = api.NewHandler(absPath)
 	if _, err = apiHandler.EnsurePicoChannel(""); err != nil {
@@ -174,6 +193,9 @@ func main() {
 	}
 	apiHandler.SetServerOptions(portNum, effectivePublic, explicitPublic, launcherCfg.AllowedCIDRs)
 	apiHandler.RegisterRoutes(mux)
+
+	// Auth API Routes
+	authHandler.RegisterRoutes(mux)
 
 	// Frontend Embedded Assets
 	registerEmbedRoutes(mux)
@@ -183,10 +205,13 @@ func main() {
 		logger.Fatalf("Invalid allowed CIDR configuration: %v", err)
 	}
 
+	// Apply authentication middleware (before other middlewares)
+	authProtectedHandler := authMiddleware.RequireAuth(accessControlledMux)
+
 	// Apply middleware stack
 	handler := middleware.Recoverer(
 		middleware.Logger(
-			middleware.JSONContentType(accessControlledMux),
+			middleware.JSONContentType(authProtectedHandler),
 		),
 	)
 
