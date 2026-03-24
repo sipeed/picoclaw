@@ -186,7 +186,7 @@ type MatrixChannel struct {
 func NewMatrixChannel(cfg config.MatrixConfig, messageBus *bus.MessageBus) (*MatrixChannel, error) {
 	homeserver := strings.TrimSpace(cfg.Homeserver)
 	userID := strings.TrimSpace(cfg.UserID)
-	accessToken := strings.TrimSpace(cfg.AccessToken)
+	accessToken := strings.TrimSpace(cfg.AccessToken())
 	if homeserver == "" {
 		return nil, fmt.Errorf("matrix homeserver is required")
 	}

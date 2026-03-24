@@ -373,6 +373,9 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 | [Azure OpenAI](https://portal.azure.com/) | `azure/` | Required | Enterprise Azure deployment |
 | [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | Device code login |
 | [Antigravity](https://console.cloud.google.com/) | `antigravity/` | OAuth | Google Cloud AI |
+| [AWS Bedrock](https://console.aws.amazon.com/bedrock)* | `bedrock/` | AWS credentials | Claude, Llama, Mistral on AWS |
+
+> \* AWS Bedrock requires build tag: `go build -tags bedrock`. Set `api_base` to a region name (e.g., `us-east-1`) for automatic endpoint resolution across all AWS partitions (aws, aws-cn, aws-us-gov). When using a full endpoint URL instead, you must also configure `AWS_REGION` via environment variable or AWS config/profile.
 
 <details>
 <summary><b>Local deployment (Ollama, vLLM, etc.)</b></summary>

@@ -96,7 +96,7 @@ func saveWeixinConfig(token, baseURL, proxy string) error {
 	}
 
 	cfg.Channels.Weixin.Enabled = true
-	cfg.Channels.Weixin.Token = token
+	cfg.Channels.Weixin.SetToken(token)
 	const defaultBase = "https://ilinkai.weixin.qq.com/"
 	if baseURL != "" && baseURL != defaultBase {
 		cfg.Channels.Weixin.BaseURL = baseURL

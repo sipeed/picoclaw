@@ -26,6 +26,17 @@ PicoClaw's tools configuration is located in the `tools` field of `config.json`.
 }
 ```
 
+## Sensitive Data Filtering
+
+Before tool results are sent to the LLM, PicoClaw can filter sensitive values (API keys, tokens, secrets) from the output. This prevents the LLM from seeing its own credentials.
+
+See [Sensitive Data Filtering](../sensitive_data_filtering.md) for full documentation.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `filter_sensitive_data` | bool | `true` | Enable/disable filtering |
+| `filter_min_length` | int | `8` | Minimum content length to trigger filtering |
+
 ## Web Tools
 
 Web tools are used for web search and fetching.

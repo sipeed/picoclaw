@@ -56,6 +56,7 @@ type AgentLoop struct {
 	mcp            mcpRuntime
 	hookRuntime    hookRuntime
 	steering       *steeringQueue
+	pendingSkills  sync.Map
 	mu             sync.RWMutex
 
 	// Concurrent turn management (from HEAD)
@@ -77,6 +78,7 @@ type processOptions struct {
 	SenderID                string              // Current sender ID for dynamic context
 	SenderDisplayName       string              // Current sender display name for dynamic context
 	UserMessage             string              // User message content (may include prefix)
+	ForcedSkills            []string            // Skills explicitly requested for this message
 	SystemPromptOverride    string              // Override the default system prompt (Used by SubTurns)
 	Media                   []string            // media:// refs from inbound message
 	InitialSteeringMessages []providers.Message // Steering messages from refactor/agent
@@ -161,30 +163,33 @@ func registerSharedTools(
 
 		if cfg.Tools.IsToolEnabled("web") {
 			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
-				BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey, cfg.Tools.Web.Brave.APIKeys),
-				BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
-				BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-				TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey, cfg.Tools.Web.Tavily.APIKeys),
+				BraveAPIKeys:    config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey(), cfg.Tools.Web.Brave.APIKeys()),
+				BraveMaxResults: cfg.Tools.Web.Brave.MaxResults,
+				BraveEnabled:    cfg.Tools.Web.Brave.Enabled,
+				TavilyAPIKeys: config.MergeAPIKeys(
+					cfg.Tools.Web.Tavily.APIKey(),
+					cfg.Tools.Web.Tavily.APIKeys(),
+				),
 				TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
 				TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
 				TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
 				DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 				DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
 				PerplexityAPIKeys: config.MergeAPIKeys(
-					cfg.Tools.Web.Perplexity.APIKey,
-					cfg.Tools.Web.Perplexity.APIKeys,
+					cfg.Tools.Web.Perplexity.APIKey(),
+					cfg.Tools.Web.Perplexity.APIKeys(),
 				),
 				PerplexityMaxResults:  cfg.Tools.Web.Perplexity.MaxResults,
 				PerplexityEnabled:     cfg.Tools.Web.Perplexity.Enabled,
 				SearXNGBaseURL:        cfg.Tools.Web.SearXNG.BaseURL,
 				SearXNGMaxResults:     cfg.Tools.Web.SearXNG.MaxResults,
 				SearXNGEnabled:        cfg.Tools.Web.SearXNG.Enabled,
-				GLMSearchAPIKey:       cfg.Tools.Web.GLMSearch.APIKey,
+				GLMSearchAPIKey:       cfg.Tools.Web.GLMSearch.APIKey(),
 				GLMSearchBaseURL:      cfg.Tools.Web.GLMSearch.BaseURL,
 				GLMSearchEngine:       cfg.Tools.Web.GLMSearch.SearchEngine,
 				GLMSearchMaxResults:   cfg.Tools.Web.GLMSearch.MaxResults,
 				GLMSearchEnabled:      cfg.Tools.Web.GLMSearch.Enabled,
-				BaiduSearchAPIKey:     cfg.Tools.Web.BaiduSearch.APIKey,
+				BaiduSearchAPIKey:     cfg.Tools.Web.BaiduSearch.APIKey(),
 				BaiduSearchBaseURL:    cfg.Tools.Web.BaiduSearch.BaseURL,
 				BaiduSearchMaxResults: cfg.Tools.Web.BaiduSearch.MaxResults,
 				BaiduSearchEnabled:    cfg.Tools.Web.BaiduSearch.Enabled,
@@ -250,9 +255,20 @@ func registerSharedTools(
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
 		install_skills_enable := cfg.Tools.IsToolEnabled("install_skill")
 		if skills_enabled && (find_skills_enable || install_skills_enable) {
+			clawHubConfig := cfg.Tools.Skills.Registries.ClawHub
 			registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
 				MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-				ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
+				ClawHub: skills.ClawHubConfig{
+					Enabled:         clawHubConfig.Enabled,
+					BaseURL:         clawHubConfig.BaseURL,
+					AuthToken:       clawHubConfig.AuthToken(),
+					SearchPath:      clawHubConfig.SearchPath,
+					SkillsPath:      clawHubConfig.SkillsPath,
+					DownloadPath:    clawHubConfig.DownloadPath,
+					Timeout:         clawHubConfig.Timeout,
+					MaxZipSize:      clawHubConfig.MaxZipSize,
+					MaxResponseSize: clawHubConfig.MaxResponseSize,
+				},
 			})
 
 			if find_skills_enable {
@@ -1334,6 +1350,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return response, nil
 	}
 
+	if pending := al.takePendingSkills(opts.SessionKey); len(pending) > 0 {
+		opts.ForcedSkills = append(opts.ForcedSkills, pending...)
+		logger.InfoCF("agent", "Applying pending skill override",
+			map[string]any{
+				"session_key": opts.SessionKey,
+				"skills":      strings.Join(pending, ","),
+			})
+	}
+
 	return al.runAgentLoop(ctx, agent, opts)
 }
 
@@ -1627,6 +1652,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.chatID,
 		ts.opts.SenderID,
 		ts.opts.SenderDisplayName,
+		activeSkillNames(ts.agent, ts.opts)...,
 	)
 
 	cfg := al.GetConfig()
@@ -1656,6 +1682,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 				newHistory, newSummary, ts.userMessage,
 				ts.media, ts.channel, ts.chatID,
 				ts.opts.SenderID, ts.opts.SenderDisplayName,
+				activeSkillNames(ts.agent, ts.opts)...,
 			)
 			messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 		}
@@ -1726,7 +1753,8 @@ turnLoop:
 			select {
 			case result, ok := <-ts.pendingResults:
 				if ok && result != nil && result.ForLLM != "" {
-					msg := providers.Message{Role: "user", Content: fmt.Sprintf("[SubTurn Result] %s", result.ForLLM)}
+					content := al.cfg.FilterSensitiveData(result.ForLLM)
+					msg := providers.Message{Role: "user", Content: fmt.Sprintf("[SubTurn Result] %s", content)}
 					pendingMessages = append(pendingMessages, msg)
 				}
 			default:
@@ -2020,8 +2048,8 @@ turnLoop:
 				newSummary := ts.agent.Sessions.GetSummary(ts.sessionKey)
 				messages = ts.agent.ContextBuilder.BuildMessages(
 					newHistory, newSummary, "",
-					nil, ts.channel, ts.chatID,
-					"", "", // Empty SenderID and SenderDisplayName for retry
+					nil, ts.channel, ts.chatID, ts.opts.SenderID, ts.opts.SenderDisplayName,
+					activeSkillNames(ts.agent, ts.opts)...,
 				)
 				callMessages = messages
 				if gracefulTerminal {
@@ -2084,9 +2112,13 @@ turnLoop:
 			}
 		}
 
+		reasoningContent := response.Reasoning
+		if reasoningContent == "" {
+			reasoningContent = response.ReasoningContent
+		}
 		go al.handleReasoning(
 			turnCtx,
-			response.Reasoning,
+			reasoningContent,
 			ts.channel,
 			al.targetReasoningChannelID(ts.channel),
 		)
@@ -2329,6 +2361,9 @@ turnLoop:
 					return
 				}
 
+				// Filter sensitive data before publishing
+				content = al.cfg.FilterSensitiveData(content)
+
 				logger.InfoCF("agent", "Async tool completed, publishing result",
 					map[string]any{
 						"tool":        asyncToolName,
@@ -2444,6 +2479,11 @@ turnLoop:
 				contentForLLM = toolResult.Err.Error()
 			}
 
+			// Filter sensitive data (API keys, tokens, secrets) before sending to LLM
+			if al.cfg.Tools.IsFilterSensitiveDataEnabled() {
+				contentForLLM = al.cfg.FilterSensitiveData(contentForLLM)
+			}
+
 			toolResultMsg := providers.Message{
 				Role:       "tool",
 				Content:    contentForLLM,
@@ -2521,7 +2561,8 @@ turnLoop:
 				select {
 				case result, ok := <-ts.pendingResults:
 					if ok && result != nil && result.ForLLM != "" {
-						msg := providers.Message{Role: "user", Content: fmt.Sprintf("[SubTurn Result] %s", result.ForLLM)}
+						content := al.cfg.FilterSensitiveData(result.ForLLM)
+						msg := providers.Message{Role: "user", Content: fmt.Sprintf("[SubTurn Result] %s", content)}
 						messages = append(messages, msg)
 						ts.agent.Sessions.AddFullMessage(ts.sessionKey, msg)
 					}
@@ -3102,6 +3143,10 @@ func (al *AgentLoop) handleCommand(
 		return "", false
 	}
 
+	if matched, handled, reply := al.applyExplicitSkillCommand(msg.Content, agent, opts); matched {
+		return reply, handled
+	}
+
 	if al.cmdRegistry == nil {
 		return "", false
 	}
@@ -3165,6 +3210,9 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 			return nil
 		},
 	}
+	if agent != nil && agent.ContextBuilder != nil {
+		rt.ListSkillNames = agent.ContextBuilder.ListSkillNames
+	}
 	rt.ReloadConfig = func() error {
 		if al.reloadFunc == nil {
 			return fmt.Errorf("reload not configured")
@@ -3222,6 +3270,146 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 		}
 	}
 	return rt
+}
+
+func activeSkillNames(agent *AgentInstance, opts processOptions) []string {
+	var out []string
+	seen := make(map[string]struct{})
+
+	appendNames := func(names []string) {
+		for _, name := range names {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if _, exists := seen[name]; exists {
+				continue
+			}
+			seen[name] = struct{}{}
+			out = append(out, name)
+		}
+	}
+
+	if agent != nil {
+		appendNames(agent.SkillsFilter)
+	}
+	appendNames(opts.ForcedSkills)
+
+	return out
+}
+
+func (al *AgentLoop) applyExplicitSkillCommand(
+	raw string,
+	agent *AgentInstance,
+	opts *processOptions,
+) (matched bool, handled bool, reply string) {
+	commandName, ok := commands.CommandName(raw)
+	if !ok || commandName != "use" {
+		return false, false, ""
+	}
+
+	if agent == nil || agent.ContextBuilder == nil {
+		return true, true, commandsUnavailableSkillMessage()
+	}
+
+	fields := strings.Fields(strings.TrimSpace(raw))
+	if len(fields) < 2 {
+		return true, true, buildUseCommandHelp(agent)
+	}
+
+	if strings.EqualFold(fields[1], "clear") || strings.EqualFold(fields[1], "off") {
+		al.clearPendingSkills(opts.SessionKey)
+		return true, true, "Cleared pending skill override."
+	}
+
+	canonicalSkill, ok := agent.ContextBuilder.ResolveSkillName(fields[1])
+	if !ok {
+		return true, true, fmt.Sprintf("Unknown skill: %s\nUse /list skills to see installed skills.", fields[1])
+	}
+
+	if len(fields) == 2 {
+		al.setPendingSkills(opts.SessionKey, []string{canonicalSkill})
+		return true, true, fmt.Sprintf(
+			"Skill %q is armed for your next message.\nSend your next request normally, or use /use clear to cancel.",
+			canonicalSkill,
+		)
+	}
+
+	message := strings.TrimSpace(strings.Join(fields[2:], " "))
+	if message == "" {
+		return true, true, buildUseCommandHelp(agent)
+	}
+
+	opts.UserMessage = message
+	opts.ForcedSkills = append(opts.ForcedSkills, canonicalSkill)
+	return true, false, ""
+}
+
+func commandsUnavailableSkillMessage() string {
+	return "Skill selection is unavailable in the current context."
+}
+
+func buildUseCommandHelp(agent *AgentInstance) string {
+	if agent == nil || agent.ContextBuilder == nil {
+		return "Usage: /use <skill> [message]"
+	}
+
+	names := agent.ContextBuilder.ListSkillNames()
+	if len(names) == 0 {
+		return "Usage: /use <skill> [message]\nNo installed skills found."
+	}
+
+	return fmt.Sprintf(
+		"Usage: /use <skill> [message]\n\nInstalled Skills:\n- %s\n\nUse /use <skill> to apply a skill to your next message, or /use <skill> <message> to force it immediately.",
+		strings.Join(names, "\n- "),
+	)
+}
+
+func (al *AgentLoop) setPendingSkills(sessionKey string, skillNames []string) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" || len(skillNames) == 0 {
+		return
+	}
+
+	filtered := make([]string, 0, len(skillNames))
+	for _, name := range skillNames {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			filtered = append(filtered, name)
+		}
+	}
+	if len(filtered) == 0 {
+		return
+	}
+
+	al.pendingSkills.Store(sessionKey, filtered)
+}
+
+func (al *AgentLoop) takePendingSkills(sessionKey string) []string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return nil
+	}
+
+	value, ok := al.pendingSkills.LoadAndDelete(sessionKey)
+	if !ok {
+		return nil
+	}
+
+	skills, ok := value.([]string)
+	if !ok {
+		return nil
+	}
+
+	return append([]string(nil), skills...)
+}
+
+func (al *AgentLoop) clearPendingSkills(sessionKey string) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return
+	}
+	al.pendingSkills.Delete(sessionKey)
 }
 
 func mapCommandError(result commands.ExecuteResult) string {

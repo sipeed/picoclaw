@@ -67,25 +67,34 @@ func TestUpgradeRegistryForConcurrency(t *testing.T) {
 func TestBuildWorkerConfig(t *testing.T) {
 	// 1. Setup global config with model aliases
 	cfg := &config.Config{
-		ModelList: []config.ModelConfig{
-			{
-				ModelName: "strong-model",
-				Model:     "openai/gpt-4o",
-				APIKey:    "sk-test",
-				APIBase:   "https://api.openai.com/v1",
-			},
-			{
-				ModelName: "fast-model",
-				Model:     "anthropic/claude-3-haiku",
-				APIKey:    "sk-test",
-				APIBase:   "https://api.anthropic.com/v1",
-			},
-			{
-				ModelName: "direct-id",
-				Model:     "openai/gpt-3.5-turbo",
-				APIKey:    "sk-test",
-				APIBase:   "https://api.openai.com/v1",
-			},
+		ModelList: []*config.ModelConfig{
+			func() *config.ModelConfig {
+				m := &config.ModelConfig{
+					ModelName: "strong-model",
+					Model:     "openai/gpt-4o",
+					APIBase:   "https://api.openai.com/v1",
+				}
+				m.SetAPIKey("sk-test")
+				return m
+			}(),
+			func() *config.ModelConfig {
+				m := &config.ModelConfig{
+					ModelName: "fast-model",
+					Model:     "anthropic/claude-3-haiku",
+					APIBase:   "https://api.anthropic.com/v1",
+				}
+				m.SetAPIKey("sk-test")
+				return m
+			}(),
+			func() *config.ModelConfig {
+				m := &config.ModelConfig{
+					ModelName: "direct-id",
+					Model:     "openai/gpt-3.5-turbo",
+					APIBase:   "https://api.openai.com/v1",
+				}
+				m.SetAPIKey("sk-test")
+				return m
+			}(),
 		},
 	}
 
@@ -216,5 +225,3 @@ func TestExecuteSequential(t *testing.T) {
 	assert.Contains(t, result.ForLLM, "Derived result from Agent B")
 	assert.Equal(t, 2, mock.callCount, "Should have called mock provider exactly twice")
 }
-
-

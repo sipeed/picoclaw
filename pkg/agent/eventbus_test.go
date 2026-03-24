@@ -109,7 +109,7 @@ func TestAgentLoop_EmitsMinimalTurnEvents(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -228,7 +228,7 @@ func TestAgentLoop_EmitsSteeringAndSkippedToolEvents(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -353,7 +353,7 @@ func TestAgentLoop_EmitsContextCompressEventOnRetry(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -443,7 +443,7 @@ func TestAgentLoop_EmitsSessionSummarizeEvent(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:                 tmpDir,
-				Model:                     "test-model",
+				ModelName:                 "test-model",
 				MaxTokens:                 4096,
 				MaxToolIterations:         10,
 				ContextWindow:             8000,
@@ -500,7 +500,7 @@ func TestAgentLoop_EmitsFollowUpQueuedEvent(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},

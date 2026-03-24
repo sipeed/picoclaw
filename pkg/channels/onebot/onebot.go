@@ -184,8 +184,8 @@ func (c *OneBotChannel) connect() error {
 	dialer.HandshakeTimeout = 10 * time.Second
 
 	header := make(map[string][]string)
-	if c.config.AccessToken != "" {
-		header["Authorization"] = []string{"Bearer " + c.config.AccessToken}
+	if c.config.AccessToken() != "" {
+		header["Authorization"] = []string{"Bearer " + c.config.AccessToken()}
 	}
 
 	conn, resp, err := dialer.Dial(c.config.WSUrl, header)

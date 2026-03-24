@@ -25,11 +25,11 @@ func TestProbeLocalModelAvailability_OpenAICompatibleIncludesAPIKey(t *testing.T
 	}))
 	defer srv.Close()
 
-	model := config.ModelConfig{
+	model := &config.ModelConfig{
 		Model:   "openai/custom-model",
 		APIBase: srv.URL + "/v1",
-		APIKey:  apiKey,
 	}
+	model.SetAPIKey(apiKey)
 
 	if !probeLocalModelAvailability(model) {
 		t.Fatal("probeLocalModelAvailability() = false, want true when api_key is configured")

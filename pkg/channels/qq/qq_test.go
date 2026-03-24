@@ -444,6 +444,9 @@ func TestSendMedia_UsesRemoteURLUploadForC2C(t *testing.T) {
 	if upload.body.FileType != 4 {
 		t.Fatalf("upload file_type = %d, want 4", upload.body.FileType)
 	}
+	if upload.body.FileName != "report.pdf" {
+		t.Fatalf("upload file_name = %q, want report.pdf", upload.body.FileName)
+	}
 
 	if len(api.c2cMessages) != 1 {
 		t.Fatalf("c2cMessages = %d, want 1", len(api.c2cMessages))
@@ -457,6 +460,59 @@ func TestSendMedia_UsesRemoteURLUploadForC2C(t *testing.T) {
 	}
 	if msg.Media == nil || string(msg.Media.FileInfo) != "remote-file-info" {
 		t.Fatalf("msg.Media.FileInfo = %q, want remote-file-info", string(msg.Media.FileInfo))
+	}
+}
+
+func TestSendMedia_LocalFileUploadIncludesStoredFilename(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	store := media.NewFileMediaStore()
+
+	localPath := writeTempFile(t, t.TempDir(), "report.pdf", []byte("fake-pdf"))
+	ref, err := store.Store(localPath, media.MediaMeta{
+		Filename:    "report.pdf",
+		ContentType: "application/pdf",
+	}, "qq:test")
+	if err != nil {
+		t.Fatalf("Store() error = %v", err)
+	}
+
+	api := &fakeQQAPI{
+		transportResp: mustJSON(t, dto.Message{FileInfo: []byte("local-file-info")}),
+	}
+	ch := &QQChannel{
+		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		api:         api,
+		dedup:       make(map[string]time.Time),
+		done:        make(chan struct{}),
+		ctx:         context.Background(),
+	}
+	ch.SetRunning(true)
+	ch.SetMediaStore(store)
+	ch.chatType.Store("user-1", "direct")
+
+	err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		ChatID: "user-1",
+		Parts: []bus.MediaPart{{
+			Type: "file",
+			Ref:  ref,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("SendMedia() error = %v", err)
+	}
+
+	if len(api.transportCalls) != 1 {
+		t.Fatalf("transportCalls = %d, want 1", len(api.transportCalls))
+	}
+	upload := api.transportCalls[0]
+	if upload.body.FileType != 4 {
+		t.Fatalf("upload file_type = %d, want 4", upload.body.FileType)
+	}
+	if upload.body.FileName != "report.pdf" {
+		t.Fatalf("upload file_name = %q, want report.pdf", upload.body.FileName)
+	}
+	if upload.body.FileData == "" {
+		t.Fatal("upload file_data = empty, want base64 payload")
 	}
 }
 

@@ -42,7 +42,7 @@ func init() {
 
 // NewWeixinChannel creates a new WeixinChannel from config.
 func NewWeixinChannel(cfg config.WeixinConfig, messageBus *bus.MessageBus) (*WeixinChannel, error) {
-	api, err := NewApiClient(cfg.BaseURL, cfg.Token, cfg.Proxy)
+	api, err := NewApiClient(cfg.BaseURL, cfg.Token(), cfg.Proxy)
 	if err != nil {
 		return nil, fmt.Errorf("weixin: failed to create API client: %w", err)
 	}

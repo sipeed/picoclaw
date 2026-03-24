@@ -3,6 +3,8 @@ export type JsonRecord = Record<string, unknown>
 export interface CoreConfigForm {
   workspace: string
   restrictToWorkspace: boolean
+  toolFeedbackEnabled: boolean
+  toolFeedbackMaxArgsLength: string
   execEnabled: boolean
   allowRemote: boolean
   enableDenyPatterns: boolean
@@ -63,6 +65,8 @@ export const DM_SCOPE_OPTIONS = [
 export const EMPTY_FORM: CoreConfigForm = {
   workspace: "",
   restrictToWorkspace: true,
+  toolFeedbackEnabled: true,
+  toolFeedbackMaxArgsLength: "300",
   execEnabled: true,
   allowRemote: true,
   enableDenyPatterns: true,
@@ -124,6 +128,7 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
   const tools = asRecord(root.tools)
   const cron = asRecord(tools.cron)
   const exec = asRecord(tools.exec)
+  const toolFeedback = asRecord(defaults.tool_feedback)
 
   return {
     workspace: asString(defaults.workspace) || EMPTY_FORM.workspace,
@@ -131,6 +136,14 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       defaults.restrict_to_workspace === undefined
         ? EMPTY_FORM.restrictToWorkspace
         : asBool(defaults.restrict_to_workspace),
+    toolFeedbackEnabled:
+      toolFeedback.enabled === undefined
+        ? EMPTY_FORM.toolFeedbackEnabled
+        : asBool(toolFeedback.enabled),
+    toolFeedbackMaxArgsLength: asNumberString(
+      toolFeedback.max_args_length,
+      EMPTY_FORM.toolFeedbackMaxArgsLength,
+    ),
     execEnabled:
       exec.enabled === undefined
         ? EMPTY_FORM.execEnabled

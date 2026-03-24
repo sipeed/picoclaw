@@ -56,9 +56,6 @@ Note: 'local-model' is a special value for using a local VLLM server
 
 func showCurrentModel(cfg *config.Config) {
 	defaultModel := cfg.Agents.Defaults.ModelName
-	if defaultModel == "" {
-		defaultModel = cfg.Agents.Defaults.Model
-	}
 
 	if defaultModel == "" {
 		fmt.Println("No default model is currently set.")
@@ -78,16 +75,13 @@ func listAvailableModels(cfg *config.Config) {
 	}
 
 	defaultModel := cfg.Agents.Defaults.ModelName
-	if defaultModel == "" {
-		defaultModel = cfg.Agents.Defaults.Model
-	}
 
 	for _, model := range cfg.ModelList {
 		marker := "  "
 		if model.ModelName == defaultModel {
 			marker = "> "
 		}
-		if model.APIKey == "" {
+		if model.APIKey() == "" {
 			continue
 		}
 		fmt.Printf("%s- %s (%s)\n", marker, model.ModelName, model.Model)
@@ -98,7 +92,7 @@ func setDefaultModel(configPath string, cfg *config.Config, modelName string) er
 	// Validate that the model exists in model_list
 	modelFound := false
 	for _, model := range cfg.ModelList {
-		if model.APIKey != "" && model.ModelName == modelName {
+		if model.APIKey() != "" && model.ModelName == modelName {
 			modelFound = true
 			break
 		}
@@ -111,12 +105,8 @@ func setDefaultModel(configPath string, cfg *config.Config, modelName string) er
 	// Update the default model
 	// Clear old model field and set new model_name
 	oldModel := cfg.Agents.Defaults.ModelName
-	if oldModel == "" {
-		oldModel = cfg.Agents.Defaults.Model
-	}
 
 	cfg.Agents.Defaults.ModelName = modelName
-	cfg.Agents.Defaults.Model = "" // Clear deprecated field
 
 	// Save config back to file
 	if err := config.SaveConfig(configPath, cfg); err != nil {

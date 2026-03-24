@@ -166,8 +166,7 @@ func TestOAuthLogoutClearsCredentialAndConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig error: %v", err)
 	}
-	cfg.Providers.OpenAI.AuthMethod = "oauth"
-	cfg.ModelList = append(cfg.ModelList, config.ModelConfig{
+	cfg.ModelList = append(cfg.ModelList, &config.ModelConfig{
 		ModelName:  "gpt-5.4",
 		Model:      "openai/gpt-5.4",
 		AuthMethod: "oauth",
@@ -208,9 +207,6 @@ func TestOAuthLogoutClearsCredentialAndConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig error: %v", err)
 	}
-	if updated.Providers.OpenAI.AuthMethod != "" {
-		t.Fatalf("providers.openai.auth_method = %q, want empty", updated.Providers.OpenAI.AuthMethod)
-	}
 	for _, m := range updated.ModelList {
 		if strings.HasPrefix(m.Model, "openai/") && m.AuthMethod != "" {
 			t.Fatalf("openai model auth_method = %q, want empty", m.AuthMethod)
@@ -233,12 +229,18 @@ func setupOAuthTestEnv(t *testing.T) (string, func()) {
 	}
 
 	cfg := config.DefaultConfig()
-	cfg.ModelList = []config.ModelConfig{{
+	cfg.ModelList = []*config.ModelConfig{{
 		ModelName: "custom-default",
 		Model:     "openai/gpt-4o",
-		APIKey:    "sk-default",
 	}}
 	cfg.Agents.Defaults.ModelName = "custom-default"
+	cfg.WithSecurity(&config.SecurityConfig{
+		ModelList: map[string]config.ModelSecurityEntry{
+			"custom-default": {
+				APIKeys: []string{"sk-default"},
+			},
+		},
+	})
 
 	configPath := filepath.Join(tmp, "config.json")
 	if err := config.SaveConfig(configPath, cfg); err != nil {

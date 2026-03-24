@@ -6,12 +6,15 @@
 package providers
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	anthropicmessages "github.com/sipeed/picoclaw/pkg/providers/anthropic_messages"
 	"github.com/sipeed/picoclaw/pkg/providers/azure"
+	"github.com/sipeed/picoclaw/pkg/providers/bedrock"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -55,8 +58,9 @@ func ExtractProtocol(model string) (protocol, modelID string) {
 
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
-// Supported protocols: openai, litellm, novita, anthropic, anthropic-messages,
-// antigravity, claude-cli, codex-cli, github-copilot
+// Supported protocol families include OpenAI-compatible prefixes (e.g., openai, openrouter, groq, gemini),
+// Azure OpenAI, Amazon Bedrock, Anthropic (including messages), and various CLI/compatibility shims.
+// See the switch on protocol in this function for the authoritative list.
 // Returns the provider, the model ID (without protocol prefix), and any error.
 func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, error) {
 	if cfg == nil {
@@ -80,7 +84,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			return provider, modelID, nil
 		}
 		// OpenAI with API key
-		if cfg.APIKey == "" && cfg.APIBase == "" {
+		if cfg.APIKey() == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}
 		apiBase := cfg.APIBase
@@ -88,17 +92,18 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase = getDefaultAPIBase(protocol)
 		}
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
-			cfg.APIKey,
+			cfg.APIKey(),
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			cfg.ExtraBody,
 		), modelID, nil
 
 	case "azure", "azure-openai":
 		// Azure OpenAI uses deployment-based URLs, api-key header auth,
 		// and always sends max_completion_tokens.
-		if cfg.APIKey == "" {
+		if cfg.APIKey() == "" {
 			return nil, "", fmt.Errorf("api_key is required for azure protocol")
 		}
 		if cfg.APIBase == "" {
@@ -107,19 +112,55 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			)
 		}
 		return azure.NewProviderWithTimeout(
-			cfg.APIKey,
+			cfg.APIKey(),
 			cfg.APIBase,
 			cfg.Proxy,
 			cfg.RequestTimeout,
 		), modelID, nil
 
+	case "bedrock":
+		// AWS Bedrock uses AWS SDK credentials (env vars, profiles, IAM roles, etc.)
+		// api_base can be:
+		//   - A full endpoint URL: https://bedrock-runtime.us-east-1.amazonaws.com
+		//   - A region name: us-east-1 (AWS SDK resolves endpoint automatically)
+		var opts []bedrock.Option
+		if cfg.APIBase != "" {
+			if !strings.Contains(cfg.APIBase, "://") {
+				// Treat as region: let AWS SDK resolve the correct endpoint
+				// (supports all AWS partitions: aws, aws-cn, aws-us-gov, etc.)
+				opts = append(opts, bedrock.WithRegion(cfg.APIBase))
+			} else {
+				// Full endpoint URL provided (for custom endpoints or testing)
+				opts = append(opts, bedrock.WithBaseEndpoint(cfg.APIBase))
+			}
+		}
+		// Use a separate timeout for AWS config loading (credential resolution can block)
+		initTimeout := 30 * time.Second
+		if cfg.RequestTimeout > 0 {
+			reqTimeout := time.Duration(cfg.RequestTimeout) * time.Second
+			// Set request timeout for API calls
+			opts = append(opts, bedrock.WithRequestTimeout(reqTimeout))
+			// Ensure init timeout is at least as large as request timeout
+			if reqTimeout > initTimeout {
+				initTimeout = reqTimeout
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), initTimeout)
+		defer cancel()
+		// Note: AWS_PROFILE env var is automatically used by AWS SDK
+		provider, err := bedrock.NewProvider(ctx, opts...)
+		if err != nil {
+			return nil, "", fmt.Errorf("creating bedrock provider: %w", err)
+		}
+		return provider, modelID, nil
+
 	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
-		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
+		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding":
 		// All other OpenAI-compatible HTTP providers
-		if cfg.APIKey == "" && cfg.APIBase == "" {
+		if cfg.APIKey() == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}
 		apiBase := cfg.APIBase
@@ -127,11 +168,37 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase = getDefaultAPIBase(protocol)
 		}
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
-			cfg.APIKey,
+			cfg.APIKey(),
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			cfg.ExtraBody,
+		), modelID, nil
+
+	case "minimax":
+		// Minimax requires reasoning_split: true in the request body
+		if cfg.APIKey() == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase(protocol)
+		}
+		extraBody := cfg.ExtraBody
+		if extraBody == nil {
+			extraBody = make(map[string]any)
+		}
+		if _, ok := extraBody["reasoning_split"]; !ok {
+			extraBody["reasoning_split"] = true
+		}
+		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+			cfg.APIKey(),
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
+			extraBody,
 		), modelID, nil
 
 	case "anthropic":
@@ -148,15 +215,16 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = "https://api.anthropic.com/v1"
 		}
-		if cfg.APIKey == "" {
+		if cfg.APIKey() == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
-			cfg.APIKey,
+			cfg.APIKey(),
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			cfg.ExtraBody,
 		), modelID, nil
 
 	case "anthropic-messages":
@@ -165,11 +233,11 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = "https://api.anthropic.com/v1"
 		}
-		if cfg.APIKey == "" {
+		if cfg.APIKey() == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic-messages protocol (model: %s)", cfg.Model)
 		}
 		return anthropicmessages.NewProviderWithTimeout(
-			cfg.APIKey,
+			cfg.APIKey(),
 			apiBase,
 			cfg.RequestTimeout,
 		), modelID, nil
@@ -180,11 +248,11 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		if cfg.APIKey == "" {
+		if cfg.APIKey() == "" {
 			return nil, "", fmt.Errorf("api_key is required for %q protocol (model: %s)", protocol, cfg.Model)
 		}
 		return anthropicmessages.NewProviderWithTimeout(
-			cfg.APIKey,
+			cfg.APIKey(),
 			apiBase,
 			cfg.RequestTimeout,
 		), modelID, nil

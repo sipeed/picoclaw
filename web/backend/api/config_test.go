@@ -18,6 +18,7 @@ func TestHandleUpdateConfig_PreservesExecAllowRemoteDefaultWhenOmitted(t *testin
 	h.RegisterRoutes(mux)
 
 	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(`{
+"version": 1,
 		"agents": {
 			"defaults": {
 				"workspace": "~/.picoclaw/workspace"
@@ -27,7 +28,7 @@ func TestHandleUpdateConfig_PreservesExecAllowRemoteDefaultWhenOmitted(t *testin
 			{
 				"model_name": "custom-default",
 				"model": "openai/gpt-4o",
-				"api_key": "sk-default"
+				"api_keys": ["sk-default"]
 			}
 		]
 	}`))

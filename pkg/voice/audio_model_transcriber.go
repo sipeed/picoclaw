@@ -29,7 +29,7 @@ func NewAudioModelTranscriber(modelCfg *config.ModelConfig) *AudioModelTranscrib
 	}
 
 	logger.DebugCF("voice", "Creating audio model transcriber", map[string]any{
-		"has_api_key": modelCfg.APIKey != "",
+		"has_api_key": modelCfg.APIKey() != "",
 		"api_base":    modelCfg.APIBase,
 		"model":       modelCfg.Model,
 	})

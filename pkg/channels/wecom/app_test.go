@@ -91,10 +91,10 @@ func TestNewWeComAppChannel(t *testing.T) {
 
 	t.Run("missing corp_id", func(t *testing.T) {
 		cfg := config.WeComAppConfig{
-			CorpID:     "",
-			CorpSecret: "test_secret",
-			AgentID:    1000002,
+			CorpID:  "",
+			AgentID: 1000002,
 		}
+		cfg.SetCorpSecret("test_secret")
 		_, err := NewWeComAppChannel(cfg, msgBus)
 		if err == nil {
 			t.Error("expected error for missing corp_id, got nil")
@@ -103,9 +103,8 @@ func TestNewWeComAppChannel(t *testing.T) {
 
 	t.Run("missing corp_secret", func(t *testing.T) {
 		cfg := config.WeComAppConfig{
-			CorpID:     "test_corp_id",
-			CorpSecret: "",
-			AgentID:    1000002,
+			CorpID:  "test_corp_id",
+			AgentID: 1000002,
 		}
 		_, err := NewWeComAppChannel(cfg, msgBus)
 		if err == nil {
@@ -115,10 +114,10 @@ func TestNewWeComAppChannel(t *testing.T) {
 
 	t.Run("missing agent_id", func(t *testing.T) {
 		cfg := config.WeComAppConfig{
-			CorpID:     "test_corp_id",
-			CorpSecret: "test_secret",
-			AgentID:    0,
+			CorpID:  "test_corp_id",
+			AgentID: 0,
 		}
+		cfg.SetCorpSecret("test_secret")
 		_, err := NewWeComAppChannel(cfg, msgBus)
 		if err == nil {
 			t.Error("expected error for missing agent_id, got nil")
@@ -127,11 +126,11 @@ func TestNewWeComAppChannel(t *testing.T) {
 
 	t.Run("valid config", func(t *testing.T) {
 		cfg := config.WeComAppConfig{
-			CorpID:     "test_corp_id",
-			CorpSecret: "test_secret",
-			AgentID:    1000002,
-			AllowFrom:  []string{"user1", "user2"},
+			CorpID:    "test_corp_id",
+			AgentID:   1000002,
+			AllowFrom: []string{"user1", "user2"},
 		}
+		cfg.SetCorpSecret("test_secret")
 		ch, err := NewWeComAppChannel(cfg, msgBus)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -150,11 +149,11 @@ func TestWeComAppChannelIsAllowed(t *testing.T) {
 
 	t.Run("empty allowlist allows all", func(t *testing.T) {
 		cfg := config.WeComAppConfig{
-			CorpID:     "test_corp_id",
-			CorpSecret: "test_secret",
-			AgentID:    1000002,
-			AllowFrom:  []string{},
+			CorpID:    "test_corp_id",
+			AgentID:   1000002,
+			AllowFrom: []string{},
 		}
+		cfg.SetCorpSecret("test_secret")
 		ch, _ := NewWeComAppChannel(cfg, msgBus)
 		if !ch.IsAllowed("any_user") {
 			t.Error("empty allowlist should allow all users")
@@ -163,11 +162,11 @@ func TestWeComAppChannelIsAllowed(t *testing.T) {
 
 	t.Run("allowlist restricts users", func(t *testing.T) {
 		cfg := config.WeComAppConfig{
-			CorpID:     "test_corp_id",
-			CorpSecret: "test_secret",
-			AgentID:    1000002,
-			AllowFrom:  []string{"allowed_user"},
+			CorpID:    "test_corp_id",
+			AgentID:   1000002,
+			AllowFrom: []string{"allowed_user"},
 		}
+		cfg.SetCorpSecret("test_secret")
 		ch, _ := NewWeComAppChannel(cfg, msgBus)
 		if !ch.IsAllowed("allowed_user") {
 			t.Error("allowed user should pass allowlist check")
@@ -180,12 +179,11 @@ func TestWeComAppChannelIsAllowed(t *testing.T) {
 
 func TestWeComAppVerifySignature(t *testing.T) {
 	msgBus := bus.NewMessageBus()
-	cfg := config.WeComAppConfig{
-		CorpID:     "test_corp_id",
-		CorpSecret: "test_secret",
-		AgentID:    1000002,
-		Token:      "test_token",
-	}
+	cfg := config.WeComAppConfig{}
+	cfg.CorpID = "test_corp_id"
+	cfg.SetCorpSecret("test_secret")
+	cfg.AgentID = 1000002
+	cfg.SetToken("test_token")
 	ch, _ := NewWeComAppChannel(cfg, msgBus)
 
 	t.Run("valid signature", func(t *testing.T) {
@@ -194,7 +192,7 @@ func TestWeComAppVerifySignature(t *testing.T) {
 		msgEncrypt := "test_message"
 		expectedSig := generateSignatureApp("test_token", timestamp, nonce, msgEncrypt)
 
-		if !verifySignature(ch.config.Token, expectedSig, timestamp, nonce, msgEncrypt) {
+		if !verifySignature(ch.config.Token(), expectedSig, timestamp, nonce, msgEncrypt) {
 			t.Error("valid signature should pass verification")
 		}
 	})
@@ -204,21 +202,20 @@ func TestWeComAppVerifySignature(t *testing.T) {
 		nonce := "test_nonce"
 		msgEncrypt := "test_message"
 
-		if verifySignature(ch.config.Token, "invalid_sig", timestamp, nonce, msgEncrypt) {
+		if verifySignature(ch.config.Token(), "invalid_sig", timestamp, nonce, msgEncrypt) {
 			t.Error("invalid signature should fail verification")
 		}
 	})
 
 	t.Run("empty token rejects verification (fail-closed)", func(t *testing.T) {
-		cfgEmpty := config.WeComAppConfig{
-			CorpID:     "test_corp_id",
-			CorpSecret: "test_secret",
-			AgentID:    1000002,
-			Token:      "",
-		}
+		cfgEmpty := config.WeComAppConfig{}
+		cfgEmpty.CorpID = "test_corp_id"
+		cfgEmpty.SetCorpSecret("test_secret")
+		cfgEmpty.AgentID = 1000002
+		cfgEmpty.SetToken("")
 		chEmpty, _ := NewWeComAppChannel(cfgEmpty, msgBus)
 
-		if verifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {
+		if verifySignature(chEmpty.config.Token(), "any_sig", "any_ts", "any_nonce", "any_msg") {
 			t.Error("empty token should reject verification (fail-closed)")
 		}
 	})
@@ -228,19 +225,18 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 
 	t.Run("decrypt without AES key", func(t *testing.T) {
-		cfg := config.WeComAppConfig{
-			CorpID:         "test_corp_id",
-			CorpSecret:     "test_secret",
-			AgentID:        1000002,
-			EncodingAESKey: "",
-		}
+		cfg := config.WeComAppConfig{}
+		cfg.CorpID = "test_corp_id"
+		cfg.SetCorpSecret("test_secret")
+		cfg.AgentID = 1000002
+		cfg.SetEncodingAESKey("")
 		ch, _ := NewWeComAppChannel(cfg, msgBus)
 
 		// Without AES key, message should be base64 decoded only
 		plainText := "hello world"
 		encoded := base64.StdEncoding.EncodeToString([]byte(plainText))
 
-		result, err := decryptMessage(encoded, ch.config.EncodingAESKey)
+		result, err := decryptMessage(encoded, ch.config.EncodingAESKey())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -252,11 +248,11 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 	t.Run("decrypt with AES key", func(t *testing.T) {
 		aesKey := generateTestAESKeyApp()
 		cfg := config.WeComAppConfig{
-			CorpID:         "test_corp_id",
-			CorpSecret:     "test_secret",
-			AgentID:        1000002,
-			EncodingAESKey: aesKey,
+			CorpID:  "test_corp_id",
+			AgentID: 1000002,
 		}
+		cfg.SetCorpSecret("test_secret")
+		cfg.SetEncodingAESKey(aesKey)
 		ch, _ := NewWeComAppChannel(cfg, msgBus)
 
 		originalMsg := "<xml><Content>Hello</Content></xml>"
@@ -265,7 +261,7 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 			t.Fatalf("failed to encrypt test message: %v", err)
 		}
 
-		result, err := decryptMessage(encrypted, ch.config.EncodingAESKey)
+		result, err := decryptMessage(encrypted, ch.config.EncodingAESKey())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -276,29 +272,28 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 
 	t.Run("invalid base64", func(t *testing.T) {
 		cfg := config.WeComAppConfig{
-			CorpID:         "test_corp_id",
-			CorpSecret:     "test_secret",
-			AgentID:        1000002,
-			EncodingAESKey: "",
+			CorpID:  "test_corp_id",
+			AgentID: 1000002,
 		}
+		cfg.SetCorpSecret("test_secret")
+		cfg.SetEncodingAESKey("")
 		ch, _ := NewWeComAppChannel(cfg, msgBus)
 
-		_, err := decryptMessage("invalid_base64!!!", ch.config.EncodingAESKey)
+		_, err := decryptMessage("invalid_base64!!!", ch.config.EncodingAESKey())
 		if err == nil {
 			t.Error("expected error for invalid base64, got nil")
 		}
 	})
 
 	t.Run("invalid AES key", func(t *testing.T) {
-		cfg := config.WeComAppConfig{
-			CorpID:         "test_corp_id",
-			CorpSecret:     "test_secret",
-			AgentID:        1000002,
-			EncodingAESKey: "invalid_key",
-		}
+		cfg := config.WeComAppConfig{}
+		cfg.CorpID = "test_corp_id"
+		cfg.SetCorpSecret("test_secret")
+		cfg.AgentID = 1000002
+		cfg.SetEncodingAESKey("invalid_key")
 		ch, _ := NewWeComAppChannel(cfg, msgBus)
 
-		_, err := decryptMessage(base64.StdEncoding.EncodeToString([]byte("test")), ch.config.EncodingAESKey)
+		_, err := decryptMessage(base64.StdEncoding.EncodeToString([]byte("test")), ch.config.EncodingAESKey())
 		if err == nil {
 			t.Error("expected error for invalid AES key, got nil")
 		}
@@ -306,17 +301,16 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 
 	t.Run("ciphertext too short", func(t *testing.T) {
 		aesKey := generateTestAESKeyApp()
-		cfg := config.WeComAppConfig{
-			CorpID:         "test_corp_id",
-			CorpSecret:     "test_secret",
-			AgentID:        1000002,
-			EncodingAESKey: aesKey,
-		}
+		cfg := config.WeComAppConfig{}
+		cfg.CorpID = "test_corp_id"
+		cfg.SetCorpSecret("test_secret")
+		cfg.AgentID = 1000002
+		cfg.SetEncodingAESKey(aesKey)
 		ch, _ := NewWeComAppChannel(cfg, msgBus)
 
 		// Encrypt a very short message that results in ciphertext less than block size
 		shortData := make([]byte, 8)
-		_, err := decryptMessage(base64.StdEncoding.EncodeToString(shortData), ch.config.EncodingAESKey)
+		_, err := decryptMessage(base64.StdEncoding.EncodeToString(shortData), ch.config.EncodingAESKey())
 		if err == nil {
 			t.Error("expected error for short ciphertext, got nil")
 		}
@@ -326,13 +320,12 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 func TestWeComAppHandleVerification(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	aesKey := generateTestAESKeyApp()
-	cfg := config.WeComAppConfig{
-		CorpID:         "test_corp_id",
-		CorpSecret:     "test_secret",
-		AgentID:        1000002,
-		Token:          "test_token",
-		EncodingAESKey: aesKey,
-	}
+	cfg := config.WeComAppConfig{}
+	cfg.CorpID = "test_corp_id"
+	cfg.SetCorpSecret("test_secret")
+	cfg.AgentID = 1000002
+	cfg.SetToken("test_token")
+	cfg.SetEncodingAESKey(aesKey)
 	ch, _ := NewWeComAppChannel(cfg, msgBus)
 
 	t.Run("valid verification request", func(t *testing.T) {
@@ -394,13 +387,12 @@ func TestWeComAppHandleVerification(t *testing.T) {
 func TestWeComAppHandleMessageCallback(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	aesKey := generateTestAESKeyApp()
-	cfg := config.WeComAppConfig{
-		CorpID:         "test_corp_id",
-		CorpSecret:     "test_secret",
-		AgentID:        1000002,
-		Token:          "test_token",
-		EncodingAESKey: aesKey,
-	}
+	cfg := config.WeComAppConfig{}
+	cfg.CorpID = "test_corp_id"
+	cfg.SetCorpSecret("test_secret")
+	cfg.AgentID = 1000002
+	cfg.SetToken("test_token")
+	cfg.SetEncodingAESKey(aesKey)
 	ch, _ := NewWeComAppChannel(cfg, msgBus)
 
 	t.Run("valid message callback", func(t *testing.T) {
@@ -509,10 +501,10 @@ func TestWeComAppHandleMessageCallback(t *testing.T) {
 func TestWeComAppProcessMessage(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	cfg := config.WeComAppConfig{
-		CorpID:     "test_corp_id",
-		CorpSecret: "test_secret",
-		AgentID:    1000002,
+		CorpID:  "test_corp_id",
+		AgentID: 1000002,
 	}
+	cfg.SetCorpSecret("test_secret")
 	ch, _ := NewWeComAppChannel(cfg, msgBus)
 
 	t.Run("process text message", func(t *testing.T) {
@@ -594,12 +586,11 @@ func TestWeComAppProcessMessage(t *testing.T) {
 
 func TestWeComAppHandleWebhook(t *testing.T) {
 	msgBus := bus.NewMessageBus()
-	cfg := config.WeComAppConfig{
-		CorpID:     "test_corp_id",
-		CorpSecret: "test_secret",
-		AgentID:    1000002,
-		Token:      "test_token",
-	}
+	cfg := config.WeComAppConfig{}
+	cfg.CorpID = "test_corp_id"
+	cfg.SetCorpSecret("test_secret")
+	cfg.AgentID = 1000002
+	cfg.SetToken("test_token")
 	ch, _ := NewWeComAppChannel(cfg, msgBus)
 
 	t.Run("GET request calls verification", func(t *testing.T) {
@@ -666,10 +657,10 @@ func TestWeComAppHandleWebhook(t *testing.T) {
 func TestWeComAppHandleHealth(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	cfg := config.WeComAppConfig{
-		CorpID:     "test_corp_id",
-		CorpSecret: "test_secret",
-		AgentID:    1000002,
+		CorpID:  "test_corp_id",
+		AgentID: 1000002,
 	}
+	cfg.SetCorpSecret("test_secret")
 	ch, _ := NewWeComAppChannel(cfg, msgBus)
 
 	req := httptest.NewRequest(http.MethodGet, "/health/wecom-app", nil)
@@ -695,10 +686,10 @@ func TestWeComAppHandleHealth(t *testing.T) {
 func TestWeComAppAccessToken(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	cfg := config.WeComAppConfig{
-		CorpID:     "test_corp_id",
-		CorpSecret: "test_secret",
-		AgentID:    1000002,
+		CorpID:  "test_corp_id",
+		AgentID: 1000002,
 	}
+	cfg.SetCorpSecret("test_secret")
 	ch, _ := NewWeComAppChannel(cfg, msgBus)
 
 	t.Run("get empty access token initially", func(t *testing.T) {
