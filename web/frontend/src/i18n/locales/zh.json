@@ -244,6 +244,9 @@
       "weixin": "微信"
     },
     "weixin": {
+      "warningTitle": "测试阶段，请谨慎使用",
+      "warningDesc": "微信 Channel 当前仍处于测试阶段，存在封号风险。请仅在充分了解风险的前提下使用。",
+      "bindEnableSuccess": "微信已连接，频道已自动启用。",
       "bindTitle": "微信账号绑定",
       "bindDesc": "使用微信扫描二维码以绑定您的个人微信账号。",
       "bind": "绑定微信",
@@ -289,7 +292,9 @@
       "saveError": "保存频道配置失败",
       "enabled": "已启用",
       "docLink": "配置文档",
-      "enableLabel": "启用频道"
+      "enableLabel": "启用频道",
+      "restartRequiredTitle": "需要重启服务",
+      "restartRequiredDesc": "{{name}} 的最新配置已保存。重启服务后才能正式生效。"
     },
     "form": {
       "desc": {

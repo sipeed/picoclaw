@@ -1,8 +1,6 @@
 import { IconLoader2 } from "@tabler/icons-react"
-import { useAtomValue } from "jotai"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { toast } from "sonner"
 
 import {
   type ChannelConfig,
@@ -21,7 +19,8 @@ import { WeixinForm } from "@/components/channels/channel-forms/weixin-form"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { gatewayAtom } from "@/store/gateway"
+import { useGateway } from "@/hooks/use-gateway"
+import { refreshGatewayState } from "@/store/gateway"
 
 interface ChannelConfigPageProps {
   channelName: string
@@ -241,7 +240,7 @@ const CHANNELS_WITHOUT_DOCS = new Set([
 
 export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const { t, i18n } = useTranslation()
-  const gateway = useAtomValue(gatewayAtom)
+  const { state: gatewayState } = useGateway()
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -254,56 +253,59 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const [editConfig, setEditConfig] = useState<ChannelConfig>({})
   const [enabled, setEnabled] = useState(false)
 
-  const loadData = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true)
-    try {
-      const [catalog, appConfig] = await Promise.all([
-        getChannelsCatalog(),
-        getAppConfig(),
-      ])
-      const matched =
-        catalog.channels.find((item) => item.name === channelName) ?? null
+  const loadData = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true)
+      try {
+        const [catalog, appConfig] = await Promise.all([
+          getChannelsCatalog(),
+          getAppConfig(),
+        ])
+        const matched =
+          catalog.channels.find((item) => item.name === channelName) ?? null
 
-      if (!matched) {
-        setChannel(null)
-        setFetchError(
-          t("channels.page.notFound", {
-            name: channelName,
-          }),
-        )
-        return
+        if (!matched) {
+          setChannel(null)
+          setFetchError(
+            t("channels.page.notFound", {
+              name: channelName,
+            }),
+          )
+          return
+        }
+
+        const channelsConfig = asRecord(asRecord(appConfig).channels)
+        const raw = asRecord(channelsConfig[matched.config_key])
+        const normalized = normalizeConfig(matched, raw)
+
+        setChannel(matched)
+        setBaseConfig(normalized)
+        setEditConfig(buildEditConfig(normalized))
+        setEnabled(asBool(normalized.enabled))
+        setFetchError("")
+        setServerError("")
+        setFieldErrors({})
+      } catch (e) {
+        setFetchError(e instanceof Error ? e.message : t("channels.loadError"))
+      } finally {
+        if (!silent) setLoading(false)
       }
-
-      const channelsConfig = asRecord(asRecord(appConfig).channels)
-      const raw = asRecord(channelsConfig[matched.config_key])
-      const normalized = normalizeConfig(matched, raw)
-
-      setChannel(matched)
-      setBaseConfig(normalized)
-      setEditConfig(buildEditConfig(normalized))
-      setEnabled(asBool(normalized.enabled))
-      setFetchError("")
-      setServerError("")
-      setFieldErrors({})
-    } catch (e) {
-      setFetchError(e instanceof Error ? e.message : t("channels.loadError"))
-    } finally {
-      if (!silent) setLoading(false)
-    }
-  }, [channelName, t])
+    },
+    [channelName, t],
+  )
 
   useEffect(() => {
     loadData()
   }, [loadData])
 
-  const previousGatewayStatusRef = useRef(gateway.status)
+  const previousGatewayStatusRef = useRef(gatewayState)
   useEffect(() => {
     const previousStatus = previousGatewayStatusRef.current
-    if (previousStatus !== "running" && gateway.status === "running") {
+    if (previousStatus !== "running" && gatewayState === "running") {
       void loadData()
     }
-    previousGatewayStatusRef.current = gateway.status
-  }, [gateway.status, loadData])
+    previousGatewayStatusRef.current = gatewayState
+  }, [gatewayState, loadData])
 
   const savePayload = useMemo(() => {
     if (!channel) return null
@@ -396,17 +398,27 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
           [channel.config_key]: savePayload,
         },
       })
-      toast.success(t("channels.page.saveSuccess"))
       await loadData()
     } catch (e) {
       const message =
         e instanceof Error ? e.message : t("channels.page.saveError")
       setServerError(message)
-      toast.error(message)
     } finally {
       setSaving(false)
     }
   }
+
+  const handleWeixinBindSuccess = useCallback(async () => {
+    try {
+      setEnabled(true)
+      await Promise.all([loadData(true), refreshGatewayState({ force: true })])
+    } catch (e) {
+      const message =
+        e instanceof Error ? e.message : t("channels.page.saveError")
+      setServerError(message)
+      await loadData(true)
+    }
+  }, [loadData, t])
 
   const renderForm = () => {
     if (!channel) return null
@@ -455,7 +467,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
             config={editConfig}
             onChange={handleChange}
             isEdit={isEdit}
-            onBindSuccess={() => void loadData(true)}
+            onBindSuccess={() => void handleWeixinBindSuccess()}
           />
         )
       default:
