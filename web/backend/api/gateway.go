@@ -159,10 +159,10 @@ func (h *Handler) gatewayStartReady() (bool, string, error) {
 		return false, fmt.Sprintf("default model %q is invalid", modelName), nil
 	}
 
-	if !hasModelConfiguration(*modelCfg) {
+	if !hasModelConfiguration(modelCfg) {
 		return false, fmt.Sprintf("default model %q has no credentials configured", modelName), nil
 	}
-	if requiresRuntimeProbe(*modelCfg) && !probeLocalModelAvailability(*modelCfg) {
+	if requiresRuntimeProbe(modelCfg) && !probeLocalModelAvailability(modelCfg) {
 		return false, fmt.Sprintf("default model %q is not reachable", modelName), nil
 	}
 

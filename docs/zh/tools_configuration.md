@@ -28,6 +28,17 @@ PicoClaw 的工具配置位于 `config.json` 的 `tools` 字段中。
 }
 ```
 
+## 敏感数据过滤
+
+在将工具结果发送给 LLM 之前，PicoClaw 可以从输出中过滤敏感值（API 密钥、令牌、密码）。这可以防止 LLM 看到自己的凭据。
+
+详细说明请参阅[敏感数据过滤](../sensitive_data_filtering.md)。
+
+| 配置项 | 类型 | 默认值 | 描述 |
+|--------|------|--------|------|
+| `filter_sensitive_data` | bool | `true` | 启用/禁用过滤 |
+| `filter_min_length` | int | `8` | 触发过滤的最小内容长度 |
+
 ## Web 工具
 
 Web 工具用于网页搜索和抓取。
@@ -41,15 +52,53 @@ Web 工具用于网页搜索和抓取。
 | `fetch_limit_bytes` | int    | 10485760      | 抓取网页负载的最大大小，单位为字节（默认 10MB）。                                      |
 | `format`            | string | "plaintext"   | 抓取内容的输出格式。选项：`plaintext` 或 `markdown`（推荐）。                          |
 
-### Brave
+### 百度搜索
 
-| 配置项        | 类型   | 默认值 | 描述               |
-|---------------|--------|--------|--------------------|
-| `enabled`     | bool   | false  | 启用 Brave 搜索    |
-| `api_key`     | string | -      | Brave Search API 密钥 |
-| `max_results` | int    | 5      | 最大结果数         |
+使用[千帆 AI 搜索 API](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5)，国内访问稳定，中文搜索效果好。
+
+| 配置项        | 类型   | 默认值                                                          | 描述                  |
+|---------------|--------|----------------------------------------------------------------|-----------------------|
+| `enabled`     | bool   | false                                                          | 启用百度搜索          |
+| `api_key`     | string | -                                                              | 千帆 API 密钥         |
+| `base_url`    | string | `https://qianfan.baidubce.com/v2/ai_search/web_search`        | 百度搜索 API URL      |
+| `max_results` | int    | 10                                                             | 最大结果数            |
+
+```json
+{
+  "tools": {
+    "web": {
+      "baidu_search": {
+        "enabled": true,
+        "api_key": "YOUR_BAIDU_QIANFAN_API_KEY",
+        "max_results": 10
+      }
+    }
+  }
+}
+```
+
+### Tavily
+
+| 配置项        | 类型   | 默认值 | 描述                              |
+|---------------|--------|--------|-----------------------------------|
+| `enabled`     | bool   | false  | 启用 Tavily 搜索                  |
+| `api_key`     | string | -      | Tavily API 密钥                   |
+| `base_url`    | string | -      | 自定义 Tavily API 基础 URL        |
+| `max_results` | int    | 0      | 最大结果数（0 = 默认）            |
+
+### GLM Search
+
+| 配置项          | 类型   | 默认值                                               | 描述                  |
+|-----------------|--------|------------------------------------------------------|-----------------------|
+| `enabled`       | bool   | false                                                | 启用 GLM 搜索        |
+| `api_key`       | string | -                                                    | GLM API 密钥          |
+| `base_url`      | string | `https://open.bigmodel.cn/api/paas/v4/web_search`   | GLM Search API URL    |
+| `search_engine` | string | `search_std`                                         | 搜索引擎类型          |
+| `max_results`   | int    | 5                                                    | 最大结果数            |
 
 ### DuckDuckGo
+
+> ⚠️ 国内访问困难，建议搭配代理使用。
 
 | 配置项        | 类型 | 默认值 | 描述                  |
 |---------------|------|--------|-----------------------|
@@ -58,11 +107,40 @@ Web 工具用于网页搜索和抓取。
 
 ### Perplexity
 
-| 配置项        | 类型   | 默认值 | 描述                  |
-|---------------|--------|--------|-----------------------|
-| `enabled`     | bool   | false  | 启用 Perplexity 搜索  |
-| `api_key`     | string | -      | Perplexity API 密钥   |
-| `max_results` | int    | 5      | 最大结果数            |
+> ⚠️ 国内访问困难，建议搭配代理使用。
+
+| 配置项        | 类型     | 默认值 | 描述                                           |
+|---------------|----------|--------|------------------------------------------------|
+| `enabled`     | bool     | false  | 启用 Perplexity 搜索                           |
+| `api_key`     | string   | -      | Perplexity API 密钥                            |
+| `api_keys`    | string[] | -      | 多个 API 密钥轮换（优先于 `api_key`）          |
+| `max_results` | int      | 5      | 最大结果数                                     |
+
+### Brave
+
+> ⚠️ 国内访问困难，建议搭配代理使用。
+
+| 配置项        | 类型     | 默认值 | 描述                                           |
+|---------------|----------|--------|------------------------------------------------|
+| `enabled`     | bool     | false  | 启用 Brave 搜索                                |
+| `api_key`     | string   | -      | Brave Search API 密钥                          |
+| `api_keys`    | string[] | -      | 多个 API 密钥轮换（优先于 `api_key`）          |
+| `max_results` | int      | 5      | 最大结果数                                     |
+
+### SearXNG
+
+| 配置项        | 类型   | 默认值                   | 描述                  |
+|---------------|--------|--------------------------|-----------------------|
+| `enabled`     | bool   | false                    | 启用 SearXNG 搜索     |
+| `base_url`    | string | `http://localhost:8888`  | SearXNG 实例 URL      |
+| `max_results` | int    | 5                        | 最大结果数            |
+
+### 其他 Web 设置
+
+| 配置项                   | 类型     | 默认值 | 描述                                           |
+|--------------------------|----------|--------|-------------------------------------------------|
+| `prefer_native`          | bool     | true   | 优先使用 provider 原生搜索而非配置的搜索引擎    |
+| `private_host_whitelist` | string[] | `[]`   | 允许 Web 抓取的私有/内部主机白名单              |
 
 ## Exec 工具
 
@@ -154,6 +232,7 @@ Cron 工具用于调度周期性任务。
 | 配置项                 | 类型 | 默认值 | 描述                                |
 |------------------------|------|--------|-------------------------------------|
 | `exec_timeout_minutes` | int  | 5      | 执行超时时间（分钟），0 表示无限制  |
+| `allow_command`        | bool | false  | 允许 cron 任务执行 shell 命令       |
 
 ## MCP 工具
 
@@ -320,9 +399,27 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
 | `registries.clawhub.enabled`       | bool   | true                 | 启用 ClawHub 注册表                  |
 | `registries.clawhub.base_url`      | string | `https://clawhub.ai` | ClawHub 基础 URL                     |
 | `registries.clawhub.auth_token`    | string | `""`                 | 可选的 Bearer 令牌，用于更高速率限制 |
-| `registries.clawhub.search_path`   | string | `/api/v1/search`     | 搜索 API 路径                        |
-| `registries.clawhub.skills_path`   | string | `/api/v1/skills`     | Skills API 路径                      |
-| `registries.clawhub.download_path` | string | `/api/v1/download`   | 下载 API 路径                        |
+| `registries.clawhub.search_path`   | string | `""`                 | 搜索 API 路径                        |
+| `registries.clawhub.skills_path`   | string | `""`                 | Skills API 路径                      |
+| `registries.clawhub.download_path` | string | `""`                 | 下载 API 路径                        |
+| `registries.clawhub.timeout`       | int    | 0                    | 请求超时时间（秒），0 = 默认         |
+| `registries.clawhub.max_zip_size`  | int    | 0                    | 技能 zip 最大大小（字节），0 = 默认  |
+| `registries.clawhub.max_response_size` | int | 0                   | API 响应最大大小（字节），0 = 默认   |
+
+### GitHub 集成
+
+| 配置项           | 类型   | 默认值 | 描述                          |
+|------------------|--------|--------|-------------------------------|
+| `github.proxy`   | string | `""`   | GitHub API 请求的 HTTP 代理   |
+| `github.token`   | string | `""`   | GitHub 个人访问令牌           |
+
+### 搜索设置
+
+| 配置项                     | 类型 | 默认值 | 描述                     |
+|----------------------------|------|--------|--------------------------|
+| `max_concurrent_searches`  | int  | 2      | 最大并发技能搜索请求数   |
+| `search_cache.max_size`    | int  | 50     | 最大缓存搜索结果数       |
+| `search_cache.ttl_seconds` | int  | 300    | 缓存 TTL（秒）           |
 
 ### 配置示例
 
@@ -334,11 +431,17 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
         "clawhub": {
           "enabled": true,
           "base_url": "https://clawhub.ai",
-          "auth_token": "",
-          "search_path": "/api/v1/search",
-          "skills_path": "/api/v1/skills",
-          "download_path": "/api/v1/download"
+          "auth_token": ""
         }
+      },
+      "github": {
+        "proxy": "",
+        "token": ""
+      },
+      "max_concurrent_searches": 2,
+      "search_cache": {
+        "max_size": 50,
+        "ttl_seconds": 300
       }
     }
   }

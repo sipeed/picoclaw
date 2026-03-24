@@ -17,7 +17,7 @@
   "chat": {
     "welcome": "今天我能为您做些什么？",
     "welcomeDesc": "您可以询问我天气、设置或其他任何任务，我随时为您效劳。",
-    "placeholder": "输入新消息...",
+    "placeholder": "输入新消息...\n按 Enter 发送，Shift + Enter 换行",
     "newChat": "新建对话",
     "notConnected": "服务未运行，请先启动以进行对话。",
     "thinking": {
@@ -396,6 +396,10 @@
       "workspace_hint": "智能体执行文件读写操作时使用的基础目录。",
       "restrict_workspace": "限制工作目录访问",
       "restrict_workspace_hint": "仅允许在工作目录内执行文件操作。",
+      "tool_feedback_enabled": "工具反馈",
+      "tool_feedback_enabled_hint": "在每次执行工具前，先向当前会话发送一条简短的工具调用预览。",
+      "tool_feedback_max_args_length": "工具反馈参数预览长度",
+      "tool_feedback_max_args_length_hint": "每条工具反馈消息中展示的参数字符上限。设为 0 时使用默认值。",
       "exec_enabled": "允许命令执行",
       "exec_enabled_hint": "控制应用是否允许执行命令。关闭后，所有命令请求都不会执行。",
       "allow_remote": "允许远程命令执行",
@@ -415,6 +419,8 @@
       "cron_exec_timeout_hint": "定时任务中命令的最长运行时间。设置为 0 表示不限制超时。",
       "max_tokens": "最大 Token 数",
       "max_tokens_hint": "单次模型响应允许的最大 Token 数。",
+      "context_window": "上下文窗口",
+      "context_window_hint": "模型输入上下文容量（Token 数）。留空使用默认值（最大 Token 数的 4 倍）。",
       "max_tool_iterations": "最大工具迭代次数",
       "max_tool_iterations_hint": "单个任务中允许的工具调用循环上限。",
       "summarize_threshold": "触发摘要的消息阈值",

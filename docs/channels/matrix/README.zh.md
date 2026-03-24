@@ -1,3 +1,5 @@
+> 返回 [README](../../../README.zh.md)
+
 # Matrix 通道配置指南
 
 ## 1. 配置示例
@@ -42,6 +44,7 @@
 | group_trigger        | object   | 否   | 群聊触发策略（支持 `mention_only` / `prefixes`） |
 | placeholder          | object   | 否   | 占位消息配置 |
 | reasoning_channel_id | string   | 否   | 思维链输出目标通道 |
+| message_format       | string   | 否   | 消息格式：`richtext`（富文本）或 `plain`（纯文本） |
 
 ## 3. 当前支持
 

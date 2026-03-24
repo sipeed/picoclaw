@@ -133,9 +133,10 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	scope := fmt.Sprintf("tool:send_file:%s:%s", channel, chatID)
 
 	ref, err := t.mediaStore.Store(resolved, media.MediaMeta{
-		Filename:    filename,
-		ContentType: mediaType,
-		Source:      "tool:send_file",
+		Filename:      filename,
+		ContentType:   mediaType,
+		Source:        "tool:send_file",
+		CleanupPolicy: media.CleanupPolicyForgetOnly,
 	}, scope)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to register media: %v", err))

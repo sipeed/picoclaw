@@ -56,7 +56,7 @@ Par défaut, les compétences sont chargées depuis :
 
 1. `~/.picoclaw/workspace/skills` (workspace)
 2. `~/.picoclaw/skills` (global)
-3. `<current-working-directory>/skills` (builtin)
+3. `<chemin-intégré-à-la-compilation>/skills` (intégré)
 
 Pour les configurations avancées/de test, vous pouvez remplacer la racine des compétences builtin avec :
 
@@ -214,5 +214,150 @@ L'agent lira ce fichier toutes les 30 minutes (configurable) et exécutera toute
 Pour les tâches longues (recherche web, appels API), utilisez l'outil `spawn` pour créer un **subagent** :
 
 ```markdown
-# Periodic Tasks
+# Tâches Périodiques
+
+## Tâches Rapides (répondre directement)
+
+- Indiquer l'heure actuelle
+
+## Tâches Longues (utiliser spawn pour l'asynchrone)
+
+- Rechercher les actualités IA sur le web et résumer
+- Vérifier les e-mails et signaler les messages importants
 ```
+
+**Comportements clés :**
+
+| Fonctionnalité   | Description                                                        |
+| ---------------- | ------------------------------------------------------------------ |
+| **spawn**        | Crée un subagent asynchrone, ne bloque pas le heartbeat            |
+| **Contexte indépendant** | Le subagent a son propre contexte, sans historique de session |
+| **message tool** | Le subagent communique directement avec l'utilisateur              |
+| **Non-bloquant** | Après le spawn, le heartbeat continue vers la tâche suivante       |
+
+#### Flux de Communication du Subagent
+
+```
+Heartbeat déclenché
+    ↓
+Agent lit HEARTBEAT.md
+    ↓
+Tâche longue : spawn subagent
+    ↓                           ↓
+Continue tâche suivante    Subagent travaille indépendamment
+    ↓                           ↓
+Toutes tâches terminées    Subagent utilise "message" tool
+    ↓                           ↓
+Répond HEARTBEAT_OK        Utilisateur reçoit le résultat
+```
+
+**Configuration :**
+
+```json
+{
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
+  }
+}
+```
+
+| Option     | Défaut | Description                              |
+| ---------- | ------ | ---------------------------------------- |
+| `enabled`  | `true` | Activer/désactiver le heartbeat          |
+| `interval` | `30`   | Intervalle en minutes (minimum : 5)      |
+
+**Variables d'environnement :**
+
+* `PICOCLAW_HEARTBEAT_ENABLED=false` pour désactiver
+* `PICOCLAW_HEARTBEAT_INTERVAL=60` pour changer l'intervalle
+
+### Providers
+
+> [!NOTE]
+> Groq fournit une transcription vocale gratuite via Whisper. Si configuré, les messages audio de n'importe quel canal seront automatiquement transcrits au niveau de l'agent.
+
+| Provider     | Usage                                   | Obtenir une clé API                                          |
+| ------------ | --------------------------------------- | ------------------------------------------------------------ |
+| `gemini`     | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)           |
+| `zhipu`      | LLM (Zhipu direct)                      | [bigmodel.cn](https://bigmodel.cn)                           |
+| `volcengine` | LLM (Volcengine direct)                 | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
+| `openrouter` | LLM (recommandé, accès à tous modèles)  | [openrouter.ai](https://openrouter.ai)                       |
+| `anthropic`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com)       |
+| `openai`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)           |
+| `deepseek`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)       |
+| `qwen`       | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
+| `groq`       | LLM + **Transcription vocale** (Whisper)| [console.groq.com](https://console.groq.com)                 |
+| `cerebras`   | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                           |
+| `vivgrid`    | LLM (Vivgrid direct)                    | [vivgrid.com](https://vivgrid.com)                           |
+
+### Configuration des Modèles (model_list)
+
+> **Nouveauté :** PicoClaw utilise désormais une approche **centrée sur le modèle**. Spécifiez simplement le format `vendor/model` (ex. `zhipu/glm-4.7`) pour ajouter de nouveaux providers — **aucune modification de code requise !**
+
+#### Tous les Vendors Supportés
+
+| Vendor                  | Préfixe `model` | API Base par défaut                                 | Protocole | API Key                                                          |
+| ----------------------- | --------------- | --------------------------------------------------- | --------- | ---------------------------------------------------------------- |
+| **OpenAI**              | `openai/`       | `https://api.openai.com/v1`                         | OpenAI    | [Obtenir](https://platform.openai.com)                           |
+| **Anthropic**           | `anthropic/`    | `https://api.anthropic.com/v1`                      | Anthropic | [Obtenir](https://console.anthropic.com)                         |
+| **智谱 AI (GLM)**       | `zhipu/`        | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Obtenir](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek**            | `deepseek/`     | `https://api.deepseek.com/v1`                       | OpenAI    | [Obtenir](https://platform.deepseek.com)                         |
+| **Google Gemini**       | `gemini/`       | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Obtenir](https://aistudio.google.com/api-keys)                  |
+| **Groq**                | `groq/`         | `https://api.groq.com/openai/v1`                    | OpenAI    | [Obtenir](https://console.groq.com)                              |
+| **通义千问 (Qwen)**     | `qwen/`         | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Obtenir](https://dashscope.console.aliyun.com)                  |
+| **Ollama**              | `ollama/`       | `http://localhost:11434/v1`                         | OpenAI    | Local (pas de clé)                                               |
+| **OpenRouter**          | `openrouter/`   | `https://openrouter.ai/api/v1`                      | OpenAI    | [Obtenir](https://openrouter.ai/keys)                            |
+| **VolcEngine (Doubao)** | `volcengine/`   | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Obtenir](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
+| **Antigravity**         | `antigravity/`  | Google Cloud                                        | Custom    | OAuth uniquement                                                 |
+
+#### Équilibrage de Charge
+
+Configurez plusieurs endpoints pour le même nom de modèle — PicoClaw effectuera automatiquement un round-robin :
+
+```json
+{
+  "model_list": [
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api1.example.com/v1", "api_key": "sk-key1" },
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api2.example.com/v1", "api_key": "sk-key2" }
+  ]
+}
+```
+
+#### Migration depuis l'ancienne config `providers`
+
+L'ancienne configuration `providers` est **dépréciée** mais toujours supportée. Voir [docs/migration/model-list-migration.md](../migration/model-list-migration.md).
+
+### Architecture des Providers
+
+PicoClaw route les providers par famille de protocole :
+
+- **Compatible OpenAI** : OpenRouter, Groq, Zhipu, endpoints vLLM et la plupart des autres.
+- **Anthropic** : Comportement natif de l'API Claude.
+- **Codex/OAuth** : Route d'authentification OAuth/token OpenAI.
+
+### Tâches Planifiées / Rappels
+
+PicoClaw supporte les tâches planifiées via l'outil `cron`. L'agent peut définir, lister et annuler des rappels ou tâches récurrentes.
+
+```json
+{
+  "tools": {
+    "cron": {
+      "enabled": true,
+      "exec_timeout_minutes": 5
+    }
+  }
+}
+```
+
+Les tâches planifiées persistent après redémarrage dans `~/.picoclaw/workspace/cron/`.
+
+### Sujets Avancés
+
+| Sujet | Description |
+| ----- | ----------- |
+| [Système de Hooks](../hooks/README.md) | Hooks événementiels : observateurs, intercepteurs, hooks d'approbation |
+| [Steering](../steering.md) | Injecter des messages dans une boucle agent en cours d'exécution |
+| [SubTurn](../subturn.md) | Coordination de subagents, contrôle de concurrence, cycle de vie |
+| [Gestion du Contexte](../agent-refactor/context.md) | Détection des limites de contexte, compression |

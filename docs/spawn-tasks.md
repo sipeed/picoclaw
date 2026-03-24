@@ -2,6 +2,15 @@
 
 > Back to [README](../README.md)
 
+PicoClaw supports **asynchronous task execution** via the `spawn` tool. This is primarily used by the **Heartbeat** system to run long-running tasks without blocking the main agent loop.
+
+## Heartbeat
+
+The heartbeat system periodically checks `workspace/HEARTBEAT.md` for scheduled tasks. On first run, a default template is auto-generated. You can customize it to define quick tasks (handled inline) and long tasks (delegated via `spawn`).
+
+**Example `HEARTBEAT.md`:**
+
+```markdown
 ## Quick Tasks (respond directly)
 
 - Report current time

@@ -5,7 +5,7 @@
 ### 提供商 (Providers)
 
 > [!NOTE]
-> Groq 通过 Whisper 提供免费的语音转录。如果配置了 Groq，任意渠道的音频消息都将在 Agent 层面自动转录为文字。
+> 语音转录现在可以通过 `voice.model_name` 指定的多模态模型完成；如果未配置语音模型，Groq Whisper 仍可作为回退方案。
 
 | 提供商               | 用途                         | 获取 API Key                                                         |
 | -------------------- | ---------------------------- | -------------------------------------------------------------------- |
@@ -93,7 +93,34 @@
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-5.4"
+      "model_name": "gpt-5.4"
+    }
+  }
+}
+```
+
+#### 语音转录
+
+你可以通过 `voice.model_name` 为语音转录指定一个专用模型。这样可以直接复用已经配置好的、支持音频输入的多模态 provider，而不必只依赖 Groq。
+
+如果没有配置 `voice.model_name`，且存在 Groq API Key，PicoClaw 会继续回退到 Groq 转录。
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "voice-gemini",
+      "model": "gemini/gemini-2.5-flash",
+      "api_key": "your-gemini-key"
+    }
+  ],
+  "voice": {
+    "model_name": "voice-gemini",
+    "echo_transcription": false
+  },
+  "providers": {
+    "groq": {
+      "api_key": "gsk_xxx"
     }
   }
 }
@@ -266,7 +293,7 @@ PicoClaw 在发送请求前仅去除外层 `litellm/` 前缀，因此 `litellm/l
   ],
   "agents": {
     "defaults": {
-      "model": "glm-4.7"
+      "model_name": "glm-4.7"
     }
   }
 }
@@ -298,7 +325,7 @@ PicoClaw 按协议族路由 Provider：
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
+      "model_name": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -328,12 +355,11 @@ picoclaw agent -m "你好"
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model_name": "anthropic/claude-opus-4-5"
     }
   },
   "session": {
-    "dm_scope": "per-channel-peer",
-    "backlog_limit": 20
+    "dm_scope": "per-channel-peer"
   },
   "providers": {
     "openrouter": {
@@ -342,6 +368,10 @@ picoclaw agent -m "你好"
     "groq": {
       "api_key": "gsk_xxx"
     }
+  },
+  "voice": {
+    "model_name": "voice-gemini",
+    "echo_transcription": false
   },
   "channels": {
     "telegram": {

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // registerModelRoutes binds model list management endpoints to the ServeMux.
@@ -31,12 +32,13 @@ type modelResponse struct {
 	Proxy      string `json:"proxy,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"`
 	// Advanced fields
-	ConnectMode    string `json:"connect_mode,omitempty"`
-	Workspace      string `json:"workspace,omitempty"`
-	RPM            int    `json:"rpm,omitempty"`
-	MaxTokensField string `json:"max_tokens_field,omitempty"`
-	RequestTimeout int    `json:"request_timeout,omitempty"`
-	ThinkingLevel  string `json:"thinking_level,omitempty"`
+	ConnectMode    string         `json:"connect_mode,omitempty"`
+	Workspace      string         `json:"workspace,omitempty"`
+	RPM            int            `json:"rpm,omitempty"`
+	MaxTokensField string         `json:"max_tokens_field,omitempty"`
+	RequestTimeout int            `json:"request_timeout,omitempty"`
+	ThinkingLevel  string         `json:"thinking_level,omitempty"`
+	ExtraBody      map[string]any `json:"extra_body,omitempty"`
 	// Meta
 	Configured bool `json:"configured"`
 	IsDefault  bool `json:"is_default"`
@@ -58,7 +60,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	wg.Add(len(cfg.ModelList))
 	for i, m := range cfg.ModelList {
-		go func(i int, m config.ModelConfig) {
+		go func(i int, m *config.ModelConfig) {
 			defer wg.Done()
 			configured[i] = isModelConfigured(m)
 		}(i, m)
@@ -72,7 +74,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			ModelName:      m.ModelName,
 			Model:          m.Model,
 			APIBase:        m.APIBase,
-			APIKey:         maskAPIKey(m.APIKey),
+			APIKey:         maskAPIKey(m.APIKey()),
 			Proxy:          m.Proxy,
 			AuthMethod:     m.AuthMethod,
 			ConnectMode:    m.ConnectMode,
@@ -81,6 +83,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			MaxTokensField: m.MaxTokensField,
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,
+			ExtraBody:      m.ExtraBody,
 			Configured:     configured[i],
 			IsDefault:      m.ModelName == defaultModel,
 		})
@@ -122,7 +125,7 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg.ModelList = append(cfg.ModelList, mc)
+	cfg.ModelList = append(cfg.ModelList, &mc)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -156,7 +159,12 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var mc config.ModelConfig
+	type custom struct {
+		config.ModelConfig
+		APIKey string `json:"api_key"`
+	}
+
+	var mc custom
 	if err = json.Unmarshal(body, &mc); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
@@ -181,10 +189,17 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	// Preserve the existing API key when the caller omits it (empty string).
 	// This lets the UI update api_base / proxy without clearing the stored secret.
 	if mc.APIKey == "" {
-		mc.APIKey = cfg.ModelList[idx].APIKey
+		mc.ModelConfig.SetAPIKey(cfg.ModelList[idx].APIKey())
+	} else {
+		mc.ModelConfig.SetAPIKey(mc.APIKey)
+	}
+	if mc.ExtraBody == nil {
+		mc.ExtraBody = cfg.ModelList[idx].ExtraBody
 	}
 
-	cfg.ModelList[idx] = mc
+	cfg.ModelList[idx] = &mc.ModelConfig
+
+	logger.Debugf("update model config: %#v", mc.ModelConfig)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -223,9 +238,6 @@ func (h *Handler) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
 	// If the deleted model was the default, clear it.
 	if cfg.Agents.Defaults.ModelName == deletedModelName {
 		cfg.Agents.Defaults.ModelName = ""
-	}
-	if cfg.Agents.Defaults.Model == deletedModelName {
-		cfg.Agents.Defaults.Model = ""
 	}
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {

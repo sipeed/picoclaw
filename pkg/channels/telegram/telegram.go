@@ -2,6 +2,8 @@ package telegram
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mymmrac/telego"
@@ -80,7 +83,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	}
 	opts = append(opts, telego.WithLogger(logger.NewLogger("telego")))
 
-	bot, err := telego.NewBot(telegramCfg.Token, opts...)
+	bot, err := telego.NewBot(telegramCfg.Token(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}
@@ -374,6 +377,22 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 	return err
 }
 
+// DeleteMessage implements channels.MessageDeleter.
+func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
+	cid, _, err := parseTelegramChatID(chatID)
+	if err != nil {
+		return err
+	}
+	mid, err := strconv.Atoi(messageID)
+	if err != nil {
+		return err
+	}
+	return c.bot.DeleteMessage(ctx, &telego.DeleteMessageParams{
+		ChatID:    tu.ID(cid),
+		MessageID: mid,
+	})
+}
+
 // SendPlaceholder implements channels.PlaceholderCapable.
 // It sends a placeholder message (e.g. "Thinking... 💭") that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).
@@ -462,13 +481,26 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 				_, err = c.bot.SendDocument(ctx, docParams)
 			}
 		case "audio":
-			params := &telego.SendAudioParams{
-				ChatID:          tu.ID(chatID),
-				MessageThreadID: threadID,
-				Audio:           telego.InputFile{File: file},
-				Caption:         part.Caption,
+			// Send OGG files with "voice" in the filename as Telegram voice
+			// bubbles (SendVoice) instead of audio attachments (SendAudio).
+			fn := strings.ToLower(part.Filename)
+			if strings.Contains(fn, "voice") && (strings.HasSuffix(fn, ".ogg") || strings.HasSuffix(fn, ".oga")) {
+				vparams := &telego.SendVoiceParams{
+					ChatID:          tu.ID(chatID),
+					MessageThreadID: threadID,
+					Voice:           telego.InputFile{File: file},
+					Caption:         part.Caption,
+				}
+				_, err = c.bot.SendVoice(ctx, vparams)
+			} else {
+				params := &telego.SendAudioParams{
+					ChatID:          tu.ID(chatID),
+					MessageThreadID: threadID,
+					Audio:           telego.InputFile{File: file},
+					Caption:         part.Caption,
+				}
+				_, err = c.bot.SendAudio(ctx, params)
 			}
-			_, err = c.bot.SendAudio(ctx, params)
 		case "video":
 			params := &telego.SendVideoParams{
 				ChatID:          tu.ID(chatID),
@@ -542,8 +574,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	storeMedia := func(localPath, filename string) string {
 		if store := c.GetMediaStore(); store != nil {
 			ref, err := store.Store(localPath, media.MediaMeta{
-				Filename: filename,
-				Source:   "telegram",
+				Filename:      filename,
+				Source:        "telegram",
+				CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 			}, scope)
 			if err == nil {
 				return ref
@@ -846,4 +879,108 @@ func (c *TelegramChannel) stripBotMention(content string) string {
 	re := regexp.MustCompile(`(?i)@` + regexp.QuoteMeta(botUsername))
 	content = re.ReplaceAllString(content, "")
 	return strings.TrimSpace(content)
+}
+
+// BeginStream implements channels.StreamingCapable.
+func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (channels.Streamer, error) {
+	if !c.config.Channels.Telegram.Streaming.Enabled {
+		return nil, fmt.Errorf("streaming disabled in config")
+	}
+
+	cid, _, err := parseTelegramChatID(chatID)
+	if err != nil {
+		return nil, err
+	}
+
+	streamCfg := c.config.Channels.Telegram.Streaming
+	return &telegramStreamer{
+		bot:              c.bot,
+		chatID:           cid,
+		draftID:          cryptoRandInt(),
+		throttleInterval: time.Duration(streamCfg.ThrottleSeconds) * time.Second,
+		minGrowth:        streamCfg.MinGrowthChars,
+	}, nil
+}
+
+// telegramStreamer streams partial LLM output via Telegram's sendMessageDraft API.
+// On first API error (e.g. bot lacks forum mode), it silently degrades: Update
+// becomes a no-op, while Finalize still delivers the final message.
+type telegramStreamer struct {
+	bot              *telego.Bot
+	chatID           int64
+	draftID          int
+	throttleInterval time.Duration
+	minGrowth        int
+	lastLen          int
+	lastAt           time.Time
+	failed           bool
+	mu               sync.Mutex
+}
+
+func (s *telegramStreamer) Update(ctx context.Context, content string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failed {
+		return nil
+	}
+
+	// Throttle: skip if not enough time or content has passed
+	now := time.Now()
+	growth := len(content) - s.lastLen
+	if s.lastLen > 0 && now.Sub(s.lastAt) < s.throttleInterval && growth < s.minGrowth {
+		return nil
+	}
+
+	htmlContent := markdownToTelegramHTML(content)
+
+	err := s.bot.SendMessageDraft(ctx, &telego.SendMessageDraftParams{
+		ChatID:    s.chatID,
+		DraftID:   s.draftID,
+		Text:      htmlContent,
+		ParseMode: telego.ModeHTML,
+	})
+	if err != nil {
+		// First error → degrade silently (e.g. no forum mode)
+		logger.WarnCF("telegram", "sendMessageDraft failed, disabling streaming", map[string]any{
+			"error": err.Error(),
+		})
+		s.failed = true
+		return nil // don't propagate — Finalize will still deliver
+	}
+
+	s.lastLen = len(content)
+	s.lastAt = now
+	return nil
+}
+
+func (s *telegramStreamer) Finalize(ctx context.Context, content string) error {
+	htmlContent := markdownToTelegramHTML(content)
+	tgMsg := tu.Message(tu.ID(s.chatID), htmlContent)
+	tgMsg.ParseMode = telego.ModeHTML
+
+	if _, err := s.bot.SendMessage(ctx, tgMsg); err != nil {
+		// Fallback to plain text
+		tgMsg.ParseMode = ""
+		if _, err = s.bot.SendMessage(ctx, tgMsg); err != nil {
+			logger.ErrorCF("telegram", "Finalize failed after HTML and plain-text attempts", map[string]any{
+				"chat_id": s.chatID,
+				"error":   err.Error(),
+				"len":     len(content),
+			})
+			return fmt.Errorf("telegram finalize: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *telegramStreamer) Cancel(ctx context.Context) {
+	// Draft auto-expires on Telegram's side; nothing to clean up.
+}
+
+// cryptoRandInt returns a non-zero random int using crypto/rand.
+func cryptoRandInt() int {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return int(binary.BigEndian.Uint32(b[:])) | 1 // ensure non-zero
 }

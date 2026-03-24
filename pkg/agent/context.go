@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -59,7 +60,7 @@ func getGlobalConfigDir() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".picoclaw")
+	return filepath.Join(home, pkg.DefaultPicoClawHome)
 }
 
 func NewContextBuilder(workspace string) *ContextBuilder {
@@ -222,13 +223,10 @@ func (cb *ContextBuilder) InvalidateCache() {
 // invalidation (bootstrap files + memory). Skill roots are handled separately
 // because they require both directory-level and recursive file-level checks.
 func (cb *ContextBuilder) sourcePaths() []string {
-	return []string{
-		filepath.Join(cb.workspace, "AGENTS.md"),
-		filepath.Join(cb.workspace, "SOUL.md"),
-		filepath.Join(cb.workspace, "USER.md"),
-		filepath.Join(cb.workspace, "IDENTITY.md"),
-		filepath.Join(cb.workspace, "memory", "MEMORY.md"),
-	}
+	agentDefinition := cb.LoadAgentDefinition()
+	paths := agentDefinition.trackedPaths(cb.workspace)
+	paths = append(paths, filepath.Join(cb.workspace, "memory", "MEMORY.md"))
+	return uniquePaths(paths)
 }
 
 // skillRoots returns all skill root directories that can affect
@@ -432,18 +430,32 @@ func skillFilesChangedSince(skillRoots []string, filesAtCache map[string]time.Ti
 }
 
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
-	bootstrapFiles := []string{
-		"AGENTS.md",
-		"SOUL.md",
-		"USER.md",
-		"IDENTITY.md",
+	var sb strings.Builder
+
+	agentDefinition := cb.LoadAgentDefinition()
+	if agentDefinition.Agent != nil {
+		label := string(agentDefinition.Source)
+		if label == "" {
+			label = relativeWorkspacePath(cb.workspace, agentDefinition.Agent.Path)
+		}
+		fmt.Fprintf(&sb, "## %s\n\n%s\n\n", label, agentDefinition.Agent.Body)
+	}
+	if agentDefinition.Soul != nil {
+		fmt.Fprintf(
+			&sb,
+			"## %s\n\n%s\n\n",
+			relativeWorkspacePath(cb.workspace, agentDefinition.Soul.Path),
+			agentDefinition.Soul.Content,
+		)
+	}
+	if agentDefinition.User != nil {
+		fmt.Fprintf(&sb, "## %s\n\n%s\n\n", "USER.md", agentDefinition.User.Content)
 	}
 
-	var sb strings.Builder
-	for _, filename := range bootstrapFiles {
-		filePath := filepath.Join(cb.workspace, filename)
+	if agentDefinition.Source != AgentDefinitionSourceAgent {
+		filePath := filepath.Join(cb.workspace, "IDENTITY.md")
 		if data, err := os.ReadFile(filePath); err == nil {
-			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, data)
+			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", "IDENTITY.md", data)
 		}
 	}
 
@@ -497,6 +509,7 @@ func (cb *ContextBuilder) BuildMessages(
 	currentMessage string,
 	media []string,
 	channel, chatID, senderID, senderDisplayName string,
+	activeSkills ...string,
 ) []providers.Message {
 	messages := []providers.Message{}
 
@@ -528,6 +541,11 @@ func (cb *ContextBuilder) BuildMessages(
 	contentBlocks := []providers.ContentBlock{
 		{Type: "text", Text: staticPrompt, CacheControl: &providers.CacheControl{Type: "ephemeral"}},
 		{Type: "text", Text: dynamicCtx},
+	}
+
+	if skillsText := cb.buildActiveSkillsContext(activeSkills); skillsText != "" {
+		stringParts = append(stringParts, skillsText)
+		contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: skillsText})
 	}
 
 	if summary != "" {
@@ -660,8 +678,21 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 	// like DeepSeek that enforce: "An assistant message with 'tool_calls' must
 	// be followed by tool messages responding to each 'tool_call_id'."
 	final := make([]providers.Message, 0, len(sanitized))
+	seenToolCallID := make(map[string]bool)
 	for i := 0; i < len(sanitized); i++ {
 		msg := sanitized[i]
+
+		// Deduplicate tool results by ToolCallID
+		if msg.Role == "tool" && msg.ToolCallID != "" {
+			if seenToolCallID[msg.ToolCallID] {
+				logger.DebugCF("agent", "Dropping duplicate tool result", map[string]any{
+					"tool_call_id": msg.ToolCallID,
+				})
+				continue
+			}
+			seenToolCallID[msg.ToolCallID] = true
+		}
+
 		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
 			// Collect expected tool_call IDs
 			expected := make(map[string]bool, len(msg.ToolCalls))
@@ -735,6 +766,68 @@ func (cb *ContextBuilder) AddAssistantMessage(
 	// Always add assistant message, whether or not it has tool calls
 	messages = append(messages, msg)
 	return messages
+}
+
+func (cb *ContextBuilder) buildActiveSkillsContext(skillNames []string) string {
+	if cb.skillsLoader == nil || len(skillNames) == 0 {
+		return ""
+	}
+
+	var ordered []string
+	seen := make(map[string]struct{}, len(skillNames))
+	for _, name := range skillNames {
+		canonical, ok := cb.ResolveSkillName(name)
+		if !ok {
+			continue
+		}
+		if _, exists := seen[canonical]; exists {
+			continue
+		}
+		seen[canonical] = struct{}{}
+		ordered = append(ordered, canonical)
+	}
+	if len(ordered) == 0 {
+		return ""
+	}
+
+	content := cb.skillsLoader.LoadSkillsForContext(ordered)
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(`# Active Skills
+
+The following skills are active for this request. Follow them when relevant.
+
+%s`, content)
+}
+
+func (cb *ContextBuilder) ListSkillNames() []string {
+	if cb.skillsLoader == nil {
+		return nil
+	}
+
+	allSkills := cb.skillsLoader.ListSkills()
+	names := make([]string, 0, len(allSkills))
+	for _, skill := range allSkills {
+		names = append(names, skill.Name)
+	}
+	return names
+}
+
+func (cb *ContextBuilder) ResolveSkillName(name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" || cb.skillsLoader == nil {
+		return "", false
+	}
+
+	for _, skill := range cb.skillsLoader.ListSkills() {
+		if strings.EqualFold(skill.Name, name) {
+			return skill.Name, true
+		}
+	}
+
+	return "", false
 }
 
 // GetSkillsInfo returns information about loaded skills.

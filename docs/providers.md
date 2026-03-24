@@ -5,7 +5,7 @@
 ### Providers
 
 > [!NOTE]
-> Groq provides free voice transcription via Whisper. If configured, audio messages from any channel will be automatically transcribed at the agent level.
+> Voice transcription can use a configured multimodal model via `voice.model_name`. Groq Whisper remains available as a fallback when no voice model is configured.
 
 | Provider     | Purpose                                 | Get API Key                                                  |
 | ------------ | --------------------------------------- | ------------------------------------------------------------ |
@@ -95,7 +95,34 @@ This design also enables **multi-agent support** with flexible provider selectio
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-5.4"
+      "model_name": "gpt-5.4"
+    }
+  }
+}
+```
+
+#### Voice Transcription
+
+You can configure a dedicated model for audio transcription with `voice.model_name`. This lets you reuse existing multimodal providers that support audio input instead of relying only on Groq.
+
+If `voice.model_name` is not configured, PicoClaw will continue to fall back to Groq transcription when a Groq API key is available.
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "voice-gemini",
+      "model": "gemini/gemini-2.5-flash",
+      "api_key": "your-gemini-key"
+    }
+  ],
+  "voice": {
+    "model_name": "voice-gemini",
+    "echo_transcription": false
+  },
+  "providers": {
+    "groq": {
+      "api_key": "gsk_xxx"
     }
   }
 }
@@ -268,13 +295,13 @@ The old `providers` configuration is **deprecated** but still supported for back
   ],
   "agents": {
     "defaults": {
-      "model": "glm-4.7"
+      "model_name": "glm-4.7"
     }
   }
 }
 ```
 
-For detailed migration guide, see [docs/migration/model-list-migration.md](docs/migration/model-list-migration.md).
+For detailed migration guide, see [migration/model-list-migration.md](migration/model-list-migration.md).
 
 ### Provider Architecture
 
@@ -300,7 +327,7 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
+      "model_name": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -330,12 +357,11 @@ picoclaw agent -m "Hello"
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model_name": "anthropic/claude-opus-4-5"
     }
   },
   "session": {
-    "dm_scope": "per-channel-peer",
-    "backlog_limit": 20
+    "dm_scope": "per-channel-peer"
   },
   "providers": {
     "openrouter": {
@@ -344,6 +370,10 @@ picoclaw agent -m "Hello"
     "groq": {
       "api_key": "gsk_xxx"
     }
+  },
+  "voice": {
+    "model_name": "voice-gemini",
+    "echo_transcription": false
   },
   "channels": {
     "telegram": {

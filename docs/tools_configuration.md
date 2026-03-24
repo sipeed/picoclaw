@@ -26,6 +26,17 @@ PicoClaw's tools configuration is located in the `tools` field of `config.json`.
 }
 ```
 
+## Sensitive Data Filtering
+
+Before tool results are sent to the LLM, PicoClaw can filter sensitive values (API keys, tokens, secrets) from the output. This prevents the LLM from seeing its own credentials.
+
+See [Sensitive Data Filtering](../sensitive_data_filtering.md) for full documentation.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `filter_sensitive_data` | bool | `true` | Enable/disable filtering |
+| `filter_min_length` | int | `8` | Minimum content length to trigger filtering |
+
 ## Web Tools
 
 Web tools are used for web search and fetching.
@@ -41,11 +52,12 @@ General settings for fetching and processing webpage content.
 
 ### Brave
 
-| Config        | Type   | Default | Description               |
-|---------------|--------|---------|---------------------------|
-| `enabled`     | bool   | false   | Enable Brave search       |
-| `api_key`     | string | -       | Brave Search API key      |
-| `max_results` | int    | 5       | Maximum number of results |
+| Config        | Type     | Default | Description                                    |
+|---------------|----------|---------|------------------------------------------------|
+| `enabled`     | bool     | false   | Enable Brave search                            |
+| `api_key`     | string   | -       | Brave Search API key                           |
+| `api_keys`    | string[] | -       | Multiple API keys for rotation (takes priority over `api_key`) |
+| `max_results` | int      | 5       | Maximum number of results                      |
 
 ### DuckDuckGo
 
@@ -54,13 +66,73 @@ General settings for fetching and processing webpage content.
 | `enabled`     | bool | true    | Enable DuckDuckGo search  |
 | `max_results` | int  | 5       | Maximum number of results |
 
+### Baidu Search
+
+Baidu Search uses the [Qianfan AI Search API](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5), which is AI-powered and optimized for Chinese-language queries.
+
+| Config        | Type   | Default                                                          | Description               |
+|---------------|--------|------------------------------------------------------------------|---------------------------|
+| `enabled`     | bool   | false                                                            | Enable Baidu Search       |
+| `api_key`     | string | -                                                                | Qianfan API key           |
+| `base_url`    | string | `https://qianfan.baidubce.com/v2/ai_search/web_search`          | Baidu Search API URL      |
+| `max_results` | int    | 10                                                               | Maximum number of results |
+
+```json
+{
+  "tools": {
+    "web": {
+      "baidu_search": {
+        "enabled": true,
+        "api_key": "YOUR_BAIDU_QIANFAN_API_KEY",
+        "max_results": 10
+      }
+    }
+  }
+}
+```
+
 ### Perplexity
+
+| Config        | Type     | Default | Description                                    |
+|---------------|----------|---------|------------------------------------------------|
+| `enabled`     | bool     | false   | Enable Perplexity search                       |
+| `api_key`     | string   | -       | Perplexity API key                             |
+| `api_keys`    | string[] | -       | Multiple API keys for rotation (takes priority over `api_key`) |
+| `max_results` | int      | 5       | Maximum number of results                      |
+
+### Tavily
 
 | Config        | Type   | Default | Description               |
 |---------------|--------|---------|---------------------------|
-| `enabled`     | bool   | false   | Enable Perplexity search  |
-| `api_key`     | string | -       | Perplexity API key        |
-| `max_results` | int    | 5       | Maximum number of results |
+| `enabled`     | bool   | false   | Enable Tavily search      |
+| `api_key`     | string | -       | Tavily API key            |
+| `base_url`    | string | -       | Custom Tavily API base URL |
+| `max_results` | int    | 0       | Maximum number of results (0 = default) |
+
+### SearXNG
+
+| Config        | Type   | Default                  | Description               |
+|---------------|--------|--------------------------|---------------------------|
+| `enabled`     | bool   | false                    | Enable SearXNG search     |
+| `base_url`    | string | `http://localhost:8888`  | SearXNG instance URL      |
+| `max_results` | int    | 5                        | Maximum number of results |
+
+### GLM Search
+
+| Config          | Type   | Default                                              | Description               |
+|-----------------|--------|------------------------------------------------------|---------------------------|
+| `enabled`       | bool   | false                                                | Enable GLM Search         |
+| `api_key`       | string | -                                                    | GLM API key               |
+| `base_url`      | string | `https://open.bigmodel.cn/api/paas/v4/web_search`   | GLM Search API URL        |
+| `search_engine` | string | `search_std`                                         | Search engine type        |
+| `max_results`   | int    | 5                                                    | Maximum number of results |
+
+### Additional Web Settings
+
+| Config                   | Type     | Default | Description                                                    |
+|--------------------------|----------|---------|----------------------------------------------------------------|
+| `prefer_native`          | bool     | true    | Prefer provider's native search over configured search engines |
+| `private_host_whitelist` | string[] | `[]`    | Private/internal hosts allowed for web fetching                |
 
 ## Exec Tool
 
@@ -155,6 +227,7 @@ The cron tool is used for scheduling periodic tasks.
 | Config                 | Type | Default | Description                                    |
 |------------------------|------|---------|------------------------------------------------|
 | `exec_timeout_minutes` | int  | 5       | Execution timeout in minutes, 0 means no limit |
+| `allow_command`        | bool | false   | Allow cron tasks to execute shell commands      |
 
 ## MCP Tool
 
@@ -370,9 +443,27 @@ The skills tool configures skill discovery and installation via registries like 
 | `registries.clawhub.enabled`       | bool   | true                 | Enable ClawHub registry                      |
 | `registries.clawhub.base_url`      | string | `https://clawhub.ai` | ClawHub base URL                             |
 | `registries.clawhub.auth_token`    | string | `""`                 | Optional Bearer token for higher rate limits |
-| `registries.clawhub.search_path`   | string | `/api/v1/search`     | Search API path                              |
-| `registries.clawhub.skills_path`   | string | `/api/v1/skills`     | Skills API path                              |
-| `registries.clawhub.download_path` | string | `/api/v1/download`   | Download API path                            |
+| `registries.clawhub.search_path`   | string | `""`                 | Search API path                              |
+| `registries.clawhub.skills_path`   | string | `""`                 | Skills API path                              |
+| `registries.clawhub.download_path` | string | `""`                 | Download API path                            |
+| `registries.clawhub.timeout`       | int    | 0                    | Request timeout in seconds (0 = default)     |
+| `registries.clawhub.max_zip_size`  | int    | 0                    | Max skill zip size in bytes (0 = default)    |
+| `registries.clawhub.max_response_size` | int | 0                   | Max API response size in bytes (0 = default) |
+
+### GitHub Integration
+
+| Config           | Type   | Default | Description                          |
+|------------------|--------|---------|--------------------------------------|
+| `github.proxy`   | string | `""`    | HTTP proxy for GitHub API requests   |
+| `github.token`   | string | `""`    | GitHub personal access token         |
+
+### Search Settings
+
+| Config                    | Type | Default | Description                                |
+|---------------------------|------|---------|--------------------------------------------|
+| `max_concurrent_searches` | int  | 2       | Max concurrent skill search requests       |
+| `search_cache.max_size`   | int  | 50      | Max cached search results                  |
+| `search_cache.ttl_seconds`| int  | 300     | Cache TTL in seconds                       |
 
 ### Configuration Example
 
@@ -384,11 +475,17 @@ The skills tool configures skill discovery and installation via registries like 
         "clawhub": {
           "enabled": true,
           "base_url": "https://clawhub.ai",
-          "auth_token": "",
-          "search_path": "/api/v1/search",
-          "skills_path": "/api/v1/skills",
-          "download_path": "/api/v1/download"
+          "auth_token": ""
         }
+      },
+      "github": {
+        "proxy": "",
+        "token": ""
+      },
+      "max_concurrent_searches": 2,
+      "search_cache": {
+        "max_size": 50,
+        "ttl_seconds": 300
       }
     }
   }

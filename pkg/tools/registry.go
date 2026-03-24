@@ -384,3 +384,22 @@ func (r *ToolRegistry) GetSummaries() []string {
 	}
 	return summaries
 }
+
+// GetAll returns all registered tools (both core and non-core with TTL > 0).
+// Used by SubTurn to inherit parent's tool set.
+func (r *ToolRegistry) GetAll() []Tool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sorted := r.sortedToolNames()
+	tools := make([]Tool, 0, len(sorted))
+	for _, name := range sorted {
+		entry := r.tools[name]
+
+		// Include core tools and non-core tools with active TTL
+		if entry.IsCore || entry.TTL > 0 {
+			tools = append(tools, entry.Tool)
+		}
+	}
+	return tools
+}

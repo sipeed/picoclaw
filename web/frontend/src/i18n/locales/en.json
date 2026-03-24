@@ -17,7 +17,7 @@
   "chat": {
     "welcome": "How can I help you today?",
     "welcomeDesc": "Ask me about weather, settings, or any other tasks. I'm here to assist you.",
-    "placeholder": "Start a new message...",
+    "placeholder": "Start a new message...\nPress Enter to send, Shift + Enter for a new line",
     "newChat": "New Chat",
     "notConnected": "Gateway is not running. Start it to chat.",
     "thinking": {
@@ -396,6 +396,10 @@
       "workspace_hint": "Base directory for agent file operations.",
       "restrict_workspace": "Restrict to Workspace",
       "restrict_workspace_hint": "Only allow file operations inside workspace.",
+      "tool_feedback_enabled": "Tool Feedback",
+      "tool_feedback_enabled_hint": "Send a short tool-call preview into the current chat before each tool execution.",
+      "tool_feedback_max_args_length": "Tool Feedback Args Preview Length",
+      "tool_feedback_max_args_length_hint": "Maximum number of argument characters shown in each tool feedback message. Set to 0 to use the default.",
       "exec_enabled": "Allow Commands",
       "exec_enabled_hint": "Enable or disable command execution for the app. When disabled, no command requests will run.",
       "allow_remote": "Allow Remote Commands",
@@ -415,6 +419,8 @@
       "cron_exec_timeout_hint": "Maximum runtime for scheduled commands. Set to 0 to disable the timeout.",
       "max_tokens": "Max Tokens",
       "max_tokens_hint": "Upper token limit per model response.",
+      "context_window": "Context Window",
+      "context_window_hint": "Model input context capacity in tokens. Leave empty to use the default (4x max tokens).",
       "max_tool_iterations": "Max Tool Iterations",
       "max_tool_iterations_hint": "Maximum tool-call loops in a single task.",
       "summarize_threshold": "Summarize Message Threshold",

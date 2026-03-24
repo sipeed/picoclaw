@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,9 +16,21 @@ import (
 	"github.com/sipeed/picoclaw/pkg/media"
 )
 
+var audioExtensions = []string{".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma"}
+
+func AudioFormat(path string) (string, error) {
+	ext := strings.ToLower(filepath.Ext(path))
+	for _, supportedExt := range audioExtensions {
+		if ext == supportedExt {
+			return strings.TrimPrefix(ext, "."), nil
+		}
+	}
+
+	return "", fmt.Errorf("unsupported audio format for %q", path)
+}
+
 // IsAudioFile checks if a file is an audio file based on its filename extension and content type.
 func IsAudioFile(filename, contentType string) bool {
-	audioExtensions := []string{".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma"}
 	audioTypes := []string{"audio/", "application/ogg", "application/x-ogg"}
 
 	for _, ext := range audioExtensions {

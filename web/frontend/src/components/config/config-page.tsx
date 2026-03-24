@@ -147,10 +147,18 @@ export function ConfigPage() {
         const maxTokens = parseIntField(form.maxTokens, "Max tokens", {
           min: 1,
         })
+        const contextWindow = form.contextWindow.trim()
+          ? parseIntField(form.contextWindow, "Context window", { min: 1 })
+          : undefined
         const maxToolIterations = parseIntField(
           form.maxToolIterations,
           "Max tool iterations",
           { min: 1 },
+        )
+        const toolFeedbackMaxArgsLength = parseIntField(
+          form.toolFeedbackMaxArgsLength,
+          "Tool feedback max args length",
+          { min: 0 },
         )
         const summarizeMessageThreshold = parseIntField(
           form.summarizeMessageThreshold,
@@ -200,7 +208,12 @@ export function ConfigPage() {
             defaults: {
               workspace,
               restrict_to_workspace: form.restrictToWorkspace,
+              tool_feedback: {
+                enabled: form.toolFeedbackEnabled,
+                max_args_length: toolFeedbackMaxArgsLength,
+              },
               max_tokens: maxTokens,
+              context_window: contextWindow,
               max_tool_iterations: maxToolIterations,
               summarize_message_threshold: summarizeMessageThreshold,
               summarize_token_percent: summarizeTokenPercent,

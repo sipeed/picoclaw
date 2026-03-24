@@ -82,7 +82,7 @@ type WeComBotReplyMessage struct {
 
 // NewWeComBotChannel creates a new WeCom Bot channel instance
 func NewWeComBotChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*WeComBotChannel, error) {
-	if cfg.Token == "" || cfg.WebhookURL == "" {
+	if cfg.Token() == "" || cfg.WebhookURL == "" {
 		return nil, fmt.Errorf("wecom token and webhook_url are required")
 	}
 
@@ -216,7 +216,7 @@ func (c *WeComBotChannel) handleVerification(ctx context.Context, w http.Respons
 	}
 
 	// Verify signature
-	if !verifySignature(c.config.Token, msgSignature, timestamp, nonce, echostr) {
+	if !verifySignature(c.config.Token(), msgSignature, timestamp, nonce, echostr) {
 		logger.WarnC("wecom", "Signature verification failed")
 		http.Error(w, "Invalid signature", http.StatusForbidden)
 		return
@@ -225,7 +225,7 @@ func (c *WeComBotChannel) handleVerification(ctx context.Context, w http.Respons
 	// Decrypt echostr
 	// For AIBOT (智能机器人), receiveid should be empty string ""
 	// Reference: https://developer.work.weixin.qq.com/document/path/101033
-	decryptedEchoStr, err := decryptMessageWithVerify(echostr, c.config.EncodingAESKey, "")
+	decryptedEchoStr, err := decryptMessageWithVerify(echostr, c.config.EncodingAESKey(), "")
 	if err != nil {
 		logger.ErrorCF("wecom", "Failed to decrypt echostr", map[string]any{
 			"error": err.Error(),
@@ -278,7 +278,7 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	}
 
 	// Verify signature
-	if !verifySignature(c.config.Token, msgSignature, timestamp, nonce, encryptedMsg.Encrypt) {
+	if !verifySignature(c.config.Token(), msgSignature, timestamp, nonce, encryptedMsg.Encrypt) {
 		logger.WarnC("wecom", "Message signature verification failed")
 		http.Error(w, "Invalid signature", http.StatusForbidden)
 		return
@@ -287,7 +287,7 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	// Decrypt message
 	// For AIBOT (智能机器人), receiveid should be empty string ""
 	// Reference: https://developer.work.weixin.qq.com/document/path/101033
-	decryptedMsg, err := decryptMessageWithVerify(encryptedMsg.Encrypt, c.config.EncodingAESKey, "")
+	decryptedMsg, err := decryptMessageWithVerify(encryptedMsg.Encrypt, c.config.EncodingAESKey(), "")
 	if err != nil {
 		logger.ErrorCF("wecom", "Failed to decrypt message", map[string]any{
 			"error": err.Error(),
