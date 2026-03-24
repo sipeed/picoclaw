@@ -171,7 +171,7 @@ func (h *Handler) handlePollWeixinFlow(w http.ResponseWriter, r *http.Request) {
 			h.setWeixinFlowError(flowID, "login confirmed but missing bot_token")
 			break
 		}
-		if saveErr := h.saveWeixinToken(statusResp.BotToken, statusResp.IlinkBotID); saveErr != nil {
+		if saveErr := h.saveWeixinBinding(statusResp.BotToken, statusResp.IlinkBotID); saveErr != nil {
 			h.setWeixinFlowError(flowID, fmt.Sprintf("failed to save token: %v", saveErr))
 			logger.ErrorCF("weixin", "failed to save token", map[string]any{"error": saveErr.Error()})
 			break
@@ -203,17 +203,34 @@ func (h *Handler) handlePollWeixinFlow(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// saveWeixinToken writes the token and account ID into the config file.
-func (h *Handler) saveWeixinToken(token, accountID string) error {
+// saveWeixinBinding writes the token/account ID, enables the Weixin channel,
+// and best-effort restarts the gateway when it is currently running.
+func (h *Handler) saveWeixinBinding(token, accountID string) error {
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 	cfg.Channels.Weixin.SetToken(token)
+	cfg.Channels.Weixin.Enabled = true
 	if accountID != "" {
 		cfg.Channels.Weixin.AccountID = accountID
 	}
-	return config.SaveConfig(h.configPath, cfg)
+	if err := config.SaveConfig(h.configPath, cfg); err != nil {
+		return err
+	}
+
+	status := h.gatewayStatusData()
+	gatewayStatus, _ := status["gateway_status"].(string)
+	if gatewayStatus != "running" {
+		return nil
+	}
+
+	if _, err := h.RestartGateway(); err != nil {
+		logger.ErrorCF("weixin", "failed to restart gateway after saving binding", map[string]any{
+			"error": err.Error(),
+		})
+	}
+	return nil
 }
 
 // generateQRDataURI encodes content as a QR code PNG and returns a data URI.

@@ -76,8 +76,12 @@ export async function startWeixinFlow(): Promise<WeixinFlowResponse> {
   return request<WeixinFlowResponse>("/api/weixin/flows", { method: "POST" })
 }
 
-export async function pollWeixinFlow(flowID: string): Promise<WeixinFlowResponse> {
-  return request<WeixinFlowResponse>(`/api/weixin/flows/${encodeURIComponent(flowID)}`)
+export async function pollWeixinFlow(
+  flowID: string,
+): Promise<WeixinFlowResponse> {
+  return request<WeixinFlowResponse>(
+    `/api/weixin/flows/${encodeURIComponent(flowID)}`,
+  )
 }
 
 export type { ChannelsCatalogResponse, ConfigActionResponse }

@@ -244,6 +244,9 @@
       "weixin": "WeChat"
     },
     "weixin": {
+      "warningTitle": "Testing phase, use with caution",
+      "warningDesc": "The WeChat channel is still experimental and may carry a risk of account suspension. Use it only if you understand and accept the risk.",
+      "bindEnableSuccess": "WeChat connected and the channel has been enabled automatically.",
       "bindTitle": "WeChat Account Binding",
       "bindDesc": "Scan the QR code with WeChat to bind your personal account.",
       "bind": "Bind WeChat",
@@ -289,7 +292,9 @@
       "saveError": "Failed to save channel configuration",
       "enabled": "enabled",
       "docLink": "Documentation",
-      "enableLabel": "Enable channel"
+      "enableLabel": "Enable channel",
+      "restartRequiredTitle": "Gateway restart required",
+      "restartRequiredDesc": "The latest {{name}} configuration has been saved. Restart the gateway for it to take effect."
     },
     "form": {
       "desc": {
