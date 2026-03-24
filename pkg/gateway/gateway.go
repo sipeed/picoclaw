@@ -155,7 +155,19 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		}
 	}
 	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
+	runningServices.HealthServer.SetAPIKey(cfg.Gateway.APIKey)
 	agentLoop.SetReloadFunc(reloadTrigger)
+
+	// Setup synchronous /chat endpoint handler
+	if cfg.Gateway.ChatEnabled {
+		runningServices.HealthServer.SetChatFunc(func(ctx context.Context, message, sessionID string) (string, error) {
+			if sessionID == "" {
+				sessionID = "http-chat"
+			}
+			return agentLoop.ProcessDirectWithChannel(ctx, message, sessionID, "http", "chat")
+		})
+	}
+
 
 	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop")

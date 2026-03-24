@@ -464,6 +464,10 @@ type DiscordConfig struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-"               env:"PICOCLAW_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
 }
 
+func (c *DiscordConfig) SetToken(token string) {
+	c.Token = *NewSecureString(token)
+}
+
 type MaixCamConfig struct {
 	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_MAIXCAM_ENABLED"`
 	Host               string              `json:"host"                 env:"PICOCLAW_CHANNELS_MAIXCAM_HOST"`
@@ -502,6 +506,14 @@ type SlackConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"        yaml:"-"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"   yaml:"-"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-"                   env:"PICOCLAW_CHANNELS_SLACK_REASONING_CHANNEL_ID"`
+}
+
+func (c *SlackConfig) SetBotToken(token string) {
+	c.BotToken = *NewSecureString(token)
+}
+
+func (c *SlackConfig) SetAppToken(token string) {
+	c.AppToken = *NewSecureString(token)
 }
 
 type MatrixConfig struct {
@@ -680,6 +692,24 @@ type ModelConfig struct {
 	isVirtual bool
 }
 
+func (c *ModelConfig) UnmarshalJSON(data []byte) error {
+	type Alias ModelConfig
+	aux := &struct {
+		APIKey  string   `json:"api_key"`
+		APIKeys []string `json:"api_keys"`
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	c.apiKeys = MergeAPIKeys(aux.APIKey, aux.APIKeys)
+	return nil
+}
+
 // APIKey returns the first API key from apiKeys
 func (c *ModelConfig) APIKey() string {
 	if len(c.APIKeys) > 0 {
@@ -713,10 +743,12 @@ func (c *ModelConfig) SetAPIKey(value string) {
 }
 
 type GatewayConfig struct {
-	Host      string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
-	Port      int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
-	HotReload bool   `json:"hot_reload"          env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
-	LogLevel  string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
+	Host        string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
+	Port        int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
+	APIKey      string `json:"api_key"             env:"PICOCLAW_GATEWAY_API_KEY"`
+	ChatEnabled bool   `json:"chat_enabled"        env:"PICOCLAW_GATEWAY_CHAT_ENABLED"`
+	HotReload   bool   `json:"hot_reload"          env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
+	LogLevel    string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
 }
 
 type ToolDiscoveryConfig struct {
@@ -873,6 +905,8 @@ type SkillsToolsConfig struct {
 	Github                SkillsGithubConfig     `yaml:"github,omitempty"                                     json:"github"`
 	MaxConcurrentSearches int                    `yaml:"-"                                                    json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
 	SearchCache           SearchCacheConfig      `yaml:"-"                                                    json:"search_cache"`
+	Whitelist             FlexibleStringSlice    `json:"whitelist,omitempty"                                  env:"PICOCLAW_TOOLS_SKILLS_WHITELIST"`
+	WhitelistEnabled      bool                   `json:"whitelist_enabled,omitempty"                          env:"PICOCLAW_TOOLS_SKILLS_WHITELIST_ENABLED"`
 }
 
 type MediaCleanupConfig struct {
@@ -902,7 +936,9 @@ type ToolsConfig struct {
 	Exec            ExecConfig         `json:"exec"              yaml:"-"`
 	Skills          SkillsToolsConfig  `json:"skills"            yaml:"skills,omitempty"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"     yaml:"-"`
-	MCP             MCPConfig          `json:"mcp"               yaml:"-"`
+	Whitelist        FlexibleStringSlice `json:"whitelist,omitempty"         yaml:"-" env:"PICOCLAW_TOOLS_WHITELIST"`
+	WhitelistEnabled bool                `json:"whitelist_enabled,omitempty" yaml:"-" env:"PICOCLAW_TOOLS_WHITELIST_ENABLED"`
+	MCP             MCPConfig          `json:"mcp"               yaml:"-""`
 	AppendFile      ToolConfig         `json:"append_file"       yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_APPEND_FILE_"`
 	EditFile        ToolConfig         `json:"edit_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_EDIT_FILE_"`
 	FindSkills      ToolConfig         `json:"find_skills"       yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_FIND_SKILLS_"`
