@@ -107,7 +107,9 @@ func RunToolLoop(
 					Content: "[SYSTEM] Token budget has been exhausted. Stop all tool calls immediately and return the best result you have completed so far. Do not call any more tools.",
 				})
 				// One final LLM call to get a summary/wrap-up from the model
-				if finalResp, err := config.Provider.Chat(ctx, messages, nil, config.Model, config.LLMOptions); err == nil {
+				if finalResp, err := config.Provider.Chat(
+					ctx, messages, nil, config.Model, config.LLMOptions,
+				); err == nil {
 					finalContent = finalResp.Content
 				}
 				break
