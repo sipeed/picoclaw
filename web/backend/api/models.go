@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // registerModelRoutes binds model list management endpoints to the ServeMux.
@@ -158,7 +159,12 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var mc config.ModelConfig
+	type custom struct {
+		config.ModelConfig
+		APIKey string `json:"api_key"`
+	}
+
+	var mc custom
 	if err = json.Unmarshal(body, &mc); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
@@ -182,14 +188,18 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 
 	// Preserve the existing API key when the caller omits it (empty string).
 	// This lets the UI update api_base / proxy without clearing the stored secret.
-	if mc.APIKey() == "" {
-		mc.SetAPIKey(cfg.ModelList[idx].APIKey())
+	if mc.APIKey == "" {
+		mc.ModelConfig.SetAPIKey(cfg.ModelList[idx].APIKey())
+	} else {
+		mc.ModelConfig.SetAPIKey(mc.APIKey)
 	}
 	if mc.ExtraBody == nil {
 		mc.ExtraBody = cfg.ModelList[idx].ExtraBody
 	}
 
-	cfg.ModelList[idx] = &mc
+	cfg.ModelList[idx] = &mc.ModelConfig
+
+	logger.Debugf("update model config: %#v", mc.ModelConfig)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)

@@ -4,13 +4,20 @@ export function maskedSecretPlaceholder(value: unknown, fallback = ""): string {
     return fallback
   }
 
-  if (secret.length < 7) {
+  // ensure at least 40% of the characters are masked for secrets of length 4 or more
+  if (secret.length <= 6) {
     const first = secret[0]
     const last = secret[secret.length - 1]
     return `${first}***${last}`
   }
 
-  const prefix = secret.slice(0, Math.min(3, secret.length))
-  const suffix = secret.slice(-Math.min(4, secret.length))
-  return `${prefix}***${suffix}`
+  if (secret.length <= 12) {
+    const firstTwo = secret.slice(0, 2)
+    const lastTwo = secret.slice(-2)
+    return `${firstTwo}****${lastTwo}`
+  }
+
+  const prefix = secret.slice(0, 3)
+  const suffix = secret.slice(-4)
+  return `${prefix}*****${suffix}`
 }
