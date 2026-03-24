@@ -254,7 +254,7 @@ test: generate
 
 ## fmt: Format Go code
 fmt:
-	@$(GOLANGCI_LINT) fmt
+	@gofmt -s -w $$(find . -name "*.go" -not -path "./web/*" -not -path "./vendor/*")
 
 ## lint: Run linters
 lint:
