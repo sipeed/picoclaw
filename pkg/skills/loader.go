@@ -63,6 +63,8 @@ type SkillsLoader struct {
 	workspaceSkills string // workspace skills (project-level)
 	globalSkills    string // global skills (~/.picoclaw/skills)
 	builtinSkills   string // builtin skills
+	whitelist        []string
+	whitelistEnabled bool
 }
 
 // SkillRoots returns all unique skill root directories used by this loader.
@@ -88,18 +90,32 @@ func (sl *SkillsLoader) SkillRoots() []string {
 	return out
 }
 
-func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string) *SkillsLoader {
+func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string, whitelist []string, whitelistEnabled bool) *SkillsLoader {
 	return &SkillsLoader{
 		workspace:       workspace,
 		workspaceSkills: filepath.Join(workspace, "skills"),
 		globalSkills:    globalSkills, // ~/.picoclaw/skills
 		builtinSkills:   builtinSkills,
+		whitelist:       whitelist,
+		whitelistEnabled: whitelistEnabled,
 	}
 }
 
 func (sl *SkillsLoader) ListSkills() []SkillInfo {
 	skills := make([]SkillInfo, 0)
 	seen := make(map[string]bool)
+
+	isWhitelisted := func(name string) bool {
+		if !sl.whitelistEnabled {
+			return true
+		}
+		for _, w := range sl.whitelist {
+			if w == name {
+				return true
+			}
+		}
+		return false
+	}
 
 	addSkills := func(dir, source string) {
 		if dir == "" {
@@ -113,6 +129,12 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 			if !d.IsDir() {
 				continue
 			}
+
+			// First check if whitelisted before doing more expensive operations.
+			if !isWhitelisted(d.Name()) {
+				continue
+			}
+
 			skillFile := filepath.Join(dir, d.Name(), "SKILL.md")
 			if _, err := os.Stat(skillFile); err != nil {
 				continue
@@ -127,6 +149,12 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 				info.Description = metadata.Description
 				info.Name = metadata.Name
 			}
+
+			// Double check whitelisted name if metadata name is different from directory name
+			if info.Name != d.Name() && !isWhitelisted(info.Name) {
+				continue
+			}
+
 			if err := info.validate(); err != nil {
 				slog.Warn("invalid skill from "+source, "name", info.Name, "error", err)
 				continue
@@ -148,6 +176,19 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 }
 
 func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
+	if sl.whitelistEnabled {
+		whitelisted := false
+		for _, w := range sl.whitelist {
+			if w == name {
+				whitelisted = true
+				break
+			}
+		}
+		if !whitelisted {
+			return "", false
+		}
+	}
+
 	// 1. load from workspace skills first (project-level)
 	if sl.workspaceSkills != "" {
 		skillFile := filepath.Join(sl.workspaceSkills, name, "SKILL.md")
@@ -155,6 +196,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 			return sl.stripFrontmatter(string(content)), true
 		}
 	}
+// ...
 
 	// 2. then load from global skills (~/.picoclaw/skills)
 	if sl.globalSkills != "" {
@@ -204,11 +246,11 @@ func (sl *SkillsLoader) BuildSkillsSummary() string {
 		escapedDesc := escapeXML(s.Description)
 		escapedPath := escapeXML(s.Path)
 
-		lines = append(lines, fmt.Sprintf("  <skill>"))
-		lines = append(lines, fmt.Sprintf("    <name>%s</name>", escapedName))
-		lines = append(lines, fmt.Sprintf("    <description>%s</description>", escapedDesc))
-		lines = append(lines, fmt.Sprintf("    <location>%s</location>", escapedPath))
-		lines = append(lines, fmt.Sprintf("    <source>%s</source>", s.Source))
+		lines = append(lines, "  <skill>")
+		lines = append(lines, "    <name>"+escapedName+"</name>")
+		lines = append(lines, "    <description>"+escapedDesc+"</description>")
+		lines = append(lines, "    <location>"+escapedPath+"</location>")
+		lines = append(lines, "    <source>"+s.Source+"</source>")
 		lines = append(lines, "  </skill>")
 	}
 	lines = append(lines, "</skills>")
