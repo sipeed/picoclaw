@@ -54,12 +54,14 @@ func (pc *picoConn) close() {
 // It serves as the reference implementation for all optional capability interfaces.
 type PicoChannel struct {
 	*channels.BaseChannel
-	config      config.PicoConfig
-	upgrader    websocket.Upgrader
-	connections sync.Map // connID → *picoConn
-	connCount   atomic.Int32
-	ctx         context.Context
-	cancel      context.CancelFunc
+	config             config.PicoConfig
+	upgrader           websocket.Upgrader
+	connections        map[string]*picoConn            // connID -> *picoConn
+	sessionConnections map[string]map[string]*picoConn // sessionID -> connID -> *picoConn
+	connsMu            sync.RWMutex
+	connCount          atomic.Int32
+	ctx                context.Context
+	cancel             context.CancelFunc
 }
 
 // NewPicoChannel creates a new Pico Protocol channel.
@@ -92,7 +94,90 @@ func NewPicoChannel(cfg config.PicoConfig, messageBus *bus.MessageBus) (*PicoCha
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 		},
+		connections:        make(map[string]*picoConn),
+		sessionConnections: make(map[string]map[string]*picoConn),
 	}, nil
+}
+
+// addConnection stores a connection in both connID and session indexes.
+func (c *PicoChannel) addConnection(pc *picoConn) {
+	c.connsMu.Lock()
+	defer c.connsMu.Unlock()
+
+	c.connections[pc.id] = pc
+	bySession, ok := c.sessionConnections[pc.sessionID]
+	if !ok {
+		bySession = make(map[string]*picoConn)
+		c.sessionConnections[pc.sessionID] = bySession
+	}
+	bySession[pc.id] = pc
+}
+
+// removeConnection deletes a connection from indexes and returns it when found.
+func (c *PicoChannel) removeConnection(connID string) *picoConn {
+	c.connsMu.Lock()
+	defer c.connsMu.Unlock()
+
+	pc, ok := c.connections[connID]
+	if !ok {
+		return nil
+	}
+
+	delete(c.connections, connID)
+	if bySession, ok := c.sessionConnections[pc.sessionID]; ok {
+		delete(bySession, connID)
+		if len(bySession) == 0 {
+			delete(c.sessionConnections, pc.sessionID)
+		}
+	}
+
+	return pc
+}
+
+// takeAllConnections snapshots and clears all connection indexes.
+func (c *PicoChannel) takeAllConnections() []*picoConn {
+	c.connsMu.Lock()
+	defer c.connsMu.Unlock()
+
+	all := make([]*picoConn, 0, len(c.connections))
+	for connID, pc := range c.connections {
+		all = append(all, pc)
+		delete(c.connections, connID)
+	}
+	clear(c.sessionConnections)
+
+	return all
+}
+
+// sessionConnectionsSnapshot returns all active connections for a session.
+func (c *PicoChannel) sessionConnectionsSnapshot(sessionID string) []*picoConn {
+	c.connsMu.RLock()
+	defer c.connsMu.RUnlock()
+
+	bySession, ok := c.sessionConnections[sessionID]
+	if !ok || len(bySession) == 0 {
+		return nil
+	}
+
+	conns := make([]*picoConn, 0, len(bySession))
+	for _, pc := range bySession {
+		conns = append(conns, pc)
+	}
+	return conns
+}
+
+// newUniqueConnID generates a connID that is not currently present in the index.
+func (c *PicoChannel) newUniqueConnID() string {
+	for {
+		id := uuid.New().String()
+
+		c.connsMu.RLock()
+		_, exists := c.connections[id]
+		c.connsMu.RUnlock()
+		if !exists {
+			return id
+		}
+	}
 }
 
 // Start implements Channel.
@@ -110,13 +195,10 @@ func (c *PicoChannel) Stop(ctx context.Context) error {
 	c.SetRunning(false)
 
 	// Close all connections
-	c.connections.Range(func(key, value any) bool {
-		if pc, ok := value.(*picoConn); ok {
-			pc.close()
-		}
-		c.connections.Delete(key)
-		return true
-	})
+	for _, pc := range c.takeAllConnections() {
+		pc.close()
+	}
+	c.connCount.Store(0)
 
 	if c.cancel != nil {
 		c.cancel()
@@ -133,8 +215,8 @@ func (c *PicoChannel) WebhookPath() string { return "/pico/" }
 func (c *PicoChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/pico")
 
-	switch {
-	case path == "/ws" || path == "/ws/":
+	switch path {
+	case "/ws", "/ws/":
 		c.handleWebSocket(w, r)
 	default:
 		http.NotFound(w, r)
@@ -208,23 +290,16 @@ func (c *PicoChannel) broadcastToSession(chatID string, msg PicoMessage) error {
 	msg.SessionID = sessionID
 
 	var sent bool
-	c.connections.Range(func(key, value any) bool {
-		pc, ok := value.(*picoConn)
-		if !ok {
-			return true
+	for _, pc := range c.sessionConnectionsSnapshot(sessionID) {
+		if err := pc.writeJSON(msg); err != nil {
+			logger.DebugCF("pico", "Write to connection failed", map[string]any{
+				"conn_id": pc.id,
+				"error":   err.Error(),
+			})
+		} else {
+			sent = true
 		}
-		if pc.sessionID == sessionID {
-			if err := pc.writeJSON(msg); err != nil {
-				logger.DebugCF("pico", "Write to connection failed", map[string]any{
-					"conn_id": pc.id,
-					"error":   err.Error(),
-				})
-			} else {
-				sent = true
-			}
-		}
-		return true
-	})
+	}
 
 	if !sent {
 		return fmt.Errorf("no active connections for session %s: %w", sessionID, channels.ErrSendFailed)
@@ -276,12 +351,12 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pc := &picoConn{
-		id:        uuid.New().String(),
+		id:        c.newUniqueConnID(),
 		conn:      conn,
 		sessionID: sessionID,
 	}
 
-	c.connections.Store(pc.id, pc)
+	c.addConnection(pc)
 	c.connCount.Add(1)
 
 	logger.InfoCF("pico", "WebSocket client connected", map[string]any{
@@ -341,12 +416,13 @@ func (c *PicoChannel) matchedSubprotocol(r *http.Request) string {
 func (c *PicoChannel) readLoop(pc *picoConn) {
 	defer func() {
 		pc.close()
-		c.connections.Delete(pc.id)
-		c.connCount.Add(-1)
-		logger.InfoCF("pico", "WebSocket client disconnected", map[string]any{
-			"conn_id":    pc.id,
-			"session_id": pc.sessionID,
-		})
+		if removed := c.removeConnection(pc.id); removed != nil {
+			c.connCount.Add(-1)
+			logger.InfoCF("pico", "WebSocket client disconnected", map[string]any{
+				"conn_id":    removed.id,
+				"session_id": removed.sessionID,
+			})
+		}
 	}()
 
 	readTimeout := time.Duration(c.config.ReadTimeout) * time.Second
