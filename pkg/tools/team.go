@@ -899,6 +899,7 @@ func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, ba
 
 	// 3. Initialize queue with nodes having 0 in-degree
 	nodesToProcess := len(members)
+	completedNodes := 0
 	for id, deg := range inDegree {
 		if deg == 0 {
 			readyChan <- id
@@ -914,7 +915,8 @@ func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, ba
 	var finalResultsMu sync.Mutex
 
 	// 4. DAG Execution Loop
-	for i := 0; i < nodesToProcess; i++ {
+	// Continue until all nodes have completed
+	for completedNodes < nodesToProcess {
 		select {
 		case <-ctx.Done():
 			return ErrorResult("DAG execution timed out or cancelled")
@@ -986,6 +988,9 @@ func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, ba
 				wg.Wait()
 				return ErrorResult(res.err.Error())
 			}
+
+			// Mark this node as completed
+			completedNodes++
 
 			// Update dependents
 			for _, dependentID := range graph[res.id] {
