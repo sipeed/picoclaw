@@ -106,6 +106,7 @@ func (c *Config) WithSecurity(sec *SecurityConfig) *Config {
 		c.security = sec
 		return c
 	}
+	sec = normalizeSecurityConfig(sec)
 	err := applySecurityConfig(c, sec)
 	if err != nil {
 		return nil
@@ -1768,6 +1769,7 @@ func SaveConfig(path string, cfg *Config) error {
 		logger.ErrorC("config", "security is nil")
 		return fmt.Errorf("security is nil")
 	}
+	cfg.security = normalizeSecurityConfig(cfg.security)
 	// Ensure version is always set when saving
 	if cfg.Version == 0 {
 		cfg.Version = CurrentVersion
@@ -1946,6 +1948,7 @@ func SaveConfig(path string, cfg *Config) error {
 	if err != nil {
 		return err
 	}
+	logger.Infof("saving config to %s", path)
 	return fileutil.WriteFileAtomic(path, data, 0o600)
 }
 
