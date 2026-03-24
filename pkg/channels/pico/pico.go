@@ -156,10 +156,10 @@ func (c *PicoChannel) takeAllConnections() []*picoConn {
 	defer c.connsMu.Unlock()
 
 	all := make([]*picoConn, 0, len(c.connections))
-	for connID, pc := range c.connections {
+	for _, pc := range c.connections {
 		all = append(all, pc)
-		delete(c.connections, connID)
 	}
+	clear(c.connections)
 	clear(c.sessionConnections)
 
 	return all
