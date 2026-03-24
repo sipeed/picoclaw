@@ -36,6 +36,7 @@ type Provider struct {
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	httpClient     *http.Client
 	extraBody      map[string]any // Additional fields to inject into request body
+	useAzureHeaders bool          // Use api-key header instead of Authorization: Bearer
 }
 
 type Option func(*Provider)
@@ -60,6 +61,16 @@ func WithExtraBody(extraBody map[string]any) Option {
 	return func(p *Provider) {
 		p.extraBody = extraBody
 	}
+}
+
+func WithAzureHeaders() Option {
+	return func(p *Provider) {
+		p.useAzureHeaders = true
+	}
+}
+
+func (p *Provider) SetUseAzureHeaders(use bool) {
+	p.useAzureHeaders = use
 }
 
 func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
@@ -181,7 +192,11 @@ func (p *Provider) Chat(
 
 	req.Header.Set("Content-Type", "application/json")
 	if p.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		if p.useAzureHeaders {
+			req.Header.Set("api-key", p.apiKey)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
 	}
 
 	resp, err := p.httpClient.Do(req)
@@ -227,7 +242,11 @@ func (p *Provider) ChatStream(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	if p.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		if p.useAzureHeaders {
+			req.Header.Set("api-key", p.apiKey)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
 	}
 
 	// Use a client without Timeout for streaming — the http.Client.Timeout covers
@@ -387,19 +406,30 @@ func parseStreamResponse(
 }
 
 func normalizeModel(model, apiBase string) string {
+	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
+		return model
+	}
+
+	// NVIDIA endpoints (integrate.api.nvidia.com) require the provider prefix
+	// (e.g., nvidia/, meta/, mistral/) for routing. Do not strip them.
+	// We also re-add the prefix if it was likely stripped by the agent's protocol resolution logic.
+	if strings.Contains(strings.ToLower(apiBase), ".nvidia.com") {
+		if !strings.Contains(model, "/") {
+			return "nvidia/" + model
+		}
+		return model
+	}
+
 	before, after, ok := strings.Cut(model, "/")
 	if !ok {
 		return model
 	}
 
-	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
-		return model
-	}
-
 	prefix := strings.ToLower(before)
 	switch prefix {
-	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google",
-		"openrouter", "zhipu", "mistral", "vivgrid", "minimax", "novita":
+	case "litellm", "moonshot", "groq", "ollama", "deepseek", "google",
+		"openrouter", "zhipu", "mistral", "vivgrid", "minimax", "novita",
+		"azure-ai", "azure-foundry":
 		return after
 	default:
 		return model
@@ -430,7 +460,7 @@ func isNativeSearchHost(apiBase string) bool {
 		return false
 	}
 	host := u.Hostname()
-	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+	return host == "api.openai.com"
 }
 
 // supportsPromptCacheKey reports whether the given API base is known to
@@ -443,5 +473,7 @@ func supportsPromptCacheKey(apiBase string) bool {
 		return false
 	}
 	host := u.Hostname()
-	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+	// Strictly limit to OpenAI official. Azure OpenAI often rejects this field
+	// depending on model version and region, causing 400 errors.
+	return host == "api.openai.com"
 }

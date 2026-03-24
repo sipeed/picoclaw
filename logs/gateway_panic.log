@@ -1,0 +1,26 @@
+Error: error creating provider: model "" not found in model_list: model "" not found in model_list or providers
+Usage:
+  picoclaw gateway [flags]
+
+Aliases:
+  gateway, g
+
+Flags:
+  -E, --allow-empty   Continue starting even when no default model is configured
+  -d, --debug         Enable debug logging
+  -h, --help          help for gateway
+  -T, --no-truncate   Disable string truncation in debug logs
+
+Error: error creating provider: model "" not found in model_list: model "" not found in model_list or providers
+Usage:
+  picoclaw gateway [flags]
+
+Aliases:
+  gateway, g
+
+Flags:
+  -E, --allow-empty   Continue starting even when no default model is configured
+  -d, --debug         Enable debug logging
+  -h, --help          help for gateway
+  -T, --no-truncate   Disable string truncation in debug logs
+
