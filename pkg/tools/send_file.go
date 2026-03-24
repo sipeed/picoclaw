@@ -6,6 +6,7 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/h2non/filetype"
@@ -21,20 +22,32 @@ type SendFileTool struct {
 	restrict    bool
 	maxFileSize int
 	mediaStore  media.MediaStore
+	allowPaths  []*regexp.Regexp
 
 	defaultChannel string
 	defaultChatID  string
 }
 
-func NewSendFileTool(workspace string, restrict bool, maxFileSize int, store media.MediaStore) *SendFileTool {
+func NewSendFileTool(
+	workspace string,
+	restrict bool,
+	maxFileSize int,
+	store media.MediaStore,
+	allowPaths ...[]*regexp.Regexp,
+) *SendFileTool {
 	if maxFileSize <= 0 {
 		maxFileSize = config.DefaultMaxMediaSize
+	}
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
 	}
 	return &SendFileTool{
 		workspace:   workspace,
 		restrict:    restrict,
 		maxFileSize: maxFileSize,
 		mediaStore:  store,
+		allowPaths:  patterns,
 	}
 }
 
@@ -92,7 +105,7 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("media store not configured")
 	}
 
-	resolved, err := validatePath(path, t.workspace, t.restrict)
+	resolved, err := validatePathWithAllowPaths(path, t.workspace, t.restrict, t.allowPaths)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("invalid path: %v", err))
 	}
@@ -120,9 +133,10 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	scope := fmt.Sprintf("tool:send_file:%s:%s", channel, chatID)
 
 	ref, err := t.mediaStore.Store(resolved, media.MediaMeta{
-		Filename:    filename,
-		ContentType: mediaType,
-		Source:      "tool:send_file",
+		Filename:      filename,
+		ContentType:   mediaType,
+		Source:        "tool:send_file",
+		CleanupPolicy: media.CleanupPolicyForgetOnly,
 	}, scope)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to register media: %v", err))

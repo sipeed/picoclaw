@@ -97,6 +97,15 @@ func TestMatchAllowed(t *testing.T) {
 			allowed: "654321",
 			want:    false,
 		},
+		{
+			name: "negative numeric ID matches PlatformID",
+			sender: bus.SenderInfo{
+				Platform:   "telegram",
+				PlatformID: "-1001234567890",
+			},
+			allowed: "-1001234567890",
+			want:    true,
+		},
 		// Username matching
 		{
 			name:    "@username matches Username",
@@ -238,6 +247,9 @@ func TestIsNumeric(t *testing.T) {
 		{"abc", false},
 		{"12a34", false},
 		{"telegram", false},
+		{"-1001234567890", true},
+		{"-", false},
+		{"-12a34", false},
 	}
 
 	for _, tt := range tests {

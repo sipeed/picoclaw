@@ -94,12 +94,31 @@ export function AgentDefaultsSection({
       />
 
       <SwitchCardField
-        label={t("pages.config.allow_remote")}
-        hint={t("pages.config.allow_remote_hint")}
+        label={t("pages.config.tool_feedback_enabled")}
+        hint={t("pages.config.tool_feedback_enabled_hint")}
         layout="setting-row"
-        checked={form.allowRemote}
-        onCheckedChange={(checked) => onFieldChange("allowRemote", checked)}
+        checked={form.toolFeedbackEnabled}
+        onCheckedChange={(checked) =>
+          onFieldChange("toolFeedbackEnabled", checked)
+        }
       />
+
+      {form.toolFeedbackEnabled && (
+        <Field
+          label={t("pages.config.tool_feedback_max_args_length")}
+          hint={t("pages.config.tool_feedback_max_args_length_hint")}
+          layout="setting-row"
+        >
+          <Input
+            type="number"
+            min={0}
+            value={form.toolFeedbackMaxArgsLength}
+            onChange={(e) =>
+              onFieldChange("toolFeedbackMaxArgsLength", e.target.value)
+            }
+          />
+        </Field>
+      )}
 
       <Field
         label={t("pages.config.max_tokens")}
@@ -111,6 +130,20 @@ export function AgentDefaultsSection({
           min={1}
           value={form.maxTokens}
           onChange={(e) => onFieldChange("maxTokens", e.target.value)}
+        />
+      </Field>
+
+      <Field
+        label={t("pages.config.context_window")}
+        hint={t("pages.config.context_window_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={1}
+          value={form.contextWindow}
+          onChange={(e) => onFieldChange("contextWindow", e.target.value)}
+          placeholder="131072"
         />
       </Field>
 
@@ -157,6 +190,98 @@ export function AgentDefaultsSection({
           }
         />
       </Field>
+    </ConfigSectionCard>
+  )
+}
+
+interface ExecSectionProps {
+  form: CoreConfigForm
+  onFieldChange: UpdateCoreField
+}
+
+export function ExecSection({ form, onFieldChange }: ExecSectionProps) {
+  const { t } = useTranslation()
+
+  return (
+    <ConfigSectionCard title={t("pages.config.sections.exec")}>
+      <SwitchCardField
+        label={t("pages.config.exec_enabled")}
+        hint={t("pages.config.exec_enabled_hint")}
+        layout="setting-row"
+        checked={form.execEnabled}
+        onCheckedChange={(checked) => onFieldChange("execEnabled", checked)}
+      />
+
+      {form.execEnabled && (
+        <>
+          <SwitchCardField
+            label={t("pages.config.allow_remote")}
+            hint={t("pages.config.allow_remote_hint")}
+            layout="setting-row"
+            checked={form.allowRemote}
+            onCheckedChange={(checked) => onFieldChange("allowRemote", checked)}
+          />
+
+          <SwitchCardField
+            label={t("pages.config.enable_deny_patterns")}
+            hint={t("pages.config.enable_deny_patterns_hint")}
+            layout="setting-row"
+            checked={form.enableDenyPatterns}
+            onCheckedChange={(checked) =>
+              onFieldChange("enableDenyPatterns", checked)
+            }
+          />
+
+          {form.enableDenyPatterns && (
+            <Field
+              label={t("pages.config.custom_deny_patterns")}
+              hint={t("pages.config.custom_deny_patterns_hint")}
+              layout="setting-row"
+              controlClassName="md:max-w-md"
+            >
+              <Textarea
+                value={form.customDenyPatternsText}
+                placeholder={t("pages.config.custom_patterns_placeholder")}
+                className="min-h-[88px]"
+                onChange={(e) =>
+                  onFieldChange("customDenyPatternsText", e.target.value)
+                }
+              />
+            </Field>
+          )}
+
+          <Field
+            label={t("pages.config.custom_allow_patterns")}
+            hint={t("pages.config.custom_allow_patterns_hint")}
+            layout="setting-row"
+            controlClassName="md:max-w-md"
+          >
+            <Textarea
+              value={form.customAllowPatternsText}
+              placeholder={t("pages.config.custom_patterns_placeholder")}
+              className="min-h-[88px]"
+              onChange={(e) =>
+                onFieldChange("customAllowPatternsText", e.target.value)
+              }
+            />
+          </Field>
+
+          <Field
+            label={t("pages.config.exec_timeout_seconds")}
+            hint={t("pages.config.exec_timeout_seconds_hint")}
+            layout="setting-row"
+          >
+            <Input
+              type="number"
+              min={0}
+              value={form.execTimeoutSeconds}
+              onChange={(e) =>
+                onFieldChange("execTimeoutSeconds", e.target.value)
+              }
+            />
+          </Field>
+        </>
+      )}
     </ConfigSectionCard>
   )
 }
@@ -232,6 +357,44 @@ export function RuntimeSection({ form, onFieldChange }: RuntimeSectionProps) {
           />
         </Field>
       )}
+    </ConfigSectionCard>
+  )
+}
+
+interface CronSectionProps {
+  form: CoreConfigForm
+  onFieldChange: UpdateCoreField
+}
+
+export function CronSection({ form, onFieldChange }: CronSectionProps) {
+  const { t } = useTranslation()
+
+  return (
+    <ConfigSectionCard title={t("pages.config.sections.cron")}>
+      <SwitchCardField
+        label={t("pages.config.allow_shell_execution")}
+        hint={t("pages.config.allow_shell_execution_hint")}
+        layout="setting-row"
+        checked={form.allowCommand}
+        disabled={!form.execEnabled}
+        onCheckedChange={(checked) => onFieldChange("allowCommand", checked)}
+      />
+
+      <Field
+        label={t("pages.config.cron_exec_timeout")}
+        hint={t("pages.config.cron_exec_timeout_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={0}
+          disabled={!form.execEnabled}
+          value={form.cronExecTimeoutMinutes}
+          onChange={(e) =>
+            onFieldChange("cronExecTimeoutMinutes", e.target.value)
+          }
+        />
+      </Field>
     </ConfigSectionCard>
   )
 }

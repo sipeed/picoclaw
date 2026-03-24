@@ -51,7 +51,7 @@ func init() {
 			FormatFieldValue: formatFieldValue,
 		}
 
-		logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
+		logger = zerolog.New(consoleWriter).With().Timestamp().Caller().Logger()
 		fileLogger = zerolog.Logger{}
 	})
 }
@@ -94,10 +94,46 @@ func SetLevel(level LogLevel) {
 	zerolog.SetGlobalLevel(level)
 }
 
+func SetConsoleLevel(level LogLevel) {
+	mu.Lock()
+	defer mu.Unlock()
+	logger = logger.Level(level)
+}
+
 func GetLevel() LogLevel {
 	mu.RLock()
 	defer mu.RUnlock()
 	return currentLevel
+}
+
+// ParseLevel converts a case-insensitive level name to a LogLevel.
+// Returns the level and true if valid, or (INFO, false) if unrecognized.
+func ParseLevel(s string) (LogLevel, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return DEBUG, true
+	case "info":
+		return INFO, true
+	case "warn", "warning":
+		return WARN, true
+	case "error":
+		return ERROR, true
+	case "fatal":
+		return FATAL, true
+	default:
+		return INFO, false
+	}
+}
+
+// SetLevelFromString sets the log level from a string value.
+// If the string is empty or not a recognized level name, the current level is kept.
+func SetLevelFromString(s string) {
+	if s == "" {
+		return
+	}
+	if level, ok := ParseLevel(s); ok {
+		SetLevel(level)
+	}
 }
 
 func EnableFileLogging(filePath string) error {
@@ -134,9 +170,9 @@ func DisableFileLogging() {
 	fileLogger = zerolog.Logger{}
 }
 
-func getCallerInfo() (string, int, string) {
+func getCallerSkip() int {
 	for i := 2; i < 15; i++ {
-		pc, file, line, ok := runtime.Caller(i)
+		pc, file, _, ok := runtime.Caller(i)
 		if !ok {
 			continue
 		}
@@ -158,10 +194,10 @@ func getCallerInfo() (string, int, string) {
 			continue
 		}
 
-		return filepath.Base(file), line, filepath.Base(funcName)
+		return i - 1
 	}
 
-	return "???", 0, "???"
+	return 3
 }
 
 //nolint:zerologlint
@@ -187,19 +223,16 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		return
 	}
 
-	callerFile, callerLine, callerFunc := getCallerInfo()
+	skip := getCallerSkip()
 
 	event := getEvent(logger, level)
 
-	// Build combined field with component and caller
 	if component != "" {
-		event.Str("caller", fmt.Sprintf("%-6s %s:%d (%s)", component, callerFile, callerLine, callerFunc))
-	} else {
-		event.Str("caller", fmt.Sprintf("<none> %s:%d (%s)", callerFile, callerLine, callerFunc))
+		event.Str("component", component)
 	}
 
 	appendFields(event, fields)
-	event.Msg(message)
+	event.CallerSkipFrame(skip).Msg(message)
 
 	// Also log to file if enabled
 	if fileLogger.GetLevel() != zerolog.NoLevel {
@@ -208,9 +241,10 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		if component != "" {
 			fileEvent.Str("component", component)
 		}
+		// fileEvent.Str("caller", fmt.Sprintf("%s:%d (%s)", callerFile, callerLine, callerFunc))
 
-		appendFields(event, fields)
-		fileEvent.Msg(message)
+		appendFields(fileEvent, fields)
+		fileEvent.CallerSkipFrame(skip).Msg(message)
 	}
 
 	if level == FATAL {
@@ -222,6 +256,8 @@ func appendFields(event *zerolog.Event, fields map[string]any) {
 	for k, v := range fields {
 		// Type switch to avoid double JSON serialization of strings
 		switch val := v.(type) {
+		case error:
+			event.Str(k, val.Error())
 		case string:
 			event.Str(k, val)
 		case int:

@@ -1,10 +1,14 @@
 package agent
 
 import (
+	"context"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 func TestNewAgentInstance_UsesDefaultsTemperatureAndMaxTokens(t *testing.T) {
@@ -18,7 +22,7 @@ func TestNewAgentInstance_UsesDefaultsTemperatureAndMaxTokens(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         1234,
 				MaxToolIterations: 5,
 			},
@@ -50,7 +54,7 @@ func TestNewAgentInstance_DefaultsTemperatureWhenZero(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         1234,
 				MaxToolIterations: 5,
 			},
@@ -79,7 +83,7 @@ func TestNewAgentInstance_DefaultsTemperatureWhenUnset(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         1234,
 				MaxToolIterations: 5,
 			},
@@ -133,10 +137,10 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 				Agents: config.AgentsConfig{
 					Defaults: config.AgentDefaults{
 						Workspace: tmpDir,
-						Model:     tt.aliasName,
+						ModelName: tt.aliasName,
 					},
 				},
-				ModelList: []config.ModelConfig{
+				ModelList: []*config.ModelConfig{
 					{
 						ModelName: tt.aliasName,
 						Model:     tt.modelName,
@@ -158,5 +162,121 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 				t.Fatalf("candidate model = %q, want %q", agent.Candidates[0].Model, tt.wantModel)
 			}
 		})
+	}
+}
+
+func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
+	workspace := t.TempDir()
+	mediaDir := media.TempDir()
+	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(mediaDir) error = %v", err)
+	}
+
+	mediaFile, err := os.CreateTemp(mediaDir, "instance-tool-*.txt")
+	if err != nil {
+		t.Fatalf("CreateTemp(mediaDir) error = %v", err)
+	}
+	mediaPath := mediaFile.Name()
+	if _, err := mediaFile.WriteString("attachment content"); err != nil {
+		mediaFile.Close()
+		t.Fatalf("WriteString(mediaFile) error = %v", err)
+	}
+	if err := mediaFile.Close(); err != nil {
+		t.Fatalf("Close(mediaFile) error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(mediaPath) })
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:           workspace,
+				ModelName:           "test-model",
+				RestrictToWorkspace: true,
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{Enabled: true},
+			ListDir:  config.ToolConfig{Enabled: true},
+			Exec: config.ExecConfig{
+				ToolConfig:         config.ToolConfig{Enabled: true},
+				EnableDenyPatterns: true,
+				AllowRemote:        true,
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	readTool, ok := agent.Tools.Get("read_file")
+	if !ok {
+		t.Fatal("read_file tool not registered")
+	}
+	readResult := readTool.Execute(context.Background(), map[string]any{"path": mediaPath})
+	if readResult.IsError {
+		t.Fatalf("read_file should allow media temp dir, got: %s", readResult.ForLLM)
+	}
+	if !strings.Contains(readResult.ForLLM, "attachment content") {
+		t.Fatalf("read_file output missing media content: %s", readResult.ForLLM)
+	}
+
+	listTool, ok := agent.Tools.Get("list_dir")
+	if !ok {
+		t.Fatal("list_dir tool not registered")
+	}
+	listResult := listTool.Execute(context.Background(), map[string]any{"path": mediaDir})
+	if listResult.IsError {
+		t.Fatalf("list_dir should allow media temp dir, got: %s", listResult.ForLLM)
+	}
+	if !strings.Contains(listResult.ForLLM, filepath.Base(mediaPath)) {
+		t.Fatalf("list_dir output missing media file: %s", listResult.ForLLM)
+	}
+
+	execTool, ok := agent.Tools.Get("exec")
+	if !ok {
+		t.Fatal("exec tool not registered")
+	}
+	execResult := execTool.Execute(context.Background(), map[string]any{
+		"command":     "cat " + filepath.Base(mediaPath),
+		"working_dir": mediaDir,
+	})
+	if execResult.IsError {
+		t.Fatalf("exec should allow media temp dir, got: %s", execResult.ForLLM)
+	}
+	if !strings.Contains(execResult.ForLLM, "attachment content") {
+		t.Fatalf("exec output missing media content: %s", execResult.ForLLM)
+	}
+}
+
+func TestNewAgentInstance_InvalidExecConfigDoesNotExit(t *testing.T) {
+	workspace := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "test-model",
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{Enabled: true},
+			Exec: config.ExecConfig{
+				ToolConfig:         config.ToolConfig{Enabled: true},
+				EnableDenyPatterns: true,
+				CustomDenyPatterns: []string{"[invalid-regex"},
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	if agent == nil {
+		t.Fatal("expected agent instance, got nil")
+	}
+
+	if _, ok := agent.Tools.Get("exec"); ok {
+		t.Fatal("exec tool should not be registered when exec config is invalid")
+	}
+
+	if _, ok := agent.Tools.Get("read_file"); !ok {
+		t.Fatal("read_file tool should still be registered")
 	}
 }

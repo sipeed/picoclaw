@@ -3,10 +3,10 @@
 
 <h1>PicoClaw: Assistente de IA Ultra-Eficiente em Go</h1>
 
-<h3>Hardware de $10 · 10MB de RAM · Boot em 1s · 皮皮虾，我们走！</h3>
+<h3>Hardware de $10 · 10MB de RAM · Boot em ms · Let's Go, PicoClaw!</h3>
   <p>
-    <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
-    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V-blue" alt="Hardware">
+    <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
+    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V%2C%20LoongArch-blue" alt="Hardware">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
     <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
@@ -18,14 +18,17 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
- [中文](README.zh.md) | [日本語](README.ja.md) | **Português** | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [English](README.md)
+[中文](README.zh.md) | [日本語](README.ja.md) | **Português** | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [English](README.md)
+
 </div>
 
 ---
 
-🦐 **PicoClaw** é um assistente pessoal de IA ultra-leve inspirado no [nanobot](https://github.com/HKUDS/nanobot), reescrito do zero em **Go** por meio de um processo de "auto-inicialização" (self-bootstrapping) — onde o próprio agente de IA conduziu toda a migração de arquitetura e otimização de código.
+> **PicoClaw** é um projeto open-source independente iniciado pela [Sipeed](https://sipeed.com), escrito inteiramente em **Go** do zero — não é um fork do OpenClaw, NanoBot ou qualquer outro projeto.
 
-⚡️ **Extremamente leve:** Roda em hardware de apenas **$10** com **<10MB** de RAM. Isso é 99% menos memória que o OpenClaw e 98% mais barato que um Mac mini!
+**PicoClaw** é um assistente de IA pessoal ultra-leve inspirado no [NanoBot](https://github.com/HKUDS/nanobot). Foi reconstruído do zero em **Go** por meio de um processo de "auto-bootstrapping" — o próprio AI Agent conduziu a migração de arquitetura e a otimização do código.
+
+**Roda em hardware de $10 com menos de 10MB de RAM** — isso é 99% menos memória que o OpenClaw e 98% mais barato que um Mac mini!
 
 <table align="center">
 <tr align="center">
@@ -43,45 +46,73 @@
 </table>
 
 > [!CAUTION]
-> **🚨 DECLARAÇÃO DE SEGURANÇA & CANAIS OFICIAIS**
+> **Aviso de Segurança**
 >
-> * **SEM CRIPTOMOEDAS:** O PicoClaw **NÃO** possui nenhum token/moeda oficial. Todas as alegações no `pump.fun` ou outras plataformas de negociação são **GOLPES**.
-> * **DOMÍNIO OFICIAL:** O **ÚNICO** site oficial é o **[picoclaw.io](https://picoclaw.io)**, e o site da empresa é o **[sipeed.com](https://sipeed.com)**.
-> * **Aviso:** Muitos domínios `.ai/.org/.com/.net/...` foram registrados por terceiros, não são nossos.
-> * **Aviso:** O PicoClaw está em fase inicial de desenvolvimento e pode ter problemas de segurança de rede não resolvidos. Não implante em ambientes de produção antes da versão v1.0.
-> * **Nota:** O PicoClaw recentemente fez merge de muitos PRs, o que pode resultar em maior consumo de memória (10-20MB) nas versões mais recentes. Planejamos priorizar a otimização de recursos assim que o conjunto de funcionalidades estiver estável.
-
+> * **SEM CRIPTO:** O PicoClaw **não** emitiu nenhum token oficial ou criptomoeda. Todas as alegações no `pump.fun` ou outras plataformas de negociação são **golpes**.
+> * **DOMÍNIO OFICIAL:** O **ÚNICO** site oficial é **[picoclaw.io](https://picoclaw.io)**, e o site da empresa é **[sipeed.com](https://sipeed.com)**
+> * **ATENÇÃO:** Muitos domínios `.ai/.org/.com/.net/...` foram registrados por terceiros. Não confie neles.
+> * **NOTA:** O PicoClaw está em desenvolvimento rápido inicial. Podem existir problemas de segurança não resolvidos. Não implante em produção antes da v1.0.
+> * **NOTA:** O PicoClaw mesclou muitos PRs recentemente. Builds recentes podem usar 10-20MB de RAM. A otimização de recursos está planejada após a estabilização de funcionalidades.
 
 ## 📢 Novidades
 
-2026-02-16 🎉 PicoClaw atingiu 12K stars em uma semana! Obrigado a todos pelo apoio! O PicoClaw está crescendo mais rápido do que jamais imaginamos. Dado o alto volume de PRs, precisamos urgentemente de maintainers da comunidade. Nossos papéis de voluntários e roadmap foram publicados oficialmente [aqui](docs/ROADMAP.md) — estamos ansiosos para ter você a bordo!
+2026-03-17 🚀 **v0.2.3 Lançada!** UI na bandeja do sistema (Windows e Linux), consulta de status de sub-agent (`spawn_status`), hot-reload experimental do Gateway, controle de segurança do Cron e 2 correções de segurança. O PicoClaw atingiu **25K Stars**!
 
-2026-02-13 🎉 PicoClaw atingiu 5000 stars em 4 dias! Obrigado à comunidade! Estamos finalizando o **Roadmap do Projeto** e configurando o **Grupo de Desenvolvedores** para acelerar o desenvolvimento do PicoClaw.
+2026-03-09 🎉 **v0.2.1 — Maior atualização até agora!** Suporte ao protocolo MCP, 4 novos channels (Matrix/IRC/WeCom/Discord Proxy), 3 novos providers (Kimi/Minimax/Avian), pipeline de visão, armazenamento de memória JSONL, roteamento de modelos.
 
-🚀 **Chamada para Ação:** Envie suas solicitações de funcionalidades nas GitHub Discussions. Revisaremos e priorizaremos na próxima reunião semanal.
+2026-02-28 📦 **v0.2.0** lançada com suporte a Docker Compose e Web UI Launcher.
 
-2026-02-09 🎉 PicoClaw lançado oficialmente! Construído em 1 dia para trazer Agentes de IA para hardware de $10 com <10MB de RAM. 🦐 PicoClaw, Partiu!
+2026-02-26 🎉 O PicoClaw atinge **20K Stars** em apenas 17 dias! Orquestração automática de channels e interfaces de capacidade estão disponíveis.
+
+<details>
+<summary>Notícias anteriores...</summary>
+
+2026-02-16 🎉 O PicoClaw ultrapassa 12K Stars em uma semana! Funções de mantenedor da comunidade e [Roadmap](ROADMAP.md) lançados oficialmente.
+
+2026-02-13 🎉 O PicoClaw ultrapassa 5000 Stars em 4 dias! Roadmap do projeto e grupos de desenvolvedores em andamento.
+
+2026-02-09 🎉 **PicoClaw Lançado!** Construído em 1 dia para levar AI Agents a hardware de $10 com menos de 10MB de RAM. Let's Go, PicoClaw!
+
+</details>
 
 ## ✨ Funcionalidades
 
-🪶 **Ultra-Leve**: Consumo de memória <10MB — 99% menor que o Clawdbot para funcionalidades essenciais.
+🪶 **Ultra-leve**: Footprint de memória do núcleo <10MB — 99% menor que o OpenClaw.*
 
-💰 **Custo Mínimo**: Eficiente o suficiente para rodar em hardware de $10 — 98% mais barato que um Mac mini.
+💰 **Custo mínimo**: Eficiente o suficiente para rodar em hardware de $10 — 98% mais barato que um Mac mini.
 
-⚡️ **Inicialização Relámpago**: Tempo de inicialização 400X mais rápido, boot em 1 segundo mesmo em CPU single-core de 0.6GHz.
+⚡️ **Boot ultrarrápido**: Inicialização 400x mais rápida. Boot em menos de 1s mesmo em um processador single-core de 0,6GHz.
 
-🌍 **Portabilidade Real**: Um único binário auto-contido para RISC-V, ARM, MIPS e x86. Um clique e já era!
+🌍 **Verdadeiramente portátil**: Binário único para arquiteturas RISC-V, ARM, MIPS e x86. Um binário, roda em qualquer lugar!
 
-🤖 **Auto-Construído por IA**: Implementação nativa em Go de forma autônoma — 95% do núcleo gerado pelo Agente com refinamento humano no loop.
+🤖 **Bootstrapped por IA**: Implementação nativa pura em Go — 95% do código principal foi gerado por um Agent e refinado por revisão humana.
 
-|                               | OpenClaw      | NanoBot                  | **PicoClaw**                              |
-| ----------------------------- | ------------- | ------------------------ | ----------------------------------------- |
-| **Linguagem**                 | TypeScript    | Python                   | **Go**                                    |
-| **RAM**                       | >1GB          | >100MB                   | **< 10MB**                                |
-| **Inicialização**</br>(CPU 0.8GHz) | >500s         | >30s                     | **<1s**                                   |
-| **Custo**                     | Mac Mini $599 | Maioria dos SBC Linux </br>~$50 | **Qualquer placa Linux**</br>**A partir de $10** |
+🔌 **Suporte a MCP**: Integração nativa com o [Model Context Protocol](https://modelcontextprotocol.io/) — conecte qualquer servidor MCP para estender as capacidades do Agent.
+
+👁️ **Pipeline de visão**: Envie imagens e arquivos diretamente ao Agent — codificação base64 automática para LLMs multimodais.
+
+🧠 **Roteamento inteligente**: Roteamento de modelos baseado em regras — consultas simples vão para modelos leves, economizando custos de API.
+
+_*Builds recentes podem usar 10-20MB devido a merges rápidos de PRs. Otimização de recursos está planejada. Comparação de velocidade de boot baseada em benchmarks de single-core a 0,8GHz (veja tabela abaixo)._
+
+<div align="center">
+
+|                                | OpenClaw      | NanoBot                  | **PicoClaw**                           |
+| ------------------------------ | ------------- | ------------------------ | -------------------------------------- |
+| **Linguagem**                  | TypeScript    | Python                   | **Go**                                 |
+| **RAM**                        | >1GB          | >100MB                   | **< 10MB***                            |
+| **Tempo de boot**</br>(core 0,8GHz) | >500s    | >30s                     | **<1s**                                |
+| **Custo**                      | Mac Mini $599 | Maioria das placas Linux ~$50 | **Qualquer placa Linux**</br>**a partir de $10** |
 
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
+
+</div>
+
+> **[Lista de Compatibilidade de Hardware](docs/pt-br/hardware-compatibility.md)** — Veja todas as placas testadas, de RISC-V de $5 ao Raspberry Pi e celulares Android. Sua placa não está listada? Envie um PR!
+
+<p align="center">
+<img src="assets/hardware-banner.jpg" alt="PicoClaw Hardware Compatibility" width="100%">
+</p>
 
 ## 🦾 Demonstração
 
@@ -89,9 +120,9 @@
 
 <table align="center">
 <tr align="center">
-<th><p align="center">🧩 Engenharia Full-Stack</p></th>
-<th><p align="center">🗂️ Gerenciamento de Logs & Planejamento</p></th>
-<th><p align="center">🔎 Busca Web & Aprendizado</p></th>
+<th><p align="center">Modo Engenheiro Full-Stack</p></th>
+<th><p align="center">Registro e Planejamento</p></th>
+<th><p align="center">Busca na Web e Aprendizado</p></th>
 </tr>
 <tr>
 <td align="center"><p align="center"><img src="assets/picoclaw_code.gif" width="240" height="180"></p></td>
@@ -99,50 +130,35 @@
 <td align="center"><p align="center"><img src="assets/picoclaw_search.gif" width="240" height="180"></p></td>
 </tr>
 <tr>
-<td align="center">Desenvolver • Implantar • Escalar</td>
-<td align="center">Agendar • Automatizar • Memorizar</td>
-<td align="center">Descobrir • Analisar • Tendências</td>
+<td align="center">Desenvolver · Implantar · Escalar</td>
+<td align="center">Agendar · Automatizar · Lembrar</td>
+<td align="center">Descobrir · Insights · Tendências</td>
 </tr>
 </table>
 
-### 📱 Rode em celulares Android antigos
-
-Dê uma segunda vida ao seu celular de dez anos atrás! Transforme-o em um assistente de IA inteligente com o PicoClaw. Início rápido:
-
-1. **Instale o Termux** (Disponível no F-Droid ou Google Play).
-2. **Execute os comandos**
-
-```bash
-# Nota: Substitua v0.1.1 pela versao mais recente da pagina de Releases
-wget https://github.com/sipeed/picoclaw/releases/download/v0.1.1/picoclaw-linux-arm64
-chmod +x picoclaw-linux-arm64
-pkg install proot
-termux-chroot ./picoclaw-linux-arm64 onboard
-```
-
-Depois siga as instruções na seção "Início Rápido" para completar a configuração!
-
-<img src="assets/termux.jpg" alt="PicoClaw" width="512">
-
-### 🐜 Implantação Inovadora com Baixo Consumo
+### 🐜 Implantação Inovadora de Baixo Consumo
 
 O PicoClaw pode ser implantado em praticamente qualquer dispositivo Linux!
 
-- $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) versão E (Ethernet) ou W (WiFi6), para Assistente Doméstico Minimalista
-- $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html), ou $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) para Manutenção Automatizada de Servidores
-- $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) ou $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) para Monitoramento Inteligente
+- $9,9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) edição E(Ethernet) ou W(WiFi6), para um assistente doméstico mínimo
+- $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html), ou $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html), para operações automatizadas de servidor
+- $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) ou $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera), para vigilância inteligente
 
-https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4
+<https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4>
 
-🌟 Mais cenários de implantação aguardam você!
+🌟 Mais Casos de Implantação Aguardam!
 
 ## 📦 Instalação
 
-### Instalar com binário pré-compilado
+### Download pelo picoclaw.io (Recomendado)
 
-Baixe o binário para sua plataforma na página de [releases](https://github.com/sipeed/picoclaw/releases).
+Acesse **[picoclaw.io](https://picoclaw.io)** — o site oficial detecta automaticamente sua plataforma e fornece download com um clique. Não é necessário selecionar a arquitetura manualmente.
 
-### Instalar a partir do código-fonte (funcionalidades mais recentes, recomendado para desenvolvimento)
+### Download do binário pré-compilado
+
+Alternativamente, baixe o binário para sua plataforma na página de [GitHub Releases](https://github.com/sipeed/picoclaw/releases).
+
+### Compilar a partir do código-fonte (para desenvolvimento)
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -150,68 +166,141 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 make deps
 
-# Build, sem necessidade de instalar
+# Compilar o binário principal
 make build
 
-# Build para multiplas plataformas
+# Compilar o Web UI Launcher (necessário para o modo WebUI)
+make build-launcher
+
+# Compilar para múltiplas plataformas
 make build-all
 
-# Build e Instalar
+# Compilar para Raspberry Pi Zero 2 W (32-bit: make build-linux-arm; 64-bit: make build-linux-arm64)
+make build-pi-zero
+
+# Compilar e instalar
 make install
 ```
 
-## 🐳 Docker Compose
+**Raspberry Pi Zero 2 W:** Use o binário que corresponde ao seu SO: Raspberry Pi OS 32-bit -> `make build-linux-arm`; 64-bit -> `make build-linux-arm64`. Ou execute `make build-pi-zero` para compilar ambos.
 
-Você tambêm pode rodar o PicoClaw usando Docker Compose sem instalar nada localmente.
+## 🚀 Guia de Início Rápido
+
+### 🌐 WebUI Launcher (Recomendado para Desktop)
+
+O WebUI Launcher fornece uma interface baseada em navegador para configuração e chat. Esta é a maneira mais fácil de começar — sem necessidade de conhecimento de linha de comando.
+
+**Opção 1: Duplo clique (Desktop)**
+
+Após baixar de [picoclaw.io](https://picoclaw.io), dê duplo clique em `picoclaw-launcher` (ou `picoclaw-launcher.exe` no Windows). Seu navegador abrirá automaticamente em `http://localhost:18800`.
+
+**Opção 2: Linha de comando**
 
 ```bash
-# 1. Clone este repositorio
+picoclaw-launcher
+# Abra http://localhost:18800 no seu navegador
+```
+
+> [!TIP]
+> **Acesso remoto / Docker / VM:** Adicione a flag `-public` para escutar em todas as interfaces:
+> ```bash
+> picoclaw-launcher -public
+> ```
+
+<p align="center">
+<img src="assets/launcher-webui.jpg" alt="WebUI Launcher" width="600">
+</p>
+
+**Primeiros passos:**
+
+Abra o WebUI e então: **1)** Configure um Provider (adicione sua API key de LLM) -> **2)** Configure um Channel (ex.: Telegram) -> **3)** Inicie o Gateway -> **4)** Converse!
+
+Para documentação detalhada do WebUI, veja [docs.picoclaw.io](https://docs.picoclaw.io).
+
+<details>
+<summary><b>Docker (alternativa)</b></summary>
+
+```bash
+# 1. Clone este repositório
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Primeiro uso — gera docker/data/config.json automaticamente e para
-docker compose -f docker/docker-compose.yml --profile gateway up
-# O contêiner exibe "First-run setup complete." e para.
+# 2. Primeira execução — gera automaticamente docker/data/config.json e encerra
+#    (só é acionado quando config.json e workspace/ estão ausentes)
+docker compose -f docker/docker-compose.yml --profile launcher up
+# O container imprime "First-run setup complete." e para.
 
 # 3. Configure suas API keys
-vim docker/data/config.json   # Chaves de API do provedor, tokens de bot, etc.
+vim docker/data/config.json
 
 # 4. Iniciar
-docker compose -f docker/docker-compose.yml --profile gateway up -d
+docker compose -f docker/docker-compose.yml --profile launcher up -d
+# Abra http://localhost:18800
 ```
 
-> [!TIP]
-> **Usuários Docker**: Por padrão, o Gateway ouve em `127.0.0.1`, o que não é acessível a partir do host. Se você precisar acessar os endpoints de integridade ou expor portas, defina `PICOCLAW_GATEWAY_HOST=0.0.0.0` em seu ambiente ou atualize o `config.json`.
+> **Usuários de Docker / VM:** O Gateway escuta em `127.0.0.1` por padrão. Defina `PICOCLAW_GATEWAY_HOST=0.0.0.0` ou use a flag `-public` para torná-lo acessível pelo host.
 
 ```bash
-# 5. Ver logs
-docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
+# Verificar logs
+docker compose -f docker/docker-compose.yml logs -f
 
-# 6. Parar
-docker compose -f docker/docker-compose.yml --profile gateway down
-```
+# Parar
+docker compose -f docker/docker-compose.yml --profile launcher down
 
-### Modo Agente (Execução única)
-
-```bash
-# Fazer uma pergunta
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Quanto e 2+2?"
-
-# Modo interativo
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
-```
-
-### Atualizar
-
-```bash
+# Atualizar
 docker compose -f docker/docker-compose.yml pull
-docker compose -f docker/docker-compose.yml --profile gateway up -d
+docker compose -f docker/docker-compose.yml --profile launcher up -d
 ```
 
-### 🚀 Início Rápido
+</details>
 
-> [!TIP]
-> Configure sua API key em `~/.picoclaw/config.json`. Obtenha API keys: [Volcengine (CodingPlan)](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) (LLM) · [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM). Busca web é **opcional** — obtenha a [API Tavily](https://tavily.com) gratuita (1000 consultas grátis/mês) ou a [Brave Search API](https://brave.com/search/api) (2000 consultas grátis/mês).
+### 💻 TUI Launcher (Recomendado para Headless / SSH)
+
+O TUI (Terminal UI) Launcher fornece uma interface de terminal completa para configuração e gerenciamento. Ideal para servidores, Raspberry Pi e outros ambientes headless.
+
+```bash
+picoclaw-launcher-tui
+```
+
+<p align="center">
+<img src="assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
+</p>
+
+**Primeiros passos:**
+
+Use os menus do TUI para: **1)** Configurar um Provider -> **2)** Configurar um Channel -> **3)** Iniciar o Gateway -> **4)** Conversar!
+
+Para documentação detalhada do TUI, veja [docs.picoclaw.io](https://docs.picoclaw.io).
+
+### 📱 Android
+
+Dê uma segunda vida ao seu celular de uma década! Transforme-o em um Assistente de IA inteligente com o PicoClaw.
+
+**Opção 1: Termux (disponível agora)**
+
+1. Instale o [Termux](https://github.com/termux/termux-app) (baixe nas [GitHub Releases](https://github.com/termux/termux-app/releases), ou pesquise no F-Droid / Google Play)
+2. Execute os seguintes comandos:
+
+```bash
+# Baixar a versão mais recente
+wget https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_arm64.tar.gz
+tar xzf picoclaw_Linux_arm64.tar.gz
+pkg install proot
+termux-chroot ./picoclaw onboard   # chroot fornece um layout padrão de sistema de arquivos Linux
+```
+
+Em seguida, siga a seção Terminal Launcher abaixo para concluir a configuração.
+
+<img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
+
+**Opção 2: Instalação via APK (em breve)**
+
+Um APK Android independente com WebUI integrado está em desenvolvimento. Fique ligado!
+
+<details>
+<summary><b>Terminal Launcher (para ambientes com recursos limitados)</b></summary>
+
+Para ambientes mínimos onde apenas o binário principal `picoclaw` está disponível (sem Launcher UI), você pode configurar tudo via linha de comando e um arquivo de configuração JSON.
 
 **1. Inicializar**
 
@@ -219,1018 +308,271 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 picoclaw onboard
 ```
 
+Isso cria `~/.picoclaw/config.json` e o diretório workspace.
+
 **2. Configurar** (`~/.picoclaw/config.json`)
 
 ```json
 {
-  "model_list": [
-    {
-      "model_name": "ark-code-latest",
-      "model": "volcengine/ark-code-latest",
-      "api_key": "sk-your-api-key",
-      "api_base":"https://ark.cn-beijing.volces.com/api/coding/v3"
-    },
-    {
-      "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
-      "api_key": "sk-your-openai-key",
-      "request_timeout": 300,
-      "api_base": "https://api.openai.com/v1"
-    }
-  ],
   "agents": {
     "defaults": {
       "model_name": "gpt-5.4"
     }
   },
-  "tools": {
-    "web": {
-      "brave": {
-        "enabled": false,
-        "api_key": "YOUR_BRAVE_API_KEY",
-        "max_results": 5
-      },
-      "duckduckgo": {
-        "enabled": true,
-        "max_results": 5
-      }
-    }
-  }
-}
-```
-
-> **Novo**: O formato de configuração `model_list` permite adicionar provedores sem alterar código. Veja [Configuração de Modelo](#configuração-de-modelo-model_list) para detalhes.
-> `request_timeout` é opcional e usa segundos. Se omitido ou definido como `<= 0`, o PicoClaw usa o timeout padrão (120s).
-
-**3. Obter API Keys**
-
-* **Provedor de LLM**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-* **Busca Web** (opcional): [Brave Search](https://brave.com/search/api) - Plano gratuito disponível (2000 consultas/mês)
-
-> **Nota**: Veja `config.example.json` para um modelo de configuração completo.
-
-**4. Conversar**
-
-```bash
-picoclaw agent -m "Quanto e 2+2?"
-```
-
-Pronto! Você tem um assistente de IA funcionando em 2 minutos.
-
----
-
-## 💬 Integração com Apps de Chat
-
-Converse com seu PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom.
-
-| Canal | Nível de Configuração |
-| --- | --- |
-| **Telegram** | Fácil (apenas um token) |
-| **Discord** | Fácil (bot token + intents) |
-| **QQ** | Fácil (AppID + AppSecret) |
-| **DingTalk** | Médio (credenciais do app) |
-| **LINE** | Médio (credenciais + webhook URL) |
-| **WeCom AI Bot** | Médio (Token + chave AES) |
-
-<details>
-<summary><b>Telegram</b> (Recomendado)</summary>
-
-**1. Criar o bot**
-
-* Abra o Telegram, busque `@BotFather`
-* Envie `/newbot`, siga as instruções
-* Copie o token
-
-**2. Configurar**
-
-```json
-{
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
-    }
-  }
-}
-```
-
-> Obtenha seu User ID pelo `@userinfobot` no Telegram.
-
-**3. Executar**
-
-```bash
-picoclaw gateway
-```
-
-</details>
-
-<details>
-<summary><b>Discord</b></summary>
-
-**1. Criar o bot**
-
-* Acesse <https://discord.com/developers/applications>
-* Crie um aplicativo → Bot → Add Bot
-* Copie o token do bot
-
-**2. Habilitar Intents**
-
-* Nas configurações do Bot, habilite **MESSAGE CONTENT INTENT**
-* (Opcional) Habilite **SERVER MEMBERS INTENT** se quiser usar lista de permissões baseada em dados dos membros
-
-**3. Obter seu User ID**
-
-* Configurações do Discord → Avançado → habilite **Modo Desenvolvedor**
-* Clique com botão direito no seu avatar → **Copiar ID do Usuário**
-
-**4. Configurar**
-
-```json
-{
-  "channels": {
-    "discord": {
-      "enabled": true,
-      "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
-    }
-  }
-}
-```
-
-**5. Convidar o bot**
-
-* OAuth2 → URL Generator
-* Scopes: `bot`
-* Bot Permissions: `Send Messages`, `Read Message History`
-* Abra a URL de convite gerada e adicione o bot ao seu servidor
-
-**6. Executar**
-
-```bash
-picoclaw gateway
-```
-
-</details>
-
-<details>
-<summary><b>QQ</b></summary>
-
-**1. Criar o bot**
-
-- Acesse a [QQ Open Platform](https://q.qq.com/#)
-- Crie um aplicativo → Obtenha **AppID** e **AppSecret**
-
-**2. Configurar**
-
-```json
-{
-  "channels": {
-    "qq": {
-      "enabled": true,
-      "app_id": "YOUR_APP_ID",
-      "app_secret": "YOUR_APP_SECRET",
-      "allow_from": []
-    }
-  }
-}
-```
-
-> Deixe `allow_from` vazio para permitir todos os usuários, ou especifique números QQ para restringir o acesso.
-
-**3. Executar**
-
-```bash
-picoclaw gateway
-```
-
-</details>
-
-<details>
-<summary><b>DingTalk</b></summary>
-
-**1. Criar o bot**
-
-* Acesse a [Open Platform](https://open.dingtalk.com/)
-* Crie um app interno
-* Copie o Client ID e Client Secret
-
-**2. Configurar**
-
-```json
-{
-  "channels": {
-    "dingtalk": {
-      "enabled": true,
-      "client_id": "YOUR_CLIENT_ID",
-      "client_secret": "YOUR_CLIENT_SECRET",
-      "allow_from": []
-    }
-  }
-}
-```
-
-> Deixe `allow_from` vazio para permitir todos os usuários, ou especifique IDs para restringir o acesso.
-
-**3. Executar**
-
-```bash
-picoclaw gateway
-```
-
-</details>
-
-<details>
-<summary><b>LINE</b></summary>
-
-**1. Criar uma Conta Oficial LINE**
-
-- Acesse o [LINE Developers Console](https://developers.line.biz/)
-- Crie um provider → Crie um canal Messaging API
-- Copie o **Channel Secret** e o **Channel Access Token**
-
-**2. Configurar**
-
-```json
-{
-  "channels": {
-    "line": {
-      "enabled": true,
-      "channel_secret": "YOUR_CHANNEL_SECRET",
-      "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_path": "/webhook/line",
-      "allow_from": []
-    }
-  }
-}
-```
-
-**3. Configurar URL do Webhook**
-
-O LINE requer HTTPS para webhooks. Use um reverse proxy ou tunnel:
-
-```bash
-# Exemplo com ngrok
-ngrok http 18790
-```
-
-Em seguida, configure a Webhook URL no LINE Developers Console para `https://seu-dominio/webhook/line` e habilite **Use webhook**.
-
-> **Nota**: O webhook do LINE é servido pelo Gateway compartilhado (padrão 127.0.0.1:18790). Use um proxy reverso/HTTPS ou túnel (como ngrok) para expor o Gateway de forma segura quando necessário.
-
-**4. Executar**
-
-```bash
-picoclaw gateway
-```
-
-> Em chats de grupo, o bot responde apenas quando mencionado com @. As respostas citam a mensagem original.
-
-> **Docker Compose**: Se você usa Docker Compose, exponha o Gateway (padrão 127.0.0.1:18790) se precisar acessar o webhook LINE externamente, por exemplo `ports: ["18790:18790"]`.
-
-</details>
-
-<details>
-<summary><b>WeCom (WeChat Work)</b></summary>
-
-O PicoClaw suporta três tipos de integração WeCom:
-
-**Opção 1: WeCom Bot (Robô)** - Configuração mais fácil, suporta chats em grupo
-**Opção 2: WeCom App (Aplicativo Personalizado)** - Mais recursos, mensagens proativas, somente chat privado
-**Opção 3: WeCom AI Bot (Robô Inteligente)** - Bot IA oficial, respostas em streaming, suporta grupo e privado
-
-Veja o [Guia de Configuração WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) para instruções detalhadas.
-
-**Configuração Rápida - WeCom Bot:**
-
-**1. Criar um bot**
-
-* Acesse o Console de Administração WeCom → Chat em Grupo → Adicionar Bot de Grupo
-* Copie a URL do webhook (formato: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
-
-**2. Configurar**
-
-```json
-{
-  "channels": {
-    "wecom": {
-      "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_path": "/webhook/wecom",
-      "allow_from": []
-    }
-  }
-}
-```
-
-> **Nota**: O webhook do WeCom Bot é atendido pelo Gateway compartilhado (padrão 127.0.0.1:18790). Use um proxy reverso/HTTPS ou túnel para expor o Gateway em produção.
-
-**Configuração Rápida - WeCom App:**
-
-**1. Criar um aplicativo**
-
-* Acesse o Console de Administração WeCom → Gerenciamento de Aplicativos → Criar Aplicativo
-* Copie o **AgentId** e o **Secret**
-* Acesse a página "Minha Empresa", copie o **CorpID**
-
-**2. Configurar recebimento de mensagens**
-
-* Nos detalhes do aplicativo, clique em "Receber Mensagens" → "Configurar API"
-* Defina a URL como `http://your-server:18790/webhook/wecom-app`
-* Gere o **Token** e o **EncodingAESKey**
-
-**3. Configurar**
-
-```json
-{
-  "channels": {
-    "wecom_app": {
-      "enabled": true,
-      "corp_id": "wwxxxxxxxxxxxxxxxx",
-      "corp_secret": "YOUR_CORP_SECRET",
-      "agent_id": 1000002,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-app",
-      "allow_from": []
-    }
-  }
-}
-```
-
-**4. Executar**
-
-```bash
-picoclaw gateway
-```
-
-> **Nota**: O WeCom App (callbacks de webhook) é servido pelo Gateway compartilhado (padrão 127.0.0.1:18790). Em produção use um proxy reverso HTTPS para expor a porta do Gateway, ou atualize `PICOCLAW_GATEWAY_HOST` para `0.0.0.0` se necessário.
-
-**Configuração Rápida - WeCom AI Bot:**
-
-**1. Criar um AI Bot**
-
-* Acesse o Console de Administração WeCom → Gerenciamento de Aplicativos → AI Bot
-* Configure a URL de callback: `http://your-server:18791/webhook/wecom-aibot`
-* Copie o **Token** e gere o **EncodingAESKey**
-
-**2. Configurar**
-
-```json
-{
-  "channels": {
-    "wecom_aibot": {
-      "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-aibot",
-      "allow_from": [],
-      "welcome_message": "Olá! Como posso ajudá-lo?"
-    }
-  }
-}
-```
-
-**3. Executar**
-
-```bash
-picoclaw gateway
-```
-
-> **Nota**: O WeCom AI Bot usa protocolo de pull em streaming — sem preocupações com timeout de resposta. Tarefas longas (>5,5 min) alternam automaticamente para entrega via `response_url`.
-
-</details>
-
-## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Junte-se a Rede Social de Agentes
-
-Conecte o PicoClaw a Rede Social de Agentes simplesmente enviando uma única mensagem via CLI ou qualquer App de Chat integrado.
-
-**Leia `https://clawdchat.ai/skill.md` e siga as instruções para entrar no [ClawdChat.ai](https://clawdchat.ai)**
-
-## ⚙️ Configuração Detalhada
-
-Arquivo de configuração: `~/.picoclaw/config.json`
-
-### Variáveis de Ambiente
-
-Você pode substituir os caminhos padrão usando variáveis de ambiente. Isso é útil para instalações portáteis, implantações em contêineres ou para executar o picoclaw como um serviço do sistema. Essas variáveis são independentes e controlam caminhos diferentes.
-
-| Variável          | Descrição                                                                                                                             | Caminho Padrão            |
-|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
-| `PICOCLAW_CONFIG` | Substitui o caminho para o arquivo de configuração. Isso informa diretamente ao picoclaw qual `config.json` carregar, ignorando todos os outros locais. | `~/.picoclaw/config.json` |
-| `PICOCLAW_HOME`   | Substitui o diretório raiz dos dados do picoclaw. Isso altera o local padrão do `workspace` e de outros diretórios de dados.          | `~/.picoclaw`             |
-
-**Exemplos:**
-
-```bash
-# Executar o picoclaw usando um arquivo de configuração específico
-# O caminho do workspace será lido de dentro desse arquivo de configuração
-PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
-
-# Executar o picoclaw com todos os seus dados armazenados em /opt/picoclaw
-# A configuração será carregada do ~/.picoclaw/config.json padrão
-# O workspace será criado em /opt/picoclaw/workspace
-PICOCLAW_HOME=/opt/picoclaw picoclaw agent
-
-# Use ambos para uma configuração totalmente personalizada
-PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
-```
-
-### Estrutura do Workspace
-
-O PicoClaw armazena dados no workspace configurado (padrão: `~/.picoclaw/workspace`):
-
-```
-~/.picoclaw/workspace/
-├── sessions/          # Sessoes de conversa e historico
-├── memory/            # Memoria de longo prazo (MEMORY.md)
-├── state/             # Estado persistente (ultimo canal, etc.)
-├── cron/              # Banco de dados de tarefas agendadas
-├── skills/            # Skills personalizadas
-├── AGENTS.md          # Guia de comportamento do Agente
-├── HEARTBEAT.md       # Prompts de tarefas periodicas (verificado a cada 30 min)
-├── IDENTITY.md        # Identidade do Agente
-├── SOUL.md            # Alma do Agente
-└── USER.md            # Preferencias do usuario
-```
-
-### 🔒 Sandbox de Segurança
-
-O PicoClaw roda em um ambiente sandbox por padrão. O agente so pode acessar arquivos e executar comandos dentro do workspace configurado.
-
-#### Configuração Padrão
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "workspace": "~/.picoclaw/workspace",
-      "restrict_to_workspace": true
-    }
-  }
-}
-```
-
-| Opção | Padrão | Descrição |
-|-------|--------|-----------|
-| `workspace` | `~/.picoclaw/workspace` | Diretório de trabalho do agente |
-| `restrict_to_workspace` | `true` | Restringir acesso de arquivos/comandos ao workspace |
-
-#### Ferramentas Protegidas
-
-Quando `restrict_to_workspace: true`, as seguintes ferramentas são restritas ao sandbox:
-
-| Ferramenta | Função | Restrição |
-|------------|--------|-----------|
-| `read_file` | Ler arquivos | Apenas arquivos dentro do workspace |
-| `write_file` | Escrever arquivos | Apenas arquivos dentro do workspace |
-| `list_dir` | Listar diretorios | Apenas diretorios dentro do workspace |
-| `edit_file` | Editar arquivos | Apenas arquivos dentro do workspace |
-| `append_file` | Adicionar a arquivos | Apenas arquivos dentro do workspace |
-| `exec` | Executar comandos | Caminhos dos comandos devem estar dentro do workspace |
-
-#### Proteção Adicional do Exec
-
-Mesmo com `restrict_to_workspace: false`, a ferramenta `exec` bloqueia estes comandos perigosos:
-
-* `rm -rf`, `del /f`, `rmdir /s` — Exclusão em massa
-* `format`, `mkfs`, `diskpart` — Formatação de disco
-* `dd if=` — Criação de imagem de disco
-* Escrita em `/dev/sd[a-z]` — Escrita direta no disco
-* `shutdown`, `reboot`, `poweroff` — Desligamento do sistema
-* Fork bomb `:(){ :|:& };:`
-
-#### Exemplos de Erro
-
-```
-[ERROR] tool: Tool execution failed
-{tool=exec, error=Command blocked by safety guard (path outside working dir)}
-```
-
-```
-[ERROR] tool: Tool execution failed
-{tool=exec, error=Command blocked by safety guard (dangerous pattern detected)}
-```
-
-#### Desabilitar Restrições (Risco de Segurança)
-
-Se você precisa que o agente acesse caminhos fora do workspace:
-
-**Método 1: Arquivo de configuração**
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "restrict_to_workspace": false
-    }
-  }
-}
-```
-
-**Método 2: Variável de ambiente**
-
-```bash
-export PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false
-```
-
-> ⚠️ **Aviso**: Desabilitar esta restrição permite que o agente acesse qualquer caminho no seu sistema. Use com cuidado apenas em ambientes controlados.
-
-#### Consistência do Limite de Segurança
-
-A configuração `restrict_to_workspace` se aplica consistentemente em todos os caminhos de execução:
-
-| Caminho de Execução | Limite de Segurança |
-|----------------------|---------------------|
-| Agente Principal | `restrict_to_workspace` ✅ |
-| Subagente / Spawn | Herda a mesma restrição ✅ |
-| Tarefas Heartbeat | Herda a mesma restrição ✅ |
-
-Todos os caminhos compartilham a mesma restrição de workspace — nao há como contornar o limite de segurança por meio de subagentes ou tarefas agendadas.
-
-### Heartbeat (Tarefas Periódicas)
-
-O PicoClaw pode executar tarefas periódicas automaticamente. Crie um arquivo `HEARTBEAT.md` no seu workspace:
-
-```markdown
-# Tarefas Periodicas
-
-- Verificar meu email para mensagens importantes
-- Revisar minha agenda para proximos eventos
-- Verificar a previsao do tempo
-```
-
-O agente lerá este arquivo a cada 30 minutos (configurável) e executará as tarefas usando as ferramentas disponíveis.
-
-#### Tarefas Assincronas com Spawn
-
-Para tarefas de longa duração (busca web, chamadas de API), use a ferramenta `spawn` para criar um **subagente**:
-
-```markdown
-# Tarefas Periódicas
-
-## Tarefas Rápidas (resposta direta)
-- Informar hora atual
-
-## Tarefas Longas (usar spawn para async)
-- Buscar notícias de IA na web e resumir
-- Verificar email e reportar mensagens importantes
-```
-
-**Comportamentos principais:**
-
-| Funcionalidade | Descrição |
-|----------------|-----------|
-| **spawn** | Cria subagente assíncrono, não bloqueia o heartbeat |
-| **Contexto independente** | Subagente tem seu próprio contexto, sem histórico de sessão |
-| **Ferramenta message** | Subagente se comunica diretamente com o usuário via ferramenta message |
-| **Não-bloqueante** | Após o spawn, o heartbeat continua para a próxima tarefa |
-
-#### Como Funciona a Comunicação do Subagente
-
-```
-Heartbeat dispara
-    ↓
-Agente lê HEARTBEAT.md
-    ↓
-Para tarefa longa: spawn subagente
-    ↓                           ↓
-Continua próxima tarefa    Subagente trabalha independentemente
-    ↓                           ↓
-Todas tarefas concluídas   Subagente usa ferramenta "message"
-    ↓                           ↓
-Responde HEARTBEAT_OK      Usuário recebe resultado diretamente
-```
-
-O subagente tem acesso às ferramentas (message, web_search, etc.) e pode se comunicar com o usuário independentemente sem passar pelo agente principal.
-
-**Configuração:**
-
-```json
-{
-  "heartbeat": {
-    "enabled": true,
-    "interval": 30
-  }
-}
-```
-
-| Opção | Padrão | Descrição |
-|-------|--------|-----------|
-| `enabled` | `true` | Habilitar/desabilitar heartbeat |
-| `interval` | `30` | Intervalo de verificação em minutos (min: 5) |
-
-**Variáveis de ambiente:**
-
-* `PICOCLAW_HEARTBEAT_ENABLED=false` para desabilitar
-* `PICOCLAW_HEARTBEAT_INTERVAL=60` para alterar o intervalo
-
-### Provedores
-
-> [!NOTE]
-> O Groq fornece transcrição de voz gratuita via Whisper. Se configurado, mensagens de áudio de qualquer canal serão automaticamente transcritas no nível do agente.
-
-| Provedor | Finalidade | Obter API Key |
-| --- | --- | --- |
-| `gemini` | LLM (Gemini direto) | [aistudio.google.com](https://aistudio.google.com) |
-| `zhipu` | LLM (Zhipu direto) | [bigmodel.cn](bigmodel.cn) |
-| `volcengine`             | LLM(Volcengine direto)                   | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw)           |
-| `openrouter` (Em teste) | LLM (recomendado, acesso a todos os modelos) | [openrouter.ai](https://openrouter.ai) |
-| `anthropic` (Em teste) | LLM (Claude direto) | [console.anthropic.com](https://console.anthropic.com) |
-| `openai` (Em teste) | LLM (GPT direto) | [platform.openai.com](https://platform.openai.com) |
-| `deepseek` (Em teste) | LLM (DeepSeek direto) | [platform.deepseek.com](https://platform.deepseek.com) |
-| `qwen` | Alibaba Qwen | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
-| `cerebras` | Cerebras | [cerebras.ai](https://cerebras.ai) |
-| `groq` | LLM + **Transcrição de voz** (Whisper) | [console.groq.com](https://console.groq.com) |
-
-<details>
-<summary><b>Configuração Zhipu</b></summary>
-
-**1. Obter API key**
-
-* Obtenha a [API key](https://bigmodel.cn/usercenter/proj-mgmt/apikeys)
-
-**2. Configurar**
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
-      "max_tokens": 8192,
-      "temperature": 0.7,
-      "max_tool_iterations": 20
-    }
-  },
-  "providers": {
-    "zhipu": {
-      "api_key": "Sua API Key",
-      "api_base": "https://open.bigmodel.cn/api/paas/v4"
-    }
-  }
-}
-```
-
-**3. Executar**
-
-```bash
-picoclaw agent -m "Ola, como vai?"
-```
-
-</details>
-
-<details>
-<summary><b>Exemplo de configuraçao completa</b></summary>
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "model": "anthropic/claude-opus-4-5"
-    }
-  },
-  "providers": {
-    "openrouter": {
-      "api_key": "sk-or-v1-xxx"
-    },
-    "groq": {
-      "api_key": "gsk_xxx"
-    }
-  },
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "token": "123456:ABC...",
-      "allow_from": ["123456789"]
-    },
-    "discord": {
-      "enabled": true,
-      "token": "",
-      "allow_from": [""]
-    },
-    "whatsapp": {
-      "enabled": false
-    },
-    "feishu": {
-      "enabled": false,
-      "app_id": "cli_xxx",
-      "app_secret": "xxx",
-      "encrypt_key": "",
-      "verification_token": "",
-      "allow_from": []
-    },
-    "qq": {
-      "enabled": false,
-      "app_id": "",
-      "app_secret": "",
-      "allow_from": []
-    }
-  },
-  "tools": {
-    "web": {
-      "brave": {
-        "enabled": false,
-        "api_key": "BSA...",
-        "max_results": 5
-      },
-      "duckduckgo": {
-        "enabled": true,
-        "max_results": 5
-      }
-    },
-    "cron": {
-      "exec_timeout_minutes": 5
-    }
-  },
-  "heartbeat": {
-    "enabled": true,
-    "interval": 30
-  }
-}
-```
-
-</details>
-
-### Configuração de Modelo (model_list)
-
-> **Novidade!** PicoClaw agora usa uma abordagem de configuração **centrada no modelo**. Basta especificar o formato `fornecedor/modelo` (ex: `zhipu/glm-4.7`) para adicionar novos provedores—**nenhuma alteração de código necessária!**
-
-Este design também possibilita o **suporte multi-agent** com seleção flexível de provedores:
-
-- **Diferentes agentes, diferentes provedores** : Cada agente pode usar seu próprio provedor LLM
-- **Modelos de fallback** : Configure modelos primários e de reserva para resiliência
-- **Balanceamento de carga** : Distribua solicitações entre múltiplos endpoints
-- **Configuração centralizada** : Gerencie todos os provedores em um só lugar
-
-#### 📋 Todos os Fornecedores Suportados
-
-| Fornecedor | Prefixo `model` | API Base Padrão | Protocolo | Chave API |
-|-------------|-----------------|------------------|----------|-----------|
-| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [Obter Chave](https://platform.openai.com) |
-| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [Obter Chave](https://console.anthropic.com) |
-| **Zhipu AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [Obter Chave](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
-| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [Obter Chave](https://platform.deepseek.com) |
-| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [Obter Chave](https://aistudio.google.com/api-keys) |
-| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [Obter Chave](https://console.groq.com) |
-| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [Obter Chave](https://platform.moonshot.cn) |
-| **Qwen (Alibaba)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [Obter Chave](https://dashscope.console.aliyun.com) |
-| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [Obter Chave](https://build.nvidia.com) |
-| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | Local (sem chave necessária) |
-| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [Obter Chave](https://openrouter.ai/keys) |
-| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | Local |
-| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Obter Chave](https://cerebras.ai) |
-| **VolcEngine (Doubao)** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Obter Chave](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
-| **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
-| **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Obter Chave](https://www.byteplus.com)                    |
-| **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Obter Chave](https://longcat.chat/platform)                     |
-| **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [Obter Token](https://modelscope.cn/my/tokens)                   |
-| **Azure OpenAI**    | `azure/`          | `https://{resource}.openai.azure.com`               | Azure     | [Obter Chave](https://portal.azure.com)                          |
-| **Antigravity** | `antigravity/` | Google Cloud | Custom | Apenas OAuth |
-| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
-
-#### Configuração Básica
-
-```json
-{
   "model_list": [
     {
-      "model_name": "ark-code-latest",
-      "model": "volcengine/ark-code-latest",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-api-key"
-    },
-    {
-      "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
-      "api_key": "sk-your-openai-key"
-    },
-    {
-      "model_name": "claude-sonnet-4.6",
-      "model": "anthropic/claude-sonnet-4.6",
-      "api_key": "sk-ant-your-key"
-    },
-    {
-      "model_name": "glm-4.7",
-      "model": "zhipu/glm-4.7",
-      "api_key": "your-zhipu-key"
-    }
-  ],
-  "agents": {
-    "defaults": {
-      "model": "gpt-5.4"
-    }
-  }
-}
-```
-
-#### Exemplos por Fornecedor
-
-**OpenAI**
-```json
-{
-  "model_name": "gpt-5.4",
-  "model": "openai/gpt-5.4",
-  "api_key": "sk-..."
-}
-```
-
-**VolcEngine (Doubao)**
-```json
-{
-  "model_name": "ark-code-latest",
-  "model": "volcengine/ark-code-latest",
-  "api_key": "sk-..."
-}
-```
-
-**Zhipu AI (GLM)**
-```json
-{
-  "model_name": "glm-4.7",
-  "model": "zhipu/glm-4.7",
-  "api_key": "your-key"
-}
-```
-
-**Anthropic (com OAuth)**
-```json
-{
-  "model_name": "claude-sonnet-4.6",
-  "model": "anthropic/claude-sonnet-4.6",
-  "auth_method": "oauth"
-}
-```
-> Execute `picoclaw auth login --provider anthropic` para configurar credenciais OAuth.
-
-**Proxy/API personalizada**
-```json
-{
-  "model_name": "my-custom-model",
-  "model": "openai/custom-model",
-  "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-...",
-  "request_timeout": 300
-}
-```
-
-#### Balanceamento de Carga
-
-Configure vários endpoints para o mesmo nome de modelo—PicoClaw fará round-robin automaticamente entre eles:
-
-```json
-{
-  "model_list": [
-    {
-      "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
-      "api_base": "https://api1.example.com/v1",
-      "api_key": "sk-key1"
-    },
-    {
-      "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
-      "api_base": "https://api2.example.com/v1",
-      "api_key": "sk-key2"
     }
   ]
 }
 ```
 
-#### Migração da Configuração Legada `providers`
+> Veja `config/config.example.json` no repositório para um template de configuração completo com todas as opções disponíveis.
 
-A configuração antiga `providers` está **descontinuada** mas ainda é suportada para compatibilidade reversa.
+**3. Conversar**
 
-**Configuração Antiga (descontinuada):**
-```json
-{
-  "providers": {
-    "zhipu": {
-      "api_key": "your-key",
-      "api_base": "https://open.bigmodel.cn/api/paas/v4"
-    }
-  },
-  "agents": {
-    "defaults": {
-      "provider": "zhipu",
-      "model": "glm-4.7"
-    }
-  }
-}
+```bash
+# Pergunta única
+picoclaw agent -m "What is 2+2?"
+
+# Modo interativo
+picoclaw agent
+
+# Iniciar gateway para integração com app de chat
+picoclaw gateway
 ```
 
-**Nova Configuração (recomendada):**
+</details>
+
+## 🔌 Providers (LLM)
+
+O PicoClaw suporta mais de 30 providers de LLM através da configuração `model_list`. Use o formato `protocolo/modelo`:
+
+| Provider | Protocolo | API Key | Notas |
+|----------|-----------|---------|-------|
+| [OpenAI](https://platform.openai.com/api-keys) | `openai/` | Obrigatória | GPT-5.4, GPT-4o, o3, etc. |
+| [Anthropic](https://console.anthropic.com/settings/keys) | `anthropic/` | Obrigatória | Claude Opus 4.6, Sonnet 4.6, etc. |
+| [Google Gemini](https://aistudio.google.com/apikey) | `gemini/` | Obrigatória | Gemini 3 Flash, 2.5 Pro, etc. |
+| [OpenRouter](https://openrouter.ai/keys) | `openrouter/` | Obrigatória | 200+ modelos, API unificada |
+| [Zhipu (GLM)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | `zhipu/` | Obrigatória | GLM-4.7, GLM-5, etc. |
+| [DeepSeek](https://platform.deepseek.com/api_keys) | `deepseek/` | Obrigatória | DeepSeek-V3, DeepSeek-R1 |
+| [Volcengine](https://console.volcengine.com) | `volcengine/` | Obrigatória | Modelos Doubao, Ark |
+| [Qwen](https://dashscope.console.aliyun.com/apiKey) | `qwen/` | Obrigatória | Qwen3, Qwen-Max, etc. |
+| [Groq](https://console.groq.com/keys) | `groq/` | Obrigatória | Inferência rápida (Llama, Mixtral) |
+| [Moonshot (Kimi)](https://platform.moonshot.cn/console/api-keys) | `moonshot/` | Obrigatória | Modelos Kimi |
+| [Minimax](https://platform.minimaxi.com/user-center/basic-information/interface-key) | `minimax/` | Obrigatória | Modelos MiniMax |
+| [Mistral](https://console.mistral.ai/api-keys) | `mistral/` | Obrigatória | Mistral Large, Codestral |
+| [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | Obrigatória | Modelos hospedados pela NVIDIA |
+| [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | Obrigatória | Inferência rápida |
+| [Novita AI](https://novita.ai/) | `novita/` | Obrigatória | Vários modelos abertos |
+| [Ollama](https://ollama.com/) | `ollama/` | Não necessária | Modelos locais, self-hosted |
+| [vLLM](https://docs.vllm.ai/) | `vllm/` | Não necessária | Implantação local, compatível com OpenAI |
+| [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Varia | Proxy para 100+ providers |
+| [Azure OpenAI](https://portal.azure.com/) | `azure/` | Obrigatória | Implantação Azure Enterprise |
+| [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | Login por código de dispositivo |
+| [Antigravity](https://console.cloud.google.com/) | `antigravity/` | OAuth | Google Cloud AI |
+
+<details>
+<summary><b>Implantação local (Ollama, vLLM, etc.)</b></summary>
+
+**Ollama:**
 ```json
 {
   "model_list": [
     {
-      "model_name": "glm-4.7",
-      "model": "zhipu/glm-4.7",
-      "api_key": "your-key"
+      "model_name": "local-llama",
+      "model": "ollama/llama3.1:8b",
+      "api_base": "http://localhost:11434/v1"
     }
-  ],
-  "agents": {
-    "defaults": {
-      "model": "glm-4.7"
-    }
-  }
+  ]
 }
 ```
 
-Para o guia de migração detalhado, consulte [docs/migration/model-list-migration.md](docs/migration/model-list-migration.md).
+**vLLM:**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "local-vllm",
+      "model": "vllm/your-model",
+      "api_base": "http://localhost:8000/v1"
+    }
+  ]
+}
+```
 
-## Referência CLI
+Para detalhes completos de configuração de providers, veja [Providers & Models](docs/pt-br/providers.md).
 
-| Comando | Descrição |
-| --- | --- |
-| `picoclaw onboard` | Inicializar configuração & workspace |
-| `picoclaw agent -m "..."` | Conversar com o agente |
-| `picoclaw agent` | Modo de chat interativo |
-| `picoclaw gateway` | Iniciar o gateway (para bots de chat) |
-| `picoclaw status` | Mostrar status |
-| `picoclaw cron list` | Listar todas as tarefas agendadas |
-| `picoclaw cron add ...` | Adicionar uma tarefa agendada |
+</details>
 
-### Tarefas Agendadas / Lembretes
+## 💬 Channels (Apps de Chat)
 
-O PicoClaw suporta lembretes agendados e tarefas recorrentes por meio da ferramenta `cron`:
+Converse com seu PicoClaw por meio de mais de 17 plataformas de mensagens:
 
-* **Lembretes únicos**: "Remind me in 10 minutes" (Me lembre em 10 minutos) → dispara uma vez após 10min
-* **Tarefas recorrentes**: "Remind me every 2 hours" (Me lembre a cada 2 horas) → dispara a cada 2 horas
-* **Expressões Cron**: "Remind me at 9am daily" (Me lembre às 9h todos os dias) → usa expressão cron
+| Channel | Configuração | Protocolo | Docs |
+|---------|--------------|-----------|------|
+| **Telegram** | Fácil (bot token) | Long polling | [Guia](docs/channels/telegram/README.pt-br.md) |
+| **Discord** | Fácil (bot token + intents) | WebSocket | [Guia](docs/channels/discord/README.pt-br.md) |
+| **WhatsApp** | Fácil (QR scan ou bridge URL) | Nativo / Bridge | [Guia](docs/pt-br/chat-apps.md#whatsapp) |
+| **Weixin** | Fácil (scan QR nativo) | iLink API | [Guia](docs/pt-br/chat-apps.md#weixin) |
+| **QQ** | Fácil (AppID + AppSecret) | WebSocket | [Guia](docs/channels/qq/README.pt-br.md) |
+| **Slack** | Fácil (bot + app token) | Socket Mode | [Guia](docs/channels/slack/README.pt-br.md) |
+| **Matrix** | Médio (homeserver + token) | Sync API | [Guia](docs/channels/matrix/README.pt-br.md) |
+| **DingTalk** | Médio (credenciais do cliente) | Stream | [Guia](docs/channels/dingtalk/README.pt-br.md) |
+| **Feishu / Lark** | Médio (App ID + Secret) | WebSocket/SDK | [Guia](docs/channels/feishu/README.pt-br.md) |
+| **LINE** | Médio (credenciais + webhook) | Webhook | [Guia](docs/channels/line/README.pt-br.md) |
+| **WeCom Bot** | Médio (webhook URL) | Webhook | [Guia](docs/channels/wecom/wecom_bot/README.pt-br.md) |
+| **WeCom App** | Médio (credenciais corporativas) | Webhook | [Guia](docs/channels/wecom/wecom_app/README.pt-br.md) |
+| **WeCom AI Bot** | Médio (token + chave AES) | WebSocket / Webhook | [Guia](docs/channels/wecom/wecom_aibot/README.pt-br.md) |
+| **IRC** | Médio (servidor + nick) | Protocolo IRC | [Guia](docs/pt-br/chat-apps.md#irc) |
+| **OneBot** | Médio (WebSocket URL) | OneBot v11 | [Guia](docs/channels/onebot/README.pt-br.md) |
+| **MaixCam** | Fácil (habilitar) | TCP socket | [Guia](docs/channels/maixcam/README.pt-br.md) |
+| **Pico** | Fácil (habilitar) | Protocolo nativo | Integrado |
+| **Pico Client** | Fácil (WebSocket URL) | WebSocket | Integrado |
 
-As tarefas são armazenadas em `~/.picoclaw/workspace/cron/` e processadas automaticamente.
+> Todos os channels baseados em webhook compartilham um único servidor HTTP do Gateway (`gateway.host`:`gateway.port`, padrão `127.0.0.1:18790`). O Feishu usa modo WebSocket/SDK e não utiliza o servidor HTTP compartilhado.
 
-## 🤝 Contribuir & Roadmap
+Para instruções detalhadas de configuração de channels, veja [Configuração de Apps de Chat](docs/pt-br/chat-apps.md).
 
-PRs são bem-vindos! O código-fonte é intencionalmente pequeno e legível. 🤗
+## 🔧 Ferramentas
 
-Roadmap em breve...
+### 🔍 Busca na Web
 
-Grupo de desenvolvedores em formação. Requisito de entrada: Pelo menos 1 PR com merge.
+O PicoClaw pode pesquisar na web para fornecer informações atualizadas. Configure em `tools.web`:
 
-Grupos de usuários:
+| Motor de Busca | API Key | Nível Gratuito | Link |
+|----------------|---------|----------------|------|
+| DuckDuckGo | Não necessária | Ilimitado | Fallback integrado |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Obrigatória | 1000 consultas/dia | IA, otimizado para chinês |
+| [Tavily](https://tavily.com) | Obrigatória | 1000 consultas/mês | Otimizado para AI Agents |
+| [Brave Search](https://brave.com/search/api) | Obrigatória | 2000 consultas/mês | Rápido e privado |
+| [Perplexity](https://www.perplexity.ai) | Obrigatória | Pago | Busca com IA |
+| [SearXNG](https://github.com/searxng/searxng) | Não necessária | Self-hosted | Metabuscador gratuito |
+| [GLM Search](https://open.bigmodel.cn/) | Obrigatória | Varia | Busca web Zhipu |
 
-Discord: <https://discord.gg/V4sAZ9XWpN>
+### ⚙️ Outras Ferramentas
 
-<img src="assets/wechat.png" alt="PicoClaw" width="512">
+O PicoClaw inclui ferramentas integradas para operações de arquivo, execução de código, agendamento e mais. Veja [Configuração de Ferramentas](docs/pt-br/tools_configuration.md) para detalhes.
 
-## 🐛 Solução de Problemas
+## 🎯 Skills
 
-### Busca web mostra "API 配置问题"
+Skills são capacidades modulares que estendem seu Agent. Elas são carregadas a partir de arquivos `SKILL.md` no seu workspace.
 
-Isso é normal se você ainda não configurou uma API key de busca. O PicoClaw fornecerá links úteis para busca manual.
+**Instalar skills do ClawHub:**
 
-Para habilitar a busca web:
+```bash
+picoclaw skills search "web scraping"
+picoclaw skills install <skill-name>
+```
 
-1. **Opção 1 (Recomendado)**: Obtenha uma API key gratuita em [https://brave.com/search/api](https://brave.com/search/api) (2000 consultas grátis/mês) para os melhores resultados.
-2. **Opção 2 (Sem Cartão de Crédito)**: Se você não tem uma key, o sistema automaticamente usa o **DuckDuckGo** como fallback (sem necessidade de key).
+**Configurar token do ClawHub** (opcional, para limites de taxa mais altos):
 
-Adicione a key em `~/.picoclaw/config.json` se usar o Brave:
-
+Adicione ao seu `config.json`:
 ```json
 {
   "tools": {
-    "web": {
-      "brave": {
-        "enabled": false,
-        "api_key": "YOUR_BRAVE_API_KEY",
-        "max_results": 5
-      },
-      "duckduckgo": {
-        "enabled": true,
-        "max_results": 5
+    "skills": {
+      "registries": {
+        "clawhub": {
+          "auth_token": "your-clawhub-token"
+        }
       }
     }
   }
 }
 ```
 
-### Erros de filtragem de conteúdo
+Para mais detalhes, veja [Configuração de Ferramentas - Skills](docs/pt-br/tools_configuration.md#skills-tool).
 
-Alguns provedores (como Zhipu) possuem filtragem de conteúdo. Tente reformular sua pergunta ou use um modelo diferente.
+## 🔗 MCP (Model Context Protocol)
 
-### Bot do Telegram diz "Conflict: terminated by other getUpdates"
+O PicoClaw suporta nativamente o [MCP](https://modelcontextprotocol.io/) — conecte qualquer servidor MCP para estender as capacidades do seu Agent com ferramentas externas e fontes de dados.
 
-Isso acontece quando outra instância do bot está em execução. Certifique-se de que apenas um `picoclaw gateway` esteja rodando por vez.
+```json
+{
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "servers": {
+        "filesystem": {
+          "enabled": true,
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+        }
+      }
+    }
+  }
+}
+```
 
----
+Para configuração completa de MCP (transportes stdio, SSE, HTTP, Tool Discovery), veja [Configuração de Ferramentas - MCP](docs/pt-br/tools_configuration.md#mcp-tool).
 
-## 📝 Comparação de API Keys
+## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Junte-se à Rede Social de Agents
 
-| Serviço | Plano Gratuito | Caso de Uso |
-| --- | --- | --- |
-| **OpenRouter** | 200K tokens/mês | Múltiplos modelos (Claude, GPT-4, etc.) |
-| **Volcengine CodingPlan** | ¥9,9/primeiro mês | Ideal para usuários chineses, múltiplos modelos SOTA (Doubao, DeepSeek, etc.) |
-| **Zhipu** | 200K tokens/mês | Adequado para usuários chineses |
-| **Brave Search** | 2000 consultas/mês | Funcionalidade de busca web |
-| **Groq** | Plano gratuito disponível | Inferência ultra-rápida (Llama, Mixtral) |
-| **Cerebras** | Plano gratuito disponível | Inferência ultra-rápida (Llama 3.3 70B) |
-| **ModelScope** | 2000 requisições/dia | Inferência gratuita (Qwen, GLM, DeepSeek, etc.) |
+Conecte o PicoClaw à Rede Social de Agents simplesmente enviando uma única mensagem via CLI ou qualquer App de Chat integrado.
 
----
+**Leia `https://clawdchat.ai/skill.md` e siga as instruções para entrar no [ClawdChat.ai](https://clawdchat.ai)**
 
-<div align="center">
-  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
-</div>
+## 🖥️ Referência CLI
+
+| Comando                   | Descrição                              |
+| ------------------------- | -------------------------------------- |
+| `picoclaw onboard`        | Inicializar config e workspace         |
+| `picoclaw onboard weixin` | Conectar conta WeChat via QR |
+| `picoclaw agent -m "..."` | Conversar com o agent                  |
+| `picoclaw agent`          | Modo de chat interativo                |
+| `picoclaw gateway`        | Iniciar o gateway                      |
+| `picoclaw status`         | Exibir status                          |
+| `picoclaw version`        | Exibir informações de versão           |
+| `picoclaw model`          | Ver ou trocar o modelo padrão          |
+| `picoclaw cron list`      | Listar todos os jobs agendados         |
+| `picoclaw cron add ...`   | Adicionar um job agendado              |
+| `picoclaw cron disable`   | Desabilitar um job agendado            |
+| `picoclaw cron remove`    | Remover um job agendado                |
+| `picoclaw skills list`    | Listar skills instaladas               |
+| `picoclaw skills install` | Instalar uma skill                     |
+| `picoclaw migrate`        | Migrar dados de versões anteriores     |
+| `picoclaw auth login`     | Autenticar com providers               |
+
+### ⏰ Tarefas Agendadas / Lembretes
+
+O PicoClaw suporta lembretes agendados e tarefas recorrentes através da ferramenta `cron`:
+
+* **Lembretes únicos**: "Lembre-me em 10 minutos" -> dispara uma vez após 10min
+* **Tarefas recorrentes**: "Lembre-me a cada 2 horas" -> dispara a cada 2 horas
+* **Expressões cron**: "Lembre-me às 9h diariamente" -> usa expressão cron
+
+## 📚 Documentação
+
+Para guias detalhados além deste README:
+
+| Tópico | Descrição |
+|--------|-----------|
+| [Docker & Início Rápido](docs/pt-br/docker.md) | Configuração do Docker Compose, modos Launcher/Agent |
+| [Apps de Chat](docs/pt-br/chat-apps.md) | Guias de configuração para todos os 17+ channels |
+| [Configuração](docs/pt-br/configuration.md) | Variáveis de ambiente, layout do workspace, sandbox de segurança |
+| [Providers & Models](docs/pt-br/providers.md) | 30+ providers de LLM, roteamento de modelos, configuração de model_list |
+| [Spawn & Tarefas Assíncronas](docs/pt-br/spawn-tasks.md) | Tarefas rápidas, tarefas longas com spawn, orquestração assíncrona de sub-agents |
+| [Hooks](docs/hooks/README.md) | Sistema de hooks orientado a eventos: observadores, interceptores, hooks de aprovação |
+| [Steering](docs/steering.md) | Injetar mensagens em um loop de agente em execução |
+| [SubTurn](docs/subturn.md) | Coordenação de subagentes, controle de concorrência, ciclo de vida |
+| [Solução de Problemas](docs/pt-br/troubleshooting.md) | Problemas comuns e soluções |
+| [Configuração de Ferramentas](docs/pt-br/tools_configuration.md) | Habilitar/desabilitar por ferramenta, políticas de exec, MCP, Skills |
+| [Compatibilidade de Hardware](docs/pt-br/hardware-compatibility.md) | Placas testadas, requisitos mínimos |
+
+## 🤝 Contribuir & Roadmap
+
+PRs são bem-vindos! O código-fonte é intencionalmente pequeno e legível.
+
+Veja nosso [Roadmap da Comunidade](https://github.com/sipeed/picoclaw/issues/988) e [CONTRIBUTING.md](CONTRIBUTING.md) para diretrizes.
+
+Grupo de desenvolvedores em formação, entre após seu primeiro PR mesclado!
+
+Grupos de Usuários:
+
+Discord: <https://discord.gg/V4sAZ9XWpN>
+
+WeChat:
+<img src="assets/wechat.png" alt="WeChat group QR code" width="512">

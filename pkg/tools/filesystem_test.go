@@ -189,6 +189,121 @@ func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
 	}
 }
 
+// TestFilesystemTool_WriteFile_OverwriteDefaultBlocked verifies that writing to an
+// existing file without overwrite=true returns an error.
+func TestFilesystemTool_WriteFile_OverwriteDefaultBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	os.WriteFile(testFile, []byte("original"), 0o644)
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": "new content",
+	})
+
+	assert.True(t, result.IsError, "expected error when overwriting without overwrite=true")
+	assert.Contains(t, result.ForLLM, "already exists")
+	assert.Contains(t, result.ForLLM, "overwrite=true")
+
+	// Original content must be untouched
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "original", string(data))
+}
+
+// TestFilesystemTool_WriteFile_OverwriteExplicitAllowed verifies that setting
+// overwrite=true replaces the existing file.
+func TestFilesystemTool_WriteFile_OverwriteExplicitAllowed(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	os.WriteFile(testFile, []byte("original"), 0o644)
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":      testFile,
+		"content":   "replaced",
+		"overwrite": true,
+	})
+
+	assert.False(t, result.IsError, "expected success with overwrite=true, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "replaced", string(data))
+}
+
+// TestFilesystemTool_WriteFile_NewFileNoOverwriteFlag verifies that a new (non-existing)
+// file can be written without setting overwrite=true.
+func TestFilesystemTool_WriteFile_NewFileNoOverwriteFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "newfile.txt")
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": "brand new",
+	})
+
+	assert.False(t, result.IsError, "expected success for new file, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "brand new", string(data))
+}
+
+// TestFilesystemTool_WriteFile_OverwriteFalseExplicitBlocked verifies that
+// explicitly passing overwrite=false also blocks overwriting.
+func TestFilesystemTool_WriteFile_OverwriteFalseExplicitBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	os.WriteFile(testFile, []byte("original"), 0o644)
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":      testFile,
+		"content":   "new content",
+		"overwrite": false,
+	})
+
+	assert.True(t, result.IsError, "expected error when overwrite=false")
+	assert.Contains(t, result.ForLLM, "already exists")
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "original", string(data))
+}
+
+// TestFilesystemTool_WriteFile_OverwriteSandboxed verifies the overwrite guard
+// works correctly in restricted (sandbox) mode.
+func TestFilesystemTool_WriteFile_OverwriteSandboxed(t *testing.T) {
+	workspace := t.TempDir()
+	testFile := "file.txt"
+	os.WriteFile(filepath.Join(workspace, testFile), []byte("original"), 0o644)
+
+	tool := NewWriteFileTool(workspace, true)
+
+	// Without overwrite=true → blocked
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": "new content",
+	})
+	assert.True(t, result.IsError, "expected error in sandbox mode without overwrite=true")
+	assert.Contains(t, result.ForLLM, "already exists")
+
+	// With overwrite=true → allowed
+	result = tool.Execute(context.Background(), map[string]any{
+		"path":      testFile,
+		"content":   "replaced in sandbox",
+		"overwrite": true,
+	})
+	assert.False(t, result.IsError, "expected success in sandbox mode with overwrite=true, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(filepath.Join(workspace, testFile))
+	assert.NoError(t, err)
+	assert.Equal(t, "replaced in sandbox", string(data))
+}
+
 // TestFilesystemTool_ListDir_Success verifies successful directory listing
 func TestFilesystemTool_ListDir_Success(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -518,6 +633,90 @@ func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
 	result = tool.Execute(context.Background(), map[string]any{"path": otherFile})
 	if !result.IsError {
 		t.Errorf("expected non-whitelisted path to be blocked, got: %s", result.ForLLM)
+	}
+}
+
+func TestWhitelistFs_BlocksSymlinkEscapeInAllowedDir(t *testing.T) {
+	workspace := t.TempDir()
+	allowedDir := t.TempDir()
+	secretDir := t.TempDir()
+	secretFile := filepath.Join(secretDir, "secret.txt")
+	if err := os.WriteFile(secretFile, []byte("top secret"), 0o644); err != nil {
+		t.Fatalf("WriteFile(secretFile) error = %v", err)
+	}
+
+	linkPath := filepath.Join(allowedDir, "link_out")
+	if err := os.Symlink(secretDir, linkPath); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(allowedDir))}
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
+
+	result := tool.Execute(context.Background(), map[string]any{"path": filepath.Join(linkPath, "secret.txt")})
+	if !result.IsError {
+		t.Fatalf("expected symlink escape from allowed dir to be blocked, got: %s", result.ForLLM)
+	}
+}
+
+func TestWhitelistFs_WriteAllowsNewFileUnderAllowedDir(t *testing.T) {
+	workspace := t.TempDir()
+	rootDir := t.TempDir()
+	allowedDir := filepath.Join(rootDir, "allowed")
+	targetFile := filepath.Join(allowedDir, "nested", "file.txt")
+
+	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(allowedDir))}
+	tool := NewWriteFileTool(workspace, true, patterns)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    targetFile,
+		"content": "outside write",
+	})
+	if result.IsError {
+		t.Fatalf("expected whitelisted write to succeed, got: %s", result.ForLLM)
+	}
+
+	data, err := os.ReadFile(targetFile)
+	if err != nil {
+		t.Fatalf("ReadFile(targetFile) error = %v", err)
+	}
+	if string(data) != "outside write" {
+		t.Fatalf("target file content = %q, want %q", string(data), "outside write")
+	}
+}
+
+func TestWhitelistFs_AllowsResolvedAllowedRootAlias(t *testing.T) {
+	workspace := t.TempDir()
+	realDir := t.TempDir()
+	linkParent := t.TempDir()
+	allowedAlias := filepath.Join(linkParent, "allowed-link")
+
+	if err := os.Symlink(realDir, allowedAlias); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	targetFile := filepath.Join(allowedAlias, "nested", "alias.txt")
+	if err := os.MkdirAll(filepath.Dir(targetFile), 0o755); err != nil {
+		t.Fatalf("MkdirAll(targetFile dir) error = %v", err)
+	}
+	if err := os.WriteFile(targetFile, []byte("through alias"), 0o644); err != nil {
+		t.Fatalf("WriteFile(targetFile) error = %v", err)
+	}
+
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(
+			"^" + regexp.QuoteMeta(filepath.Clean(allowedAlias)) +
+				"(?:" + regexp.QuoteMeta(string(os.PathSeparator)) + "|$)",
+		),
+	}
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
+
+	result := tool.Execute(context.Background(), map[string]any{"path": targetFile})
+	if result.IsError {
+		t.Fatalf("expected symlink-backed allowed root to be readable, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "through alias") {
+		t.Fatalf("expected file content, got: %s", result.ForLLM)
 	}
 }
 

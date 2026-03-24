@@ -2,9 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -30,7 +33,7 @@ func TestEnsurePicoChannel_FreshConfig(t *testing.T) {
 	if !cfg.Channels.Pico.Enabled {
 		t.Error("expected Pico to be enabled after setup")
 	}
-	if cfg.Channels.Pico.Token == "" {
+	if cfg.Channels.Pico.Token() == "" {
 		t.Error("expected a non-empty token after setup")
 	}
 }
@@ -118,7 +121,7 @@ func TestEnsurePicoChannel_PreservesUserSettings(t *testing.T) {
 	// Pre-configure with custom user settings
 	cfg := config.DefaultConfig()
 	cfg.Channels.Pico.Enabled = true
-	cfg.Channels.Pico.Token = "user-custom-token"
+	cfg.Channels.Pico.SetToken("user-custom-token")
 	cfg.Channels.Pico.AllowTokenQuery = true
 	cfg.Channels.Pico.AllowOrigins = []string{"https://myapp.example.com"}
 	if err := config.SaveConfig(configPath, cfg); err != nil {
@@ -140,8 +143,8 @@ func TestEnsurePicoChannel_PreservesUserSettings(t *testing.T) {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
 
-	if cfg.Channels.Pico.Token != "user-custom-token" {
-		t.Errorf("token = %q, want %q", cfg.Channels.Pico.Token, "user-custom-token")
+	if cfg.Channels.Pico.Token() != "user-custom-token" {
+		t.Errorf("token = %q, want %q", cfg.Channels.Pico.Token(), "user-custom-token")
 	}
 	if !cfg.Channels.Pico.AllowTokenQuery {
 		t.Error("user's allow_token_query=true must be preserved")
@@ -163,7 +166,7 @@ func TestEnsurePicoChannel_Idempotent(t *testing.T) {
 	}
 
 	cfg1, _ := config.LoadConfig(configPath)
-	token1 := cfg1.Channels.Pico.Token
+	token1 := cfg1.Channels.Pico.Token()
 
 	// Second call should be a no-op
 	changed, err := h.ensurePicoChannel(origin)
@@ -175,7 +178,7 @@ func TestEnsurePicoChannel_Idempotent(t *testing.T) {
 	}
 
 	cfg2, _ := config.LoadConfig(configPath)
-	if cfg2.Channels.Pico.Token != token1 {
+	if cfg2.Channels.Pico.Token() != token1 {
 		t.Error("token should not change on subsequent calls")
 	}
 }
@@ -234,4 +237,78 @@ func TestHandlePicoSetup_Response(t *testing.T) {
 	if resp["changed"] != true {
 		t.Error("response should have changed=true on first setup")
 	}
+}
+
+func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	handler := h.handleWebSocketProxy()
+
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/pico/ws" {
+			t.Fatalf("server1 path = %q, want %q", r.URL.Path, "/pico/ws")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "server1")
+	}))
+	defer server1.Close()
+
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/pico/ws" {
+			t.Fatalf("server2 path = %q, want %q", r.URL.Path, "/pico/ws")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "server2")
+	}))
+	defer server2.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = mustGatewayTestPort(t, server1.URL)
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	req1 := httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
+	rec1 := httptest.NewRecorder()
+	handler(rec1, req1)
+
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("first status = %d, want %d", rec1.Code, http.StatusOK)
+	}
+	if body := rec1.Body.String(); body != "server1" {
+		t.Fatalf("first body = %q, want %q", body, "server1")
+	}
+
+	cfg.Gateway.Port = mustGatewayTestPort(t, server2.URL)
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
+	rec2 := httptest.NewRecorder()
+	handler(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second status = %d, want %d", rec2.Code, http.StatusOK)
+	}
+	if body := rec2.Body.String(); body != "server2" {
+		t.Fatalf("second body = %q, want %q", body, "server2")
+	}
+}
+
+func mustGatewayTestPort(t *testing.T, rawURL string) int {
+	t.Helper()
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatalf("Atoi(%q) error = %v", parsed.Port(), err)
+	}
+
+	return port
 }

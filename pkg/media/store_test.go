@@ -77,6 +77,106 @@ func TestReleaseAll(t *testing.T) {
 	}
 }
 
+func TestReleaseAllForgetOnlyKeepsFile(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileMediaStore()
+
+	path := createTempFile(t, dir, "workspace.txt")
+	ref, err := store.Store(path, MediaMeta{
+		Source:        "test",
+		CleanupPolicy: CleanupPolicyForgetOnly,
+	}, "scope1")
+	if err != nil {
+		t.Fatalf("Store failed: %v", err)
+	}
+
+	if err := store.ReleaseAll("scope1"); err != nil {
+		t.Fatalf("ReleaseAll failed: %v", err)
+	}
+
+	if _, err := store.Resolve(ref); err == nil {
+		t.Error("forget-only ref should be unresolvable after release")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("forget-only file should remain on disk: %v", err)
+	}
+}
+
+func TestReleaseAllSharedPathDeletesOnFinalRefOnly(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileMediaStore()
+
+	path := createTempFile(t, dir, "shared.jpg")
+	refA, err := store.Store(path, MediaMeta{
+		Source:        "test",
+		CleanupPolicy: CleanupPolicyDeleteOnCleanup,
+	}, "scopeA")
+	if err != nil {
+		t.Fatalf("Store(scopeA) failed: %v", err)
+	}
+	refB, err := store.Store(path, MediaMeta{
+		Source:        "test",
+		CleanupPolicy: CleanupPolicyDeleteOnCleanup,
+	}, "scopeB")
+	if err != nil {
+		t.Fatalf("Store(scopeB) failed: %v", err)
+	}
+
+	if err := store.ReleaseAll("scopeA"); err != nil {
+		t.Fatalf("ReleaseAll(scopeA) failed: %v", err)
+	}
+
+	if _, err := store.Resolve(refA); err == nil {
+		t.Error("refA should be unresolvable after ReleaseAll(scopeA)")
+	}
+	if _, err := store.Resolve(refB); err != nil {
+		t.Fatalf("refB should still resolve: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("shared file should remain until final ref is released: %v", err)
+	}
+
+	if err := store.ReleaseAll("scopeB"); err != nil {
+		t.Fatalf("ReleaseAll(scopeB) failed: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("shared file should be deleted after final ref is released")
+	}
+}
+
+func TestReleaseAllMixedPoliciesKeepsFile(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileMediaStore()
+
+	path := createTempFile(t, dir, "shared.txt")
+	if _, err := store.Store(path, MediaMeta{
+		Source:        "test",
+		CleanupPolicy: CleanupPolicyDeleteOnCleanup,
+	}, "owned"); err != nil {
+		t.Fatalf("Store(owned) failed: %v", err)
+	}
+	if _, err := store.Store(path, MediaMeta{
+		Source:        "test",
+		CleanupPolicy: CleanupPolicyForgetOnly,
+	}, "borrowed"); err != nil {
+		t.Fatalf("Store(borrowed) failed: %v", err)
+	}
+
+	if err := store.ReleaseAll("owned"); err != nil {
+		t.Fatalf("ReleaseAll(owned) failed: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("mixed-policy file should remain after owned ref release: %v", err)
+	}
+
+	if err := store.ReleaseAll("borrowed"); err != nil {
+		t.Fatalf("ReleaseAll(borrowed) failed: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("mixed-policy path should not be auto-deleted: %v", err)
+	}
+}
+
 func TestMultiScopeIsolation(t *testing.T) {
 	dir := t.TempDir()
 	store := NewFileMediaStore()
@@ -293,6 +393,35 @@ func TestCleanExpiredRemovesOldEntries(t *testing.T) {
 	}
 }
 
+func TestCleanExpiredForgetOnlyKeepsFile(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	store := newTestStoreWithCleanup(10 * time.Minute)
+	store.nowFunc = func() time.Time { return now.Add(-20 * time.Minute) }
+
+	path := createTempFile(t, dir, "workspace.txt")
+	ref, err := store.Store(path, MediaMeta{
+		Source:        "test",
+		CleanupPolicy: CleanupPolicyForgetOnly,
+	}, "scope1")
+	if err != nil {
+		t.Fatalf("Store failed: %v", err)
+	}
+
+	store.nowFunc = func() time.Time { return now }
+	removed := store.CleanExpired()
+
+	if removed != 1 {
+		t.Errorf("expected 1 removed, got %d", removed)
+	}
+	if _, err := store.Resolve(ref); err == nil {
+		t.Error("expired forget-only ref should be unresolvable")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("forget-only file should remain on disk: %v", err)
+	}
+}
+
 func TestCleanExpiredKeepsNonExpired(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
@@ -343,6 +472,53 @@ func TestCleanExpiredMixedAges(t *testing.T) {
 	}
 	if _, err := store.Resolve(freshRef); err != nil {
 		t.Errorf("fresh ref should still resolve: %v", err)
+	}
+}
+
+func TestCleanExpiredSharedPathDeletesOnFinalRefOnly(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	store := newTestStoreWithCleanup(10 * time.Minute)
+
+	path := createTempFile(t, dir, "shared.jpg")
+
+	store.nowFunc = func() time.Time { return now.Add(-20 * time.Minute) }
+	oldRef, err := store.Store(path, MediaMeta{
+		Source:        "test",
+		CleanupPolicy: CleanupPolicyDeleteOnCleanup,
+	}, "scope-old")
+	if err != nil {
+		t.Fatalf("Store(old) failed: %v", err)
+	}
+
+	store.nowFunc = func() time.Time { return now }
+	freshRef, err := store.Store(path, MediaMeta{
+		Source:        "test",
+		CleanupPolicy: CleanupPolicyDeleteOnCleanup,
+	}, "scope-fresh")
+	if err != nil {
+		t.Fatalf("Store(fresh) failed: %v", err)
+	}
+
+	removed := store.CleanExpired()
+	if removed != 1 {
+		t.Errorf("expected 1 removed, got %d", removed)
+	}
+	if _, err := store.Resolve(oldRef); err == nil {
+		t.Error("old ref should be gone after cleanup")
+	}
+	if _, err := store.Resolve(freshRef); err != nil {
+		t.Fatalf("fresh ref should still resolve: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("shared file should remain while fresh ref exists: %v", err)
+	}
+
+	if err := store.ReleaseAll("scope-fresh"); err != nil {
+		t.Fatalf("ReleaseAll(scope-fresh) failed: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("shared file should be deleted after final ref is released")
 	}
 }
 

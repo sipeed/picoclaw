@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -103,6 +104,14 @@ func TestSendFileTool_Success(t *testing.T) {
 	if result.Media[0][:8] != "media://" {
 		t.Errorf("expected media:// ref, got %q", result.Media[0])
 	}
+
+	_, meta, err := store.ResolveWithMeta(result.Media[0])
+	if err != nil {
+		t.Fatalf("ResolveWithMeta failed: %v", err)
+	}
+	if meta.CleanupPolicy != media.CleanupPolicyForgetOnly {
+		t.Errorf("CleanupPolicy = %q, want %q", meta.CleanupPolicy, media.CleanupPolicyForgetOnly)
+	}
 }
 
 func TestSendFileTool_CustomFilename(t *testing.T) {
@@ -122,6 +131,44 @@ func TestSendFileTool_CustomFilename(t *testing.T) {
 	})
 	if result.IsError {
 		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if len(result.Media) != 1 {
+		t.Fatalf("expected 1 media ref, got %d", len(result.Media))
+	}
+}
+
+func TestSendFileTool_AllowsWhitelistedMediaTempPath(t *testing.T) {
+	workspace := t.TempDir()
+	mediaDir := media.TempDir()
+	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(mediaDir) error = %v", err)
+	}
+
+	testFile, err := os.CreateTemp(mediaDir, "send-file-*.txt")
+	if err != nil {
+		t.Fatalf("CreateTemp(mediaDir) error = %v", err)
+	}
+	testPath := testFile.Name()
+	if _, err := testFile.WriteString("forward me"); err != nil {
+		testFile.Close()
+		t.Fatalf("WriteString(testFile) error = %v", err)
+	}
+	if err := testFile.Close(); err != nil {
+		t.Fatalf("Close(testFile) error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(testPath) })
+
+	pattern := regexp.MustCompile(
+		"^" + regexp.QuoteMeta(filepath.Clean(mediaDir)) + "(?:" + regexp.QuoteMeta(string(os.PathSeparator)) + "|$)",
+	)
+
+	store := media.NewFileMediaStore()
+	tool := NewSendFileTool(workspace, true, 0, store, []*regexp.Regexp{pattern})
+	tool.SetContext("feishu", "chat123")
+
+	result := tool.Execute(context.Background(), map[string]any{"path": testPath})
+	if result.IsError {
+		t.Fatalf("expected whitelisted temp media file to be sendable, got: %s", result.ForLLM)
 	}
 	if len(result.Media) != 1 {
 		t.Fatalf("expected 1 media ref, got %d", len(result.Media))

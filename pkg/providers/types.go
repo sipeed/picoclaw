@@ -37,11 +37,34 @@ type StatefulProvider interface {
 	Close()
 }
 
+// StreamingProvider is an optional interface for providers that support token streaming.
+// onChunk receives the accumulated text so far (not individual deltas).
+// The returned LLMResponse is the same complete response for compatibility with tool-call handling.
+type StreamingProvider interface {
+	ChatStream(
+		ctx context.Context,
+		messages []Message,
+		tools []ToolDefinition,
+		model string,
+		options map[string]any,
+		onChunk func(accumulated string),
+	) (*LLMResponse, error)
+}
+
 // ThinkingCapable is an optional interface for providers that support
 // extended thinking (e.g. Anthropic). Used by the agent loop to warn
 // when thinking_level is configured but the active provider cannot use it.
 type ThinkingCapable interface {
 	SupportsThinking() bool
+}
+
+// NativeSearchCapable is an optional interface for providers that support
+// built-in web search during LLM inference (e.g. OpenAI web_search_preview,
+// xAI Grok search). When the active provider implements this interface and
+// returns true, the agent loop can hide the client-side web_search tool to
+// avoid duplicate search surfaces and use the provider's native search instead.
+type NativeSearchCapable interface {
+	SupportsNativeSearch() bool
 }
 
 // FailoverReason classifies why an LLM request failed for fallback decisions.

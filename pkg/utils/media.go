@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,11 +13,24 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 )
+
+var audioExtensions = []string{".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma"}
+
+func AudioFormat(path string) (string, error) {
+	ext := strings.ToLower(filepath.Ext(path))
+	for _, supportedExt := range audioExtensions {
+		if ext == supportedExt {
+			return strings.TrimPrefix(ext, "."), nil
+		}
+	}
+
+	return "", fmt.Errorf("unsupported audio format for %q", path)
+}
 
 // IsAudioFile checks if a file is an audio file based on its filename extension and content type.
 func IsAudioFile(filename, contentType string) bool {
-	audioExtensions := []string{".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma"}
 	audioTypes := []string{"audio/", "application/ogg", "application/x-ogg"}
 
 	for _, ext := range audioExtensions {
@@ -67,7 +81,7 @@ func DownloadFile(urlStr, filename string, opts DownloadOptions) string {
 		opts.LoggerPrefix = "utils"
 	}
 
-	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	mediaDir := media.TempDir()
 	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
 		logger.ErrorCF(opts.LoggerPrefix, "Failed to create media directory", map[string]any{
 			"error": err.Error(),

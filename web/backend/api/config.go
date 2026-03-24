@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // registerConfigRoutes binds configuration management endpoints to the ServeMux.
@@ -44,7 +46,7 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var cfg config.Config
-	if err := json.Unmarshal(body, &cfg); err != nil {
+	if err = json.Unmarshal(body, &cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -61,6 +63,14 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	logger.Infof("new config: %+v", cfg)
+	oldCfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		return
+	}
+	cfg.SecurityCopyFrom(oldCfg)
 
 	if err := config.SaveConfig(h.configPath, &cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -149,6 +159,8 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	newCfg.SecurityCopyFrom(cfg)
+
 	if err := config.SaveConfig(h.configPath, &newCfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
 		return
@@ -174,20 +186,41 @@ func validateConfig(cfg *config.Config) []string {
 	}
 
 	// Pico channel: token required when enabled
-	if cfg.Channels.Pico.Enabled && cfg.Channels.Pico.Token == "" {
+	if cfg.Channels.Pico.Enabled && cfg.Channels.Pico.Token() == "" {
 		errs = append(errs, "channels.pico.token is required when pico channel is enabled")
 	}
 
 	// Telegram: token required when enabled
-	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token == "" {
+	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token() == "" {
 		errs = append(errs, "channels.telegram.token is required when telegram channel is enabled")
 	}
 
 	// Discord: token required when enabled
-	if cfg.Channels.Discord.Enabled && cfg.Channels.Discord.Token == "" {
+	if cfg.Channels.Discord.Enabled && cfg.Channels.Discord.Token() == "" {
 		errs = append(errs, "channels.discord.token is required when discord channel is enabled")
 	}
 
+	if cfg.Tools.Exec.Enabled {
+		if cfg.Tools.Exec.EnableDenyPatterns {
+			errs = append(
+				errs,
+				validateRegexPatterns("tools.exec.custom_deny_patterns", cfg.Tools.Exec.CustomDenyPatterns)...)
+		}
+		errs = append(
+			errs,
+			validateRegexPatterns("tools.exec.custom_allow_patterns", cfg.Tools.Exec.CustomAllowPatterns)...)
+	}
+
+	return errs
+}
+
+func validateRegexPatterns(field string, patterns []string) []string {
+	var errs []string
+	for index, pattern := range patterns {
+		if _, err := regexp.Compile(pattern); err != nil {
+			errs = append(errs, fmt.Sprintf("%s[%d] is not a valid regular expression: %v", field, index, err))
+		}
+	}
 	return errs
 }
 

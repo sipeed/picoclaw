@@ -27,6 +27,7 @@ type picoConn struct {
 	sessionID string
 	writeMu   sync.Mutex
 	closed    atomic.Bool
+	cancel    context.CancelFunc // cancels per-connection goroutines (e.g. pingLoop)
 }
 
 // writeJSON sends a JSON message to the connection with write locking.
@@ -42,6 +43,9 @@ func (pc *picoConn) writeJSON(v any) error {
 // close closes the connection.
 func (pc *picoConn) close() {
 	if pc.closed.CompareAndSwap(false, true) {
+		if pc.cancel != nil {
+			pc.cancel()
+		}
 		pc.conn.Close()
 	}
 }
@@ -60,7 +64,7 @@ type PicoChannel struct {
 
 // NewPicoChannel creates a new Pico Protocol channel.
 func NewPicoChannel(cfg config.PicoConfig, messageBus *bus.MessageBus) (*PicoChannel, error) {
-	if cfg.Token == "" {
+	if cfg.Token() == "" {
 		return nil, fmt.Errorf("pico token is required")
 	}
 
@@ -293,7 +297,7 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 //  2. Sec-WebSocket-Protocol "token.<value>" (for browsers that can't set headers)
 //  3. Query parameter "token" (only when AllowTokenQuery is on)
 func (c *PicoChannel) authenticate(r *http.Request) bool {
-	token := c.config.Token
+	token := c.config.Token()
 	if token == "" {
 		return false
 	}
@@ -324,7 +328,7 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 // matchedSubprotocol returns the "token.<value>" subprotocol that matches
 // the configured token, or "" if none do.
 func (c *PicoChannel) matchedSubprotocol(r *http.Request) string {
-	token := c.config.Token
+	token := c.config.Token()
 	for _, proto := range websocket.Subprotocols(r) {
 		if after, ok := strings.CutPrefix(proto, "token."); ok && after == token {
 			return proto

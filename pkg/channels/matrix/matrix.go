@@ -35,8 +35,6 @@ const (
 	roomKindCacheTTL           = 5 * time.Minute
 	roomKindCacheCleanupPeriod = 1 * time.Minute
 	roomKindCacheMaxEntries    = 2048
-
-	matrixMediaTempDirName = "picoclaw_media"
 )
 
 var matrixMentionHrefRegexp = regexp.MustCompile(`(?i)<a[^>]+href=["']([^"']+)["']`)
@@ -188,7 +186,7 @@ type MatrixChannel struct {
 func NewMatrixChannel(cfg config.MatrixConfig, messageBus *bus.MessageBus) (*MatrixChannel, error) {
 	homeserver := strings.TrimSpace(cfg.Homeserver)
 	userID := strings.TrimSpace(cfg.UserID)
-	accessToken := strings.TrimSpace(cfg.AccessToken)
+	accessToken := strings.TrimSpace(cfg.AccessToken())
 	if homeserver == "" {
 		return nil, fmt.Errorf("matrix homeserver is required")
 	}
@@ -694,6 +692,9 @@ func (c *MatrixChannel) extractInboundMedia(
 
 func (c *MatrixChannel) storeMedia(localPath string, meta media.MediaMeta, scope string) string {
 	if store := c.GetMediaStore(); store != nil {
+		if meta.CleanupPolicy == "" {
+			meta.CleanupPolicy = media.CleanupPolicyDeleteOnCleanup
+		}
 		ref, err := store.Store(localPath, meta, scope)
 		if err == nil {
 			return ref
@@ -1105,7 +1106,7 @@ func (c *MatrixChannel) stripSelfMention(text string) string {
 }
 
 func matrixMediaTempDir() (string, error) {
-	mediaDir := filepath.Join(os.TempDir(), matrixMediaTempDirName)
+	mediaDir := media.TempDir()
 	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
 		return "", err
 	}

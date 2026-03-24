@@ -13,7 +13,7 @@ func TestNewOnboardCommand(t *testing.T) {
 	require.NotNil(t, cmd)
 
 	assert.Equal(t, "onboard", cmd.Use)
-	assert.Equal(t, "Initialize picoclaw configuration and workspace", cmd.Short)
+	assert.Equal(t, "Initialize picoclaw configuration, workspace, and channel accounts", cmd.Short)
 
 	assert.Len(t, cmd.Aliases, 1)
 	assert.True(t, cmd.HasAlias("o"))
@@ -24,6 +24,10 @@ func TestNewOnboardCommand(t *testing.T) {
 	assert.Nil(t, cmd.PersistentPreRun)
 	assert.Nil(t, cmd.PersistentPostRun)
 
-	assert.False(t, cmd.HasFlags())
-	assert.False(t, cmd.HasSubCommands())
+	assert.True(t, cmd.HasFlags())
+	encFlag := cmd.Flags().Lookup("enc")
+	require.NotNil(t, encFlag, "expected --enc flag to be registered")
+	assert.Equal(t, "false", encFlag.DefValue, "--enc should default to false")
+	assert.True(t, cmd.HasSubCommands())
+	assert.NotNil(t, cmd.Commands())
 }

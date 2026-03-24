@@ -1,13 +1,12 @@
 <div align="center">
-<img src="assets/logo.webp" alt="PicoClaw" width="512">
+  <img src="assets/logo.webp" alt="PicoClaw" width="512">
 
-<h1>PicoClaw: Go で書かれた超効率 AI アシスタント</h1>
+  <h1>PicoClaw: Go で書かれた超効率 AI アシスタント</h1>
 
-<h3>$10 ハードウェア · 10MB RAM · 1秒起動 · 行くぜ、シャコ！</h3>
-<h3></h3>
+  <h3>$10 ハードウェア · 10MB RAM · ms 起動 · Let's Go, PicoClaw!</h3>
   <p>
-    <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
-    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V-blue" alt="Hardware">
+    <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
+    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20MIPS%2C%20RISC--V%2C%20LoongArch-blue" alt="Hardware">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
     <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
@@ -19,16 +18,17 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | **日本語** | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [English](README.md)
+[中文](README.zh.md) | **日本語** | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [English](README.md)
 
 </div>
 
-
 ---
 
-🦐 PicoClaw は [nanobot](https://github.com/HKUDS/nanobot) にインスパイアされた超軽量パーソナル AI アシスタントです。Go でゼロからリファクタリングされ、AI エージェント自身がアーキテクチャの移行とコード最適化を推進するセルフブートストラッピングプロセスで構築されました。
+> **PicoClaw** は [Sipeed](https://sipeed.com) が立ち上げた独立したオープンソースプロジェクトです。完全に **Go 言語**で一から書かれており、OpenClaw、NanoBot、その他のプロジェクトのフォークではありません。
 
-⚡️ $10 のハードウェアで 10MB 未満の RAM で動作：OpenClaw より 99% 少ないメモリ、Mac mini より 98% 安い！
+**PicoClaw** は [NanoBot](https://github.com/HKUDS/nanobot) にインスパイアされた超軽量パーソナル AI アシスタントです。**Go** でゼロからリビルドされ、「セルフブートストラッピング」プロセスで構築されました — AI Agent 自身がアーキテクチャの移行とコード最適化を推進しました。
+
+**$10 のハードウェアで 10MB 未満の RAM で動作** — OpenClaw より 99% 少ないメモリ、Mac mini より 98% 安い！
 
 <table align="center">
   <tr align="center">
@@ -45,68 +45,120 @@
   </tr>
 </table>
 
+> [!CAUTION]
+> **セキュリティに関する注意**
+>
+> * **暗号通貨なし:** PicoClaw には公式トークン/コインは**一切ありません**。`pump.fun` やその他の取引プラットフォームでの主張はすべて**詐欺**です。
+> * **公式ドメイン:** **唯一**の公式サイトは **[picoclaw.io](https://picoclaw.io)**、企業サイトは **[sipeed.com](https://sipeed.com)** です。
+> * **注意:** 多くの `.ai/.org/.com/.net/...` ドメインは第三者によって登録されています。信頼しないでください。
+> * **注記:** PicoClaw は初期開発段階にあり、未解決のネットワークセキュリティ問題がある可能性があります。v1.0 リリース前に本番環境へのデプロイは避けてください。
+> * **注記:** PicoClaw は最近多くの PR をマージしており、最新バージョンではメモリフットプリントが大きくなる場合があります（10〜20MB）。機能セットが安定次第、リソース最適化を優先する予定です。
+
 ## 📢 ニュース
-2026-02-09 🎉 PicoClaw リリース！$10 ハードウェアで 10MB 未満の RAM で動く AI エージェントを 1 日で構築。🦐 行くぜ、シャコ！
+
+2026-03-17 🚀 **v0.2.3 リリース！** システムトレイ UI（Windows & Linux）、サブエージェントステータス追跡（`spawn_status`）、実験的 Gateway ホットリロード、cron セキュリティゲート、セキュリティ修正 2 件。PicoClaw **25K ⭐** 達成！
+
+2026-03-09 🎉 **v0.2.1 — 史上最大のアップデート！** MCP プロトコル対応、4 つの新 Channel（Matrix/IRC/WeCom/Discord Proxy）、3 つの新 Provider（Kimi/Minimax/Avian）、ビジョンパイプライン、JSONL メモリストア、モデルルーティング。
+
+2026-02-28 📦 **v0.2.0** リリース — Docker Compose 対応と Web UI Launcher。
+
+2026-02-26 🎉 PicoClaw がわずか 17 日で **20K スター** 達成！Channel 自動オーケストレーションとケイパビリティインターフェースが実装されました。
+
+<details>
+<summary>過去のニュース...</summary>
+
+2026-02-16 🎉 PicoClaw が 1 週間で 12K スター達成！コミュニティメンテナーの役割と[ロードマップ](ROADMAP.md)が正式に公開されました。
+
+2026-02-13 🎉 PicoClaw が 4 日間で 5000 スター達成！プロジェクトロードマップと開発者グループの準備が進行中。
+
+2026-02-09 🎉 **PicoClaw リリース！** $10 ハードウェアで 10MB 未満の RAM で動く AI Agent を 1 日で構築。Let's Go, PicoClaw!
+
+</details>
 
 ## ✨ 特徴
 
-🪶 **超軽量**: メモリフットプリント 10MB 未満 — Clawdbot のコア機能より 99% 小さい。
+🪶 **超軽量**: コアメモリフットプリント 10MB 未満 — OpenClaw より 99% 小さい。*
 
 💰 **最小コスト**: $10 ハードウェアで動作 — Mac mini より 98% 安い。
 
-⚡️ **超高速**: 起動時間 400 倍高速、0.6GHz シングルコアでも 1 秒で起動。
+⚡️ **超高速起動**: 起動時間 400 倍高速。0.6GHz シングルコアでも 1 秒未満で起動。
 
-🌍 **真のポータビリティ**: RISC-V、ARM、MIPS、x86 対応の単一バイナリ。ワンクリックで Go！
+🌍 **真のポータビリティ**: RISC-V、ARM、MIPS、x86 対応の単一バイナリ。どこでも動く！
 
-🤖 **AI ブートストラップ**: 自律的な Go ネイティブ実装 — コアの 95% が AI 生成、人間によるレビュー付き。
+🤖 **AI ブートストラップ**: 純粋な Go ネイティブ実装 — コアコードの 95% が Agent によって生成され、人間によるレビューで調整。
 
-|  | OpenClaw  | NanoBot | **PicoClaw** |
-| --- | --- | --- |--- |
-| **言語** | TypeScript | Python | **Go** |
-| **RAM** | >1GB |>100MB| **< 10MB** |
-| **起動時間**</br>(0.8GHz コア) | >500秒 | >30秒 |  **<1秒** |
-| **コスト** | Mac Mini 599$ | 大半の Linux SBC </br>~50$ |**あらゆる Linux ボード**</br>**最安 10$** |
+🔌 **MCP 対応**: ネイティブ [Model Context Protocol](https://modelcontextprotocol.io/) 統合 — 任意の MCP サーバーに接続して Agent 機能を拡張。
+
+👁️ **ビジョンパイプライン**: 画像やファイルを Agent に直接送信 — マルチモーダル LLM 向けの自動 base64 エンコーディング。
+
+🧠 **スマートルーティング**: ルールベースのモデルルーティング — 簡単なクエリは軽量モデルへ、API コストを節約。
+
+_*最近のバージョンでは急速な PR マージにより 10〜20MB になる場合があります。リソース最適化は計画中です。起動時間の比較は 0.8GHz シングルコアベンチマークに基づいています（下表参照）。_
+
+<div align="center">
+
+|                                | OpenClaw      | NanoBot                  | **PicoClaw**                           |
+| ------------------------------ | ------------- | ------------------------ | -------------------------------------- |
+| **言語**                       | TypeScript    | Python                   | **Go**                                 |
+| **RAM**                        | >1GB          | >100MB                   | **< 10MB***                            |
+| **起動時間**</br>(0.8GHz コア) | >500秒        | >30秒                    | **<1秒**                               |
+| **コスト**                     | Mac Mini $599 | 大半の Linux ボード ~$50 | **あらゆる Linux ボード**</br>**最安 $10** |
+
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
 
+</div>
+
+> **[ハードウェア互換性リスト](docs/ja/hardware-compatibility.md)** — テスト済みの全ボード一覧（$5 RISC-V から Raspberry Pi、Android スマートフォンまで）。お使いのボードが未掲載？PR を送ってください！
+
+<p align="center">
+<img src="assets/hardware-banner.jpg" alt="PicoClaw Hardware Compatibility" width="100%">
+</p>
 
 ## 🦾 デモンストレーション
+
 ### 🛠️ スタンダードアシスタントワークフロー
+
 <table align="center">
-  <tr align="center">
-    <th><p align="center">🧩 フルスタックエンジニア</p></th>
-    <th><p align="center">🗂️ ログ＆計画管理</p></th>
-    <th><p align="center">🔎 Web 検索＆学習</p></th>
-  </tr>
-  <tr>
-    <td align="center"><p align="center"><img src="assets/picoclaw_code.gif" width="240" height="180"></p></td>
-    <td align="center"><p align="center"><img src="assets/picoclaw_memory.gif" width="240" height="180"></p></td>
-    <td align="center"><p align="center"><img src="assets/picoclaw_search.gif" width="240" height="180"></p></td>
-  </tr>
-  <tr>
-    <td align="center">開発 · デプロイ · スケール</td>
-    <td align="center">スケジュール · 自動化 · メモリ</td>
-    <td align="center">発見 · インサイト · トレンド</td>
-  </tr>
+<tr align="center">
+<th><p align="center">フルスタックエンジニアモード</p></th>
+<th><p align="center">ログ＆計画管理</p></th>
+<th><p align="center">Web 検索＆学習</p></th>
+</tr>
+<tr>
+<td align="center"><p align="center"><img src="assets/picoclaw_code.gif" width="240" height="180"></p></td>
+<td align="center"><p align="center"><img src="assets/picoclaw_memory.gif" width="240" height="180"></p></td>
+<td align="center"><p align="center"><img src="assets/picoclaw_search.gif" width="240" height="180"></p></td>
+</tr>
+<tr>
+<td align="center">開発 · デプロイ · スケール</td>
+<td align="center">スケジュール · 自動化 · メモリ</td>
+<td align="center">発見 · インサイト · トレンド</td>
+</tr>
 </table>
 
 ### 🐜 革新的な省フットプリントデプロイ
+
 PicoClaw はほぼすべての Linux デバイスにデプロイできます！
 
 - $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(Ethernet) または W(WiFi6) バージョン、最小ホームアシスタントに
 - $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html) または $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) サーバー自動メンテナンスに
 - $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) または $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) スマート監視に
 
-https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4
+<https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4>
 
 🌟 もっと多くのデプロイ事例が待っています！
 
 ## 📦 インストール
 
-### コンパイル済みバイナリでインストール
+### picoclaw.io からダウンロード（推奨）
 
-[リリースページ](https://github.com/sipeed/picoclaw/releases) からお使いのプラットフォーム用のファームウェアをダウンロードしてください。
+**[picoclaw.io](https://picoclaw.io)** にアクセス — 公式サイトがプラットフォームを自動検出し、ワンクリックでダウンロードできます。アーキテクチャを手動で選ぶ必要はありません。
 
-### ソースからインストール（最新機能、開発向け推奨）
+### プリコンパイル済みバイナリをダウンロード
+
+または、[GitHub Releases](https://github.com/sipeed/picoclaw/releases) ページからプラットフォームに合ったバイナリをダウンロードしてください。
+
+### ソースからビルド（開発用）
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -114,68 +166,141 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 make deps
 
-# ビルド（インストール不要）
+# コアバイナリをビルド
 make build
+
+# Web UI Launcher をビルド（WebUI モードに必要）
+make build-launcher
 
 # 複数プラットフォーム向けビルド
 make build-all
+
+# Raspberry Pi Zero 2 W 向けビルド（32-bit: make build-linux-arm; 64-bit: make build-linux-arm64）
+make build-pi-zero
 
 # ビルドとインストール
 make install
 ```
 
-## 🐳 Docker Compose
+**Raspberry Pi Zero 2 W:** OS に合ったバイナリを使用してください：32-bit Raspberry Pi OS → `make build-linux-arm`、64-bit → `make build-linux-arm64`。または `make build-pi-zero` で両方をビルド。
 
-Docker Compose を使えば、ローカルにインストールせずに PicoClaw を実行できます。
+## 🚀 クイックスタートガイド
+
+### 🌐 WebUI Launcher（デスクトップ向け推奨）
+
+WebUI Launcher はブラウザベースの設定・チャットインターフェースを提供します。コマンドラインの知識不要で、最も簡単に始められる方法です。
+
+**オプション 1: ダブルクリック（デスクトップ）**
+
+[picoclaw.io](https://picoclaw.io) からダウンロード後、`picoclaw-launcher`（Windows では `picoclaw-launcher.exe`）をダブルクリックしてください。ブラウザが自動的に `http://localhost:18800` を開きます。
+
+**オプション 2: コマンドライン**
 
 ```bash
-# 1. リポジトリをクローン
+picoclaw-launcher
+# ブラウザで http://localhost:18800 を開く
+```
+
+> [!TIP]
+> **リモートアクセス / Docker / VM:** すべてのインターフェースでリッスンするには `-public` フラグを追加してください：
+> ```bash
+> picoclaw-launcher -public
+> ```
+
+<p align="center">
+<img src="assets/launcher-webui.jpg" alt="WebUI Launcher" width="600">
+</p>
+
+**始め方:**
+
+WebUI を開いたら：**1)** Provider を設定（LLM API キーを追加）→ **2)** Channel を設定（例：Telegram）→ **3)** Gateway を起動 → **4)** チャット！
+
+WebUI の詳細なドキュメントは [docs.picoclaw.io](https://docs.picoclaw.io) を参照してください。
+
+<details>
+<summary><b>Docker（代替手段）</b></summary>
+
+```bash
+# 1. このリポジトリをクローン
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. 初回起動 — docker/data/config.json を自動生成して終了
-docker compose -f docker/docker-compose.yml --profile gateway up
-# コンテナが "First-run setup complete." を表示して停止します。
+# 2. 初回実行 — docker/data/config.json を自動生成して終了
+#    （config.json と workspace/ の両方が存在しない場合のみ実行）
+docker compose -f docker/docker-compose.yml --profile launcher up
+# コンテナが "First-run setup complete." を出力して停止します。
 
 # 3. API キーを設定
-vim docker/data/config.json   # プロバイダー API キー、Bot トークンなどを設定
+vim docker/data/config.json
 
 # 4. 起動
-docker compose -f docker/docker-compose.yml --profile gateway up -d
+docker compose -f docker/docker-compose.yml --profile launcher up -d
+# http://localhost:18800 を開く
 ```
 
-> [!TIP]
-> **Docker ユーザー**: デフォルトでは、Gateway は `127.0.0.1` でリッスンしており、ホストからアクセスできません。ヘルスチェックエンドポイントにアクセスしたり、ポートを公開したりする必要がある場合は、環境変数で `PICOCLAW_GATEWAY_HOST=0.0.0.0` を設定するか、`config.json` を更新してください。
+> **Docker / VM ユーザー:** Gateway はデフォルトで `127.0.0.1` でリッスンします。ホストからアクセスできるようにするには `PICOCLAW_GATEWAY_HOST=0.0.0.0` を設定するか、`-public` フラグを使用してください。
 
 ```bash
-# 5. ログ確認
-docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
+# ログを確認
+docker compose -f docker/docker-compose.yml logs -f
 
-# 6. 停止
-docker compose -f docker/docker-compose.yml --profile gateway down
-```
+# 停止
+docker compose -f docker/docker-compose.yml --profile launcher down
 
-### Agent モード（ワンショット）
-
-```bash
-# 質問を投げる
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "What is 2+2?"
-
-# インタラクティブモード
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
-```
-
-### アップデート
-
-```bash
+# 更新
 docker compose -f docker/docker-compose.yml pull
-docker compose -f docker/docker-compose.yml --profile gateway up -d
+docker compose -f docker/docker-compose.yml --profile launcher up -d
 ```
 
-### 🚀 クイックスタート（ネイティブ）
+</details>
 
-> [!TIP]
-> `~/.picoclaw/config.json` に API キーを設定してください。API キーの取得先: [Volcengine (CodingPlan)](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) (LLM) · [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)。Web 検索は **任意** です — 無料の [Tavily API](https://tavily.com) (月 1000 クエリ無料) または [Brave Search API](https://brave.com/search/api) (月 2000 クエリ無料)。
+### 💻 TUI Launcher（ヘッドレス / SSH 向け推奨）
+
+TUI（Terminal UI）Launcher は設定と管理のためのフル機能ターミナルインターフェースを提供します。サーバー、Raspberry Pi、その他のヘッドレス環境に最適です。
+
+```bash
+picoclaw-launcher-tui
+```
+
+<p align="center">
+<img src="assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
+</p>
+
+**始め方:**
+
+TUI メニューを使って：**1)** Provider を設定 → **2)** Channel を設定 → **3)** Gateway を起動 → **4)** チャット！
+
+TUI の詳細なドキュメントは [docs.picoclaw.io](https://docs.picoclaw.io) を参照してください。
+
+### 📱 Android
+
+10 年前のスマホに第二の人生を！PicoClaw でスマート AI アシスタントに変身させましょう。
+
+**オプション 1: Termux（現在利用可能）**
+
+1. [Termux](https://github.com/termux/termux-app) をインストール（[GitHub Releases](https://github.com/termux/termux-app/releases) からダウンロード、または F-Droid / Google Play で検索）
+2. 以下のコマンドを実行：
+
+```bash
+# 最新リリースをダウンロード
+wget https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_arm64.tar.gz
+tar xzf picoclaw_Linux_arm64.tar.gz
+pkg install proot
+termux-chroot ./picoclaw onboard   # chroot で標準的な Linux ファイルシステムレイアウトを提供
+```
+
+その後、下記の Terminal Launcher セクションの手順に従って設定を完了してください。
+
+<img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
+
+**オプション 2: APK インストール（近日公開）**
+
+内蔵 WebUI を備えたスタンドアロン Android APK を開発中です。お楽しみに！
+
+<details>
+<summary><b>Terminal Launcher（リソース制約環境向け）</b></summary>
+
+`picoclaw` コアバイナリのみが利用可能な最小環境（Launcher UI なし）では、コマンドラインと JSON 設定ファイルですべてを設定できます。
 
 **1. 初期化**
 
@@ -183,983 +308,271 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 picoclaw onboard
 ```
 
+`~/.picoclaw/config.json` とワークスペースディレクトリが作成されます。
+
 **2. 設定** (`~/.picoclaw/config.json`)
 
 ```json
 {
-  "model_list": [
-    {
-      "model_name": "ark-code-latest",
-      "model": "volcengine/ark-code-latest",
-      "api_key": "sk-your-api-key",
-      "api_base":"https://ark.cn-beijing.volces.com/api/coding/v3"
-    },
-    {
-      "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
-      "api_key": "sk-your-openai-key",
-      "request_timeout": 300,
-      "api_base": "https://api.openai.com/v1"
-    }
-  ],
   "agents": {
     "defaults": {
       "model_name": "gpt-5.4"
     }
   },
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "token": "YOUR_TELEGRAM_BOT_TOKEN",
-      "allow_from": []
-    }
-  },
-  "tools": {
-    "web": {
-      "search": {
-        "api_key": "YOUR_BRAVE_API_KEY",
-        "max_results": 5
-      },
-      "tavily": {
-        "enabled": false,
-        "api_key": "YOUR_TAVILY_API_KEY",
-        "max_results": 5
-      }
-    },
-    "cron": {
-      "exec_timeout_minutes": 5
-    }
-  },
-  "heartbeat": {
-    "enabled": true,
-    "interval": 30
-  }
-}
-```
-
-> **新機能**: `model_list` 形式により、プロバイダーをコード変更なしで追加できます。詳細は [モデル設定](#モデル設定-model_list) を参照してください。
-> `request_timeout` は任意の秒単位設定です。省略または `<= 0` の場合、PicoClaw はデフォルトのタイムアウト（120秒）を使用します。
-
-**3. API キーの取得**
-
-- **LLM プロバイダー**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-- **Web 検索**（任意）: [Tavily](https://tavily.com) - AI エージェント向けに最適化 (月 1000 リクエスト) · [Brave Search](https://brave.com/search/api) - 無料枠あり（月 2000 リクエスト）
-
-> **注意**: 完全な設定テンプレートは `config.example.json` を参照してください。
-
-**4. チャット**
-
-```bash
-picoclaw agent -m "What is 2+2?"
-```
-
-これだけです！2 分で AI アシスタントが動きます。
-
----
-
-## 💬 チャットアプリ
-
-Telegram、Discord、QQ、DingTalk、LINE、WeCom で PicoClaw と会話できます
-
-| チャネル | セットアップ |
-|---------|------------|
-| **Telegram** | 簡単（トークンのみ） |
-| **Discord** | 簡単（Bot トークン + Intents） |
-| **QQ** | 簡単（AppID + AppSecret） |
-| **DingTalk** | 普通（アプリ認証情報） |
-| **LINE** | 普通（認証情報 + Webhook URL） |
-| **WeCom AI Bot** | 普通（Token + AES キー） |
-
-<details>
-<summary><b>Telegram</b>（推奨）</summary>
-
-**1. Bot を作成**
-
-- Telegram を開き、`@BotFather` を検索
-- `/newbot` を送信、プロンプトに従う
-- トークンをコピー
-
-**2. 設定**
-
-```json
-{
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
-    }
-  }
-}
-```
-
-> ユーザー ID は Telegram の `@userinfobot` から取得できます。
-
-**3. 起動**
-
-```bash
-picoclaw gateway
-```
-</details>
-
-
-<details>
-<summary><b>Discord</b></summary>
-
-**1. Bot を作成**
-- https://discord.com/developers/applications にアクセス
-- アプリケーションを作成 → Bot → Add Bot
-- Bot トークンをコピー
-
-**2. Intents を有効化**
-- Bot の設定画面で **MESSAGE CONTENT INTENT** を有効化
-- （任意）**SERVER MEMBERS INTENT** も有効化
-
-**3. ユーザー ID を取得**
-- Discord 設定 → 詳細設定 → **開発者モード** を有効化
-- 自分のアバターを右クリック → **ユーザーIDをコピー**
-
-**4. 設定**
-
-```json
-{
-  "channels": {
-    "discord": {
-      "enabled": true,
-      "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
-    }
-  }
-}
-```
-
-**5. Bot を招待**
-- OAuth2 → URL Generator
-- Scopes: `bot`
-- Bot Permissions: `Send Messages`, `Read Message History`
-- 生成された招待 URL を開き、サーバーに Bot を追加
-
-**6. 起動**
-
-```bash
-picoclaw gateway
-```
-
-</details>
-
-<details>
-<summary><b>QQ</b></summary>
-
-**1. Bot を作成**
-
-- [QQ オープンプラットフォーム](https://q.qq.com/#) にアクセス
-- アプリケーションを作成 → **AppID** と **AppSecret** を取得
-
-**2. 設定**
-
-```json
-{
-  "channels": {
-    "qq": {
-      "enabled": true,
-      "app_id": "YOUR_APP_ID",
-      "app_secret": "YOUR_APP_SECRET",
-      "allow_from": []
-    }
-  }
-}
-```
-
-> `allow_from` を空にすると全ユーザーを許可、QQ番号を指定してアクセス制限可能。
-
-**3. 起動**
-
-```bash
-picoclaw gateway
-```
-
-</details>
-
-<details>
-<summary><b>DingTalk</b></summary>
-
-**1. Bot を作成**
-
-- [オープンプラットフォーム](https://open.dingtalk.com/) にアクセス
-- 内部アプリを作成
-- Client ID と Client Secret をコピー
-
-**2. 設定**
-
-```json
-{
-  "channels": {
-    "dingtalk": {
-      "enabled": true,
-      "client_id": "YOUR_CLIENT_ID",
-      "client_secret": "YOUR_CLIENT_SECRET",
-      "allow_from": []
-    }
-  }
-}
-```
-
-> `allow_from` を空にすると全ユーザーを許可、ユーザーIDを指定してアクセス制限可能。
-
-**3. 起動**
-
-```bash
-picoclaw gateway
-```
-
-</details>
-
-<details>
-<summary><b>LINE</b></summary>
-
-**1. LINE 公式アカウントを作成**
-
-- [LINE Developers Console](https://developers.line.biz/) にアクセス
-- プロバイダーを作成 → Messaging API チャネルを作成
-- **チャネルシークレット** と **チャネルアクセストークン** をコピー
-
-**2. 設定**
-
-```json
-{
-  "channels": {
-    "line": {
-      "enabled": true,
-      "channel_secret": "YOUR_CHANNEL_SECRET",
-      "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_path": "/webhook/line",
-      "allow_from": []
-    }
-  }
-}
-```
-
-**3. Webhook URL を設定**
-
-LINE の Webhook には HTTPS が必要です。リバースプロキシまたはトンネルを使用してください:
-
-```bash
-# ngrok の例
-ngrok http 18790
-```
-
-LINE Developers Console で Webhook URL を `https://あなたのドメイン/webhook/line` に設定し、**Webhook の利用** を有効にしてください。
-
-> **注意**: LINE の Webhook は共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は Gateway のポートを公開するか、リバースプロキシを設定してください。
-
-**4. 起動**
-
-```bash
-picoclaw gateway
-```
-
-> グループチャットでは @メンション時のみ応答します。返信は元メッセージを引用する形式です。
-
-> **Docker Compose**: Gateway HTTP サーバーは共有の `127.0.0.1:18790` で Webhook を提供します。ホストからアクセスするには `picoclaw-gateway` サービスに `ports: ["18790:18790"]` を追加してください。
-
-</details>
-
-<details>
-<summary><b>WeCom (企業微信)</b></summary>
-
-PicoClaw は3種類の WeCom 統合をサポートしています：
-
-**オプション1: WeCom Bot (ロボット)** - 簡単な設定、グループチャット対応
-**オプション2: WeCom App (カスタムアプリ)** - より多機能、アクティブメッセージング対応、プライベートチャットのみ
-**オプション3: WeCom AI Bot (スマートボット)** - 公式 AI Bot、ストリーミング返信、グループ・プライベート両対応
-
-詳細な設定手順は [WeCom AI Bot Configuration Guide](docs/channels/wecom/wecom_aibot/README.zh.md) を参照してください。
-
-**クイックセットアップ - WeCom Bot:**
-
-**1. ボットを作成**
-
-* WeCom 管理コンソール → グループチャット → グループボットを追加
-* Webhook URL をコピー（形式: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`）
-
-**2. 設定**
-
-```json
-{
-  "channels": {
-    "wecom": {
-      "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_path": "/webhook/wecom",
-      "allow_from": []
-    }
-  }
-}
-
-> **注意**: WeCom Bot の Webhook 受信は共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は Gateway のポートを公開するか、HTTPS 用のリバースプロキシを設定してください。
-```
-
-**クイックセットアップ - WeCom App:**
-
-**1. アプリを作成**
-
-* WeCom 管理コンソール → アプリ管理 → アプリを作成
-* **AgentId** と **Secret** をコピー
-* "マイ会社" ページで **CorpID** をコピー
-
-**2. メッセージ受信を設定**
-
-* アプリ詳細で "メッセージを受信" → "APIを設定" をクリック
-* URL を `http://your-server:18790/webhook/wecom-app` に設定
-* **Token** と **EncodingAESKey** を生成
-
-**3. 設定**
-
-```json
-{
-  "channels": {
-    "wecom_app": {
-      "enabled": true,
-      "corp_id": "wwxxxxxxxxxxxxxxxx",
-      "corp_secret": "YOUR_CORP_SECRET",
-      "agent_id": 1000002,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-app",
-      "allow_from": []
-    }
-  }
-}
-```
-
-**4. 起動**
-
-```bash
-picoclaw gateway
-```
-
-> **注意**: WeCom App の Webhook コールバックは共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は HTTPS 用のリバースプロキシを設定してください。
-
-**クイックセットアップ - WeCom AI Bot:**
-
-**1. AI Bot を作成**
-
-* WeCom 管理コンソール → アプリ管理 → AI Bot
-* コールバック URL を設定: `http://your-server:18791/webhook/wecom-aibot`
-* **Token** をコピーし、**EncodingAESKey** を生成
-
-**2. 設定**
-
-```json
-{
-  "channels": {
-    "wecom_aibot": {
-      "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-aibot",
-      "allow_from": [],
-      "welcome_message": "こんにちは！何かお手伝いできますか？"
-    }
-  }
-}
-```
-
-**3. 起動**
-
-```bash
-picoclaw gateway
-```
-
-> **注意**: WeCom AI Bot はストリーミングプルプロトコルを使用 — 返信タイムアウトの心配なし。長時間タスク（>30秒）は自動的に `response_url` によるプッシュ配信に切り替わります。
-
-</details>
-
-## ⚙️ 設定
-
-設定ファイル: `~/.picoclaw/config.json`
-
-### 環境変数
-
-環境変数を使用してデフォルトのパスを上書きできます。これは、ポータブルインストール、コンテナ化されたデプロイメント、または picoclaw をシステムサービスとして実行する場合に便利です。これらの変数は独立しており、異なるパスを制御します。
-
-| 変数              | 説明                                                                                                                             | デフォルトパス            |
-|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
-| `PICOCLAW_CONFIG` | 設定ファイルへのパスを上書きします。これにより、picoclaw は他のすべての場所を無視して、指定された `config.json` をロードします。 | `~/.picoclaw/config.json` |
-| `PICOCLAW_HOME`   | picoclaw データのルートディレクトリを上書きします。これにより、`workspace` やその他のデータディレクトリのデフォルトの場所が変更されます。          | `~/.picoclaw`             |
-
-**例：**
-
-```bash
-# 特定の設定ファイルを使用して picoclaw を実行する
-# ワークスペースのパスはその設定ファイル内から読み込まれます
-PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
-
-# すべてのデータを /opt/picoclaw に保存して picoclaw を実行する
-# 設定はデフォルトの ~/.picoclaw/config.json からロードされます
-# ワークスペースは /opt/picoclaw/workspace に作成されます
-PICOCLAW_HOME=/opt/picoclaw picoclaw agent
-
-# 両方を使用して完全にカスタマイズされたセットアップを行う
-PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
-```
-
-### ワークスペース構成
-
-PicoClaw は設定されたワークスペース（デフォルト: `~/.picoclaw/workspace`）にデータを保存します：
-
-```
-~/.picoclaw/workspace/
-├── sessions/          # 会話セッションと履歴
-├── memory/            # 長期メモリ（MEMORY.md）
-├── state/             # 永続状態（最後のチャネルなど）
-├── cron/              # スケジュールジョブデータベース
-├── skills/            # カスタムスキル
-├── AGENTS.md          # エージェントの行動ガイド
-├── HEARTBEAT.md       # 定期タスクプロンプト（30分ごとに確認）
-├── IDENTITY.md        # エージェントのアイデンティティ
-├── SOUL.md            # エージェントのソウル
-└── USER.md            # ユーザー設定
-```
-
-### 🔒 セキュリティサンドボックス
-
-PicoClaw はデフォルトでサンドボックス環境で実行されます。エージェントは設定されたワークスペース内のファイルにのみアクセスし、コマンドを実行できます。
-
-#### デフォルト設定
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "workspace": "~/.picoclaw/workspace",
-      "restrict_to_workspace": true
-    }
-  }
-}
-```
-
-| オプション | デフォルト | 説明 |
-|-----------|-----------|------|
-| `workspace` | `~/.picoclaw/workspace` | エージェントの作業ディレクトリ |
-| `restrict_to_workspace` | `true` | ファイル/コマンドアクセスをワークスペースに制限 |
-
-#### 保護対象ツール
-
-`restrict_to_workspace: true` の場合、以下のツールがサンドボックス化されます：
-
-| ツール | 機能 | 制限 |
-|-------|------|------|
-| `read_file` | ファイル読み込み | ワークスペース内のファイルのみ |
-| `write_file` | ファイル書き込み | ワークスペース内のファイルのみ |
-| `list_dir` | ディレクトリ一覧 | ワークスペース内のディレクトリのみ |
-| `edit_file` | ファイル編集 | ワークスペース内のファイルのみ |
-| `append_file` | ファイル追記 | ワークスペース内のファイルのみ |
-| `exec` | コマンド実行 | コマンドパスはワークスペース内である必要あり |
-
-#### exec ツールの追加保護
-
-`restrict_to_workspace: false` でも、`exec` ツールは以下の危険なコマンドをブロックします：
-
-- `rm -rf`, `del /f`, `rmdir /s` — 一括削除
-- `format`, `mkfs`, `diskpart` — ディスクフォーマット
-- `dd if=` — ディスクイメージング
-- `/dev/sd[a-z]` への書き込み — 直接ディスク書き込み
-- `shutdown`, `reboot`, `poweroff` — システムシャットダウン
-- フォークボム `:(){ :|:& };:`
-
-#### エラー例
-
-```
-[ERROR] tool: Tool execution failed
-{tool=exec, error=Command blocked by safety guard (path outside working dir)}
-```
-
-```
-[ERROR] tool: Tool execution failed
-{tool=exec, error=Command blocked by safety guard (dangerous pattern detected)}
-```
-
-#### 制限の無効化（セキュリティリスク）
-
-エージェントにワークスペース外のパスへのアクセスが必要な場合：
-
-**方法1: 設定ファイル**
-```json
-{
-  "agents": {
-    "defaults": {
-      "restrict_to_workspace": false
-    }
-  }
-}
-```
-
-**方法2: 環境変数**
-```bash
-export PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false
-```
-
-> ⚠️ **警告**: この制限を無効にすると、エージェントはシステム上の任意のパスにアクセスできるようになります。制御された環境でのみ慎重に使用してください。
-
-#### セキュリティ境界の一貫性
-
-`restrict_to_workspace` 設定は、すべての実行パスで一貫して適用されます：
-
-| 実行パス | セキュリティ境界 |
-|---------|-----------------|
-| メインエージェント | `restrict_to_workspace` ✅ |
-| サブエージェント / Spawn | 同じ制限を継承 ✅ |
-| ハートビートタスク | 同じ制限を継承 ✅ |
-
-すべてのパスで同じワークスペース制限が適用されます — サブエージェントやスケジュールタスクを通じてセキュリティ境界をバイパスする方法はありません。
-
-### ハートビート（定期タスク）
-
-PicoClaw は自動的に定期タスクを実行できます。ワークスペースに `HEARTBEAT.md` ファイルを作成します：
-
-```markdown
-# 定期タスク
-
-- 重要なメールをチェック
-- 今後の予定を確認
-- 天気予報をチェック
-```
-
-エージェントは30分ごと（設定可能）にこのファイルを読み込み、利用可能なツールを使ってタスクを実行します。
-
-#### spawn で非同期タスク実行
-
-時間のかかるタスク（Web検索、API呼び出し）には `spawn` ツールを使って**サブエージェント**を作成します：
-
-```markdown
-# 定期タスク
-
-## クイックタスク（直接応答）
-- 現在時刻を報告
-
-## 長時間タスク（spawn で非同期）
-- AIニュースを検索して要約
-- メールをチェックして重要なメッセージを報告
-```
-
-**主な特徴:**
-
-| 機能 | 説明 |
-|------|------|
-| **spawn** | 非同期サブエージェントを作成、ハートビートをブロックしない |
-| **独立コンテキスト** | サブエージェントは独自のコンテキストを持ち、セッション履歴なし |
-| **message ツール** | サブエージェントは message ツールで直接ユーザーと通信 |
-| **非ブロッキング** | spawn 後、ハートビートは次のタスクへ継続 |
-
-#### サブエージェントの通信方法
-
-```
-ハートビート発動
-    ↓
-エージェントが HEARTBEAT.md を読む
-    ↓
-長いタスク: spawn サブエージェント
-    ↓                           ↓
-次のタスクへ継続          サブエージェントが独立して動作
-    ↓                           ↓
-全タスク完了              message ツールを使用
-    ↓                           ↓
-HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
-```
-
-サブエージェントはツール（message、web_search など）にアクセスでき、メインエージェントを経由せずにユーザーと通信できます。
-
-**設定:**
-
-```json
-{
-  "heartbeat": {
-    "enabled": true,
-    "interval": 30
-  }
-}
-```
-
-| オプション | デフォルト | 説明 |
-|-----------|-----------|------|
-| `enabled` | `true` | ハートビートの有効/無効 |
-| `interval` | `30` | チェック間隔（分）、最小5分 |
-
-**環境変数:**
-- `PICOCLAW_HEARTBEAT_ENABLED=false` で無効化
-- `PICOCLAW_HEARTBEAT_INTERVAL=60` で間隔変更
-
-### プロバイダー
-
-> [!NOTE]
-> Groq は Whisper による無料の音声文字起こしを提供しています。設定すると、あらゆるチャンネルからの音声メッセージがエージェントレベルで自動的に文字起こしされます。
-
-| プロバイダー | 用途 | API キー取得先 |
-| --- | --- | --- |
-| `gemini` | LLM（Gemini 直接） | [aistudio.google.com](https://aistudio.google.com) |
-| `zhipu` | LLM（Zhipu 直接） | [bigmodel.cn](https://bigmodel.cn) |
-| `volcengine`             | LLM(Volcengine 直接)                   | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw)           |
-| `openrouter`（要テスト） | LLM（推奨、全モデルにアクセス可能） | [openrouter.ai](https://openrouter.ai) |
-| `anthropic`（要テスト） | LLM（Claude 直接） | [console.anthropic.com](https://console.anthropic.com) |
-| `openai`（要テスト） | LLM（GPT 直接） | [platform.openai.com](https://platform.openai.com) |
-| `deepseek`（要テスト） | LLM（DeepSeek 直接） | [platform.deepseek.com](https://platform.deepseek.com) |
-| `groq` | LLM + **音声文字起こし**（Whisper） | [console.groq.com](https://console.groq.com) |
-| `cerebras` | LLM（Cerebras 直接） | [cerebras.ai](https://cerebras.ai) |
-
-### 基本設定
-
-1.  **設定ファイルの作成:**
-
-    ```bash
-    cp config.example.json config/config.json
-    ```
-
-2.  **設定の編集:**
-
-    ```json
-    {
-      "providers": {
-        "openrouter": {
-          "api_key": "sk-or-v1-..."
-        }
-      },
-      "channels": {
-        "discord": {
-          "enabled": true,
-          "token": "YOUR_DISCORD_BOT_TOKEN"
-        }
-      }
-    }
-    ```
-
-3.  **実行**
-
-    ```bash
-    picoclaw agent -m "Hello"
-    ```
-</details>
-
-<details>
-<summary><b>完全な設定例</b></summary>
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "model": "anthropic/claude-opus-4-5"
-    }
-  },
-  "providers": {
-    "openrouter": {
-      "api_key": "sk-or-v1-xxx"
-    },
-    "groq": {
-      "api_key": "gsk_xxx"
-    }
-  },
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "token": "123456:ABC...",
-      "allow_from": ["123456789"]
-    },
-    "discord": {
-      "enabled": true,
-      "token": "",
-      "allow_from": [""]
-    },
-    "whatsapp": {
-      "enabled": false
-    },
-    "feishu": {
-      "enabled": false,
-      "app_id": "cli_xxx",
-      "app_secret": "xxx",
-      "encrypt_key": "",
-      "verification_token": "",
-      "allow_from": []
-    }
-  },
-  "tools": {
-    "web": {
-      "search": {
-        "api_key": "BSA..."
-      }
-    },
-    "cron": {
-      "exec_timeout_minutes": 5
-    }
-  },
-  "heartbeat": {
-    "enabled": true,
-    "interval": 30
-  }
-}
-```
-
-</details>
-
-### モデル設定 (model_list)
-
-> **新機能！** PicoClaw は現在 **モデル中心** の設定アプローチを採用しています。`ベンダー/モデル` 形式（例: `zhipu/glm-4.7`）を指定するだけで、新しいプロバイダーを追加できます—**コードの変更は一切不要！**
-
-この設計は、柔軟なプロバイダー選択による **マルチエージェントサポート** も可能にします：
-
-- **異なるエージェント、異なるプロバイダー** : 各エージェントは独自の LLM プロバイダーを使用可能
-- **フォールバックモデル** : 耐障性のため、プライマリモデルとフォールバックモデルを設定可能
-- **ロードバランシング** : 複数のエンドポイントにリクエストを分散
-- **集中設定管理** : すべてのプロバイダーを一箇所で管理
-
-#### 📋 サポートされているすべてのベンダー
-
-| ベンダー | `model` プレフィックス | デフォルト API Base | プロトコル | API キー |
-|-------------|-----------------|---------------------|----------|---------|
-| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [キーを取得](https://platform.openai.com) |
-| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [キーを取得](https://console.anthropic.com) |
-| **Zhipu AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [キーを取得](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
-| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [キーを取得](https://platform.deepseek.com) |
-| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [キーを取得](https://aistudio.google.com/api-keys) |
-| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [キーを取得](https://console.groq.com) |
-| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [キーを取得](https://platform.moonshot.cn) |
-| **Qwen (Alibaba)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [キーを取得](https://dashscope.console.aliyun.com) |
-| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [キーを取得](https://build.nvidia.com) |
-| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | ローカル（キー不要） |
-| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [キーを取得](https://openrouter.ai/keys) |
-| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | ローカル |
-| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [キーを取得](https://cerebras.ai) |
-| **VolcEngine (Doubao)** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [キーを取得](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
-| **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
-| **BytePlus**        | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [キーを取得](https://www.byteplus.com)                     |
-| **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [キーを取得](https://longcat.chat/platform)                      |
-| **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [トークンを取得](https://modelscope.cn/my/tokens)                 |
-| **Azure OpenAI**    | `azure/`          | `https://{resource}.openai.azure.com`               | Azure     | [キーを取得](https://portal.azure.com)                            |
-| **Antigravity** | `antigravity/` | Google Cloud | カスタム | OAuthのみ |
-| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
-
-#### 基本設定
-
-```json
-{
   "model_list": [
     {
-      "model_name": "ark-code-latest",
-      "model": "volcengine/ark-code-latest",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-api-key"
-    },
-    {
-      "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
-      "api_key": "sk-your-openai-key"
-    },
-    {
-      "model_name": "claude-sonnet-4.6",
-      "model": "anthropic/claude-sonnet-4.6",
-      "api_key": "sk-ant-your-key"
-    },
-    {
-      "model_name": "glm-4.7",
-      "model": "zhipu/glm-4.7",
-      "api_key": "your-zhipu-key"
-    }
-  ],
-  "agents": {
-    "defaults": {
-      "model": "gpt-5.4"
-    }
-  }
-}
-```
-
-#### ベンダー別の例
-
-**OpenAI**
-```json
-{
-  "model_name": "gpt-5.4",
-  "model": "openai/gpt-5.4",
-  "api_key": "sk-..."
-}
-```
-
-**VolcEngine (Doubao)**
-```json
-{
-  "model_name": "ark-code-latest",
-  "model": "volcengine/ark-code-latest",
-  "api_key": "sk-..."
-}
-```
-
-**Zhipu AI (GLM)**
-```json
-{
-  "model_name": "glm-4.7",
-  "model": "zhipu/glm-4.7",
-  "api_key": "your-key"
-}
-```
-
-**Anthropic (OAuth使用)**
-```json
-{
-  "model_name": "claude-sonnet-4.6",
-  "model": "anthropic/claude-sonnet-4.6",
-  "auth_method": "oauth"
-}
-```
-> OAuth認証を設定するには、`picoclaw auth login --provider anthropic` を実行してください。
-
-**カスタムプロキシ/API**
-```json
-{
-  "model_name": "my-custom-model",
-  "model": "openai/custom-model",
-  "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-...",
-  "request_timeout": 300
-}
-```
-
-#### ロードバランシング
-
-同じモデル名で複数のエンドポイントを設定すると、PicoClaw が自動的にラウンドロビンで分散します：
-
-```json
-{
-  "model_list": [
-    {
-      "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
-      "api_base": "https://api1.example.com/v1",
-      "api_key": "sk-key1"
-    },
-    {
-      "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
-      "api_base": "https://api2.example.com/v1",
-      "api_key": "sk-key2"
     }
   ]
 }
 ```
 
-#### 従来の `providers` 設定からの移行
+> 利用可能なすべてのオプションを含む完全な設定テンプレートは、リポジトリの `config/config.example.json` を参照してください。
 
-古い `providers` 設定は**非推奨**ですが、後方互換性のためにサポートされています。
+**3. チャット**
 
-**旧設定（非推奨）:**
-```json
-{
-  "providers": {
-    "zhipu": {
-      "api_key": "your-key",
-      "api_base": "https://open.bigmodel.cn/api/paas/v4"
-    }
-  },
-  "agents": {
-    "defaults": {
-      "provider": "zhipu",
-      "model": "glm-4.7"
-    }
-  }
-}
+```bash
+# ワンショット質問
+picoclaw agent -m "What is 2+2?"
+
+# インタラクティブモード
+picoclaw agent
+
+# チャットアプリ統合用 Gateway を起動
+picoclaw gateway
 ```
 
-**新設定（推奨）:**
+</details>
+
+## 🔌 Provider（LLM）
+
+PicoClaw は `model_list` 設定を通じて 30 以上の LLM Provider をサポートしています。`protocol/model` 形式を使用してください：
+
+| Provider | Protocol | API キー | 備考 |
+|----------|----------|---------|------|
+| [OpenAI](https://platform.openai.com/api-keys) | `openai/` | 必須 | GPT-5.4、GPT-4o、o3 など |
+| [Anthropic](https://console.anthropic.com/settings/keys) | `anthropic/` | 必須 | Claude Opus 4.6、Sonnet 4.6 など |
+| [Google Gemini](https://aistudio.google.com/apikey) | `gemini/` | 必須 | Gemini 3 Flash、2.5 Pro など |
+| [OpenRouter](https://openrouter.ai/keys) | `openrouter/` | 必須 | 200 以上のモデル、統合 API |
+| [Zhipu (GLM)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | `zhipu/` | 必須 | GLM-4.7、GLM-5 など |
+| [DeepSeek](https://platform.deepseek.com/api_keys) | `deepseek/` | 必須 | DeepSeek-V3、DeepSeek-R1 |
+| [Volcengine](https://console.volcengine.com) | `volcengine/` | 必須 | Doubao、Ark モデル |
+| [Qwen](https://dashscope.console.aliyun.com/apiKey) | `qwen/` | 必須 | Qwen3、Qwen-Max など |
+| [Groq](https://console.groq.com/keys) | `groq/` | 必須 | 高速推論（Llama、Mixtral） |
+| [Moonshot (Kimi)](https://platform.moonshot.cn/console/api-keys) | `moonshot/` | 必須 | Kimi モデル |
+| [Minimax](https://platform.minimaxi.com/user-center/basic-information/interface-key) | `minimax/` | 必須 | MiniMax モデル |
+| [Mistral](https://console.mistral.ai/api-keys) | `mistral/` | 必須 | Mistral Large、Codestral |
+| [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | 必須 | NVIDIA ホスティングモデル |
+| [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | 必須 | 高速推論 |
+| [Novita AI](https://novita.ai/) | `novita/` | 必須 | 各種オープンモデル |
+| [Ollama](https://ollama.com/) | `ollama/` | 不要 | ローカルモデル、セルフホスト |
+| [vLLM](https://docs.vllm.ai/) | `vllm/` | 不要 | ローカルデプロイ、OpenAI 互換 |
+| [LiteLLM](https://docs.litellm.ai/) | `litellm/` | 場合による | 100 以上の Provider のプロキシ |
+| [Azure OpenAI](https://portal.azure.com/) | `azure/` | 必須 | エンタープライズ Azure デプロイ |
+| [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | デバイスコードログイン |
+| [Antigravity](https://console.cloud.google.com/) | `antigravity/` | OAuth | Google Cloud AI |
+
+<details>
+<summary><b>ローカルデプロイ（Ollama、vLLM など）</b></summary>
+
+**Ollama:**
 ```json
 {
   "model_list": [
     {
-      "model_name": "glm-4.7",
-      "model": "zhipu/glm-4.7",
-      "api_key": "your-key"
+      "model_name": "local-llama",
+      "model": "ollama/llama3.1:8b",
+      "api_base": "http://localhost:11434/v1"
     }
-  ],
-  "agents": {
-    "defaults": {
-      "model": "glm-4.7"
+  ]
+}
+```
+
+**vLLM:**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "local-vllm",
+      "model": "vllm/your-model",
+      "api_base": "http://localhost:8000/v1"
+    }
+  ]
+}
+```
+
+Provider の完全な設定詳細は [Provider とモデル](docs/ja/providers.md) を参照してください。
+
+</details>
+
+## 💬 Channel（チャットアプリ）
+
+17 以上のメッセージングプラットフォームで PicoClaw と会話できます：
+
+| Channel | セットアップ | Protocol | ドキュメント |
+|---------|------------|----------|------------|
+| **Telegram** | 簡単（bot トークン） | Long polling | [ガイド](docs/channels/telegram/README.ja.md) |
+| **Discord** | 簡単（bot トークン + intents） | WebSocket | [ガイド](docs/channels/discord/README.ja.md) |
+| **WhatsApp** | 簡単（QR スキャンまたは bridge URL） | Native / Bridge | [ガイド](docs/ja/chat-apps.md#whatsapp) |
+| **微信 (Weixin)** | 簡単（QR スキャン） | iLink API | [ガイド](docs/ja/chat-apps.md#weixin) |
+| **QQ** | 簡単（AppID + AppSecret） | WebSocket | [ガイド](docs/channels/qq/README.ja.md) |
+| **Slack** | 簡単（bot + app トークン） | Socket Mode | [ガイド](docs/channels/slack/README.ja.md) |
+| **Matrix** | 中級（homeserver + トークン） | Sync API | [ガイド](docs/channels/matrix/README.ja.md) |
+| **DingTalk** | 中級（クライアント認証情報） | Stream | [ガイド](docs/channels/dingtalk/README.ja.md) |
+| **Feishu / Lark** | 中級（App ID + Secret） | WebSocket/SDK | [ガイド](docs/channels/feishu/README.ja.md) |
+| **LINE** | 中級（認証情報 + webhook） | Webhook | [ガイド](docs/channels/line/README.ja.md) |
+| **WeCom Bot** | 中級（webhook URL） | Webhook | [ガイド](docs/channels/wecom/wecom_bot/README.ja.md) |
+| **WeCom App** | 中級（corp 認証情報） | Webhook | [ガイド](docs/channels/wecom/wecom_app/README.ja.md) |
+| **WeCom AI Bot** | 中級（トークン + AES キー） | WebSocket / Webhook | [ガイド](docs/channels/wecom/wecom_aibot/README.ja.md) |
+| **IRC** | 中級（サーバー + nick） | IRC protocol | [ガイド](docs/ja/chat-apps.md#irc) |
+| **OneBot** | 中級（WebSocket URL） | OneBot v11 | [ガイド](docs/channels/onebot/README.ja.md) |
+| **MaixCam** | 簡単（有効化） | TCP socket | [ガイド](docs/channels/maixcam/README.ja.md) |
+| **Pico** | 簡単（有効化） | Native protocol | 内蔵 |
+| **Pico Client** | 簡単（WebSocket URL） | WebSocket | 内蔵 |
+
+> webhook ベースのすべての Channel は単一の Gateway HTTP サーバー（`gateway.host`:`gateway.port`、デフォルト `127.0.0.1:18790`）を共有します。Feishu は WebSocket/SDK モードを使用し、共有 HTTP サーバーを使用しません。
+
+Channel の詳細なセットアップ手順は [チャットアプリ設定](docs/ja/chat-apps.md) を参照してください。
+
+## 🔧 ツール
+
+### 🔍 Web 検索
+
+PicoClaw は最新情報を提供するために Web を検索できます。`tools.web` で設定してください：
+
+| 検索エンジン | API キー | 無料枠 | リンク |
+|------------|---------|--------|-------|
+| DuckDuckGo | 不要 | 無制限 | 内蔵フォールバック |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 必須 | 1000 クエリ/日 | AI 搭載、中国語に最適化 |
+| [Tavily](https://tavily.com) | 必須 | 1000 クエリ/月 | AI Agent 向けに最適化 |
+| [Brave Search](https://brave.com/search/api) | 必須 | 2000 クエリ/月 | 高速でプライベート |
+| [Perplexity](https://www.perplexity.ai) | 必須 | 有料 | AI 搭載検索 |
+| [SearXNG](https://github.com/searxng/searxng) | 不要 | セルフホスト | 無料メタ検索エンジン |
+| [GLM Search](https://open.bigmodel.cn/) | 必須 | 場合による | Zhipu Web 検索 |
+
+### ⚙️ その他のツール
+
+PicoClaw にはファイル操作、コード実行、スケジューリングなどの組み込みツールが含まれています。詳細は [ツール設定](docs/ja/tools_configuration.md) を参照してください。
+
+## 🎯 Skill
+
+Skill は Agent を拡張するモジュール型の機能です。ワークスペース内の `SKILL.md` ファイルから読み込まれます。
+
+**ClawHub から Skill をインストール：**
+
+```bash
+picoclaw skills search "web scraping"
+picoclaw skills install <skill-name>
+```
+
+**ClawHub トークンを設定**（オプション、レート制限を上げるため）：
+
+`config.json` に追加：
+```json
+{
+  "tools": {
+    "skills": {
+      "registries": {
+        "clawhub": {
+          "auth_token": "your-clawhub-token"
+        }
+      }
     }
   }
 }
 ```
 
-詳細な移行ガイドは、[docs/migration/model-list-migration.md](docs/migration/model-list-migration.md) を参照してください。
+詳細は [ツール設定 - Skill](docs/ja/tools_configuration.md#skills-tool) を参照してください。
 
-## CLI リファレンス
+## 🔗 MCP（Model Context Protocol）
 
-| コマンド | 説明 |
+PicoClaw は [MCP](https://modelcontextprotocol.io/) をネイティブサポートしています — 任意の MCP サーバーに接続して、外部ツールやデータソースで Agent の機能を拡張できます。
+
+```json
+{
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "servers": {
+        "filesystem": {
+          "enabled": true,
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+        }
+      }
+    }
+  }
+}
+```
+
+MCP の完全な設定（stdio、SSE、HTTP トランスポート、Tool Discovery）は [ツール設定 - MCP](docs/ja/tools_configuration.md#mcp-tool) を参照してください。
+
+## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> エージェントソーシャルネットワークに参加
+
+CLI または統合チャットアプリからメッセージを 1 つ送るだけで、PicoClaw をエージェントソーシャルネットワークに接続できます。
+
+**`https://clawdchat.ai/skill.md` を読み、指示に従って [ClawdChat.ai](https://clawdchat.ai) に参加してください**
+
+## 🖥️ CLI リファレンス
+
+| コマンド                    | 説明                           |
+| ------------------------- | ------------------------------ |
+| `picoclaw onboard`        | 設定＆ワークスペースの初期化     |
+| `picoclaw onboard weixin` | WeChat アカウントを QR で接続 |
+| `picoclaw agent -m "..."` | Agent とチャット                |
+| `picoclaw agent`          | インタラクティブチャットモード   |
+| `picoclaw gateway`        | Gateway を起動                  |
+| `picoclaw status`         | ステータスを表示                |
+| `picoclaw version`        | バージョン情報を表示            |
+| `picoclaw model`          | デフォルトモデルの表示・切替    |
+| `picoclaw cron list`      | スケジュールジョブ一覧          |
+| `picoclaw cron add ...`   | スケジュールジョブを追加         |
+| `picoclaw cron disable`   | スケジュールジョブを無効化       |
+| `picoclaw cron remove`    | スケジュールジョブを削除         |
+| `picoclaw skills list`    | インストール済み Skill 一覧      |
+| `picoclaw skills install` | Skill をインストール             |
+| `picoclaw migrate`        | 旧バージョンからデータを移行     |
+| `picoclaw auth login`     | Provider への認証               |
+
+### ⏰ スケジュールタスク / リマインダー
+
+PicoClaw は `cron` ツールによるスケジュールリマインダーと定期タスクをサポートしています：
+
+* **ワンタイムリマインダー**: 「10分後にリマインド」→ 10分後に1回トリガー
+* **定期タスク**: 「2時間ごとにリマインド」→ 2時間ごとにトリガー
+* **Cron 式**: 「毎日9時にリマインド」→ cron 式を使用
+
+## 📚 ドキュメント
+
+この README を超えた詳細なガイドについては：
+
+| トピック | 説明 |
 |---------|------|
-| `picoclaw onboard` | 設定＆ワークスペースの初期化 |
-| `picoclaw agent -m "..."` | エージェントとチャット |
-| `picoclaw agent` | インタラクティブチャットモード |
-| `picoclaw gateway` | ゲートウェイを起動 |
-| `picoclaw status` | ステータスを表示 |
+| [Docker & クイックスタート](docs/ja/docker.md) | Docker Compose セットアップ、Launcher/Agent モード |
+| [チャットアプリ](docs/ja/chat-apps.md) | 17 以上の Channel セットアップガイド |
+| [設定](docs/ja/configuration.md) | 環境変数、ワークスペース構成、セキュリティサンドボックス |
+| [Provider とモデル](docs/ja/providers.md) | 30 以上の LLM Provider、モデルルーティング、model_list 設定 |
+| [Spawn & 非同期タスク](docs/ja/spawn-tasks.md) | クイックタスク、spawn による長時間タスク、非同期サブエージェントオーケストレーション |
+| [Hook システム](docs/hooks/README.md) | イベント駆動 Hook：オブザーバー、インターセプター、承認 Hook |
+| [Steering](docs/steering.md) | 実行中の Agent ループにメッセージを注入 |
+| [SubTurn](docs/subturn.md) | サブ Agent の調整、並行制御、ライフサイクル |
+| [トラブルシューティング](docs/ja/troubleshooting.md) | よくある問題と解決策 |
+| [ツール設定](docs/ja/tools_configuration.md) | ツールごとの有効/無効、exec ポリシー、MCP、Skill |
+| [ハードウェア互換性](docs/ja/hardware-compatibility.md) | テスト済みボード、最小要件 |
 
 ## 🤝 コントリビュート＆ロードマップ
 
-PR 歓迎！コードベースは意図的に小さく読みやすくしています。🤗
+PR 歓迎！コードベースは意図的に小さく読みやすくしています。
 
-Discord: https://discord.gg/V4sAZ9XWpN
+[コミュニティロードマップ](https://github.com/sipeed/picoclaw/issues/988)と[CONTRIBUTING.md](CONTRIBUTING.md)をご覧ください。
 
-<img src="assets/wechat.png" alt="PicoClaw" width="512">
+開発者グループ構築中、最初の PR がマージされたら参加できます！
 
+ユーザーグループ:
 
-## 🐛 トラブルシューティング
+Discord: <https://discord.gg/V4sAZ9XWpN>
 
-### Web 検索で「API 設定の問題」と表示される
-
-検索 API キーをまだ設定していない場合、これは正常です。PicoClaw は手動検索用の便利なリンクを提供します。
-
-Web 検索を有効にするには：
-1. [https://tavily.com](https://tavily.com) (月 1000 クエリ無料) または [https://brave.com/search/api](https://brave.com/search/api) で無料の API キーを取得（月 2000 クエリ無料）
-2. `~/.picoclaw/config.json` に追加：
-   ```json
-   {
-     "tools": {
-       "web": {
-         "brave": {
-           "enabled": true,
-           "api_key": "YOUR_BRAVE_API_KEY",
-           "max_results": 5
-         },
-         "duckduckgo": {
-           "enabled": true,
-           "max_results": 5
-         }
-       }
-     }
-   }
-   ```
-
-### コンテンツフィルタリングエラーが出る
-
-一部のプロバイダー（Zhipu など）にはコンテンツフィルタリングがあります。クエリを言い換えるか、別のモデルを使用してください。
-
-### Telegram Bot で「Conflict: terminated by other getUpdates」と表示される
-
-別のインスタンスが実行中の場合に発生します。`picoclaw gateway` が 1 つだけ実行されていることを確認してください。
-
----
-
-## 📝 API キー比較
-
-| サービス | 無料枠 | ユースケース |
-|---------|--------|------------|
-| **OpenRouter** | 月 200K トークン | 複数モデル（Claude, GPT-4 など） |
-| **Volcengine CodingPlan** | 9.9元/初月 | 中国ユーザーに最適、複数のSOTAモデル（Doubao、DeepSeek等） |
-| **Zhipu** | 月 200K トークン | 中国ユーザーに適している |
-| **Qwen** | 無料枠あり | 通義千問 (Qwen) |
-| **Brave Search** | 月 2000 クエリ | Web 検索機能 |
-| **Tavily** | 月 1000 クエリ | AI エージェント検索最適化 |
-| **Groq** | 無料枠あり | 高速推論（Llama, Mixtral） |
-| **Cerebras** | 無料枠あり | 高速推論（Llama, Qwen など） |
-| **ModelScope** | 1 日 2000 リクエスト | 無料推論（Qwen, GLM, DeepSeek など） |
-
----
-
-<div align="center">
-  <img src="assets/logo.jpg" alt="PicoClaw Meme" width="512">
-</div>
+WeChat:
+<img src="assets/wechat.png" alt="WeChat group QR code" width="512">

@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
 
 type Server struct {
-	server    *http.Server
-	mu        sync.RWMutex
-	ready     bool
-	checks    map[string]Check
-	startTime time.Time
+	server     *http.Server
+	mu         sync.RWMutex
+	ready      bool
+	checks     map[string]Check
+	startTime  time.Time
+	reloadFunc func() error
 }
 
 type Check struct {
@@ -29,6 +31,7 @@ type StatusResponse struct {
 	Status string           `json:"status"`
 	Uptime string           `json:"uptime"`
 	Checks map[string]Check `json:"checks,omitempty"`
+	Pid    int              `json:"pid"`
 }
 
 func NewServer(host string, port int) *Server {
@@ -41,6 +44,7 @@ func NewServer(host string, port int) *Server {
 
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
+	mux.HandleFunc("/reload", s.reloadHandler)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	s.server = &http.Server{
@@ -104,6 +108,44 @@ func (s *Server) RegisterCheck(name string, checkFn func() (bool, string)) {
 	}
 }
 
+// SetReloadFunc sets the callback function for config reload.
+func (s *Server) SetReloadFunc(fn func() error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadFunc = fn
+}
+
+func (s *Server) reloadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed, use POST"})
+		return
+	}
+
+	s.mu.Lock()
+	reloadFunc := s.reloadFunc
+	s.mu.Unlock()
+
+	if reloadFunc == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "reload not configured"})
+		return
+	}
+
+	if err := reloadFunc(); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "reload triggered"})
+}
+
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -112,6 +154,7 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	resp := StatusResponse{
 		Status: "ok",
 		Uptime: uptime.String(),
+		Pid:    os.Getpid(),
 	}
 
 	json.NewEncoder(w).Encode(resp)
@@ -155,11 +198,12 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RegisterOnMux registers /health and /ready handlers onto the given mux.
+// RegisterOnMux registers /health, /ready and /reload handlers onto the given mux.
 // This allows the health endpoints to be served by a shared HTTP server.
 func (s *Server) RegisterOnMux(mux *http.ServeMux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
+	mux.HandleFunc("/reload", s.reloadHandler)
 }
 
 func statusString(ok bool) string {

@@ -2,12 +2,14 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
-	"log"
 	"mime"
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 //go:embed all:dist
@@ -19,16 +21,16 @@ func registerEmbedRoutes(mux *http.ServeMux) {
 	// Go's built-in mime.TypeByExtension returns "image/svg" which is incorrect
 	// The correct MIME type per RFC 6838 is "image/svg+xml"
 	if err := mime.AddExtensionType(".svg", "image/svg+xml"); err != nil {
-		log.Printf("Warning: failed to register SVG MIME type: %v", err)
+		logger.ErrorC("web", fmt.Sprintf("Warning: failed to register SVG MIME type: %v", err))
 	}
 
 	// Attempt to get the subdirectory 'dist' where Vite usually builds
 	subFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
 		// Log a warning if dist doesn't exist yet (e.g., during development before a frontend build)
-		log.Printf(
-			"Warning: no 'dist' folder found in embedded frontend. " +
-				"Ensure you run `pnpm build:backend` in the frontend directory " +
+		logger.WarnC("web",
+			"Warning: no 'dist' folder found in embedded frontend. "+
+				"Ensure you run `pnpm build:backend` in the frontend directory "+
 				"before building the Go backend.",
 		)
 		return
