@@ -15,22 +15,23 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
-// InstallSkillTool allows the LLM agent to install skills from registries.
-// It shares the same RegistryManager that FindSkillsTool uses,
-// so all registries configured in config are available for installation.
 type InstallSkillTool struct {
-	registryMgr *skills.RegistryManager
-	workspace   string
-	mu          sync.Mutex
+	registryMgr      *skills.RegistryManager
+	workspace        string
+	whitelist        []string
+	whitelistEnabled bool
+	mu               sync.Mutex
 }
 
 // NewInstallSkillTool creates a new InstallSkillTool.
 // registryMgr is the shared registry manager (same instance as FindSkillsTool).
 // workspace is the root workspace directory; skills install to {workspace}/skills/{slug}/.
-func NewInstallSkillTool(registryMgr *skills.RegistryManager, workspace string) *InstallSkillTool {
+func NewInstallSkillTool(registryMgr *skills.RegistryManager, workspace string, whitelist []string, whitelistEnabled bool) *InstallSkillTool {
 	return &InstallSkillTool{
 		registryMgr: registryMgr,
 		workspace:   workspace,
+		whitelist:   whitelist,
+		whitelistEnabled: whitelistEnabled,
 		mu:          sync.Mutex{},
 	}
 }
@@ -78,6 +79,20 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 	slug, _ := args["slug"].(string)
 	if err := utils.ValidateSkillIdentifier(slug); err != nil {
 		return ErrorResult(fmt.Sprintf("invalid slug %q: error: %s", slug, err.Error()))
+	}
+
+	// Check whitelist
+	if t.whitelistEnabled {
+		whitelisted := false
+		for _, w := range t.whitelist {
+			if w == slug {
+				whitelisted = true
+				break
+			}
+		}
+		if !whitelisted {
+			return ErrorResult(fmt.Sprintf("skill %q is not in whitelist and cannot be installed", slug))
+		}
 	}
 
 	// Validate registry
