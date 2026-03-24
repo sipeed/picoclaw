@@ -99,10 +99,13 @@ func NewPicoChannel(cfg config.PicoConfig, messageBus *bus.MessageBus) (*PicoCha
 	}, nil
 }
 
-// createAndAddConnection generates a unique connID and registers it atomically.
-func (c *PicoChannel) createAndAddConnection(conn *websocket.Conn, sessionID string) *picoConn {
+// createAndAddConnection checks MaxConnections and registers a connection atomically.
+func (c *PicoChannel) createAndAddConnection(conn *websocket.Conn, sessionID string, maxConns int) (*picoConn, error) {
 	c.connsMu.Lock()
 	defer c.connsMu.Unlock()
+	if c.connCount >= maxConns {
+		return nil, channels.ErrSendFailed
+	}
 
 	var connID string
 	for {
@@ -127,7 +130,7 @@ func (c *PicoChannel) createAndAddConnection(conn *websocket.Conn, sessionID str
 	bySession[pc.id] = pc
 	c.connCount++
 
-	return pc
+	return pc, nil
 }
 
 // removeConnection deletes a connection from indexes and returns it when found.
@@ -361,7 +364,16 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		sessionID = uuid.New().String()
 	}
 
-	pc := c.createAndAddConnection(conn, sessionID)
+	pc, err := c.createAndAddConnection(conn, sessionID, maxConns)
+	if err != nil {
+		_ = conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "too many connections"),
+			time.Now().Add(2*time.Second),
+		)
+		_ = conn.Close()
+		return
+	}
 
 	logger.InfoCF("pico", "WebSocket client connected", map[string]any{
 		"conn_id":    pc.id,
