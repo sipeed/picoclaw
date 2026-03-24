@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"fmt"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -229,21 +230,7 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		return channels.ErrNotRunning
 	}
 
-
-
-	c.applyPassiveReplyMetadata(msg.ChatID, msgToCreate)
-
-	// Sanitize URLs in group messages to avoid QQ's URL blacklist rejection.
-	if chatKind == "group" {
-		if msgToCreate.Content != "" {
-			msgToCreate.Content = sanitizeURLs(msgToCreate.Content)
-		}
-		if msgToCreate.Markdown != nil && msgToCreate.Markdown.Content != "" {
-			msgToCreate.Markdown.Content = sanitizeURLs(msgToCreate.Markdown.Content)
-		}
-	}
-
-	// Route to group or C2C.
+	chatKind := c.getChatKind(msg.ChatID)
 	mdMsg, textMsg := c.genReplyMsg(ctx, msg)
 	var err error
 	for _, replyMsg := range []dto.MessageToCreate{mdMsg, textMsg} {
@@ -329,9 +316,6 @@ func (c *QQChannel) StartTyping(ctx context.Context, chatID string) (func(), err
 }
 
 // SendMedia implements the channels.MediaSender interface.
-// QQ group/C2C media sending is a two-step flow:
-// 1. Upload media to /files using a remote URL or base64-encoded local bytes.
-// 2. Send a msg_type=7 message using the returned file_info.
 func (c *QQChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
 
 	if !c.IsRunning() {
@@ -339,24 +323,6 @@ func (c *QQChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage)
 	}
 	var err error
 	for _, part := range msg.Parts {
-		fileInfo, err := c.uploadMedia(ctx, chatKind, msg.ChatID, part)
-		if err != nil {
-			logger.ErrorCF("qq", "Failed to upload media", map[string]any{
-				"type":    part.Type,
-				"chat_id": msg.ChatID,
-				"error":   err.Error(),
-			})
-			if errors.Is(err, channels.ErrSendFailed) {
-				return err
-			}
-			return fmt.Errorf("qq send media: %w", channels.ErrTemporary)
-		}
-
-		if err := c.sendUploadedMedia(ctx, chatKind, msg.ChatID, part, fileInfo); err != nil {
-			logger.ErrorCF("qq", "Failed to send media", map[string]any{
-				"type":    part.Type,
-				"chat_id": msg.ChatID,
-				"error":   err.Error(),
 		if err = c.sendOneMedia(ctx, msg.ChatID, part); err != nil {
 			logger.ErrorCF("qq", "Failed to send media", map[string]any{
 				"part":  part,
@@ -366,236 +332,6 @@ func (c *QQChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage)
 		}
 	}
 	return err
-}
-
-type qqMediaUpload struct {
-	FileType   uint64 `json:"file_type"`
-	URL        string `json:"url,omitempty"`
-	FileData   string `json:"file_data,omitempty"`
-	FileName   string `json:"file_name,omitempty"`
-	SrvSendMsg bool   `json:"srv_send_msg,omitempty"`
-}
-
-func (c *QQChannel) uploadMedia(
-	ctx context.Context,
-	chatKind, chatID string,
-	part bus.MediaPart,
-) ([]byte, error) {
-	payload, err := c.buildMediaUpload(part)
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := c.api.Transport(ctx, http.MethodPost, c.mediaUploadURL(chatKind, chatID), payload)
-	if err != nil {
-		return nil, err
-	}
-
-	var uploaded dto.Message
-	if err := json.Unmarshal(body, &uploaded); err != nil {
-		return nil, fmt.Errorf("qq decode media upload response: %w", err)
-	}
-	if len(uploaded.FileInfo) == 0 {
-		return nil, fmt.Errorf("qq upload media: missing file_info")
-	}
-
-	return uploaded.FileInfo, nil
-}
-
-func (c *QQChannel) buildMediaUpload(part bus.MediaPart) (*qqMediaUpload, error) {
-	payload := &qqMediaUpload{}
-
-	mediaRef := part.Ref
-	if isHTTPURL(mediaRef) {
-		payload.FileType = qqFileType(c.outboundMediaType(part, ""))
-		payload.URL = mediaRef
-		payload.FileName = qqUploadFilename(part, mediaRef, payload.FileType)
-		return payload, nil
-	}
-
-	store := c.GetMediaStore()
-	if store == nil {
-		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
-	}
-
-	resolved, meta, err := store.ResolveWithMeta(part.Ref)
-	if err != nil {
-		return nil, fmt.Errorf("qq resolve media ref %q: %v: %w", part.Ref, err, channels.ErrSendFailed)
-	}
-	if part.Filename == "" {
-		part.Filename = meta.Filename
-	}
-	if part.ContentType == "" {
-		part.ContentType = meta.ContentType
-	}
-
-	if isHTTPURL(resolved) {
-		payload.FileType = qqFileType(c.outboundMediaType(part, ""))
-		payload.URL = resolved
-		payload.FileName = qqUploadFilename(part, resolved, payload.FileType)
-		return payload, nil
-	}
-	payload.FileType = qqFileType(c.outboundMediaType(part, resolved))
-	payload.FileName = qqUploadFilename(part, resolved, payload.FileType)
-
-	if limitBytes := c.maxBase64FileSizeBytes(); limitBytes > 0 {
-		info, statErr := os.Stat(resolved)
-		if statErr != nil {
-			return nil, fmt.Errorf("qq stat local media %q: %v: %w", resolved, statErr, channels.ErrSendFailed)
-		}
-		if info.Size() > limitBytes {
-			return nil, fmt.Errorf(
-				"qq local media %q exceeds max_base64_file_size_mib (%d > %d bytes): %w",
-				resolved,
-				info.Size(),
-				limitBytes,
-				channels.ErrSendFailed,
-			)
-		}
-	}
-
-	data, err := os.ReadFile(resolved)
-	if err != nil {
-		return nil, fmt.Errorf("qq read local media %q: %v: %w", resolved, err, channels.ErrSendFailed)
-	}
-
-	payload.FileData = base64.StdEncoding.EncodeToString(data)
-	return payload, nil
-}
-
-func qqUploadFilename(part bus.MediaPart, resolved string, fileType uint64) string {
-	if fileType != qqFileType("file") {
-		return ""
-	}
-	if part.Filename != "" {
-		return part.Filename
-	}
-	if isHTTPURL(resolved) {
-		if parsed, err := url.Parse(resolved); err == nil {
-			if base := path.Base(parsed.Path); base != "" && base != "." && base != "/" {
-				return base
-			}
-		}
-		return ""
-	}
-
-	if base := filepath.Base(resolved); base != "" && base != "." {
-		return base
-	}
-	return ""
-}
-
-func (c *QQChannel) outboundMediaType(part bus.MediaPart, localPath string) string {
-	if part.Type != "audio" {
-		return part.Type
-	}
-
-	if localPath == "" {
-		logger.InfoCF("qq", "Sending audio as file because duration is unavailable", map[string]any{
-			"ref":      part.Ref,
-			"filename": part.Filename,
-		})
-		return "file"
-	}
-
-	duration, ok, err := qqAudioDuration(localPath, part.Filename, part.ContentType)
-	if err != nil {
-		logger.WarnCF("qq", "Failed to detect audio duration, sending as file", map[string]any{
-			"ref":      part.Ref,
-			"filename": part.Filename,
-			"error":    err.Error(),
-		})
-		return "file"
-	}
-	if !ok {
-		logger.InfoCF("qq", "Sending audio as file because duration is unavailable", map[string]any{
-			"ref":      part.Ref,
-			"filename": part.Filename,
-		})
-		return "file"
-	}
-	if duration > qqVoiceMaxDuration {
-		logger.InfoCF("qq", "Sending audio as file because it exceeds QQ voice limit", map[string]any{
-			"ref":              part.Ref,
-			"filename":         part.Filename,
-			"duration_seconds": duration.Seconds(),
-			"limit_seconds":    qqVoiceMaxDuration.Seconds(),
-		})
-		return "file"
-	}
-
-	return "audio"
-}
-
-func (c *QQChannel) sendUploadedMedia(
-	ctx context.Context,
-	chatKind, chatID string,
-	part bus.MediaPart,
-	fileInfo []byte,
-) error {
-	msg := &dto.MessageToCreate{
-		Content: part.Caption,
-		MsgType: dto.RichMediaMsg,
-		Media: &dto.MediaInfo{
-			FileInfo: fileInfo,
-		},
-	}
-	c.applyPassiveReplyMetadata(chatID, msg)
-
-	if chatKind == "group" && msg.Content != "" {
-		msg.Content = sanitizeURLs(msg.Content)
-	}
-
-	if chatKind == "group" {
-		_, err := c.api.PostGroupMessage(ctx, chatID, msg)
-		return err
-	}
-	_, err := c.api.PostC2CMessage(ctx, chatID, msg)
-	return err
-}
-
-func (c *QQChannel) applyPassiveReplyMetadata(chatID string, msg *dto.MessageToCreate) {
-	if v, ok := c.lastMsgID.Load(chatID); ok {
-		if msgID, ok := v.(string); ok && msgID != "" {
-			msg.MsgID = msgID
-
-			// Increment msg_seq atomically for multi-part replies.
-			if counterVal, ok := c.msgSeqCounters.Load(chatID); ok {
-				if counter, ok := counterVal.(*atomic.Uint64); ok {
-					seq := counter.Add(1)
-					msg.MsgSeq = uint32(seq)
-				}
-			}
-		}
-	}
-}
-
-func (c *QQChannel) mediaUploadURL(chatKind, chatID string) string {
-	base := constant.APIDomain
-	if chatKind == "group" {
-		return fmt.Sprintf("%s/v2/groups/%s/files", base, chatID)
-	}
-	return fmt.Sprintf("%s/v2/users/%s/files", base, chatID)
-}
-
-func qqFileType(partType string) uint64 {
-	switch partType {
-	case "image":
-		return 1
-	case "video":
-		return 2
-	case "audio":
-		return 3
-	default:
-		return 4
-	}
-}
-
-func (c *QQChannel) maxBase64FileSizeBytes() int64 {
-	if c.config.MaxBase64FileSizeMiB <= 0 {
-		return 0
-	}
-	return c.config.MaxBase64FileSizeMiB * bytesPerMiB
 }
 
 // handleC2CMessage handles QQ private messages.
@@ -619,19 +355,6 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 			Platform:    "qq",
 			PlatformID:  data.Author.ID,
 			CanonicalID: identity.BuildCanonicalID("qq", data.Author.ID),
-		}
-
-		if !c.IsAllowedSender(sender) {
-			return nil
-		}
-
-		content := strings.TrimSpace(data.Content)
-		mediaPaths, attachmentNotes := c.extractInboundAttachments(senderID, data.ID, data.Attachments)
-		for _, note := range attachmentNotes {
-			content = appendContent(content, note)
-		}
-		if content == "" && len(mediaPaths) == 0 {
-			logger.DebugC("qq", "Received empty C2C message with no attachments, ignoring")
 			Username:    data.Author.Username,
 		}
 
@@ -650,9 +373,8 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		}
 
 		logger.InfoCF("qq", "Received C2C message", map[string]any{
-			"sender":      senderID,
-			"length":      len(content),
-			"media_count": len(mediaPaths),
+			"sender": senderID,
+			"length": len(content),
 		})
 
 		// Store chat routing context.
@@ -699,19 +421,6 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			Platform:    "qq",
 			PlatformID:  data.Author.ID,
 			CanonicalID: identity.BuildCanonicalID("qq", data.Author.ID),
-		}
-
-		if !c.IsAllowedSender(sender) {
-			return nil
-		}
-
-		content := strings.TrimSpace(data.Content)
-		mediaPaths, attachmentNotes := c.extractInboundAttachments(data.GroupID, data.ID, data.Attachments)
-		for _, note := range attachmentNotes {
-			content = appendContent(content, note)
-		}
-
-		// GroupAT event means bot is always mentioned; apply group trigger filtering.
 			Username:    data.Author.Username,
 		}
 
@@ -739,12 +448,13 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			logger.DebugC("qq", "Received empty group message with no attachments, ignoring")
 			return nil
 		}
-
+        
 		logger.InfoCF("qq", "Received group AT message", map[string]any{
-			"sender":      senderID,
-			"group":       data.GroupID,
-			"length":      len(content),
-			"media_count": len(mediaPaths),
+			"sender": senderID,
+			"group":  data.GroupID,
+			"length": len(content),
+            "media_count": len(mediaPaths),
+
 		})
 
 		// Store chat routing context using GroupID as chatID.
