@@ -75,6 +75,10 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
 # Install Python packages (system-wide via uv to avoid PEP 668 issues)
 RUN uv pip install --system --break-system-packages atproto
 
+# Install bsky CLI (Python wrapper around atproto SDK)
+COPY docker/bsky.py /usr/local/bin/bsky
+RUN sed -i 's/\r$//' /usr/local/bin/bsky && chmod +x /usr/local/bin/bsky
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget -q --spider http://localhost:18790/health || exit 1

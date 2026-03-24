@@ -12,12 +12,15 @@ if [ ! -d "${HOME}/.picoclaw/workspace" ] && [ ! -f "${HOME}/.picoclaw/config.js
     exit 0
 fi
 
-# Ensure bsky CLI is on PATH (symlink from skill scripts)
-BSKY_SCRIPT="${HOME}/.picoclaw/workspace/skills/bluesky/scripts/bsky.py"
-if [ -f "$BSKY_SCRIPT" ] && [ ! -e /usr/local/bin/bsky ]; then
-    chmod +x "$BSKY_SCRIPT"
-    ln -sf "$BSKY_SCRIPT" /usr/local/bin/bsky
-    echo "bsky CLI symlinked to PATH"
+# Ensure bsky CLI is on PATH (baked into image at /usr/local/bin/bsky via Dockerfile)
+# Fallback: symlink from workspace if image copy is missing
+if [ ! -e /usr/local/bin/bsky ]; then
+    BSKY_SCRIPT="${HOME}/.picoclaw/workspace/skills/social-poster/scripts/bsky.py"
+    if [ -f "$BSKY_SCRIPT" ]; then
+        chmod +x "$BSKY_SCRIPT"
+        ln -sf "$BSKY_SCRIPT" /usr/local/bin/bsky
+        echo "bsky CLI symlinked to PATH from workspace"
+    fi
 fi
 
 # Bluesky: persist session config inside mounted volume and auto-login
@@ -31,24 +34,20 @@ if [ ! -e "${HOME}/.config/bsky" ]; then
 fi
 
 # Auto-login to Bluesky if credentials provided and no valid session exists
-if [ -n "$BSKY_HANDLE" ] && [ -n "$BSKY_APP_PASSWORD" ]; then
-    BSKY_SCRIPT="${HOME}/.picoclaw/workspace/skills/bluesky/scripts/bsky.py"
-    if [ -f "$BSKY_SCRIPT" ]; then
-        # Check if already logged in (whoami prints "Not logged in" when no session)
-        WHOAMI_OUT=$(python3 "$BSKY_SCRIPT" whoami 2>&1 || true)
-        if echo "$WHOAMI_OUT" | grep -qi "not logged in\|error\|failed\|expired"; then
-            echo "Logging in to Bluesky as $BSKY_HANDLE..."
-            python3 "$BSKY_SCRIPT" login --handle "$BSKY_HANDLE" --password "$BSKY_APP_PASSWORD" && \
-                echo "Bluesky login successful" || \
-                echo "WARNING: Bluesky login failed, continuing without it"
-        elif echo "$WHOAMI_OUT" | grep -qi "Handle:"; then
-            echo "Bluesky: already logged in ($WHOAMI_OUT)"
-        else
-            echo "Logging in to Bluesky as $BSKY_HANDLE..."
-            python3 "$BSKY_SCRIPT" login --handle "$BSKY_HANDLE" --password "$BSKY_APP_PASSWORD" && \
-                echo "Bluesky login successful" || \
-                echo "WARNING: Bluesky login failed, continuing without it"
-        fi
+if [ -n "$BSKY_HANDLE" ] && [ -n "$BSKY_APP_PASSWORD" ] && command -v bsky >/dev/null 2>&1; then
+    WHOAMI_OUT=$(bsky whoami 2>&1 || true)
+    if echo "$WHOAMI_OUT" | grep -qi "not logged in\|error\|failed\|expired"; then
+        echo "Logging in to Bluesky as $BSKY_HANDLE..."
+        bsky login --handle "$BSKY_HANDLE" --password "$BSKY_APP_PASSWORD" && \
+            echo "Bluesky login successful" || \
+            echo "WARNING: Bluesky login failed, continuing without it"
+    elif echo "$WHOAMI_OUT" | grep -qi "Handle:"; then
+        echo "Bluesky: already logged in ($WHOAMI_OUT)"
+    else
+        echo "Logging in to Bluesky as $BSKY_HANDLE..."
+        bsky login --handle "$BSKY_HANDLE" --password "$BSKY_APP_PASSWORD" && \
+            echo "Bluesky login successful" || \
+            echo "WARNING: Bluesky login failed, continuing without it"
     fi
 fi
 
