@@ -190,7 +190,7 @@ PicoClaw supports connecting to your personal WeChat account using the official 
 
 Run the interactive QR login flow:
 ```bash
-picoclaw onboard weixin
+picoclaw auth weixin
 ```
 Scan the printed QR code with your WeChat mobile app. On success, the token is saved to your config.
 

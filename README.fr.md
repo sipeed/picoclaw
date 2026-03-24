@@ -524,7 +524,7 @@ Connectez PicoClaw au réseau social des Agents simplement en envoyant un seul m
 | Commande                  | Description                              |
 | ------------------------- | ---------------------------------------- |
 | `picoclaw onboard`        | Initialiser la config & le workspace     |
-| `picoclaw onboard weixin` | Connecter un compte WeChat via QR |
+| `picoclaw auth weixin` | Connecter un compte WeChat via QR |
 | `picoclaw agent -m "..."` | Chatter avec l'agent                     |
 | `picoclaw agent`          | Mode chat interactif                     |
 | `picoclaw gateway`        | Démarrer le gateway                      |
