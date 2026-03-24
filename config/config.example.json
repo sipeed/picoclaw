@@ -262,6 +262,32 @@
         "enabled": false
       },
       "reasoning_channel_id": ""
+    },
+    "mqtt": {
+      "enabled": false,
+      "broker": "tcp://broker.emqx.io:1883",
+      "client_id": "picoclaw-001",
+      "username": "",
+      "password": "",
+      "subscribe_topics": [
+        "picoclaw/input"
+      ],
+      "subscribe_json_key": null,
+      "reply_topic": "picoclaw/output",
+      "reply_json_key": null,
+      "tls": false,
+      "tls_ca": "",
+      "tls_cert": "",
+      "tls_key": "",
+      "qos": 1,
+      "retain": false,
+      "prefix": "/mqtt",
+      "instruction": "Будь предельно краток",
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": false
+      },
+      "reasoning_channel_id": ""
     }
   },
   "providers": {

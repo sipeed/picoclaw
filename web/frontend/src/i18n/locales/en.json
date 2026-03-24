@@ -240,7 +240,8 @@
       "pico": "Web",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
-      "irc": "IRC"
+      "irc": "IRC",
+      "mqtt": "MQTT"
     },
     "field": {
       "token": "Bot Token",
@@ -328,6 +329,15 @@
         "channels": "IRC channels to join.",
         "requestCaps": "IRC capability list requested on connect.",
         "maxBase64FileSizeMiB": "Maximum size in MiB for converting local files to base64 before upload. 0 means unlimited. Applies only to local files, not URL uploads.",
+        "broker": "MQTT broker URL (e.g. tcp://broker.emqx.io:1883).",
+        "subscribeTopics": "MQTT topics to subscribe to, separated by commas.",
+        "subscribeJsonKey": "JSON key to extract from incoming messages. Leave empty to use raw payload.",
+        "replyTopic": "Default topic for publishing replies.",
+        "replyJsonKey": "JSON key to wrap reply content. Leave empty to send plain text.",
+        "qos": "Quality of Service level (0, 1, or 2).",
+        "retain": "Whether to retain published messages on the broker.",
+        "prefix": "URL prefix for the channel.",
+        "instruction": "System instruction prepended to incoming messages.",
         "genericField": "Used to configure {{field}}."
       }
     },

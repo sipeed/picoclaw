@@ -44,6 +44,7 @@ const CHANNEL_IMPORTANCE_ORDER = [
   "pico",
   "maixcam",
   "irc",
+  "mqtt",
   "whatsapp",
   "whatsapp_native",
 ]

@@ -240,7 +240,8 @@
       "pico": "Web",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
-      "irc": "IRC"
+      "irc": "IRC",
+      "mqtt": "MQTT"
     },
     "field": {
       "token": "Bot Token",
@@ -328,6 +329,15 @@
         "channels": "要加入的 IRC 频道列表。",
         "requestCaps": "连接时请求的 IRC 扩展能力列表。",
         "maxBase64FileSizeMiB": "本地文件转为 base64 上传的最大体积，单位 MiB；0 表示不限制，仅影响本地文件，不影响 URL 直传。",
+        "broker": "MQTT 代理地址（例如 tcp://broker.emqx.io:1883）。",
+        "subscribeTopics": "要订阅的 MQTT 主题，多个值用逗号分隔。",
+        "subscribeJsonKey": "从接收消息中提取的 JSON 键名。留空则使用原始内容。",
+        "replyTopic": "发布回复的默认主题。",
+        "replyJsonKey": "用于包装回复内容的 JSON 键名。留空则发送纯文本。",
+        "qos": "服务质量等级（0、1 或 2）。",
+        "retain": "是否在代理上保留已发布的消息。",
+        "prefix": "频道 URL 前缀。",
+        "instruction": "附加到接收消息前的系统指令。",
         "genericField": "用于配置{{field}}。"
       }
     },
