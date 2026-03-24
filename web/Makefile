@@ -83,7 +83,11 @@ build:
 # Run all tests
 test:
 	cd backend && ${WEB_GO} test ./...
-	cd frontend && pnpm lint
+	@if command -v pnpm >/dev/null 2>&1; then \
+		cd frontend && pnpm lint; \
+	else \
+		echo "pnpm not found, skipping frontend linting"; \
+	fi
 
 # Lint and format
 lint:

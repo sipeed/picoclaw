@@ -272,11 +272,25 @@ func registerSharedTools(
 					cfg.Tools.Skills.SearchCache.MaxSize,
 					time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second,
 				)
-				agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache, cfg.Tools.Skills.Whitelist, cfg.Tools.Skills.WhitelistEnabled))
+				agent.Tools.Register(
+					tools.NewFindSkillsTool(
+						registryMgr,
+						searchCache,
+						cfg.Tools.Skills.Whitelist,
+						cfg.Tools.Skills.WhitelistEnabled,
+					),
+				)
 			}
 
 			if install_skills_enable {
-				agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace, cfg.Tools.Skills.Whitelist, cfg.Tools.Skills.WhitelistEnabled))
+				agent.Tools.Register(
+					tools.NewInstallSkillTool(
+						registryMgr,
+						agent.Workspace,
+						cfg.Tools.Skills.Whitelist,
+						cfg.Tools.Skills.WhitelistEnabled,
+					),
+				)
 			}
 		}
 
