@@ -34,10 +34,10 @@ type SecurityConfig struct {
 	ModelList map[string]ModelSecurityEntry `yaml:"model_list,omitempty"`
 
 	// Channel tokens/secrets
-	Channels ChannelsSecurity `yaml:"channels,omitempty"`
+	Channels *ChannelsSecurity `yaml:"channels,omitempty"`
 
-	Web    WebToolsSecurity `yaml:"web,omitempty"`
-	Skills SkillsSecurity   `yaml:"skills,omitempty"`
+	Web    *WebToolsSecurity `yaml:"web,omitempty"`
+	Skills *SkillsSecurity   `yaml:"skills,omitempty"`
 
 	// cache for sensitive values and compiled regex (computed once)
 	sensitiveCache *SensitiveDataCache

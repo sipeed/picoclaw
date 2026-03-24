@@ -1364,7 +1364,7 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 			"test-model": {APIKeys: []string{"sk-model-key-12345"}},
 		},
 		// Channel tokens
-		Channels: ChannelsSecurity{
+		Channels: &ChannelsSecurity{
 			Telegram: &TelegramSecurity{Token: "telegram-bot-token-abcdef"},
 			Discord:  &DiscordSecurity{Token: "discord-bot-token-xyz789"},
 			Slack:    &SlackSecurity{BotToken: "xoxb-slack-bot-token", AppToken: "xapp-slack-app-token"},
@@ -1382,7 +1382,7 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 			},
 		},
 		// Web tool API keys
-		Web: WebToolsSecurity{
+		Web: &WebToolsSecurity{
 			Brave:       &BraveSecurity{APIKeys: []string{"brave-api-key"}},
 			Tavily:      &TavilySecurity{APIKeys: []string{"tavily-api-key"}},
 			Perplexity:  &PerplexitySecurity{APIKeys: []string{"perplexity-api-key"}},
@@ -1390,7 +1390,7 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 			BaiduSearch: &BaiduSearchSecurity{APIKey: "baidu-search-key"},
 		},
 		// Skills tokens
-		Skills: SkillsSecurity{
+		Skills: &SkillsSecurity{
 			Github:  &GithubSecurity{Token: "github-token-xyz"},
 			ClawHub: &ClawHubSecurity{AuthToken: "clawhub-auth-token"},
 		},

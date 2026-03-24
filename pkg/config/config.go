@@ -1350,11 +1350,14 @@ type MCPConfig struct {
 }
 
 func LoadConfig(path string) (*Config, error) {
+	logger.Debugf("loading config from %s", path)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			logger.WarnF("config file not found, using default config", map[string]any{"path": path})
 			return DefaultConfig(), nil
 		}
+		logger.Errorf("failed to read config file: %v", err)
 		return nil, err
 	}
 
@@ -1366,6 +1369,7 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to detect config version: %w", e)
 	}
 	if len(data) <= 10 {
+		logger.Warn(fmt.Sprintf("content is [%s]", string(data)))
 		return DefaultConfig().WithSecurity(&SecurityConfig{}), nil
 	}
 
@@ -1381,34 +1385,37 @@ func LoadConfig(path string) (*Config, error) {
 		}
 		cfg, e = v.Migrate()
 		if e != nil {
-			logger.DebugF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+			logger.ErrorF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
 			return nil, e
 		}
-		logger.DebugF("config migrate success", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
-		defer func() {
+		logger.InfoF("config migrate success", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		err = makeBackup(path)
+		if err != nil {
+			return nil, err
+		}
+		defer func(cfg *Config) {
 			_ = SaveConfig(path, cfg)
-		}()
+		}(cfg)
 	case CurrentVersion:
 		// Current version
 		cfg, err = loadConfig(data)
 		if err != nil {
 			return nil, err
 		}
+		// Load security configuration
+		securityPath := securityPath(path)
+		sec, err := loadSecurityConfig(securityPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load security config: %w", err)
+		}
+
+		// Apply security references from .security.yml BEFORE resolveAPIKeys
+		// This resolves ref: references to actual values
+		if err := applySecurityConfig(cfg, sec); err != nil {
+			return nil, fmt.Errorf("failed to apply security config: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported config version: %d", versionInfo.Version)
-	}
-
-	// Load security configuration
-	securityPath := securityPath(path)
-	sec, err := loadSecurityConfig(securityPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load security config: %w", err)
-	}
-
-	// Apply security references from .security.yml BEFORE resolveAPIKeys
-	// This resolves ref: references to actual values
-	if err := applySecurityConfig(cfg, sec); err != nil {
-		return nil, fmt.Errorf("failed to apply security config: %w", err)
 	}
 
 	if passphrase := credential.PassphraseProvider(); passphrase != "" {
@@ -1462,6 +1469,19 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
+func makeBackup(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+	// Create backup of the config file before migration
+	bakPath := path + ".bak"
+	if err := fileutil.CopyFile(path, bakPath, 0o600); err != nil {
+		logger.ErrorF("failed to create config backup", map[string]any{"error": err})
+		return fmt.Errorf("failed to create config backup: %w", err)
+	}
+	return nil
+}
+
 func copyArray[T any](dst, src *[]T) {
 	*dst = make([]T, len(*src))
 	copy(*dst, *src)
@@ -1474,32 +1494,36 @@ func applySecurityConfig(cfg *Config, sec *SecurityConfig) error {
 		return nil
 	}
 
-	if sec.Web.Brave != nil && len(sec.Web.Brave.APIKeys) > 0 {
-		copyArray(&cfg.Tools.Web.Brave.apiKeys, &sec.Web.Brave.APIKeys)
+	if sec.Web != nil {
+		if sec.Web.Brave != nil && len(sec.Web.Brave.APIKeys) > 0 {
+			copyArray(&cfg.Tools.Web.Brave.apiKeys, &sec.Web.Brave.APIKeys)
+		}
+
+		if sec.Web.Tavily != nil && len(sec.Web.Tavily.APIKeys) > 0 {
+			copyArray(&cfg.Tools.Web.Tavily.apiKeys, &sec.Web.Tavily.APIKeys)
+		}
+
+		if sec.Web.Perplexity != nil && len(sec.Web.Perplexity.APIKeys) > 0 {
+			copyArray(&cfg.Tools.Web.Perplexity.apiKeys, &sec.Web.Perplexity.APIKeys)
+		}
+
+		if sec.Web.GLMSearch != nil && sec.Web.GLMSearch.APIKey != "" {
+			cfg.Tools.Web.GLMSearch.apiKey = sec.Web.GLMSearch.APIKey
+		}
+
+		if sec.Web.BaiduSearch != nil && sec.Web.BaiduSearch.APIKey != "" {
+			cfg.Tools.Web.BaiduSearch.apiKey = sec.Web.BaiduSearch.APIKey
+		}
 	}
 
-	if sec.Web.Tavily != nil && len(sec.Web.Tavily.APIKeys) > 0 {
-		copyArray(&cfg.Tools.Web.Tavily.apiKeys, &sec.Web.Tavily.APIKeys)
-	}
+	if sec.Skills != nil {
+		if sec.Skills.Github != nil && sec.Skills.Github.Token != "" {
+			cfg.Tools.Skills.Github.token = sec.Skills.Github.Token
+		}
 
-	if sec.Web.Perplexity != nil && len(sec.Web.Perplexity.APIKeys) > 0 {
-		copyArray(&cfg.Tools.Web.Perplexity.apiKeys, &sec.Web.Perplexity.APIKeys)
-	}
-
-	if sec.Web.GLMSearch != nil && sec.Web.GLMSearch.APIKey != "" {
-		cfg.Tools.Web.GLMSearch.apiKey = sec.Web.GLMSearch.APIKey
-	}
-
-	if sec.Web.BaiduSearch != nil && sec.Web.BaiduSearch.APIKey != "" {
-		cfg.Tools.Web.BaiduSearch.apiKey = sec.Web.BaiduSearch.APIKey
-	}
-
-	if sec.Skills.Github != nil && sec.Skills.Github.Token != "" {
-		cfg.Tools.Skills.Github.token = sec.Skills.Github.Token
-	}
-
-	if sec.Skills.ClawHub != nil && sec.Skills.ClawHub.AuthToken != "" {
-		cfg.Tools.Skills.Registries.ClawHub.authToken = sec.Skills.ClawHub.AuthToken
+		if sec.Skills.ClawHub != nil && sec.Skills.ClawHub.AuthToken != "" {
+			cfg.Tools.Skills.Registries.ClawHub.authToken = sec.Skills.ClawHub.AuthToken
+		}
 	}
 
 	names := toNameIndex(cfg.ModelList)
@@ -1521,126 +1545,128 @@ func applySecurityConfig(cfg *Config, sec *SecurityConfig) error {
 		}
 	}
 
-	// Handle Telegram token
-	if sec.Channels.Telegram != nil && sec.Channels.Telegram.Token != "" {
-		cfg.Channels.Telegram.token = sec.Channels.Telegram.Token
-	}
+	if sec.Channels != nil {
+		// Handle Telegram token
+		if sec.Channels.Telegram != nil && sec.Channels.Telegram.Token != "" {
+			cfg.Channels.Telegram.token = sec.Channels.Telegram.Token
+		}
 
-	// Handle Feishu credentials
-	if sec.Channels.Feishu != nil {
-		if sec.Channels.Feishu.AppSecret != "" {
-			cfg.Channels.Feishu.appSecret = sec.Channels.Feishu.AppSecret
+		// Handle Feishu credentials
+		if sec.Channels.Feishu != nil {
+			if sec.Channels.Feishu.AppSecret != "" {
+				cfg.Channels.Feishu.appSecret = sec.Channels.Feishu.AppSecret
+			}
+			if sec.Channels.Feishu.EncryptKey != "" {
+				cfg.Channels.Feishu.encryptKey = sec.Channels.Feishu.EncryptKey
+			}
+			if sec.Channels.Feishu.VerificationToken != "" {
+				cfg.Channels.Feishu.verificationToken = sec.Channels.Feishu.VerificationToken
+			}
 		}
-		if sec.Channels.Feishu.EncryptKey != "" {
-			cfg.Channels.Feishu.encryptKey = sec.Channels.Feishu.EncryptKey
-		}
-		if sec.Channels.Feishu.VerificationToken != "" {
-			cfg.Channels.Feishu.verificationToken = sec.Channels.Feishu.VerificationToken
-		}
-	}
 
-	// Handle Discord token
-	if sec.Channels.Discord != nil && sec.Channels.Discord.Token != "" {
-		cfg.Channels.Discord.token = sec.Channels.Discord.Token
-	}
+		// Handle Discord token
+		if sec.Channels.Discord != nil && sec.Channels.Discord.Token != "" {
+			cfg.Channels.Discord.token = sec.Channels.Discord.Token
+		}
 
-	// Handle Weixin token
-	if sec.Channels.Weixin != nil && sec.Channels.Weixin.Token != "" {
-		cfg.Channels.Weixin.token = sec.Channels.Weixin.Token
-	}
+		// Handle Weixin token
+		if sec.Channels.Weixin != nil && sec.Channels.Weixin.Token != "" {
+			cfg.Channels.Weixin.token = sec.Channels.Weixin.Token
+		}
 
-	// Handle DingTalk client secret
-	if sec.Channels.DingTalk != nil && sec.Channels.DingTalk.ClientSecret != "" {
-		cfg.Channels.DingTalk.clientSecret = sec.Channels.DingTalk.ClientSecret
-	}
+		// Handle DingTalk client secret
+		if sec.Channels.DingTalk != nil && sec.Channels.DingTalk.ClientSecret != "" {
+			cfg.Channels.DingTalk.clientSecret = sec.Channels.DingTalk.ClientSecret
+		}
 
-	// Handle Slack tokens
-	if sec.Channels.Slack != nil {
-		if sec.Channels.Slack.BotToken != "" {
-			cfg.Channels.Slack.botToken = sec.Channels.Slack.BotToken
+		// Handle Slack tokens
+		if sec.Channels.Slack != nil {
+			if sec.Channels.Slack.BotToken != "" {
+				cfg.Channels.Slack.botToken = sec.Channels.Slack.BotToken
+			}
+			if sec.Channels.Slack.AppToken != "" {
+				cfg.Channels.Slack.appToken = sec.Channels.Slack.AppToken
+			}
 		}
-		if sec.Channels.Slack.AppToken != "" {
-			cfg.Channels.Slack.appToken = sec.Channels.Slack.AppToken
-		}
-	}
 
-	// Handle Matrix access token
-	if sec.Channels.Matrix != nil && sec.Channels.Matrix.AccessToken != "" {
-		cfg.Channels.Matrix.accessToken = sec.Channels.Matrix.AccessToken
-	}
+		// Handle Matrix access token
+		if sec.Channels.Matrix != nil && sec.Channels.Matrix.AccessToken != "" {
+			cfg.Channels.Matrix.accessToken = sec.Channels.Matrix.AccessToken
+		}
 
-	// Handle LINE credentials
-	if sec.Channels.LINE != nil {
-		if sec.Channels.LINE.ChannelSecret != "" {
-			cfg.Channels.LINE.channelSecret = sec.Channels.LINE.ChannelSecret
+		// Handle LINE credentials
+		if sec.Channels.LINE != nil {
+			if sec.Channels.LINE.ChannelSecret != "" {
+				cfg.Channels.LINE.channelSecret = sec.Channels.LINE.ChannelSecret
+			}
+			if sec.Channels.LINE.ChannelAccessToken != "" {
+				cfg.Channels.LINE.channelAccessToken = sec.Channels.LINE.ChannelAccessToken
+			}
 		}
-		if sec.Channels.LINE.ChannelAccessToken != "" {
-			cfg.Channels.LINE.channelAccessToken = sec.Channels.LINE.ChannelAccessToken
-		}
-	}
 
-	// Handle OneBot access token
-	if sec.Channels.OneBot != nil && sec.Channels.OneBot.AccessToken != "" {
-		cfg.Channels.OneBot.accessToken = sec.Channels.OneBot.AccessToken
-	}
+		// Handle OneBot access token
+		if sec.Channels.OneBot != nil && sec.Channels.OneBot.AccessToken != "" {
+			cfg.Channels.OneBot.accessToken = sec.Channels.OneBot.AccessToken
+		}
 
-	// Handle WeCom token and encoding key
-	if sec.Channels.WeCom != nil {
-		if sec.Channels.WeCom.Token != "" {
-			cfg.Channels.WeCom.token = sec.Channels.WeCom.Token
+		// Handle WeCom token and encoding key
+		if sec.Channels.WeCom != nil {
+			if sec.Channels.WeCom.Token != "" {
+				cfg.Channels.WeCom.token = sec.Channels.WeCom.Token
+			}
+			if sec.Channels.WeCom.EncodingAESKey != "" {
+				cfg.Channels.WeCom.encodingAESKey = sec.Channels.WeCom.EncodingAESKey
+			}
 		}
-		if sec.Channels.WeCom.EncodingAESKey != "" {
-			cfg.Channels.WeCom.encodingAESKey = sec.Channels.WeCom.EncodingAESKey
-		}
-	}
 
-	// Handle WeCom App credentials
-	if sec.Channels.WeComApp != nil {
-		if sec.Channels.WeComApp.CorpSecret != "" {
-			cfg.Channels.WeComApp.corpSecret = sec.Channels.WeComApp.CorpSecret
+		// Handle WeCom App credentials
+		if sec.Channels.WeComApp != nil {
+			if sec.Channels.WeComApp.CorpSecret != "" {
+				cfg.Channels.WeComApp.corpSecret = sec.Channels.WeComApp.CorpSecret
+			}
+			if sec.Channels.WeComApp.Token != "" {
+				cfg.Channels.WeComApp.token = sec.Channels.WeComApp.Token
+			}
+			if sec.Channels.WeComApp.EncodingAESKey != "" {
+				cfg.Channels.WeComApp.encodingAESKey = sec.Channels.WeComApp.EncodingAESKey
+			}
 		}
-		if sec.Channels.WeComApp.Token != "" {
-			cfg.Channels.WeComApp.token = sec.Channels.WeComApp.Token
-		}
-		if sec.Channels.WeComApp.EncodingAESKey != "" {
-			cfg.Channels.WeComApp.encodingAESKey = sec.Channels.WeComApp.EncodingAESKey
-		}
-	}
 
-	// Handle WeCom AI Bot credentials
-	if sec.Channels.WeComAIBot != nil {
-		if sec.Channels.WeComAIBot.Token != "" {
-			cfg.Channels.WeComAIBot.token = sec.Channels.WeComAIBot.Token
+		// Handle WeCom AI Bot credentials
+		if sec.Channels.WeComAIBot != nil {
+			if sec.Channels.WeComAIBot.Token != "" {
+				cfg.Channels.WeComAIBot.token = sec.Channels.WeComAIBot.Token
+			}
+			if sec.Channels.WeComAIBot.EncodingAESKey != "" {
+				cfg.Channels.WeComAIBot.encodingAESKey = sec.Channels.WeComAIBot.EncodingAESKey
+			}
+			if sec.Channels.WeComAIBot.Secret != "" {
+				cfg.Channels.WeComAIBot.secret = sec.Channels.WeComAIBot.Secret
+			}
 		}
-		if sec.Channels.WeComAIBot.EncodingAESKey != "" {
-			cfg.Channels.WeComAIBot.encodingAESKey = sec.Channels.WeComAIBot.EncodingAESKey
-		}
-		if sec.Channels.WeComAIBot.Secret != "" {
-			cfg.Channels.WeComAIBot.secret = sec.Channels.WeComAIBot.Secret
-		}
-	}
 
-	// Handle Pico channel token
-	if sec.Channels.Pico != nil && sec.Channels.Pico.Token != "" {
-		cfg.Channels.Pico.token = sec.Channels.Pico.Token
-	}
+		// Handle Pico channel token
+		if sec.Channels.Pico != nil && sec.Channels.Pico.Token != "" {
+			cfg.Channels.Pico.token = sec.Channels.Pico.Token
+		}
 
-	// Handle IRC passwords
-	if sec.Channels.IRC != nil {
-		if sec.Channels.IRC.Password != "" {
-			cfg.Channels.IRC.password = sec.Channels.IRC.Password
+		// Handle IRC passwords
+		if sec.Channels.IRC != nil {
+			if sec.Channels.IRC.Password != "" {
+				cfg.Channels.IRC.password = sec.Channels.IRC.Password
+			}
+			if sec.Channels.IRC.NickServPassword != "" {
+				cfg.Channels.IRC.nickServPassword = sec.Channels.IRC.NickServPassword
+			}
+			if sec.Channels.IRC.SASLPassword != "" {
+				cfg.Channels.IRC.saslPassword = sec.Channels.IRC.SASLPassword
+			}
 		}
-		if sec.Channels.IRC.NickServPassword != "" {
-			cfg.Channels.IRC.nickServPassword = sec.Channels.IRC.NickServPassword
-		}
-		if sec.Channels.IRC.SASLPassword != "" {
-			cfg.Channels.IRC.saslPassword = sec.Channels.IRC.SASLPassword
-		}
-	}
 
-	// Handle QQ app secret
-	if sec.Channels.QQ != nil && sec.Channels.QQ.AppSecret != "" {
-		cfg.Channels.QQ.appSecret = sec.Channels.QQ.AppSecret
+		// Handle QQ app secret
+		if sec.Channels.QQ != nil && sec.Channels.QQ.AppSecret != "" {
+			cfg.Channels.QQ.appSecret = sec.Channels.QQ.AppSecret
+		}
 	}
 
 	cfg.security = sec
