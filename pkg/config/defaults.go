@@ -372,10 +372,11 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host:      "127.0.0.1",
-			Port:      18790,
-			HotReload: false,
-			LogLevel:  "fatal",
+			Host:        "127.0.0.1",
+			Port:        18790,
+			ChatEnabled: true,
+			HotReload:   false,
+			LogLevel:    "fatal",
 		},
 		Tools: ToolsConfig{
 			FilterSensitiveData: true,

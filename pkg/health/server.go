@@ -9,7 +9,19 @@ import (
 	"os"
 	"sync"
 	"time"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
+
+// ChatRequest is the JSON body for POST /chat.
+type ChatRequest struct {
+	Message   string `json:"message"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+// ChatResponse is the JSON response from POST /chat.
+type ChatResponse struct {
+	Response string `json:"response"`
+}
 
 type Server struct {
 	server     *http.Server
@@ -18,6 +30,8 @@ type Server struct {
 	checks     map[string]Check
 	startTime  time.Time
 	reloadFunc func() error
+	chatFunc   func(ctx context.Context, message, sessionID string) (string, error)
+	apiKey     string
 }
 
 type Check struct {
@@ -45,13 +59,15 @@ func NewServer(host string, port int) *Server {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
+	mux.HandleFunc("/chat", s.chatHandler)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	s.server = &http.Server{
-		Addr:         addr,
-		Handler:      mux,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+		Addr:        addr,
+		Handler:     mux,
+		ReadTimeout: 10 * time.Second,
+		// WriteTimeout must be long enough for LLM inference; 5 min is generous.
+		WriteTimeout: 5 * time.Minute,
 	}
 
 	return s
@@ -115,7 +131,39 @@ func (s *Server) SetReloadFunc(fn func() error) {
 	s.reloadFunc = fn
 }
 
+// SetChatFunc sets the callback that processes /chat requests.
+// fn receives the user message and an optional session ID and must return the
+// agent's reply (or an error). It is called synchronously inside the HTTP
+// handler, so the write timeout on the server governs the maximum duration.
+func (s *Server) SetChatFunc(fn func(ctx context.Context, message, sessionID string) (string, error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.chatFunc = fn
+}
+
+// SetAPIKey sets the expected X-API-Key header value.
+func (s *Server) SetAPIKey(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.apiKey = key
+}
+
+func (s *Server) verifyAPIKey(r *http.Request) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.apiKey == "" {
+		return true
+	}
+	return r.Header.Get("X-API-Key") == s.apiKey
+}
+
 func (s *Server) reloadHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.verifyAPIKey(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		return
+	}
 	if r.Method != http.MethodPost {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -198,12 +246,72 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RegisterOnMux registers /health, /ready and /reload handlers onto the given mux.
-// This allows the health endpoints to be served by a shared HTTP server.
+// RegisterOnMux registers /health, /ready, /reload and /chat handlers onto the
+// given mux. This allows the health endpoints to be served by a shared HTTP server.
 func (s *Server) RegisterOnMux(mux *http.ServeMux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
+	mux.HandleFunc("/chat", s.chatHandler)
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		logger.Error("GATEWAY IS HITTING ITSELF FOR LLM CALLS!")
+		http.Error(w, "GATEWAY LOOP DETECTION", http.StatusLoopDetected)
+	})
+}
+
+// chatHandler handles POST /chat — a synchronous HTTP chat API.
+// Request body:  {"message": "...", "session_id": "..." (optional)}
+// Response body: {"response": "..."}
+func (s *Server) chatHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.verifyAPIKey(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed, use POST"})
+		return
+	}
+
+	s.mu.RLock()
+	chatFunc := s.chatFunc
+	s.mu.RUnlock()
+
+	if chatFunc == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "chat not configured"})
+		return
+	}
+
+	var req ChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+	if req.Message == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "message field is required"})
+		return
+	}
+
+	reply, err := chatFunc(r.Context(), req.Message, req.SessionID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(ChatResponse{Response: reply})
 }
 
 func statusString(ok bool) string {
