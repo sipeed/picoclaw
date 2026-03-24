@@ -99,10 +99,24 @@ func NewPicoChannel(cfg config.PicoConfig, messageBus *bus.MessageBus) (*PicoCha
 	}, nil
 }
 
-// addConnection stores a connection in both connID and session indexes.
-func (c *PicoChannel) addConnection(pc *picoConn) {
+// createAndAddConnection generates a unique connID and registers it atomically.
+func (c *PicoChannel) createAndAddConnection(conn *websocket.Conn, sessionID string) *picoConn {
 	c.connsMu.Lock()
 	defer c.connsMu.Unlock()
+
+	var connID string
+	for {
+		connID = uuid.New().String()
+		if _, exists := c.connections[connID]; !exists {
+			break
+		}
+	}
+
+	pc := &picoConn{
+		id:        connID,
+		conn:      conn,
+		sessionID: sessionID,
+	}
 
 	c.connections[pc.id] = pc
 	bySession, ok := c.sessionConnections[pc.sessionID]
@@ -111,6 +125,8 @@ func (c *PicoChannel) addConnection(pc *picoConn) {
 		c.sessionConnections[pc.sessionID] = bySession
 	}
 	bySession[pc.id] = pc
+
+	return pc
 }
 
 // removeConnection deletes a connection from indexes and returns it when found.
@@ -164,20 +180,6 @@ func (c *PicoChannel) sessionConnectionsSnapshot(sessionID string) []*picoConn {
 		conns = append(conns, pc)
 	}
 	return conns
-}
-
-// newUniqueConnID generates a connID that is not currently present in the index.
-func (c *PicoChannel) newUniqueConnID() string {
-	for {
-		id := uuid.New().String()
-
-		c.connsMu.RLock()
-		_, exists := c.connections[id]
-		c.connsMu.RUnlock()
-		if !exists {
-			return id
-		}
-	}
 }
 
 // Start implements Channel.
@@ -350,13 +352,7 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		sessionID = uuid.New().String()
 	}
 
-	pc := &picoConn{
-		id:        c.newUniqueConnID(),
-		conn:      conn,
-		sessionID: sessionID,
-	}
-
-	c.addConnection(pc)
+	pc := c.createAndAddConnection(conn, sessionID)
 	c.connCount.Add(1)
 
 	logger.InfoCF("pico", "WebSocket client connected", map[string]any{
