@@ -2134,7 +2134,8 @@ func TestFilterClientWebSearch_EmptyInput(t *testing.T) {
 }
 
 func TestProcessHeartbeat_SkipsWhenAgentBusy(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	_ = cfg
 	defer cleanup()
 
 	// Simulate an active turn by registering a turnState via the helper
@@ -2157,7 +2158,8 @@ func TestProcessHeartbeat_SkipsWhenAgentBusy(t *testing.T) {
 }
 
 func TestProcessHeartbeat_RunsWhenIdle(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	_ = cfg
 	defer cleanup()
 
 	// Verify no active turns exist
@@ -2180,7 +2182,8 @@ func TestProcessHeartbeat_RunsWhenIdle(t *testing.T) {
 }
 
 func TestProcessHeartbeat_SkipsForAnyActiveSession(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	_ = cfg
 	defer cleanup()
 
 	// Register multiple active turns to cover the sync.Map iteration
@@ -2205,7 +2208,8 @@ func TestProcessHeartbeat_SkipsForAnyActiveSession(t *testing.T) {
 }
 
 func TestProcessHeartbeat_ProceedsAfterTurnClears(t *testing.T) {
-	al, _, _, _, cleanup := newTestAgentLoop(t)
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	_ = cfg
 	defer cleanup()
 
 	// Simulate a turn that starts and then completes
