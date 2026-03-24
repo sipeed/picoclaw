@@ -1395,6 +1395,18 @@ func LoadConfig(path string) (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Load existing security config and merge with migrated one to prevent data loss
+		existingSec, secErr := loadSecurityConfig(securityPath(path))
+		if secErr != nil {
+			logger.WarnF("failed to load existing security config during migration", map[string]any{"error": secErr})
+		}
+		if existingSec != nil && cfg.security != nil {
+			cfg.security = mergeSecurityConfig(existingSec, cfg.security)
+			// Re-apply the merged security config to update all channels and models
+			if err = applySecurityConfig(cfg, cfg.security); err != nil {
+				logger.WarnF("failed to re-apply merged security config during migration", map[string]any{"error": err})
+			}
+		}
 		defer func(cfg *Config) {
 			_ = SaveConfig(path, cfg)
 		}(cfg)
