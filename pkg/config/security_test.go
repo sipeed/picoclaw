@@ -20,6 +20,9 @@ func TestSecurityConfig(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, sec)
 		assert.Empty(t, sec.ModelList)
+		assert.NotNil(t, sec.Channels)
+		assert.NotNil(t, sec.Web)
+		assert.NotNil(t, sec.Skills)
 	})
 }
 

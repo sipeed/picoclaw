@@ -67,14 +67,17 @@ const baseNavGroups: Omit<NavGroup, "items">[] = [
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const routerState = useRouterState()
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
   const currentPath = routerState.location.pathname
   const {
     channelItems,
     hasMoreChannels,
     showAllChannels,
     toggleShowAllChannels,
-  } = useSidebarChannels({ t })
+  } = useSidebarChannels({
+    language: (i18n.resolvedLanguage ?? i18n.language ?? "").toLowerCase(),
+    t,
+  })
 
   const navGroups: NavGroup[] = React.useMemo(() => {
     return [

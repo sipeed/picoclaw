@@ -15,6 +15,7 @@ builds:
     env:
       - CGO_ENABLED=0
     tags:
+      - goolm
       - stdjson
     ldflags:
       - -s -w
@@ -57,6 +58,7 @@ builds:
     env:
       - CGO_ENABLED=0
     tags:
+      - goolm
       - stdjson
     ldflags:
       - -s -w
@@ -95,6 +97,7 @@ builds:
     env:
       - CGO_ENABLED=0
     tags:
+      - goolm
       - stdjson
     ldflags:
       - -s -w

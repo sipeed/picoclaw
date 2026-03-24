@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -19,9 +20,14 @@ type ToolEntry struct {
 }
 
 type ToolRegistry struct {
-	tools   map[string]*ToolEntry
-	mu      sync.RWMutex
-	version atomic.Uint64 // incremented on Register/RegisterHidden for cache invalidation
+	tools      map[string]*ToolEntry
+	mu         sync.RWMutex
+	version    atomic.Uint64 // incremented on Register/RegisterHidden for cache invalidation
+	mediaStore media.MediaStore
+}
+
+type mediaStoreAware interface {
+	SetMediaStore(store media.MediaStore)
 }
 
 func NewToolRegistry() *ToolRegistry {
@@ -43,6 +49,9 @@ func (r *ToolRegistry) Register(tool Tool) {
 		IsCore: true,
 		TTL:    0, // Core tools do not use TTL
 	}
+	if aware, ok := tool.(mediaStoreAware); ok && r.mediaStore != nil {
+		aware.SetMediaStore(r.mediaStore)
+	}
 	r.version.Add(1)
 	logger.DebugCF("tools", "Registered core tool", map[string]any{"name": name})
 }
@@ -61,8 +70,25 @@ func (r *ToolRegistry) RegisterHidden(tool Tool) {
 		IsCore: false,
 		TTL:    0,
 	}
+	if aware, ok := tool.(mediaStoreAware); ok && r.mediaStore != nil {
+		aware.SetMediaStore(r.mediaStore)
+	}
 	r.version.Add(1)
 	logger.DebugCF("tools", "Registered hidden tool", map[string]any{"name": name})
+}
+
+// SetMediaStore injects a MediaStore into all registered tools that can
+// consume it, and remembers it for future registrations.
+func (r *ToolRegistry) SetMediaStore(store media.MediaStore) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.mediaStore = store
+	for _, entry := range r.tools {
+		if aware, ok := entry.Tool.(mediaStoreAware); ok {
+			aware.SetMediaStore(store)
+		}
+	}
 }
 
 // PromoteTools atomically sets the TTL for multiple non-core tools.
@@ -180,6 +206,14 @@ func (r *ToolRegistry) ExecuteWithContext(
 		return ErrorResult(fmt.Sprintf("tool %q not found", name)).WithError(fmt.Errorf("tool not found"))
 	}
 
+	// Validate arguments against the tool's declared schema.
+	if err := validateToolArgs(tool.Parameters(), args); err != nil {
+		logger.WarnCF("tool", "Tool argument validation failed",
+			map[string]any{"tool": name, "error": err.Error()})
+		return ErrorResult(fmt.Sprintf("invalid arguments for tool %q: %s", name, err)).
+			WithError(fmt.Errorf("argument validation failed: %w", err))
+	}
+
 	// Inject channel/chatID into ctx so tools read them via ToolChannel(ctx)/ToolChatID(ctx).
 	// Always inject — tools validate what they require.
 	ctx = WithToolContext(ctx, channel, chatID)
@@ -230,6 +264,8 @@ func (r *ToolRegistry) ExecuteWithContext(
 		}
 	}
 
+	result = normalizeToolResult(result, name, r.mediaStore, channel, chatID)
+
 	duration := time.Since(start)
 
 	// Log based on result type
@@ -251,7 +287,7 @@ func (r *ToolRegistry) ExecuteWithContext(
 			map[string]any{
 				"tool":          name,
 				"duration_ms":   duration.Milliseconds(),
-				"result_length": len(result.ForLLM),
+				"result_length": len(result.ContentForLLM()),
 			})
 	}
 
@@ -346,7 +382,8 @@ func (r *ToolRegistry) Clone() *ToolRegistry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	clone := &ToolRegistry{
-		tools: make(map[string]*ToolEntry, len(r.tools)),
+		tools:      make(map[string]*ToolEntry, len(r.tools)),
+		mediaStore: r.mediaStore,
 	}
 	for name, entry := range r.tools {
 		clone.tools[name] = &ToolEntry{

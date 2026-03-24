@@ -96,14 +96,15 @@ type continuationTarget struct {
 }
 
 const (
-	defaultResponse           = "The model returned an empty response. This may indicate a provider error or token limit."
-	toolLimitResponse         = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
-	sessionKeyAgentPrefix     = "agent:"
-	metadataKeyAccountID      = "account_id"
-	metadataKeyGuildID        = "guild_id"
-	metadataKeyTeamID         = "team_id"
-	metadataKeyParentPeerKind = "parent_peer_kind"
-	metadataKeyParentPeerID   = "parent_peer_id"
+	defaultResponse            = "The model returned an empty response. This may indicate a provider error or token limit."
+	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
+	handledToolResponseSummary = "Requested output delivered via tool attachment."
+	sessionKeyAgentPrefix      = "agent:"
+	metadataKeyAccountID       = "account_id"
+	metadataKeyGuildID         = "guild_id"
+	metadataKeyTeamID          = "team_id"
+	metadataKeyParentPeerKind  = "parent_peer_kind"
+	metadataKeyParentPeerID    = "parent_peer_id"
 )
 
 func NewAgentLoop(
@@ -1030,13 +1031,13 @@ func (al *AgentLoop) GetConfig() *config.Config {
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
 
-	// Propagate store to send_file tools in all agents.
+	// Propagate store to all registered tools that can emit media.
 	registry := al.GetRegistry()
-	registry.ForEachTool("send_file", func(t tools.Tool) {
-		if sf, ok := t.(*tools.SendFileTool); ok {
-			sf.SetMediaStore(s)
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
+			agent.Tools.SetMediaStore(s)
 		}
-	})
+	}
 }
 
 // SetTranscriber injects a voice transcriber for agent-level audio transcription.
@@ -2165,6 +2166,7 @@ turnLoop:
 				"iteration": iteration,
 			})
 
+		allResponsesHandled := len(normalizedToolCalls) > 0
 		assistantMsg := providers.Message{
 			Role:             "assistant",
 			Content:          response.Content,
@@ -2221,6 +2223,7 @@ turnLoop:
 						toolArgs = toolReq.Arguments
 					}
 				case HookActionDenyTool:
+					allResponsesHandled = false
 					denyContent := hookDeniedToolContent("Tool execution denied by hook", decision.Reason)
 					al.emitEvent(
 						EventKindToolExecSkipped,
@@ -2260,6 +2263,7 @@ turnLoop:
 					ChatID:    ts.chatID,
 				})
 				if !approval.Approved {
+					allResponsesHandled = false
 					denyContent := hookDeniedToolContent("Tool execution denied by approval hook", approval.Reason)
 					al.emitEvent(
 						EventKindToolExecSkipped,
@@ -2333,10 +2337,7 @@ turnLoop:
 				}
 
 				// Determine content for the agent loop (ForLLM or error).
-				content := result.ForLLM
-				if content == "" && result.Err != nil {
-					content = result.Err.Error()
-				}
+				content := result.ContentForLLM()
 				if content == "" {
 					return
 				}
@@ -2420,6 +2421,50 @@ turnLoop:
 			if toolResult == nil {
 				toolResult = tools.ErrorResult("hook returned nil tool result")
 			}
+			if len(toolResult.Media) > 0 && toolResult.ResponseHandled {
+				parts := make([]bus.MediaPart, 0, len(toolResult.Media))
+				for _, ref := range toolResult.Media {
+					part := bus.MediaPart{Ref: ref}
+					if al.mediaStore != nil {
+						if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
+							part.Filename = meta.Filename
+							part.ContentType = meta.ContentType
+							part.Type = inferMediaType(meta.Filename, meta.ContentType)
+						}
+					}
+					parts = append(parts, part)
+				}
+				outboundMedia := bus.OutboundMediaMessage{
+					Channel: ts.channel,
+					ChatID:  ts.chatID,
+					Parts:   parts,
+				}
+				if al.channelManager != nil && ts.channel != "" && !constants.IsInternalChannel(ts.channel) {
+					if err := al.channelManager.SendMedia(ctx, outboundMedia); err != nil {
+						logger.WarnCF("agent", "Failed to deliver handled tool media",
+							map[string]any{
+								"agent_id": ts.agent.ID,
+								"tool":     toolName,
+								"channel":  ts.channel,
+								"chat_id":  ts.chatID,
+								"error":    err.Error(),
+							})
+						toolResult = tools.ErrorResult(fmt.Sprintf("failed to deliver attachment: %v", err)).WithError(err)
+					}
+				} else if al.bus != nil {
+					al.bus.PublishOutboundMedia(ctx, outboundMedia)
+					// Queuing media is only best-effort; it has not been delivered yet.
+					toolResult.ResponseHandled = false
+				}
+			}
+
+			if len(toolResult.Media) > 0 && !toolResult.ResponseHandled {
+				toolResult.ArtifactTags = buildArtifactTags(al.mediaStore, toolResult.Media)
+			}
+
+			if !toolResult.ResponseHandled {
+				allResponsesHandled = false
+			}
 
 			if !toolResult.Silent && toolResult.ForUser != "" && ts.opts.SendResponse {
 				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
@@ -2434,30 +2479,7 @@ turnLoop:
 					})
 			}
 
-			if len(toolResult.Media) > 0 {
-				parts := make([]bus.MediaPart, 0, len(toolResult.Media))
-				for _, ref := range toolResult.Media {
-					part := bus.MediaPart{Ref: ref}
-					if al.mediaStore != nil {
-						if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
-							part.Filename = meta.Filename
-							part.ContentType = meta.ContentType
-							part.Type = inferMediaType(meta.Filename, meta.ContentType)
-						}
-					}
-					parts = append(parts, part)
-				}
-				al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
-					Channel: ts.channel,
-					ChatID:  ts.chatID,
-					Parts:   parts,
-				})
-			}
-
-			contentForLLM := toolResult.ForLLM
-			if contentForLLM == "" && toolResult.Err != nil {
-				contentForLLM = toolResult.Err.Error()
-			}
+			contentForLLM := toolResult.ContentForLLM()
 
 			// Filter sensitive data (API keys, tokens, secrets) before sending to LLM
 			if al.cfg.Tools.IsFilterSensitiveDataEnabled() {
@@ -2550,6 +2572,70 @@ turnLoop:
 					// No results available
 				}
 			}
+		}
+
+		if allResponsesHandled {
+			if len(pendingMessages) > 0 {
+				logger.InfoCF("agent", "Pending steering exists after handled tool delivery; continuing turn before finalizing",
+					map[string]any{
+						"agent_id":       ts.agent.ID,
+						"steering_count": len(pendingMessages),
+						"session_key":    ts.sessionKey,
+					})
+				finalContent = ""
+				goto turnLoop
+			}
+
+			if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+				logger.InfoCF("agent", "Steering arrived after handled tool delivery; continuing turn before finalizing",
+					map[string]any{
+						"agent_id":       ts.agent.ID,
+						"steering_count": len(steerMsgs),
+						"session_key":    ts.sessionKey,
+					})
+				pendingMessages = append(pendingMessages, steerMsgs...)
+				finalContent = ""
+				goto turnLoop
+			}
+
+			summaryMsg := providers.Message{
+				Role:    "assistant",
+				Content: handledToolResponseSummary,
+			}
+
+			if !ts.opts.NoHistory {
+				ts.agent.Sessions.AddMessage(ts.sessionKey, summaryMsg.Role, summaryMsg.Content)
+				ts.recordPersistedMessage(summaryMsg)
+				if err := ts.agent.Sessions.Save(ts.sessionKey); err != nil {
+					turnStatus = TurnEndStatusError
+					al.emitEvent(
+						EventKindError,
+						ts.eventMeta("runTurn", "turn.error"),
+						ErrorPayload{
+							Stage:   "session_save",
+							Message: err.Error(),
+						},
+					)
+					return turnResult{}, err
+				}
+			}
+			if ts.opts.EnableSummary {
+				al.maybeSummarize(ts.agent, ts.sessionKey, ts.scope)
+			}
+
+			ts.setPhase(TurnPhaseCompleted)
+			ts.setFinalContent("")
+			logger.InfoCF("agent", "Tool output satisfied delivery; ending turn without follow-up LLM",
+				map[string]any{
+					"agent_id":   ts.agent.ID,
+					"iteration":  iteration,
+					"tool_count": len(normalizedToolCalls),
+				})
+			return turnResult{
+				finalContent: "",
+				status:       turnStatus,
+				followUps:    append([]bus.InboundMessage(nil), ts.followUps...),
+			}, nil
 		}
 
 		ts.agent.Tools.TickTTL()
@@ -3159,6 +3245,97 @@ func (al *AgentLoop) handleCommand(
 	}
 }
 
+func activeSkillNames(agent *AgentInstance, opts processOptions) []string {
+	if agent == nil {
+		return nil
+	}
+
+	combined := make([]string, 0, len(agent.SkillsFilter)+len(opts.ForcedSkills))
+	combined = append(combined, agent.SkillsFilter...)
+	combined = append(combined, opts.ForcedSkills...)
+	if len(combined) == 0 {
+		return nil
+	}
+
+	var resolved []string
+	seen := make(map[string]struct{}, len(combined))
+	for _, name := range combined {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if agent.ContextBuilder != nil {
+			if canonical, ok := agent.ContextBuilder.ResolveSkillName(name); ok {
+				name = canonical
+			}
+		}
+		key := strings.ToLower(name)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		resolved = append(resolved, name)
+	}
+
+	return resolved
+}
+
+func (al *AgentLoop) applyExplicitSkillCommand(
+	raw string,
+	agent *AgentInstance,
+	opts *processOptions,
+) (matched bool, handled bool, reply string) {
+	cmdName, ok := commands.CommandName(raw)
+	if !ok || cmdName != "use" {
+		return false, false, ""
+	}
+
+	if agent == nil || agent.ContextBuilder == nil {
+		return true, true, commandsUnavailableSkillMessage()
+	}
+
+	parts := strings.Fields(strings.TrimSpace(raw))
+	if len(parts) < 2 {
+		return true, true, buildUseCommandHelp(agent)
+	}
+
+	arg := strings.TrimSpace(parts[1])
+	if strings.EqualFold(arg, "clear") || strings.EqualFold(arg, "off") {
+		if opts != nil {
+			al.clearPendingSkills(opts.SessionKey)
+		}
+		return true, true, "Cleared pending skill override."
+	}
+
+	skillName, ok := agent.ContextBuilder.ResolveSkillName(arg)
+	if !ok {
+		return true, true, fmt.Sprintf("Unknown skill: %s\nUse /list skills to see installed skills.", arg)
+	}
+
+	if len(parts) < 3 {
+		if opts == nil || strings.TrimSpace(opts.SessionKey) == "" {
+			return true, true, commandsUnavailableSkillMessage()
+		}
+		al.setPendingSkills(opts.SessionKey, []string{skillName})
+		return true, true, fmt.Sprintf(
+			"Skill %q is armed for your next message. Send your next prompt normally, or use /use clear to cancel.",
+			skillName,
+		)
+	}
+
+	message := strings.TrimSpace(strings.Join(parts[2:], " "))
+	if message == "" {
+		return true, true, buildUseCommandHelp(agent)
+	}
+
+	if opts != nil {
+		opts.ForcedSkills = append(opts.ForcedSkills, skillName)
+		opts.UserMessage = message
+	}
+
+	return true, false, ""
+}
+
 func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOptions) *commands.Runtime {
 	registry := al.GetRegistry()
 	cfg := al.GetConfig()
@@ -3199,6 +3376,9 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 		return al.reloadFunc()
 	}
 	if agent != nil {
+		if agent.ContextBuilder != nil {
+			rt.ListSkillNames = agent.ContextBuilder.ListSkillNames
+		}
 		rt.GetModelInfo = func() (string, string) {
 			return agent.Model, resolvedCandidateProvider(agent.Candidates, cfg.Agents.Defaults.Provider)
 		}
@@ -3249,79 +3429,6 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 		}
 	}
 	return rt
-}
-
-func activeSkillNames(agent *AgentInstance, opts processOptions) []string {
-	var out []string
-	seen := make(map[string]struct{})
-
-	appendNames := func(names []string) {
-		for _, name := range names {
-			name = strings.TrimSpace(name)
-			if name == "" {
-				continue
-			}
-			if _, exists := seen[name]; exists {
-				continue
-			}
-			seen[name] = struct{}{}
-			out = append(out, name)
-		}
-	}
-
-	if agent != nil {
-		appendNames(agent.SkillsFilter)
-	}
-	appendNames(opts.ForcedSkills)
-
-	return out
-}
-
-func (al *AgentLoop) applyExplicitSkillCommand(
-	raw string,
-	agent *AgentInstance,
-	opts *processOptions,
-) (matched bool, handled bool, reply string) {
-	commandName, ok := commands.CommandName(raw)
-	if !ok || commandName != "use" {
-		return false, false, ""
-	}
-
-	if agent == nil || agent.ContextBuilder == nil {
-		return true, true, commandsUnavailableSkillMessage()
-	}
-
-	fields := strings.Fields(strings.TrimSpace(raw))
-	if len(fields) < 2 {
-		return true, true, buildUseCommandHelp(agent)
-	}
-
-	if strings.EqualFold(fields[1], "clear") || strings.EqualFold(fields[1], "off") {
-		al.clearPendingSkills(opts.SessionKey)
-		return true, true, "Cleared pending skill override."
-	}
-
-	canonicalSkill, ok := agent.ContextBuilder.ResolveSkillName(fields[1])
-	if !ok {
-		return true, true, fmt.Sprintf("Unknown skill: %s\nUse /list skills to see installed skills.", fields[1])
-	}
-
-	if len(fields) == 2 {
-		al.setPendingSkills(opts.SessionKey, []string{canonicalSkill})
-		return true, true, fmt.Sprintf(
-			"Skill %q is armed for your next message.\nSend your next request normally, or use /use clear to cancel.",
-			canonicalSkill,
-		)
-	}
-
-	message := strings.TrimSpace(strings.Join(fields[2:], " "))
-	if message == "" {
-		return true, true, buildUseCommandHelp(agent)
-	}
-
-	opts.UserMessage = message
-	opts.ForcedSkills = append(opts.ForcedSkills, canonicalSkill)
-	return true, false, ""
 }
 
 func commandsUnavailableSkillMessage() string {

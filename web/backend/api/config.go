@@ -152,9 +152,13 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Copy security credentials before validation so security-managed
-	// fields (e.g. pico token) are available for validation checks.
+	// Restore security fields (tokens/keys) from the loaded config before validation,
+	// because private fields are lost during JSON round-trip.
 	newCfg.SecurityCopyFrom(cfg)
+	if err := newCfg.ApplySecurity(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to apply security config: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	if errs := validateConfig(&newCfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -203,6 +207,15 @@ func validateConfig(cfg *config.Config) []string {
 	// Discord: token required when enabled
 	if cfg.Channels.Discord.Enabled && cfg.Channels.Discord.Token() == "" {
 		errs = append(errs, "channels.discord.token is required when discord channel is enabled")
+	}
+
+	if cfg.Channels.WeCom.Enabled {
+		if cfg.Channels.WeCom.BotID == "" {
+			errs = append(errs, "channels.wecom.bot_id is required when wecom channel is enabled")
+		}
+		if cfg.Channels.WeCom.Secret() == "" {
+			errs = append(errs, "channels.wecom.secret is required when wecom channel is enabled")
+		}
 	}
 
 	if cfg.Tools.Exec.Enabled {

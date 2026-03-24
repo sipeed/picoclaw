@@ -153,13 +153,7 @@ Both single and multiple keys should use the array format.
 - ref:channels.line.channel_secret
 - ref:channels.line.channel_access_token
 - ref:channels.onebot.access_token
-- ref:channels.wecom.token
-- ref:channels.wecom.encoding_aes_key
-- ref:channels.wecom_app.corp_secret
-- ref:channels.wecom_app.token
-- ref:channels.wecom_app.encoding_aes_key
-- ref:channels.wecom_aibot.token
-- ref:channels.wecom_aibot.encoding_aes_key
+- ref:channels.wecom.secret
 - ref:channels.pico.token
 - ref:channels.irc.password
 - ref:channels.irc.nickserv_password

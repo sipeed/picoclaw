@@ -642,8 +642,12 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		}
 	}
 
+	if content == "" && len(mediaPaths) == 0 {
+		return nil
+	}
+
 	if content == "" {
-		content = "[empty message]"
+		content = "[media only]"
 	}
 
 	// In group chats, apply unified group trigger filtering

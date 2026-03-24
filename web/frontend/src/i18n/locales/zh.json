@@ -233,14 +233,31 @@
       "qq": "QQ",
       "onebot": "OneBot",
       "wecom": "企业微信",
-      "wecom_app": "企业微信应用",
-      "wecom_aibot": "企业微信 AI 机器人",
       "whatsapp": "WhatsApp",
       "whatsapp_native": "WhatsApp Native",
       "pico": "Web",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
-      "irc": "IRC"
+      "irc": "IRC",
+      "weixin": "微信"
+    },
+    "weixin": {
+      "warningTitle": "测试阶段，请谨慎使用",
+      "warningDesc": "微信 Channel 当前仍处于测试阶段，存在封号风险。请仅在充分了解风险的前提下使用。",
+      "bindEnableSuccess": "微信已连接，频道已自动启用。",
+      "bindTitle": "微信账号绑定",
+      "bindDesc": "使用微信扫描二维码以绑定您的个人微信账号。",
+      "bind": "绑定微信",
+      "rebind": "重新绑定",
+      "bound": "微信已绑定",
+      "notBound": "尚未绑定微信账号。",
+      "generating": "正在生成二维码...",
+      "scanHint": "打开微信，扫描二维码",
+      "scanned": "已扫码 — 请在微信中确认",
+      "expired": "二维码已过期",
+      "retry": "重试",
+      "refresh": "刷新二维码",
+      "errorGeneric": "发生错误，请重试。"
     },
     "field": {
       "token": "Bot Token",
@@ -273,7 +290,9 @@
       "saveError": "保存频道配置失败",
       "enabled": "已启用",
       "docLink": "配置文档",
-      "enableLabel": "启用频道"
+      "enableLabel": "启用频道",
+      "restartRequiredTitle": "需要重启服务",
+      "restartRequiredDesc": "{{name}} 的最新配置已保存。重启服务后才能正式生效。"
     },
     "form": {
       "desc": {

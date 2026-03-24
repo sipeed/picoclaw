@@ -206,6 +206,40 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	return false
 }
 
+// preSendMedia handles typing stop, reaction undo, and placeholder cleanup
+// before sending media attachments. Unlike preSend for text messages, media
+// delivery never edits the placeholder because there is no text payload to
+// replace it with; it only attempts to delete the placeholder when possible.
+func (m *Manager) preSendMedia(ctx context.Context, name string, msg bus.OutboundMediaMessage, ch Channel) {
+	key := name + ":" + msg.ChatID
+
+	// 1. Stop typing
+	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
+		if entry, ok := v.(typingEntry); ok {
+			entry.stop() // idempotent, safe
+		}
+	}
+
+	// 2. Undo reaction
+	if v, loaded := m.reactionUndos.LoadAndDelete(key); loaded {
+		if entry, ok := v.(reactionEntry); ok {
+			entry.undo() // idempotent, safe
+		}
+	}
+
+	// 3. Clear any finalized stream marker for this chat before media delivery.
+	m.streamActive.LoadAndDelete(key)
+
+	// 4. Delete placeholder if present.
+	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
+		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
+			if deleter, ok := ch.(MessageDeleter); ok {
+				deleter.DeleteMessage(ctx, msg.ChatID, entry.id) // best effort
+			}
+		}
+	}
+}
+
 func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.MediaStore) (*Manager, error) {
 	m := &Manager{
 		channels:      make(map[string]Channel),
@@ -371,17 +405,8 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("onebot", "OneBot")
 	}
 
-	if channels.WeCom.Enabled && channels.WeCom.Token() != "" {
+	if channels.WeCom.Enabled && channels.WeCom.BotID != "" && channels.WeCom.Secret() != "" {
 		m.initChannel("wecom", "WeCom")
-	}
-
-	if channels.WeComAIBot.Enabled && (channels.WeComAIBot.Token() != "" ||
-		(channels.WeComAIBot.Secret() != "" && channels.WeComAIBot.BotID != "")) {
-		m.initChannel("wecom_aibot", "WeCom AI Bot")
-	}
-
-	if channels.WeComApp.Enabled && channels.WeComApp.CorpID != "" {
-		m.initChannel("wecom_app", "WeCom App")
 	}
 
 	if channels.Weixin.Enabled && channels.Weixin.Token() != "" {
@@ -774,7 +799,7 @@ func (m *Manager) runMediaWorker(ctx context.Context, name string, w *channelWor
 			if !ok {
 				return
 			}
-			m.sendMediaWithRetry(ctx, name, w, msg)
+			_ = m.sendMediaWithRetry(ctx, name, w, msg)
 		case <-ctx.Done():
 			return
 		}
@@ -782,26 +807,37 @@ func (m *Manager) runMediaWorker(ctx context.Context, name string, w *channelWor
 }
 
 // sendMediaWithRetry sends a media message through the channel with rate limiting and
-// retry logic. If the channel does not implement MediaSender, it silently skips.
-func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMediaMessage) {
+// retry logic. It returns nil on success, or the last error after retries,
+// including when the channel does not support MediaSender.
+func (m *Manager) sendMediaWithRetry(
+	ctx context.Context,
+	name string,
+	w *channelWorker,
+	msg bus.OutboundMediaMessage,
+) error {
 	ms, ok := w.ch.(MediaSender)
 	if !ok {
-		logger.DebugCF("channels", "Channel does not support MediaSender, skipping media", map[string]any{
+		err := fmt.Errorf("channel %q does not support media sending", name)
+		logger.WarnCF("channels", "Channel does not support MediaSender", map[string]any{
 			"channel": name,
+			"error":   err.Error(),
 		})
-		return
+		return err
 	}
 
 	// Rate limit: wait for token
 	if err := w.limiter.Wait(ctx); err != nil {
-		return
+		return err
 	}
+
+	// Pre-send: stop typing and clean up any placeholder before sending media.
+	m.preSendMedia(ctx, name, msg, w.ch)
 
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		lastErr = ms.SendMedia(ctx, msg)
 		if lastErr == nil {
-			return
+			return nil
 		}
 
 		// Permanent failures — don't retry
@@ -820,7 +856,7 @@ func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channe
 			case <-time.After(rateLimitDelay):
 				continue
 			case <-ctx.Done():
-				return
+				return ctx.Err()
 			}
 		}
 
@@ -829,7 +865,7 @@ func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channe
 		select {
 		case <-time.After(backoff):
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 
@@ -840,6 +876,7 @@ func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channe
 		"error":   lastErr.Error(),
 		"retries": maxRetries,
 	})
+	return lastErr
 }
 
 // runTTLJanitor periodically scans the typingStops and placeholders maps
@@ -1030,6 +1067,26 @@ func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) erro
 		m.sendWithRetry(ctx, msg.Channel, w, msg)
 	}
 	return nil
+}
+
+// SendMedia sends outbound media synchronously through the channel worker's
+// rate limiter and retry logic. It blocks until the media is delivered (or all
+// retries are exhausted), which preserves ordering when later agent behavior
+// depends on actual media delivery.
+func (m *Manager) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	m.mu.RLock()
+	_, exists := m.channels[msg.Channel]
+	w, wExists := m.workers[msg.Channel]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("channel %s not found", msg.Channel)
+	}
+	if !wExists || w == nil {
+		return fmt.Errorf("channel %s has no active worker", msg.Channel)
+	}
+
+	return m.sendMediaWithRetry(ctx, msg.Channel, w, msg)
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {

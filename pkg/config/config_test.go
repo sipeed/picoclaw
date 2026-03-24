@@ -1372,8 +1372,7 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 			Feishu:   &FeishuSecurity{AppSecret: "feishu-app-secret-123", EncryptKey: "feishu-encrypt-key"},
 			DingTalk: &DingTalkSecurity{ClientSecret: "dingtalk-client-secret"},
 			OneBot:   &OneBotSecurity{AccessToken: "onebot-access-token"},
-			WeCom:    &WeComSecurity{Token: "wecom-token", EncodingAESKey: "wecom-aes-key"},
-			WeComApp: &WeComAppSecurity{CorpSecret: "wecom-app-secret", Token: "wecom-app-token"},
+			WeCom:    &WeComSecurity{Secret: "wecom-secret"},
 			Pico:     &PicoSecurity{Token: "pico-token-abc123"},
 			IRC: &IRCSecurity{
 				Password:         "irc-password",

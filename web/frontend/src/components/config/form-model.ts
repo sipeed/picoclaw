@@ -179,7 +179,10 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       EMPTY_FORM.cronExecTimeoutMinutes,
     ),
     maxTokens: asNumberString(defaults.max_tokens, EMPTY_FORM.maxTokens),
-    contextWindow: asNumberString(defaults.context_window, EMPTY_FORM.contextWindow),
+    contextWindow: asNumberString(
+      defaults.context_window,
+      EMPTY_FORM.contextWindow,
+    ),
     maxToolIterations: asNumberString(
       defaults.max_tool_iterations,
       EMPTY_FORM.maxToolIterations,

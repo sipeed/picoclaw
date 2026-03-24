@@ -566,3 +566,118 @@ func TestMigration_Integration_ModelNameField(t *testing.T) {
 		t.Errorf("ModelFallbacks[0] = %q, want %q", cfg.Agents.Defaults.ModelFallbacks[0], "deepseek-chat")
 	}
 }
+
+// TestMigration_PreservesExistingSecurityConfig tests that when migrating from v0 to v1,
+// existing .security.yml values (e.g., loaded from environment variables) are preserved
+// and not overwritten by empty values from the legacy config.
+func TestMigration_PreservesExistingSecurityConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	securityPath := filepath.Join(tmpDir, ".security.yml")
+
+	// Create a legacy config (version 0) with model_list and channel config
+	// The model_list doesn't have api_keys, they should come from existing .security.yml
+	legacyConfig := `{
+		"agents": {
+			"defaults": {
+				"provider": "openai",
+				"model": "gpt-4"
+			}
+		},
+		"model_list": [
+			{
+				"model_name": "openai",
+				"model": "openai/gpt-4"
+			}
+		],
+		"channels": {
+			"telegram": {
+				"enabled": true
+			}
+		},
+		"gateway": {
+			"host": "127.0.0.1",
+			"port": 18790
+		},
+		"tools": {
+			"web": {"enabled": true}
+		},
+		"heartbeat": {
+			"enabled": true,
+			"interval": 30
+		},
+		"devices": {
+			"enabled": false
+		}
+	}`
+
+	// Create an existing .security.yml with values that might come from env vars
+	existingSecurity := `model_list:
+  openai:0:
+    api_keys:
+      - sk-existing-key-from-env
+channels:
+  telegram:
+    token: existing-telegram-token-from-env
+  discord:
+    token: existing-discord-token-from-env
+web:
+  brave:
+    api_keys:
+      - existing-brave-key
+`
+
+	if err := os.WriteFile(configPath, []byte(legacyConfig), 0o600); err != nil {
+		t.Fatalf("Failed to write legacy config: %v", err)
+	}
+
+	if err := os.WriteFile(securityPath, []byte(existingSecurity), 0o600); err != nil {
+		t.Fatalf("Failed to write existing security config: %v", err)
+	}
+
+	// Load the config - this should trigger migration
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// Verify that the migrated config has the existing security values
+	// Telegram token should be preserved
+	if cfg.Channels.Telegram.Token() != "existing-telegram-token-from-env" {
+		t.Errorf("Telegram token was overwritten: got %q, want %q",
+			cfg.Channels.Telegram.Token(), "existing-telegram-token-from-env")
+	}
+
+	// Discord token should be preserved (even though legacy config didn't have it)
+	if cfg.Channels.Discord.Token() != "existing-discord-token-from-env" {
+		t.Errorf("Discord token was overwritten: got %q, want %q",
+			cfg.Channels.Discord.Token(), "existing-discord-token-from-env")
+	}
+
+	// Model API key should be preserved
+	if cfg.ModelList[0].APIKey() != "sk-existing-key-from-env" {
+		t.Errorf("Model API key was overwritten: got %q, want %q",
+			cfg.ModelList[0].APIKey(), "sk-existing-key-from-env")
+	}
+
+	// Brave API key should be preserved
+	if cfg.Tools.Web.Brave.APIKey() != "existing-brave-key" {
+		t.Errorf("Brave API key was overwritten: got %q, want %q",
+			cfg.Tools.Web.Brave.APIKey(), "existing-brave-key")
+	}
+
+	// Reload the security config from disk to verify it wasn't corrupted
+	reloadedSec, err := loadSecurityConfig(securityPath)
+	if err != nil {
+		t.Fatalf("Failed to reload security config: %v", err)
+	}
+
+	if reloadedSec.Channels.Telegram == nil ||
+		reloadedSec.Channels.Telegram.Token != "existing-telegram-token-from-env" {
+		t.Error("Telegram token not preserved in .security.yml file")
+	}
+
+	if reloadedSec.Channels.Discord == nil || reloadedSec.Channels.Discord.Token != "existing-discord-token-from-env" {
+		t.Error("Discord token not preserved in .security.yml file")
+	}
+}

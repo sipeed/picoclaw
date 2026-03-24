@@ -28,6 +28,7 @@ const SECRET_FIELDS = new Set([
   "encoding_aes_key",
   "encrypt_key",
   "verification_token",
+  "secret",
   "password",
   "nickserv_password",
   "sasl_password",
@@ -44,6 +45,7 @@ const OBJECT_FIELDS = new Set([
   "allow_token_query",
   "allow_from",
   "allow_origins",
+  "groups",
 ])
 
 function formatLabel(key: string): string {
@@ -118,6 +120,14 @@ export function GenericForm({
       app_id: t("channels.form.desc.appId"),
       client_id: t("channels.form.desc.clientId"),
       corp_id: t("channels.form.desc.corpId"),
+      bot_id: t("channels.form.desc.appId"),
+      websocket_url: t("channels.form.desc.wsUrl"),
+      dm_policy: t("channels.form.desc.genericField", { field: "DM policy" }),
+      group_policy: t("channels.form.desc.genericField", { field: "group policy" }),
+      group_allow_from: t("channels.form.desc.allowFrom"),
+      send_thinking_message: t("channels.form.desc.genericField", {
+        field: "thinking message behavior",
+      }),
       agent_id: t("channels.form.desc.agentId"),
       webhook_url: t("channels.form.desc.webhookUrl"),
       webhook_host: t("channels.form.desc.webhookHost"),

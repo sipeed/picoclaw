@@ -17,13 +17,12 @@ import (
 
 // Test JSON unmarshal of private fields
 func TestJSONUnmarshalPrivateFields(t *testing.T) {
-	//nolint: govet
 	type testStruct struct {
 		PublicField  string `json:"public"`
-		privateField string `json:"private"`
+		privateField string
 	}
 
-	data := `{"public": "pub", "private": "priv"}`
+	data := `{"public": "pub", "privateField": "priv"}`
 	var s testStruct
 	if err := json.Unmarshal([]byte(data), &s); err != nil {
 		t.Fatalf("JSON unmarshal failed: %v", err)
@@ -35,9 +34,8 @@ func TestJSONUnmarshalPrivateFields(t *testing.T) {
 	if s.PublicField != "pub" {
 		t.Errorf("PublicField = %q, want 'pub'", s.PublicField)
 	}
-	// This should fail because privateField is unexported
-	if s.privateField != "priv" {
-		t.Logf("privateField = %q, want 'priv' - THIS IS EXPECTED TO FAIL", s.privateField)
+	if s.privateField != "" {
+		t.Errorf("privateField = %q, want empty because unexported fields are ignored", s.privateField)
 	}
 }
 
@@ -242,15 +240,7 @@ func TestAllSecurityKeysAccessible(t *testing.T) {
     },
     "wecom": {
       "enabled": true,
-      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook"
-    },
-    "wecom_app": {
-      "enabled": true,
-      "corp_id": "test_corp_id",
-      "agent_id": 123456
-    },
-    "wecom_aibot": {
-      "enabled": true
+      "bot_id": "test_wecom_bot_id"
     },
     "pico": {
       "enabled": true
@@ -317,15 +307,7 @@ channels:
   onebot:
     access_token: "onebot_test_access_token"
   wecom:
-    token: "wecom_test_webhook_token"
-    encoding_aes_key: "wecom_test_aes_key"
-  wecom_app:
-    corp_secret: "wecom_app_test_corp_secret"
-    token: "wecom_app_test_token"
-    encoding_aes_key: "wecom_app_test_aes_key"
-  wecom_aibot:
-    token: "wecom_aibot_test_token"
-    encoding_aes_key: "wecom_aibot_test_aes_key"
+    secret: "wecom_test_secret"
   pico:
     token: "pico_test_token"
   irc:
@@ -411,24 +393,10 @@ skills:
 		t.Logf("OneBot AccessToken(): %s", cfg.Channels.OneBot.AccessToken())
 
 		// WeCom
-		assert.Equal(t, "wecom_test_webhook_token", cfg.Channels.WeCom.Token())
-		assert.Equal(t, "wecom_test_aes_key", cfg.Channels.WeCom.EncodingAESKey())
-		t.Logf("WeCom Token(): %s", cfg.Channels.WeCom.Token())
-		t.Logf("WeCom EncodingAESKey(): %s", cfg.Channels.WeCom.EncodingAESKey())
-
-		// WeCom App
-		assert.Equal(t, "wecom_app_test_corp_secret", cfg.Channels.WeComApp.CorpSecret())
-		assert.Equal(t, "wecom_app_test_token", cfg.Channels.WeComApp.Token())
-		assert.Equal(t, "wecom_app_test_aes_key", cfg.Channels.WeComApp.EncodingAESKey())
-		t.Logf("WeComApp CorpSecret(): %s", cfg.Channels.WeComApp.CorpSecret())
-		t.Logf("WeComApp Token(): %s", cfg.Channels.WeComApp.Token())
-		t.Logf("WeComApp EncodingAESKey(): %s", cfg.Channels.WeComApp.EncodingAESKey())
-
-		// WeCom AI Bot
-		assert.Equal(t, "wecom_aibot_test_token", cfg.Channels.WeComAIBot.Token())
-		assert.Equal(t, "wecom_aibot_test_aes_key", cfg.Channels.WeComAIBot.EncodingAESKey())
-		t.Logf("WeComAIBot Token(): %s", cfg.Channels.WeComAIBot.Token())
-		t.Logf("WeComAIBot EncodingAESKey(): %s", cfg.Channels.WeComAIBot.EncodingAESKey())
+		assert.Equal(t, "test_wecom_bot_id", cfg.Channels.WeCom.BotID)
+		assert.Equal(t, "wecom_test_secret", cfg.Channels.WeCom.Secret())
+		t.Logf("WeCom BotID: %s", cfg.Channels.WeCom.BotID)
+		t.Logf("WeCom Secret(): %s", cfg.Channels.WeCom.Secret())
 
 		// Pico
 		assert.Equal(t, "pico_test_token", cfg.Channels.Pico.Token())
