@@ -7,7 +7,7 @@ PicoClaw 支持使用腾讯官方 iLink API 连接您的个人微信账号。
 最简单的方法是使用交互式 onboarding 命令进行一键激活：
 
 ```bash
-picoclaw onboard weixin
+picoclaw auth weixin
 ```
 
 该命令将：

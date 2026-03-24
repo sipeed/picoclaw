@@ -520,7 +520,7 @@ PicoClaw 原生支持 [MCP](https://modelcontextprotocol.io/) — 连接任意 M
 | 命令                       | 说明                   |
 | ------------------------- | ---------------------- |
 | `picoclaw onboard`        | 初始化配置与工作区       |
-| `picoclaw onboard weixin` | 扫码连接微信个人号 |
+| `picoclaw auth weixin` | 扫码连接微信个人号 |
 | `picoclaw agent -m "..."` | 与 Agent 对话           |
 | `picoclaw agent`          | 交互式对话模式           |
 | `picoclaw gateway`        | 启动网关                |

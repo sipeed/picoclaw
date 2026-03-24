@@ -191,7 +191,7 @@ PicoClaw 通过腾讯 iLink 官方 API 支持连接微信个人号。
 
 运行交互式扫码登录流程：
 ```bash
-picoclaw onboard weixin
+picoclaw auth weixin
 ```
 用微信手机端扫描打印出的二维码。登录成功后，token 会自动保存到配置文件。
 
