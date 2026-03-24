@@ -203,7 +203,9 @@ func (t *TeamTool) maybeRunAutoReviewer(
 	cnf, err := t.cfg.GetModelConfig(reviewerConfig.Model)
 
 	if err == nil {
-		provider, model, err := providers.CreateProviderFromConfig(cnf)
+		var provider providers.LLMProvider
+		var model string
+		provider, model, err = providers.CreateProviderFromConfig(cnf)
 
 		if err == nil {
 			reviewerConfig.Model = model
@@ -216,9 +218,13 @@ func (t *TeamTool) maybeRunAutoReviewer(
 		providerName = reviewerConfig.Provider.GetDefaultModel()
 	}
 
-	logger.InfoCF("team", fmt.Sprintf("reviewer use provider: [%s] and model: [%s]", providerName, reviewerConfig.Model), map[string]any{
-		"model": teamConfig.ReviewerModel,
-	})
+	logger.InfoCF(
+		"team",
+		fmt.Sprintf("reviewer use provider: [%s] and model: [%s]", providerName, reviewerConfig.Model),
+		map[string]any{
+			"model": teamConfig.ReviewerModel,
+		},
+	)
 
 	loopContent, _, err := t.spawnWorker(ctx, reviewerConfig, reviewerMessages, nil)
 	if err != nil {
@@ -253,7 +259,8 @@ func (t *TeamTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		}
 	} else {
 		// Default allowed strategies if not configured
-		if strategy == "sequential" || strategy == "parallel" || strategy == "dag" || strategy == "evaluator_optimizer" {
+		if strategy == "sequential" || strategy == "parallel" || strategy == "dag" ||
+			strategy == "evaluator_optimizer" {
 			validStrategy = true
 		}
 	}
@@ -269,7 +276,13 @@ func (t *TeamTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	// 2. Validate Max Members
 	if teamConfig.MaxMembers > 0 && len(membersRaw) > teamConfig.MaxMembers {
-		return ErrorResult(fmt.Sprintf("Team exceeds maximum allowed members (%d). You requested %d members.", teamConfig.MaxMembers, len(membersRaw)))
+		return ErrorResult(
+			fmt.Sprintf(
+				"Team exceeds maximum allowed members (%d). You requested %d members.",
+				teamConfig.MaxMembers,
+				len(membersRaw),
+			),
+		)
 	}
 
 	maxTokensFloat, ok := args["max_team_tokens"].(float64)
@@ -286,7 +299,7 @@ func (t *TeamTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 			// LLM requested more than config allows: clamp to the hard ceiling.
 			// effectiveMaxTokens already holds the correct ceiling, no change needed.
 		} else if effectiveMaxTokens == 0 || requestedTokens < effectiveMaxTokens {
-			// LLM asked for less, or there is no hard limit: honour the requested budget.
+			// LLM asked for less, or there is no hard limit: honor the requested budget.
 			effectiveMaxTokens = requestedTokens
 		}
 	}
@@ -421,7 +434,12 @@ func upgradeRegistryForConcurrency(original *ToolRegistry) *ToolRegistry {
 // spawnWorker executes a single team member's turn, routing through SubTurnSpawner when available.
 // Returns (content, messages, error). The messages slice is non-nil only for stateful workers
 // (evaluator_optimizer) and can be passed as InitialMessages for the next iteration.
-func (t *TeamTool) spawnWorker(ctx context.Context, cfg ToolLoopConfig, messages []providers.Message, budget *atomic.Int64) (string, []providers.Message, error) {
+func (t *TeamTool) spawnWorker(
+	ctx context.Context,
+	cfg ToolLoopConfig,
+	messages []providers.Message,
+	budget *atomic.Int64,
+) (string, []providers.Message, error) {
 	if t.spawner == nil {
 		// Fallback: direct RunToolLoop (no turnState integration)
 		res, err := RunToolLoop(ctx, cfg, messages, t.originChannel, t.originChatID)
@@ -475,7 +493,11 @@ func (t *TeamTool) spawnWorker(ctx context.Context, cfg ToolLoopConfig, messages
 
 // spawnWorkerEmptyTools is like spawnWorker but forces an empty tool registry on the sub-turn.
 // Used for the evaluator in evaluator_optimizer to prevent side effects.
-func (t *TeamTool) spawnWorkerEmptyTools(ctx context.Context, cfg ToolLoopConfig, messages []providers.Message) (string, error) {
+func (t *TeamTool) spawnWorkerEmptyTools(
+	ctx context.Context,
+	cfg ToolLoopConfig,
+	messages []providers.Message,
+) (string, error) {
 	if t.spawner == nil {
 		// Fallback: direct RunToolLoop with empty registry
 		emptyConfig := cfg
@@ -532,15 +554,21 @@ func getLLMOptionsFromConfig(cfg ToolLoopConfig) (int, float64) {
 	return maxTokens, temperature
 }
 
-
 // potentially overriding the model based on the member's definition.
-func (t *TeamTool) buildWorkerConfig(baseConfig ToolLoopConfig, registry *ToolRegistry, m TeamMember) (ToolLoopConfig, error) {
+func (t *TeamTool) buildWorkerConfig(
+	baseConfig ToolLoopConfig,
+	registry *ToolRegistry,
+	m TeamMember,
+) (ToolLoopConfig, error) {
 	cfg := baseConfig
 	cfg.Tools = registry
 	// Heterogeneous Agents: Override model if this team member requested a specific one
 	if m.Model != "" {
 		if !t.manager.IsModelAllowed(m.Model) {
-			return cfg, fmt.Errorf("requested model '%s' is not in the allowed fallback candidates list for this agent workspace", m.Model)
+			return cfg, fmt.Errorf(
+				"requested model '%s' is not in the allowed fallback candidates list for this agent workspace",
+				m.Model,
+			)
 		}
 		// Resolve model name from model_list if it's an alias
 		//resolvedModel := m.Model
@@ -554,13 +582,11 @@ func (t *TeamTool) buildWorkerConfig(baseConfig ToolLoopConfig, registry *ToolRe
 		//}
 
 		cnf, err := t.cfg.GetModelConfig(m.Model)
-
 		if err != nil {
 			return cfg, err
 		}
 
 		provider, model, err := providers.CreateProviderFromConfig(cnf)
-
 		if err != nil {
 			return ToolLoopConfig{}, err
 		}
@@ -574,15 +600,24 @@ func (t *TeamTool) buildWorkerConfig(baseConfig ToolLoopConfig, registry *ToolRe
 		providerName = cfg.Provider.GetDefaultModel()
 	}
 
-	logger.InfoCF("team", fmt.Sprintf("[%s] use provider: [%s] and model: [%s]", m.Role, providerName, cfg.Model), map[string]any{
-		"member_index": m.ID,
-		"model":        m.Model,
-	})
+	logger.InfoCF(
+		"team",
+		fmt.Sprintf("[%s] use provider: [%s] and model: [%s]", m.Role, providerName, cfg.Model),
+		map[string]any{
+			"member_index": m.ID,
+			"model":        m.Model,
+		},
+	)
 
 	return cfg, nil
 }
 
-func (t *TeamTool) executeSequential(ctx context.Context, baseConfig ToolLoopConfig, members []TeamMember, contextLimit int) *ToolResult {
+func (t *TeamTool) executeSequential(
+	ctx context.Context,
+	baseConfig ToolLoopConfig,
+	members []TeamMember,
+	contextLimit int,
+) *ToolResult {
 	var finalOutput strings.Builder
 	finalOutput.WriteString("Team Execution Summary (Sequential):\n\n")
 
@@ -592,7 +627,11 @@ func (t *TeamTool) executeSequential(ctx context.Context, baseConfig ToolLoopCon
 		// If there is a previous result, we append it to the task so the new agent sees it.
 		actualTask := m.Task
 		if i > 0 && previousResult != "" {
-			actualTask = fmt.Sprintf("%s\n\n--- Context from previous phase ---\n%s", m.Task, truncateContextN(previousResult, contextLimit))
+			actualTask = fmt.Sprintf(
+				"%s\n\n--- Context from previous phase ---\n%s",
+				m.Task,
+				truncateContextN(previousResult, contextLimit),
+			)
 		}
 
 		messages := []providers.Message{
@@ -616,7 +655,9 @@ func (t *TeamTool) executeSequential(ctx context.Context, baseConfig ToolLoopCon
 
 		previousResult = content
 
-		finalOutput.WriteString(fmt.Sprintf("### Phase %d completed by Role: [%s]\n%s\n\n", i+1, m.Role, previousResult))
+		finalOutput.WriteString(
+			fmt.Sprintf("### Phase %d completed by Role: [%s]\n%s\n\n", i+1, m.Role, previousResult),
+		)
 	}
 
 	return &ToolResult{
@@ -658,7 +699,6 @@ func (t *TeamTool) executeParallel(ctx context.Context, baseConfig ToolLoopConfi
 			}
 
 			content, _, err := t.spawnWorker(ctx, workerConfig, messages, baseConfig.RemainingTokenBudget)
-
 			if err != nil {
 				resultsChan <- workResult{index: index, role: member.Role, err: err}
 				return
@@ -709,18 +749,32 @@ func (t *TeamTool) executeParallel(ctx context.Context, baseConfig ToolLoopConfi
 	fullOutput := successOutput.String()
 	if failureCount > 0 {
 		fullOutput += "---\n## ⚠️ Partial Failures\n\n" + failureOutput.String() +
-			fmt.Sprintf("\n%d/%d workers succeeded. %d worker(s) failed. The successful results above may still be usable.",
-				successCount, len(members), failureCount)
+			fmt.Sprintf(
+				"\n%d/%d workers succeeded. %d worker(s) failed. The successful results above may still be usable.",
+				successCount,
+				len(members),
+				failureCount,
+			)
 	}
 
 	return &ToolResult{
-		ForLLM:  fullOutput,
-		ForUser: fmt.Sprintf("⚠️ Parallel execution: %d/%d workers succeeded. %d failed.", successCount, len(members), failureCount),
+		ForLLM: fullOutput,
+		ForUser: fmt.Sprintf(
+			"⚠️ Parallel execution: %d/%d workers succeeded. %d failed.",
+			successCount,
+			len(members),
+			failureCount,
+		),
 		IsError: failureCount == len(members),
 	}
 }
 
-func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig ToolLoopConfig, members []TeamMember, contextLimit int) *ToolResult {
+func (t *TeamTool) executeEvaluatorOptimizer(
+	ctx context.Context,
+	baseConfig ToolLoopConfig,
+	members []TeamMember,
+	contextLimit int,
+) *ToolResult {
 	if len(members) != 2 {
 		return ErrorResult("The evaluator_optimizer strategy requires exactly two members: [0] Worker, [1] Evaluator.")
 	}
@@ -768,7 +822,12 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig Too
 		logger.InfoCF("team", fmt.Sprintf("Evaluator-Optimizer attempt %d/%d", attempt, maxLoops), map[string]any{})
 
 		// 2. Trigger Worker (resumes from its exact previous state!)
-		workerContent, workerMsgs, err := t.spawnWorker(ctx, workerConfig, workerMessages, baseConfig.RemainingTokenBudget)
+		workerContent, workerMsgs, err := t.spawnWorker(
+			ctx,
+			workerConfig,
+			workerMessages,
+			baseConfig.RemainingTokenBudget,
+		)
 		if err != nil {
 			errStr := fmt.Sprintf("Worker failed on attempt %d: %v", attempt, err)
 			finalOutput.WriteString(errStr + "\n")
@@ -785,7 +844,11 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig Too
 		// 3. Trigger Evaluator (Ephemeral, stateless evaluation)
 		// The evaluator only needs to reason about text — give it no tools to avoid
 		// unnecessary tool calls, wasted tokens, and potential side effects.
-		evalContext := fmt.Sprintf("%s\n\n--- Worker's Output to Evaluate ---\n%s\n\nIf the output is completely correct and fulfills the task, you MUST reply starting with strictly '[PASS]'. Otherwise, explain the issues in detail.", evaluator.Task, truncateContextN(workerContent, contextLimit))
+		evalContext := fmt.Sprintf(
+			"%s\n\n--- Worker's Output to Evaluate ---\n%s\n\nIf the output is completely correct and fulfills the task, you MUST reply starting with strictly '[PASS]'. Otherwise, explain the issues in detail.",
+			evaluator.Task,
+			truncateContextN(workerContent, contextLimit),
+		)
 
 		evalMessages := []providers.Message{
 			{Role: "system", Content: evaluator.Role},
@@ -806,16 +869,28 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig Too
 			finalOutput.WriteString("✅ Evaluation Passed! Loop finished successfully.\n")
 			logger.InfoCF("team", "Evaluator-Optimizer passed", map[string]any{"attempt": attempt})
 			return &ToolResult{
-				ForLLM:  finalOutput.String(),
-				ForUser: fmt.Sprintf("✅ Evaluator-Optimizer passed on attempt %d/%d (worker: %s).", attempt, maxLoops, worker.Role),
+				ForLLM: finalOutput.String(),
+				ForUser: fmt.Sprintf(
+					"✅ Evaluator-Optimizer passed on attempt %d/%d (worker: %s).",
+					attempt,
+					maxLoops,
+					worker.Role,
+				),
 			}
 		}
 
-		logger.InfoCF("team", "Evaluator-Optimizer did not pass, retrying", map[string]any{"attempt": attempt, "max_loops": maxLoops})
+		logger.InfoCF(
+			"team",
+			"Evaluator-Optimizer did not pass, retrying",
+			map[string]any{"attempt": attempt, "max_loops": maxLoops},
+		)
 
 		// 5. If not passed, and not the last attempt, inject feedback into Worker's stateful memory
 		if attempt < maxLoops {
-			injection := fmt.Sprintf("The evaluator rejected your previous attempt. Please fix the issues based on this feedback:\n\n%s", evalContent)
+			injection := fmt.Sprintf(
+				"The evaluator rejected your previous attempt. Please fix the issues based on this feedback:\n\n%s",
+				evalContent,
+			)
 			workerMessages = append(workerMessages, providers.Message{
 				Role:    "user",
 				Content: injection,
@@ -831,7 +906,13 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig Too
 	}
 }
 
-func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, baseConfig ToolLoopConfig, members []TeamMember, contextLimit int) *ToolResult {
+func (t *TeamTool) executeDAG(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	baseConfig ToolLoopConfig,
+	members []TeamMember,
+	contextLimit int,
+) *ToolResult {
 	logger.InfoCF("team", "DAG execution starting", map[string]any{"member_count": len(members)})
 	// 1. Build and VALIDATE dependency graph
 	memberMap := make(map[string]TeamMember)
@@ -849,7 +930,9 @@ func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, ba
 	for _, m := range members {
 		for _, dep := range m.DependsOn {
 			if _, exists := memberMap[dep]; !exists {
-				return ErrorResult(fmt.Sprintf("DAG Validation Error: Member [%s] depends on undefined member [%s]", m.ID, dep))
+				return ErrorResult(
+					fmt.Sprintf("DAG Validation Error: Member [%s] depends on undefined member [%s]", m.ID, dep),
+				)
 			}
 			graph[dep] = append(graph[dep], m.ID)
 			inDegree[m.ID]++
@@ -881,7 +964,9 @@ func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, ba
 	}
 
 	if processedCount != len(members) {
-		return ErrorResult("DAG Validation Error: Circular dependency (cycle) detected in the team layout. Please fix your 'depends_on' definitions.")
+		return ErrorResult(
+			"DAG Validation Error: Circular dependency (cycle) detected in the team layout. Please fix your 'depends_on' definitions.",
+		)
 	}
 
 	// 2. Channels for coordination
@@ -919,7 +1004,7 @@ func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, ba
 	for completedNodes < nodesToProcess {
 		select {
 		case <-ctx.Done():
-			return ErrorResult("DAG execution timed out or cancelled")
+			return ErrorResult("DAG execution timed out or canceled")
 
 		case memberID := <-readyChan:
 			wg.Add(1)
@@ -939,7 +1024,11 @@ func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, ba
 				contextMu.Unlock()
 
 				if depsContext != "" {
-					actualTask = fmt.Sprintf("%s\n\n--- Context from dependencies ---\n%s", m.Task, truncateContextN(depsContext, contextLimit))
+					actualTask = fmt.Sprintf(
+						"%s\n\n--- Context from dependencies ---\n%s",
+						m.Task,
+						truncateContextN(depsContext, contextLimit),
+					)
 				}
 
 				messages := []providers.Message{
@@ -959,7 +1048,6 @@ func (t *TeamTool) executeDAG(ctx context.Context, cancel context.CancelFunc, ba
 				}
 
 				content, _, err := t.spawnWorker(ctx, workerConfig, messages, baseConfig.RemainingTokenBudget)
-
 				if err != nil {
 					masterErrMu.Lock()
 					if masterErr == nil {
@@ -1044,12 +1132,6 @@ func truncateContextN(ctx string, maxRunes int) string {
 		return string(runes[:maxRunes]) + "\n...[Context truncated due to length]..."
 	}
 	return ctx
-}
-
-// truncateContext is the default wrapper using 8000 runes (≈6000 words).
-// Call truncateContextN directly when a configurable limit is needed.
-func truncateContext(ctx string) string {
-	return truncateContextN(ctx, 8000)
 }
 
 // buildUserSummary produces a concise human-readable summary for the ForUser field,

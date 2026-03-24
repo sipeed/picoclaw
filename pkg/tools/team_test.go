@@ -5,9 +5,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestUpgradeRegistryForConcurrency(t *testing.T) {
@@ -27,7 +28,12 @@ func TestUpgradeRegistryForConcurrency(t *testing.T) {
 	upgraded := upgradeRegistryForConcurrency(original)
 
 	// Verify count matches
-	assert.Equal(t, len(original.ListTools()), len(upgraded.ListTools()), "Upgraded registry should have same number of tools")
+	assert.Equal(
+		t,
+		len(original.ListTools()),
+		len(upgraded.ListTools()),
+		"Upgraded registry should have same number of tools",
+	)
 
 	// Verify ReadFileTool got upgraded
 	actualReadTool, ok := upgraded.Get("read_file")
@@ -180,7 +186,13 @@ type mockProvider struct {
 	callCount int
 }
 
-func (m *mockProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, options map[string]any) (*providers.LLMResponse, error) {
+func (m *mockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
 	if m.callCount >= len(m.responses) {
 		return &providers.LLMResponse{Content: "Default response"}, nil
 	}
@@ -201,7 +213,13 @@ type mockProviderWithID struct {
 	callCount int
 }
 
-func (m *mockProviderWithID) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, options map[string]any) (*providers.LLMResponse, error) {
+func (m *mockProviderWithID) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.callCount++
@@ -387,8 +405,8 @@ func TestExecuteDAG(t *testing.T) {
 		// Setup: A, B (roots) -> C, D -> E
 		mock := &mockProviderWithID{
 			responses: map[string]string{
-				"Root A":  "Root A output",
-				"Root B":  "Root B output",
+				"Root A":   "Root A output",
+				"Root B":   "Root B output",
 				"Worker C": "C output",
 				"Worker D": "D output",
 				"Final":    "Final E output",

@@ -24,7 +24,7 @@ type SubTurnConfig struct {
 	Model              string
 	Provider           providers.LLMProvider // non-nil overrides the child agent's provider
 	Tools              []Tool
-	EmptyTools         bool          // true: child agent gets an empty ToolRegistry (overrides Tools)
+	EmptyTools         bool // true: child agent gets an empty ToolRegistry (overrides Tools)
 	SystemPrompt       string
 	MaxTokens          int
 	Temperature        float64
@@ -50,6 +50,8 @@ const (
 
 // modelTagDescriptions provides LLM-readable explanations of each known tag,
 // injected at runtime into the tool description to guide model selection.
+//
+//nolint:unused // Reserved for future use in dynamic tool descriptions
 var modelTagDescriptions = map[string]string{
 	ModelTagVision:      "can analyze images and screenshots (multimodal input)",
 	ModelTagImageGen:    "can generate images from text descriptions (e.g. DALL-E, Stable Diffusion)",
