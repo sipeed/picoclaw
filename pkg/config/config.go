@@ -955,6 +955,10 @@ type ModelConfig struct {
 	ConnectMode string `json:"connect_mode,omitempty"` // Connection mode: stdio, grpc
 	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
 
+	// Provider specific fields
+	ProjectID string `json:"project_id,omitempty"` // Project ID (e.g. for Google Vertex AI)
+	Region    string `json:"region,omitempty"`     // Region (e.g. for Google Vertex AI)
+
 	// Optional optimizations
 	RPM            int            `json:"rpm,omitempty"`              // Requests per minute limit
 	MaxTokensField string         `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
@@ -2149,6 +2153,8 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 				AuthMethod:     m.AuthMethod,
 				ConnectMode:    m.ConnectMode,
 				Workspace:      m.Workspace,
+				ProjectID:      m.ProjectID,
+				Region:         m.Region,
 				RPM:            m.RPM,
 				MaxTokensField: m.MaxTokensField,
 				RequestTimeout: m.RequestTimeout,
@@ -2168,6 +2174,8 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 			AuthMethod:     m.AuthMethod,
 			ConnectMode:    m.ConnectMode,
 			Workspace:      m.Workspace,
+			ProjectID:      m.ProjectID,
+			Region:         m.Region,
 			RPM:            m.RPM,
 			MaxTokensField: m.MaxTokensField,
 			RequestTimeout: m.RequestTimeout,

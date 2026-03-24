@@ -15,6 +15,7 @@ import (
 	anthropicmessages "github.com/sipeed/picoclaw/pkg/providers/anthropic_messages"
 	"github.com/sipeed/picoclaw/pkg/providers/azure"
 	"github.com/sipeed/picoclaw/pkg/providers/bedrock"
+	"github.com/sipeed/picoclaw/pkg/providers/vertex"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -117,6 +118,24 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.Proxy,
 			cfg.RequestTimeout,
 		), modelID, nil
+
+	case "vertex", "vertex_ai", "vertex-ai":
+		if cfg.APIKey() == "" {
+			return nil, "", fmt.Errorf("api_key is required for vertex protocol")
+		}
+		if cfg.APIBase == "" && cfg.ProjectID == "" {
+			return nil, "", fmt.Errorf("either api_base or project_id is required for vertex protocol")
+		}
+
+		provider := vertex.NewProvider(
+			cfg.APIKey(),
+			cfg.APIBase,
+			cfg.Proxy,
+			cfg.ProjectID,
+			cfg.Region,
+			vertex.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
+		)
+		return provider, modelID, nil
 
 	case "bedrock":
 		// AWS Bedrock uses AWS SDK credentials (env vars, profiles, IAM roles, etc.)

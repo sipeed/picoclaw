@@ -170,7 +170,7 @@ func setupPicoEnabledEnv(t *testing.T) (string, func()) {
 		ModelList: map[string]config.ModelSecurityEntry{
 			"custom-default": {APIKeys: []string{"sk-default"}},
 		},
-		Channels: config.ChannelsSecurity{
+		Channels: &config.ChannelsSecurity{
 			Pico: &config.PicoSecurity{Token: "test-pico-token"},
 		},
 	})
