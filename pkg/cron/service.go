@@ -179,24 +179,14 @@ func (cs *CronService) checkJobs() {
 	}
 
 	now := time.Now().UnixMilli()
-	var dueJobIDs []string
+	var dueJobs []CronJob
 
-	// Collect jobs that are due (we need to copy them to execute outside lock)
+	// Collect copies of due jobs and reset their next run times
 	for i := range cs.store.Jobs {
 		job := &cs.store.Jobs[i]
 		if job.Enabled && job.State.NextRunAtMS != nil && *job.State.NextRunAtMS <= now {
-			dueJobIDs = append(dueJobIDs, job.ID)
-		}
-	}
-
-	// Reset next run for due jobs before unlocking to avoid duplicate execution.
-	dueMap := make(map[string]bool, len(dueJobIDs))
-	for _, jobID := range dueJobIDs {
-		dueMap[jobID] = true
-	}
-	for i := range cs.store.Jobs {
-		if dueMap[cs.store.Jobs[i].ID] {
-			cs.store.Jobs[i].State.NextRunAtMS = nil
+			dueJobs = append(dueJobs, *job)
+			job.State.NextRunAtMS = nil
 		}
 	}
 
@@ -206,39 +196,22 @@ func (cs *CronService) checkJobs() {
 
 	cs.mu.Unlock()
 
-	// Execute jobs outside lock.
-	for _, jobID := range dueJobIDs {
-		cs.executeJobByID(jobID)
+	// Execute jobs outside lock with collected copies
+	for _, job := range dueJobs {
+		cs.executeJob(job)
 	}
 }
 
-func (cs *CronService) executeJobByID(jobID string) {
+func (cs *CronService) executeJob(dueJob CronJob) {
 	startTime := time.Now().UnixMilli()
-
-	cs.mu.RLock()
-	var callbackJob *CronJob
-	for i := range cs.store.Jobs {
-		job := &cs.store.Jobs[i]
-		if job.ID == jobID {
-			jobCopy := *job
-			callbackJob = &jobCopy
-			break
-		}
-	}
-	cs.mu.RUnlock()
-
-	if callbackJob == nil {
-		log.Printf("[cron] job %s not found, skipping", jobID)
-		return
-	}
 
 	// Log job execution start
 	log.Printf("[cron] ▶ executing job '%s' (id: %s, schedule: %s, channel: %s)",
-		callbackJob.Name, jobID, callbackJob.Schedule.Kind, callbackJob.Payload.Channel)
+		dueJob.Name, dueJob.ID, dueJob.Schedule.Kind, dueJob.Payload.Channel)
 
 	var err error
 	if cs.onJob != nil {
-		_, err = cs.onJob(callbackJob)
+		_, err = cs.onJob(&dueJob)
 	}
 
 	execDuration := time.Now().UnixMilli() - startTime
@@ -249,13 +222,13 @@ func (cs *CronService) executeJobByID(jobID string) {
 
 	var job *CronJob
 	for i := range cs.store.Jobs {
-		if cs.store.Jobs[i].ID == jobID {
+		if cs.store.Jobs[i].ID == dueJob.ID {
 			job = &cs.store.Jobs[i]
 			break
 		}
 	}
 	if job == nil {
-		log.Printf("[cron] job %s disappeared before state update", jobID)
+		log.Printf("[cron] job %s disappeared before state update", dueJob.ID)
 		return
 	}
 
