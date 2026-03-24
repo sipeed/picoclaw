@@ -59,7 +59,7 @@ type PicoChannel struct {
 	connections        map[string]*picoConn            // connID -> *picoConn
 	sessionConnections map[string]map[string]*picoConn // sessionID -> connID -> *picoConn
 	connsMu            sync.RWMutex
-	connCount          atomic.Int32
+	connCount          int
 	ctx                context.Context
 	cancel             context.CancelFunc
 }
@@ -125,7 +125,7 @@ func (c *PicoChannel) createAndAddConnection(conn *websocket.Conn, sessionID str
 		c.sessionConnections[pc.sessionID] = bySession
 	}
 	bySession[pc.id] = pc
-	c.connCount.Add(1)
+	c.connCount++
 
 	return pc
 }
@@ -147,7 +147,7 @@ func (c *PicoChannel) removeConnection(connID string) *picoConn {
 			delete(c.sessionConnections, pc.sessionID)
 		}
 	}
-	c.connCount.Add(-1)
+	c.connCount--
 
 	return pc
 }
@@ -163,7 +163,7 @@ func (c *PicoChannel) takeAllConnections() []*picoConn {
 	}
 	clear(c.connections)
 	clear(c.sessionConnections)
-	c.connCount.Store(0)
+	c.connCount = 0
 
 	return all
 }
@@ -183,6 +183,13 @@ func (c *PicoChannel) sessionConnectionsSnapshot(sessionID string) []*picoConn {
 		conns = append(conns, pc)
 	}
 	return conns
+}
+
+// currentConnCount returns a lock-protected snapshot of active connection count.
+func (c *PicoChannel) currentConnCount() int {
+	c.connsMu.RLock()
+	defer c.connsMu.RUnlock()
+	return c.connCount
 }
 
 // Start implements Channel.
@@ -329,7 +336,7 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if maxConns <= 0 {
 		maxConns = 100
 	}
-	if int(c.connCount.Load()) >= maxConns {
+	if c.currentConnCount() >= maxConns {
 		http.Error(w, "too many connections", http.StatusServiceUnavailable)
 		return
 	}
