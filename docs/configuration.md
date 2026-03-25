@@ -6,6 +6,8 @@
 
 Config file: `~/.picoclaw/config.json`
 
+> **Security Configuration:** For storing API keys, tokens, and other sensitive data, see the [Security Configuration Guide](security_configuration.md).
+
 ### Environment Variables
 
 You can override default paths using environment variables. This is useful for portable installations, containerized deployments, or running picoclaw as a system service. These variables are independent and control different paths.
