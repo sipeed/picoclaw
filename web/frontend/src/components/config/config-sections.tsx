@@ -700,16 +700,14 @@ export function RuntimeSection({ form, onFieldChange }: RuntimeSectionProps) {
         >
           <SelectTrigger className="w-full">
             <SelectValue>
-              {LOG_LEVEL_OPTIONS.find((o) => o.value === form.gatewayLogLevel)
-                ? t(
-                    LOG_LEVEL_OPTIONS.find(
-                      (o) => o.value === form.gatewayLogLevel,
-                    )!.labelKey,
-                    LOG_LEVEL_OPTIONS.find(
-                      (o) => o.value === form.gatewayLogLevel,
-                    )!.labelDefault,
-                  )
-                : form.gatewayLogLevel}
+              {(() => {
+                const selected = LOG_LEVEL_OPTIONS.find(
+                  (o) => o.value === form.gatewayLogLevel,
+                )
+                return selected
+                  ? t(selected.labelKey, selected.labelDefault)
+                  : form.gatewayLogLevel
+              })()}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
