@@ -102,6 +102,7 @@ export const LOG_LEVEL_OPTIONS = [
   { value: "info", labelKey: "pages.config.log_level_info", labelDefault: "Info" },
   { value: "warn", labelKey: "pages.config.log_level_warn", labelDefault: "Warn" },
   { value: "error", labelKey: "pages.config.log_level_error", labelDefault: "Error" },
+  { value: "fatal", labelKey: "pages.config.log_level_fatal", labelDefault: "Fatal" },
 ] as const
 
 export const EMPTY_FORM: CoreConfigForm = {
