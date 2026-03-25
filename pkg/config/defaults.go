@@ -471,6 +471,9 @@ func DefaultConfig() *Config {
 			InstallSkill: ToolConfig{
 				Enabled: true,
 			},
+			UpdateSkill: ToolConfig{
+				Enabled: true,
+			},
 			ListDir: ToolConfig{
 				Enabled: true,
 			},

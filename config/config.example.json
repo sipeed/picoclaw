@@ -489,6 +489,9 @@
     "install_skill": {
       "enabled": true
     },
+    "update_skill": {
+      "enabled": true
+    },
     "list_dir": {
       "enabled": true
     },
