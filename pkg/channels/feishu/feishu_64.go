@@ -4,6 +4,8 @@ package feishu
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -35,6 +38,26 @@ import (
 // on this error, so we do it ourselves.
 const errCodeTenantTokenInvalid = 99991663
 
+const indexFileName = ".feishu_index.json"
+const maxFilenameConflictRetries = 10000 // Maximum iterations to find unique filename
+const readOnlyFileMode = 0o444           // Read-only file permission (user=r, group=r, other=r)
+
+// DirectoryIndex represents a per-directory index file.
+type DirectoryIndex struct {
+	Version int        `json:"version"`
+	Files   []FileMeta `json:"files"`
+}
+
+// FileMeta represents a single downloaded file in the directory index.
+type FileMeta struct {
+	Filename     string    `json:"filename"`     // Local filename
+	Hash         string    `json:"hash"`         // SHA-256 hash
+	Size         int64     `json:"size"`         // File size in bytes
+	FileKey      string    `json:"file_key"`     // Feishu file key (for re-downloading)
+	MessageID    string    `json:"message_id"`   // Message ID
+	DownloadedAt time.Time `json:"downloaded_at"` // Download time
+}
+
 type FeishuChannel struct {
 	*channels.BaseChannel
 	config     config.FeishuConfig
@@ -45,8 +68,9 @@ type FeishuChannel struct {
 
 	botOpenID atomic.Value // stores string; populated lazily for @mention detection
 
-	mu     sync.Mutex
-	cancel context.CancelFunc
+	mu      sync.Mutex
+	cancel  context.CancelFunc
+	indexMu sync.Map // map[string]*sync.Mutex - one lock per directory for index updates
 }
 
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus, globalCfg *config.Config) (*FeishuChannel, error) {
@@ -722,6 +746,180 @@ func (c *FeishuChannel) validateAndCreateDir(dir string) error {
 	return fmt.Errorf("failed to access directory: %w", err)
 }
 
+// loadDirectoryIndex loads the directory index file.
+// Returns an empty index if the file doesn't exist or cannot be read.
+func (c *FeishuChannel) loadDirectoryIndex(dirPath string) (*DirectoryIndex, error) {
+	indexPath := filepath.Join(dirPath, indexFileName)
+
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Index doesn't exist, return empty index
+			return &DirectoryIndex{Version: 1, Files: []FileMeta{}}, nil
+		}
+		return nil, err
+	}
+
+	var index DirectoryIndex
+	if err := json.Unmarshal(data, &index); err != nil {
+		return nil, err
+	}
+
+	return &index, nil
+}
+
+// saveDirectoryIndex saves the directory index file.
+func (c *FeishuChannel) saveDirectoryIndex(dirPath string, index *DirectoryIndex) error {
+	indexPath := filepath.Join(dirPath, indexFileName)
+
+	data, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	// Atomic write: write to temp file first, then rename
+	tmpPath := indexPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpPath, indexPath)
+}
+
+// updateIndexWithFile updates the index, adding or updating file metadata.
+// getIndexLock returns a mutex for the given directory path.
+func (c *FeishuChannel) getIndexLock(dirPath string) *sync.Mutex {
+	lock, _ := c.indexMu.LoadOrStore(dirPath, &sync.Mutex{})
+	return lock.(*sync.Mutex)
+}
+
+func (c *FeishuChannel) updateIndexWithFile(dirPath string, meta FileMeta) error {
+	// Acquire lock for this directory to prevent concurrent index corruption
+	lock := c.getIndexLock(dirPath)
+	lock.Lock()
+	defer lock.Unlock()
+
+	index, err := c.loadDirectoryIndex(dirPath)
+	if err != nil {
+		return err
+	}
+
+	// Find if this file already exists in the index
+	found := false
+	for i, file := range index.Files {
+		if file.Filename == meta.Filename {
+			index.Files[i] = meta // Update
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		index.Files = append(index.Files, meta) // Add
+	}
+
+	return c.saveDirectoryIndex(dirPath, index)
+}
+
+// findFileByKeyInIndex searches for a file by file_key in the index.
+// Returns the FileMeta if found, nil otherwise.
+func (c *FeishuChannel) findFileByKeyInIndex(dirPath, fileKey string) (*FileMeta, error) {
+	index, err := c.loadDirectoryIndex(dirPath)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, file := range index.Files {
+		if file.FileKey == fileKey {
+			return &file, nil
+		}
+	}
+
+	return nil, nil // Not found
+}
+
+// generateFilePath generates a file path: {year}/{month}/{filename}.
+func (c *FeishuChannel) generateFilePath(downloadDir, filename string) string {
+	now := time.Now()
+	yearMonth := now.Format("2006/01") // 2026/03
+	monthPath := filepath.Join(downloadDir, yearMonth)
+	return filepath.Join(monthPath, utils.SanitizeFilename(filename))
+}
+
+// generateUniqueFilename intelligently handles filename conflicts.
+// Returns: unique file path, whether existing file is reused, error.
+func (c *FeishuChannel) generateUniqueFilename(basePath, tmpPath string) (string, bool, error) {
+	// Check if file exists
+	if _, err := os.Stat(basePath); os.IsNotExist(err) {
+		return basePath, false, nil // File doesn't exist, use it directly
+	}
+
+	// File exists, check if it's the same file (hash + size)
+	existingHash, err := c.calculateFileHash(basePath)
+	if err == nil {
+		newHash, _ := c.calculateFileHash(tmpPath)
+		existingSize, _ := getFileSize(basePath)
+		newSize, _ := getFileSize(tmpPath)
+
+		// hash and size match, reuse existing file
+		if existingHash == newHash && existingSize == newSize {
+			return basePath, true, nil
+		}
+	}
+
+	// Not the same file, add serial number suffix
+	ext := filepath.Ext(basePath)
+	nameWithoutExt := strings.TrimSuffix(basePath, ext)
+
+	for i := 1; i <= maxFilenameConflictRetries; i++ {
+		// Use -1, -2 format
+		newPath := fmt.Sprintf("%s-%d%s", nameWithoutExt, i, ext)
+		if _, err := os.Stat(newPath); os.IsNotExist(err) {
+			return newPath, false, nil
+		}
+
+		// Check if new path has same content as temp file
+		if existingHash, err := c.calculateFileHash(newPath); err == nil {
+			newHash, _ := c.calculateFileHash(tmpPath)
+			if existingHash == newHash {
+				existingSize, _ := getFileSize(newPath)
+				newSize, _ := getFileSize(tmpPath)
+				if existingSize == newSize {
+					return newPath, true, nil
+				}
+			}
+		}
+	}
+
+	// Should never happen, but return error to be safe
+	return "", false, fmt.Errorf("too many filename conflicts (>%d), could not generate unique filename", maxFilenameConflictRetries)
+}
+
+// getFileSize gets the size of a file.
+func getFileSize(filePath string) (int64, error) {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
+}
+
+// calculateFileHash calculates SHA-256 hash of a file and returns it as hex string.
+func (c *FeishuChannel) calculateFileHash(filePath string) (string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, f); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
 // downloadResource downloads a message resource (image/file) from Feishu,
 // writes it to the configured media directory, and stores the reference in MediaStore.
 // fallbackExt (e.g. ".jpg") is appended when the resolved filename has no extension.
@@ -772,38 +970,124 @@ func (c *FeishuChannel) downloadResource(
 		filename += fallbackExt
 	}
 
-	// Determine download directory
-	mediaDir := c.resolveDownloadDir()
-	if mediaDir == "" {
+	// 1. Determine download directory
+	downloadDir := c.resolveDownloadDir()
+	if downloadDir == "" {
 		// Fallback to TempDir
-		mediaDir = media.TempDir()
+		downloadDir = media.TempDir()
 	}
 
-	logger.DebugCF("feishu", "Downloading resource to directory", map[string]any{
-		"directory": mediaDir,
-	})
-	ext := filepath.Ext(filename)
-	localPath := filepath.Join(mediaDir, utils.SanitizeFilename(messageID+"-"+fileKey+ext))
-
-	out, err := os.Create(localPath)
+	// 2. Download to temporary file
+	tmpFile, err := os.CreateTemp("", "feishu_download_*")
 	if err != nil {
-		logger.ErrorCF("feishu", "Failed to create local file for resource", map[string]any{
+		logger.ErrorCF("feishu", "Failed to create temporary file", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+	tmpPath := tmpFile.Name()
+
+	// Write downloaded content to temp file
+	size, err := io.Copy(tmpFile, resp.File)
+	tmpFile.Close()
+	if err != nil {
+		os.Remove(tmpPath)
+		logger.ErrorCF("feishu", "Failed to write resource to temp file", map[string]any{
 			"error": err.Error(),
 		})
 		return ""
 	}
 
-	if _, copyErr := io.Copy(out, resp.File); copyErr != nil {
-		out.Close()
-		os.Remove(localPath)
-		logger.ErrorCF("feishu", "Failed to write resource to file", map[string]any{
-			"error": copyErr.Error(),
+	// 3. Generate target path: {year}/{month}/{filename}
+	basePath := c.generateFilePath(downloadDir, filename)
+
+	// 4. Intelligently handle filename conflicts
+	targetPath, reused, err := c.generateUniqueFilename(basePath, tmpPath)
+	if err != nil {
+		os.Remove(tmpPath)
+		logger.ErrorCF("feishu", "Failed to generate unique filename", map[string]any{
+			"error": err.Error(),
 		})
 		return ""
 	}
-	out.Close()
 
-	ref, err := store.Store(localPath, media.MediaMeta{
+	if reused {
+		// Reuse existing file, delete temp file
+		os.Remove(tmpPath)
+		logger.InfoCF("feishu", "Reusing existing file (deduplication)", map[string]any{
+			"existing_path": targetPath,
+		})
+
+		// Store the reference in MediaStore
+		ref, err := store.Store(targetPath, media.MediaMeta{
+			Filename:      filename,
+			Source:        "feishu",
+			CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
+		}, scope)
+		if err != nil {
+			logger.ErrorCF("feishu", "Failed to store downloaded resource", map[string]any{
+				"file_key": fileKey,
+				"error":    err.Error(),
+			})
+			return ""
+		}
+		return ref
+	}
+
+	// 5. Create directory and move file
+	monthDir := filepath.Dir(targetPath)
+	if err := os.MkdirAll(monthDir, 0o755); err != nil {
+		os.Remove(tmpPath)
+		logger.ErrorCF("feishu", "Failed to create month directory", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	if err := os.Rename(tmpPath, targetPath); err != nil {
+		os.Remove(tmpPath)
+		logger.ErrorCF("feishu", "Failed to move temp file to final location", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	// 6. Set file permissions (according to config)
+	if !c.config.DownloadReadonlyDisable {
+		// Set to read-only (prevent accidental deletion or modification)
+		if err := os.Chmod(targetPath, readOnlyFileMode); err != nil {
+			logger.WarnCF("feishu", "Failed to set file read-only", map[string]any{
+				"path":  targetPath,
+				"error": err.Error(),
+			})
+		}
+	}
+
+	// 7. Update index file
+	hash, _ := c.calculateFileHash(targetPath)
+	meta := FileMeta{
+		Filename:     filepath.Base(targetPath),
+		Hash:         hash,
+		Size:         size,
+		FileKey:      fileKey,
+		MessageID:    messageID,
+		DownloadedAt: time.Now(),
+	}
+
+	if err := c.updateIndexWithFile(monthDir, meta); err != nil {
+		// Index update failed, log warning but don't affect download
+		logger.WarnCF("feishu", "Failed to update index file", map[string]any{
+			"error": err.Error(),
+		})
+	}
+
+	logger.InfoCF("feishu", "Saved new file to download directory", map[string]any{
+		"filename":  filename,
+		"local_path": targetPath,
+		"hash":      hash,
+	})
+
+	ref, err := store.Store(targetPath, media.MediaMeta{
 		Filename:      filename,
 		Source:        "feishu",
 		CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
@@ -813,7 +1097,6 @@ func (c *FeishuChannel) downloadResource(
 			"file_key": fileKey,
 			"error":    err.Error(),
 		})
-		os.Remove(localPath)
 		return ""
 	}
 

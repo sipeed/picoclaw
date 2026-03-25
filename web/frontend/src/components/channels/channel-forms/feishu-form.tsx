@@ -136,6 +136,12 @@ export function FeishuForm({
           placeholder={t("channels.field.downloadDirPlaceholder")}
         />
       </Field>
+      <SwitchCardField
+        label={t("channels.field.downloadReadonlyDisable")}
+        hint={t("channels.form.desc.downloadReadonlyDisable")}
+        checked={asBool(config.download_readonly_disable)}
+        onCheckedChange={(checked) => onChange("download_readonly_disable", checked)}
+      />
     </div>
   )
 }

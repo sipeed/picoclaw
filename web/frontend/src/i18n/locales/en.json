@@ -302,6 +302,7 @@
       "allowOriginsPlaceholder": "e.g. https://example.com, http://localhost:5173",
       "downloadDir": "Download Directory",
       "downloadDirPlaceholder": "downloads or /absolute/path",
+      "downloadReadonlyDisable": "Disable Download Readonly",
       "secretPlaceholder": "Enter secret",
       "secretHintSet": "A value is already set. Leave blank to keep it unchanged."
     },
@@ -334,6 +335,7 @@
         "isLark": "Use Lark international domain (open.larksuite.com) instead of Feishu domain (open.feishu.cn).",
         "allowFrom": "Allowed user or group IDs, separated by commas.",
         "downloadDir": "Custom directory for downloaded files. Relative paths are resolved from the workspace directory. Leave empty to use system temp directory.",
+        "downloadReadonlyDisable": "Disable read-only protection for downloaded files (default: read-only enabled). When enabled, files can be edited directly.",
         "allowOrigins": "Allowed origin domains, separated by commas.",
         "wsUrl": "WebSocket service URL.",
         "reconnectInterval": "Reconnect interval after disconnection (seconds).",
