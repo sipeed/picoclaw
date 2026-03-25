@@ -6,6 +6,8 @@ import {
   type CoreConfigForm,
   DM_SCOPE_OPTIONS,
   type LauncherForm,
+  LOG_LEVEL_OPTIONS,
+  STEERING_MODE_OPTIONS,
 } from "@/components/config/form-model"
 import { Field, SwitchCardField } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
@@ -70,6 +72,9 @@ export function AgentDefaultsSection({
   onFieldChange,
 }: AgentDefaultsSectionProps) {
   const { t } = useTranslation()
+  const selectedSteeringModeOption = STEERING_MODE_OPTIONS.find(
+    (o) => o.value === form.steeringMode,
+  )
 
   return (
     <ConfigSectionCard title={t("pages.config.sections.agent")}>
@@ -192,6 +197,225 @@ export function AgentDefaultsSection({
           }
         />
       </Field>
+
+      <SwitchCardField
+        label={t("pages.config.allow_read_outside_workspace")}
+        hint={t("pages.config.allow_read_outside_workspace_hint")}
+        layout="setting-row"
+        checked={form.allowReadOutsideWorkspace}
+        onCheckedChange={(checked) =>
+          onFieldChange("allowReadOutsideWorkspace", checked)
+        }
+      />
+
+      <Field
+        label={t("pages.config.steering_mode")}
+        hint={t("pages.config.steering_mode_hint")}
+        layout="setting-row"
+      >
+        <Select
+          value={form.steeringMode}
+          onValueChange={(value) => onFieldChange("steeringMode", value)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue>
+              {selectedSteeringModeOption
+                ? t(
+                    selectedSteeringModeOption.labelKey,
+                    selectedSteeringModeOption.labelDefault,
+                  )
+                : form.steeringMode}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {STEERING_MODE_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {t(opt.labelKey, opt.labelDefault)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      <Field
+        label={t("pages.config.temperature")}
+        hint={t("pages.config.temperature_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={0}
+          max={2}
+          step={0.1}
+          value={form.temperature}
+          onChange={(e) => onFieldChange("temperature", e.target.value)}
+          placeholder="0.7"
+        />
+      </Field>
+
+      <Field
+        label={t("pages.config.max_media_size")}
+        hint={t("pages.config.max_media_size_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={0}
+          value={form.maxMediaSize}
+          onChange={(e) => onFieldChange("maxMediaSize", e.target.value)}
+          placeholder="20971520"
+        />
+      </Field>
+    </ConfigSectionCard>
+  )
+}
+
+interface SubTurnSectionProps {
+  form: CoreConfigForm
+  onFieldChange: UpdateCoreField
+}
+
+export function SubTurnSection({ form, onFieldChange }: SubTurnSectionProps) {
+  const { t } = useTranslation()
+
+  return (
+    <ConfigSectionCard
+      title={t("pages.config.sections.subturn")}
+      description={t("pages.config.subturn_description")}
+    >
+      <Field
+        label={t("pages.config.subturn_max_depth")}
+        hint={t("pages.config.subturn_max_depth_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={0}
+          value={form.subturnMaxDepth}
+          onChange={(e) => onFieldChange("subturnMaxDepth", e.target.value)}
+        />
+      </Field>
+
+      <Field
+        label={t("pages.config.subturn_max_concurrent")}
+        hint={t("pages.config.subturn_max_concurrent_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={0}
+          value={form.subturnMaxConcurrent}
+          onChange={(e) =>
+            onFieldChange("subturnMaxConcurrent", e.target.value)
+          }
+        />
+      </Field>
+
+      <Field
+        label={t("pages.config.subturn_default_timeout")}
+        hint={t("pages.config.subturn_default_timeout_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={0}
+          value={form.subturnDefaultTimeoutMinutes}
+          onChange={(e) =>
+            onFieldChange("subturnDefaultTimeoutMinutes", e.target.value)
+          }
+        />
+      </Field>
+
+      <Field
+        label={t("pages.config.subturn_token_budget")}
+        hint={t("pages.config.subturn_token_budget_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={0}
+          value={form.subturnDefaultTokenBudget}
+          onChange={(e) =>
+            onFieldChange("subturnDefaultTokenBudget", e.target.value)
+          }
+        />
+      </Field>
+
+      <Field
+        label={t("pages.config.subturn_concurrency_timeout")}
+        hint={t("pages.config.subturn_concurrency_timeout_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={0}
+          value={form.subturnConcurrencyTimeoutSec}
+          onChange={(e) =>
+            onFieldChange("subturnConcurrencyTimeoutSec", e.target.value)
+          }
+        />
+      </Field>
+    </ConfigSectionCard>
+  )
+}
+
+interface RoutingSectionProps {
+  form: CoreConfigForm
+  onFieldChange: UpdateCoreField
+}
+
+export function RoutingSection({ form, onFieldChange }: RoutingSectionProps) {
+  const { t } = useTranslation()
+
+  return (
+    <ConfigSectionCard
+      title={t("pages.config.sections.routing")}
+      description={t("pages.config.routing_description")}
+    >
+      <SwitchCardField
+        label={t("pages.config.routing_enabled")}
+        hint={t("pages.config.routing_enabled_hint")}
+        layout="setting-row"
+        checked={form.routingEnabled}
+        onCheckedChange={(checked) =>
+          onFieldChange("routingEnabled", checked)
+        }
+      />
+
+      {form.routingEnabled && (
+        <>
+          <Field
+            label={t("pages.config.routing_light_model")}
+            hint={t("pages.config.routing_light_model_hint")}
+            layout="setting-row"
+          >
+            <Input
+              value={form.routingLightModel}
+              onChange={(e) =>
+                onFieldChange("routingLightModel", e.target.value)
+              }
+              placeholder="gpt-4o-mini"
+            />
+          </Field>
+
+          <Field
+            label={t("pages.config.routing_threshold")}
+            hint={t("pages.config.routing_threshold_hint")}
+            layout="setting-row"
+          >
+            <Input
+              type="number"
+              min={0}
+              max={1}
+              step={0.1}
+              value={form.routingThreshold}
+              onChange={(e) =>
+                onFieldChange("routingThreshold", e.target.value)
+              }
+            />
+          </Field>
+        </>
+      )}
     </ConfigSectionCard>
   )
 }
@@ -389,6 +613,9 @@ interface RuntimeSectionProps {
 
 export function RuntimeSection({ form, onFieldChange }: RuntimeSectionProps) {
   const { t } = useTranslation()
+  const selectedLogLevelOption = LOG_LEVEL_OPTIONS.find(
+    (o) => o.value === form.gatewayLogLevel,
+  )
   const selectedDmScopeOption = DM_SCOPE_OPTIONS.find(
     (scope) => scope.value === form.dmScope,
   )
@@ -450,6 +677,86 @@ export function RuntimeSection({ form, onFieldChange }: RuntimeSectionProps) {
             min={1}
             value={form.heartbeatInterval}
             onChange={(e) => onFieldChange("heartbeatInterval", e.target.value)}
+          />
+        </Field>
+      )}
+
+      <SwitchCardField
+        label={t("pages.config.voice_echo_transcription")}
+        hint={t("pages.config.voice_echo_transcription_hint")}
+        layout="setting-row"
+        checked={form.voiceEchoTranscription}
+        onCheckedChange={(checked) =>
+          onFieldChange("voiceEchoTranscription", checked)
+        }
+      />
+
+      <Field
+        label={t("pages.config.gateway_log_level")}
+        hint={t("pages.config.gateway_log_level_hint")}
+        layout="setting-row"
+      >
+        <Select
+          value={form.gatewayLogLevel}
+          onValueChange={(value) => onFieldChange("gatewayLogLevel", value)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue>
+              {selectedLogLevelOption
+                ? t(
+                    selectedLogLevelOption.labelKey,
+                    selectedLogLevelOption.labelDefault,
+                  )
+                : form.gatewayLogLevel}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {LOG_LEVEL_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {t(opt.labelKey, opt.labelDefault)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+    </ConfigSectionCard>
+  )
+}
+
+interface ToolSecuritySectionProps {
+  form: CoreConfigForm
+  onFieldChange: UpdateCoreField
+}
+
+export function ToolSecuritySection({
+  form,
+  onFieldChange,
+}: ToolSecuritySectionProps) {
+  const { t } = useTranslation()
+
+  return (
+    <ConfigSectionCard title={t("pages.config.sections.tool_security")}>
+      <SwitchCardField
+        label={t("pages.config.filter_sensitive_data")}
+        hint={t("pages.config.filter_sensitive_data_hint")}
+        layout="setting-row"
+        checked={form.filterSensitiveData}
+        onCheckedChange={(checked) =>
+          onFieldChange("filterSensitiveData", checked)
+        }
+      />
+
+      {form.filterSensitiveData && (
+        <Field
+          label={t("pages.config.filter_min_length")}
+          hint={t("pages.config.filter_min_length_hint")}
+          layout="setting-row"
+        >
+          <Input
+            type="number"
+            min={0}
+            value={form.filterMinLength}
+            onChange={(e) => onFieldChange("filterMinLength", e.target.value)}
           />
         </Field>
       )}
