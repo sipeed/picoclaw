@@ -25,7 +25,9 @@ Add this to `config.json`:
         "text": "Thinking..."
       },
       "reasoning_channel_id": "",
-      "message_format": "richtext"
+      "message_format": "richtext",
+      "crypto_database_path": "",
+      "crypto_passphrase": "YOUR_MATRIX_CRYPTO_PICKLE_KEY"
     }
   }
 }
@@ -46,6 +48,8 @@ Add this to `config.json`:
 | placeholder          | object   | No       | Placeholder message config |
 | reasoning_channel_id | string   | No       | Target channel for reasoning output |
 | message_format       | string   | No       | Output format: `"richtext"` (default) renders markdown as HTML; `"plain"` sends plain text only |
+| crypto_database_path | string   | No       | Path to store the crypto database (uses workspace path `~/.picoclaw/workspace` if empty) |
+| crypto_passphrase    | string   | No       | Serialization key for encrypting session keys in the database; must remain unchanged once set |
 
 ## 3. Currently Supported
 
@@ -58,6 +62,7 @@ Add this to `config.json`:
 - Typing state (`m.typing`)
 - Placeholder message + final reply replacement
 - Auto-join invited rooms (can be disabled)
+- End-to-end encryption (E2EE) support for encrypted messages
 
 ## 4. TODO
 

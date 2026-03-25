@@ -28,7 +28,8 @@ export function ModelCard({
 }: ModelCardProps) {
   const { t } = useTranslation()
   const isOAuth = model.auth_method === "oauth"
-  const canSetDefault = model.configured && !model.is_default
+  const canSetDefault =
+    model.configured && !model.is_default && !model.is_virtual
 
   return (
     <div
@@ -62,6 +63,11 @@ export function ModelCard({
           {model.is_default && (
             <span className="bg-primary/10 text-primary shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-none font-medium">
               {t("models.badge.default")}
+            </span>
+          )}
+          {model.is_virtual && (
+            <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-none font-medium">
+              {t("models.badge.virtual")}
             </span>
           )}
         </div>

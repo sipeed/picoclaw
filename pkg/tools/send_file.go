@@ -142,7 +142,7 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult(fmt.Sprintf("failed to register media: %v", err))
 	}
 
-	return MediaResult(fmt.Sprintf("File %q sent to user", filename), []string{ref})
+	return MediaResult(fmt.Sprintf("File %q sent to user", filename), []string{ref}).WithResponseHandled()
 }
 
 // detectMediaType determines the MIME type of a file.

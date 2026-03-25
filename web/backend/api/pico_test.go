@@ -18,12 +18,12 @@ func TestEnsurePicoChannel_FreshConfig(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 
-	changed, err := h.ensurePicoChannel("")
+	changed, err := h.EnsurePicoChannel("")
 	if err != nil {
-		t.Fatalf("ensurePicoChannel() error = %v", err)
+		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
 	if !changed {
-		t.Fatal("ensurePicoChannel() should report changed on a fresh config")
+		t.Fatal("EnsurePicoChannel() should report changed on a fresh config")
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -43,8 +43,8 @@ func TestEnsurePicoChannel_DoesNotEnableTokenQuery(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 
-	if _, err := h.ensurePicoChannel(""); err != nil {
-		t.Fatalf("ensurePicoChannel() error = %v", err)
+	if _, err := h.EnsurePicoChannel(""); err != nil {
+		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -61,8 +61,8 @@ func TestEnsurePicoChannel_DoesNotSetWildcardOrigins(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 
-	if _, err := h.ensurePicoChannel("http://localhost:18800"); err != nil {
-		t.Fatalf("ensurePicoChannel() error = %v", err)
+	if _, err := h.EnsurePicoChannel("http://localhost:18800"); err != nil {
+		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -81,8 +81,8 @@ func TestEnsurePicoChannel_NoOriginWithoutCaller(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 
-	if _, err := h.ensurePicoChannel(""); err != nil {
-		t.Fatalf("ensurePicoChannel() error = %v", err)
+	if _, err := h.EnsurePicoChannel(""); err != nil {
+		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -102,8 +102,8 @@ func TestEnsurePicoChannel_SetsCallerOrigin(t *testing.T) {
 	h := NewHandler(configPath)
 
 	lanOrigin := "http://192.168.1.9:18800"
-	if _, err := h.ensurePicoChannel(lanOrigin); err != nil {
-		t.Fatalf("ensurePicoChannel() error = %v", err)
+	if _, err := h.EnsurePicoChannel(lanOrigin); err != nil {
+		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -131,12 +131,12 @@ func TestEnsurePicoChannel_PreservesUserSettings(t *testing.T) {
 
 	h := NewHandler(configPath)
 
-	changed, err := h.ensurePicoChannel("")
+	changed, err := h.EnsurePicoChannel("")
 	if err != nil {
-		t.Fatalf("ensurePicoChannel() error = %v", err)
+		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
 	if changed {
-		t.Error("ensurePicoChannel() should not change a fully configured config")
+		t.Error("EnsurePicoChannel() should not change a fully configured config")
 	}
 
 	cfg, err = config.LoadConfig(configPath)
@@ -169,12 +169,12 @@ func TestEnsurePicoChannel_ExistingConfigWithoutSecurityFile(t *testing.T) {
 
 	h := NewHandler(configPath)
 
-	changed, err := h.ensurePicoChannel("")
+	changed, err := h.EnsurePicoChannel("")
 	if err != nil {
-		t.Fatalf("ensurePicoChannel() error = %v", err)
+		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
 	if !changed {
-		t.Fatal("ensurePicoChannel() should report changed when pico is missing")
+		t.Fatal("EnsurePicoChannel() should report changed when pico is missing")
 	}
 
 	cfg, err = config.LoadConfig(configPath)
@@ -193,6 +193,33 @@ func TestEnsurePicoChannel_ExistingConfigWithoutSecurityFile(t *testing.T) {
 	}
 }
 
+func TestEnsurePicoChannel_ConfiguresPicoWithoutGateway(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = ""
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	if _, err := h.EnsurePicoChannel(""); err != nil {
+		t.Fatalf("EnsurePicoChannel() error = %v", err)
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if !cfg.Channels.Pico.Enabled {
+		t.Error("expected Pico to be enabled after launcher startup setup")
+	}
+	if cfg.Channels.Pico.Token() == "" {
+		t.Error("expected a non-empty token after launcher startup setup")
+	}
+}
+
 func TestEnsurePicoChannel_Idempotent(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
@@ -200,20 +227,20 @@ func TestEnsurePicoChannel_Idempotent(t *testing.T) {
 	origin := "http://localhost:18800"
 
 	// First call sets things up
-	if _, err := h.ensurePicoChannel(origin); err != nil {
-		t.Fatalf("first ensurePicoChannel() error = %v", err)
+	if _, err := h.EnsurePicoChannel(origin); err != nil {
+		t.Fatalf("first EnsurePicoChannel() error = %v", err)
 	}
 
 	cfg1, _ := config.LoadConfig(configPath)
 	token1 := cfg1.Channels.Pico.Token()
 
 	// Second call should be a no-op
-	changed, err := h.ensurePicoChannel(origin)
+	changed, err := h.EnsurePicoChannel(origin)
 	if err != nil {
-		t.Fatalf("second ensurePicoChannel() error = %v", err)
+		t.Fatalf("second EnsurePicoChannel() error = %v", err)
 	}
 	if changed {
-		t.Error("second ensurePicoChannel() should not report changed")
+		t.Error("second EnsurePicoChannel() should not report changed")
 	}
 
 	cfg2, _ := config.LoadConfig(configPath)

@@ -11,20 +11,33 @@ Package config
 
 # Example: Using Security Configuration
 
-## 1. Create security.yml
+## Overview
 
-File: ~/.picoclaw/security.yml
+The security configuration feature allows you to separate sensitive data (API keys,
+tokens, secrets, passwords) from your main configuration. The system automatically
+loads values from `.security.yml` and applies them to the corresponding fields in
+your config.
+
+**Key Points:**
+- Values from `.security.yml` are automatically mapped to config fields
+- No `ref:` syntax is needed - just omit sensitive fields from config.json
+- If a field exists in both files, `.security.yml` value takes precedence
+- You can mix direct values in config.json with security values
+
+## 1. Create .security.yml
+
+File: ~/.picoclaw/.security.yml
 
 ```yaml
 # Model API Keys
-# Note: Use 'api_keys' array for multiple keys (load balancing/failover)
-# Single key should be provided as an array with one element
+# All models MUST use 'api_keys' (plural) array format
+# Even a single key must be provided as an array with one element
 model_list:
 
 	gpt-5.4:
 	  api_keys:
 	    - "sk-proj-your-actual-openai-key-1"
-	    - "sk-proj-your-actual-openai-key-2"  # Failover key
+	    - "sk-proj-your-actual-openai-key-2"  # Optional: Multiple keys for failover
 	claude-sonnet-4.6:
 	  api_keys:
 	    - "sk-ant-your-actual-anthropic-key"  # Single key in array format
@@ -38,80 +51,95 @@ channels:
 	  token: "your-discord-bot-token"
 
 # Web Tool Keys
-# Note: Use 'api_keys' array for multiple keys (load balancing/failover)
-# For GLMSearch, use 'api_key' (single string)
+# Brave, Tavily, Perplexity: Use 'api_keys' array
+# GLMSearch, BaiduSearch: Use 'api_key' single string
 web:
 
 	brave:
 	  api_keys:
 	    - "BSAyour-brave-api-key-1"
-	    - "BSAyour-brave-api-key-2"  # Failover key
+	    - "BSAyour-brave-api-key-2"  # Optional: Multiple keys for failover
 	tavily:
 	  api_keys:
 	    - "tvly-your-tavily-api-key"  # Single key in array format
+	perplexity:
+	  api_keys:
+	    - "pplx-your-perplexity-api-key"  # Single key in array format
 	glm_search:
 	  api_key: "your-glm-search-api-key"  # Single key (not array)
+	baidu_search:
+	  api_key: "your-baidu-search-api-key"  # Single key (not array)
 
 ```
 
-## 2. Update config.json to use references
+## 2. Simplify config.json
 
 File: ~/.picoclaw/config.json
 
+Note: Sensitive fields are omitted because they're loaded from .security.yml
+
 ```json
 
-		{
-		  "version": 1,
-		  "agents": {
-		    "defaults": {
-		      "workspace": "~/picoclaw-workspace",
-		      "model_name": "gpt-5.4"
-		    }
-		  },
-		  "model_list": [
-		    {
-		      "model_name": "gpt-5.4",
-		      "model": "openai/gpt-5.4",
-		      "api_base": "https://api.openai.com/v1",
-		      "api_key": "ref:model_list.gpt-5.4.api_key"
-		    },
-		    {
-		      "model_name": "claude-sonnet-4.6",
-		      "model": "anthropic/claude-sonnet-4.6",
-		      "api_base": "https://api.anthropic.com/v1",
-		      "api_key": "ref:model_list.claude-sonnet-4.6.api_key"
-		    }
-		  ],
-		  "channels": {
-		    "telegram": {
-		      "enabled": true,
-		      "token": "ref:channels.telegram.token"
-		    },
-		    "discord": {
-		      "enabled": true,
-		      "token": "ref:channels.discord.token"
-		    }
-		  },
+	{
+	  "version": 1,
+	  "agents": {
+	    "defaults": {
+	      "workspace": "~/picoclaw-workspace",
+	      "model_name": "gpt-5.4"
+	    }
+	  },
+	  "model_list": [
+	    {
+	      "model_name": "gpt-5.4",
+	      "model": "openai/gpt-5.4",
+	      "api_base": "https://api.openai.com/v1"
+	      // api_key is automatically loaded from .security.yml
+	    },
+	    {
+	      "model_name": "claude-sonnet-4.6",
+	      "model": "anthropic/claude-sonnet-4.6",
+	      "api_base": "https://api.anthropic.com/v1"
+	      // api_key is automatically loaded from .security.yml
+	    }
+	  ],
+	  "channels": {
+	    "telegram": {
+	      "enabled": true
+	      // token is automatically loaded from .security.yml
+	    },
+	    "discord": {
+	      "enabled": true
+	      // token is automatically loaded from .security.yml
+	    }
+	  },
 	  "tools": {
 	    "web": {
 	      "brave": {
-	        "enabled": true,
-	        "api_key": "ref:web.brave.api_key"
+	        "enabled": true
+	        // api_key is automatically loaded from .security.yml
 	      },
 	      "tavily": {
-	        "enabled": true,
-	        "api_key": "ref:web.tavily.api_key"
+	        "enabled": true
+	        // api_key is automatically loaded from .security.yml
+	      },
+	      "glm_search": {
+	        "enabled": true
+	        // api_key is automatically loaded from .security.yml
+	      },
+	      "baidu_search": {
+	        "enabled": true
+	        // api_key is automatically loaded from .security.yml
 	      }
 	    }
 	  }
-		}
+	}
 
 ```
 
 ## 3. Set proper permissions
 
 ```bash
-chmod 600 ~/.picoclaw/security.yml
+chmod 600 ~/.picoclaw/.security.yml
 ```
 
 ## 4. Add to .gitignore
@@ -127,57 +155,131 @@ chmod 600 ~/.picoclaw/security.yml
 picoclaw --version
 ```
 
-# Available Reference Paths
+# Supported Fields in .security.yml
 
 ## Model API Keys
-- ref:model_list.<model_name>.api_key
+
+All models MUST use the `api_keys` (plural) array format in .security.yml.
+
+```yaml
+model_list:
+
+	<model_name>:
+	  api_keys:
+	    - "key-1"
+	    - "key-2"  # Optional: Multiple keys for failover
+
+```
 
 Examples:
-- ref:model_list.gpt-5.4.api_key
-- ref:model_list.claude-sonnet-4.6.api_key
+```yaml
+model_list:
 
-**Note:** In .security.yml, use `api_keys` (array) format for models.
-Both single and multiple keys should use the array format.
+	gpt-5.4:
+	  api_keys:
+	    - "sk-proj-key-1"
+	    - "sk-proj-key-2"
+	claude-sonnet-4.6:
+	  api_keys:
+	    - "sk-ant-key"
+
+```
+
+**Important:**
+- Always use `api_keys` (plural) for models
+- Even a single key must be in an array format
+- The model_name in .security.yml must match the model_name in config.json
 
 ## Channel Tokens/Secrets
-- ref:channels.telegram.token
-- ref:channels.feishu.app_secret
-- ref:channels.feishu.encrypt_key
-- ref:channels.feishu.verification_token
-- ref:channels.discord.token
-- ref:channels.qq.app_secret
-- ref:channels.dingtalk.client_secret
-- ref:channels.slack.bot_token
-- ref:channels.slack.app_token
-- ref:channels.matrix.access_token
-- ref:channels.line.channel_secret
-- ref:channels.line.channel_access_token
-- ref:channels.onebot.access_token
-- ref:channels.wecom.token
-- ref:channels.wecom.encoding_aes_key
-- ref:channels.wecom_app.corp_secret
-- ref:channels.wecom_app.token
-- ref:channels.wecom_app.encoding_aes_key
-- ref:channels.wecom_aibot.token
-- ref:channels.wecom_aibot.encoding_aes_key
-- ref:channels.pico.token
-- ref:channels.irc.password
-- ref:channels.irc.nickserv_password
-- ref:channels.irc.sasl_password
+
+```yaml
+channels:
+
+	telegram:
+	  token: "value"
+	feishu:
+	  app_secret: "value"
+	  encrypt_key: "value"
+	  verification_token: "value"
+	discord:
+	  token: "value"
+	weixin:
+	  token: "value"
+	qq:
+	  app_secret: "value"
+	dingtalk:
+	  client_secret: "value"
+	slack:
+	  bot_token: "value"
+	  app_token: "value"
+	matrix:
+	  access_token: "value"
+	line:
+	  channel_secret: "value"
+	  channel_access_token: "value"
+	onebot:
+	  access_token: "value"
+	wecom:
+	  token: "value"
+	  encoding_aes_key: "value"
+	wecom_app:
+	  corp_secret: "value"
+	  token: "value"
+	  encoding_aes_key: "value"
+	wecom_aibot:
+	  secret: "value"
+	  token: "value"
+	  encoding_aes_key: "value"
+	pico:
+	  token: "value"
+	irc:
+	  password: "value"
+	  nickserv_password: "value"
+	  sasl_password: "value"
 
 ## Web Tool API Keys
-- ref:web.brave.api_key
-- ref:web.tavily.api_key
-- ref:web.perplexity.api_key
-- ref:web.glm_search.api_key
 
-**Note:**
-- Brave, Tavily, Perplexity: Use `api_keys` (array) format in .security.yml
-- GLMSearch: Use `api_key` (single string) format in .security.yml
+**Brave, Tavily, Perplexity:**
+```yaml
+web:
+
+	brave:
+	  api_keys:
+	    - "BSA-key-1"
+	    - "BSA-key-2"
+	tavily:
+	  api_keys:
+	    - "tvly-key"
+	perplexity:
+	  api_keys:
+	    - "pplx-key"
+
+```
+Use `api_keys` (plural) array format.
+
+**GLMSearch, BaiduSearch:**
+```yaml
+web:
+
+	glm_search:
+	  api_key: "your-glm-key"
+	baidu_search:
+	  api_key: "your-baidu-key"
+
+```
+Use `api_key` (singular) single string format.
 
 ## Skills Registry Tokens
-- ref:skills.github.token
-- ref:skills.clawhub.auth_token
+
+```yaml
+skills:
+
+	github:
+	  token: "value"
+	clawhub:
+	  auth_token: "value"
+
+```
 
 # Backward Compatibility
 
@@ -191,14 +293,14 @@ You can still use direct values in config.json if needed:
 	      "model_name": "local-model",
 	      "model": "ollama/llama3",
 	      "api_base": "http://localhost:11434/v1",
-	      "api_key": "ollama"  // Direct value (no reference)
+	      "api_key": "ollama"  // Direct value (works fine)
 	    }
 	  ]
 	}
 
 ```
 
-You can also mix references and direct values:
+You can also mix security values and direct values:
 
 ```json
 
@@ -206,16 +308,23 @@ You can also mix references and direct values:
 	  "model_list": [
 	    {
 	      "model_name": "cloud-model",
-	      "api_key": "ref:model_list.cloud-model.api_key"  // From .security.yml
+	      // api_key loaded from .security.yml
 	    },
 	    {
 	      "model_name": "local-model",
+	      "model": "ollama/llama3",
+	      "api_base": "http://localhost:11434/v1",
 	      "api_key": "ollama"  // Direct value
 	    }
 	  ]
 	}
 
 ```
+
+**Priority Order:**
+1. Environment variables (highest priority)
+2. .security.yml values
+3. config.json direct values (lowest priority)
 
 # Migration from Old Config
 
@@ -224,7 +333,7 @@ You can also mix references and direct values:
 cp ~/.picoclaw/config.json ~/.picoclaw/config.json.backup
 ```
 
-## Step 2: Copy the example security file
+## Step 2: Create .security.yml
 ```bash
 cp security.example.yml ~/.picoclaw/.security.yml
 ```
@@ -232,10 +341,19 @@ cp security.example.yml ~/.picoclaw/.security.yml
 ## Step 3: Fill in your API keys
 Edit ~/.picoclaw/.security.yml and replace placeholders with your actual keys.
 
-## Step 4: Update config.json references
-Replace sensitive values in ~/.picoclaw/config.json with ref: references.
+## Step 4: Simplify config.json (Recommended)
+Remove sensitive fields from ~/.picoclaw/config.json:
+- `api_key` fields from model_list entries
+- `token` fields from channels
+- `api_key` fields from tools.web
+- `token`/`auth_token` fields from tools.skills
 
-## Step 5: Test
+## Step 5: Set permissions
+```bash
+chmod 600 ~/.picoclaw/.security.yml
+```
+
+## Step 6: Test
 ```bash
 picoclaw --version
 ```
@@ -249,9 +367,11 @@ rm ~/.picoclaw/config.json.backup
 
 ## Multiple API Keys (Load Balancing & Failover)
 
-You can configure multiple API keys for both models and web tools to enable:
+You can configure multiple API keys for models and web tools to enable:
 - **Load balancing**: Requests are distributed across multiple keys
 - **Failover**: If a key fails, the system automatically switches to another key
+- **Rate limit management**: Distribute usage across multiple keys
+- **High availability**: Reduce downtime during API provider issues
 
 ### Example: Model with Multiple Keys
 
@@ -275,7 +395,7 @@ model_list:
 	    {
 	      "model_name": "gpt-5.4",
 	      "model": "openai/gpt-5.4",
-	      "api_key": "ref:model_list.gpt-5.4.api_key"
+	      "api_base": "https://api.openai.com/v1"
 	    }
 	  ]
 	}
@@ -307,8 +427,13 @@ web:
 	  "tools": {
 	    "web": {
 	      "brave": {
-	        "enabled": true,
-	        "api_key": "ref:web.brave.api_key"
+	        "enabled": true
+	      },
+	      "tavily": {
+	        "enabled": true
+	      },
+	      "glm_search": {
+	        "enabled": true
 	      }
 	    }
 	  }
@@ -316,9 +441,9 @@ web:
 
 ```
 
-### Single Key
+## Single Key Format
 
-Use array format with one element:
+**Models, Brave, Tavily, Perplexity:**
 ```yaml
 model_list:
 
@@ -328,36 +453,32 @@ model_list:
 
 ```
 
-### Multiple Keys (Load Balancing & Failover)
-
-Use array format with multiple elements:
+**GLMSearch, BaiduSearch:**
 ```yaml
-model_list:
+web:
 
-	gpt-5.4:
-	  api_keys:
-	    - "sk-proj-key-1"
-	    - "sk-proj-key-2"
-	    - "sk-proj-key-3"
+	glm_search:
+	  api_key: "your-glm-key"  # Single key (not array)
 
 ```
 
-**Important:** All model keys in .security.yml must use the `api_keys` (plural) array format.
-The single `api_key` (singular) format is NOT supported for models.
-
-### Model Index Matching
+## Model Name Matching
 
 The system supports intelligent model name matching in .security.yml:
 
-**Example 1: Exact Match**
-```yaml
-# config.json
+### Example 1: Exact Match
+
+**config.json:**
+```json
 
 	{
 	  "model_name": "gpt-5.4:0"
 	}
 
-# .security.yml (exact match with index)
+```
+
+**.security.yml (exact match with index):**
+```yaml
 model_list:
 
 	gpt-5.4:0:
@@ -365,26 +486,30 @@ model_list:
 
 ```
 
-**Example 2: Base Name Match**
-```yaml
-# config.json
+### Example 2: Base Name Match
+
+**config.json:**
+```json
 
 	{
 	  "model_name": "gpt-5.4:0"
 	}
 
-# .security.yml (base name without index)
+```
+
+**.security.yml (base name without index):**
+```yaml
 model_list:
 
 	gpt-5.4:
-	  api_keys: ["key-1"]
+	  api_keys: ["key-1", "key-2"]
 
 ```
 
 Both methods work. The base name match allows you to use simpler keys in .security.yml
 even when your config uses indexed model names for load balancing.
 
-### Security File Permissions
+## Security File Permissions
 
 The security file should have restricted permissions:
 
@@ -397,26 +522,64 @@ This ensures only the owner can read and write the file.
 # Security Best Practices
 
 1. Never commit .security.yml to version control
-2. Set file permissions: chmod 600 ~/.picoclaw/.security.yml
-3. Use different keys for different environments
-4. Rotate keys regularly and update .security.yml
-5. Encrypt backups containing .security.yml
+2. Add .security.yml to your .gitignore file
+3. Set file permissions: chmod 600 ~/.picoclaw/.security.yml
+4. Use different keys for different environments (dev, staging, production)
+5. Rotate keys regularly and update .security.yml
+6. Encrypt backups containing .security.yml
+7. Review access regularly
+
+# Environment Variables
+
+You can override any security value using environment variables:
+
+```bash
+# Channels
+export PICOCLAW_CHANNELS_TELEGRAM_TOKEN="token-from-env"
+export PICOCLAW_CHANNELS_DISCORD_TOKEN="discord-token-from-env"
+
+# Web Tools
+export PICOCLAW_TOOLS_WEB_BRAVE_API_KEY="brave-key-from-env"
+export PICOCLAW_TOOLS_WEB_BAIDU_API_KEY="baidu-key-from-env"
+
+# Skills
+export PICOCLAW_TOOLS_SKILLS_GITHUB_TOKEN="github-token-from-env"
+```
+
+Environment variables have the highest priority and will override both config.json
+and .security.yml values.
 
 # Troubleshooting
+
+## Error: "failed to load security config"
+- Ensure .security.yml exists in the same directory as config.json
+- Check YAML syntax is valid (use a YAML validator)
+- Verify file permissions allow reading
 
 ## Error: "model security entry not found"
 - Check that the model name in config.json matches exactly in .security.yml
 - Verify the model_list section exists in .security.yml
+- For indexed names (e.g., "gpt-5.4:0"), check both exact match and base name match
+- Ensure the YAML structure is correct (proper indentation)
 
-## Error: "failed to load security config"
-- Ensure .security.yml exists in the same directory as config.json
-- Check YAML syntax is valid
-- Verify file permissions allow reading
+## Multiple API Keys Not Working
+- Ensure you're using `api_keys` (plural) in .security.yml for models and web tools (except GLMSearch/BaiduSearch)
+- Check that the array format is correct in YAML (proper indentation with dashes)
+- Remember: Models, Brave, Tavily, Perplexity MUST use `api_keys` (array format)
+- GLMSearch and BaiduSearch MUST use `api_key` (single string format)
 
-## Error: "unknown reference path"
-- Verify the reference format is correct
-- Check the path structure matches the examples above
-- Ensure all required sections exist in .security.yml
+## Keys Not Being Applied
+- Check that .security.yml is in the same directory as config.json
+- Verify the file permissions allow reading (chmod 600 ~/.picoclaw/.security.yml)
+- Ensure the YAML structure matches the expected format
+- Check for typos in field names (case-sensitive)
+- Verify the model/channel names match exactly (case-sensitive)
+
+## Load Balancing/Failover Issues
+- Verify all API keys in the api_keys array are valid
+- Check that all keys have the same rate limits and permissions
+- Monitor logs to see which keys are being used and failing
+- Ensure the api_keys array is properly formatted in YAML
 */
 package config
 
