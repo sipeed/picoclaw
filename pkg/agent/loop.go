@@ -1683,10 +1683,19 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.recordPersistedMessage(rootMsg)
 	}
 
+	currentTurnResolved := resolveMediaRefs([]providers.Message{
+		{Role: "user", Media: append([]string(nil), ts.media...)},
+	}, al.mediaStore, maxMediaSize)
+	var currentTurnMedia []string
+	if len(currentTurnResolved) > 0 {
+		currentTurnMedia = currentTurnResolved[0].Media
+	}
+
 	activeCandidates, activeModel, usedLight, useImageFallback := al.selectCandidates(
 		ts.agent,
 		ts.userMessage,
 		messages,
+		currentTurnMedia,
 	)
 	activeProvider := ts.agent.Provider
 	if usedLight && ts.agent.LightProvider != nil {
@@ -2764,8 +2773,9 @@ func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
 	userMsg string,
 	history []providers.Message,
+	currentTurnMedia []string,
 ) (candidates []providers.FallbackCandidate, model string, usedLight bool, useImageFallback bool) {
-	if hasImageMedia(history) && len(agent.ImageCandidates) > 0 {
+	if hasImageMediaRefs(currentTurnMedia) && len(agent.ImageCandidates) > 0 {
 		logger.InfoCF("agent", "Image model selected",
 			map[string]any{
 				"agent_id":    agent.ID,
@@ -2798,12 +2808,10 @@ func (al *AgentLoop) selectCandidates(
 	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel()), true, false
 }
 
-func hasImageMedia(messages []providers.Message) bool {
-	for _, msg := range messages {
-		for _, ref := range msg.Media {
-			if strings.HasPrefix(strings.ToLower(ref), "data:image/") {
-				return true
-			}
+func hasImageMediaRefs(mediaRefs []string) bool {
+	for _, ref := range mediaRefs {
+		if strings.HasPrefix(strings.ToLower(ref), "data:image/") {
+			return true
 		}
 	}
 	return false
