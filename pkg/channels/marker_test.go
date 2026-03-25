@@ -79,3 +79,63 @@ func TestSplitByMarker_EmptyInput(t *testing.T) {
 		t.Errorf("Expected empty slice for empty input, got %d chunks", len(chunks))
 	}
 }
+
+// TestMarkerAndLengthSplitIntegration tests that SplitByMarker and SplitMessage work together correctly.
+// Marker splitting happens first (per-agent config), then length splitting happens (per-channel config).
+func TestMarkerAndLengthSplitIntegration(t *testing.T) {
+	maxLen := 10
+
+	// Original content: "Short <|[SPLIT]|> ThisIsAVeryLongString"
+	content := "Short <|[SPLIT]|> ThisIsAVeryLongString"
+	markerChunks := SplitByMarker(content)
+
+	// Step 1: Marker split should give us 2 chunks
+	if len(markerChunks) != 2 {
+		t.Fatalf("Expected 2 marker chunks, got %d: %q", len(markerChunks), markerChunks)
+	}
+
+	// Step 2: Length split should be applied to each marker chunk
+	var finalChunks []string
+	for _, chunk := range markerChunks {
+		if len([]rune(chunk)) > maxLen {
+			lengthChunks := SplitMessage(chunk, maxLen)
+			finalChunks = append(finalChunks, lengthChunks...)
+		} else {
+			finalChunks = append(finalChunks, chunk)
+		}
+	}
+
+	// "Short" is 6 chars, within limit
+	// "ThisIsAVeryLongString" is 22 chars, should be split into multiple chunks
+	// SplitMessage with maxLen=10 splits: "ThisIsAVeryLongString" -> ["ThisI", "sAVer", "yLong", "String"] (5 chunks)
+	if len(finalChunks) != 5 {
+		t.Errorf("Expected 5 final chunks, got %d: %q", len(finalChunks), finalChunks)
+	}
+
+	// Verify first chunk is unchanged
+	if finalChunks[0] != "Short" {
+		t.Errorf("First chunk should be 'Short', got %q", finalChunks[0])
+	}
+
+	// Verify all length-split chunks are within limit
+	for i, chunk := range finalChunks[1:] {
+		if len([]rune(chunk)) > maxLen {
+			t.Errorf("Chunk %d exceeds maxLen: %q (%d chars)", i+1, chunk, len([]rune(chunk)))
+		}
+	}
+}
+
+// TestMarkerSplitPreservesCodeBlockIntegrity tests that marker split preserves code block boundaries
+func TestMarkerSplitPreservesCodeBlockIntegrity(t *testing.T) {
+	content := "Hello <|[SPLIT]|>```go\npackage main\n```<|[SPLIT]|>World"
+	chunks := SplitByMarker(content)
+
+	if len(chunks) != 3 {
+		t.Fatalf("Expected 3 chunks, got %d: %q", len(chunks), chunks)
+	}
+
+	// Verify code block is intact in middle chunk
+	if chunks[1] != "```go\npackage main\n```" {
+		t.Errorf("Code block not preserved correctly: %q", chunks[1])
+	}
+}
