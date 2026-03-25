@@ -2817,3 +2817,116 @@ func TestFilterClientWebSearch_EmptyInput(t *testing.T) {
 		t.Fatalf("len(result) = %d, want 0", len(result))
 	}
 }
+
+func TestProcessHeartbeat_SkipsWhenAgentBusy(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	_ = cfg
+	defer cleanup()
+
+	// Simulate an active turn by registering a turnState via the helper
+	busyTS := &turnState{
+		sessionKey: "user-chat",
+		agentID:    "main",
+		phase:      TurnPhaseRunning,
+		startedAt:  time.Now(),
+	}
+	al.registerActiveTurn(busyTS)
+	defer al.clearActiveTurn(busyTS)
+
+	resp, err := al.ProcessHeartbeat(context.Background(), "heartbeat prompt", "telegram", "chat123")
+	if err != nil {
+		t.Fatalf("ProcessHeartbeat returned error: %v", err)
+	}
+	if resp != "HEARTBEAT_SKIPPED" {
+		t.Fatalf("expected HEARTBEAT_SKIPPED when busy, got %q", resp)
+	}
+}
+
+func TestProcessHeartbeat_RunsWhenIdle(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	_ = cfg
+	defer cleanup()
+
+	// Verify no active turns exist
+	if ts := al.getAnyActiveTurnState(); ts != nil {
+		t.Fatal("expected no active turns in fresh AgentLoop")
+	}
+
+	// Given the mock provider, the heartbeat call should succeed with a fixed response
+	// (which also implies it did not skip with HEARTBEAT_SKIPPED).
+	resp, err := al.ProcessHeartbeat(context.Background(), "heartbeat prompt", "cli", "direct")
+	if err != nil {
+		t.Fatalf("expected no error from ProcessHeartbeat when idle, got: %v", err)
+	}
+	if resp == "HEARTBEAT_SKIPPED" {
+		t.Fatal("ProcessHeartbeat skipped despite no active turns")
+	}
+	if resp != "Mock response" {
+		t.Fatalf("expected mock provider response %q, got %q", "Mock response", resp)
+	}
+}
+
+func TestProcessHeartbeat_SkipsForAnyActiveSession(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	_ = cfg
+	defer cleanup()
+
+	// Register multiple active turns to cover the sync.Map iteration
+	for _, key := range []string{"session-a", "session-b"} {
+		ts := &turnState{
+			sessionKey: key,
+			agentID:    "main",
+			phase:      TurnPhaseRunning,
+			startedAt:  time.Now(),
+		}
+		al.registerActiveTurn(ts)
+		defer al.clearActiveTurn(ts)
+	}
+
+	resp, err := al.ProcessHeartbeat(context.Background(), "heartbeat prompt", "telegram", "chat123")
+	if err != nil {
+		t.Fatalf("ProcessHeartbeat returned error: %v", err)
+	}
+	if resp != "HEARTBEAT_SKIPPED" {
+		t.Fatalf("expected HEARTBEAT_SKIPPED when agent has active turns, got %q", resp)
+	}
+}
+
+func TestProcessHeartbeat_ProceedsAfterTurnClears(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	_ = cfg
+	defer cleanup()
+
+	// Simulate a turn that starts and then completes
+	busyTS := &turnState{
+		sessionKey: "user-chat",
+		agentID:    "main",
+		phase:      TurnPhaseRunning,
+		startedAt:  time.Now(),
+	}
+	al.registerActiveTurn(busyTS)
+
+	// First call — should skip
+	resp, err := al.ProcessHeartbeat(context.Background(), "heartbeat prompt", "cli", "direct")
+	if err != nil {
+		t.Fatalf("first ProcessHeartbeat returned error: %v", err)
+	}
+	if resp != "HEARTBEAT_SKIPPED" {
+		t.Fatalf("expected skip on first call, got %q", resp)
+	}
+
+	// Clear the turn (simulating user conversation ending)
+	al.clearActiveTurn(busyTS)
+
+	// Second call — should proceed (not skip)
+	resp2, err2 := al.ProcessHeartbeat(context.Background(), "heartbeat prompt", "cli", "direct")
+	if err2 != nil {
+		t.Fatalf("second ProcessHeartbeat returned error: %v", err2)
+	}
+	if resp2 == "HEARTBEAT_SKIPPED" {
+		t.Fatal("ProcessHeartbeat still skipping after turn cleared")
+	}
+	if resp2 != "Mock response" {
+		t.Fatalf("expected heartbeat to proceed and return %q, got %q", "Mock response", resp2)
+	}
+}

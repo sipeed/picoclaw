@@ -1227,10 +1227,20 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 
 // ProcessHeartbeat processes a heartbeat request without session history.
 // Each heartbeat is independent and doesn't accumulate context.
+// If the agent is already processing another turn, the heartbeat is skipped.
 func (al *AgentLoop) ProcessHeartbeat(
 	ctx context.Context,
 	content, channel, chatID string,
 ) (string, error) {
+	// Skip heartbeat if the agent is busy with another turn
+	if ts := al.getAnyActiveTurnState(); ts != nil {
+		logger.InfoCF("heartbeat", "Skipping heartbeat — agent is busy",
+			map[string]any{
+				"session_key": ts.sessionKey,
+			})
+		return "HEARTBEAT_SKIPPED", nil
+	}
+
 	if err := al.ensureHooksInitialized(ctx); err != nil {
 		return "", err
 	}
