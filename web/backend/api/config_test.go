@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -177,7 +178,7 @@ func TestValidateConfig_RejectsUnknownDMScope(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("validateConfig() errors = nil, want dm_scope validation error")
 	}
-	if !bytes.Contains([]byte(errs[0]), []byte("session.dm_scope")) {
+	if !strings.Contains(errs[0], "session.dm_scope") {
 		t.Fatalf("validateConfig() first error = %q, want dm_scope validation", errs[0])
 	}
 }

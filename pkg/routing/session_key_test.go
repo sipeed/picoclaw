@@ -30,7 +30,12 @@ func TestNormalizeDMScope(t *testing.T) {
 		{name: "per peer", input: "per-peer", want: DMScopePerPeer, ok: true},
 		{name: "per channel peer", input: "per-channel-peer", want: DMScopePerChannelPeer, ok: true},
 		{name: "per channel alias", input: "per-channel", want: DMScopePerChannelPeer, ok: true},
-		{name: "per account channel peer", input: "per-account-channel-peer", want: DMScopePerAccountChannelPeer, ok: true},
+		{
+			name:  "per account channel peer",
+			input: "per-account-channel-peer",
+			want:  DMScopePerAccountChannelPeer,
+			ok:    true,
+		},
 		{name: "unknown", input: "shared", want: "", ok: false},
 	}
 
