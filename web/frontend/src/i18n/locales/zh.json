@@ -528,7 +528,7 @@
       "routing_light_model": "轻量模型",
       "routing_light_model_hint": "用于简单任务的模型名称（来自模型列表）。",
       "routing_threshold": "复杂度阈值",
-      "routing_threshold_hint": "复杂度评分阈值（0–1）。评分高于此值的请求使用主模型。",
+      "routing_threshold_hint": "复杂度评分阈值（0–1]。留空或设为 0 使用系统默认值（当前为 0.35）。评分高于此值的请求使用主模型。",
       "filter_sensitive_data": "过滤敏感数据",
       "filter_sensitive_data_hint": "自动过滤工具返回结果中的 API 密钥、令牌和机密信息，避免发送给 LLM。",
       "filter_min_length": "过滤最小内容长度",
