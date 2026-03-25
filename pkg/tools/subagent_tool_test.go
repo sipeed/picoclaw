@@ -324,3 +324,27 @@ func TestSubagentTool_ForUserTruncation(t *testing.T) {
 		t.Error("ForLLM should contain reference to original task")
 	}
 }
+
+func TestSubagentTool_Execute_PassesManagerToolsToSubTurn(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager.RegisterTool(&managerSnapshotTool{name: "snapshot_tool"})
+
+	tool := NewSubagentTool(manager)
+	spawner := &recordingSpawner{}
+	tool.SetSpawner(spawner)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"task": "inspect tools",
+	})
+	if result == nil {
+		t.Fatal("Result should not be nil")
+	}
+	if result.IsError {
+		t.Fatalf("Expected success, got error: %s", result.ForLLM)
+	}
+
+	if len(spawner.toolNames) != 1 || spawner.toolNames[0] != "snapshot_tool" {
+		t.Fatalf("expected tool snapshot [snapshot_tool], got %v", spawner.toolNames)
+	}
+}

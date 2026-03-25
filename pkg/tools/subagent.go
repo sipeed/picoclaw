@@ -115,6 +115,21 @@ func (sm *SubagentManager) RegisterTool(tool Tool) {
 	sm.tools.Register(tool)
 }
 
+func snapshotTools(toolsRegistry *ToolRegistry) []Tool {
+	if toolsRegistry == nil {
+		return nil
+	}
+
+	names := toolsRegistry.List()
+	snapshot := make([]Tool, 0, len(names))
+	for _, name := range names {
+		if tool, ok := toolsRegistry.Get(name); ok {
+			snapshot = append(snapshot, tool)
+		}
+	}
+	return snapshot
+}
+
 func (sm *SubagentManager) Spawn(
 	ctx context.Context,
 	task, label, agentID, originChannel, originChatID string,
@@ -322,6 +337,7 @@ type SubagentTool struct {
 	defaultModel string
 	maxTokens    int
 	temperature  float64
+	tools        *ToolRegistry
 }
 
 func NewSubagentTool(manager *SubagentManager) *SubagentTool {
@@ -332,6 +348,7 @@ func NewSubagentTool(manager *SubagentManager) *SubagentTool {
 		defaultModel: manager.defaultModel,
 		maxTokens:    manager.maxTokens,
 		temperature:  manager.temperature,
+		tools:        manager.tools,
 	}
 }
 
@@ -395,7 +412,7 @@ Task: %s`,
 	if t.spawner != nil {
 		result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
 			Model:        t.defaultModel,
-			Tools:        nil, // Will inherit from parent via context
+			Tools:        snapshotTools(t.tools),
 			SystemPrompt: systemPrompt,
 			MaxTokens:    t.maxTokens,
 			Temperature:  t.temperature,

@@ -11,6 +11,7 @@ type SpawnTool struct {
 	defaultModel   string
 	maxTokens      int
 	temperature    float64
+	tools          *ToolRegistry
 	allowlistCheck func(targetAgentID string) bool
 }
 
@@ -25,6 +26,7 @@ func NewSpawnTool(manager *SubagentManager) *SpawnTool {
 		defaultModel: manager.defaultModel,
 		maxTokens:    manager.maxTokens,
 		temperature:  manager.temperature,
+		tools:        manager.tools,
 	}
 }
 
@@ -124,7 +126,7 @@ Task: %s`,
 		go func() {
 			result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
 				Model:        t.defaultModel,
-				Tools:        nil, // Will inherit from parent via context
+				Tools:        snapshotTools(t.tools),
 				SystemPrompt: systemPrompt,
 				MaxTokens:    t.maxTokens,
 				Temperature:  t.temperature,

@@ -933,6 +933,89 @@ func (m *simpleMockProviderAPI) GetDefaultModel() string {
 	return "gpt-4o-mini"
 }
 
+type toolCaptureProvider struct {
+	lastToolNames []string
+}
+
+func (p *toolCaptureProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	toolDefs []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
+	p.lastToolNames = p.lastToolNames[:0]
+	for _, td := range toolDefs {
+		p.lastToolNames = append(p.lastToolNames, td.Function.Name)
+	}
+	return &providers.LLMResponse{Content: "ok"}, nil
+}
+
+func (p *toolCaptureProvider) GetDefaultModel() string {
+	return "test-model"
+}
+
+type subturnProbeTool struct{}
+
+func (t *subturnProbeTool) Name() string { return "subturn_probe_tool" }
+
+func (t *subturnProbeTool) Description() string { return "subturn probe tool" }
+
+func (t *subturnProbeTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+	}
+}
+
+func (t *subturnProbeTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	return tools.SilentResult("ok")
+}
+
+func TestSpawnSubTurn_UsesExplicitConfigTools(t *testing.T) {
+	provider := &toolCaptureProvider{}
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         t.TempDir(),
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+
+	parentAgent := al.registry.GetDefaultAgent()
+	if parentAgent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	// Keep parent tools empty so child tools can only come from cfg.Tools.
+	parentAgent.Tools = tools.NewToolRegistry()
+	parent := &turnState{
+		ctx:            context.Background(),
+		turnID:         "parent-explicit-tools",
+		depth:          0,
+		pendingResults: make(chan *tools.ToolResult, 1),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+		session:        &ephemeralSessionStore{},
+		agent:          parentAgent,
+	}
+
+	_, err := spawnSubTurn(context.Background(), al, parent, SubTurnConfig{
+		Model:        "test-model",
+		SystemPrompt: "run task",
+		Tools:        []tools.Tool{&subturnProbeTool{}},
+	})
+	if err != nil {
+		t.Fatalf("spawnSubTurn returned error: %v", err)
+	}
+
+	if len(provider.lastToolNames) != 1 || provider.lastToolNames[0] != "subturn_probe_tool" {
+		t.Fatalf("expected explicit cfg tool to be sent, got %v", provider.lastToolNames)
+	}
+}
+
 // TestGetActiveTurn verifies that GetActiveTurn returns correct turn information
 func TestGetActiveTurn(t *testing.T) {
 	cfg := &config.Config{
