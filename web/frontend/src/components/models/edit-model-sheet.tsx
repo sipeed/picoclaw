@@ -33,6 +33,7 @@ interface EditForm {
   maxTokensField: string
   requestTimeout: string
   thinkingLevel: string
+  extraHeaders: string
   extraBody: string
 }
 
@@ -61,6 +62,7 @@ export function EditModelSheet({
     maxTokensField: "",
     requestTimeout: "",
     thinkingLevel: "",
+    extraHeaders: "",
     extraBody: "",
   })
   const [saving, setSaving] = useState(false)
@@ -82,6 +84,7 @@ export function EditModelSheet({
           ? String(model.request_timeout)
           : "",
         thinkingLevel: model.thinking_level ?? "",
+        extraHeaders: model.extra_headers ? JSON.stringify(model.extra_headers) : "",
         extraBody: model.extra_body
           ? JSON.stringify(model.extra_body, null, 2)
           : "",
@@ -97,6 +100,18 @@ export function EditModelSheet({
 
   const handleSave = async () => {
     if (!model) return
+    if (form.extraHeaders.trim()) {
+      try {
+        const parsed = JSON.parse(form.extraHeaders.trim())
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+          setError("Extra headers must be a valid JSON object")
+          return
+        }
+      } catch {
+        setError("Extra headers must be valid JSON format")
+        return
+      }
+    }
     setSaving(true)
     setError("")
     try {
@@ -115,6 +130,7 @@ export function EditModelSheet({
           ? Number(form.requestTimeout)
           : undefined,
         thinking_level: form.thinkingLevel || undefined,
+        extra_headers: form.extraHeaders.trim() ? JSON.parse(form.extraHeaders.trim()) : undefined,
         extra_body: form.extraBody.trim()
           ? JSON.parse(form.extraBody.trim())
           : {},
@@ -284,6 +300,13 @@ export function EditModelSheet({
               </Field>
 
               <Field
+                label={t("models.field.extraHeaders")}
+                hint={t("models.field.extraHeadersHint")}
+              >
+                <Input
+                  value={form.extraHeaders}
+                  onChange={setField("extraHeaders")}
+                  placeholder='{"X-My-Header": "value"}'
                 label={t("models.field.extraBody")}
                 hint={t("models.field.extraBodyHint")}
               >

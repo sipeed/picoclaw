@@ -35,6 +35,7 @@ interface AddForm {
   maxTokensField: string
   requestTimeout: string
   thinkingLevel: string
+  extraHeaders: string
   extraBody: string
 }
 
@@ -51,6 +52,7 @@ const EMPTY_ADD_FORM: AddForm = {
   maxTokensField: "",
   requestTimeout: "",
   thinkingLevel: "",
+  extraHeaders: "",
   extraBody: "",
 }
 
@@ -98,6 +100,16 @@ export function AddModelSheet({
       errors.modelName = t("models.add.errorDuplicateModelName")
     }
     if (!form.model.trim()) errors.model = t("models.add.errorRequired")
+    if (form.extraHeaders.trim()) {
+      try {
+        const parsed = JSON.parse(form.extraHeaders.trim())
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+          errors.extraHeaders = "Must be a valid JSON object"
+        }
+      } catch {
+        errors.extraHeaders = "Invalid JSON format"
+      }
+    }
     setFieldErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -132,6 +144,7 @@ export function AddModelSheet({
           ? Number(form.requestTimeout)
           : undefined,
         thinking_level: form.thinkingLevel.trim() || undefined,
+        extra_headers: form.extraHeaders.trim() ? JSON.parse(form.extraHeaders.trim()) : undefined,
         extra_body: form.extraBody.trim()
           ? JSON.parse(form.extraBody.trim())
           : undefined,
@@ -313,6 +326,18 @@ export function AddModelSheet({
               </Field>
 
               <Field
+                label={t("models.field.extraHeaders")}
+                hint={t("models.field.extraHeadersHint")}
+              >
+                <Input
+                  value={form.extraHeaders}
+                  onChange={setField("extraHeaders")}
+                  placeholder='{"X-My-Header": "value"}'
+                  aria-invalid={!!fieldErrors.extraHeaders}
+                />
+                {fieldErrors.extraHeaders && (
+                  <p className="text-destructive text-xs">{fieldErrors.extraHeaders}</p>
+                )}
                 label={t("models.field.extraBody")}
                 hint={t("models.field.extraBodyHint")}
               >
