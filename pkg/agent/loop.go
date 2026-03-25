@@ -460,7 +460,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				if target == nil {
 					cancelDrain()
 					if finalResponse != "" {
-						al.publishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, finalResponse)
+						al.publishResponseIfNeeded(ctx, msg.SessionKey, msg.Channel, msg.ChatID, finalResponse)
 					}
 					return
 				}
@@ -520,7 +520,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				}
 
 				if finalResponse != "" {
-					al.publishResponseIfNeeded(ctx, target.Channel, target.ChatID, finalResponse)
+					al.publishResponseIfNeeded(ctx, target.SessionKey, target.Channel, target.ChatID, finalResponse)
 				}
 			}()
 		default:
@@ -606,15 +606,14 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
-func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
+func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, sessionKey, channel, chatID, response string) {
 	if response == "" {
 		return
 	}
 
 	alreadySent := false
-	defaultAgent := al.GetRegistry().GetDefaultAgent()
-	if defaultAgent != nil {
-		if tool, ok := defaultAgent.Tools.Get("message"); ok {
+	if agent := al.agentForSession(sessionKey); agent != nil {
+		if tool, ok := agent.Tools.Get("message"); ok {
 			if mt, ok := tool.(*tools.MessageTool); ok {
 				alreadySent = mt.HasSentInRound()
 			}
@@ -1504,11 +1503,7 @@ func (al *AgentLoop) runAgentLoop(
 	}
 
 	if opts.SendResponse && result.finalContent != "" {
-		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-			Channel: opts.Channel,
-			ChatID:  opts.ChatID,
-			Content: result.finalContent,
-		})
+		al.publishResponseIfNeeded(ctx, opts.SessionKey, opts.Channel, opts.ChatID, result.finalContent)
 	}
 
 	if result.finalContent != "" {
