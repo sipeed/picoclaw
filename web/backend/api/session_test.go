@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -318,5 +319,171 @@ func TestHandleSessions_FiltersEmptyJSONLFiles(t *testing.T) {
 
 	if detailRec.Code != http.StatusNotFound {
 		t.Fatalf("detail status = %d, want %d, body=%s", detailRec.Code, http.StatusNotFound, detailRec.Body.String())
+	}
+}
+
+func TestHandleSessions_NonPicoJSONLStorage(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	nonPicoKey := "agent:main:slack:channel:C123456/1723456789.123456"
+	if err := store.AddFullMessage(nil, nonPicoKey, providers.Message{
+		Role:    "user",
+		Content: "slack user message",
+	}); err != nil {
+		t.Fatalf("AddFullMessage(user) error = %v", err)
+	}
+	if err := store.AddFullMessage(nil, nonPicoKey, providers.Message{
+		Role:    "assistant",
+		Content: "slack assistant message",
+	}); err != nil {
+		t.Fatalf("AddFullMessage(assistant) error = %v", err)
+	}
+	if err := store.SetSummary(nil, nonPicoKey, "Slack session summary"); err != nil {
+		t.Fatalf("SetSummary() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	listRec := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	mux.ServeHTTP(listRec, listReq)
+
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body=%s", listRec.Code, http.StatusOK, listRec.Body.String())
+	}
+
+	var items []sessionListItem
+	if err := json.Unmarshal(listRec.Body.Bytes(), &items); err != nil {
+		t.Fatalf("Unmarshal(list) error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
+	}
+	if items[0].ID != nonPicoKey {
+		t.Fatalf("items[0].ID = %q, want %q", items[0].ID, nonPicoKey)
+	}
+	if items[0].MessageCount != 2 {
+		t.Fatalf("items[0].MessageCount = %d, want 2", items[0].MessageCount)
+	}
+
+	escapedKey := url.PathEscape(nonPicoKey)
+
+	detailRec := httptest.NewRecorder()
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/"+escapedKey, nil)
+	mux.ServeHTTP(detailRec, detailReq)
+
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d, body=%s", detailRec.Code, http.StatusOK, detailRec.Body.String())
+	}
+
+	var detail struct {
+		ID       string `json:"id"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(detailRec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("Unmarshal(detail) error = %v", err)
+	}
+	if detail.ID != nonPicoKey {
+		t.Fatalf("detail.ID = %q, want %q", detail.ID, nonPicoKey)
+	}
+	if len(detail.Messages) != 2 {
+		t.Fatalf("len(detail.Messages) = %d, want 2", len(detail.Messages))
+	}
+
+	deleteRec := httptest.NewRecorder()
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/sessions/"+escapedKey, nil)
+	mux.ServeHTTP(deleteRec, deleteReq)
+
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d, body=%s", deleteRec.Code, http.StatusNoContent, deleteRec.Body.String())
+	}
+
+	base := filepath.Join(dir, sanitizeSessionKey(nonPicoKey))
+	for _, path := range []string{base + ".jsonl", base + ".meta.json"} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be removed, stat err = %v", path, err)
+		}
+	}
+}
+
+func TestHandleListSessions_NonPicoLegacyJSONStorage(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	nonPicoKey := "agent:main:discord:channel:guild-42/thread-7"
+	legacyPath := filepath.Join(dir, sanitizeSessionKey(nonPicoKey)+".json")
+
+	legacySession := sessionFile{
+		Key: nonPicoKey,
+		Messages: []providers.Message{
+			{Role: "user", Content: "legacy discord user"},
+			{Role: "assistant", Content: "legacy discord assistant"},
+		},
+		Summary: "Legacy discord session",
+	}
+	data, err := json.Marshal(legacySession)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(legacyPath, data, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var items []sessionListItem
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
+	}
+	if items[0].ID != nonPicoKey {
+		t.Fatalf("items[0].ID = %q, want %q", items[0].ID, nonPicoKey)
+	}
+
+	escapedKey := url.PathEscape(nonPicoKey)
+
+	detailRec := httptest.NewRecorder()
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/"+escapedKey, nil)
+	mux.ServeHTTP(detailRec, detailReq)
+
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d, body=%s", detailRec.Code, http.StatusOK, detailRec.Body.String())
+	}
+
+	deleteRec := httptest.NewRecorder()
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/sessions/"+escapedKey, nil)
+	mux.ServeHTTP(deleteRec, deleteReq)
+
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d, body=%s", deleteRec.Code, http.StatusNoContent, deleteRec.Body.String())
+	}
+
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("expected %s to be removed, stat err = %v", legacyPath, err)
 	}
 }

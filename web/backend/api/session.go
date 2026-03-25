@@ -56,7 +56,7 @@ type sessionMetaFile struct {
 //
 //	agent:main:pico:direct:pico:<session-uuid>
 //
-// The sanitized filename replaces ':' with '_', so on disk it becomes:
+// The sanitized filename replaces ':', '/' and '\' with '_', so on disk it becomes:
 //
 //	agent_main_pico_direct_pico_<session-uuid>.json
 const (
@@ -83,11 +83,44 @@ func extractPicoSessionIDFromSanitizedKey(key string) (string, bool) {
 }
 
 func sanitizeSessionKey(key string) string {
-	return strings.ReplaceAll(key, ":", "_")
+	key = strings.ReplaceAll(key, ":", "_")
+	key = strings.ReplaceAll(key, "/", "_")
+	return strings.ReplaceAll(key, "\\", "_")
 }
 
-func (h *Handler) readLegacySession(dir, sessionID string) (sessionFile, error) {
-	path := filepath.Join(dir, sanitizeSessionKey(picoSessionPrefix+sessionID)+".json")
+// sessionIDFromKey preserves the short Pico session IDs already used by the
+// web UI, but returns the full key for every other channel so list/detail/delete
+// can round-trip the same identifier.
+func sessionIDFromKey(key string) string {
+	if id, ok := extractPicoSessionID(key); ok {
+		return id
+	}
+	return key
+}
+
+// resolveSessionKey keeps existing Pico detail/delete compatibility for legacy
+// short IDs, while allowing non-Pico sessions to pass their full session key.
+func resolveSessionKey(sessionID string) string {
+	if strings.HasPrefix(sessionID, "agent:") {
+		return sessionID
+	}
+	return picoSessionPrefix + sessionID
+}
+
+func (h *Handler) resolveSessionKeyFromSanitizedBase(dir, base string) (string, bool) {
+	metaPath := filepath.Join(dir, base+".meta.json")
+	meta, err := h.readSessionMeta(metaPath, "")
+	if err == nil && strings.TrimSpace(meta.Key) != "" {
+		return meta.Key, true
+	}
+	if id, ok := extractPicoSessionIDFromSanitizedKey(base); ok {
+		return picoSessionPrefix + id, true
+	}
+	return "", false
+}
+
+func (h *Handler) readLegacySessionByKey(dir, sessionKey string) (sessionFile, error) {
+	path := filepath.Join(dir, sanitizeSessionKey(sessionKey)+".json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return sessionFile{}, err
@@ -154,8 +187,7 @@ func (h *Handler) readSessionMessages(path string, skip int) ([]providers.Messag
 	return msgs, nil
 }
 
-func (h *Handler) readJSONLSession(dir, sessionID string) (sessionFile, error) {
-	sessionKey := picoSessionPrefix + sessionID
+func (h *Handler) readJSONLSessionByKey(dir, sessionKey string) (sessionFile, error) {
 	base := filepath.Join(dir, sanitizeSessionKey(sessionKey))
 	jsonlPath := base + ".jsonl"
 	metaPath := base + ".meta.json"
@@ -190,6 +222,14 @@ func (h *Handler) readJSONLSession(dir, sessionID string) (sessionFile, error) {
 		Created:  created,
 		Updated:  updated,
 	}, nil
+}
+
+func (h *Handler) readLegacySession(dir, sessionID string) (sessionFile, error) {
+	return h.readLegacySessionByKey(dir, resolveSessionKey(sessionID))
+}
+
+func (h *Handler) readJSONLSession(dir, sessionID string) (sessionFile, error) {
+	return h.readJSONLSessionByKey(dir, resolveSessionKey(sessionID))
 }
 
 func buildSessionListItem(sessionID string, sess sessionFile) sessionListItem {
@@ -310,12 +350,21 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 
 		switch {
 		case strings.HasSuffix(name, ".jsonl"):
-			sessionID, ok = extractPicoSessionIDFromSanitizedKey(strings.TrimSuffix(name, ".jsonl"))
-			if !ok {
+			base := strings.TrimSuffix(name, ".jsonl")
+			sessionKey, found := h.resolveSessionKeyFromSanitizedBase(dir, base)
+			if !found {
 				continue
 			}
-			sess, loadErr = h.readJSONLSession(dir, sessionID)
+			sess, loadErr = h.readJSONLSessionByKey(dir, sessionKey)
 			if loadErr == nil && isEmptySession(sess) {
+				continue
+			}
+			sessionID = sessionIDFromKey(sess.Key)
+			if sessionID == "" {
+				sessionID = sessionIDFromKey(sessionKey)
+			}
+			ok = sessionID != ""
+			if !ok {
 				continue
 			}
 		case strings.HasSuffix(name, ".meta.json"):
@@ -323,11 +372,8 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		case filepath.Ext(name) == ".json":
 			base := strings.TrimSuffix(name, ".json")
 			if _, statErr := os.Stat(filepath.Join(dir, base+".jsonl")); statErr == nil {
-				if jsonlSessionID, found := extractPicoSessionIDFromSanitizedKey(base); found {
-					if jsonlSess, jsonlErr := h.readJSONLSession(
-						dir,
-						jsonlSessionID,
-					); jsonlErr == nil &&
+				if sessionKey, found := h.resolveSessionKeyFromSanitizedBase(dir, base); found {
+					if jsonlSess, jsonlErr := h.readJSONLSessionByKey(dir, sessionKey); jsonlErr == nil &&
 						!isEmptySession(jsonlSess) {
 						continue
 					}
@@ -343,7 +389,8 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 			if isEmptySession(sess) {
 				continue
 			}
-			sessionID, ok = extractPicoSessionID(sess.Key)
+			sessionID = sessionIDFromKey(sess.Key)
+			ok = sessionID != ""
 			if !ok {
 				continue
 			}
@@ -422,7 +469,7 @@ func (h *Handler) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			sess, err = h.readLegacySession(dir, sessionID)
+			sess, err = h.readLegacySessionByKey(dir, resolveSessionKey(sessionID))
 			if err == nil && isEmptySession(sess) {
 				err = os.ErrNotExist
 			}
@@ -480,7 +527,8 @@ func (h *Handler) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := filepath.Join(dir, sanitizeSessionKey(picoSessionPrefix+sessionID))
+	sessionKey := resolveSessionKey(sessionID)
+	base := filepath.Join(dir, sanitizeSessionKey(sessionKey))
 	jsonlPath := base + ".jsonl"
 	metaPath := base + ".meta.json"
 	legacyPath := base + ".json"
