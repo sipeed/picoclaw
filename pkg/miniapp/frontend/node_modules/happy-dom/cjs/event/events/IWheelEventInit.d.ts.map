@@ -1,1 +1,0 @@
-{"version":3,"file":"IWheelEventInit.d.ts","sourceRoot":"","sources":["../../../src/event/events/IWheelEventInit.ts"],"names":[],"mappings":"AAAA,OAAO,YAAY,MAAM,oBAAoB,CAAC;AAE9C,MAAM,CAAC,OAAO,WAAW,eAAgB,SAAQ,YAAY;IAC5D,MAAM,CAAC,EAAE,MAAM,CAAC;IAChB,MAAM,CAAC,EAAE,MAAM,CAAC;IAChB,MAAM,CAAC,EAAE,MAAM,CAAC;IAChB,SAAS,CAAC,EAAE,MAAM,CAAC;CACnB"}

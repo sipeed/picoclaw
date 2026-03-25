@@ -1,1 +1,0 @@
-{"version":3,"file":"IResponseInit.d.ts","sourceRoot":"","sources":["../../../src/fetch/types/IResponseInit.ts"],"names":[],"mappings":"AAAA,OAAO,YAAY,MAAM,mBAAmB,CAAC;AAE7C;;GAEG;AACH,MAAM,CAAC,OAAO,WAAW,aAAa;IACrC,OAAO,CAAC,EAAE,YAAY,GAAG,SAAS,CAAC;IACnC,MAAM,CAAC,EAAE,MAAM,GAAG,SAAS,CAAC;IAC5B,UAAU,CAAC,EAAE,MAAM,GAAG,SAAS,CAAC;CAChC"}

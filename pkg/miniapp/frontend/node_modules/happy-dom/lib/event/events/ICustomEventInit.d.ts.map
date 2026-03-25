@@ -1,1 +1,0 @@
-{"version":3,"file":"ICustomEventInit.d.ts","sourceRoot":"","sources":["../../../src/event/events/ICustomEventInit.ts"],"names":[],"mappings":"AAAA,OAAO,UAAU,MAAM,kBAAkB,CAAC;AAE1C,MAAM,CAAC,OAAO,WAAW,gBAAiB,SAAQ,UAAU;IAC3D,MAAM,CAAC,EAAE,MAAM,GAAG,IAAI,CAAC;CACvB"}

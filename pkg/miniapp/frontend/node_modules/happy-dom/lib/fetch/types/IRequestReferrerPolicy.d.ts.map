@@ -1,1 +1,0 @@
-{"version":3,"file":"IRequestReferrerPolicy.d.ts","sourceRoot":"","sources":["../../../src/fetch/types/IRequestReferrerPolicy.ts"],"names":[],"mappings":"AAAA,KAAK,sBAAsB,GACxB,EAAE,GACF,aAAa,GACb,4BAA4B,GAC5B,aAAa,GACb,QAAQ,GACR,eAAe,GACf,0BAA0B,GAC1B,iCAAiC,GACjC,YAAY,CAAC;AAChB,eAAe,sBAAsB,CAAC"}

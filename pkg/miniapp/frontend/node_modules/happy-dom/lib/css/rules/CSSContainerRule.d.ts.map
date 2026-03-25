@@ -1,1 +1,0 @@
-{"version":3,"file":"CSSContainerRule.d.ts","sourceRoot":"","sources":["../../../src/css/rules/CSSContainerRule.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,eAAe,CAAC;AAEpC;;GAEG;AACH,MAAM,CAAC,OAAO,OAAO,gBAAiB,SAAQ,OAAO;IACpD,SAAgB,IAAI,0CAA0B;IAC9C,SAAgB,QAAQ,EAAE,OAAO,EAAE,CAAM;IACzC,SAAgB,aAAa,MAAM;IAEnC;;;;OAIG;IACH,IAAW,OAAO,IAAI,MAAM,CAM3B;CACD"}

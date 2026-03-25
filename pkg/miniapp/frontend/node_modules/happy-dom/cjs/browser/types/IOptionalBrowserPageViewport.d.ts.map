@@ -1,1 +1,0 @@
-{"version":3,"file":"IOptionalBrowserPageViewport.d.ts","sourceRoot":"","sources":["../../../src/browser/types/IOptionalBrowserPageViewport.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,OAAO,WAAW,4BAA4B;IACpD,KAAK,CAAC,EAAE,MAAM,CAAC;IACf,MAAM,CAAC,EAAE,MAAM,CAAC;IAChB,gBAAgB,CAAC,EAAE,MAAM,CAAC;CAC1B"}

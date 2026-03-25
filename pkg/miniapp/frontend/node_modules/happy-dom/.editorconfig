@@ -1,8 +1,0 @@
-# EditorConfig is awesome: http://EditorConfig.org
-
-# top-most EditorConfig file
-root = true
-
-# Indentation override for all JS under lib directory
-[{**.js,**.ts,**.json}]
-indent_style = tab

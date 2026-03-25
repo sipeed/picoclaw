@@ -1,1 +1,0 @@
-{"version":3,"file":"IAnimationEventInit.d.ts","sourceRoot":"","sources":["../../../src/event/events/IAnimationEventInit.ts"],"names":[],"mappings":"AAAA,OAAO,UAAU,MAAM,kBAAkB,CAAC;AAE1C,MAAM,CAAC,OAAO,WAAW,mBAAoB,SAAQ,UAAU;IAC9D,aAAa,CAAC,EAAE,MAAM,CAAC;IACvB,WAAW,CAAC,EAAE,MAAM,CAAC;IACrB,aAAa,CAAC,EAAE,MAAM,CAAC;CACvB"}

@@ -1,1 +1,0 @@
-{"version":3,"file":"IMediaQueryListInit.d.ts","sourceRoot":"","sources":["../../../src/event/events/IMediaQueryListInit.ts"],"names":[],"mappings":"AAAA,OAAO,UAAU,MAAM,kBAAkB,CAAC;AAE1C,MAAM,CAAC,OAAO,WAAW,mBAAoB,SAAQ,UAAU;IAC9D,OAAO,CAAC,EAAE,OAAO,CAAC;IAClB,KAAK,CAAC,EAAE,MAAM,CAAC;CACf"}

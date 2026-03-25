@@ -1,1 +1,0 @@
-{"version":3,"file":"ResizeObserver.d.ts","sourceRoot":"","sources":["../../src/resize-observer/ResizeObserver.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,CAAC,OAAO,OAAO,cAAc;IAClC;;;;OAIG;IACI,OAAO,IAAI,IAAI;IAItB;;;;OAIG;IACI,SAAS,IAAI,IAAI;IAIxB;;;;OAIG;IACI,UAAU,IAAI,IAAI;CAGzB"}
