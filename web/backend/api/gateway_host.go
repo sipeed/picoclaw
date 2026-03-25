@@ -75,6 +75,38 @@ func requestHostName(r *http.Request) string {
 	return "127.0.0.1"
 }
 
+// clientFacingAuthorityFromRequest returns host[:port] for URLs returned to the
+// browser. If Host / X-Forwarded-Host has no explicit port, the listen port is
+// omitted so default ports for http/https/ws/wss apply (reverse proxy, FRP, etc.).
+func clientFacingAuthorityFromRequest(r *http.Request, listenPort int) string {
+	raw := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if raw != "" {
+		raw = strings.TrimSpace(strings.Split(raw, ",")[0])
+	} else {
+		raw = strings.TrimSpace(r.Host)
+	}
+	if raw == "" {
+		return net.JoinHostPort("127.0.0.1", strconv.Itoa(listenPort))
+	}
+	host, port, err := net.SplitHostPort(raw)
+	if err != nil {
+		return raw
+	}
+	return net.JoinHostPort(host, port)
+}
+
+func (h *Handler) picoURLAuthority(r *http.Request, cfg *config.Config) string {
+	webPort := h.serverPort
+	if webPort == 0 {
+		webPort = 18800
+	}
+	bind := h.effectiveGatewayBindHost(cfg)
+	if bind != "" && bind != "0.0.0.0" {
+		return net.JoinHostPort(bind, strconv.Itoa(webPort))
+	}
+	return clientFacingAuthorityFromRequest(r, webPort)
+}
+
 // forwardedRFC7239Proto returns the proto value from the first Forwarded element (RFC 7239), or "".
 func forwardedRFC7239Proto(r *http.Request) string {
 	raw := strings.TrimSpace(r.Header.Get("Forwarded"))
@@ -149,39 +181,16 @@ func requestHTTPScheme(r *http.Request) string {
 }
 
 func (h *Handler) buildWsURL(r *http.Request, cfg *config.Config) string {
-	host := h.effectiveGatewayBindHost(cfg)
-	if host == "" || host == "0.0.0.0" {
-		host = requestHostName(r)
-	}
-	// Use web server port instead of gateway port to avoid exposing extra ports
-	// The WebSocket connection will be proxied by the backend to the gateway
-	wsPort := h.serverPort
-	if wsPort == 0 {
-		wsPort = 18800 // default web server port
-	}
-	return requestWSScheme(r) + "://" + net.JoinHostPort(host, strconv.Itoa(wsPort)) + "/pico/ws"
+	auth := h.picoURLAuthority(r, cfg)
+	return requestWSScheme(r) + "://" + auth + "/pico/ws"
 }
 
 func (h *Handler) buildPicoEventsURL(r *http.Request, cfg *config.Config) string {
-	host := h.effectiveGatewayBindHost(cfg)
-	if host == "" || host == "0.0.0.0" {
-		host = requestHostName(r)
-	}
-	webPort := h.serverPort
-	if webPort == 0 {
-		webPort = 18800
-	}
-	return requestHTTPScheme(r) + "://" + net.JoinHostPort(host, strconv.Itoa(webPort)) + "/pico/events"
+	auth := h.picoURLAuthority(r, cfg)
+	return requestHTTPScheme(r) + "://" + auth + "/pico/events"
 }
 
 func (h *Handler) buildPicoSendURL(r *http.Request, cfg *config.Config) string {
-	host := h.effectiveGatewayBindHost(cfg)
-	if host == "" || host == "0.0.0.0" {
-		host = requestHostName(r)
-	}
-	webPort := h.serverPort
-	if webPort == 0 {
-		webPort = 18800
-	}
-	return requestHTTPScheme(r) + "://" + net.JoinHostPort(host, strconv.Itoa(webPort)) + "/pico/send"
+	auth := h.picoURLAuthority(r, cfg)
+	return requestHTTPScheme(r) + "://" + auth + "/pico/send"
 }
