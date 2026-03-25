@@ -210,32 +210,36 @@ export function AgentDefaultsSection({
         hint={t("pages.config.steering_mode_hint")}
         layout="setting-row"
       >
-        <Select
-          value={form.steeringMode}
-          onValueChange={(value) => onFieldChange("steeringMode", value)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue>
-              {STEERING_MODE_OPTIONS.find((o) => o.value === form.steeringMode)
-                ? t(
-                    STEERING_MODE_OPTIONS.find(
-                      (o) => o.value === form.steeringMode,
-                    )!.labelKey,
-                    STEERING_MODE_OPTIONS.find(
-                      (o) => o.value === form.steeringMode,
-                    )!.labelDefault,
-                  )
-                : form.steeringMode}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {STEERING_MODE_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {t(opt.labelKey, opt.labelDefault)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {(() => {
+          const selectedSteeringModeOption = STEERING_MODE_OPTIONS.find(
+            (o) => o.value === form.steeringMode,
+          )
+
+          return (
+            <Select
+              value={form.steeringMode}
+              onValueChange={(value) => onFieldChange("steeringMode", value)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue>
+                  {selectedSteeringModeOption
+                    ? t(
+                        selectedSteeringModeOption.labelKey,
+                        selectedSteeringModeOption.labelDefault,
+                      )
+                    : form.steeringMode}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {STEERING_MODE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {t(opt.labelKey, opt.labelDefault)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )
+        })()}
       </Field>
 
       <Field
