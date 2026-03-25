@@ -224,10 +224,6 @@ func (h *Handler) readJSONLSessionByKey(dir, sessionKey string) (sessionFile, er
 	}, nil
 }
 
-func (h *Handler) readLegacySession(dir, sessionID string) (sessionFile, error) {
-	return h.readLegacySessionByKey(dir, resolveSessionKey(sessionID))
-}
-
 func (h *Handler) readJSONLSession(dir, sessionID string) (sessionFile, error) {
 	return h.readJSONLSessionByKey(dir, resolveSessionKey(sessionID))
 }
