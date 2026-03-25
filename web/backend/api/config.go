@@ -334,24 +334,24 @@ func mergeMap(dst, src map[string]any) {
 }
 
 func asMapField(value map[string]any, key string) (map[string]any, bool) {
-	raw, ok := value[key]
-	if !ok {
+	raw, exists := value[key]
+	if !exists {
 		return nil, false
 	}
-	m, ok := raw.(map[string]any)
-	return m, ok
+	m, isMap := raw.(map[string]any)
+	return m, isMap
 }
 
 func getSecretString(m map[string]any, key string) (string, bool) {
-	if raw, ok := m[key]; ok {
-		s, ok := raw.(string)
-		if ok {
+	if raw, exists := m[key]; exists {
+		s, isString := raw.(string)
+		if isString {
 			return s, true
 		}
 	}
-	if raw, ok := m["_"+key]; ok {
-		s, ok := raw.(string)
-		if ok {
+	if raw, exists := m["_"+key]; exists {
+		s, isString := raw.(string)
+		if isString {
 			return s, true
 		}
 	}
@@ -359,112 +359,118 @@ func getSecretString(m map[string]any, key string) (string, bool) {
 }
 
 func applyConfigSecretsFromMap(cfg *config.Config, raw map[string]any) {
-	channels, ok := asMapField(raw, "channels")
-	if ok {
-		if telegram, ok := asMapField(channels, "telegram"); ok {
-			if token, ok := getSecretString(telegram, "token"); ok {
+	channels, hasChannels := asMapField(raw, "channels")
+	if hasChannels {
+		if telegram, hasTelegram := asMapField(channels, "telegram"); hasTelegram {
+			if token, hasToken := getSecretString(telegram, "token"); hasToken {
 				cfg.Channels.Telegram.SetToken(token)
 			}
 		}
-		if feishu, ok := asMapField(channels, "feishu"); ok {
-			if appSecret, ok := getSecretString(feishu, "app_secret"); ok {
+		if feishu, hasFeishu := asMapField(channels, "feishu"); hasFeishu {
+			if appSecret, hasAppSecret := getSecretString(feishu, "app_secret"); hasAppSecret {
 				cfg.Channels.Feishu.SetAppSecret(appSecret)
 			}
-			if encryptKey, ok := getSecretString(feishu, "encrypt_key"); ok {
+			if encryptKey, hasEncryptKey := getSecretString(feishu, "encrypt_key"); hasEncryptKey {
 				cfg.Channels.Feishu.SetEncryptKey(encryptKey)
 			}
-			if verificationToken, ok := getSecretString(feishu, "verification_token"); ok {
+			if verificationToken, hasVerificationToken := getSecretString(
+				feishu,
+				"verification_token",
+			); hasVerificationToken {
 				cfg.Channels.Feishu.SetVerificationToken(verificationToken)
 			}
 		}
-		if discord, ok := asMapField(channels, "discord"); ok {
-			if token, ok := getSecretString(discord, "token"); ok {
+		if discord, hasDiscord := asMapField(channels, "discord"); hasDiscord {
+			if token, hasToken := getSecretString(discord, "token"); hasToken {
 				cfg.Channels.Discord.SetToken(token)
 			}
 		}
-		if weixin, ok := asMapField(channels, "weixin"); ok {
-			if token, ok := getSecretString(weixin, "token"); ok {
+		if weixin, hasWeixin := asMapField(channels, "weixin"); hasWeixin {
+			if token, hasToken := getSecretString(weixin, "token"); hasToken {
 				cfg.Channels.Weixin.SetToken(token)
 			}
 		}
-		if qq, ok := asMapField(channels, "qq"); ok {
-			if appSecret, ok := getSecretString(qq, "app_secret"); ok {
+		if qq, hasQQ := asMapField(channels, "qq"); hasQQ {
+			if appSecret, hasAppSecret := getSecretString(qq, "app_secret"); hasAppSecret {
 				cfg.Channels.QQ.SetAppSecret(appSecret)
 			}
 		}
-		if dingtalk, ok := asMapField(channels, "dingtalk"); ok {
-			if clientSecret, ok := getSecretString(dingtalk, "client_secret"); ok {
+		if dingtalk, hasDingTalk := asMapField(channels, "dingtalk"); hasDingTalk {
+			if clientSecret, hasClientSecret := getSecretString(dingtalk, "client_secret"); hasClientSecret {
 				cfg.Channels.DingTalk.SetClientSecret(clientSecret)
 			}
 		}
-		if slack, ok := asMapField(channels, "slack"); ok {
-			if botToken, ok := getSecretString(slack, "bot_token"); ok {
+		if slack, hasSlack := asMapField(channels, "slack"); hasSlack {
+			if botToken, hasBotToken := getSecretString(slack, "bot_token"); hasBotToken {
 				cfg.Channels.Slack.SetBotToken(botToken)
 			}
-			if appToken, ok := getSecretString(slack, "app_token"); ok {
+			if appToken, hasAppToken := getSecretString(slack, "app_token"); hasAppToken {
 				cfg.Channels.Slack.SetAppToken(appToken)
 			}
 		}
-		if matrix, ok := asMapField(channels, "matrix"); ok {
-			if accessToken, ok := getSecretString(matrix, "access_token"); ok {
+		if matrix, hasMatrix := asMapField(channels, "matrix"); hasMatrix {
+			if accessToken, hasAccessToken := getSecretString(matrix, "access_token"); hasAccessToken {
 				cfg.Channels.Matrix.SetAccessToken(accessToken)
 			}
 		}
-		if line, ok := asMapField(channels, "line"); ok {
-			if channelSecret, ok := getSecretString(line, "channel_secret"); ok {
+		if line, hasLine := asMapField(channels, "line"); hasLine {
+			if channelSecret, hasChannelSecret := getSecretString(line, "channel_secret"); hasChannelSecret {
 				cfg.Channels.LINE.SetChannelSecret(channelSecret)
 			}
-			if channelAccessToken, ok := getSecretString(line, "channel_access_token"); ok {
+			if channelAccessToken, hasChannelAccessToken := getSecretString(
+				line,
+				"channel_access_token",
+			); hasChannelAccessToken {
 				cfg.Channels.LINE.SetChannelAccessToken(channelAccessToken)
 			}
 		}
-		if onebot, ok := asMapField(channels, "onebot"); ok {
-			if accessToken, ok := getSecretString(onebot, "access_token"); ok {
+		if onebot, hasOneBot := asMapField(channels, "onebot"); hasOneBot {
+			if accessToken, hasAccessToken := getSecretString(onebot, "access_token"); hasAccessToken {
 				cfg.Channels.OneBot.SetAccessToken(accessToken)
 			}
 		}
-		if wecom, ok := asMapField(channels, "wecom"); ok {
-			if secret, ok := getSecretString(wecom, "secret"); ok {
+		if wecom, hasWeCom := asMapField(channels, "wecom"); hasWeCom {
+			if secret, hasSecret := getSecretString(wecom, "secret"); hasSecret {
 				cfg.Channels.WeCom.SetSecret(secret)
 			}
 		}
-		if pico, ok := asMapField(channels, "pico"); ok {
-			if token, ok := getSecretString(pico, "token"); ok {
+		if pico, hasPico := asMapField(channels, "pico"); hasPico {
+			if token, hasToken := getSecretString(pico, "token"); hasToken {
 				cfg.Channels.Pico.SetToken(token)
 			}
 		}
-		if irc, ok := asMapField(channels, "irc"); ok {
-			if password, ok := getSecretString(irc, "password"); ok {
+		if irc, hasIRC := asMapField(channels, "irc"); hasIRC {
+			if password, hasPassword := getSecretString(irc, "password"); hasPassword {
 				cfg.Channels.IRC.SetPassword(password)
 			}
-			if nickservPassword, ok := getSecretString(irc, "nickserv_password"); ok {
+			if nickservPassword, hasNickservPassword := getSecretString(irc, "nickserv_password"); hasNickservPassword {
 				cfg.Channels.IRC.SetNickServPassword(nickservPassword)
 			}
-			if saslPassword, ok := getSecretString(irc, "sasl_password"); ok {
+			if saslPassword, hasSASLPassword := getSecretString(irc, "sasl_password"); hasSASLPassword {
 				cfg.Channels.IRC.SetSASLPassword(saslPassword)
 			}
 		}
 	}
 
-	tools, ok := asMapField(raw, "tools")
-	if !ok {
+	tools, hasTools := asMapField(raw, "tools")
+	if !hasTools {
 		return
 	}
-	skills, ok := asMapField(tools, "skills")
-	if !ok {
+	skills, hasSkills := asMapField(tools, "skills")
+	if !hasSkills {
 		return
 	}
-	if github, ok := asMapField(skills, "github"); ok {
-		if token, ok := getSecretString(github, "token"); ok {
+	if github, hasGithub := asMapField(skills, "github"); hasGithub {
+		if token, hasToken := getSecretString(github, "token"); hasToken {
 			cfg.Tools.Skills.Github.SetToken(token)
 		}
 	}
-	registries, ok := asMapField(skills, "registries")
-	if !ok {
+	registries, hasRegistries := asMapField(skills, "registries")
+	if !hasRegistries {
 		return
 	}
-	if clawHub, ok := asMapField(registries, "clawhub"); ok {
-		if authToken, ok := getSecretString(clawHub, "auth_token"); ok {
+	if clawHub, hasClawHub := asMapField(registries, "clawhub"); hasClawHub {
+		if authToken, hasAuthToken := getSecretString(clawHub, "auth_token"); hasAuthToken {
 			cfg.Tools.Skills.Registries.ClawHub.SetAuthToken(authToken)
 		}
 	}
