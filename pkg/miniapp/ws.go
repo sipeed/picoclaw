@@ -49,7 +49,9 @@ func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
 	levelStr := r.URL.Query().Get("level")
 	minLevel := logger.INFO
 	if levelStr != "" {
-		minLevel = logger.ParseLevel(levelStr)
+		if lvl, ok := logger.ParseLevel(levelStr); ok {
+			minLevel = lvl
+		}
 	}
 
 	// Clear HTTP server deadlines before WebSocket hijack
@@ -88,7 +90,7 @@ func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
 
 	// Build filter function
 	filter := func(e logger.LogEntry) bool {
-		if lvl := logger.ParseLevel(e.Level); lvl < minLevel {
+		if lvl, ok := logger.ParseLevel(e.Level); ok && lvl < minLevel {
 			return false
 		}
 		if component != "" && e.Component != component {

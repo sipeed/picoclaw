@@ -46,8 +46,30 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey strin
 			if agent == nil {
 				return "", fmt.Errorf("no default agent configured")
 			}
+			// Validate model exists in model_list
+			cfg := al.GetConfig()
+			if cfg != nil && len(cfg.ModelList) > 0 {
+				found := false
+				for _, m := range cfg.ModelList {
+					if m.ModelName == value {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return "", fmt.Errorf("model %q not found in model_list or providers", value)
+				}
+			}
 			old := agent.Model
 			agent.Model = value
+			// Rebuild candidates so subsequent LLM calls use the new
+			// model's provider/endpoint instead of the old one.
+			agent.Candidates = resolveModelCandidates(
+				cfg,
+				cfg.Agents.Defaults.Provider,
+				value,
+				nil,
+			)
 			return old, nil
 		},
 		SwitchChannel: func(value string) error {
@@ -123,6 +145,26 @@ func (al *AgentLoop) handleCommand(
 	args := parts[1:]
 
 	switch cmd {
+	case "/use":
+		if len(args) == 0 {
+			return "Usage: /use <skill> [message]", true
+		}
+		skillName := args[0]
+		// If we reached here, expandForkCommands didn't expand (either skill not found or no message)
+		if agent != nil {
+			if _, found := agent.ContextBuilder.LoadSkill(skillName); found {
+				// Skill exists but no message → arm for next message.
+				// Use channel:chatID as key since session key may not be resolved yet.
+				armKey := msg.Channel + ":" + msg.ChatID
+				if sessionKey != "" {
+					armKey = sessionKey
+				}
+				al.pendingSkills.Store(armKey, skillName)
+				return fmt.Sprintf("Skill %q is armed for your next message.", skillName), true
+			}
+		}
+		return fmt.Sprintf("Unknown skill: %s", skillName), true
+
 	case "/session":
 		return al.handleSessionCommand(args, msg.SessionKey), true
 
@@ -624,29 +666,21 @@ func (al *AgentLoop) expandSkillCommand(msg bus.InboundMessage) (expanded string
 		return "", "", false
 	}
 
-	skillContent, found := agent.ContextBuilder.LoadSkill(skillName)
+	_, found := agent.ContextBuilder.LoadSkill(skillName)
 
 	if !found {
 		return "", "", false
 	}
 
+	// If no user message, don't expand — let it fall through to /use arming handler
+	if userMessage == "" {
+		return "", "", false
+	}
+
 	tag := fmt.Sprintf("[Skill: %s]", skillName)
 
-	// Build expanded message: skill instructions + user message (for LLM)
-
-	var sb strings.Builder
-
-	sb.WriteString(tag)
-
-	sb.WriteString("\n\n")
-
-	sb.WriteString(skillContent)
-
-	if userMessage != "" {
-		sb.WriteString("\n\n---\n\n")
-
-		sb.WriteString(userMessage)
-	}
+	// The skill content will be injected into the system prompt via ForcedSkills/BuildMessages.
+	expanded = userMessage
 
 	// Build compact form: skill name tag + user message only (for history)
 
@@ -656,7 +690,7 @@ func (al *AgentLoop) expandSkillCommand(msg bus.InboundMessage) (expanded string
 		compactForm = tag + "\n" + userMessage
 	}
 
-	return sb.String(), compactForm, true
+	return expanded, compactForm, true
 }
 
 // handleSkillsCommand lists all available skills.

@@ -39,11 +39,7 @@ type loopExt struct {
 
 	activeTasks sync.Map // sessionKey → *activeTask
 
-	activeRequests sync.WaitGroup // tracks in-flight LLM worker requests
-
 	done chan struct{} // closed by Close() to stop background goroutines
-
-	reloadFunc func() error // upstream compat: called by buildCommandsRuntime
 
 	saveConfig func(*config.Config) error
 
@@ -167,18 +163,18 @@ func registerOrchestrationTools(
 	}
 
 	webSearchOpts := tools.WebSearchToolOptions{
-		BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey, cfg.Tools.Web.Brave.APIKeys),
+		BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey(), cfg.Tools.Web.Brave.APIKeys()),
 		BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-		TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey, cfg.Tools.Web.Tavily.APIKeys),
+		TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey(), cfg.Tools.Web.Tavily.APIKeys()),
 		TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
 		TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
 		TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
 		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
 		PerplexityAPIKeys: config.MergeAPIKeys(
-			cfg.Tools.Web.Perplexity.APIKey,
-			cfg.Tools.Web.Perplexity.APIKeys,
+			cfg.Tools.Web.Perplexity.APIKey(),
+			cfg.Tools.Web.Perplexity.APIKeys(),
 		),
 		PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 		PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
@@ -269,20 +265,35 @@ func (al *AgentLoop) handleTaskIntervention(msg bus.InboundMessage) (string, boo
 	return "Intervention sent to running task.", true
 }
 
-// expandForkCommands expands fork-specific /skill and /plan commands in the message.
-// Returns the modified message and the compact form for history.
-func (al *AgentLoop) expandForkCommands(msg *bus.InboundMessage) string {
+// expandForkCommands expands fork-specific /skill, /use, and /plan commands in the message.
+// Returns the compact form for history and any forced skill names.
+func (al *AgentLoop) expandForkCommands(msg *bus.InboundMessage) (compact string, forcedSkills []string) {
 	var expansionCompact string
 
-	if expanded, compact, ok := al.expandSkillCommand(*msg); ok {
+	// Support both /skill and /use prefixes for skill loading
+	content := strings.TrimSpace(msg.Content)
+	originalContent := content
+	if strings.HasPrefix(content, "/use ") {
+		// Rewrite /use → /skill for the skill expander
+		msg.Content = "/skill " + content[5:]
+	}
+	if expanded, cpt, ok := al.expandSkillCommand(*msg); ok {
 		msg.Content = expanded
-		expansionCompact = compact
+		expansionCompact = cpt
+		// Extract skill name
+		skillFields := strings.Fields(originalContent)
+		if len(skillFields) >= 2 {
+			forcedSkills = append(forcedSkills, skillFields[1])
+		}
+	} else if strings.HasPrefix(originalContent, "/use ") {
+		// Skill expansion failed (no message or not found) — restore original /use content
+		msg.Content = originalContent
 	}
 
-	if expanded, compact, ok := al.expandPlanCommand(*msg); ok {
+	if expanded, cpt, ok := al.expandPlanCommand(*msg); ok {
 		msg.Content = expanded
-		expansionCompact = compact
+		expansionCompact = cpt
 	}
 
-	return expansionCompact
+	return expansionCompact, forcedSkills
 }

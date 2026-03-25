@@ -281,7 +281,7 @@ func TestParseLevel(t *testing.T) {
 		{"", INFO},
 	}
 	for _, tt := range tests {
-		got := ParseLevel(tt.input)
+		got, _ := ParseLevel(tt.input)
 		if got != tt.want {
 			t.Errorf("ParseLevel(%q) = %d, want %d", tt.input, got, tt.want)
 		}

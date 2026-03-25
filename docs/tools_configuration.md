@@ -26,6 +26,17 @@ PicoClaw's tools configuration is located in the `tools` field of `config.json`.
 }
 ```
 
+## Sensitive Data Filtering
+
+Before tool results are sent to the LLM, PicoClaw can filter sensitive values (API keys, tokens, secrets) from the output. This prevents the LLM from seeing its own credentials.
+
+See [Sensitive Data Filtering](../sensitive_data_filtering.md) for full documentation.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `filter_sensitive_data` | bool | `true` | Enable/disable filtering |
+| `filter_min_length` | int | `8` | Minimum content length to trigger filtering |
+
 ## Web Tools
 
 Web tools are used for web search and fetching.
@@ -54,6 +65,31 @@ General settings for fetching and processing webpage content.
 |---------------|------|---------|---------------------------|
 | `enabled`     | bool | true    | Enable DuckDuckGo search  |
 | `max_results` | int  | 5       | Maximum number of results |
+
+### Baidu Search
+
+Baidu Search uses the [Qianfan AI Search API](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5), which is AI-powered and optimized for Chinese-language queries.
+
+| Config        | Type   | Default                                                          | Description               |
+|---------------|--------|------------------------------------------------------------------|---------------------------|
+| `enabled`     | bool   | false                                                            | Enable Baidu Search       |
+| `api_key`     | string | -                                                                | Qianfan API key           |
+| `base_url`    | string | `https://qianfan.baidubce.com/v2/ai_search/web_search`          | Baidu Search API URL      |
+| `max_results` | int    | 10                                                               | Maximum number of results |
+
+```json
+{
+  "tools": {
+    "web": {
+      "baidu_search": {
+        "enabled": true,
+        "api_key": "YOUR_BAIDU_QIANFAN_API_KEY",
+        "max_results": 10
+      }
+    }
+  }
+}
+```
 
 ### Perplexity
 

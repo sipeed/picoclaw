@@ -1,0 +1,356 @@
+package agent
+
+import (
+	"context"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/session"
+	"github.com/sipeed/picoclaw/pkg/tools"
+)
+
+type TurnPhase string
+
+const (
+	TurnPhaseSetup      TurnPhase = "setup"
+	TurnPhaseRunning    TurnPhase = "running"
+	TurnPhaseTools      TurnPhase = "tools"
+	TurnPhaseFinalizing TurnPhase = "finalizing"
+	TurnPhaseCompleted  TurnPhase = "completed"
+	TurnPhaseAborted    TurnPhase = "aborted"
+)
+
+type ActiveTurnInfo struct {
+	TurnID       string
+	AgentID      string
+	SessionKey   string
+	Channel      string
+	ChatID       string
+	UserMessage  string
+	Phase        TurnPhase
+	Iteration    int
+	StartedAt    time.Time
+	Depth        int
+	ParentTurnID string
+	ChildTurnIDs []string
+}
+
+type turnResult struct {
+	finalContent string
+}
+
+type turnState struct {
+	mu sync.RWMutex
+
+	agent *AgentInstance
+	opts  processOptions
+	scope turnEventScope
+
+	turnID     string
+	agentID    string
+	sessionKey string
+
+	channel     string
+	chatID      string
+	userMessage string
+	media       []string
+
+	phase     TurnPhase
+	iteration int
+	startedAt time.Time
+
+	gracefulInterrupt     bool
+	gracefulInterruptHint string
+	hardAbort             bool
+	providerCancel        context.CancelFunc
+	turnCancel            context.CancelFunc
+
+	// SubTurn support (from HEAD)
+	depth                int                    // SubTurn depth (0 for root turn)
+	parentTurnID         string                 // Parent turn ID (empty for root turn)
+	childTurnIDs         []string               // Child turn IDs
+	pendingResults       chan *tools.ToolResult // Channel for SubTurn results
+	concurrencySem       chan struct{}          // Semaphore for limiting concurrent SubTurns
+	isFinished           atomic.Bool            // Whether this turn has finished
+	session              session.LegacyStore    // Session store reference
+	initialHistoryLength int                    // Snapshot of history length at turn start
+
+	// Additional SubTurn fields
+	ctx             context.Context    // Context for this turn
+	cancelFunc      context.CancelFunc // Cancel function for this turn's context
+	critical        bool               // Whether this SubTurn should continue after parent ends
+	parentTurnState *turnState         // Reference to parent turnState
+	parentEnded     atomic.Bool        // Whether parent has ended
+	closeOnce       sync.Once          // Ensures pendingResults channel is closed once
+	finishedChan    chan struct{}      // Closed when turn finishes
+
+	// Token budget tracking
+	tokenBudget      *atomic.Int64        // Shared token budget counter
+	lastFinishReason string               // Last LLM finish_reason
+	lastUsage        *providers.UsageInfo // Last LLM usage info
+
+	// Back-reference to the owning AgentLoop (set for SubTurns only, used for hard abort cascade)
+	al *AgentLoop
+}
+
+func newTurnState(agent *AgentInstance, opts processOptions, scope turnEventScope) *turnState {
+	ts := &turnState{
+		agent:       agent,
+		opts:        opts,
+		scope:       scope,
+		turnID:      scope.turnID,
+		agentID:     agent.ID,
+		sessionKey:  opts.SessionKey,
+		channel:     opts.Channel,
+		chatID:      opts.ChatID,
+		userMessage: opts.UserMessage,
+		media:       append([]string(nil), opts.Media...),
+		phase:       TurnPhaseSetup,
+		startedAt:   time.Now(),
+	}
+
+	// Bind session store and capture initial history length for rollback logic
+	if agent != nil && agent.Sessions != nil {
+		ts.session = agent.Sessions
+		ts.initialHistoryLength = len(agent.Sessions.GetHistory(opts.SessionKey))
+	}
+
+	return ts
+}
+
+func (al *AgentLoop) registerActiveTurn(ts *turnState) {
+	al.activeTurnStates.Store(ts.sessionKey, ts)
+}
+
+func (al *AgentLoop) clearActiveTurn(ts *turnState) {
+	al.activeTurnStates.Delete(ts.sessionKey)
+}
+
+// runTurn executes a sub-turn using the turnState's agent and options.
+// It bridges the turnState-based SubTurn API to the existing runAgentLoop.
+func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, error) {
+	// Inject turnState and AgentLoop into context so tools can retrieve them.
+	ctx = withTurnState(ctx, ts)
+	ctx = WithAgentLoop(ctx, al)
+
+	al.registerActiveTurn(ts)
+	defer al.clearActiveTurn(ts)
+
+	content, err := al.runAgentLoop(ctx, ts.agent, ts.opts)
+	return turnResult{finalContent: content}, err
+}
+
+func (al *AgentLoop) getActiveTurnState(sessionKey string) *turnState {
+	if val, ok := al.activeTurnStates.Load(sessionKey); ok {
+		return val.(*turnState)
+	}
+	return nil
+}
+
+// getAnyActiveTurnState returns any active turn state (for backward compatibility)
+func (al *AgentLoop) getAnyActiveTurnState() *turnState {
+	var firstTS *turnState
+	al.activeTurnStates.Range(func(key, value any) bool {
+		firstTS = value.(*turnState)
+		return false // stop after first
+	})
+	return firstTS
+}
+
+func (al *AgentLoop) GetActiveTurn() *ActiveTurnInfo {
+	// For backward compatibility, return the first active turn found
+	// In the new architecture, there can be multiple concurrent turns
+	var firstTS *turnState
+	al.activeTurnStates.Range(func(key, value any) bool {
+		firstTS = value.(*turnState)
+		return false // stop after first
+	})
+	if firstTS == nil {
+		return nil
+	}
+	info := firstTS.snapshot()
+	return &info
+}
+
+func (al *AgentLoop) GetActiveTurnBySession(sessionKey string) *ActiveTurnInfo {
+	ts := al.getActiveTurnState(sessionKey)
+	if ts == nil {
+		return nil
+	}
+	info := ts.snapshot()
+	return &info
+}
+
+func (ts *turnState) snapshot() ActiveTurnInfo {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+
+	return ActiveTurnInfo{
+		TurnID:       ts.turnID,
+		AgentID:      ts.agentID,
+		SessionKey:   ts.sessionKey,
+		Channel:      ts.channel,
+		ChatID:       ts.chatID,
+		UserMessage:  ts.userMessage,
+		Phase:        ts.phase,
+		Iteration:    ts.iteration,
+		StartedAt:    ts.startedAt,
+		Depth:        ts.depth,
+		ParentTurnID: ts.parentTurnID,
+		ChildTurnIDs: append([]string(nil), ts.childTurnIDs...),
+	}
+}
+
+func (ts *turnState) requestGracefulInterrupt(hint string) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.hardAbort {
+		return false
+	}
+	ts.gracefulInterrupt = true
+	ts.gracefulInterruptHint = hint
+	return true
+}
+
+func (ts *turnState) requestHardAbort() bool {
+	ts.mu.Lock()
+	if ts.hardAbort {
+		ts.mu.Unlock()
+		return false
+	}
+	ts.hardAbort = true
+	turnCancel := ts.turnCancel
+	providerCancel := ts.providerCancel
+	ts.mu.Unlock()
+
+	if providerCancel != nil {
+		providerCancel()
+	}
+	if turnCancel != nil {
+		turnCancel()
+	}
+	return true
+}
+
+func (ts *turnState) eventMeta(source, tracePath string) EventMeta {
+	snap := ts.snapshot()
+	return EventMeta{
+		AgentID:    snap.AgentID,
+		TurnID:     snap.TurnID,
+		SessionKey: snap.SessionKey,
+		Iteration:  snap.Iteration,
+		Source:     source,
+		TracePath:  tracePath,
+	}
+}
+
+// SubTurn-related methods
+
+// Finish marks the turn as finished and closes the pendingResults channel
+func (ts *turnState) Finish(isHardAbort bool) {
+	ts.isFinished.Store(true)
+
+	// Close pendingResults channel exactly once
+	ts.closeOnce.Do(func() {
+		if ts.pendingResults != nil {
+			close(ts.pendingResults)
+		}
+		ts.mu.Lock()
+		if ts.finishedChan == nil {
+			ts.finishedChan = make(chan struct{})
+		}
+		close(ts.finishedChan)
+		ts.mu.Unlock()
+	})
+
+	// If this is a graceful finish (not hard abort), signal to children
+	if !isHardAbort && ts.parentTurnState == nil {
+		// This is a root turn finishing gracefully
+		ts.parentEnded.Store(true)
+	}
+
+	// Cancel the turn context
+	if ts.cancelFunc != nil {
+		ts.cancelFunc()
+	}
+
+	// Hard abort cascades to all child turns
+	if isHardAbort && ts.al != nil {
+		ts.mu.RLock()
+		children := append([]string(nil), ts.childTurnIDs...)
+		ts.mu.RUnlock()
+		for _, childID := range children {
+			if val, ok := ts.al.activeTurnStates.Load(childID); ok {
+				val.(*turnState).Finish(true)
+			}
+		}
+	}
+}
+
+// Finished returns whether the turn has finished
+func (ts *turnState) Finished() chan struct{} {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.finishedChan == nil {
+		ts.finishedChan = make(chan struct{})
+	}
+	return ts.finishedChan
+}
+
+// IsParentEnded checks if the parent turn has ended
+func (ts *turnState) IsParentEnded() bool {
+	if ts.parentTurnState == nil {
+		return false
+	}
+	return ts.parentTurnState.parentEnded.Load()
+}
+
+// GetLastFinishReason returns the last LLM finish_reason
+func (ts *turnState) GetLastFinishReason() string {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.lastFinishReason
+}
+
+// SetLastFinishReason sets the last LLM finish_reason
+func (ts *turnState) SetLastFinishReason(reason string) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.lastFinishReason = reason
+}
+
+// GetLastUsage returns the last LLM usage info
+func (ts *turnState) GetLastUsage() *providers.UsageInfo {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.lastUsage
+}
+
+// SetLastUsage sets the last LLM usage info
+func (ts *turnState) SetLastUsage(usage *providers.UsageInfo) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.lastUsage = usage
+}
+
+// Context helper functions for SubTurn
+
+type turnStateKeyType struct{}
+
+var turnStateKey = turnStateKeyType{}
+
+func withTurnState(ctx context.Context, ts *turnState) context.Context {
+	return context.WithValue(ctx, turnStateKey, ts)
+}
+
+func turnStateFromContext(ctx context.Context) *turnState {
+	ts, _ := ctx.Value(turnStateKey).(*turnState)
+	return ts
+}
+
+// TurnStateFromContext retrieves turnState from context (exported for tools)
+func TurnStateFromContext(ctx context.Context) *turnState {
+	return turnStateFromContext(ctx)
+}

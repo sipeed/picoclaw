@@ -91,7 +91,7 @@ func TestSelectCandidates_WithRouterUsesLight(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "heavy-model",
+				ModelName:         "heavy-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},

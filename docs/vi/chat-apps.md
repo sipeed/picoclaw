@@ -13,6 +13,7 @@ Trò chuyện với picoclaw của bạn qua Telegram, Discord, WhatsApp, Matrix
 | **Telegram**         | ⭐ Dễ              | Khuyến nghị, chuyển giọng nói thành văn bản, long polling (không cần IP công khai) | [Tài liệu](../channels/telegram/README.vi.md)                                              |
 | **Discord**          | ⭐ Dễ              | Socket Mode, hỗ trợ nhóm/DM, hệ sinh thái bot phong phú | [Tài liệu](../channels/discord/README.vi.md)                                                                  |
 | **WhatsApp**         | ⭐ Dễ              | Bản địa (quét QR) hoặc Bridge URL                     | [Tài liệu](#whatsapp)                                                                                            |
+| **Weixin**           | ⭐ Dễ              | Quét QR gốc (API Tencent iLink)                       | [Tài liệu](#weixin)                                                                                              |
 | **Slack**            | ⭐ Dễ              | **Socket Mode** (không cần IP công khai), doanh nghiệp | [Tài liệu](../channels/slack/README.vi.md)                                                                      |
 | **Matrix**           | ⭐⭐ Trung bình    | Giao thức liên kết, hỗ trợ tự lưu trữ                | [Tài liệu](../channels/matrix/README.vi.md)                                                                     |
 | **QQ**               | ⭐⭐ Trung bình    | API bot chính thức, cộng đồng Trung Quốc              | [Tài liệu](../channels/qq/README.vi.md)                                                                         |
@@ -20,11 +21,12 @@ Trò chuyện với picoclaw của bạn qua Telegram, Discord, WhatsApp, Matrix
 | **LINE**             | ⭐⭐⭐ Nâng cao    | Yêu cầu HTTPS Webhook                                 | [Tài liệu](../channels/line/README.vi.md)                                                                       |
 | **WeCom (企业微信)** | ⭐⭐⭐ Nâng cao    | Bot nhóm (Webhook), ứng dụng tùy chỉnh (API), AI Bot | [Bot](../channels/wecom/wecom_bot/README.vi.md) / [App](../channels/wecom/wecom_app/README.vi.md) / [AI Bot](../channels/wecom/wecom_aibot/README.vi.md) |
 | **Feishu (飞书)**    | ⭐⭐⭐ Nâng cao    | Cộng tác doanh nghiệp, nhiều tính năng                | [Tài liệu](../channels/feishu/README.vi.md)                                                                     |
-| **IRC**              | ⭐⭐ Trung bình    | Máy chủ + cấu hình TLS                                | -                                                                                                                |
+| **IRC**              | ⭐⭐ Trung bình    | Máy chủ + cấu hình TLS                                | [Tài liệu](#irc) |
 | **OneBot**           | ⭐⭐ Trung bình    | Tương thích NapCat/Go-CQHTTP, hệ sinh thái cộng đồng  | [Tài liệu](../channels/onebot/README.vi.md)                                                                     |
 | **MaixCam**          | ⭐ Dễ              | Kênh tích hợp phần cứng cho camera AI Sipeed          | [Tài liệu](../channels/maixcam/README.vi.md)                                                                    |
 | **Pico**             | ⭐ Dễ              | Kênh giao thức bản địa PicoClaw                       |                                                                                                                  |
 
+<a id="telegram"></a>
 <details>
 <summary><b>Telegram</b> (Khuyến nghị)</summary>
 
@@ -65,6 +67,7 @@ Nếu đăng ký lệnh thất bại (lỗi tạm thời mạng/API), kênh vẫ
 
 </details>
 
+<a id="discord"></a>
 <details>
 <summary><b>Discord</b></summary>
 
@@ -138,6 +141,7 @@ picoclaw gateway
 
 </details>
 
+<a id="whatsapp"></a>
 <details>
 <summary><b>WhatsApp</b> (native qua whatsmeow)</summary>
 
@@ -165,6 +169,43 @@ Nếu `session_store_path` trống, phiên được lưu tại `<workspace>/what
 
 </details>
 
+<a id="weixin"></a>
+<details>
+<summary><b>Weixin</b> (WeChat Cá nhân)</summary>
+
+PicoClaw hỗ trợ kết nối với tài khoản WeChat cá nhân của bạn thông qua API chính thức Tencent iLink.
+
+**1. Đăng nhập**
+
+Chạy luồng đăng nhập QR tương tác:
+```bash
+picoclaw auth weixin
+```
+Quét mã QR được in ra bằng ứng dụng WeChat trên điện thoại. Sau khi đăng nhập thành công, token sẽ được lưu vào cấu hình.
+
+**2. Cấu hình**
+
+(Tùy chọn) Thêm ID người dùng WeChat vào `allow_from` để giới hạn ai có thể nhắn tin với bot:
+```json
+{
+  "channels": {
+    "weixin": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "allow_from": ["YOUR_USER_ID"]
+    }
+  }
+}
+```
+
+**3. Chạy**
+```bash
+picoclaw gateway
+```
+
+</details>
+
+<a id="qq"></a>
 <details>
 <summary><b>QQ</b></summary>
 
@@ -206,6 +247,7 @@ Nếu bạn muốn tạo bot thủ công:
 
 </details>
 
+<a id="dingtalk"></a>
 <details>
 <summary><b>DingTalk</b></summary>
 
@@ -240,6 +282,7 @@ picoclaw gateway
 
 </details>
 
+<a id="maixcam"></a>
 <details>
 <summary><b>MaixCam</b></summary>
 
@@ -262,6 +305,7 @@ picoclaw gateway
 </details>
 
 
+<a id="matrix"></a>
 <details>
 <summary><b>Matrix</b></summary>
 
@@ -296,6 +340,7 @@ picoclaw gateway
 
 </details>
 
+<a id="line"></a>
 <details>
 <summary><b>LINE</b></summary>
 
@@ -344,6 +389,7 @@ picoclaw gateway
 
 </details>
 
+<a id="wecom"></a>
 <details>
 <summary><b>WeCom (企业微信)</b></summary>
 
@@ -458,6 +504,7 @@ picoclaw gateway
 
 </details>
 
+<a id="feishu"></a>
 <details>
 <summary><b>Feishu (Lark)</b></summary>
 
@@ -499,6 +546,7 @@ Mở Feishu, tìm tên bot của bạn và bắt đầu trò chuyện. Bạn cũ
 
 </details>
 
+<a id="slack"></a>
 <details>
 <summary><b>Slack</b></summary>
 
@@ -532,6 +580,7 @@ picoclaw gateway
 
 </details>
 
+<a id="irc"></a>
 <details>
 <summary><b>IRC</b></summary>
 
@@ -565,6 +614,7 @@ Bot sẽ kết nối đến máy chủ IRC và tham gia các kênh đã chỉ đ
 
 </details>
 
+<a id="onebot"></a>
 <details>
 <summary><b>OneBot (QQ qua giao thức OneBot)</b></summary>
 

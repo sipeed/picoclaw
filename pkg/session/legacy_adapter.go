@@ -225,11 +225,7 @@ func (la *LegacyAdapter) SetHistory(key string, history []providers.Message) {
 
 	defer la.mu.Unlock()
 
-	c, ok := la.cache[key]
-
-	if !ok {
-		return
-	}
+	c := la.getOrLoad(key)
 
 	msgs := make([]providers.Message, len(history))
 

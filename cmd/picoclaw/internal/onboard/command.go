@@ -17,8 +17,13 @@ func NewOnboardCommand() *cobra.Command {
 		Use:     "onboard",
 		Aliases: []string{"o"},
 		Short:   "Initialize picoclaw configuration and workspace",
+		// Run without subcommands → original onboard flow
 		Run: func(cmd *cobra.Command, args []string) {
-			onboard(encrypt)
+			if len(args) == 0 {
+				onboard(encrypt)
+			} else {
+				_ = cmd.Help()
+			}
 		},
 	}
 

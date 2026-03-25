@@ -6,9 +6,14 @@
 package config
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 )
+
+type migratable interface {
+	Migrate() (*Config, error)
+}
 
 // buildModelWithProtocol constructs a model string with protocol prefix.
 // If the model already contains a "/" (indicating it has a protocol prefix), it is returned as-is.
@@ -21,22 +26,22 @@ func buildModelWithProtocol(protocol, model string) string {
 	return protocol + "/" + model
 }
 
-// providerMigrationConfig defines how to migrate a provider from old config to new format.
-type providerMigrationConfig struct {
-	// providerNames are the possible names used in agents.defaults.provider
-	providerNames []string
-	// protocol is the protocol prefix for the model field
-	protocol string
-	// buildConfig creates the ModelConfig from ProviderConfig
-	buildConfig func(p ProvidersConfig) (ModelConfig, bool)
-}
-
-// ConvertProvidersToModelList converts the old ProvidersConfig to a slice of ModelConfig.
+// v0ConvertProvidersToModelList converts the old providersConfigV0 to a slice of ModelConfig.
 // This enables backward compatibility with existing configurations.
 // It preserves the user's configured model from agents.defaults.model when possible.
-func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
+func v0ConvertProvidersToModelList(cfg *configV0) []modelConfigV0 {
 	if cfg == nil {
 		return nil
+	}
+
+	// providerMigrationConfig defines how to migrate a provider from old config to new format.
+	type providerMigrationConfig struct {
+		// providerNames are the possible names used in agents.defaults.provider
+		providerNames []string
+		// protocol is the protocol prefix for the model field
+		protocol string
+		// buildConfig creates the ModelConfig from ProviderConfig
+		buildConfig func(p providersConfigV0) (modelConfigV0, bool)
 	}
 
 	// Get user's configured provider and model
@@ -45,7 +50,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 
 	p := cfg.Providers
 
-	var result []ModelConfig
+	var result []modelConfigV0
 
 	// Track if we've applied the legacy model name fix (only for first provider)
 	legacyModelNameApplied := false
@@ -55,11 +60,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"openai", "gpt"},
 			protocol:      "openai",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.OpenAI.APIKey == "" && p.OpenAI.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "openai",
 					Model:          "openai/gpt-5.4",
 					APIKey:         p.OpenAI.APIKey,
@@ -73,11 +78,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"anthropic", "claude"},
 			protocol:      "anthropic",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Anthropic.APIKey == "" && p.Anthropic.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "anthropic",
 					Model:          "anthropic/claude-sonnet-4.6",
 					APIKey:         p.Anthropic.APIKey,
@@ -91,11 +96,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"litellm"},
 			protocol:      "litellm",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.LiteLLM.APIKey == "" && p.LiteLLM.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "litellm",
 					Model:          "litellm/auto",
 					APIKey:         p.LiteLLM.APIKey,
@@ -108,11 +113,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"openrouter"},
 			protocol:      "openrouter",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.OpenRouter.APIKey == "" && p.OpenRouter.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "openrouter",
 					Model:          "openrouter/auto",
 					APIKey:         p.OpenRouter.APIKey,
@@ -125,11 +130,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"groq"},
 			protocol:      "groq",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Groq.APIKey == "" && p.Groq.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "groq",
 					Model:          "groq/llama-3.1-70b-versatile",
 					APIKey:         p.Groq.APIKey,
@@ -142,11 +147,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"zhipu", "glm"},
 			protocol:      "zhipu",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Zhipu.APIKey == "" && p.Zhipu.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "zhipu",
 					Model:          "zhipu/glm-4",
 					APIKey:         p.Zhipu.APIKey,
@@ -159,11 +164,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"vllm"},
 			protocol:      "vllm",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.VLLM.APIKey == "" && p.VLLM.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "vllm",
 					Model:          "vllm/auto",
 					APIKey:         p.VLLM.APIKey,
@@ -176,11 +181,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"gemini", "google"},
 			protocol:      "gemini",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Gemini.APIKey == "" && p.Gemini.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "gemini",
 					Model:          "gemini/gemini-pro",
 					APIKey:         p.Gemini.APIKey,
@@ -193,11 +198,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"nvidia"},
 			protocol:      "nvidia",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Nvidia.APIKey == "" && p.Nvidia.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "nvidia",
 					Model:          "nvidia/meta/llama-3.1-8b-instruct",
 					APIKey:         p.Nvidia.APIKey,
@@ -210,11 +215,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"ollama"},
 			protocol:      "ollama",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Ollama.APIKey == "" && p.Ollama.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "ollama",
 					Model:          "ollama/llama3",
 					APIKey:         p.Ollama.APIKey,
@@ -227,11 +232,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"moonshot", "kimi"},
 			protocol:      "moonshot",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "moonshot",
 					Model:          "moonshot/kimi",
 					APIKey:         p.Moonshot.APIKey,
@@ -244,11 +249,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"shengsuanyun"},
 			protocol:      "shengsuanyun",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "shengsuanyun",
 					Model:          "shengsuanyun/auto",
 					APIKey:         p.ShengSuanYun.APIKey,
@@ -261,11 +266,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"deepseek"},
 			protocol:      "deepseek",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "deepseek",
 					Model:          "deepseek/deepseek-chat",
 					APIKey:         p.DeepSeek.APIKey,
@@ -278,11 +283,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"cerebras"},
 			protocol:      "cerebras",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Cerebras.APIKey == "" && p.Cerebras.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "cerebras",
 					Model:          "cerebras/llama-3.3-70b",
 					APIKey:         p.Cerebras.APIKey,
@@ -295,11 +300,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"vivgrid"},
 			protocol:      "vivgrid",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Vivgrid.APIKey == "" && p.Vivgrid.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "vivgrid",
 					Model:          "vivgrid/auto",
 					APIKey:         p.Vivgrid.APIKey,
@@ -312,11 +317,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"volcengine", "doubao"},
 			protocol:      "volcengine",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "volcengine",
 					Model:          "volcengine/doubao-pro",
 					APIKey:         p.VolcEngine.APIKey,
@@ -329,11 +334,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"github_copilot", "copilot"},
 			protocol:      "github-copilot",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" && p.GitHubCopilot.ConnectMode == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:   "github-copilot",
 					Model:       "github-copilot/gpt-5.4",
 					APIBase:     p.GitHubCopilot.APIBase,
@@ -344,11 +349,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"antigravity"},
 			protocol:      "antigravity",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Antigravity.APIKey == "" && p.Antigravity.AuthMethod == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:  "antigravity",
 					Model:      "antigravity/gemini-2.0-flash",
 					APIKey:     p.Antigravity.APIKey,
@@ -359,11 +364,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"qwen", "tongyi"},
 			protocol:      "qwen",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Qwen.APIKey == "" && p.Qwen.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "qwen",
 					Model:          "qwen/qwen-max",
 					APIKey:         p.Qwen.APIKey,
@@ -376,11 +381,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"mistral"},
 			protocol:      "mistral",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Mistral.APIKey == "" && p.Mistral.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "mistral",
 					Model:          "mistral/mistral-small-latest",
 					APIKey:         p.Mistral.APIKey,
@@ -393,11 +398,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"avian"},
 			protocol:      "avian",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.Avian.APIKey == "" && p.Avian.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "avian",
 					Model:          "avian/deepseek/deepseek-v3.2",
 					APIKey:         p.Avian.APIKey,
@@ -410,11 +415,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"longcat"},
 			protocol:      "longcat",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.LongCat.APIKey == "" && p.LongCat.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "longcat",
 					Model:          "longcat/LongCat-Flash-Thinking",
 					APIKey:         p.LongCat.APIKey,
@@ -427,11 +432,11 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		{
 			providerNames: []string{"modelscope"},
 			protocol:      "modelscope",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+			buildConfig: func(p providersConfigV0) (modelConfigV0, bool) {
 				if p.ModelScope.APIKey == "" && p.ModelScope.APIBase == "" {
-					return ModelConfig{}, false
+					return modelConfigV0{}, false
 				}
-				return ModelConfig{
+				return modelConfigV0{
 					ModelName:      "modelscope",
 					Model:          "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
 					APIKey:         p.ModelScope.APIKey,
@@ -469,83 +474,63 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 	return result
 }
 
-// protocolProviderMapping maps a model protocol prefix (the part before "/" in
-// the Model field) to a function that extracts the corresponding ProviderConfig
-// from the legacy ProvidersConfig.  Used by InheritProviderCredentials.
-var protocolProviderMapping = map[string]func(p ProvidersConfig) ProviderConfig{
-	"openai":         func(p ProvidersConfig) ProviderConfig { return p.OpenAI.ProviderConfig },
-	"anthropic":      func(p ProvidersConfig) ProviderConfig { return p.Anthropic },
-	"litellm":        func(p ProvidersConfig) ProviderConfig { return p.LiteLLM },
-	"openrouter":     func(p ProvidersConfig) ProviderConfig { return p.OpenRouter },
-	"groq":           func(p ProvidersConfig) ProviderConfig { return p.Groq },
-	"zhipu":          func(p ProvidersConfig) ProviderConfig { return p.Zhipu },
-	"vllm":           func(p ProvidersConfig) ProviderConfig { return p.VLLM },
-	"gemini":         func(p ProvidersConfig) ProviderConfig { return p.Gemini },
-	"nvidia":         func(p ProvidersConfig) ProviderConfig { return p.Nvidia },
-	"ollama":         func(p ProvidersConfig) ProviderConfig { return p.Ollama },
-	"moonshot":       func(p ProvidersConfig) ProviderConfig { return p.Moonshot },
-	"shengsuanyun":   func(p ProvidersConfig) ProviderConfig { return p.ShengSuanYun },
-	"deepseek":       func(p ProvidersConfig) ProviderConfig { return p.DeepSeek },
-	"cerebras":       func(p ProvidersConfig) ProviderConfig { return p.Cerebras },
-	"vivgrid":        func(p ProvidersConfig) ProviderConfig { return p.Vivgrid },
-	"volcengine":     func(p ProvidersConfig) ProviderConfig { return p.VolcEngine },
-	"github-copilot": func(p ProvidersConfig) ProviderConfig { return p.GitHubCopilot },
-	"antigravity":    func(p ProvidersConfig) ProviderConfig { return p.Antigravity },
-	"qwen":           func(p ProvidersConfig) ProviderConfig { return p.Qwen },
-	"mistral":        func(p ProvidersConfig) ProviderConfig { return p.Mistral },
-	"avian":          func(p ProvidersConfig) ProviderConfig { return p.Avian },
-	"minimax":        func(p ProvidersConfig) ProviderConfig { return p.Minimax },
-	"longcat":        func(p ProvidersConfig) ProviderConfig { return p.LongCat },
-	"modelscope":     func(p ProvidersConfig) ProviderConfig { return p.ModelScope },
-	"novita":         func(p ProvidersConfig) ProviderConfig { return p.Novita },
+// loadConfigV0 loads a legacy config (no version field)
+func loadConfigV0(data []byte) (migratable, error) {
+	var v0 configV0
+	if err := json.Unmarshal(data, &v0); err != nil {
+		return nil, err
+	}
+
+	v0.migrateChannelConfigs()
+
+	// Auto-migrate: if only legacy providers config exists, convert to model_list
+	if len(v0.ModelList) == 0 && !v0.Providers.IsEmpty() {
+		newModelList := v0ConvertProvidersToModelList(&v0)
+		// Convert []ModelConfig to []modelConfigV0
+		v0.ModelList = make([]modelConfigV0, len(newModelList))
+		for i, m := range newModelList {
+			v0.ModelList[i] = modelConfigV0{
+				ModelName:      m.ModelName,
+				Model:          m.Model,
+				APIBase:        m.APIBase,
+				Proxy:          m.Proxy,
+				Fallbacks:      m.Fallbacks,
+				AuthMethod:     m.AuthMethod,
+				ConnectMode:    m.ConnectMode,
+				Workspace:      m.Workspace,
+				RPM:            m.RPM,
+				MaxTokensField: m.MaxTokensField,
+				RequestTimeout: m.RequestTimeout,
+				ThinkingLevel:  m.ThinkingLevel,
+				APIKey:         m.APIKey,
+				APIKeys:        m.APIKeys,
+			}
+		}
+	}
+
+	return &v0, nil
 }
 
-// InheritProviderCredentials fills in missing api_key, api_base, proxy, and
-// request_timeout on model_list entries from the matching legacy providers
-// configuration.  The match is determined by the protocol prefix in the Model
-// field (e.g. "deepseek/deepseek-chat" matches providers.deepseek).
-//
-// Only empty fields are filled — any value explicitly set on a model_list entry
-// takes precedence.  This function modifies the slice in place.
-//
-// This bridges the gap described in issue #1635: users who configure
-// credentials once in the providers section expect model_list entries using
-// the same protocol to "just work" without duplicating credentials.
-func InheritProviderCredentials(models []ModelConfig, providers ProvidersConfig) {
-	if providers.IsEmpty() {
-		return
+// loadConfigV1 loads a version 1 config (current schema)
+func loadConfig(data []byte) (*Config, error) {
+	cfg := DefaultConfig()
+
+	// Pre-scan the JSON to check how many model_list entries the user provided.
+	// Go's JSON decoder reuses existing slice backing-array elements rather than
+	// zero-initializing them, so fields absent from the user's JSON (e.g. api_base)
+	// would silently inherit values from the DefaultConfig template at the same
+	// index position. We only reset cfg.ModelList when the user actually provides
+	// entries; when count is 0 we keep DefaultConfig's built-in list as fallback.
+	var tmp Config
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return nil, err
+	}
+	if len(tmp.ModelList) > 0 {
+		cfg.ModelList = nil
 	}
 
-	for i := range models {
-		m := &models[i]
-
-		// Extract protocol prefix from Model field
-		protocol := ""
-		if idx := strings.Index(m.Model, "/"); idx > 0 {
-			protocol = strings.ToLower(m.Model[:idx])
-		}
-		if protocol == "" {
-			continue
-		}
-
-		getProvider, ok := protocolProviderMapping[protocol]
-		if !ok {
-			continue
-		}
-		pc := getProvider(providers)
-
-		// Only fill empty fields — explicit model_list values win
-		if m.APIKey == "" && pc.APIKey != "" {
-			m.APIKey = pc.APIKey
-		}
-		if m.APIBase == "" && pc.APIBase != "" {
-			m.APIBase = pc.APIBase
-		}
-		if m.Proxy == "" && pc.Proxy != "" {
-			m.Proxy = pc.Proxy
-		}
-		if m.RequestTimeout == 0 && pc.RequestTimeout != 0 {
-			m.RequestTimeout = pc.RequestTimeout
-		}
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return nil, err
 	}
+	return cfg, nil
 }

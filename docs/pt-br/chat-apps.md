@@ -13,6 +13,7 @@ Converse com seu picoclaw através do Telegram, Discord, WhatsApp, Matrix, QQ, D
 | **Telegram**         | ⭐ Fácil           | Recomendado, voz para texto, long polling (sem IP público) | [Documentação](../channels/telegram/README.pt-br.md)                                                       |
 | **Discord**          | ⭐ Fácil           | Socket Mode, suporte a grupos/DM, ecossistema bot rico | [Documentação](../channels/discord/README.pt-br.md)                                                            |
 | **WhatsApp**         | ⭐ Fácil           | Nativo (scan QR) ou Bridge URL                        | [Documentação](#whatsapp)                                                                                        |
+| **Weixin**           | ⭐ Fácil           | Scan QR nativo (API Tencent iLink)                    | [Documentação](#weixin)                                                                                          |
 | **Slack**            | ⭐ Fácil           | **Socket Mode** (sem IP público), empresarial         | [Documentação](../channels/slack/README.pt-br.md)                                                               |
 | **Matrix**           | ⭐⭐ Médio         | Protocolo federado, suporte a auto-hospedagem         | [Documentação](../channels/matrix/README.pt-br.md)                                                              |
 | **QQ**               | ⭐⭐ Médio         | API bot oficial, comunidade chinesa                   | [Documentação](../channels/qq/README.pt-br.md)                                                                  |
@@ -20,11 +21,12 @@ Converse com seu picoclaw através do Telegram, Discord, WhatsApp, Matrix, QQ, D
 | **LINE**             | ⭐⭐⭐ Avançado    | HTTPS Webhook obrigatório                             | [Documentação](../channels/line/README.pt-br.md)                                                                |
 | **WeCom (企业微信)** | ⭐⭐⭐ Avançado    | Bot de grupo (Webhook), app personalizado (API), AI Bot | [Bot](../channels/wecom/wecom_bot/README.pt-br.md) / [App](../channels/wecom/wecom_app/README.pt-br.md) / [AI Bot](../channels/wecom/wecom_aibot/README.pt-br.md) |
 | **Feishu (飞书)**    | ⭐⭐⭐ Avançado    | Colaboração empresarial, rico em recursos             | [Documentação](../channels/feishu/README.pt-br.md)                                                              |
-| **IRC**              | ⭐⭐ Médio         | Servidor + configuração TLS                           | -                                                                                                                |
+| **IRC**              | ⭐⭐ Médio         | Servidor + configuração TLS                           | [Documentação](#irc) |
 | **OneBot**           | ⭐⭐ Médio         | Compatível com NapCat/Go-CQHTTP, ecossistema comunitário | [Documentação](../channels/onebot/README.pt-br.md)                                                           |
 | **MaixCam**          | ⭐ Fácil           | Canal de integração de hardware para câmeras AI Sipeed | [Documentação](../channels/maixcam/README.pt-br.md)                                                            |
 | **Pico**             | ⭐ Fácil           | Canal de protocolo nativo PicoClaw                    |                                                                                                                  |
 
+<a id="telegram"></a>
 <details>
 <summary><b>Telegram</b> (Recomendado)</summary>
 
@@ -65,6 +67,7 @@ Se o registro de comandos falhar (erros transitórios de rede/API), o canal aind
 
 </details>
 
+<a id="discord"></a>
 <details>
 <summary><b>Discord</b></summary>
 
@@ -138,6 +141,7 @@ picoclaw gateway
 
 </details>
 
+<a id="whatsapp"></a>
 <details>
 <summary><b>WhatsApp</b> (nativo via whatsmeow)</summary>
 
@@ -165,6 +169,43 @@ Se `session_store_path` estiver vazio, a sessão é armazenada em `<workspace>/w
 
 </details>
 
+<a id="weixin"></a>
+<details>
+<summary><b>Weixin</b> (WeChat Pessoal)</summary>
+
+O PicoClaw suporta conexão com sua conta pessoal do WeChat usando a API oficial Tencent iLink.
+
+**1. Login**
+
+Execute o fluxo de login interativo por QR code:
+```bash
+picoclaw auth weixin
+```
+Escaneie o QR code exibido com seu aplicativo WeChat mobile. Após o login bem-sucedido, o token é salvo na sua configuração.
+
+**2. Configurar**
+
+(Opcional) Adicione seu ID de usuário WeChat em `allow_from` para restringir quem pode enviar mensagens ao bot:
+```json
+{
+  "channels": {
+    "weixin": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "allow_from": ["YOUR_USER_ID"]
+    }
+  }
+}
+```
+
+**3. Executar**
+```bash
+picoclaw gateway
+```
+
+</details>
+
+<a id="qq"></a>
 <details>
 <summary><b>QQ</b></summary>
 
@@ -206,6 +247,7 @@ Se preferir criar o bot manualmente:
 
 </details>
 
+<a id="dingtalk"></a>
 <details>
 <summary><b>DingTalk</b></summary>
 
@@ -240,6 +282,7 @@ picoclaw gateway
 
 </details>
 
+<a id="maixcam"></a>
 <details>
 <summary><b>MaixCam</b></summary>
 
@@ -262,6 +305,7 @@ picoclaw gateway
 </details>
 
 
+<a id="matrix"></a>
 <details>
 <summary><b>Matrix</b></summary>
 
@@ -296,6 +340,7 @@ Para opções completas (`device_id`, `join_on_invite`, `group_trigger`, `placeh
 
 </details>
 
+<a id="line"></a>
 <details>
 <summary><b>LINE</b></summary>
 
@@ -344,6 +389,7 @@ picoclaw gateway
 
 </details>
 
+<a id="wecom"></a>
 <details>
 <summary><b>WeCom (企业微信)</b></summary>
 
@@ -457,6 +503,7 @@ picoclaw gateway
 
 </details>
 
+<a id="feishu"></a>
 <details>
 <summary><b>Feishu (Lark)</b></summary>
 
@@ -498,6 +545,7 @@ Para opções completas, veja o [Guia de Configuração do Canal Feishu](../chan
 
 </details>
 
+<a id="slack"></a>
 <details>
 <summary><b>Slack</b></summary>
 
@@ -531,6 +579,7 @@ picoclaw gateway
 
 </details>
 
+<a id="irc"></a>
 <details>
 <summary><b>IRC</b></summary>
 
@@ -564,6 +613,7 @@ O bot se conectará ao servidor IRC e entrará nos canais especificados.
 
 </details>
 
+<a id="onebot"></a>
 <details>
 <summary><b>OneBot (QQ via protocolo OneBot)</b></summary>
 

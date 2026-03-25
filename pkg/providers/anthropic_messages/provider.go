@@ -188,17 +188,23 @@ func buildRequestBody(
 
 		case "user":
 			if msg.ToolCallID != "" {
-				// Tool result message
-				content := []map[string]any{
-					{
-						"type":        "tool_result",
-						"tool_use_id": msg.ToolCallID,
-						"content":     msg.Content,
-					},
+				// Tool result message — merge into previous user message if it contains tool_results
+				toolResultBlock := map[string]any{
+					"type":        "tool_result",
+					"tool_use_id": msg.ToolCallID,
+					"content":     msg.Content,
+				}
+				if len(apiMessages) > 0 {
+					if prev, ok := apiMessages[len(apiMessages)-1].(map[string]any); ok && prev["role"] == "user" {
+						if content, ok := prev["content"].([]map[string]any); ok {
+							prev["content"] = append(content, toolResultBlock)
+							continue
+						}
+					}
 				}
 				apiMessages = append(apiMessages, map[string]any{
 					"role":    "user",
-					"content": content,
+					"content": []map[string]any{toolResultBlock},
 				})
 			} else {
 				// Regular user message
@@ -246,17 +252,23 @@ func buildRequestBody(
 			})
 
 		case "tool":
-			// Tool result (alternative format)
-			content := []map[string]any{
-				{
-					"type":        "tool_result",
-					"tool_use_id": msg.ToolCallID,
-					"content":     msg.Content,
-				},
+			// Tool result (alternative format) — merge into previous user message if it contains tool_results
+			toolResultBlock := map[string]any{
+				"type":        "tool_result",
+				"tool_use_id": msg.ToolCallID,
+				"content":     msg.Content,
+			}
+			if len(apiMessages) > 0 {
+				if prev, ok := apiMessages[len(apiMessages)-1].(map[string]any); ok && prev["role"] == "user" {
+					if content, ok := prev["content"].([]map[string]any); ok {
+						prev["content"] = append(content, toolResultBlock)
+						continue
+					}
+				}
 			}
 			apiMessages = append(apiMessages, map[string]any{
 				"role":    "user",
-				"content": content,
+				"content": []map[string]any{toolResultBlock},
 			})
 		}
 	}

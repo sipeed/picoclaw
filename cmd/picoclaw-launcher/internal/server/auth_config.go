@@ -16,64 +16,39 @@ func updateConfigAfterLogin(configPath, provider string, cred *auth.AuthCredenti
 		return
 	}
 
+	var authMethod, modelName, model string
+	var matchFn func(string) bool
+
 	switch provider {
 	case "openai":
-		cfg.Providers.OpenAI.AuthMethod = "oauth"
-		found := false
-		for i := range cfg.ModelList {
-			if isOpenAIModel(cfg.ModelList[i].Model) {
-				cfg.ModelList[i].AuthMethod = "oauth"
-				found = true
-				break
-			}
-		}
-		if !found {
-			cfg.ModelList = append(cfg.ModelList, config.ModelConfig{
-				ModelName:  "gpt-5.2",
-				Model:      "openai/gpt-5.2",
-				AuthMethod: "oauth",
-			})
-		}
-		cfg.Agents.Defaults.ModelName = "gpt-5.2"
-
+		authMethod, modelName, model = "oauth", "gpt-5.2", "openai/gpt-5.2"
+		matchFn = isOpenAIModel
 	case "anthropic":
-		cfg.Providers.Anthropic.AuthMethod = "token"
-		found := false
-		for i := range cfg.ModelList {
-			if isAnthropicModel(cfg.ModelList[i].Model) {
-				cfg.ModelList[i].AuthMethod = "token"
-				found = true
-				break
-			}
-		}
-		if !found {
-			cfg.ModelList = append(cfg.ModelList, config.ModelConfig{
-				ModelName:  "claude-sonnet-4.6",
-				Model:      "anthropic/claude-sonnet-4.6",
-				AuthMethod: "token",
-			})
-		}
-		cfg.Agents.Defaults.ModelName = "claude-sonnet-4.6"
-
+		authMethod, modelName, model = "token", "claude-sonnet-4.6", "anthropic/claude-sonnet-4.6"
+		matchFn = isAnthropicModel
 	case "google-antigravity":
-		cfg.Providers.Antigravity.AuthMethod = "oauth"
-		found := false
-		for i := range cfg.ModelList {
-			if isAntigravityModel(cfg.ModelList[i].Model) {
-				cfg.ModelList[i].AuthMethod = "oauth"
-				found = true
-				break
-			}
-		}
-		if !found {
-			cfg.ModelList = append(cfg.ModelList, config.ModelConfig{
-				ModelName:  "gemini-flash",
-				Model:      "antigravity/gemini-3-flash",
-				AuthMethod: "oauth",
-			})
-		}
-		cfg.Agents.Defaults.ModelName = "gemini-flash"
+		authMethod, modelName, model = "oauth", "gemini-flash", "antigravity/gemini-3-flash"
+		matchFn = isAntigravityModel
+	default:
+		return
 	}
+
+	found := false
+	for _, m := range cfg.ModelList {
+		if matchFn(m.Model) {
+			m.AuthMethod = authMethod
+			found = true
+			break
+		}
+	}
+	if !found {
+		cfg.ModelList = append(cfg.ModelList, &config.ModelConfig{
+			ModelName:  modelName,
+			Model:      model,
+			AuthMethod: authMethod,
+		})
+	}
+	cfg.Agents.Defaults.ModelName = modelName
 
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		log.Printf("Warning: could not update config: %v", err)
@@ -87,30 +62,21 @@ func clearAuthMethodInConfig(configPath, provider string) {
 		return
 	}
 
-	for i := range cfg.ModelList {
+	for _, m := range cfg.ModelList {
 		switch provider {
 		case "openai":
-			if isOpenAIModel(cfg.ModelList[i].Model) {
-				cfg.ModelList[i].AuthMethod = ""
+			if isOpenAIModel(m.Model) {
+				m.AuthMethod = ""
 			}
 		case "anthropic":
-			if isAnthropicModel(cfg.ModelList[i].Model) {
-				cfg.ModelList[i].AuthMethod = ""
+			if isAnthropicModel(m.Model) {
+				m.AuthMethod = ""
 			}
 		case "google-antigravity", "antigravity":
-			if isAntigravityModel(cfg.ModelList[i].Model) {
-				cfg.ModelList[i].AuthMethod = ""
+			if isAntigravityModel(m.Model) {
+				m.AuthMethod = ""
 			}
 		}
-	}
-
-	switch provider {
-	case "openai":
-		cfg.Providers.OpenAI.AuthMethod = ""
-	case "anthropic":
-		cfg.Providers.Anthropic.AuthMethod = ""
-	case "google-antigravity", "antigravity":
-		cfg.Providers.Antigravity.AuthMethod = ""
 	}
 
 	config.SaveConfig(configPath, cfg)
@@ -122,12 +88,9 @@ func clearAllAuthMethodsInConfig(configPath string) {
 	if err != nil {
 		return
 	}
-	for i := range cfg.ModelList {
-		cfg.ModelList[i].AuthMethod = ""
+	for _, m := range cfg.ModelList {
+		m.AuthMethod = ""
 	}
-	cfg.Providers.OpenAI.AuthMethod = ""
-	cfg.Providers.Anthropic.AuthMethod = ""
-	cfg.Providers.Antigravity.AuthMethod = ""
 	config.SaveConfig(configPath, cfg)
 }
 

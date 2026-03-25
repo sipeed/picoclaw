@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -18,6 +19,28 @@ import (
 // MaxIterations × HTTP timeout provides the soft limit; this is a safety net.
 
 const spawnTimeout = 30 * time.Minute
+
+// SubTurnSpawner is an interface for spawning sub-turns.
+// This avoids circular dependency between tools and agent packages.
+type SubTurnSpawner interface {
+	SpawnSubTurn(ctx context.Context, cfg SubTurnConfig) (*ToolResult, error)
+}
+
+// SubTurnConfig holds configuration for spawning a sub-turn.
+type SubTurnConfig struct {
+	Model              string
+	Tools              []Tool
+	SystemPrompt       string
+	MaxTokens          int
+	Temperature        float64
+	Async              bool          // true for async (spawn), false for sync (subagent)
+	Critical           bool          // continue running after parent finishes gracefully
+	Timeout            time.Duration // 0 = use default (5 minutes)
+	MaxContextRunes    int           // 0 = auto, -1 = no limit, >0 = explicit limit
+	ActualSystemPrompt string
+	InitialMessages    []providers.Message
+	InitialTokenBudget *atomic.Int64 // Shared token budget for team members; nil if no budget
+}
 
 type SubagentTask struct {
 	ID string
@@ -63,6 +86,15 @@ type SubagentTask struct {
 	PlanSteps []string
 }
 
+type SpawnSubTurnFunc func(
+	ctx context.Context,
+	task, label, agentID string,
+	tools *ToolRegistry,
+	maxTokens int,
+	temperature float64,
+	hasMaxTokens, hasTemperature bool,
+) (*ToolResult, error)
+
 type SubagentManager struct {
 	tasks map[string]*SubagentTask
 
@@ -93,6 +125,8 @@ type SubagentManager struct {
 	hasTemperature bool
 
 	nextID int
+
+	spawner SpawnSubTurnFunc
 
 	reporter orch.AgentReporter
 
@@ -136,6 +170,12 @@ func NewSubagentManager(
 
 		reporter: reporter,
 	}
+}
+
+func (sm *SubagentManager) SetSpawner(spawner SpawnSubTurnFunc) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.spawner = spawner
 }
 
 // SetLLMOptions sets max tokens and temperature for subagent LLM calls.
@@ -302,8 +342,8 @@ func (sm *SubagentManager) finishTask(
 	err error,
 	callback AsyncCallback,
 ) {
-	sm.mu.Lock()
 	var result *ToolResult
+	sm.mu.Lock()
 	defer func() {
 		sm.mu.Unlock()
 
@@ -503,8 +543,7 @@ func (sm *SubagentManager) ListTaskCopies() []SubagentTask {
 }
 
 // SubagentTool executes a subagent task synchronously and returns the result.
-// Unlike SpawnTool which runs tasks asynchronously, SubagentTool waits for completion
-// and returns the result directly in the ToolResult.
+// It directly calls SubTurnSpawner with Async=false for synchronous execution.
 type SubagentTool struct {
 	manager *SubagentManager
 

@@ -37,74 +37,70 @@ import (
 type AgentLoop struct {
 	loopExt // fork-specific fields (see loop_ext.go)
 
-	bus *bus.MessageBus
-
-	cfg *config.Config
-
+	// Core dependencies
+	bus      *bus.MessageBus
+	cfg      *config.Config
 	registry *AgentRegistry
+	state    *state.Manager
 
-	state *state.Manager
+	// Event system
+	eventBus *EventBus
+	hooks    *HookManager
 
-	running atomic.Bool
-
-	summarizing sync.Map
-
-	fallback *providers.FallbackChain
-
+	// Runtime state
+	running        atomic.Bool
+	summarizing    sync.Map
+	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
-
-	mediaStore media.MediaStore
-
-	transcriber voice.Transcriber
-
-	cmdRegistry *commands.Registry
-
-	mcp mcpRuntime
-
-	mu sync.RWMutex
+	mediaStore     media.MediaStore
+	transcriber    voice.Transcriber
+	cmdRegistry    *commands.Registry
+	mcp            mcpRuntime
+	hookRuntime    hookRuntime
+	steering       *steeringQueue
+	pendingSkills  sync.Map // sessionKey → skillName (armed by /use <skill>)
+	mu             sync.RWMutex
 
 	providerCache map[string]providers.LLMProvider
 
-	lastSystemPrompt atomic.Value // string — last system prompt sent to LLM
+	// Concurrent turn management
+	activeTurnStates sync.Map     // key: sessionKey (string), value: *turnState
+	subTurnCounter   atomic.Int64 // Counter for generating unique SubTurn IDs
 
-	promptDirty atomic.Bool // true = rebuild needed on next GetSystemPrompt read
+	// Turn tracking
+	turnSeq        atomic.Uint64
+	activeRequests sync.WaitGroup
+
+	lastSystemPrompt atomic.Value // string — last system prompt sent to LLM
+	promptDirty      atomic.Bool  // true = rebuild needed on next GetSystemPrompt read
 
 	OnStateChange func() // called on plan/session/skills mutations
-
 	OnUserMessage func() // called when a real user message is processed
+
+	reloadFunc func() error
 }
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey string // Session identifier for history/context
-
-	Channel string // Target channel for tool execution
-
-	ChatID string // Target chat ID for tool execution
-
-	SenderID string // Current sender ID for dynamic context
-
-	SenderDisplayName string // Current sender display name for dynamic context
-
-	UserMessage string // User message content (may include prefix)
-
-	Media []string // media:// refs from inbound message
-
-	HistoryMessage string // If set, save this to history instead of UserMessage (for skill compaction)
-
-	DefaultResponse string // Response when LLM returns empty
-
-	EnableSummary bool // Whether to trigger summarization
-
-	SendResponse bool // Whether to send response via bus
-
-	NoHistory bool // If true, don't load session history (for heartbeat)
-
-	TaskID string // Unique task ID for background task status tracking
-
-	Background bool // If true, this is a background task (cron/heartbeat) — enables live task notifications
-
-	SystemMessage bool // If true, this is a system message (subagent result) — skip placeholder and plan nudge
+	SessionKey              string              // Session identifier for history/context
+	Channel                 string              // Target channel for tool execution
+	ChatID                  string              // Target chat ID for tool execution
+	SenderID                string              // Current sender ID for dynamic context
+	SenderDisplayName       string              // Current sender display name for dynamic context
+	UserMessage             string              // User message content (may include prefix)
+	ForcedSkills            []string            // Skills explicitly requested for this message
+	SystemPromptOverride    string              // Override the default system prompt (Used by SubTurns)
+	Media                   []string            // media:// refs from inbound message
+	InitialSteeringMessages []providers.Message // Steering messages from refactor/agent
+	HistoryMessage          string              // If set, save this to history instead of UserMessage (for skill compaction)
+	DefaultResponse         string              // Response when LLM returns empty
+	EnableSummary           bool                // Whether to trigger summarization
+	SendResponse            bool                // Whether to send response via bus
+	NoHistory               bool                // If true, don't load session history (for heartbeat)
+	SkipInitialSteeringPoll bool                // If true, skip the steering poll at loop start (used by Continue)
+	TaskID                  string              // Unique task ID for background task status tracking
+	Background              bool                // If true, this is a background task (cron/heartbeat) — enables live task notifications
+	SystemMessage           bool                // If true, this is a system message (subagent result) — skip placeholder and plan nudge
 }
 
 const (
@@ -139,16 +135,13 @@ func NewAgentLoop(
 	}
 
 	providerCache := make(map[string]providers.LLMProvider)
-
+	eventBus := NewEventBus()
 	al := &AgentLoop{
-		bus: msgBus,
-
-		cfg: cfg,
-
-		registry: registry,
-
-		state: stateManager,
-
+		bus:         msgBus,
+		cfg:         cfg,
+		registry:    registry,
+		state:       stateManager,
+		eventBus:    eventBus,
 		summarizing: sync.Map{},
 
 		fallback: fallbackChain,
@@ -156,24 +149,27 @@ func NewAgentLoop(
 		providerCache: providerCache,
 
 		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
+		steering:    newSteeringQueue(parseSteeringMode(cfg.Agents.Defaults.SteeringMode)),
 	}
+	al.hooks = NewHookManager(eventBus)
+	configureHookManagerFromConfig(al.hooks, cfg)
+
+	// Register shared tools to all agents (now that al is created)
+	registerSharedTools(al, cfg, msgBus, registry, provider)
 
 	// Initialize fork-specific fields (stats, sessions, orchestration, gcLoop).
 	al.initLoopExt(cfg, registry, len(enableStats) > 0 && enableStats[0])
-
-	// Register shared tools to all agents (needs al for orchestration reporter).
-	registerSharedTools(cfg, msgBus, registry, provider, al)
 
 	return al
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
 func registerSharedTools(
+	al *AgentLoop,
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
-	al *AgentLoop,
 ) {
 	allowReadPaths := buildAllowReadPatterns(cfg)
 
@@ -186,30 +182,37 @@ func registerSharedTools(
 		// Web tools
 		if cfg.Tools.IsToolEnabled("web") {
 			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
-				BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey, cfg.Tools.Web.Brave.APIKeys),
-				BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
-				BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-				TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey, cfg.Tools.Web.Tavily.APIKeys),
+				BraveAPIKeys:    config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey(), cfg.Tools.Web.Brave.APIKeys()),
+				BraveMaxResults: cfg.Tools.Web.Brave.MaxResults,
+				BraveEnabled:    cfg.Tools.Web.Brave.Enabled,
+				TavilyAPIKeys: config.MergeAPIKeys(
+					cfg.Tools.Web.Tavily.APIKey(),
+					cfg.Tools.Web.Tavily.APIKeys(),
+				),
 				TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
 				TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
 				TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
 				DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 				DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
 				PerplexityAPIKeys: config.MergeAPIKeys(
-					cfg.Tools.Web.Perplexity.APIKey,
-					cfg.Tools.Web.Perplexity.APIKeys,
+					cfg.Tools.Web.Perplexity.APIKey(),
+					cfg.Tools.Web.Perplexity.APIKeys(),
 				),
-				PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
-				PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
-				SearXNGBaseURL:       cfg.Tools.Web.SearXNG.BaseURL,
-				SearXNGMaxResults:    cfg.Tools.Web.SearXNG.MaxResults,
-				SearXNGEnabled:       cfg.Tools.Web.SearXNG.Enabled,
-				GLMSearchAPIKey:      cfg.Tools.Web.GLMSearch.APIKey,
-				GLMSearchBaseURL:     cfg.Tools.Web.GLMSearch.BaseURL,
-				GLMSearchEngine:      cfg.Tools.Web.GLMSearch.SearchEngine,
-				GLMSearchMaxResults:  cfg.Tools.Web.GLMSearch.MaxResults,
-				GLMSearchEnabled:     cfg.Tools.Web.GLMSearch.Enabled,
-				Proxy:                cfg.Tools.Web.Proxy,
+				PerplexityMaxResults:  cfg.Tools.Web.Perplexity.MaxResults,
+				PerplexityEnabled:     cfg.Tools.Web.Perplexity.Enabled,
+				SearXNGBaseURL:        cfg.Tools.Web.SearXNG.BaseURL,
+				SearXNGMaxResults:     cfg.Tools.Web.SearXNG.MaxResults,
+				SearXNGEnabled:        cfg.Tools.Web.SearXNG.Enabled,
+				GLMSearchAPIKey:       cfg.Tools.Web.GLMSearch.APIKey(),
+				GLMSearchBaseURL:      cfg.Tools.Web.GLMSearch.BaseURL,
+				GLMSearchEngine:       cfg.Tools.Web.GLMSearch.SearchEngine,
+				GLMSearchMaxResults:   cfg.Tools.Web.GLMSearch.MaxResults,
+				GLMSearchEnabled:      cfg.Tools.Web.GLMSearch.Enabled,
+				BaiduSearchAPIKey:     cfg.Tools.Web.BaiduSearch.APIKey(),
+				BaiduSearchBaseURL:    cfg.Tools.Web.BaiduSearch.BaseURL,
+				BaiduSearchMaxResults: cfg.Tools.Web.BaiduSearch.MaxResults,
+				BaiduSearchEnabled:    cfg.Tools.Web.BaiduSearch.Enabled,
+				Proxy:                 cfg.Tools.Web.Proxy,
 			})
 			if err != nil {
 				logger.ErrorCF("agent", "Failed to create web search tool", map[string]any{
@@ -293,9 +296,20 @@ func registerSharedTools(
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
 		install_skills_enable := cfg.Tools.IsToolEnabled("install_skill")
 		if skills_enabled && (find_skills_enable || install_skills_enable) {
+			clawHubConfig := cfg.Tools.Skills.Registries.ClawHub
 			registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
 				MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-				ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
+				ClawHub: skills.ClawHubConfig{
+					Enabled:         clawHubConfig.Enabled,
+					BaseURL:         clawHubConfig.BaseURL,
+					AuthToken:       clawHubConfig.AuthToken(),
+					SearchPath:      clawHubConfig.SearchPath,
+					SkillsPath:      clawHubConfig.SkillsPath,
+					DownloadPath:    clawHubConfig.DownloadPath,
+					Timeout:         clawHubConfig.Timeout,
+					MaxZipSize:      clawHubConfig.MaxZipSize,
+					MaxResponseSize: clawHubConfig.MaxResponseSize,
+				},
 			})
 
 			if find_skills_enable {
@@ -322,6 +336,9 @@ func registerSharedTools(
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
 
+	if err := al.ensureHooksInitialized(ctx); err != nil {
+		return err
+	}
 	if err := al.ensureMCPInitialized(ctx); err != nil {
 		return err
 	}
@@ -362,15 +379,11 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		}
 
 		// Echo commands sent from the Mini App so the user can see what was sent.
-
 		if msg.Metadata["source"] == "webapp" && msg.Metadata["echoed"] == "" && msg.Content != "" {
 			_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-				Channel: msg.Channel,
-
-				ChatID: msg.ChatID,
-
-				Content: "via MiniApp: " + msg.Content,
-
+				Channel:         msg.Channel,
+				ChatID:          msg.ChatID,
+				Content:         "via MiniApp: " + msg.Content,
 				SkipPlaceholder: true,
 			})
 		}
@@ -380,48 +393,35 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		if response, handled := al.handleCommand(ctx, msg, defaultAgent, msg.SessionKey); handled {
 			if response != "" {
 				_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-					Channel: msg.Channel,
-
-					ChatID: msg.ChatID,
-
-					Content: response,
-
+					Channel:         msg.Channel,
+					ChatID:          msg.ChatID,
+					Content:         response,
 					SkipPlaceholder: true,
 				})
 			}
 
 			// /plan start sets the flag — enqueue a synthetic message so
-
 			// the LLM worker actually begins executing the plan.
-
 			if al.planStartPending {
 				al.planStartPending = false
-
 				clearHistory := al.planClearHistory
-
 				al.planClearHistory = false
 
 				if clearHistory {
 					if agent := al.registry.GetDefaultAgent(); agent != nil {
 						agent.Sessions.SetHistory(msg.SessionKey, nil)
-
 						agent.Sessions.SetSummary(msg.SessionKey, "")
-
 						_ = agent.Sessions.Save(msg.SessionKey)
 					}
 				}
 
 				// Activate worktree for the session's plan execution
-
 				if agent := al.registry.GetDefaultAgent(); agent != nil {
 					taskName := agent.ContextBuilder.Memory().GetPlanTaskName()
-
 					if taskName == "" {
 						taskName = "plan-execution"
 					}
-
 					planDir := agent.ContextBuilder.GetPlanWorkDir()
-
 					if wt, err := agent.ActivateWorktree(msg.SessionKey, taskName, planDir); err != nil {
 						logger.WarnCF("agent", "Worktree activation skipped", map[string]any{"error": err.Error()})
 					} else {
@@ -430,7 +430,6 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				}
 
 				syntheticMeta := map[string]string{"echoed": "1"}
-
 				for k, v := range msg.Metadata {
 					if k != "source" {
 						syntheticMeta[k] = v
@@ -439,21 +438,14 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 				select {
 				case llmQueue <- bus.InboundMessage{
-					Channel: msg.Channel,
-
-					ChatID: msg.ChatID,
-
-					SenderID: msg.SenderID,
-
+					Channel:    msg.Channel,
+					ChatID:     msg.ChatID,
+					SenderID:   msg.SenderID,
 					SessionKey: msg.SessionKey,
-
-					Content: "The plan has been approved. Begin executing.",
-
-					Metadata: syntheticMeta,
+					Content:    "The plan has been approved. Begin executing.",
+					Metadata:   syntheticMeta,
 				}:
-
 				case <-ctx.Done():
-
 					return nil
 				}
 			}
@@ -462,12 +454,9 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		}
 
 		// Dispatch to LLM worker
-
 		select {
 		case llmQueue <- msg:
-
 		case <-ctx.Done():
-
 			return nil
 		}
 	}
@@ -476,7 +465,6 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 }
 
 // llmWorker processes LLM messages sequentially in a background goroutine.
-
 func (al *AgentLoop) llmWorker(ctx context.Context, queue <-chan bus.InboundMessage) {
 	for msg := range queue {
 		if ctx.Err() != nil {
@@ -491,12 +479,13 @@ func (al *AgentLoop) llmWorker(ctx context.Context, queue <-chan bus.InboundMess
 			continue
 		}
 
-		al.llmWorkerNormal(ctx, msg)
+		al.llmWorkerNormal(ctx, msg, queue)
 	}
 }
 
 // llmWorkerNormal processes a single non-PDF message.
-func (al *AgentLoop) llmWorkerNormal(ctx context.Context, msg bus.InboundMessage) {
+// queue is optional (nil when called outside Run loop).
+func (al *AgentLoop) llmWorkerNormal(ctx context.Context, msg bus.InboundMessage, queue <-chan bus.InboundMessage) {
 	al.activeRequests.Add(1)
 	defer al.activeRequests.Done()
 
@@ -520,7 +509,64 @@ func (al *AgentLoop) llmWorkerNormal(ctx context.Context, msg bus.InboundMessage
 		response = fmt.Sprintf("Error processing message: %v", err)
 	}
 
+	// Auto-continue: if inbound messages arrived in the queue while this
+	// turn was running, treat them as steering continuations so the agent
+	// responds with the full context instead of two separate turns.
+	if queue != nil {
+		if drained := al.drainQueueAsSteering(queue, msg); len(drained) > 0 {
+			agent := al.agentForSession(msg.SessionKey)
+			if agent == nil {
+				agent = al.registry.GetDefaultAgent()
+			}
+			if agent != nil {
+				sessionKey := msg.SessionKey
+				if sessionKey == "" {
+					route, _, _ := al.resolveMessageRoute(msg)
+					sessionKey = resolveScopeKey(route, msg.SessionKey)
+				}
+				contResp, contErr := al.continueWithSteeringMessages(
+					ctx, agent, sessionKey, msg.Channel, msg.ChatID, drained,
+				)
+				if contErr == nil && contResp != "" {
+					response = contResp
+				}
+			}
+		}
+	}
+
 	al.sendResponseIfNeeded(ctx, msg, response)
+}
+
+// drainQueueAsSteering non-blocking drains pending messages from the
+// llmQueue that belong to the same chat as the original message and
+// returns them as steering-style provider messages.
+func (al *AgentLoop) drainQueueAsSteering(
+	queue <-chan bus.InboundMessage,
+	orig bus.InboundMessage,
+) []providers.Message {
+	var msgs []providers.Message
+	for {
+		select {
+		case m, ok := <-queue:
+			if !ok {
+				return msgs
+			}
+			if m.Channel == orig.Channel && m.ChatID == orig.ChatID {
+				msgs = append(msgs, providers.Message{
+					Role:    "user",
+					Content: m.Content,
+				})
+			} else {
+				// Re-queue by pushing to steering for later processing
+				al.enqueueSteeringMessage("", "", providers.Message{
+					Role:    "user",
+					Content: m.Content,
+				})
+			}
+		default:
+			return msgs
+		}
+	}
 }
 
 // llmWorkerPDF handles a bare-PDF message with two-phase follow-up collection.
@@ -565,13 +611,13 @@ func (al *AgentLoop) llmWorkerPDF(ctx context.Context, msg bus.InboundMessage, q
 			Content:    followUpText,
 			Metadata:   msg.Metadata,
 		}
-		al.llmWorkerNormal(ctx, followUpMsg)
+		al.llmWorkerNormal(ctx, followUpMsg, nil)
 	}
 
 	// Re-queue messages from other chats that were buffered.
 	otherMsgs := extractNonChatMessages(buffered, msg.ChatID)
 	for _, other := range otherMsgs {
-		al.llmWorkerNormal(ctx, other)
+		al.llmWorkerNormal(ctx, other, nil)
 	}
 }
 
@@ -616,9 +662,7 @@ func (al *AgentLoop) Stop() {
 }
 
 // Close releases resources held by the loop (e.g. flushes write-behind stats
-
 // and dirty session data). Should be called during graceful shutdown.
-
 func (al *AgentLoop) Close() {
 	// Wait for in-flight LLM requests to finish before releasing resources.
 	al.activeRequests.Wait()
@@ -636,6 +680,184 @@ func (al *AgentLoop) Close() {
 	}
 
 	al.GetRegistry().Close()
+	if al.hooks != nil {
+		al.hooks.Close()
+	}
+	if al.eventBus != nil {
+		al.eventBus.Close()
+	}
+}
+
+// MountHook registers an in-process hook on the agent loop.
+func (al *AgentLoop) MountHook(reg HookRegistration) error {
+	if al == nil || al.hooks == nil {
+		return fmt.Errorf("hook manager is not initialized")
+	}
+	return al.hooks.Mount(reg)
+}
+
+// UnmountHook removes a previously registered in-process hook.
+func (al *AgentLoop) UnmountHook(name string) {
+	if al == nil || al.hooks == nil {
+		return
+	}
+	al.hooks.Unmount(name)
+}
+
+// SubscribeEvents registers a subscriber for agent-loop events.
+func (al *AgentLoop) SubscribeEvents(buffer int) EventSubscription {
+	if al == nil || al.eventBus == nil {
+		ch := make(chan Event)
+		close(ch)
+		return EventSubscription{C: ch}
+	}
+	return al.eventBus.Subscribe(buffer)
+}
+
+// UnsubscribeEvents removes a previously registered event subscriber.
+func (al *AgentLoop) UnsubscribeEvents(id uint64) {
+	if al == nil || al.eventBus == nil {
+		return
+	}
+	al.eventBus.Unsubscribe(id)
+}
+
+// EventDrops returns the number of dropped events for the given kind.
+func (al *AgentLoop) EventDrops(kind EventKind) int64 {
+	if al == nil || al.eventBus == nil {
+		return 0
+	}
+	return al.eventBus.Dropped(kind)
+}
+
+type turnEventScope struct {
+	agentID    string
+	sessionKey string
+	turnID     string
+}
+
+func (al *AgentLoop) newTurnEventScope(agentID, sessionKey string) turnEventScope {
+	seq := al.turnSeq.Add(1)
+	return turnEventScope{
+		agentID:    agentID,
+		sessionKey: sessionKey,
+		turnID:     fmt.Sprintf("%s-turn-%d", agentID, seq),
+	}
+}
+
+func (al *AgentLoop) emitEvent(kind EventKind, meta EventMeta, payload any) {
+	evt := Event{
+		Kind:    kind,
+		Meta:    meta,
+		Payload: payload,
+	}
+
+	if al == nil || al.eventBus == nil {
+		return
+	}
+
+	al.logEvent(evt)
+
+	al.eventBus.Emit(evt)
+}
+
+func (al *AgentLoop) logEvent(evt Event) {
+	fields := map[string]any{
+		"event_kind":  evt.Kind.String(),
+		"agent_id":    evt.Meta.AgentID,
+		"turn_id":     evt.Meta.TurnID,
+		"session_key": evt.Meta.SessionKey,
+		"iteration":   evt.Meta.Iteration,
+	}
+
+	if evt.Meta.TracePath != "" {
+		fields["trace"] = evt.Meta.TracePath
+	}
+	if evt.Meta.Source != "" {
+		fields["source"] = evt.Meta.Source
+	}
+
+	switch payload := evt.Payload.(type) {
+	case TurnStartPayload:
+		fields["channel"] = payload.Channel
+		fields["chat_id"] = payload.ChatID
+		fields["user_len"] = len(payload.UserMessage)
+		fields["media_count"] = payload.MediaCount
+	case TurnEndPayload:
+		fields["status"] = payload.Status
+		fields["iterations_total"] = payload.Iterations
+		fields["duration_ms"] = payload.Duration.Milliseconds()
+		fields["final_len"] = payload.FinalContentLen
+	case LLMRequestPayload:
+		fields["model"] = payload.Model
+		fields["messages"] = payload.MessagesCount
+		fields["tools"] = payload.ToolsCount
+		fields["max_tokens"] = payload.MaxTokens
+	case LLMDeltaPayload:
+		fields["content_delta_len"] = payload.ContentDeltaLen
+		fields["reasoning_delta_len"] = payload.ReasoningDeltaLen
+	case LLMResponsePayload:
+		fields["content_len"] = payload.ContentLen
+		fields["tool_calls"] = payload.ToolCalls
+		fields["has_reasoning"] = payload.HasReasoning
+	case LLMRetryPayload:
+		fields["attempt"] = payload.Attempt
+		fields["max_retries"] = payload.MaxRetries
+		fields["reason"] = payload.Reason
+		fields["error"] = payload.Error
+		fields["backoff_ms"] = payload.Backoff.Milliseconds()
+	case ContextCompressPayload:
+		fields["reason"] = payload.Reason
+		fields["dropped_messages"] = payload.DroppedMessages
+		fields["remaining_messages"] = payload.RemainingMessages
+	case SessionSummarizePayload:
+		fields["summarized_messages"] = payload.SummarizedMessages
+		fields["kept_messages"] = payload.KeptMessages
+		fields["summary_len"] = payload.SummaryLen
+		fields["omitted_oversized"] = payload.OmittedOversized
+	case ToolExecStartPayload:
+		fields["tool"] = payload.Tool
+		fields["args_count"] = len(payload.Arguments)
+	case ToolExecEndPayload:
+		fields["tool"] = payload.Tool
+		fields["duration_ms"] = payload.Duration.Milliseconds()
+		fields["for_llm_len"] = payload.ForLLMLen
+		fields["for_user_len"] = payload.ForUserLen
+		fields["is_error"] = payload.IsError
+		fields["async"] = payload.Async
+	case ToolExecSkippedPayload:
+		fields["tool"] = payload.Tool
+		fields["reason"] = payload.Reason
+	case SteeringInjectedPayload:
+		fields["count"] = payload.Count
+		fields["total_content_len"] = payload.TotalContentLen
+	case FollowUpQueuedPayload:
+		fields["source_tool"] = payload.SourceTool
+		fields["channel"] = payload.Channel
+		fields["chat_id"] = payload.ChatID
+		fields["content_len"] = payload.ContentLen
+	case InterruptReceivedPayload:
+		fields["interrupt_kind"] = payload.Kind
+		fields["role"] = payload.Role
+		fields["content_len"] = payload.ContentLen
+		fields["queue_depth"] = payload.QueueDepth
+		fields["hint_len"] = payload.HintLen
+	case SubTurnSpawnPayload:
+		fields["child_agent_id"] = payload.AgentID
+		fields["label"] = payload.Label
+	case SubTurnEndPayload:
+		fields["child_agent_id"] = payload.AgentID
+		fields["status"] = payload.Status
+	case SubTurnResultDeliveredPayload:
+		fields["target_channel"] = payload.TargetChannel
+		fields["target_chat_id"] = payload.TargetChatID
+		fields["content_len"] = payload.ContentLen
+	case ErrorPayload:
+		fields["stage"] = payload.Stage
+		fields["error"] = payload.Message
+	}
+
+	logger.InfoCF("eventbus", fmt.Sprintf("Agent event: %s", evt.Kind.String()), fields)
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
@@ -747,7 +969,7 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	}
 
 	// Ensure shared tools are re-registered on the new registry
-	registerSharedTools(cfg, al.bus, registry, provider, al)
+	registerSharedTools(al, cfg, al.bus, registry, provider)
 
 	// Atomically swap the config and registry under write lock
 	// This ensures readers see a consistent pair
@@ -762,6 +984,9 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	al.fallback = providers.NewFallbackChain(providers.NewCooldownTracker())
 
 	al.mu.Unlock()
+
+	al.hookRuntime.reset(al)
+	configureHookManagerFromConfig(al.hooks, cfg)
 
 	// Close old provider after releasing the lock
 	// This prevents blocking readers while closing
@@ -989,6 +1214,9 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 	ctx context.Context,
 	content, sessionKey, channel, chatID string,
 ) (string, error) {
+	if err := al.ensureHooksInitialized(ctx); err != nil {
+		return "", err
+	}
 	if err := al.ensureMCPInitialized(ctx); err != nil {
 		return "", err
 	}
@@ -1009,7 +1237,31 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 		},
 	}
 
-	return al.processMessage(ctx, msg)
+	response, err := al.processMessage(ctx, msg)
+	if err != nil {
+		return response, err
+	}
+
+	// If steering messages arrived during the LLM call, the initial
+	// response is stale. Discard it and do a continuation turn that
+	// includes the steering messages for a fresh response.
+	steeringMsgs := al.dequeueSteeringMessagesForScopeWithFallback(sessionKey)
+	if len(steeringMsgs) > 0 {
+		agent := al.agentForSession(sessionKey)
+		if agent == nil {
+			agent = al.registry.GetDefaultAgent()
+		}
+		if agent != nil {
+			contResp, contErr := al.continueWithSteeringMessages(
+				ctx, agent, sessionKey, channel, chatID, steeringMsgs,
+			)
+			if contErr == nil && contResp != "" {
+				return contResp, nil
+			}
+		}
+	}
+
+	return response, nil
 }
 
 // ProcessHeartbeat processes a heartbeat request without session history.
@@ -1017,6 +1269,12 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
 	ctx = tools.WithHeartbeatContext(ctx)
 	ctx = tools.WithWebSearchQuota(ctx, research.DefaultHeartbeatSearchQuota)
+	if err := al.ensureHooksInitialized(ctx); err != nil {
+		return "", err
+	}
+	if err := al.ensureMCPInitialized(ctx); err != nil {
+		return "", err
+	}
 
 	agent := al.GetRegistry().GetDefaultAgent()
 	if agent == nil {
@@ -1148,8 +1406,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		al.OnUserMessage()
 	}
 
-	// Expand fork-specific /skill and /plan commands
-	expansionCompact := al.expandForkCommands(&msg)
+	// Expand fork-specific /skill, /use, and /plan commands
+	expansionCompact, forcedSkills := al.expandForkCommands(&msg)
 
 	// Check for commands (using default agent, before routing)
 	if response, handled := al.handleCommand(ctx, msg, al.registry.GetDefaultAgent(), msg.SessionKey); handled {
@@ -1164,30 +1422,32 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	sessionKey := resolveScopeKey(route, msg.SessionKey)
 
+	// Consume armed skill from a previous /use <skill> command
+	armKey := msg.Channel + ":" + msg.ChatID
+	if val, ok := al.pendingSkills.LoadAndDelete(sessionKey); ok {
+		if skillName, ok := val.(string); ok {
+			forcedSkills = append(forcedSkills, skillName)
+		}
+	} else if val, ok := al.pendingSkills.LoadAndDelete(armKey); ok {
+		if skillName, ok := val.(string); ok {
+			forcedSkills = append(forcedSkills, skillName)
+		}
+	}
+
 	return al.runAgentLoop(ctx, agent, processOptions{
-		SessionKey: sessionKey,
-
-		Channel: msg.Channel,
-
-		ChatID: msg.ChatID,
-
-		SenderID: msg.SenderID,
-
+		SessionKey:        sessionKey,
+		Channel:           msg.Channel,
+		ChatID:            msg.ChatID,
+		SenderID:          msg.SenderID,
 		SenderDisplayName: msg.Sender.DisplayName,
-
-		UserMessage: msg.Content,
-
-		Media: msg.Media,
-
-		HistoryMessage: expansionCompact,
-
-		DefaultResponse: defaultResponse,
-
-		EnableSummary: true,
-
-		SendResponse: false,
-
-		Background: msg.Metadata["background"] == "true",
+		UserMessage:       msg.Content,
+		ForcedSkills:      forcedSkills,
+		Media:             msg.Media,
+		HistoryMessage:    expansionCompact,
+		DefaultResponse:   defaultResponse,
+		EnableSummary:     true,
+		SendResponse:      false,
+		Background:        msg.Metadata["background"] == "true",
 	})
 }
 
@@ -1197,7 +1457,6 @@ func (al *AgentLoop) withTelegramThread(channel, chatID string, threadID int) st
 	}
 
 	baseChatID := chatID
-
 	if slash := strings.Index(baseChatID, "/"); slash >= 0 {
 		baseChatID = baseChatID[:slash]
 	}
@@ -1231,6 +1490,7 @@ func (al *AgentLoop) callLLMWithRetry(
 	activeModel string,
 	onChunk func(string, string),
 	iteration int,
+	scope ...turnEventScope,
 ) (*providers.LLMResponse, error) {
 	llmOpts := map[string]any{
 		"max_tokens":       agent.MaxTokens,
@@ -1325,12 +1585,29 @@ func (al *AgentLoop) callLLMWithRetry(
 			strings.Contains(errMsg, "prompt is too long") ||
 			strings.Contains(errMsg, "request too large"))
 
+		// Helper to emit events if scope was provided
+		emitRetryEvent := func(kind EventKind, payload any) {
+			if len(scope) > 0 {
+				meta := EventMeta{
+					AgentID:    agent.ID,
+					TurnID:     scope[0].turnID,
+					SessionKey: opts.SessionKey,
+					Iteration:  iteration,
+				}
+				al.emitEvent(kind, meta, payload)
+			}
+		}
+
 		if isTimeoutError && retry < maxRetries {
 			backoff := time.Duration(retry+1) * 5 * time.Second
 			logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
 				"error":   err.Error(),
 				"retry":   retry,
 				"backoff": backoff.String(),
+			})
+			emitRetryEvent(EventKindLLMRetry, LLMRetryPayload{
+				Attempt: retry + 1, MaxRetries: maxRetries,
+				Reason: "timeout", Error: err.Error(), Backoff: backoff,
 			})
 			time.Sleep(backoff)
 			continue
@@ -1341,6 +1618,10 @@ func (al *AgentLoop) callLLMWithRetry(
 				"error": err.Error(),
 				"retry": retry,
 			})
+			emitRetryEvent(EventKindLLMRetry, LLMRetryPayload{
+				Attempt: retry + 1, MaxRetries: maxRetries,
+				Reason: "context_limit", Error: err.Error(),
+			})
 			if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
 				_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 					Channel: opts.Channel,
@@ -1348,6 +1629,7 @@ func (al *AgentLoop) callLLMWithRetry(
 					Content: "Context window exceeded. Compressing history and retrying...",
 				})
 			}
+			prevCount := len(*messages)
 			al.forceCompression(agent, opts.SessionKey)
 			newHistory := agent.Sessions.GetHistory(opts.SessionKey)
 			newSummary := agent.Sessions.GetSummary(opts.SessionKey)
@@ -1356,6 +1638,11 @@ func (al *AgentLoop) callLLMWithRetry(
 				nil, opts.Channel, opts.ChatID,
 				opts.SenderID, opts.SenderDisplayName,
 			)
+			emitRetryEvent(EventKindContextCompress, ContextCompressPayload{
+				Reason:            ContextCompressReasonRetry,
+				DroppedMessages:   prevCount - len(*messages),
+				RemainingMessages: len(*messages),
+			})
 			continue
 		}
 		break

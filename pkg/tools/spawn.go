@@ -31,7 +31,7 @@ func NewSpawnTool(manager *SubagentManager) *SpawnTool {
 	}
 }
 
-// SetCallback implements AsyncTool interface for async completion notification
+// SetCallback implements AsyncTool interface for async completion notification.
 
 func (t *SpawnTool) SetCallback(cb AsyncCallback) {
 	t.callback = cb
@@ -93,11 +93,19 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResul
 
 // ExecuteAsync implements AsyncExecutor. The callback is passed through to the
 // subagent manager as a call parameter — never stored on the SpawnTool instance.
-func (t *SpawnTool) ExecuteAsync(ctx context.Context, args map[string]any, cb AsyncCallback) *ToolResult {
+func (t *SpawnTool) ExecuteAsync(
+	ctx context.Context,
+	args map[string]any,
+	cb AsyncCallback,
+) *ToolResult {
 	return t.execute(ctx, args, cb)
 }
 
-func (t *SpawnTool) execute(ctx context.Context, args map[string]any, cb AsyncCallback) *ToolResult {
+func (t *SpawnTool) execute(
+	ctx context.Context,
+	args map[string]any,
+	cb AsyncCallback,
+) *ToolResult {
 	task, ok := args["task"].(string)
 	if !ok || strings.TrimSpace(task) == "" {
 		return ErrorResult(

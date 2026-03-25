@@ -314,6 +314,15 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 
 			agent.Sessions.Save(sessionKey)
 		}
+
+		al.emitEvent(EventKindSessionSummarize,
+			EventMeta{AgentID: agent.ID, SessionKey: sessionKey},
+			SessionSummarizePayload{
+				SummarizedMessages: len(validMessages),
+				KeptMessages:       4,
+				SummaryLen:         len(finalSummary),
+				OmittedOversized:   omitted,
+			})
 	}
 }
 

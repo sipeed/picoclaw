@@ -91,7 +91,7 @@ func loadTempConfig(t *testing.T, path string) *config.Config {
 
 func TestUpdateConfigAfterLogin_OpenAI_ExistingModel(t *testing.T) {
 	cfg := &config.Config{
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{ModelName: "gpt-4o", Model: "openai/gpt-4o"},
 		},
 	}
@@ -113,7 +113,7 @@ func TestUpdateConfigAfterLogin_OpenAI_ExistingModel(t *testing.T) {
 
 func TestUpdateConfigAfterLogin_OpenAI_NoExistingModel(t *testing.T) {
 	cfg := &config.Config{
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{ModelName: "claude", Model: "anthropic/claude-sonnet-4.6"},
 		},
 	}
@@ -179,7 +179,7 @@ func TestUpdateConfigAfterLogin_GoogleAntigravity(t *testing.T) {
 
 func TestClearAuthMethodInConfig(t *testing.T) {
 	cfg := &config.Config{
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{ModelName: "gpt-4o", Model: "openai/gpt-4o", AuthMethod: "oauth"},
 			{ModelName: "claude", Model: "anthropic/claude-sonnet-4.6", AuthMethod: "token"},
 		},
@@ -202,7 +202,7 @@ func TestClearAuthMethodInConfig(t *testing.T) {
 
 func TestClearAllAuthMethodsInConfig(t *testing.T) {
 	cfg := &config.Config{
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{ModelName: "gpt-4o", Model: "openai/gpt-4o", AuthMethod: "oauth"},
 			{ModelName: "claude", Model: "anthropic/claude-sonnet-4.6", AuthMethod: "token"},
 			{ModelName: "gemini", Model: "antigravity/gemini-3-flash", AuthMethod: "oauth"},

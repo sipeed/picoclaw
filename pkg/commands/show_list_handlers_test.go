@@ -61,6 +61,9 @@ func TestShowListHandlers_ListHandledOnAllChannels(t *testing.T) {
 		GetEnabledChannels: func() []string {
 			return []string{"telegram"}
 		},
+		ListSkillNames: func() []string {
+			return []string{"shell"}
+		},
 	}
 	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
@@ -81,5 +84,21 @@ func TestShowListHandlers_ListHandledOnAllChannels(t *testing.T) {
 	}
 	if !strings.Contains(reply, "telegram") {
 		t.Fatalf("whatsapp /list reply=%q, expected enabled channels content", reply)
+	}
+
+	reply = ""
+	res = ex.Execute(context.Background(), Request{
+		Channel: "whatsapp",
+		Text:    "/list skills",
+		Reply: func(text string) error {
+			reply = text
+			return nil
+		},
+	})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("whatsapp /list skills outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if !strings.Contains(reply, "shell") {
+		t.Fatalf("whatsapp /list skills reply=%q, expected installed skills content", reply)
 	}
 }

@@ -68,7 +68,9 @@ func (t *LogsTool) Execute(_ context.Context, args map[string]any) *ToolResult {
 	level := logger.WARN
 
 	if lvlStr, ok := args["level"].(string); ok && lvlStr != "" {
-		level = logger.ParseLevel(lvlStr)
+		if parsed, ok := logger.ParseLevel(lvlStr); ok {
+			level = parsed
+		}
 	}
 
 	// Parse component

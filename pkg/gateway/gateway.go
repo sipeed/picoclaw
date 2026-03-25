@@ -31,6 +31,7 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/slack"
 	_ "github.com/sipeed/picoclaw/pkg/channels/telegram"
 	_ "github.com/sipeed/picoclaw/pkg/channels/wecom"
+	_ "github.com/sipeed/picoclaw/pkg/channels/weixin"
 	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp"
 	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp_native"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -55,6 +56,10 @@ const (
 	serviceShutdownTimeout  = 30 * time.Second
 	providerReloadTimeout   = 30 * time.Second
 	gracefulShutdownTimeout = 15 * time.Second
+
+	logPath   = "logs"
+	panicFile = "gateway_panic.log"
+	logFile   = "gateway.log"
 )
 
 type services struct {
@@ -87,15 +92,29 @@ func (p *startupBlockedProvider) GetDefaultModel() string {
 }
 
 // Run starts the gateway runtime using the configuration loaded from configPath.
-func Run(debug bool, configPath string, orchestration bool, enableStats bool, allowEmptyStartup bool) error {
-	if debug {
-		logger.SetLevel(logger.DEBUG)
-		fmt.Println("🔍 Debug mode enabled")
+func Run(debug bool, homePath, configPath string, orchestration bool, enableStats bool, allowEmptyStartup bool) error {
+	panicPath := filepath.Join(homePath, logPath, panicFile)
+	panicFunc, err := logger.InitPanic(panicPath)
+	if err != nil {
+		return fmt.Errorf("error initializing panic log: %w", err)
 	}
+	defer panicFunc()
+
+	if err = logger.EnableFileLogging(filepath.Join(homePath, logPath, logFile)); err != nil {
+		panic(fmt.Sprintf("error enabling file logging: %v", err))
+	}
+	defer logger.DisableFileLogging()
 
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("error loading config: %w", err)
+	}
+
+	logger.SetLevelFromString(cfg.Gateway.LogLevel)
+
+	if debug {
+		logger.SetLevel(logger.DEBUG)
+		fmt.Println("🔍 Debug mode enabled")
 	}
 
 	provider, modelID, err := createStartupProvider(cfg, allowEmptyStartup)
@@ -319,7 +338,7 @@ func setupAndStartServices(
 			handler := miniapp.NewHandler(
 				dataProvider,
 				sender,
-				cfg.Channels.Telegram.Token,
+				cfg.Channels.Telegram.Token(),
 				miniappNotifier,
 				cfg.Channels.Telegram.AllowFrom,
 				cfg.WorkspacePath(),
@@ -454,9 +473,6 @@ func handleConfigReload(
 	logger.Info("🔄 Config file changed, reloading...")
 
 	newModel := newCfg.Agents.Defaults.ModelName
-	if newModel == "" {
-		newModel = newCfg.Agents.Defaults.Model
-	}
 
 	logger.Infof(" New model is '%s', recreating provider...", newModel)
 

@@ -30,7 +30,7 @@ func TestRecordLastHeartbeatTarget(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "test-model",
+				ModelName: "test-model",
 
 				MaxTokens: 4096,
 
@@ -159,7 +159,7 @@ func TestResolveProvider_CachesProviders(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "test-model",
+				ModelName: "test-model",
 
 				Provider: "vllm",
 
@@ -169,11 +169,11 @@ func TestResolveProvider_CachesProviders(t *testing.T) {
 			},
 		},
 
-		Providers: config.ProvidersConfig{
-			VLLM: config.ProviderConfig{
-				APIKey: "test-key",
-
-				APIBase: "https://example.com/v1",
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "test-model",
+				Model:     "vllm/test-model",
+				APIBase:   "https://example.com/v1",
 			},
 		},
 	}
@@ -187,7 +187,7 @@ func TestResolveProvider_CachesProviders(t *testing.T) {
 	p1 := al.resolveProvider("vllm", "test-model", primary)
 
 	if p1 == primary {
-		t.Fatal("expected a new provider from legacy providers config, not the fallback")
+		t.Fatal("expected a new provider from model_list config, not the fallback")
 	}
 
 	p2 := al.resolveProvider("vllm", "test-model", primary)
@@ -210,7 +210,7 @@ func TestResolveProvider_FallsBackOnError(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "test-model",
+				ModelName: "test-model",
 
 				Provider: "vllm",
 
@@ -251,7 +251,7 @@ func TestResolveProvider_EmptyNameReturnsFallback(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "test-model",
+				ModelName: "test-model",
 
 				MaxTokens: 4096,
 
@@ -286,7 +286,7 @@ func TestSlashCommandResponseSkipsPlaceholder(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "test-model",
+				ModelName: "test-model",
 
 				MaxTokens: 4096,
 
@@ -1019,7 +1019,7 @@ func TestAutoPhaseAdvance(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "test-model",
+				ModelName: "test-model",
 
 				MaxTokens: 4096,
 
@@ -1101,7 +1101,7 @@ func TestAutoCompleteClears(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "test-model",
+				ModelName: "test-model",
 
 				MaxTokens: 4096,
 
@@ -1884,7 +1884,7 @@ func setupPlanNudgeTest(
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "test-model",
+				ModelName: "test-model",
 
 				MaxTokens: 4096,
 
@@ -1990,7 +1990,7 @@ func TestPlanNudge_ProgressMessage(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "test-model",
+				ModelName: "test-model",
 
 				MaxTokens: 4096,
 
@@ -2408,7 +2408,7 @@ func setupPlanModelTest(
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "normal-model",
+				ModelName: "normal-model",
 
 				PlanModel: "plan-model",
 
@@ -2531,7 +2531,7 @@ func TestAgentLoop_PlanModel_ResolvesProviderForSingleCandidate(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "MiniMax-M2.5",
+				ModelName: "MiniMax-M2.5",
 
 				PlanModel: "openai/gpt-5.2",
 

@@ -32,7 +32,7 @@ func makeOrchTestLoop(t *testing.T) (*AgentLoop, *orch.Broadcaster) {
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "test-model",
+				ModelName: "test-model",
 
 				MaxTokens: 512,
 

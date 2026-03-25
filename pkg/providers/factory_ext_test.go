@@ -22,7 +22,11 @@ func TestCreateProviderByName_OpenAI_OAuth(t *testing.T) {
 	}
 
 	cfg := config.DefaultConfig()
-	cfg.Providers.OpenAI.AuthMethod = "oauth"
+	cfg.ModelList = append(cfg.ModelList, &config.ModelConfig{
+		ModelName:  "openai",
+		Model:      "openai/gpt-4o",
+		AuthMethod: "oauth",
+	})
 
 	provider, err := CreateProviderByName(cfg, "openai")
 	if err != nil {
@@ -36,8 +40,11 @@ func TestCreateProviderByName_OpenAI_OAuth(t *testing.T) {
 
 func TestCreateProviderByName_VLLM(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Providers.VLLM.APIKey = "test-vllm-key"
-	cfg.Providers.VLLM.APIBase = "https://api.example.com/v1"
+	cfg.ModelList = append(cfg.ModelList, &config.ModelConfig{
+		ModelName: "vllm",
+		Model:     "vllm/test-model",
+		APIBase:   "https://api.example.com/v1",
+	})
 
 	provider, err := CreateProviderByName(cfg, "vllm")
 	if err != nil {
@@ -60,8 +67,11 @@ func TestCreateProviderByName_Unknown(t *testing.T) {
 
 func TestCreateProviderByName_CaseInsensitive(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Providers.VLLM.APIKey = "test-key"
-	cfg.Providers.VLLM.APIBase = "https://example.com/v1"
+	cfg.ModelList = append(cfg.ModelList, &config.ModelConfig{
+		ModelName: "vllm",
+		Model:     "vllm/test-model",
+		APIBase:   "https://example.com/v1",
+	})
 
 	provider, err := CreateProviderByName(cfg, "VLLM")
 	if err != nil {

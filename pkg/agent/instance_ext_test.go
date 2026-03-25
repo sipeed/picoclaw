@@ -20,11 +20,11 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAliasWithoutProtocol(t *
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
 
-				Model: "glm-5",
+				ModelName: "glm-5",
 			},
 		},
 
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{
 				ModelName: "glm-5",
 

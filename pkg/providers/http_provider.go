@@ -26,12 +26,13 @@ func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
 }
 
 func NewHTTPProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *HTTPProvider {
-	return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(apiKey, apiBase, proxy, maxTokensField, 0)
+	return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(apiKey, apiBase, proxy, maxTokensField, 0, nil)
 }
 
 func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 	apiKey, apiBase, proxy, maxTokensField string,
 	requestTimeoutSeconds int,
+	extraBody map[string]any,
 ) *HTTPProvider {
 	return &HTTPProvider{
 		delegate: openai_compat.NewProvider(
@@ -40,6 +41,7 @@ func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			proxy,
 			openai_compat.WithMaxTokensField(maxTokensField),
 			openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
+			openai_compat.WithExtraBody(extraBody),
 		),
 	}
 }
@@ -50,12 +52,13 @@ func NewHTTPProviderFromConfig(cfg *config.ModelConfig, apiBase string) *HTTPPro
 	opts := []openai_compat.Option{
 		openai_compat.WithMaxTokensField(cfg.MaxTokensField),
 		openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout) * time.Second),
+		openai_compat.WithExtraBody(cfg.ExtraBody),
 	}
 	if cfg.Stream != nil && *cfg.Stream {
 		opts = append(opts, openai_compat.WithStream(true))
 	}
 	return &HTTPProvider{
-		delegate: openai_compat.NewProvider(cfg.APIKey, apiBase, cfg.Proxy, opts...),
+		delegate: openai_compat.NewProvider(cfg.APIKey(), apiBase, cfg.Proxy, opts...),
 	}
 }
 

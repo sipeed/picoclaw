@@ -43,9 +43,7 @@ tasks/
 
 # Plans
 docs/plans/
-
-# Claude Code (local settings are per-user)
-.claude/settings.local.json
+docs/superpowers/
 
 # Editors
 .vscode/
@@ -66,5 +64,6 @@ cmd/telegram/
 web/backend/dist/*
 !web/backend/dist/.gitkeep
 
+.claude/
 
 docker/data

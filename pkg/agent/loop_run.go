@@ -29,6 +29,44 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	defer al.releaseSessionLock(opts.SessionKey)
 
+	// Event scope for this turn
+	scope := al.newTurnEventScope(agent.ID, opts.SessionKey)
+	turnStart := time.Now()
+
+	// Create a cancelable context for hard abort support
+	turnCtx, turnCancelFn := context.WithCancel(ctx)
+	defer turnCancelFn()
+
+	// Register a turnState so the interrupt API can find this turn
+	ts := &turnState{
+		turnID:      scope.turnID,
+		agentID:     agent.ID,
+		sessionKey:  opts.SessionKey,
+		channel:     opts.Channel,
+		chatID:      opts.ChatID,
+		userMessage: opts.UserMessage,
+		phase:       TurnPhaseRunning,
+		startedAt:   turnStart,
+		agent:       agent,
+		turnCancel:  turnCancelFn,
+	}
+	// Bind session store and capture initial history length for rollback
+	if agent.Sessions != nil {
+		ts.session = agent.Sessions
+		ts.initialHistoryLength = len(agent.Sessions.GetHistory(opts.SessionKey))
+	}
+	al.registerActiveTurn(ts)
+	defer al.clearActiveTurn(ts)
+
+	al.emitEvent(EventKindTurnStart,
+		EventMeta{AgentID: agent.ID, TurnID: scope.turnID, SessionKey: opts.SessionKey},
+		TurnStartPayload{
+			Channel:     opts.Channel,
+			ChatID:      opts.ChatID,
+			UserMessage: opts.UserMessage,
+			MediaCount:  len(opts.Media),
+		})
+
 	// Report session lifecycle to canvas.
 
 	al.reporter().ReportSpawn(opts.SessionKey, opts.Channel, opts.UserMessage)
@@ -37,7 +75,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// -0. Create cancelable child context and register active task
 
-	taskCtx, taskCancel := context.WithCancel(ctx)
+	taskCtx, taskCancel := context.WithCancel(turnCtx)
 
 	defer taskCancel()
 
@@ -51,6 +89,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		cancel: taskCancel,
 
 		interrupt: make(chan string, 1),
+
+		turnID: scope.turnID,
 	}
 
 	// Guarantee heartbeat worktree cleanup on ALL exit paths (error, panic, normal).
@@ -241,6 +281,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		opts.ChatID,
 		opts.SenderID,
 		opts.SenderDisplayName,
+		opts.ForcedSkills...,
 	)
 
 	// Resolve media:// refs: images→base64 data URLs, non-images→local paths in content
@@ -323,7 +364,9 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		historyMsg = opts.HistoryMessage
 	}
 
-	agent.Sessions.AddMessage(opts.SessionKey, "user", historyMsg)
+	if historyMsg != "" {
+		agent.Sessions.AddMessage(opts.SessionKey, "user", historyMsg)
+	}
 
 	// 4. Record user prompt for stats
 
@@ -380,8 +423,32 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 		var err error
 
-		finalContent, iteration, err = al.runLLMIteration(ctx, agent, messages, opts, task, curPlanStatus)
+		finalContent, iteration, err = al.runLLMIteration(ctx, agent, messages, opts, task, curPlanStatus, scope)
 		if err != nil {
+			// Check for hard abort: if the turn was hard-aborted, restore
+			// session history and return empty response.
+			ts.mu.RLock()
+			isHardAbort := ts.hardAbort
+			ts.mu.RUnlock()
+			if isHardAbort {
+				if ts.session != nil {
+					history := ts.session.GetHistory(opts.SessionKey)
+					if ts.initialHistoryLength < len(history) {
+						ts.session.SetHistory(opts.SessionKey, history[:ts.initialHistoryLength])
+					}
+				}
+				abortMeta := EventMeta{
+					AgentID:    agent.ID,
+					TurnID:     scope.turnID,
+					SessionKey: opts.SessionKey,
+					Iteration:  iteration,
+				}
+				al.emitEvent(EventKindTurnEnd, abortMeta, TurnEndPayload{
+					Status:   TurnEndStatusAborted,
+					Duration: time.Since(turnStart),
+				})
+				return "", nil
+			}
 			return "", err
 		}
 
@@ -592,6 +659,15 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			"final_length": len(finalContent),
 		})
 
+	al.emitEvent(EventKindTurnEnd,
+		EventMeta{AgentID: agent.ID, TurnID: scope.turnID, SessionKey: opts.SessionKey, Iteration: iteration},
+		TurnEndPayload{
+			Status:          TurnEndStatusCompleted,
+			Iterations:      iteration,
+			Duration:        time.Since(turnStart),
+			FinalContentLen: len(finalContent),
+		})
+
 	return finalContent, nil
 }
 
@@ -800,6 +876,7 @@ func (al *AgentLoop) runLLMIteration(
 	opts processOptions,
 	task *activeTask,
 	planSnapshot string,
+	scope turnEventScope,
 ) (string, int, error) {
 	hooks := al.buildHooks(agent, opts, task, planSnapshot)
 
@@ -810,7 +887,41 @@ func (al *AgentLoop) runLLMIteration(
 	iteration := 0
 	var finalContent string
 
+	// Initial steering poll: inject queued steering messages before the first LLM call
+	if !opts.SkipInitialSteeringPoll {
+		steeringMsgs := al.dequeueSteeringMessagesForScopeWithFallback(opts.SessionKey)
+		if len(steeringMsgs) > 0 {
+			messages = append(messages, steeringMsgs...)
+			totalLen := 0
+			for _, sm := range steeringMsgs {
+				totalLen += len(sm.Content)
+			}
+			al.emitEvent(EventKindSteeringInjected,
+				EventMeta{AgentID: agent.ID, TurnID: scope.turnID, SessionKey: opts.SessionKey},
+				SteeringInjectedPayload{Count: len(steeringMsgs), TotalContentLen: totalLen})
+		}
+	}
+
+	// Also inject any initial steering messages from the process options
+	if len(opts.InitialSteeringMessages) > 0 {
+		// Persist original refs in session history
+		for _, sm := range opts.InitialSteeringMessages {
+			agent.Sessions.AddFullMessage(opts.SessionKey, sm)
+		}
+		// Resolve media refs for the provider call while keeping
+		// the originals in session history with raw refs.
+		cfg := al.GetConfig()
+		maxMedia := cfg.Agents.Defaults.GetMaxMediaSize()
+		resolved := resolveMediaRefs(opts.InitialSteeringMessages, al.mediaStore, maxMedia)
+		messages = append(messages, resolved...)
+	}
+
 	for iteration < agent.MaxIterations {
+		// Check for context cancellation (e.g. hard abort) before each iteration
+		if ctx.Err() != nil {
+			return "", iteration, ctx.Err()
+		}
+
 		iteration++
 
 		if msg := hooks.OnIterationStart(iteration); msg != "" {
@@ -855,6 +966,45 @@ func (al *AgentLoop) runLLMIteration(
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
+		// Hook: BeforeLLM — let hooks inspect/modify the request
+		hookMeta := EventMeta{
+			AgentID:    agent.ID,
+			TurnID:     scope.turnID,
+			SessionKey: opts.SessionKey,
+			Iteration:  iteration,
+		}
+		if al.hooks != nil {
+			hookReq := &LLMHookRequest{
+				Meta:    hookMeta,
+				Model:   activeModel,
+				Tools:   providerToolDefs,
+				Channel: opts.Channel,
+				ChatID:  opts.ChatID,
+			}
+			modified, _ := al.hooks.BeforeLLM(ctx, hookReq)
+			if modified != nil {
+				if modified.Model != "" && modified.Model != activeModel {
+					activeModel = modified.Model
+					// Update candidates to use the hook-specified model
+					candidates = []providers.FallbackCandidate{{Model: modified.Model}}
+				}
+				if len(modified.Tools) > 0 {
+					providerToolDefs = modified.Tools
+				}
+			}
+		}
+
+		// Emit LLM request event
+		al.emitEvent(EventKindLLMRequest,
+			hookMeta,
+			LLMRequestPayload{
+				Model:         activeModel,
+				MessagesCount: len(messages),
+				ToolsCount:    len(providerToolDefs),
+				MaxTokens:     agent.MaxTokens,
+				Temperature:   agent.Temperature,
+			})
+
 		// Streaming setup
 		onChunk, streamCleanup := hooks.SetupStreaming()
 
@@ -862,7 +1012,7 @@ func (al *AgentLoop) runLLMIteration(
 
 		// Call LLM with retry
 		response, err := al.callLLMWithRetry(ctx, agent, &messages, opts,
-			providerToolDefs, candidates, activeModel, onChunk, iteration)
+			providerToolDefs, candidates, activeModel, onChunk, iteration, scope)
 
 		// Streaming cleanup
 		if streamCleanup != nil {
@@ -890,7 +1040,40 @@ func (al *AgentLoop) runLLMIteration(
 			)
 		}
 
-		go al.handleReasoning(ctx, response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
+		// Hook: AfterLLM — let hooks inspect/modify the response
+		if al.hooks != nil {
+			hookResp := &LLMHookResponse{
+				Meta:     hookMeta,
+				Model:    activeModel,
+				Response: response,
+				Channel:  opts.Channel,
+				ChatID:   opts.ChatID,
+			}
+			modified, _ := al.hooks.AfterLLM(ctx, hookResp)
+			if modified != nil && modified.Response != nil {
+				response = modified.Response
+			}
+		}
+
+		// Emit LLM response event
+		al.emitEvent(EventKindLLMResponse,
+			EventMeta{AgentID: agent.ID, TurnID: scope.turnID, SessionKey: opts.SessionKey, Iteration: iteration},
+			LLMResponsePayload{
+				ContentLen:   len(response.Content),
+				ToolCalls:    len(response.ToolCalls),
+				HasReasoning: response.Reasoning != "",
+			})
+
+		reasoningText := response.Reasoning
+		if reasoningText == "" {
+			reasoningText = response.ReasoningContent
+		}
+		go al.handleReasoning(
+			context.WithoutCancel(ctx),
+			reasoningText,
+			opts.Channel,
+			al.targetReasoningChannelID(opts.Channel),
+		)
 
 		logger.DebugCF("agent", "LLM response",
 			map[string]any{
@@ -966,12 +1149,36 @@ func (al *AgentLoop) runLLMIteration(
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
 		// Execute tool calls and collect results
-		lastBlocker := al.executeToolCalls(ctx, agent, normalizedToolCalls, &messages, opts, hooks, iteration)
+		execResult := al.executeToolCalls(ctx, agent, normalizedToolCalls, &messages, opts, hooks, iteration, scope)
+
+		// Graceful interrupt: make a terminal LLM call with no tool
+		// definitions so the agent can produce a final summary.
+		if execResult.gracefulInterrupt {
+			hintMsg := "Interrupt requested. Stop scheduling tools and provide a short final summary."
+			if execResult.gracefulHint != "" {
+				hintMsg += "\n\nInterrupt hint: " + execResult.gracefulHint
+			}
+			messages = append(messages, providers.Message{
+				Role:    "user",
+				Content: hintMsg,
+			})
+
+			terminalResp, termErr := al.callLLMWithRetry(
+				ctx, agent, &messages, opts,
+				nil, // no tool definitions
+				al.selectCandidates(agent, "", messages),
+				agent.Model, nil, iteration+1, scope,
+			)
+			if termErr == nil && terminalResp != nil {
+				finalContent = terminalResp.Content
+			}
+			break
+		}
 
 		// Tick TTL-based tool expiry after execution
 		agent.Tools.TickTTL()
 
-		hooks.InjectReminders(iteration, &messages, lastBlocker)
+		hooks.InjectReminders(iteration, &messages, execResult.lastBlocker)
 		hooks.RefreshSystemPrompt(messages)
 	}
 
@@ -981,6 +1188,13 @@ func (al *AgentLoop) runLLMIteration(
 	}
 
 	return finalContent, iteration, nil
+}
+
+// toolExecResult holds results from executeToolCalls.
+type toolExecResult struct {
+	lastBlocker       string
+	gracefulInterrupt bool
+	gracefulHint      string
 }
 
 // executeToolCalls runs each tool call sequentially, publishes results,
@@ -993,9 +1207,87 @@ func (al *AgentLoop) executeToolCalls(
 	opts processOptions,
 	hooks iterationHooks,
 	iteration int,
-) string {
-	var lastBlocker string
-	for _, tc := range toolCalls {
+	scope turnEventScope,
+) toolExecResult {
+	var result toolExecResult
+	steered := false
+	gracefulSkip := false
+	for i, tc := range toolCalls {
+		// Check for graceful interrupt between tool calls
+		if !gracefulSkip {
+			if ts := al.getActiveTurnState(opts.SessionKey); ts != nil {
+				ts.mu.RLock()
+				if ts.gracefulInterrupt {
+					gracefulSkip = true
+					result.gracefulInterrupt = true
+					result.gracefulHint = ts.gracefulInterruptHint
+				}
+				ts.mu.RUnlock()
+			}
+		}
+
+		// Check for pending steering messages between tool calls
+		if i > 0 && !steered && !gracefulSkip {
+			steeringMsgs := al.dequeueSteeringMessagesForScopeWithFallback(opts.SessionKey)
+			if len(steeringMsgs) > 0 {
+				steered = true
+				totalLen := 0
+				for _, sm := range steeringMsgs {
+					totalLen += len(sm.Content)
+				}
+				*messages = append(*messages, steeringMsgs...)
+				steeringMeta := EventMeta{
+					AgentID:    agent.ID,
+					TurnID:     scope.turnID,
+					SessionKey: opts.SessionKey,
+					Iteration:  iteration,
+				}
+				al.emitEvent(
+					EventKindSteeringInjected,
+					steeringMeta,
+					SteeringInjectedPayload{
+						Count:           len(steeringMsgs),
+						TotalContentLen: totalLen,
+					},
+				)
+			}
+		}
+
+		// Skip remaining tools if graceful interrupt was requested
+		if gracefulSkip {
+			*messages = append(*messages, providers.Message{
+				Role:       "tool",
+				Content:    "Skipped due to graceful interrupt.",
+				ToolCallID: tc.ID,
+			})
+			continue
+		}
+
+		// Skip remaining tools if steering was injected
+		if steered {
+			skipMeta := EventMeta{
+				AgentID:    agent.ID,
+				TurnID:     scope.turnID,
+				SessionKey: opts.SessionKey,
+				Iteration:  iteration,
+			}
+			al.emitEvent(
+				EventKindToolExecSkipped,
+				skipMeta,
+				ToolExecSkippedPayload{
+					Tool:   tc.Name,
+					Reason: "steering",
+				},
+			)
+			// Still need to add a tool result to messages for protocol correctness
+			*messages = append(*messages, providers.Message{
+				Role:       "tool",
+				Content:    "Skipped due to queued user message.",
+				ToolCallID: tc.ID,
+			})
+			continue
+		}
+
 		argsJSON, _ := json.Marshal(tc.Arguments)
 		argsPreview := utils.Truncate(string(argsJSON), 200)
 		logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
@@ -1015,6 +1307,64 @@ func (al *AgentLoop) executeToolCalls(
 			}
 		}
 
+		toolMeta := EventMeta{
+			AgentID:    agent.ID,
+			TurnID:     scope.turnID,
+			SessionKey: opts.SessionKey,
+			Iteration:  iteration,
+		}
+
+		// Hook: BeforeTool — let hooks inspect/modify the tool call
+		toolArgs := tc.Arguments
+		if al.hooks != nil {
+			hookReq := &ToolCallHookRequest{
+				Meta: toolMeta, Tool: tc.Name, Arguments: toolArgs,
+				Channel: opts.Channel, ChatID: opts.ChatID,
+			}
+			modified, decision := al.hooks.BeforeTool(ctx, hookReq)
+			switch decision.normalizedAction() {
+			case HookActionContinue, HookActionModify:
+				if modified != nil {
+					toolArgs = modified.Arguments
+				}
+			case HookActionDenyTool:
+				reason := decision.Reason
+				if reason == "" {
+					reason = "denied by hook"
+				}
+				al.emitEvent(EventKindToolExecSkipped, toolMeta,
+					ToolExecSkippedPayload{Tool: tc.Name, Reason: reason})
+				*messages = append(*messages, providers.Message{
+					Role: "tool", ToolCallID: tc.ID,
+					Content: fmt.Sprintf("Tool execution denied by hook: %s", reason),
+				})
+				continue
+			}
+
+			// Hook: ApproveTool
+			approvalReq := &ToolApprovalRequest{
+				Meta: toolMeta, Tool: tc.Name, Arguments: toolArgs,
+				Channel: opts.Channel, ChatID: opts.ChatID,
+			}
+			approvalDec := al.hooks.ApproveTool(ctx, approvalReq)
+			if !approvalDec.Approved {
+				reason := approvalDec.Reason
+				if reason == "" {
+					reason = "blocked by approval hook"
+				}
+				denialMsg := fmt.Sprintf("Tool execution denied by approval hook: %s", reason)
+				al.emitEvent(EventKindToolExecSkipped, toolMeta,
+					ToolExecSkippedPayload{Tool: tc.Name, Reason: denialMsg})
+				*messages = append(*messages, providers.Message{
+					Role: "tool", ToolCallID: tc.ID, Content: denialMsg,
+				})
+				continue
+			}
+		}
+
+		al.emitEvent(EventKindToolExecStart, toolMeta,
+			ToolExecStartPayload{Tool: tc.Name, Arguments: toolArgs})
+
 		asyncCallback := hooks.OnPreToolExec(ctx, tc)
 
 		toolStart := time.Now()
@@ -1025,10 +1375,33 @@ func (al *AgentLoop) executeToolCalls(
 		}
 
 		toolResult := agent.Tools.ExecuteWithContext(
-			toolCtx, tc.Name, tc.Arguments,
+			toolCtx, tc.Name, toolArgs,
 			opts.Channel, opts.ChatID, asyncCallback,
 		)
 		toolDuration := time.Since(toolStart)
+
+		// Hook: AfterTool — let hooks inspect/modify the tool result
+		if al.hooks != nil {
+			hookResult := &ToolResultHookResponse{
+				Meta: toolMeta, Tool: tc.Name, Arguments: toolArgs,
+				Result: toolResult, Duration: toolDuration,
+				Channel: opts.Channel, ChatID: opts.ChatID,
+			}
+			modified, _ := al.hooks.AfterTool(ctx, hookResult)
+			if modified != nil && modified.Result != nil {
+				toolResult = modified.Result
+			}
+		}
+
+		al.emitEvent(EventKindToolExecEnd, toolMeta,
+			ToolExecEndPayload{
+				Tool:       tc.Name,
+				Duration:   toolDuration,
+				ForLLMLen:  len(toolResult.ForLLM),
+				ForUserLen: len(toolResult.ForUser),
+				IsError:    toolResult.IsError,
+				Async:      toolResult.Async,
+			})
 
 		hooks.OnToolExecDone(tc, toolResult, toolDuration)
 
@@ -1053,7 +1426,7 @@ func (al *AgentLoop) executeToolCalls(
 			contentForLLM = toolResult.Err.Error()
 		}
 		if toolResult.IsError || toolResult.Err != nil {
-			lastBlocker = contentForLLM
+			result.lastBlocker = contentForLLM
 		}
 
 		toolResultMsg := providers.Message{
@@ -1064,7 +1437,21 @@ func (al *AgentLoop) executeToolCalls(
 		*messages = append(*messages, toolResultMsg)
 		agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 	}
-	return lastBlocker
+
+	// Re-check graceful interrupt after all tool execution (may have been
+	// set during the last tool's execution).
+	if !result.gracefulInterrupt {
+		if ts := al.getActiveTurnState(opts.SessionKey); ts != nil {
+			ts.mu.RLock()
+			if ts.gracefulInterrupt {
+				result.gracefulInterrupt = true
+				result.gracefulHint = ts.gracefulInterruptHint
+			}
+			ts.mu.RUnlock()
+		}
+	}
+
+	return result
 }
 
 // forceTextResponse makes a final LLM call without tools when max iterations
