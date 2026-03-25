@@ -91,11 +91,12 @@ func findSafeBoundary(history []providers.Message, targetIndex int) int {
 // metadata, and Media items. Uses a heuristic of 2.5 characters per token.
 func estimateMessageTokens(msg providers.Message) int {
 	chars := utf8.RuneCountInString(msg.Content)
+	chars += utf8.RuneCountInString(msg.ReasoningContent)
 
-	// ReasoningContent (extended thinking / chain-of-thought) can be
-	// substantial and is stored in session history via AddFullMessage.
-	if msg.ReasoningContent != "" {
-		chars += utf8.RuneCountInString(msg.ReasoningContent)
+	// SystemParts are structured system blocks that can be substantial
+	// when using instruction-heavy agents or KV-cache-aware adapters.
+	for _, part := range msg.SystemParts {
+		chars += utf8.RuneCountInString(part.Text)
 	}
 
 	for _, tc := range msg.ToolCalls {
