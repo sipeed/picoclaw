@@ -1,4 +1,4 @@
-.PHONY: dev dev-frontend dev-backend build test lint clean
+.PHONY: dev dev-frontend dev-backend build build-go test lint clean
 
 # Go variables
 GO?=CGO_ENABLED=0 go
@@ -78,6 +78,10 @@ dev-backend:
 # Build frontend and embed into Go binary
 build:
 	cd frontend && pnpm build:backend
+	${WEB_GO} build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/picoclaw-launcher ./backend/
+
+# Build only the Go binary (frontend dist must already exist)
+build-go:
 	${WEB_GO} build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/picoclaw-launcher ./backend/
 
 # Run all tests

@@ -1,0 +1,64 @@
+# ============================================================
+# Stage 1: Build picoclaw binary (with WhatsApp native support)
+# ============================================================
+FROM golang:1.25-alpine AS picoclaw-builder
+
+RUN apk add --no-cache git make
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG BUILD_TARGET=build-whatsapp-native-docker
+RUN make ${BUILD_TARGET}
+
+# ============================================================
+# Stage 2: Build picoclaw-launcher frontend
+# ============================================================
+FROM node:20-alpine AS frontend-builder
+
+RUN npm install -g pnpm
+
+WORKDIR /src/web/frontend
+COPY web/frontend/package.json web/frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY web/frontend/ ./
+RUN pnpm build:backend
+
+# ============================================================
+# Stage 3: Build picoclaw-launcher backend (embeds frontend)
+# ============================================================
+FROM golang:1.25-alpine AS launcher-builder
+
+RUN apk add --no-cache git make
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=frontend-builder /src/web/backend/dist /src/web/backend/dist
+RUN cd web && make build-go
+
+# ============================================================
+# Stage 4: Minimal runtime image
+# ============================================================
+FROM alpine:3.23
+
+RUN apk add --no-cache ca-certificates tzdata curl
+
+COPY --from=picoclaw-builder /src/build/picoclaw /usr/local/bin/picoclaw
+COPY --from=launcher-builder /src/web/build/picoclaw-launcher /usr/local/bin/picoclaw-launcher
+
+RUN addgroup -g 1000 picoclaw && \
+    adduser -D -u 1000 -G picoclaw picoclaw
+
+USER picoclaw
+
+RUN /usr/local/bin/picoclaw onboard
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -q --spider http://localhost:18800/ || exit 1
+
+ENTRYPOINT ["picoclaw-launcher"]
+CMD ["-public", "-no-browser", "-port", "18800"]

@@ -131,6 +131,12 @@ build-launcher:
 	@ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher
 	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher"
 
+## build-whatsapp-native-docker: Build with WhatsApp native for linux/amd64 only (Docker image use)
+build-whatsapp-native-docker: generate
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=amd64 $(GO) build -buildvcs=false -tags $(GO_BUILD_TAGS),whatsapp_native -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./$(CMD_DIR)
+	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
+
 ## build-whatsapp-native: Build with WhatsApp native (whatsmeow) support; larger binary
 build-whatsapp-native: generate
 ## @echo "Building $(BINARY_NAME) with WhatsApp native for $(PLATFORM)/$(ARCH)..."

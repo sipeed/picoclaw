@@ -281,3 +281,40 @@ func TestEncrypt_SSHKeyOutsideAllowedDirs(t *testing.T) {
 		t.Fatal("expected error for SSH key outside allowed directories, got nil")
 	}
 }
+
+func TestResolve_EnvVar_Success(t *testing.T) {
+	t.Setenv("PICOCLAW_TEST_API_KEY", "sk-from-env")
+	r := credential.NewResolver(t.TempDir())
+	got, err := r.Resolve("env://PICOCLAW_TEST_API_KEY")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "sk-from-env" {
+		t.Fatalf("got %q, want %q", got, "sk-from-env")
+	}
+}
+
+func TestResolve_EnvVar_NotSet(t *testing.T) {
+	r := credential.NewResolver(t.TempDir())
+	_, err := r.Resolve("env://PICOCLAW_TEST_UNSET_VAR_XYZ")
+	if err == nil {
+		t.Fatal("expected error for unset env var, got nil")
+	}
+}
+
+func TestResolve_EnvVar_Empty(t *testing.T) {
+	t.Setenv("PICOCLAW_TEST_EMPTY_KEY", "")
+	r := credential.NewResolver(t.TempDir())
+	_, err := r.Resolve("env://PICOCLAW_TEST_EMPTY_KEY")
+	if err == nil {
+		t.Fatal("expected error for empty env var, got nil")
+	}
+}
+
+func TestResolve_EnvVar_NoVarName(t *testing.T) {
+	r := credential.NewResolver(t.TempDir())
+	_, err := r.Resolve("env://")
+	if err == nil {
+		t.Fatal("expected error for env:// with no variable name, got nil")
+	}
+}
