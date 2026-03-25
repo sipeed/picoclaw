@@ -32,11 +32,11 @@ type modelResponse struct {
 	Proxy      string `json:"proxy,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"`
 	// Advanced fields
-	ConnectMode    string         `json:"connect_mode,omitempty"`
-	Workspace      string         `json:"workspace,omitempty"`
-	RPM            int            `json:"rpm,omitempty"`
-	MaxTokensField string         `json:"max_tokens_field,omitempty"`
-	RequestTimeout int            `json:"request_timeout,omitempty"`
+	ConnectMode    string            `json:"connect_mode,omitempty"`
+	Workspace      string            `json:"workspace,omitempty"`
+	RPM            int               `json:"rpm,omitempty"`
+	MaxTokensField string            `json:"max_tokens_field,omitempty"`
+	RequestTimeout int               `json:"request_timeout,omitempty"`
 	ThinkingLevel  string            `json:"thinking_level,omitempty"`
 	ExtraBody      map[string]any    `json:"extra_body,omitempty"`
 	ExtraHeaders   map[string]string `json:"extra_headers,omitempty"`
@@ -195,7 +195,11 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if idx < 0 || idx >= len(cfg.ModelList) {
-		http.Error(w, fmt.Sprintf("Index %d out of range (0-%d)", idx, len(cfg.ModelList)-1), http.StatusNotFound)
+		http.Error(
+			w,
+			fmt.Sprintf("Index %d out of range (0-%d)", idx, len(cfg.ModelList)-1),
+			http.StatusNotFound,
+		)
 		return
 	}
 
@@ -248,7 +252,11 @@ func (h *Handler) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if idx < 0 || idx >= len(cfg.ModelList) {
-		http.Error(w, fmt.Sprintf("Index %d out of range (0-%d)", idx, len(cfg.ModelList)-1), http.StatusNotFound)
+		http.Error(
+			w,
+			fmt.Sprintf("Index %d out of range (0-%d)", idx, len(cfg.ModelList)-1),
+			http.StatusNotFound,
+		)
 		return
 	}
 
@@ -311,11 +319,19 @@ func (h *Handler) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if !found {
-		http.Error(w, fmt.Sprintf("Model %q not found in model_list", req.ModelName), http.StatusNotFound)
+		http.Error(
+			w,
+			fmt.Sprintf("Model %q not found in model_list", req.ModelName),
+			http.StatusNotFound,
+		)
 		return
 	}
 	if isVirtual {
-		http.Error(w, fmt.Sprintf("Cannot set virtual model %q as default", req.ModelName), http.StatusBadRequest)
+		http.Error(
+			w,
+			fmt.Sprintf("Cannot set virtual model %q as default", req.ModelName),
+			http.StatusBadRequest,
+		)
 		return
 	}
 

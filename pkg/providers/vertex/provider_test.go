@@ -8,10 +8,10 @@ import (
 	"net/url"
 	"testing"
 
-
-	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
 func TestProvider_buildURL(t *testing.T) {
@@ -37,16 +37,16 @@ func TestProvider_buildURL(t *testing.T) {
 			expected:  "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent",
 		},
 		{
-			name:      "Override with base URL without method",
-			apiBase:   "http://localhost:8080/v1/models",
-			model:     "gemini-1.0-pro",
-			expected:  "http://localhost:8080/v1/models/gemini-1.0-pro:generateContent?key=key",
+			name:     "Override with base URL without method",
+			apiBase:  "http://localhost:8080/v1/models",
+			model:    "gemini-1.0-pro",
+			expected: "http://localhost:8080/v1/models/gemini-1.0-pro:generateContent?key=key",
 		},
 		{
-			name:      "Override with full endpoint URL",
-			apiBase:   "https://my-custom-proxy.com/my-endpoint:generateContent",
-			model:     "gemini-1.5-pro",
-			expected:  "https://my-custom-proxy.com/my-endpoint:generateContent?key=key",
+			name:     "Override with full endpoint URL",
+			apiBase:  "https://my-custom-proxy.com/my-endpoint:generateContent",
+			model:    "gemini-1.5-pro",
+			expected: "https://my-custom-proxy.com/my-endpoint:generateContent?key=key",
 		},
 	}
 
@@ -59,16 +59,25 @@ func TestProvider_buildURL(t *testing.T) {
 	}
 }
 
-
 func TestProvider_buildRequestBody(t *testing.T) {
 	p := NewProvider("key", "", "", "proj", "us-central1")
 
 	messages := []protocoltypes.Message{
 		{Role: "system", Content: "You are a helpful assistant."},
 		{Role: "user", Content: "Hello!", Media: []string{"data:image/png;base64,iVBORw0KGgo"}},
-		{Role: "assistant", ToolCalls: []protocoltypes.ToolCall{{Name: "get_weather", Arguments: map[string]any{"location": "Tokyo"}}}},
+		{
+			Role: "assistant",
+			ToolCalls: []protocoltypes.ToolCall{
+				{Name: "get_weather", Arguments: map[string]any{"location": "Tokyo"}},
+			},
+		},
 		{Role: "tool", ToolCallID: "get_weather", Content: "Sunny"},
-		{Role: "assistant", ToolCalls: []protocoltypes.ToolCall{{Name: "get_time", Arguments: map[string]any{"location": "Tokyo"}}}},
+		{
+			Role: "assistant",
+			ToolCalls: []protocoltypes.ToolCall{
+				{Name: "get_time", Arguments: map[string]any{"location": "Tokyo"}},
+			},
+		},
 		{Role: "tool", ToolCallID: "get_time", Content: "12:00 PM"},
 	}
 
@@ -127,7 +136,6 @@ func TestProvider_buildRequestBody(t *testing.T) {
 
 	assert.Equal(t, "model", contents[3]["role"])
 }
-
 
 func TestProvider_Chat(t *testing.T) {
 	// Create a mock server
@@ -194,7 +202,11 @@ func TestProvider_ChatStream(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		// Write mock chunks
 		w.Write([]byte(`data: {"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}` + "\n\n"))
-		w.Write([]byte(`data: {"candidates":[{"content":{"parts":[{"text":", world!"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}}` + "\n\n"))
+		w.Write(
+			[]byte(
+				`data: {"candidates":[{"content":{"parts":[{"text":", world!"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}}` + "\n\n",
+			),
+		)
 	}))
 	defer ts.Close()
 

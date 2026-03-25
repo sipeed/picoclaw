@@ -82,13 +82,19 @@ func TestExtractFeatures_RecentToolCalls(t *testing.T) {
 	// History longer than lookbackWindow — only last lookbackWindow entries count.
 	history := make([]providers.Message, 10)
 	// Put 2 tool calls at positions 8 and 9 (within the last 6)
-	history[8] = providers.Message{Role: "assistant", ToolCalls: []providers.ToolCall{{Name: "exec"}}}
+	history[8] = providers.Message{
+		Role:      "assistant",
+		ToolCalls: []providers.ToolCall{{Name: "exec"}},
+	}
 	history[9] = providers.Message{
 		Role:      "assistant",
 		ToolCalls: []providers.ToolCall{{Name: "read_file"}, {Name: "write_file"}},
 	}
 	// Position 3 is outside the lookback window and must NOT be counted
-	history[3] = providers.Message{Role: "assistant", ToolCalls: []providers.ToolCall{{Name: "old_tool"}}}
+	history[3] = providers.Message{
+		Role:      "assistant",
+		ToolCalls: []providers.ToolCall{{Name: "old_tool"}},
+	}
 
 	f := ExtractFeatures("test", history)
 	// 1 (position 8) + 2 (position 9) = 3
@@ -241,9 +247,15 @@ func TestRuleClassifier_ScoreDoesNotExceedOne(t *testing.T) {
 
 // ── Router ───────────────────────────────────────────────────────────────────
 
-
 func TestRouter_SelectModel_SimpleMessageUsesLight(t *testing.T) {
-	r := New(RouterConfig{Tiers: []RoutingTier{{Model: "gemini-flash", Threshold: 0.0}, {Model: "claude-sonnet-4-6", Threshold: 0.35}}})
+	r := New(
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "gemini-flash", Threshold: 0.0},
+				{Model: "claude-sonnet-4-6", Threshold: 0.35},
+			},
+		},
+	)
 	msg := "hi"
 	model, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
 	if !usedLight {
@@ -255,7 +267,14 @@ func TestRouter_SelectModel_SimpleMessageUsesLight(t *testing.T) {
 }
 
 func TestRouter_SelectModel_CodeBlockUsesPrimary(t *testing.T) {
-	r := New(RouterConfig{Tiers: []RoutingTier{{Model: "gemini-flash", Threshold: 0.0}, {Model: "claude-sonnet-4-6", Threshold: 0.35}}})
+	r := New(
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "gemini-flash", Threshold: 0.0},
+				{Model: "claude-sonnet-4-6", Threshold: 0.35},
+			},
+		},
+	)
 	msg := "```go\nfmt.Println(\"hello\")\n```"
 	model, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
 	if usedLight {
@@ -267,7 +286,14 @@ func TestRouter_SelectModel_CodeBlockUsesPrimary(t *testing.T) {
 }
 
 func TestRouter_SelectModel_AttachmentUsesPrimary(t *testing.T) {
-	r := New(RouterConfig{Tiers: []RoutingTier{{Model: "gemini-flash", Threshold: 0.0}, {Model: "claude-sonnet-4-6", Threshold: 0.35}}})
+	r := New(
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "gemini-flash", Threshold: 0.0},
+				{Model: "claude-sonnet-4-6", Threshold: 0.35},
+			},
+		},
+	)
 	msg := "can you analyze this? data:image/png;base64,abc123"
 	model, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
 	if usedLight {
@@ -279,7 +305,14 @@ func TestRouter_SelectModel_AttachmentUsesPrimary(t *testing.T) {
 }
 
 func TestRouter_SelectModel_LongMessageUsesPrimary(t *testing.T) {
-	r := New(RouterConfig{Tiers: []RoutingTier{{Model: "gemini-flash", Threshold: 0.0}, {Model: "claude-sonnet-4-6", Threshold: 0.35}}})
+	r := New(
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "gemini-flash", Threshold: 0.0},
+				{Model: "claude-sonnet-4-6", Threshold: 0.35},
+			},
+		},
+	)
 	// >200 token estimate: 210 * 3 = 630 chars
 	msg := strings.Repeat("word ", 210)
 	model, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
@@ -294,9 +327,19 @@ func TestRouter_SelectModel_LongMessageUsesPrimary(t *testing.T) {
 func TestRouter_SelectModel_DeepToolChainUsesLight(t *testing.T) {
 	// Tool calls alone (0.25) don't cross the 0.35 threshold — acceptable behavior.
 	// Routing is conservative: only promote to heavy when the signal is unambiguous.
-	r := New(RouterConfig{Tiers: []RoutingTier{{Model: "gemini-flash", Threshold: 0.0}, {Model: "claude-sonnet-4-6", Threshold: 0.35}}})
+	r := New(
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "gemini-flash", Threshold: 0.0},
+				{Model: "claude-sonnet-4-6", Threshold: 0.35},
+			},
+		},
+	)
 	history := []providers.Message{
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{Name: "read_file"}, {Name: "write_file"}}},
+		{
+			Role:      "assistant",
+			ToolCalls: []providers.ToolCall{{Name: "read_file"}, {Name: "write_file"}},
+		},
 		{Role: "assistant", ToolCalls: []providers.ToolCall{{Name: "exec"}, {Name: "search"}}},
 	}
 	msg := "ok"
@@ -308,7 +351,14 @@ func TestRouter_SelectModel_DeepToolChainUsesLight(t *testing.T) {
 
 func TestRouter_SelectModel_ToolChainPlusMediumUsesHeavy(t *testing.T) {
 	// Tool calls (0.25) + medium message (0.15) = 0.40 >= 0.35 → heavy
-	r := New(RouterConfig{Tiers: []RoutingTier{{Model: "gemini-flash", Threshold: 0.0}, {Model: "claude-sonnet-4-6", Threshold: 0.35}}})
+	r := New(
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "gemini-flash", Threshold: 0.0},
+				{Model: "claude-sonnet-4-6", Threshold: 0.35},
+			},
+		},
+	)
 	history := []providers.Message{
 		{Role: "assistant", ToolCalls: []providers.ToolCall{
 			{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"},
@@ -324,7 +374,14 @@ func TestRouter_SelectModel_ToolChainPlusMediumUsesHeavy(t *testing.T) {
 
 func TestRouter_SelectModel_CustomThreshold(t *testing.T) {
 	// Very low threshold: even a short message triggers heavy model
-	r := New(RouterConfig{Tiers: []RoutingTier{{Model: "gemini-flash", Threshold: 0.0}, {Model: "claude-sonnet-4-6", Threshold: 0.05}}})
+	r := New(
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "gemini-flash", Threshold: 0.0},
+				{Model: "claude-sonnet-4-6", Threshold: 0.05},
+			},
+		},
+	)
 	msg := strings.Repeat("word ", 55) // medium message → 0.15 >= 0.05
 	_, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
 	if usedLight {
@@ -334,7 +391,14 @@ func TestRouter_SelectModel_CustomThreshold(t *testing.T) {
 
 func TestRouter_SelectModel_HighThreshold(t *testing.T) {
 	// Very high threshold: even code blocks route to light
-	r := New(RouterConfig{Tiers: []RoutingTier{{Model: "gemini-flash", Threshold: 0.0}, {Model: "claude-sonnet-4-6", Threshold: 0.99}}})
+	r := New(
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "gemini-flash", Threshold: 0.0},
+				{Model: "claude-sonnet-4-6", Threshold: 0.99},
+			},
+		},
+	)
 	msg := "```go\nfmt.Println()\n```"
 	_, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
 	if !usedLight {
@@ -343,7 +407,14 @@ func TestRouter_SelectModel_HighThreshold(t *testing.T) {
 }
 
 func TestRouter_Tiers(t *testing.T) {
-	r := New(RouterConfig{Tiers: []RoutingTier{{Model: "my-fast-model", Threshold: 0.0}, {Model: "heavy-model", Threshold: 0.35}}})
+	r := New(
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "my-fast-model", Threshold: 0.0},
+				{Model: "heavy-model", Threshold: 0.35},
+			},
+		},
+	)
 	if r.Tiers()[0].Model != "my-fast-model" {
 		t.Errorf("LightModel: got %q, want %q", "my-fast-model", "my-fast-model")
 	}
@@ -357,7 +428,12 @@ func (f *fixedScoreClassifier) Score(_ Features) float64 { return f.score }
 
 func TestRouter_CustomClassifier_LowScore_SelectsLight(t *testing.T) {
 	r := newWithClassifier(
-		RouterConfig{Tiers: []RoutingTier{{Model: "light", Threshold: 0.0}, {Model: "heavy", Threshold: 0.5}}},
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "light", Threshold: 0.0},
+				{Model: "heavy", Threshold: 0.5},
+			},
+		},
 		&fixedScoreClassifier{score: 0.2},
 	)
 	_, usedLight, _ := r.SelectModel("anything", nil, "heavy")
@@ -368,7 +444,12 @@ func TestRouter_CustomClassifier_LowScore_SelectsLight(t *testing.T) {
 
 func TestRouter_CustomClassifier_HighScore_SelectsPrimary(t *testing.T) {
 	r := newWithClassifier(
-		RouterConfig{Tiers: []RoutingTier{{Model: "light", Threshold: 0.0}, {Model: "heavy", Threshold: 0.5}}},
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "light", Threshold: 0.0},
+				{Model: "heavy", Threshold: 0.5},
+			},
+		},
 		&fixedScoreClassifier{score: 0.8},
 	)
 	_, usedLight, _ := r.SelectModel("anything", nil, "heavy")
@@ -380,7 +461,12 @@ func TestRouter_CustomClassifier_HighScore_SelectsPrimary(t *testing.T) {
 func TestRouter_CustomClassifier_ExactThreshold_SelectsPrimary(t *testing.T) {
 	// score == threshold → primary (uses >= comparison)
 	r := newWithClassifier(
-		RouterConfig{Tiers: []RoutingTier{{Model: "light", Threshold: 0.0}, {Model: "heavy", Threshold: 0.5}}},
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "light", Threshold: 0.0},
+				{Model: "heavy", Threshold: 0.5},
+			},
+		},
 		&fixedScoreClassifier{score: 0.5},
 	)
 	_, usedLight, _ := r.SelectModel("anything", nil, "heavy")
@@ -391,7 +477,12 @@ func TestRouter_CustomClassifier_ExactThreshold_SelectsPrimary(t *testing.T) {
 
 func TestRouter_SelectModel_ReturnsScore(t *testing.T) {
 	r := newWithClassifier(
-		RouterConfig{Tiers: []RoutingTier{{Model: "light", Threshold: 0.0}, {Model: "heavy", Threshold: 0.5}}},
+		RouterConfig{
+			Tiers: []RoutingTier{
+				{Model: "light", Threshold: 0.0},
+				{Model: "heavy", Threshold: 0.5},
+			},
+		},
 		&fixedScoreClassifier{score: 0.42},
 	)
 	_, _, score := r.SelectModel("anything", nil, "heavy")

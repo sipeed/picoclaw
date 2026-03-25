@@ -164,7 +164,10 @@ func registerSharedTools(
 
 		if cfg.Tools.IsToolEnabled("web") {
 			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
-				BraveAPIKeys:    config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey(), cfg.Tools.Web.Brave.APIKeys()),
+				BraveAPIKeys: config.MergeAPIKeys(
+					cfg.Tools.Web.Brave.APIKey(),
+					cfg.Tools.Web.Brave.APIKeys(),
+				),
 				BraveMaxResults: cfg.Tools.Web.Brave.MaxResults,
 				BraveEnabled:    cfg.Tools.Web.Brave.Enabled,
 				TavilyAPIKeys: config.MergeAPIKeys(
@@ -197,7 +200,11 @@ func registerSharedTools(
 				Proxy:                 cfg.Tools.Web.Proxy,
 			})
 			if err != nil {
-				logger.ErrorCF("agent", "Failed to create web search tool", map[string]any{"error": err.Error()})
+				logger.ErrorCF(
+					"agent",
+					"Failed to create web search tool",
+					map[string]any{"error": err.Error()},
+				)
 			} else if searchTool != nil {
 				agent.Tools.Register(searchTool)
 			}
@@ -210,7 +217,11 @@ func registerSharedTools(
 				cfg.Tools.Web.FetchLimitBytes,
 				cfg.Tools.Web.PrivateHostWhitelist)
 			if err != nil {
-				logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+				logger.ErrorCF(
+					"agent",
+					"Failed to create web fetch tool",
+					map[string]any{"error": err.Error()},
+				)
 			} else {
 				agent.Tools.Register(fetchTool)
 			}
@@ -478,7 +489,12 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							"queue_depth": al.pendingSteeringCountForScope(target.SessionKey),
 						})
 
-					continued, continueErr := al.Continue(ctx, target.SessionKey, target.Channel, target.ChatID)
+					continued, continueErr := al.Continue(
+						ctx,
+						target.SessionKey,
+						target.Channel,
+						target.ChatID,
+					)
 					if continueErr != nil {
 						logger.WarnCF("agent", "Failed to continue queued steering",
 							map[string]any{
@@ -506,14 +522,22 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							"queue_depth": al.pendingSteeringCountForScope(target.SessionKey),
 						})
 
-					continued, continueErr := al.Continue(ctx, target.SessionKey, target.Channel, target.ChatID)
+					continued, continueErr := al.Continue(
+						ctx,
+						target.SessionKey,
+						target.Channel,
+						target.ChatID,
+					)
 					if continueErr != nil {
-						logger.WarnCF("agent", "Failed to continue queued steering after shutdown drain",
+						logger.WarnCF(
+							"agent",
+							"Failed to continue queued steering after shutdown drain",
 							map[string]any{
 								"channel": target.Channel,
 								"chat_id": target.ChatID,
 								"error":   continueErr.Error(),
-							})
+							},
+						)
 						return
 					}
 					if continued == "" {
@@ -572,11 +596,15 @@ func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, active
 		msgScope, _, scopeOK := al.resolveSteeringTarget(msg)
 		if !scopeOK || msgScope != activeScope {
 			if err := al.requeueInboundMessage(msg); err != nil {
-				logger.WarnCF("agent", "Failed to requeue non-steering inbound message", map[string]any{
-					"error":     err.Error(),
-					"channel":   msg.Channel,
-					"sender_id": msg.SenderID,
-				})
+				logger.WarnCF(
+					"agent",
+					"Failed to requeue non-steering inbound message",
+					map[string]any{
+						"error":     err.Error(),
+						"channel":   msg.Channel,
+						"sender_id": msg.SenderID,
+					},
+				)
 			}
 			continue
 		}
@@ -610,7 +638,10 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
-func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
+func (al *AgentLoop) publishResponseIfNeeded(
+	ctx context.Context,
+	channel, chatID, response string,
+) {
 	if response == "" {
 		return
 	}
@@ -1060,7 +1091,10 @@ var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
 // transcribeAudioInMessage resolves audio media refs, transcribes them, and
 // replaces audio annotations in msg.Content with the transcribed text.
 // Returns the (possibly modified) message and true if audio was transcribed.
-func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.InboundMessage) (bus.InboundMessage, bool) {
+func (al *AgentLoop) transcribeAudioInMessage(
+	ctx context.Context,
+	msg bus.InboundMessage,
+) (bus.InboundMessage, bool) {
 	if al.transcriber == nil || al.mediaStore == nil || len(msg.Media) == 0 {
 		return msg, false
 	}
@@ -1070,7 +1104,11 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	for _, ref := range msg.Media {
 		path, meta, err := al.mediaStore.ResolveWithMeta(ref)
 		if err != nil {
-			logger.WarnCF("voice", "Failed to resolve media ref", map[string]any{"ref": ref, "error": err})
+			logger.WarnCF(
+				"voice",
+				"Failed to resolve media ref",
+				map[string]any{"ref": ref, "error": err},
+			)
 			continue
 		}
 		if !utils.IsAudioFile(meta.Filename, meta.ContentType) {
@@ -1148,7 +1186,11 @@ func (al *AgentLoop) sendTranscriptionFeedback(
 		ReplyToMessageID: messageID,
 	})
 	if err != nil {
-		logger.WarnCF("voice", "Failed to send transcription feedback", map[string]any{"error": err.Error()})
+		logger.WarnCF(
+			"voice",
+			"Failed to send transcription feedback",
+			map[string]any{"error": err.Error()},
+		)
 	}
 }
 
@@ -1348,7 +1390,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	return al.runAgentLoop(ctx, agent, opts)
 }
 
-func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
+func (al *AgentLoop) resolveMessageRoute(
+	msg bus.InboundMessage,
+) (routing.ResolvedRoute, *AgentInstance, error) {
 	registry := al.GetRegistry()
 	route := registry.ResolveRoute(routing.RouteInput{
 		Channel:    msg.Channel,
@@ -1364,7 +1408,10 @@ func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.Resolv
 		agent = registry.GetDefaultAgent()
 	}
 	if agent == nil {
-		return routing.ResolvedRoute{}, nil, fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
+		return routing.ResolvedRoute{}, nil, fmt.Errorf(
+			"no agent available for route (agent_id=%s)",
+			route.AgentID,
+		)
 	}
 
 	return route, agent, nil
@@ -2650,12 +2697,15 @@ turnLoop:
 	}
 
 	if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
-		logger.InfoCF("agent", "Steering arrived after turn completion; continuing turn before finalizing",
+		logger.InfoCF(
+			"agent",
+			"Steering arrived after turn completion; continuing turn before finalizing",
 			map[string]any{
 				"agent_id":       ts.agent.ID,
 				"steering_count": len(steerMsgs),
 				"session_key":    ts.sessionKey,
-			})
+			},
+		)
 		pendingMessages = append(pendingMessages, steerMsgs...)
 		finalContent = ""
 		goto turnLoop
@@ -2757,8 +2807,8 @@ func (al *AgentLoop) selectCandidates(
 	if targetModelName == agent.Model {
 		logger.DebugCF("agent", "Model routing: primary model selected",
 			map[string]any{
-				"agent_id":  agent.ID,
-				"score":     score,
+				"agent_id": agent.ID,
+				"score":    score,
 			})
 		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
 	}
@@ -2773,17 +2823,24 @@ func (al *AgentLoop) selectCandidates(
 		return tierCands, resolvedCandidateModel(tierCands, targetModelName)
 	}
 
-	logger.WarnCF("agent", "Model routing: tier model candidates not found, falling back to primary",
+	logger.WarnCF(
+		"agent",
+		"Model routing: tier model candidates not found, falling back to primary",
 		map[string]any{
 			"agent_id":   agent.ID,
 			"tier_model": targetModelName,
 			"score":      score,
-		})
+		},
+	)
 	return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
-func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey string, turnScope turnEventScope) {
+func (al *AgentLoop) maybeSummarize(
+	agent *AgentInstance,
+	sessionKey string,
+	turnScope turnEventScope,
+) {
 	newHistory := agent.Sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := agent.ContextWindow * agent.SummarizeTokenPercent / 100
@@ -2817,7 +2874,10 @@ type compressionResult struct {
 // prompt is built dynamically by BuildMessages and is NOT stored here.
 // The compression note is recorded in the session summary so that
 // BuildMessages can include it in the next system prompt.
-func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) (compressionResult, bool) {
+func (al *AgentLoop) forceCompression(
+	agent *AgentInstance,
+	sessionKey string,
+) (compressionResult, bool) {
 	history := agent.Sessions.GetHistory(sessionKey)
 	if len(history) <= 2 {
 		return compressionResult{}, false
@@ -2970,7 +3030,11 @@ func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 }
 
 // summarizeSession summarizes the conversation history for a session.
-func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string, turnScope turnEventScope) {
+func (al *AgentLoop) summarizeSession(
+	agent *AgentInstance,
+	sessionKey string,
+	turnScope turnEventScope,
+) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -3322,7 +3386,10 @@ func (al *AgentLoop) applyExplicitSkillCommand(
 
 	skillName, ok := agent.ContextBuilder.ResolveSkillName(arg)
 	if !ok {
-		return true, true, fmt.Sprintf("Unknown skill: %s\nUse /list skills to see installed skills.", arg)
+		return true, true, fmt.Sprintf(
+			"Unknown skill: %s\nUse /list skills to see installed skills.",
+			arg,
+		)
 	}
 
 	if len(parts) < 3 {
@@ -3349,7 +3416,10 @@ func (al *AgentLoop) applyExplicitSkillCommand(
 	return true, false, ""
 }
 
-func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOptions) *commands.Runtime {
+func (al *AgentLoop) buildCommandsRuntime(
+	agent *AgentInstance,
+	opts *processOptions,
+) *commands.Runtime {
 	registry := al.GetRegistry()
 	cfg := al.GetConfig()
 	rt := &commands.Runtime{
@@ -3393,7 +3463,10 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 			rt.ListSkillNames = agent.ContextBuilder.ListSkillNames
 		}
 		rt.GetModelInfo = func() (string, string) {
-			return agent.Model, resolvedCandidateProvider(agent.Candidates, cfg.Agents.Defaults.Provider)
+			return agent.Model, resolvedCandidateProvider(
+				agent.Candidates,
+				cfg.Agents.Defaults.Provider,
+			)
 		}
 		rt.SwitchModel = func(value string) (string, error) {
 			value = strings.TrimSpace(value)
@@ -3407,7 +3480,12 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 				return "", fmt.Errorf("failed to initialize model %q: %w", value, err)
 			}
 
-			nextCandidates := resolveModelCandidates(cfg, cfg.Agents.Defaults.Provider, modelCfg.Model, agent.Fallbacks)
+			nextCandidates := resolveModelCandidates(
+				cfg,
+				cfg.Agents.Defaults.Provider,
+				modelCfg.Model,
+				agent.Fallbacks,
+			)
 			if len(nextCandidates) == 0 {
 				return "", fmt.Errorf("model %q did not resolve to any provider candidates", value)
 			}
