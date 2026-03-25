@@ -26,6 +26,7 @@
 | `mistral`            | LLM (Mistral 直连)           | [console.mistral.ai](https://console.mistral.ai)                    |
 | `longcat`            | LLM (Longcat 直连)           | [longcat.ai](https://longcat.ai)                                     |
 | `modelscope`         | LLM (ModelScope 直连)        | [modelscope.cn](https://modelscope.cn)                               |
+| `mimo`               | LLM (小米 MiMo 直连)         | [platform.xiaomimimo.com](https://platform.xiaomimimo.com)           |
 
 ### 模型配置 (model_list)
 
@@ -62,6 +63,7 @@
 | **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [获取密钥](https://vivgrid.com)                                   |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [获取密钥](https://longcat.chat/platform)                         |
 | **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [获取 Token](https://modelscope.cn/my/tokens)                    |
+| **小米 MiMo**       | `mimo/`           | `https://api.xiaomimimo.com/v1`                     | OpenAI    | [获取密钥](https://platform.xiaomimimo.com)                      |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | 自定义    | 仅 OAuth                                                          |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                 |
 

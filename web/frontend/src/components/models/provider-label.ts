@@ -18,6 +18,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   avian: "Avian",
   vllm: "VLLM (local)",
   zhipu: "Zhipu AI (智谱)",
+  mimo: "Xiaomi MiMo",
 }
 
 export function getProviderKey(model: string): string {
