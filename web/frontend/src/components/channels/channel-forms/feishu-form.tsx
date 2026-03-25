@@ -126,6 +126,16 @@ export function FeishuForm({
           placeholder={t("channels.field.allowFromPlaceholder")}
         />
       </Field>
+      <Field
+        label={t("channels.field.downloadDir")}
+        hint={t("channels.form.desc.downloadDir")}
+      >
+        <Input
+          value={asString(config.download_dir)}
+          onChange={(e) => onChange("download_dir", e.target.value)}
+          placeholder={t("channels.field.downloadDirPlaceholder")}
+        />
+      </Field>
     </div>
   )
 }
