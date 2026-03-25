@@ -23,6 +23,28 @@ export interface CoreConfigForm {
   heartbeatInterval: string
   devicesEnabled: boolean
   monitorUSB: boolean
+  // Agent advanced
+  allowReadOutsideWorkspace: boolean
+  steeringMode: string
+  temperature: string
+  maxMediaSize: string
+  // SubTurn
+  subturnMaxDepth: string
+  subturnMaxConcurrent: string
+  subturnDefaultTimeoutMinutes: string
+  subturnDefaultTokenBudget: string
+  subturnConcurrencyTimeoutSec: string
+  // Routing
+  routingEnabled: boolean
+  routingLightModel: string
+  routingThreshold: string
+  // Tool security
+  filterSensitiveData: boolean
+  filterMinLength: string
+  // Voice
+  voiceEchoTranscription: boolean
+  // Gateway
+  gatewayLogLevel: string
 }
 
 export interface LauncherForm {
@@ -62,6 +84,26 @@ export const DM_SCOPE_OPTIONS = [
   },
 ] as const
 
+export const STEERING_MODE_OPTIONS = [
+  {
+    value: "one-at-a-time",
+    labelKey: "pages.config.steering_mode_one_at_a_time",
+    labelDefault: "One at a Time",
+  },
+  {
+    value: "all",
+    labelKey: "pages.config.steering_mode_all",
+    labelDefault: "All",
+  },
+] as const
+
+export const LOG_LEVEL_OPTIONS = [
+  { value: "debug", labelKey: "pages.config.log_level_debug", labelDefault: "Debug" },
+  { value: "info", labelKey: "pages.config.log_level_info", labelDefault: "Info" },
+  { value: "warn", labelKey: "pages.config.log_level_warn", labelDefault: "Warn" },
+  { value: "error", labelKey: "pages.config.log_level_error", labelDefault: "Error" },
+] as const
+
 export const EMPTY_FORM: CoreConfigForm = {
   workspace: "",
   restrictToWorkspace: true,
@@ -85,6 +127,28 @@ export const EMPTY_FORM: CoreConfigForm = {
   heartbeatInterval: "30",
   devicesEnabled: false,
   monitorUSB: true,
+  // Agent advanced
+  allowReadOutsideWorkspace: false,
+  steeringMode: "one-at-a-time",
+  temperature: "",
+  maxMediaSize: "",
+  // SubTurn
+  subturnMaxDepth: "0",
+  subturnMaxConcurrent: "0",
+  subturnDefaultTimeoutMinutes: "0",
+  subturnDefaultTokenBudget: "0",
+  subturnConcurrencyTimeoutSec: "0",
+  // Routing
+  routingEnabled: false,
+  routingLightModel: "",
+  routingThreshold: "0.5",
+  // Tool security
+  filterSensitiveData: true,
+  filterMinLength: "8",
+  // Voice
+  voiceEchoTranscription: false,
+  // Gateway
+  gatewayLogLevel: "info",
 }
 
 export const EMPTY_LAUNCHER_FORM: LauncherForm = {
@@ -129,6 +193,10 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
   const cron = asRecord(tools.cron)
   const exec = asRecord(tools.exec)
   const toolFeedback = asRecord(defaults.tool_feedback)
+  const subturn = asRecord(defaults.subturn)
+  const routing = asRecord(defaults.routing)
+  const voice = asRecord(root.voice)
+  const gateway = asRecord(root.gateway)
 
   return {
     workspace: asString(defaults.workspace) || EMPTY_FORM.workspace,
@@ -212,6 +280,64 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       devices.monitor_usb === undefined
         ? EMPTY_FORM.monitorUSB
         : asBool(devices.monitor_usb),
+    // Agent advanced
+    allowReadOutsideWorkspace:
+      defaults.allow_read_outside_workspace === undefined
+        ? EMPTY_FORM.allowReadOutsideWorkspace
+        : asBool(defaults.allow_read_outside_workspace),
+    steeringMode: asString(defaults.steering_mode) || EMPTY_FORM.steeringMode,
+    temperature: asNumberString(defaults.temperature, EMPTY_FORM.temperature),
+    maxMediaSize: asNumberString(
+      defaults.max_media_size,
+      EMPTY_FORM.maxMediaSize,
+    ),
+    // SubTurn
+    subturnMaxDepth: asNumberString(
+      subturn.max_depth,
+      EMPTY_FORM.subturnMaxDepth,
+    ),
+    subturnMaxConcurrent: asNumberString(
+      subturn.max_concurrent,
+      EMPTY_FORM.subturnMaxConcurrent,
+    ),
+    subturnDefaultTimeoutMinutes: asNumberString(
+      subturn.default_timeout_minutes,
+      EMPTY_FORM.subturnDefaultTimeoutMinutes,
+    ),
+    subturnDefaultTokenBudget: asNumberString(
+      subturn.default_token_budget,
+      EMPTY_FORM.subturnDefaultTokenBudget,
+    ),
+    subturnConcurrencyTimeoutSec: asNumberString(
+      subturn.concurrency_timeout_sec,
+      EMPTY_FORM.subturnConcurrencyTimeoutSec,
+    ),
+    // Routing
+    routingEnabled:
+      routing.enabled === undefined
+        ? EMPTY_FORM.routingEnabled
+        : asBool(routing.enabled),
+    routingLightModel: asString(routing.light_model) || EMPTY_FORM.routingLightModel,
+    routingThreshold: asNumberString(
+      routing.threshold,
+      EMPTY_FORM.routingThreshold,
+    ),
+    // Tool security
+    filterSensitiveData:
+      tools.filter_sensitive_data === undefined
+        ? EMPTY_FORM.filterSensitiveData
+        : asBool(tools.filter_sensitive_data),
+    filterMinLength: asNumberString(
+      tools.filter_min_length,
+      EMPTY_FORM.filterMinLength,
+    ),
+    // Voice
+    voiceEchoTranscription:
+      voice.echo_transcription === undefined
+        ? EMPTY_FORM.voiceEchoTranscription
+        : asBool(voice.echo_transcription),
+    // Gateway
+    gatewayLogLevel: asString(gateway.log_level) || EMPTY_FORM.gatewayLogLevel,
   }
 }
 
@@ -223,6 +349,24 @@ export function parseIntField(
   const value = Number(rawValue)
   if (!Number.isInteger(value)) {
     throw new Error(`${label} must be an integer.`)
+  }
+  if (options.min !== undefined && value < options.min) {
+    throw new Error(`${label} must be >= ${options.min}.`)
+  }
+  if (options.max !== undefined && value > options.max) {
+    throw new Error(`${label} must be <= ${options.max}.`)
+  }
+  return value
+}
+
+export function parseFloatField(
+  rawValue: string,
+  label: string,
+  options: { min?: number; max?: number } = {},
+): number {
+  const value = Number(rawValue)
+  if (!Number.isFinite(value)) {
+    throw new Error(`${label} must be a number.`)
   }
   if (options.min !== undefined && value < options.min) {
     throw new Error(`${label} must be >= ${options.min}.`)

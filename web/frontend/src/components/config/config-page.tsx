@@ -18,7 +18,10 @@ import {
   DevicesSection,
   ExecSection,
   LauncherSection,
+  RoutingSection,
   RuntimeSection,
+  SubTurnSection,
+  ToolSecuritySection,
 } from "@/components/config/config-sections"
 import {
   type CoreConfigForm,
@@ -27,6 +30,7 @@ import {
   type LauncherForm,
   buildFormFromConfig,
   parseCIDRText,
+  parseFloatField,
   parseIntField,
   parseMultilineList,
 } from "@/components/config/form-model"
@@ -180,6 +184,58 @@ export function ConfigPage() {
           "Cron exec timeout",
           { min: 0 },
         )
+
+        // SubTurn fields
+        const subturnMaxDepth = parseIntField(
+          form.subturnMaxDepth,
+          "SubTurn max depth",
+          { min: 0 },
+        )
+        const subturnMaxConcurrent = parseIntField(
+          form.subturnMaxConcurrent,
+          "SubTurn max concurrent",
+          { min: 0 },
+        )
+        const subturnDefaultTimeoutMinutes = parseIntField(
+          form.subturnDefaultTimeoutMinutes,
+          "SubTurn default timeout",
+          { min: 0 },
+        )
+        const subturnDefaultTokenBudget = parseIntField(
+          form.subturnDefaultTokenBudget,
+          "SubTurn token budget",
+          { min: 0 },
+        )
+        const subturnConcurrencyTimeoutSec = parseIntField(
+          form.subturnConcurrencyTimeoutSec,
+          "SubTurn concurrency timeout",
+          { min: 0 },
+        )
+
+        // Routing fields
+        const routingThreshold = form.routingEnabled
+          ? parseFloatField(form.routingThreshold, "Routing threshold", {
+              min: 0,
+              max: 1,
+            })
+          : undefined
+
+        // Optional numeric fields
+        const temperature = form.temperature.trim()
+          ? parseFloatField(form.temperature, "Temperature", {
+              min: 0,
+              max: 2,
+            })
+          : undefined
+        const maxMediaSize = form.maxMediaSize.trim()
+          ? parseIntField(form.maxMediaSize, "Max media size", { min: 0 })
+          : undefined
+        const filterMinLength = parseIntField(
+          form.filterMinLength,
+          "Filter min length",
+          { min: 0 },
+        )
+
         const execConfigPatch: Record<string, unknown> = {
           enabled: form.execEnabled,
         }
@@ -208,6 +264,10 @@ export function ConfigPage() {
             defaults: {
               workspace,
               restrict_to_workspace: form.restrictToWorkspace,
+              allow_read_outside_workspace: form.allowReadOutsideWorkspace,
+              steering_mode: form.steeringMode,
+              temperature,
+              max_media_size: maxMediaSize,
               tool_feedback: {
                 enabled: form.toolFeedbackEnabled,
                 max_args_length: toolFeedbackMaxArgsLength,
@@ -217,12 +277,28 @@ export function ConfigPage() {
               max_tool_iterations: maxToolIterations,
               summarize_message_threshold: summarizeMessageThreshold,
               summarize_token_percent: summarizeTokenPercent,
+              subturn: {
+                max_depth: subturnMaxDepth,
+                max_concurrent: subturnMaxConcurrent,
+                default_timeout_minutes: subturnDefaultTimeoutMinutes,
+                default_token_budget: subturnDefaultTokenBudget,
+                concurrency_timeout_sec: subturnConcurrencyTimeoutSec,
+              },
+              routing: form.routingEnabled
+                ? {
+                    enabled: true,
+                    light_model: form.routingLightModel,
+                    threshold: routingThreshold,
+                  }
+                : { enabled: false },
             },
           },
           session: {
             dm_scope: dmScope,
           },
           tools: {
+            filter_sensitive_data: form.filterSensitiveData,
+            filter_min_length: filterMinLength,
             cron: {
               allow_command: form.allowCommand,
               exec_timeout_minutes: cronExecTimeoutMinutes,
@@ -236,6 +312,12 @@ export function ConfigPage() {
           devices: {
             enabled: form.devicesEnabled,
             monitor_usb: form.monitorUSB,
+          },
+          voice: {
+            echo_transcription: form.voiceEchoTranscription,
+          },
+          gateway: {
+            log_level: form.gatewayLogLevel,
           },
         })
 
@@ -322,9 +404,15 @@ export function ConfigPage() {
 
               <AgentDefaultsSection form={form} onFieldChange={updateField} />
 
+              <SubTurnSection form={form} onFieldChange={updateField} />
+
+              <RoutingSection form={form} onFieldChange={updateField} />
+
               <RuntimeSection form={form} onFieldChange={updateField} />
 
               <ExecSection form={form} onFieldChange={updateField} />
+
+              <ToolSecuritySection form={form} onFieldChange={updateField} />
 
               <CronSection form={form} onFieldChange={updateField} />
 
