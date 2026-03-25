@@ -847,10 +847,10 @@ type ModelConfig struct {
 	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
 
 	// Optional optimizations
-	RPM            int            `json:"rpm,omitempty"`              // Requests per minute limit
-	MaxTokensField string         `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
-	RequestTimeout int            `json:"request_timeout,omitempty"`
-	ThinkingLevel  string         `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
+	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
+	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
+	RequestTimeout int    `json:"request_timeout,omitempty"`
+	ThinkingLevel  string `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
 	// CooldownStrategy controls the scope of cooldown tracking for this model.
 	// - "provider" (default): cooldown is shared across all models in the provider
 	// - "model" or "per-model": cooldown is isolated to this specific model
@@ -878,7 +878,6 @@ func (c *ModelConfig) APIKey() string {
 // IsVirtual returns true if this model was generated from multi-key expansion.
 func (c *ModelConfig) IsVirtual() bool {
 	return c.isVirtual
-}
 }
 
 // Validate checks if the ModelConfig has all required fields.
@@ -921,6 +920,7 @@ func (c *ModelConfig) SetAPIKey(value string) {
 	}
 	c.secDirty = true
 }
+
 type GatewayConfig struct {
 	Host      string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
 	Port      int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
