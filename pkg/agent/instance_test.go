@@ -172,11 +172,11 @@ func TestNewAgentInstance_ResolvePerModelCooldownKeys(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:      tmpDir,
-				Model:          "router-a",
+				ModelName:      "router-a",
 				ModelFallbacks: []string{"router-b", "shared-provider"},
 			},
 		},
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{
 				ModelName:        "router-a",
 				Model:            "litellm/openai/gpt-4o-mini",
@@ -218,7 +218,7 @@ func TestNewAgentInstance_ResolveLightModelPerModelCooldownKeys(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace: tmpDir,
-				Model:     "primary-model",
+				ModelName: "primary-model",
 				Routing: &config.RoutingConfig{
 					Enabled:    true,
 					LightModel: "light-model",
@@ -226,7 +226,7 @@ func TestNewAgentInstance_ResolveLightModelPerModelCooldownKeys(t *testing.T) {
 				},
 			},
 		},
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{
 				ModelName: "primary-model",
 				Model:     "litellm/openai/gpt-4o-mini",
@@ -252,6 +252,41 @@ func TestNewAgentInstance_ResolveLightModelPerModelCooldownKeys(t *testing.T) {
 	}
 	if got := agent.LightCandidates[0].CooldownKey; got != "litellm/openai/gpt-4o" {
 		t.Fatalf("light candidate cooldown key = %q, want %q", got, "litellm/openai/gpt-4o")
+	}
+}
+
+func TestNewAgentInstance_ResolveMultiKeyCooldownKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:      tmpDir,
+				ModelName:      "glm-main",
+				ModelFallbacks: []string{"glm-replica"},
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "glm-main",
+				Model:     "zhipu/glm-4.7",
+			},
+			{
+				ModelName: "glm-replica",
+				Model:     "zhipu/glm-4.7__key_1",
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	if len(agent.Candidates) != 2 {
+		t.Fatalf("len(Candidates) = %d, want 2", len(agent.Candidates))
+	}
+	if got := agent.Candidates[0].CooldownKey; got != "zhipu/glm-4.7" {
+		t.Fatalf("candidate[0] cooldown key = %q, want %q", got, "zhipu/glm-4.7")
+	}
+	if got := agent.Candidates[1].CooldownKey; got != "zhipu/glm-4.7__key_1" {
+		t.Fatalf("candidate[1] cooldown key = %q, want %q", got, "zhipu/glm-4.7__key_1")
 	}
 }
 

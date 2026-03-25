@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -239,7 +240,7 @@ func applyCooldownKeys(cfg *config.Config, candidates []providers.FallbackCandid
 	copy(resolved, candidates)
 
 	for i := range resolved {
-		resolved[i].CooldownKey = resolveCooldownKey(strategyLookup, resolved[i])
+		resolved[i].CooldownKey = resolveCooldownKey(strategyLookup, resolved[i], resolved)
 	}
 
 	return resolved
@@ -267,7 +268,11 @@ func buildCooldownStrategyLookup(cfg *config.Config) map[string]string {
 	return strategyLookup
 }
 
-func resolveCooldownKey(strategyLookup map[string]string, candidate providers.FallbackCandidate) string {
+func resolveCooldownKey(
+	strategyLookup map[string]string,
+	candidate providers.FallbackCandidate,
+	candidates []providers.FallbackCandidate,
+) string {
 	if strings.TrimSpace(candidate.Provider) == "" {
 		if strings.TrimSpace(candidate.Model) == "" {
 			return ""
@@ -276,11 +281,54 @@ func resolveCooldownKey(strategyLookup map[string]string, candidate providers.Fa
 	}
 
 	candidateKey := providers.ModelKey(candidate.Provider, candidate.Model)
+	if belongsToMultiKeySet(candidate, candidates) {
+		return candidateKey
+	}
 	if strategyLookup[candidateKey] == "model" {
 		return candidateKey
 	}
 
 	return candidate.Provider
+}
+
+func belongsToMultiKeySet(
+	candidate providers.FallbackCandidate,
+	candidates []providers.FallbackCandidate,
+) bool {
+	provider := providers.NormalizeProvider(candidate.Provider)
+	model := strings.ToLower(strings.TrimSpace(candidate.Model))
+	if provider == "" || model == "" {
+		return false
+	}
+
+	baseModel, isReplica := multiKeyBaseModel(model)
+	if isReplica {
+		return true
+	}
+
+	for _, other := range candidates {
+		if providers.NormalizeProvider(other.Provider) != provider {
+			continue
+		}
+		otherBase, otherIsReplica := multiKeyBaseModel(other.Model)
+		if otherIsReplica && otherBase == baseModel {
+			return true
+		}
+	}
+
+	return false
+}
+
+func multiKeyBaseModel(model string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	idx := strings.LastIndex(normalized, "__key_")
+	if idx <= 0 {
+		return normalized, false
+	}
+	if _, err := strconv.Atoi(normalized[idx+len("__key_"):]); err != nil {
+		return normalized, false
+	}
+	return normalized[:idx], true
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.
