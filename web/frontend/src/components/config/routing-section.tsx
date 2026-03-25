@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from "lucide-react"
+import { IconPlus, IconTrash } from "@tabler/icons-react"
 import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
@@ -78,7 +78,7 @@ export function RoutingSection({
                 size="sm"
                 onClick={handleAddTier}
               >
-                <Plus className="mr-2 h-4 w-4" />
+                <IconPlus className="mr-2 h-4 w-4" />
                 {t("pages.config.routing.add_tier", "Add Tier")}
               </Button>
             </div>
@@ -137,7 +137,7 @@ export function RoutingSection({
                     className="text-destructive h-8 w-8"
                     onClick={() => handleRemoveTier(index)}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <IconTrash className="h-4 w-4" />
                   </Button>
                 </div>
               ))}
