@@ -123,7 +123,9 @@ export function GenericForm({
       bot_id: t("channels.form.desc.appId"),
       websocket_url: t("channels.form.desc.wsUrl"),
       dm_policy: t("channels.form.desc.genericField", { field: "DM policy" }),
-      group_policy: t("channels.form.desc.genericField", { field: "group policy" }),
+      group_policy: t("channels.form.desc.genericField", {
+        field: "group policy",
+      }),
       group_allow_from: t("channels.form.desc.allowFrom"),
       send_thinking_message: t("channels.form.desc.genericField", {
         field: "thinking message behavior",

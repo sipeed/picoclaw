@@ -1,5 +1,10 @@
 export type JsonRecord = Record<string, unknown>
 
+export interface RoutingTier {
+  model: string
+  threshold: number
+}
+
 export interface CoreConfigForm {
   workspace: string
   restrictToWorkspace: boolean
@@ -23,6 +28,8 @@ export interface CoreConfigForm {
   heartbeatInterval: string
   devicesEnabled: boolean
   monitorUSB: boolean
+  routingEnabled: boolean
+  routingTiers: RoutingTier[]
 }
 
 export interface LauncherForm {
@@ -85,6 +92,8 @@ export const EMPTY_FORM: CoreConfigForm = {
   heartbeatInterval: "30",
   devicesEnabled: false,
   monitorUSB: true,
+  routingEnabled: false,
+  routingTiers: [],
 }
 
 export const EMPTY_LAUNCHER_FORM: LauncherForm = {
@@ -129,6 +138,25 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
   const cron = asRecord(tools.cron)
   const exec = asRecord(tools.exec)
   const toolFeedback = asRecord(defaults.tool_feedback)
+  const routing = asRecord(defaults.routing)
+
+  const parsedTiers: RoutingTier[] = []
+  if (Array.isArray(routing.tiers)) {
+    for (const t of routing.tiers) {
+      if (t && typeof t === "object") {
+        const tier = t as Record<string, unknown>
+        parsedTiers.push({
+          model: asString(tier.model),
+          threshold: Number(tier.threshold) || 0,
+        })
+      }
+    }
+  } else if (routing.light_model) {
+    parsedTiers.push({
+      model: asString(routing.light_model),
+      threshold: Number(routing.threshold) || 0.35,
+    })
+  }
 
   return {
     workspace: asString(defaults.workspace) || EMPTY_FORM.workspace,
@@ -212,6 +240,11 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       devices.monitor_usb === undefined
         ? EMPTY_FORM.monitorUSB
         : asBool(devices.monitor_usb),
+    routingEnabled:
+      routing.enabled === undefined
+        ? EMPTY_FORM.routingEnabled
+        : asBool(routing.enabled),
+    routingTiers: parsedTiers,
   }
 }
 

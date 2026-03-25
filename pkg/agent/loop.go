@@ -2744,29 +2744,37 @@ func (al *AgentLoop) selectCandidates(
 	userMsg string,
 	history []providers.Message,
 ) (candidates []providers.FallbackCandidate, model string) {
-	if agent.Router == nil || len(agent.LightCandidates) == 0 {
+	if agent.Router == nil {
 		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
 	}
 
-	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
-	if !usedLight {
+	targetModelName, _, score := agent.Router.SelectModel(userMsg, history, agent.Model)
+	if targetModelName == agent.Model {
 		logger.DebugCF("agent", "Model routing: primary model selected",
 			map[string]any{
 				"agent_id":  agent.ID,
 				"score":     score,
-				"threshold": agent.Router.Threshold(),
 			})
 		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
 	}
 
-	logger.InfoCF("agent", "Model routing: light model selected",
+	if tierCands, ok := agent.TierCandidates[targetModelName]; ok && len(tierCands) > 0 {
+		logger.InfoCF("agent", "Model routing: tier model selected",
+			map[string]any{
+				"agent_id":   agent.ID,
+				"tier_model": targetModelName,
+				"score":      score,
+			})
+		return tierCands, resolvedCandidateModel(tierCands, targetModelName)
+	}
+
+	logger.WarnCF("agent", "Model routing: tier model candidates not found, falling back to primary",
 		map[string]any{
-			"agent_id":    agent.ID,
-			"light_model": agent.Router.LightModel(),
-			"score":       score,
-			"threshold":   agent.Router.Threshold(),
+			"agent_id":   agent.ID,
+			"tier_model": targetModelName,
+			"score":      score,
 		})
-	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel())
+	return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.

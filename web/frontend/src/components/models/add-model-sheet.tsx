@@ -12,7 +12,6 @@ import {
 } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Sheet,
   SheetContent,
@@ -21,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { Textarea } from "@/components/ui/textarea"
 
 interface AddForm {
   modelName: string
@@ -103,7 +103,11 @@ export function AddModelSheet({
     if (form.extraHeaders.trim()) {
       try {
         const parsed = JSON.parse(form.extraHeaders.trim())
-        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        if (
+          typeof parsed !== "object" ||
+          parsed === null ||
+          Array.isArray(parsed)
+        ) {
           errors.extraHeaders = "Must be a valid JSON object"
         }
       } catch {
@@ -115,7 +119,8 @@ export function AddModelSheet({
   }
 
   const setField =
-    (key: keyof AddForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    (key: keyof AddForm) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setForm((f) => ({ ...f, [key]: e.target.value }))
       if (fieldErrors[key]) {
         setFieldErrors((prev) => ({ ...prev, [key]: undefined }))
@@ -144,7 +149,9 @@ export function AddModelSheet({
           ? Number(form.requestTimeout)
           : undefined,
         thinking_level: form.thinkingLevel.trim() || undefined,
-        extra_headers: form.extraHeaders.trim() ? JSON.parse(form.extraHeaders.trim()) : undefined,
+        extra_headers: form.extraHeaders.trim()
+          ? JSON.parse(form.extraHeaders.trim())
+          : undefined,
         extra_body: form.extraBody.trim()
           ? JSON.parse(form.extraBody.trim())
           : undefined,
@@ -336,8 +343,12 @@ export function AddModelSheet({
                   aria-invalid={!!fieldErrors.extraHeaders}
                 />
                 {fieldErrors.extraHeaders && (
-                  <p className="text-destructive text-xs">{fieldErrors.extraHeaders}</p>
+                  <p className="text-destructive text-xs">
+                    {fieldErrors.extraHeaders}
+                  </p>
                 )}
+              </Field>
+              <Field
                 label={t("models.field.extraBody")}
                 hint={t("models.field.extraBodyHint")}
               >

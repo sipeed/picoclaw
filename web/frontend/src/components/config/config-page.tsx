@@ -30,6 +30,7 @@ import {
   parseIntField,
   parseMultilineList,
 } from "@/components/config/form-model"
+import { RoutingSection } from "@/components/config/routing-section"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 
@@ -217,6 +218,10 @@ export function ConfigPage() {
               max_tool_iterations: maxToolIterations,
               summarize_message_threshold: summarizeMessageThreshold,
               summarize_token_percent: summarizeTokenPercent,
+              routing: {
+                enabled: form.routingEnabled,
+                tiers: form.routingTiers,
+              },
             },
           },
           session: {
@@ -321,6 +326,13 @@ export function ConfigPage() {
               )}
 
               <AgentDefaultsSection form={form} onFieldChange={updateField} />
+
+              <RoutingSection
+                enabled={form.routingEnabled}
+                tiers={form.routingTiers}
+                onEnabledChange={(v) => updateField("routingEnabled", v)}
+                onTiersChange={(v) => updateField("routingTiers", v)}
+              />
 
               <RuntimeSection form={form} onFieldChange={updateField} />
 
