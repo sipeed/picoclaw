@@ -178,16 +178,6 @@ func lookupModelConfig(cfg *config.Config, modelName string) *config.ModelConfig
 	return modelCfg
 }
 
-func gatewayRestartRequired(configDefaultModel, bootDefaultModel, gatewayStatus string) bool {
-	if gatewayStatus != "running" {
-		return false
-	}
-	if strings.TrimSpace(configDefaultModel) == "" || strings.TrimSpace(bootDefaultModel) == "" {
-		return false
-	}
-	return configDefaultModel != bootDefaultModel
-}
-
 func computeConfigSignature(cfg *config.Config) string {
 	if cfg == nil {
 		return ""
@@ -806,7 +796,7 @@ func (h *Handler) handleGatewayStatus(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) gatewayStatusData() map[string]any {
 	data := map[string]any{}
-	configDefaultModel := ""
+	var configDefaultModel string
 	cfg, cfgErr := config.LoadConfig(h.configPath)
 	if cfgErr == nil && cfg != nil {
 		configDefaultModel = strings.TrimSpace(cfg.Agents.Defaults.GetModelName())
