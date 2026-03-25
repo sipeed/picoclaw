@@ -28,7 +28,9 @@ type (
 	FunctionCall   = protocoltypes.FunctionCall
 )
 
-const ()
+const (
+	defaultRequestTimeout = common.DefaultRequestTimeout
+)
 
 // Provider implements the LLM provider interface for Google Vertex AI.
 // It uses the standard Vertex AI REST API for Gemini models.
@@ -112,6 +114,7 @@ func (p *Provider) buildURL(model string, action string) string {
 	return baseURL
 }
 
+
 // parseMediaData converts base64 media data into the Vertex AI inlineData format.
 // It tries to detect mime type from the data URI scheme if present.
 func parseMediaData(mediaData string) map[string]any {
@@ -135,11 +138,7 @@ func parseMediaData(mediaData string) map[string]any {
 }
 
 // buildRequestBody formats the standard messages and tools into the Vertex AI (Gemini) REST payload format.
-func (p *Provider) buildRequestBody(
-	messages []Message,
-	tools []ToolDefinition,
-	options map[string]any,
-) (map[string]any, error) {
+func (p *Provider) buildRequestBody(messages []Message, tools []ToolDefinition, options map[string]any) (map[string]any, error) {
 	req := make(map[string]any)
 
 	var contents []map[string]any
@@ -235,7 +234,7 @@ func (p *Provider) buildRequestBody(
 
 			parts = append(parts, map[string]any{
 				"functionResponse": map[string]any{
-					"name":     msg.ToolCallID,
+					"name": msg.ToolCallID,
 					"response": responseObj,
 				},
 			})
@@ -291,6 +290,7 @@ func (p *Provider) buildRequestBody(
 
 	return req, nil
 }
+
 
 func (p *Provider) Chat(
 	ctx context.Context,
@@ -440,11 +440,7 @@ func (p *Provider) ChatStream(
 				if part.FunctionCall != nil {
 					argsJSON, _ := json.Marshal(part.FunctionCall.Args)
 					toolCall := ToolCall{
-						ID: fmt.Sprintf(
-							"call_%s_%d",
-							part.FunctionCall.Name,
-							time.Now().UnixNano(),
-						),
+						ID:        fmt.Sprintf("call_%s_%d", part.FunctionCall.Name, time.Now().UnixNano()),
 						Name:      part.FunctionCall.Name,
 						Arguments: part.FunctionCall.Args,
 						Function: &FunctionCall{

@@ -856,9 +856,9 @@ type ModelConfig struct {
 	Region    string `json:"region,omitempty"`     // Region (e.g. for Google Vertex AI)
 
 	// Optional optimizations
-	RPM            int               `json:"rpm,omitempty"`              // Requests per minute limit
-	MaxTokensField string            `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
-	RequestTimeout int               `json:"request_timeout,omitempty"`
+	RPM            int            `json:"rpm,omitempty"`              // Requests per minute limit
+	MaxTokensField string         `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
+	RequestTimeout int            `json:"request_timeout,omitempty"`
 	ThinkingLevel  string            `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
 	ExtraBody      map[string]any    `json:"extra_body,omitempty"`     // Additional fields to inject into request body
 	ExtraHeaders   map[string]string `json:"extra_headers,omitempty"`  // Additional headers to inject into request
@@ -1034,10 +1034,10 @@ type SearXNGConfig struct {
 }
 
 type GLMSearchConfig struct {
-	Enabled  bool `json:"enabled"       env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
+	Enabled  bool `json:"enabled"  env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
 	apiKey   string
 	secDirty bool
-	BaseURL  string `json:"base_url"      env:"PICOCLAW_TOOLS_WEB_GLM_BASE_URL"`
+	BaseURL  string `json:"base_url" env:"PICOCLAW_TOOLS_WEB_GLM_BASE_URL"`
 	// SearchEngine specifies the search backend: "search_std" (default),
 	// "search_pro", "search_pro_sogou", or "search_pro_quark".
 	SearchEngine string `json:"search_engine" env:"PICOCLAW_TOOLS_WEB_GLM_SEARCH_ENGINE"`
@@ -1074,7 +1074,7 @@ func (c *BaiduSearchConfig) SetAPIKey(key string) {
 }
 
 type WebToolsConfig struct {
-	ToolConfig  `                    envPrefix:"PICOCLAW_TOOLS_WEB_"`
+	ToolConfig  `                  envPrefix:"PICOCLAW_TOOLS_WEB_"`
 	Brave       BraveConfig       `                                json:"brave"`
 	Tavily      TavilyConfig      `                                json:"tavily"`
 	DuckDuckGo  DuckDuckGoConfig  `                                json:"duckduckgo"`
@@ -1087,13 +1087,13 @@ type WebToolsConfig struct {
 	// the client-side web_search tool is hidden to avoid duplicate search surfaces,
 	// and the provider's built-in search is used instead. Falls back to client-side
 	// search when the provider does not support native search.
-	PreferNative bool `                                json:"prefer_native"                    env:"PICOCLAW_TOOLS_WEB_PREFER_NATIVE"`
+	PreferNative bool `json:"prefer_native" env:"PICOCLAW_TOOLS_WEB_PREFER_NATIVE"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
-	Proxy                string              `                                json:"proxy,omitempty"                  env:"PICOCLAW_TOOLS_WEB_PROXY"`
-	FetchLimitBytes      int64               `                                json:"fetch_limit_bytes,omitempty"      env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
-	Format               string              `                                json:"format,omitempty"                 env:"PICOCLAW_TOOLS_WEB_FORMAT"`
-	PrivateHostWhitelist FlexibleStringSlice `                                json:"private_host_whitelist,omitempty" env:"PICOCLAW_TOOLS_WEB_PRIVATE_HOST_WHITELIST"`
+	Proxy                string              `json:"proxy,omitempty"                  env:"PICOCLAW_TOOLS_WEB_PROXY"`
+	FetchLimitBytes      int64               `json:"fetch_limit_bytes,omitempty"      env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
+	Format               string              `json:"format,omitempty"                 env:"PICOCLAW_TOOLS_WEB_FORMAT"`
+	PrivateHostWhitelist FlexibleStringSlice `json:"private_host_whitelist,omitempty" env:"PICOCLAW_TOOLS_WEB_PRIVATE_HOST_WHITELIST"`
 }
 
 type CronToolsConfig struct {
@@ -1131,8 +1131,8 @@ type ReadFileToolConfig struct {
 }
 
 type ToolsConfig struct {
-	AllowReadPaths  []string `json:"allow_read_paths"      env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
-	AllowWritePaths []string `json:"allow_write_paths"     env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
+	AllowReadPaths  []string `json:"allow_read_paths"  env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
+	AllowWritePaths []string `json:"allow_write_paths" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
 	// FilterSensitiveData controls whether to filter sensitive values (API keys,
 	// tokens, secrets) from tool results before sending to the LLM.
 	// Default: true (enabled)
@@ -1140,29 +1140,29 @@ type ToolsConfig struct {
 	// FilterMinLength is the minimum content length required for filtering.
 	// Content shorter than this will be returned unchanged for performance.
 	// Default: 8
-	FilterMinLength int                `json:"filter_min_length"     env:"PICOCLAW_TOOLS_FILTER_MIN_LENGTH"`
+	FilterMinLength int                `json:"filter_min_length" env:"PICOCLAW_TOOLS_FILTER_MIN_LENGTH"`
 	Web             WebToolsConfig     `json:"web"`
 	Cron            CronToolsConfig    `json:"cron"`
 	Exec            ExecConfig         `json:"exec"`
 	Skills          SkillsToolsConfig  `json:"skills"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 	MCP             MCPConfig          `json:"mcp"`
-	AppendFile      ToolConfig         `json:"append_file"                                                      envPrefix:"PICOCLAW_TOOLS_APPEND_FILE_"`
-	EditFile        ToolConfig         `json:"edit_file"                                                        envPrefix:"PICOCLAW_TOOLS_EDIT_FILE_"`
-	FindSkills      ToolConfig         `json:"find_skills"                                                      envPrefix:"PICOCLAW_TOOLS_FIND_SKILLS_"`
-	I2C             ToolConfig         `json:"i2c"                                                              envPrefix:"PICOCLAW_TOOLS_I2C_"`
-	InstallSkill    ToolConfig         `json:"install_skill"                                                    envPrefix:"PICOCLAW_TOOLS_INSTALL_SKILL_"`
-	UpdateSkill     ToolConfig         `json:"update_skill"                                                     envPrefix:"PICOCLAW_TOOLS_UPDATE_SKILL_"`
-	ListDir         ToolConfig         `json:"list_dir"                                                         envPrefix:"PICOCLAW_TOOLS_LIST_DIR_"`
-	Message         ToolConfig         `json:"message"                                                          envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
-	ReadFile        ReadFileToolConfig `json:"read_file"                                                        envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
-	SendFile        ToolConfig         `json:"send_file"                                                        envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
-	Spawn           ToolConfig         `json:"spawn"                                                            envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
-	SpawnStatus     ToolConfig         `json:"spawn_status"                                                     envPrefix:"PICOCLAW_TOOLS_SPAWN_STATUS_"`
-	SPI             ToolConfig         `json:"spi"                                                              envPrefix:"PICOCLAW_TOOLS_SPI_"`
-	Subagent        ToolConfig         `json:"subagent"                                                         envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
-	WebFetch        ToolConfig         `json:"web_fetch"                                                        envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
-	WriteFile       ToolConfig         `json:"write_file"                                                       envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
+	AppendFile      ToolConfig         `json:"append_file"                                              envPrefix:"PICOCLAW_TOOLS_APPEND_FILE_"`
+	EditFile        ToolConfig         `json:"edit_file"                                                envPrefix:"PICOCLAW_TOOLS_EDIT_FILE_"`
+	FindSkills      ToolConfig         `json:"find_skills"                                              envPrefix:"PICOCLAW_TOOLS_FIND_SKILLS_"`
+	I2C             ToolConfig         `json:"i2c"                                                      envPrefix:"PICOCLAW_TOOLS_I2C_"`
+	InstallSkill    ToolConfig         `json:"install_skill"                                            envPrefix:"PICOCLAW_TOOLS_INSTALL_SKILL_"`
+	UpdateSkill     ToolConfig         `json:"update_skill"                                             envPrefix:"PICOCLAW_TOOLS_UPDATE_SKILL_"`
+	ListDir         ToolConfig         `json:"list_dir"                                                 envPrefix:"PICOCLAW_TOOLS_LIST_DIR_"`
+	Message         ToolConfig         `json:"message"                                                  envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
+	ReadFile        ReadFileToolConfig `json:"read_file"                                                envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
+	SendFile        ToolConfig         `json:"send_file"                                                envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
+	Spawn           ToolConfig         `json:"spawn"                                                    envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
+	SpawnStatus     ToolConfig         `json:"spawn_status"                                             envPrefix:"PICOCLAW_TOOLS_SPAWN_STATUS_"`
+	SPI             ToolConfig         `json:"spi"                                                      envPrefix:"PICOCLAW_TOOLS_SPI_"`
+	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
+	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
+	WriteFile       ToolConfig         `json:"write_file"                                               envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
 }
 
 // IsFilterSensitiveDataEnabled returns true if sensitive data filtering is enabled
@@ -1254,10 +1254,10 @@ type MCPServerConfig struct {
 
 // MCPConfig defines configuration for all MCP servers
 type MCPConfig struct {
-	ToolConfig `                           envPrefix:"PICOCLAW_TOOLS_MCP_"`
+	ToolConfig `                    envPrefix:"PICOCLAW_TOOLS_MCP_"`
 	Discovery  ToolDiscoveryConfig `                                json:"discovery"`
 	// Servers is a map of server name to server configuration
-	Servers map[string]MCPServerConfig `                                json:"servers,omitempty"`
+	Servers map[string]MCPServerConfig `json:"servers,omitempty"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -1265,10 +1265,7 @@ func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			logger.WarnF(
-				"config file not found, using default config",
-				map[string]any{"path": path},
-			)
+			logger.WarnF("config file not found, using default config", map[string]any{"path": path})
 			return DefaultConfig(), nil
 		}
 		logger.Errorf("failed to read config file: %v", err)
@@ -1291,10 +1288,7 @@ func LoadConfig(path string) (*Config, error) {
 	var cfg *Config
 	switch versionInfo.Version {
 	case 0:
-		logger.InfoF(
-			"config migrate start",
-			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
-		)
+		logger.InfoF("config migrate start", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
 		// Legacy config (no version field)
 		v, e := loadConfigV0(data)
 		if e != nil {
@@ -1302,16 +1296,10 @@ func LoadConfig(path string) (*Config, error) {
 		}
 		cfg, e = v.Migrate()
 		if e != nil {
-			logger.ErrorF(
-				"config migrate fail",
-				map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
-			)
+			logger.ErrorF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
 			return nil, e
 		}
-		logger.InfoF(
-			"config migrate success",
-			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
-		)
+		logger.InfoF("config migrate success", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
 		err = makeBackup(path)
 		if err != nil {
 			return nil, err
@@ -1319,19 +1307,13 @@ func LoadConfig(path string) (*Config, error) {
 		// Load existing security config and merge with migrated one to prevent data loss
 		existingSec, secErr := loadSecurityConfig(securityPath(path))
 		if secErr != nil {
-			logger.WarnF(
-				"failed to load existing security config during migration",
-				map[string]any{"error": secErr},
-			)
+			logger.WarnF("failed to load existing security config during migration", map[string]any{"error": secErr})
 		}
 		if existingSec != nil && cfg.security != nil {
 			cfg.security = mergeSecurityConfig(existingSec, cfg.security)
 			// Re-apply the merged security config to update all channels and models
 			if err = applySecurityConfig(cfg, cfg.security); err != nil {
-				logger.WarnF(
-					"failed to re-apply merged security config during migration",
-					map[string]any{"error": err},
-				)
+				logger.WarnF("failed to re-apply merged security config during migration", map[string]any{"error": err})
 			}
 		}
 		defer func(cfg *Config) {
@@ -1363,11 +1345,9 @@ func LoadConfig(path string) (*Config, error) {
 		for _, m := range cfg.ModelList {
 			for _, k := range m.apiKeys {
 				if k != "" && !strings.HasPrefix(k, "enc://") && !strings.HasPrefix(k, "file://") {
-					fmt.Fprintf(
-						os.Stderr,
+					fmt.Fprintf(os.Stderr,
 						"picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n",
-						m.ModelName,
-					)
+						m.ModelName)
 					break // Only warn once per model
 				}
 			}

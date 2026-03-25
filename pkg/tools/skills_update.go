@@ -69,8 +69,7 @@ func (t *UpdateSkillTool) Execute(ctx context.Context, args map[string]any) *Too
 
 	// Prepare the content to append
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	contentToAppend := fmt.Sprintf(
-		"\n\n## Learned Skill: %s\n\n**Analysis**: %s\n\n**Skills Improved**: %s\n\n%s\n",
+	contentToAppend := fmt.Sprintf("\n\n## Learned Skill: %s\n\n**Analysis**: %s\n\n**Skills Improved**: %s\n\n%s\n",
 		timestamp,
 		analysis,
 		skillsToImprove,
@@ -93,19 +92,11 @@ func (t *UpdateSkillTool) Execute(ctx context.Context, args map[string]any) *Too
 		return ErrorResult(fmt.Sprintf("failed to append to SKILL.md: %v", err))
 	}
 
-	output := fmt.Sprintf(
-		"Successfully learned and updated SKILL.md.\n\nAnalysis: %s\nSkills Improved: %s\n",
-		analysis,
-		skillsToImprove,
-	)
+	output := fmt.Sprintf("Successfully learned and updated SKILL.md.\n\nAnalysis: %s\nSkills Improved: %s\n", analysis, skillsToImprove)
 
 	// The response is passed back to the LLM.
 	// We also populate the ForUser field to notify the user.
 	res := SilentResult(output)
-	res.ForUser = fmt.Sprintf(
-		"I have analyzed our conversation and improved my skills.\n\n**My Analysis**:\n%s\n\n**Skills I've Improved/Added**:\n%s\n\nI have saved these learnings to `SKILL.md`.",
-		analysis,
-		skillsToImprove,
-	)
+	res.ForUser = fmt.Sprintf("I have analyzed our conversation and improved my skills.\n\n**My Analysis**:\n%s\n\n**Skills I've Improved/Added**:\n%s\n\nI have saved these learnings to `SKILL.md`.", analysis, skillsToImprove)
 	return res
 }

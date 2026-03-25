@@ -65,5 +65,5 @@ func TestUpdateSkillTool_Execute(t *testing.T) {
 
 	contentStr2 := string(content2)
 	assert.Contains(t, contentStr2, "I was slow to find the file.") // Old content still there
-	assert.Contains(t, contentStr2, "Another analysis.")            // New content added
+	assert.Contains(t, contentStr2, "Another analysis.") // New content added
 }

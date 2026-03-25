@@ -7,6 +7,7 @@ import (
 // defaultThreshold is used when the config threshold is zero or negative.
 // At 0.35 a message needs at least one strong signal (code block, long text,
 // or an attachment) before the heavy model is chosen.
+const defaultThreshold = 0.35
 
 // RoutingTier defines a single tier for model routing.
 type RoutingTier struct {
