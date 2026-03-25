@@ -383,6 +383,7 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 | [Azure OpenAI](https://portal.azure.com/) | `azure/` | Required | Enterprise Azure deployment |
 | [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | Device code login |
 | [Antigravity](https://console.cloud.google.com/) | `antigravity/` | OAuth | Google Cloud AI |
+| [Google Vertex AI](https://cloud.google.com/vertex-ai) | `vertex/` | Required / OAuth | GCP Vertex AI |
 | [AWS Bedrock](https://console.aws.amazon.com/bedrock)* | `bedrock/` | AWS credentials | Claude, Llama, Mistral on AWS |
 
 > \* AWS Bedrock requires build tag: `go build -tags bedrock`. Set `api_base` to a region name (e.g., `us-east-1`) for automatic endpoint resolution across all AWS partitions (aws, aws-cn, aws-us-gov). When using a full endpoint URL instead, you must also configure `AWS_REGION` via environment variable or AWS config/profile.
@@ -411,6 +412,27 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
       "model_name": "local-vllm",
       "model": "vllm/your-model",
       "api_base": "http://localhost:8000/v1"
+    }
+  ]
+}
+```
+
+**Google AI Studio / Vertex AI (Custom Endpoints):**
+You can use the `vertex` provider to query Google AI Studio endpoints or custom Vertex AI URLs. This supports using an `api_key` as a query parameter (`?key=...`).
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gemini-pro-studio",
+      "model": "vertex/gemini-1.5-pro",
+      "api_base": "https://generativelanguage.googleapis.com/v1beta/models",
+      "api_key": "YOUR_GEMINI_API_KEY"
+    },
+    {
+      "model_name": "gemini-pro-vertex",
+      "model": "vertex/gemini-3-pro-preview",
+      "api_base": "https://us-central1-aiplatform.googleapis.com/v1/publishers/google/models",
+      "api_key": "YOUR_VERTEX_API_KEY"
     }
   ]
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 
@@ -37,22 +38,22 @@ func TestProvider_buildURL(t *testing.T) {
 		},
 		{
 			name:      "Override with base URL without method",
-			apiBase:   "http://localhost:8080/v1",
+			apiBase:   "http://localhost:8080/v1/models",
 			model:     "gemini-1.0-pro",
-			expected:  "http://localhost:8080/v1/models/gemini-1.0-pro:generateContent",
+			expected:  "http://localhost:8080/v1/models/gemini-1.0-pro:generateContent?key=key",
 		},
 		{
 			name:      "Override with full endpoint URL",
 			apiBase:   "https://my-custom-proxy.com/my-endpoint:generateContent",
 			model:     "gemini-1.5-pro",
-			expected:  "https://my-custom-proxy.com/my-endpoint:generateContent",
+			expected:  "https://my-custom-proxy.com/my-endpoint:generateContent?key=key",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewProvider("key", tt.apiBase, "", tt.projectID, tt.region)
-			actual := p.buildURL(tt.model)
+			actual := p.buildURL(tt.model, "generateContent")
 			assert.Equal(t, tt.expected, actual)
 		})
 	}
@@ -132,7 +133,9 @@ func TestProvider_Chat(t *testing.T) {
 	// Create a mock server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "POST", r.Method)
-		assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
+		// Because we're using the query 'key=test-key' we no longer have Bearer authentication
+		// assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
+		assert.Contains(t, r.URL.String(), "key=test-key")
 
 		var reqBody map[string]any
 		err := json.NewDecoder(r.Body).Decode(&reqBody)
@@ -175,4 +178,113 @@ func TestProvider_Chat(t *testing.T) {
 	assert.Equal(t, 10, resp.Usage.PromptTokens)
 	assert.Equal(t, 5, resp.Usage.CompletionTokens)
 	assert.Equal(t, 15, resp.Usage.TotalTokens)
+}
+
+func TestProvider_ChatStream(t *testing.T) {
+	// Create a mock server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		assert.Contains(t, r.URL.String(), "key=test-key")
+		assert.Contains(t, r.URL.String(), "alt=sse")
+
+		var reqBody map[string]any
+		err := json.NewDecoder(r.Body).Decode(&reqBody)
+		require.NoError(t, err)
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Write mock chunks
+		w.Write([]byte(`data: {"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}` + "\n\n"))
+		w.Write([]byte(`data: {"candidates":[{"content":{"parts":[{"text":", world!"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}}` + "\n\n"))
+	}))
+	defer ts.Close()
+
+	p := NewProvider("test-key", ts.URL, "", "my-project", "us-central1")
+	opts := make(map[string]any)
+
+	var chunks []string
+	resp, err := p.ChatStream(
+		context.Background(),
+		[]protocoltypes.Message{{Role: "user", Content: "Say hello!"}},
+		nil,
+		"gemini-1.5-pro",
+		opts,
+		func(accumulated string) {
+			chunks = append(chunks, accumulated)
+		},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	assert.Equal(t, "Hello, world!", resp.Content)
+	assert.Equal(t, "stop", resp.FinishReason)
+	assert.NotNil(t, resp.Usage)
+	if resp.Usage != nil {
+		assert.Equal(t, 10, resp.Usage.PromptTokens)
+		assert.Equal(t, 5, resp.Usage.CompletionTokens)
+		assert.Equal(t, 15, resp.Usage.TotalTokens)
+	}
+
+	assert.Equal(t, []string{"Hello", "Hello, world!"}, chunks)
+}
+
+func TestProvider_Chat_Standard(t *testing.T) {
+	// Create a mock server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		// Standard Vertex without apiBase should use Bearer authentication
+		assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
+
+		var reqBody map[string]any
+		err := json.NewDecoder(r.Body).Decode(&reqBody)
+		require.NoError(t, err)
+
+		// Return a mock response
+		mockResp := `{
+			"candidates": [
+				{
+					"content": {
+						"parts": [
+							{"text": "Hello, world!"}
+						]
+					},
+					"finishReason": "STOP"
+				}
+			]
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(mockResp))
+	}))
+	defer ts.Close()
+
+	// Use an empty apiBase so it builds standard Vertex URLs
+	p := NewProvider("test-key", "", "", "my-project", "us-central1")
+	// Since buildURL will use aiplatform.googleapis.com, we override the httpClient Transport
+	// to redirect requests to our mock server for this test by swapping the base URL out in a custom RoundTripper.
+	p.httpClient.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		req.URL, _ = url.Parse(ts.URL)
+		return http.DefaultTransport.RoundTrip(req)
+	})
+
+	opts := make(map[string]any)
+
+	resp, err := p.Chat(
+		context.Background(),
+		[]protocoltypes.Message{{Role: "user", Content: "Say hello!"}},
+		nil,
+		"gemini-1.5-pro",
+		opts,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	assert.Equal(t, "Hello, world!", resp.Content)
+	assert.Equal(t, "stop", resp.FinishReason)
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

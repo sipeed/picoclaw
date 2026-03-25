@@ -6,6 +6,7 @@
 package vertex
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -73,19 +74,44 @@ func NewProvider(apiKey, apiBase, proxy, projectID, region string, opts ...Optio
 }
 
 // buildURL constructs the Vertex AI REST endpoint URL.
-func (p *Provider) buildURL(model string) string {
-	if p.apiBase != "" {
-		if strings.Contains(p.apiBase, "generateContent") {
-			return p.apiBase
-		}
-		return fmt.Sprintf("%s/models/%s:generateContent", p.apiBase, model)
+func (p *Provider) buildURL(model string, action string) string {
+	if action == "" {
+		action = "generateContent"
 	}
 
-	region := p.region
-	if region == "" {
-		region = "us-central1"
+	var baseURL string
+	if p.apiBase != "" {
+		if strings.Contains(p.apiBase, "generateContent") {
+			baseURL = p.apiBase
+		} else {
+			baseURL = fmt.Sprintf("%s/%s:%s", p.apiBase, model, action)
+		}
+	} else {
+		region := p.region
+		if region == "" {
+			region = "us-central1"
+		}
+		baseURL = fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:%s", region, p.projectID, region, model, action)
 	}
-	return fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent", region, p.projectID, region, model)
+
+	// Only append ?key= for custom apiBase endpoints
+	if p.apiBase != "" && p.apiKey != "" && !strings.Contains(baseURL, "key=") {
+		if strings.Contains(baseURL, "?") {
+			baseURL = fmt.Sprintf("%s&key=%s", baseURL, p.apiKey)
+		} else {
+			baseURL = fmt.Sprintf("%s?key=%s", baseURL, p.apiKey)
+		}
+	}
+
+	if action == "streamGenerateContent" && !strings.Contains(baseURL, "alt=sse") {
+		if strings.Contains(baseURL, "?") {
+			baseURL = fmt.Sprintf("%s&alt=sse", baseURL)
+		} else {
+			baseURL = fmt.Sprintf("%s?alt=sse", baseURL)
+		}
+	}
+
+	return baseURL
 }
 
 
@@ -287,7 +313,7 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	requestURL := p.buildURL(model)
+	requestURL := p.buildURL(model, "generateContent")
 
 	req, err := http.NewRequestWithContext(ctx, "POST", requestURL, bytes.NewReader(jsonData))
 	if err != nil {
@@ -295,7 +321,7 @@ func (p *Provider) Chat(
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if p.apiKey != "" {
+	if p.apiKey != "" && !strings.Contains(requestURL, "key=") {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
 
@@ -315,6 +341,161 @@ func (p *Provider) Chat(
 	}
 
 	return p.parseResponse(bodyBytes)
+}
+
+func (p *Provider) ChatStream(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	if p.apiBase == "" && p.projectID == "" {
+		return nil, fmt.Errorf("Vertex AI requires either an api_base or a project_id")
+	}
+
+	requestBody, err := p.buildRequestBody(messages, tools, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build request body: %w", err)
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	requestURL := p.buildURL(model, "streamGenerateContent")
+
+	req, err := http.NewRequestWithContext(ctx, "POST", requestURL, bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if p.apiKey != "" && !strings.Contains(requestURL, "key=") {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, common.HandleErrorResponse(resp, "vertex")
+	}
+
+	var accumulatedText string
+	var allToolCalls []ToolCall
+	var finalResponse *LLMResponse
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "data: ") {
+			line = strings.TrimPrefix(line, "data: ")
+		} else if line == "[" || line == "]" || line == "," {
+			continue
+		}
+
+		var chunk struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text         string `json:"text"`
+						FunctionCall *struct {
+							Name string         `json:"name"`
+							Args map[string]any `json:"args"`
+						} `json:"functionCall,omitempty"`
+					} `json:"parts"`
+				} `json:"content"`
+				FinishReason string `json:"finishReason"`
+			} `json:"candidates"`
+			UsageMetadata *struct {
+				PromptTokenCount     int `json:"promptTokenCount"`
+				CandidatesTokenCount int `json:"candidatesTokenCount"`
+				TotalTokenCount      int `json:"totalTokenCount"`
+			} `json:"usageMetadata,omitempty"`
+		}
+
+		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+			continue
+		}
+
+		if len(chunk.Candidates) > 0 {
+			candidate := chunk.Candidates[0]
+			for _, part := range candidate.Content.Parts {
+				if part.Text != "" {
+					accumulatedText += part.Text
+					if onChunk != nil {
+						onChunk(accumulatedText)
+					}
+				}
+				if part.FunctionCall != nil {
+					argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+					toolCall := ToolCall{
+						ID:        fmt.Sprintf("call_%s_%d", part.FunctionCall.Name, time.Now().UnixNano()),
+						Name:      part.FunctionCall.Name,
+						Arguments: part.FunctionCall.Args,
+						Function: &FunctionCall{
+							Name:      part.FunctionCall.Name,
+							Arguments: string(argsJSON),
+						},
+					}
+					allToolCalls = append(allToolCalls, toolCall)
+				}
+			}
+
+			if candidate.FinishReason != "" && finalResponse == nil {
+				finishReason := candidate.FinishReason
+				if finishReason == "STOP" {
+					finishReason = "stop"
+				} else if len(allToolCalls) > 0 {
+					finishReason = "tool_calls"
+				}
+
+				finalResponse = &LLMResponse{
+					Content:      accumulatedText,
+					ToolCalls:    allToolCalls,
+					FinishReason: finishReason,
+				}
+			}
+		}
+
+		if chunk.UsageMetadata != nil {
+			if finalResponse == nil {
+				finalResponse = &LLMResponse{
+					Content:   accumulatedText,
+					ToolCalls: allToolCalls,
+				}
+			}
+			finalResponse.Usage = &protocoltypes.UsageInfo{
+				PromptTokens:     chunk.UsageMetadata.PromptTokenCount,
+				CompletionTokens: chunk.UsageMetadata.CandidatesTokenCount,
+				TotalTokens:      chunk.UsageMetadata.TotalTokenCount,
+			}
+		}
+	}
+
+	if finalResponse == nil {
+		finishReason := "stop"
+		if len(allToolCalls) > 0 {
+			finishReason = "tool_calls"
+		}
+		finalResponse = &LLMResponse{
+			Content:      accumulatedText,
+			ToolCalls:    allToolCalls,
+			FinishReason: finishReason,
+		}
+	}
+
+	return finalResponse, nil
 }
 
 func (p *Provider) parseResponse(body []byte) (*LLMResponse, error) {
