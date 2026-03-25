@@ -1,0 +1,1 @@
+{"version":3,"file":"IMediaTrackSettings.d.ts","sourceRoot":"","sources":["../../../src/nodes/html-media-element/IMediaTrackSettings.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,OAAO,WAAW,mBAAmB;IAC3C,QAAQ,EAAE,MAAM,CAAC;IACjB,SAAS,EAAE,MAAM,CAAC;IAClB,UAAU,EAAE,MAAM,CAAC;CACnB"}

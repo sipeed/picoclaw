@@ -1,0 +1,1 @@
+{"version":3,"file":"SVGLengthTypeEnum.d.ts","sourceRoot":"","sources":["../../src/svg/SVGLengthTypeEnum.ts"],"names":[],"mappings":"AAAA,aAAK,iBAAiB;IACrB,OAAO,IAAI;IACX,MAAM,IAAI;IACV,UAAU,IAAI;IACd,GAAG,IAAI;IACP,GAAG,IAAI;IACP,EAAE,IAAI;IACN,EAAE,IAAI;IACN,EAAE,IAAI;IACN,EAAE,IAAI;IACN,EAAE,IAAI;IACN,EAAE,KAAK;CACP;AAED,eAAe,iBAAiB,CAAC"}

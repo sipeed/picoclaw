@@ -1,0 +1,1 @@
+{"version":3,"file":"DOMRectList.d.ts","sourceRoot":"","sources":["../../src/dom/DOMRectList.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,cAAc,CAAC;AAGnC;;;;GAIG;AACH,MAAM,CAAC,OAAO,OAAO,WAAY,SAAQ,KAAK,CAAC,OAAO,CAAC;IACtD;;;;OAIG;gBACS,wBAAwB,EAAE,MAAM;IAW5C;;;;OAIG;IACI,IAAI,CAAC,KAAK,EAAE,MAAM,GAAG,OAAO;CAGnC"}

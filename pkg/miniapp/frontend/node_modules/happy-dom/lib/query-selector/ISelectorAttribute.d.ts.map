@@ -1,0 +1,1 @@
+{"version":3,"file":"ISelectorAttribute.d.ts","sourceRoot":"","sources":["../../src/query-selector/ISelectorAttribute.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,OAAO,WAAW,kBAAkB;IAC1C,IAAI,EAAE,MAAM,CAAC;IACb,QAAQ,EAAE,MAAM,GAAG,IAAI,CAAC;IACxB,KAAK,EAAE,MAAM,GAAG,IAAI,CAAC;IACrB,QAAQ,EAAE,GAAG,GAAG,GAAG,GAAG,IAAI,CAAC;IAC3B,MAAM,EAAE,MAAM,GAAG,IAAI,CAAC;CACtB"}

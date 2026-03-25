@@ -167,18 +167,18 @@ func registerOrchestrationTools(
 	}
 
 	webSearchOpts := tools.WebSearchToolOptions{
-		BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey, cfg.Tools.Web.Brave.APIKeys),
+		BraveAPIKeys:         config.MergeAPIKeys(cfg.Tools.Web.Brave.APIKey(), cfg.Tools.Web.Brave.APIKeys()),
 		BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-		TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey, cfg.Tools.Web.Tavily.APIKeys),
+		TavilyAPIKeys:        config.MergeAPIKeys(cfg.Tools.Web.Tavily.APIKey(), cfg.Tools.Web.Tavily.APIKeys()),
 		TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
 		TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
 		TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
 		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
 		PerplexityAPIKeys: config.MergeAPIKeys(
-			cfg.Tools.Web.Perplexity.APIKey,
-			cfg.Tools.Web.Perplexity.APIKeys,
+			cfg.Tools.Web.Perplexity.APIKey(),
+			cfg.Tools.Web.Perplexity.APIKeys(),
 		),
 		PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 		PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,

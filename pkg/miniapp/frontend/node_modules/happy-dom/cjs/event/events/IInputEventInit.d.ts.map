@@ -1,0 +1,1 @@
+{"version":3,"file":"IInputEventInit.d.ts","sourceRoot":"","sources":["../../../src/event/events/IInputEventInit.ts"],"names":[],"mappings":"AAAA,OAAO,YAAY,MAAM,oBAAoB,CAAC;AAC9C,OAAO,YAAY,MAAM,oBAAoB,CAAC;AAE9C,MAAM,CAAC,OAAO,WAAW,eAAgB,SAAQ,YAAY;IAC5D,SAAS,CAAC,EAAE,MAAM,CAAC;IACnB,IAAI,CAAC,EAAE,MAAM,CAAC;IACd,YAAY,CAAC,EAAE,YAAY,CAAC;IAC5B,WAAW,CAAC,EAAE,OAAO,CAAC;CACtB"}

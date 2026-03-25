@@ -1,0 +1,1 @@
+{"version":3,"file":"IUIEventInit.d.ts","sourceRoot":"","sources":["../../src/event/IUIEventInit.ts"],"names":[],"mappings":"AAAA,OAAO,aAAa,MAAM,4BAA4B,CAAC;AACvD,OAAO,UAAU,MAAM,iBAAiB,CAAC;AAEzC,MAAM,CAAC,OAAO,WAAW,YAAa,SAAQ,UAAU;IACvD,MAAM,CAAC,EAAE,MAAM,CAAC;IAChB,IAAI,CAAC,EAAE,aAAa,CAAC;CACrB"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"SVGUnitTypes.d.ts","sourceRoot":"","sources":["../../src/svg/SVGUnitTypes.ts"],"names":[],"mappings":"AAEA;;;;GAIG;AACH,MAAM,CAAC,OAAO,OAAO,YAAY;IAChC,gBAAuB,qBAAqB,KAAK;IACjD,gBAAuB,4BAA4B,KAAK;IACxD,gBAAuB,+BAA+B,KAAK;IAC3D,SAAgB,qBAAqB,KAAK;IAC1C,SAAgB,4BAA4B,KAAK;IACjD,SAAgB,+BAA+B,KAAK;IAEpD;;;;OAIG;gBACS,wBAAwB,EAAE,MAAM;CAK5C"}

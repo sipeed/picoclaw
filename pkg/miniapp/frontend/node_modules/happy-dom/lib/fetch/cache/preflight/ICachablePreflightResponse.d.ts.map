@@ -1,0 +1,1 @@
+{"version":3,"file":"ICachablePreflightResponse.d.ts","sourceRoot":"","sources":["../../../../src/fetch/cache/preflight/ICachablePreflightResponse.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,kBAAkB,CAAC;AAEvC,MAAM,CAAC,OAAO,WAAW,0BAA0B;IAClD,MAAM,EAAE,MAAM,CAAC;IACf,GAAG,EAAE,MAAM,CAAC;IACZ,OAAO,EAAE,OAAO,CAAC;CACjB"}

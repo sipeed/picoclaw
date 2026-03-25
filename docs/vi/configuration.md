@@ -216,4 +216,149 @@ Cho tác vụ chạy lâu (tìm kiếm web, gọi API), sử dụng công cụ `
 
 ```markdown
 # Tác Vụ Định Kỳ
+
+## Tác Vụ Nhanh (trả lời trực tiếp)
+
+- Báo giờ hiện tại
+
+## Tác Vụ Dài (dùng spawn cho bất đồng bộ)
+
+- Tìm kiếm tin tức AI trên web và tóm tắt
+- Kiểm tra email và báo cáo tin nhắn quan trọng
 ```
+
+**Hành vi chính:**
+
+| Tính năng        | Mô tả                                                              |
+| ---------------- | ------------------------------------------------------------------ |
+| **spawn**        | Tạo subagent bất đồng bộ, không chặn heartbeat                    |
+| **Ngữ cảnh độc lập** | Subagent có ngữ cảnh riêng, không có lịch sử phiên             |
+| **message tool** | Subagent giao tiếp trực tiếp với người dùng qua message tool      |
+| **Không chặn**   | Sau khi spawn, heartbeat tiếp tục tác vụ tiếp theo                |
+
+#### Luồng Giao Tiếp Của Subagent
+
+```
+Heartbeat kích hoạt
+    ↓
+Agent đọc HEARTBEAT.md
+    ↓
+Tác vụ dài: spawn subagent
+    ↓                           ↓
+Tiếp tục tác vụ tiếp theo  Subagent hoạt động độc lập
+    ↓                           ↓
+Hoàn thành tất cả tác vụ   Subagent dùng công cụ "message"
+    ↓                           ↓
+Trả lời HEARTBEAT_OK        Người dùng nhận kết quả trực tiếp
+```
+
+**Cấu hình:**
+
+```json
+{
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
+  }
+}
+```
+
+| Tùy chọn   | Mặc định | Mô tả                                  |
+| ---------- | -------- | -------------------------------------- |
+| `enabled`  | `true`   | Bật/tắt heartbeat                      |
+| `interval` | `30`     | Khoảng thời gian kiểm tra tính bằng phút (tối thiểu: 5) |
+
+**Biến môi trường:**
+
+* `PICOCLAW_HEARTBEAT_ENABLED=false` để tắt
+* `PICOCLAW_HEARTBEAT_INTERVAL=60` để thay đổi khoảng thời gian
+
+### Providers
+
+> [!NOTE]
+> Groq cung cấp chuyển đổi giọng nói thành văn bản miễn phí qua Whisper. Nếu được cấu hình, tin nhắn âm thanh từ bất kỳ kênh nào sẽ được tự động chuyển đổi ở cấp độ agent.
+
+| Provider     | Mục đích                                | Lấy API Key                                                  |
+| ------------ | --------------------------------------- | ------------------------------------------------------------ |
+| `gemini`     | LLM (Gemini trực tiếp)                  | [aistudio.google.com](https://aistudio.google.com)           |
+| `zhipu`      | LLM (Zhipu trực tiếp)                   | [bigmodel.cn](https://bigmodel.cn)                           |
+| `volcengine` | LLM (Volcengine trực tiếp)              | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
+| `openrouter` | LLM (khuyến nghị, truy cập tất cả mô hình) | [openrouter.ai](https://openrouter.ai)                   |
+| `anthropic`  | LLM (Claude trực tiếp)                  | [console.anthropic.com](https://console.anthropic.com)       |
+| `openai`     | LLM (GPT trực tiếp)                     | [platform.openai.com](https://platform.openai.com)           |
+| `deepseek`   | LLM (DeepSeek trực tiếp)                | [platform.deepseek.com](https://platform.deepseek.com)       |
+| `qwen`       | LLM (Qwen trực tiếp)                    | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
+| `groq`       | LLM + **Chuyển đổi giọng nói** (Whisper)| [console.groq.com](https://console.groq.com)                 |
+| `cerebras`   | LLM (Cerebras trực tiếp)                | [cerebras.ai](https://cerebras.ai)                           |
+| `vivgrid`    | LLM (Vivgrid trực tiếp)                 | [vivgrid.com](https://vivgrid.com)                           |
+
+### Cấu Hình Mô Hình (model_list)
+
+> **Tính năng mới:** PicoClaw hiện sử dụng cách tiếp cận **lấy mô hình làm trung tâm**. Chỉ cần chỉ định định dạng `vendor/model` (ví dụ: `zhipu/glm-4.7`) để thêm provider mới — **không cần thay đổi code!**
+
+#### Tất Cả Vendor Được Hỗ Trợ
+
+| Vendor                  | Tiền tố `model` | API Base mặc định                                   | Giao thức | API Key                                                          |
+| ----------------------- | --------------- | --------------------------------------------------- | --------- | ---------------------------------------------------------------- |
+| **OpenAI**              | `openai/`       | `https://api.openai.com/v1`                         | OpenAI    | [Lấy](https://platform.openai.com)                               |
+| **Anthropic**           | `anthropic/`    | `https://api.anthropic.com/v1`                      | Anthropic | [Lấy](https://console.anthropic.com)                             |
+| **智谱 AI (GLM)**       | `zhipu/`        | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Lấy](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys)     |
+| **DeepSeek**            | `deepseek/`     | `https://api.deepseek.com/v1`                       | OpenAI    | [Lấy](https://platform.deepseek.com)                             |
+| **Google Gemini**       | `gemini/`       | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Lấy](https://aistudio.google.com/api-keys)                      |
+| **Groq**                | `groq/`         | `https://api.groq.com/openai/v1`                    | OpenAI    | [Lấy](https://console.groq.com)                                  |
+| **通义千问 (Qwen)**     | `qwen/`         | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Lấy](https://dashscope.console.aliyun.com)                      |
+| **Ollama**              | `ollama/`       | `http://localhost:11434/v1`                         | OpenAI    | Cục bộ (không cần key)                                           |
+| **OpenRouter**          | `openrouter/`   | `https://openrouter.ai/api/v1`                      | OpenAI    | [Lấy](https://openrouter.ai/keys)                                |
+| **VolcEngine (Doubao)** | `volcengine/`   | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Lấy](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
+| **Antigravity**         | `antigravity/`  | Google Cloud                                        | Custom    | Chỉ OAuth                                                        |
+
+#### Cân Bằng Tải
+
+Cấu hình nhiều endpoint cho cùng tên mô hình — PicoClaw sẽ tự động round-robin:
+
+```json
+{
+  "model_list": [
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api1.example.com/v1", "api_key": "sk-key1" },
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api2.example.com/v1", "api_key": "sk-key2" }
+  ]
+}
+```
+
+#### Di Chuyển Từ Cấu Hình `providers` Cũ
+
+Cấu hình `providers` cũ đã **bị deprecated** nhưng vẫn được hỗ trợ. Xem [docs/migration/model-list-migration.md](../migration/model-list-migration.md).
+
+### Kiến Trúc Provider
+
+PicoClaw định tuyến provider theo họ giao thức:
+
+- **Tương thích OpenAI**: OpenRouter, Groq, Zhipu, endpoint kiểu vLLM và hầu hết các provider khác.
+- **Anthropic**: Hành vi API Claude gốc.
+- **Codex/OAuth**: Tuyến xác thực OAuth/token OpenAI.
+
+### Tác Vụ Đã Lên Lịch / Nhắc Nhở
+
+PicoClaw hỗ trợ tác vụ theo lịch qua công cụ `cron`.
+
+```json
+{
+  "tools": {
+    "cron": {
+      "enabled": true,
+      "exec_timeout_minutes": 5
+    }
+  }
+}
+```
+
+Tác vụ đã lên lịch được lưu trữ bền vững sau khi khởi động lại tại `~/.picoclaw/workspace/cron/`.
+
+### Chủ Đề Nâng Cao
+
+| Chủ đề | Mô tả |
+| ------ | ----- |
+| [Hệ Thống Hook](../hooks/README.md) | Hook hướng sự kiện: observer, interceptor, approval hook |
+| [Steering](../steering.md) | Chèn tin nhắn vào vòng lặp agent đang chạy |
+| [SubTurn](../subturn.md) | Điều phối subagent, kiểm soát đồng thời, vòng đời |
+| [Quản Lý Ngữ Cảnh](../agent-refactor/context.md) | Phát hiện ranh giới ngữ cảnh, nén |

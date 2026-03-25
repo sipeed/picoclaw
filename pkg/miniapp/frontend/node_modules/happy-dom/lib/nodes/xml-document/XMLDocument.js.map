@@ -1,0 +1,1 @@
+{"version":3,"file":"XMLDocument.js","sourceRoot":"","sources":["../../../src/nodes/xml-document/XMLDocument.ts"],"names":[],"mappings":"AAAA,OAAO,QAAQ,MAAM,yBAAyB,CAAC;AAC/C,OAAO,KAAK,cAAc,MAAM,yBAAyB,CAAC;AAE1D;;GAEG;AACH,MAAM,CAAC,OAAO,OAAO,WAAY,SAAQ,QAAQ;IAChD,sBAAsB;IACf,CAAC,cAAc,CAAC,WAAW,CAAC,GAAW,iBAAiB,CAAC;CAChE"}

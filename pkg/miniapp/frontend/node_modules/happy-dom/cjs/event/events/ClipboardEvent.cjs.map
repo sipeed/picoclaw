@@ -1,0 +1,1 @@
+{"version":3,"file":"ClipboardEvent.cjs","sourceRoot":"","sources":["../../../src/event/events/ClipboardEvent.ts"],"names":[],"mappings":";;;;;AACA,2DAAgC;AAGhC;;GAEG;AACH,MAAqB,cAAe,SAAQ,kBAAK;IACzC,aAAa,CAAsB;IAE1C;;;;;OAKG;IACH,YAAY,IAAY,EAAE,YAAwC,IAAI;QACrE,KAAK,CAAC,IAAI,EAAE,SAAS,CAAC,CAAC;QAEvB,IAAI,CAAC,aAAa,GAAG,SAAS,EAAE,aAAa,IAAI,IAAI,CAAC;IACvD,CAAC;CACD;AAdD,iCAcC"}

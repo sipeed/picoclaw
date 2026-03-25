@@ -1,0 +1,1 @@
+{"version":3,"file":"ImageBitmap.d.ts","sourceRoot":"","sources":["../../../src/nodes/html-canvas-element/ImageBitmap.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,CAAC,OAAO,OAAO,WAAW;IACxB,MAAM,EAAE,MAAM,CAAC;IACf,KAAK,EAAE,MAAM,CAAC;IAErB;;;;;OAKG;gBACS,KAAK,EAAE,MAAM,EAAE,MAAM,EAAE,MAAM;IAKzC;;OAEG;IACI,KAAK,IAAI,IAAI;CAGpB"}

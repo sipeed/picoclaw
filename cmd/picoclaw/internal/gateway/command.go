@@ -36,7 +36,7 @@ func NewGatewayCommand() *cobra.Command {
 			return nil
 		},
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return gateway.Run(debug, internal.GetConfigPath(), orchestration, enableStats, allowEmpty)
+			return gateway.Run(debug, internal.GetPicoclawHome(), internal.GetConfigPath(), orchestration, enableStats, allowEmpty)
 		},
 	}
 

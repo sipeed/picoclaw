@@ -41,14 +41,6 @@ Paramètres généraux pour la récupération et le traitement du contenu des pa
 | `fetch_limit_bytes` | int    | 10485760      | Taille maximale du contenu de la page web à récupérer, en octets (par défaut 10 Mo).          |
 | `format`            | string | "plaintext"   | Format de sortie du contenu récupéré. Options : `plaintext` ou `markdown` (recommandé).       |
 
-### Brave
-
-| Config        | Type   | Par défaut | Description               |
-|---------------|--------|------------|---------------------------|
-| `enabled`     | bool   | false      | Activer la recherche Brave |
-| `api_key`     | string | -          | Clé API Brave Search      |
-| `max_results` | int    | 5          | Nombre maximum de résultats |
-
 ### DuckDuckGo
 
 | Config        | Type | Par défaut | Description                    |
@@ -56,13 +48,73 @@ Paramètres généraux pour la récupération et le traitement du contenu des pa
 | `enabled`     | bool | true       | Activer la recherche DuckDuckGo |
 | `max_results` | int  | 5          | Nombre maximum de résultats    |
 
+### Baidu Search
+
+| Config        | Type   | Par défaut                                                      | Description                        |
+|---------------|--------|-----------------------------------------------------------------|------------------------------------|
+| `enabled`     | bool   | false                                                           | Activer la recherche Baidu         |
+| `api_key`     | string | -                                                               | Clé API Qianfan                    |
+| `base_url`    | string | `https://qianfan.baidubce.com/v2/ai_search/web_search`         | URL de l'API Baidu Search          |
+| `max_results` | int    | 10                                                              | Nombre maximum de résultats        |
+
+```json
+{
+  "tools": {
+    "web": {
+      "baidu_search": {
+        "enabled": true,
+        "api_key": "YOUR_BAIDU_QIANFAN_API_KEY",
+        "max_results": 10
+      }
+    }
+  }
+}
+```
+
 ### Perplexity
 
 | Config        | Type   | Par défaut | Description                    |
 |---------------|--------|------------|--------------------------------|
-| `enabled`     | bool   | false      | Activer la recherche Perplexity |
-| `api_key`     | string | -          | Clé API Perplexity             |
-| `max_results` | int    | 5          | Nombre maximum de résultats    |
+| `enabled`     | bool     | false      | Activer la recherche Perplexity                              |
+| `api_key`     | string   | -          | Clé API Perplexity                                           |
+| `api_keys`    | string[] | -          | Plusieurs clés API Perplexity pour la rotation (`api_key` prioritaire) |
+| `max_results` | int      | 5          | Nombre maximum de résultats                                  |
+
+### Brave
+
+| Config        | Type   | Par défaut | Description               |
+|---------------|--------|------------|---------------------------|
+| `enabled`     | bool     | false      | Activer la recherche Brave                                   |
+| `api_key`     | string   | -          | Clé API Brave Search                                         |
+| `api_keys`    | string[] | -          | Plusieurs clés API Brave Search pour la rotation (`api_key` prioritaire) |
+| `max_results` | int      | 5          | Nombre maximum de résultats                                  |
+
+### Tavily
+
+| Config        | Type   | Par défaut | Description                        |
+|---------------|--------|------------|------------------------------------|
+| `enabled`     | bool   | false      | Activer la recherche Tavily        |
+| `api_key`     | string | -          | Clé API Tavily                     |
+| `base_url`    | string | -          | URL de base Tavily personnalisée   |
+| `max_results` | int    | 0          | Nombre maximum de résultats (0 = défaut) |
+
+### SearXNG
+
+| Config        | Type   | Par défaut               | Description                    |
+|---------------|--------|--------------------------|--------------------------------|
+| `enabled`     | bool   | false                    | Activer la recherche SearXNG   |
+| `base_url`    | string | `http://localhost:8888`  | URL de l'instance SearXNG      |
+| `max_results` | int    | 5                        | Nombre maximum de résultats    |
+
+### GLM Search
+
+| Config          | Type   | Par défaut                                           | Description               |
+|-----------------|--------|------------------------------------------------------|---------------------------|
+| `enabled`       | bool   | false                                                | Activer GLM Search        |
+| `api_key`       | string | -                                                    | Clé API GLM               |
+| `base_url`      | string | `https://open.bigmodel.cn/api/paas/v4/web_search`   | URL de l'API GLM Search   |
+| `search_engine` | string | `search_std`                                         | Type de moteur de recherche |
+| `max_results`   | int    | 5                                                    | Nombre maximum de résultats |
 
 ## Outil Exec
 

@@ -89,10 +89,9 @@ func TestNewWeComBotChannel(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 
 	t.Run("missing token", func(t *testing.T) {
-		cfg := config.WeComConfig{
-			Token:      "",
-			WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-		}
+		cfg := config.WeComConfig{}
+		cfg.SetToken("")
+		cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
 		_, err := NewWeComBotChannel(cfg, msgBus)
 		if err == nil {
 			t.Error("expected error for missing token, got nil")
@@ -100,10 +99,9 @@ func TestNewWeComBotChannel(t *testing.T) {
 	})
 
 	t.Run("missing webhook_url", func(t *testing.T) {
-		cfg := config.WeComConfig{
-			Token:      "test_token",
-			WebhookURL: "",
-		}
+		cfg := config.WeComConfig{}
+		cfg.SetToken("test_token")
+		cfg.WebhookURL = ""
 		_, err := NewWeComBotChannel(cfg, msgBus)
 		if err == nil {
 			t.Error("expected error for missing webhook_url, got nil")
@@ -111,11 +109,10 @@ func TestNewWeComBotChannel(t *testing.T) {
 	})
 
 	t.Run("valid config", func(t *testing.T) {
-		cfg := config.WeComConfig{
-			Token:      "test_token",
-			WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-			AllowFrom:  []string{"user1", "user2"},
-		}
+		cfg := config.WeComConfig{}
+		cfg.SetToken("test_token")
+		cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
+		cfg.AllowFrom = []string{"user1", "user2"}
 		ch, err := NewWeComBotChannel(cfg, msgBus)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -133,11 +130,10 @@ func TestWeComBotChannelIsAllowed(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 
 	t.Run("empty allowlist allows all", func(t *testing.T) {
-		cfg := config.WeComConfig{
-			Token:      "test_token",
-			WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-			AllowFrom:  []string{},
-		}
+		cfg := config.WeComConfig{}
+		cfg.SetToken("test_token")
+		cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
+		cfg.AllowFrom = []string{}
 		ch, _ := NewWeComBotChannel(cfg, msgBus)
 		if !ch.IsAllowed("any_user") {
 			t.Error("empty allowlist should allow all users")
@@ -145,11 +141,10 @@ func TestWeComBotChannelIsAllowed(t *testing.T) {
 	})
 
 	t.Run("allowlist restricts users", func(t *testing.T) {
-		cfg := config.WeComConfig{
-			Token:      "test_token",
-			WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-			AllowFrom:  []string{"allowed_user"},
-		}
+		cfg := config.WeComConfig{}
+		cfg.SetToken("test_token")
+		cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
+		cfg.AllowFrom = []string{"allowed_user"}
 		ch, _ := NewWeComBotChannel(cfg, msgBus)
 		if !ch.IsAllowed("allowed_user") {
 			t.Error("allowed user should pass allowlist check")
@@ -162,10 +157,9 @@ func TestWeComBotChannelIsAllowed(t *testing.T) {
 
 func TestWeComBotVerifySignature(t *testing.T) {
 	msgBus := bus.NewMessageBus()
-	cfg := config.WeComConfig{
-		Token:      "test_token",
-		WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-	}
+	cfg := config.WeComConfig{}
+	cfg.SetToken("test_token")
+	cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
 	ch, _ := NewWeComBotChannel(cfg, msgBus)
 
 	t.Run("valid signature", func(t *testing.T) {
@@ -174,7 +168,7 @@ func TestWeComBotVerifySignature(t *testing.T) {
 		msgEncrypt := "test_message"
 		expectedSig := generateSignature("test_token", timestamp, nonce, msgEncrypt)
 
-		if !verifySignature(ch.config.Token, expectedSig, timestamp, nonce, msgEncrypt) {
+		if !verifySignature(ch.config.Token(), expectedSig, timestamp, nonce, msgEncrypt) {
 			t.Error("valid signature should pass verification")
 		}
 	})
@@ -184,21 +178,20 @@ func TestWeComBotVerifySignature(t *testing.T) {
 		nonce := "test_nonce"
 		msgEncrypt := "test_message"
 
-		if verifySignature(ch.config.Token, "invalid_sig", timestamp, nonce, msgEncrypt) {
+		if verifySignature(ch.config.Token(), "invalid_sig", timestamp, nonce, msgEncrypt) {
 			t.Error("invalid signature should fail verification")
 		}
 	})
 
 	t.Run("empty token rejects verification (fail-closed)", func(t *testing.T) {
-		cfgEmpty := config.WeComConfig{
-			Token:      "",
-			WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-		}
+		cfgEmpty := config.WeComConfig{}
+		cfgEmpty.SetToken("")
+		cfgEmpty.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
 		chEmpty := &WeComBotChannel{
 			config: cfgEmpty,
 		}
 
-		if verifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {
+		if verifySignature(chEmpty.config.Token(), "any_sig", "any_ts", "any_nonce", "any_msg") {
 			t.Error("empty token should reject verification (fail-closed)")
 		}
 	})
@@ -208,18 +201,17 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 
 	t.Run("decrypt without AES key", func(t *testing.T) {
-		cfg := config.WeComConfig{
-			Token:          "test_token",
-			WebhookURL:     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-			EncodingAESKey: "",
-		}
+		cfg := config.WeComConfig{}
+		cfg.SetToken("test_token")
+		cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
+		cfg.SetEncodingAESKey("")
 		ch, _ := NewWeComBotChannel(cfg, msgBus)
 
 		// Without AES key, message should be base64 decoded only
 		plainText := "hello world"
 		encoded := base64.StdEncoding.EncodeToString([]byte(plainText))
 
-		result, err := decryptMessage(encoded, ch.config.EncodingAESKey)
+		result, err := decryptMessage(encoded, ch.config.EncodingAESKey())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -230,11 +222,10 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 
 	t.Run("decrypt with AES key", func(t *testing.T) {
 		aesKey := generateTestAESKey()
-		cfg := config.WeComConfig{
-			Token:          "test_token",
-			WebhookURL:     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-			EncodingAESKey: aesKey,
-		}
+		cfg := config.WeComConfig{}
+		cfg.SetToken("test_token")
+		cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
+		cfg.SetEncodingAESKey(aesKey)
 		ch, _ := NewWeComBotChannel(cfg, msgBus)
 
 		originalMsg := "<xml><Content>Hello</Content></xml>"
@@ -243,7 +234,7 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 			t.Fatalf("failed to encrypt test message: %v", err)
 		}
 
-		result, err := decryptMessage(encrypted, ch.config.EncodingAESKey)
+		result, err := decryptMessage(encrypted, ch.config.EncodingAESKey())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -253,28 +244,26 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 	})
 
 	t.Run("invalid base64", func(t *testing.T) {
-		cfg := config.WeComConfig{
-			Token:          "test_token",
-			WebhookURL:     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-			EncodingAESKey: "",
-		}
+		cfg := config.WeComConfig{}
+		cfg.SetToken("test_token")
+		cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
+		cfg.SetEncodingAESKey("")
 		ch, _ := NewWeComBotChannel(cfg, msgBus)
 
-		_, err := decryptMessage("invalid_base64!!!", ch.config.EncodingAESKey)
+		_, err := decryptMessage("invalid_base64!!!", ch.config.EncodingAESKey())
 		if err == nil {
 			t.Error("expected error for invalid base64, got nil")
 		}
 	})
 
 	t.Run("invalid AES key", func(t *testing.T) {
-		cfg := config.WeComConfig{
-			Token:          "test_token",
-			WebhookURL:     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-			EncodingAESKey: "invalid_key",
-		}
+		cfg := config.WeComConfig{}
+		cfg.SetToken("test_token")
+		cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
+		cfg.SetEncodingAESKey("invalid_key")
 		ch, _ := NewWeComBotChannel(cfg, msgBus)
 
-		_, err := decryptMessage(base64.StdEncoding.EncodeToString([]byte("test")), ch.config.EncodingAESKey)
+		_, err := decryptMessage(base64.StdEncoding.EncodeToString([]byte("test")), ch.config.EncodingAESKey())
 		if err == nil {
 			t.Error("expected error for invalid AES key, got nil")
 		}
@@ -338,11 +327,10 @@ func TestWeComBotPKCS7Unpad(t *testing.T) {
 func TestWeComBotHandleVerification(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	aesKey := generateTestAESKey()
-	cfg := config.WeComConfig{
-		Token:          "test_token",
-		EncodingAESKey: aesKey,
-		WebhookURL:     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-	}
+	cfg := config.WeComConfig{}
+	cfg.SetToken("test_token")
+	cfg.SetEncodingAESKey(aesKey)
+	cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
 	ch, _ := NewWeComBotChannel(cfg, msgBus)
 
 	t.Run("valid verification request", func(t *testing.T) {
@@ -404,11 +392,10 @@ func TestWeComBotHandleVerification(t *testing.T) {
 func TestWeComBotHandleMessageCallback(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	aesKey := generateTestAESKey()
-	cfg := config.WeComConfig{
-		Token:          "test_token",
-		EncodingAESKey: aesKey,
-		WebhookURL:     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-	}
+	cfg := config.WeComConfig{}
+	cfg.SetToken("test_token")
+	cfg.SetEncodingAESKey(aesKey)
+	cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
 	ch, _ := NewWeComBotChannel(cfg, msgBus)
 
 	runBotMessageCallback := func(t *testing.T, jsonMsg string) *httptest.ResponseRecorder {
@@ -530,10 +517,9 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 
 func TestWeComBotProcessMessage(t *testing.T) {
 	msgBus := bus.NewMessageBus()
-	cfg := config.WeComConfig{
-		Token:      "test_token",
-		WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-	}
+	cfg := config.WeComConfig{}
+	cfg.SetToken("test_token")
+	cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
 	ch, _ := NewWeComBotChannel(cfg, msgBus)
 
 	t.Run("process direct text message", func(t *testing.T) {
@@ -599,10 +585,9 @@ func TestWeComBotProcessMessage(t *testing.T) {
 
 func TestWeComBotHandleWebhook(t *testing.T) {
 	msgBus := bus.NewMessageBus()
-	cfg := config.WeComConfig{
-		Token:      "test_token",
-		WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-	}
+	cfg := config.WeComConfig{}
+	cfg.SetToken("test_token")
+	cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
 	ch, _ := NewWeComBotChannel(cfg, msgBus)
 
 	t.Run("GET request calls verification", func(t *testing.T) {
@@ -668,10 +653,9 @@ func TestWeComBotHandleWebhook(t *testing.T) {
 
 func TestWeComBotHandleHealth(t *testing.T) {
 	msgBus := bus.NewMessageBus()
-	cfg := config.WeComConfig{
-		Token:      "test_token",
-		WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-	}
+	cfg := config.WeComConfig{}
+	cfg.SetToken("test_token")
+	cfg.WebhookURL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
 	ch, _ := NewWeComBotChannel(cfg, msgBus)
 
 	req := httptest.NewRequest(http.MethodGet, "/health/wecom", nil)

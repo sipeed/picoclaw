@@ -12,6 +12,7 @@ type channelCatalogItem struct {
 }
 
 var channelCatalog = []channelCatalogItem{
+	{Name: "weixin", ConfigKey: "weixin"},
 	{Name: "telegram", ConfigKey: "telegram"},
 	{Name: "discord", ConfigKey: "discord"},
 	{Name: "slack", ConfigKey: "slack"},

@@ -1,0 +1,1 @@
+{"version":3,"file":"DOMStringMap.d.ts","sourceRoot":"","sources":["../../src/dom/DOMStringMap.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,6BAA6B,CAAC;AAIlD;;;;;GAKG;AACH,MAAM,CAAC,OAAO,OAAO,YAAY;IAChC,CAAC,GAAG,EAAE,MAAM,GAAG,MAAM,CAAC;IAEtB;;;;;OAKG;gBACS,wBAAwB,EAAE,MAAM,EAAE,OAAO,EAAE,OAAO;CAyE9D"}

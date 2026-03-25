@@ -1,0 +1,1 @@
+{"version":3,"file":"CSSParser.d.ts","sourceRoot":"","sources":["../../../src/css/utilities/CSSParser.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,eAAe,CAAC;AAEpC,OAAO,aAAa,MAAM,qBAAqB,CAAC;AAYhD;;GAEG;AACH,MAAM,CAAC,OAAO,OAAO,SAAS;IAC7B;;;;;;OAMG;WACW,eAAe,CAAC,gBAAgB,EAAE,aAAa,EAAE,OAAO,EAAE,MAAM,GAAG,OAAO,EAAE;IAsI1F;;;;;;OAMG;IACH,OAAO,CAAC,MAAM,CAAC,oBAAoB;CAQnC"}

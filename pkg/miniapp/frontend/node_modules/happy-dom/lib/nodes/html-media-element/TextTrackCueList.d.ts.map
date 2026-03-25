@@ -1,0 +1,1 @@
+{"version":3,"file":"TextTrackCueList.d.ts","sourceRoot":"","sources":["../../../src/nodes/html-media-element/TextTrackCueList.ts"],"names":[],"mappings":"AAAA,OAAO,YAAY,MAAM,mBAAmB,CAAC;AAG7C;;GAEG;AACH,MAAM,CAAC,OAAO,OAAO,gBAAiB,SAAQ,KAAK,CAAC,YAAY,CAAC;IAChE;;;;OAIG;gBACS,wBAAwB,CAAC,EAAE,MAAM;IAW7C;;;;OAIG;IACI,UAAU,CAAC,EAAE,EAAE,MAAM,GAAG,YAAY,GAAG,IAAI;CAQlD"}

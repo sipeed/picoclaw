@@ -1,0 +1,33 @@
+var PermissionNameEnum;
+(function (PermissionNameEnum) {
+    PermissionNameEnum["geolocation"] = "geolocation";
+    PermissionNameEnum["notifications"] = "notifications";
+    PermissionNameEnum["push"] = "push";
+    PermissionNameEnum["midi"] = "midi";
+    PermissionNameEnum["camera"] = "camera";
+    PermissionNameEnum["microphone"] = "microphone";
+    PermissionNameEnum["backgroundFetch"] = "background-fetch";
+    PermissionNameEnum["backgroundSync"] = "background-sync";
+    PermissionNameEnum["persistentStorage"] = "persistent-storage";
+    PermissionNameEnum["ambientLightSensor"] = "ambient-light-sensor";
+    PermissionNameEnum["accelerometer"] = "accelerometer";
+    PermissionNameEnum["gyroscope"] = "gyroscope";
+    PermissionNameEnum["magnetometer"] = "magnetometer";
+    PermissionNameEnum["screenWakeLock"] = "screen-wake-lock";
+    PermissionNameEnum["nfc"] = "nfc";
+    PermissionNameEnum["displayCapture"] = "display-capture";
+    PermissionNameEnum["accessibilityEvents"] = "accessibility-events";
+    PermissionNameEnum["clipboardRead"] = "clipboard-read";
+    PermissionNameEnum["clipboardWrite"] = "clipboard-write";
+    PermissionNameEnum["paymentHandler"] = "payment-handler";
+    PermissionNameEnum["idleDetection"] = "idle-detection";
+    PermissionNameEnum["periodicBackgroundSync"] = "periodic-background-sync";
+    PermissionNameEnum["systemWakeLock"] = "system-wake-lock";
+    PermissionNameEnum["storageAccess"] = "storage-access";
+    PermissionNameEnum["windowManagement"] = "window-management";
+    PermissionNameEnum["windowPlacement"] = "window-placement";
+    PermissionNameEnum["localFonts"] = "local-fonts";
+    PermissionNameEnum["topLevelStorageAccess"] = "top-level-storage-access";
+})(PermissionNameEnum || (PermissionNameEnum = {}));
+export default PermissionNameEnum;
+//# sourceMappingURL=PermissionNameEnum.js.map

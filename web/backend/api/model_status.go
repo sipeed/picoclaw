@@ -20,9 +20,9 @@ var (
 	probeOpenAICompatibleModelFunc = probeOpenAICompatibleModel
 )
 
-func hasModelConfiguration(m config.ModelConfig) bool {
+func hasModelConfiguration(m *config.ModelConfig) bool {
 	authMethod := strings.ToLower(strings.TrimSpace(m.AuthMethod))
-	apiKey := strings.TrimSpace(m.APIKey)
+	apiKey := strings.TrimSpace(m.APIKey())
 
 	if authMethod == "oauth" || authMethod == "token" {
 		if provider, ok := oauthProviderForModel(m.Model); ok {
@@ -44,7 +44,7 @@ func hasModelConfiguration(m config.ModelConfig) bool {
 
 // isModelConfigured reports whether a model is currently available to use.
 // Local models must be reachable; remote/API-key models only need saved config.
-func isModelConfigured(m config.ModelConfig) bool {
+func isModelConfigured(m *config.ModelConfig) bool {
 	if !hasModelConfiguration(m) {
 		return false
 	}
@@ -54,7 +54,7 @@ func isModelConfigured(m config.ModelConfig) bool {
 	return true
 }
 
-func requiresRuntimeProbe(m config.ModelConfig) bool {
+func requiresRuntimeProbe(m *config.ModelConfig) bool {
 	authMethod := strings.ToLower(strings.TrimSpace(m.AuthMethod))
 	if authMethod == "local" {
 		return true
@@ -75,27 +75,27 @@ func requiresRuntimeProbe(m config.ModelConfig) bool {
 	return false
 }
 
-func probeLocalModelAvailability(m config.ModelConfig) bool {
+func probeLocalModelAvailability(m *config.ModelConfig) bool {
 	apiBase := modelProbeAPIBase(m)
 	protocol, modelID := splitModel(m.Model)
 	switch protocol {
 	case "ollama":
 		return probeOllamaModelFunc(apiBase, modelID)
 	case "vllm":
-		return probeOpenAICompatibleModelFunc(apiBase, modelID)
+		return probeOpenAICompatibleModelFunc(apiBase, modelID, m.APIKey())
 	case "github-copilot", "copilot":
 		return probeTCPServiceFunc(apiBase)
 	case "claude-cli", "claudecli", "codex-cli", "codexcli":
 		return true
 	default:
 		if hasLocalAPIBase(apiBase) {
-			return probeOpenAICompatibleModelFunc(apiBase, modelID)
+			return probeOpenAICompatibleModelFunc(apiBase, modelID, m.APIKey())
 		}
 		return false
 	}
 }
 
-func modelProbeAPIBase(m config.ModelConfig) string {
+func modelProbeAPIBase(m *config.ModelConfig) string {
 	if apiBase := strings.TrimSpace(m.APIBase); apiBase != "" {
 		return normalizeModelProbeAPIBase(apiBase)
 	}
@@ -209,7 +209,7 @@ func probeOllamaModel(apiBase, modelID string) bool {
 			Model string `json:"model"`
 		} `json:"models"`
 	}
-	if err := getJSON(root+"/api/tags", &resp); err != nil {
+	if err := getJSON(root+"/api/tags", &resp, ""); err != nil {
 		return false
 	}
 
@@ -221,7 +221,7 @@ func probeOllamaModel(apiBase, modelID string) bool {
 	return false
 }
 
-func probeOpenAICompatibleModel(apiBase, modelID string) bool {
+func probeOpenAICompatibleModel(apiBase, modelID, apiKey string) bool {
 	if strings.TrimSpace(apiBase) == "" {
 		return false
 	}
@@ -231,7 +231,7 @@ func probeOpenAICompatibleModel(apiBase, modelID string) bool {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if err := getJSON(strings.TrimRight(strings.TrimSpace(apiBase), "/")+"/models", &resp); err != nil {
+	if err := getJSON(strings.TrimRight(strings.TrimSpace(apiBase), "/")+"/models", &resp, apiKey); err != nil {
 		return false
 	}
 
@@ -243,10 +243,13 @@ func probeOpenAICompatibleModel(apiBase, modelID string) bool {
 	return false
 }
 
-func getJSON(rawURL string, out any) error {
+func getJSON(rawURL string, out any, apiKey string) error {
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
 		return err
+	}
+	if apiKey = strings.TrimSpace(apiKey); apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
 	client := &http.Client{Timeout: modelProbeTimeout}

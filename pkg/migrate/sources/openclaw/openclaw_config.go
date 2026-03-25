@@ -981,13 +981,16 @@ func (c *PicoClawConfig) ToStandardConfig() *config.Config {
 	cfg.Agents.Defaults.ModelFallbacks = c.Agents.Defaults.ModelFallbacks
 
 	for _, m := range c.ModelList {
-		cfg.ModelList = append(cfg.ModelList, config.ModelConfig{
+		mc := &config.ModelConfig{
 			ModelName: m.ModelName,
 			Model:     m.Model,
 			APIBase:   m.APIBase,
-			APIKey:    m.APIKey,
 			Proxy:     m.Proxy,
-		})
+		}
+		if m.APIKey != "" {
+			mc.SetAPIKey(m.APIKey)
+		}
+		cfg.ModelList = append(cfg.ModelList, mc)
 	}
 
 	cfg.Channels = c.Channels.ToStandardChannels()
@@ -1020,59 +1023,107 @@ func (c ChannelsConfig) ToStandardChannels() config.ChannelsConfig {
 			Enabled:   c.WhatsApp.Enabled,
 			BridgeURL: c.WhatsApp.BridgeURL,
 		},
-		Telegram: config.TelegramConfig{
-			Enabled: c.Telegram.Enabled,
-			Token:   c.Telegram.Token,
-			Proxy:   c.Telegram.Proxy,
-		},
-		Feishu: config.FeishuConfig{
-			Enabled:           c.Feishu.Enabled,
-			AppID:             c.Feishu.AppID,
-			AppSecret:         c.Feishu.AppSecret,
-			EncryptKey:        c.Feishu.EncryptKey,
-			VerificationToken: c.Feishu.VerificationToken,
-		},
-		Discord: config.DiscordConfig{
-			Enabled:     c.Discord.Enabled,
-			Token:       c.Discord.Token,
-			MentionOnly: c.Discord.MentionOnly,
-		},
+		Telegram: func() config.TelegramConfig {
+			tc := config.TelegramConfig{
+				Enabled: c.Telegram.Enabled,
+				Proxy:   c.Telegram.Proxy,
+			}
+			if c.Telegram.Token != "" {
+				tc.SetToken(c.Telegram.Token)
+			}
+			return tc
+		}(),
+		Feishu: func() config.FeishuConfig {
+			fc := config.FeishuConfig{
+				Enabled: c.Feishu.Enabled,
+				AppID:   c.Feishu.AppID,
+			}
+			if c.Feishu.AppSecret != "" {
+				fc.SetAppSecret(c.Feishu.AppSecret)
+			}
+			if c.Feishu.EncryptKey != "" {
+				fc.SetEncryptKey(c.Feishu.EncryptKey)
+			}
+			if c.Feishu.VerificationToken != "" {
+				fc.SetVerificationToken(c.Feishu.VerificationToken)
+			}
+			return fc
+		}(),
+		Discord: func() config.DiscordConfig {
+			dc := config.DiscordConfig{
+				Enabled:     c.Discord.Enabled,
+				MentionOnly: c.Discord.MentionOnly,
+			}
+			if c.Discord.Token != "" {
+				dc.SetToken(c.Discord.Token)
+			}
+			return dc
+		}(),
 		MaixCam: config.MaixCamConfig{
 			Enabled: c.MaixCam.Enabled,
 			Host:    c.MaixCam.Host,
 			Port:    c.MaixCam.Port,
 		},
-		QQ: config.QQConfig{
-			Enabled:   c.QQ.Enabled,
-			AppID:     c.QQ.AppID,
-			AppSecret: c.QQ.AppSecret,
-		},
-		DingTalk: config.DingTalkConfig{
-			Enabled:      c.DingTalk.Enabled,
-			ClientID:     c.DingTalk.ClientID,
-			ClientSecret: c.DingTalk.ClientSecret,
-		},
-		Slack: config.SlackConfig{
-			Enabled:  c.Slack.Enabled,
-			BotToken: c.Slack.BotToken,
-			AppToken: c.Slack.AppToken,
-		},
-		Matrix: config.MatrixConfig{
-			Enabled:      c.Matrix.Enabled,
-			Homeserver:   c.Matrix.Homeserver,
-			UserID:       c.Matrix.UserID,
-			AccessToken:  c.Matrix.AccessToken,
-			AllowFrom:    c.Matrix.AllowFrom,
-			JoinOnInvite: true,
-		},
-		LINE: config.LINEConfig{
-			Enabled:            c.LINE.Enabled,
-			ChannelSecret:      c.LINE.ChannelSecret,
-			ChannelAccessToken: c.LINE.ChannelAccessToken,
-			WebhookHost:        c.LINE.WebhookHost,
-			WebhookPort:        c.LINE.WebhookPort,
-			WebhookPath:        c.LINE.WebhookPath,
-		},
+		QQ: func() config.QQConfig {
+			qc := config.QQConfig{
+				Enabled: c.QQ.Enabled,
+				AppID:   c.QQ.AppID,
+			}
+			if c.QQ.AppSecret != "" {
+				qc.SetAppSecret(c.QQ.AppSecret)
+			}
+			return qc
+		}(),
+		DingTalk: func() config.DingTalkConfig {
+			dt := config.DingTalkConfig{
+				Enabled:  c.DingTalk.Enabled,
+				ClientID: c.DingTalk.ClientID,
+			}
+			if c.DingTalk.ClientSecret != "" {
+				dt.SetClientSecret(c.DingTalk.ClientSecret)
+			}
+			return dt
+		}(),
+		Slack: func() config.SlackConfig {
+			sc := config.SlackConfig{
+				Enabled: c.Slack.Enabled,
+			}
+			if c.Slack.BotToken != "" {
+				sc.SetBotToken(c.Slack.BotToken)
+			}
+			if c.Slack.AppToken != "" {
+				sc.SetAppToken(c.Slack.AppToken)
+			}
+			return sc
+		}(),
+		Matrix: func() config.MatrixConfig {
+			mc := config.MatrixConfig{
+				Enabled:      c.Matrix.Enabled,
+				Homeserver:   c.Matrix.Homeserver,
+				UserID:       c.Matrix.UserID,
+				AllowFrom:    c.Matrix.AllowFrom,
+				JoinOnInvite: true,
+			}
+			if c.Matrix.AccessToken != "" {
+				mc.SetAccessToken(c.Matrix.AccessToken)
+			}
+			return mc
+		}(),
+		LINE: func() config.LINEConfig {
+			lc := config.LINEConfig{
+				Enabled:     c.LINE.Enabled,
+				WebhookHost: c.LINE.WebhookHost,
+				WebhookPort: c.LINE.WebhookPort,
+				WebhookPath: c.LINE.WebhookPath,
+			}
+			if c.LINE.ChannelSecret != "" {
+				lc.SetChannelSecret(c.LINE.ChannelSecret)
+			}
+			if c.LINE.ChannelAccessToken != "" {
+				lc.SetChannelAccessToken(c.LINE.ChannelAccessToken)
+			}
+			return lc
+		}(),
 	}
 }
 
@@ -1084,30 +1135,44 @@ func (c GatewayConfig) ToStandardGateway() config.GatewayConfig {
 }
 
 func (c ToolsConfig) ToStandardTools() config.ToolsConfig {
+	brave := config.BraveConfig{
+		Enabled:    c.Web.Brave.Enabled,
+		MaxResults: c.Web.Brave.MaxResults,
+	}
+	if c.Web.Brave.APIKey != "" {
+		brave.SetAPIKey(c.Web.Brave.APIKey)
+	}
+	if len(c.Web.Brave.APIKeys) > 0 {
+		brave.SetAPIKeys(c.Web.Brave.APIKeys)
+	}
+
+	tavily := config.TavilyConfig{
+		Enabled:    c.Web.Tavily.Enabled,
+		BaseURL:    c.Web.Tavily.BaseURL,
+		MaxResults: c.Web.Tavily.MaxResults,
+	}
+	if c.Web.Tavily.APIKey != "" {
+		tavily.SetAPIKey(c.Web.Tavily.APIKey)
+	}
+
+	perplexity := config.PerplexityConfig{
+		Enabled:    c.Web.Perplexity.Enabled,
+		MaxResults: c.Web.Perplexity.MaxResults,
+	}
+	if c.Web.Perplexity.APIKey != "" {
+		perplexity.SetAPIKey(c.Web.Perplexity.APIKey)
+	}
+
 	return config.ToolsConfig{
 		Web: config.WebToolsConfig{
-			Brave: config.BraveConfig{
-				Enabled:    c.Web.Brave.Enabled,
-				APIKey:     c.Web.Brave.APIKey,
-				APIKeys:    c.Web.Brave.APIKeys,
-				MaxResults: c.Web.Brave.MaxResults,
-			},
-			Tavily: config.TavilyConfig{
-				Enabled:    c.Web.Tavily.Enabled,
-				APIKey:     c.Web.Tavily.APIKey,
-				BaseURL:    c.Web.Tavily.BaseURL,
-				MaxResults: c.Web.Tavily.MaxResults,
-			},
+			Brave:  brave,
+			Tavily: tavily,
 			DuckDuckGo: config.DuckDuckGoConfig{
 				Enabled:    c.Web.DuckDuckGo.Enabled,
 				MaxResults: c.Web.DuckDuckGo.MaxResults,
 			},
-			Perplexity: config.PerplexityConfig{
-				Enabled:    c.Web.Perplexity.Enabled,
-				APIKey:     c.Web.Perplexity.APIKey,
-				MaxResults: c.Web.Perplexity.MaxResults,
-			},
-			Proxy: c.Web.Proxy,
+			Perplexity: perplexity,
+			Proxy:      c.Web.Proxy,
 		},
 		Cron: config.CronToolsConfig{
 			ExecTimeoutMinutes: c.Cron.ExecTimeoutMinutes,

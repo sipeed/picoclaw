@@ -1,0 +1,1 @@
+{"version":3,"file":"INodeFilter.d.ts","sourceRoot":"","sources":["../../src/tree-walker/INodeFilter.ts"],"names":[],"mappings":"AAAA,OAAO,IAAI,MAAM,uBAAuB,CAAC;AAEzC,KAAK,WAAW,GAAG,CAAC,CAAC,IAAI,EAAE,IAAI,KAAK,MAAM,CAAC,GAAG;IAAE,UAAU,CAAC,IAAI,EAAE,IAAI,GAAG,MAAM,CAAA;CAAE,CAAC;AAEjF,eAAe,WAAW,CAAC"}

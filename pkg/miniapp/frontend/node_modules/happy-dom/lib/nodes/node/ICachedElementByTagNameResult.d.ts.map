@@ -1,0 +1,1 @@
+{"version":3,"file":"ICachedElementByTagNameResult.d.ts","sourceRoot":"","sources":["../../../src/nodes/node/ICachedElementByTagNameResult.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,uBAAuB,CAAC;AAC5C,OAAO,aAAa,MAAM,oBAAoB,CAAC;AAE/C,MAAM,CAAC,OAAO,WAAW,6BAA8B,SAAQ,aAAa;IAC3E,MAAM,EAAE,OAAO,CAAC,OAAO,CAAC,GAAG,IAAI,CAAC;CAChC"}

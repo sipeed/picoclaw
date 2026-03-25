@@ -1,0 +1,1 @@
+{"version":3,"file":"ResizeObserver.js","sourceRoot":"","sources":["../../src/resize-observer/ResizeObserver.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,CAAC,OAAO,OAAO,cAAc;IAClC;;;;OAIG;IACI,OAAO;QACb,wBAAwB;IACzB,CAAC;IAED;;;;OAIG;IACI,SAAS;QACf,wBAAwB;IACzB,CAAC;IAED;;;;OAIG;IACI,UAAU;QAChB,wBAAwB;IACzB,CAAC;CACD"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"ICachedStyleResult.d.ts","sourceRoot":"","sources":["../../../src/nodes/node/ICachedStyleResult.ts"],"names":[],"mappings":"AAAA,OAAO,kCAAkC,MAAM,8EAA8E,CAAC;AAC9H,OAAO,aAAa,MAAM,oBAAoB,CAAC;AAE/C,MAAM,CAAC,OAAO,WAAW,kBAAmB,SAAQ,aAAa;IAChE,MAAM,EAAE,OAAO,CAAC,kCAAkC,GAAG,IAAI,CAAC,GAAG,IAAI,CAAC;CAClE"}

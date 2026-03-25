@@ -41,14 +41,6 @@ Web ツールはウェブ検索とフェッチに使用されます。
 | `fetch_limit_bytes` | int    | 10485760      | 取得するウェブページペイロードの最大サイズ（バイト単位、デフォルトは10MB）。            |
 | `format`            | string | "plaintext"   | 取得コンテンツの出力形式。オプション：`plaintext` または `markdown`（推奨）。           |
 
-### Brave
-
-| 設定項目      | 型     | デフォルト | 説明                  |
-|---------------|--------|------------|-----------------------|
-| `enabled`     | bool   | false      | Brave 検索を有効にする |
-| `api_key`     | string | -          | Brave Search API キー  |
-| `max_results` | int    | 5          | 最大結果数            |
-
 ### DuckDuckGo
 
 | 設定項目      | 型   | デフォルト | 説明                      |
@@ -56,13 +48,73 @@ Web ツールはウェブ検索とフェッチに使用されます。
 | `enabled`     | bool | true       | DuckDuckGo 検索を有効にする |
 | `max_results` | int  | 5          | 最大結果数                |
 
+### Baidu Search
+
+| 設定項目      | 型     | デフォルト                                                      | 説明                          |
+|---------------|--------|-----------------------------------------------------------------|-------------------------------|
+| `enabled`     | bool   | false                                                           | Baidu 検索を有効にする        |
+| `api_key`     | string | -                                                               | Qianfan API キー              |
+| `base_url`    | string | `https://qianfan.baidubce.com/v2/ai_search/web_search`         | Baidu Search API URL          |
+| `max_results` | int    | 10                                                              | 最大結果数                    |
+
+```json
+{
+  "tools": {
+    "web": {
+      "baidu_search": {
+        "enabled": true,
+        "api_key": "YOUR_BAIDU_QIANFAN_API_KEY",
+        "max_results": 10
+      }
+    }
+  }
+}
+```
+
 ### Perplexity
 
 | 設定項目      | 型     | デフォルト | 説明                      |
 |---------------|--------|------------|---------------------------|
-| `enabled`     | bool   | false      | Perplexity 検索を有効にする |
-| `api_key`     | string | -          | Perplexity API キー        |
-| `max_results` | int    | 5          | 最大結果数                |
+| `enabled`     | bool     | false      | Perplexity 検索を有効にする                          |
+| `api_key`     | string   | -          | Perplexity API キー                                  |
+| `api_keys`    | string[] | -          | 複数の Perplexity API キー（ローテーション用、`api_key` より優先） |
+| `max_results` | int      | 5          | 最大結果数                                           |
+
+### Brave
+
+| 設定項目      | 型     | デフォルト | 説明                  |
+|---------------|--------|------------|-----------------------|
+| `enabled`     | bool     | false      | Brave 検索を有効にする                               |
+| `api_key`     | string   | -          | Brave Search API キー                                |
+| `api_keys`    | string[] | -          | 複数の Brave Search API キー（ローテーション用、`api_key` より優先） |
+| `max_results` | int      | 5          | 最大結果数                                           |
+
+### Tavily
+
+| 設定項目      | 型     | デフォルト | 説明                              |
+|---------------|--------|------------|-----------------------------------|
+| `enabled`     | bool   | false      | Tavily 検索を有効にする           |
+| `api_key`     | string | -          | Tavily API キー                   |
+| `base_url`    | string | -          | カスタム Tavily API ベース URL    |
+| `max_results` | int    | 0          | 最大結果数（0 = デフォルト）      |
+
+### SearXNG
+
+| 設定項目      | 型     | デフォルト               | 説明                      |
+|---------------|--------|--------------------------|---------------------------|
+| `enabled`     | bool   | false                    | SearXNG 検索を有効にする  |
+| `base_url`    | string | `http://localhost:8888`  | SearXNG インスタンス URL  |
+| `max_results` | int    | 5                        | 最大結果数                |
+
+### GLM Search
+
+| 設定項目        | 型     | デフォルト                                           | 説明                      |
+|-----------------|--------|------------------------------------------------------|---------------------------|
+| `enabled`       | bool   | false                                                | GLM Search を有効にする   |
+| `api_key`       | string | -                                                    | GLM API キー              |
+| `base_url`      | string | `https://open.bigmodel.cn/api/paas/v4/web_search`   | GLM Search API URL        |
+| `search_engine` | string | `search_std`                                         | 検索エンジンタイプ        |
+| `max_results`   | int    | 5                                                    | 最大結果数                |
 
 ## Exec ツール
 

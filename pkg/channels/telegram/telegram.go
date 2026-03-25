@@ -113,7 +113,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	}
 	opts = append(opts, telego.WithLogger(logger.NewLogger("telego")))
 
-	bot, err := telego.NewBot(telegramCfg.Token, opts...)
+	bot, err := telego.NewBot(telegramCfg.Token(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}
@@ -403,7 +403,7 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 	return err
 }
 
-// DeleteMessage implements channels.MessageDeleter.
+
 // SendPlaceholder implements channels.PlaceholderCapable.
 // It sends a placeholder message (e.g. "Thinking... 💭") that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).
@@ -492,13 +492,26 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 				_, err = c.bot.SendDocument(ctx, docParams)
 			}
 		case "audio":
-			params := &telego.SendAudioParams{
-				ChatID:          tu.ID(chatID),
-				MessageThreadID: threadID,
-				Audio:           telego.InputFile{File: file},
-				Caption:         part.Caption,
+			// Send OGG files with "voice" in the filename as Telegram voice
+			// bubbles (SendVoice) instead of audio attachments (SendAudio).
+			fn := strings.ToLower(part.Filename)
+			if strings.Contains(fn, "voice") && (strings.HasSuffix(fn, ".ogg") || strings.HasSuffix(fn, ".oga")) {
+				vparams := &telego.SendVoiceParams{
+					ChatID:          tu.ID(chatID),
+					MessageThreadID: threadID,
+					Voice:           telego.InputFile{File: file},
+					Caption:         part.Caption,
+				}
+				_, err = c.bot.SendVoice(ctx, vparams)
+			} else {
+				params := &telego.SendAudioParams{
+					ChatID:          tu.ID(chatID),
+					MessageThreadID: threadID,
+					Audio:           telego.InputFile{File: file},
+					Caption:         part.Caption,
+				}
+				_, err = c.bot.SendAudio(ctx, params)
 			}
-			_, err = c.bot.SendAudio(ctx, params)
 		case "video":
 			params := &telego.SendVideoParams{
 				ChatID:          tu.ID(chatID),
@@ -582,8 +595,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	storeMedia := func(localPath, filename string) string {
 		if store := c.GetMediaStore(); store != nil {
 			ref, err := store.Store(localPath, media.MediaMeta{
-				Filename: filename,
-				Source:   "telegram",
+				Filename:      filename,
+				Source:        "telegram",
+				CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 			}, scope)
 			if err == nil {
 				return ref

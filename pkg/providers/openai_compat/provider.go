@@ -37,6 +37,7 @@ type Provider struct {
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	stream         bool   // Use SSE streaming internally (accumulates into a single LLMResponse)
 	httpClient     *http.Client
+	extraBody map[string]any // Additional fields to inject into request body
 
 	// Rate limiting: minimum interval between consecutive API requests.
 	// Shared across all goroutines using this provider instance.
@@ -90,6 +91,12 @@ func WithEndpointPath(path string) Option {
 		if path != "" {
 			p.endpointPath = path
 		}
+	}
+}
+
+func WithExtraBody(extraBody map[string]any) Option {
+	return func(p *Provider) {
+		p.extraBody = extraBody
 	}
 }
 
@@ -174,7 +181,6 @@ func (p *Provider) buildHTTPRequest(
 	}
 
 	if maxTokens, ok := asInt(options["max_tokens"]); ok {
-		// Use configured maxTokensField if specified, otherwise fallback to model-based detection
 		fieldName := p.maxTokensField
 		if fieldName == "" {
 			lowerModel := strings.ToLower(model)
@@ -211,6 +217,12 @@ func (p *Provider) buildHTTPRequest(
 		if supportsPromptCacheKey(p.apiBase) {
 			requestBody["prompt_cache_key"] = cacheKey
 		}
+	}
+
+	// Merge extra body fields configured per-provider/model.
+	// These are injected last so they take precedence over defaults.
+	for k, v := range p.extraBody {
+		requestBody[k] = v
 	}
 
 	jsonData, err := json.Marshal(requestBody)
@@ -746,6 +758,8 @@ func cloneOpenAIToolArgs(src map[string]any) map[string]any {
 	}
 	return dst
 }
+
+
 
 func normalizeModel(model, apiBase string) string {
 	before, after, ok := strings.Cut(model, "/")

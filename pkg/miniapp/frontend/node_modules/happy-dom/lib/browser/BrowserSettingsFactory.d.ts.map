@@ -1,0 +1,1 @@
+{"version":3,"file":"BrowserSettingsFactory.d.ts","sourceRoot":"","sources":["../../src/browser/BrowserSettingsFactory.ts"],"names":[],"mappings":"AAAA,OAAO,gBAAgB,MAAM,6BAA6B,CAAC;AAC3D,OAAO,wBAAwB,MAAM,qCAAqC,CAAC;AAG3E;;GAEG;AACH,MAAM,CAAC,OAAO,OAAO,sBAAsB;IAC1C;;;;;;OAMG;WACW,cAAc,CAAC,QAAQ,CAAC,EAAE,wBAAwB,GAAG,gBAAgB;CA0BnF"}

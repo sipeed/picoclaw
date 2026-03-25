@@ -1,0 +1,1 @@
+{"version":3,"file":"CSSSupportsRule.d.ts","sourceRoot":"","sources":["../../../src/css/rules/CSSSupportsRule.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,eAAe,CAAC;AAEpC;;GAEG;AACH,MAAM,CAAC,OAAO,OAAO,eAAgB,SAAQ,OAAO;IACnD,SAAgB,IAAI,0CAAyB;IAC7C,SAAgB,QAAQ,EAAE,OAAO,EAAE,CAAM;IACzC,SAAgB,aAAa,MAAM;IAEnC;;;;OAIG;IACH,IAAW,OAAO,IAAI,MAAM,CAM3B;CACD"}

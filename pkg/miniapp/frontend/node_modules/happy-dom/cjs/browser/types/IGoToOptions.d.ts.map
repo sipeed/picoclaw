@@ -1,0 +1,1 @@
+{"version":3,"file":"IGoToOptions.d.ts","sourceRoot":"","sources":["../../../src/browser/types/IGoToOptions.ts"],"names":[],"mappings":"AAAA,OAAO,sBAAsB,MAAM,6CAA6C,CAAC;AACjF,OAAO,cAAc,MAAM,qBAAqB,CAAC;AAEjD;;GAEG;AACH,MAAM,CAAC,OAAO,WAAW,YAAa,SAAQ,cAAc;IAC3D;;OAEG;IACH,QAAQ,CAAC,EAAE,MAAM,CAAC;IAElB;;OAEG;IACH,cAAc,CAAC,EAAE,sBAAsB,CAAC;CACxC"}

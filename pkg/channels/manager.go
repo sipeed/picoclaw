@@ -206,6 +206,7 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	if _, loaded := m.streamActive.LoadAndDelete(key); loaded {
 		if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 			if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
+				// Prefer deleting the placeholder (cleaner UX than editing to same content)
 				if deleter, ok := ch.(MessageDeleter); ok {
 					deleter.DeleteMessage(ctx, msg.ChatID, entry.id) // best effort
 				} else if editor, ok := ch.(MessageEditor); ok {
@@ -340,7 +341,7 @@ func (m *Manager) initChannel(name, displayName string) {
 func (m *Manager) initChannels() error {
 	logger.InfoC("channels", "Initializing channel manager")
 
-	if m.config.Channels.Telegram.Enabled && m.config.Channels.Telegram.Token != "" {
+	if m.config.Channels.Telegram.Enabled && m.config.Channels.Telegram.Token() != "" {
 		m.initChannel("telegram", "Telegram")
 	}
 
@@ -357,7 +358,7 @@ func (m *Manager) initChannels() error {
 		m.initChannel("feishu", "Feishu")
 	}
 
-	if m.config.Channels.Discord.Enabled && m.config.Channels.Discord.Token != "" {
+	if m.config.Channels.Discord.Enabled && m.config.Channels.Discord.Token() != "" {
 		m.initChannel("discord", "Discord")
 	}
 
@@ -373,18 +374,18 @@ func (m *Manager) initChannels() error {
 		m.initChannel("dingtalk", "DingTalk")
 	}
 
-	if m.config.Channels.Slack.Enabled && m.config.Channels.Slack.BotToken != "" {
+	if m.config.Channels.Slack.Enabled && m.config.Channels.Slack.BotToken() != "" {
 		m.initChannel("slack", "Slack")
 	}
 
 	if m.config.Channels.Matrix.Enabled &&
 		m.config.Channels.Matrix.Homeserver != "" &&
 		m.config.Channels.Matrix.UserID != "" &&
-		m.config.Channels.Matrix.AccessToken != "" {
+		m.config.Channels.Matrix.AccessToken() != "" {
 		m.initChannel("matrix", "Matrix")
 	}
 
-	if m.config.Channels.LINE.Enabled && m.config.Channels.LINE.ChannelAccessToken != "" {
+	if m.config.Channels.LINE.Enabled && m.config.Channels.LINE.ChannelAccessToken() != "" {
 		m.initChannel("line", "LINE")
 	}
 
@@ -392,11 +393,12 @@ func (m *Manager) initChannels() error {
 		m.initChannel("onebot", "OneBot")
 	}
 
-	if m.config.Channels.WeCom.Enabled && m.config.Channels.WeCom.Token != "" {
+	if m.config.Channels.WeCom.Enabled && m.config.Channels.WeCom.Token() != "" {
 		m.initChannel("wecom", "WeCom")
 	}
 
-	if m.config.Channels.WeComAIBot.Enabled && m.config.Channels.WeComAIBot.Token != "" {
+	if m.config.Channels.WeComAIBot.Enabled && (m.config.Channels.WeComAIBot.Token() != "" ||
+		(m.config.Channels.WeComAIBot.Secret() != "" && m.config.Channels.WeComAIBot.BotID != "")) {
 		m.initChannel("wecom_aibot", "WeCom AI Bot")
 	}
 
@@ -404,7 +406,11 @@ func (m *Manager) initChannels() error {
 		m.initChannel("wecom_app", "WeCom App")
 	}
 
-	if m.config.Channels.Pico.Enabled && m.config.Channels.Pico.Token != "" {
+	if m.config.Channels.Weixin.Enabled && m.config.Channels.Weixin.Token() != "" {
+		m.initChannel("weixin", "Weixin")
+	}
+
+	if m.config.Channels.Pico.Enabled && m.config.Channels.Pico.Token() != "" {
 		m.initChannel("pico", "Pico")
 	}
 

@@ -63,14 +63,14 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 		BaseChannel: base,
 		config:      cfg,
 		tokenCache:  tc,
-		client:      lark.NewClient(cfg.AppID, cfg.AppSecret, opts...),
+		client:      lark.NewClient(cfg.AppID, cfg.AppSecret(), opts...),
 	}
 	ch.SetOwner(ch)
 	return ch, nil
 }
 
 func (c *FeishuChannel) Start(ctx context.Context) error {
-	if c.config.AppID == "" || c.config.AppSecret == "" {
+	if c.config.AppID == "" || c.config.AppSecret() == "" {
 		return fmt.Errorf("feishu app_id or app_secret is empty")
 	}
 
@@ -81,7 +81,7 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 		})
 	}
 
-	dispatcher := larkdispatcher.NewEventDispatcher(c.config.VerificationToken, c.config.EncryptKey).
+	dispatcher := larkdispatcher.NewEventDispatcher(c.config.VerificationToken(), c.config.EncryptKey()).
 		OnP2MessageReceiveV1(c.handleMessageReceive)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -94,7 +94,7 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	}
 	c.wsClient = larkws.NewClient(
 		c.config.AppID,
-		c.config.AppSecret,
+		c.config.AppSecret(),
 		larkws.WithEventHandler(dispatcher),
 		larkws.WithDomain(domain),
 	)
@@ -725,8 +725,9 @@ func (c *FeishuChannel) downloadResource(
 	out.Close()
 
 	ref, err := store.Store(localPath, media.MediaMeta{
-		Filename: filename,
-		Source:   "feishu",
+		Filename:      filename,
+		Source:        "feishu",
+		CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 	}, scope)
 	if err != nil {
 		logger.ErrorCF("feishu", "Failed to store downloaded resource", map[string]any{

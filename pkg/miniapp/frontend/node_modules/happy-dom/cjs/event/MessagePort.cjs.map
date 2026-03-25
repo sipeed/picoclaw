@@ -1,0 +1,1 @@
+{"version":3,"file":"MessagePort.cjs","sourceRoot":"","sources":["../../src/event/MessagePort.ts"],"names":[],"mappings":";;;;;AAAA,sEAA2C;AAE3C;;;;GAIG;AACH,MAA8B,WAAY,SAAQ,wBAAW;IAC5D;;;;;OAKG;IACI,WAAW,CAAC,QAAiB,EAAE,YAAuB;QAC5D,kBAAkB;IACnB,CAAC;IAED;;OAEG;IACI,KAAK;QACX,kBAAkB;IACnB,CAAC;IAED;;OAEG;IACI,KAAK;QACX,kBAAkB;IACnB,CAAC;CACD;AAxBD,8BAwBC"}

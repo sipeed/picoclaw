@@ -1,0 +1,50 @@
+import * as PropertySymbol from '../PropertySymbol.js';
+import BrowserWindow from '../window/BrowserWindow.js';
+/**
+ * SVG Animated Boolean.
+ *
+ * @see https://developer.mozilla.org/en-US/docs/Web/API/SVGAnimatedBoolean
+ */
+export default class SVGAnimatedBoolean {
+    [PropertySymbol.window]: BrowserWindow;
+    [PropertySymbol.getAttribute]: (() => string | null) | null;
+    [PropertySymbol.setAttribute]: ((value: string) => void) | null;
+    /**
+     * Constructor.
+     *
+     * @param illegalConstructorSymbol Illegal constructor symbol.
+     * @param window Window.
+     * @param options Options.
+     * @param options.getAttribute Get attribute.
+     * @param options.setAttribute Set attribute.
+     */
+    constructor(illegalConstructorSymbol: symbol, window: BrowserWindow, options: {
+        getAttribute: () => string | null;
+        setAttribute: (value: string) => void;
+    });
+    /**
+     * Returns animated value.
+     *
+     * @returns Animated value.
+     */
+    get animVal(): boolean;
+    /**
+     * Returns animated value.
+     *
+     * @param value Animated value.
+     */
+    set animVal(_value: boolean);
+    /**
+     * Returns base value.
+     *
+     * @returns Base value.
+     */
+    get baseVal(): boolean;
+    /**
+     * Sets base value.
+     *
+     * @param value Base value.
+     */
+    set baseVal(value: boolean);
+}
+//# sourceMappingURL=SVGAnimatedBoolean.d.ts.map

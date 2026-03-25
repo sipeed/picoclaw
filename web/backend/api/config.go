@@ -8,6 +8,7 @@ import (
 	"regexp"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // registerConfigRoutes binds configuration management endpoints to the ServeMux.
@@ -45,13 +46,22 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var cfg config.Config
-	if err := json.Unmarshal(body, &cfg); err != nil {
+	if err = json.Unmarshal(body, &cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
 	if execAllowRemoteOmitted(body) {
 		cfg.Tools.Exec.AllowRemote = config.DefaultConfig().Tools.Exec.AllowRemote
 	}
+
+	// Load existing config and copy security credentials before validation,
+	// so that security-managed fields (e.g. pico token) are available.
+	oldCfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		return
+	}
+	cfg.SecurityCopyFrom(oldCfg)
 
 	if errs := validateConfig(&cfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -62,6 +72,8 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	logger.Infof("configuration updated successfully")
 
 	if err := config.SaveConfig(h.configPath, &cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -140,6 +152,14 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Restore security fields (tokens/keys) from the loaded config before validation,
+	// because private fields are lost during JSON round-trip.
+	newCfg.SecurityCopyFrom(cfg)
+	if err := newCfg.ApplySecurity(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to apply security config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	if errs := validateConfig(&newCfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -175,17 +195,17 @@ func validateConfig(cfg *config.Config) []string {
 	}
 
 	// Pico channel: token required when enabled
-	if cfg.Channels.Pico.Enabled && cfg.Channels.Pico.Token == "" {
+	if cfg.Channels.Pico.Enabled && cfg.Channels.Pico.Token() == "" {
 		errs = append(errs, "channels.pico.token is required when pico channel is enabled")
 	}
 
 	// Telegram: token required when enabled
-	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token == "" {
+	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token() == "" {
 		errs = append(errs, "channels.telegram.token is required when telegram channel is enabled")
 	}
 
 	// Discord: token required when enabled
-	if cfg.Channels.Discord.Enabled && cfg.Channels.Discord.Token == "" {
+	if cfg.Channels.Discord.Enabled && cfg.Channels.Discord.Token() == "" {
 		errs = append(errs, "channels.discord.token is required when discord channel is enabled")
 	}
 

@@ -1,0 +1,1 @@
+{"version":3,"file":"IMutationListener.d.ts","sourceRoot":"","sources":["../../src/mutation-observer/IMutationListener.ts"],"names":[],"mappings":"AAAA,OAAO,qBAAqB,MAAM,4BAA4B,CAAC;AAC/D,OAAO,cAAc,MAAM,qBAAqB,CAAC;AAEjD,MAAM,CAAC,OAAO,WAAW,iBAAiB;IACzC,OAAO,EAAE,qBAAqB,CAAC;IAC/B,QAAQ,EAAE,OAAO,CAAC,CAAC,MAAM,EAAE,cAAc,KAAK,IAAI,CAAC,CAAC;CACpD"}

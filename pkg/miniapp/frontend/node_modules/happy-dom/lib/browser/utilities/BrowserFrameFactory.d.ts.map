@@ -1,0 +1,1 @@
+{"version":3,"file":"BrowserFrameFactory.d.ts","sourceRoot":"","sources":["../../../src/browser/utilities/BrowserFrameFactory.ts"],"names":[],"mappings":"AAAA,OAAO,aAAa,MAAM,2BAA2B,CAAC;AAKtD;;GAEG;AACH,MAAM,CAAC,OAAO,OAAO,mBAAmB;IACvC;;;;;OAKG;WACW,gBAAgB,CAAC,WAAW,EAAE,aAAa,GAAG,aAAa;IASzE;;;;OAIG;WACW,YAAY,CAAC,KAAK,EAAE,aAAa,GAAG,OAAO,CAAC,IAAI,CAAC;CA+D/D"}

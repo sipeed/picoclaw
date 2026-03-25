@@ -1,0 +1,1 @@
+{"version":3,"file":"IVirtualConsoleLogGroup.d.ts","sourceRoot":"","sources":["../../src/console/IVirtualConsoleLogGroup.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,OAAO,WAAW,uBAAuB;IAC/C,EAAE,EAAE,MAAM,CAAC;IACX,KAAK,EAAE,MAAM,CAAC;IACd,SAAS,EAAE,OAAO,CAAC;IACnB,MAAM,EAAE,uBAAuB,CAAC;CAChC"}

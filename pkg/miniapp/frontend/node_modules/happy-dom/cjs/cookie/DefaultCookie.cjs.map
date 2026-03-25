@@ -1,0 +1,1 @@
+{"version":3,"file":"DefaultCookie.cjs","sourceRoot":"","sources":["../../src/cookie/DefaultCookie.ts"],"names":[],"mappings":";;;;;AAAA,0FAA+D;AAG/D,kBAAwB;IACvB,WAAW;IACX,GAAG,EAAE,IAAI;IACT,SAAS,EAAE,IAAI;IAEf,WAAW;IACX,KAAK,EAAE,IAAI;IACX,MAAM,EAAE,EAAE;IACV,IAAI,EAAE,EAAE;IACR,OAAO,EAAE,IAAI;IACb,QAAQ,EAAE,KAAK;IACf,MAAM,EAAE,KAAK;IACb,QAAQ,EAAE,+BAAkB,CAAC,GAAG;CAChC,CAAC"}

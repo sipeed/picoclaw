@@ -1,0 +1,1 @@
+{"version":3,"file":"FetchCORSUtility.d.ts","sourceRoot":"","sources":["../../../src/fetch/utilities/FetchCORSUtility.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,GAAG,EAAE,MAAM,KAAK,CAAC;AAE1B;;GAEG;AACH,MAAM,CAAC,OAAO,OAAO,gBAAgB;IACpC;;;;;OAKG;WACW,MAAM,CAAC,SAAS,EAAE,GAAG,GAAG,MAAM,EAAE,SAAS,EAAE,GAAG,GAAG,MAAM,GAAG,OAAO;CAc/E"}

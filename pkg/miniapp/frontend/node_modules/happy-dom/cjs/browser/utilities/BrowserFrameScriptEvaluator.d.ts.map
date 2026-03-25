@@ -1,0 +1,1 @@
+{"version":3,"file":"BrowserFrameScriptEvaluator.d.ts","sourceRoot":"","sources":["../../../src/browser/utilities/BrowserFrameScriptEvaluator.ts"],"names":[],"mappings":"AAAA,OAAO,aAAa,MAAM,2BAA2B,CAAC;AACtD,OAAO,EAAE,MAAM,EAAE,MAAM,IAAI,CAAC;AAE5B;;GAEG;AACH,MAAM,CAAC,OAAO,OAAO,2BAA2B;IAC/C;;;;;;OAMG;WACW,QAAQ,CAAC,KAAK,EAAE,aAAa,EAAE,MAAM,EAAE,MAAM,GAAG,MAAM,GAAG,GAAG;CAO1E"}

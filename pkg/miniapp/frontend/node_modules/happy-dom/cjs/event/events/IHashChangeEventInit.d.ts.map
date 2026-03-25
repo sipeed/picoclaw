@@ -1,0 +1,1 @@
+{"version":3,"file":"IHashChangeEventInit.d.ts","sourceRoot":"","sources":["../../../src/event/events/IHashChangeEventInit.ts"],"names":[],"mappings":"AAAA,OAAO,UAAU,MAAM,kBAAkB,CAAC;AAE1C,MAAM,CAAC,OAAO,WAAW,oBAAqB,SAAQ,UAAU;IAC/D,MAAM,CAAC,EAAE,MAAM,CAAC;IAChB,MAAM,CAAC,EAAE,MAAM,CAAC;CAChB"}

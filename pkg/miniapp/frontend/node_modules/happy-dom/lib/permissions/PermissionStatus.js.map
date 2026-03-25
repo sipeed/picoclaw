@@ -1,0 +1,1 @@
+{"version":3,"file":"PermissionStatus.js","sourceRoot":"","sources":["../../src/permissions/PermissionStatus.ts"],"names":[],"mappings":"AAAA,OAAO,WAAW,MAAM,yBAAyB,CAAC;AAGlD;;;;;GAKG;AACH,MAAM,CAAC,OAAO,OAAO,gBAAiB,SAAQ,WAAW;IACjD,KAAK,CAAkC;IACvC,QAAQ,GAAoC,IAAI,CAAC;IAExD;;;;OAIG;IACH,YAAY,QAAyC,SAAS;QAC7D,KAAK,EAAE,CAAC;QACR,IAAI,CAAC,KAAK,GAAG,KAAK,CAAC;IACpB,CAAC;CACD"}

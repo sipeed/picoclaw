@@ -1,0 +1,1 @@
+{"version":3,"file":"SubmitEvent.cjs","sourceRoot":"","sources":["../../../src/event/events/SubmitEvent.ts"],"names":[],"mappings":";;;;;AAAA,2DAAgC;AAIhC;;GAEG;AACH,MAAqB,WAAY,SAAQ,kBAAK;IAC7B,SAAS,CAAqB;IAE9C;;;;;OAKG;IACH,YAAY,IAAY,EAAE,YAAqC,IAAI;QAClE,KAAK,CAAC,IAAI,EAAE,SAAS,CAAC,CAAC;QAEvB,IAAI,CAAC,SAAS,GAAG,SAAS,EAAE,SAAS,IAAI,IAAI,CAAC;IAC/C,CAAC;CACD;AAdD,8BAcC"}

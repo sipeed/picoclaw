@@ -1,0 +1,1 @@
+{"version":3,"file":"THTMLCollectionListener.d.ts","sourceRoot":"","sources":["../../../src/nodes/element/THTMLCollectionListener.ts"],"names":[],"mappings":"AAAA,KAAK,uBAAuB,CAAC,CAAC,IAAI,CAAC,OAAO,EAAE;IAC3C,KAAK,CAAC,EAAE,MAAM,CAAC;IACf,IAAI,CAAC,EAAE,CAAC,CAAC;IACT,YAAY,CAAC,EAAE,MAAM,CAAC;IACtB,aAAa,CAAC,EAAE,GAAG,CAAC;CACpB,KAAK,IAAI,CAAC;AACX,eAAe,uBAAuB,CAAC"}

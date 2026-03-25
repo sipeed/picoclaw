@@ -1,0 +1,1 @@
+{"version":3,"file":"IProgressEventInit.d.ts","sourceRoot":"","sources":["../../../src/event/events/IProgressEventInit.ts"],"names":[],"mappings":"AAAA,OAAO,UAAU,MAAM,kBAAkB,CAAC;AAE1C,MAAM,CAAC,OAAO,WAAW,kBAAmB,SAAQ,UAAU;IAC7D,gBAAgB,CAAC,EAAE,OAAO,CAAC;IAC3B,MAAM,CAAC,EAAE,MAAM,CAAC;IAChB,KAAK,CAAC,EAAE,MAAM,CAAC;CACf"}

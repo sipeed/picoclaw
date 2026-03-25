@@ -1,0 +1,1 @@
+{"version":3,"file":"DataURIParser.d.ts","sourceRoot":"","sources":["../../../src/fetch/data-uri/DataURIParser.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AACH,MAAM,CAAC,OAAO,OAAO,aAAa;IACjC;;;;;OAKG;WACW,KAAK,CAAC,GAAG,EAAE,MAAM,GAAG;QACjC,IAAI,EAAE,MAAM,CAAC;QACb,OAAO,EAAE,MAAM,CAAC;QAChB,MAAM,EAAE,MAAM,CAAC;KACf;CAgDD"}

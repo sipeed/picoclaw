@@ -34,7 +34,7 @@ func setupConfigMux(t *testing.T, cfg *config.Config) (*http.ServeMux, string) {
 
 func TestGetConfig(t *testing.T) {
 	cfg := &config.Config{
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{ModelName: "gpt-4o", Model: "openai/gpt-4o"},
 		},
 	}
@@ -83,7 +83,7 @@ func TestPutConfig(t *testing.T) {
 	mux, path := setupConfigMux(t, cfg)
 
 	newCfg := config.Config{
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{ModelName: "claude", Model: "anthropic/claude-sonnet-4.6", AuthMethod: "token"},
 		},
 	}

@@ -1,0 +1,1 @@
+{"version":3,"file":"ICachedMatchesResult.d.ts","sourceRoot":"","sources":["../../../src/nodes/node/ICachedMatchesResult.ts"],"names":[],"mappings":"AAAA,OAAO,cAAc,MAAM,wCAAwC,CAAC;AACpE,OAAO,aAAa,MAAM,oBAAoB,CAAC;AAE/C,MAAM,CAAC,OAAO,WAAW,oBAAqB,SAAQ,aAAa;IAClE,MAAM,EAAE;QAAE,KAAK,EAAE,cAAc,GAAG,IAAI,CAAA;KAAE,GAAG,IAAI,CAAC;CAChD"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"ISubmitEventInit.d.ts","sourceRoot":"","sources":["../../../src/event/events/ISubmitEventInit.ts"],"names":[],"mappings":"AAAA,OAAO,WAAW,MAAM,yCAAyC,CAAC;AAClE,OAAO,UAAU,MAAM,kBAAkB,CAAC;AAE1C,MAAM,CAAC,OAAO,WAAW,gBAAiB,SAAQ,UAAU;IAC3D,SAAS,CAAC,EAAE,WAAW,CAAC;CACxB"}

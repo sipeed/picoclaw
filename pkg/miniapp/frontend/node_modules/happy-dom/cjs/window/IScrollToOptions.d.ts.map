@@ -1,0 +1,1 @@
+{"version":3,"file":"IScrollToOptions.d.ts","sourceRoot":"","sources":["../../src/window/IScrollToOptions.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,OAAO,WAAW,gBAAgB;IACxC,GAAG,CAAC,EAAE,MAAM,CAAC;IACb,IAAI,CAAC,EAAE,MAAM,CAAC;IACd,QAAQ,CAAC,EAAE,MAAM,GAAG,QAAQ,CAAC;CAC7B"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"XMLSerializer.d.ts","sourceRoot":"","sources":["../../src/xml-serializer/XMLSerializer.ts"],"names":[],"mappings":"AAEA,OAAO,IAAI,MAAM,uBAAuB,CAAC;AAWzC;;;;GAIG;AACH,MAAM,CAAC,OAAO,OAAO,aAAa;;IACjC;;;;;OAKG;IACI,iBAAiB,CAAC,IAAI,EAAE,IAAI,GAAG,MAAM;CA8P5C"}

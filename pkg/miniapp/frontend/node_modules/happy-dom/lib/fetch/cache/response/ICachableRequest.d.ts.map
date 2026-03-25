@@ -1,0 +1,1 @@
+{"version":3,"file":"ICachableRequest.d.ts","sourceRoot":"","sources":["../../../../src/fetch/cache/response/ICachableRequest.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,kBAAkB,CAAC;AAEvC,MAAM,CAAC,OAAO,WAAW,gBAAgB;IACxC,GAAG,EAAE,MAAM,CAAC;IACZ,MAAM,EAAE,MAAM,CAAC;IACf,OAAO,EAAE,OAAO,CAAC;CACjB"}

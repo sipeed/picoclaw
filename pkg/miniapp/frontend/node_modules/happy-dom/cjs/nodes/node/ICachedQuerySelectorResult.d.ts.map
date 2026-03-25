@@ -1,0 +1,1 @@
+{"version":3,"file":"ICachedQuerySelectorResult.d.ts","sourceRoot":"","sources":["../../../src/nodes/node/ICachedQuerySelectorResult.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,uBAAuB,CAAC;AAC5C,OAAO,aAAa,MAAM,oBAAoB,CAAC;AAE/C,MAAM,CAAC,OAAO,WAAW,0BAA2B,SAAQ,aAAa;IACxE,MAAM,EAAE,OAAO,CAAC,OAAO,GAAG,IAAI,CAAC,GAAG,IAAI,CAAC;CACvC"}

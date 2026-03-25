@@ -1,0 +1,1 @@
+{"version":3,"file":"IIntersectionObserverInit.d.ts","sourceRoot":"","sources":["../../src/intersection-observer/IIntersectionObserverInit.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,6BAA6B,CAAC;AAElD,MAAM,CAAC,OAAO,WAAW,yBAAyB;IACjD;;OAEG;IACH,IAAI,CAAC,EAAE,OAAO,CAAC;IACf;;OAEG;IACH,UAAU,CAAC,EAAE,MAAM,CAAC;IACpB;;OAEG;IACH,SAAS,CAAC,EAAE,MAAM,GAAG,MAAM,EAAE,CAAC;CAC9B"}
