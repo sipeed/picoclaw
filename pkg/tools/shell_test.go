@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -681,5 +682,91 @@ func TestShellTool_URLBypassPrevented(t *testing.T) {
 		if !result.IsError || !strings.Contains(result.ForLLM, "path outside working dir") {
 			t.Errorf("bypass attempt should be blocked: %q\n  got: %s", cmd, result.ForLLM)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tirith guard tests
+// ---------------------------------------------------------------------------
+
+func TestTirithGuard_Disabled(t *testing.T) {
+	cfg := TirithConfig{Enabled: false}
+	result := tirithGuard("echo hello", cfg)
+	if result != "" {
+		t.Errorf("disabled tirith should allow all commands, got: %s", result)
+	}
+}
+
+func TestTirithGuard_MissingBinary_FailOpen(t *testing.T) {
+	cfg := TirithConfig{
+		Enabled:  true,
+		BinPath:  "/nonexistent/tirith-test-binary",
+		Timeout:  1,
+		FailOpen: true,
+	}
+	tirithMu.Lock()
+	tirithResolvedPath = ""
+	tirithInstallFailed = false
+	tirithMu.Unlock()
+
+	result := tirithGuard("echo hello", cfg)
+	if result != "" {
+		t.Errorf("missing tirith with fail-open should allow, got: %s", result)
+	}
+}
+
+func TestTirithGuard_MissingBinary_FailClosed(t *testing.T) {
+	cfg := TirithConfig{
+		Enabled:  true,
+		BinPath:  "/nonexistent/tirith-test-binary",
+		Timeout:  1,
+		FailOpen: false,
+	}
+	tirithMu.Lock()
+	tirithResolvedPath = ""
+	tirithInstallFailed = false
+	tirithMu.Unlock()
+
+	result := tirithGuard("echo hello", cfg)
+	if result == "" {
+		t.Error("missing tirith with fail-closed should block")
+	}
+	if !strings.Contains(result, "fail-closed") {
+		t.Errorf("expected fail-closed message, got: %s", result)
+	}
+}
+
+func TestTirithSummarize_ValidJSON(t *testing.T) {
+	input := []byte(`{"findings":[{"severity":"HIGH","title":"Pipe to shell"}]}`)
+	result := tirithSummarize(input)
+	if !strings.Contains(result, "Pipe to shell") || !strings.Contains(result, "HIGH") {
+		t.Errorf("expected finding summary, got: %s", result)
+	}
+}
+
+func TestTirithSummarize_InvalidJSON(t *testing.T) {
+	result := tirithSummarize([]byte("not json"))
+	if !strings.Contains(result, "details unavailable") {
+		t.Errorf("expected details unavailable, got: %s", result)
+	}
+}
+
+func TestTirithSummarize_EmptyFindings(t *testing.T) {
+	result := tirithSummarize([]byte(`{"findings":[]}`))
+	if result != "security issue detected" {
+		t.Errorf("expected generic message, got: %s", result)
+	}
+}
+
+func TestTirithDetectTarget(t *testing.T) {
+	target, ext := tirithDetectTarget()
+	if target == "" {
+		t.Skip("unsupported platform for this test")
+	}
+	if runtime.GOOS == "windows" && ext != ".zip" {
+		t.Errorf("windows should use .zip, got: %s", ext)
+	}
+	if runtime.GOOS != "windows" && ext != ".tar.gz" {
+		t.Errorf("unix should use .tar.gz, got: %s", ext)
 	}
 }
