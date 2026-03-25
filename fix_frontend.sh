@@ -1,1 +1,0 @@
-sed -i 's/"extraHeadersHint": "Custom HTTP headers in JSON format, e.g. {\\"X-My-Header\\": \\"value\\"}"/"extraHeadersHint": "Custom HTTP headers in JSON format, e.g. {\\"X-My-Header\\": \\"value\\"}",/' web/frontend/src/i18n/locales/en.json
