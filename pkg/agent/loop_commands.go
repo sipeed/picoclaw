@@ -62,6 +62,14 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, sessionKey strin
 			}
 			old := agent.Model
 			agent.Model = value
+			// Rebuild candidates so subsequent LLM calls use the new
+			// model's provider/endpoint instead of the old one.
+			agent.Candidates = resolveModelCandidates(
+				cfg,
+				cfg.Agents.Defaults.Provider,
+				value,
+				nil,
+			)
 			return old, nil
 		},
 		SwitchChannel: func(value string) error {
