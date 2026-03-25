@@ -1489,6 +1489,92 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 	}
 }
 
+func TestProcessMessage_SwitchModelPreservesPerModelCooldownKeys(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Provider:          "openai",
+				ModelName:         "local",
+				ModelFallbacks:    []string{"shared-provider"},
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "local",
+				Model:     "openai/local-model",
+				APIBase:   "https://local.example.invalid/v1",
+			},
+			{
+				ModelName:        "router-a",
+				Model:            "litellm/openai/gpt-4o-mini",
+				APIBase:          "https://litellm.example.invalid/v1",
+				CooldownStrategy: "per-model",
+			},
+			{
+				ModelName: "shared-provider",
+				Model:     "litellm/openai/gpt-4.1",
+				APIBase:   "https://litellm.example.invalid/v1",
+			},
+		},
+	}
+	cfg.WithSecurity(&config.SecurityConfig{
+		ModelList: map[string]config.ModelSecurityEntry{
+			"local": {
+				APIKeys: []string{"test-key"},
+			},
+			"router-a": {
+				APIKeys: []string{"test-key"},
+			},
+			"shared-provider": {
+				APIKeys: []string{"test-key"},
+			},
+		},
+	})
+
+	msgBus := bus.NewMessageBus()
+	provider := &countingMockProvider{response: "LLM reply"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	switchResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/switch model to router-a",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if !strings.Contains(switchResp, "Switched model from local to router-a") {
+		t.Fatalf("unexpected /switch reply: %q", switchResp)
+	}
+
+	agent := al.GetRegistry().GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("default agent is nil")
+	}
+	if len(agent.Candidates) != 2 {
+		t.Fatalf("len(Candidates) = %d, want 2", len(agent.Candidates))
+	}
+
+	if got := agent.Candidates[0].CooldownKey; got != "litellm/openai/gpt-4o-mini" {
+		t.Fatalf("candidate[0] cooldown key = %q, want %q", got, "litellm/openai/gpt-4o-mini")
+	}
+	if got := agent.Candidates[1].CooldownKey; got != "litellm" {
+		t.Fatalf("candidate[1] cooldown key = %q, want %q", got, "litellm")
+	}
+}
+
 func TestProcessMessage_SwitchModelRejectsUnknownAlias(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
