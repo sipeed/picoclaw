@@ -232,6 +232,78 @@ func TestExpandMultiKeyModels_PreservesOtherFields(t *testing.T) {
 	}
 }
 
+func TestExpandMultiKeyModels_IsVirtualFlag(t *testing.T) {
+	models := []*ModelConfig{
+		{
+			ModelName: "gpt-4",
+			Model:     "openai/gpt-4o",
+			apiKeys:   []string{"key1", "key2", "key3"},
+		},
+	}
+
+	result := expandMultiKeyModels(models)
+
+	// Should expand to 3 models
+	if len(result) != 3 {
+		t.Fatalf("expected 3 models, got %d", len(result))
+	}
+
+	// Primary model should NOT be virtual
+	primary := result[2]
+	if primary.isVirtual {
+		t.Errorf("primary model should not be virtual")
+	}
+	if primary.ModelName != "gpt-4" {
+		t.Errorf("expected primary model_name 'gpt-4', got %q", primary.ModelName)
+	}
+
+	// Virtual models should have isVirtual = true
+	virtual1 := result[0]
+	if !virtual1.isVirtual {
+		t.Errorf("gpt-4__key_1 should be virtual")
+	}
+	if virtual1.ModelName != "gpt-4__key_1" {
+		t.Errorf("expected virtual model_name 'gpt-4__key_1', got %q", virtual1.ModelName)
+	}
+
+	virtual2 := result[1]
+	if !virtual2.isVirtual {
+		t.Errorf("gpt-4__key_2 should be virtual")
+	}
+	if virtual2.ModelName != "gpt-4__key_2" {
+		t.Errorf("expected virtual model_name 'gpt-4__key_2', got %q", virtual2.ModelName)
+	}
+
+	// IsVirtual() method should work
+	if !virtual1.IsVirtual() {
+		t.Errorf("IsVirtual() should return true for virtual model")
+	}
+	if primary.IsVirtual() {
+		t.Errorf("IsVirtual() should return false for primary model")
+	}
+}
+
+func TestExpandMultiKeyModels_SingleKey_NotVirtual(t *testing.T) {
+	models := []*ModelConfig{
+		{
+			ModelName: "gpt-4",
+			Model:     "openai/gpt-4o",
+			apiKeys:   []string{"single-key"},
+		},
+	}
+
+	result := expandMultiKeyModels(models)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(result))
+	}
+
+	// Single key model should NOT be virtual
+	if result[0].isVirtual {
+		t.Errorf("single key model should not be virtual")
+	}
+}
+
 func TestMergeAPIKeys(t *testing.T) {
 	tests := []struct {
 		name     string

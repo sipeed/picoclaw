@@ -356,6 +356,46 @@ func TestHandleAddModel_PersistsAPIKey(t *testing.T) {
 	}
 }
 
+// TestHandleSetDefaultModel_RejectsNonexistentModel tests that setting a non-existent
+// model as default returns 404. This covers the case where virtual models (which are
+// filtered by SaveConfig) cannot be set as default.
+func TestHandleSetDefaultModel_RejectsNonexistentModel(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	// First save a valid config with a primary model
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{ModelName: "gpt-4", Model: "openai/gpt-4o"},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	// Try to set a non-existent model (like a virtual model name) as default
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models/default", bytes.NewBufferString(`{
+		"model_name": "gpt-4__key_1"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	// Should return 404 because the virtual model doesn't exist in the persisted config
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "not found") {
+		t.Fatalf("error message should mention 'not found', got: %s", rec.Body.String())
+	}
+}
+
 func TestMaskAPIKey(t *testing.T) {
 	tests := []struct {
 		name string

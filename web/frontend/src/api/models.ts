@@ -21,6 +21,7 @@ export interface ModelInfo {
   // Meta
   configured: boolean
   is_default: boolean
+  is_virtual: boolean
 }
 
 interface ModelsListResponse {
