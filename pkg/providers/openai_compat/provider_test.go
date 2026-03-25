@@ -269,7 +269,9 @@ func TestProviderChat_OmitsReasoningContentForMistral(t *testing.T) {
 			}
 			if _, exists := msg["reasoning_content"]; exists {
 				w.WriteHeader(http.StatusUnprocessableEntity)
-				_, _ = w.Write([]byte(`{"object":"error","message":"Extra inputs are not permitted","type":"invalid_request_error"}`))
+				_, _ = w.Write([]byte(
+					`{"object":"error","message":"Extra inputs are not permitted","type":"invalid_request_error"}`,
+				))
 				return
 			}
 		}
