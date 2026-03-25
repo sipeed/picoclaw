@@ -401,6 +401,10 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("irc", "IRC")
 	}
 
+	if channels.Zalo.Enabled && channels.Zalo.AppID != "" {
+		m.initChannel("zalo", "Zalo")
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})
