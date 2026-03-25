@@ -1683,7 +1683,11 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.recordPersistedMessage(rootMsg)
 	}
 
-	activeCandidates, activeModel, usedLight := al.selectCandidates(ts.agent, ts.userMessage, messages)
+	activeCandidates, activeModel, usedLight, useImageFallback := al.selectCandidates(
+		ts.agent,
+		ts.userMessage,
+		messages,
+	)
 	activeProvider := ts.agent.Provider
 	if usedLight && ts.agent.LightProvider != nil {
 		activeProvider = ts.agent.LightProvider
@@ -1905,13 +1909,19 @@ turnLoop:
 			defer al.activeRequests.Done()
 
 			if len(activeCandidates) > 1 && al.fallback != nil {
-				fbResult, fbErr := al.fallback.Execute(
-					providerCtx,
-					activeCandidates,
-					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return activeProvider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
-					},
+				runCandidate := func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
+					return activeProvider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
+				}
+
+				var (
+					fbResult *providers.FallbackResult
+					fbErr    error
 				)
+				if useImageFallback {
+					fbResult, fbErr = al.fallback.ExecuteImage(providerCtx, activeCandidates, runCandidate)
+				} else {
+					fbResult, fbErr = al.fallback.Execute(providerCtx, activeCandidates, runCandidate)
+				}
 				if fbErr != nil {
 					return nil, fbErr
 				}
@@ -2754,9 +2764,17 @@ func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
 	userMsg string,
 	history []providers.Message,
-) (candidates []providers.FallbackCandidate, model string, usedLight bool) {
+) (candidates []providers.FallbackCandidate, model string, usedLight bool, useImageFallback bool) {
+	if hasImageMedia(history) && len(agent.ImageCandidates) > 0 {
+		logger.InfoCF("agent", "Image model selected",
+			map[string]any{
+				"agent_id":    agent.ID,
+				"image_model": agent.ImageModel,
+			})
+		return agent.ImageCandidates, resolvedCandidateModel(agent.ImageCandidates, agent.ImageModel), false, true
+	}
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
-		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false
+		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false, false
 	}
 
 	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
@@ -2767,7 +2785,7 @@ func (al *AgentLoop) selectCandidates(
 				"score":     score,
 				"threshold": agent.Router.Threshold(),
 			})
-		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false
+		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false, false
 	}
 
 	logger.InfoCF("agent", "Model routing: light model selected",
@@ -2777,7 +2795,18 @@ func (al *AgentLoop) selectCandidates(
 			"score":       score,
 			"threshold":   agent.Router.Threshold(),
 		})
-	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel()), true
+	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel()), true, false
+}
+
+func hasImageMedia(messages []providers.Message) bool {
+	for _, msg := range messages {
+		for _, ref := range msg.Media {
+			if strings.HasPrefix(strings.ToLower(ref), "data:image/") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
