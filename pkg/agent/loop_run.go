@@ -437,9 +437,13 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 						ts.session.SetHistory(opts.SessionKey, history[:ts.initialHistoryLength])
 					}
 				}
-				al.emitEvent(EventKindTurnEnd,
-					EventMeta{AgentID: agent.ID, TurnID: scope.turnID, SessionKey: opts.SessionKey, Iteration: iteration},
-					TurnEndPayload{
+				abortMeta := EventMeta{
+					AgentID:    agent.ID,
+					TurnID:     scope.turnID,
+					SessionKey: opts.SessionKey,
+					Iteration:  iteration,
+				}
+				al.emitEvent(EventKindTurnEnd, abortMeta, TurnEndPayload{
 						Status:   TurnEndStatusAborted,
 						Duration: time.Since(turnStart),
 					})
@@ -1183,9 +1187,9 @@ func (al *AgentLoop) runLLMIteration(
 
 // toolExecResult holds results from executeToolCalls.
 type toolExecResult struct {
-	lastBlocker      string
+	lastBlocker       string
 	gracefulInterrupt bool
-	gracefulHint     string
+	gracefulHint      string
 }
 
 // executeToolCalls runs each tool call sequentially, publishes results,
