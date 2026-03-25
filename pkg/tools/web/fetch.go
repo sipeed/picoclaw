@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -158,8 +159,9 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *tools.
 			text = string(body)
 			extractor = "raw"
 		}
-	} else if strings.Contains(contentType, "text/html") || len(body) > 0 &&
-		(strings.HasPrefix(string(body), "<!DOCTYPE") || strings.HasPrefix(strings.ToLower(string(body)), "<html")) {
+	} else if strings.Contains(contentType, "text/html") ||
+		(len(body) >= 9 && bytes.EqualFold(body[:9], []byte("<!doctype"))) ||
+		(len(body) >= 5 && bytes.EqualFold(body[:5], []byte("<html"))) {
 		text = t.extractText(string(body))
 		extractor = "text"
 	} else {
