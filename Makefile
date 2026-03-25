@@ -242,11 +242,11 @@ fmt:
 
 ## lint: Run linters
 lint:
-	@CGO_ENABLED=0 $(GOLANGCI_LINT) run --build-tags $(GO_BUILD_TAGS)
+	$(GOLANGCI_LINT) run --build-tags $(GO_BUILD_TAGS)
 
 ## fix: Fix linting issues
 fix:
-	@CGO_ENABLED=0 $(GOLANGCI_LINT) run --fix --build-tags $(GO_BUILD_TAGS)
+	$(GOLANGCI_LINT) run --fix --build-tags $(GO_BUILD_TAGS)
 
 ## deps: Download dependencies
 deps:
