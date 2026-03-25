@@ -628,44 +628,18 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 			// Collect all message chunks to send
 			var chunks []string
 
-			// Step 1: Split by marker if enabled and marker is present
-			splitOnMarker := false
-			if m.config != nil {
-				splitOnMarker = m.config.Agents.Defaults.SplitOnMarker
-			}
-			if splitOnMarker {
-				markerChunks := SplitByMarker(msg.Content)
-				if len(markerChunks) > 1 {
-					// Marker found, process each chunk
+			// Step 1: Try marker-based splitting if enabled
+			if m.config != nil && m.config.Agents.Defaults.SplitOnMarker {
+				if markerChunks := SplitByMarker(msg.Content); len(markerChunks) > 1 {
 					for _, chunk := range markerChunks {
-						// Step 2: Further split by length if needed
-						if maxLen > 0 && len([]rune(chunk)) > maxLen {
-							subChunks := SplitMessage(chunk, maxLen)
-							chunks = append(chunks, subChunks...)
-						} else {
-							chunks = append(chunks, chunk)
-						}
+						chunks = append(chunks, splitByLength(chunk, maxLen)...)
 					}
-				} else {
-					// No marker found, fall through to length-based splitting
-					goto lengthSplit
 				}
-			} else {
-				// Marker disabled, use length-based splitting
-				goto lengthSplit
 			}
 
-		lengthSplit:
-			// Length-based splitting (also used as fallback when no marker found)
-			if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
-				chunks = SplitMessage(msg.Content, maxLen)
-			} else if len(chunks) == 0 {
-				chunks = []string{msg.Content}
-			}
-
-			// Fallback: if no chunks collected, use original message
+			// Step 2: Fallback to length-based splitting if no chunks from marker
 			if len(chunks) == 0 {
-				chunks = []string{msg.Content}
+				chunks = splitByLength(msg.Content, maxLen)
 			}
 
 			// Step 3: Send all chunks
@@ -678,6 +652,14 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 			return
 		}
 	}
+}
+
+// splitByLength splits content by maxLen if needed, otherwise returns single chunk.
+func splitByLength(content string, maxLen int) []string {
+	if maxLen > 0 && len([]rune(content)) > maxLen {
+		return SplitMessage(content, maxLen)
+	}
+	return []string{content}
 }
 
 // sendWithRetry sends a message through the channel with rate limiting and
