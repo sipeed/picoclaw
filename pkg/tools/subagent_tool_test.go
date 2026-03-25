@@ -325,7 +325,7 @@ func TestSubagentTool_ForUserTruncation(t *testing.T) {
 	}
 }
 
-func TestSubagentTool_Execute_PassesManagerToolsToSubTurn(t *testing.T) {
+func TestSubagentTool_Execute_LeavesToolsUnsetForRuntimeInheritance(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
 	manager.RegisterTool(&managerSnapshotTool{name: "snapshot_tool"})
@@ -344,7 +344,7 @@ func TestSubagentTool_Execute_PassesManagerToolsToSubTurn(t *testing.T) {
 		t.Fatalf("Expected success, got error: %s", result.ForLLM)
 	}
 
-	if len(spawner.toolNames) != 1 || spawner.toolNames[0] != "snapshot_tool" {
-		t.Fatalf("expected tool snapshot [snapshot_tool], got %v", spawner.toolNames)
+	if !spawner.toolsNil {
+		t.Fatalf("expected cfg.Tools to be nil for runtime inheritance, got %v", spawner.toolNames)
 	}
 }

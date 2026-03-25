@@ -49,10 +49,12 @@ func (t *managerSnapshotTool) Execute(ctx context.Context, args map[string]any) 
 
 type recordingSpawner struct {
 	toolNames []string
+	toolsNil  bool
 	done      chan struct{}
 }
 
 func (s *recordingSpawner) SpawnSubTurn(ctx context.Context, cfg SubTurnConfig) (*ToolResult, error) {
+	s.toolsNil = cfg.Tools == nil
 	for _, tool := range cfg.Tools {
 		if tool != nil {
 			s.toolNames = append(s.toolNames, tool.Name())
@@ -140,7 +142,7 @@ func TestSpawnTool_Execute_NilManager(t *testing.T) {
 	}
 }
 
-func TestSpawnTool_Execute_PassesManagerToolsToSubTurn(t *testing.T) {
+func TestSpawnTool_Execute_LeavesToolsUnsetForRuntimeInheritance(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
 	manager.RegisterTool(&managerSnapshotTool{name: "snapshot_tool"})
@@ -166,7 +168,7 @@ func TestSpawnTool_Execute_PassesManagerToolsToSubTurn(t *testing.T) {
 		t.Fatal("timed out waiting for async spawn execution")
 	}
 
-	if len(spawner.toolNames) != 1 || spawner.toolNames[0] != "snapshot_tool" {
-		t.Fatalf("expected tool snapshot [snapshot_tool], got %v", spawner.toolNames)
+	if !spawner.toolsNil {
+		t.Fatalf("expected cfg.Tools to be nil for runtime inheritance, got %v", spawner.toolNames)
 	}
 }

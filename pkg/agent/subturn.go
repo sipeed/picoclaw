@@ -354,12 +354,12 @@ func spawnSubTurn(
 	ephemeralStore := newEphemeralSession(nil)
 	agent := *baseAgent // shallow copy
 	agent.Sessions = ephemeralStore
-	if cfg.Tools != nil {
-		// Explicit tool slice from caller has highest priority for sub-turns.
-		agent.Tools = toolRegistryFromSlice(cfg.Tools)
-	} else if baseAgent.Tools != nil {
-		// Otherwise inherit the parent's tool snapshot.
+	if baseAgent.Tools != nil {
+		// Inherit the parent's tool registry snapshot so hidden/TTL metadata is preserved.
 		agent.Tools = baseAgent.Tools.Clone()
+	} else if len(cfg.Tools) > 0 {
+		// Fallback path for callers that provide explicit tool slices without a parent registry.
+		agent.Tools = toolRegistryFromSlice(cfg.Tools)
 	} else {
 		agent.Tools = tools.NewToolRegistry()
 	}
