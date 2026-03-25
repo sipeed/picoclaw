@@ -479,12 +479,13 @@ func (al *AgentLoop) llmWorker(ctx context.Context, queue <-chan bus.InboundMess
 			continue
 		}
 
-		al.llmWorkerNormal(ctx, msg)
+		al.llmWorkerNormal(ctx, msg, queue)
 	}
 }
 
 // llmWorkerNormal processes a single non-PDF message.
-func (al *AgentLoop) llmWorkerNormal(ctx context.Context, msg bus.InboundMessage) {
+// queue is optional (nil when called outside Run loop).
+func (al *AgentLoop) llmWorkerNormal(ctx context.Context, msg bus.InboundMessage, queue <-chan bus.InboundMessage) {
 	al.activeRequests.Add(1)
 	defer al.activeRequests.Done()
 
@@ -508,7 +509,64 @@ func (al *AgentLoop) llmWorkerNormal(ctx context.Context, msg bus.InboundMessage
 		response = fmt.Sprintf("Error processing message: %v", err)
 	}
 
+	// Auto-continue: if inbound messages arrived in the queue while this
+	// turn was running, treat them as steering continuations so the agent
+	// responds with the full context instead of two separate turns.
+	if queue != nil {
+		if drained := al.drainQueueAsSteering(queue, msg); len(drained) > 0 {
+			agent := al.agentForSession(msg.SessionKey)
+			if agent == nil {
+				agent = al.registry.GetDefaultAgent()
+			}
+			if agent != nil {
+				sessionKey := msg.SessionKey
+				if sessionKey == "" {
+					route, _, _ := al.resolveMessageRoute(msg)
+					sessionKey = resolveScopeKey(route, msg.SessionKey)
+				}
+				contResp, contErr := al.continueWithSteeringMessages(
+					ctx, agent, sessionKey, msg.Channel, msg.ChatID, drained,
+				)
+				if contErr == nil && contResp != "" {
+					response = contResp
+				}
+			}
+		}
+	}
+
 	al.sendResponseIfNeeded(ctx, msg, response)
+}
+
+// drainQueueAsSteering non-blocking drains pending messages from the
+// llmQueue that belong to the same chat as the original message and
+// returns them as steering-style provider messages.
+func (al *AgentLoop) drainQueueAsSteering(
+	queue <-chan bus.InboundMessage,
+	orig bus.InboundMessage,
+) []providers.Message {
+	var msgs []providers.Message
+	for {
+		select {
+		case m, ok := <-queue:
+			if !ok {
+				return msgs
+			}
+			if m.Channel == orig.Channel && m.ChatID == orig.ChatID {
+				msgs = append(msgs, providers.Message{
+					Role:    "user",
+					Content: m.Content,
+				})
+			} else {
+				// Re-queue by pushing to steering for later processing
+				al.enqueueSteeringMessage("", "", providers.Message{
+					Role:    "user",
+					Content: m.Content,
+				})
+			}
+		default:
+			return msgs
+		}
+	}
 }
 
 // llmWorkerPDF handles a bare-PDF message with two-phase follow-up collection.
@@ -553,13 +611,13 @@ func (al *AgentLoop) llmWorkerPDF(ctx context.Context, msg bus.InboundMessage, q
 			Content:    followUpText,
 			Metadata:   msg.Metadata,
 		}
-		al.llmWorkerNormal(ctx, followUpMsg)
+		al.llmWorkerNormal(ctx, followUpMsg, nil)
 	}
 
 	// Re-queue messages from other chats that were buffered.
 	otherMsgs := extractNonChatMessages(buffered, msg.ChatID)
 	for _, other := range otherMsgs {
-		al.llmWorkerNormal(ctx, other)
+		al.llmWorkerNormal(ctx, other, nil)
 	}
 }
 
@@ -1179,7 +1237,31 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 		},
 	}
 
-	return al.processMessage(ctx, msg)
+	response, err := al.processMessage(ctx, msg)
+	if err != nil {
+		return response, err
+	}
+
+	// If steering messages arrived during the LLM call, the initial
+	// response is stale. Discard it and do a continuation turn that
+	// includes the steering messages for a fresh response.
+	steeringMsgs := al.dequeueSteeringMessagesForScopeWithFallback(sessionKey)
+	if len(steeringMsgs) > 0 {
+		agent := al.agentForSession(sessionKey)
+		if agent == nil {
+			agent = al.registry.GetDefaultAgent()
+		}
+		if agent != nil {
+			contResp, contErr := al.continueWithSteeringMessages(
+				ctx, agent, sessionKey, channel, chatID, steeringMsgs,
+			)
+			if contErr == nil && contResp != "" {
+				return contResp, nil
+			}
+		}
+	}
+
+	return response, nil
 }
 
 // ProcessHeartbeat processes a heartbeat request without session history.

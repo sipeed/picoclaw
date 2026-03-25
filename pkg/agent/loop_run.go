@@ -33,6 +33,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	scope := al.newTurnEventScope(agent.ID, opts.SessionKey)
 	turnStart := time.Now()
 
+	// Create a cancelable context for hard abort support
+	turnCtx, turnCancelFn := context.WithCancel(ctx)
+	defer turnCancelFn()
+
 	// Register a turnState so the interrupt API can find this turn
 	ts := &turnState{
 		turnID:      scope.turnID,
@@ -44,6 +48,12 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		phase:       TurnPhaseRunning,
 		startedAt:   turnStart,
 		agent:       agent,
+		turnCancel:  turnCancelFn,
+	}
+	// Bind session store and capture initial history length for rollback
+	if agent.Sessions != nil {
+		ts.session = agent.Sessions
+		ts.initialHistoryLength = len(agent.Sessions.GetHistory(opts.SessionKey))
 	}
 	al.registerActiveTurn(ts)
 	defer al.clearActiveTurn(ts)
@@ -65,7 +75,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// -0. Create cancelable child context and register active task
 
-	taskCtx, taskCancel := context.WithCancel(ctx)
+	taskCtx, taskCancel := context.WithCancel(turnCtx)
 
 	defer taskCancel()
 
@@ -354,7 +364,9 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		historyMsg = opts.HistoryMessage
 	}
 
-	agent.Sessions.AddMessage(opts.SessionKey, "user", historyMsg)
+	if historyMsg != "" {
+		agent.Sessions.AddMessage(opts.SessionKey, "user", historyMsg)
+	}
 
 	// 4. Record user prompt for stats
 
@@ -413,6 +425,30 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 		finalContent, iteration, err = al.runLLMIteration(ctx, agent, messages, opts, task, curPlanStatus, scope)
 		if err != nil {
+			// Check for hard abort: if the turn was hard-aborted, restore
+			// session history and return empty response.
+			ts.mu.RLock()
+			isHardAbort := ts.hardAbort
+			ts.mu.RUnlock()
+			if isHardAbort {
+				if ts.session != nil {
+					history := ts.session.GetHistory(opts.SessionKey)
+					if ts.initialHistoryLength < len(history) {
+						ts.session.SetHistory(opts.SessionKey, history[:ts.initialHistoryLength])
+					}
+				}
+				abortMeta := EventMeta{
+					AgentID:    agent.ID,
+					TurnID:     scope.turnID,
+					SessionKey: opts.SessionKey,
+					Iteration:  iteration,
+				}
+				al.emitEvent(EventKindTurnEnd, abortMeta, TurnEndPayload{
+					Status:   TurnEndStatusAborted,
+					Duration: time.Since(turnStart),
+				})
+				return "", nil
+			}
 			return "", err
 		}
 
@@ -868,10 +904,24 @@ func (al *AgentLoop) runLLMIteration(
 
 	// Also inject any initial steering messages from the process options
 	if len(opts.InitialSteeringMessages) > 0 {
-		messages = append(messages, opts.InitialSteeringMessages...)
+		// Persist original refs in session history
+		for _, sm := range opts.InitialSteeringMessages {
+			agent.Sessions.AddFullMessage(opts.SessionKey, sm)
+		}
+		// Resolve media refs for the provider call while keeping
+		// the originals in session history with raw refs.
+		cfg := al.GetConfig()
+		maxMedia := cfg.Agents.Defaults.GetMaxMediaSize()
+		resolved := resolveMediaRefs(opts.InitialSteeringMessages, al.mediaStore, maxMedia)
+		messages = append(messages, resolved...)
 	}
 
 	for iteration < agent.MaxIterations {
+		// Check for context cancellation (e.g. hard abort) before each iteration
+		if ctx.Err() != nil {
+			return "", iteration, ctx.Err()
+		}
+
 		iteration++
 
 		if msg := hooks.OnIterationStart(iteration); msg != "" {
@@ -1014,7 +1064,16 @@ func (al *AgentLoop) runLLMIteration(
 				HasReasoning: response.Reasoning != "",
 			})
 
-		go al.handleReasoning(ctx, response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
+		reasoningText := response.Reasoning
+		if reasoningText == "" {
+			reasoningText = response.ReasoningContent
+		}
+		go al.handleReasoning(
+			context.WithoutCancel(ctx),
+			reasoningText,
+			opts.Channel,
+			al.targetReasoningChannelID(opts.Channel),
+		)
 
 		logger.DebugCF("agent", "LLM response",
 			map[string]any{
@@ -1090,12 +1149,36 @@ func (al *AgentLoop) runLLMIteration(
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
 		// Execute tool calls and collect results
-		lastBlocker := al.executeToolCalls(ctx, agent, normalizedToolCalls, &messages, opts, hooks, iteration, scope)
+		execResult := al.executeToolCalls(ctx, agent, normalizedToolCalls, &messages, opts, hooks, iteration, scope)
+
+		// Graceful interrupt: make a terminal LLM call with no tool
+		// definitions so the agent can produce a final summary.
+		if execResult.gracefulInterrupt {
+			hintMsg := "Interrupt requested. Stop scheduling tools and provide a short final summary."
+			if execResult.gracefulHint != "" {
+				hintMsg += "\n\nInterrupt hint: " + execResult.gracefulHint
+			}
+			messages = append(messages, providers.Message{
+				Role:    "user",
+				Content: hintMsg,
+			})
+
+			terminalResp, termErr := al.callLLMWithRetry(
+				ctx, agent, &messages, opts,
+				nil, // no tool definitions
+				al.selectCandidates(agent, "", messages),
+				agent.Model, nil, iteration+1, scope,
+			)
+			if termErr == nil && terminalResp != nil {
+				finalContent = terminalResp.Content
+			}
+			break
+		}
 
 		// Tick TTL-based tool expiry after execution
 		agent.Tools.TickTTL()
 
-		hooks.InjectReminders(iteration, &messages, lastBlocker)
+		hooks.InjectReminders(iteration, &messages, execResult.lastBlocker)
 		hooks.RefreshSystemPrompt(messages)
 	}
 
@@ -1105,6 +1188,13 @@ func (al *AgentLoop) runLLMIteration(
 	}
 
 	return finalContent, iteration, nil
+}
+
+// toolExecResult holds results from executeToolCalls.
+type toolExecResult struct {
+	lastBlocker       string
+	gracefulInterrupt bool
+	gracefulHint      string
 }
 
 // executeToolCalls runs each tool call sequentially, publishes results,
@@ -1118,12 +1208,26 @@ func (al *AgentLoop) executeToolCalls(
 	hooks iterationHooks,
 	iteration int,
 	scope turnEventScope,
-) string {
-	var lastBlocker string
+) toolExecResult {
+	var result toolExecResult
 	steered := false
+	gracefulSkip := false
 	for i, tc := range toolCalls {
+		// Check for graceful interrupt between tool calls
+		if !gracefulSkip {
+			if ts := al.getActiveTurnState(opts.SessionKey); ts != nil {
+				ts.mu.RLock()
+				if ts.gracefulInterrupt {
+					gracefulSkip = true
+					result.gracefulInterrupt = true
+					result.gracefulHint = ts.gracefulInterruptHint
+				}
+				ts.mu.RUnlock()
+			}
+		}
+
 		// Check for pending steering messages between tool calls
-		if i > 0 && !steered {
+		if i > 0 && !steered && !gracefulSkip {
 			steeringMsgs := al.dequeueSteeringMessagesForScopeWithFallback(opts.SessionKey)
 			if len(steeringMsgs) > 0 {
 				steered = true
@@ -1147,6 +1251,16 @@ func (al *AgentLoop) executeToolCalls(
 					},
 				)
 			}
+		}
+
+		// Skip remaining tools if graceful interrupt was requested
+		if gracefulSkip {
+			*messages = append(*messages, providers.Message{
+				Role:       "tool",
+				Content:    "Skipped due to graceful interrupt.",
+				ToolCallID: tc.ID,
+			})
+			continue
 		}
 
 		// Skip remaining tools if steering was injected
@@ -1312,7 +1426,7 @@ func (al *AgentLoop) executeToolCalls(
 			contentForLLM = toolResult.Err.Error()
 		}
 		if toolResult.IsError || toolResult.Err != nil {
-			lastBlocker = contentForLLM
+			result.lastBlocker = contentForLLM
 		}
 
 		toolResultMsg := providers.Message{
@@ -1323,7 +1437,21 @@ func (al *AgentLoop) executeToolCalls(
 		*messages = append(*messages, toolResultMsg)
 		agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 	}
-	return lastBlocker
+
+	// Re-check graceful interrupt after all tool execution (may have been
+	// set during the last tool's execution).
+	if !result.gracefulInterrupt {
+		if ts := al.getActiveTurnState(opts.SessionKey); ts != nil {
+			ts.mu.RLock()
+			if ts.gracefulInterrupt {
+				result.gracefulInterrupt = true
+				result.gracefulHint = ts.gracefulInterruptHint
+			}
+			ts.mu.RUnlock()
+		}
+	}
+
+	return result
 }
 
 // forceTextResponse makes a final LLM call without tools when max iterations
