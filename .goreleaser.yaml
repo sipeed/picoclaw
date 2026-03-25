@@ -2,6 +2,11 @@
 # vim: set ts=2 sw=2 tw=0 fo=cnqoj
 version: 2
 
+git:
+  ignore_tags:
+    - nightly
+    - ".*-nightly.*"
+
 before:
   hooks:
     - go mod tidy
