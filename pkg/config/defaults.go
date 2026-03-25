@@ -42,6 +42,7 @@ func DefaultConfig() *Config {
 					Enabled:       true,
 					MaxArgsLength: 300,
 				},
+				SplitOnMarker: false,
 			},
 		},
 		Bindings: []AgentBinding{},
