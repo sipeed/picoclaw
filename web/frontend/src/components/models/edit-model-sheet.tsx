@@ -12,6 +12,7 @@ import {
 } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Sheet,
   SheetContent,
@@ -33,6 +34,7 @@ interface EditForm {
   requestTimeout: string
   thinkingLevel: string
   extraHeaders: string
+  extraBody: string
 }
 
 interface EditModelSheetProps {
@@ -61,6 +63,7 @@ export function EditModelSheet({
     requestTimeout: "",
     thinkingLevel: "",
     extraHeaders: "",
+    extraBody: "",
   })
   const [saving, setSaving] = useState(false)
   const [setAsDefault, setSetAsDefault] = useState(false)
@@ -82,6 +85,9 @@ export function EditModelSheet({
           : "",
         thinkingLevel: model.thinking_level ?? "",
         extraHeaders: model.extra_headers ? JSON.stringify(model.extra_headers) : "",
+        extraBody: model.extra_body
+          ? JSON.stringify(model.extra_body, null, 2)
+          : "",
       })
       setSetAsDefault(model.is_default)
       setError("")
@@ -89,7 +95,7 @@ export function EditModelSheet({
   }, [model])
 
   const setField =
-    (key: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    (key: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm((f) => ({ ...f, [key]: e.target.value }))
 
   const handleSave = async () => {
@@ -125,6 +131,9 @@ export function EditModelSheet({
           : undefined,
         thinking_level: form.thinkingLevel || undefined,
         extra_headers: form.extraHeaders.trim() ? JSON.parse(form.extraHeaders.trim()) : undefined,
+        extra_body: form.extraBody.trim()
+          ? JSON.parse(form.extraBody.trim())
+          : {},
       })
       if (setAsDefault && !model.is_default) {
         await setDefaultModel(model.model_name)
@@ -298,6 +307,14 @@ export function EditModelSheet({
                   value={form.extraHeaders}
                   onChange={setField("extraHeaders")}
                   placeholder='{"X-My-Header": "value"}'
+                label={t("models.field.extraBody")}
+                hint={t("models.field.extraBodyHint")}
+              >
+                <Textarea
+                  value={form.extraBody}
+                  onChange={setField("extraBody")}
+                  placeholder='{"key": "value"}'
+                  rows={3}
                 />
               </Field>
             </AdvancedSection>

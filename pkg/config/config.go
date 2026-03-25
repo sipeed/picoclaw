@@ -381,7 +381,7 @@ type TypingConfig struct {
 
 // PlaceholderConfig controls placeholder message behavior (Phase 10).
 type PlaceholderConfig struct {
-	Enabled bool   `json:"enabled,omitempty"`
+	Enabled bool   `json:"enabled"`
 	Text    string `json:"text,omitempty"`
 }
 
@@ -862,6 +862,10 @@ type ModelConfig struct {
 	secModelName string
 	apiKeys      []string
 	secDirty     bool
+
+	// isVirtual marks this model as a virtual model generated from multi-key expansion.
+	// Virtual models should not be persisted to config files.
+	isVirtual bool
 }
 
 // APIKey returns the first API key from apiKeys
@@ -870,6 +874,11 @@ func (c *ModelConfig) APIKey() string {
 		return c.apiKeys[0]
 	}
 	return ""
+}
+
+// IsVirtual returns true if this model was generated from multi-key expansion.
+func (c *ModelConfig) IsVirtual() bool {
+	return c.isVirtual
 }
 
 // Validate checks if the ModelConfig has all required fields.
@@ -1805,7 +1814,20 @@ func SaveConfig(path string, cfg *Config) error {
 		return err
 	}
 
+	// Filter out virtual models before serializing to config file
+	nonVirtualModels := make([]*ModelConfig, 0, len(cfg.ModelList))
+	for _, m := range cfg.ModelList {
+		if !m.isVirtual {
+			nonVirtualModels = append(nonVirtualModels, m)
+		}
+	}
+	// Temporarily replace ModelList with filtered version for serialization
+	originalModelList := cfg.ModelList
+	cfg.ModelList = nonVirtualModels
+
 	data, err := json.MarshalIndent(cfg, "", "  ")
+	// Restore original ModelList after serialization
+	cfg.ModelList = originalModelList
 	if err != nil {
 		return err
 	}
@@ -2025,6 +2047,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 				RequestTimeout: m.RequestTimeout,
 				ThinkingLevel:  m.ThinkingLevel,
 				ExtraBody:      m.ExtraBody,
+				isVirtual:      true,
 			}
 			expanded = append(expanded, additionalEntry)
 			fallbackNames = append(fallbackNames, expandedName)
