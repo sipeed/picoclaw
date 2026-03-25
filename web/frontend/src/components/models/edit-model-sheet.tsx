@@ -12,7 +12,6 @@ import {
 } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Sheet,
   SheetContent,
@@ -21,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { Textarea } from "@/components/ui/textarea"
 
 interface EditForm {
   apiKey: string
@@ -84,7 +84,9 @@ export function EditModelSheet({
           ? String(model.request_timeout)
           : "",
         thinkingLevel: model.thinking_level ?? "",
-        extraHeaders: model.extra_headers ? JSON.stringify(model.extra_headers) : "",
+        extraHeaders: model.extra_headers
+          ? JSON.stringify(model.extra_headers)
+          : "",
         extraBody: model.extra_body
           ? JSON.stringify(model.extra_body, null, 2)
           : "",
@@ -95,7 +97,8 @@ export function EditModelSheet({
   }, [model])
 
   const setField =
-    (key: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    (key: keyof EditForm) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm((f) => ({ ...f, [key]: e.target.value }))
 
   const handleSave = async () => {
@@ -103,7 +106,11 @@ export function EditModelSheet({
     if (form.extraHeaders.trim()) {
       try {
         const parsed = JSON.parse(form.extraHeaders.trim())
-        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        if (
+          typeof parsed !== "object" ||
+          parsed === null ||
+          Array.isArray(parsed)
+        ) {
           setError("Extra headers must be a valid JSON object")
           return
         }
@@ -130,7 +137,9 @@ export function EditModelSheet({
           ? Number(form.requestTimeout)
           : undefined,
         thinking_level: form.thinkingLevel || undefined,
-        extra_headers: form.extraHeaders.trim() ? JSON.parse(form.extraHeaders.trim()) : undefined,
+        extra_headers: form.extraHeaders.trim()
+          ? JSON.parse(form.extraHeaders.trim())
+          : undefined,
         extra_body: form.extraBody.trim()
           ? JSON.parse(form.extraBody.trim())
           : {},
@@ -307,6 +316,9 @@ export function EditModelSheet({
                   value={form.extraHeaders}
                   onChange={setField("extraHeaders")}
                   placeholder='{"X-My-Header": "value"}'
+                />
+              </Field>
+              <Field
                 label={t("models.field.extraBody")}
                 hint={t("models.field.extraBodyHint")}
               >

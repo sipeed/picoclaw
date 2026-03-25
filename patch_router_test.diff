@@ -1,0 +1,29 @@
+<<<<<<< SEARCH
+func TestRouter_SelectModel_SimpleMessageUsesLight(t *testing.T) {
+	r := New(RouterConfig{LightModel: "gemini-flash"})
+	msg := "hello, how are you?"
+
+	model, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
+
+	if !usedLight {
+		t.Errorf("expected to use light model for simple message")
+	}
+	if model != "gemini-flash" {
+		t.Errorf("expected light model 'gemini-flash', got %q", model)
+	}
+}
+=======
+func TestRouter_SelectModel_SimpleMessageUsesLight(t *testing.T) {
+	r := New(RouterConfig{Tiers: []RoutingTier{{Model: "gemini-flash", Threshold: 0.0}, {Model: "claude-sonnet-4-6", Threshold: 0.35}}})
+	msg := "hello, how are you?"
+
+	model, usedLight, _ := r.SelectModel(msg, nil, "claude-sonnet-4-6")
+
+	if !usedLight {
+		t.Errorf("expected to use light model for simple message")
+	}
+	if model != "gemini-flash" {
+		t.Errorf("expected light model 'gemini-flash', got %q", model)
+	}
+}
+>>>>>>> REPLACE

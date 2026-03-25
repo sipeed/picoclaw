@@ -41,13 +41,13 @@ type AgentInstance struct {
 	SkillsFilter              []string
 	Candidates                []providers.FallbackCandidate
 
-	// Router is non-nil when model routing is configured and the light model
-	// was successfully resolved. It scores each incoming message and decides
-	// whether to route to LightCandidates or stay with Candidates.
+	// Router is non-nil when model routing is configured and the tiers
+	// were successfully resolved. It scores each incoming message and decides
+	// which model tier to use.
 	Router *routing.Router
-	// LightCandidates holds the resolved provider candidates for the light model.
+	// TierCandidates holds the resolved provider candidates for each routing tier.
 	// Pre-computed at agent creation to avoid repeated model_list lookups at runtime.
-	LightCandidates []providers.FallbackCandidate
+	TierCandidates map[string][]providers.FallbackCandidate
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -165,21 +165,53 @@ func NewAgentInstance(
 	// Resolve fallback candidates
 	candidates := resolveModelCandidates(cfg, defaults.Provider, model, fallbacks)
 
-	// Model routing setup: pre-resolve light model candidates at creation time
+	// Model routing setup: pre-resolve tier model candidates at creation time
 	// to avoid repeated model_list lookups on every incoming message.
 	var router *routing.Router
-	var lightCandidates []providers.FallbackCandidate
-	if rc := defaults.Routing; rc != nil && rc.Enabled && rc.LightModel != "" {
-		resolved := resolveModelCandidates(cfg, defaults.Provider, rc.LightModel, nil)
-		if len(resolved) > 0 {
-			router = routing.New(routing.RouterConfig{
-				LightModel: rc.LightModel,
-				Threshold:  rc.Threshold,
-			})
-			lightCandidates = resolved
+	var tierCandidates map[string][]providers.FallbackCandidate
+	if rc := defaults.Routing; rc != nil && rc.Enabled {
+		// Backward compatibility: handle old light_model/threshold config
+		var tiers []routing.RoutingTier
+		if len(rc.Tiers) == 0 && rc.LightModel != "" {
+			tiers = []routing.RoutingTier{
+				{Model: rc.LightModel, Threshold: 0.0},
+			}
+			if rc.Threshold > 0 {
+				tiers = append(tiers, routing.RoutingTier{Model: model, Threshold: rc.Threshold})
+			} else {
+				tiers = append(tiers, routing.RoutingTier{Model: model, Threshold: 0.35})
+			}
 		} else {
-			logger.WarnCF("agent", "Routing light model not found; routing disabled",
-				map[string]any{"light_model": rc.LightModel, "agent_id": agentID})
+			for _, t := range rc.Tiers {
+				tiers = append(tiers, routing.RoutingTier{Model: t.Model, Threshold: t.Threshold})
+			}
+		}
+
+		if len(tiers) > 0 {
+			tierCandidates = make(map[string][]providers.FallbackCandidate)
+			validTiers := []routing.RoutingTier{}
+
+			for _, tier := range tiers {
+				if tier.Model == model {
+					// Don't need to resolve the primary model again
+					validTiers = append(validTiers, tier)
+					continue
+				}
+				resolved := resolveModelCandidates(cfg, defaults.Provider, tier.Model, nil)
+				if len(resolved) > 0 {
+					tierCandidates[tier.Model] = resolved
+					validTiers = append(validTiers, tier)
+				} else {
+					logger.WarnCF("agent", "Routing tier model not found; skipping tier",
+						map[string]any{"tier_model": tier.Model, "agent_id": agentID})
+				}
+			}
+
+			if len(validTiers) > 0 {
+				router = routing.New(routing.RouterConfig{
+					Tiers: validTiers,
+				})
+			}
 		}
 	}
 
@@ -204,7 +236,7 @@ func NewAgentInstance(
 		SkillsFilter:              skillsFilter,
 		Candidates:                candidates,
 		Router:                    router,
-		LightCandidates:           lightCandidates,
+		TierCandidates:            tierCandidates,
 	}
 }
 

@@ -1,0 +1,170 @@
+<<<<<<< SEARCH
+export interface CoreConfigForm {
+  workspace: string
+  restrictToWorkspace: boolean
+  toolFeedbackEnabled: boolean
+  toolFeedbackMaxArgsLength: string
+  execEnabled: boolean
+  allowRemote: boolean
+  enableDenyPatterns: boolean
+  customDenyPatternsText: string
+  customAllowPatternsText: string
+  execTimeoutSeconds: string
+  allowCommand: boolean
+  cronExecTimeoutMinutes: string
+  maxTokens: string
+  contextWindow: string
+  maxToolIterations: string
+  summarizeMessageThreshold: string
+  summarizeTokenPercent: string
+  dmScope: string
+  heartbeatEnabled: boolean
+  heartbeatInterval: string
+  devicesEnabled: boolean
+  monitorUSB: boolean
+}
+=======
+export interface RoutingTier {
+  model: string
+  threshold: number
+}
+
+export interface CoreConfigForm {
+  workspace: string
+  restrictToWorkspace: boolean
+  toolFeedbackEnabled: boolean
+  toolFeedbackMaxArgsLength: string
+  execEnabled: boolean
+  allowRemote: boolean
+  enableDenyPatterns: boolean
+  customDenyPatternsText: string
+  customAllowPatternsText: string
+  execTimeoutSeconds: string
+  allowCommand: boolean
+  cronExecTimeoutMinutes: string
+  maxTokens: string
+  contextWindow: string
+  maxToolIterations: string
+  summarizeMessageThreshold: string
+  summarizeTokenPercent: string
+  dmScope: string
+  heartbeatEnabled: boolean
+  heartbeatInterval: string
+  devicesEnabled: boolean
+  monitorUSB: boolean
+  routingEnabled: boolean
+  routingTiers: RoutingTier[]
+}
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+export const EMPTY_FORM: CoreConfigForm = {
+  workspace: "",
+  restrictToWorkspace: true,
+  toolFeedbackEnabled: true,
+  toolFeedbackMaxArgsLength: "300",
+  execEnabled: true,
+  allowRemote: true,
+  enableDenyPatterns: true,
+  customDenyPatternsText: "",
+  customAllowPatternsText: "",
+  execTimeoutSeconds: "0",
+  allowCommand: true,
+  cronExecTimeoutMinutes: "5",
+  maxTokens: "32768",
+  contextWindow: "",
+  maxToolIterations: "50",
+  summarizeMessageThreshold: "20",
+  summarizeTokenPercent: "75",
+  dmScope: "per-channel-peer",
+  heartbeatEnabled: true,
+  heartbeatInterval: "30",
+  devicesEnabled: false,
+  monitorUSB: true,
+}
+=======
+export const EMPTY_FORM: CoreConfigForm = {
+  workspace: "",
+  restrictToWorkspace: true,
+  toolFeedbackEnabled: true,
+  toolFeedbackMaxArgsLength: "300",
+  execEnabled: true,
+  allowRemote: true,
+  enableDenyPatterns: true,
+  customDenyPatternsText: "",
+  customAllowPatternsText: "",
+  execTimeoutSeconds: "0",
+  allowCommand: true,
+  cronExecTimeoutMinutes: "5",
+  maxTokens: "32768",
+  contextWindow: "",
+  maxToolIterations: "50",
+  summarizeMessageThreshold: "20",
+  summarizeTokenPercent: "75",
+  dmScope: "per-channel-peer",
+  heartbeatEnabled: true,
+  heartbeatInterval: "30",
+  devicesEnabled: false,
+  monitorUSB: true,
+  routingEnabled: false,
+  routingTiers: [],
+}
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  const toolFeedback = asRecord(defaults.tool_feedback)
+
+  return {
+    workspace: asString(defaults.workspace) || EMPTY_FORM.workspace,
+=======
+  const toolFeedback = asRecord(defaults.tool_feedback)
+  const routing = asRecord(defaults.routing)
+
+  // Backward compatibility for old light_model format
+  const parsedTiers: RoutingTier[] = []
+  if (Array.isArray(routing.tiers)) {
+    for (const t of routing.tiers) {
+      if (t && typeof t === "object") {
+        const tier = t as Record<string, unknown>
+        parsedTiers.push({
+          model: asString(tier.model),
+          threshold: Number(tier.threshold) || 0,
+        })
+      }
+    }
+  } else if (routing.light_model) {
+    parsedTiers.push({
+      model: asString(routing.light_model),
+      threshold: Number(routing.threshold) || 0.35,
+    })
+  }
+
+  return {
+    workspace: asString(defaults.workspace) || EMPTY_FORM.workspace,
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+    devicesEnabled:
+      devices.enabled === undefined
+        ? EMPTY_FORM.devicesEnabled
+        : asBool(devices.enabled),
+    monitorUSB:
+      devices.monitor_usb === undefined
+        ? EMPTY_FORM.monitorUSB
+        : asBool(devices.monitor_usb),
+  }
+}
+=======
+    devicesEnabled:
+      devices.enabled === undefined
+        ? EMPTY_FORM.devicesEnabled
+        : asBool(devices.enabled),
+    monitorUSB:
+      devices.monitor_usb === undefined
+        ? EMPTY_FORM.monitorUSB
+        : asBool(devices.monitor_usb),
+    routingEnabled:
+      routing.enabled === undefined
+        ? EMPTY_FORM.routingEnabled
+        : asBool(routing.enabled),
+    routingTiers: parsedTiers,
+  }
+}
+>>>>>>> REPLACE

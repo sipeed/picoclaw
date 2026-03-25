@@ -9,17 +9,17 @@ import (
 // or an attachment) before the heavy model is chosen.
 const defaultThreshold = 0.35
 
+// RoutingTier defines a single tier for model routing.
+type RoutingTier struct {
+	Model     string
+	Threshold float64
+}
+
 // RouterConfig holds the validated model routing settings.
 // It mirrors config.RoutingConfig but lives in pkg/routing to keep the
 // dependency graph simple: pkg/agent resolves config → routing, not the reverse.
 type RouterConfig struct {
-	// LightModel is the model_name (from model_list) used for simple tasks.
-	LightModel string
-
-	// Threshold is the complexity score cutoff in [0, 1].
-	// score >= Threshold → primary (heavy) model.
-	// score <  Threshold → light model.
-	Threshold float64
+	Tiers []RoutingTier
 }
 
 // Router selects the appropriate model tier for each incoming message.
@@ -30,11 +30,7 @@ type Router struct {
 }
 
 // New creates a Router with the given config and the default RuleClassifier.
-// If cfg.Threshold is zero or negative, defaultThreshold (0.35) is used.
 func New(cfg RouterConfig) *Router {
-	if cfg.Threshold <= 0 {
-		cfg.Threshold = defaultThreshold
-	}
 	return &Router{
 		cfg:        cfg,
 		classifier: &RuleClassifier{},
@@ -44,20 +40,18 @@ func New(cfg RouterConfig) *Router {
 // newWithClassifier creates a Router with a custom Classifier.
 // Intended for unit tests that need to inject a deterministic scorer.
 func newWithClassifier(cfg RouterConfig, c Classifier) *Router {
-	if cfg.Threshold <= 0 {
-		cfg.Threshold = defaultThreshold
-	}
 	return &Router{cfg: cfg, classifier: c}
 }
 
 // SelectModel returns the model to use for this conversation turn along with
 // the computed complexity score (for logging and debugging).
 //
-//   - If score < cfg.Threshold: returns (cfg.LightModel, true, score)
-//   - Otherwise:               returns (primaryModel, false, score)
+// The router selects the tier whose threshold is <= score.
+// If multiple tiers match, it prefers the one with the highest threshold.
+// If no tier matches, it returns the primary model.
 //
 // The caller is responsible for resolving the returned model name into
-// provider candidates (see AgentInstance.LightCandidates).
+// provider candidates.
 func (r *Router) SelectModel(
 	msg string,
 	history []providers.Message,
@@ -65,18 +59,27 @@ func (r *Router) SelectModel(
 ) (model string, usedLight bool, score float64) {
 	features := ExtractFeatures(msg, history)
 	score = r.classifier.Score(features)
-	if score < r.cfg.Threshold {
-		return r.cfg.LightModel, true, score
+
+	selectedModel := primaryModel
+	maxMatchedThreshold := -1.0
+	matched := false
+
+	// Find the highest threshold that is <= score
+	for _, tier := range r.cfg.Tiers {
+		if score >= tier.Threshold && tier.Threshold > maxMatchedThreshold {
+			selectedModel = tier.Model
+			maxMatchedThreshold = tier.Threshold
+			matched = true
+		}
 	}
-	return primaryModel, false, score
+
+	// usedLight is a bit of a legacy concept now, but we can set it to true if we didn't use primaryModel
+	usedLight = matched && selectedModel != primaryModel
+
+	return selectedModel, usedLight, score
 }
 
-// LightModel returns the configured light model name.
-func (r *Router) LightModel() string {
-	return r.cfg.LightModel
-}
-
-// Threshold returns the complexity threshold in use.
-func (r *Router) Threshold() float64 {
-	return r.cfg.Threshold
+// Tiers returns the configured routing tiers.
+func (r *Router) Tiers() []RoutingTier {
+	return r.cfg.Tiers
 }
