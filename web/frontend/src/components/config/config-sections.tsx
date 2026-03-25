@@ -72,6 +72,9 @@ export function AgentDefaultsSection({
   onFieldChange,
 }: AgentDefaultsSectionProps) {
   const { t } = useTranslation()
+  const selectedSteeringModeOption = STEERING_MODE_OPTIONS.find(
+    (o) => o.value === form.steeringMode,
+  )
 
   return (
     <ConfigSectionCard title={t("pages.config.sections.agent")}>
@@ -210,36 +213,28 @@ export function AgentDefaultsSection({
         hint={t("pages.config.steering_mode_hint")}
         layout="setting-row"
       >
-        {(() => {
-          const selectedSteeringModeOption = STEERING_MODE_OPTIONS.find(
-            (o) => o.value === form.steeringMode,
-          )
-
-          return (
-            <Select
-              value={form.steeringMode}
-              onValueChange={(value) => onFieldChange("steeringMode", value)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue>
-                  {selectedSteeringModeOption
-                    ? t(
-                        selectedSteeringModeOption.labelKey,
-                        selectedSteeringModeOption.labelDefault,
-                      )
-                    : form.steeringMode}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {STEERING_MODE_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {t(opt.labelKey, opt.labelDefault)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )
-        })()}
+        <Select
+          value={form.steeringMode}
+          onValueChange={(value) => onFieldChange("steeringMode", value)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue>
+              {selectedSteeringModeOption
+                ? t(
+                    selectedSteeringModeOption.labelKey,
+                    selectedSteeringModeOption.labelDefault,
+                  )
+                : form.steeringMode}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {STEERING_MODE_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {t(opt.labelKey, opt.labelDefault)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </Field>
 
       <Field
@@ -618,6 +613,9 @@ interface RuntimeSectionProps {
 
 export function RuntimeSection({ form, onFieldChange }: RuntimeSectionProps) {
   const { t } = useTranslation()
+  const selectedLogLevelOption = LOG_LEVEL_OPTIONS.find(
+    (o) => o.value === form.gatewayLogLevel,
+  )
   const selectedDmScopeOption = DM_SCOPE_OPTIONS.find(
     (scope) => scope.value === form.dmScope,
   )
@@ -704,14 +702,12 @@ export function RuntimeSection({ form, onFieldChange }: RuntimeSectionProps) {
         >
           <SelectTrigger className="w-full">
             <SelectValue>
-              {(() => {
-                const selected = LOG_LEVEL_OPTIONS.find(
-                  (o) => o.value === form.gatewayLogLevel,
-                )
-                return selected
-                  ? t(selected.labelKey, selected.labelDefault)
-                  : form.gatewayLogLevel
-              })()}
+              {selectedLogLevelOption
+                ? t(
+                    selectedLogLevelOption.labelKey,
+                    selectedLogLevelOption.labelDefault,
+                  )
+                : form.gatewayLogLevel}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>

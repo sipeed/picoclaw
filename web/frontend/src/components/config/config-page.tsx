@@ -213,6 +213,9 @@ export function ConfigPage() {
         )
 
         // Routing fields
+        if (form.routingEnabled && !form.routingLightModel.trim()) {
+          throw new Error("Light Model is required when Smart Routing is enabled.")
+        }
         const routingThreshold = form.routingEnabled
           ? parseFloatField(form.routingThreshold, "Routing threshold", {
               min: 0,
@@ -230,11 +233,12 @@ export function ConfigPage() {
         const maxMediaSize = form.maxMediaSize.trim()
           ? parseIntField(form.maxMediaSize, "Max media size", { min: 0 })
           : undefined
-        const filterMinLength = parseIntField(
-          form.filterMinLength,
-          "Filter min length",
-          { min: 0 },
-        )
+        const filterMinLength =
+          form.filterSensitiveData && form.filterMinLength.trim()
+            ? parseIntField(form.filterMinLength, "Filter min length", {
+                min: 0,
+              })
+            : undefined
 
         const execConfigPatch: Record<string, unknown> = {
           enabled: form.execEnabled,
@@ -287,7 +291,7 @@ export function ConfigPage() {
               routing: form.routingEnabled
                 ? {
                     enabled: true,
-                    light_model: form.routingLightModel,
+                    light_model: form.routingLightModel.trim() || undefined,
                     threshold: routingThreshold,
                   }
                 : { enabled: false },
