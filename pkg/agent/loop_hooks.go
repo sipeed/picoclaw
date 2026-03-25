@@ -323,6 +323,31 @@ func (al *AgentLoop) buildAsyncCallback(opts processOptions, toolName string) to
 			ChatID:   fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID),
 			Content:  fmt.Sprintf("Async tool '%s' completed.\n\nResult:\n%s", toolName, content),
 		})
+
+		meta := EventMeta{SessionKey: opts.SessionKey}
+		// Try to find the turn ID from the active task
+		taskKey := opts.SessionKey
+		if opts.TaskID != "" {
+			taskKey = opts.TaskID
+		}
+		if val, ok := al.activeTasks.Load(taskKey); ok {
+			if at, ok := val.(*activeTask); ok {
+				meta.TurnID = at.turnID
+			}
+		}
+		if ts := al.getActiveTurnState(opts.SessionKey); ts != nil {
+			meta.AgentID = ts.agentID
+			if meta.TurnID == "" {
+				meta.TurnID = ts.turnID
+			}
+		}
+		al.emitEvent(EventKindFollowUpQueued, meta,
+			FollowUpQueuedPayload{
+				SourceTool: toolName,
+				Channel:    opts.Channel,
+				ChatID:     opts.ChatID,
+				ContentLen: len(content),
+			})
 	}
 }
 

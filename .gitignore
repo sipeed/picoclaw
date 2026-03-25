@@ -30,6 +30,9 @@ config/config.json
 coverage.txt
 coverage.html
 
+# Dependencies
+node_modules/
+
 # OS
 .DS_Store
 

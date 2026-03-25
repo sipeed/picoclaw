@@ -145,8 +145,14 @@ func TestSubagentTool_Execute_Success(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil, nil, WebSearchToolOptions{})
 	tool := NewSubagentTool(manager)
-	manager.SetSpawner(func(ctx context.Context, task, label, agentID string, tools *ToolRegistry, maxTokens int, temperature float64, hasMaxTokens, hasTemperature bool) (*ToolResult, error) {
-		return &ToolResult{ForLLM: "Completed: " + task, ForUser: "Completed: " + task}, nil
+	manager.SetSpawner(func(
+		ctx context.Context, task, label, agentID string,
+		tools *ToolRegistry, maxTokens int, temperature float64,
+		hasMaxTokens, hasTemperature bool,
+	) (*ToolResult, error) {
+		return &ToolResult{
+			ForLLM: "Completed: " + task, ForUser: "Completed: " + task,
+		}, nil
 	})
 
 	ctx := WithToolContext(context.Background(), "telegram", "chat-123")
@@ -202,8 +208,14 @@ func TestSubagentTool_Execute_NoLabel(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil, nil, WebSearchToolOptions{})
 	tool := NewSubagentTool(manager)
-	manager.SetSpawner(func(ctx context.Context, task, label, agentID string, tools *ToolRegistry, maxTokens int, temperature float64, hasMaxTokens, hasTemperature bool) (*ToolResult, error) {
-		return &ToolResult{ForLLM: "Completed: " + task, ForUser: "Completed: " + task}, nil
+	manager.SetSpawner(func(
+		ctx context.Context, task, label, agentID string,
+		tools *ToolRegistry, maxTokens int, temperature float64,
+		hasMaxTokens, hasTemperature bool,
+	) (*ToolResult, error) {
+		return &ToolResult{
+			ForLLM: "Completed: " + task, ForUser: "Completed: " + task,
+		}, nil
 	})
 
 	ctx := context.Background()
@@ -278,8 +290,14 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil, nil, WebSearchToolOptions{})
 	tool := NewSubagentTool(manager)
-	manager.SetSpawner(func(ctx context.Context, task, label, agentID string, tools *ToolRegistry, maxTokens int, temperature float64, hasMaxTokens, hasTemperature bool) (*ToolResult, error) {
-		return &ToolResult{ForLLM: "Completed: " + task, ForUser: "Completed: " + task}, nil
+	manager.SetSpawner(func(
+		ctx context.Context, task, label, agentID string,
+		tools *ToolRegistry, maxTokens int, temperature float64,
+		hasMaxTokens, hasTemperature bool,
+	) (*ToolResult, error) {
+		return &ToolResult{
+			ForLLM: "Completed: " + task, ForUser: "Completed: " + task,
+		}, nil
 	})
 
 	channel := "test-channel"
@@ -306,8 +324,14 @@ func TestSubagentTool_ForUserTruncation(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil, nil, WebSearchToolOptions{})
 	tool := NewSubagentTool(manager)
-	manager.SetSpawner(func(ctx context.Context, task, label, agentID string, tools *ToolRegistry, maxTokens int, temperature float64, hasMaxTokens, hasTemperature bool) (*ToolResult, error) {
-		return &ToolResult{ForLLM: "Completed: " + task, ForUser: "Completed: " + task}, nil
+	manager.SetSpawner(func(
+		ctx context.Context, task, label, agentID string,
+		tools *ToolRegistry, maxTokens int, temperature float64,
+		hasMaxTokens, hasTemperature bool,
+	) (*ToolResult, error) {
+		return &ToolResult{
+			ForLLM: "Completed: " + task, ForUser: "Completed: " + task,
+		}, nil
 	})
 
 	ctx := context.Background()

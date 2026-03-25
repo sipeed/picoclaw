@@ -605,15 +605,15 @@ func copyAgentInstance(src *AgentInstance) AgentInstance {
 		ThinkingLevel: src.ThinkingLevel, ContextWindow: src.ContextWindow,
 		SummarizeMessageThreshold: src.SummarizeMessageThreshold,
 		SummarizeTokenPercent:     src.SummarizeTokenPercent,
-		Provider: src.Provider, Sessions: src.Sessions,
+		Provider:                  src.Provider, Sessions: src.Sessions,
 		ContextBuilder: src.ContextBuilder, Tools: src.Tools,
 		Subagents: src.Subagents, SkillsFilter: src.SkillsFilter,
 		Candidates: src.Candidates,
-		PlanModel: src.PlanModel, PlanFallbacks: src.PlanFallbacks,
+		PlanModel:  src.PlanModel, PlanFallbacks: src.PlanFallbacks,
 		PlanCandidates: src.PlanCandidates,
-		ImageModel: src.ImageModel, ImageFallbacks: src.ImageFallbacks,
+		ImageModel:     src.ImageModel, ImageFallbacks: src.ImageFallbacks,
 		ImageCandidates: src.ImageCandidates,
-		Router: src.Router, LightCandidates: src.LightCandidates,
+		Router:          src.Router, LightCandidates: src.LightCandidates,
 	}
 }
 

@@ -403,7 +403,6 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 	return err
 }
 
-
 // SendPlaceholder implements channels.PlaceholderCapable.
 // It sends a placeholder message (e.g. "Thinking... 💭") that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).

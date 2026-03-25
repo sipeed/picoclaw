@@ -526,4 +526,3 @@ func Unsubscribe(sub *LogSubscriber) {
 	logSubsMu.Unlock()
 	close(sub.Ch)
 }
-

@@ -708,7 +708,7 @@ func (c *WeComAIBotChannel) getStreamResponse(task *streamTask, timestamp, nonce
 	default:
 		if time.Now().After(task.Deadline) {
 			// Deadline reached: close the stream with a notice, then wait for agent via response_url.
-			content = "⏳ Processing, please wait. The results will be sent shortly."
+			content = c.config.ProcessingMessage
 			finish = true
 			closeStreamOnly = true
 			logger.InfoCF(

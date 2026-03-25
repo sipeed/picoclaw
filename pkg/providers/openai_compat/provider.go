@@ -37,7 +37,7 @@ type Provider struct {
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	stream         bool   // Use SSE streaming internally (accumulates into a single LLMResponse)
 	httpClient     *http.Client
-	extraBody map[string]any // Additional fields to inject into request body
+	extraBody      map[string]any // Additional fields to inject into request body
 
 	// Rate limiting: minimum interval between consecutive API requests.
 	// Shared across all goroutines using this provider instance.
@@ -758,8 +758,6 @@ func cloneOpenAIToolArgs(src map[string]any) map[string]any {
 	}
 	return dst
 }
-
-
 
 func normalizeModel(model, apiBase string) string {
 	before, after, ok := strings.Cut(model, "/")

@@ -378,8 +378,14 @@ func TestFilenameForDownload(t *testing.T) {
 		{"url no ext no content-type", "https://example.com/mcp/photos/42", "", "", "42"},
 		{"root path", "https://example.com/", "", "image/jpeg", "download.jpg"},
 		{"root no content-type", "https://example.com", "", "", "download"},
-		{"content-disposition wins", "https://example.com/mcp/photos/42", `attachment; filename="photo.png"`, "image/jpeg", "photo.png"},
-		{"content-disposition inline", "https://example.com/x", `inline; filename="report.pdf"`, "application/pdf", "report.pdf"},
+		{
+			"content-disposition wins", "https://example.com/mcp/photos/42",
+			`attachment; filename="photo.png"`, "image/jpeg", "photo.png",
+		},
+		{
+			"content-disposition inline", "https://example.com/x",
+			`inline; filename="report.pdf"`, "application/pdf", "report.pdf",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

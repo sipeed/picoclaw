@@ -296,7 +296,6 @@ type SubTurnConfig struct {
 	ConcurrencyTimeoutSec int `json:"concurrency_timeout_sec" env:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_CONCURRENCY_TIMEOUT_SEC"`
 }
 
-
 type AgentDefaults struct {
 	Workspace                 string             `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
 	RestrictToWorkspace       bool               `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
@@ -1806,14 +1805,6 @@ func (c *Config) migrateChannelConfigs() {
 }
 
 func SaveConfig(path string, cfg *Config) error {
-	if cfg.security == nil {
-		logger.Errorf("config %#v", *cfg)
-		if len(cfg.ModelList) > 0 {
-			logger.Errorf("model[0] %#v", cfg.ModelList[0])
-		}
-		logger.ErrorC("config", "security is nil")
-		return fmt.Errorf("security is nil")
-	}
 	cfg.security = normalizeSecurityConfig(cfg.security)
 	// Ensure version is always set when saving
 	if cfg.Version == 0 {
@@ -2056,7 +2047,6 @@ func (c *Config) FindModelConfigByRef(protocol, modelID string) *ModelConfig {
 	return nil
 }
 
-// HasProvidersConfig checks if any provider in the old providers config has configuration.
 // ValidateModelList validates all ModelConfig entries in the model_list.
 // It checks that each model config is valid.
 // Note: Multiple entries with the same model_name are allowed for load balancing.

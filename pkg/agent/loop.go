@@ -57,9 +57,9 @@ type AgentLoop struct {
 	cmdRegistry    *commands.Registry
 	mcp            mcpRuntime
 	hookRuntime    hookRuntime
-	steering       *steeringQueue
-	pendingSkills  sync.Map
-	mu             sync.RWMutex
+	steering      *steeringQueue
+	pendingSkills sync.Map // sessionKey → skillName (armed by /use <skill>)
+	mu            sync.RWMutex
 
 	providerCache map[string]providers.LLMProvider
 
@@ -101,12 +101,6 @@ type processOptions struct {
 	TaskID                  string              // Unique task ID for background task status tracking
 	Background              bool                // If true, this is a background task (cron/heartbeat) — enables live task notifications
 	SystemMessage           bool                // If true, this is a system message (subagent result) — skip placeholder and plan nudge
-}
-
-type continuationTarget struct {
-	SessionKey string
-	Channel    string
-	ChatID     string
 }
 
 const (
@@ -609,60 +603,6 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
-func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
-	if response == "" {
-		return
-	}
-
-	alreadySent := false
-	defaultAgent := al.GetRegistry().GetDefaultAgent()
-	if defaultAgent != nil {
-		if tool, ok := defaultAgent.Tools.Get("message"); ok {
-			if mt, ok := tool.(*tools.MessageTool); ok {
-				alreadySent = mt.HasSentInRound()
-			}
-		}
-	}
-
-	if alreadySent {
-		logger.DebugCF(
-			"agent",
-			"Skipped outbound (message tool already sent)",
-			map[string]any{"channel": channel},
-		)
-		return
-	}
-
-	al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-		Channel: channel,
-		ChatID:  chatID,
-		Content: response,
-	})
-	logger.InfoCF("agent", "Published outbound response",
-		map[string]any{
-			"channel":     channel,
-			"chat_id":     chatID,
-			"content_len": len(response),
-		})
-}
-
-func (al *AgentLoop) buildContinuationTarget(msg bus.InboundMessage) (*continuationTarget, error) {
-	if msg.Channel == "system" {
-		return nil, nil
-	}
-
-	route, _, err := al.resolveMessageRoute(msg)
-	if err != nil {
-		return nil, err
-	}
-
-	return &continuationTarget{
-		SessionKey: resolveScopeKey(route, msg.SessionKey),
-		Channel:    msg.Channel,
-		ChatID:     msg.ChatID,
-	}, nil
-}
-
 // Close releases resources held by the loop (e.g. flushes write-behind stats
 // and dirty session data). Should be called during graceful shutdown.
 func (al *AgentLoop) Close() {
@@ -747,17 +687,6 @@ func (al *AgentLoop) newTurnEventScope(agentID, sessionKey string) turnEventScop
 	}
 }
 
-func (ts turnEventScope) meta(iteration int, source, tracePath string) EventMeta {
-	return EventMeta{
-		AgentID:    ts.agentID,
-		TurnID:     ts.turnID,
-		SessionKey: ts.sessionKey,
-		Iteration:  iteration,
-		Source:     source,
-		TracePath:  tracePath,
-	}
-}
-
 func (al *AgentLoop) emitEvent(kind EventKind, meta EventMeta, payload any) {
 	evt := Event{
 		Kind:    kind,
@@ -772,43 +701,6 @@ func (al *AgentLoop) emitEvent(kind EventKind, meta EventMeta, payload any) {
 	al.logEvent(evt)
 
 	al.eventBus.Emit(evt)
-}
-
-func cloneEventArguments(args map[string]any) map[string]any {
-	if len(args) == 0 {
-		return nil
-	}
-
-	cloned := make(map[string]any, len(args))
-	for k, v := range args {
-		cloned[k] = v
-	}
-	return cloned
-}
-
-func (al *AgentLoop) hookAbortError(ts *turnState, stage string, decision HookDecision) error {
-	reason := decision.Reason
-	if reason == "" {
-		reason = "hook requested turn abort"
-	}
-
-	err := fmt.Errorf("hook aborted turn during %s: %s", stage, reason)
-	al.emitEvent(
-		EventKindError,
-		ts.eventMeta("hooks", "turn.error"),
-		ErrorPayload{
-			Stage:   "hook." + stage,
-			Message: err.Error(),
-		},
-	)
-	return err
-}
-
-func hookDeniedToolContent(prefix, reason string) string {
-	if reason == "" {
-		return prefix
-	}
-	return prefix + ": " + reason
 }
 
 func (al *AgentLoop) logEvent(evt Event) {
@@ -1432,8 +1324,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		al.OnUserMessage()
 	}
 
-	// Expand fork-specific /skill and /plan commands
-	expansionCompact := al.expandForkCommands(&msg)
+	// Expand fork-specific /skill, /use, and /plan commands
+	expansionCompact, forcedSkills := al.expandForkCommands(&msg)
 
 	// Check for commands (using default agent, before routing)
 	if response, handled := al.handleCommand(ctx, msg, al.registry.GetDefaultAgent(), msg.SessionKey); handled {
@@ -1448,6 +1340,18 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	sessionKey := resolveScopeKey(route, msg.SessionKey)
 
+	// Consume armed skill from a previous /use <skill> command
+	armKey := msg.Channel + ":" + msg.ChatID
+	if val, ok := al.pendingSkills.LoadAndDelete(sessionKey); ok {
+		if skillName, ok := val.(string); ok {
+			forcedSkills = append(forcedSkills, skillName)
+		}
+	} else if val, ok := al.pendingSkills.LoadAndDelete(armKey); ok {
+		if skillName, ok := val.(string); ok {
+			forcedSkills = append(forcedSkills, skillName)
+		}
+	}
+
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:        sessionKey,
 		Channel:           msg.Channel,
@@ -1455,6 +1359,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		SenderID:          msg.SenderID,
 		SenderDisplayName: msg.Sender.DisplayName,
 		UserMessage:       msg.Content,
+		ForcedSkills:      forcedSkills,
 		Media:             msg.Media,
 		HistoryMessage:    expansionCompact,
 		DefaultResponse:   defaultResponse,
@@ -1503,6 +1408,7 @@ func (al *AgentLoop) callLLMWithRetry(
 	activeModel string,
 	onChunk func(string, string),
 	iteration int,
+	scope ...turnEventScope,
 ) (*providers.LLMResponse, error) {
 	llmOpts := map[string]any{
 		"max_tokens":       agent.MaxTokens,
@@ -1597,12 +1503,25 @@ func (al *AgentLoop) callLLMWithRetry(
 			strings.Contains(errMsg, "prompt is too long") ||
 			strings.Contains(errMsg, "request too large"))
 
+		// Helper to emit events if scope was provided
+		emitRetryEvent := func(kind EventKind, payload any) {
+			if len(scope) > 0 {
+				al.emitEvent(kind,
+					EventMeta{AgentID: agent.ID, TurnID: scope[0].turnID, SessionKey: opts.SessionKey, Iteration: iteration},
+					payload)
+			}
+		}
+
 		if isTimeoutError && retry < maxRetries {
 			backoff := time.Duration(retry+1) * 5 * time.Second
 			logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
 				"error":   err.Error(),
 				"retry":   retry,
 				"backoff": backoff.String(),
+			})
+			emitRetryEvent(EventKindLLMRetry, LLMRetryPayload{
+				Attempt: retry + 1, MaxRetries: maxRetries,
+				Reason: "timeout", Error: err.Error(), Backoff: backoff,
 			})
 			time.Sleep(backoff)
 			continue
@@ -1613,6 +1532,10 @@ func (al *AgentLoop) callLLMWithRetry(
 				"error": err.Error(),
 				"retry": retry,
 			})
+			emitRetryEvent(EventKindLLMRetry, LLMRetryPayload{
+				Attempt: retry + 1, MaxRetries: maxRetries,
+				Reason: "context_limit", Error: err.Error(),
+			})
 			if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
 				_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 					Channel: opts.Channel,
@@ -1620,6 +1543,7 @@ func (al *AgentLoop) callLLMWithRetry(
 					Content: "Context window exceeded. Compressing history and retrying...",
 				})
 			}
+			prevCount := len(*messages)
 			al.forceCompression(agent, opts.SessionKey)
 			newHistory := agent.Sessions.GetHistory(opts.SessionKey)
 			newSummary := agent.Sessions.GetSummary(opts.SessionKey)
@@ -1628,6 +1552,11 @@ func (al *AgentLoop) callLLMWithRetry(
 				nil, opts.Channel, opts.ChatID,
 				opts.SenderID, opts.SenderDisplayName,
 			)
+			emitRetryEvent(EventKindContextCompress, ContextCompressPayload{
+				Reason:            ContextCompressReasonRetry,
+				DroppedMessages:   prevCount - len(*messages),
+				RemainingMessages: len(*messages),
+			})
 			continue
 		}
 		break

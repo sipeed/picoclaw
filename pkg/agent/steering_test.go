@@ -340,7 +340,6 @@ func TestAgentLoop_Continue_WithMessages(t *testing.T) {
 	}
 }
 
-
 // slowTool simulates a tool that takes some time to execute.
 type slowTool struct {
 	name     string

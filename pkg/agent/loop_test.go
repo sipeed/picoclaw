@@ -890,6 +890,11 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 				Model:     "openrouter/deepseek/deepseek-v3.2",
 				APIBase:   "https://openrouter.ai/api/v1",
 			},
+			{
+				ModelName: "after-switch",
+				Model:     "openai/after-switch-model",
+				APIBase:   "https://local.example.invalid/v1",
+			},
 		},
 	}
 	cfg.WithSecurity(&config.SecurityConfig{
@@ -898,6 +903,9 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 				APIKeys: []string{"test-key"},
 			},
 			"deepseek": {
+				APIKeys: []string{"test-key"},
+			},
+			"after-switch": {
 				APIKeys: []string{"test-key"},
 			},
 		},
@@ -918,7 +926,7 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 			ID:   "user1",
 		},
 	})
-	if !strings.Contains(switchResp, "Switched model from before-switch to after-switch") {
+	if !strings.Contains(switchResp, "Switched model from local to after-switch") {
 		t.Fatalf("unexpected /switch reply: %q", switchResp)
 	}
 

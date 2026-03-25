@@ -45,6 +45,8 @@ type activeTask struct {
 
 	messageContent string // last content sent by the message tool (for inclusion in completion)
 
+	turnID string // event correlation ID for the owning turn
+
 	mu sync.Mutex
 }
 

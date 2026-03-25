@@ -7,7 +7,6 @@
 package heartbeat
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -489,43 +488,6 @@ func heartbeatHasUserTasks(content string) bool {
 
 	return false
 }
-
-// sendResponse sends the heartbeat response to the last channel
-func (hs *HeartbeatService) sendResponse(response string) {
-	hs.mu.RLock()
-	msgBus := hs.bus
-	hs.mu.RUnlock()
-
-	if msgBus == nil {
-		hs.logInfof("No message bus configured, heartbeat result not sent")
-		return
-	}
-
-	// Get last channel from state
-	lastChannel := hs.state.GetLastChannel()
-	if lastChannel == "" {
-		hs.logInfof("No last channel recorded, heartbeat result not sent")
-		return
-	}
-
-	platform, userID := hs.parseLastChannel(lastChannel)
-
-	// Skip internal channels that can't receive messages
-	if platform == "" || userID == "" {
-		return
-	}
-
-	pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer pubCancel()
-	msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-		Channel: platform,
-		ChatID:  userID,
-		Content: response,
-	})
-
-	hs.logInfof("Heartbeat result sent to %s", platform)
-}
-
 
 // parseLastChannel parses the last channel string into platform and userID.
 // Returns empty strings for invalid or internal channels.

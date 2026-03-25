@@ -236,7 +236,7 @@ func downloadToTemp(ctx context.Context, rawURL string) (downloadResult, error) 
 
 	// Generate a random temp filename to avoid collisions
 	var randBytes [8]byte
-	if _, err := rand.Read(randBytes[:]); err != nil {
+	if _, err = rand.Read(randBytes[:]); err != nil {
 		return downloadResult{}, err
 	}
 	tmpPath := filepath.Join(dir, fmt.Sprintf("dl_%x%s", randBytes, ext))
@@ -319,21 +319,21 @@ func preferredExtension(mediaType string) string {
 	// mime.ExtensionsByType returns multiple options in undefined order;
 	// hardcode the most common ones for determinism.
 	preferred := map[string]string{
-		"image/png":       ".png",
-		"image/jpeg":      ".jpg",
-		"image/gif":       ".gif",
-		"image/webp":      ".webp",
-		"image/svg+xml":   ".svg",
-		"image/bmp":       ".bmp",
-		"image/tiff":      ".tiff",
-		"video/mp4":       ".mp4",
-		"video/webm":      ".webm",
-		"audio/mpeg":      ".mp3",
-		"audio/ogg":       ".ogg",
-		"application/pdf": ".pdf",
-		"application/zip": ".zip",
-		"text/plain":      ".txt",
-		"text/html":       ".html",
+		"image/png":        ".png",
+		"image/jpeg":       ".jpg",
+		"image/gif":        ".gif",
+		"image/webp":       ".webp",
+		"image/svg+xml":    ".svg",
+		"image/bmp":        ".bmp",
+		"image/tiff":       ".tiff",
+		"video/mp4":        ".mp4",
+		"video/webm":       ".webm",
+		"audio/mpeg":       ".mp3",
+		"audio/ogg":        ".ogg",
+		"application/pdf":  ".pdf",
+		"application/zip":  ".zip",
+		"text/plain":       ".txt",
+		"text/html":        ".html",
 		"application/json": ".json",
 	}
 	if ext, ok := preferred[mediaType]; ok {
