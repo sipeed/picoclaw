@@ -1193,7 +1193,12 @@ func (al *AgentLoop) executeToolCalls(
 			}
 		}
 
-		toolMeta := EventMeta{AgentID: agent.ID, TurnID: scope.turnID, SessionKey: opts.SessionKey, Iteration: iteration}
+		toolMeta := EventMeta{
+			AgentID:    agent.ID,
+			TurnID:     scope.turnID,
+			SessionKey: opts.SessionKey,
+			Iteration:  iteration,
+		}
 
 		// Hook: BeforeTool — let hooks inspect/modify the tool call
 		toolArgs := tc.Arguments
