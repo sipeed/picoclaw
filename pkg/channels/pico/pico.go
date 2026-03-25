@@ -2,8 +2,10 @@ package pico
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -19,6 +21,23 @@ import (
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
+
+// maxHTTPBodySize is the maximum request body for HTTP message ingress.
+// Text prompts are small; 64 KiB is generous while keeping the attack surface low.
+const maxHTTPBodySize = 64 << 10 // 64 KiB
+
+// httpMessageRequest is the JSON body for POST /pico/message.
+type httpMessageRequest struct {
+	Content   string `json:"content"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+// httpMessageResponse is the JSON response for POST /pico/message.
+type httpMessageResponse struct {
+	OK        bool   `json:"ok"`
+	Status    string `json:"status"`
+	SessionID string `json:"session_id"`
+}
 
 // picoConn represents a single WebSocket connection.
 type picoConn struct {
@@ -228,6 +247,8 @@ func (c *PicoChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch path {
 	case "/ws", "/ws/":
 		c.handleWebSocket(w, r)
+	case "/message", "/message/":
+		c.handleHTTPMessage(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -383,6 +404,8 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 //  1. Authorization: Bearer <token> header
 //  2. Sec-WebSocket-Protocol "token.<value>" (for browsers that can't set headers)
 //  3. Query parameter "token" (only when AllowTokenQuery is on)
+//
+// Token comparison uses subtle.ConstantTimeCompare to reduce timing side-channels.
 func (c *PicoChannel) authenticate(r *http.Request) bool {
 	token := c.config.Token()
 	if token == "" {
@@ -392,7 +415,7 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 	// Check Authorization header
 	auth := r.Header.Get("Authorization")
 	if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
-		if after == token {
+		if subtle.ConstantTimeCompare([]byte(after), []byte(token)) == 1 {
 			return true
 		}
 	}
@@ -404,7 +427,7 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 
 	// Check query parameter only when explicitly allowed
 	if c.config.AllowTokenQuery {
-		if r.URL.Query().Get("token") == token {
+		if subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("token")), []byte(token)) == 1 {
 			return true
 		}
 	}
@@ -422,6 +445,89 @@ func (c *PicoChannel) matchedSubprotocol(r *http.Request) string {
 		}
 	}
 	return ""
+}
+
+// handleHTTPMessage processes an inbound HTTP message trigger.
+// This is the HTTP equivalent of a Pico WebSocket message.send — it accepts
+// a JSON body, publishes the message to the bus, and returns 202 Accepted.
+func (c *PicoChannel) handleHTTPMessage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if !c.IsRunning() {
+		http.Error(w, "channel not running", http.StatusServiceUnavailable)
+		return
+	}
+
+	if !c.authenticate(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxHTTPBodySize+1))
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if int64(len(body)) > maxHTTPBodySize {
+		http.Error(w, "request entity too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	var req httpMessageRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "bad request: invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Validate non-empty, but preserve original content including whitespace.
+	// This matches WebSocket message.send semantics in handleMessageSend.
+	content := req.Content
+	if strings.TrimSpace(content) == "" {
+		http.Error(w, "bad request: empty content", http.StatusBadRequest)
+		return
+	}
+
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+	}
+
+	chatID := "pico:" + sessionID
+	senderID := "pico-user"
+	peer := bus.Peer{Kind: "direct", ID: "pico:" + sessionID}
+
+	metadata := map[string]string{
+		"platform":   "pico",
+		"session_id": sessionID,
+		"transport":  "http",
+	}
+
+	logger.DebugCF("pico", "Received HTTP message", map[string]any{
+		"session_id": sessionID,
+		"preview":    truncate(content, 50),
+	})
+
+	sender := bus.SenderInfo{
+		Platform:    "pico",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("pico", senderID),
+	}
+
+	// Allow-list enforcement is handled internally by BaseChannel.HandleMessage,
+	// matching WebSocket message.send semantics (silent drop, not HTTP error).
+	msgID := uuid.New().String()
+	c.HandleMessage(c.ctx, peer, msgID, senderID, chatID, content, nil, metadata, sender)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(httpMessageResponse{
+		OK:        true,
+		Status:    "accepted",
+		SessionID: sessionID,
+	})
 }
 
 // readLoop reads messages from a WebSocket connection.
