@@ -37,6 +37,7 @@ const PROVIDER_DOMAINS: Record<string, string> = {
   avian: "avian.io",
   vllm: "vllm.ai",
   zhipu: "zhipuai.cn",
+  mimo: "xiaomi.com",
 }
 
 interface ProviderIconProps {
