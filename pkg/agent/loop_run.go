@@ -444,9 +444,9 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 					Iteration:  iteration,
 				}
 				al.emitEvent(EventKindTurnEnd, abortMeta, TurnEndPayload{
-						Status:   TurnEndStatusAborted,
-						Duration: time.Since(turnStart),
-					})
+					Status:   TurnEndStatusAborted,
+					Duration: time.Since(turnStart),
+				})
 				return "", nil
 			}
 			return "", err
@@ -1068,7 +1068,12 @@ func (al *AgentLoop) runLLMIteration(
 		if reasoningText == "" {
 			reasoningText = response.ReasoningContent
 		}
-		go al.handleReasoning(ctx, reasoningText, opts.Channel, al.targetReasoningChannelID(opts.Channel))
+		go al.handleReasoning(
+			context.WithoutCancel(ctx),
+			reasoningText,
+			opts.Channel,
+			al.targetReasoningChannelID(opts.Channel),
+		)
 
 		logger.DebugCF("agent", "LLM response",
 			map[string]any{
