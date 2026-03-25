@@ -36,6 +36,31 @@ type syncCursorFile struct {
 	GetUpdatesBuf string `json:"get_updates_buf"`
 }
 
+func syncDirForHome(home string) string {
+	return filepath.Join(home, "channels", "weixin", "sync")
+}
+
+func probeSyncDirWritable(home string) error {
+	syncDir := syncDirForHome(home)
+	if err := os.MkdirAll(syncDir, 0o700); err != nil {
+		return err
+	}
+
+	probeFile, err := os.CreateTemp(syncDir, ".write-probe-*")
+	if err != nil {
+		return err
+	}
+	probePath := probeFile.Name()
+	if err := probeFile.Close(); err != nil {
+		_ = os.Remove(probePath)
+		return err
+	}
+	if err := os.Remove(probePath); err != nil {
+		return err
+	}
+	return nil
+}
+
 func picoclawHomeDir() string {
 	if home := os.Getenv(config.EnvHome); home != "" {
 		return home
@@ -43,15 +68,14 @@ func picoclawHomeDir() string {
 
 	if userHome, err := os.UserHomeDir(); err == nil && userHome != "" {
 		home := filepath.Join(userHome, ".picoclaw")
-		syncDir := filepath.Join(home, "channels", "weixin", "sync")
-		mkErr := os.MkdirAll(syncDir, 0o700)
-		if mkErr == nil {
+		if probeErr := probeSyncDirWritable(home); probeErr == nil {
 			return home
+		} else {
+			logger.WarnCF("weixin", "Default picoclaw home is not writable; using temp directory for sync cursor", map[string]any{
+				"path":  home,
+				"error": probeErr.Error(),
+			})
 		}
-		logger.WarnCF("weixin", "Default picoclaw home is not writable; using temp directory for sync cursor", map[string]any{
-			"path":  home,
-			"error": mkErr.Error(),
-		})
 	}
 
 	return filepath.Join(os.TempDir(), "picoclaw")
