@@ -32,6 +32,7 @@ interface EditForm {
   maxTokensField: string
   requestTimeout: string
   thinkingLevel: string
+  extraHeaders: string
 }
 
 interface EditModelSheetProps {
@@ -59,6 +60,7 @@ export function EditModelSheet({
     maxTokensField: "",
     requestTimeout: "",
     thinkingLevel: "",
+    extraHeaders: "",
   })
   const [saving, setSaving] = useState(false)
   const [setAsDefault, setSetAsDefault] = useState(false)
@@ -79,6 +81,7 @@ export function EditModelSheet({
           ? String(model.request_timeout)
           : "",
         thinkingLevel: model.thinking_level ?? "",
+        extraHeaders: model.extra_headers ? JSON.stringify(model.extra_headers) : "",
       })
       setSetAsDefault(model.is_default)
       setError("")
@@ -91,6 +94,18 @@ export function EditModelSheet({
 
   const handleSave = async () => {
     if (!model) return
+    if (form.extraHeaders.trim()) {
+      try {
+        const parsed = JSON.parse(form.extraHeaders.trim())
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+          setError("Extra headers must be a valid JSON object")
+          return
+        }
+      } catch {
+        setError("Extra headers must be valid JSON format")
+        return
+      }
+    }
     setSaving(true)
     setError("")
     try {
@@ -109,6 +124,7 @@ export function EditModelSheet({
           ? Number(form.requestTimeout)
           : undefined,
         thinking_level: form.thinkingLevel || undefined,
+        extra_headers: form.extraHeaders.trim() ? JSON.parse(form.extraHeaders.trim()) : undefined,
       })
       if (setAsDefault && !model.is_default) {
         await setDefaultModel(model.model_name)
@@ -271,6 +287,17 @@ export function EditModelSheet({
                   value={form.maxTokensField}
                   onChange={setField("maxTokensField")}
                   placeholder="max_completion_tokens"
+                />
+              </Field>
+
+              <Field
+                label={t("models.field.extraHeaders")}
+                hint={t("models.field.extraHeadersHint")}
+              >
+                <Input
+                  value={form.extraHeaders}
+                  onChange={setField("extraHeaders")}
+                  placeholder='{"X-My-Header": "value"}'
                 />
               </Field>
             </AdvancedSection>

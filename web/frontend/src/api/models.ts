@@ -18,6 +18,7 @@ export interface ModelInfo {
   request_timeout?: number
   thinking_level?: string
   extra_body?: Record<string, unknown>
+  extra_headers?: Record<string, string>
   // Meta
   configured: boolean
   is_default: boolean

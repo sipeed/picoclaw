@@ -34,6 +34,7 @@ interface AddForm {
   maxTokensField: string
   requestTimeout: string
   thinkingLevel: string
+  extraHeaders: string
 }
 
 const EMPTY_ADD_FORM: AddForm = {
@@ -49,6 +50,7 @@ const EMPTY_ADD_FORM: AddForm = {
   maxTokensField: "",
   requestTimeout: "",
   thinkingLevel: "",
+  extraHeaders: "",
 }
 
 interface AddModelSheetProps {
@@ -95,6 +97,16 @@ export function AddModelSheet({
       errors.modelName = t("models.add.errorDuplicateModelName")
     }
     if (!form.model.trim()) errors.model = t("models.add.errorRequired")
+    if (form.extraHeaders.trim()) {
+      try {
+        const parsed = JSON.parse(form.extraHeaders.trim())
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+          errors.extraHeaders = "Must be a valid JSON object"
+        }
+      } catch {
+        errors.extraHeaders = "Invalid JSON format"
+      }
+    }
     setFieldErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -129,6 +141,7 @@ export function AddModelSheet({
           ? Number(form.requestTimeout)
           : undefined,
         thinking_level: form.thinkingLevel.trim() || undefined,
+        extra_headers: form.extraHeaders.trim() ? JSON.parse(form.extraHeaders.trim()) : undefined,
       })
       if (setAsDefault) {
         await setDefaultModel(modelName)
@@ -304,6 +317,21 @@ export function AddModelSheet({
                   onChange={setField("maxTokensField")}
                   placeholder="max_completion_tokens"
                 />
+              </Field>
+
+              <Field
+                label={t("models.field.extraHeaders")}
+                hint={t("models.field.extraHeadersHint")}
+              >
+                <Input
+                  value={form.extraHeaders}
+                  onChange={setField("extraHeaders")}
+                  placeholder='{"X-My-Header": "value"}'
+                  aria-invalid={!!fieldErrors.extraHeaders}
+                />
+                {fieldErrors.extraHeaders && (
+                  <p className="text-destructive text-xs">{fieldErrors.extraHeaders}</p>
+                )}
               </Field>
             </AdvancedSection>
 

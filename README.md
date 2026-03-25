@@ -388,6 +388,43 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 > \* AWS Bedrock requires build tag: `go build -tags bedrock`. Set `api_base` to a region name (e.g., `us-east-1`) for automatic endpoint resolution across all AWS partitions (aws, aws-cn, aws-us-gov). When using a full endpoint URL instead, you must also configure `AWS_REGION` via environment variable or AWS config/profile.
 
 <details>
+<summary><b>Custom Headers (Web UI & config.json)</b></summary>
+
+You can pass custom HTTP headers to your model API calls (useful for custom gateways, proxies, or specific provider features).
+
+**In the Web UI:**
+1. Go to the **Models** page and click **Add Model** or edit an existing one.
+2. Open the **Advanced** section.
+3. In the **Extra Headers** field, enter your custom headers in valid JSON format, for example:
+   ```json
+   {
+     "X-My-Header": "value",
+     "Authorization": "Bearer my-custom-token"
+   }
+   ```
+4. Save the model.
+
+**Directly in `config.json`:**
+Add the `extra_headers` field to your model configuration:
+```json
+{
+  "model_list": [
+    {
+      "model_name": "custom-header-model",
+      "model": "openai/gpt-4o",
+      "api_base": "https://api.myproxy.com/v1",
+      "api_key": "sk-123",
+      "extra_headers": {
+        "X-My-Header": "value"
+      }
+    }
+  ]
+}
+```
+
+</details>
+
+<details>
 <summary><b>Local deployment (Ollama, vLLM, etc.)</b></summary>
 
 **Ollama:**

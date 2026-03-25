@@ -37,8 +37,9 @@ type modelResponse struct {
 	RPM            int            `json:"rpm,omitempty"`
 	MaxTokensField string         `json:"max_tokens_field,omitempty"`
 	RequestTimeout int            `json:"request_timeout,omitempty"`
-	ThinkingLevel  string         `json:"thinking_level,omitempty"`
-	ExtraBody      map[string]any `json:"extra_body,omitempty"`
+	ThinkingLevel  string            `json:"thinking_level,omitempty"`
+	ExtraBody      map[string]any    `json:"extra_body,omitempty"`
+	ExtraHeaders   map[string]string `json:"extra_headers,omitempty"`
 	// Meta
 	Configured bool `json:"configured"`
 	IsDefault  bool `json:"is_default"`
@@ -84,6 +85,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,
 			ExtraBody:      m.ExtraBody,
+			ExtraHeaders:   m.ExtraHeaders,
 			Configured:     configured[i],
 			IsDefault:      m.ModelName == defaultModel,
 		})
@@ -204,6 +206,9 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	if mc.ExtraBody == nil {
 		mc.ExtraBody = cfg.ModelList[idx].ExtraBody
+	}
+	if mc.ExtraHeaders == nil {
+		mc.ExtraHeaders = cfg.ModelList[idx].ExtraHeaders
 	}
 
 	cfg.ModelList[idx] = &mc.ModelConfig

@@ -208,7 +208,9 @@
       "thinkingLevel": "Thinking Level",
       "thinkingLevelHint": "Extended thinking budget: off, low, medium, high, xhigh, adaptive.",
       "maxTokensField": "Max Tokens Field",
-      "maxTokensFieldHint": "Override the request field name for max tokens, e.g. max_completion_tokens."
+      "maxTokensFieldHint": "Override the request field name for max tokens, e.g. max_completion_tokens.",
+      "extraHeaders": "Extra Headers",
+      "extraHeadersHint": "Custom HTTP headers in JSON format, e.g. {\"X-My-Header\": \"value\"}"
     },
     "edit": {
       "title": "Configure {{name}}",
