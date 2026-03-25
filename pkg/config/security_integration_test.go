@@ -43,7 +43,8 @@ func TestSecurityConfigIntegration(t *testing.T) {
 	t.Run("Full workflow with security references", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
-		// Create config.json with references
+		// Create config.json with direct security values (not ref: references)
+		// These values should take precedence over .security.yml
 		configPath := filepath.Join(tmpDir, "config.json")
 		configContent := `{
   "version": 1,
@@ -52,25 +53,25 @@ func TestSecurityConfigIntegration(t *testing.T) {
       "model_name": "test-model",
       "model": "openai/test-model",
       "api_base": "https://api.openai.com/v1",
-      "api_key": "ref:model_list.test-model.api_key"
+      "api_key": "sk-from-config-json-direct"
     }
   ],
   "channels": {
     "telegram": {
       "enabled": true,
-      "token": "ref:channels.telegram.token"
+      "token": "token-from-config-json-direct"
     }
   },
   "tools": {
     "web": {
       "brave": {
         "enabled": true,
-        "api_key": "ref:web.brave.api_key"
+        "api_key": "BSA-from-config-json-direct"
       }
     },
     "skills": {
       "github": {
-        "token": "ref:skills.github.token"
+        "token": "ghp-from-config-json-direct"
       }
     }
   }
@@ -78,46 +79,47 @@ func TestSecurityConfigIntegration(t *testing.T) {
 		err := os.WriteFile(configPath, []byte(configContent), 0o644)
 		require.NoError(t, err)
 
-		// Create .security.yml with actual values
+		// Create .security.yml with different values
+		// These should be overridden by config.json values
 		securityPath := filepath.Join(tmpDir, SecurityConfigFile)
 		securityContent := `model_list:
   test-model:
     api_keys:
-      - "sk-test-api-key-12345"
+      - "sk-from-security-yml"
 
 channels:
   telegram:
-    token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+    token: "token-from-security-yml"
 
 web:
   brave:
     api_keys:
-      - "BSAbrave-api-key-67890"
+      - "BSA-from-security-yml"
 
 skills:
   github:
-    token: "ghp_github-token-abc123"`
+    token: "ghp-from-security-yml"`
 		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
 		require.NoError(t, err)
 
-		// Load config and verify references are resolved
+		// Load config and verify config.json values take precedence
 		cfg, err := LoadConfig(configPath)
 		require.NoError(t, err)
 		require.NotNil(t, cfg)
 
-		// Verify model API key is resolved
+		// Verify model API key from config.json takes precedence
 		assert.Equal(t, 1, len(cfg.ModelList))
 		assert.Equal(t, "test-model", cfg.ModelList[0].ModelName)
-		assert.Equal(t, "sk-test-api-key-12345", cfg.ModelList[0].apiKeys[0])
+		assert.Equal(t, "sk-from-config-json-direct", cfg.ModelList[0].apiKeys[0])
 
-		// Verify channel token is resolved
-		assert.Equal(t, "123456789:ABCdefGHIjklMNOpqrsTUVwxyz", cfg.Channels.Telegram.token)
+		// Verify channel token from config.json takes precedence
+		assert.Equal(t, "token-from-config-json-direct", cfg.Channels.Telegram.token)
 
-		// Verify web tool API key is resolved
-		assert.Equal(t, "BSAbrave-api-key-67890", cfg.Tools.Web.Brave.APIKey())
+		// Verify web tool API key from config.json takes precedence
+		assert.Equal(t, "BSA-from-config-json-direct", cfg.Tools.Web.Brave.APIKey())
 
-		// Verify skills token is resolved
-		assert.Equal(t, "ghp_github-token-abc123", cfg.Tools.Skills.Github.token)
+		// Verify skills token from config.json takes precedence
+		assert.Equal(t, "ghp-from-config-json-direct", cfg.Tools.Skills.Github.token)
 	})
 }
 
