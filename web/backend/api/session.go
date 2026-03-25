@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -35,6 +36,7 @@ type sessionFile struct {
 // sessionListItem is a lightweight summary returned by GET /api/sessions.
 type sessionListItem struct {
 	ID           string `json:"id"`
+	Channel      string `json:"channel"`
 	Title        string `json:"title"`
 	Preview      string `json:"preview"`
 	MessageCount int    `json:"message_count"`
@@ -65,6 +67,59 @@ const (
 	maxSessionJSONLLineSize    = 10 * 1024 * 1024 // 10 MB
 	maxSessionTitleRunes       = 60
 )
+
+// extractChannelFromSessionKey extracts the channel name from a session key.
+// Supports formats:
+//   - agent:main:pico:direct:pico:<uuid>  -> "pico"
+//   - agent:main:telegram:direct:<peer> -> "telegram"
+//   - agent:main:discord:direct:<peer> -> "discord"
+//   - agent:main:<channel>:group:<peer> -> <channel>
+func extractChannelFromSessionKey(key string) string {
+	// Parse the key using the routing package's parser
+	parts := strings.SplitN(key, ":", 4)
+	if len(parts) >= 3 {
+		// Format is: agent:<agentId>:<channel>:...
+		channel := parts[2]
+		if channel == "pico" {
+			return "web"
+		}
+		return channel
+	}
+	return "unknown"
+}
+
+// extractSessionIDFromSanitizedKey extracts session ID from sanitized filename.
+// Returns the full session ID (including agent context) and the session UUID.
+// For example, "agent_main_telegram_direct_123" -> "telegram:123"
+func extractSessionIDFromSanitizedKey(key string) (fullID, channel, uuid string, ok bool) {
+	// Try pico session first
+	if strings.HasPrefix(key, sanitizedPicoSessionPrefix) {
+		picoUUID := strings.TrimPrefix(key, sanitizedPicoSessionPrefix)
+		return picoUUID, "web", picoUUID, true
+	}
+	// Try other channel formats: agent_main_<channel>_<kind>_<peer>
+	// e.g., agent_main_telegram_direct_1200880918
+	rest := strings.TrimPrefix(key, "agent_main_")
+	if rest == key {
+		return "", "", "", false // Not a session file
+	}
+	// Split by underscores: channel_kind_peer
+	parts := strings.SplitN(rest, "_", 3)
+	if len(parts) >= 3 {
+		channel := parts[0]
+		peer := parts[2]
+		if channel == "pico" {
+			return peer, "web", peer, true
+		}
+		return peer, channel, peer, true
+	}
+	return "", "", "", false
+}
+
+// isSessionJSONLFile returns true if the filename is a JSONL session file.
+func isSessionJSONLFile(name string) bool {
+	return strings.HasSuffix(name, ".jsonl")
+}
 
 // extractPicoSessionID extracts the session UUID from a full session key.
 // Returns the UUID and true if the key matches the Pico session pattern.
@@ -193,6 +248,10 @@ func (h *Handler) readJSONLSession(dir, sessionID string) (sessionFile, error) {
 }
 
 func buildSessionListItem(sessionID string, sess sessionFile) sessionListItem {
+	return buildSessionListItemWithChannel(sessionID, "web", sess)
+}
+
+func buildSessionListItemWithChannel(sessionID, channel string, sess sessionFile) sessionListItem {
 	preview := ""
 	for _, msg := range sess.Messages {
 		if msg.Role == "user" && strings.TrimSpace(msg.Content) != "" {
@@ -224,6 +283,7 @@ func buildSessionListItem(sessionID string, sess sessionFile) sessionListItem {
 
 	return sessionListItem{
 		ID:           sessionID,
+		Channel:      channel,
 		Title:        title,
 		Preview:      preview,
 		MessageCount: validMessageCount,
@@ -302,19 +362,34 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 
 		name := entry.Name()
 		var (
-			sessionID string
-			sess      sessionFile
-			loadErr   error
-			ok        bool
+			fullSessionID string // Full session ID including channel context
+			channel       string // Channel name (web, telegram, discord, etc.)
+			uuid          string // Session UUID
+			sess          sessionFile
+			loadErr       error
+			ok            bool
 		)
 
 		switch {
-		case strings.HasSuffix(name, ".jsonl"):
-			sessionID, ok = extractPicoSessionIDFromSanitizedKey(strings.TrimSuffix(name, ".jsonl"))
+		case isSessionJSONLFile(name):
+			// Try to parse as JSONL session
+			fullSessionID, channel, uuid, ok = extractSessionIDFromSanitizedKey(strings.TrimSuffix(name, ".jsonl"))
 			if !ok {
-				continue
+				// Fallback to legacy pico parsing - use a local variable
+				fallbackSessionID, ok := extractPicoSessionIDFromSanitizedKey(strings.TrimSuffix(name, ".jsonl"))
+				if !ok {
+					continue
+				}
+				channel = "web"
+				uuid = fallbackSessionID
 			}
-			sess, loadErr = h.readJSONLSession(dir, sessionID)
+			// For non-pico sessions, we need to reconstruct the full key
+			if channel != "web" {
+				fullSessionID = fmt.Sprintf("%s:%s", channel, uuid)
+			} else {
+				fullSessionID = uuid
+			}
+			sess, loadErr = h.readJSONLSession(dir, uuid)
 			if loadErr == nil && isEmptySession(sess) {
 				continue
 			}
@@ -322,16 +397,9 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 			continue
 		case filepath.Ext(name) == ".json":
 			base := strings.TrimSuffix(name, ".json")
+			// Skip if there's a JSONL version
 			if _, statErr := os.Stat(filepath.Join(dir, base+".jsonl")); statErr == nil {
-				if jsonlSessionID, found := extractPicoSessionIDFromSanitizedKey(base); found {
-					if jsonlSess, jsonlErr := h.readJSONLSession(
-						dir,
-						jsonlSessionID,
-					); jsonlErr == nil &&
-						!isEmptySession(jsonlSess) {
-						continue
-					}
-				}
+				continue
 			}
 			data, err := os.ReadFile(filepath.Join(dir, name))
 			if err != nil {
@@ -343,11 +411,27 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 			if isEmptySession(sess) {
 				continue
 			}
-			sessionID, ok = extractPicoSessionID(sess.Key)
-			if !ok {
+			// Extract session ID from the key field
+			if strings.HasPrefix(sess.Key, "agent:") {
+				parsed := strings.SplitN(sess.Key, ":", 3)
+				if len(parsed) >= 3 {
+					fullSessionID = strings.TrimPrefix(sess.Key, "agent:")
+					// Extract channel from format: main:<channel>:... or main:pico:...
+					rest := parsed[2]
+					if strings.HasPrefix(rest, "pico:") {
+						channel = "web"
+					} else {
+						channelParts := strings.SplitN(rest, ":", 2)
+						if len(channelParts) >= 1 {
+							channel = channelParts[0]
+						}
+					}
+					uuid = fullSessionID
+				}
+			} else {
 				continue
 			}
-			if _, exists := seen[sessionID]; exists {
+			if _, exists := seen[fullSessionID]; exists {
 				continue
 			}
 		default:
@@ -357,12 +441,12 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		if loadErr != nil {
 			continue
 		}
-		if _, exists := seen[sessionID]; exists {
+		if _, exists := seen[fullSessionID]; exists {
 			continue
 		}
 
-		seen[sessionID] = struct{}{}
-		items = append(items, buildSessionListItem(sessionID, sess))
+		seen[fullSessionID] = struct{}{}
+		items = append(items, buildSessionListItemWithChannel(fullSessionID, channel, sess))
 	}
 
 	// Sort by updated descending (most recent first)
