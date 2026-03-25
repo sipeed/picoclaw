@@ -38,6 +38,7 @@ const errCodeTenantTokenInvalid = 99991663
 type FeishuChannel struct {
 	*channels.BaseChannel
 	config     config.FeishuConfig
+	globalCfg  *config.Config // Access to workspace configuration
 	client     *lark.Client
 	wsClient   *larkws.Client
 	tokenCache *tokenCache // custom cache that supports invalidation
@@ -48,7 +49,7 @@ type FeishuChannel struct {
 	cancel context.CancelFunc
 }
 
-func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
+func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus, globalCfg *config.Config) (*FeishuChannel, error) {
 	base := channels.NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom,
 		channels.WithGroupTrigger(cfg.GroupTrigger),
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
@@ -62,6 +63,7 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 	ch := &FeishuChannel{
 		BaseChannel: base,
 		config:      cfg,
+		globalCfg:   globalCfg,
 		tokenCache:  tc,
 		client:      lark.NewClient(cfg.AppID, cfg.AppSecret(), opts...),
 	}
@@ -642,8 +644,86 @@ func (c *FeishuChannel) downloadInboundMedia(
 	return refs
 }
 
+// resolveDownloadDir resolves the download directory based on configuration.
+// Returns the resolved directory path, or empty string if TempDir should be used.
+func (c *FeishuChannel) resolveDownloadDir() string {
+	downloadDir := c.config.DownloadDir
+	if downloadDir == "" {
+		// Default to system TempDir
+		return ""
+	}
+
+	// Expand ~ if present
+	if strings.HasPrefix(downloadDir, "~") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			logger.WarnCF("feishu", "Failed to expand home directory, falling back to TempDir", map[string]any{
+				"error": err.Error(),
+			})
+			return ""
+		}
+		downloadDir = filepath.Join(homeDir, downloadDir[1:])
+	}
+
+	// If path is relative, resolve it relative to workspace
+	if !filepath.IsAbs(downloadDir) {
+		downloadDir = filepath.Join(c.globalCfg.WorkspacePath(), downloadDir)
+	}
+
+	// Convert to absolute path (clean any .. or . components)
+	absPath, err := filepath.Abs(downloadDir)
+	if err != nil {
+		logger.WarnCF("feishu", "Failed to resolve download directory, falling back to TempDir", map[string]any{
+			"path":  downloadDir,
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	// Validate the resolved path is accessible
+	if err := c.validateAndCreateDir(absPath); err != nil {
+		logger.WarnCF("feishu", "Configured download_dir not accessible, falling back to TempDir", map[string]any{
+			"path":  absPath,
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	return absPath
+}
+
+// validateAndCreateDir validates that a directory path is accessible and creates it if needed.
+func (c *FeishuChannel) validateAndCreateDir(dir string) error {
+	// Check if path exists and is a directory
+	info, err := os.Stat(dir)
+	if err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("path exists but is not a directory")
+		}
+		// Test write permission by creating a temporary file
+		testFile := filepath.Join(dir, ".picoclaw_write_test")
+		f, err := os.Create(testFile)
+		if err != nil {
+			return fmt.Errorf("directory not writable: %w", err)
+		}
+		f.Close()
+		os.Remove(testFile)
+		return nil
+	}
+
+	// Directory doesn't exist, try to create it
+	if os.IsNotExist(err) {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("failed to create directory: %w", err)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("failed to access directory: %w", err)
+}
+
 // downloadResource downloads a message resource (image/file) from Feishu,
-// writes it to the project media directory, and stores the reference in MediaStore.
+// writes it to the configured media directory, and stores the reference in MediaStore.
 // fallbackExt (e.g. ".jpg") is appended when the resolved filename has no extension.
 func (c *FeishuChannel) downloadResource(
 	ctx context.Context,
@@ -692,14 +772,16 @@ func (c *FeishuChannel) downloadResource(
 		filename += fallbackExt
 	}
 
-	// Write to the shared picoclaw_media directory using a unique name to avoid collisions.
-	mediaDir := media.TempDir()
-	if mkdirErr := os.MkdirAll(mediaDir, 0o700); mkdirErr != nil {
-		logger.ErrorCF("feishu", "Failed to create media directory", map[string]any{
-			"error": mkdirErr.Error(),
-		})
-		return ""
+	// Determine download directory
+	mediaDir := c.resolveDownloadDir()
+	if mediaDir == "" {
+		// Fallback to TempDir
+		mediaDir = media.TempDir()
 	}
+
+	logger.DebugCF("feishu", "Downloading resource to directory", map[string]any{
+		"directory": mediaDir,
+	})
 	ext := filepath.Ext(filename)
 	localPath := filepath.Join(mediaDir, utils.SanitizeFilename(messageID+"-"+fileKey+ext))
 
