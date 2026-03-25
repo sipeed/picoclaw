@@ -1,4 +1,4 @@
-import { IconLoader2 } from "@tabler/icons-react"
+import { IconAlertTriangle, IconLoader2 } from "@tabler/icons-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
@@ -15,6 +15,7 @@ import { FeishuForm } from "@/components/channels/channel-forms/feishu-form"
 import { GenericForm } from "@/components/channels/channel-forms/generic-form"
 import { SlackForm } from "@/components/channels/channel-forms/slack-form"
 import { TelegramForm } from "@/components/channels/channel-forms/telegram-form"
+import { WecomForm } from "@/components/channels/channel-forms/wecom-form"
 import { WeixinForm } from "@/components/channels/channel-forms/weixin-form"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
@@ -186,7 +187,7 @@ function getRequiredFieldKeys(channelName: string): string[] {
     case "onebot":
       return ["ws_url"]
     case "wecom":
-      return ["bot_id", "secret"]
+      return []
     case "whatsapp":
       return ["bridge_url"]
     case "pico":
@@ -326,6 +327,8 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
     return getChannelDisplayName(channel, t)
   }, [channel, channelName, t])
 
+  const hidesPageLevelEnableToggle = channel?.name === "wecom"
+
   const hiddenKeys = useMemo(() => {
     if (!channel) return []
     if (channel.name === "whatsapp") {
@@ -410,6 +413,36 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
     }
   }, [loadData, t])
 
+  const handleWecomBindSuccess = useCallback(async () => {
+    try {
+      setEnabled(true)
+      await Promise.all([loadData(true), refreshGatewayState({ force: true })])
+    } catch (e) {
+      const message =
+        e instanceof Error ? e.message : t("channels.page.saveError")
+      setServerError(message)
+      await loadData(true)
+    }
+  }, [loadData, t])
+
+  const handleWecomEnabledChange = useCallback(
+    async (nextEnabled: boolean) => {
+      try {
+        setEnabled(nextEnabled)
+        await Promise.all([
+          loadData(true),
+          refreshGatewayState({ force: true }),
+        ])
+      } catch (e) {
+        const message =
+          e instanceof Error ? e.message : t("channels.page.saveError")
+        setServerError(message)
+        await loadData(true)
+      }
+    },
+    [loadData, t],
+  )
+
   const renderForm = () => {
     if (!channel) return null
     const isEdit = configured
@@ -459,6 +492,27 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
             isEdit={isEdit}
             onBindSuccess={() => void handleWeixinBindSuccess()}
           />
+        )
+      case "wecom":
+        return (
+          <>
+            <WecomForm
+              config={editConfig}
+              isEdit={isEdit}
+              onBindSuccess={() => void handleWecomBindSuccess()}
+              onEnabledChange={(nextEnabled) =>
+                void handleWecomEnabledChange(nextEnabled)
+              }
+            />
+            <GenericForm
+              config={editConfig}
+              onChange={handleChange}
+              isEdit={isEdit}
+              hiddenKeys={[...hiddenKeys, "bot_id"]}
+              requiredKeys={requiredKeys}
+              fieldErrors={fieldErrors}
+            />
+          </>
         )
       default:
         return (
@@ -524,12 +578,33 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
               )}
             </div>
 
-            <div className="border-border/60 bg-background flex items-center justify-between rounded-lg border px-4 py-3">
-              <p className="text-sm font-medium">
-                {t("channels.page.enableLabel")}
-              </p>
-              <Switch checked={enabled} onCheckedChange={setEnabled} />
-            </div>
+            {channel?.name === "weixin" && (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <IconAlertTriangle
+                    size={18}
+                    className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
+                  />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                      {t("channels.weixin.warningTitle")}
+                    </p>
+                    <p className="text-sm text-amber-700/90 dark:text-amber-300/90">
+                      {t("channels.weixin.warningDesc")}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {!hidesPageLevelEnableToggle && (
+              <div className="border-border/60 bg-background flex items-center justify-between rounded-lg border px-4 py-3">
+                <p className="text-sm font-medium">
+                  {t("channels.page.enableLabel")}
+                </p>
+                <Switch checked={enabled} onCheckedChange={setEnabled} />
+              </div>
+            )}
 
             {renderForm()}
 

@@ -12,7 +12,6 @@ import {
 } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Sheet,
   SheetContent,
@@ -21,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { Textarea } from "@/components/ui/textarea"
 
 interface EditForm {
   apiKey: string
@@ -92,7 +92,8 @@ export function EditModelSheet({
   }, [model])
 
   const setField =
-    (key: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    (key: keyof EditForm) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm((f) => ({ ...f, [key]: e.target.value }))
 
   const handleSave = async () => {

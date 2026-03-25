@@ -12,7 +12,6 @@ import {
 } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Sheet,
   SheetContent,
@@ -21,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { Textarea } from "@/components/ui/textarea"
 
 interface AddForm {
   modelName: string
@@ -103,7 +103,8 @@ export function AddModelSheet({
   }
 
   const setField =
-    (key: keyof AddForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    (key: keyof AddForm) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setForm((f) => ({ ...f, [key]: e.target.value }))
       if (fieldErrors[key]) {
         setFieldErrors((prev) => ({ ...prev, [key]: undefined }))
