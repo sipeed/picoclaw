@@ -7,7 +7,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -156,6 +158,29 @@ func TestBuildWeixinSyncBufPathUsesPicoclawHome(t *testing.T) {
 	got := buildWeixinSyncBufPath(wxCfg)
 	if filepath.Dir(got) != filepath.Join(home, "channels", "weixin", "sync") {
 		t.Fatalf("sync path dir = %q", filepath.Dir(got))
+	}
+}
+
+func TestBuildWeixinSyncBufPathFallsBackWhenHomeIsUnusable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("HOME handling differs on windows")
+	}
+
+	t.Setenv(config.EnvHome, "")
+	unusableHome := filepath.Join(t.TempDir(), "home-file")
+	if err := os.WriteFile(unusableHome, []byte("not-a-dir"), 0o600); err != nil {
+		t.Fatalf("WriteFile(unusableHome) error = %v", err)
+	}
+	t.Setenv("HOME", unusableHome)
+
+	wxCfg := config.WeixinConfig{
+		BaseURL: "https://ilinkai.weixin.qq.com/",
+	}
+	wxCfg.SetToken("token-123")
+	got := buildWeixinSyncBufPath(wxCfg)
+	wantDir := filepath.Join(os.TempDir(), "picoclaw", "channels", "weixin", "sync")
+	if filepath.Dir(got) != wantDir {
+		t.Fatalf("sync path dir = %q, want %q", filepath.Dir(got), wantDir)
 	}
 }
 
