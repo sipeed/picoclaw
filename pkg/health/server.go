@@ -19,22 +19,36 @@ type ChatRequest struct {
 	SessionID string `json:"session_id,omitempty"`
 }
 
-// ChatResponse is the JSON response from POST /chat.
+// ChatResponse is the JSON response from /chat.
 type ChatResponse struct {
-	Response string `json:"response"`
+	Response  string `json:"response,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+type chatStatus struct {
+	Response  string
+	Error     error
+	Done      bool
+	CreatedAt time.Time
 }
 
 type Server struct {
-	server     *http.Server
-	mu         sync.RWMutex
-	ready      bool
-	checks     map[string]Check
-	startTime  time.Time
-	reloadFunc func() error
-	authToken  string // optional bearer token for protected endpoints
-	chatFunc   func(ctx context.Context, message, sessionID string) (string, error)
-	apiKey     string
+
+	server        *http.Server
+	mu            sync.RWMutex
+	ready         bool
+	checks        map[string]Check
+	startTime     time.Time
+	reloadFunc    func() error
+	authToken     string // optional bearer token for protected endpoints
+	chatFunc      func(ctx context.Context, message, sessionID string) (string, error)
+	apiKey        string
+	chatResults   map[string]*chatStatus
+	chatResultsMu sync.RWMutex
 }
+
 
 type Check struct {
 	Name      string    `json:"name"`
@@ -53,16 +67,21 @@ type StatusResponse struct {
 func NewServer(host string, port int, token string) *Server {
 	mux := http.NewServeMux()
 	s := &Server{
-		ready:     false,
-		checks:    make(map[string]Check),
-		startTime: time.Now(),
-		authToken: token,
+		ready:       false,
+		checks:      make(map[string]Check),
+		startTime:   time.Now(),
+		authToken:   token,
+		chatResults: make(map[string]*chatStatus),
 	}
 
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
 	mux.HandleFunc("/chat", s.chatHandler)
+	mux.HandleFunc("/cgat", s.chatHandler)
+
+	// Start task cleanup goroutine
+	go s.taskCleanupLoop()
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	s.server = &http.Server{
@@ -256,29 +275,40 @@ func (s *Server) RegisterOnMux(mux *http.ServeMux) {
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
 	mux.HandleFunc("/chat", s.chatHandler)
+	mux.HandleFunc("/cgat", s.chatHandler)
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
 		logger.Error("GATEWAY IS HITTING ITSELF FOR LLM CALLS!")
 		http.Error(w, "GATEWAY LOOP DETECTION", http.StatusLoopDetected)
 	})
 }
 
-// chatHandler handles POST /chat — a synchronous HTTP chat API.
-// Request body:  {"message": "...", "session_id": "..." (optional)}
-// Response body: {"response": "..."}
+// chatHandler handles POST /chat (initiate async) and GET /chat (poll for result).
+// POST body: {"message": "...", "session_id": "..." (optional)}
+// POST response: {"session_id": "...", "status": "pending"}
+// GET query: ?session_id=...
+// GET response: {"response": "...", "status": "completed"}
 func (s *Server) chatHandler(w http.ResponseWriter, r *http.Request) {
 	if !s.verifyAPIKey(r) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed, use POST"})
+		json.NewEncoder(w).Encode(ChatResponse{Error: "unauthorized"})
 		return
 	}
 
+	if r.Method == http.MethodPost {
+		s.handlePostChat(w, r)
+		return
+	} else if r.Method == http.MethodGet {
+		s.handleGetChat(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusMethodNotAllowed)
+	json.NewEncoder(w).Encode(ChatResponse{Error: "method not allowed, use POST or GET"})
+}
+
+func (s *Server) handlePostChat(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	chatFunc := s.chatFunc
 	s.mu.RUnlock()
@@ -286,7 +316,7 @@ func (s *Server) chatHandler(w http.ResponseWriter, r *http.Request) {
 	if chatFunc == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": "chat not configured"})
+		json.NewEncoder(w).Encode(ChatResponse{Error: "chat not configured"})
 		return
 	}
 
@@ -294,27 +324,130 @@ func (s *Server) chatHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON: " + err.Error()})
+		json.NewEncoder(w).Encode(ChatResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
 	if req.Message == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "message field is required"})
+		json.NewEncoder(w).Encode(ChatResponse{Error: "message field is required"})
 		return
 	}
 
-	reply, err := chatFunc(r.Context(), req.Message, req.SessionID)
-	if err != nil {
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = fmt.Sprintf("chat-%d", time.Now().UnixNano())
+	}
+
+	// Initialize status
+	s.chatResultsMu.Lock()
+	s.chatResults[sessionID] = &chatStatus{
+		CreatedAt: time.Now(),
+	}
+	s.chatResultsMu.Unlock()
+
+	// Start processing in background
+	go func() {
+		// Use a long-running context for the chat call, but don't bind to r.Context()
+		// which will be cancelled when this request finishes.
+		ctx := context.Background()
+		logger.Debugf("Starting async chat for session %s", sessionID)
+		reply, err := chatFunc(ctx, req.Message, sessionID)
+
+		s.chatResultsMu.Lock()
+		defer s.chatResultsMu.Unlock()
+		if result, ok := s.chatResults[sessionID]; ok {
+			result.Response = reply
+			result.Error = err
+			result.Done = true
+			logger.Debugf("Finished async chat for session %s (err=%v)", sessionID, err)
+		}
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(ChatResponse{
+		SessionID: sessionID,
+		Status:    "pending",
+	})
+}
+
+func (s *Server) handleGetChat(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Query().Get("session_id")
+	if sessionID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(ChatResponse{Error: "session_id query parameter is required"})
+		return
+	}
+
+	s.chatResultsMu.RLock()
+	result, ok := s.chatResults[sessionID]
+	if !ok {
+		s.chatResultsMu.RUnlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(ChatResponse{Error: "session not found"})
+		return
+	}
+
+	// Read fields while holding the lock to avoid race conditions
+	done := result.Done
+	response := result.Response
+	errVal := result.Error
+	s.chatResultsMu.RUnlock()
+
+	if !done {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(ChatResponse{
+			SessionID: sessionID,
+			Status:    "pending",
+		})
+		return
+	}
+
+	if errVal != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		json.NewEncoder(w).Encode(ChatResponse{
+			SessionID: sessionID,
+			Status:    "error",
+			Error:     errVal.Error(),
+		})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(ChatResponse{Response: reply})
+	json.NewEncoder(w).Encode(ChatResponse{
+		SessionID: sessionID,
+		Status:    "completed",
+		Response:  response,
+	})
+}
+
+func (s *Server) taskCleanupLoop() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s.chatResultsMu.Lock()
+		now := time.Now()
+		for id, status := range s.chatResults {
+			// Keep pending tasks for 2 hours, completed/error for 1 hour
+			expiry := time.Hour
+			if !status.Done {
+				expiry = 2 * time.Hour
+			}
+
+			if now.Sub(status.CreatedAt) > expiry {
+				delete(s.chatResults, id)
+				logger.Debugf("Cleaned up expired chat session %s", id)
+			}
+		}
+		s.chatResultsMu.Unlock()
+	}
 }
 
 func statusString(ok bool) string {

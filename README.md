@@ -609,6 +609,7 @@ For detailed guides beyond this README:
 | [SubTurn](docs/subturn.md) | Subagent coordination, concurrency control, lifecycle |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
 | [Tools Configuration](docs/tools_configuration.md) | Per-tool enable/disable, exec policies, MCP, Skills |
+| [Gateway API Reference](docs/api.md) | HTTP endpoints: `/chat`, `/health`, `/ready`, `/reload` |
 | [Hardware Compatibility](docs/hardware-compatibility.md) | Tested boards, minimum requirements |
 
 ## 🤝 Contribute & Roadmap
