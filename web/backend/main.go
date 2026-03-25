@@ -57,7 +57,7 @@ func main() {
 	console := flag.Bool("console", false, "Console mode, no GUI")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "PicoClaw Launcher - A web-based configuration editor\n\n")
+		fmt.Fprintf(os.Stderr, "%s Launcher - A web-based configuration editor\n\n", appName)
 		fmt.Fprintf(os.Stderr, "Usage: %s [options] [config.json]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Arguments:\n")
 		fmt.Fprintf(os.Stderr, "  config.json    Path to the configuration file (default: ~/.picoclaw/config.json)\n\n")
@@ -98,8 +98,8 @@ func main() {
 		defer logger.DisableFileLogging()
 	}
 
-	logger.InfoC("web", fmt.Sprintf("%s Launcher %s starting...", appName, appVersion))
-	logger.InfoC("web", fmt.Sprintf("PicoClaw Home: %s", picoHome))
+	logger.InfoC("web", fmt.Sprintf("%s launcher starting (version %s)...", appName, appVersion))
+	logger.InfoC("web", fmt.Sprintf("%s Home: %s", appName, picoHome))
 
 	// Set language from command line or auto-detect
 	if *lang != "" {
@@ -118,7 +118,7 @@ func main() {
 	}
 	err = utils.EnsureOnboarded(absPath)
 	if err != nil {
-		logger.Errorf("Warning: Failed to initialize PicoClaw config automatically: %v", err)
+		logger.Errorf("Warning: Failed to initialize %s config automatically: %v", appName, err)
 	}
 
 	var explicitPort bool
