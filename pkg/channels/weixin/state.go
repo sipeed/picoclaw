@@ -41,7 +41,24 @@ type contextTokensFile struct {
 }
 
 func picoclawHomeDir() string {
-	return config.GetHome()
+	if home := os.Getenv(config.EnvHome); home != "" {
+		return home
+	}
+
+	if userHome, err := os.UserHomeDir(); err == nil && userHome != "" {
+		home := filepath.Join(userHome, ".picoclaw")
+		syncDir := filepath.Join(home, "channels", "weixin", "sync")
+		mkErr := os.MkdirAll(syncDir, 0o700)
+		if mkErr == nil {
+			return home
+		}
+		logger.WarnCF("weixin", "Default picoclaw home is not writable; using temp directory for sync cursor", map[string]any{
+			"path":  home,
+			"error": mkErr.Error(),
+		})
+	}
+
+	return filepath.Join(os.TempDir(), "picoclaw")
 }
 
 func genWeixinAccountKey(cfg config.WeixinConfig) string {
