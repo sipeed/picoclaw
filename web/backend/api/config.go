@@ -52,6 +52,11 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
+	var raw map[string]any
+	if err = json.Unmarshal(body, &raw); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
 	if execAllowRemoteOmitted(body) {
 		cfg.Tools.Exec.AllowRemote = config.DefaultConfig().Tools.Exec.AllowRemote
 	}
@@ -63,6 +68,7 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to apply security config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	applyConfigSecretsFromMap(&cfg, raw)
 
 	if errs := validateConfig(&cfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -159,6 +165,7 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to apply security config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	applyConfigSecretsFromMap(&newCfg, base)
 
 	if errs := validateConfig(&newCfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -322,6 +329,143 @@ func mergeMap(dst, src map[string]any) {
 			mergeMap(dstMap, srcMap)
 		} else {
 			dst[key] = srcVal
+		}
+	}
+}
+
+func asMapField(value map[string]any, key string) (map[string]any, bool) {
+	raw, ok := value[key]
+	if !ok {
+		return nil, false
+	}
+	m, ok := raw.(map[string]any)
+	return m, ok
+}
+
+func getSecretString(m map[string]any, key string) (string, bool) {
+	if raw, ok := m[key]; ok {
+		s, ok := raw.(string)
+		if ok {
+			return s, true
+		}
+	}
+	if raw, ok := m["_"+key]; ok {
+		s, ok := raw.(string)
+		if ok {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+func applyConfigSecretsFromMap(cfg *config.Config, raw map[string]any) {
+	channels, ok := asMapField(raw, "channels")
+	if ok {
+		if telegram, ok := asMapField(channels, "telegram"); ok {
+			if token, ok := getSecretString(telegram, "token"); ok {
+				cfg.Channels.Telegram.SetToken(token)
+			}
+		}
+		if feishu, ok := asMapField(channels, "feishu"); ok {
+			if appSecret, ok := getSecretString(feishu, "app_secret"); ok {
+				cfg.Channels.Feishu.SetAppSecret(appSecret)
+			}
+			if encryptKey, ok := getSecretString(feishu, "encrypt_key"); ok {
+				cfg.Channels.Feishu.SetEncryptKey(encryptKey)
+			}
+			if verificationToken, ok := getSecretString(feishu, "verification_token"); ok {
+				cfg.Channels.Feishu.SetVerificationToken(verificationToken)
+			}
+		}
+		if discord, ok := asMapField(channels, "discord"); ok {
+			if token, ok := getSecretString(discord, "token"); ok {
+				cfg.Channels.Discord.SetToken(token)
+			}
+		}
+		if weixin, ok := asMapField(channels, "weixin"); ok {
+			if token, ok := getSecretString(weixin, "token"); ok {
+				cfg.Channels.Weixin.SetToken(token)
+			}
+		}
+		if qq, ok := asMapField(channels, "qq"); ok {
+			if appSecret, ok := getSecretString(qq, "app_secret"); ok {
+				cfg.Channels.QQ.SetAppSecret(appSecret)
+			}
+		}
+		if dingtalk, ok := asMapField(channels, "dingtalk"); ok {
+			if clientSecret, ok := getSecretString(dingtalk, "client_secret"); ok {
+				cfg.Channels.DingTalk.SetClientSecret(clientSecret)
+			}
+		}
+		if slack, ok := asMapField(channels, "slack"); ok {
+			if botToken, ok := getSecretString(slack, "bot_token"); ok {
+				cfg.Channels.Slack.SetBotToken(botToken)
+			}
+			if appToken, ok := getSecretString(slack, "app_token"); ok {
+				cfg.Channels.Slack.SetAppToken(appToken)
+			}
+		}
+		if matrix, ok := asMapField(channels, "matrix"); ok {
+			if accessToken, ok := getSecretString(matrix, "access_token"); ok {
+				cfg.Channels.Matrix.SetAccessToken(accessToken)
+			}
+		}
+		if line, ok := asMapField(channels, "line"); ok {
+			if channelSecret, ok := getSecretString(line, "channel_secret"); ok {
+				cfg.Channels.LINE.SetChannelSecret(channelSecret)
+			}
+			if channelAccessToken, ok := getSecretString(line, "channel_access_token"); ok {
+				cfg.Channels.LINE.SetChannelAccessToken(channelAccessToken)
+			}
+		}
+		if onebot, ok := asMapField(channels, "onebot"); ok {
+			if accessToken, ok := getSecretString(onebot, "access_token"); ok {
+				cfg.Channels.OneBot.SetAccessToken(accessToken)
+			}
+		}
+		if wecom, ok := asMapField(channels, "wecom"); ok {
+			if secret, ok := getSecretString(wecom, "secret"); ok {
+				cfg.Channels.WeCom.SetSecret(secret)
+			}
+		}
+		if pico, ok := asMapField(channels, "pico"); ok {
+			if token, ok := getSecretString(pico, "token"); ok {
+				cfg.Channels.Pico.SetToken(token)
+			}
+		}
+		if irc, ok := asMapField(channels, "irc"); ok {
+			if password, ok := getSecretString(irc, "password"); ok {
+				cfg.Channels.IRC.SetPassword(password)
+			}
+			if nickservPassword, ok := getSecretString(irc, "nickserv_password"); ok {
+				cfg.Channels.IRC.SetNickServPassword(nickservPassword)
+			}
+			if saslPassword, ok := getSecretString(irc, "sasl_password"); ok {
+				cfg.Channels.IRC.SetSASLPassword(saslPassword)
+			}
+		}
+	}
+
+	tools, ok := asMapField(raw, "tools")
+	if !ok {
+		return
+	}
+	skills, ok := asMapField(tools, "skills")
+	if !ok {
+		return
+	}
+	if github, ok := asMapField(skills, "github"); ok {
+		if token, ok := getSecretString(github, "token"); ok {
+			cfg.Tools.Skills.Github.SetToken(token)
+		}
+	}
+	registries, ok := asMapField(skills, "registries")
+	if !ok {
+		return
+	}
+	if clawHub, ok := asMapField(registries, "clawhub"); ok {
+		if authToken, ok := getSecretString(clawHub, "auth_token"); ok {
+			cfg.Tools.Skills.Registries.ClawHub.SetAuthToken(authToken)
 		}
 	}
 }
