@@ -57,9 +57,9 @@ type AgentLoop struct {
 	cmdRegistry    *commands.Registry
 	mcp            mcpRuntime
 	hookRuntime    hookRuntime
-	steering      *steeringQueue
-	pendingSkills sync.Map // sessionKey → skillName (armed by /use <skill>)
-	mu            sync.RWMutex
+	steering       *steeringQueue
+	pendingSkills  sync.Map // sessionKey → skillName (armed by /use <skill>)
+	mu             sync.RWMutex
 
 	providerCache map[string]providers.LLMProvider
 
@@ -1506,9 +1506,13 @@ func (al *AgentLoop) callLLMWithRetry(
 		// Helper to emit events if scope was provided
 		emitRetryEvent := func(kind EventKind, payload any) {
 			if len(scope) > 0 {
-				al.emitEvent(kind,
-					EventMeta{AgentID: agent.ID, TurnID: scope[0].turnID, SessionKey: opts.SessionKey, Iteration: iteration},
-					payload)
+				meta := EventMeta{
+					AgentID:    agent.ID,
+					TurnID:     scope[0].turnID,
+					SessionKey: opts.SessionKey,
+					Iteration:  iteration,
+				}
+				al.emitEvent(kind, meta, payload)
 			}
 		}
 

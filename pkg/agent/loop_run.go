@@ -917,7 +917,12 @@ func (al *AgentLoop) runLLMIteration(
 			})
 
 		// Hook: BeforeLLM — let hooks inspect/modify the request
-		hookMeta := EventMeta{AgentID: agent.ID, TurnID: scope.turnID, SessionKey: opts.SessionKey, Iteration: iteration}
+		hookMeta := EventMeta{
+			AgentID:    agent.ID,
+			TurnID:     scope.turnID,
+			SessionKey: opts.SessionKey,
+			Iteration:  iteration,
+		}
 		if al.hooks != nil {
 			hookReq := &LLMHookRequest{
 				Meta:    hookMeta,

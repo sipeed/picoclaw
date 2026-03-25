@@ -84,10 +84,10 @@ type Manager struct {
 	mediaStore    media.MediaStore
 	dispatchTask  *asyncTask
 	mu            sync.RWMutex
-	placeholders  sync.Map          // "channel:chatID" → placeholderID (string)
-	typingStops   sync.Map          // "channel:chatID" → func()
-	reactionUndos sync.Map          // "channel:chatID" → reactionEntry
-	streamActive sync.Map // "channel:chatID" → true (set when streamer.Finalize sent the message)
+	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
+	typingStops   sync.Map // "channel:chatID" → func()
+	reactionUndos sync.Map // "channel:chatID" → reactionEntry
+	streamActive  sync.Map // "channel:chatID" → true (set when streamer.Finalize sent the message)
 }
 
 type asyncTask struct {
