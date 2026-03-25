@@ -1132,17 +1132,39 @@ func (al *AgentLoop) executeToolCalls(
 					totalLen += len(sm.Content)
 				}
 				*messages = append(*messages, steeringMsgs...)
-				al.emitEvent(EventKindSteeringInjected,
-					EventMeta{AgentID: agent.ID, TurnID: scope.turnID, SessionKey: opts.SessionKey, Iteration: iteration},
-					SteeringInjectedPayload{Count: len(steeringMsgs), TotalContentLen: totalLen})
+				steeringMeta := EventMeta{
+					AgentID:    agent.ID,
+					TurnID:     scope.turnID,
+					SessionKey: opts.SessionKey,
+					Iteration:  iteration,
+				}
+				al.emitEvent(
+					EventKindSteeringInjected,
+					steeringMeta,
+					SteeringInjectedPayload{
+						Count:           len(steeringMsgs),
+						TotalContentLen: totalLen,
+					},
+				)
 			}
 		}
 
 		// Skip remaining tools if steering was injected
 		if steered {
-			al.emitEvent(EventKindToolExecSkipped,
-				EventMeta{AgentID: agent.ID, TurnID: scope.turnID, SessionKey: opts.SessionKey, Iteration: iteration},
-				ToolExecSkippedPayload{Tool: tc.Name, Reason: "steering"})
+			skipMeta := EventMeta{
+				AgentID:    agent.ID,
+				TurnID:     scope.turnID,
+				SessionKey: opts.SessionKey,
+				Iteration:  iteration,
+			}
+			al.emitEvent(
+				EventKindToolExecSkipped,
+				skipMeta,
+				ToolExecSkippedPayload{
+					Tool:   tc.Name,
+					Reason: "steering",
+				},
+			)
 			// Still need to add a tool result to messages for protocol correctness
 			*messages = append(*messages, providers.Message{
 				Role:       "tool",

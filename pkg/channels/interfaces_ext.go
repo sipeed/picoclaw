@@ -14,4 +14,3 @@ type MessageSenderWithID interface {
 type DraftSender interface {
 	SendDraft(ctx context.Context, chatID string, draftID int, content string) error
 }
-
