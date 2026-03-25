@@ -461,6 +461,7 @@ func TestSelectCandidates_UsesImageModelWhenImageMediaPresent(t *testing.T) {
 		[]providers.Message{
 			{Role: "user", Content: "describe this image", Media: []string{"data:image/png;base64,AAAA"}},
 		},
+		[]string{"data:image/png;base64,AAAA"},
 	)
 
 	if !useImageFallback {
@@ -474,6 +475,48 @@ func TestSelectCandidates_UsesImageModelWhenImageMediaPresent(t *testing.T) {
 	}
 	if candidates[0].Provider != "gemini" || candidates[0].Model != "gemini-2.5-flash-lite" {
 		t.Fatalf("candidate = %+v, want gemini/gemini-2.5-flash-lite", candidates[0])
+	}
+}
+
+func TestSelectCandidates_DoesNotUseImageModelForHistoricalImages(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:  tmpDir,
+				ModelName:  "text-main",
+				ImageModel: "vision-main",
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{ModelName: "text-main", Model: "openai/gpt-5.4"},
+			{ModelName: "vision-main", Model: "gemini/gemini-2.5-flash-lite"},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	candidates, model, useImageFallback := (&AgentLoop{}).selectCandidates(
+		agent,
+		"text-only follow-up",
+		[]providers.Message{
+			{Role: "user", Content: "earlier image", Media: []string{"data:image/png;base64,AAAA"}},
+			{Role: "assistant", Content: "previous response"},
+			{Role: "user", Content: "current text-only turn"},
+		},
+		nil,
+	)
+
+	if useImageFallback {
+		t.Fatal("expected image fallback to be disabled for text-only current turn")
+	}
+	if model != "gpt-5.4" {
+		t.Fatalf("model = %q, want %q", model, "gpt-5.4")
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("len(candidates) = %d, want 1", len(candidates))
+	}
+	if candidates[0].Provider != "openai" || candidates[0].Model != "gpt-5.4" {
+		t.Fatalf("candidate = %+v, want openai/gpt-5.4", candidates[0])
 	}
 }
 
@@ -514,6 +557,62 @@ func TestRunAgentLoop_UsesImageModelForImageMessages(t *testing.T) {
 	}
 	if provider.lastModel != "gemini-2.5-flash-lite" {
 		t.Fatalf("provider lastModel = %q, want %q", provider.lastModel, "gemini-2.5-flash-lite")
+	}
+}
+
+func TestRunAgentLoop_DoesNotUseImageModelWhenOnlyHistoryHasImages(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "text-main",
+				ImageModel:        "vision-main",
+				MaxTokens:         4096,
+				MaxToolIterations: 5,
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{ModelName: "text-main", Model: "openai/gpt-5.4"},
+			{ModelName: "vision-main", Model: "gemini/gemini-2.5-flash-lite"},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.registry.GetDefaultAgent()
+
+	sessionKey := "image-history-session"
+	_, err := al.runAgentLoop(context.Background(), agent, processOptions{
+		SessionKey:      sessionKey,
+		Channel:         "telegram",
+		ChatID:          "chat-1",
+		UserMessage:     "describe this image",
+		Media:           []string{"data:image/png;base64,AAAA"},
+		DefaultResponse: "fallback",
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("first runAgentLoop returned error: %v", err)
+	}
+	if provider.lastModel != "gemini-2.5-flash-lite" {
+		t.Fatalf("first run provider lastModel = %q, want %q", provider.lastModel, "gemini-2.5-flash-lite")
+	}
+
+	_, err = al.runAgentLoop(context.Background(), agent, processOptions{
+		SessionKey:      sessionKey,
+		Channel:         "telegram",
+		ChatID:          "chat-1",
+		UserMessage:     "now answer text only",
+		DefaultResponse: "fallback",
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("second runAgentLoop returned error: %v", err)
+	}
+	if provider.lastModel != "gpt-5.4" {
+		t.Fatalf("second run provider lastModel = %q, want %q", provider.lastModel, "gpt-5.4")
 	}
 }
 
