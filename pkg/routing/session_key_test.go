@@ -18,6 +18,32 @@ func TestBuildAgentMainSessionKey_Normalizes(t *testing.T) {
 	}
 }
 
+func TestNormalizeDMScope(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  DMScope
+		ok    bool
+	}{
+		{name: "main", input: "main", want: DMScopeMain, ok: true},
+		{name: "global alias", input: "global", want: DMScopeMain, ok: true},
+		{name: "per peer", input: "per-peer", want: DMScopePerPeer, ok: true},
+		{name: "per channel peer", input: "per-channel-peer", want: DMScopePerChannelPeer, ok: true},
+		{name: "per channel alias", input: "per-channel", want: DMScopePerChannelPeer, ok: true},
+		{name: "per account channel peer", input: "per-account-channel-peer", want: DMScopePerAccountChannelPeer, ok: true},
+		{name: "unknown", input: "shared", want: "", ok: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := NormalizeDMScope(tt.input)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("NormalizeDMScope(%q) = (%q, %v), want (%q, %v)", tt.input, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
 func TestBuildAgentPeerSessionKey_DMScopeMain(t *testing.T) {
 	got := BuildAgentPeerSessionKey(SessionKeyParams{
 		AgentID: "main",
@@ -28,6 +54,19 @@ func TestBuildAgentPeerSessionKey_DMScopeMain(t *testing.T) {
 	want := "agent:main:main"
 	if got != want {
 		t.Errorf("DMScopeMain = %q, want %q", got, want)
+	}
+}
+
+func TestBuildAgentPeerSessionKey_DMScopeGlobalAlias(t *testing.T) {
+	got := BuildAgentPeerSessionKey(SessionKeyParams{
+		AgentID: "main",
+		Channel: "telegram",
+		Peer:    &RoutePeer{Kind: "direct", ID: "user123"},
+		DMScope: DMScope("global"),
+	})
+	want := "agent:main:main"
+	if got != want {
+		t.Errorf("DMScope(global) = %q, want %q", got, want)
 	}
 }
 
@@ -54,6 +93,19 @@ func TestBuildAgentPeerSessionKey_DMScopePerChannelPeer(t *testing.T) {
 	want := "agent:main:telegram:direct:user123"
 	if got != want {
 		t.Errorf("DMScopePerChannelPeer = %q, want %q", got, want)
+	}
+}
+
+func TestBuildAgentPeerSessionKey_DMScopePerChannelAlias(t *testing.T) {
+	got := BuildAgentPeerSessionKey(SessionKeyParams{
+		AgentID: "main",
+		Channel: "telegram",
+		Peer:    &RoutePeer{Kind: "direct", ID: "user123"},
+		DMScope: DMScope("per-channel"),
+	})
+	want := "agent:main:telegram:direct:user123"
+	if got != want {
+		t.Errorf("DMScope(per-channel) = %q, want %q", got, want)
 	}
 }
 

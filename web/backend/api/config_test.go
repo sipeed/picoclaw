@@ -143,6 +143,45 @@ func TestHandlePatchConfig_AllowsInvalidExecRegexPatternsWhenExecDisabled(t *tes
 	}
 }
 
+func TestValidateConfig_NormalizesLegacyDMScopeAliases(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "global", input: "global", want: "main"},
+		{name: "per-channel", input: "per-channel", want: "per-channel-peer"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.DefaultConfig()
+			cfg.Session.DMScope = tt.input
+
+			errs := validateConfig(cfg)
+			if len(errs) != 0 {
+				t.Fatalf("validateConfig() errors = %v, want none", errs)
+			}
+			if cfg.Session.DMScope != tt.want {
+				t.Fatalf("Session.DMScope = %q, want %q", cfg.Session.DMScope, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateConfig_RejectsUnknownDMScope(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Session.DMScope = "shared"
+
+	errs := validateConfig(cfg)
+	if len(errs) == 0 {
+		t.Fatal("validateConfig() errors = nil, want dm_scope validation error")
+	}
+	if !bytes.Contains([]byte(errs[0]), []byte("session.dm_scope")) {
+		t.Fatalf("validateConfig() first error = %q, want dm_scope validation", errs[0])
+	}
+}
+
 // setupPicoEnabledEnv creates a test environment with Pico channel enabled and
 // its token stored only in .security.yml (not in the JSON payload).
 func setupPicoEnabledEnv(t *testing.T) (string, func()) {

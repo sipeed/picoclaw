@@ -40,11 +40,12 @@ export const DM_SCOPE_OPTIONS = [
     descDefault: "Separate context for each user in each channel.",
   },
   {
-    value: "per-channel",
-    labelKey: "pages.config.session_scope_per_channel",
-    labelDefault: "Per Channel",
-    descKey: "pages.config.session_scope_per_channel_desc",
-    descDefault: "One shared context per channel.",
+    value: "per-account-channel-peer",
+    labelKey: "pages.config.session_scope_per_account_channel_peer",
+    labelDefault: "Per Account + Channel + Peer",
+    descKey: "pages.config.session_scope_per_account_channel_peer_desc",
+    descDefault:
+      "Separate context for each user on each channel account instance.",
   },
   {
     value: "per-peer",
@@ -54,13 +55,18 @@ export const DM_SCOPE_OPTIONS = [
     descDefault: "One context per user across channels.",
   },
   {
-    value: "global",
+    value: "main",
     labelKey: "pages.config.session_scope_global",
     labelDefault: "Global",
     descKey: "pages.config.session_scope_global_desc",
     descDefault: "All messages share one global context.",
   },
 ] as const
+
+const DM_SCOPE_ALIASES: Record<string, string> = {
+  global: "main",
+  "per-channel": "per-channel-peer",
+}
 
 export const EMPTY_FORM: CoreConfigForm = {
   workspace: "",
@@ -102,6 +108,19 @@ function asRecord(value: unknown): JsonRecord {
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : ""
+}
+
+function normalizeDmScope(value: unknown): string {
+  const raw = asString(value).trim()
+  if (!raw) {
+    return EMPTY_FORM.dmScope
+  }
+
+  const normalized = DM_SCOPE_ALIASES[raw] ?? raw
+
+  return DM_SCOPE_OPTIONS.some((scope) => scope.value === normalized)
+    ? normalized
+    : raw
 }
 
 function asBool(value: unknown): boolean {
@@ -195,7 +214,7 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       defaults.summarize_token_percent,
       EMPTY_FORM.summarizeTokenPercent,
     ),
-    dmScope: asString(session.dm_scope) || EMPTY_FORM.dmScope,
+    dmScope: normalizeDmScope(session.dm_scope),
     heartbeatEnabled:
       heartbeat.enabled === undefined
         ? EMPTY_FORM.heartbeatEnabled
