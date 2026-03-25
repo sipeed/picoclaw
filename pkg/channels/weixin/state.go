@@ -71,10 +71,14 @@ func picoclawHomeDir() string {
 		if probeErr := probeSyncDirWritable(home); probeErr == nil {
 			return home
 		} else {
-			logger.WarnCF("weixin", "Default picoclaw home is not writable; using temp directory for sync cursor", map[string]any{
-				"path":  home,
-				"error": probeErr.Error(),
-			})
+			logger.WarnCF(
+				"weixin",
+				"Default picoclaw home is not writable; using temp directory for sync cursor",
+				map[string]any{
+					"path":  home,
+					"error": probeErr.Error(),
+				},
+			)
 		}
 	}
 
