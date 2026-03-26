@@ -58,6 +58,15 @@ func DetectTranscriber(cfg *config.Config) Transcriber {
 	if key := strings.TrimSpace(cfg.Voice.ElevenLabsAPIKey); key != "" {
 		return NewElevenLabsTranscriber(key)
 	}
+
+	// Local Parakeet model (no API key required).
+	if cfg.Voice.ParakeetEnabled {
+		return NewParakeetTranscriber(
+			cfg.Voice.ParakeetAPIBase,
+			cfg.Voice.ParakeetModel,
+		)
+	}
+
 	// Fall back to any model-list entry that uses the groq/ protocol.
 	for _, mc := range cfg.ModelList {
 		if strings.HasPrefix(mc.Model, "groq/") && mc.APIKey() != "" {
