@@ -36,7 +36,7 @@ const passwordInput = card
   .first();
 ```
 
-- Use **scoped context** (e.g. `.login-card`, `.v-dialog--active`) so you don’t match multiple instances.
+- Use **scoped context** (e.g. `.login-card`, or the modal's custom CSS class from the relevant `app-selectors-*` SKILL.md) so you don't match multiple instances. NEVER use `.v-dialog--active`.
 - Match the **exact i18n string** for the locale under test (see Login flow for en).
 
 ### 2. ARIA roles and names
@@ -181,7 +181,7 @@ After login, the app may show `SelectOrganizationPage` when the URL has `?select
 - Logout: `.logout-button`
 - Organization list: `.organization-card` (click to select)
 - Create org: button with text matching "Create Organization" / createOrganization
-- Modal for creating org: Vuetify `v-dialog`; when open, use `.v-dialog--active` to scope form fields (anchor-by-label for "Organization Name" if using GlobalFormField, or the v-text-field in that modal).
+- Modal for creating org: Check the relevant `app-selectors-*` SKILL.md for the actual modal selector (custom CSS class). Do NOT use `.v-dialog--active`.
 
 ### 2. In-app org switcher (drawer)
 
@@ -199,7 +199,7 @@ After login, the app may show `SelectOrganizationPage` when the URL has `?select
 - **Canvas**: VueFlow (`@vue-flow/core`). Main wrapper: `.dnd-flow`, flow root: `.basic-flow`, pane: `.vue-flow__pane`.
 - **Nodes**: Rendered inside the flow; identify by type/label or position. Node types come from metadata (e.g. Start, End, RestAPINode shown as "Rest API Node").
 - **Sidebar**: Nodes dropdown in a panel; add nodes by click or drag-and-drop from the sidebar to the canvas.
-- **Config**: `NodeConfigurationModal`, `EdgeConfigurationModal`; wait for modal to be visible (e.g. `.v-dialog--active`) before interacting with form fields (anchor-by-label or Vuetify fallbacks).
+- **Config**: `NodeConfigurationModal`, `EdgeConfigurationModal`; wait for modal to be visible using the actual custom CSS class from the relevant `app-selectors-*` SKILL.md before interacting with form fields.
 
 ---
 
@@ -212,8 +212,8 @@ After login, the app may show `SelectOrganizationPage` when the URL has `?select
 
 ## Modals & global UI
 
-- **Vuetify dialogs**: When open, the active overlay has `.v-dialog--active`. Scope all modal content to this container to avoid hitting elements outside the dialog.
-- **Form modals**: `FormModal` and similar use Vuetify form controls; use anchor-by-label inside `.v-dialog--active` for fields.
+- **NEVER use `.v-dialog--active` or `.v-dialog` as selectors.** These are generic Vuetify wrapper classes that may not exist in the actual DOM. Instead, always use the real custom CSS class from the relevant `app-selectors-*` SKILL.md (e.g. `.modal-content`, `.modal-header`, `.modal-title`).
+- **Form modals**: Look up the modal's actual selector in the "Discovered Modals / Dialogs" section of the page's `app-selectors-*` SKILL.md, then scope form fields inside that selector.
 - **Snackbars**: Feedback is shown via `GlobalSnackBar`. Assert messages in `.v-snackbar` (e.g. content or role).
 
 ---
@@ -276,7 +276,7 @@ Example for the final report result at the end of the test run:
 
 - **Hydration / i18n**: Ensure the app has finished loading and (if applicable) i18n has resolved. Wait for URL and a non-layout element (e.g. `.login-card`) before interacting.
 - **Label text**: Does the regex match the rendered label exactly? (e.g. "Email address" vs "Email".) Use the exact strings from `locales/en/pages.json` for the default locale.
-- **Teleports**: Menus and dialogs (e.g. `v-menu`, `v-dialog`) render at the end of `<body>`, not inside the component tree. Query for `.org-dropdown-menu`, `.v-dialog--active` on `page` (or `document.body`), not inside a parent that doesn’t contain them.
+- **Teleports**: Menus and dialogs (e.g. `v-menu`) render at the end of `<body>`, not inside the component tree. Query for `.org-dropdown-menu` or the modal's actual custom CSS class from the relevant `app-selectors-*` SKILL.md on `page`, not inside a parent that doesn't contain them. NEVER use `.v-dialog--active`.
 - **Hidden inputs**: Vuetify may wrap the real `<input>` for styling. Prefer the visible interaction target; use `.click({ force: true })` only if necessary and document why.
 - **Redirects**: If using `page.goto('/')`, wait for the redirect to `/login` to complete before looking for login inputs.
 - **Vuetify 3**: Prefer anchor-by-label over `.v-text-field`; use `.v-input` / `.v-field__input` as fallback when needed.
@@ -295,19 +295,35 @@ Selector priority:
 1. Use getByRole() with accessible names whenever possible
 2. Use getByLabel() for text fields
 3. Use getByText() for menu items
-4. Use Vuetify classes only when necessary (.v-btn, .v-select, .v-dialog)
+4. Use Vuetify classes only when necessary (.v-btn, .v-select). NEVER use .v-dialog or .v-dialog--active.
 
 Dialogs:
-- Wait for dialogs using:
-  await page.locator('.v-dialog--active').waitFor()
+- NEVER use .v-dialog--active — it is a generic Vuetify wrapper that may not exist in the DOM.
+- Instead, find the modal's actual custom CSS class from the relevant app-selectors-* SKILL.md.
+- Wait for dialogs using the real selector, e.g.:
+  await page.locator('.modal-content').waitFor()
 
-Menus / dropdowns:
-- Vuetify v-menu is teleported to the bottom of the body
-- Always wait for the menu before selecting items
+Menus / dropdowns (Vuetify v-select):
+- Vuetify dropdowns are teleported to the bottom of the body as `.v-overlay`
+- NEVER use `[role="option"]` or `[role="combobox"]` or `getByRole('option')` — Vuetify does NOT use these ARIA roles
+- NEVER traverse parent with `.locator('..')` to find a select — it won't work with Vuetify's DOM structure
 
-Example:
-await page.getByRole('button', { name: /select role/i }).click()
-await page.getByRole('option', { name: /developer/i }).click()
+To select an option from a Vuetify v-select dropdown:
+
+```typescript
+// Step 1: Click the v-select to open it (use label from SKILL.md)
+await page.locator('.v-select').filter({ hasText: /Frequency/ }).click();
+await page.waitForTimeout(500);
+
+// Step 2: Click the list item in the overlay (teleported to body)
+await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /Weekly/ }).click();
+await page.waitForTimeout(300);
+```
+
+If the app-selectors-* SKILL.md lists dropdown options, use the exact option text from there.
+If multiple v-selects exist, use `.filter({ hasText: /LabelText/ })` or `.nth(N)` to target the right one.
+
+IMPORTANT: After clicking a v-list-item, the overlay closes automatically. Do NOT press Escape.
 
 Tables:
 - When selecting rows by email:
