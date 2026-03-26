@@ -108,12 +108,20 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
+3. **Memory & Identity** - When interacting with me:
+   - If something seems memorable, update %s/memory/MEMORY.md
+   - If I tell you about yourself (your name, personality, traits), update %s/SOUL.md
+   - If I share my preferences, update %s/USER.md
+   Always briefly mention what you updated so I know.
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
 
 %s`,
-		version, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
+		version,
+		workspacePath, workspacePath, workspacePath, workspacePath,
+		workspacePath, workspacePath, workspacePath,
+		toolDiscovery,
+	)
 }
 
 func (cb *ContextBuilder) getDiscoveryRule() string {
