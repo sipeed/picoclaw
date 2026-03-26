@@ -468,7 +468,12 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	// Surface bootstrap errors so the agent can diagnose and fix bootstrap.sh
 	errorLogPath := filepath.Join(cb.workspace, "bootstrap.error.log")
 	if data, err := os.ReadFile(errorLogPath); err == nil && len(data) > 0 {
-		fmt.Fprintf(&sb, "## BOOTSTRAP ERROR WARNING\n\nThe last container start ran `bootstrap.sh` and it FAILED. Some capabilities may be missing. You should read `bootstrap.sh`, identify the issue, fix it, and tell the user to restart the container.\n\nError output:\n```\n%s\n```\n\n", data)
+		const bootstrapWarnHeader = "## BOOTSTRAP ERROR WARNING\n\n" +
+			"The last container start ran `bootstrap.sh` and it FAILED. " +
+			"Some capabilities may be missing. You should read `bootstrap.sh`, " +
+			"identify the issue, fix it, and tell the user to restart the container." +
+			"\n\nError output:\n```\n%s\n```\n\n"
+		fmt.Fprintf(&sb, bootstrapWarnHeader, data)
 	}
 
 	return sb.String()
