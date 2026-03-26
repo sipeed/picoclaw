@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Change Email page on dashbo
 
 # Change Email — Component Map
 
-> Generated: 2026-03-26T07:07:54.379Z
+> Generated: 2026-03-26T12:28:22.888Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Change Email
@@ -25,6 +25,8 @@ description: DOM selectors and component map for the Change Email page on dashbo
 |---|-------|------|----------|
 | 1 | New Email | `text` | `input[placeholder="New Email"]` |
 | 2 | Confirm New Email | `text` | `input[placeholder="Confirm New Email"]` |
+
+**Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
 **Buttons (1):**
 - `page.locator('.confirm-btn')` [disabled]

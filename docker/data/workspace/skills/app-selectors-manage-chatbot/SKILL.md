@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Manage Chatbot page on dash
 
 # Manage Chatbot — Component Map
 
-> Generated: 2026-03-26T07:04:47.772Z
+> Generated: 2026-03-26T12:24:13.973Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Manage Chatbot

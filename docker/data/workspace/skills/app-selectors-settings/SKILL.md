@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Settings page on dashboard.
 
 # Settings — Component Map
 
-> Generated: 2026-03-26T07:08:13.257Z
+> Generated: 2026-03-26T12:28:42.194Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Settings
@@ -28,8 +28,10 @@ description: DOM selectors and component map for the Settings page on dashboard.
 - `page.locator('.add-btn')`
   classes: `v-btn v-btn--elevated v-theme--mainTheme v-btn--density-default v-btn--size-default v-btn--variant-elevated text-capitalize font-weight-bold bg-btn-primary text-btn-text-primary add-btn`
 
-**Icon Buttons (10):**
+**Icon Buttons (12):**
 - mdi-pencil-outline (`mdi-pencil-outline`) → `.change-logo-btn`
+- mdi-pencil (`mdi-pencil`) → `.edit-btn`
+- mdi-pencil (`mdi-pencil`) → `.edit-btn`
 - mdi-pencil (`mdi-pencil`) → `.edit-btn`
 - mdi-pencil (`mdi-pencil`) → `.edit-btn`
 - mdi-pencil (`mdi-pencil`) → `.edit-btn`
@@ -46,15 +48,15 @@ description: DOM selectors and component map for the Settings page on dashboard.
 
 **Table 1:** `.api-keys-table`
 - Columns: `API Key ID` | `Role` | `Description` | `Status` | `Creation Date` | `Expired Date` | `Actions`
-- Rows: 9
+- Rows: 11
 - Sample: e8d40*****1d3f3 | document_search | Auto-generated for document search: Picotestwebcrawler2 | Revoked | 24 Mar 2026, 4:00 AM | 24 Mar 2027, 4:00 AM | 
 
 **Table 2:**
 - Columns: `API Key ID` | `Role` | `Description` | `Status` | `Creation Date` | `Expired Date` | `Actions`
-- Rows: 9
+- Rows: 11
 - Sample: e8d40*****1d3f3 | document_search | Auto-generated for document search: Picotestwebcrawler2 | Revoked | 24 Mar 2026, 4:00 AM | 24 Mar 2027, 4:00 AM | 
 
-**Chips:** `Revoked`, `Active`, `Revoked`, `Revoked`, `Revoked`, `Revoked`, `Revoked`, `Active`, `Active`
+**Chips:** `Revoked`, `Active`, `Revoked`, `Revoked`, `Revoked`, `Revoked`, `Revoked`, `Active`, `Revoked`, `Active`, `Revoked`
 
 **Sidebar (8):**
 - `page.locator('a:has-text("Dashboard")')`
@@ -133,15 +135,15 @@ description: DOM selectors and component map for the Settings page on dashboard.
   - Enter description (`text`)
 - Buttons: `Cancel`, `Create API Key`
 - 2 input(s): Enter number of days, Enter description
-- 1 dropdown(s): ?
+- 1 dropdown(s): Role *
 - 2 table(s)
 - headings: API Keys, Create New API Key
 - buttons: Role:All, Status:All, Add new API Key, Cancel, Create API Key
 - custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
 
 **Dropdowns in modal:**
-- **"Dropdown 1"**: `Internal`, `External`
-  Open: `page.locator('.v-select').filter({ hasText: /Dropdown 1/ }).click()`
+- **"Role *"**: `Internal`, `External`
+  Open: `page.locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(0).click()`
   Pick: `await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click()`
 
 **After clicking "Create API Key" inside modal:**
@@ -151,15 +153,15 @@ description: DOM selectors and component map for the Settings page on dashboard.
   - Enter description (`text`)
 - Buttons: `Cancel`, `Create API Key`
 - 2 input(s): Enter number of days, Enter description
-- 1 dropdown(s): ?
+- 1 dropdown(s): Role *
 - 2 table(s)
 - headings: API Keys, Create New API Key
 - buttons: Role:All, Status:All, Add new API Key, Cancel, Create API Key
 - custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
 
 **Dropdowns after "Create API Key":**
-- **"Dropdown 1"**: `Internal`, `External`
-  Open: `page.locator('.v-select').filter({ hasText: /Dropdown 1/ }).click()`
+- **"Role *"**: `Internal`, `External`
+  Open: `page.locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(0).click()`
   Pick: `await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click()`
 
 ---

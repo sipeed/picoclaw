@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Organization page on dashbo
 
 # Organization — Component Map
 
-> Generated: 2026-03-26T07:07:29.639Z
+> Generated: 2026-03-26T12:27:57.684Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Organization
@@ -120,15 +120,15 @@ description: DOM selectors and component map for the Organization page on dashbo
   - Email (`text`)
 - Buttons: `Cancel`, `Add`
 - 1 input(s): Email
-- 2 dropdown(s): ?, ?
+- 2 dropdown(s): ?, Role *
 - 2 table(s)
 - headings: Organization Team, Bot Icons, Add a Member
 - buttons: Add a Member, Upload Icon, Cancel, Add
 - custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
 
 **Dropdowns in modal:**
-- **"Dropdown 2"**: `admin`, `developer`, `agent`
-  Open: `page.locator('.v-select').filter({ hasText: /Dropdown 2/ }).click()`
+- **"Role *"**: `admin`, `developer`, `agent`
+  Open: `page.locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(1).click()`
   Pick: `await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click()`
 
 **After clicking "Add" inside modal:**
@@ -137,15 +137,15 @@ description: DOM selectors and component map for the Organization page on dashbo
   - Email (`text`)
 - Buttons: `Cancel`, `Add`
 - 1 input(s): Email
-- 2 dropdown(s): ?, ?
+- 2 dropdown(s): ?, Role *
 - 2 table(s)
 - headings: Organization Team, Bot Icons, Add a Member
 - buttons: Add a Member, Upload Icon, Cancel, Add
 - custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
 
 **Dropdowns after "Add":**
-- **"Dropdown 2"**: `admin`, `developer`, `agent`
-  Open: `page.locator('.v-select').filter({ hasText: /Dropdown 2/ }).click()`
+- **"Role *"**: `admin`, `developer`, `agent`
+  Open: `page.locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(1).click()`
   Pick: `await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click()`
 
 ---

@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Register Page page on dashb
 
 # Register Page — Component Map
 
-> Generated: 2026-03-26T07:04:30.510Z
+> Generated: 2026-03-26T12:23:56.718Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Register Page

@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Login Page page on dashboar
 
 # Login Page — Component Map
 
-> Generated: 2026-03-26T07:04:15.075Z
+> Generated: 2026-03-26T12:23:40.474Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Login Page
@@ -16,8 +16,10 @@ description: DOM selectors and component map for the Login Page page on dashboar
 
 | # | Label | Type | Selector |
 |---|-------|------|----------|
-| 1 | Email address | `text` | `page.locator('.v-field__input').nth(0)` |
-| 2 | Password | `password` | `page.locator('.v-field__input').nth(1)` |
+| 1 | Email address | `text` | `.custom-drawer input[type="text"]` |
+| 2 | Password | `password` | `.custom-drawer input[type="password"]` |
+
+**Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
 **Buttons (4):**
 - `page.locator('button:has-text("Forgot Password")')`

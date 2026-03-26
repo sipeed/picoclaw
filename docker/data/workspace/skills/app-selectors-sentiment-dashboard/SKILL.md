@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Sentiment Dashboard page on
 
 # Sentiment Dashboard — Component Map
 
-> Generated: 2026-03-26T07:06:09.701Z
+> Generated: 2026-03-26T12:26:37.118Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Sentiment Dashboard
@@ -27,6 +27,8 @@ description: DOM selectors and component map for the Sentiment Dashboard page on
 | # | Label | Type | Selector |
 |---|-------|------|----------|
 | 1 | Datepicker input | `text` | `[data-testid="dp-input"]` |
+
+**Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
 **Dropdowns / Selects (1):**
 - **Dropdown 1** (select) — current: "10"
@@ -144,7 +146,7 @@ description: DOM selectors and component map for the Sentiment Dashboard page on
 
 **Dropdowns in modal:**
 - **"Dropdown 1"**: `10`, `25`, `50`, `100`, `All`
-  Open: `page.locator('.v-select').filter({ hasText: /Dropdown 1/ }).click()`
+  Open: `page.locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(0).click()`
   Pick: `await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click()`
 
 ---

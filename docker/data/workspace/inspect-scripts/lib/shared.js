@@ -8,7 +8,7 @@ const LOGIN_PASSWORD = 'testing2026!';
 const ORG_NAME = 'Testing2026!';
 
 const DESTRUCTIVE_RE = /delete|remove|confirm|save|submit|export|download|logout|sign\s*out|sign\s*up|sign\s*in|discard|back\s+to|login|log\s*in|send\s+email|set\s+password|reset|forgot|cancel/i;
-const MODAL_TRIGGER_RE = /add|create|new|edit|invite|upload|import|schedule|filter|sort|column|show|manage|configure|change|select version/i;
+const MODAL_TRIGGER_RE = /add|create|new|edit|invite|upload|import|schedule|filter|sort|column|show|manage|configure|change|select version|continue|next|proceed/i;
 const MAX_MODALS = 10;
 const FRAMEWORK_RE_SRC = '^(v-|mdi-|d-|ma-|pa-|mt-|mb-|ml-|mr-|mx-|my-|px-|py-|pt-|pb-|pl-|pr-|ga-|text-|font-|bg-|rounded|elevation|float-|position-|overflow-|align-|justify-|flex-|order-|col-|row-|container|spacer|fill-|w-|h-|min-|max-|gap-|border|opacity|cursor|transition|--v-)';
 
@@ -93,7 +93,7 @@ async function extractAllComponents(page) {
 
     const C = {
       headings: [], staticTexts: [], breadcrumbs: [],
-      inputs: [], textareas: [], selects: [], checkboxes: [], switches: [], radios: [], fileInputs: [],
+      inputs: [], textareas: [], selects: [], checkboxes: [], switches: [], radios: [], btnToggles: [], fileInputs: [],
       buttons: [], iconButtons: [], links: [],
       tables: [], cards: [], chips: [], tabs: [], lists: [],
       alerts: [], snackbars: [], progressBars: [],
@@ -151,7 +151,22 @@ async function extractAllComponents(page) {
     document.querySelectorAll('.v-select,.v-autocomplete,.v-combobox').forEach((sel, i) => {
       if (!isVis(sel)) return;
       const vi = sel.closest('.v-input');
-      const label = vi?.querySelector('.v-label,.v-field__label')?.textContent?.trim() || null;
+      const label = (() => {
+        const own = vi?.querySelector('.v-label,.v-field__label,label')?.textContent?.trim();
+        if (own) return own;
+        // Common app structure: <label>...</label> followed by .v-input wrapper.
+        const wrapper = vi?.parentElement || sel.parentElement;
+        const sibling = wrapper?.querySelector(':scope > label')?.textContent?.trim();
+        if (sibling) return sibling;
+        // Fallback: nearest ancestor label in small radius.
+        let cur = wrapper;
+        for (let d = 0; d < 3 && cur; d++) {
+          const near = cur.querySelector(':scope > label')?.textContent?.trim();
+          if (near) return near;
+          cur = cur.parentElement;
+        }
+        return null;
+      })();
       const value = sel.querySelector('.v-select__selection-text,.v-autocomplete__selection')?.textContent?.trim() || null;
       const type = sel.classList.contains('v-autocomplete') ? 'autocomplete' : sel.classList.contains('v-combobox') ? 'combobox' : 'select';
       C.selects.push({ index: i, type, label, currentValue: value, disabled: sel.classList.contains('v-input--disabled'), ...elMeta(sel), containerSelector: bestSel(vi) });
@@ -183,10 +198,33 @@ async function extractAllComponents(page) {
       if (opts.length) C.radios.push({ index: i, groupLabel: gl, options: opts, selected: sel, ...elMeta(rg) });
     });
 
+    // BUTTON TOGGLES (e.g. SIMPLE / ADVANCED)
+    document.querySelectorAll('.v-btn-toggle').forEach((toggle, i) => {
+      if (!isVis(toggle)) return;
+      const parent = toggle.closest('.v-input');
+      const groupLabel = (() => {
+        let cur = toggle.previousElementSibling || toggle.parentElement;
+        for (let d = 0; d < 4 && cur; d++) {
+          const t = cur?.textContent?.trim();
+          if (t && t.length < 60 && t.length > 1) return t;
+          cur = cur.previousElementSibling || cur.parentElement;
+        }
+        return null;
+      })();
+      const opts = Array.from(toggle.querySelectorAll('.v-btn')).map(b => ({
+        text: (b.textContent?.trim() || '').replace(/\s+/g, ' '),
+        active: b.classList.contains('v-btn--active') || b.classList.contains('v-btn--variant-flat'),
+      })).filter(o => o.text);
+      if (opts.length >= 2) C.btnToggles.push({ index: i, groupLabel, options: opts, ...elMeta(toggle) });
+    });
+
     // BUTTONS
     const seenBtn = new Set();
     document.querySelectorAll('button,[role="button"]').forEach((btn, i) => {
       if (!isVis(btn)) return;
+      // Expansion panel headers are rendered as <button>, but should be modeled
+      // as panels (not generic action buttons) to avoid wrong test selectors.
+      if (btn.matches('.v-expansion-panel-title') || btn.closest('.v-expansion-panel-title')) return;
       const t = txt(btn); const al = aria(btn);
       const hasIcon = !!btn.querySelector('.v-icon,.mdi,i[class*="mdi"]');
       if ((!t || !t.length) && hasIcon) {
@@ -279,7 +317,10 @@ async function extractAllComponents(page) {
       const title = content.querySelector('.v-card-title,.v-toolbar-title,h1,h2,h3')?.textContent?.trim() || null;
       const body = content.querySelector('.v-card-text,.v-card__text')?.textContent?.trim() || null;
       const inps = Array.from(el.querySelectorAll('input:not([type="hidden"])')).filter(isVis).map(inp => ({ type: inp.type, label: inputLabel(inp) || inp.placeholder || null }));
-      const btns = Array.from(el.querySelectorAll('button')).filter(isVis).map(b => txt(b)).filter(Boolean);
+      const btns = Array.from(el.querySelectorAll('button'))
+        .filter(b => isVis(b) && !b.matches('.v-expansion-panel-title') && !b.closest('.v-expansion-panel-title'))
+        .map(b => txt(b))
+        .filter(Boolean);
       C.dialogs.push({ index: i, title, bodyText: body?.slice(0, 300) || null, inputs: inps, buttons: btns, ...elMeta(el) });
     });
 
@@ -458,7 +499,21 @@ async function exploreDropdowns(page) {
       const s = page.locator(sel).nth(i);
       if (!(await s.isVisible().catch(() => false))) continue;
       if (await s.evaluate(el => el.classList.contains('v-input--disabled'))) continue;
-      const label = await s.evaluate(el => { const vi = el.closest('.v-input'); return vi?.querySelector('.v-label,.v-field__label')?.textContent?.trim() || null; });
+      const label = await s.evaluate(el => {
+        const vi = el.closest('.v-input');
+        const own = vi?.querySelector('.v-label,.v-field__label,label')?.textContent?.trim();
+        if (own) return own;
+        const wrapper = vi?.parentElement || el.parentElement;
+        const sibling = wrapper?.querySelector(':scope > label')?.textContent?.trim();
+        if (sibling) return sibling;
+        let cur = wrapper;
+        for (let d = 0; d < 3 && cur; d++) {
+          const near = cur.querySelector(':scope > label')?.textContent?.trim();
+          if (near) return near;
+          cur = cur.parentElement;
+        }
+        return null;
+      });
       const selCls = await s.evaluate(el => el.className?.toString?.() || '');
       await s.click(); await page.waitForTimeout(1000);
       const info = await page.evaluate(() => {
@@ -560,6 +615,17 @@ async function exploreModals(page, pageUrl) {
       const overlay = await identifyNewOverlay(page, bKeys);
       if (overlay) {
         console.log(`    ✓ Overlay: ${overlay.selector} (${overlay.allClasses})`);
+
+        // Wait for any loading state to finish inside the modal
+        try {
+          const loadingEl = page.locator('.v-overlay--active, .custom-drawer-overlay').locator('text=/loading/i').first();
+          if (await loadingEl.isVisible({ timeout: 1000 }).catch(() => false)) {
+            console.log('    ⏳ Modal is loading, waiting for data...');
+            await loadingEl.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
+            await page.waitForTimeout(1500);
+          }
+        } catch (e) {}
+
         const comps = await extractAllComponents(page);
         console.log(`    📋 Exploring dropdowns inside overlay...`);
         const dds = await exploreDropdowns(page);
@@ -567,12 +633,101 @@ async function exploreModals(page, pageUrl) {
         // Explore sub-buttons inside the modal that reveal more form elements
         // (e.g. "Create Schedule" reveals Sync Type / Frequency dropdowns)
         const subResults = [];
-        const subBtns = await page.locator('.v-overlay--active button:visible').all();
+        const WIZARD_STEP_RE = /continue|next|proceed|step/i;
+
+        // For wizard-style modals: fill empty text inputs with dummy values so
+        // Continue/Next buttons become enabled, then explore each dropdown option path
+        const wizardBtnSel = '.v-overlay--active button:visible, .custom-drawer button:visible, .custom-drawer-overlay button:visible';
+        const hasWizardBtn = await page.locator(wizardBtnSel).evaluateAll(btns =>
+          btns.some(b => /continue|next|proceed/i.test(b.textContent?.trim() || ''))
+        ).catch(() => false);
+
+        if (hasWizardBtn) {
+          // Fill empty visible text inputs with dummy value to unblock wizard validation
+          const emptyInputs = await page.locator('.v-overlay--active input[type="text"]:visible, .custom-drawer input[type="text"]:visible, .custom-drawer-overlay input[type="text"]:visible').all();
+          for (const inp of emptyInputs) {
+            try {
+              const val = await inp.inputValue().catch(() => '');
+              if (!val) { await inp.fill('__inspect_dummy__'); await page.waitForTimeout(300); console.log('    📝 Filled empty input with dummy value'); }
+            } catch (e) {}
+          }
+
+          // Explore each dropdown option path (e.g. source type variations)
+          const ddSel = '.v-overlay--active .v-select:visible, .custom-drawer .v-select:visible, .custom-drawer-overlay .v-select:visible, .v-overlay--active .v-autocomplete:visible, .custom-drawer .v-autocomplete:visible';
+          const ddCount = await page.locator(ddSel).count();
+          const exploredPaths = [];
+          for (let di = 0; di < ddCount; di++) {
+            try {
+              const dd = page.locator(ddSel).nth(di);
+              if (!(await dd.isVisible().catch(() => false))) continue;
+              if (await dd.evaluate(el => el.classList.contains('v-input--disabled'))) continue;
+              const ddLabel = await dd.evaluate(el => el.closest('.v-input')?.querySelector('.v-label,.v-field__label')?.textContent?.trim() || null);
+              await dd.click(); await page.waitForTimeout(800);
+              const opts = await page.locator('.v-overlay--active .v-list-item:visible').allTextContents();
+              await page.keyboard.press('Escape'); await page.waitForTimeout(500);
+              if (opts.length <= 1) continue;
+              for (const optText of opts) {
+                const ot = optText.trim();
+                if (!ot) continue;
+                try {
+                  console.log(`    🔄 Trying dropdown "${ddLabel || di}" → "${ot}" path...`);
+                  await dd.click(); await page.waitForTimeout(500);
+                  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: new RegExp(ot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).first().click();
+                  await page.waitForTimeout(1000);
+                  // Capture state right after option selection (before moving to next step).
+                  // Website Crawler panels live on this step.
+                  const currentComps = await extractAllComponents(page);
+                  const currentDds = await exploreDropdowns(page);
+                  const currentPanels = await exploreExpansionPanels(page);
+                  exploredPaths.push({ subTrigger: `Selected ${ddLabel || 'dropdown'} = ${ot}`, components: currentComps, dropdowns: currentDds, panels: currentPanels });
+                  console.log(`    ✓ Captured selected-option state for "${ot}" — ${currentPanels.length} panel(s), ${currentDds.length} dropdown(s)`);
+
+                  // Now click Continue/Next.
+                  // IMPORTANT: for Website Crawler, crawler panels are on this same step;
+                  // continuing here can hide them and mislead generated tests.
+                  if (/website\s*crawler/i.test(ot)) {
+                    continue;
+                  }
+                  const wizBtn = page.locator('.v-overlay--active button:visible, .custom-drawer button:visible').filter({ hasText: /continue|next/i }).first();
+                  if (await wizBtn.isVisible({ timeout: 1000 }).catch(() => false) && !(await wizBtn.evaluate(el => el.disabled || el.classList.contains('v-btn--disabled')).catch(() => true))) {
+                    await wizBtn.click(); await page.waitForTimeout(2000);
+                    const pathComps = await extractAllComponents(page);
+                    const pathDds = await exploreDropdowns(page);
+                    const pathPanels = await exploreExpansionPanels(page);
+                    exploredPaths.push({ subTrigger: `Continue (${ddLabel || 'dropdown'} = ${ot})`, components: pathComps, dropdowns: pathDds, panels: pathPanels });
+                    console.log(`    ✓ Explored wizard step for "${ot}" — ${pathPanels.length} panel(s), ${pathDds.length} dropdown(s)`);
+                    // Go back: press Back button or re-navigate
+                    const backBtn = page.locator('.v-overlay--active button:visible, .custom-drawer button:visible').filter({ hasText: /back|previous/i }).first();
+                    if (await backBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+                      await backBtn.click(); await page.waitForTimeout(1500);
+                    } else {
+                      // Re-open the modal to try next option
+                      await closeAnyOverlay(page, overlay.selector);
+                      await forceCloseAllOverlays(page, pageUrl);
+                      await page.waitForTimeout(1000);
+                      // Re-click the original trigger button
+                      try { await page.locator(`button:has-text("${t}")`).first().click(); await page.waitForTimeout(2000); } catch (e) { break; }
+                      // Re-fill dummy inputs
+                      const reInputs = await page.locator('.v-overlay--active input[type="text"]:visible, .custom-drawer input[type="text"]:visible, .custom-drawer-overlay input[type="text"]:visible').all();
+                      for (const ri of reInputs) { try { const v = await ri.inputValue().catch(() => ''); if (!v) await ri.fill('__inspect_dummy__'); } catch (e) {} }
+                      await page.waitForTimeout(500);
+                    }
+                  }
+                } catch (e) { console.log(`    ✗ Path "${ot}": ${e.message?.slice(0, 60)}`); }
+              }
+            } catch (e) {}
+          }
+          subResults.push(...exploredPaths);
+        }
+
+        // Also explore non-wizard sub-buttons (add/create/manage/etc.)
+        const subBtns = await page.locator('.v-overlay--active button:visible, .custom-drawer button:visible').all();
         for (const subBtn of subBtns) {
           try {
             const subText = (await subBtn.textContent()).trim().replace(/\s+/g, ' ');
             if (!subText || subText.length > 80) continue;
             if (DESTRUCTIVE_RE.test(subText)) continue;
+            if (WIZARD_STEP_RE.test(subText)) continue;
             if (!MODAL_TRIGGER_RE.test(subText)) continue;
             if (await subBtn.evaluate(el => el.disabled || el.classList.contains('v-btn--disabled'))) continue;
             console.log(`    🔍 Sub-clicking "${subText}" inside overlay...`);
@@ -581,7 +736,9 @@ async function exploreModals(page, pageUrl) {
             const subComps = await extractAllComponents(page);
             console.log(`    📋 Exploring dropdowns after sub-click...`);
             const subDds = await exploreDropdowns(page);
-            subResults.push({ subTrigger: subText, components: subComps, dropdowns: subDds });
+            console.log(`    📋 Exploring expansion panels after sub-click...`);
+            const subPanels = await exploreExpansionPanels(page);
+            subResults.push({ subTrigger: subText, components: subComps, dropdowns: subDds, panels: subPanels });
           } catch (e) {}
         }
 
@@ -591,6 +748,8 @@ async function exploreModals(page, pageUrl) {
         // Close the overlay
         await closeAnyOverlay(page, overlay.selector);
         await forceCloseAllOverlays(page, pageUrl);
+        // After capturing the Create KB Bucket wizard panels, continue
+        // to explore other triggers (e.g. Schedule) on the same page.
       } else {
         console.log(`    ✗ No new overlay detected after clicking "${t}"`);
       }
@@ -836,10 +995,12 @@ function generatePageSection(data) {
     s += `**Input Fields (${formInputs.length}):**\n\n| # | Label | Type | Selector |\n|---|-------|------|----------|\n`;
     formInputs.forEach((inp, i) => {
       const label = inp.label || (inp.type === 'password' ? 'Password' : `Input ${i + 1}`);
-      const sel = pickSel(inp, `page.locator('.v-field__input').nth(${i})`);
+      let sel = pickSel(inp, null);
+      if (!sel && inp.placeholder) sel = `input[placeholder="${inp.placeholder}"]`;
+      if (!sel) sel = `.custom-drawer input[type="${inp.type || 'text'}"]`;
       s += `| ${i + 1} | ${label} | \`${inp.type}\` | \`${sel}\` |\n`;
     });
-    s += '\n';
+    s += `\n**Input selector rule:** Use \`input[placeholder="..."]\` or \`.nth(N)\` on scoped container inputs. Do NOT use \`.filter({ hasText })\` on a \`div\` to match placeholder text — placeholders are attributes, not visible text content.\n\n`;
   }
   if (C.textareas.length) { s += `**Textareas (${C.textareas.length}):**\n\n| # | Label | Selector |\n|---|-------|----------|\n`; C.textareas.forEach((ta, i) => { s += `| ${i + 1} | ${ta.label || ta.placeholder || `Textarea ${i + 1}`} | \`${pickSel(ta, `page.locator('textarea').nth(${i})`)}\` |\n`; }); s += '\n'; }
 
@@ -861,11 +1022,19 @@ function generatePageSection(data) {
 
   if (C.checkboxes.length) { s += `**Checkboxes (${C.checkboxes.length}):**\n`; C.checkboxes.forEach((cb, i) => { const sel = pickSel(cb, `.v-checkbox:nth(${i})`); s += `- ${cb.label || `Checkbox ${i + 1}`} — ${cb.checked ? '☑' : '☐'}${cb.disabled ? ' [disabled]' : ''}\n  \`page.locator('${sel}').click()\`\n`; }); s += '\n'; }
   if (C.switches.length) { s += `**Switches (${C.switches.length}):**\n`; C.switches.forEach((sw, i) => { const sel = pickSel(sw, `.v-switch:nth(${i})`); s += `- ${sw.label || `Switch ${i + 1}`} — ${sw.checked ? 'ON' : 'OFF'}${sw.disabled ? ' [disabled]' : ''}\n  \`page.locator('${sel}').click()\`\n`; }); s += '\n'; }
-  if (C.radios.length) { s += `**Radio Groups:**\n`; C.radios.forEach((rg, i) => { s += `- **${rg.groupLabel || `Group ${i + 1}`}:** ${rg.options.join(', ')}`; if (rg.selected) s += ` — selected: "${rg.selected}"`; s += `\n`; }); s += '\n'; }
+  if (C.radios.length) { s += '**Radio Groups (\`.v-radio-group\`):**\n'; C.radios.forEach((rg, i) => { const sel = pickSel(rg, `.v-radio-group:nth(${i})`); s += `- **${rg.groupLabel || 'Group ' + (i + 1)}:** ${rg.options.join(', ')}`; if (rg.selected) s += ` — selected: "${rg.selected}"`; s += '\n  Selector: \`page.locator(\'' + sel + '\')\`\n'; }); s += '\n'; }
+  if (C.btnToggles?.length) { s += '**Button Toggles (\`.v-btn-toggle\`):**\n'; C.btnToggles.forEach((bt, i) => { const sel = pickSel(bt, `.v-btn-toggle:nth(${i})`); const active = bt.options.find(o => o.active); s += `- **${bt.groupLabel || 'Toggle ' + (i + 1)}:** ${bt.options.map(o => o.text).join(' | ')}`; if (active) s += ` — active: "${active.text}"`; s += '\n  Selector: \`page.locator(\'' + sel + '\')\`\n  To select an option: \`page.locator(\'' + sel + '\').getByText(\'OPTION_TEXT\').click()\`\n'; }); s += '\n'; }
   if (C.fileInputs.length) { s += `**File Inputs:**\n`; C.fileInputs.forEach((fi, i) => { s += `- ${fi.label || `File ${i + 1}`}`; if (fi.accept) s += ` (${fi.accept})`; s += `\n`; }); s += '\n'; }
 
+  const panelTitleSet = new Set((C.expansionPanels || []).map(p => (p.title || '').replace(/\s+/g, ' ').trim()).filter(Boolean));
   const stableBtns = []; const dynBtns = [];
-  C.buttons.forEach(btn => { const n = stripDynamic(btn.text); if (n.includes('{DATE}')) dynBtns.push({ ...btn, pattern: n }); else stableBtns.push(btn); });
+  C.buttons.forEach(btn => {
+    const normalized = (btn.text || '').replace(/\s+/g, ' ').trim();
+    if (panelTitleSet.has(normalized)) return;
+    const n = stripDynamic(btn.text);
+    if (n.includes('{DATE}')) dynBtns.push({ ...btn, pattern: n });
+    else stableBtns.push(btn);
+  });
   if (stableBtns.length) {
     s += `**Buttons (${stableBtns.length}):**\n`;
     const seen = new Set();
@@ -892,6 +1061,9 @@ function generatePageSection(data) {
   if (C.pagination.length) { s += `**Pagination:** ${C.pagination.map(p => `${p.totalPages} pages`).join(', ')}\n\n`; }
   if (C.alerts.length) { s += `**Alerts:**\n`; C.alerts.forEach(a => { s += `- [${a.type}] "${a.text}"\n`; }); s += '\n'; }
   if (C.expansionPanels.length) { s += `**Expansion Panels:**\n`; C.expansionPanels.forEach((p, i) => { const sel = pickSel(p, `.v-expansion-panel-title:nth(${i})`); s += `- **${p.title || `Panel ${i + 1}`}** (${p.isOpen ? 'open' : 'closed'}) → \`page.locator('${sel}').click()\`\n`; }); s += '\n'; }
+  if (C.expansionPanels.length) {
+    s += `**Expansion Panel Selector Rule:** Use \`.v-expansion-panel-title\` (or \`.crawler-sections .v-expansion-panel-title\`) with text filter. Do NOT use \`button:has-text(...)\` for these section headers.\n\n`;
+  }
 
   // Element registry
   const meaningful = (C.elementRegistry || []).filter(e => e.customClasses.length > 0 || e.id || e.testId);
@@ -919,7 +1091,7 @@ function generatePageSection(data) {
         s += `**Dropdowns in modal:**\n`;
         m.dropdowns.forEach(dd => {
           s += `- **"${dd.label}"**: ${dd.options.map(o => `\`${o}\``).join(', ')}\n`;
-          s += `  Open: \`page.locator('.v-select').filter({ hasText: /${dd.label}/ }).click()\`\n`;
+          s += `  Open: \`page.locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(${dd.index}).click()\`\n`;
           s += `  Pick: \`await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click()\`\n`;
         });
         s += '\n';
@@ -932,9 +1104,18 @@ function generatePageSection(data) {
             s += `**Dropdowns after "${sub.subTrigger}":**\n`;
             sub.dropdowns.forEach(dd => {
               s += `- **"${dd.label}"**: ${dd.options.map(o => `\`${o}\``).join(', ')}\n`;
-              s += `  Open: \`page.locator('.v-select').filter({ hasText: /${dd.label}/ }).click()\`\n`;
+              s += `  Open: \`page.locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(${dd.index}).click()\`\n`;
               s += `  Pick: \`await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click()\`\n`;
             });
+            s += '\n';
+          }
+          if (sub.panels?.length) {
+            s += `**Expansion Panels after "${sub.subTrigger}":**\n`;
+            for (const p of sub.panels) {
+              s += `- **"${p.panelTitle}"** (index ${p.panelIndex})\n`;
+              s += `  Open: \`page.locator('.v-expansion-panel-title').filter({ hasText: /${p.panelTitle}/ }).click()\`\n`;
+              s += summarize(p.components, m.overlaySelector);
+            }
             s += '\n';
           }
         }
@@ -951,23 +1132,33 @@ function generatePageSection(data) {
 
 function summarize(C, overlaySel) {
   let s = '';
+  const panelTitleSet = new Set((C.expansionPanels || []).map(p => (p.title || '').replace(/\s+/g, ' ').trim()).filter(Boolean));
   (C.dialogs || []).forEach(d => {
     if (d.selector) s += `- Container: \`${d.selector}\` (classes: \`${d.className}\`)\n`;
     if (d.title) s += `- Title: "${d.title}"\n`;
     if (d.inputs?.length) { s += `- Inputs:\n`; d.inputs.forEach(inp => { s += `  - ${inp.label || 'unlabeled'} (\`${inp.type}\`)\n`; }); }
-    if (d.buttons?.length) s += `- Buttons: ${d.buttons.map(b => `\`${b}\``).join(', ')}\n`;
+    const dialogButtons = (d.buttons || []).filter(b => {
+      const normalized = (b || '').replace(/\s+/g, ' ').trim();
+      return !panelTitleSet.has(normalized);
+    });
+    if (dialogButtons.length) s += `- Buttons: ${dialogButtons.map(b => `\`${b}\``).join(', ')}\n`;
   });
   const extra = [];
   const fi = (C.inputs || []).filter(i => !i.inSelect);
   if (fi.length) extra.push(`${fi.length} input(s): ${fi.map(i => i.label || i.type).join(', ')}`);
   if (C.textareas?.length) extra.push(`${C.textareas.length} textarea(s)`);
   if (C.selects?.length) extra.push(`${C.selects.length} dropdown(s): ${C.selects.map(s => s.label || '?').join(', ')}`);
+  if (C.radios?.length) extra.push(`radio group(s): ${C.radios.map(r => `${r.groupLabel || '?'} [${r.options.join(', ')}]`).join('; ')}`);
+  if (C.btnToggles?.length) extra.push(`toggle(s): ${C.btnToggles.map(t => `${t.groupLabel || '?'} [${t.options.map(o => o.active ? `**${o.text}**` : o.text).join(' | ')}]`).join('; ')}`);
   if (C.checkboxes?.length) extra.push(`${C.checkboxes.length} checkbox(es)`);
   if (C.switches?.length) extra.push(`${C.switches.length} switch(es)`);
   if (C.tables?.length) extra.push(`${C.tables.length} table(s)`);
   if (C.cards?.length) extra.push(`${C.cards.length} card(s)`);
   if (C.headings?.length) extra.push(`headings: ${C.headings.map(h => h.text).join(', ')}`);
-  const sb = (C.buttons || []).filter(b => !stripDynamic(b.text).includes('{DATE}'));
+  const sb = (C.buttons || []).filter(b => {
+    const normalized = (b.text || '').replace(/\s+/g, ' ').trim();
+    return !stripDynamic(b.text).includes('{DATE}') && !panelTitleSet.has(normalized);
+  });
   if (sb.length) extra.push(`buttons: ${sb.map(b => b.text).join(', ')}`);
   const ce = (C.elementRegistry || []).filter(e => e.customClasses.length > 0);
   if (ce.length) extra.push(`custom: ${ce.slice(0, 10).map(e => e.selector || e.customClasses[0]).join(', ')}`);

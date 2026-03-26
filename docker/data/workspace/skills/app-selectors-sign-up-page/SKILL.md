@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Sign Up Page page on dashbo
 
 # Sign Up Page — Component Map
 
-> Generated: 2026-03-26T07:04:19.075Z
+> Generated: 2026-03-26T12:23:44.327Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Sign Up Page
@@ -16,9 +16,11 @@ description: DOM selectors and component map for the Sign Up Page page on dashbo
 
 | # | Label | Type | Selector |
 |---|-------|------|----------|
-| 1 | Email address | `text` | `page.locator('.v-field__input').nth(0)` |
-| 2 | Password | `password` | `page.locator('.v-field__input').nth(1)` |
-| 3 | Confirm Password | `password` | `page.locator('.v-field__input').nth(2)` |
+| 1 | Email address | `text` | `.custom-drawer input[type="text"]` |
+| 2 | Password | `password` | `.custom-drawer input[type="password"]` |
+| 3 | Confirm Password | `password` | `.custom-drawer input[type="password"]` |
+
+**Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
 **Buttons (2):**
 - `page.locator('.m-auto')`

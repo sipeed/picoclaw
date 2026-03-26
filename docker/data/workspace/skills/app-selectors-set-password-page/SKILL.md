@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Set Password Page page on d
 
 # Set Password Page — Component Map
 
-> Generated: 2026-03-26T07:04:26.697Z
+> Generated: 2026-03-26T12:23:52.259Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Set Password Page
@@ -22,8 +22,10 @@ description: DOM selectors and component map for the Set Password Page page on d
 
 | # | Label | Type | Selector |
 |---|-------|------|----------|
-| 1 | Password | `password` | `page.locator('.v-field__input').nth(0)` |
-| 2 | Confirm Password | `password` | `page.locator('.v-field__input').nth(1)` |
+| 1 | Password | `password` | `.custom-drawer input[type="password"]` |
+| 2 | Confirm Password | `password` | `.custom-drawer input[type="password"]` |
+
+**Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
 **Buttons (1):**
 - `page.locator('.m-auto')`

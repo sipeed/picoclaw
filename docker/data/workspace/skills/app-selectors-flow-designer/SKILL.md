@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Flow Designer page on dashb
 
 # Flow Designer — Component Map
 
-> Generated: 2026-03-26T07:05:06.454Z
+> Generated: 2026-03-26T12:24:32.710Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Flow Designer
@@ -23,6 +23,8 @@ description: DOM selectors and component map for the Flow Designer page on dashb
 | # | Label | Type | Selector |
 |---|-------|------|----------|
 | 1 | Search flow name | `text` | `.search-input input` |
+
+**Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
 **Dropdowns / Selects (1):**
 - **Dropdown 1** (select) — current: "10"
@@ -75,12 +77,12 @@ description: DOM selectors and component map for the Flow Designer page on dashb
 **Table 1:** `.flow-data-table`
 - Columns: `Flow Name` | `Last Update` | `Actions`
 - Rows: 10 (paginated)
-- Sample: Untitled | 26 Mar 2026, 6:04 AM | 
+- Sample: Untitled | 26 Mar 2026, 12:16 PM | 
 
 **Table 2:**
 - Columns: `Flow Name` | `Last Update` | `Actions`
 - Rows: 10
-- Sample: Untitled | 26 Mar 2026, 6:04 AM | 
+- Sample: Untitled | 26 Mar 2026, 12:16 PM | 
 
 **Sidebar (8):**
 - `page.locator('a:has-text("Dashboard")')`
@@ -128,12 +130,12 @@ description: DOM selectors and component map for the Flow Designer page on dashb
 | `.tab-header` | `div` | `tab-header` | ActiveArchived |
 | `.tab` | `div` | `tab active` | Active |
 | `.tab` | `div` | `tab` | Archived |
-| `.flow-table-container` | `div` | `flow-table-container` | Flow NameLast UpdateActionsUntitled26 Mar 2026, 6:04 AMUntit |
+| `.flow-table-container` | `div` | `flow-table-container` | Flow NameLast UpdateActionsUntitled26 Mar 2026, 12:16 PMUnti |
 | `.table-controls` | `div` | `table-controls` |  |
 | `.search-section` | `div` | `search-section` |  |
 | `.search-input` | `div` | `search-input` |  |
 | `` | `input` | `` |  |
-| `.flow-data-table` | `div` | `flow-data-table` | Flow NameLast UpdateActionsUntitled26 Mar 2026, 6:04 AMUntit |
+| `.flow-data-table` | `div` | `flow-data-table` | Flow NameLast UpdateActionsUntitled26 Mar 2026, 12:16 PMUnti |
 | `.action-icons` | `div` | `action-icons` |  |
 | `.action-btn` | `button` | `action-btn` |  |
 | `[data-testid="v-pagination-root"]` | `nav` | `` |  |

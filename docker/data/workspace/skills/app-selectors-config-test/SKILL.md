@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Config Test page on dashboa
 
 # Config Test — Component Map
 
-> Generated: 2026-03-26T07:04:53.071Z
+> Generated: 2026-03-26T12:24:19.735Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Config Test

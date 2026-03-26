@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Profile page on dashboard.i
 
 # Profile — Component Map
 
-> Generated: 2026-03-26T07:07:49.615Z
+> Generated: 2026-03-26T12:28:18.020Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Profile
@@ -24,8 +24,10 @@ description: DOM selectors and component map for the Profile page on dashboard.i
 
 | # | Label | Type | Selector |
 |---|-------|------|----------|
-| 1 | First Name | `text` | `page.locator('.v-field__input').nth(0)` |
-| 2 | Last Name | `text` | `page.locator('.v-field__input').nth(1)` |
+| 1 | First Name | `text` | `.custom-drawer input[type="text"]` |
+| 2 | Last Name | `text` | `.custom-drawer input[type="text"]` |
+
+**Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
 **File Inputs:**
 - H (image/*)

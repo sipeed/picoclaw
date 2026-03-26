@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Forgot Password Page page o
 
 # Forgot Password Page — Component Map
 
-> Generated: 2026-03-26T07:04:22.835Z
+> Generated: 2026-03-26T12:23:48.380Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Forgot Password Page
@@ -23,7 +23,9 @@ description: DOM selectors and component map for the Forgot Password Page page o
 
 | # | Label | Type | Selector |
 |---|-------|------|----------|
-| 1 | Email address | `text` | `page.locator('.v-field__input').nth(0)` |
+| 1 | Email address | `text` | `.custom-drawer input[type="text"]` |
+
+**Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
 **Buttons (2):**
 - `page.locator('.m-auto')`

@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Add-Ons page on dashboard.i
 
 # Add-Ons — Component Map
 
-> Generated: 2026-03-26T07:08:32.661Z
+> Generated: 2026-03-26T12:29:00.383Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Add-Ons
@@ -39,6 +39,8 @@ description: DOM selectors and component map for the Add-Ons page on dashboard.i
 | # | Label | Type | Selector |
 |---|-------|------|----------|
 | 1 | Search | `text` | `.search-input input` |
+
+**Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
 **Buttons (9):**
 - `page.locator('.dropdown-button')`

@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Change Password page on das
 
 # Change Password — Component Map
 
-> Generated: 2026-03-26T07:07:59.066Z
+> Generated: 2026-03-26T12:28:27.789Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Change Password
@@ -25,6 +25,8 @@ description: DOM selectors and component map for the Change Password page on das
 |---|-------|------|----------|
 | 1 | New Password | `password` | `input[placeholder="New Password"]` |
 | 2 | Confirm New Password | `password` | `input[placeholder="Confirm New Password"]` |
+
+**Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
 **Buttons (1):**
 - `page.locator('.confirm-btn')` [disabled]

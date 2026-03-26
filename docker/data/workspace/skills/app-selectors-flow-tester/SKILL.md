@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 
 # Flow Tester — Component Map
 
-> Generated: 2026-03-26T07:08:43.550Z
+> Generated: 2026-03-26T12:29:11.288Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Flow Tester
@@ -26,19 +26,25 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 |---|-------|------|----------|
 | 1 | Type here | `text` | `.message-field input` |
 
+**Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
+
 **Dropdowns / Selects (1):**
-- **Dropdown 1** (select) — current: "Untitled"
+- **Select Conversation Flow** (select) — current: "Untitled"
   - Selector: `.tester-select`
   - Open: `page.locator('.tester-select').click()`
-  - Options: `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`
+  - Options: `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`, `Untitled`
   - Pick: `page.locator('.v-list-item:has-text("OPTION")').click()`
 
-**Buttons (4):**
+**Button Toggles (`.v-btn-toggle`):**
+- **Enable SSE:** On | Off — active: "On"
+  Selector: `page.locator('.stream-toggle-buttons')`
+  To select an option: `page.locator('.stream-toggle-buttons').getByText('OPTION_TEXT').click()`
+
+**Buttons (3):**
 - `page.locator('.version-selector-button')`
   classes: `version-selector-button`
 - `page.locator('button:has-text("On")')`
 - `page.locator('button:has-text("Off")')`
-- `page.locator('button:has-text("Additional bot response")')`
 
 **Icon Buttons (1):**
 - mdi-pencil-outline (`mdi-pencil-outline`) → `.change-logo-btn`
@@ -59,6 +65,8 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 
 **Expansion Panels:**
 - **Additional bot response** (closed) → `page.locator('.v-expansion-panel-title:nth(0)').click()`
+
+**Expansion Panel Selector Rule:** Use `.v-expansion-panel-title` (or `.crawler-sections .v-expansion-panel-title`) with text filter. Do NOT use `button:has-text(...)` for these section headers.
 
 **Custom Elements & IDs (39):**
 
@@ -108,10 +116,11 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 
 **Panel "Additional bot response" (0):**
 - 1 input(s): Type here
-- 1 dropdown(s): ?
+- 1 dropdown(s): Select Conversation Flow
+- toggle(s): Enable SSE [**On** | Off]
 - 1 card(s)
 - headings: Enable SSE
-- buttons: Initial version, On, Off, Additional bot response
+- buttons: Initial version, On, Off
 - custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
 
 ---

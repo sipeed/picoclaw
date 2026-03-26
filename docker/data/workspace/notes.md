@@ -1,47 +1,3 @@
-docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m 'Before generating anything, read and follow:
-
-- /skills/playwright/SKILL.md
-- /skills/app-selectors/SKILL.md
-- /skills/app-selectors-knowledge-base/SKILL.md
-
-IMPORTANT RULES:
-
-1. You MUST only use selectors from the SKILL.md files above. Copy them exactly.
-2. NEVER guess or invent Vuetify selectors like .v-dialog, .v-dialog--active, .v-overlay, .v-card, etc.
-3. For login, use the EXACT credentials and selectors from /skills/app-selectors/SKILL.md. Do NOT use env vars or placeholder credentials.
-4. For modals/dialogs, use the actual custom CSS classes from the Discovered Modals or Custom Elements section. NEVER use generic Vuetify wrappers.
-
-Create a Playwright test file at /tests/knowledge-base/schedule-kb-full-sync-simple.spec.ts.
-
-After creating the test, auto-run it and include the terminal output + result summary:
-
-- Command: npx playwright test tests/knowledge-base/schedule-kb-full-sync-simple.spec.ts
-
-Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing2026!
-
-1. Perform case "Login" with email heidi@intnt.ai and password testing2026!
-2. On Select Organization page, select organization "Testing2026!"
-3. User redirected to https://dashboard.int3nt.info/
-4. Click "Knowledge Base" in the left sidebar
-5. Locate knowledge base bucket "Picotest1"
-6. Click "Schedule" on the bucket card
-7. Manage Schedule modal appears
-8. Click "Create Schedule"
-9. Under Sync Type, select Full Sync
-10. Ensure Cron Expression mode = SIMPLE
-11. In Frequency, select Weekly
-12. Verify the Cron Expression is automatically generated
-13. Click Save
-
-Expected result:
-
-1. Manage Schedule modal appears
-2. User able to select Full Sync
-3. User able to configure schedule using Simple mode
-4. System automatically generates a Cron Expression based on selected frequency
-5. Schedule is saved successfully
-6. Notification appears at the bottom of the page: "Schedule created successfully"'
-
 # Single page:
 
 docker exec $(docker compose --env-file .env --profile gateway ps -q picoclaw-gateway) \
@@ -52,7 +8,10 @@ docker exec $(docker compose --env-file .env --profile gateway ps -q picoclaw-ga
 docker exec $(docker compose --env-file .env --profile gateway ps -q picoclaw-gateway) \
  node /home/picoclaw/.picoclaw/workspace/inspect-scripts/run-all.js
 
-docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m 'Before generating anything, read and follow:
+# Creating Playwright Script Prompt:
+
+docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m "$(cat <<'EOF'
+Before generating anything, read and follow:
 
 - /skills/playwright/SKILL.md
 - /skills/app-selectors/SKILL.md
@@ -64,44 +23,49 @@ IMPORTANT RULES:
 2. NEVER guess or invent Vuetify selectors like .v-dialog, .v-dialog--active, .v-overlay, .v-card, etc.
 3. For login, use the EXACT credentials and selectors from /skills/app-selectors/SKILL.md. Do NOT use env vars or placeholder credentials.
 4. For modals/dialogs, use the actual custom CSS classes from the Discovered Modals or Custom Elements section. NEVER use generic Vuetify wrappers.
+5. TypeScript-safe Playwright only: NEVER use .filter({ hasAttribute: ... }) because it is invalid in Playwright.
+6. Logging rule: print "✅ PASS" only AFTER the step assertion succeeds. Never print optimistic PASS logs.
+7. Loading states in modals: after a modal/overlay opens, ALWAYS wait for any "Loading..." text to disappear before asserting content. Use: await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+8. NEVER guess component types (e.g. .v-radio-group, .v-tabs). Always check the SKILL.md "Discovered Modals / Dialogs" section for the EXACT elements and their selectors. If a toggle, mode selector, or form field is not documented in the SKILL.md, use getByRole('button') or getByText() with exact visible text.
 
-Create a Playwright test file at /tests/knowledge-base/schedule-kb-full-sync-simple.spec.ts.
+Create a Playwright test file at /tests/knowledge-base/edit-kb-schedule.spec.ts.
 
 After creating the test, auto-run it and include the terminal output + result summary:
 
-- Command: npx playwright test tests/knowledge-base/schedule-kb-full-sync-simple.spec.ts
+- Command: npx playwright test tests/knowledge-base/edit-kb-schedule.spec.ts
 
 Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing2026!
 
 1. Perform case "Login"
 2. On Select Organization page, select organization "Testing2026!"
 3. User redirected to https://dashboard.int3nt.info/
-4. Click "Knowledge Base" in the left sidebar
-5. Click "Create Knowledge Base Bucket" button
-6. In Create KB Bucket Step 1: Source Settings, fill Knowledge Group Name with "Picotest2"
-7. Leave LLM transformer model to parse documents as None
-8. Click Source Type dropdown
-9. Select Website crawler
-10. Click Continue
-11. On the Website Crawler Configuration, fill the "Base url" field with "https://intentai.com"
-12. Click the "Web crawler parameters", fill the "Seed URLs" field with "https://intentai.com/blog/"
-13. Leave the "Sitemap URLs" and "Schedule (Cron Expression)" as it is
-14. Click on "Crawl depth and limits", fill the field with:
+4. Click "Knowledge Base" on the left sidebar
+5. Locate knowledge base bucket "Picotest1"
+6. Click "Schedule"
+7. Manage Schedule modal appears showing the existing schedule
+8. Verify the modal displays:
 
-- fill Max Crawl Depth: "2"
-- Max Extracted Links Count: "1000"
-- Max Unique URL Count: "25"
+- Sync Type
+- Cron Expression
 
-15. leave the rest as it is, click continue
-16. Submit
+9. Click "Edit Schedule"
+10. Schedule configuration screen appears
+11. Ensure Cron Expression mode = SIMPLE
+12. In Frequency, select Monthly
+13. Under Select day(s) choose Day 1
+14. In At time, enter 00:00
+15. Verify the Cron Expression is automatically updated
+16. Click Save
 
 Expected result:
 
-1. User successfully accesses Knowledge Base page
-2. Create KB Bucket panel appears after clicking Create Knowledge Base Bucket
-3. User able to enter Knowledge Group Name
-4. User able to select Source Type: Website Crawler
-5. User able to proceed to Step 2: Search Engine Configuration
-6. Default search engine configuration is displayed
-7. New Knowledge Base Bucket "Picotest2" is successfully created
-8. The new bucket appears in the Knowledge Base list'
+1. Existing schedule information is displayed correctly
+2. User able to click Edit Schedule
+3. Schedule configuration screen appears
+4. User able to modify schedule using Simple mode
+5. Cron expression updates automatically based on selected configuration
+6. Schedule saved successfully
+7. Notification appears: "Schedule updated successfully"
+8. Manage Schedule modal now displays the updated Cron Expression
+   EOF
+   )"
