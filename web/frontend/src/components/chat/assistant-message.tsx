@@ -12,20 +12,18 @@ const STREAM_FRAME_MS = 18
 const STREAM_STEPS = 60
 
 interface AssistantMessageProps {
-  messageId?: string
   content: string
   timestamp?: string | number
+  isStreaming?: boolean
 }
 
 export function AssistantMessage({
-  messageId = "",
   content,
   timestamp = "",
+  isStreaming = false,
 }: AssistantMessageProps) {
   const [isCopied, setIsCopied] = useState(false)
-  const [displayedContent, setDisplayedContent] = useState(
-    messageId.startsWith("hist-") ? content : "",
-  )
+  const [displayedContent, setDisplayedContent] = useState(content)
   const timerRef = useRef<number | null>(null)
   const displayedRef = useRef(displayedContent)
   const formattedTimestamp =
@@ -50,13 +48,12 @@ export function AssistantMessage({
   }, [])
 
   useEffect(() => {
-    const isHistoryMessage = messageId.startsWith("hist-")
     if (timerRef.current !== null) {
       window.clearInterval(timerRef.current)
       timerRef.current = null
     }
 
-    if (isHistoryMessage || content.trim() === "") {
+    if (!isStreaming || content.trim() === "") {
       queueMicrotask(() => syncDisplayedContent(content))
       return
     }
@@ -86,7 +83,7 @@ export function AssistantMessage({
         timerRef.current = null
       }
     }, STREAM_FRAME_MS)
-  }, [content, messageId])
+  }, [content, isStreaming])
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content).then(() => {
