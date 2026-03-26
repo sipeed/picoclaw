@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -92,6 +94,113 @@ func TestManualToolsPreservedAfterReload(t *testing.T) {
 	}
 	if resp != "Found tool" {
 		t.Errorf("Response after reload: %s, want Found tool", resp)
+	}
+}
+
+type tenantIsolationMockProvider struct {
+	toolCalls []providers.ToolCall
+	response  string
+}
+
+func (p *tenantIsolationMockProvider) Chat(
+	ctx context.Context, msgs []providers.Message, tools []providers.ToolDefinition,
+	model string, opts map[string]any,
+) (*providers.LLMResponse, error) {
+	if len(p.toolCalls) > 0 {
+		res := &providers.LLMResponse{
+			ToolCalls: p.toolCalls,
+		}
+		p.toolCalls = nil // Clear so it doesn't loop
+		return res, nil
+	}
+	return &providers.LLMResponse{Content: p.response}, nil
+}
+
+func (p *tenantIsolationMockProvider) GetDefaultModel() string { return "test-model" }
+
+func TestProcessMessage_IsolatedTenant_UsesPrivateWorkspace(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-isolation-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:           tmpDir,
+				ModelName:           "test-model",
+				MaxTokens:           4096,
+				MaxToolIterations:   10,
+				RestrictToWorkspace: true,
+			},
+		},
+	}
+	cfg.Tools.WriteFile.Enabled = true
+
+	msgBus := bus.NewMessageBus()
+	provider := &tenantIsolationMockProvider{
+		toolCalls: []providers.ToolCall{
+			{
+				ID:   "call1",
+				Type: "function",
+				Name: "write_file",
+				Arguments: map[string]any{
+					"path":    "secret.txt",
+					"content": "isolated-content",
+				},
+			},
+		},
+		response: "File written.",
+	}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	defer al.Close()
+
+	isolationID := "tenant-A"
+	msg := bus.InboundMessage{
+		Channel:  "test-channel",
+		SenderID: "user1",
+		ChatID:   isolationID,
+		Content:  "Write the secret file",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+
+	resp, err := al.processMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("processMessage failed: %v", err)
+	}
+	fmt.Printf("Agent Response: %s\n", resp)
+
+	// Verify the file was written to the ISOLATED workspace, NOT the global one
+	isolatedPath := filepath.Join(tmpDir, "sessions", isolationID, "workspace", "secret.txt")
+	globalPath := filepath.Join(tmpDir, "secret.txt")
+
+	// Debug: Print all files in tmpDir
+	t.Logf("Listing all files in %s:", tmpDir)
+	filepath.Walk(tmpDir, func(path string, info os.FileInfo, err error) error {
+		if !info.IsDir() {
+			t.Logf("Found file: %s", path)
+		}
+		return nil
+	})
+
+	if _, err := os.Stat(isolatedPath); os.IsNotExist(err) {
+		t.Errorf("expected file at %s to exist", isolatedPath)
+	}
+	if _, err := os.Stat(globalPath); err == nil {
+		t.Errorf("expected file at %s to NOT exist (leaked to global workspace)", globalPath)
+	}
+
+	// Verify history is in the base sessions directory with the isolated key
+	// agent:::main:tenant-A becomes agent___main_tenant-A
+	isoSessionPath := filepath.Join(tmpDir, "sessions", "agent___main_tenant-A.jsonl")
+	if _, err := os.Stat(isoSessionPath); os.IsNotExist(err) {
+		t.Errorf("expected history at %s to exist", isoSessionPath)
+	} else {
+		t.Logf("History exists at: %s", isoSessionPath)
 	}
 }
 
