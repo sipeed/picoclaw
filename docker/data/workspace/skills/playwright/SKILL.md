@@ -245,13 +245,30 @@ After login, the app may show `SelectOrganizationPage` when the URL has `?select
 
 ## Reporting format
 
-Use this format for test execution reports:
+You MUST include console.log statements for every step and a final report summary at the end of the test.
 
-- **PASS** Step N: [Short description of action/assertion]
-- **FAIL** Step N: [Reason for failure + current URL/state]
+Example for each step:
+```typescript
+console.log('✅ PASS: Step 5 - Login successful, redirected to organization selection page');
+// OR if failed
+console.log('❌ FAIL: Step 5 - Login failed, still on login page');
+```
 
-**Result: X/Y PASSED**  
-**Navigation path**: Start → Login → [Target page]
+Example for the final report result at the end of the test run:
+```typescript
+  console.log('\\n📍 Step 6: Report PASS or FAIL for each step');
+  console.log('\\n' + '='.repeat(70));
+  console.log('📊 TEST SUMMARY');
+  console.log('='.repeat(70));
+  console.log('✅ Step 1: PASS - Page loaded');
+  console.log('✅ Step 2: PASS - Login form visible');
+  console.log('✅ Step 3: PASS - Credentials entered');
+  console.log('✅ Step 4: PASS - Login button clicked');
+  console.log('✅ Step 5: PASS - Login successful, redirected to ?select_org');
+  console.log('✅ Step 6: PASS - All steps passed');
+  console.log('='.repeat(70));
+  console.log('\\n');
+```
 
 ---
 

@@ -54,11 +54,6 @@ test('Download conversation logs flow', async ({ page }) => {
   await expect(logsContainer).toBeVisible({ timeout: 10000 });
   console.log('✅ PASS: Step 5 - Logs page displayed');
 
-  /**
-   * Note: Flow ID (Step 7) and Output Type (Step 8) are currently 
-   * not implemented in LogsPage.vue and have been removed to avoid timeouts.
-   */
-
   // Step 6: Verify Date range is selected
   console.log('\n📍 Step 6: Verify and select date range');
   const dateButtons = page.locator('.dropdown-button');
