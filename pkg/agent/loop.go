@@ -1686,7 +1686,11 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.recordPersistedMessage(rootMsg)
 	}
 
-	activeCandidates, activeModel := al.selectCandidates(ts.agent, ts.userMessage, messages)
+	activeCandidates, activeModel, usedLight := al.selectCandidates(ts.agent, ts.userMessage, messages)
+	activeProvider := ts.agent.Provider
+	if usedLight && ts.agent.LightProvider != nil {
+		activeProvider = ts.agent.LightProvider
+	}
 	pendingMessages := append([]providers.Message(nil), ts.opts.InitialSteeringMessages...)
 	var finalContent string
 
@@ -1908,7 +1912,7 @@ turnLoop:
 					providerCtx,
 					activeCandidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return ts.agent.Provider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
+						return activeProvider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
 					},
 				)
 				if fbErr != nil {
@@ -1924,7 +1928,7 @@ turnLoop:
 				}
 				return fbResult.Response, nil
 			}
-			return ts.agent.Provider.Chat(providerCtx, messagesForCall, toolDefsForCall, llmModel, llmOpts)
+			return activeProvider.Chat(providerCtx, messagesForCall, toolDefsForCall, llmModel, llmOpts)
 		}
 
 		var response *providers.LLMResponse
@@ -2748,9 +2752,9 @@ func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
 	userMsg string,
 	history []providers.Message,
-) (candidates []providers.FallbackCandidate, model string) {
+) (candidates []providers.FallbackCandidate, model string, usedLight bool) {
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
-		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
+		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false
 	}
 
 	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
@@ -2761,7 +2765,7 @@ func (al *AgentLoop) selectCandidates(
 				"score":     score,
 				"threshold": agent.Router.Threshold(),
 			})
-		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
+		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false
 	}
 
 	logger.InfoCF("agent", "Model routing: light model selected",
@@ -2771,7 +2775,7 @@ func (al *AgentLoop) selectCandidates(
 			"score":       score,
 			"threshold":   agent.Router.Threshold(),
 		})
-	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel())
+	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel()), true
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
