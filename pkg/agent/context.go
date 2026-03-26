@@ -104,6 +104,8 @@ Your workspace is at: %s
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
 
+5. **Path Resolution** - ALWAYS use paths relative to your workspace root (e.g., "relay_project/go.mod"). DO NOT start paths with a leading slash ("/") or use absolute paths, as they are blocked for security.
+
 %s`,
 		version, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
 }
