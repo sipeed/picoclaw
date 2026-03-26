@@ -45,6 +45,9 @@ jobs:
 
       - name: 'Set up Cloud SDK'
         uses: 'google-github-actions/setup-gcloud@v2'
+        
+      - name: Verify build artifact
+        run: ls -lh ${{ steps.binary.outputs.path }}
 
       - name: 'Deploy binary to GCE'
         run: |
