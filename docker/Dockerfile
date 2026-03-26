@@ -13,7 +13,8 @@ RUN go mod download
 
 # Copy source and build
 COPY . .
-RUN make build
+ARG BUILD_TARGET=build
+RUN make ${BUILD_TARGET}
 
 # ============================================================
 # Stage 2: Minimal runtime image
