@@ -40,13 +40,13 @@ func mustReceiveInbound(t *testing.T, msgBus *bus.MessageBus) bus.InboundMessage
 	}
 }
 
-func TestOnChatBotMessageReceived_GroupMentionOnlyUsesIsInAtList(t *testing.T) {
+func TestOnChatBotMessageReceived_GroupMentionOnlyUsesIsInAtListAndStripsMention(t *testing.T) {
 	ch, msgBus := newTestDingTalkChannel(t, config.DingTalkConfig{
 		GroupTrigger: config.GroupTriggerConfig{MentionOnly: true},
 	})
 
 	_, err := ch.onChatBotMessageReceived(context.Background(), &chatbot.BotCallbackDataModel{
-		Text:             chatbot.BotCallbackDataTextModel{Content: "  @bot hello  "},
+		Text:             chatbot.BotCallbackDataTextModel{Content: "  @bot /help  "},
 		SenderStaffId:    "staff-123",
 		SenderNick:       "Alice",
 		ConversationType: "2",
@@ -68,7 +68,7 @@ func TestOnChatBotMessageReceived_GroupMentionOnlyUsesIsInAtList(t *testing.T) {
 	if inbound.Peer.Kind != "group" || inbound.Peer.ID != "group-abc" {
 		t.Fatalf("peer=%+v", inbound.Peer)
 	}
-	if inbound.Content != "@bot hello" {
+	if inbound.Content != "/help" {
 		t.Fatalf("content=%q", inbound.Content)
 	}
 }
@@ -105,5 +105,27 @@ func TestOnChatBotMessageReceived_DirectFallbackSenderIDUsesConversationID(t *te
 	}
 	if _, ok := ch.sessionWebhooks.Load(""); ok {
 		t.Fatal("unexpected empty chat_id webhook key")
+	}
+}
+
+func TestStripLeadingAtMentions(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantOut string
+	}{
+		{name: "single mention and command", input: "@bot /help", wantOut: "/help"},
+		{name: "multiple mentions", input: "@bot @alice /new", wantOut: "/new"},
+		{name: "no mention", input: "/help", wantOut: "/help"},
+		{name: "mention only", input: "@bot", wantOut: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripLeadingAtMentions(tt.input)
+			if got != tt.wantOut {
+				t.Fatalf("stripLeadingAtMentions(%q)=%q want=%q", tt.input, got, tt.wantOut)
+			}
+		})
 	}
 }

@@ -190,8 +190,12 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 		peer = bus.Peer{Kind: "direct", ID: peerID}
 	} else {
 		peer = bus.Peer{Kind: "group", ID: data.ConversationId}
+		isMentioned := data.IsInAtList
+		if isMentioned {
+			content = stripLeadingAtMentions(content)
+		}
 		// In group chats, apply unified group trigger filtering
-		respond, cleaned := c.ShouldRespondInGroup(data.IsInAtList, content)
+		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
 		if !respond {
 			return nil, nil
 		}
@@ -252,4 +256,20 @@ func (c *DingTalkChannel) SendDirectReply(ctx context.Context, sessionWebhook, c
 	}
 
 	return nil
+}
+
+func stripLeadingAtMentions(content string) string {
+	fields := strings.Fields(content)
+	if len(fields) == 0 {
+		return ""
+	}
+
+	i := 0
+	for i < len(fields) && strings.HasPrefix(fields[i], "@") {
+		i++
+	}
+	if i == 0 {
+		return strings.TrimSpace(content)
+	}
+	return strings.Join(fields[i:], " ")
 }
