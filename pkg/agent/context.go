@@ -21,6 +21,7 @@ import (
 
 type ContextBuilder struct {
 	workspace          string
+	baseWorkspace      string
 	skillsLoader       *skills.SkillsLoader
 	memory             *MemoryStore
 	toolDiscoveryBM25  bool
@@ -61,7 +62,11 @@ func getGlobalConfigDir() string {
 	return config.GetHome()
 }
 
-func NewContextBuilder(workspace string) *ContextBuilder {
+func NewContextBuilder(workspace string, baseWorkspace string) *ContextBuilder {
+	// If isolationID logic is needed, it should be handled by the caller
+	// ensuring workspace and baseWorkspace are correctly distinct.
+	os.MkdirAll(workspace, 0o755)
+
 	// builtin skills: skills directory in current project
 	// Use the skills/ directory under the current working directory
 	builtinSkillsDir := strings.TrimSpace(os.Getenv(config.EnvBuiltinSkills))
@@ -72,9 +77,10 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
 
 	return &ContextBuilder{
-		workspace:    workspace,
-		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir, nil, false),
-		memory:       NewMemoryStore(workspace),
+		workspace:     workspace,
+		baseWorkspace: baseWorkspace,
+		skillsLoader:  skills.NewSkillsLoader(workspace, baseWorkspace, globalSkillsDir, builtinSkillsDir, nil, false),
+		memory:        NewMemoryStore(workspace),
 	}
 }
 
@@ -462,7 +468,13 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 
 	if agentDefinition.Source != AgentDefinitionSourceAgent {
 		filePath := filepath.Join(cb.workspace, "IDENTITY.md")
-		if data, err := os.ReadFile(filePath); err == nil {
+		data, err := os.ReadFile(filePath)
+		if err != nil && cb.baseWorkspace != "" && cb.baseWorkspace != cb.workspace {
+			// Fallback to base workspace
+			filePath = filepath.Join(cb.baseWorkspace, "IDENTITY.md")
+			data, err = os.ReadFile(filePath)
+		}
+		if err == nil {
 			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", "IDENTITY.md", data)
 		}
 	}

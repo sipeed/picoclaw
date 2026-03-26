@@ -34,7 +34,7 @@ Act directly and use tools first.
 	})
 	defer cleanupWorkspace(t, tmpDir)
 
-	cb := NewContextBuilder(tmpDir)
+	cb := NewContextBuilder(tmpDir, tmpDir)
 	definition := cb.LoadAgentDefinition()
 
 	if definition.Source != AgentDefinitionSourceAgent {
@@ -86,7 +86,7 @@ func TestLoadAgentDefinitionFallsBackToLegacyAgentsMarkdown(t *testing.T) {
 	})
 	defer cleanupWorkspace(t, tmpDir)
 
-	cb := NewContextBuilder(tmpDir)
+	cb := NewContextBuilder(tmpDir, tmpDir)
 	definition := cb.LoadAgentDefinition()
 
 	if definition.Source != AgentDefinitionSourceAgents {
@@ -113,7 +113,7 @@ func TestLoadAgentDefinitionLoadsWorkspaceUserMarkdown(t *testing.T) {
 	})
 	defer cleanupWorkspace(t, tmpDir)
 
-	cb := NewContextBuilder(tmpDir)
+	cb := NewContextBuilder(tmpDir, tmpDir)
 	definition := cb.LoadAgentDefinition()
 
 	if definition.User == nil {
@@ -142,7 +142,7 @@ Keep going.
 	})
 	defer cleanupWorkspace(t, tmpDir)
 
-	cb := NewContextBuilder(tmpDir)
+	cb := NewContextBuilder(tmpDir, tmpDir)
 	definition := cb.LoadAgentDefinition()
 
 	if definition.Agent == nil {
@@ -178,7 +178,7 @@ Follow the body prompt.
 	})
 	defer cleanupWorkspace(t, tmpDir)
 
-	cb := NewContextBuilder(tmpDir)
+	cb := NewContextBuilder(tmpDir, tmpDir)
 	bootstrap := cb.LoadBootstrapFiles()
 
 	if !strings.Contains(bootstrap, "Follow the body prompt") {
@@ -209,7 +209,7 @@ func TestLoadBootstrapFilesIncludesWorkspaceUserMarkdown(t *testing.T) {
 	})
 	defer cleanupWorkspace(t, tmpDir)
 
-	cb := NewContextBuilder(tmpDir)
+	cb := NewContextBuilder(tmpDir, tmpDir)
 	bootstrap := cb.LoadBootstrapFiles()
 
 	if !strings.Contains(bootstrap, "Shared profile") {
@@ -228,7 +228,7 @@ func TestStructuredAgentIgnoresIdentityChanges(t *testing.T) {
 	})
 	defer cleanupWorkspace(t, tmpDir)
 
-	cb := NewContextBuilder(tmpDir)
+	cb := NewContextBuilder(tmpDir, tmpDir)
 
 	promptV1 := cb.BuildSystemPromptWithCache()
 	if strings.Contains(promptV1, "Legacy identity") {
@@ -265,7 +265,7 @@ func TestStructuredAgentUserChangesInvalidateCache(t *testing.T) {
 	})
 	defer cleanupWorkspace(t, tmpDir)
 
-	cb := NewContextBuilder(tmpDir)
+	cb := NewContextBuilder(tmpDir, tmpDir)
 
 	promptV1 := cb.BuildSystemPromptWithCache()
 	if !strings.Contains(promptV1, "Initial workspace preferences") {
