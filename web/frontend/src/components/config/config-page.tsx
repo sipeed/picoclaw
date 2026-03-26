@@ -20,6 +20,7 @@ import {
   ExecSection,
   LauncherSection,
   RuntimeSection,
+  WebSearchSection,
 } from "@/components/config/config-sections"
 import {
   type CoreConfigForm,
@@ -182,9 +183,12 @@ export function ConfigPage() {
           "Cron exec timeout",
           { min: 0 },
         )
+        const glmSearchAPIKey = form.glmSearchAPIKey.trim()
+        const baiduSearchAPIKey = form.baiduSearchAPIKey.trim()
         const execConfigPatch: Record<string, unknown> = {
           enabled: form.execEnabled,
         }
+        const webConfigPatch: Record<string, unknown> = {}
 
         if (form.execEnabled) {
           execConfigPatch.allow_remote = form.allowRemote
@@ -203,6 +207,24 @@ export function ConfigPage() {
               form.customDenyPatternsText,
             )
           }
+        }
+
+        if (glmSearchAPIKey !== "") {
+          webConfigPatch.glm_search = { api_key: glmSearchAPIKey }
+        }
+        if (baiduSearchAPIKey !== "") {
+          webConfigPatch.baidu_search = { api_key: baiduSearchAPIKey }
+        }
+
+        const toolsPatch: Record<string, unknown> = {
+          cron: {
+            allow_command: form.allowCommand,
+            exec_timeout_minutes: cronExecTimeoutMinutes,
+          },
+          exec: execConfigPatch,
+        }
+        if (Object.keys(webConfigPatch).length > 0) {
+          toolsPatch.web = webConfigPatch
         }
 
         await patchAppConfig({
@@ -225,13 +247,7 @@ export function ConfigPage() {
           session: {
             dm_scope: dmScope,
           },
-          tools: {
-            cron: {
-              allow_command: form.allowCommand,
-              exec_timeout_minutes: cronExecTimeoutMinutes,
-            },
-            exec: execConfigPatch,
-          },
+          tools: toolsPatch,
           heartbeat: {
             enabled: form.heartbeatEnabled,
             interval: heartbeatInterval,
@@ -331,6 +347,8 @@ export function ConfigPage() {
               <ExecSection form={form} onFieldChange={updateField} />
 
               <CronSection form={form} onFieldChange={updateField} />
+
+              <WebSearchSection form={form} onFieldChange={updateField} />
 
               <LauncherSection
                 launcherForm={launcherForm}

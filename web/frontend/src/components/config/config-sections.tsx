@@ -505,6 +505,51 @@ export function CronSection({ form, onFieldChange }: CronSectionProps) {
   )
 }
 
+interface WebSearchSectionProps {
+  form: CoreConfigForm
+  onFieldChange: UpdateCoreField
+}
+
+export function WebSearchSection({
+  form,
+  onFieldChange,
+}: WebSearchSectionProps) {
+  const { t } = useTranslation()
+
+  return (
+    <ConfigSectionCard
+      title={t("pages.config.sections.web_search")}
+      description={t("pages.config.web_search_section_hint")}
+    >
+      <Field
+        label={t("pages.config.glm_search_api_key")}
+        hint={t("pages.config.glm_search_api_key_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="password"
+          value={form.glmSearchAPIKey}
+          placeholder={t("pages.config.secret_placeholder")}
+          onChange={(e) => onFieldChange("glmSearchAPIKey", e.target.value)}
+        />
+      </Field>
+
+      <Field
+        label={t("pages.config.baidu_search_api_key")}
+        hint={t("pages.config.baidu_search_api_key_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="password"
+          value={form.baiduSearchAPIKey}
+          placeholder={t("pages.config.secret_placeholder")}
+          onChange={(e) => onFieldChange("baiduSearchAPIKey", e.target.value)}
+        />
+      </Field>
+    </ConfigSectionCard>
+  )
+}
+
 interface LauncherSectionProps {
   launcherForm: LauncherForm
   onFieldChange: UpdateLauncherField

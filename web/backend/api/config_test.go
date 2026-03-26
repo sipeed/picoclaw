@@ -143,6 +143,187 @@ func TestHandlePatchConfig_AllowsInvalidExecRegexPatternsWhenExecDisabled(t *tes
 	}
 }
 
+func TestHandlePatchConfig_PreservesWebSearchAPIKeysWhenOmitted(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	seedWebSearchAPIKeys(t, configPath, "glm-existing-key", "baidu-existing-key")
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"gateway": {
+			"log_level": "info"
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := cfg.Tools.Web.GLMSearch.APIKey(); got != "glm-existing-key" {
+		t.Fatalf("tools.web.glm_search.api_key = %q, want %q", got, "glm-existing-key")
+	}
+	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != "baidu-existing-key" {
+		t.Fatalf("tools.web.baidu_search.api_key = %q, want %q", got, "baidu-existing-key")
+	}
+}
+
+func TestHandlePatchConfig_UpdatesWebSearchAPIKeys(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"tools": {
+			"web": {
+				"glm_search": { "api_key": "glm-updated-key" },
+				"baidu_search": { "api_key": "baidu-updated-key" }
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := cfg.Tools.Web.GLMSearch.APIKey(); got != "glm-updated-key" {
+		t.Fatalf("tools.web.glm_search.api_key = %q, want %q", got, "glm-updated-key")
+	}
+	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != "baidu-updated-key" {
+		t.Fatalf("tools.web.baidu_search.api_key = %q, want %q", got, "baidu-updated-key")
+	}
+}
+
+func TestHandleUpdateConfig_PreservesWebSearchAPIKeysWhenOmitted(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	seedWebSearchAPIKeys(t, configPath, "glm-existing-key-via-put", "baidu-existing-key-via-put")
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(`{
+		"version": 1,
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model_name": "custom-default"
+			}
+		},
+		"model_list": [
+			{
+				"model_name": "custom-default",
+				"model": "openai/gpt-4o",
+				"api_keys": ["sk-default"]
+			}
+		]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := cfg.Tools.Web.GLMSearch.APIKey(); got != "glm-existing-key-via-put" {
+		t.Fatalf("tools.web.glm_search.api_key = %q, want %q", got, "glm-existing-key-via-put")
+	}
+	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != "baidu-existing-key-via-put" {
+		t.Fatalf("tools.web.baidu_search.api_key = %q, want %q", got, "baidu-existing-key-via-put")
+	}
+}
+
+func TestHandleUpdateConfig_UpdatesWebSearchAPIKeys(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(`{
+		"version": 1,
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model_name": "custom-default"
+			}
+		},
+		"model_list": [
+			{
+				"model_name": "custom-default",
+				"model": "openai/gpt-4o",
+				"api_keys": ["sk-default"]
+			}
+		],
+		"tools": {
+			"web": {
+				"glm_search": { "api_key": "glm-updated-key-via-put" },
+				"baidu_search": { "api_key": "baidu-updated-key-via-put" }
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := cfg.Tools.Web.GLMSearch.APIKey(); got != "glm-updated-key-via-put" {
+		t.Fatalf("tools.web.glm_search.api_key = %q, want %q", got, "glm-updated-key-via-put")
+	}
+	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != "baidu-updated-key-via-put" {
+		t.Fatalf("tools.web.baidu_search.api_key = %q, want %q", got, "baidu-updated-key-via-put")
+	}
+}
+
+func seedWebSearchAPIKeys(t *testing.T, configPath, glmAPIKey, baiduAPIKey string) {
+	t.Helper()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	cfg.Tools.Web.GLMSearch.SetAPIKey(glmAPIKey)
+	cfg.Tools.Web.BaiduSearch.SetAPIKey(baiduAPIKey)
+
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+}
+
 // setupPicoEnabledEnv creates a test environment with Pico channel enabled and
 // its token stored only in .security.yml (not in the JSON payload).
 func setupPicoEnabledEnv(t *testing.T) (string, func()) {
