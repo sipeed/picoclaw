@@ -1048,10 +1048,10 @@ type SearXNGConfig struct {
 }
 
 type GLMSearchConfig struct {
-	Enabled      bool   `json:"enabled"       env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
-	apiKey       string
-	secDirty     bool
-	BaseURL      string `json:"base_url"      env:"PICOCLAW_TOOLS_WEB_GLM_BASE_URL"`
+	Enabled  bool `json:"enabled"       env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
+	apiKey   string
+	secDirty bool
+	BaseURL  string `json:"base_url"      env:"PICOCLAW_TOOLS_WEB_GLM_BASE_URL"`
 	// SearchEngine specifies the search backend: "search_std" (default),
 	// "search_pro", "search_pro_sogou", or "search_pro_quark".
 	SearchEngine string `json:"search_engine" env:"PICOCLAW_TOOLS_WEB_GLM_SEARCH_ENGINE"`
