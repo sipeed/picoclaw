@@ -129,6 +129,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		logger.SetLevelFromString(config.ResolveGatewayLogLevel(configPath))
 	}
 
+<<<<<<< HEAD
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		logger.Fatalf("error loading config: %v", err)
@@ -155,10 +156,15 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	}
 	defer pid.RemovePidFile(homePath)
 
+=======
+	fmt.Printf("🔍 Creating startup provider for model: %s (allow empty: %v)\n", cfg.Agents.Defaults.GetModelName(), allowEmptyStartup)
+>>>>>>> 46dc6e5 (Synchronize hardening: added onboard purge, non-interactive mode, and diagnostic startup logs)
 	provider, modelID, err := createStartupProvider(cfg, allowEmptyStartup)
 	if err != nil {
+		fmt.Printf("❌ Error creating provider: %v\n", err)
 		return fmt.Errorf("error creating provider: %w", err)
 	}
+	fmt.Printf("✓ Provider created (Model ID: %s)\n", modelID)
 
 	if modelID != "" {
 		cfg.Agents.Defaults.ModelName = modelID
@@ -181,10 +187,13 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 			"skills_available": skillsInfo["available"],
 		})
 
+	fmt.Println("🚀 Setting up services...")
 	runningServices, err := setupAndStartServices(cfg, agentLoop, msgBus, pidData.Token)
 	if err != nil {
+		fmt.Printf("❌ Error starting services: %v\n", err)
 		return err
 	}
+
 
 	// Setup manual reload channel for /reload endpoint
 	manualReloadChan := make(chan struct{}, 1)
