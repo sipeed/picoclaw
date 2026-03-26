@@ -181,6 +181,9 @@ export function ConfigPage() {
           "Cron exec timeout",
           { min: 0 },
         )
+        const braveAPIKey = form.braveAPIKey.trim()
+        const tavilyAPIKey = form.tavilyAPIKey.trim()
+        const perplexityAPIKey = form.perplexityAPIKey.trim()
         const glmSearchAPIKey = form.glmSearchAPIKey.trim()
         const baiduSearchAPIKey = form.baiduSearchAPIKey.trim()
         const execConfigPatch: Record<string, unknown> = {
@@ -207,6 +210,15 @@ export function ConfigPage() {
           }
         }
 
+        if (braveAPIKey !== "") {
+          webConfigPatch.brave = { api_key: braveAPIKey }
+        }
+        if (tavilyAPIKey !== "") {
+          webConfigPatch.tavily = { api_key: tavilyAPIKey }
+        }
+        if (perplexityAPIKey !== "") {
+          webConfigPatch.perplexity = { api_key: perplexityAPIKey }
+        }
         if (glmSearchAPIKey !== "") {
           webConfigPatch.glm_search = { api_key: glmSearchAPIKey }
         }
