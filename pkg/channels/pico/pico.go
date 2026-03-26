@@ -275,10 +275,7 @@ func (c *PicoChannel) SendPlaceholder(ctx context.Context, chatID string) (strin
 		return "", nil
 	}
 
-	text := c.config.Placeholder.Text
-	if text == "" {
-		text = "Thinking... 💭"
-	}
+	text := c.config.Placeholder.GetRandomText()
 
 	msgID := uuid.New().String()
 	outMsg := newMessage(TypeMessageCreate, map[string]any{

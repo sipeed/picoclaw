@@ -26,6 +26,7 @@ type ContextBuilder struct {
 	memory             *MemoryStore
 	toolDiscoveryBM25  bool
 	toolDiscoveryRegex bool
+	splitOnMarker      bool
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -49,6 +50,11 @@ type ContextBuilder struct {
 func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuilder {
 	cb.toolDiscoveryBM25 = useBM25
 	cb.toolDiscoveryRegex = useRegex
+	return cb
+}
+
+func (cb *ContextBuilder) WithSplitOnMarker(enabled bool) *ContextBuilder {
+	cb.splitOnMarker = enabled
 	return cb
 }
 
@@ -155,6 +161,14 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 	memoryContext := cb.memory.GetMemoryContext()
 	if memoryContext != "" {
 		parts = append(parts, "# Memory\n\n"+memoryContext)
+	}
+
+	// Multi-Message Sending (if enabled)
+	if cb.splitOnMarker {
+		parts = append(parts, `# MULTI-MESSAGE OUTPUT
+You MUST frequently use <|[SPLIT]|> to break your responses into multiple short messages. NEVER output a single long wall of text. Actively split distinct concepts or parts. Example: Message part 1<|[SPLIT]|>Message part 2<|[SPLIT]|>Message part 3
+
+Each part separated by the marker will be sent as an independent message.`)
 	}
 
 	// Join with "---" separator

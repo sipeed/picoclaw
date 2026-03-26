@@ -221,6 +221,30 @@ func TestClassifyError_ImageDimensionError(t *testing.T) {
 	}
 }
 
+func TestClassifyError_ContextOverflowPatterns(t *testing.T) {
+	patterns := []string{
+		"context_length_exceeded",
+		"context_window_exceeded",
+		"maximum context length",
+		"token limit",
+		"too many tokens",
+		"prompt is too long",
+		"request too large",
+	}
+
+	for _, msg := range patterns {
+		err := errors.New(msg)
+		result := ClassifyError(err, "openai", "gpt-4")
+		if result == nil {
+			t.Errorf("pattern %q: expected non-nil", msg)
+			continue
+		}
+		if result.Reason != FailoverContextOverflow {
+			t.Errorf("pattern %q: reason = %q, want context_overflow", msg, result.Reason)
+		}
+	}
+}
+
 func TestClassifyError_ImageSizeError(t *testing.T) {
 	err := errors.New("image exceeds 20 mb limit")
 	result := ClassifyError(err, "openai", "gpt-4o")
@@ -265,6 +289,7 @@ func TestFailoverError_IsRetriable(t *testing.T) {
 		{FailoverTimeout, true},
 		{FailoverOverloaded, true},
 		{FailoverFormat, false},
+		{FailoverContextOverflow, false},
 		{FailoverUnknown, true},
 	}
 

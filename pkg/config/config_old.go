@@ -834,6 +834,7 @@ type webToolsConfigV0 struct {
 	Perplexity           perplexityConfigV0  `                                json:"perplexity"`
 	SearXNG              SearXNGConfig       `                                json:"searxng"`
 	GLMSearch            glmSearchConfigV0   `                                json:"glm_search"`
+	BaiduSearch          baiduSearchConfigV0 `                                json:"baidu_search"`
 	PreferNative         bool                `                                json:"prefer_native"                    env:"PICOCLAW_TOOLS_WEB_PREFER_NATIVE"`
 	Proxy                string              `                                json:"proxy,omitempty"                  env:"PICOCLAW_TOOLS_WEB_PROXY"`
 	FetchLimitBytes      int64               `                                json:"fetch_limit_bytes,omitempty"      env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
@@ -925,11 +926,34 @@ func (v *glmSearchConfigV0) ToGLMSearchConfig() (GLMSearchConfig, *GLMSearchSecu
 	}, sec
 }
 
+type baiduSearchConfigV0 struct {
+	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_BAIDU_ENABLED"`
+	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_BAIDU_API_KEY"`
+	BaseURL    string `json:"base_url"    env:"PICOCLAW_TOOLS_WEB_BAIDU_BASE_URL"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BAIDU_MAX_RESULTS"`
+}
+
+func (v *baiduSearchConfigV0) ToBaiduSearchConfig() (BaiduSearchConfig, *BaiduSearchSecurity) {
+	var sec *BaiduSearchSecurity
+	if v.APIKey != "" {
+		sec = &BaiduSearchSecurity{
+			APIKey: v.APIKey,
+		}
+	}
+	return BaiduSearchConfig{
+		Enabled:    v.Enabled,
+		apiKey:     v.APIKey,
+		BaseURL:    v.BaseURL,
+		MaxResults: v.MaxResults,
+	}, sec
+}
+
 func (v *webToolsConfigV0) ToWebToolsConfig() (WebToolsConfig, WebToolsSecurity) {
 	brave, braveSecurity := v.Brave.ToBraveConfig()
 	tavily, tavilySecurity := v.Tavily.ToTavilyConfig()
 	perplexity, perplexitySecurity := v.Perplexity.ToPerplexityConfig()
 	glmSearch, glmSearchSecurity := v.GLMSearch.ToGLMSearchConfig()
+	baiduSearch, baiduSearchSecurity := v.BaiduSearch.ToBaiduSearchConfig()
 
 	return WebToolsConfig{
 			ToolConfig:           v.ToolConfig,
@@ -939,16 +963,18 @@ func (v *webToolsConfigV0) ToWebToolsConfig() (WebToolsConfig, WebToolsSecurity)
 			Perplexity:           perplexity,
 			SearXNG:              v.SearXNG,
 			GLMSearch:            glmSearch,
+			BaiduSearch:          baiduSearch,
 			PreferNative:         v.PreferNative,
 			Proxy:                v.Proxy,
 			FetchLimitBytes:      v.FetchLimitBytes,
 			Format:               v.Format,
 			PrivateHostWhitelist: v.PrivateHostWhitelist,
 		}, WebToolsSecurity{
-			Brave:      braveSecurity,
-			Tavily:     tavilySecurity,
-			Perplexity: perplexitySecurity,
-			GLMSearch:  glmSearchSecurity,
+			Brave:       braveSecurity,
+			Tavily:      tavilySecurity,
+			Perplexity:  perplexitySecurity,
+			GLMSearch:   glmSearchSecurity,
+			BaiduSearch: baiduSearchSecurity,
 		}
 }
 

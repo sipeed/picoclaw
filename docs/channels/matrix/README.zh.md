@@ -22,7 +22,7 @@
       },
       "placeholder": {
         "enabled": true,
-        "text": "Thinking... 💭"
+        "text": ["Thinking...", "Processing...", "Typing..."]
       },
       "reasoning_channel_id": "",
       "message_format": "richtext",
@@ -50,6 +50,13 @@
 | message_format       | string   | 否   | 消息格式：`richtext`（富文本）或 `plain`（纯文本） |
 | crypto_database_path | string   | 否   | 加密数据库存储路径（为空时使用工作空间路径 `~/.picoclaw/workspace`） |
 | crypto_passphrase    | string   | 否   | 加密数据库中 session key 的序列化密钥；设置后不能更改 |
+
+### 占位消息配置 (Placeholder)
+
+| 字段    | 类型            | 必填 | 说明 |
+|---------|-----------------|------|------|
+| enabled | bool            | 否   | 是否启用占位消息（默认：false） |
+| text    | string/[]string | 否   | 占位文本。可以是单个字符串或字符串数组。如果提供多个文本，运行时会随机选择一个。默认："Thinking..." |
 
 ## 3. 当前支持
 

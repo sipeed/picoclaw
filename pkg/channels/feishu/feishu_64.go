@@ -211,10 +211,7 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 		return "", nil
 	}
 
-	text := c.config.Placeholder.Text
-	if text == "" {
-		text = "Thinking..."
-	}
+	text := c.config.Placeholder.GetRandomText()
 
 	cardContent, err := buildMarkdownCard(text)
 	if err != nil {

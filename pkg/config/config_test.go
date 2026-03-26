@@ -487,6 +487,33 @@ func TestDefaultConfig_WebPreferNativeEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ToolFeedbackDisabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Agents.Defaults.ToolFeedback.Enabled {
+		t.Fatal("DefaultConfig().Agents.Defaults.ToolFeedback.Enabled should be false")
+	}
+}
+
+func TestLoadConfig_ToolFeedbackDefaultsFalseWhenUnset(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"version":1,"agents":{"defaults":{"workspace":"./workspace"}}}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Agents.Defaults.ToolFeedback.Enabled {
+		t.Fatal("agents.defaults.tool_feedback.enabled should remain false when unset in config file")
+	}
+}
+
 func TestLoadConfig_WebPreferNativeDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")

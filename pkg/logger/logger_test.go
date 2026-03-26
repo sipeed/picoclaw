@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -364,4 +368,41 @@ func TestAppendFields_ErrorUsesErrorString(t *testing.T) {
 	if got["error"] != "transcription request failed" {
 		t.Fatalf("error field = %#v, want %q", got["error"], "transcription request failed")
 	}
+}
+
+func TestDisableConsole(t *testing.T) {
+	DisableConsole()
+	Info("this should go to nowhere")
+}
+
+func TestConfigureFromEnv(t *testing.T) {
+	home := os.Getenv("HOME")
+	if home == "" {
+		t.Skip("HOME not set")
+	}
+
+	tmpFile := "/tmp/picoclaw_test_log_" + fmt.Sprintf("%d", time.Now().UnixNano())
+	defer os.Remove(tmpFile)
+
+	os.Setenv("PICOCLAW_LOG_FILE", tmpFile)
+	defer os.Unsetenv("PICOCLAW_LOG_FILE")
+
+	ConfigureFromEnv()
+
+	if logFile == nil {
+		t.Error("expected log file to be set")
+	}
+
+	Info("test message")
+
+	os.Setenv("PICOCLAW_LOG_FILE", "~/test_log")
+	ConfigureFromEnv()
+
+	expanded := filepath.Join(home, "test_log")
+	defer os.Remove(expanded)
+}
+
+func TestConfigureFromEnvNoEnv(t *testing.T) {
+	os.Unsetenv("PICOCLAW_LOG_FILE")
+	ConfigureFromEnv()
 }

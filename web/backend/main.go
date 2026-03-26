@@ -98,7 +98,7 @@ func main() {
 		defer logger.DisableFileLogging()
 	}
 
-	logger.InfoC("web", "PicoClaw Launcher starting...")
+	logger.InfoC("web", fmt.Sprintf("%s Launcher %s starting...", appName, appVersion))
 	logger.InfoC("web", fmt.Sprintf("PicoClaw Home: %s", picoHome))
 
 	// Set language from command line or auto-detect

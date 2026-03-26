@@ -573,10 +573,7 @@ func (c *MatrixChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 		return "", fmt.Errorf("matrix room ID is empty")
 	}
 
-	text := strings.TrimSpace(c.config.Placeholder.Text)
-	if text == "" {
-		text = "Thinking... 💭"
-	}
+	text := c.config.Placeholder.GetRandomText()
 
 	resp, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, &event.MessageEventContent{
 		MsgType: event.MsgNotice,

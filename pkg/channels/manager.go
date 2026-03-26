@@ -608,8 +608,10 @@ func newChannelWorker(name string, ch Channel) *channelWorker {
 	}
 }
 
-// runWorker processes outbound messages for a single channel, splitting
-// messages that exceed the channel's maximum message length.
+// runWorker processes outbound messages for a single channel.
+// Message processing follows this order:
+//  1. SplitByMarker (if enabled in config) - LLM semantic marker-based splitting
+//  2. SplitMessage - channel-specific length-based splitting (MaxMessageLength)
 func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) {
 	defer close(w.done)
 	for {
@@ -622,20 +624,42 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 			if mlp, ok := w.ch.(MessageLengthProvider); ok {
 				maxLen = mlp.MaxMessageLength()
 			}
-			if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
-				chunks := SplitMessage(msg.Content, maxLen)
-				for _, chunk := range chunks {
-					chunkMsg := msg
-					chunkMsg.Content = chunk
-					m.sendWithRetry(ctx, name, w, chunkMsg)
+
+			// Collect all message chunks to send
+			var chunks []string
+
+			// Step 1: Try marker-based splitting if enabled
+			if m.config != nil && m.config.Agents.Defaults.SplitOnMarker {
+				if markerChunks := SplitByMarker(msg.Content); len(markerChunks) > 1 {
+					for _, chunk := range markerChunks {
+						chunks = append(chunks, splitByLength(chunk, maxLen)...)
+					}
 				}
-			} else {
-				m.sendWithRetry(ctx, name, w, msg)
+			}
+
+			// Step 2: Fallback to length-based splitting if no chunks from marker
+			if len(chunks) == 0 {
+				chunks = splitByLength(msg.Content, maxLen)
+			}
+
+			// Step 3: Send all chunks
+			for _, chunk := range chunks {
+				chunkMsg := msg
+				chunkMsg.Content = chunk
+				m.sendWithRetry(ctx, name, w, chunkMsg)
 			}
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+// splitByLength splits content by maxLen if needed, otherwise returns single chunk.
+func splitByLength(content string, maxLen int) []string {
+	if maxLen > 0 && len([]rune(content)) > maxLen {
+		return SplitMessage(content, maxLen)
+	}
+	return []string{content}
 }
 
 // sendWithRetry sends a message through the channel with rate limiting and

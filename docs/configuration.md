@@ -31,6 +31,22 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Gateway Log Level
+
+`gateway.log_level` controls Gateway log verbosity and is configurable in `config.json`.
+
+```json
+{
+  "gateway": {
+    "log_level": "fatal"
+  }
+}
+```
+
+When omitted, the default is `fatal`. Supported values: `debug`, `info`, `warn`, `error`, `fatal`.
+
+You can also override this with the environment variable `PICOCLAW_LOG_LEVEL`.
+
 ### Workspace Layout
 
 PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspace`):
@@ -454,6 +470,70 @@ This design also enables **multi-agent support** with flexible provider selectio
 - **Load balancing**: Distribute requests across multiple endpoints
 - **Centralized configuration**: Manage all providers in one place
 
+#### 🔒 Security Configuration (Recommended)
+
+PicoClaw supports separating sensitive data (API keys, tokens, secrets) from your main configuration by storing them in a `.security.yml` file.
+
+**Key Benefits:**
+- **Security**: Sensitive data is never in your main config file
+- **Easy sharing**: Share config.json without exposing API keys
+- **Version control**: Add `.security.yml` to `.gitignore`
+- **Flexible deployment**: Different environments can use different security files
+
+**Quick Setup:**
+
+1. Create `~/.picoclaw/.security.yml` with your API keys:
+```yaml
+model_list:
+  gpt-5.4:
+    api_keys:
+      - "sk-proj-your-actual-openai-key"
+  claude-sonnet-4.6:
+    api_keys:
+      - "sk-ant-your-actual-anthropic-key"
+channels:
+  telegram:
+    token: "your-telegram-bot-token"
+web:
+  brave:
+    api_keys:
+      - "BSAyour-brave-api-key"
+  glm_search:
+    api_key: "your-glm-search-api-key"
+```
+
+2. Set proper permissions:
+```bash
+chmod 600 ~/.picoclaw/.security.yml
+```
+
+3. Remove sensitive fields from `config.json` (recommended):
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4"
+      // api_key loaded from .security.yml
+    }
+  ],
+  "channels": {
+    "telegram": {
+      "enabled": true"
+      // token loaded from .security.yml
+    }
+  }
+}
+```
+
+**How it works:**
+- Values from `.security.yml` are automatically mapped to config fields
+- No special syntax needed — just omit sensitive fields from config.json
+- If a field exists in both files, `.security.yml` value takes precedence
+- You can mix direct values in config.json with security values
+
+For complete documentation, see [`security_configuration.md`](security_configuration.md).
+
 #### All Supported Vendors
 
 | Vendor                  | `model` Prefix    | Default API Base                                    | Protocol  | API Key                                                          |
@@ -515,7 +595,11 @@ This design also enables **multi-agent support** with flexible provider selectio
 }
 ```
 
+> **Security Note**: You can remove `api_key` fields from your config and store them in `.security.yml` instead. See [Security Configuration](#-security-configuration-recommended) above for details.
+
 #### Vendor-Specific Examples
+
+> **Tip**: You can omit `api_key` fields and store them in `.security.yml` for better security. See [Security Configuration](#-security-configuration-recommended).
 
 <details>
 <summary><b>OpenAI</b></summary>
@@ -523,8 +607,8 @@ This design also enables **multi-agent support** with flexible provider selectio
 ```json
 {
   "model_name": "gpt-5.4",
-  "model": "openai/gpt-5.4",
-  "api_key": "sk-..."
+  "model": "openai/gpt-5.4"
+  // api_key: set in .security.yml
 }
 ```
 
@@ -536,8 +620,8 @@ This design also enables **multi-agent support** with flexible provider selectio
 ```json
 {
   "model_name": "ark-code-latest",
-  "model": "volcengine/ark-code-latest",
-  "api_key": "sk-..."
+  "model": "volcengine/ark-code-latest"
+  // api_key: set in .security.yml
 }
 ```
 
@@ -549,8 +633,8 @@ This design also enables **multi-agent support** with flexible provider selectio
 ```json
 {
   "model_name": "glm-4.7",
-  "model": "zhipu/glm-4.7",
-  "api_key": "your-key"
+  "model": "zhipu/glm-4.7"
+  // api_key: set in .security.yml
 }
 ```
 
@@ -562,8 +646,8 @@ This design also enables **multi-agent support** with flexible provider selectio
 ```json
 {
   "model_name": "deepseek-chat",
-  "model": "deepseek/deepseek-chat",
-  "api_key": "sk-..."
+  "model": "deepseek/deepseek-chat"
+  // api_key: set in .security.yml
 }
 ```
 
@@ -575,8 +659,8 @@ This design also enables **multi-agent support** with flexible provider selectio
 ```json
 {
   "model_name": "claude-sonnet-4.6",
-  "model": "anthropic/claude-sonnet-4.6",
-  "api_key": "sk-ant-your-key"
+  "model": "anthropic/claude-sonnet-4.6"
+  // api_key: set in .security.yml
 }
 ```
 
@@ -616,8 +700,8 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 {
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
-  "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-..."
+  "api_base": "https://my-proxy.com/v1"
+  // api_key: set in .security.yml
 }
 ```
 
@@ -628,6 +712,33 @@ PicoClaw strips only the outer `litellm/` prefix before sending the request, so 
 #### Load Balancing
 
 Configure multiple endpoints for the same model name — PicoClaw will automatically round-robin between them:
+
+**Option 1: Multiple API Keys in .security.yml (Recommended)**
+
+```yaml
+# .security.yml
+model_list:
+  gpt-5.4:
+    api_keys:
+      - "sk-proj-key-1"
+      - "sk-proj-key-2"
+```
+
+```json
+// config.json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
+      "api_base": "https://api.openai.com/v1"
+      // api_keys loaded from .security.yml
+    }
+  ]
+}
+```
+
+**Option 2: Multiple Model Entries**
 
 ```json
 {
@@ -685,6 +796,8 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
 }
 ```
 
+> **Note**: The `providers` format is deprecated. Use the new `model_list` format with `.security.yml` for better security.
+
 </details>
 
 <details>
@@ -701,18 +814,10 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
     "dm_scope": "per-channel-peer",
     "backlog_limit": 20
   },
-  "providers": {
-    "openrouter": {
-      "api_key": "sk-or-v1-xxx"
-    },
-    "groq": {
-      "api_key": "gsk_xxx"
-    }
-  },
   "channels": {
     "telegram": {
-      "enabled": true,
-      "token": "123456:ABC...",
+      "enabled": true"
+      // token: set in .security.yml
       "allow_from": ["123456789"]
     }
   },
@@ -730,6 +835,8 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
   }
 }
 ```
+
+> **Note**: Sensitive fields (`api_key`, `token`, etc.) can be omitted and stored in `.security.yml` for better security.
 
 </details>
 
@@ -754,6 +861,7 @@ Scheduled tasks persist across restarts and are stored in `~/.picoclaw/workspace
 
 | Topic | Description |
 | ----- | ----------- |
+| [Security Configuration](security_configuration.md) | Store API keys and secrets in separate `.security.yml` file |
 | [Sensitive Data Filtering](sensitive_data_filtering.md) | Filter API keys and tokens from tool results before sending to LLM |
 | [Hook System](hooks/README.md) | Event-driven hooks: observers, interceptors, approval hooks |
 | [Steering](steering.md) | Inject messages into a running agent loop between tool calls |

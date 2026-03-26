@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -1016,6 +1017,40 @@ func (m *artifactThenSendProvider) Chat(
 
 func (m *artifactThenSendProvider) GetDefaultModel() string {
 	return "artifact-then-send-model"
+}
+
+type toolFeedbackProvider struct {
+	filePath string
+	calls    int
+}
+
+func (m *toolFeedbackProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_heartbeat_read_file",
+				Type:      "function",
+				Name:      "read_file",
+				Arguments: map[string]any{"path": m.filePath},
+			}},
+		}, nil
+	}
+
+	return &providers.LLMResponse{
+		Content:   "HEARTBEAT_OK",
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *toolFeedbackProvider) GetDefaultModel() string {
+	return "heartbeat-tool-feedback-model"
 }
 
 type toolLimitOnlyProvider struct{}
@@ -2313,6 +2348,112 @@ func TestProcessMessage_PublishesReasoningContentToReasoningChannel(t *testing.T
 	}
 }
 
+func TestProcessHeartbeat_DoesNotPublishToolFeedback(t *testing.T) {
+	tmpDir := t.TempDir()
+	heartbeatFile := filepath.Join(tmpDir, "heartbeat-task.txt")
+	if err := os.WriteFile(heartbeatFile, []byte("heartbeat task"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ToolFeedback: config.ToolFeedbackConfig{
+					Enabled:       true,
+					MaxArgsLength: 300,
+				},
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{
+				Enabled: true,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &toolFeedbackProvider{filePath: heartbeatFile}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.ProcessHeartbeat(context.Background(), "check heartbeat tasks", "telegram", "chat-1")
+	if err != nil {
+		t.Fatalf("ProcessHeartbeat() error = %v", err)
+	}
+	if response != "HEARTBEAT_OK" {
+		t.Fatalf("ProcessHeartbeat() response = %q, want %q", response, "HEARTBEAT_OK")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		t.Fatalf("expected no outbound tool feedback during heartbeat, got %+v", outbound)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestProcessMessage_PublishesToolFeedbackWhenEnabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	heartbeatFile := filepath.Join(tmpDir, "tool-feedback.txt")
+	if err := os.WriteFile(heartbeatFile, []byte("tool feedback task"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ToolFeedback: config.ToolFeedbackConfig{
+					Enabled:       true,
+					MaxArgsLength: 300,
+				},
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{
+				Enabled: true,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &toolFeedbackProvider{filePath: heartbeatFile}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user-1",
+		ChatID:   "chat-1",
+		Content:  "check tool feedback",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "HEARTBEAT_OK" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "HEARTBEAT_OK")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Channel != "telegram" {
+			t.Fatalf("tool feedback channel = %q, want %q", outbound.Channel, "telegram")
+		}
+		if outbound.ChatID != "chat-1" {
+			t.Fatalf("tool feedback chatID = %q, want %q", outbound.ChatID, "chat-1")
+		}
+		if !strings.Contains(outbound.Content, "`read_file`") {
+			t.Fatalf("tool feedback content = %q, want read_file preview", outbound.Content)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected outbound tool feedback for regular messages")
+	}
+}
+
 func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()
@@ -2675,5 +2816,113 @@ func TestFilterClientWebSearch_EmptyInput(t *testing.T) {
 	result := filterClientWebSearch(nil)
 	if len(result) != 0 {
 		t.Fatalf("len(result) = %d, want 0", len(result))
+	}
+}
+
+type overflowProvider struct {
+	calls        int
+	lastMessages []providers.Message
+	chatFunc     func(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error)
+}
+
+func (p *overflowProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	p.calls++
+	p.lastMessages = append([]providers.Message(nil), messages...)
+
+	if p.chatFunc != nil {
+		return p.chatFunc(ctx, messages, tools, model, opts)
+	}
+
+	if p.calls == 1 {
+		return nil, errors.New("context_window_exceeded")
+	}
+
+	return &providers.LLMResponse{
+		Content: "Recovered from overflow",
+	}, nil
+}
+
+func (p *overflowProvider) GetDefaultModel() string {
+	return "test-model"
+}
+
+func TestProcessMessage_ContextOverflowRecovery(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	_ = cfg
+
+	provider := &overflowProvider{}
+	al.registry = NewAgentRegistry(al.cfg, provider)
+
+	sessionKey := "agent:main:test-session"
+	agent := al.GetRegistry().GetDefaultAgent()
+
+	for i := 0; i < 5; i++ {
+		agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "heavy message"})
+		agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "assistant", Content: "response"})
+	}
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:    "test",
+		ChatID:     "chat1",
+		SenderID:   "user1",
+		SessionKey: "test-session",
+		Content:    "trigger recovery",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Recovered from overflow" {
+		t.Fatalf("response = %q, want %q", response, "Recovered from overflow")
+	}
+
+	if provider.calls != 2 {
+		t.Fatalf("expected 2 calls, got %d", provider.calls)
+	}
+}
+
+func TestProcessMessage_ContextOverflow_AnthropicStyle(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	_ = cfg
+
+	provider := &overflowProvider{}
+	al.registry = NewAgentRegistry(al.cfg, provider)
+
+	recoveryMsg := "error: status 400: context_window_exceeded"
+
+	provider.chatFunc = func(
+		ctx context.Context,
+		messages []providers.Message,
+		tools []providers.ToolDefinition,
+		model string,
+		opts map[string]any,
+	) (*providers.LLMResponse, error) {
+		if provider.calls == 1 {
+			return nil, errors.New(recoveryMsg)
+		}
+		return &providers.LLMResponse{Content: "Anthropic recovery success"}, nil
+	}
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "test",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "hello",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if !strings.Contains(response, "Anthropic recovery success") {
+		t.Fatalf("response = %q, want success message", response)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("expected 2 calls for retry, got %d", provider.calls)
 	}
 }

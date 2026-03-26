@@ -103,10 +103,12 @@ func NewAgentInstance(
 	sessions := initSessionStore(sessionsDir)
 
 	mcpDiscoveryActive := cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled
-	contextBuilder := NewContextBuilder(workspace).WithToolDiscovery(
-		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
-		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
-	)
+	contextBuilder := NewContextBuilder(workspace).
+		WithToolDiscovery(
+			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
+			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
+		).
+		WithSplitOnMarker(cfg.Agents.Defaults.SplitOnMarker)
 
 	agentID := routing.DefaultAgentID
 	agentName := ""

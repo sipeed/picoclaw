@@ -402,10 +402,7 @@ func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (s
 		return "", nil
 	}
 
-	text := phCfg.Text
-	if text == "" {
-		text = "Thinking... 💭"
-	}
+	text := phCfg.GetRandomText()
 
 	cid, threadID, err := parseTelegramChatID(chatID)
 	if err != nil {
