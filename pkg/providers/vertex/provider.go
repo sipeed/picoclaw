@@ -87,7 +87,14 @@ func (p *Provider) buildURL(model string, action string) string {
 		if region == "" {
 			region = "us-central1"
 		}
-		baseURL = fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:%s", region, p.projectID, region, model, action)
+		baseURL = fmt.Sprintf(
+			"https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:%s",
+			region,
+			p.projectID,
+			region,
+			model,
+			action,
+		)
 	}
 
 	// Only append ?key= for custom apiBase endpoints
@@ -438,7 +445,11 @@ func (p *Provider) ChatStream(
 				if part.FunctionCall != nil {
 					argsJSON, _ := json.Marshal(part.FunctionCall.Args)
 					toolCall := ToolCall{
-						ID:        fmt.Sprintf("call_%s_%d", part.FunctionCall.Name, time.Now().UnixNano()),
+						ID: fmt.Sprintf(
+							"call_%s_%d",
+							part.FunctionCall.Name,
+							time.Now().UnixNano(),
+						),
 						Name:      part.FunctionCall.Name,
 						Arguments: part.FunctionCall.Args,
 						Function: &FunctionCall{
