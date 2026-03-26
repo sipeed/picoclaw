@@ -184,7 +184,13 @@ func TestProviderChat_ParsesLongCatMarkupToolCalls(t *testing.T) {
 		}),
 	}
 
-	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "longcat/LongCat-Flash-Thinking", nil)
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"longcat/LongCat-Flash-Thinking",
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
