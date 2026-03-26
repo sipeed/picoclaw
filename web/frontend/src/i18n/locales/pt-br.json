@@ -1,0 +1,534 @@
+{
+  "navigation": {
+    "chat": "Chat",
+    "model_group": "Modelos",
+    "models": "Modelos",
+    "credentials": "Credenciais",
+    "agent_group": "Agente",
+    "skills": "Skills",
+    "tools": "Ferramentas",
+    "services": "Serviços",
+    "channels_group": "Canais",
+    "show_more_channels": "Mais",
+    "show_less_channels": "Menos",
+    "config": "Configuração",
+    "logs": "Logs"
+  },
+  "chat": {
+    "welcome": "Como posso te ajudar hoje?",
+    "welcomeDesc": "Pergunte sobre clima, configurações ou qualquer outra tarefa. Estou aqui para ajudar.",
+    "placeholder": "Digite uma mensagem...\nEnter para enviar, Shift + Enter para nova linha",
+    "newChat": "Novo Chat",
+    "notConnected": "O Gateway não está rodando. Inicie-o para conversar.",
+    "thinking": {
+      "step1": "Pensando...",
+      "step2": "Analisando sua solicitação...",
+      "step3": "Preparando resposta...",
+      "step4": "Quase lá..."
+    },
+    "history": "Histórico",
+    "noHistory": "Nenhum histórico de chat ainda",
+    "historyLoadFailed": "Falha ao carregar histórico de chat",
+    "historyOpenFailed": "Falha ao abrir este histórico de chat",
+    "loadingMore": "Carregando mais...",
+    "deleteSession": "Excluir sessão",
+    "messagesCount": "{{count}} mensagens",
+    "noModel": "Selecionar modelo",
+    "empty": {
+      "noConfiguredModel": "Nenhum Modelo Configurado",
+      "noConfiguredModelDescription": "Você precisa configurar pelo menos um modelo de IA com uma API Key antes de iniciar o chat.",
+      "goToModels": "Ir para Modelos",
+      "noSelectedModel": "Nenhum Modelo Selecionado",
+      "noSelectedModelDescription": "Você tem modelos configurados, mas nenhum está definido como padrão. Selecione um modelo antes de iniciar o chat.",
+      "notRunning": "Gateway Não Está Rodando",
+      "notRunningDescription": "Inicie o serviço de gateway para começar a conversar. Use o botão Iniciar Gateway na barra superior."
+    },
+    "modelGroup": {
+      "apikey": "API Key",
+      "oauth": "OAuth",
+      "local": "Local"
+    }
+  },
+  "header": {
+    "gateway": {
+      "stopDialog": {
+        "title": "Parar o Serviço de Gateway?",
+        "description": "Tem certeza de que deseja parar o gateway? Isso desconectará suas sessões de chat ativas e interromperá a inferência.",
+        "confirm": "Parar Gateway"
+      },
+      "action": {
+        "start": "Iniciar Gateway",
+        "stop": "Parar Gateway",
+        "restart": "Reiniciar Gateway"
+      },
+      "status": {
+        "starting": "Iniciando Gateway...",
+        "restarting": "Reiniciando Gateway...",
+        "stopping": "Parando Gateway..."
+      },
+      "restartRequired": "Alterações no modelo requerem reiniciar o gateway para ter efeito."
+    }
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "save": "Salvar",
+    "saving": "Salvando...",
+    "reset": "Redefinir",
+    "confirm": "Confirmar"
+  },
+  "labels": {
+    "loading": "Carregando..."
+  },
+  "credentials": {
+    "description": "Gerencie credenciais OAuth e baseadas em token para provedores compatíveis.",
+    "loading": "Carregando credenciais...",
+    "providers": {
+      "openai": {
+        "description": "Suporta OAuth pelo navegador, código de dispositivo e login por token."
+      },
+      "anthropic": {
+        "description": "Usa login por token para acesso ao Claude."
+      },
+      "antigravity": {
+        "description": "Usa OAuth pelo navegador para Google Cloud Code Assist."
+      }
+    },
+    "status": {
+      "connected": "Conectado",
+      "needsRefresh": "Precisa atualizar",
+      "expired": "Expirado",
+      "notLoggedIn": "Não conectado"
+    },
+    "actions": {
+      "browser": "OAuth pelo Navegador",
+      "deviceCode": "Código do Dispositivo",
+      "stopLoading": "Parar Carregamento",
+      "saveToken": "Salvar",
+      "logout": "Sair"
+    },
+    "logoutDialog": {
+      "title": "Sair do provedor?",
+      "description": "Isso removerá sua credencial salva para {{provider}}."
+    },
+    "fields": {
+      "openaiToken": "Token OpenAI",
+      "anthropicToken": "Token Anthropic"
+    },
+    "labels": {
+      "account": "Conta",
+      "email": "E-mail",
+      "project": "Projeto"
+    },
+    "errors": {
+      "loadFailed": "Falha ao carregar credenciais",
+      "flowFailed": "Falha ao verificar fluxo de autenticação",
+      "loginFailed": "Falha no login",
+      "logoutFailed": "Falha ao sair",
+      "invalidBrowserResponse": "Resposta inválida do login pelo navegador",
+      "invalidDeviceResponse": "Resposta inválida do código de dispositivo",
+      "popupBlocked": "Não foi possível abrir uma nova aba. Permita popups e tente novamente."
+    },
+    "flow": {
+      "current": "Status atual de autenticação",
+      "pending": "Aguardando autorização...",
+      "success": "Autenticação bem-sucedida",
+      "error": "Falha na autenticação",
+      "expired": "Sessão de autenticação expirada"
+    },
+    "device": {
+      "title": "Login por Dispositivo OpenAI",
+      "description": "Abra a página de verificação e insira o código abaixo. Esta página será atualizada automaticamente.",
+      "code": "Código do Usuário",
+      "url": "URL de Verificação",
+      "polling": "Verificando status de login...",
+      "open": "Abrir Página de Verificação"
+    }
+  },
+  "models": {
+    "description": "Configure API Keys para provedores de IA. Apenas modelos configurados estarão disponíveis para chat.",
+    "loadError": "Falha ao carregar modelos",
+    "noDefaultHintPrefix": "Nenhum modelo padrão definido. Clique em",
+    "noDefaultHintSuffix": "para definir um.",
+    "status": {
+      "configured": "Configurado",
+      "unconfigured": "Não configurado"
+    },
+    "badge": {
+      "default": "Padrão",
+      "virtual": "Virtual"
+    },
+    "action": {
+      "edit": "Editar API Key",
+      "setDefault": "Definir como padrão",
+      "delete": "Excluir modelo"
+    },
+    "defaultOnSave": {
+      "label": "Modelo Padrão",
+      "description": "Definir automaticamente este modelo como padrão após salvar."
+    },
+    "add": {
+      "button": "Adicionar Modelo",
+      "title": "Adicionar Modelo Personalizado",
+      "description": "Adicione um endpoint de modelo compatível com OpenAI ou nativo.",
+      "modelName": "Nome do Modelo",
+      "modelNamePlaceholder": "ex: meu-gpt4",
+      "modelNameHint": "Um nome curto usado para identificar este modelo nas conversas.",
+      "modelId": "Identificador do Modelo",
+      "modelIdPlaceholder": "ex: openai/gpt-4o",
+      "modelIdHint": "Formato: protocolo/id-modelo. Suportados: openai, anthropic, gemini, groq, …",
+      "errorRequired": "Este campo é obrigatório.",
+      "errorDuplicateModelName": "Este nome já existe. Use um nome diferente.",
+      "saveError": "Falha ao adicionar modelo",
+      "confirm": "Adicionar Modelo"
+    },
+    "delete": {
+      "title": "Excluir Modelo?",
+      "description": "\"{{name}}\" será removido permanentemente da sua lista de modelos. Isso não pode ser desfeito.",
+      "confirm": "Excluir"
+    },
+    "advanced": {
+      "toggle": "Opções avançadas"
+    },
+    "field": {
+      "apiBase": "URL Base da API",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "Insira sua API Key",
+      "apiKeyPlaceholderSet": "Deixe em branco para manter a chave atual",
+      "proxy": "Proxy HTTP",
+      "proxyHint": "Opcional. ex: http://127.0.0.1:7890",
+      "authMethod": "Método de Autenticação",
+      "authMethodHint": "Método de autenticação: oauth, token. Deixe em branco para autenticação por API Key.",
+      "connectMode": "Modo de Conexão",
+      "connectModeHint": "Modo de conexão para provedores via CLI: stdio ou grpc.",
+      "workspace": "Diretório de Trabalho",
+      "workspaceHint": "Diretório de trabalho para provedores via CLI (ex: GitHub Copilot).",
+      "requestTimeout": "Timeout da Requisição (s)",
+      "requestTimeoutHint": "Máximo de segundos para aguardar uma resposta. 0 = usar padrão.",
+      "rpm": "Limite de Taxa (RPM)",
+      "rpmHint": "Máximo de requisições por minuto. 0 = sem limite.",
+      "thinkingLevel": "Nível de Raciocínio",
+      "thinkingLevelHint": "Orçamento de raciocínio estendido: off, low, medium, high, xhigh, adaptive.",
+      "maxTokensField": "Campo de Max Tokens",
+      "maxTokensFieldHint": "Sobrescrever o nome do campo de max tokens na requisição, ex: max_completion_tokens.",
+      "extraBody": "Corpo Extra",
+      "extraBodyHint": "Campos JSON adicionais para injetar no corpo da requisição, ex: {\"reasoning_split\": true}."
+    },
+    "edit": {
+      "title": "Configurar {{name}}",
+      "apiKeyHint": "Uma chave já está definida. Deixe em branco para mantê-la.",
+      "oauthNote": "Este provedor usa OAuth — não é necessária API Key.",
+      "saveError": "Falha ao salvar"
+    }
+  },
+  "channels": {
+    "loadError": "Falha ao carregar canais",
+    "edit": "Configurar {{name}}",
+    "status": {
+      "configured": "Configurado"
+    },
+    "name": {
+      "telegram": "Telegram",
+      "discord": "Discord",
+      "slack": "Slack",
+      "feishu": "Feishu",
+      "dingtalk": "DingTalk",
+      "line": "LINE",
+      "qq": "QQ",
+      "onebot": "OneBot",
+      "wecom": "WeCom",
+      "whatsapp": "WhatsApp",
+      "whatsapp_native": "WhatsApp Nativo",
+      "pico": "Web",
+      "maixcam": "MaixCam",
+      "matrix": "Matrix",
+      "irc": "IRC",
+      "weixin": "WeChat"
+    },
+    "weixin": {
+      "warningTitle": "Fase de testes, use com cautela",
+      "warningDesc": "O canal do WeChat ainda é experimental e pode ter risco de suspensão de conta. Use apenas se você entende e aceita o risco.",
+      "bindTitle": "Vinculação de Conta WeChat",
+      "bindDesc": "Escaneie o QR code com o WeChat para vincular sua conta pessoal.",
+      "bind": "Vincular WeChat",
+      "rebind": "Revincular",
+      "bound": "WeChat Vinculado",
+      "notBound": "Conta WeChat ainda não vinculada.",
+      "generating": "Gerando QR code...",
+      "scanHint": "Abra o WeChat e escaneie o QR code",
+      "scanned": "Escaneado — confirme no WeChat",
+      "expired": "QR code expirado",
+      "retry": "Tentar Novamente",
+      "refresh": "Atualizar QR",
+      "errorGeneric": "Ocorreu um erro. Tente novamente."
+    },
+    "wecom": {
+      "bindTitle": "Vinculação WeCom",
+      "bindDesc": "Escaneie o QR code com o WeCom para vincular seu AI Bot.",
+      "enableDesc": "Após vincular, você pode habilitar ou desabilitar o canal aqui.",
+      "enableBindFirst": "Vincule o bot primeiro, depois habilite o canal.",
+      "bind": "Vincular WeCom",
+      "rebind": "Revincular",
+      "bound": "WeCom Vinculado",
+      "notBound": "AI Bot do WeCom ainda não vinculado.",
+      "generating": "Gerando QR code...",
+      "scanHint": "Abra o WeCom e escaneie o QR code",
+      "scanned": "Escaneado, confirme no WeCom",
+      "expired": "QR code expirado",
+      "retry": "Tentar Novamente",
+      "refresh": "Atualizar QR",
+      "errorGeneric": "Ocorreu um erro. Tente novamente."
+    },
+    "field": {
+      "token": "Token do Bot",
+      "tokenPlaceholder": "Insira o token do bot",
+      "botToken": "Token do Bot",
+      "appToken": "Token do App",
+      "appId": "ID do App",
+      "appSecret": "Segredo do App",
+      "verificationToken": "Token de Verificação",
+      "encryptKey": "Chave de Criptografia",
+      "baseUrl": "URL Base da API",
+      "proxy": "Proxy HTTP",
+      "mentionOnly": "Apenas Menções",
+      "typingEnabled": "Indicador de Digitação",
+      "placeholderEnabled": "Mensagem Provisória",
+      "placeholderText": "Texto Provisório",
+      "groupTriggerMentionOnly": "Apenas Menções em Grupo",
+      "groupTriggerPrefixes": "Prefixos de Ativação em Grupo",
+      "isLark": "Lark (Internacional)",
+      "allowFrom": "Permitir De",
+      "allowFromPlaceholder": "ex: 123456, 789012",
+      "allowOrigins": "Origens Permitidas",
+      "allowOriginsPlaceholder": "ex: https://exemplo.com, http://localhost:5173",
+      "secretPlaceholder": "Insira o segredo",
+      "secretHintSet": "Um valor já está definido. Deixe em branco para mantê-lo."
+    },
+    "page": {
+      "notFound": "Canal \"{{name}}\" não é suportado.",
+      "saveSuccess": "Configuração do canal salva.",
+      "saveError": "Falha ao salvar configuração do canal",
+      "enabled": "habilitado",
+      "docLink": "Documentação",
+      "enableLabel": "Habilitar canal",
+      "restartRequiredTitle": "Reinicialização do gateway necessária",
+      "restartRequiredDesc": "A configuração mais recente de {{name}} foi salva. Reinicie o gateway para que ela entre em vigor."
+    },
+    "form": {
+      "desc": {
+        "token": "Token de acesso do bot usado para conectar à API da plataforma.",
+        "botToken": "Token do bot usado para enviar e receber mensagens.",
+        "appToken": "Token do app usado para conexões em Socket Mode.",
+        "appId": "ID único do aplicativo usado para autenticação.",
+        "appSecret": "Segredo do aplicativo usado para assinatura e autenticação.",
+        "verificationToken": "Token de verificação para callbacks de eventos.",
+        "encryptKey": "Chave de criptografia usada para descriptografar payloads de callback.",
+        "baseUrl": "URL base da API da plataforma. O endpoint oficial é usado por padrão.",
+        "proxy": "Endereço de proxy HTTP para acesso à rede externa.",
+        "mentionOnly": "Responder apenas quando o bot for explicitamente mencionado em chats de grupo.",
+        "typingEnabled": "Exibir status de digitação enquanto o assistente está gerando uma resposta.",
+        "placeholderEnabled": "Habilitar mensagens provisórias temporárias antes da resposta final ser enviada.",
+        "groupTriggerMentionOnly": "Em chats de grupo, responder apenas quando o bot for mencionado.",
+        "groupTriggerPrefixes": "Prefixos personalizados de ativação em grupo, separados por vírgulas.",
+        "isLark": "Usar domínio internacional Lark (open.larksuite.com) em vez do domínio Feishu (open.feishu.cn).",
+        "allowFrom": "IDs de usuários ou grupos permitidos, separados por vírgulas.",
+        "allowOrigins": "Domínios de origem permitidos, separados por vírgulas.",
+        "wsUrl": "URL do serviço WebSocket.",
+        "reconnectInterval": "Intervalo de reconexão após desconexão (segundos).",
+        "bridgeUrl": "URL do serviço de bridge.",
+        "sessionStorePath": "Caminho local para armazenamento de sessão.",
+        "useNative": "Usar modo de cliente nativo.",
+        "host": "Endereço do host do serviço.",
+        "port": "Porta do serviço.",
+        "homeserver": "URL do homeserver Matrix.",
+        "userId": "ID de usuário da conta.",
+        "deviceId": "ID do dispositivo.",
+        "joinOnInvite": "Entrar automaticamente em salas quando convidado.",
+        "clientId": "Client ID usado para autenticação na plataforma.",
+        "corpId": "Corp ID da empresa.",
+        "agentId": "Agent ID do aplicativo empresarial.",
+        "webhookUrl": "URL completa do webhook.",
+        "webhookHost": "Host de escuta do webhook.",
+        "webhookPort": "Porta de escuta do webhook.",
+        "webhookPath": "Caminho da rota do webhook.",
+        "replyTimeout": "Timeout de resposta em segundos.",
+        "maxSteps": "Número máximo de etapas de processamento.",
+        "welcomeMessage": "Conteúdo da mensagem de boas-vindas para novas sessões.",
+        "allowTokenQuery": "Permitir token em parâmetros de query da URL.",
+        "pingInterval": "Intervalo de heartbeat da conexão em segundos.",
+        "readTimeout": "Timeout de leitura em segundos.",
+        "writeTimeout": "Timeout de escrita em segundos.",
+        "maxConnections": "Número máximo de conexões simultâneas.",
+        "server": "Endereço do servidor IRC.",
+        "tls": "Habilitar TLS.",
+        "nick": "Apelido do bot.",
+        "user": "Nome de usuário IRC.",
+        "realName": "Nome real exibido.",
+        "channels": "Canais IRC para entrar.",
+        "requestCaps": "Lista de capabilities IRC solicitadas na conexão.",
+        "maxBase64FileSizeMiB": "Tamanho máximo em MiB para converter arquivos locais em base64 antes do upload. 0 significa ilimitado. Aplica-se apenas a arquivos locais, não uploads por URL.",
+        "genericField": "Usado para configurar {{field}}."
+      }
+    },
+    "validation": {
+      "requiredField": "Este campo é obrigatório."
+    }
+  },
+  "pages": {
+    "agent": {
+      "load_error": "Falha ao carregar informações de suporte do agente.",
+      "skills": {
+        "description": "Skills são carregadas do workspace, diretório home global do PicoClaw e diretórios internos.",
+        "empty": "Nenhuma skill disponível no momento.",
+        "import": "Importar Skill",
+        "import_success": "Skill importada.",
+        "import_error": "Falha ao importar skill.",
+        "view": "Visualizar",
+        "delete": "Excluir",
+        "delete_title": "Excluir Skill?",
+        "delete_description": "\"{{name}}\" será removida das skills do workspace.",
+        "delete_confirm": "Excluir",
+        "delete_success": "Skill excluída.",
+        "delete_error": "Falha ao excluir skill.",
+        "viewer_title": "Conteúdo da Skill",
+        "viewer_description": "Leia o conteúdo atual efetivo do SKILL.md aqui.",
+        "loading_detail": "Carregando conteúdo da skill...",
+        "load_detail_error": "Falha ao carregar conteúdo da skill.",
+        "path": "Caminho da Skill",
+        "no_description": "Sem descrição fornecida."
+      },
+      "tools": {
+        "description": "Esta visualização mostra se cada ferramenta do agente está habilitada, desabilitada ou bloqueada por um pré-requisito ausente.",
+        "empty": "Nenhuma ferramenta disponível.",
+        "enable": "Habilitar",
+        "disable": "Desabilitar",
+        "enable_success": "Ferramenta habilitada.",
+        "disable_success": "Ferramenta desabilitada.",
+        "toggle_error": "Falha ao atualizar estado da ferramenta.",
+        "config_key": "Controlado por tools.{{key}}",
+        "status": {
+          "enabled": "Habilitado",
+          "disabled": "Desabilitado",
+          "blocked": "Bloqueado"
+        },
+        "categories": {
+          "automation": "Automação",
+          "filesystem": "Sistema de Arquivos",
+          "web": "Web",
+          "communication": "Comunicação",
+          "skills": "Skills",
+          "agents": "Agentes",
+          "hardware": "Hardware",
+          "discovery": "Descoberta"
+        },
+        "reasons": {
+          "requires_linux": "Esta ferramenta funciona apenas em hosts Linux com os arquivos de dispositivo necessários expostos.",
+          "requires_skills": "Habilite `tools.skills` antes que esta ferramenta de registro de skills possa ser usada.",
+          "requires_subagent": "Habilite `tools.subagent` antes que a ferramenta spawn possa delegar trabalho.",
+          "requires_mcp_discovery": "Habilite `tools.mcp.discovery` antes que as ferramentas de descoberta MCP fiquem disponíveis."
+        }
+      }
+    },
+    "config": {
+      "load_error": "Falha ao carregar configuração. Atualize a página e tente novamente.",
+      "workspace": "Diretório de Trabalho",
+      "workspace_hint": "Diretório base para operações de arquivo do agente.",
+      "restrict_workspace": "Restringir ao Workspace",
+      "restrict_workspace_hint": "Permitir apenas operações de arquivo dentro do workspace.",
+      "split_on_marker": "Modo Conversacional",
+      "split_on_marker_hint": "Dividir mensagens longas em curtas como uma conversa humana real.",
+      "tool_feedback_enabled": "Feedback de Ferramentas",
+      "tool_feedback_enabled_hint": "Enviar uma prévia curta da chamada de ferramenta no chat atual antes de cada execução.",
+      "tool_feedback_max_args_length": "Tamanho da Prévia de Argumentos",
+      "tool_feedback_max_args_length_hint": "Número máximo de caracteres de argumentos mostrados em cada mensagem de feedback. 0 para usar o padrão.",
+      "exec_enabled": "Permitir Comandos",
+      "exec_enabled_hint": "Habilitar ou desabilitar execução de comandos. Quando desabilitado, nenhuma solicitação de comando será executada.",
+      "allow_remote": "Permitir Comandos Remotos",
+      "allow_remote_hint": "Quando habilitado, sessões remotas também podem executar comandos. Quando desabilitado, a execução fica limitada a contextos locais seguros.",
+      "enable_deny_patterns": "Habilitar Lista Negra",
+      "enable_deny_patterns_hint": "Quando habilitado, bloqueia comandos que correspondam aos padrões perigosos internos e à lista negra personalizada abaixo.",
+      "exec_timeout_seconds": "Timeout de Comando (segundos)",
+      "exec_timeout_seconds_hint": "Tempo máximo de execução para comandos. 0 para usar o timeout padrão.",
+      "custom_deny_patterns": "Lista Negra de Comandos",
+      "custom_deny_patterns_hint": "Adicione regras extras de bloqueio de comandos, uma expressão regular por linha.",
+      "custom_allow_patterns": "Lista Branca de Comandos",
+      "custom_allow_patterns_hint": "Adicione regras extras de permissão de comandos, uma expressão regular por linha. Comandos correspondentes pulam a lista negra, mas outros limites de segurança ainda se aplicam.",
+      "custom_patterns_placeholder": "^rm\\s+-rf\\b\n^git\\s+push\\b",
+      "pattern_detector_title": "Ferramenta de Detecção de Padrões",
+      "pattern_detector_hint": "Insira um comando para testar se ele corresponde a algum padrão da lista negra ou branca.",
+      "pattern_detector_input_placeholder": "Insira um comando para testar, ex: rm -rf /tmp",
+      "pattern_detector_test_button": "Testar",
+      "pattern_detector_result_allowed": "Permitido (corresponde à lista branca)",
+      "pattern_detector_result_blocked": "Bloqueado (corresponde à lista negra)",
+      "pattern_detector_result_no_match": "Sem correspondência (usará regras padrão)",
+      "allow_shell_execution": "Permitir Comandos Agendados",
+      "allow_shell_execution_hint": "Permitir que tarefas agendadas executem comandos por padrão. Quando desabilitado, é necessário passar command_confirm=true para agendar uma tarefa de comando.",
+      "cron_exec_timeout": "Timeout de Comando Agendado (minutos)",
+      "cron_exec_timeout_hint": "Tempo máximo de execução para comandos agendados. 0 para desabilitar o timeout.",
+      "max_tokens": "Máximo de Tokens",
+      "max_tokens_hint": "Limite superior de tokens por resposta do modelo.",
+      "context_window": "Janela de Contexto",
+      "context_window_hint": "Capacidade de contexto de entrada do modelo em tokens. Deixe vazio para usar o padrão (4x max tokens).",
+      "max_tool_iterations": "Máximo de Iterações de Ferramentas",
+      "max_tool_iterations_hint": "Máximo de loops de chamadas de ferramentas em uma única tarefa.",
+      "summarize_threshold": "Limite para Resumo de Mensagens",
+      "summarize_threshold_hint": "Iniciar resumo após esta quantidade de mensagens.",
+      "summarize_token_percent": "Percentual de Tokens para Resumo",
+      "summarize_token_percent_hint": "Usado quando o resumo da conversa é acionado.",
+      "session_scope": "Escopo da Sessão",
+      "session_scope_hint": "Como o contexto do chat é isolado entre pares/canais.",
+      "session_scope_per_channel_peer": "Por Canal + Usuário",
+      "session_scope_per_channel_peer_desc": "Contexto separado para cada usuário em cada canal.",
+      "session_scope_per_channel": "Por Canal",
+      "session_scope_per_channel_desc": "Um contexto compartilhado por canal.",
+      "session_scope_per_peer": "Por Usuário",
+      "session_scope_per_peer_desc": "Um contexto por usuário em todos os canais.",
+      "session_scope_global": "Global",
+      "session_scope_global_desc": "Todas as mensagens compartilham um único contexto global.",
+      "heartbeat_enabled": "Heartbeat",
+      "heartbeat_enabled_hint": "Enviar mensagens periódicas de heartbeat.",
+      "heartbeat_interval": "Intervalo de Heartbeat (minutos)",
+      "heartbeat_interval_hint": "Intervalo em minutos entre sinais de heartbeat.",
+      "devices_enabled": "Habilitar Dispositivos",
+      "devices_enabled_hint": "Habilitar integrações com dispositivos de hardware.",
+      "monitor_usb": "Monitorar USB",
+      "monitor_usb_hint": "Observar eventos de conexão/desconexão USB quando dispositivos estão habilitados.",
+      "autostart_label": "Iniciar no Login",
+      "autostart_hint": "Iniciar o PicoClaw Web automaticamente ao fazer login.",
+      "autostart_unsupported": "Iniciar no login não é suportado nesta plataforma.",
+      "autostart_load_error": "Falha ao carregar status de inicialização automática.",
+      "server_port": "Porta do Serviço",
+      "server_port_hint": "Porta HTTP usada pelo PicoClaw Web.",
+      "lan_access": "Habilitar Acesso LAN",
+      "lan_access_hint": "Permitir acesso de outros dispositivos na sua rede local.",
+      "allowed_cidrs": "CIDRs de Rede Permitidos",
+      "allowed_cidrs_hint": "Apenas clientes destes intervalos CIDR podem acessar o serviço. Um por linha ou separados por vírgula. Deixe vazio para permitir todos.",
+      "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
+      "sections": {
+        "agent": "Agente",
+        "runtime": "Execução",
+        "exec": "Executar Comandos",
+        "cron": "Tarefas Cron",
+        "launcher": "Serviço",
+        "devices": "Dispositivos"
+      },
+      "open_raw": "Config Bruta",
+      "back_to_visual": "Config Visual",
+      "raw_json_title": "Configuração JSON Bruta",
+      "json_placeholder": "Insira configuração JSON válida...",
+      "save_success": "Configuração salva com sucesso.",
+      "save_error": "Falha ao salvar configuração.",
+      "reset_confirm_title": "Redefinir Alterações",
+      "reset_confirm_desc": "Tem certeza de que deseja redefinir suas alterações não salvas para o último estado salvo?",
+      "reset_success": "Alterações redefinidas para o último estado salvo.",
+      "invalid_json": "Formato JSON inválido.",
+      "format_success": "JSON formatado com sucesso.",
+      "format_error": "Formato JSON inválido.",
+      "format": "Formatar",
+      "unsaved_changes": "Você tem alterações não salvas."
+    },
+    "logs": {
+      "clear": "Limpar logs",
+      "empty": "Aguardando logs..."
+    }
+  }
+}

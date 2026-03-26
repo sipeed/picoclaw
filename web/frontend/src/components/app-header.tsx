@@ -288,6 +288,9 @@ export function AppHeader() {
             <DropdownMenuItem onClick={() => i18n.changeLanguage("en")}>
               English
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => i18n.changeLanguage("pt-BR")}>
+              Português (Brasil)
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => i18n.changeLanguage("zh")}>
               简体中文
             </DropdownMenuItem>
