@@ -74,6 +74,7 @@ UNAME_S:=$(shell uname -s)
 UNAME_M:=$(shell uname -m)
 
 # Platform-specific settings
+EXE=
 ifeq ($(UNAME_S),Linux)
 	PLATFORM=linux
 	ifeq ($(UNAME_M),x86_64)
@@ -101,12 +102,22 @@ else ifeq ($(UNAME_S),Darwin)
 	else
 		ARCH=$(UNAME_M)
 	endif
+else ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME_S)))
+	PLATFORM=windows
+	EXE=.exe
+	ifeq ($(UNAME_M),x86_64)
+		ARCH=amd64
+	else ifeq ($(UNAME_M),aarch64)
+		ARCH=arm64
+	else
+		ARCH=$(UNAME_M)
+	endif
 else
 	PLATFORM=$(UNAME_S)
 	ARCH=$(UNAME_M)
 endif
 
-BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
+BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXE)
 
 # Default target
 all: build
@@ -124,7 +135,7 @@ build: generate
 	@mkdir -p $(BUILD_DIR)
 	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)"
-	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
+	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXE) $(BUILD_DIR)/$(BINARY_NAME)$(EXE)
 
 ## build-launcher: Build the picoclaw-launcher (web console) binary
 build-launcher:
