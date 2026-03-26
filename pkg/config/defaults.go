@@ -39,7 +39,7 @@ func DefaultConfig() *Config {
 				SummarizeTokenPercent:     75,
 				SteeringMode:              "one-at-a-time",
 				ToolFeedback: ToolFeedbackConfig{
-					Enabled:       true,
+					Enabled:       false,
 					MaxArgsLength: 300,
 				},
 				SplitOnMarker: false,
