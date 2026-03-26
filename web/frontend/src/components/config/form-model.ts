@@ -14,6 +14,9 @@ export interface CoreConfigForm {
   execTimeoutSeconds: string
   allowCommand: boolean
   cronExecTimeoutMinutes: string
+  braveAPIKey: string
+  tavilyAPIKey: string
+  perplexityAPIKey: string
   glmSearchAPIKey: string
   baiduSearchAPIKey: string
   maxTokens: string
@@ -79,6 +82,9 @@ export const EMPTY_FORM: CoreConfigForm = {
   execTimeoutSeconds: "0",
   allowCommand: true,
   cronExecTimeoutMinutes: "5",
+  braveAPIKey: "",
+  tavilyAPIKey: "",
+  perplexityAPIKey: "",
   glmSearchAPIKey: "",
   baiduSearchAPIKey: "",
   maxTokens: "32768",
@@ -133,6 +139,9 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
   const devices = asRecord(root.devices)
   const tools = asRecord(root.tools)
   const web = asRecord(tools.web)
+  const brave = asRecord(web.brave)
+  const tavily = asRecord(web.tavily)
+  const perplexity = asRecord(web.perplexity)
   const glmSearch = asRecord(web.glm_search)
   const baiduSearch = asRecord(web.baidu_search)
   const cron = asRecord(tools.cron)
@@ -191,6 +200,9 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       cron.exec_timeout_minutes,
       EMPTY_FORM.cronExecTimeoutMinutes,
     ),
+    braveAPIKey: asString(brave.api_key),
+    tavilyAPIKey: asString(tavily.api_key),
+    perplexityAPIKey: asString(perplexity.api_key),
     glmSearchAPIKey: asString(glmSearch.api_key),
     baiduSearchAPIKey: asString(baiduSearch.api_key),
     maxTokens: asNumberString(defaults.max_tokens, EMPTY_FORM.maxTokens),
