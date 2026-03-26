@@ -95,14 +95,16 @@ function buildSavePayload(
     if (key.startsWith("_")) continue
     if (key === "enabled") continue
 
-    if (key in SECRET_FIELD_MAP) {
-      const editKey = SECRET_FIELD_MAP[key]
-      const incoming = asString(editConfig[editKey])
-      payload[key] = incoming !== "" ? incoming : value
-      continue
-    }
-
     payload[key] = value
+  }
+
+  for (const [key, editKey] of Object.entries(SECRET_FIELD_MAP)) {
+    if (editKey in editConfig) {
+      const incoming = asString(editConfig[editKey])
+      if (incoming !== "") {
+        payload[key] = incoming
+      }
+    }
   }
 
   if (channel.name === "whatsapp_native") {

@@ -2762,8 +2762,8 @@ func (al *AgentLoop) selectCandidates(
 	if targetModelName == agent.Model {
 		logger.DebugCF("agent", "Model routing: primary model selected",
 			map[string]any{
-				"agent_id":  agent.ID,
-				"score":     score,
+				"agent_id": agent.ID,
+				"score":    score,
 			})
 		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
 	}
