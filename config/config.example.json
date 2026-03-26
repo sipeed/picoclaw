@@ -5,10 +5,12 @@
       "restrict_to_workspace": true,
       "model_name": "gpt-5.4",
       "max_tokens": 8192,
+      "context_window": 131072,
       "temperature": 0.7,
       "max_tool_iterations": 20,
       "summarize_message_threshold": 20,
       "summarize_token_percent": 75,
+      "split_on_marker": false,
       "tool_feedback": {
         "enabled": false,
         "max_args_length": 300
@@ -128,6 +130,10 @@
       "encrypt_key": "",
       "verification_token": "",
       "allow_from": [],
+      "placeholder": {
+        "enabled": true,
+        "text": ["Thinking...", "Processing...", "Typing..."]
+      },
       "reasoning_channel_id": "",
       "random_reaction_emoji": [],
       "is_lark": false
@@ -159,9 +165,11 @@
       },
       "placeholder": {
         "enabled": true,
-        "text": "Thinking... 💭"
+        "text": ["Thinking...", "Processing...", "Typing..."]
       },
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "crypto_database_path": "",
+      "crypto_passphrase": "YOUR_MATRIX_CRYPTO_PICKLE_KEY"
     },
     "line": {
       "enabled": false,
@@ -181,39 +189,13 @@
       "reasoning_channel_id": ""
     },
     "wecom": {
-      "_comment": "WeCom Bot - Easier setup, supports group chats",
-      "enabled": false,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_path": "/webhook/wecom",
-      "allow_from": [],
-      "reply_timeout": 5,
-      "reasoning_channel_id": ""
-    },
-    "wecom_app": {
-      "_comment": "WeCom App (自建应用) - More features, proactive messaging, private chat only.",
-      "enabled": false,
-      "corp_id": "YOUR_CORP_ID",
-      "corp_secret": "YOUR_CORP_SECRET",
-      "agent_id": 1000002,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-app",
-      "allow_from": [],
-      "reply_timeout": 5,
-      "reasoning_channel_id": ""
-    },
-    "wecom_aibot": {
-      "_comment": "WeCom AI Bot (智能机器人) - Official WeCom AI Bot integration, supports proactive messaging and private chats.",
+      "_comment": "WeCom AI Bot over WebSocket.",
       "enabled": false,
       "bot_id": "YOUR_BOT_ID",
       "secret": "YOUR_SECRET",
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-aibot",
-      "max_steps": 10,
-      "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
+      "websocket_url": "wss://openws.work.weixin.qq.com",
+      "send_thinking_message": true,
+      "allow_from": [],
       "reasoning_channel_id": ""
     },
     "pico": {
@@ -246,13 +228,8 @@
       "nickserv_password": "",
       "sasl_user": "",
       "sasl_password": "",
-      "channels": [
-        "#mychannel"
-      ],
-      "request_caps": [
-        "server-time",
-        "message-tags"
-      ],
+      "channels": ["#mychannel"],
+      "request_caps": ["server-time", "message-tags"],
       "allow_from": [],
       "group_trigger": {
         "mention_only": true
@@ -261,79 +238,6 @@
         "enabled": false
       },
       "reasoning_channel_id": ""
-    }
-  },
-  "providers": {
-    "_comment": "DEPRECATED: Use model_list instead. This will be removed in a future version",
-    "anthropic": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "openai": {
-      "api_key": "",
-      "api_base": "",
-      "web_search": true
-    },
-    "openrouter": {
-      "api_key": "sk-or-v1-xxx",
-      "api_base": ""
-    },
-    "groq": {
-      "api_key": "gsk_xxx",
-      "api_base": ""
-    },
-    "zhipu": {
-      "api_key": "YOUR_ZHIPU_API_KEY",
-      "api_base": ""
-    },
-    "gemini": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "vllm": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "nvidia": {
-      "api_key": "nvapi-xxx",
-      "api_base": "",
-      "proxy": "http://127.0.0.1:7890"
-    },
-    "moonshot": {
-      "api_key": "sk-xxx",
-      "api_base": ""
-    },
-    "qwen": {
-      "api_key": "sk-xxx",
-      "api_base": ""
-    },
-    "ollama": {
-      "api_key": "",
-      "api_base": "http://localhost:11434/v1"
-    },
-    "cerebras": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "volcengine": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "mistral": {
-      "api_key": "",
-      "api_base": "https://api.mistral.ai/v1"
-    },
-    "avian": {
-      "api_key": "",
-      "api_base": "https://api.avian.io/v1"
-    },
-    "longcat": {
-      "api_key": "",
-      "api_base": "https://api.longcat.chat/openai"
-    },
-    "modelscope": {
-      "api_key": "",
-      "api_base": "https://api-inference.modelscope.cn/v1"
     }
   },
   "tools": {
@@ -347,9 +251,7 @@
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
-        "api_keys": [
-          "YOUR_BRAVE_API_KEY"
-        ],
+        "api_keys": ["YOUR_BRAVE_API_KEY"],
         "max_results": 5
       },
       "tavily": {
@@ -365,9 +267,7 @@
       "perplexity": {
         "enabled": false,
         "api_key": "pplx-xxx",
-        "api_keys": [
-          "pplx-xxx"
-        ],
+        "api_keys": ["pplx-xxx"],
         "max_results": 5
       },
       "searxng": {
@@ -381,6 +281,12 @@
         "base_url": "https://open.bigmodel.cn/api/paas/v4/web_search",
         "search_engine": "search_std",
         "max_results": 5
+      },
+      "baidu_search": {
+        "enabled": false,
+        "api_key": "",
+        "base_url": "https://qianfan.baidubce.com/v2/ai_search/web_search",
+        "max_results": 10
       },
       "fetch_limit_bytes": 10485760,
       "private_host_whitelist": []
@@ -410,19 +316,12 @@
         "filesystem": {
           "enabled": false,
           "command": "npx",
-          "args": [
-            "-y",
-            "@modelcontextprotocol/server-filesystem",
-            "/tmp"
-          ]
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
         },
         "github": {
           "enabled": false,
           "command": "npx",
-          "args": [
-            "-y",
-            "@modelcontextprotocol/server-github"
-          ],
+          "args": ["-y", "@modelcontextprotocol/server-github"],
           "env": {
             "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_TOKEN"
           }
@@ -430,10 +329,7 @@
         "brave-search": {
           "enabled": false,
           "command": "npx",
-          "args": [
-            "-y",
-            "@modelcontextprotocol/server-brave-search"
-          ],
+          "args": ["-y", "@modelcontextprotocol/server-brave-search"],
           "env": {
             "BRAVE_API_KEY": "YOUR_BRAVE_API_KEY"
           }
@@ -450,10 +346,7 @@
         "slack": {
           "enabled": false,
           "command": "npx",
-          "args": [
-            "-y",
-            "@modelcontextprotocol/server-slack"
-          ],
+          "args": ["-y", "@modelcontextprotocol/server-slack"],
           "env": {
             "SLACK_BOT_TOKEN": "YOUR_SLACK_BOT_TOKEN",
             "SLACK_TEAM_ID": "YOUR_SLACK_TEAM_ID"
@@ -546,11 +439,22 @@
     "monitor_usb": true
   },
   "voice": {
+    "model_name": "",
     "echo_transcription": false
   },
+  "hooks": {
+    "enabled": true,
+    "defaults": {
+      "observer_timeout_ms": 500,
+      "interceptor_timeout_ms": 5000,
+      "approval_timeout_ms": 60000
+    }
+  },
   "gateway": {
+    "_comment": "Default log level is set to 'fatal'. Other available options are 'debug', 'info', 'warn' and 'error'.",
     "host": "127.0.0.1",
     "port": 18790,
-    "hot_reload": false
+    "hot_reload": false,
+    "log_level": "fatal"
   }
 }

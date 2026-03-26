@@ -2,6 +2,7 @@ package logger
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -100,10 +101,46 @@ func SetConsoleLevel(level LogLevel) {
 	logger = logger.Level(level)
 }
 
+func DisableConsole() {
+	mu.Lock()
+	defer mu.Unlock()
+	logger = zerolog.New(io.Discard).With().Timestamp().Caller().Logger()
+}
+
 func GetLevel() LogLevel {
 	mu.RLock()
 	defer mu.RUnlock()
 	return currentLevel
+}
+
+// ParseLevel converts a case-insensitive level name to a LogLevel.
+// Returns the level and true if valid, or (INFO, false) if unrecognized.
+func ParseLevel(s string) (LogLevel, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return DEBUG, true
+	case "info":
+		return INFO, true
+	case "warn", "warning":
+		return WARN, true
+	case "error":
+		return ERROR, true
+	case "fatal":
+		return FATAL, true
+	default:
+		return INFO, false
+	}
+}
+
+// SetLevelFromString sets the log level from a string value.
+// If the string is empty or not a recognized level name, the current level is kept.
+func SetLevelFromString(s string) {
+	if s == "" {
+		return
+	}
+	if level, ok := ParseLevel(s); ok {
+		SetLevel(level)
+	}
 }
 
 func EnableFileLogging(filePath string) error {
@@ -138,6 +175,22 @@ func DisableFileLogging() {
 		logFile = nil
 	}
 	fileLogger = zerolog.Logger{}
+}
+
+func ConfigureFromEnv() {
+	if logFile := os.Getenv("PICOCLAW_LOG_FILE"); logFile != "" {
+		if strings.HasPrefix(logFile, "~/") {
+			if home := os.Getenv("HOME"); home != "" {
+				logFile = filepath.Join(home, logFile[2:])
+			}
+		}
+
+		if err := EnableFileLogging(logFile); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to enable file logging: %v\n", err)
+		} else {
+			DisableConsole()
+		}
+	}
 }
 
 func getCallerSkip() int {
@@ -226,6 +279,8 @@ func appendFields(event *zerolog.Event, fields map[string]any) {
 	for k, v := range fields {
 		// Type switch to avoid double JSON serialization of strings
 		switch val := v.(type) {
+		case error:
+			event.Str(k, val.Error())
 		case string:
 			event.Str(k, val)
 		case int:

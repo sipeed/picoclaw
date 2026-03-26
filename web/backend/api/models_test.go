@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -36,11 +38,11 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 	var ollamaProbes []string
 	var tcpProbes []string
 
-	probeOpenAICompatibleModelFunc = func(apiBase, modelID string) bool {
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
 		mu.Lock()
-		openAIProbes = append(openAIProbes, apiBase+"|"+modelID)
+		openAIProbes = append(openAIProbes, apiBase+"|"+modelID+"|"+apiKey)
 		mu.Unlock()
-		return apiBase == "http://127.0.0.1:8000/v1" && modelID == "custom-model"
+		return apiBase == "http://127.0.0.1:8000/v1" && modelID == "custom-model" && apiKey == ""
 	}
 	probeOllamaModelFunc = func(apiBase, modelID string) bool {
 		mu.Lock()
@@ -59,7 +61,7 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.ModelList = []config.ModelConfig{
+	cfg.ModelList = []*config.ModelConfig{
 		{
 			ModelName:  "openai-oauth",
 			Model:      "openai/gpt-5.4",
@@ -78,7 +80,6 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 			ModelName: "vllm-remote",
 			Model:     "vllm/custom-model",
 			APIBase:   "https://models.example.com/v1",
-			APIKey:    "remote-key",
 		},
 		{
 			ModelName:  "copilot-gpt-5.4",
@@ -87,6 +88,11 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 			AuthMethod: "oauth",
 		},
 	}
+	cfg.WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
+		"vllm-remote": {
+			APIKeys: []string{"remote-key"},
+		},
+	}})
 	cfg.Agents.Defaults.ModelName = "openai-oauth"
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
@@ -131,7 +137,7 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 	if !got["copilot-gpt-5.4"] {
 		t.Fatalf("copilot model configured = false, want true when local bridge probe succeeds")
 	}
-	if len(openAIProbes) != 1 || openAIProbes[0] != "http://127.0.0.1:8000/v1|custom-model" {
+	if len(openAIProbes) != 1 || openAIProbes[0] != "http://127.0.0.1:8000/v1|custom-model|" {
 		t.Fatalf("openAI probes = %#v, want only local vllm probe", openAIProbes)
 	}
 	if len(ollamaProbes) != 1 || ollamaProbes[0] != "http://localhost:11434/v1|llama3" {
@@ -152,7 +158,7 @@ func TestHandleListModels_ConfiguredStatusForOAuthModelWithCredential(t *testing
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.ModelList = []config.ModelConfig{{
+	cfg.ModelList = []*config.ModelConfig{{
 		ModelName:  "claude-oauth",
 		Model:      "anthropic/claude-sonnet-4.6",
 		AuthMethod: "oauth",
@@ -205,7 +211,7 @@ func TestHandleListModels_ProbesLocalModelsConcurrently(t *testing.T) {
 	started := make(chan string, 2)
 	release := make(chan struct{})
 
-	probeOpenAICompatibleModelFunc = func(apiBase, modelID string) bool {
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
 		started <- apiBase + "|" + modelID
 		<-release
 		return true
@@ -215,7 +221,7 @@ func TestHandleListModels_ProbesLocalModelsConcurrently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.ModelList = []config.ModelConfig{
+	cfg.ModelList = []*config.ModelConfig{
 		{
 			ModelName: "local-vllm-a",
 			Model:     "vllm/custom-a",
@@ -265,16 +271,16 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	resetModelProbeHooks(t)
 
 	var gotProbe string
-	probeOpenAICompatibleModelFunc = func(apiBase, modelID string) bool {
-		gotProbe = apiBase + "|" + modelID
-		return apiBase == "http://127.0.0.1:8000/v1" && modelID == "custom-model"
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
+		gotProbe = apiBase + "|" + modelID + "|" + apiKey
+		return apiBase == "http://127.0.0.1:8000/v1" && modelID == "custom-model" && apiKey == ""
 	}
 
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.ModelList = []config.ModelConfig{{
+	cfg.ModelList = []*config.ModelConfig{{
 		ModelName: "vllm-local",
 		Model:     "vllm/custom-model",
 		APIBase:   "http://0.0.0.0:8000/v1",
@@ -307,7 +313,156 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	if !resp.Models[0].Configured {
 		t.Fatal("wildcard-bound local model configured = false, want true after probe host normalization")
 	}
-	if gotProbe != "http://127.0.0.1:8000/v1|custom-model" {
-		t.Fatalf("probe api base = %q, want %q", gotProbe, "http://127.0.0.1:8000/v1|custom-model")
+	if gotProbe != "http://127.0.0.1:8000/v1|custom-model|" {
+		t.Fatalf("probe api base = %q, want %q", gotProbe, "http://127.0.0.1:8000/v1|custom-model|")
+	}
+}
+
+func TestHandleAddModel_PersistsAPIKey(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"new-model",
+		"model":"openai/gpt-4o-mini",
+		"api_key":"sk-new-model-key"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if len(cfg.ModelList) != 2 {
+		t.Fatalf("len(model_list) = %d, want 2", len(cfg.ModelList))
+	}
+
+	added := cfg.ModelList[1]
+	if added.ModelName != "new-model" {
+		t.Fatalf("model_name = %q, want %q", added.ModelName, "new-model")
+	}
+	if added.APIKey() != "sk-new-model-key" {
+		t.Fatalf("api_key = %q, want %q", added.APIKey(), "sk-new-model-key")
+	}
+}
+
+// TestHandleSetDefaultModel_RejectsNonexistentModel tests that setting a non-existent
+// model as default returns 404. This covers the case where virtual models (which are
+// filtered by SaveConfig) cannot be set as default.
+func TestHandleSetDefaultModel_RejectsNonexistentModel(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	// First save a valid config with a primary model
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{ModelName: "gpt-4", Model: "openai/gpt-4o"},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	// Try to set a non-existent model (like a virtual model name) as default
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models/default", bytes.NewBufferString(`{
+		"model_name": "gpt-4__key_1"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	// Should return 404 because the virtual model doesn't exist in the persisted config
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "not found") {
+		t.Fatalf("error message should mention 'not found', got: %s", rec.Body.String())
+	}
+}
+
+func TestMaskAPIKey(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{
+			name: "empty key",
+			key:  "",
+			want: "",
+		},
+		{
+			name: "short key fully masked",
+			key:  "abcd",
+			want: "****",
+		},
+		{
+			name: "length 8 boundary fully masked",
+			key:  "12345678",
+			want: "****",
+		},
+		{
+			name: "length 9 boundary shows last 2",
+			key:  "123456789",
+			want: "123****89",
+		},
+		{
+			name: "length 12 boundary shows last 2",
+			key:  "abcdefghijkl",
+			want: "abc****kl",
+		},
+		{
+			name: "length 13 boundary shows last 4",
+			key:  "abcdefghijklm",
+			want: "abc****jklm",
+		},
+		{
+			name: "typical api key",
+			key:  "sk-1234567890abcd",
+			want: "sk-****abcd",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := maskAPIKey(tc.key)
+			if got != tc.want {
+				t.Fatalf("maskAPIKey(%q) = %q, want %q", tc.key, got, tc.want)
+			}
+
+			if tc.key != "" {
+				displayed := strings.Replace(tc.want, "****", "", 1)
+				if len(tc.key) <= 8 {
+					if displayed != "" {
+						t.Fatalf("maskAPIKey(%q) displayed part = %q, want empty", tc.key, displayed)
+					}
+				} else {
+					if len(displayed)*10 > len(tc.key)*6 {
+						t.Fatalf(
+							"maskAPIKey(%q) displayed length = %d, want at most 60%% of %d",
+							tc.key,
+							len(displayed),
+							len(tc.key),
+						)
+					}
+				}
+			}
+		})
 	}
 }

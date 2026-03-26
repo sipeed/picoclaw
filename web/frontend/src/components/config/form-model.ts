@@ -3,6 +3,9 @@ export type JsonRecord = Record<string, unknown>
 export interface CoreConfigForm {
   workspace: string
   restrictToWorkspace: boolean
+  splitOnMarker: boolean
+  toolFeedbackEnabled: boolean
+  toolFeedbackMaxArgsLength: string
   execEnabled: boolean
   allowRemote: boolean
   enableDenyPatterns: boolean
@@ -12,6 +15,7 @@ export interface CoreConfigForm {
   allowCommand: boolean
   cronExecTimeoutMinutes: string
   maxTokens: string
+  contextWindow: string
   maxToolIterations: string
   summarizeMessageThreshold: string
   summarizeTokenPercent: string
@@ -62,6 +66,9 @@ export const DM_SCOPE_OPTIONS = [
 export const EMPTY_FORM: CoreConfigForm = {
   workspace: "",
   restrictToWorkspace: true,
+  splitOnMarker: false,
+  toolFeedbackEnabled: false,
+  toolFeedbackMaxArgsLength: "300",
   execEnabled: true,
   allowRemote: true,
   enableDenyPatterns: true,
@@ -71,6 +78,7 @@ export const EMPTY_FORM: CoreConfigForm = {
   allowCommand: true,
   cronExecTimeoutMinutes: "5",
   maxTokens: "32768",
+  contextWindow: "",
   maxToolIterations: "50",
   summarizeMessageThreshold: "20",
   summarizeTokenPercent: "75",
@@ -122,6 +130,7 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
   const tools = asRecord(root.tools)
   const cron = asRecord(tools.cron)
   const exec = asRecord(tools.exec)
+  const toolFeedback = asRecord(defaults.tool_feedback)
 
   return {
     workspace: asString(defaults.workspace) || EMPTY_FORM.workspace,
@@ -129,6 +138,18 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       defaults.restrict_to_workspace === undefined
         ? EMPTY_FORM.restrictToWorkspace
         : asBool(defaults.restrict_to_workspace),
+    splitOnMarker:
+      defaults.split_on_marker === undefined
+        ? EMPTY_FORM.splitOnMarker
+        : asBool(defaults.split_on_marker),
+    toolFeedbackEnabled:
+      toolFeedback.enabled === undefined
+        ? EMPTY_FORM.toolFeedbackEnabled
+        : asBool(toolFeedback.enabled),
+    toolFeedbackMaxArgsLength: asNumberString(
+      toolFeedback.max_args_length,
+      EMPTY_FORM.toolFeedbackMaxArgsLength,
+    ),
     execEnabled:
       exec.enabled === undefined
         ? EMPTY_FORM.execEnabled
@@ -164,6 +185,10 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       EMPTY_FORM.cronExecTimeoutMinutes,
     ),
     maxTokens: asNumberString(defaults.max_tokens, EMPTY_FORM.maxTokens),
+    contextWindow: asNumberString(
+      defaults.context_window,
+      EMPTY_FORM.contextWindow,
+    ),
     maxToolIterations: asNumberString(
       defaults.max_tool_iterations,
       EMPTY_FORM.maxToolIterations,

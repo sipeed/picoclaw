@@ -23,10 +23,13 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.10.1
+          args: --build-tags=goolm,stdjson
 
   vuln_check:
     name: Security Check
     runs-on: ubuntu-latest
+    env:
+      GOFLAGS: -tags=goolm,stdjson
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -59,4 +62,4 @@ jobs:
         run: go generate ./...
 
       - name: Run go test
-        run: go test ./...
+        run: go test -tags goolm,stdjson ./...

@@ -5,7 +5,7 @@
 ### 提供商 (Providers)
 
 > [!NOTE]
-> Groq 通过 Whisper 提供免费的语音转录。如果配置了 Groq，任意渠道的音频消息都将在 Agent 层面自动转录为文字。
+> 语音转录现在可以通过 `voice.model_name` 指定的多模态模型完成；如果未配置语音模型，Groq Whisper 仍可作为回退方案。
 
 | 提供商               | 用途                         | 获取 API Key                                                         |
 | -------------------- | ---------------------------- | -------------------------------------------------------------------- |
@@ -26,6 +26,7 @@
 | `mistral`            | LLM (Mistral 直连)           | [console.mistral.ai](https://console.mistral.ai)                    |
 | `longcat`            | LLM (Longcat 直连)           | [longcat.ai](https://longcat.ai)                                     |
 | `modelscope`         | LLM (ModelScope 直连)        | [modelscope.cn](https://modelscope.cn)                               |
+| `mimo`               | LLM (小米 MiMo 直连)         | [platform.xiaomimimo.com](https://platform.xiaomimimo.com)           |
 
 ### 模型配置 (model_list)
 
@@ -62,6 +63,7 @@
 | **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [获取密钥](https://vivgrid.com)                                   |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [获取密钥](https://longcat.chat/platform)                         |
 | **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [获取 Token](https://modelscope.cn/my/tokens)                    |
+| **小米 MiMo**       | `mimo/`           | `https://api.xiaomimimo.com/v1`                     | OpenAI    | [获取密钥](https://platform.xiaomimimo.com)                      |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | 自定义    | 仅 OAuth                                                          |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                 |
 
@@ -94,6 +96,33 @@
   "agents": {
     "defaults": {
       "model_name": "gpt-5.4"
+    }
+  }
+}
+```
+
+#### 语音转录
+
+你可以通过 `voice.model_name` 为语音转录指定一个专用模型。这样可以直接复用已经配置好的、支持音频输入的多模态 provider，而不必只依赖 Groq。
+
+如果没有配置 `voice.model_name`，且存在 Groq API Key，PicoClaw 会继续回退到 Groq 转录。
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "voice-gemini",
+      "model": "gemini/gemini-2.5-flash",
+      "api_key": "your-gemini-key"
+    }
+  ],
+  "voice": {
+    "model_name": "voice-gemini",
+    "echo_transcription": false
+  },
+  "providers": {
+    "groq": {
+      "api_key": "gsk_xxx"
     }
   }
 }
@@ -341,6 +370,10 @@ picoclaw agent -m "你好"
     "groq": {
       "api_key": "gsk_xxx"
     }
+  },
+  "voice": {
+    "model_name": "voice-gemini",
+    "echo_transcription": false
   },
   "channels": {
     "telegram": {

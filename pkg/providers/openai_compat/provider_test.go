@@ -610,6 +610,90 @@ func TestProvider_RequestTimeoutOverride(t *testing.T) {
 	}
 }
 
+func TestProviderChat_ExtraBodyInjected(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	extraBody := map[string]any{"reasoning_split": true, "custom_field": "test"}
+	p := NewProvider("key", server.URL, "", WithExtraBody(extraBody))
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"minimax/abab7",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if got, ok := requestBody["reasoning_split"]; !ok || got != true {
+		t.Fatalf("reasoning_split = %v, want true", got)
+	}
+	if got, ok := requestBody["custom_field"]; !ok || got != "test" {
+		t.Fatalf("custom_field = %v, want test", got)
+	}
+}
+
+func TestProviderChat_ExtraBodyOverridesOptions(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	extraBody := map[string]any{"temperature": 0.9}
+	p := NewProvider("key", server.URL, "", WithExtraBody(extraBody))
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-4o",
+		map[string]any{"temperature": 0.5},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	// ExtraBody takes precedence over options since it is merged last.
+	if got := requestBody["temperature"]; got != float64(0.9) {
+		t.Fatalf("temperature = %v, want 0.9 (from extraBody, overriding options)", got)
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {

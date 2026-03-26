@@ -159,10 +159,10 @@ func (h *Handler) gatewayStartReady() (bool, string, error) {
 		return false, fmt.Sprintf("default model %q is invalid", modelName), nil
 	}
 
-	if !hasModelConfiguration(*modelCfg) {
+	if !hasModelConfiguration(modelCfg) {
 		return false, fmt.Sprintf("default model %q has no credentials configured", modelName), nil
 	}
-	if requiresRuntimeProbe(*modelCfg) && !probeLocalModelAvailability(*modelCfg) {
+	if requiresRuntimeProbe(modelCfg) && !probeLocalModelAvailability(modelCfg) {
 		return false, fmt.Sprintf("default model %q is not reachable", modelName), nil
 	}
 
@@ -407,7 +407,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	gateway.logs.Reset()
 
 	// Ensure Pico Channel is configured before starting gateway
-	if _, err := h.ensurePicoChannel(""); err != nil {
+	if _, err := h.EnsurePicoChannel(""); err != nil {
 		logger.ErrorC("gateway", fmt.Sprintf("Warning: failed to ensure pico channel: %v", err))
 		// Non-fatal: gateway can still start without pico channel
 	}

@@ -39,8 +39,13 @@ func TestBuiltinHelpHandler_ReturnsFormattedMessage(t *testing.T) {
 	if !strings.Contains(reply, "/show [model|channel|agents]") {
 		t.Fatalf("/help reply missing /show usage, got %q", reply)
 	}
-	if !strings.Contains(reply, "/list [models|channels|agents]") {
+	if !strings.Contains(reply, "/list [models|channels|agents|skills]") {
 		t.Fatalf("/help reply missing /list usage, got %q", reply)
+	}
+	if !strings.Contains(reply, "/use <skill> <message>") {
+		if !strings.Contains(reply, "/use <skill> [message]") {
+			t.Fatalf("/help reply missing /use usage, got %q", reply)
+		}
 	}
 }
 
@@ -141,5 +146,45 @@ func TestBuiltinListAgents_RestoresOldBehavior(t *testing.T) {
 	}
 	if !strings.Contains(reply, "default") || !strings.Contains(reply, "coder") {
 		t.Fatalf("/list agents reply=%q, want agent IDs", reply)
+	}
+}
+
+func TestBuiltinListSkills_UsesRuntimeSkillNames(t *testing.T) {
+	rt := &Runtime{
+		ListSkillNames: func() []string {
+			return []string{"shell", "git"}
+		},
+	}
+	defs := BuiltinDefinitions()
+	ex := NewExecutor(NewRegistry(defs), rt)
+
+	var reply string
+	res := ex.Execute(context.Background(), Request{
+		Text: "/list skills",
+		Reply: func(text string) error {
+			reply = text
+			return nil
+		},
+	})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("/list skills: outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if !strings.Contains(reply, "shell") || !strings.Contains(reply, "git") {
+		t.Fatalf("/list skills reply=%q, want installed skill names", reply)
+	}
+}
+
+func TestBuiltinUseCommand_PassthroughsToAgentLogic(t *testing.T) {
+	defs := BuiltinDefinitions()
+	ex := NewExecutor(NewRegistry(defs), nil)
+
+	res := ex.Execute(context.Background(), Request{
+		Text: "/use shell run ls",
+	})
+	if res.Outcome != OutcomePassthrough {
+		t.Fatalf("/use outcome=%v, want=%v", res.Outcome, OutcomePassthrough)
+	}
+	if res.Command != "use" {
+		t.Fatalf("/use command=%q, want=%q", res.Command, "use")
 	}
 }

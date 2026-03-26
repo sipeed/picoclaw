@@ -28,6 +28,17 @@ PicoClaw 的工具配置位于 `config.json` 的 `tools` 字段中。
 }
 ```
 
+## 敏感数据过滤
+
+在将工具结果发送给 LLM 之前，PicoClaw 可以从输出中过滤敏感值（API 密钥、令牌、密码）。这可以防止 LLM 看到自己的凭据。
+
+详细说明请参阅[敏感数据过滤](../sensitive_data_filtering.md)。
+
+| 配置项 | 类型 | 默认值 | 描述 |
+|--------|------|--------|------|
+| `filter_sensitive_data` | bool | `true` | 启用/禁用过滤 |
+| `filter_min_length` | int | `8` | 触发过滤的最小内容长度 |
+
 ## Web 工具
 
 Web 工具用于网页搜索和抓取。
@@ -41,30 +52,30 @@ Web 工具用于网页搜索和抓取。
 | `fetch_limit_bytes` | int    | 10485760      | 抓取网页负载的最大大小，单位为字节（默认 10MB）。                                      |
 | `format`            | string | "plaintext"   | 抓取内容的输出格式。选项：`plaintext` 或 `markdown`（推荐）。                          |
 
-### Brave
+### 百度搜索
 
-| 配置项        | 类型     | 默认值 | 描述                                           |
-|---------------|----------|--------|------------------------------------------------|
-| `enabled`     | bool     | false  | 启用 Brave 搜索                                |
-| `api_key`     | string   | -      | Brave Search API 密钥                          |
-| `api_keys`    | string[] | -      | 多个 API 密钥轮换（优先于 `api_key`）          |
-| `max_results` | int      | 5      | 最大结果数                                     |
+使用[千帆 AI 搜索 API](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5)，国内访问稳定，中文搜索效果好。
 
-### DuckDuckGo
+| 配置项        | 类型   | 默认值                                                          | 描述                  |
+|---------------|--------|----------------------------------------------------------------|-----------------------|
+| `enabled`     | bool   | false                                                          | 启用百度搜索          |
+| `api_key`     | string | -                                                              | 千帆 API 密钥         |
+| `base_url`    | string | `https://qianfan.baidubce.com/v2/ai_search/web_search`        | 百度搜索 API URL      |
+| `max_results` | int    | 10                                                             | 最大结果数            |
 
-| 配置项        | 类型 | 默认值 | 描述                  |
-|---------------|------|--------|-----------------------|
-| `enabled`     | bool | true   | 启用 DuckDuckGo 搜索  |
-| `max_results` | int  | 5      | 最大结果数            |
-
-### Perplexity
-
-| 配置项        | 类型     | 默认值 | 描述                                           |
-|---------------|----------|--------|------------------------------------------------|
-| `enabled`     | bool     | false  | 启用 Perplexity 搜索                           |
-| `api_key`     | string   | -      | Perplexity API 密钥                            |
-| `api_keys`    | string[] | -      | 多个 API 密钥轮换（优先于 `api_key`）          |
-| `max_results` | int      | 5      | 最大结果数                                     |
+```json
+{
+  "tools": {
+    "web": {
+      "baidu_search": {
+        "enabled": true,
+        "api_key": "YOUR_BAIDU_QIANFAN_API_KEY",
+        "max_results": 10
+      }
+    }
+  }
+}
+```
 
 ### Tavily
 
@@ -75,14 +86,6 @@ Web 工具用于网页搜索和抓取。
 | `base_url`    | string | -      | 自定义 Tavily API 基础 URL        |
 | `max_results` | int    | 0      | 最大结果数（0 = 默认）            |
 
-### SearXNG
-
-| 配置项        | 类型   | 默认值                   | 描述                  |
-|---------------|--------|--------------------------|-----------------------|
-| `enabled`     | bool   | false                    | 启用 SearXNG 搜索     |
-| `base_url`    | string | `http://localhost:8888`  | SearXNG 实例 URL      |
-| `max_results` | int    | 5                        | 最大结果数            |
-
 ### GLM Search
 
 | 配置项          | 类型   | 默认值                                               | 描述                  |
@@ -92,6 +95,45 @@ Web 工具用于网页搜索和抓取。
 | `base_url`      | string | `https://open.bigmodel.cn/api/paas/v4/web_search`   | GLM Search API URL    |
 | `search_engine` | string | `search_std`                                         | 搜索引擎类型          |
 | `max_results`   | int    | 5                                                    | 最大结果数            |
+
+### DuckDuckGo
+
+> ⚠️ 国内访问困难，建议搭配代理使用。
+
+| 配置项        | 类型 | 默认值 | 描述                  |
+|---------------|------|--------|-----------------------|
+| `enabled`     | bool | true   | 启用 DuckDuckGo 搜索  |
+| `max_results` | int  | 5      | 最大结果数            |
+
+### Perplexity
+
+> ⚠️ 国内访问困难，建议搭配代理使用。
+
+| 配置项        | 类型     | 默认值 | 描述                                           |
+|---------------|----------|--------|------------------------------------------------|
+| `enabled`     | bool     | false  | 启用 Perplexity 搜索                           |
+| `api_key`     | string   | -      | Perplexity API 密钥                            |
+| `api_keys`    | string[] | -      | 多个 API 密钥轮换（优先于 `api_key`）          |
+| `max_results` | int      | 5      | 最大结果数                                     |
+
+### Brave
+
+> ⚠️ 国内访问困难，建议搭配代理使用。
+
+| 配置项        | 类型     | 默认值 | 描述                                           |
+|---------------|----------|--------|------------------------------------------------|
+| `enabled`     | bool     | false  | 启用 Brave 搜索                                |
+| `api_key`     | string   | -      | Brave Search API 密钥                          |
+| `api_keys`    | string[] | -      | 多个 API 密钥轮换（优先于 `api_key`）          |
+| `max_results` | int      | 5      | 最大结果数                                     |
+
+### SearXNG
+
+| 配置项        | 类型   | 默认值                   | 描述                  |
+|---------------|--------|--------------------------|-----------------------|
+| `enabled`     | bool   | false                    | 启用 SearXNG 搜索     |
+| `base_url`    | string | `http://localhost:8888`  | SearXNG 实例 URL      |
+| `max_results` | int    | 5                        | 最大结果数            |
 
 ### 其他 Web 设置
 

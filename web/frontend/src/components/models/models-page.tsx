@@ -32,6 +32,7 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   vllm: 16,
   mistral: 17,
   avian: 18,
+  mimo: 19,
 }
 
 interface ProviderGroup {

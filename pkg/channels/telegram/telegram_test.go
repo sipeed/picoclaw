@@ -641,3 +641,35 @@ func TestHandleMessage_ReplyThread_NonForum_NoIsolation(t *testing.T) {
 	assert.Empty(t, inbound.Metadata["parent_peer_kind"])
 	assert.Empty(t, inbound.Metadata["parent_peer_id"])
 }
+
+func TestHandleMessage_EmptyContent_Ignored(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
+		chatIDs:     make(map[string]int64),
+		ctx:         context.Background(),
+	}
+
+	// Service message with no text/caption/media (like ForumTopicCreated)
+	msg := &telego.Message{
+		MessageID: 123,
+		Chat: telego.Chat{
+			ID:   456,
+			Type: "group",
+		},
+		From: &telego.User{
+			ID:        789,
+			FirstName: "User",
+		},
+	}
+
+	err := ch.handleMessage(context.Background(), msg)
+	require.NoError(t, err)
+
+	// Should NOT publish to message bus
+	select {
+	case <-messageBus.InboundChan():
+		t.Fatal("Empty message should not be published to message bus")
+	default:
+	}
+}

@@ -22,7 +22,7 @@ func TestNewAgentInstance_UsesDefaultsTemperatureAndMaxTokens(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         1234,
 				MaxToolIterations: 5,
 			},
@@ -54,7 +54,7 @@ func TestNewAgentInstance_DefaultsTemperatureWhenZero(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         1234,
 				MaxToolIterations: 5,
 			},
@@ -83,7 +83,7 @@ func TestNewAgentInstance_DefaultsTemperatureWhenUnset(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         1234,
 				MaxToolIterations: 5,
 			},
@@ -137,10 +137,10 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 				Agents: config.AgentsConfig{
 					Defaults: config.AgentDefaults{
 						Workspace: tmpDir,
-						Model:     tt.aliasName,
+						ModelName: tt.aliasName,
 					},
 				},
-				ModelList: []config.ModelConfig{
+				ModelList: []*config.ModelConfig{
 					{
 						ModelName: tt.aliasName,
 						Model:     tt.modelName,
@@ -236,8 +236,9 @@ func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 		t.Fatal("exec tool not registered")
 	}
 	execResult := execTool.Execute(context.Background(), map[string]any{
-		"command":     "cat " + filepath.Base(mediaPath),
-		"working_dir": mediaDir,
+		"action":  "run",
+		"command": "cat " + filepath.Base(mediaPath),
+		"cwd":     mediaDir,
 	})
 	if execResult.IsError {
 		t.Fatalf("exec should allow media temp dir, got: %s", execResult.ForLLM)

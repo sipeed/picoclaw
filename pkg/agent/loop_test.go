@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,41 @@ func (f *fakeChannel) IsRunning() bool                                         {
 func (f *fakeChannel) IsAllowed(string) bool                                   { return true }
 func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool              { return true }
 func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
+
+type fakeMediaChannel struct {
+	fakeChannel
+	sentMedia []bus.OutboundMediaMessage
+}
+
+func (f *fakeMediaChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	f.sentMedia = append(f.sentMedia, msg)
+	return nil
+}
+
+func newStartedTestChannelManager(
+	t *testing.T,
+	msgBus *bus.MessageBus,
+	store media.MediaStore,
+	name string,
+	ch channels.Channel,
+) *channels.Manager {
+	t.Helper()
+
+	cm, err := channels.NewManager(&config.Config{}, msgBus, store)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	cm.RegisterChannel(name, ch)
+	if err := cm.StartAll(context.Background()); err != nil {
+		t.Fatalf("StartAll() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := cm.StopAll(context.Background()); err != nil {
+			t.Fatalf("StopAll() error = %v", err)
+		}
+	})
+	return cm
+}
 
 type recordingProvider struct {
 	lastMessages []providers.Message
@@ -67,7 +103,7 @@ func newTestAgentLoop(
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -90,7 +126,7 @@ func TestProcessMessage_IncludesCurrentSenderInDynamicContext(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -129,6 +165,243 @@ func TestProcessMessage_IncludesCurrentSenderInDynamicContext(t *testing.T) {
 	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
 	if lastMessage.Role != "user" || lastMessage.Content != "hello" {
 		t.Fatalf("last provider message = %+v, want unchanged user message", lastMessage)
+	}
+}
+
+func TestProcessMessage_UseCommandLoadsRequestedSkill(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillDir := filepath.Join(tmpDir, "skills", "shell")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDir, "SKILL.md"),
+		[]byte("# shell\n\nPrefer concise shell commands and explain them briefly."),
+		0o644,
+	); err != nil {
+		t.Fatalf("write skill file: %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/use shell explain how to list files",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "Mock response")
+	}
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("provider did not receive any messages")
+	}
+
+	systemPrompt := provider.lastMessages[0].Content
+	if !strings.Contains(systemPrompt, "# Active Skills") {
+		t.Fatalf("system prompt missing active skills section:\n%s", systemPrompt)
+	}
+	if !strings.Contains(systemPrompt, "### Skill: shell") {
+		t.Fatalf("system prompt missing requested skill content:\n%s", systemPrompt)
+	}
+
+	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
+	if lastMessage.Role != "user" || lastMessage.Content != "explain how to list files" {
+		t.Fatalf("last provider message = %+v, want rewritten user message", lastMessage)
+	}
+}
+
+func TestHandleCommand_UseCommandRejectsUnknownSkill(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.GetRegistry().GetDefaultAgent()
+
+	opts := processOptions{}
+	reply, handled := al.handleCommand(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/use missing explain how to list files",
+	}, agent, &opts)
+	if !handled {
+		t.Fatal("expected /use with unknown skill to be handled")
+	}
+	if !strings.Contains(reply, "Unknown skill: missing") {
+		t.Fatalf("reply = %q, want unknown skill error", reply)
+	}
+}
+
+func TestProcessMessage_UseCommandArmsSkillForNextMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillDir := filepath.Join(tmpDir, "skills", "shell")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDir, "SKILL.md"),
+		[]byte("# shell\n\nPrefer concise shell commands and explain them briefly."),
+		0o644,
+	); err != nil {
+		t.Fatalf("write skill file: %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/use shell",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() arm error = %v", err)
+	}
+	if !strings.Contains(response, `Skill "shell" is armed for your next message.`) {
+		t.Fatalf("arm response = %q, want armed confirmation", response)
+	}
+
+	response, err = al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "explain how to list files",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() follow-up error = %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("follow-up response = %q, want %q", response, "Mock response")
+	}
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("provider did not receive any messages")
+	}
+
+	systemPrompt := provider.lastMessages[0].Content
+	if !strings.Contains(systemPrompt, "### Skill: shell") {
+		t.Fatalf("system prompt missing pending skill content:\n%s", systemPrompt)
+	}
+	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
+	if lastMessage.Role != "user" || lastMessage.Content != "explain how to list files" {
+		t.Fatalf("last provider message = %+v, want unchanged follow-up user message", lastMessage)
+	}
+}
+
+func TestApplyExplicitSkillCommand_ArmsSkillForNextMessage(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	if err := os.MkdirAll(filepath.Join(cfg.Agents.Defaults.Workspace, "skills", "finance-news"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(skill) error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(cfg.Agents.Defaults.Workspace, "skills", "finance-news", "SKILL.md"),
+		[]byte("# Finance News\n\nUse web tools for current finance updates.\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(SKILL.md) error = %v", err)
+	}
+
+	agent := al.GetRegistry().GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	opts := &processOptions{SessionKey: "agent:main:test"}
+	matched, handled, reply := al.applyExplicitSkillCommand("/use finance-news", agent, opts)
+	if !matched {
+		t.Fatal("expected /use command to match")
+	}
+	if !handled {
+		t.Fatal("expected /use without inline message to be handled immediately")
+	}
+	if !strings.Contains(reply, `Skill "finance-news" is armed for your next message`) {
+		t.Fatalf("unexpected reply: %q", reply)
+	}
+
+	pending := al.takePendingSkills(opts.SessionKey)
+	if len(pending) != 1 || pending[0] != "finance-news" {
+		t.Fatalf("pending skills = %#v, want [finance-news]", pending)
+	}
+}
+
+func TestApplyExplicitSkillCommand_InlineMessageMutatesOptions(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	if err := os.MkdirAll(filepath.Join(cfg.Agents.Defaults.Workspace, "skills", "finance-news"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(skill) error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(cfg.Agents.Defaults.Workspace, "skills", "finance-news", "SKILL.md"),
+		[]byte("# Finance News\n\nUse web tools for current finance updates.\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(SKILL.md) error = %v", err)
+	}
+
+	agent := al.GetRegistry().GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	opts := &processOptions{
+		SessionKey:  "agent:main:test",
+		UserMessage: "/use finance-news dammi le ultime news",
+	}
+	matched, handled, reply := al.applyExplicitSkillCommand(opts.UserMessage, agent, opts)
+	if !matched {
+		t.Fatal("expected /use command to match")
+	}
+	if handled {
+		t.Fatal("expected /use with inline message to fall through into normal agent execution")
+	}
+	if reply != "" {
+		t.Fatalf("unexpected reply: %q", reply)
+	}
+	if opts.UserMessage != "dammi le ultime news" {
+		t.Fatalf("opts.UserMessage = %q, want %q", opts.UserMessage, "dammi le ultime news")
+	}
+	if len(opts.ForcedSkills) != 1 || opts.ForcedSkills[0] != "finance-news" {
+		t.Fatalf("opts.ForcedSkills = %#v, want [finance-news]", opts.ForcedSkills)
 	}
 }
 
@@ -179,7 +452,7 @@ func TestNewAgentLoop_StateInitialized(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -215,7 +488,7 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -272,7 +545,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -298,6 +571,217 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	}
 }
 
+func TestProcessMessage_MediaToolHandledSkipsFollowUpLLMAndFinalText(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &handledMediaProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	store := media.NewFileMediaStore()
+	al.SetMediaStore(store)
+	telegramChannel := &fakeMediaChannel{fakeChannel: fakeChannel{id: "rid-telegram"}}
+	al.SetChannelManager(newStartedTestChannelManager(t, msgBus, store, "telegram", telegramChannel))
+
+	imagePath := filepath.Join(tmpDir, "screen.png")
+	if err := os.WriteFile(imagePath, []byte("fake screenshot"), 0o644); err != nil {
+		t.Fatalf("WriteFile(imagePath) error = %v", err)
+	}
+
+	al.RegisterTool(&handledMediaTool{
+		store: store,
+		path:  imagePath,
+	})
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "take a screenshot of the screen and send it to me",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "" {
+		t.Fatalf("expected no final response when media tool already handled delivery, got %q", response)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("expected exactly 1 LLM call, got %d", provider.calls)
+	}
+	if len(provider.toolCounts) != 1 {
+		t.Fatalf("expected tool counts for 1 provider call, got %d", len(provider.toolCounts))
+	}
+	if provider.toolCounts[0] == 0 {
+		t.Fatal("expected tools to be available on the first LLM call")
+	}
+
+	if len(telegramChannel.sentMedia) != 1 {
+		t.Fatalf("expected exactly 1 synchronously sent media message, got %d", len(telegramChannel.sentMedia))
+	}
+	if telegramChannel.sentMedia[0].Channel != "telegram" || telegramChannel.sentMedia[0].ChatID != "chat1" {
+		t.Fatalf("unexpected sent media target: %+v", telegramChannel.sentMedia[0])
+	}
+	if len(telegramChannel.sentMedia[0].Parts) != 1 {
+		t.Fatalf("expected exactly 1 sent media part, got %d", len(telegramChannel.sentMedia[0].Parts))
+	}
+
+	select {
+	case extra := <-msgBus.OutboundMediaChan():
+		t.Fatalf("expected handled media to bypass async queue, got %+v", extra)
+	default:
+	}
+
+	defaultAgent := al.GetRegistry().GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+	route, _, err := al.resolveMessageRoute(bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "take a screenshot of the screen and send it to me",
+	})
+	if err != nil {
+		t.Fatalf("resolveMessageRoute() error = %v", err)
+	}
+	sessionKey := resolveScopeKey(route, "")
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) == 0 {
+		t.Fatal("expected session history to be saved")
+	}
+	last := history[len(history)-1]
+	if last.Role != "assistant" || last.Content != "Requested output delivered via tool attachment." {
+		t.Fatalf("expected handled assistant summary in history, got %+v", last)
+	}
+}
+
+func TestProcessMessage_HandledToolProcessesQueuedSteeringBeforeReturning(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &handledMediaWithSteeringProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	store := media.NewFileMediaStore()
+	al.SetMediaStore(store)
+	telegramChannel := &fakeMediaChannel{fakeChannel: fakeChannel{id: "rid-telegram"}}
+	al.SetChannelManager(newStartedTestChannelManager(t, msgBus, store, "telegram", telegramChannel))
+
+	imagePath := filepath.Join(tmpDir, "screen-steering.png")
+	if err := os.WriteFile(imagePath, []byte("fake screenshot"), 0o644); err != nil {
+		t.Fatalf("WriteFile(imagePath) error = %v", err)
+	}
+
+	al.RegisterTool(&handledMediaWithSteeringTool{
+		store: store,
+		path:  imagePath,
+		loop:  al,
+	})
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "take a screenshot of the screen and send it to me",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Handled the queued steering message." {
+		t.Fatalf("response = %q, want queued steering response", response)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("expected 2 LLM calls after queued steering, got %d", provider.calls)
+	}
+	if len(telegramChannel.sentMedia) != 1 {
+		t.Fatalf("expected exactly 1 synchronously sent media message, got %d", len(telegramChannel.sentMedia))
+	}
+}
+
+func TestProcessMessage_MediaArtifactCanBeForwardedBySendFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = tmpDir
+	cfg.Agents.Defaults.ModelName = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 10
+
+	msgBus := bus.NewMessageBus()
+	provider := &artifactThenSendProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	store := media.NewFileMediaStore()
+	al.SetMediaStore(store)
+	telegramChannel := &fakeMediaChannel{fakeChannel: fakeChannel{id: "rid-telegram"}}
+	al.SetChannelManager(newStartedTestChannelManager(t, msgBus, store, "telegram", telegramChannel))
+
+	mediaDir := media.TempDir()
+	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(mediaDir) error = %v", err)
+	}
+	imagePath := filepath.Join(mediaDir, "artifact-screen.png")
+	if err := os.WriteFile(imagePath, []byte("fake screenshot"), 0o644); err != nil {
+		t.Fatalf("WriteFile(imagePath) error = %v", err)
+	}
+
+	al.RegisterTool(&mediaArtifactTool{
+		store: store,
+		path:  imagePath,
+	})
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "take a screenshot of the screen and send it to me",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "" {
+		t.Fatalf("expected no final response after send_file handled delivery, got %q", response)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("expected 2 LLM calls (artifact + send_file), got %d", provider.calls)
+	}
+
+	if len(telegramChannel.sentMedia) != 1 {
+		t.Fatalf("expected exactly 1 synchronously sent media message, got %d", len(telegramChannel.sentMedia))
+	}
+	if telegramChannel.sentMedia[0].Channel != "telegram" || telegramChannel.sentMedia[0].ChatID != "chat1" {
+		t.Fatalf("unexpected sent media target: %+v", telegramChannel.sentMedia[0])
+	}
+	if len(telegramChannel.sentMedia[0].Parts) != 1 {
+		t.Fatalf("expected exactly 1 sent media part, got %d", len(telegramChannel.sentMedia[0].Parts))
+	}
+
+	select {
+	case extra := <-msgBus.OutboundMediaChan():
+		t.Fatalf("expected synchronous send_file delivery to bypass async queue, got %+v", extra)
+	default:
+	}
+}
+
 // TestAgentLoop_GetStartupInfo verifies startup info contains tools
 func TestAgentLoop_GetStartupInfo(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
@@ -308,7 +792,7 @@ func TestAgentLoop_GetStartupInfo(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Workspace = tmpDir
-	cfg.Agents.Defaults.Model = "test-model"
+	cfg.Agents.Defaults.ModelName = "test-model"
 	cfg.Agents.Defaults.MaxTokens = 4096
 	cfg.Agents.Defaults.MaxToolIterations = 10
 
@@ -352,7 +836,7 @@ func TestAgentLoop_Stop(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -397,6 +881,29 @@ func (m *simpleMockProvider) GetDefaultModel() string {
 	return "mock-model"
 }
 
+type reasoningContentProvider struct {
+	response         string
+	reasoningContent string
+}
+
+func (m *reasoningContentProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	return &providers.LLMResponse{
+		Content:          m.response,
+		ReasoningContent: m.reasoningContent,
+		ToolCalls:        []providers.ToolCall{},
+	}, nil
+}
+
+func (m *reasoningContentProvider) GetDefaultModel() string {
+	return "reasoning-content-model"
+}
+
 type countingMockProvider struct {
 	response string
 	calls    int
@@ -418,6 +925,132 @@ func (m *countingMockProvider) Chat(
 
 func (m *countingMockProvider) GetDefaultModel() string {
 	return "counting-mock-model"
+}
+
+type handledMediaProvider struct {
+	calls      int
+	toolCounts []int
+}
+
+func (m *handledMediaProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	m.toolCounts = append(m.toolCounts, len(tools))
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			Content: "Taking the screenshot now.",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_handled_media",
+				Type:      "function",
+				Name:      "handled_media_tool",
+				Arguments: map[string]any{},
+			}},
+		}, nil
+	}
+	return &providers.LLMResponse{}, nil
+}
+
+func (m *handledMediaProvider) GetDefaultModel() string {
+	return "handled-media-model"
+}
+
+type artifactThenSendProvider struct {
+	calls int
+}
+
+func (m *artifactThenSendProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			Content: "Taking the screenshot now.",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_artifact_media",
+				Type:      "function",
+				Name:      "media_artifact_tool",
+				Arguments: map[string]any{},
+			}},
+		}, nil
+	}
+
+	var artifactPath string
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != "tool" {
+			continue
+		}
+		start := strings.Index(messages[i].Content, "[file:")
+		if start < 0 {
+			continue
+		}
+		rest := messages[i].Content[start+len("[file:"):]
+		end := strings.Index(rest, "]")
+		if end < 0 {
+			continue
+		}
+		artifactPath = rest[:end]
+		break
+	}
+	if artifactPath == "" {
+		return nil, fmt.Errorf("provider did not receive artifact path in tool result")
+	}
+
+	return &providers.LLMResponse{
+		Content: "",
+		ToolCalls: []providers.ToolCall{{
+			ID:        "call_send_file",
+			Type:      "function",
+			Name:      "send_file",
+			Arguments: map[string]any{"path": artifactPath},
+		}},
+	}, nil
+}
+
+func (m *artifactThenSendProvider) GetDefaultModel() string {
+	return "artifact-then-send-model"
+}
+
+type toolFeedbackProvider struct {
+	filePath string
+	calls    int
+}
+
+func (m *toolFeedbackProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_heartbeat_read_file",
+				Type:      "function",
+				Name:      "read_file",
+				Arguments: map[string]any{"path": m.filePath},
+			}},
+		}, nil
+	}
+
+	return &providers.LLMResponse{
+		Content:   "HEARTBEAT_OK",
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *toolFeedbackProvider) GetDefaultModel() string {
+	return "heartbeat-tool-feedback-model"
 }
 
 type toolLimitOnlyProvider struct{}
@@ -456,13 +1089,143 @@ func (m *mockCustomTool) Description() string {
 
 func (m *mockCustomTool) Parameters() map[string]any {
 	return map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
+		"type":                 "object",
+		"properties":           map[string]any{},
+		"additionalProperties": true,
 	}
 }
 
 func (m *mockCustomTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
 	return tools.SilentResult("Custom tool executed")
+}
+
+type handledMediaTool struct {
+	store media.MediaStore
+	path  string
+}
+
+func (m *handledMediaTool) Name() string { return "handled_media_tool" }
+func (m *handledMediaTool) Description() string {
+	return "Returns a media attachment and fully handles the user response"
+}
+
+func (m *handledMediaTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (m *handledMediaTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	ref, err := m.store.Store(m.path, media.MediaMeta{
+		Filename:    filepath.Base(m.path),
+		ContentType: "image/png",
+		Source:      "test:handled_media_tool",
+	}, "test:handled_media")
+	if err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+	return tools.MediaResult("Attachment delivered by tool.", []string{ref}).WithResponseHandled()
+}
+
+type handledMediaWithSteeringProvider struct {
+	calls int
+}
+
+func (m *handledMediaWithSteeringProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			Content: "Taking the screenshot now.",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_handled_media_steering",
+				Type:      "function",
+				Name:      "handled_media_with_steering_tool",
+				Arguments: map[string]any{},
+			}},
+		}, nil
+	}
+
+	for _, msg := range messages {
+		if msg.Role == "user" && msg.Content == "what about this instead?" {
+			return &providers.LLMResponse{Content: "Handled the queued steering message."}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("provider did not receive queued steering message")
+}
+
+func (m *handledMediaWithSteeringProvider) GetDefaultModel() string {
+	return "handled-media-with-steering-model"
+}
+
+type handledMediaWithSteeringTool struct {
+	store media.MediaStore
+	path  string
+	loop  *AgentLoop
+}
+
+func (m *handledMediaWithSteeringTool) Name() string { return "handled_media_with_steering_tool" }
+func (m *handledMediaWithSteeringTool) Description() string {
+	return "Returns handled media and enqueues a steering message during execution"
+}
+
+func (m *handledMediaWithSteeringTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (m *handledMediaWithSteeringTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	if err := m.loop.Steer(providers.Message{Role: "user", Content: "what about this instead?"}); err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+
+	ref, err := m.store.Store(m.path, media.MediaMeta{
+		Filename:    filepath.Base(m.path),
+		ContentType: "image/png",
+		Source:      "test:handled_media_with_steering_tool",
+	}, "test:handled_media_with_steering")
+	if err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+	return tools.MediaResult("Attachment delivered by tool.", []string{ref}).WithResponseHandled()
+}
+
+type mediaArtifactTool struct {
+	store media.MediaStore
+	path  string
+}
+
+func (m *mediaArtifactTool) Name() string { return "media_artifact_tool" }
+func (m *mediaArtifactTool) Description() string {
+	return "Returns a media artifact that the agent can forward or save later"
+}
+
+func (m *mediaArtifactTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (m *mediaArtifactTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	ref, err := m.store.Store(m.path, media.MediaMeta{
+		Filename:    filepath.Base(m.path),
+		ContentType: "image/png",
+		Source:      "test:media_artifact_tool",
+	}, "test:media_artifact")
+	if err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+	return tools.MediaResult("Artifact created.", []string{ref})
 }
 
 type toolLimitTestTool struct{}
@@ -558,7 +1321,7 @@ func TestProcessMessage_UsesRouteSessionKey(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -614,7 +1377,7 @@ func TestProcessMessage_CommandOutcomes(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -694,26 +1457,34 @@ func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				Provider:          "openai",
-				Model:             "local",
+				ModelName:         "local",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
 		},
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{
 				ModelName: "local",
 				Model:     "openai/local-model",
-				APIKey:    "test-key",
 				APIBase:   "https://local.example.invalid/v1",
 			},
 			{
 				ModelName: "deepseek",
 				Model:     "openrouter/deepseek/deepseek-v3.2",
-				APIKey:    "test-key",
 				APIBase:   "https://openrouter.ai/api/v1",
 			},
 		},
 	}
+	cfg.WithSecurity(&config.SecurityConfig{
+		ModelList: map[string]config.ModelSecurityEntry{
+			"local": {
+				APIKeys: []string{"test-key"},
+			},
+			"deepseek": {
+				APIKeys: []string{"test-key"},
+			},
+		},
+	})
 
 	msgBus := bus.NewMessageBus()
 	provider := &countingMockProvider{response: "LLM reply"}
@@ -765,20 +1536,26 @@ func TestProcessMessage_SwitchModelRejectsUnknownAlias(t *testing.T) {
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				Provider:          "openai",
-				Model:             "local",
+				ModelName:         "local",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
 		},
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{
 				ModelName: "local",
 				Model:     "openai/local-model",
-				APIKey:    "test-key",
 				APIBase:   "https://local.example.invalid/v1",
 			},
 		},
 	}
+	cfg.WithSecurity(&config.SecurityConfig{
+		ModelList: map[string]config.ModelSecurityEntry{
+			"local": {
+				APIKeys: []string{"test-key"},
+			},
+		},
+	})
 
 	msgBus := bus.NewMessageBus()
 	provider := &countingMockProvider{response: "LLM reply"}
@@ -840,26 +1617,34 @@ func TestProcessMessage_SwitchModelRoutesSubsequentRequestsToSelectedProvider(t 
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				Provider:          "openai",
-				Model:             "local",
+				ModelName:         "local",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
 		},
-		ModelList: []config.ModelConfig{
+		ModelList: []*config.ModelConfig{
 			{
 				ModelName: "local",
 				Model:     "openai/Qwen3.5-35B-A3B",
-				APIKey:    "local-key",
 				APIBase:   localServer.URL,
 			},
 			{
 				ModelName: "deepseek",
 				Model:     "openrouter/deepseek/deepseek-v3.2",
-				APIKey:    "remote-key",
 				APIBase:   remoteServer.URL,
 			},
 		},
 	}
+	cfg.WithSecurity(&config.SecurityConfig{
+		ModelList: map[string]config.ModelSecurityEntry{
+			"local": {
+				APIKeys: []string{"local-key"},
+			},
+			"deepseek": {
+				APIKeys: []string{"remote-key"},
+			},
+		},
+	})
 
 	msgBus := bus.NewMessageBus()
 	provider, _, err := providers.CreateProvider(cfg)
@@ -946,7 +1731,7 @@ func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -988,7 +1773,7 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -1059,7 +1844,7 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -1078,11 +1863,11 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 
 	al := NewAgentLoop(cfg, msgBus, provider)
 
-	// Inject some history to simulate a full context
+	// Inject some history to simulate a full context.
+	// Session history only stores user/assistant/tool messages — the system
+	// prompt is built dynamically by BuildMessages and is NOT stored here.
 	sessionKey := "test-session-context"
-	// Create dummy history
 	history := []providers.Message{
-		{Role: "system", Content: "System prompt"},
 		{Role: "user", Content: "Old message 1"},
 		{Role: "assistant", Content: "Old response 1"},
 		{Role: "user", Content: "Old message 2"},
@@ -1120,12 +1905,11 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Check final history length
 	finalHistory := defaultAgent.Sessions.GetHistory(sessionKey)
 	// We verify that the history has been modified (compressed)
-	// Original length: 6
-	// Expected behavior: compression drops ~50% of history (mid slice)
-	// We can assert that the length is NOT what it would be without compression.
-	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
-	if len(finalHistory) >= 8 {
-		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	// Original length: 5
+	// Expected behavior: compression drops ~50% of Turns
+	// Without compression: 5 + 1 (new user msg) + 1 (assistant msg) = 7
+	if len(finalHistory) >= 7 {
+		t.Errorf("Expected history to be compressed (len < 7), got %d", len(finalHistory))
 	}
 }
 
@@ -1140,7 +1924,7 @@ func TestAgentLoop_EmptyModelResponseUsesAccurateFallback(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 3,
 			},
@@ -1171,7 +1955,7 @@ func TestAgentLoop_ToolLimitUsesDedicatedFallback(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 1,
 			},
@@ -1228,7 +2012,7 @@ func TestProcessDirectWithChannel_TriggersMCPInitialization(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -1280,7 +2064,7 @@ func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
-				Model:             "test-model",
+				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
 			},
@@ -1293,18 +2077,17 @@ func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 		t.Fatalf("Failed to create channel manager: %v", err)
 	}
 	for name, id := range map[string]string{
-		"whatsapp":  "rid-whatsapp",
-		"telegram":  "rid-telegram",
-		"feishu":    "rid-feishu",
-		"discord":   "rid-discord",
-		"maixcam":   "rid-maixcam",
-		"qq":        "rid-qq",
-		"dingtalk":  "rid-dingtalk",
-		"slack":     "rid-slack",
-		"line":      "rid-line",
-		"onebot":    "rid-onebot",
-		"wecom":     "rid-wecom",
-		"wecom_app": "rid-wecom-app",
+		"whatsapp": "rid-whatsapp",
+		"telegram": "rid-telegram",
+		"feishu":   "rid-feishu",
+		"discord":  "rid-discord",
+		"maixcam":  "rid-maixcam",
+		"qq":       "rid-qq",
+		"dingtalk": "rid-dingtalk",
+		"slack":    "rid-slack",
+		"line":     "rid-line",
+		"onebot":   "rid-onebot",
+		"wecom":    "rid-wecom",
 	} {
 		chManager.RegisterChannel(name, &fakeChannel{id: id})
 	}
@@ -1324,7 +2107,6 @@ func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 		{channel: "line", wantID: "rid-line"},
 		{channel: "onebot", wantID: "rid-onebot"},
 		{channel: "wecom", wantID: "rid-wecom"},
-		{channel: "wecom_app", wantID: "rid-wecom-app"},
 		{channel: "unknown", wantID: ""},
 	}
 
@@ -1350,7 +2132,7 @@ func TestHandleReasoning(t *testing.T) {
 			Agents: config.AgentsConfig{
 				Defaults: config.AgentDefaults{
 					Workspace:         tmpDir,
-					Model:             "test-model",
+					ModelName:         "test-model",
 					MaxTokens:         4096,
 					MaxToolIterations: 10,
 				},
@@ -1508,6 +2290,168 @@ func TestHandleReasoning(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestProcessMessage_PublishesReasoningContentToReasoningChannel(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &reasoningContentProvider{
+		response:         "final answer",
+		reasoningContent: "thinking trace",
+	}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	chManager, err := channels.NewManager(&config.Config{}, msgBus, nil)
+	if err != nil {
+		t.Fatalf("Failed to create channel manager: %v", err)
+	}
+	chManager.RegisterChannel("telegram", &fakeChannel{id: "reason-chat"})
+	al.SetChannelManager(chManager)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "final answer" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "final answer")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Channel != "telegram" {
+			t.Fatalf("reasoning channel = %q, want %q", outbound.Channel, "telegram")
+		}
+		if outbound.ChatID != "reason-chat" {
+			t.Fatalf("reasoning chatID = %q, want %q", outbound.ChatID, "reason-chat")
+		}
+		if outbound.Content != "thinking trace" {
+			t.Fatalf("reasoning content = %q, want %q", outbound.Content, "thinking trace")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected reasoning content to be published to reasoning channel")
+	}
+}
+
+func TestProcessHeartbeat_DoesNotPublishToolFeedback(t *testing.T) {
+	tmpDir := t.TempDir()
+	heartbeatFile := filepath.Join(tmpDir, "heartbeat-task.txt")
+	if err := os.WriteFile(heartbeatFile, []byte("heartbeat task"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ToolFeedback: config.ToolFeedbackConfig{
+					Enabled:       true,
+					MaxArgsLength: 300,
+				},
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{
+				Enabled: true,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &toolFeedbackProvider{filePath: heartbeatFile}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.ProcessHeartbeat(context.Background(), "check heartbeat tasks", "telegram", "chat-1")
+	if err != nil {
+		t.Fatalf("ProcessHeartbeat() error = %v", err)
+	}
+	if response != "HEARTBEAT_OK" {
+		t.Fatalf("ProcessHeartbeat() response = %q, want %q", response, "HEARTBEAT_OK")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		t.Fatalf("expected no outbound tool feedback during heartbeat, got %+v", outbound)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestProcessMessage_PublishesToolFeedbackWhenEnabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	heartbeatFile := filepath.Join(tmpDir, "tool-feedback.txt")
+	if err := os.WriteFile(heartbeatFile, []byte("tool feedback task"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ToolFeedback: config.ToolFeedbackConfig{
+					Enabled:       true,
+					MaxArgsLength: 300,
+				},
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{
+				Enabled: true,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &toolFeedbackProvider{filePath: heartbeatFile}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user-1",
+		ChatID:   "chat-1",
+		Content:  "check tool feedback",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "HEARTBEAT_OK" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "HEARTBEAT_OK")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Channel != "telegram" {
+			t.Fatalf("tool feedback channel = %q, want %q", outbound.Channel, "telegram")
+		}
+		if outbound.ChatID != "chat-1" {
+			t.Fatalf("tool feedback chatID = %q, want %q", outbound.ChatID, "chat-1")
+		}
+		if !strings.Contains(outbound.Content, "`read_file`") {
+			t.Fatalf("tool feedback content = %q, want read_file preview", outbound.Content)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected outbound tool feedback for regular messages")
+	}
 }
 
 func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {
@@ -1872,5 +2816,113 @@ func TestFilterClientWebSearch_EmptyInput(t *testing.T) {
 	result := filterClientWebSearch(nil)
 	if len(result) != 0 {
 		t.Fatalf("len(result) = %d, want 0", len(result))
+	}
+}
+
+type overflowProvider struct {
+	calls        int
+	lastMessages []providers.Message
+	chatFunc     func(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error)
+}
+
+func (p *overflowProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	p.calls++
+	p.lastMessages = append([]providers.Message(nil), messages...)
+
+	if p.chatFunc != nil {
+		return p.chatFunc(ctx, messages, tools, model, opts)
+	}
+
+	if p.calls == 1 {
+		return nil, errors.New("context_window_exceeded")
+	}
+
+	return &providers.LLMResponse{
+		Content: "Recovered from overflow",
+	}, nil
+}
+
+func (p *overflowProvider) GetDefaultModel() string {
+	return "test-model"
+}
+
+func TestProcessMessage_ContextOverflowRecovery(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	_ = cfg
+
+	provider := &overflowProvider{}
+	al.registry = NewAgentRegistry(al.cfg, provider)
+
+	sessionKey := "agent:main:test-session"
+	agent := al.GetRegistry().GetDefaultAgent()
+
+	for i := 0; i < 5; i++ {
+		agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "heavy message"})
+		agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "assistant", Content: "response"})
+	}
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:    "test",
+		ChatID:     "chat1",
+		SenderID:   "user1",
+		SessionKey: "test-session",
+		Content:    "trigger recovery",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Recovered from overflow" {
+		t.Fatalf("response = %q, want %q", response, "Recovered from overflow")
+	}
+
+	if provider.calls != 2 {
+		t.Fatalf("expected 2 calls, got %d", provider.calls)
+	}
+}
+
+func TestProcessMessage_ContextOverflow_AnthropicStyle(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	_ = cfg
+
+	provider := &overflowProvider{}
+	al.registry = NewAgentRegistry(al.cfg, provider)
+
+	recoveryMsg := "error: status 400: context_window_exceeded"
+
+	provider.chatFunc = func(
+		ctx context.Context,
+		messages []providers.Message,
+		tools []providers.ToolDefinition,
+		model string,
+		opts map[string]any,
+	) (*providers.LLMResponse, error) {
+		if provider.calls == 1 {
+			return nil, errors.New(recoveryMsg)
+		}
+		return &providers.LLMResponse{Content: "Anthropic recovery success"}, nil
+	}
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "test",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "hello",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if !strings.Contains(response, "Anthropic recovery success") {
+		t.Fatalf("response = %q, want success message", response)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("expected 2 calls for retry, got %d", provider.calls)
 	}
 }
