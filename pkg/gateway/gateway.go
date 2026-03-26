@@ -480,14 +480,17 @@ func restartServices(
 	}
 	fmt.Println("  ✓ Heartbeat service restarted")
 
-	runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
-		Enabled:  cfg.Tools.MediaCleanup.Enabled,
-		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
-		Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
-	})
-	if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
-		fms.Start()
-	}
+
+	if runningServices.MediaStore == nil {
+    runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
+        Enabled:  cfg.Tools.MediaCleanup.Enabled,
+        MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
+        Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
+    })
+    if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
+        fms.Start()
+    }
+}
 	al.SetMediaStore(runningServices.MediaStore)
 
 	runningServices.ChannelManager, err = channels.NewManager(cfg, msgBus, runningServices.MediaStore)
