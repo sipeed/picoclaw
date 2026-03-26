@@ -150,6 +150,7 @@ export function ChatPage() {
             <div key={msg.id} className="flex w-full">
               {msg.role === "assistant" ? (
                 <AssistantMessage
+                  messageId={msg.id}
                   content={msg.content}
                   timestamp={msg.timestamp}
                 />

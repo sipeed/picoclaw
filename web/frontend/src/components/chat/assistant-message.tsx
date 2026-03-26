@@ -1,5 +1,5 @@
 import { IconCheck, IconCopy } from "@tabler/icons-react"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
 import rehypeSanitize from "rehype-sanitize"
@@ -8,18 +8,85 @@ import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
 import { formatMessageTime } from "@/hooks/use-pico-chat"
 
+const STREAM_FRAME_MS = 18
+const STREAM_STEPS = 60
+
 interface AssistantMessageProps {
+  messageId?: string
   content: string
   timestamp?: string | number
 }
 
 export function AssistantMessage({
+  messageId = "",
   content,
   timestamp = "",
 }: AssistantMessageProps) {
   const [isCopied, setIsCopied] = useState(false)
+  const [displayedContent, setDisplayedContent] = useState(
+    messageId.startsWith("hist-") ? content : "",
+  )
+  const timerRef = useRef<number | null>(null)
+  const displayedRef = useRef(displayedContent)
   const formattedTimestamp =
     timestamp !== "" ? formatMessageTime(timestamp) : ""
+
+  const syncDisplayedContent = (nextContent: string) => {
+    setDisplayedContent((previous) =>
+      previous === nextContent ? previous : nextContent,
+    )
+  }
+
+  useEffect(() => {
+    displayedRef.current = displayedContent
+  }, [displayedContent])
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearInterval(timerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const isHistoryMessage = messageId.startsWith("hist-")
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+
+    if (isHistoryMessage || content.trim() === "") {
+      queueMicrotask(() => syncDisplayedContent(content))
+      return
+    }
+
+    const currentDisplayed = displayedRef.current
+    const targetRunes = Array.from(content)
+    const start = content.startsWith(currentDisplayed) ? currentDisplayed : ""
+    const startLen = Array.from(start).length
+
+    if (startLen >= targetRunes.length) {
+      queueMicrotask(() => syncDisplayedContent(content))
+      return
+    }
+
+    let cursor = startLen
+    const chunkSize = Math.max(
+      1,
+      Math.ceil((targetRunes.length - startLen) / STREAM_STEPS),
+    )
+
+    queueMicrotask(() => syncDisplayedContent(start))
+    timerRef.current = window.setInterval(() => {
+      cursor = Math.min(targetRunes.length, cursor + chunkSize)
+      setDisplayedContent(targetRunes.slice(0, cursor).join(""))
+      if (cursor >= targetRunes.length && timerRef.current !== null) {
+        window.clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+    }, STREAM_FRAME_MS)
+  }, [content, messageId])
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content).then(() => {
@@ -48,7 +115,7 @@ export function AssistantMessage({
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeRaw, rehypeSanitize]}
           >
-            {content}
+            {displayedContent}
           </ReactMarkdown>
         </div>
         <Button
