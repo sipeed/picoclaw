@@ -58,10 +58,19 @@ type AgentLoop struct {
 	steering       *steeringQueue
 	pendingSkills  sync.Map
 	mu             sync.RWMutex
+	manualTools    []tools.Tool
 
 	// Concurrent turn management (from HEAD)
 	activeTurnStates sync.Map     // key: sessionKey (string), value: *turnState
 	subTurnCounter   atomic.Int64 // Counter for generating unique SubTurn IDs
+
+	// Agent instance caching for multi-user isolation
+	// Each unique chatID gets its own agent instance to maintain state/model selection
+	agentCache     sync.Map // key: channel:chatID, value: *AgentInstance
+	agentCacheMu   sync.RWMutex
+	agentCacheTTL  time.Duration // How long to keep cached agents alive
+	agentCleaner   *time.Ticker  // Periodic cleanup of stale cached agents
+	lastCacheCheck sync.Map      // key: channel:chatID, value: time.Time (last access time)
 
 	// Turn tracking (from Incoming)
 	turnSeq        atomic.Uint64
@@ -100,7 +109,7 @@ const (
 	defaultResponse            = "The model returned an empty response. This may indicate a provider error or token limit."
 	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
 	handledToolResponseSummary = "Requested output delivered via tool attachment."
-	sessionKeyAgentPrefix      = "agent:"
+	sessionKeyAgentPrefix      = "agent::"
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"
@@ -162,6 +171,13 @@ func registerSharedTools(
 		if !ok {
 			continue
 		}
+
+		// Re-register manual tools first so they can be overwritten by core shared tools if needed
+		al.mu.RLock()
+		for _, tool := range al.manualTools {
+			agent.Tools.Register(tool)
+		}
+		al.mu.RUnlock()
 
 		if cfg.Tools.IsToolEnabled("web") {
 			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
@@ -664,7 +680,7 @@ func (al *AgentLoop) buildContinuationTarget(msg bus.InboundMessage) (*continuat
 	}
 
 	return &continuationTarget{
-		SessionKey: resolveScopeKey(route, msg.SessionKey),
+		SessionKey: resolveScopeKey(route, msg.SessionKey, msg.ChatID, route.AgentID),
 		Channel:    msg.Channel,
 		ChatID:     msg.ChatID,
 	}, nil
@@ -918,6 +934,21 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 		if agent, ok := registry.GetAgent(agentID); ok {
 			agent.Tools.Register(tool)
 		}
+	}
+
+	al.mu.Lock()
+	defer al.mu.Unlock()
+	// Check for duplicates by name and overwrite
+	found := false
+	for i, t := range al.manualTools {
+		if t.Name() == tool.Name() {
+			al.manualTools[i] = tool
+			found = true
+			break
+		}
+	}
+	if !found {
+		al.manualTools = append(al.manualTools, tool)
 	}
 }
 
@@ -1298,9 +1329,61 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
-	route, agent, routeErr := al.resolveMessageRoute(msg)
+	route, baseAgent, routeErr := al.resolveMessageRoute(msg)
 	if routeErr != nil {
 		return "", routeErr
+	}
+
+	agent := baseAgent
+	isolationID := msg.ChatID
+	if isolationID != "" && isolationID != "direct" {
+		// Check agent instance cache first (keyed by channel:chatID)
+		cacheKey := msg.Channel + ":" + isolationID
+		if cached, ok := al.agentCache.Load(cacheKey); ok {
+			agent = cached.(*AgentInstance)
+			// Update last access time for TTL tracking
+			al.lastCacheCheck.Store(cacheKey, time.Now())
+
+			logger.InfoCF("agent", "Reusing cached agent instance", map[string]any{
+				"agent_id":     agent.ID,
+				"cache_key":    cacheKey,
+				"isolation_id": isolationID,
+			})
+		} else {
+			// Create a transient isolated instance for this chat session
+			// This ensures workspace, memory, and sessions are private to the chat_id.
+
+			// Determine the original config for this agent to preserve its specialized prompt/skills
+			var ac *config.AgentConfig
+			for i := range al.cfg.Agents.List {
+				if routing.NormalizeAgentID(al.cfg.Agents.List[i].ID) == route.AgentID {
+					ac = &al.cfg.Agents.List[i]
+					break
+				}
+			}
+
+			// Create a new instance with the isolationID
+			// NewAgentInstance uses isolationID to sub-path the workspace
+			agent = NewAgentInstance(ac, &al.cfg.Agents.Defaults, al.cfg, baseAgent.Provider, isolationID)
+
+			// Set its ID to match the routed agent so prompts and logs match
+			agent.ID = route.AgentID
+
+			// Re-register shared tools (web, message, spawn) to this transient agent
+			// We pass a mini-registry containing only this agent
+			registerSharedTools(al, al.cfg, al.bus, &AgentRegistry{agents: map[string]*AgentInstance{agent.ID: agent}}, baseAgent.Provider)
+
+			// Cache this agent instance per chat session
+			al.agentCache.Store(cacheKey, agent)
+			al.lastCacheCheck.Store(cacheKey, time.Now())
+
+			logger.InfoCF("agent", "Created isolated transient agent", map[string]any{
+				"agent_id":     agent.ID,
+				"cache_key":    cacheKey,
+				"isolation_id": isolationID,
+				"workspace":    agent.Workspace,
+			})
+		}
 	}
 
 	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
@@ -1311,7 +1394,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	// Resolve session key from route, while preserving explicit agent-scoped keys.
-	scopeKey := resolveScopeKey(route, msg.SessionKey)
+	// If caller provides a session key, respect it. Otherwise, derive from chatID for isolation.
+	scopeKey := resolveScopeKey(route, msg.SessionKey, msg.ChatID, agent.ID)
 	sessionKey := scopeKey
 
 	logger.InfoCF("agent", "Routed message",
@@ -1377,10 +1461,19 @@ func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.Resolv
 	return route, agent, nil
 }
 
-func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
+func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey, chatID, agentID string) string {
+	// 1. If caller explicitly provides a session key with agent prefix, use it as-is
 	if msgSessionKey != "" && strings.HasPrefix(msgSessionKey, sessionKeyAgentPrefix) {
 		return msgSessionKey
 	}
+
+	// 2. If a unique chatID is provided, use it to create an isolated session per chat
+	// This ensures each Teams conversation (or any unique chat) has separate session history
+	if chatID != "" && chatID != "direct" {
+		return fmt.Sprintf("%s:%s:%s", sessionKeyAgentPrefix, agentID, chatID)
+	}
+
+	// 3. Fall back to route's default session key
 	return route.SessionKey
 }
 
@@ -1394,7 +1487,7 @@ func (al *AgentLoop) resolveSteeringTarget(msg bus.InboundMessage) (string, stri
 		return "", "", false
 	}
 
-	return resolveScopeKey(route, msg.SessionKey), agent.ID, true
+	return resolveScopeKey(route, msg.SessionKey, msg.ChatID, agent.ID), agent.ID, true
 }
 
 func (al *AgentLoop) requeueInboundMessage(msg bus.InboundMessage) error {

@@ -160,11 +160,14 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 
 	// Setup synchronous /chat endpoint handler
 	if cfg.Gateway.ChatEnabled {
-		runningServices.HealthServer.SetChatFunc(func(ctx context.Context, message, sessionID string) (string, error) {
+		runningServices.HealthServer.SetChatFunc(func(ctx context.Context, message, sessionID, chatID string) (string, error) {
 			if sessionID == "" {
 				sessionID = "http-chat"
 			}
-			return agentLoop.ProcessDirectWithChannel(ctx, message, sessionID, "http", "chat")
+			if chatID == "" {
+				chatID = "chat"
+			}
+			return agentLoop.ProcessDirectWithChannel(ctx, message, sessionID, "http", chatID)
 		})
 	}
 

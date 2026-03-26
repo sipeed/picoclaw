@@ -249,7 +249,7 @@ vet: generate
 
 ## test: Test Go code
 test: generate
-	@$(GO) test $(GOFLAGS) $$($(GO) list $(GOFLAGS) ./... | grep -v github.com/sipeed/picoclaw/web/)
+	@$(GO) test $(GOFLAGS) -p 1 $$($(GO) list $(GOFLAGS) ./... | grep -v github.com/sipeed/picoclaw/web/) -timeout 120s
 	@cd web && make test
 
 ## fmt: Format Go code

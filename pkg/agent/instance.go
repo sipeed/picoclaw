@@ -56,8 +56,9 @@ func NewAgentInstance(
 	defaults *config.AgentDefaults,
 	cfg *config.Config,
 	provider providers.LLMProvider,
+	isolationID string,
 ) *AgentInstance {
-	workspace := resolveAgentWorkspace(agentCfg, defaults)
+	workspace := resolveAgentWorkspace(agentCfg, defaults, isolationID)
 	os.MkdirAll(workspace, 0o755)
 
 	model := resolveAgentModel(agentCfg, defaults)
@@ -99,11 +100,15 @@ func NewAgentInstance(
 		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
 	}
 
-	sessionsDir := filepath.Join(workspace, "sessions")
+	// Use main agent workspace (no isolation) for sessions so that session history
+	// persists across transient instances. The isolated workspace is only for file tools.
+	mainWorkspace := resolveOriginalAgentWorkspace(agentCfg, defaults)
+	sessionsDir := filepath.Join(mainWorkspace, "sessions")
 	sessions := initSessionStore(sessionsDir)
 
 	mcpDiscoveryActive := cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled
-	contextBuilder := NewContextBuilder(workspace).
+	baseWorkspace := mainWorkspace
+	contextBuilder := NewContextBuilder(workspace, baseWorkspace).
 		WithToolDiscovery(
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
@@ -211,17 +216,27 @@ func NewAgentInstance(
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.
-func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
+func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentDefaults, isolationID string) string {
+	base := ""
 	if agentCfg != nil && strings.TrimSpace(agentCfg.Workspace) != "" {
-		return expandHome(strings.TrimSpace(agentCfg.Workspace))
+		base = expandHome(strings.TrimSpace(agentCfg.Workspace))
+	} else if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
+		base = expandHome(defaults.Workspace)
+	} else {
+		// For named agents without explicit workspace, use default workspace with agent ID suffix
+		id := routing.NormalizeAgentID(agentCfg.ID)
+		base = filepath.Join(expandHome(defaults.Workspace), "..", "workspace-"+id)
 	}
-	// Use the configured default workspace (respects PICOCLAW_HOME)
-	if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
-		return expandHome(defaults.Workspace)
+
+	if isolationID != "" && isolationID != "direct" {
+		return filepath.Join(base, "sessions", isolationID, "workspace")
 	}
-	// For named agents without explicit workspace, use default workspace with agent ID suffix
-	id := routing.NormalizeAgentID(agentCfg.ID)
-	return filepath.Join(expandHome(defaults.Workspace), "..", "workspace-"+id)
+	return base
+}
+
+// resolveOriginalAgentWorkspace determines the original workspace directory for an agent without isolation.
+func resolveOriginalAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
+	return resolveAgentWorkspace(agentCfg, defaults, "")
 }
 
 // resolveAgentModel resolves the primary model for an agent.
