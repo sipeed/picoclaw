@@ -1416,7 +1416,7 @@ func (al *AgentLoop) executeToolCalls(
 				map[string]any{"tool": tc.Name, "content_len": len(toolResult.ForUser)})
 		}
 
-		if len(toolResult.Media) > 0 && opts.SendResponse {
+		if len(toolResult.Media) > 0 {
 			al.publishToolMedia(ctx, toolResult, opts)
 		}
 

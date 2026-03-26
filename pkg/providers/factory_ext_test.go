@@ -22,13 +22,15 @@ func TestCreateProviderByName_OpenAI_OAuth(t *testing.T) {
 	}
 
 	cfg := config.DefaultConfig()
-	cfg.ModelList = append(cfg.ModelList, &config.ModelConfig{
-		ModelName:  "openai",
-		Model:      "openai/gpt-4o",
-		AuthMethod: "oauth",
-	})
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName:  "openai-oauth",
+			Model:      "openai/gpt-4o",
+			AuthMethod: "oauth",
+		},
+	}
 
-	provider, err := CreateProviderByName(cfg, "openai")
+	provider, err := CreateProviderByName(cfg, "openai-oauth")
 	if err != nil {
 		t.Fatalf("CreateProviderByName() error = %v", err)
 	}
