@@ -279,6 +279,13 @@ func (al *AgentLoop) dequeueSteeringMessagesForScopeWithFallback(scope string) [
 	return al.steering.dequeueScopeWithFallback(scope)
 }
 
+func (al *AgentLoop) pendingSteeringCountForScope(scope string) int {
+	if al.steering == nil {
+		return 0
+	}
+	return al.steering.lenScope(scope)
+}
+
 func (al *AgentLoop) continueWithSteeringMessages(
 	ctx context.Context,
 	agent *AgentInstance,

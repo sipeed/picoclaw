@@ -96,6 +96,7 @@ type processOptions struct {
 	DefaultResponse         string              // Response when LLM returns empty
 	EnableSummary           bool                // Whether to trigger summarization
 	SendResponse            bool                // Whether to send response via bus
+	SuppressToolFeedback    bool                // Whether to suppress inline tool feedback messages
 	NoHistory               bool                // If true, don't load session history (for heartbeat)
 	SkipInitialSteeringPoll bool                // If true, skip the steering poll at loop start (used by Continue)
 	TaskID                  string              // Unique task ID for background task status tracking
@@ -103,15 +104,22 @@ type processOptions struct {
 	SystemMessage           bool                // If true, this is a system message (subagent result) — skip placeholder and plan nudge
 }
 
+type continuationTarget struct {
+	SessionKey string
+	Channel    string
+	ChatID     string
+}
+
 const (
-	defaultResponse           = "The model returned an empty response. This may indicate a provider error or token limit."
-	toolLimitResponse         = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
-	sessionKeyAgentPrefix     = "agent:"
-	metadataKeyAccountID      = "account_id"
-	metadataKeyGuildID        = "guild_id"
-	metadataKeyTeamID         = "team_id"
-	metadataKeyParentPeerKind = "parent_peer_kind"
-	metadataKeyParentPeerID   = "parent_peer_id"
+	defaultResponse            = "The model returned an empty response. This may indicate a provider error or token limit."
+	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
+	handledToolResponseSummary = "Requested output delivered via tool attachment."
+	sessionKeyAgentPrefix      = "agent:"
+	metadataKeyAccountID       = "account_id"
+	metadataKeyGuildID         = "guild_id"
+	metadataKeyTeamID          = "team_id"
+	metadataKeyParentPeerKind  = "parent_peer_kind"
+	metadataKeyParentPeerID    = "parent_peer_id"
 )
 
 func NewAgentLoop(
@@ -414,7 +422,6 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						_ = agent.Sessions.Save(msg.SessionKey)
 					}
 				}
-
 				// Activate worktree for the session's plan execution
 				if agent := al.registry.GetDefaultAgent(); agent != nil {
 					taskName := agent.ContextBuilder.Memory().GetPlanTaskName()
@@ -657,8 +664,133 @@ func (al *AgentLoop) resetMessageTool() {
 	}
 }
 
+// drainBusToSteering consumes inbound messages and redirects messages from the
+// active scope into the steering queue. Messages from other scopes are requeued
+// so they can be processed normally after the active turn. It drains all
+// immediately available messages, blocking for the first one until ctx is done.
+func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, activeAgentID string) {
+	blocking := true
+	for {
+		var msg bus.InboundMessage
+
+		if blocking {
+			// Block waiting for the first available message or ctx cancellation.
+			select {
+			case <-ctx.Done():
+				return
+			case m, ok := <-al.bus.InboundChan():
+				if !ok {
+					return
+				}
+				msg = m
+			}
+		} else {
+			// Non-blocking: drain any remaining queued messages, return when empty.
+			select {
+			case m, ok := <-al.bus.InboundChan():
+				if !ok {
+					return
+				}
+				msg = m
+			default:
+				return
+			}
+		}
+		blocking = false
+
+		msgScope, _, scopeOK := al.resolveSteeringTarget(msg)
+		if !scopeOK || msgScope != activeScope {
+			if err := al.requeueInboundMessage(msg); err != nil {
+				logger.WarnCF("agent", "Failed to requeue non-steering inbound message", map[string]any{
+					"error":     err.Error(),
+					"channel":   msg.Channel,
+					"sender_id": msg.SenderID,
+				})
+			}
+			continue
+		}
+
+		// Transcribe audio if needed before steering, so the agent sees text.
+		msg, _ = al.transcribeAudioInMessage(ctx, msg)
+
+		logger.InfoCF("agent", "Redirecting inbound message to steering queue",
+			map[string]any{
+				"channel":     msg.Channel,
+				"sender_id":   msg.SenderID,
+				"content_len": len(msg.Content),
+				"scope":       activeScope,
+			})
+
+		if err := al.enqueueSteeringMessage(activeScope, activeAgentID, providers.Message{
+			Role:    "user",
+			Content: msg.Content,
+			Media:   append([]string(nil), msg.Media...),
+		}); err != nil {
+			logger.WarnCF("agent", "Failed to steer message, will be lost",
+				map[string]any{
+					"error":   err.Error(),
+					"channel": msg.Channel,
+				})
+		}
+	}
+}
+
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+}
+
+func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
+	if response == "" {
+		return
+	}
+
+	alreadySent := false
+	defaultAgent := al.GetRegistry().GetDefaultAgent()
+	if defaultAgent != nil {
+		if tool, ok := defaultAgent.Tools.Get("message"); ok {
+			if mt, ok := tool.(*tools.MessageTool); ok {
+				alreadySent = mt.HasSentInRound()
+			}
+		}
+	}
+
+	if alreadySent {
+		logger.DebugCF(
+			"agent",
+			"Skipped outbound (message tool already sent)",
+			map[string]any{"channel": channel},
+		)
+		return
+	}
+
+	al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+		Channel: channel,
+		ChatID:  chatID,
+		Content: response,
+	})
+	logger.InfoCF("agent", "Published outbound response",
+		map[string]any{
+			"channel":     channel,
+			"chat_id":     chatID,
+			"content_len": len(response),
+		})
+}
+
+func (al *AgentLoop) buildContinuationTarget(msg bus.InboundMessage) (*continuationTarget, error) {
+	if msg.Channel == "system" {
+		return nil, nil
+	}
+
+	route, _, err := al.resolveMessageRoute(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return &continuationTarget{
+		SessionKey: resolveScopeKey(route, msg.SessionKey),
+		Channel:    msg.Channel,
+		ChatID:     msg.ChatID,
+	}, nil
 }
 
 // Close releases resources held by the loop (e.g. flushes write-behind stats
@@ -745,6 +877,17 @@ func (al *AgentLoop) newTurnEventScope(agentID, sessionKey string) turnEventScop
 	}
 }
 
+func (ts turnEventScope) meta(iteration int, source, tracePath string) EventMeta {
+	return EventMeta{
+		AgentID:    ts.agentID,
+		TurnID:     ts.turnID,
+		SessionKey: ts.sessionKey,
+		Iteration:  iteration,
+		Source:     source,
+		TracePath:  tracePath,
+	}
+}
+
 func (al *AgentLoop) emitEvent(kind EventKind, meta EventMeta, payload any) {
 	evt := Event{
 		Kind:    kind,
@@ -759,6 +902,43 @@ func (al *AgentLoop) emitEvent(kind EventKind, meta EventMeta, payload any) {
 	al.logEvent(evt)
 
 	al.eventBus.Emit(evt)
+}
+
+func cloneEventArguments(args map[string]any) map[string]any {
+	if len(args) == 0 {
+		return nil
+	}
+
+	cloned := make(map[string]any, len(args))
+	for k, v := range args {
+		cloned[k] = v
+	}
+	return cloned
+}
+
+func (al *AgentLoop) hookAbortError(ts *turnState, stage string, decision HookDecision) error {
+	reason := decision.Reason
+	if reason == "" {
+		reason = "hook requested turn abort"
+	}
+
+	err := fmt.Errorf("hook aborted turn during %s: %s", stage, reason)
+	al.emitEvent(
+		EventKindError,
+		ts.eventMeta("hooks", "turn.error"),
+		ErrorPayload{
+			Stage:   "hook." + stage,
+			Message: err.Error(),
+		},
+	)
+	return err
+}
+
+func hookDeniedToolContent(prefix, reason string) string {
+	if reason == "" {
+		return prefix
+	}
+	return prefix + ": " + reason
 }
 
 func (al *AgentLoop) logEvent(evt Event) {
@@ -1033,13 +1213,13 @@ func (al *AgentLoop) GetConfig() *config.Config {
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
 
-	// Propagate store to send_file tools in all agents.
+	// Propagate store to all registered tools that can emit media.
 	registry := al.GetRegistry()
-	registry.ForEachTool("send_file", func(t tools.Tool) {
-		if sf, ok := t.(*tools.SendFileTool); ok {
-			sf.SetMediaStore(s)
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
+			agent.Tools.SetMediaStore(s)
 		}
-	})
+	}
 }
 
 // SetTranscriber injects a voice transcriber for agent-level audio transcription.
@@ -1290,24 +1470,16 @@ func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, cha
 	heartbeatChatID := al.withTelegramThread(channel, chatID, heartbeatThreadID)
 
 	return al.runAgentLoop(ctx, agent, processOptions{
-		SessionKey: "heartbeat",
-
-		Channel: channel,
-
-		ChatID: heartbeatChatID,
-
-		UserMessage: content,
-
-		DefaultResponse: defaultResponse,
-
-		EnableSummary: false,
-
-		SendResponse: false,
-
-		NoHistory: true, // Don't load session history for heartbeat
-
-		Background: true, // Enable live task notifications on Telegram
-
+		SessionKey:           "heartbeat",
+		Channel:              channel,
+		ChatID:               heartbeatChatID,
+		UserMessage:          content,
+		DefaultResponse:      defaultResponse,
+		EnableSummary:        false,
+		SendResponse:         false,
+		SuppressToolFeedback: true,
+		NoHistory:            true, // Don't load session history for heartbeat
+		Background:           true, // Enable live task notifications on Telegram
 	})
 }
 
@@ -1466,6 +1638,32 @@ func (al *AgentLoop) withTelegramThread(channel, chatID string, threadID int) st
 	}
 
 	return fmt.Sprintf("%s/%d", baseChatID, threadID)
+}
+
+func (al *AgentLoop) resolveSteeringTarget(msg bus.InboundMessage) (string, string, bool) {
+	if msg.Channel == "system" {
+		return "", "", false
+	}
+
+	route, agent, err := al.resolveMessageRoute(msg)
+	if err != nil || agent == nil {
+		return "", "", false
+	}
+
+	return resolveScopeKey(route, msg.SessionKey), agent.ID, true
+}
+
+func (al *AgentLoop) requeueInboundMessage(msg bus.InboundMessage) error {
+	if al.bus == nil {
+		return nil
+	}
+	pubCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	return al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+		Channel: msg.Channel,
+		ChatID:  msg.ChatID,
+		Content: msg.Content,
+	})
 }
 
 func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string) {

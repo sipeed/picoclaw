@@ -15,9 +15,7 @@ import (
 )
 
 // spawnTimeout is the hard upper bound for a single spawn goroutine.
-
 // MaxIterations × HTTP timeout provides the soft limit; this is a safety net.
-
 const spawnTimeout = 30 * time.Minute
 
 // SubTurnSpawner is an interface for spawning sub-turns.
@@ -43,46 +41,31 @@ type SubTurnConfig struct {
 }
 
 type SubagentTask struct {
-	ID string
-
-	Task string
-
+	ID    string
+	Task  string
 	Label string
 
-	AgentID string
-
+	AgentID       string
 	OriginChannel string
+	OriginChatID  string
+	Status        string
+	Result        string
+	Created       int64
 
-	OriginChatID string
-
-	Status string
-
-	Result string
-
-	Created int64
-
-	CompletedAt int64 `json:"-"`
-
-	Iterations int `json:"-"`
-
-	ToolCalls int `json:"-"`
-
-	ToolStats map[string]int `json:"-"`
+	CompletedAt int64          `json:"-"`
+	Iterations  int            `json:"-"`
+	ToolCalls   int            `json:"-"`
+	ToolStats   map[string]int `json:"-"`
 
 	cancel context.CancelFunc
 
 	// Escalation channels for deliberate presets (nil for exploratory).
-
-	inCh chan string // conductor → subagent answers
-
+	inCh  chan string           // conductor → subagent answers
 	outCh chan ContainerMessage // subagent → conductor questions/plan reviews
 
 	// Plan mode state (deliberate presets only).
-
 	PlanState SubagentPlanState
-
-	PlanGoal string
-
+	PlanGoal  string
 	PlanSteps []string
 }
 
@@ -124,14 +107,11 @@ type SubagentManager struct {
 
 	hasTemperature bool
 
-	nextID int
-
+	nextID  int
 	spawner SpawnSubTurnFunc
 
-	reporter orch.AgentReporter
-
-	recorder SessionRecorder
-
+	reporter            orch.AgentReporter
+	recorder            SessionRecorder
 	conductorSessionKey string
 }
 
@@ -310,30 +290,23 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, pres
 
 func (sm *SubagentManager) getLLMOptions() map[string]any {
 	sm.mu.RLock()
-
 	defer sm.mu.RUnlock()
 
 	var opts map[string]any
-
 	if sm.hasMaxTokens || sm.hasTemperature {
 		opts = map[string]any{}
-
 		if sm.hasMaxTokens {
 			opts["max_tokens"] = sm.maxTokens
 		}
-
 		if sm.hasTemperature {
 			opts["temperature"] = sm.temperature
 		}
 	}
-
 	return opts
 }
 
 // finishTask records completion, sends bus announcement, and invokes callback.
-
 // Must NOT hold sm.mu on entry.
-
 func (sm *SubagentManager) finishTask(
 	ctx context.Context,
 	task *SubagentTask,
@@ -385,39 +358,27 @@ func (sm *SubagentManager) finishTask(
 	} else {
 		task.Status = "completed"
 		task.Result = loopResult.Content
-
 		task.CompletedAt = time.Now().UnixMilli()
-
 		task.Iterations = loopResult.Iterations
-
 		task.ToolCalls = loopResult.ToolCalls
-
 		task.ToolStats = loopResult.ToolStats
-
 		task.PlanState = PlanCompleted
 
 		sm.reporter.ReportConversation(task.ID, "conductor", loopResult.Content)
-
 		sm.reporter.ReportGC(task.ID, "completed")
 
 		if sm.recorder != nil {
 			subKey := routing.BuildSubagentSessionKey(task.ID)
-
 			_ = sm.recorder.RecordSubagentTurn(subKey, messages)
-
 			_ = sm.recorder.RecordCompletion(subKey, "completed", loopResult.Content)
 		}
 
 		result = &ToolResult{
 			ForLLM: fmt.Sprintf(
-
 				"Subagent '%s' completed (iterations: %d, tool calls: %d): %s",
-
 				task.Label,
 				loopResult.Iterations,
-
 				loopResult.ToolCalls,
-
 				loopResult.Content,
 			),
 			ForUser: loopResult.Content,
@@ -547,19 +508,32 @@ func (sm *SubagentManager) ListTaskCopies() []SubagentTask {
 type SubagentTool struct {
 	manager *SubagentManager
 
-	originChannel string
+	spawner      SubTurnSpawner
+	defaultModel string
+	maxTokens    int
+	temperature  float64
 
-	originChatID string
+	originChannel string
+	originChatID  string
 }
 
 func NewSubagentTool(manager *SubagentManager) *SubagentTool {
-	return &SubagentTool{
-		manager: manager,
-
-		originChannel: "cli",
-
-		originChatID: "direct",
+	if manager == nil {
+		return &SubagentTool{}
 	}
+	return &SubagentTool{
+		manager:       manager,
+		defaultModel:  manager.defaultModel,
+		maxTokens:     manager.maxTokens,
+		temperature:   manager.temperature,
+		originChannel: "cli",
+		originChatID:  "direct",
+	}
+}
+
+// SetSpawner sets the SubTurnSpawner for direct sub-turn execution.
+func (t *SubagentTool) SetSpawner(spawner SubTurnSpawner) {
+	t.spawner = spawner
 }
 
 func (t *SubagentTool) Name() string {
@@ -608,88 +582,107 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	label, _ := args["label"].(string)
 
+	// Use spawner if available (direct SpawnSubTurn call)
+	if t.spawner != nil {
+		systemPrompt := fmt.Sprintf(
+			"You are a subagent. Complete the given task independently and provide a clear, concise result.\n\nTask: %s",
+			task,
+		)
+		if label != "" {
+			systemPrompt = fmt.Sprintf(
+				"You are a subagent labeled %q. Complete the given task independently and provide a clear, concise result.\n\nTask: %s",
+				label, task,
+			)
+		}
+		result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
+			Model:        t.defaultModel,
+			Tools:        nil,
+			SystemPrompt: systemPrompt,
+			MaxTokens:    t.maxTokens,
+			Temperature:  t.temperature,
+			Async:        false,
+		})
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)
+		}
+
+		// Format result for display
+		userContent := result.ForLLM
+		if result.ForUser != "" {
+			userContent = result.ForUser
+		}
+		maxUserLen := 500
+		if len(userContent) > maxUserLen {
+			userContent = userContent[:maxUserLen] + "..."
+		}
+
+		labelStr := label
+		if labelStr == "" {
+			labelStr = "(unnamed)"
+		}
+		llmContent := fmt.Sprintf("Subagent task completed:\nLabel: %s\nResult: %s",
+			labelStr, result.ForLLM)
+
+		return &ToolResult{
+			ForLLM:  llmContent,
+			ForUser: userContent,
+			Silent:  false,
+			IsError: result.IsError,
+			Async:   false,
+		}
+	}
+
 	if t.manager == nil {
 		return ErrorResult("subagent tool is not available in this session (orchestration may be disabled)").
 			WithError(fmt.Errorf("manager is nil"))
 	}
 
-	// Build messages for subagent
-	messages := []providers.Message{
-		{
-			Role: "system",
-
-			Content: "You are a subagent. Complete the given task independently and provide a clear, concise result.",
-		},
-		{
-			Role: "user",
-
-			Content: task,
-		},
-	}
-
-	// Use RunToolLoop to execute with tools (same as async SpawnTool)
+	// Fallback: use RunToolLoop with the manager
 	sm := t.manager
 	sm.mu.RLock()
 	tools := sm.tools
 	maxIter := sm.maxIterations
-	maxTokens := sm.maxTokens
-	temperature := sm.temperature
-	hasMaxTokens := sm.hasMaxTokens
-	hasTemperature := sm.hasTemperature
 	sm.mu.RUnlock()
 
-	var llmOptions map[string]any
-	if hasMaxTokens || hasTemperature {
-		llmOptions = map[string]any{}
-		if hasMaxTokens {
-			llmOptions["max_tokens"] = maxTokens
-		}
-		if hasTemperature {
-			llmOptions["temperature"] = temperature
-		}
+	messages := []providers.Message{
+		{Role: "system", Content: "You are a subagent. Complete the given task independently and provide a clear, concise result."},
+		{Role: "user", Content: task},
 	}
 
+	llmOptions := sm.getLLMOptions()
+
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
-		Provider: sm.provider,
-
-		Model: sm.defaultModel,
-
-		Tools: tools,
-
+		Provider:      sm.provider,
+		Model:         sm.defaultModel,
+		Tools:         tools,
 		MaxIterations: maxIter,
-
-		LLMOptions: llmOptions,
+		LLMOptions:    llmOptions,
 	}, messages, t.originChannel, t.originChatID)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)
 	}
 
 	// ForUser: Brief summary for user (truncated if too long)
-	userContent := loopResult.Content
-	maxUserLen := 500
-	if len(userContent) > maxUserLen {
-		userContent = userContent[:maxUserLen] + "..."
+	userContent2 := loopResult.Content
+	maxUserLen2 := 500
+	if len(userContent2) > maxUserLen2 {
+		userContent2 = userContent2[:maxUserLen2] + "..."
 	}
 
 	// ForLLM: Full execution details
-	labelStr := label
-	if labelStr == "" {
-		labelStr = "(unnamed)"
+	labelStr2 := label
+	if labelStr2 == "" {
+		labelStr2 = "(unnamed)"
 	}
 
-	llmContent := fmt.Sprintf("Subagent task completed:\nLabel: %s\nIterations: %d\nTool calls: %d\nResult: %s",
-
-		labelStr, loopResult.Iterations, loopResult.ToolCalls, loopResult.Content)
+	llmContent2 := fmt.Sprintf("Subagent task completed:\nLabel: %s\nIterations: %d\nTool calls: %d\nResult: %s",
+		labelStr2, loopResult.Iterations, loopResult.ToolCalls, loopResult.Content)
 
 	return &ToolResult{
-		ForLLM: llmContent,
-
-		ForUser: userContent,
-
-		Silent: false,
-
+		ForLLM:  llmContent2,
+		ForUser: userContent2,
+		Silent:  false,
 		IsError: false,
-
-		Async: false,
+		Async:   false,
 	}
 }

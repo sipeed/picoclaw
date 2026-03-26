@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"sync"
 	"time"
 
@@ -76,18 +77,23 @@ type channelWorker struct {
 }
 
 type Manager struct {
-	managerExt    // fork-specific fields (statusMsgIDs, taskMsgIDs, statusEditTimes)
 	channels      map[string]Channel
 	workers       map[string]*channelWorker
 	bus           *bus.MessageBus
 	config        *config.Config
 	mediaStore    media.MediaStore
 	dispatchTask  *asyncTask
+	mux           *http.ServeMux
+	httpServer    *http.Server
 	mu            sync.RWMutex
-	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
-	typingStops   sync.Map // "channel:chatID" → func()
-	reactionUndos sync.Map // "channel:chatID" → reactionEntry
-	streamActive  sync.Map // "channel:chatID" → true (set when streamer.Finalize sent the message)
+	placeholders  sync.Map          // "channel:chatID" → placeholderID (string)
+	typingStops   sync.Map          // "channel:chatID" → func()
+	reactionUndos sync.Map          // "channel:chatID" → reactionEntry
+	streamActive    sync.Map // "channel:chatID" → true (set when streamer.Finalize sent the message)
+	statusMsgIDs    sync.Map // "channel:chatID" → statusMsgEntry (streaming preview)
+	taskMsgIDs      sync.Map // "channel:chatID:taskID" → statusMsgEntry (background task status)
+	statusEditTimes sync.Map // key → time.Time — last EditMessage time for throttling
+	channelHashes   map[string]string // channel name → config hash
 }
 
 type asyncTask struct {
@@ -134,15 +140,23 @@ func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
 	}
 }
 
+// InvokeTypingStop invokes the registered typing stop function for the given channel and chatID.
+// It is safe to call even when no typing indicator is active (no-op).
+// Used by the agent loop to stop typing when processing completes (success, error, or panic),
+// regardless of whether an outbound message is published.
+func (m *Manager) InvokeTypingStop(channel, chatID string) {
+	key := channel + ":" + chatID
+	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
+		if entry, ok := v.(typingEntry); ok {
+			entry.stop()
+		}
+	}
+}
+
 // RecordReactionUndo registers a reaction undo function for later invocation.
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
 	key := channel + ":" + chatID
-	if v, loaded := m.reactionUndos.Load(key); loaded {
-		if entry, ok := v.(reactionEntry); ok {
-			entry.undo() // idempotent
-		}
-	}
 	m.reactionUndos.Store(key, reactionEntry{undo: undo, createdAt: time.Now()})
 }
 
@@ -165,43 +179,7 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 		}
 	}
 
-	// 3. Try editing a tracked status message (from streaming preview).
-	// For draft-based entries, update the draft with the final content so
-	// the draft bubble becomes the permanent response. If a placeholder
-	// also exists, delete it to avoid orphan "Thinking…" messages.
-	if v, loaded := m.statusMsgIDs.LoadAndDelete(key); loaded {
-		if entry, ok := v.(statusMsgEntry); ok {
-			if entry.draftID != 0 {
-				if drafter, ok := ch.(DraftSender); ok {
-					if err := drafter.SendDraft(ctx, msg.ChatID, entry.draftID, msg.Content); err == nil {
-						m.statusEditTimes.Delete(key)
-						// Draft displays the final content; delete orphan placeholder.
-						if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
-							if phEntry, ok := v.(placeholderEntry); ok && phEntry.id != "" {
-								if deleter, ok := ch.(MessageDeleter); ok {
-									_ = deleter.DeleteMessage(ctx, msg.ChatID, phEntry.id)
-								}
-							}
-						}
-						return true
-					}
-					// Clear orphan draft on failure to prevent stale streaming preview.
-					_ = drafter.SendDraft(ctx, msg.ChatID, entry.draftID, "")
-				}
-				m.statusEditTimes.Delete(key)
-				// Draft update failed → fall through to placeholder path.
-			} else if entry.messageID != "" {
-				if editor, ok := ch.(MessageEditor); ok {
-					if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
-						m.placeholders.Delete(key)
-						return true // edited successfully, skip Send
-					}
-				}
-			}
-		}
-	}
-
-	// 3b. If a stream already finalized this message, delete the placeholder and skip send
+	// 3. If a stream already finalized this message, delete the placeholder and skip send
 	if _, loaded := m.streamActive.LoadAndDelete(key); loaded {
 		if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 			if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
@@ -231,21 +209,59 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	return false
 }
 
+// preSendMedia handles typing stop, reaction undo, and placeholder cleanup
+// before sending media attachments. Unlike preSend for text messages, media
+// delivery never edits the placeholder because there is no text payload to
+// replace it with; it only attempts to delete the placeholder when possible.
+func (m *Manager) preSendMedia(ctx context.Context, name string, msg bus.OutboundMediaMessage, ch Channel) {
+	key := name + ":" + msg.ChatID
+
+	// 1. Stop typing
+	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
+		if entry, ok := v.(typingEntry); ok {
+			entry.stop() // idempotent, safe
+		}
+	}
+
+	// 2. Undo reaction
+	if v, loaded := m.reactionUndos.LoadAndDelete(key); loaded {
+		if entry, ok := v.(reactionEntry); ok {
+			entry.undo() // idempotent, safe
+		}
+	}
+
+	// 3. Clear any finalized stream marker for this chat before media delivery.
+	m.streamActive.LoadAndDelete(key)
+
+	// 4. Delete placeholder if present.
+	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
+		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
+			if deleter, ok := ch.(MessageDeleter); ok {
+				deleter.DeleteMessage(ctx, msg.ChatID, entry.id) // best effort
+			}
+		}
+	}
+}
+
 func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.MediaStore) (*Manager, error) {
 	m := &Manager{
-		channels:   make(map[string]Channel),
-		workers:    make(map[string]*channelWorker),
-		bus:        messageBus,
-		config:     cfg,
-		mediaStore: store,
+		channels:      make(map[string]Channel),
+		workers:       make(map[string]*channelWorker),
+		bus:           messageBus,
+		config:        cfg,
+		mediaStore:    store,
+		channelHashes: make(map[string]string),
 	}
 
 	// Register as streaming delegate so the agent loop can obtain streamers
 	messageBus.SetStreamDelegate(m)
 
-	if err := m.initChannels(); err != nil {
+	if err := m.initChannels(&cfg.Channels); err != nil {
 		return nil, err
 	}
+
+	// Store initial config hashes for all channels
+	m.channelHashes = toChannelHashes(cfg)
 
 	return m, nil
 }
@@ -337,15 +353,15 @@ func (m *Manager) initChannel(name, displayName string) {
 	}
 }
 
-func (m *Manager) initChannels() error {
+func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 	logger.InfoC("channels", "Initializing channel manager")
 
-	if m.config.Channels.Telegram.Enabled && m.config.Channels.Telegram.Token() != "" {
+	if channels.Telegram.Enabled && channels.Telegram.Token() != "" {
 		m.initChannel("telegram", "Telegram")
 	}
 
-	if m.config.Channels.WhatsApp.Enabled {
-		waCfg := m.config.Channels.WhatsApp
+	if channels.WhatsApp.Enabled {
+		waCfg := channels.WhatsApp
 		if waCfg.UseNative {
 			m.initChannel("whatsapp_native", "WhatsApp Native")
 		} else if waCfg.BridgeURL != "" {
@@ -353,71 +369,62 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
-	if m.config.Channels.Feishu.Enabled {
+	if channels.Feishu.Enabled {
 		m.initChannel("feishu", "Feishu")
 	}
 
-	if m.config.Channels.Discord.Enabled && m.config.Channels.Discord.Token() != "" {
+	if channels.Discord.Enabled && channels.Discord.Token() != "" {
 		m.initChannel("discord", "Discord")
 	}
 
-	if m.config.Channels.MaixCam.Enabled {
+	if channels.MaixCam.Enabled {
 		m.initChannel("maixcam", "MaixCam")
 	}
 
-	if m.config.Channels.QQ.Enabled {
+	if channels.QQ.Enabled {
 		m.initChannel("qq", "QQ")
 	}
 
-	if m.config.Channels.DingTalk.Enabled && m.config.Channels.DingTalk.ClientID != "" {
+	if channels.DingTalk.Enabled && channels.DingTalk.ClientID != "" {
 		m.initChannel("dingtalk", "DingTalk")
 	}
 
-	if m.config.Channels.Slack.Enabled && m.config.Channels.Slack.BotToken() != "" {
+	if channels.Slack.Enabled && channels.Slack.BotToken() != "" {
 		m.initChannel("slack", "Slack")
 	}
 
-	if m.config.Channels.Matrix.Enabled &&
+	if channels.Matrix.Enabled &&
 		m.config.Channels.Matrix.Homeserver != "" &&
 		m.config.Channels.Matrix.UserID != "" &&
 		m.config.Channels.Matrix.AccessToken() != "" {
 		m.initChannel("matrix", "Matrix")
 	}
 
-	if m.config.Channels.LINE.Enabled && m.config.Channels.LINE.ChannelAccessToken() != "" {
+	if channels.LINE.Enabled && channels.LINE.ChannelAccessToken() != "" {
 		m.initChannel("line", "LINE")
 	}
 
-	if m.config.Channels.OneBot.Enabled && m.config.Channels.OneBot.WSUrl != "" {
+	if channels.OneBot.Enabled && channels.OneBot.WSUrl != "" {
 		m.initChannel("onebot", "OneBot")
 	}
 
-	if m.config.Channels.WeCom.Enabled && m.config.Channels.WeCom.Token() != "" {
+	if channels.WeCom.Enabled && channels.WeCom.BotID != "" && channels.WeCom.Secret() != "" {
 		m.initChannel("wecom", "WeCom")
 	}
 
-	if m.config.Channels.WeComAIBot.Enabled && (m.config.Channels.WeComAIBot.Token() != "" ||
-		(m.config.Channels.WeComAIBot.Secret() != "" && m.config.Channels.WeComAIBot.BotID != "")) {
-		m.initChannel("wecom_aibot", "WeCom AI Bot")
-	}
-
-	if m.config.Channels.WeComApp.Enabled && m.config.Channels.WeComApp.CorpID != "" {
-		m.initChannel("wecom_app", "WeCom App")
-	}
-
-	if m.config.Channels.Weixin.Enabled && m.config.Channels.Weixin.Token() != "" {
+	if channels.Weixin.Enabled && channels.Weixin.Token() != "" {
 		m.initChannel("weixin", "Weixin")
 	}
 
-	if m.config.Channels.Pico.Enabled && m.config.Channels.Pico.Token() != "" {
+	if channels.Pico.Enabled && channels.Pico.Token() != "" {
 		m.initChannel("pico", "Pico")
 	}
 
-	if m.config.Channels.PicoClient.Enabled && m.config.Channels.PicoClient.URL != "" {
+	if channels.PicoClient.Enabled && channels.PicoClient.URL != "" {
 		m.initChannel("pico_client", "Pico Client")
 	}
 
-	if m.config.Channels.IRC.Enabled && m.config.Channels.IRC.Server != "" {
+	if channels.IRC.Enabled && channels.IRC.Server != "" {
 		m.initChannel("irc", "IRC")
 	}
 
@@ -428,30 +435,40 @@ func (m *Manager) initChannels() error {
 	return nil
 }
 
-// SetupHTTPServer registers channel webhook handlers and health checkers onto
-// the health server's mux so everything is served by a single HTTP listener.
+// SetupHTTPServer creates a shared HTTP server with the given listen address.
+// It registers health endpoints from the health server and discovers channels
+// that implement WebhookHandler and/or HealthChecker to register their handlers.
 func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
-	if healthServer == nil {
-		return
+	m.mux = http.NewServeMux()
+
+	// Register health endpoints
+	if healthServer != nil {
+		healthServer.RegisterOnMux(m.mux)
 	}
-	mux := healthServer.Mux()
 
 	// Discover and register webhook handlers and health checkers
 	for name, ch := range m.channels {
 		if wh, ok := ch.(WebhookHandler); ok {
-			mux.Handle(wh.WebhookPath(), wh)
+			m.mux.Handle(wh.WebhookPath(), wh)
 			logger.InfoCF("channels", "Webhook handler registered", map[string]any{
 				"channel": name,
 				"path":    wh.WebhookPath(),
 			})
 		}
 		if hc, ok := ch.(HealthChecker); ok {
-			mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
+			m.mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
 			logger.InfoCF("channels", "Health endpoint registered", map[string]any{
 				"channel": name,
 				"path":    hc.HealthPath(),
 			})
 		}
+	}
+
+	m.httpServer = &http.Server{
+		Addr:         addr,
+		Handler:      m.mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
 	}
 }
 
@@ -493,6 +510,20 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	// Start the TTL janitor that cleans up stale typing/placeholder entries
 	go m.runTTLJanitor(dispatchCtx)
 
+	// Start shared HTTP server if configured
+	if m.httpServer != nil {
+		go func() {
+			logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
+				"addr": m.httpServer.Addr,
+			})
+			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
+					"error": err.Error(),
+				})
+			}
+		}()
+	}
+
 	logger.InfoC("channels", "All channels started")
 	return nil
 }
@@ -502,6 +533,18 @@ func (m *Manager) StopAll(ctx context.Context) error {
 	defer m.mu.Unlock()
 
 	logger.InfoC("channels", "Stopping all channels")
+
+	// Shutdown shared HTTP server first
+	if m.httpServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := m.httpServer.Shutdown(shutdownCtx); err != nil {
+			logger.ErrorCF("channels", "Shared HTTP server shutdown error", map[string]any{
+				"error": err.Error(),
+			})
+		}
+		m.httpServer = nil
+	}
 
 	// Cancel dispatcher
 	if m.dispatchTask != nil {
@@ -568,8 +611,10 @@ func newChannelWorker(name string, ch Channel) *channelWorker {
 	}
 }
 
-// runWorker processes outbound messages for a single channel, splitting
-// messages that exceed the channel's maximum message length.
+// runWorker processes outbound messages for a single channel.
+// Message processing follows this order:
+//  1. SplitByMarker (if enabled in config) - LLM semantic marker-based splitting
+//  2. SplitMessage - channel-specific length-based splitting (MaxMessageLength)
 func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) {
 	defer close(w.done)
 	for {
@@ -578,35 +623,46 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 			if !ok {
 				return
 			}
-
-			// Route status/task messages to dedicated handlers
-			if msg.IsStatus {
-				m.handleStatusSend(ctx, name, w, msg)
-				continue
-			}
-			if msg.IsTaskStatus {
-				m.handleTaskStatusSend(ctx, name, w, msg)
-				continue
-			}
-
 			maxLen := 0
 			if mlp, ok := w.ch.(MessageLengthProvider); ok {
 				maxLen = mlp.MaxMessageLength()
 			}
-			if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
-				chunks := SplitMessage(msg.Content, maxLen)
-				for _, chunk := range chunks {
-					chunkMsg := msg
-					chunkMsg.Content = chunk
-					m.sendWithRetry(ctx, name, w, chunkMsg)
+
+			// Collect all message chunks to send
+			var chunks []string
+
+			// Step 1: Try marker-based splitting if enabled
+			if m.config != nil && m.config.Agents.Defaults.SplitOnMarker {
+				if markerChunks := SplitByMarker(msg.Content); len(markerChunks) > 1 {
+					for _, chunk := range markerChunks {
+						chunks = append(chunks, splitByLength(chunk, maxLen)...)
+					}
 				}
-			} else {
-				m.sendWithRetry(ctx, name, w, msg)
+			}
+
+			// Step 2: Fallback to length-based splitting if no chunks from marker
+			if len(chunks) == 0 {
+				chunks = splitByLength(msg.Content, maxLen)
+			}
+
+			// Step 3: Send all chunks
+			for _, chunk := range chunks {
+				chunkMsg := msg
+				chunkMsg.Content = chunk
+				m.sendWithRetry(ctx, name, w, chunkMsg)
 			}
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+// splitByLength splits content by maxLen if needed, otherwise returns single chunk.
+func splitByLength(content string, maxLen int) []string {
+	if maxLen > 0 && len([]rune(content)) > maxLen {
+		return SplitMessage(content, maxLen)
+	}
+	return []string{content}
 }
 
 // sendWithRetry sends a message through the channel with rate limiting and
@@ -770,7 +826,7 @@ func (m *Manager) runMediaWorker(ctx context.Context, name string, w *channelWor
 			if !ok {
 				return
 			}
-			m.sendMediaWithRetry(ctx, name, w, msg)
+			_ = m.sendMediaWithRetry(ctx, name, w, msg)
 		case <-ctx.Done():
 			return
 		}
@@ -778,26 +834,37 @@ func (m *Manager) runMediaWorker(ctx context.Context, name string, w *channelWor
 }
 
 // sendMediaWithRetry sends a media message through the channel with rate limiting and
-// retry logic. If the channel does not implement MediaSender, it silently skips.
-func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMediaMessage) {
+// retry logic. It returns nil on success, or the last error after retries,
+// including when the channel does not support MediaSender.
+func (m *Manager) sendMediaWithRetry(
+	ctx context.Context,
+	name string,
+	w *channelWorker,
+	msg bus.OutboundMediaMessage,
+) error {
 	ms, ok := w.ch.(MediaSender)
 	if !ok {
-		logger.DebugCF("channels", "Channel does not support MediaSender, skipping media", map[string]any{
+		err := fmt.Errorf("channel %q does not support media sending", name)
+		logger.WarnCF("channels", "Channel does not support MediaSender", map[string]any{
 			"channel": name,
+			"error":   err.Error(),
 		})
-		return
+		return err
 	}
 
 	// Rate limit: wait for token
 	if err := w.limiter.Wait(ctx); err != nil {
-		return
+		return err
 	}
+
+	// Pre-send: stop typing and clean up any placeholder before sending media.
+	m.preSendMedia(ctx, name, msg, w.ch)
 
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		lastErr = ms.SendMedia(ctx, msg)
 		if lastErr == nil {
-			return
+			return nil
 		}
 
 		// Permanent failures — don't retry
@@ -816,7 +883,7 @@ func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channe
 			case <-time.After(rateLimitDelay):
 				continue
 			case <-ctx.Done():
-				return
+				return ctx.Err()
 			}
 		}
 
@@ -825,7 +892,7 @@ func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channe
 		select {
 		case <-time.After(backoff):
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 
@@ -836,6 +903,7 @@ func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channe
 		"error":   lastErr.Error(),
 		"retries": maxRetries,
 	})
+	return lastErr
 }
 
 // runTTLJanitor periodically scans the typingStops and placeholders maps
@@ -882,18 +950,6 @@ func (m *Manager) runTTLJanitor(ctx context.Context) {
 	}
 }
 
-// InvokeTypingStop stops any active typing indicator for the given channel/chatID.
-// Safe to call even if no typing indicator is active. Intended for use in defer
-// after the LLM worker finishes processing a message.
-func (m *Manager) InvokeTypingStop(channel, chatID string) {
-	key := channel + ":" + chatID
-	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
-		if entry, ok := v.(typingEntry); ok && entry.stop != nil {
-			entry.stop()
-		}
-	}
-}
-
 func (m *Manager) GetChannel(name string) (Channel, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -924,6 +980,68 @@ func (m *Manager) GetEnabledChannels() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// Reload updates the config reference without restarting channels.
+// This is used when channel config hasn't changed but other parts of the config have.
+func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	list := toChannelHashes(cfg)
+	added, removed := compareChannels(m.channelHashes, list)
+	for _, name := range removed {
+		// Stop all channels
+		channel := m.channels[name]
+		logger.InfoCF("channels", "Stopping channel", map[string]any{
+			"channel": name,
+		})
+		if err := channel.Stop(ctx); err != nil {
+			logger.ErrorCF("channels", "Error stopping channel", map[string]any{
+				"channel": name,
+				"error":   err.Error(),
+			})
+		}
+		go func() {
+			m.UnregisterChannel(name)
+		}()
+	}
+	dispatchCtx, cancel := context.WithCancel(ctx)
+	m.dispatchTask = &asyncTask{cancel: cancel}
+	cc, err := toChannelConfig(cfg, added)
+	if err != nil {
+		logger.ErrorC("channels", fmt.Sprintf("toChannelConfig error: %v", err))
+		return err
+	}
+	err = m.initChannels(cc)
+	if err != nil {
+		logger.ErrorC("channels", fmt.Sprintf("initChannels error: %v", err))
+		return err
+	}
+	for _, name := range added {
+		channel := m.channels[name]
+		logger.InfoCF("channels", "Starting channel", map[string]any{
+			"channel": name,
+		})
+		if err := channel.Start(ctx); err != nil {
+			logger.ErrorCF("channels", "Failed to start channel", map[string]any{
+				"channel": name,
+				"error":   err.Error(),
+			})
+			continue
+		}
+		// Lazily create worker only after channel starts successfully
+		w := newChannelWorker(name, channel)
+		m.workers[name] = w
+		go m.runWorker(dispatchCtx, name, w)
+		go m.runMediaWorker(dispatchCtx, name, w)
+		go func() {
+			m.RegisterChannel(name, channel)
+		}()
+	}
+
+	m.config = cfg
+	m.channelHashes = toChannelHashes(cfg)
+	return nil
 }
 
 func (m *Manager) RegisterChannel(name string, channel Channel) {
@@ -976,6 +1094,26 @@ func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) erro
 		m.sendWithRetry(ctx, msg.Channel, w, msg)
 	}
 	return nil
+}
+
+// SendMedia sends outbound media synchronously through the channel worker's
+// rate limiter and retry logic. It blocks until the media is delivered (or all
+// retries are exhausted), which preserves ordering when later agent behavior
+// depends on actual media delivery.
+func (m *Manager) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	m.mu.RLock()
+	_, exists := m.channels[msg.Channel]
+	w, wExists := m.workers[msg.Channel]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("channel %s not found", msg.Channel)
+	}
+	if !wExists || w == nil {
+		return fmt.Errorf("channel %s has no active worker", msg.Channel)
+	}
+
+	return m.sendMediaWithRetry(ctx, msg.Channel, w, msg)
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {

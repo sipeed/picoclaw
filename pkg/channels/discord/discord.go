@@ -254,10 +254,7 @@ func (c *DiscordChannel) SendPlaceholder(ctx context.Context, chatID string) (st
 		return "", nil
 	}
 
-	text := c.config.Placeholder.Text
-	if text == "" {
-		text = "Thinking... 💭"
-	}
+	text := c.config.Placeholder.GetRandomText()
 
 	msg, err := c.session.ChannelMessageSend(chatID, text)
 	if err != nil {

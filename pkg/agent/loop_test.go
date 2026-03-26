@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,41 @@ func (f *fakeChannel) IsRunning() bool                                         {
 func (f *fakeChannel) IsAllowed(string) bool                                   { return true }
 func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool              { return true }
 func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
+
+type fakeMediaChannel struct {
+	fakeChannel
+	sentMedia []bus.OutboundMediaMessage
+}
+
+func (f *fakeMediaChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	f.sentMedia = append(f.sentMedia, msg)
+	return nil
+}
+
+func newStartedTestChannelManager(
+	t *testing.T,
+	msgBus *bus.MessageBus,
+	store media.MediaStore,
+	name string,
+	ch channels.Channel,
+) *channels.Manager {
+	t.Helper()
+
+	cm, err := channels.NewManager(&config.Config{}, msgBus, store)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	cm.RegisterChannel(name, ch)
+	if err := cm.StartAll(context.Background()); err != nil {
+		t.Fatalf("StartAll() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := cm.StopAll(context.Background()); err != nil {
+			t.Fatalf("StopAll() error = %v", err)
+		}
+	})
+	return cm
+}
 
 type recordingProvider struct {
 	lastMessages []providers.Message
@@ -451,6 +487,217 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	found := slices.Contains(toolsList, "mock_custom")
 	if !found {
 		t.Error("Expected custom tool to be registered")
+	}
+}
+
+func TestProcessMessage_MediaToolHandledSkipsFollowUpLLMAndFinalText(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &handledMediaProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	store := media.NewFileMediaStore()
+	al.SetMediaStore(store)
+	telegramChannel := &fakeMediaChannel{fakeChannel: fakeChannel{id: "rid-telegram"}}
+	al.SetChannelManager(newStartedTestChannelManager(t, msgBus, store, "telegram", telegramChannel))
+
+	imagePath := filepath.Join(tmpDir, "screen.png")
+	if err := os.WriteFile(imagePath, []byte("fake screenshot"), 0o644); err != nil {
+		t.Fatalf("WriteFile(imagePath) error = %v", err)
+	}
+
+	al.RegisterTool(&handledMediaTool{
+		store: store,
+		path:  imagePath,
+	})
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "take a screenshot of the screen and send it to me",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "" {
+		t.Fatalf("expected no final response when media tool already handled delivery, got %q", response)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("expected exactly 1 LLM call, got %d", provider.calls)
+	}
+	if len(provider.toolCounts) != 1 {
+		t.Fatalf("expected tool counts for 1 provider call, got %d", len(provider.toolCounts))
+	}
+	if provider.toolCounts[0] == 0 {
+		t.Fatal("expected tools to be available on the first LLM call")
+	}
+
+	if len(telegramChannel.sentMedia) != 1 {
+		t.Fatalf("expected exactly 1 synchronously sent media message, got %d", len(telegramChannel.sentMedia))
+	}
+	if telegramChannel.sentMedia[0].Channel != "telegram" || telegramChannel.sentMedia[0].ChatID != "chat1" {
+		t.Fatalf("unexpected sent media target: %+v", telegramChannel.sentMedia[0])
+	}
+	if len(telegramChannel.sentMedia[0].Parts) != 1 {
+		t.Fatalf("expected exactly 1 sent media part, got %d", len(telegramChannel.sentMedia[0].Parts))
+	}
+
+	select {
+	case extra := <-msgBus.OutboundMediaChan():
+		t.Fatalf("expected handled media to bypass async queue, got %+v", extra)
+	default:
+	}
+
+	defaultAgent := al.GetRegistry().GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+	route, _, err := al.resolveMessageRoute(bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "take a screenshot of the screen and send it to me",
+	})
+	if err != nil {
+		t.Fatalf("resolveMessageRoute() error = %v", err)
+	}
+	sessionKey := resolveScopeKey(route, "")
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) == 0 {
+		t.Fatal("expected session history to be saved")
+	}
+	last := history[len(history)-1]
+	if last.Role != "assistant" || last.Content != "Requested output delivered via tool attachment." {
+		t.Fatalf("expected handled assistant summary in history, got %+v", last)
+	}
+}
+
+func TestProcessMessage_HandledToolProcessesQueuedSteeringBeforeReturning(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &handledMediaWithSteeringProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	store := media.NewFileMediaStore()
+	al.SetMediaStore(store)
+	telegramChannel := &fakeMediaChannel{fakeChannel: fakeChannel{id: "rid-telegram"}}
+	al.SetChannelManager(newStartedTestChannelManager(t, msgBus, store, "telegram", telegramChannel))
+
+	imagePath := filepath.Join(tmpDir, "screen-steering.png")
+	if err := os.WriteFile(imagePath, []byte("fake screenshot"), 0o644); err != nil {
+		t.Fatalf("WriteFile(imagePath) error = %v", err)
+	}
+
+	al.RegisterTool(&handledMediaWithSteeringTool{
+		store: store,
+		path:  imagePath,
+		loop:  al,
+	})
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "take a screenshot of the screen and send it to me",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Handled the queued steering message." {
+		t.Fatalf("response = %q, want queued steering response", response)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("expected 2 LLM calls after queued steering, got %d", provider.calls)
+	}
+	if len(telegramChannel.sentMedia) != 1 {
+		t.Fatalf("expected exactly 1 synchronously sent media message, got %d", len(telegramChannel.sentMedia))
+	}
+}
+
+func TestProcessMessage_MediaArtifactCanBeForwardedBySendFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = tmpDir
+	cfg.Agents.Defaults.ModelName = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 10
+
+	msgBus := bus.NewMessageBus()
+	provider := &artifactThenSendProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	store := media.NewFileMediaStore()
+	al.SetMediaStore(store)
+	telegramChannel := &fakeMediaChannel{fakeChannel: fakeChannel{id: "rid-telegram"}}
+	al.SetChannelManager(newStartedTestChannelManager(t, msgBus, store, "telegram", telegramChannel))
+
+	mediaDir := media.TempDir()
+	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(mediaDir) error = %v", err)
+	}
+	imagePath := filepath.Join(mediaDir, "artifact-screen.png")
+	if err := os.WriteFile(imagePath, []byte("fake screenshot"), 0o644); err != nil {
+		t.Fatalf("WriteFile(imagePath) error = %v", err)
+	}
+
+	al.RegisterTool(&mediaArtifactTool{
+		store: store,
+		path:  imagePath,
+	})
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "take a screenshot of the screen and send it to me",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "" {
+		t.Fatalf("expected no final response after send_file handled delivery, got %q", response)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("expected 2 LLM calls (artifact + send_file), got %d", provider.calls)
+	}
+
+	if len(telegramChannel.sentMedia) != 1 {
+		t.Fatalf("expected exactly 1 synchronously sent media message, got %d", len(telegramChannel.sentMedia))
+	}
+	if telegramChannel.sentMedia[0].Channel != "telegram" || telegramChannel.sentMedia[0].ChatID != "chat1" {
+		t.Fatalf("unexpected sent media target: %+v", telegramChannel.sentMedia[0])
+	}
+	if len(telegramChannel.sentMedia[0].Parts) != 1 {
+		t.Fatalf("expected exactly 1 sent media part, got %d", len(telegramChannel.sentMedia[0].Parts))
+	}
+
+	select {
+	case extra := <-msgBus.OutboundMediaChan():
+		t.Fatalf("expected synchronous send_file delivery to bypass async queue, got %+v", extra)
+	default:
 	}
 }
 
@@ -1502,18 +1749,17 @@ func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 		t.Fatalf("Failed to create channel manager: %v", err)
 	}
 	for name, id := range map[string]string{
-		"whatsapp":  "rid-whatsapp",
-		"telegram":  "rid-telegram",
-		"feishu":    "rid-feishu",
-		"discord":   "rid-discord",
-		"maixcam":   "rid-maixcam",
-		"qq":        "rid-qq",
-		"dingtalk":  "rid-dingtalk",
-		"slack":     "rid-slack",
-		"line":      "rid-line",
-		"onebot":    "rid-onebot",
-		"wecom":     "rid-wecom",
-		"wecom_app": "rid-wecom-app",
+		"whatsapp": "rid-whatsapp",
+		"telegram": "rid-telegram",
+		"feishu":   "rid-feishu",
+		"discord":  "rid-discord",
+		"maixcam":  "rid-maixcam",
+		"qq":       "rid-qq",
+		"dingtalk": "rid-dingtalk",
+		"slack":    "rid-slack",
+		"line":     "rid-line",
+		"onebot":   "rid-onebot",
+		"wecom":    "rid-wecom",
 	} {
 		chManager.RegisterChannel(name, &fakeChannel{id: id})
 	}
@@ -1533,7 +1779,6 @@ func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 		{channel: "line", wantID: "rid-line"},
 		{channel: "onebot", wantID: "rid-onebot"},
 		{channel: "wecom", wantID: "rid-wecom"},
-		{channel: "wecom_app", wantID: "rid-wecom-app"},
 		{channel: "unknown", wantID: ""},
 	}
 
@@ -2138,4 +2383,326 @@ func TestFilterClientWebSearch_EmptyInput(t *testing.T) {
 	if len(result) != 0 {
 		t.Fatalf("len(result) = %d, want 0", len(result))
 	}
+}
+
+type overflowProvider struct {
+	calls        int
+	lastMessages []providers.Message
+	chatFunc     func(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error)
+}
+
+func (p *overflowProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	p.calls++
+	p.lastMessages = append([]providers.Message(nil), messages...)
+
+	if p.chatFunc != nil {
+		return p.chatFunc(ctx, messages, tools, model, opts)
+	}
+
+	if p.calls == 1 {
+		return nil, errors.New("context_window_exceeded")
+	}
+
+	return &providers.LLMResponse{
+		Content: "Recovered from overflow",
+	}, nil
+}
+
+func (p *overflowProvider) GetDefaultModel() string {
+	return "test-model"
+}
+
+func TestProcessMessage_ContextOverflowRecovery(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	_ = cfg
+
+	provider := &overflowProvider{}
+	al.registry = NewAgentRegistry(al.cfg, provider)
+
+	sessionKey := "agent:main:test-session"
+	agent := al.GetRegistry().GetDefaultAgent()
+
+	for i := 0; i < 5; i++ {
+		agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "heavy message"})
+		agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "assistant", Content: "response"})
+	}
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:    "test",
+		ChatID:     "chat1",
+		SenderID:   "user1",
+		SessionKey: "test-session",
+		Content:    "trigger recovery",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Recovered from overflow" {
+		t.Fatalf("response = %q, want %q", response, "Recovered from overflow")
+	}
+
+	if provider.calls != 2 {
+		t.Fatalf("expected 2 calls, got %d", provider.calls)
+	}
+}
+
+func TestProcessMessage_ContextOverflow_AnthropicStyle(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	_ = cfg
+
+	provider := &overflowProvider{}
+	al.registry = NewAgentRegistry(al.cfg, provider)
+
+	recoveryMsg := "error: status 400: context_window_exceeded"
+
+	provider.chatFunc = func(
+		ctx context.Context,
+		messages []providers.Message,
+		tools []providers.ToolDefinition,
+		model string,
+		opts map[string]any,
+	) (*providers.LLMResponse, error) {
+		if provider.calls == 1 {
+			return nil, errors.New(recoveryMsg)
+		}
+		return &providers.LLMResponse{Content: "Anthropic recovery success"}, nil
+	}
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "test",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "hello",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if !strings.Contains(response, "Anthropic recovery success") {
+		t.Fatalf("response = %q, want success message", response)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("expected 2 calls for retry, got %d", provider.calls)
+	}
+}
+
+// --- Missing mock types for media tool tests ---
+
+type handledMediaProvider struct {
+	calls      int
+	toolCounts []int
+}
+
+func (m *handledMediaProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	m.toolCounts = append(m.toolCounts, len(tools))
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			Content: "Taking the screenshot now.",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_handled_media",
+				Type:      "function",
+				Name:      "handled_media_tool",
+				Arguments: map[string]any{},
+			}},
+		}, nil
+	}
+	return &providers.LLMResponse{}, nil
+}
+
+func (m *handledMediaProvider) GetDefaultModel() string {
+	return "handled-media-model"
+}
+
+type handledMediaTool struct {
+	store media.MediaStore
+	path  string
+}
+
+func (m *handledMediaTool) Name() string        { return "handled_media_tool" }
+func (m *handledMediaTool) Description() string  { return "Returns a media attachment and fully handles the user response" }
+func (m *handledMediaTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (m *handledMediaTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	ref, err := m.store.Store(m.path, media.MediaMeta{
+		Filename:    filepath.Base(m.path),
+		ContentType: "image/png",
+		Source:      "test:handled_media_tool",
+	}, "test:handled_media")
+	if err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+	return tools.MediaResult("Attachment delivered by tool.", []string{ref}).WithResponseHandled()
+}
+
+type handledMediaWithSteeringProvider struct {
+	calls int
+}
+
+func (m *handledMediaWithSteeringProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			Content: "Taking the screenshot now.",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_handled_media_steering",
+				Type:      "function",
+				Name:      "handled_media_with_steering_tool",
+				Arguments: map[string]any{},
+			}},
+		}, nil
+	}
+
+	for _, msg := range messages {
+		if msg.Role == "user" && msg.Content == "what about this instead?" {
+			return &providers.LLMResponse{Content: "Handled the queued steering message."}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("provider did not receive queued steering message")
+}
+
+func (m *handledMediaWithSteeringProvider) GetDefaultModel() string {
+	return "handled-media-with-steering-model"
+}
+
+type handledMediaWithSteeringTool struct {
+	store media.MediaStore
+	path  string
+	loop  *AgentLoop
+}
+
+func (m *handledMediaWithSteeringTool) Name() string        { return "handled_media_with_steering_tool" }
+func (m *handledMediaWithSteeringTool) Description() string  { return "Returns handled media and enqueues a steering message during execution" }
+func (m *handledMediaWithSteeringTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (m *handledMediaWithSteeringTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	if err := m.loop.Steer(providers.Message{Role: "user", Content: "what about this instead?"}); err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+
+	ref, err := m.store.Store(m.path, media.MediaMeta{
+		Filename:    filepath.Base(m.path),
+		ContentType: "image/png",
+		Source:      "test:handled_media_with_steering_tool",
+	}, "test:handled_media_with_steering")
+	if err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+	return tools.MediaResult("Attachment delivered by tool.", []string{ref}).WithResponseHandled()
+}
+
+type artifactThenSendProvider struct {
+	calls int
+}
+
+func (m *artifactThenSendProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			Content: "Taking the screenshot now.",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_artifact_media",
+				Type:      "function",
+				Name:      "media_artifact_tool",
+				Arguments: map[string]any{},
+			}},
+		}, nil
+	}
+
+	var artifactPath string
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != "tool" {
+			continue
+		}
+		start := strings.Index(messages[i].Content, "[file:")
+		if start < 0 {
+			continue
+		}
+		rest := messages[i].Content[start+len("[file:"):]
+		end := strings.Index(rest, "]")
+		if end < 0 {
+			continue
+		}
+		artifactPath = rest[:end]
+		break
+	}
+	if artifactPath == "" {
+		return nil, fmt.Errorf("provider did not receive artifact path in tool result")
+	}
+
+	return &providers.LLMResponse{
+		Content: "",
+		ToolCalls: []providers.ToolCall{{
+			ID:        "call_send_file",
+			Type:      "function",
+			Name:      "send_file",
+			Arguments: map[string]any{"path": artifactPath},
+		}},
+	}, nil
+}
+
+func (m *artifactThenSendProvider) GetDefaultModel() string {
+	return "artifact-then-send-model"
+}
+
+type mediaArtifactTool struct {
+	store media.MediaStore
+	path  string
+}
+
+func (m *mediaArtifactTool) Name() string        { return "media_artifact_tool" }
+func (m *mediaArtifactTool) Description() string  { return "Returns a media artifact that the agent can forward or save later" }
+func (m *mediaArtifactTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (m *mediaArtifactTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	ref, err := m.store.Store(m.path, media.MediaMeta{
+		Filename:    filepath.Base(m.path),
+		ContentType: "image/png",
+		Source:      "test:media_artifact_tool",
+	}, "test:media_artifact")
+	if err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+	return tools.MediaResult("Artifact created.", []string{ref})
 }

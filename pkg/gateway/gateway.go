@@ -3,15 +3,11 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -24,7 +20,6 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/irc"
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
-	_ "github.com/sipeed/picoclaw/pkg/channels/matrix"
 	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
 	_ "github.com/sipeed/picoclaw/pkg/channels/pico"
 	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
@@ -41,13 +36,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
-	"github.com/sipeed/picoclaw/pkg/miniapp"
 	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/research"
-	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
-	"github.com/sipeed/picoclaw/pkg/stats"
-	"github.com/sipeed/picoclaw/pkg/tailscale"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
@@ -65,12 +55,12 @@ const (
 type services struct {
 	CronService      *cron.CronService
 	HeartbeatService *heartbeat.HeartbeatService
-	ResearchStore    *research.ResearchStore
-	ResearchFocus    *research.FocusTracker
 	MediaStore       media.MediaStore
 	ChannelManager   *channels.Manager
 	DeviceService    *devices.Service
 	HealthServer     *health.Server
+	manualReloadChan chan struct{}
+	reloading        atomic.Bool
 }
 
 type startupBlockedProvider struct {
@@ -92,7 +82,7 @@ func (p *startupBlockedProvider) GetDefaultModel() string {
 }
 
 // Run starts the gateway runtime using the configuration loaded from configPath.
-func Run(debug bool, homePath, configPath string, orchestration bool, enableStats bool, allowEmptyStartup bool) error {
+func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error {
 	panicPath := filepath.Join(homePath, logPath, panicFile)
 	panicFunc, err := logger.InitPanic(panicPath)
 	if err != nil {
@@ -121,27 +111,19 @@ func Run(debug bool, homePath, configPath string, orchestration bool, enableStat
 	if err != nil {
 		return fmt.Errorf("error creating provider: %w", err)
 	}
-	if orchestration {
-		cfg.Agents.Defaults.Orchestration = true
-	}
 
 	if modelID != "" {
 		cfg.Agents.Defaults.ModelName = modelID
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, enableStats)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
 	fmt.Println("\n📦 Agent Status:")
 	startupInfo := agentLoop.GetStartupInfo()
 	toolsInfo := startupInfo["tools"].(map[string]any)
 	skillsInfo := startupInfo["skills"].(map[string]any)
 	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
-	if wsProvider, ok := toolsInfo["web_search_provider"].(string); ok {
-		fmt.Printf("  • Web search: %s\n", wsProvider)
-	} else {
-		fmt.Println("  • Web search: disabled")
-	}
 	fmt.Printf("  • Skills: %d/%d available\n", skillsInfo["available"], skillsInfo["total"])
 
 	logger.InfoCF("agent", "Agent initialized",
@@ -155,6 +137,25 @@ func Run(debug bool, homePath, configPath string, orchestration bool, enableStat
 	if err != nil {
 		return err
 	}
+
+	// Setup manual reload channel for /reload endpoint
+	manualReloadChan := make(chan struct{}, 1)
+	runningServices.manualReloadChan = manualReloadChan
+	reloadTrigger := func() error {
+		if !runningServices.reloading.CompareAndSwap(false, true) {
+			return fmt.Errorf("reload already in progress")
+		}
+		select {
+		case manualReloadChan <- struct{}{}:
+			return nil
+		default:
+			// Should not happen, but reset flag if channel is full
+			runningServices.reloading.Store(false)
+			return fmt.Errorf("reload already queued")
+		}
+	}
+	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
+	agentLoop.SetReloadFunc(reloadTrigger)
 
 	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop")
@@ -182,12 +183,48 @@ func Run(debug bool, homePath, configPath string, orchestration bool, enableStat
 			shutdownGateway(runningServices, agentLoop, provider, true)
 			return nil
 		case newCfg := <-configReloadChan:
-			err := handleConfigReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
+			if !runningServices.reloading.CompareAndSwap(false, true) {
+				logger.Warn("Config reload skipped: another reload is in progress")
+				continue
+			}
+			err := executeReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
 			if err != nil {
 				logger.Errorf("Config reload failed: %v", err)
 			}
+		case <-manualReloadChan:
+			logger.Info("Manual reload triggered via /reload endpoint")
+			newCfg, err := config.LoadConfig(configPath)
+			if err != nil {
+				logger.Errorf("Error loading config for manual reload: %v", err)
+				runningServices.reloading.Store(false)
+				continue
+			}
+			if err = newCfg.ValidateModelList(); err != nil {
+				logger.Errorf("Config validation failed: %v", err)
+				runningServices.reloading.Store(false)
+				continue
+			}
+			err = executeReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
+			if err != nil {
+				logger.Errorf("Manual reload failed: %v", err)
+			} else {
+				logger.Info("Manual reload completed successfully")
+			}
 		}
 	}
+}
+
+func executeReload(
+	ctx context.Context,
+	agentLoop *agent.AgentLoop,
+	newCfg *config.Config,
+	provider *providers.LLMProvider,
+	runningServices *services,
+	msgBus *bus.MessageBus,
+	allowEmptyStartup bool,
+) error {
+	defer runningServices.reloading.Store(false)
+	return handleConfigReload(ctx, agentLoop, newCfg, provider, runningServices, msgBus, allowEmptyStartup)
 }
 
 func createStartupProvider(
@@ -237,17 +274,12 @@ func setupAndStartServices(
 		cfg.Heartbeat.Interval,
 		cfg.Heartbeat.Enabled,
 	)
-	runningServices.HeartbeatService.SetHeartbeatThreadID(cfg.Channels.Telegram.HeartbeatThreadID)
 	runningServices.HeartbeatService.SetBus(msgBus)
-	agentLoop.SetHeartbeatThreadUpdater(runningServices.HeartbeatService.SetHeartbeatThreadID)
 	runningServices.HeartbeatService.SetHandler(createHeartbeatHandler(agentLoop))
 	if err = runningServices.HeartbeatService.Start(); err != nil {
 		return nil, fmt.Errorf("error starting heartbeat service: %w", err)
 	}
 	fmt.Println("✓ Heartbeat service started")
-
-	// Reset heartbeat suppression when a real user message arrives
-	agentLoop.OnUserMessage = runningServices.HeartbeatService.ResetSuppression
 
 	runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
 		Enabled:  cfg.Tools.MediaCleanup.Enabled,
@@ -289,118 +321,11 @@ func setupAndStartServices(
 		return nil, fmt.Errorf("error starting channels: %w", err)
 	}
 
-	// Mini App setup: register routes and determine TLS mode
-	useTLS := false
-	var tlsCert, tlsKey string
-	var miniappNotifier *miniapp.StateNotifier
-	if cfg.Channels.Telegram.Enabled {
-		webAppURL := cfg.Channels.Telegram.WebAppURL
-		if webAppURL == "" {
-			// Auto-detect Tailscale hostname and build the WebAppURL
-			hostname, tsErr := tailscale.DetectHostname()
-			if tsErr != nil {
-				logger.InfoCF(
-					"miniapp",
-					"Tailscale not available, Mini App disabled",
-					map[string]any{"error": tsErr.Error()},
-				)
-			} else {
-				hostPort := net.JoinHostPort(hostname, strconv.Itoa(cfg.Gateway.Port))
-				webAppURL = "https://" + hostPort + "/miniapp"
-				cfg.Channels.Telegram.WebAppURL = webAppURL
-			}
-		}
-
-		// When the URL is HTTPS, fetch a TLS certificate from Tailscale so
-		// the server can actually serve over TLS. This covers both the
-		// auto-detected case above and a manually configured https:// URL.
-		if strings.HasPrefix(webAppURL, "https://") {
-			hostname, tsErr := tailscale.DetectHostname()
-			if tsErr != nil {
-				logger.ErrorCF("miniapp", "HTTPS URL configured but Tailscale not available",
-					map[string]any{"error": tsErr.Error()})
-			} else {
-				certDir := filepath.Join(cfg.WorkspacePath(), "state", "certs")
-				certFile, keyFile, certErr := tailscale.FetchCert(hostname, certDir)
-				if certErr != nil {
-					logger.ErrorCF("miniapp", "Failed to fetch TLS cert", map[string]any{"error": certErr.Error()})
-				} else {
-					tlsCert, tlsKey = certFile, keyFile
-					useTLS = true
-				}
-			}
-		}
-
-		if webAppURL != "" {
-			dataProvider := &agentLoopDataProvider{loop: agentLoop, workspace: cfg.WorkspacePath()}
-			sender := &telegramCommandSender{bus: msgBus}
-			miniappNotifier = miniapp.NewStateNotifier()
-			handler := miniapp.NewHandler(
-				dataProvider,
-				sender,
-				cfg.Channels.Telegram.Token(),
-				miniappNotifier,
-				cfg.Channels.Telegram.AllowFrom,
-				cfg.WorkspacePath(),
-			)
-			handler.SetCacheMutator(dataProvider)
-			agentLoop.OnStateChange = miniappNotifier.Notify
-			if b := agentLoop.GetOrchBroadcaster(); b != nil {
-				handler.SetOrchBroadcaster(b)
-			}
-			handler.RegisterRoutes(runningServices.HealthServer.Mux())
-
-			// Register dev preview tool for all agents
-			devPreviewTool := tools.NewDevPreviewTool(handler)
-			agentLoop.RegisterTool(devPreviewTool)
-
-			// Research store + tool registration
-			researchStore, rsErr := research.OpenResearchStore(
-				filepath.Join(cfg.WorkspacePath(), "research.db"),
-				cfg.WorkspacePath(),
-			)
-			if rsErr != nil {
-				logger.ErrorCF("research", "Failed to open research store", map[string]any{"error": rsErr.Error()})
-			} else {
-				focusTracker := research.NewFocusTracker()
-				agentLoop.RegisterTool(tools.NewResearchTool(researchStore, cfg.WorkspacePath(), focusTracker))
-				handler.SetResearchStore(researchStore)
-				handler.SetResearchFocus(focusTracker)
-				runningServices.ResearchStore = researchStore
-				runningServices.ResearchFocus = focusTracker
-				runningServices.HeartbeatService.SetResearchStore(researchStore)
-				fmt.Println("✓ Research store initialized")
-			}
-
-			fmt.Printf("✓ Mini App registered at %s\n", webAppURL)
-		}
-	}
-
-	// HealthServer is the single HTTP listener. Channel webhooks and health
-	// checkers were registered on its mux via SetupHTTPServer.
-	go func() {
-		var serverErr error
-		if useTLS {
-			serverErr = runningServices.HealthServer.StartTLS(tlsCert, tlsKey)
-		} else {
-			serverErr = runningServices.HealthServer.Start()
-		}
-		if serverErr != nil && serverErr != http.ErrServerClosed {
-			logger.ErrorCF("health", "Health server error", map[string]any{"error": serverErr.Error()})
-		}
-	}()
-	if useTLS {
-		fmt.Printf(
-			"✓ Health endpoints available at https://%s:%d/health and /ready (TLS)\n",
-			cfg.Gateway.Host,
-			cfg.Gateway.Port,
-		)
-	} else {
-		fmt.Printf(
-			"✓ Health endpoints available at http://%s:%d/health and /ready\n",
-			cfg.Gateway.Host, cfg.Gateway.Port,
-		)
-	}
+	fmt.Printf(
+		"✓ Health endpoints available at http://%s:%d/health, /ready and /reload (POST)\n",
+		cfg.Gateway.Host,
+		cfg.Gateway.Port,
+	)
 
 	stateManager := state.NewManager(cfg.WorkspacePath())
 	runningServices.DeviceService = devices.NewService(devices.Config{
@@ -417,15 +342,13 @@ func setupAndStartServices(
 	return runningServices, nil
 }
 
-func stopAndCleanupServices(runningServices *services, shutdownTimeout time.Duration) {
+func stopAndCleanupServices(runningServices *services, shutdownTimeout time.Duration, isReload bool) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
-	if runningServices.ChannelManager != nil {
+	// reload should not stop channel manager
+	if !isReload && runningServices.ChannelManager != nil {
 		runningServices.ChannelManager.StopAll(shutdownCtx)
-	}
-	if runningServices.HealthServer != nil {
-		runningServices.HealthServer.Stop(shutdownCtx)
 	}
 	if runningServices.DeviceService != nil {
 		runningServices.DeviceService.Stop()
@@ -453,7 +376,7 @@ func shutdownGateway(
 		cp.Close()
 	}
 
-	stopAndCleanupServices(runningServices, gracefulShutdownTimeout)
+	stopAndCleanupServices(runningServices, gracefulShutdownTimeout, false)
 
 	agentLoop.Stop()
 	agentLoop.Close()
@@ -477,7 +400,7 @@ func handleConfigReload(
 	logger.Infof(" New model is '%s', recreating provider...", newModel)
 
 	logger.Info("  Stopping all services...")
-	stopAndCleanupServices(runningServices, serviceShutdownTimeout)
+	stopAndCleanupServices(runningServices, serviceShutdownTimeout, true)
 
 	newProvider, newModelID, err := createStartupProvider(newCfg, allowEmptyStartup)
 	if err != nil {
@@ -551,9 +474,6 @@ func restartServices(
 		cfg.Heartbeat.Enabled,
 	)
 	runningServices.HeartbeatService.SetBus(msgBus)
-	if runningServices.ResearchStore != nil {
-		runningServices.HeartbeatService.SetResearchStore(runningServices.ResearchStore)
-	}
 	runningServices.HeartbeatService.SetHandler(createHeartbeatHandler(al))
 	if err = runningServices.HeartbeatService.Start(); err != nil {
 		return fmt.Errorf("error restarting heartbeat service: %w", err)
@@ -584,24 +504,16 @@ func restartServices(
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
-	runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	// Reuse existing HealthServer to preserve reloadFunc
+	if runningServices.HealthServer == nil {
+		runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	}
 	runningServices.ChannelManager.SetupHTTPServer(addr, runningServices.HealthServer)
 
-	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
-		return fmt.Errorf("error restarting channels: %w", err)
+	if err = runningServices.ChannelManager.Reload(context.Background(), cfg); err != nil {
+		return fmt.Errorf("error reload channels: %w", err)
 	}
-
-	// Start the HealthServer listener (single HTTP server for all routes)
-	go func() {
-		if sErr := runningServices.HealthServer.Start(); sErr != nil && sErr != http.ErrServerClosed {
-			logger.ErrorCF("health", "Health server error", map[string]any{"error": sErr.Error()})
-		}
-	}()
-	fmt.Printf(
-		"  ✓ Channels restarted, health endpoints at http://%s:%d/health and ready\n",
-		cfg.Gateway.Host,
-		cfg.Gateway.Port,
-	)
+	fmt.Println("  ✓ Channels restarted.")
 
 	stateManager := state.NewManager(cfg.WorkspacePath())
 	runningServices.DeviceService = devices.NewService(devices.Config{
@@ -756,321 +668,4 @@ func createHeartbeatHandler(agentLoop *agent.AgentLoop) func(prompt, channel, ch
 		}
 		return tools.SilentResult(response)
 	}
-}
-
-// agentLoopDataProvider adapts AgentLoop to the miniapp.DataProvider interface.
-type agentLoopDataProvider struct {
-	loop      *agent.AgentLoop
-	workspace string
-
-	gitReposCache   []miniapp.GitRepoSummary
-	gitReposCacheAt time.Time
-	gitDetailCache  map[string]gitDetailEntry
-}
-
-type gitDetailEntry struct {
-	info miniapp.GitInfo
-	at   time.Time
-}
-
-const gitCacheTTL = 5 * time.Minute
-
-func (p *agentLoopDataProvider) ListSkills() []skills.SkillInfo {
-	return p.loop.ListSkills()
-}
-
-func (p *agentLoopDataProvider) GetPlanInfo() miniapp.PlanInfo {
-	hasPlan, status, currentPhase, totalPhases, display, memory := p.loop.GetPlanInfo()
-
-	// Convert agent.PlanPhase -> miniapp.PlanPhase
-	agentPhases := p.loop.GetPlanPhases()
-	phases := make([]miniapp.PlanPhase, 0, len(agentPhases))
-	for _, ap := range agentPhases {
-		steps := make([]miniapp.PlanStep, 0, len(ap.Steps))
-		for _, as := range ap.Steps {
-			steps = append(steps, miniapp.PlanStep{
-				Index:       as.Index,
-				Description: as.Description,
-				Done:        as.Done,
-			})
-		}
-		phases = append(phases, miniapp.PlanPhase{
-			Number: ap.Number,
-			Title:  ap.Title,
-			Steps:  steps,
-		})
-	}
-
-	return miniapp.PlanInfo{
-		HasPlan:      hasPlan,
-		Status:       status,
-		CurrentPhase: currentPhase,
-		TotalPhases:  totalPhases,
-		Display:      display,
-		Phases:       phases,
-		Memory:       memory,
-	}
-}
-
-func (p *agentLoopDataProvider) GetSessionStats() *stats.Stats {
-	return p.loop.GetSessionStats()
-}
-
-func (p *agentLoopDataProvider) GetActiveSessions() []miniapp.SessionInfo {
-	entries := p.loop.GetActiveSessions()
-	result := make([]miniapp.SessionInfo, len(entries))
-	for i, e := range entries {
-		result[i] = miniapp.SessionInfo{
-			SessionKey:  e.SessionKey,
-			Channel:     e.Channel,
-			ChatID:      e.ChatID,
-			TouchDir:    e.TouchDir,
-			ProjectPath: e.ProjectPath,
-			Purpose:     e.Purpose,
-			Branch:      e.Branch,
-			LastSeenAt:  e.LastSeenAt.Format(time.RFC3339),
-			AgeSec:      int(time.Since(e.LastSeenAt).Seconds()),
-		}
-	}
-	return result
-}
-
-func (p *agentLoopDataProvider) GetSessionGraph() *miniapp.SessionGraphData {
-	nodes := p.loop.GetSessionGraph()
-	if len(nodes) == 0 {
-		return &miniapp.SessionGraphData{
-			Nodes: []miniapp.SessionGraphNode{},
-			Edges: []miniapp.SessionGraphEdge{},
-		}
-	}
-
-	gNodes := make([]miniapp.SessionGraphNode, 0, len(nodes))
-	var edges []miniapp.SessionGraphEdge
-
-	for _, n := range nodes {
-		sk := gatewayShortKey(n.Key)
-		label := n.Label
-		if label == "" {
-			label = sk
-		}
-		gNodes = append(gNodes, miniapp.SessionGraphNode{
-			Key:        n.Key,
-			ShortKey:   sk,
-			Label:      label,
-			Status:     n.Status,
-			TurnCount:  n.TurnCount,
-			CreatedAt:  n.CreatedAt.Format(time.RFC3339),
-			UpdatedAt:  n.UpdatedAt.Format(time.RFC3339),
-			Summary:    n.Summary,
-			ForkTurnID: n.ForkTurnID,
-		})
-		if n.ParentKey != "" {
-			edges = append(edges, miniapp.SessionGraphEdge{
-				From:       n.ParentKey,
-				To:         n.Key,
-				ForkTurnID: n.ForkTurnID,
-			})
-		}
-	}
-	if edges == nil {
-		edges = []miniapp.SessionGraphEdge{}
-	}
-	return &miniapp.SessionGraphData{Nodes: gNodes, Edges: edges}
-}
-
-// gatewayShortKey abbreviates long session keys for display.
-func gatewayShortKey(key string) string {
-	parts := strings.Split(key, ":")
-	if len(parts) > 2 {
-		return strings.Join(parts[2:], ":")
-	}
-	return key
-}
-
-func (p *agentLoopDataProvider) GetContextInfo() miniapp.ContextInfo {
-	workDir, planWorkDir, workspace, bootstrap := p.loop.GetContextInfo()
-	files := make([]miniapp.BootstrapFileInfo, len(bootstrap))
-	for i, b := range bootstrap {
-		files[i] = miniapp.BootstrapFileInfo{Name: b.Name, Path: b.Path, Scope: b.Scope}
-	}
-	return miniapp.ContextInfo{
-		WorkDir:     workDir,
-		PlanWorkDir: planWorkDir,
-		Workspace:   workspace,
-		Bootstrap:   files,
-	}
-}
-
-func (p *agentLoopDataProvider) GetSystemPrompt() string {
-	return p.loop.GetSystemPrompt()
-}
-
-func (p *agentLoopDataProvider) ListMediaCache(entryType string) []miniapp.MediaCacheEntry {
-	raw := p.loop.ListMediaCache(entryType)
-	if len(raw) == 0 {
-		return nil
-	}
-	entries := make([]miniapp.MediaCacheEntry, len(raw))
-	for i, e := range raw {
-		entries[i] = miniapp.MediaCacheEntry{
-			Hash:       e.Hash,
-			Type:       e.Type,
-			Result:     e.Result,
-			FilePath:   e.FilePath,
-			Pages:      e.Pages,
-			CreatedAt:  e.CreatedAt,
-			AccessedAt: e.AccessedAt,
-		}
-	}
-	return entries
-}
-
-func (p *agentLoopDataProvider) DeleteMediaCache(hash string) error {
-	return p.loop.DeleteMediaCache(hash)
-}
-
-func (p *agentLoopDataProvider) DeleteAllMediaCache() (int64, error) {
-	return p.loop.DeleteAllMediaCache()
-}
-
-func (p *agentLoopDataProvider) GetGitRepos() []miniapp.GitRepoSummary {
-	if time.Since(p.gitReposCacheAt) < gitCacheTTL {
-		return p.gitReposCache
-	}
-
-	if p.workspace == "" {
-		return nil
-	}
-
-	// Find workspace's own git root to exclude it
-	workspaceGitRoot := ""
-	if out, err := exec.Command("git", "-C", p.workspace, "rev-parse", "--show-toplevel").Output(); err == nil {
-		workspaceGitRoot = strings.TrimSpace(string(out))
-	}
-
-	// Scan for .git dirs up to 2 levels deep under workspace
-	seen := map[string]bool{}
-	var repos []miniapp.GitRepoSummary
-	for _, pattern := range []string{
-		filepath.Join(p.workspace, "*", ".git"),
-		filepath.Join(p.workspace, "*", "*", ".git"),
-	} {
-		matches, _ := filepath.Glob(pattern)
-		for _, m := range matches {
-			repoDir := filepath.Dir(m)
-			if repoDir == workspaceGitRoot || seen[repoDir] {
-				continue
-			}
-			seen[repoDir] = true
-			name := filepath.Base(repoDir)
-			branch := ""
-			out, err := exec.Command("git", "-C", repoDir, "rev-parse", "--abbrev-ref", "HEAD").Output()
-			if err == nil {
-				branch = strings.TrimSpace(string(out))
-			}
-			repos = append(repos, miniapp.GitRepoSummary{Name: name, Branch: branch})
-		}
-	}
-
-	p.gitReposCache = repos
-	p.gitReposCacheAt = time.Now()
-	return repos
-}
-
-func (p *agentLoopDataProvider) GetGitRepoDetail(name string) miniapp.GitInfo {
-	// Path traversal prevention
-	if name == "" || filepath.Base(name) != name {
-		return miniapp.GitInfo{Name: name}
-	}
-
-	// Check detail cache
-	if p.gitDetailCache != nil {
-		if entry, ok := p.gitDetailCache[name]; ok && time.Since(entry.at) < gitCacheTTL {
-			return entry.info
-		}
-	}
-
-	if p.workspace == "" {
-		return miniapp.GitInfo{Name: name}
-	}
-
-	// Resolve repo path: try 1-level and 2-level deep
-	var repoDir string
-	for _, pattern := range []string{
-		filepath.Join(p.workspace, name, ".git"),
-		filepath.Join(p.workspace, "*", name, ".git"),
-	} {
-		matches, _ := filepath.Glob(pattern)
-		if len(matches) > 0 {
-			repoDir = filepath.Dir(matches[0])
-			break
-		}
-	}
-	if repoDir == "" {
-		return miniapp.GitInfo{Name: name}
-	}
-
-	info := collectGitRepoInfo(repoDir)
-
-	if p.gitDetailCache == nil {
-		p.gitDetailCache = make(map[string]gitDetailEntry)
-	}
-	p.gitDetailCache[name] = gitDetailEntry{info: info, at: time.Now()}
-	return info
-}
-
-func collectGitRepoInfo(gitRoot string) miniapp.GitInfo {
-	info := miniapp.GitInfo{Name: filepath.Base(gitRoot)}
-
-	// Current branch
-	out, err := exec.Command("git", "-C", gitRoot, "rev-parse", "--abbrev-ref", "HEAD").Output()
-	if err == nil {
-		info.Branch = strings.TrimSpace(string(out))
-	}
-
-	// Recent commits (20 entries)
-	out, err = exec.Command("git", "-C", gitRoot, "log", "--pretty=format:%h\x1f%s\x1f%an\x1f%cr", "-20").Output()
-	if err == nil {
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			parts := strings.SplitN(line, "\x1f", 4)
-			if len(parts) == 4 {
-				info.Commits = append(info.Commits, miniapp.GitCommit{
-					Hash: parts[0], Subject: parts[1], Author: parts[2], Date: parts[3],
-				})
-			}
-		}
-	}
-
-	// Modified/untracked files
-	out, err = exec.Command("git", "-C", gitRoot, "status", "--porcelain").Output()
-	if err == nil && len(out) > 0 {
-		for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-			if len(line) < 4 {
-				continue
-			}
-			info.Modified = append(info.Modified, miniapp.GitChange{
-				Status: strings.TrimSpace(line[:2]),
-				Path:   line[3:],
-			})
-		}
-	}
-
-	return info
-}
-
-// telegramCommandSender injects Mini App commands into the message bus.
-type telegramCommandSender struct {
-	bus *bus.MessageBus
-}
-
-func (s *telegramCommandSender) SendCommand(senderID, chatID, command string) {
-	s.bus.PublishInbound(context.Background(), bus.InboundMessage{
-		Channel:  "telegram",
-		SenderID: senderID,
-		ChatID:   chatID,
-		Content:  command,
-		Metadata: map[string]string{
-			"source": "webapp",
-		},
-	})
 }

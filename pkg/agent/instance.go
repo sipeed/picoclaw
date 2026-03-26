@@ -16,6 +16,24 @@ import (
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
+// SessionAccessor is the interface that AgentInstance.Sessions must satisfy.
+// *session.LegacyAdapter implements this, as does the ephemeral store used in subturn.
+type SessionAccessor interface {
+	AddMessage(sessionKey, role, content string)
+	AddFullMessage(sessionKey string, msg providers.Message)
+	GetHistory(key string) []providers.Message
+	GetSummary(key string) string
+	SetHistory(key string, history []providers.Message)
+	SetSummary(key, summary string)
+	TruncateHistory(key string, keepLast int)
+	Save(key string) error
+	Close() error
+	MarkDirty(key string)
+	Store() session.SessionStore
+	AdvanceStored(key string, count int)
+	CompactOldTurns(key string, keepLast int, summary string) error
+}
+
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
@@ -35,7 +53,7 @@ type AgentInstance struct {
 	SummarizeMessageThreshold int
 	SummarizeTokenPercent     int
 	Provider                  providers.LLMProvider
-	Sessions                  *session.LegacyAdapter
+	Sessions                  SessionAccessor
 	ContextBuilder            *ContextBuilder
 	Tools                     *tools.ToolRegistry
 	Subagents                 *config.SubagentsConfig
@@ -139,10 +157,12 @@ func NewAgentInstance(
 	sessionsManager := session.NewLegacyAdapter(store)
 
 	mcpDiscoveryActive := cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled
-	contextBuilder := NewContextBuilder(workspace).WithToolDiscovery(
-		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
-		mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
-	)
+	contextBuilder := NewContextBuilder(workspace).
+		WithToolDiscovery(
+			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
+			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
+		).
+		WithSplitOnMarker(cfg.Agents.Defaults.SplitOnMarker)
 
 	agentID := routing.DefaultAgentID
 	agentName := ""

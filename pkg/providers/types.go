@@ -38,6 +38,21 @@ type StatefulProvider interface {
 	Close()
 }
 
+// CallbackStreamingProvider is an optional interface for providers that support
+// token streaming via a callback function.
+// onChunk receives the accumulated text so far (not individual deltas).
+// The returned LLMResponse is the same complete response for compatibility with tool-call handling.
+type CallbackStreamingProvider interface {
+	ChatStream(
+		ctx context.Context,
+		messages []Message,
+		tools []ToolDefinition,
+		model string,
+		options map[string]any,
+		onChunk func(accumulated string),
+	) (*LLMResponse, error)
+}
+
 // ThinkingCapable is an optional interface for providers that support
 // extended thinking (e.g. Anthropic). Used by the agent loop to warn
 // when thinking_level is configured but the active provider cannot use it.
@@ -58,13 +73,14 @@ type NativeSearchCapable interface {
 type FailoverReason string
 
 const (
-	FailoverAuth       FailoverReason = "auth"
-	FailoverRateLimit  FailoverReason = "rate_limit"
-	FailoverBilling    FailoverReason = "billing"
-	FailoverTimeout    FailoverReason = "timeout"
-	FailoverFormat     FailoverReason = "format"
-	FailoverOverloaded FailoverReason = "overloaded"
-	FailoverUnknown    FailoverReason = "unknown"
+	FailoverAuth            FailoverReason = "auth"
+	FailoverRateLimit       FailoverReason = "rate_limit"
+	FailoverBilling         FailoverReason = "billing"
+	FailoverTimeout         FailoverReason = "timeout"
+	FailoverFormat          FailoverReason = "format"
+	FailoverContextOverflow FailoverReason = "context_overflow"
+	FailoverOverloaded      FailoverReason = "overloaded"
+	FailoverUnknown         FailoverReason = "unknown"
 )
 
 // FailoverError wraps an LLM provider error with classification metadata.
@@ -88,7 +104,7 @@ func (e *FailoverError) Unwrap() error {
 // IsRetriable returns true if this error should trigger fallback to next candidate.
 // Non-retriable: Format errors (bad request structure, image dimension/size).
 func (e *FailoverError) IsRetriable() bool {
-	return e.Reason != FailoverFormat
+	return e.Reason != FailoverFormat && e.Reason != FailoverContextOverflow
 }
 
 // ModelConfig holds primary model and fallback list.

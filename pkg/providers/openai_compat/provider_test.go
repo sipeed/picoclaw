@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -748,34 +749,11 @@ func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
 	}
 }
 
-func TestSerializeMessages_PlainText(t *testing.T) {
-	messages := []protocoltypes.Message{
-		{Role: "user", Content: "hello"},
-		{Role: "assistant", Content: "hi", ReasoningContent: "thinking..."},
-	}
-	result := serializeMessages(messages)
-
-	data, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var msgs []map[string]any
-	json.Unmarshal(data, &msgs)
-
-	if msgs[0]["content"] != "hello" {
-		t.Fatalf("expected plain string content, got %v", msgs[0]["content"])
-	}
-	if msgs[1]["reasoning_content"] != "thinking..." {
-		t.Fatalf("reasoning_content not preserved, got %v", msgs[1]["reasoning_content"])
-	}
-}
-
 func TestSerializeMessages_WithMedia(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{Role: "user", Content: "describe this", Media: []string{"data:image/png;base64,abc123"}},
 	}
-	result := serializeMessages(messages)
+	result := common.SerializeMessages(messages)
 
 	data, _ := json.Marshal(result)
 	var msgs []map[string]any
@@ -808,7 +786,7 @@ func TestSerializeMessages_MediaWithToolCallID(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{Role: "tool", Content: "image result", Media: []string{"data:image/png;base64,xyz"}, ToolCallID: "call_1"},
 	}
-	result := serializeMessages(messages)
+	result := common.SerializeMessages(messages)
 
 	data, _ := json.Marshal(result)
 	var msgs []map[string]any
@@ -1164,7 +1142,7 @@ func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 			},
 		},
 	}
-	result := serializeMessages(messages)
+	result := common.SerializeMessages(messages)
 
 	data, _ := json.Marshal(result)
 	raw := string(data)

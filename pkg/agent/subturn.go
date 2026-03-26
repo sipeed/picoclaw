@@ -10,6 +10,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -346,6 +347,7 @@ func spawnSubTurn(
 	// We copy into a heap-allocated struct to avoid the go vet copylocks
 	// warning on the embedded instanceExt (which contains sync.RWMutex).
 	agent := copyAgentInstance(baseAgent)
+	agent.Sessions = ephemeralStore
 	// Clone the tool registry so child turn's tool registrations
 	// don't pollute the parent's registry.
 	if baseAgent.Tools != nil {
@@ -619,16 +621,9 @@ func copyAgentInstance(src *AgentInstance) AgentInstance {
 
 // ephemeralSessionStoreIface is satisfied by *ephemeralSessionStore.
 // Declared so newEphemeralSession can return a typed interface.
+// Must satisfy SessionAccessor so it can be assigned to AgentInstance.Sessions.
 type ephemeralSessionStoreIface interface {
-	AddMessage(sessionKey, role, content string)
-	AddFullMessage(sessionKey string, msg providers.Message)
-	GetHistory(key string) []providers.Message
-	GetSummary(key string) string
-	SetSummary(key, summary string)
-	SetHistory(key string, history []providers.Message)
-	TruncateHistory(key string, keepLast int)
-	Save(key string) error
-	Close() error
+	SessionAccessor
 }
 
 func (e *ephemeralSessionStore) AddMessage(_, role, content string) {
@@ -687,8 +682,12 @@ func (e *ephemeralSessionStore) TruncateHistory(_ string, keepLast int) {
 	e.history = e.history[len(e.history)-keepLast:]
 }
 
-func (e *ephemeralSessionStore) Save(_ string) error { return nil }
-func (e *ephemeralSessionStore) Close() error        { return nil }
+func (e *ephemeralSessionStore) Save(_ string) error                          { return nil }
+func (e *ephemeralSessionStore) Close() error                                 { return nil }
+func (e *ephemeralSessionStore) MarkDirty(_ string)                           {}
+func (e *ephemeralSessionStore) Store() session.SessionStore                  { return nil }
+func (e *ephemeralSessionStore) AdvanceStored(_ string, _ int)                {}
+func (e *ephemeralSessionStore) CompactOldTurns(_ string, _ int, _ string) error { return nil }
 
 func (e *ephemeralSessionStore) truncateLocked() {
 	if len(e.history) > maxEphemeralHistorySize {

@@ -69,21 +69,19 @@ type ModelSecurityEntry struct {
 
 // ChannelsSecurity stores channel-related security data
 type ChannelsSecurity struct {
-	Telegram   *TelegramSecurity   `yaml:"telegram,omitempty"`
-	Feishu     *FeishuSecurity     `yaml:"feishu,omitempty"`
-	Discord    *DiscordSecurity    `yaml:"discord,omitempty"`
-	Weixin     *WeixinSecurity     `yaml:"weixin,omitempty"`
-	QQ         *QQSecurity         `yaml:"qq,omitempty"`
-	DingTalk   *DingTalkSecurity   `yaml:"dingtalk,omitempty"`
-	Slack      *SlackSecurity      `yaml:"slack,omitempty"`
-	Matrix     *MatrixSecurity     `yaml:"matrix,omitempty"`
-	LINE       *LINESecurity       `yaml:"line,omitempty"`
-	OneBot     *OneBotSecurity     `yaml:"onebot,omitempty"`
-	WeCom      *WeComSecurity      `yaml:"wecom,omitempty"`
-	WeComApp   *WeComAppSecurity   `yaml:"wecom_app,omitempty"`
-	WeComAIBot *WeComAIBotSecurity `yaml:"wecom_aibot,omitempty"`
-	Pico       *PicoSecurity       `yaml:"pico,omitempty"`
-	IRC        *IRCSecurity        `yaml:"irc,omitempty"`
+	Telegram *TelegramSecurity `yaml:"telegram,omitempty"`
+	Feishu   *FeishuSecurity   `yaml:"feishu,omitempty"`
+	Discord  *DiscordSecurity  `yaml:"discord,omitempty"`
+	Weixin   *WeixinSecurity   `yaml:"weixin,omitempty"`
+	QQ       *QQSecurity       `yaml:"qq,omitempty"`
+	DingTalk *DingTalkSecurity `yaml:"dingtalk,omitempty"`
+	Slack    *SlackSecurity    `yaml:"slack,omitempty"`
+	Matrix   *MatrixSecurity   `yaml:"matrix,omitempty"`
+	LINE     *LINESecurity     `yaml:"line,omitempty"`
+	OneBot   *OneBotSecurity   `yaml:"onebot,omitempty"`
+	WeCom    *WeComSecurity    `yaml:"wecom,omitempty"`
+	Pico     *PicoSecurity     `yaml:"pico,omitempty"`
+	IRC      *IRCSecurity      `yaml:"irc,omitempty"`
 }
 
 type TelegramSecurity struct {
@@ -131,20 +129,7 @@ type OneBotSecurity struct {
 }
 
 type WeComSecurity struct {
-	Token          string `yaml:"token,omitempty"            env:"PICOCLAW_CHANNELS_WECOM_TOKEN"`
-	EncodingAESKey string `yaml:"encoding_aes_key,omitempty" env:"PICOCLAW_CHANNELS_WECOM_ENCODING_AES_KEY"`
-}
-
-type WeComAppSecurity struct {
-	CorpSecret     string `yaml:"corp_secret,omitempty"      env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_SECRET"`
-	Token          string `yaml:"token,omitempty"            env:"PICOCLAW_CHANNELS_WECOM_APP_TOKEN"`
-	EncodingAESKey string `yaml:"encoding_aes_key,omitempty" env:"PICOCLAW_CHANNELS_WECOM_APP_ENCODING_AES_KEY"`
-}
-
-type WeComAIBotSecurity struct {
-	Secret         string `yaml:"secret,omitempty"           env:"PICOCLAW_CHANNELS_WECOM_AIBOT_SECRET"`
-	Token          string `yaml:"token,omitempty"            env:"PICOCLAW_CHANNELS_WECOM_AIBOT_TOKEN"`
-	EncodingAESKey string `yaml:"encoding_aes_key,omitempty" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENCODING_AES_KEY"`
+	Secret string `yaml:"secret,omitempty" env:"PICOCLAW_CHANNELS_WECOM_SECRET"`
 }
 
 type PicoSecurity struct {
@@ -334,16 +319,8 @@ func mergeChannelsSecurity(dst, src *ChannelsSecurity) {
 	if src.OneBot != nil && src.OneBot.AccessToken != "" {
 		dst.OneBot = src.OneBot
 	}
-	if src.WeCom != nil && (src.WeCom.Token != "" || src.WeCom.EncodingAESKey != "") {
+	if src.WeCom != nil && src.WeCom.Secret != "" {
 		dst.WeCom = src.WeCom
-	}
-	if src.WeComApp != nil &&
-		(src.WeComApp.CorpSecret != "" || src.WeComApp.Token != "" || src.WeComApp.EncodingAESKey != "") {
-		dst.WeComApp = src.WeComApp
-	}
-	if src.WeComAIBot != nil &&
-		(src.WeComAIBot.Secret != "" || src.WeComAIBot.Token != "" || src.WeComAIBot.EncodingAESKey != "") {
-		dst.WeComAIBot = src.WeComAIBot
 	}
 	if src.Pico != nil && src.Pico.Token != "" {
 		dst.Pico = src.Pico

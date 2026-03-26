@@ -85,23 +85,21 @@ type toolsConfigV0 struct {
 }
 
 type channelsConfigV0 struct {
-	WhatsApp   WhatsAppConfig     `json:"whatsapp"`
-	Telegram   telegramConfigV0   `json:"telegram"`
-	Feishu     feishuConfigV0     `json:"feishu"`
-	Discord    discordConfigV0    `json:"discord"`
-	MaixCam    maixcamConfigV0    `json:"maixcam"`
-	Weixin     weixinConfigV0     `json:"weixin"`
-	QQ         qqConfigV0         `json:"qq"`
-	DingTalk   dingtalkConfigV0   `json:"dingtalk"`
-	Slack      slackConfigV0      `json:"slack"`
-	Matrix     matrixConfigV0     `json:"matrix"`
-	LINE       lineConfigV0       `json:"line"`
-	OneBot     onebotConfigV0     `json:"onebot"`
-	WeCom      wecomConfigV0      `json:"wecom"`
-	WeComApp   wecomappConfigV0   `json:"wecom_app"`
-	WeComAIBot wecomaibotConfigV0 `json:"wecom_aibot"`
-	Pico       picoConfigV0       `json:"pico"`
-	IRC        ircConfigV0        `json:"irc"`
+	WhatsApp WhatsAppConfig   `json:"whatsapp"`
+	Telegram telegramConfigV0 `json:"telegram"`
+	Feishu   feishuConfigV0   `json:"feishu"`
+	Discord  discordConfigV0  `json:"discord"`
+	MaixCam  maixcamConfigV0  `json:"maixcam"`
+	Weixin   weixinConfigV0   `json:"weixin"`
+	QQ       qqConfigV0       `json:"qq"`
+	DingTalk dingtalkConfigV0 `json:"dingtalk"`
+	Slack    slackConfigV0    `json:"slack"`
+	Matrix   matrixConfigV0   `json:"matrix"`
+	LINE     lineConfigV0     `json:"line"`
+	OneBot   onebotConfigV0   `json:"onebot"`
+	WeCom    wecomConfigV0    `json:"wecom"    envPrefix:"PICOCLAW_CHANNELS_WECOM_"`
+	Pico     picoConfigV0     `json:"pico"`
+	IRC      ircConfigV0      `json:"irc"`
 }
 
 func (v *channelsConfigV0) ToChannelsConfig() (ChannelsConfig, ChannelsSecurity) {
@@ -117,45 +115,39 @@ func (v *channelsConfigV0) ToChannelsConfig() (ChannelsConfig, ChannelsSecurity)
 	line, lineSecurity := v.LINE.ToLINEConfig()
 	onebot, onebotSecurity := v.OneBot.ToOneBotConfig()
 	wecom, wecomSecurity := v.WeCom.ToWeComConfig()
-	wecomapp, wecomappSecurity := v.WeComApp.ToWeComAppConfig()
-	wecomaibot, wecomaibotSecurity := v.WeComAIBot.ToWeComAIBotConfig()
 	pico, picoSecurity := v.Pico.ToPicoConfig()
 	irc, ircSecurity := v.IRC.ToIRCConfig()
 
 	return ChannelsConfig{
-			WhatsApp:   v.WhatsApp,
-			Telegram:   telegram,
-			Feishu:     feishu,
-			Discord:    discord,
-			MaixCam:    maixcam,
-			QQ:         qq,
-			Weixin:     weixin,
-			DingTalk:   dingtalk,
-			Slack:      slack,
-			Matrix:     matrix,
-			LINE:       line,
-			OneBot:     onebot,
-			WeCom:      wecom,
-			WeComApp:   wecomapp,
-			WeComAIBot: wecomaibot,
-			Pico:       pico,
-			IRC:        irc,
+			WhatsApp: v.WhatsApp,
+			Telegram: telegram,
+			Feishu:   feishu,
+			Discord:  discord,
+			MaixCam:  maixcam,
+			QQ:       qq,
+			Weixin:   weixin,
+			DingTalk: dingtalk,
+			Slack:    slack,
+			Matrix:   matrix,
+			LINE:     line,
+			OneBot:   onebot,
+			WeCom:    wecom,
+			Pico:     pico,
+			IRC:      irc,
 		}, ChannelsSecurity{
-			Telegram:   telegramSecurity,
-			Feishu:     feishuSecurity,
-			Discord:    discordSecurity,
-			QQ:         qqSecurity,
-			Weixin:     weixinSecurity,
-			DingTalk:   dingtalkSecurity,
-			Slack:      slackSecurity,
-			Matrix:     matrixSecurity,
-			LINE:       lineSecurity,
-			OneBot:     onebotSecurity,
-			WeCom:      wecomSecurity,
-			WeComApp:   wecomappSecurity,
-			WeComAIBot: wecomaibotSecurity,
-			Pico:       picoSecurity,
-			IRC:        ircSecurity,
+			Telegram: telegramSecurity,
+			Feishu:   feishuSecurity,
+			Discord:  discordSecurity,
+			QQ:       qqSecurity,
+			Weixin:   weixinSecurity,
+			DingTalk: dingtalkSecurity,
+			Slack:    slackSecurity,
+			Matrix:   matrixSecurity,
+			LINE:     lineSecurity,
+			OneBot:   onebotSecurity,
+			WeCom:    wecomSecurity,
+			Pico:     picoSecurity,
+			IRC:      ircSecurity,
 		}
 }
 
@@ -473,39 +465,32 @@ func (v *onebotConfigV0) ToOneBotConfig() (OneBotConfig, *OneBotSecurity) {
 }
 
 type wecomConfigV0 struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_ENABLED"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_WECOM_TOKEN"`
-	EncodingAESKey     string              `json:"encoding_aes_key"        env:"PICOCLAW_CHANNELS_WECOM_ENCODING_AES_KEY"`
-	WebhookURL         string              `json:"webhook_url"             env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_URL"`
-	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_WECOM_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_REPLY_TIMEOUT"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_REASONING_CHANNEL_ID"`
+	Enabled             bool                        `json:"enabled"                    env:"ENABLED"`
+	BotID               string                      `json:"bot_id"                     env:"BOT_ID"`
+	Secret              string                      `json:"secret"                     env:"SECRET"`
+	WebSocketURL        string                      `json:"websocket_url,omitempty"    env:"WEBSOCKET_URL"`
+	SendThinkingMessage bool                        `json:"send_thinking_message"      env:"SEND_THINKING_MESSAGE"`
+	DMPolicy            string                      `json:"dm_policy,omitempty"        env:"DM_POLICY"`
+	AllowFrom           FlexibleStringSlice         `json:"allow_from"                 env:"ALLOW_FROM"`
+	GroupPolicy         string                      `json:"group_policy,omitempty"     env:"GROUP_POLICY"`
+	GroupAllowFrom      FlexibleStringSlice         `json:"group_allow_from,omitempty" env:"GROUP_ALLOW_FROM"`
+	Groups              map[string]WeComGroupConfig `json:"groups,omitempty"`
+	ReasoningChannelID  string                      `json:"reasoning_channel_id"       env:"REASONING_CHANNEL_ID"`
 }
 
 func (v *wecomConfigV0) ToWeComConfig() (WeComConfig, *WeComSecurity) {
 	var sec *WeComSecurity
-	if v.Token != "" || v.EncodingAESKey != "" {
-		sec = &WeComSecurity{
-			Token:          v.Token,
-			EncodingAESKey: v.EncodingAESKey,
-		}
+	if v.Secret != "" {
+		sec = &WeComSecurity{Secret: v.Secret}
 	}
 	return WeComConfig{
-		Enabled:            v.Enabled,
-		token:              v.Token,
-		encodingAESKey:     v.EncodingAESKey,
-		WebhookURL:         v.WebhookURL,
-		WebhookHost:        v.WebhookHost,
-		WebhookPort:        v.WebhookPort,
-		WebhookPath:        v.WebhookPath,
-		AllowFrom:          v.AllowFrom,
-		ReplyTimeout:       v.ReplyTimeout,
-		GroupTrigger:       v.GroupTrigger,
-		ReasoningChannelID: v.ReasoningChannelID,
+		Enabled:             v.Enabled,
+		BotID:               v.BotID,
+		secret:              v.Secret,
+		WebSocketURL:        v.WebSocketURL,
+		SendThinkingMessage: v.SendThinkingMessage,
+		AllowFrom:           v.AllowFrom,
+		ReasoningChannelID:  v.ReasoningChannelID,
 	}, sec
 }
 
@@ -533,81 +518,6 @@ func (v *weixinConfigV0) ToWeiXinConfig() (WeixinConfig, *WeixinSecurity) {
 		CDNBaseURL:         v.CDNBaseURL,
 		Proxy:              v.Proxy,
 		AllowFrom:          v.AllowFrom,
-		ReasoningChannelID: v.ReasoningChannelID,
-	}, sec
-}
-
-type wecomappConfigV0 struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_APP_ENABLED"`
-	CorpID             string              `json:"corp_id"                 env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_ID"`
-	CorpSecret         string              `json:"corp_secret"             env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_SECRET"`
-	AgentID            int64               `json:"agent_id"                env:"PICOCLAW_CHANNELS_WECOM_APP_AGENT_ID"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_WECOM_APP_TOKEN"`
-	EncodingAESKey     string              `json:"encoding_aes_key"        env:"PICOCLAW_CHANNELS_WECOM_APP_ENCODING_AES_KEY"`
-	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_WECOM_APP_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_APP_REASONING_CHANNEL_ID"`
-}
-
-func (v *wecomappConfigV0) ToWeComAppConfig() (WeComAppConfig, *WeComAppSecurity) {
-	var sec *WeComAppSecurity
-	if v.CorpSecret != "" || v.Token != "" || v.EncodingAESKey != "" {
-		sec = &WeComAppSecurity{
-			CorpSecret:     v.CorpSecret,
-			Token:          v.Token,
-			EncodingAESKey: v.EncodingAESKey,
-		}
-	}
-	return WeComAppConfig{
-		Enabled:            v.Enabled,
-		CorpID:             v.CorpID,
-		corpSecret:         v.CorpSecret,
-		AgentID:            v.AgentID,
-		token:              v.Token,
-		encodingAESKey:     v.EncodingAESKey,
-		WebhookHost:        v.WebhookHost,
-		WebhookPort:        v.WebhookPort,
-		WebhookPath:        v.WebhookPath,
-		AllowFrom:          v.AllowFrom,
-		ReplyTimeout:       v.ReplyTimeout,
-		GroupTrigger:       v.GroupTrigger,
-		ReasoningChannelID: v.ReasoningChannelID,
-	}, sec
-}
-
-type wecomaibotConfigV0 struct {
-	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENABLED"`
-	Token              string              `json:"token"                env:"PICOCLAW_CHANNELS_WECOM_AIBOT_TOKEN"`
-	Secret             string              `json:"secret"               env:"PICOCLAW_CHANNELS_WECOM_AIBOT_SECRET"`
-	EncodingAESKey     string              `json:"encoding_aes_key"     env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENCODING_AES_KEY"`
-	WebhookPath        string              `json:"webhook_path"         env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"        env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REPLY_TIMEOUT"`
-	MaxSteps           int                 `json:"max_steps"            env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"`
-	WelcomeMessage     string              `json:"welcome_message"      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"`
-	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
-}
-
-func (v *wecomaibotConfigV0) ToWeComAIBotConfig() (WeComAIBotConfig, *WeComAIBotSecurity) {
-	var sec *WeComAIBotSecurity
-	if v.Token != "" || v.Secret != "" || v.EncodingAESKey != "" {
-		sec = &WeComAIBotSecurity{
-			Token:          v.Token,
-			Secret:         v.Secret,
-			EncodingAESKey: v.EncodingAESKey,
-		}
-	}
-	return WeComAIBotConfig{
-		Enabled:            v.Enabled,
-		WebhookPath:        v.WebhookPath,
-		AllowFrom:          v.AllowFrom,
-		ReplyTimeout:       v.ReplyTimeout,
-		MaxSteps:           v.MaxSteps,
-		WelcomeMessage:     v.WelcomeMessage,
 		ReasoningChannelID: v.ReasoningChannelID,
 	}, sec
 }
@@ -923,6 +833,7 @@ type webToolsConfigV0 struct {
 	Perplexity           perplexityConfigV0  `                                json:"perplexity"`
 	SearXNG              SearXNGConfig       `                                json:"searxng"`
 	GLMSearch            glmSearchConfigV0   `                                json:"glm_search"`
+	BaiduSearch          baiduSearchConfigV0 `                                json:"baidu_search"`
 	PreferNative         bool                `                                json:"prefer_native"                    env:"PICOCLAW_TOOLS_WEB_PREFER_NATIVE"`
 	Proxy                string              `                                json:"proxy,omitempty"                  env:"PICOCLAW_TOOLS_WEB_PROXY"`
 	FetchLimitBytes      int64               `                                json:"fetch_limit_bytes,omitempty"      env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
@@ -1014,11 +925,34 @@ func (v *glmSearchConfigV0) ToGLMSearchConfig() (GLMSearchConfig, *GLMSearchSecu
 	}, sec
 }
 
+type baiduSearchConfigV0 struct {
+	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_BAIDU_ENABLED"`
+	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_BAIDU_API_KEY"`
+	BaseURL    string `json:"base_url"    env:"PICOCLAW_TOOLS_WEB_BAIDU_BASE_URL"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BAIDU_MAX_RESULTS"`
+}
+
+func (v *baiduSearchConfigV0) ToBaiduSearchConfig() (BaiduSearchConfig, *BaiduSearchSecurity) {
+	var sec *BaiduSearchSecurity
+	if v.APIKey != "" {
+		sec = &BaiduSearchSecurity{
+			APIKey: v.APIKey,
+		}
+	}
+	return BaiduSearchConfig{
+		Enabled:    v.Enabled,
+		apiKey:     v.APIKey,
+		BaseURL:    v.BaseURL,
+		MaxResults: v.MaxResults,
+	}, sec
+}
+
 func (v *webToolsConfigV0) ToWebToolsConfig() (WebToolsConfig, WebToolsSecurity) {
 	brave, braveSecurity := v.Brave.ToBraveConfig()
 	tavily, tavilySecurity := v.Tavily.ToTavilyConfig()
 	perplexity, perplexitySecurity := v.Perplexity.ToPerplexityConfig()
 	glmSearch, glmSearchSecurity := v.GLMSearch.ToGLMSearchConfig()
+	baiduSearch, baiduSearchSecurity := v.BaiduSearch.ToBaiduSearchConfig()
 
 	return WebToolsConfig{
 			ToolConfig:           v.ToolConfig,
@@ -1028,16 +962,18 @@ func (v *webToolsConfigV0) ToWebToolsConfig() (WebToolsConfig, WebToolsSecurity)
 			Perplexity:           perplexity,
 			SearXNG:              v.SearXNG,
 			GLMSearch:            glmSearch,
+			BaiduSearch:          baiduSearch,
 			PreferNative:         v.PreferNative,
 			Proxy:                v.Proxy,
 			FetchLimitBytes:      v.FetchLimitBytes,
 			Format:               v.Format,
 			PrivateHostWhitelist: v.PrivateHostWhitelist,
 		}, WebToolsSecurity{
-			Brave:      braveSecurity,
-			Tavily:     tavilySecurity,
-			Perplexity: perplexitySecurity,
-			GLMSearch:  glmSearchSecurity,
+			Brave:       braveSecurity,
+			Tavily:      tavilySecurity,
+			Perplexity:  perplexitySecurity,
+			GLMSearch:   glmSearchSecurity,
+			BaiduSearch: baiduSearchSecurity,
 		}
 }
 

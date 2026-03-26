@@ -10,9 +10,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers/openai_compat"
-	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
 type HTTPProvider struct {
@@ -46,22 +44,6 @@ func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 	}
 }
 
-// NewHTTPProviderFromConfig creates an HTTPProvider from a ModelConfig,
-// honoring all optional fields including stream.
-func NewHTTPProviderFromConfig(cfg *config.ModelConfig, apiBase string) *HTTPProvider {
-	opts := []openai_compat.Option{
-		openai_compat.WithMaxTokensField(cfg.MaxTokensField),
-		openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout) * time.Second),
-		openai_compat.WithExtraBody(cfg.ExtraBody),
-	}
-	if cfg.Stream != nil && *cfg.Stream {
-		opts = append(opts, openai_compat.WithStream(true))
-	}
-	return &HTTPProvider{
-		delegate: openai_compat.NewProvider(cfg.APIKey(), apiBase, cfg.Proxy, opts...),
-	}
-}
-
 func (p *HTTPProvider) Chat(
 	ctx context.Context,
 	messages []Message,
@@ -72,20 +54,17 @@ func (p *HTTPProvider) Chat(
 	return p.delegate.Chat(ctx, messages, tools, model, options)
 }
 
-// CanStream returns true when SSE streaming is enabled.
-func (p *HTTPProvider) CanStream() bool {
-	return p.delegate.CanStream()
-}
-
-// ChatStream opens an SSE connection and returns a channel of StreamEvent.
+// ChatStream implements providers.CallbackStreamingProvider by delegating to the
+// OpenAI-compatible streaming endpoint (SSE with stream: true).
 func (p *HTTPProvider) ChatStream(
 	ctx context.Context,
 	messages []Message,
 	tools []ToolDefinition,
 	model string,
 	options map[string]any,
-) (<-chan protocoltypes.StreamEvent, error) {
-	return p.delegate.ChatStream(ctx, messages, tools, model, options)
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	return p.delegate.ChatStream(ctx, messages, tools, model, options, onChunk)
 }
 
 func (p *HTTPProvider) GetDefaultModel() string {

@@ -51,7 +51,6 @@ func newGroupMentionOnlyChannel(t *testing.T, botUsername string) (*TelegramChan
 		),
 		bot:     newTestTelegramBot(t, botUsername),
 		chatIDs: make(map[string]int64),
-		dedupe:  channels.NewMessageDeduplicator(1000),
 		ctx:     context.Background(),
 	}
 	return ch, messageBus

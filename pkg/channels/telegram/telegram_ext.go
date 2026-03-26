@@ -71,29 +71,6 @@ func (c *TelegramChannel) SendDraft(ctx context.Context, chatID string, draftID 
 	return nil
 }
 
-// DeleteMessage implements channels.MessageDeleter.
-// It deletes a previously sent message by its platform message ID.
-func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
-	if !c.IsRunning() {
-		return channels.ErrNotRunning
-	}
-
-	cid, _, err := parseTelegramChatID(chatID)
-	if err != nil {
-		return fmt.Errorf("invalid chat ID %s: %w", chatID, channels.ErrSendFailed)
-	}
-
-	var mid int
-	if _, scanErr := fmt.Sscanf(messageID, "%d", &mid); scanErr != nil {
-		return fmt.Errorf("invalid message ID %s: %w", messageID, channels.ErrSendFailed)
-	}
-
-	return c.bot.DeleteMessage(ctx, &telego.DeleteMessageParams{
-		ChatID:    telego.ChatID{ID: cid},
-		MessageID: mid,
-	})
-}
-
 // formatChatID formats a chat ID with optional thread ID as "chatID/threadID".
 func formatChatID(chatID int64, threadID int) string {
 	if threadID != 0 {

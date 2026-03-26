@@ -5,4 +5,8 @@ package main
 import _ "embed"
 
 //go:embed icon.ico
-var iconData []byte
+var iconICO []byte
+
+func getIcon() []byte {
+	return iconICO
+}

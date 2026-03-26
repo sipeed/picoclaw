@@ -14,6 +14,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/stats"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -192,7 +193,7 @@ func registerOrchestrationTools(
 	subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 
 	// Wire session recorder for DAG persistence.
-	recorder := newSessionRecorder(agent.Sessions)
+	recorder := newSessionRecorder(agent.Sessions.(*session.LegacyAdapter))
 	conductorKey := routing.BuildAgentMainSessionKey(agent.ID)
 	subagentManager.SetSessionRecorder(recorder, conductorKey)
 

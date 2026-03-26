@@ -9,9 +9,13 @@ import (
 type SpawnTool struct {
 	manager *SubagentManager
 
-	originChannel string
+	spawner      SubTurnSpawner
+	defaultModel string
+	maxTokens    int
+	temperature  float64
 
-	originChatID string
+	originChannel string
+	originChatID  string
 
 	allowlistCheck func(targetAgentID string) bool
 
@@ -22,13 +26,22 @@ type SpawnTool struct {
 var _ AsyncExecutor = (*SpawnTool)(nil)
 
 func NewSpawnTool(manager *SubagentManager) *SpawnTool {
-	return &SpawnTool{
-		manager: manager,
-
-		originChannel: "cli",
-
-		originChatID: "direct",
+	if manager == nil {
+		return &SpawnTool{}
 	}
+	return &SpawnTool{
+		manager:       manager,
+		defaultModel:  manager.defaultModel,
+		maxTokens:     manager.maxTokens,
+		temperature:   manager.temperature,
+		originChannel: "cli",
+		originChatID:  "direct",
+	}
+}
+
+// SetSpawner sets the SubTurnSpawner for direct sub-turn execution.
+func (t *SpawnTool) SetSpawner(spawner SubTurnSpawner) {
+	t.spawner = spawner
 }
 
 // SetCallback implements AsyncTool interface for async completion notification.
@@ -134,22 +147,51 @@ func (t *SpawnTool) execute(
 	}
 
 	// Validate preset name if provided
-
 	if preset != "" && !IsValidPreset(Preset(preset)) {
 		return ErrorResult(fmt.Sprintf(
-
 			"preset %q is not valid. Available presets: scout, analyst, coder, worker, coordinator",
-
 			preset,
 		))
 	}
 
 	if t.manager == nil {
+		// Fallback: use spawner if available (direct SpawnSubTurn call)
+		if t.spawner != nil {
+			systemPrompt := fmt.Sprintf(
+				"You are a spawned subagent running in the background. Complete the given task independently and report back when done.\n\nTask: %s",
+				task,
+			)
+			if label != "" {
+				systemPrompt = fmt.Sprintf(
+					"You are a spawned subagent labeled %q running in the background. Complete the given task independently and report back when done.\n\nTask: %s",
+					label, task,
+				)
+			}
+			go func() {
+				result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
+					Model:        t.defaultModel,
+					Tools:        nil,
+					SystemPrompt: systemPrompt,
+					MaxTokens:    t.maxTokens,
+					Temperature:  t.temperature,
+					Async:        true,
+				})
+				if err != nil {
+					result = ErrorResult(fmt.Sprintf("Spawn failed: %v", err)).WithError(err)
+				}
+				if cb != nil {
+					cb(ctx, result)
+				}
+			}()
+			if label != "" {
+				return AsyncResult(fmt.Sprintf("Spawned subagent '%s' for task: %s", label, task))
+			}
+			return AsyncResult(fmt.Sprintf("Spawned subagent for task: %s", task))
+		}
 		return ErrorResult("spawn tool is not available in this session (orchestration may be disabled)")
 	}
 
 	// Pass callback to manager for async completion notification
-
 	result, err := t.manager.Spawn(ctx, task, label, agentID, t.originChannel, t.originChatID, preset, cb)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to spawn subagent: %v", err))

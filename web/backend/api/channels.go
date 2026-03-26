@@ -22,8 +22,6 @@ var channelCatalog = []channelCatalogItem{
 	{Name: "qq", ConfigKey: "qq"},
 	{Name: "onebot", ConfigKey: "onebot"},
 	{Name: "wecom", ConfigKey: "wecom"},
-	{Name: "wecom_app", ConfigKey: "wecom_app"},
-	{Name: "wecom_aibot", ConfigKey: "wecom_aibot"},
 	{Name: "whatsapp", ConfigKey: "whatsapp", Variant: "bridge"},
 	{Name: "whatsapp_native", ConfigKey: "whatsapp", Variant: "native"},
 	{Name: "pico", ConfigKey: "pico"},

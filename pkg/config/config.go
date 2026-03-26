@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -247,7 +248,7 @@ type AgentConfig struct {
 }
 
 type SubagentsConfig struct {
-	Enabled     bool              `json:"enabled,omitempty"` // Fork-only: gate orchestration
+	Enabled     bool              `json:"enabled,omitempty"`
 	AllowAgents []string          `json:"allow_agents,omitempty"`
 	Model       *AgentModelConfig `json:"model,omitempty"`
 }
@@ -296,6 +297,11 @@ type SubTurnConfig struct {
 	ConcurrencyTimeoutSec int `json:"concurrency_timeout_sec" env:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_CONCURRENCY_TIMEOUT_SEC"`
 }
 
+type ToolFeedbackConfig struct {
+	Enabled       bool `json:"enabled"         env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
+	MaxArgsLength int  `json:"max_args_length" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
+}
+
 type AgentDefaults struct {
 	Workspace                 string             `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
 	RestrictToWorkspace       bool               `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
@@ -303,10 +309,13 @@ type AgentDefaults struct {
 	Provider                  string             `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
 	ModelName                 string             `json:"model_name"                      env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
 	ModelFallbacks            []string           `json:"model_fallbacks,omitempty"`
-	PlanModel                 string             `json:"plan_model,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_PLAN_MODEL"`
-	PlanModelFallbacks        []string           `json:"plan_model_fallbacks,omitempty"`
 	ImageModel                string             `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks       []string           `json:"image_model_fallbacks,omitempty"`
+	PlanModel                 string             `json:"plan_model,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_PLAN_MODEL"`
+	PlanModelFallbacks        []string           `json:"plan_model_fallbacks,omitempty"`
+	TaskReminderInterval      int                `json:"task_reminder_interval,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_TASK_REMINDER_INTERVAL"`
+	Orchestration             bool               `json:"orchestration,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_ORCHESTRATION"`
+	OCR                       *OCRConfig         `json:"ocr,omitempty"`
 	MaxTokens                 int                `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	ContextWindow             int                `json:"context_window,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_WINDOW"`
 	Temperature               *float64           `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
@@ -314,44 +323,14 @@ type AgentDefaults struct {
 	SummarizeMessageThreshold int                `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
 	SummarizeTokenPercent     int                `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
 	MaxMediaSize              int                `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
-	TaskReminderInterval      int                `json:"task_reminder_interval"          env:"PICOCLAW_AGENTS_DEFAULTS_TASK_REMINDER_INTERVAL"`
-	Orchestration             bool               `json:"orchestration,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_ORCHESTRATION"`
 	Routing                   *RoutingConfig     `json:"routing,omitempty"`
 	SteeringMode              string             `json:"steering_mode,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_STEERING_MODE"` // "one-at-a-time" (default) or "all"
 	SubTurn                   SubTurnConfig      `json:"subturn"                                                                                     envPrefix:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_"`
-	OCR                       *OCRConfig         `json:"ocr,omitempty"`
 	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
+	SplitOnMarker             bool               `json:"split_on_marker"                 env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
 }
 
-// ToolFeedbackConfig controls whether tool execution details are sent to the
-// chat channel as real-time feedback messages. When enabled, every tool call
-// produces a short notification with the tool name and its parameters.
-type ToolFeedbackConfig struct {
-	Enabled       bool `json:"enabled"         env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
-	MaxArgsLength int  `json:"max_args_length" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
-}
-
-// OCRConfig configures the external OCR command for PDF text extraction.
-type OCRConfig struct {
-	Command      string            `json:"command"`
-	Args         []string          `json:"args,omitempty"`
-	Env          map[string]string `json:"env,omitempty"`
-	Timeout      int               `json:"timeout,omitempty"`
-	ReadingOrder string            `json:"reading_order,omitempty"`
-}
-
-// GetOCRTimeout returns the configured timeout or default (600s = 10min).
-func (c *OCRConfig) GetOCRTimeout() int {
-	if c != nil && c.Timeout > 0 {
-		return c.Timeout
-	}
-	return 600
-}
-
-const (
-	DefaultMaxMediaSize                = 20 * 1024 * 1024 // 20 MB
-	DefaultWeComAIBotProcessingMessage = "⏳ Processing, please wait. The results will be sent shortly."
-)
+const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB
 
 func (d *AgentDefaults) GetMaxMediaSize() int {
 	if d.MaxMediaSize > 0 {
@@ -391,9 +370,7 @@ type ChannelsConfig struct {
 	Matrix     MatrixConfig     `json:"matrix"`
 	LINE       LINEConfig       `json:"line"`
 	OneBot     OneBotConfig     `json:"onebot"`
-	WeCom      WeComConfig      `json:"wecom"`
-	WeComApp   WeComAppConfig   `json:"wecom_app"`
-	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
+	WeCom      WeComConfig      `json:"wecom"       envPrefix:"PICOCLAW_CHANNELS_WECOM_"`
 	Weixin     WeixinConfig     `json:"weixin"`
 	Pico       PicoConfig       `json:"pico"`
 	PicoClient PicoClientConfig `json:"pico_client"`
@@ -413,8 +390,20 @@ type TypingConfig struct {
 
 // PlaceholderConfig controls placeholder message behavior (Phase 10).
 type PlaceholderConfig struct {
-	Enabled bool   `json:"enabled,omitempty"`
-	Text    string `json:"text,omitempty"`
+	Enabled bool                `json:"enabled"`
+	Text    FlexibleStringSlice `json:"text,omitempty"`
+}
+
+// GetRandomText returns a random placeholder text, or default if none set.
+func (p *PlaceholderConfig) GetRandomText() string {
+	if len(p.Text) == 0 {
+		return "Thinking..."
+	}
+	if len(p.Text) == 1 {
+		return p.Text[0]
+	}
+	idx := rand.Intn(len(p.Text))
+	return p.Text[idx]
 }
 
 type StreamingConfig struct {
@@ -433,20 +422,19 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled            bool `json:"enabled"                       env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Enabled            bool `json:"enabled"                 env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
 	token              string
-	BaseURL            string              `json:"base_url"                      env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
-	Proxy              string              `json:"proxy"                         env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"                    env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	BaseURL            string              `json:"base_url"                env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
+	Proxy              string              `json:"proxy"                   env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 	Streaming          StreamingConfig     `json:"streaming,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"          env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
-	WebAppURL          string              `json:"web_app_url"                   env:"PICOCLAW_CHANNELS_TELEGRAM_WEB_APP_URL"`
-	SubagentThreadID   int                 `json:"subagent_thread_id,omitempty"  env:"PICOCLAW_CHANNELS_TELEGRAM_SUBAGENT_THREAD_ID"`
-	HeartbeatThreadID  int                 `json:"heartbeat_thread_id,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_HEARTBEAT_THREAD_ID"`
-	UseMarkdownV2      bool                `json:"use_markdown_v2"               env:"PICOCLAW_CHANNELS_TELEGRAM_USE_MARKDOWN_V2"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+	HeartbeatThreadID  int                 `json:"heartbeat_thread_id"     env:"PICOCLAW_CHANNELS_TELEGRAM_HEARTBEAT_THREAD_ID"`
+	SubagentThreadID   int                 `json:"subagent_thread_id"      env:"PICOCLAW_CHANNELS_TELEGRAM_SUBAGENT_THREAD_ID"`
+	UseMarkdownV2      bool                `json:"use_markdown_v2"         env:"PICOCLAW_CHANNELS_TELEGRAM_USE_MARKDOWN_V2"`
 	secDirty           bool
 }
 
@@ -621,18 +609,20 @@ func (c *SlackConfig) SetAppToken(token string) {
 }
 
 type MatrixConfig struct {
-	Enabled            bool   `json:"enabled"                  env:"PICOCLAW_CHANNELS_MATRIX_ENABLED"`
-	Homeserver         string `json:"homeserver"               env:"PICOCLAW_CHANNELS_MATRIX_HOMESERVER"`
-	UserID             string `json:"user_id"                  env:"PICOCLAW_CHANNELS_MATRIX_USER_ID"`
+	Enabled            bool   `json:"enabled"                        env:"PICOCLAW_CHANNELS_MATRIX_ENABLED"`
+	Homeserver         string `json:"homeserver"                     env:"PICOCLAW_CHANNELS_MATRIX_HOMESERVER"`
+	UserID             string `json:"user_id"                        env:"PICOCLAW_CHANNELS_MATRIX_USER_ID"`
 	accessToken        string
-	DeviceID           string              `json:"device_id,omitempty"      env:"PICOCLAW_CHANNELS_MATRIX_DEVICE_ID"`
-	JoinOnInvite       bool                `json:"join_on_invite"           env:"PICOCLAW_CHANNELS_MATRIX_JOIN_ON_INVITE"`
-	MessageFormat      string              `json:"message_format,omitempty" env:"PICOCLAW_CHANNELS_MATRIX_MESSAGE_FORMAT"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"               env:"PICOCLAW_CHANNELS_MATRIX_ALLOW_FROM"`
+	DeviceID           string              `json:"device_id,omitempty"            env:"PICOCLAW_CHANNELS_MATRIX_DEVICE_ID"`
+	JoinOnInvite       bool                `json:"join_on_invite"                 env:"PICOCLAW_CHANNELS_MATRIX_JOIN_ON_INVITE"`
+	MessageFormat      string              `json:"message_format,omitempty"       env:"PICOCLAW_CHANNELS_MATRIX_MESSAGE_FORMAT"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"                     env:"PICOCLAW_CHANNELS_MATRIX_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"           env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
 	secDirty           bool
+	CryptoDatabasePath string `json:"crypto_database_path,omitempty" env:"PICOCLAW_CHANNELS_MATRIX_CRYPTO_DATABASE_PATH"`
+	CryptoPassphrase   string `json:"crypto_passphrase,omitempty"    env:"PICOCLAW_CHANNELS_MATRIX_CRYPTO_PASSPHRASE"`
 }
 
 // AccessToken returns the Matrix access token
@@ -708,136 +698,28 @@ func (c *OneBotConfig) SetAccessToken(token string) {
 	c.secDirty = true
 }
 
+type WeComGroupConfig struct {
+	AllowFrom FlexibleStringSlice `json:"allow_from,omitempty"`
+}
+
 type WeComConfig struct {
-	Enabled            bool `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_ENABLED"`
-	token              string
-	encodingAESKey     string
-	WebhookURL         string              `json:"webhook_url"             env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_URL"`
-	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_WECOM_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_REPLY_TIMEOUT"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_REASONING_CHANNEL_ID"`
-	secDirty           bool
+	Enabled             bool   `json:"enabled"                 env:"ENABLED"`
+	BotID               string `json:"bot_id"                  env:"BOT_ID"`
+	secret              string
+	WebSocketURL        string              `json:"websocket_url,omitempty" env:"WEBSOCKET_URL"`
+	SendThinkingMessage bool                `json:"send_thinking_message"   env:"SEND_THINKING_MESSAGE"`
+	AllowFrom           FlexibleStringSlice `json:"allow_from"              env:"ALLOW_FROM"`
+	ReasoningChannelID  string              `json:"reasoning_channel_id"    env:"REASONING_CHANNEL_ID"`
+	secDirty            bool
 }
 
-// Token returns the WeCom token
-func (c *WeComConfig) Token() string {
-	return c.token
-}
-
-// SetToken sets the WeCom token
-func (c *WeComConfig) SetToken(token string) {
-	c.token = token
-	c.secDirty = true
-}
-
-// EncodingAESKey returns the WeCom encoding AES key
-func (c *WeComConfig) EncodingAESKey() string {
-	return c.encodingAESKey
-}
-
-// SetEncodingAESKey sets the WeCom encoding AES key
-func (c *WeComConfig) SetEncodingAESKey(key string) {
-	c.encodingAESKey = key
-	c.secDirty = true
-}
-
-type WeComAppConfig struct {
-	Enabled            bool   `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_APP_ENABLED"`
-	CorpID             string `json:"corp_id"                 env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_ID"`
-	corpSecret         string
-	AgentID            int64 `json:"agent_id"                env:"PICOCLAW_CHANNELS_WECOM_APP_AGENT_ID"`
-	token              string
-	encodingAESKey     string
-	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_WECOM_APP_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_APP_REASONING_CHANNEL_ID"`
-	secDirty           bool
-}
-
-// CorpSecret returns the corporate secret for WeCom app
-func (c *WeComAppConfig) CorpSecret() string {
-	return c.corpSecret
-}
-
-// SetCorpSecret sets the corporate secret for WeCom app
-func (c *WeComAppConfig) SetCorpSecret(secret string) {
-	c.corpSecret = secret
-	c.secDirty = true
-}
-
-// Token returns the webhook token for WeCom app
-func (c *WeComAppConfig) Token() string {
-	return c.token
-}
-
-// SetToken sets the webhook token for WeCom app
-func (c *WeComAppConfig) SetToken(token string) {
-	c.token = token
-	c.secDirty = true
-}
-
-// EncodingAESKey returns the encoding AES key for WeCom app
-func (c *WeComAppConfig) EncodingAESKey() string {
-	return c.encodingAESKey
-}
-
-// SetEncodingAESKey sets the encoding AES key for WeCom app
-func (c *WeComAppConfig) SetEncodingAESKey(key string) {
-	c.encodingAESKey = key
-	c.secDirty = true
-}
-
-type WeComAIBotConfig struct {
-	Enabled            bool   `json:"enabled"                      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENABLED"`
-	BotID              string `json:"bot_id,omitempty"             env:"PICOCLAW_CHANNELS_WECOM_AIBOT_BOT_ID"`
-	secret             string
-	token              string
-	encodingAESKey     string
-	WebhookPath        string              `json:"webhook_path,omitempty"       env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"                   env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"                env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REPLY_TIMEOUT"`
-	MaxSteps           int                 `json:"max_steps"                    env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"`       // Maximum streaming steps
-	WelcomeMessage     string              `json:"welcome_message"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"` // Sent on enter_chat event; empty = no welcome
-	ProcessingMessage  string              `json:"processing_message,omitempty" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_PROCESSING_MESSAGE"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"         env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
-	secDirty           bool
-}
-
-// Token returns the webhook token for WeCom AI bot
-func (c *WeComAIBotConfig) Token() string {
-	return c.token
-}
-
-// EncodingAESKey returns the encoding AES key for WeCom AI bot
-func (c *WeComAIBotConfig) EncodingAESKey() string {
-	return c.encodingAESKey
-}
-
-// SetToken sets the token for WeCom AI bot
-func (c *WeComAIBotConfig) SetToken(token string) {
-	c.token = token
-	c.secDirty = true
-}
-
-// SetEncodingAESKey sets the encoding AES key for WeCom AI bot
-func (c *WeComAIBotConfig) SetEncodingAESKey(key string) {
-	c.encodingAESKey = key
-	c.secDirty = true
-}
-
-func (c *WeComAIBotConfig) Secret() string {
+// Secret returns the WeCom bot secret.
+func (c *WeComConfig) Secret() string {
 	return c.secret
 }
 
-func (c *WeComAIBotConfig) SetSecret(secret string) {
+// SetSecret sets the WeCom bot secret.
+func (c *WeComConfig) SetSecret(secret string) {
 	c.secret = secret
 	c.secDirty = true
 }
@@ -992,13 +874,16 @@ type ModelConfig struct {
 	MaxTokensField string         `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
 	RequestTimeout int            `json:"request_timeout,omitempty"`
 	ThinkingLevel  string         `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
-	Stream         *bool          `json:"stream,omitempty"`         // Use SSE streaming (default: protocol-dependent)
 	ExtraBody      map[string]any `json:"extra_body,omitempty"`     // Additional fields to inject into request body
 
 	// from security
 	secModelName string
 	apiKeys      []string
 	secDirty     bool
+
+	// isVirtual marks this model as a virtual model generated from multi-key expansion.
+	// Virtual models should not be persisted to config files.
+	isVirtual bool
 }
 
 // APIKey returns the first API key from apiKeys
@@ -1007,6 +892,11 @@ func (c *ModelConfig) APIKey() string {
 		return c.apiKeys[0]
 	}
 	return ""
+}
+
+// IsVirtual returns true if this model was generated from multi-key expansion.
+func (c *ModelConfig) IsVirtual() bool {
+	return c.isVirtual
 }
 
 // Validate checks if the ModelConfig has all required fields.
@@ -1354,6 +1244,10 @@ func (c *ClawHubRegistryConfig) SetAuthToken(token string) {
 type MCPServerConfig struct {
 	// Enabled indicates whether this MCP server is active
 	Enabled bool `json:"enabled"`
+	// Deferred controls whether this server's tools are registered as hidden (deferred/discovery mode).
+	// When nil, the global Discovery.Enabled setting applies.
+	// When explicitly set to true or false, it overrides the global setting for this server only.
+	Deferred *bool `json:"deferred,omitempty"`
 	// Command is the executable to run (e.g., "npx", "python", "/path/to/server")
 	Command string `json:"command"`
 	// Args are the arguments to pass to the command
@@ -1368,10 +1262,8 @@ type MCPServerConfig struct {
 	URL string `json:"url,omitempty"`
 	// Headers are HTTP headers to send with requests (sse/http only)
 	Headers map[string]string `json:"headers,omitempty"`
-	// Timeout is the maximum duration in seconds for tool calls to this server (default: 60)
+	// Timeout is the per-server timeout in seconds (0 means default 60s)
 	Timeout int `json:"timeout,omitempty"`
-	// Deferred controls whether this server's tools are registered as hidden (deferred/discovery mode).
-	Deferred *bool `json:"deferred,omitempty"`
 }
 
 // MCPConfig defines configuration for all MCP servers
@@ -1447,17 +1339,29 @@ func LoadConfig(path string) (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Load security configuration
-		securityPath := securityPath(path)
-		sec, err := loadSecurityConfig(securityPath)
+
+		// Legacy config (no version field)
+		tmpCfg, e := loadConfigV0(data)
+		if e != nil {
+			return nil, e
+		}
+
+		tmpCfgMigrated, e := tmpCfg.Migrate()
+		if e != nil {
+			logger.ErrorF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+			return nil, e
+		}
+
+		// Load security configuration from .security.yml
+		secPath := securityPath(path)
+		sec, err := loadSecurityConfig(secPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load security config: %w", err)
 		}
 
-		// Apply security references from .security.yml BEFORE resolveAPIKeys
-		// This resolves ref: references to actual values
-		if err := applySecurityConfig(cfg, sec); err != nil {
-			return nil, fmt.Errorf("failed to apply security config: %w", err)
+		// Merge security configs: config.json takes precedence over .security.yml
+		if err := applySecurityConfigWithPrecedence(cfg, tmpCfgMigrated, sec); err != nil {
+			return nil, fmt.Errorf("failed to merge security config: %w", err)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported config version: %d", versionInfo.Version)
@@ -1654,39 +1558,10 @@ func applySecurityConfig(cfg *Config, sec *SecurityConfig) error {
 			cfg.Channels.OneBot.accessToken = sec.Channels.OneBot.AccessToken
 		}
 
-		// Handle WeCom token and encoding key
+		// Handle WeCom bot secret
 		if sec.Channels.WeCom != nil {
-			if sec.Channels.WeCom.Token != "" {
-				cfg.Channels.WeCom.token = sec.Channels.WeCom.Token
-			}
-			if sec.Channels.WeCom.EncodingAESKey != "" {
-				cfg.Channels.WeCom.encodingAESKey = sec.Channels.WeCom.EncodingAESKey
-			}
-		}
-
-		// Handle WeCom App credentials
-		if sec.Channels.WeComApp != nil {
-			if sec.Channels.WeComApp.CorpSecret != "" {
-				cfg.Channels.WeComApp.corpSecret = sec.Channels.WeComApp.CorpSecret
-			}
-			if sec.Channels.WeComApp.Token != "" {
-				cfg.Channels.WeComApp.token = sec.Channels.WeComApp.Token
-			}
-			if sec.Channels.WeComApp.EncodingAESKey != "" {
-				cfg.Channels.WeComApp.encodingAESKey = sec.Channels.WeComApp.EncodingAESKey
-			}
-		}
-
-		// Handle WeCom AI Bot credentials
-		if sec.Channels.WeComAIBot != nil {
-			if sec.Channels.WeComAIBot.Token != "" {
-				cfg.Channels.WeComAIBot.token = sec.Channels.WeComAIBot.Token
-			}
-			if sec.Channels.WeComAIBot.EncodingAESKey != "" {
-				cfg.Channels.WeComAIBot.encodingAESKey = sec.Channels.WeComAIBot.EncodingAESKey
-			}
-			if sec.Channels.WeComAIBot.Secret != "" {
-				cfg.Channels.WeComAIBot.secret = sec.Channels.WeComAIBot.Secret
+			if sec.Channels.WeCom.Secret != "" {
+				cfg.Channels.WeCom.secret = sec.Channels.WeCom.Secret
 			}
 		}
 
@@ -1717,6 +1592,28 @@ func applySecurityConfig(cfg *Config, sec *SecurityConfig) error {
 	cfg.security = sec
 
 	return nil
+}
+
+// applySecurityConfigWithPrecedence merges security config from tmpCfg (migrated from configV0) and sec (SecurityConfig),
+// with tmpCfg taking precedence. It then applies the merged security config to cfg.
+func applySecurityConfigWithPrecedence(cfg *Config, tmpCfg *Config, sec *SecurityConfig) error {
+	// Get security config from tmpCfg (already extracted during migration)
+	var tmpSec *SecurityConfig
+	if tmpCfg != nil {
+		tmpSec = tmpCfg.security
+	}
+
+	// If tmpCfg has no security config, just apply sec directly
+	if tmpSec == nil {
+		return applySecurityConfig(cfg, sec)
+	}
+
+	// Merge sec and tmpSec, with tmpSec (from config.json) taking precedence
+	// mergeSecurityConfig(existing, newer) - newer takes precedence
+	mergedSec := mergeSecurityConfig(sec, tmpSec)
+
+	// Apply the merged security config to cfg
+	return applySecurityConfig(cfg, mergedSec)
 }
 
 func toNameIndex(list []*ModelConfig) []string {
@@ -1805,6 +1702,14 @@ func (c *Config) migrateChannelConfigs() {
 }
 
 func SaveConfig(path string, cfg *Config) error {
+	if cfg.security == nil {
+		logger.Errorf("config %#v", *cfg)
+		if len(cfg.ModelList) > 0 {
+			logger.Errorf("model[0] %#v", cfg.ModelList[0])
+		}
+		logger.ErrorC("config", "security is nil")
+		return fmt.Errorf("security is nil")
+	}
 	cfg.security = normalizeSecurityConfig(cfg.security)
 	// Ensure version is always set when saving
 	if cfg.Version == 0 {
@@ -1902,26 +1807,9 @@ func SaveConfig(path string, cfg *Config) error {
 	}
 	if cfg.Channels.WeCom.secDirty {
 		cfg.security.Channels.WeCom = &WeComSecurity{
-			Token:          cfg.Channels.WeCom.Token(),
-			EncodingAESKey: cfg.Channels.WeCom.EncodingAESKey(),
+			Secret: cfg.Channels.WeCom.Secret(),
 		}
 		cfg.Channels.WeCom.secDirty = false
-	}
-	if cfg.Channels.WeComApp.secDirty {
-		cfg.security.Channels.WeComApp = &WeComAppSecurity{
-			CorpSecret:     cfg.Channels.WeComApp.CorpSecret(),
-			Token:          cfg.Channels.WeComApp.Token(),
-			EncodingAESKey: cfg.Channels.WeComApp.EncodingAESKey(),
-		}
-		cfg.Channels.WeComApp.secDirty = false
-	}
-	if cfg.Channels.WeComAIBot.secDirty {
-		cfg.security.Channels.WeComAIBot = &WeComAIBotSecurity{
-			Token:          cfg.Channels.WeComAIBot.Token(),
-			EncodingAESKey: cfg.Channels.WeComAIBot.EncodingAESKey(),
-			Secret:         cfg.Channels.WeComAIBot.Secret(),
-		}
-		cfg.Channels.WeComAIBot.secDirty = false
 	}
 	if cfg.Tools.Web.Brave.secDirty {
 		cfg.security.Web.Brave = &BraveSecurity{
@@ -1980,7 +1868,20 @@ func SaveConfig(path string, cfg *Config) error {
 		return err
 	}
 
+	// Filter out virtual models before serializing to config file
+	nonVirtualModels := make([]*ModelConfig, 0, len(cfg.ModelList))
+	for _, m := range cfg.ModelList {
+		if !m.isVirtual {
+			nonVirtualModels = append(nonVirtualModels, m)
+		}
+	}
+	// Temporarily replace ModelList with filtered version for serialization
+	originalModelList := cfg.ModelList
+	cfg.ModelList = nonVirtualModels
+
 	data, err := json.MarshalIndent(cfg, "", "  ")
+	// Restore original ModelList after serialization
+	cfg.ModelList = originalModelList
 	if err != nil {
 		return err
 	}
@@ -2025,26 +1926,13 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 
 // findMatches finds all ModelConfig entries with the given model_name.
 func (c *Config) findMatches(modelName string) []*ModelConfig {
-	matches := make([]*ModelConfig, 0, 4)
+	var matches []*ModelConfig
 	for i := range c.ModelList {
 		if c.ModelList[i].ModelName == modelName {
 			matches = append(matches, c.ModelList[i])
 		}
 	}
 	return matches
-}
-
-// FindModelConfigByRef finds a ModelConfig entry whose Model field matches
-// "protocol/modelID" (case-insensitive). Used by the fallback chain to look up
-// cross-provider candidates in model_list.
-func (c *Config) FindModelConfigByRef(protocol, modelID string) *ModelConfig {
-	target := strings.ToLower(protocol + "/" + modelID)
-	for i := range c.ModelList {
-		if strings.ToLower(c.ModelList[i].Model) == target {
-			return c.ModelList[i]
-		}
-	}
-	return nil
 }
 
 // ValidateModelList validates all ModelConfig entries in the model_list.
@@ -2211,6 +2099,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 				RequestTimeout: m.RequestTimeout,
 				ThinkingLevel:  m.ThinkingLevel,
 				ExtraBody:      m.ExtraBody,
+				isVirtual:      true,
 			}
 			expanded = append(expanded, additionalEntry)
 			fallbackNames = append(fallbackNames, expandedName)

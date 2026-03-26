@@ -3,6 +3,7 @@ export type JsonRecord = Record<string, unknown>
 export interface CoreConfigForm {
   workspace: string
   restrictToWorkspace: boolean
+  splitOnMarker: boolean
   toolFeedbackEnabled: boolean
   toolFeedbackMaxArgsLength: string
   execEnabled: boolean
@@ -65,6 +66,7 @@ export const DM_SCOPE_OPTIONS = [
 export const EMPTY_FORM: CoreConfigForm = {
   workspace: "",
   restrictToWorkspace: true,
+  splitOnMarker: false,
   toolFeedbackEnabled: true,
   toolFeedbackMaxArgsLength: "300",
   execEnabled: true,
@@ -136,6 +138,10 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       defaults.restrict_to_workspace === undefined
         ? EMPTY_FORM.restrictToWorkspace
         : asBool(defaults.restrict_to_workspace),
+    splitOnMarker:
+      defaults.split_on_marker === undefined
+        ? EMPTY_FORM.splitOnMarker
+        : asBool(defaults.split_on_marker),
     toolFeedbackEnabled:
       toolFeedback.enabled === undefined
         ? EMPTY_FORM.toolFeedbackEnabled
@@ -179,7 +185,10 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       EMPTY_FORM.cronExecTimeoutMinutes,
     ),
     maxTokens: asNumberString(defaults.max_tokens, EMPTY_FORM.maxTokens),
-    contextWindow: asNumberString(defaults.context_window, EMPTY_FORM.contextWindow),
+    contextWindow: asNumberString(
+      defaults.context_window,
+      EMPTY_FORM.contextWindow,
+    ),
     maxToolIterations: asNumberString(
       defaults.max_tool_iterations,
       EMPTY_FORM.maxToolIterations,

@@ -7,6 +7,7 @@
 package heartbeat
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,7 +19,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/research"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -26,7 +26,6 @@ import (
 const (
 	minIntervalMinutes     = 5
 	defaultIntervalMinutes = 30
-	suppressionTTL         = 24 * time.Hour
 	userTasksMarker        = "Add your heartbeat tasks below this line:"
 )
 
@@ -37,17 +36,14 @@ type HeartbeatHandler func(prompt, channel, chatID string) *tools.ToolResult
 
 // HeartbeatService manages periodic heartbeat checks
 type HeartbeatService struct {
-	workspace         string
-	bus               *bus.MessageBus
-	state             *state.Manager
-	handler           HeartbeatHandler
-	researchStore     *research.ResearchStore
-	interval          time.Duration
-	enabled           bool
-	mu                sync.RWMutex
-	stopChan          chan struct{}
-	lastNotifiedAt    time.Time // when a non-silent result was last sent to user
-	heartbeatThreadID int
+	workspace string
+	bus       *bus.MessageBus
+	state     *state.Manager
+	handler   HeartbeatHandler
+	interval  time.Duration
+	enabled   bool
+	mu        sync.RWMutex
+	stopChan  chan struct{}
 }
 
 // NewHeartbeatService creates a new heartbeat service
@@ -81,29 +77,6 @@ func (hs *HeartbeatService) SetHandler(handler HeartbeatHandler) {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 	hs.handler = handler
-}
-
-// SetHeartbeatThreadID configures Telegram thread routing for heartbeat messages.
-func (hs *HeartbeatService) SetHeartbeatThreadID(threadID int) {
-	hs.mu.Lock()
-	defer hs.mu.Unlock()
-	hs.heartbeatThreadID = threadID
-}
-
-// SetResearchStore injects the research store for heartbeat-driven research.
-func (hs *HeartbeatService) SetResearchStore(store *research.ResearchStore) {
-	hs.mu.Lock()
-	defer hs.mu.Unlock()
-	hs.researchStore = store
-}
-
-// ResetSuppression clears the notification suppression so the next
-// non-silent heartbeat result will be delivered to the user again.
-// Typically called when a user message arrives.
-func (hs *HeartbeatService) ResetSuppression() {
-	hs.mu.Lock()
-	defer hs.mu.Unlock()
-	hs.lastNotifiedAt = time.Time{}
 }
 
 // Start begins the heartbeat service
@@ -200,8 +173,12 @@ func (hs *HeartbeatService) executeHeartbeat() {
 		return
 	}
 
-	channel, chatID, reason := hs.resolveHeartbeatTarget()
-	hs.logInfof("Resolved channel: %s, chatID: %s (%s)", channel, chatID, reason)
+	// Get last channel info for context
+	lastChannel := hs.state.GetLastChannel()
+	channel, chatID := hs.parseLastChannel(lastChannel)
+
+	// Debug log for channel resolution
+	hs.logInfof("Resolved channel: %s, chatID: %s (from lastChannel: %s)", channel, chatID, lastChannel)
 
 	result := handler(prompt, channel, chatID)
 
@@ -231,84 +208,14 @@ func (hs *HeartbeatService) executeHeartbeat() {
 		return
 	}
 
-	// Suppress duplicate notifications within the TTL window
-	hs.mu.RLock()
-	suppressed := !hs.lastNotifiedAt.IsZero() && time.Since(hs.lastNotifiedAt) < suppressionTTL
-	hs.mu.RUnlock()
-	if suppressed {
-		hs.logInfof("Heartbeat suppressed (already notified user recently)")
-		return
+	// Send result to user
+	if result.ForUser != "" {
+		hs.sendResponse(result.ForUser)
+	} else if result.ForLLM != "" {
+		hs.sendResponse(result.ForLLM)
 	}
-
-	// Skip sendResponse — the task completion message in runAgentLoop already
-	// includes the LLM response, so sending here would create a duplicate bubble.
-
-	hs.mu.Lock()
-	hs.lastNotifiedAt = time.Now()
-	hs.mu.Unlock()
 
 	hs.logInfof("Heartbeat completed: %s", result.ForLLM)
-}
-
-func (hs *HeartbeatService) resolveHeartbeatTarget() (channel, chatID, reason string) {
-	if explicit := hs.state.GetHeartbeatTarget(); explicit != "" {
-		if ch, cid := hs.parseTarget(explicit); ch != "" && cid != "" {
-			return ch, cid, fmt.Sprintf("explicit heartbeat target: %s", explicit)
-		}
-		hs.logErrorf("Invalid explicit heartbeat target: %s", explicit)
-	}
-
-	if threadID := hs.telegramHeartbeatThreadID(); threadID > 0 {
-		if ch, cid, src := hs.resolveTelegramThreadTarget(threadID); ch != "" && cid != "" {
-			return ch, cid, src
-		}
-	}
-
-	lastChannel := hs.state.GetLastChannel()
-	channel, chatID = hs.parseLastChannel(lastChannel)
-	return channel, chatID, fmt.Sprintf("fallback last channel: %s", lastChannel)
-}
-
-func (hs *HeartbeatService) resolveTelegramThreadTarget(threadID int) (channel, chatID, reason string) {
-	candidates := []struct {
-		value  string
-		reason string
-	}{
-		{value: hs.state.GetLastHeartbeatTarget(), reason: "last heartbeat target"},
-		{value: hs.state.GetLastChannel(), reason: "last channel"},
-	}
-
-	for _, candidate := range candidates {
-		ch, cid := hs.parseTarget(candidate.value)
-		if ch != "telegram" || cid == "" {
-			continue
-		}
-		return ch,
-			withTelegramThread(cid, threadID),
-			fmt.Sprintf("telegram heartbeat_thread_id from %s", candidate.reason)
-	}
-
-	return "", "", ""
-}
-
-func (hs *HeartbeatService) telegramHeartbeatThreadID() int {
-	hs.mu.RLock()
-	defer hs.mu.RUnlock()
-	return hs.heartbeatThreadID
-}
-
-func withTelegramThread(chatID string, threadID int) string {
-	if threadID <= 0 || chatID == "" {
-		return chatID
-	}
-	baseChatID := chatID
-	if slash := strings.Index(baseChatID, "/"); slash >= 0 {
-		baseChatID = baseChatID[:slash]
-	}
-	if baseChatID == "" {
-		return chatID
-	}
-	return fmt.Sprintf("%s/%d", baseChatID, threadID)
 }
 
 // buildPrompt builds the heartbeat prompt from HEARTBEAT.md
@@ -331,7 +238,6 @@ func (hs *HeartbeatService) buildPrompt() string {
 	}
 
 	now := time.Now().Format("2006-01-02 15:04:05")
-	researchCtx := hs.buildResearchContext()
 	return fmt.Sprintf(`# Heartbeat Check
 
 Current time: %s
@@ -341,91 +247,7 @@ Review the following tasks and execute any necessary actions using available ski
 If there is nothing that requires attention, respond ONLY with: HEARTBEAT_OK
 
 %s
-%s`, now, content, researchCtx)
-}
-
-const (
-	maxResearchTasks   = 3
-	maxFindingsPerTask = 10
-	maxSummaryLen      = 200
-)
-
-// buildResearchContext generates a prompt section for incremental research progress.
-// Only includes tasks that are "due" based on their interval setting.
-func (hs *HeartbeatService) buildResearchContext() string {
-	hs.mu.RLock()
-	store := hs.researchStore
-	hs.mu.RUnlock()
-
-	if store == nil {
-		return ""
-	}
-
-	tasks, err := store.ListDueTasks(maxResearchTasks)
-	if err != nil {
-		hs.logErrorf("Failed to list due research tasks: %v", err)
-		return ""
-	}
-
-	if len(tasks) == 0 {
-		return ""
-	}
-
-	var b strings.Builder
-	b.WriteString("\n## Research Tasks (Incremental Progress)\n\n")
-	b.WriteString("You have research tasks due for progress. For each task below:\n")
-	b.WriteString("1. If pending, set status to 'active' first\n")
-	b.WriteString("2. Use web_search to find new information, then add_finding to record it\n")
-	fmt.Fprintf(&b, "3. **Web search budget: %d calls total this heartbeat** — use them wisely\n",
-		research.DefaultHeartbeatSearchQuota)
-	b.WriteString("4. Do NOT set status to 'completed' — research progresses incrementally across heartbeats\n\n")
-
-	for _, task := range tasks {
-		fmt.Fprintf(&b, "### %s [%s] (id: %s)\n", task.Title, task.Status, task.ID)
-		fmt.Fprintf(&b, "Interval: %s", task.Interval)
-		if !task.LastResearchedAt.IsZero() {
-			fmt.Fprintf(&b, " | Last researched: %s", task.LastResearchedAt.Format("2006-01-02 15:04"))
-		}
-		b.WriteString("\n")
-		if task.Description != "" {
-			fmt.Fprintf(&b, "Description: %s\n", task.Description)
-		}
-
-		docs, err := store.ListDocuments(task.ID)
-		if err != nil {
-			b.WriteString("(error loading findings)\n\n")
-			continue
-		}
-
-		if len(docs) == 0 {
-			b.WriteString("No findings yet — start researching this topic.\n\n")
-			continue
-		}
-
-		shown := docs
-		if len(shown) > maxFindingsPerTask {
-			shown = shown[:maxFindingsPerTask]
-		}
-
-		fmt.Fprintf(&b, "Existing findings (%d total):\n", len(docs))
-		for _, d := range shown {
-			summary := d.Summary
-			if len(summary) > maxSummaryLen {
-				summary = summary[:maxSummaryLen] + "..."
-			}
-			fmt.Fprintf(&b, "- [%d] %s", d.Seq, d.Title)
-			if summary != "" {
-				fmt.Fprintf(&b, " — %s", summary)
-			}
-			b.WriteString("\n")
-		}
-		if len(docs) > maxFindingsPerTask {
-			fmt.Fprintf(&b, "  ... and %d more findings\n", len(docs)-maxFindingsPerTask)
-		}
-		b.WriteString("\nAdd NEW findings that build on and extend the above. Do not repeat existing findings.\n\n")
-	}
-
-	return b.String()
+`, now, content)
 }
 
 // createDefaultHeartbeatTemplate creates the default HEARTBEAT.md file
@@ -489,24 +311,59 @@ func heartbeatHasUserTasks(content string) bool {
 	return false
 }
 
+// sendResponse sends the heartbeat response to the last channel
+func (hs *HeartbeatService) sendResponse(response string) {
+	hs.mu.RLock()
+	msgBus := hs.bus
+	hs.mu.RUnlock()
+
+	if msgBus == nil {
+		hs.logInfof("No message bus configured, heartbeat result not sent")
+		return
+	}
+
+	// Get last channel from state
+	lastChannel := hs.state.GetLastChannel()
+	if lastChannel == "" {
+		hs.logInfof("No last channel recorded, heartbeat result not sent")
+		return
+	}
+
+	platform, userID := hs.parseLastChannel(lastChannel)
+
+	// Skip internal channels that can't receive messages
+	if platform == "" || userID == "" {
+		return
+	}
+
+	pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pubCancel()
+	msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
+		Channel: platform,
+		ChatID:  userID,
+		Content: response,
+	})
+
+	hs.logInfof("Heartbeat result sent to %s", platform)
+}
+
 // parseLastChannel parses the last channel string into platform and userID.
 // Returns empty strings for invalid or internal channels.
 func (hs *HeartbeatService) parseLastChannel(lastChannel string) (platform, userID string) {
-	return hs.parseTarget(lastChannel)
-}
-
-func (hs *HeartbeatService) parseTarget(target string) (platform, userID string) {
-	if target == "" {
+	if lastChannel == "" {
 		return "", ""
 	}
 
-	parts := strings.SplitN(target, ":", 2)
+	// Parse channel format: "platform:user_id" (e.g., "telegram:123456")
+	parts := strings.SplitN(lastChannel, ":", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		hs.logErrorf("Invalid heartbeat target format: %s", target)
+		hs.logErrorf("Invalid last channel format: %s", lastChannel)
 		return "", ""
 	}
 
 	platform, userID = parts[0], parts[1]
+
+	// Skip internal channels
 	if constants.IsInternalChannel(platform) {
 		hs.logInfof("Skipping internal channel: %s", platform)
 		return "", ""

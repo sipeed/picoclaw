@@ -185,7 +185,7 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult(fmt.Sprintf("failed to register media: %v", err))
 	}
 
-	return MediaResult(fmt.Sprintf("File %q sent to user", filename), []string{ref})
+	return MediaResult(fmt.Sprintf("File %q sent to user", filename), []string{ref}).WithResponseHandled()
 }
 
 // isHTTPURL returns true if the path looks like an HTTP(S) URL.

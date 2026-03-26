@@ -42,22 +42,14 @@ var (
 	reInlineCode = regexp.MustCompile("`([^`]+)`")
 )
 
-// telegramHTTPTimeout is the HTTP client timeout for Telegram API requests.
-// Long polling uses Timeout=30s on the API side; the HTTP client timeout
-// must be longer to avoid canceling valid long-poll responses.
-const telegramHTTPTimeout = 65 * time.Second
-
 type TelegramChannel struct {
 	*channels.BaseChannel
 	bot     *telego.Bot
 	bh      *th.BotHandler
 	config  *config.Config
 	chatIDs map[string]int64
-	dedupe  *channels.MessageDeduplicator
 	ctx     context.Context
 	cancel  context.CancelFunc
-
-	lastActiveChatID string // composite chat ID of last received message
 
 	registerFunc     func(context.Context, []commands.Definition) error
 	commandRegCancel context.CancelFunc
@@ -67,46 +59,24 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	var opts []telego.BotOption
 	telegramCfg := cfg.Channels.Telegram
 
-	// Build the base transport (with optional proxy) and wrap it with
-	// resilientTransport for connection-failure detection and recovery logging.
-	var baseTransport http.RoundTripper
 	if telegramCfg.Proxy != "" {
 		proxyURL, parseErr := url.Parse(telegramCfg.Proxy)
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid proxy URL %q: %w", telegramCfg.Proxy, parseErr)
 		}
-		baseTransport = &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+		opts = append(opts, telego.WithHTTPClient(&http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			},
+		}))
 	} else if os.Getenv("HTTP_PROXY") != "" || os.Getenv("HTTPS_PROXY") != "" {
-		baseTransport = &http.Transport{Proxy: http.ProxyFromEnvironment}
-	} else {
-		baseTransport = http.DefaultTransport
+		// Use environment proxy if configured
+		opts = append(opts, telego.WithHTTPClient(&http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+			},
+		}))
 	}
-
-	ch := &TelegramChannel{
-		config:  cfg,
-		chatIDs: make(map[string]int64),
-		dedupe:  channels.NewMessageDeduplicator(1000),
-	}
-
-	transport := &resilientTransport{
-		base: baseTransport,
-		onFailure: func() {
-			logger.WarnC("telegram", "Polling connection lost, retrying...")
-		},
-		onRecover: func() {
-			logger.InfoC("telegram", "Polling connection recovered")
-			if chatID := ch.lastActiveChatID; chatID != "" {
-				go func() {
-					_ = ch.sendReconnectNotice(chatID)
-				}()
-			}
-		},
-	}
-
-	opts = append(opts, telego.WithHTTPClient(&http.Client{
-		Transport: transport,
-		Timeout:   telegramHTTPTimeout,
-	}))
 
 	if baseURL := strings.TrimRight(strings.TrimSpace(telegramCfg.BaseURL), "/"); baseURL != "" {
 		opts = append(opts, telego.WithAPIServer(baseURL))
@@ -128,10 +98,12 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		channels.WithReasoningChannelID(telegramCfg.ReasoningChannelID),
 	)
 
-	ch.BaseChannel = base
-	ch.bot = bot
-
-	return ch, nil
+	return &TelegramChannel{
+		BaseChannel: base,
+		bot:         bot,
+		config:      cfg,
+		chatIDs:     make(map[string]int64),
+	}, nil
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
@@ -321,10 +293,6 @@ func (c *TelegramChannel) sendChunk(
 	}
 
 	if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
-		// Don't retry on rate limit errors — they aren't parse failures.
-		if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "Too Many Requests") {
-			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
-		}
 		logParseFailed(err, params.useMarkdownV2)
 
 		tgMsg.Text = params.mdFallback
@@ -337,10 +305,17 @@ func (c *TelegramChannel) sendChunk(
 	return nil
 }
 
+// maxTypingDuration limits how long the typing indicator can run.
+// Prevents endless typing when the LLM fails/hangs and preSend never invokes cancel.
+// Matches channels.Manager's typingStopTTL (5 min) so behavior is consistent.
+const maxTypingDuration = 5 * time.Minute
+
 // StartTyping implements channels.TypingCapable.
 // It sends ChatAction(typing) immediately and then repeats every 4 seconds
 // (Telegram's typing indicator expires after ~5s) in a background goroutine.
 // The returned stop function is idempotent and cancels the goroutine.
+// The goroutine also exits automatically after maxTypingDuration if cancel is
+// never called (e.g. when the LLM fails or times out without publishing).
 func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
 	cid, threadID, err := parseTelegramChatID(chatID)
 	if err != nil {
@@ -354,12 +329,15 @@ func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(
 	_ = c.bot.SendChatAction(ctx, action)
 
 	typingCtx, cancel := context.WithCancel(ctx)
+	// Cap lifetime so the goroutine cannot run indefinitely if cancel is never called
+	maxCtx, maxCancel := context.WithTimeout(typingCtx, maxTypingDuration)
 	go func() {
+		defer maxCancel()
 		ticker := time.NewTicker(4 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-typingCtx.Done():
+			case <-maxCtx.Done():
 				return
 			case <-ticker.C:
 				a := tu.ChatAction(tu.ID(cid), telego.ChatActionTyping)
@@ -392,15 +370,27 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 	}
 	_, err = c.bot.EditMessageText(ctx, editMsg)
 	if err != nil {
-		// Don't retry on rate limit errors — they aren't parse failures.
-		if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "Too Many Requests") {
-			return err
-		}
 		logParseFailed(err, useMarkdownV2)
 		_, err = c.bot.EditMessageText(ctx, tu.EditMessageText(tu.ID(cid), mid, content))
 	}
 
 	return err
+}
+
+// DeleteMessage implements channels.MessageDeleter.
+func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
+	cid, _, err := parseTelegramChatID(chatID)
+	if err != nil {
+		return err
+	}
+	mid, err := strconv.Atoi(messageID)
+	if err != nil {
+		return err
+	}
+	return c.bot.DeleteMessage(ctx, &telego.DeleteMessageParams{
+		ChatID:    tu.ID(cid),
+		MessageID: mid,
+	})
 }
 
 // SendPlaceholder implements channels.PlaceholderCapable.
@@ -412,10 +402,7 @@ func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (s
 		return "", nil
 	}
 
-	text := phCfg.Text
-	if text == "" {
-		text = "Thinking... 💭"
-	}
+	text := phCfg.GetRandomText()
 
 	cid, threadID, err := parseTelegramChatID(chatID)
 	if err != nil {
@@ -570,21 +557,11 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		return nil
 	}
 
-	// Deduplicate: Telegram may redeliver the same update after a timeout.
-	msgID := fmt.Sprintf("%d", message.MessageID)
-	if !c.dedupe.MarkMessageProcessed(msgID) {
-		logger.DebugCF("telegram", "Skipping duplicate message", map[string]any{
-			"message_id": msgID,
-		})
-		return nil
-	}
-
 	chatID := message.Chat.ID
 	c.chatIDs[platformID] = chatID
 
+	content := ""
 	mediaPaths := []string{}
-	hasMedia := message.Caption != "" || len(message.Photo) > 0 ||
-		message.Voice != nil || message.Audio != nil || message.Document != nil
 
 	chatIDStr := fmt.Sprintf("%d", chatID)
 	messageIDStr := fmt.Sprintf("%d", message.MessageID)
@@ -605,68 +582,69 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		return localPath // fallback: use raw path
 	}
 
-	// Fast path: text-only message (most common) — avoid Builder alloc
-	var content string
-	if !hasMedia {
-		if message.Text != "" {
-			content = message.Text
-		}
-	} else {
-		var cb strings.Builder
-		if message.Text != "" {
-			cb.WriteString(message.Text)
-		}
-		if message.Caption != "" {
-			if cb.Len() > 0 {
-				cb.WriteByte('\n')
-			}
-			cb.WriteString(message.Caption)
-		}
-		if len(message.Photo) > 0 {
-			photo := message.Photo[len(message.Photo)-1]
-			photoPath := c.downloadPhoto(ctx, photo.FileID)
-			if photoPath != "" {
-				mediaPaths = append(mediaPaths, storeMedia(photoPath, "photo.jpg"))
-				if cb.Len() > 0 {
-					cb.WriteByte('\n')
-				}
-				cb.WriteString("[image: photo]")
-			}
-		}
-		if message.Voice != nil {
-			voicePath := c.downloadFile(ctx, message.Voice.FileID, ".ogg")
-			if voicePath != "" {
-				mediaPaths = append(mediaPaths, storeMedia(voicePath, "voice.ogg"))
-				if cb.Len() > 0 {
-					cb.WriteByte('\n')
-				}
-				cb.WriteString("[voice]")
-			}
-		}
-		if message.Audio != nil {
-			audioPath := c.downloadFile(ctx, message.Audio.FileID, ".mp3")
-			if audioPath != "" {
-				mediaPaths = append(mediaPaths, storeMedia(audioPath, "audio.mp3"))
-				if cb.Len() > 0 {
-					cb.WriteByte('\n')
-				}
-				cb.WriteString("[audio]")
-			}
-		}
-		if message.Document != nil {
-			docPath := c.downloadFile(ctx, message.Document.FileID, "")
-			if docPath != "" {
-				mediaPaths = append(mediaPaths, storeMedia(docPath, "document"))
-				if cb.Len() > 0 {
-					cb.WriteByte('\n')
-				}
-				cb.WriteString("[file]")
-			}
-		}
-		content = cb.String()
+	if message.Text != "" {
+		content += message.Text
 	}
+
+	if message.Caption != "" {
+		if content != "" {
+			content += "\n"
+		}
+		content += message.Caption
+	}
+
+	if len(message.Photo) > 0 {
+		photo := message.Photo[len(message.Photo)-1]
+		photoPath := c.downloadPhoto(ctx, photo.FileID)
+		if photoPath != "" {
+			mediaPaths = append(mediaPaths, storeMedia(photoPath, "photo.jpg"))
+			if content != "" {
+				content += "\n"
+			}
+			content += "[image: photo]"
+		}
+	}
+
+	if message.Voice != nil {
+		voicePath := c.downloadFile(ctx, message.Voice.FileID, ".ogg")
+		if voicePath != "" {
+			mediaPaths = append(mediaPaths, storeMedia(voicePath, "voice.ogg"))
+
+			if content != "" {
+				content += "\n"
+			}
+			content += "[voice]"
+		}
+	}
+
+	if message.Audio != nil {
+		audioPath := c.downloadFile(ctx, message.Audio.FileID, ".mp3")
+		if audioPath != "" {
+			mediaPaths = append(mediaPaths, storeMedia(audioPath, "audio.mp3"))
+			if content != "" {
+				content += "\n"
+			}
+			content += "[audio]"
+		}
+	}
+
+	if message.Document != nil {
+		docPath := c.downloadFile(ctx, message.Document.FileID, "")
+		if docPath != "" {
+			mediaPaths = append(mediaPaths, storeMedia(docPath, "document"))
+			if content != "" {
+				content += "\n"
+			}
+			content += "[file]"
+		}
+	}
+
+	if content == "" && len(mediaPaths) == 0 {
+		return nil
+	}
+
 	if content == "" {
-		content = "[empty message]"
+		content = "[media only]"
 	}
 
 	// In group chats, apply unified group trigger filtering
@@ -691,8 +669,6 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	if message.Chat.IsForum && threadID != 0 {
 		compositeChatID = fmt.Sprintf("%d/%d", chatID, threadID)
 	}
-
-	c.lastActiveChatID = compositeChatID
 
 	logger.DebugCF("telegram", "Received message", map[string]any{
 		"sender_id": sender.CanonicalID,
@@ -777,12 +753,11 @@ func (c *TelegramChannel) downloadFile(ctx context.Context, fileID, ext string) 
 }
 
 func parseContent(text string, useMarkdownV2 bool) string {
-	if text == "" {
-		return ""
+	if useMarkdownV2 {
+		return markdownToTelegramMarkdownV2(text)
 	}
-	doc := parseMarkdownAST(text)
-	r := &telegramRenderer{mdv2: useMarkdownV2}
-	return r.render(doc)
+
+	return markdownToTelegramHTML(text)
 }
 
 // parseTelegramChatID splits "chatID/threadID" into its components.
@@ -893,19 +868,6 @@ func isBotCommandEntityForThisBot(entityText, botUsername string) bool {
 		return false
 	}
 	return strings.EqualFold(mentionUsername, botUsername)
-}
-
-// sendReconnectNotice sends a short notification to the given chat after
-// the polling connection recovers from a failure.
-func (c *TelegramChannel) sendReconnectNotice(compositeChatID string) error {
-	cid, threadID, err := parseTelegramChatID(compositeChatID)
-	if err != nil {
-		return err
-	}
-	msg := tu.Message(tu.ID(cid), "[system] Connection recovered — messages during the outage may have been delayed.")
-	msg.MessageThreadID = threadID
-	_, err = c.bot.SendMessage(c.ctx, msg)
-	return err
 }
 
 // stripBotMention removes the @bot mention from the content.

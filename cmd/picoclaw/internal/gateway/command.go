@@ -14,8 +14,6 @@ import (
 func NewGatewayCommand() *cobra.Command {
 	var debug bool
 	var noTruncate bool
-	var orchestration bool
-	var enableStats bool
 	var allowEmpty bool
 
 	cmd := &cobra.Command{
@@ -36,17 +34,12 @@ func NewGatewayCommand() *cobra.Command {
 			return nil
 		},
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return gateway.Run(
-				debug, internal.GetPicoclawHome(), internal.GetConfigPath(),
-				orchestration, enableStats, allowEmpty,
-			)
+			return gateway.Run(debug, internal.GetPicoclawHome(), internal.GetConfigPath(), allowEmpty)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&debug, "debug", "d", false, "Enable debug logging")
 	cmd.Flags().BoolVarP(&noTruncate, "no-truncate", "T", false, "Disable string truncation in debug logs")
-	cmd.Flags().BoolVar(&orchestration, "orchestration", false, "Enable subagent orchestration")
-	cmd.Flags().BoolVar(&enableStats, "stats", false, "Enable stats collection")
 	cmd.Flags().BoolVarP(
 		&allowEmpty,
 		"allow-empty",

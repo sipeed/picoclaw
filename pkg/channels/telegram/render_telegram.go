@@ -462,6 +462,17 @@ var mdV2SpecialChars = map[rune]bool{
 
 // escapeMarkdownV2 escapes every MarkdownV2 special character in a plain-text
 // segment. Already-escaped sequences (backslash + char) are forwarded verbatim.
+// markdownToTelegramMarkdownV2 converts standard Markdown to Telegram MarkdownV2
+// using the gomarkdown AST parser and the dual-mode telegramRenderer.
+func markdownToTelegramMarkdownV2(text string) string {
+	if text == "" {
+		return ""
+	}
+	doc := parseMarkdownAST(text)
+	r := &telegramRenderer{mdv2: true}
+	return r.render(doc)
+}
+
 func escapeMarkdownV2(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) + 8)

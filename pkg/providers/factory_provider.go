@@ -91,7 +91,14 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderFromConfig(cfg, apiBase), modelID, nil
+		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+			cfg.APIKey(),
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
+			cfg.ExtraBody,
+		), modelID, nil
 
 	case "azure", "azure-openai":
 		// Azure OpenAI uses deployment-based URLs, api-key header auth,
@@ -151,7 +158,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
-		"coding-plan", "alibaba-coding", "qwen-coding":
+		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey() == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -160,7 +167,14 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderFromConfig(cfg, apiBase), modelID, nil
+		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+			cfg.APIKey(),
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
+			cfg.ExtraBody,
+		), modelID, nil
 
 	case "minimax":
 		// Minimax requires reasoning_split: true in the request body
@@ -171,13 +185,21 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		if cfg.ExtraBody == nil {
-			cfg.ExtraBody = make(map[string]any)
+		extraBody := cfg.ExtraBody
+		if extraBody == nil {
+			extraBody = make(map[string]any)
 		}
-		if _, ok := cfg.ExtraBody["reasoning_split"]; !ok {
-			cfg.ExtraBody["reasoning_split"] = true
+		if _, ok := extraBody["reasoning_split"]; !ok {
+			extraBody["reasoning_split"] = true
 		}
-		return NewHTTPProviderFromConfig(cfg, apiBase), modelID, nil
+		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+			cfg.APIKey(),
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
+			extraBody,
+		), modelID, nil
 
 	case "anthropic":
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
@@ -196,7 +218,14 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey() == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderFromConfig(cfg, apiBase), modelID, nil
+		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+			cfg.APIKey(),
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
+			cfg.ExtraBody,
+		), modelID, nil
 
 	case "anthropic-messages":
 		// Anthropic Messages API with native format (HTTP-based, no SDK)
@@ -265,22 +294,6 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 }
 
-// CreateProviderByName creates a provider by looking up a model_name in the
-// Config.ModelList.  This replaces the legacy ProvidersConfig lookup.
-func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) {
-	name = strings.ToLower(name)
-	for _, mc := range cfg.ModelList {
-		if strings.ToLower(mc.ModelName) == name {
-			provider, _, err := CreateProviderFromConfig(mc)
-			if err != nil {
-				return nil, err
-			}
-			return provider, nil
-		}
-	}
-	return nil, fmt.Errorf("unknown provider %q (not found in model_list)", name)
-}
-
 // getDefaultAPIBase returns the default API base URL for a given protocol.
 func getDefaultAPIBase(protocol string) string {
 	switch protocol {
@@ -336,6 +349,8 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://api.longcat.chat/openai"
 	case "modelscope":
 		return "https://api-inference.modelscope.cn/v1"
+	case "mimo":
+		return "https://api.xiaomimimo.com/v1"
 	default:
 		return ""
 	}

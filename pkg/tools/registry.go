@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -28,6 +29,12 @@ type ToolRegistry struct {
 	// Cached provider definitions, invalidated when version changes.
 	cachedDefs    []providers.ToolDefinition
 	cachedVersion uint64
+
+	mediaStore media.MediaStore
+}
+
+type mediaStoreAware interface {
+	SetMediaStore(store media.MediaStore)
 }
 
 func NewToolRegistry() *ToolRegistry {
@@ -49,6 +56,9 @@ func (r *ToolRegistry) Register(tool Tool) {
 		IsCore: true,
 		TTL:    0, // Core tools do not use TTL
 	}
+	if aware, ok := tool.(mediaStoreAware); ok && r.mediaStore != nil {
+		aware.SetMediaStore(r.mediaStore)
+	}
 	r.version.Add(1)
 	logger.DebugCF("tools", "Registered core tool", map[string]any{"name": name})
 }
@@ -67,8 +77,25 @@ func (r *ToolRegistry) RegisterHidden(tool Tool) {
 		IsCore: false,
 		TTL:    0,
 	}
+	if aware, ok := tool.(mediaStoreAware); ok && r.mediaStore != nil {
+		aware.SetMediaStore(r.mediaStore)
+	}
 	r.version.Add(1)
 	logger.DebugCF("tools", "Registered hidden tool", map[string]any{"name": name})
+}
+
+// SetMediaStore injects a MediaStore into all registered tools that can
+// consume it, and remembers it for future registrations.
+func (r *ToolRegistry) SetMediaStore(store media.MediaStore) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.mediaStore = store
+	for _, entry := range r.tools {
+		if aware, ok := entry.Tool.(mediaStoreAware); ok {
+			aware.SetMediaStore(store)
+		}
+	}
 }
 
 // PromoteTools atomically sets the TTL for multiple non-core tools.
@@ -252,6 +279,8 @@ func (r *ToolRegistry) ExecuteWithContext(
 		}
 	}
 
+	result = normalizeToolResult(result, name, r.mediaStore, channel, chatID)
+
 	duration := time.Since(start)
 
 	// Log based on result type
@@ -273,7 +302,7 @@ func (r *ToolRegistry) ExecuteWithContext(
 			map[string]any{
 				"tool":          name,
 				"duration_ms":   duration.Milliseconds(),
-				"result_length": len(result.ForLLM),
+				"result_length": len(result.ContentForLLM()),
 			})
 	}
 
@@ -404,7 +433,8 @@ func (r *ToolRegistry) Clone() *ToolRegistry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	clone := &ToolRegistry{
-		tools: make(map[string]*ToolEntry, len(r.tools)),
+		tools:      make(map[string]*ToolEntry, len(r.tools)),
+		mediaStore: r.mediaStore,
 	}
 	for name, entry := range r.tools {
 		clone.tools[name] = &ToolEntry{

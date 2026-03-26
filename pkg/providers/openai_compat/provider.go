@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -33,63 +33,27 @@ type (
 type Provider struct {
 	apiKey         string
 	apiBase        string
-	endpointPath   string // API path appended to apiBase (default: "/chat/completions")
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
-	stream         bool   // Use SSE streaming internally (accumulates into a single LLMResponse)
 	httpClient     *http.Client
 	extraBody      map[string]any // Additional fields to inject into request body
-
-	// Rate limiting: minimum interval between consecutive API requests.
-	// Shared across all goroutines using this provider instance.
-	mu            sync.Mutex
-	lastRequestAt time.Time
-	minInterval   time.Duration
+	endpointPath   string         // Override the default "/chat/completions" path
+	stream         bool           // When true, Chat uses streaming SSE parsing
 }
 
-// Option is a functional option for configuring a Provider.
 type Option func(*Provider)
 
-const defaultRequestTimeout = 120 * time.Second
+const defaultRequestTimeout = common.DefaultRequestTimeout
 
-// WithMaxTokensField sets the field name for max tokens (e.g., "max_completion_tokens").
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {
 		p.maxTokensField = maxTokensField
 	}
 }
 
-// WithRequestTimeout overrides the HTTP client timeout.
 func WithRequestTimeout(timeout time.Duration) Option {
 	return func(p *Provider) {
 		if timeout > 0 {
 			p.httpClient.Timeout = timeout
-		}
-	}
-}
-
-// WithStream enables SSE streaming mode.
-func WithStream(stream bool) Option {
-	return func(p *Provider) {
-		p.stream = stream
-		if stream && p.httpClient.Timeout == defaultRequestTimeout {
-			p.httpClient.Timeout = 5 * time.Minute
-		}
-	}
-}
-
-// WithMinInterval sets the minimum interval between consecutive API requests.
-// This prevents rate limit errors when many subagents share the same provider.
-func WithMinInterval(d time.Duration) Option {
-	return func(p *Provider) {
-		p.minInterval = d
-	}
-}
-
-// WithEndpointPath sets the API path appended to apiBase (default: "/chat/completions").
-func WithEndpointPath(path string) Option {
-	return func(p *Provider) {
-		if path != "" {
-			p.endpointPath = path
 		}
 	}
 }
@@ -100,27 +64,30 @@ func WithExtraBody(extraBody map[string]any) Option {
 	}
 }
 
+// WithEndpointPath overrides the default "/chat/completions" path.
+func WithEndpointPath(path string) Option {
+	return func(p *Provider) {
+		p.endpointPath = path
+	}
+}
+
+// WithStream makes Chat use streaming SSE parsing (stream: true in the request body).
+func WithStream(enabled bool) Option {
+	return func(p *Provider) {
+		p.stream = enabled
+	}
+}
+
+// CanStream returns whether this provider was configured for streaming via WithStream.
+func (p *Provider) CanStream() bool {
+	return p.stream
+}
+
 func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
-	client := &http.Client{
-		Timeout: defaultRequestTimeout,
-	}
-
-	if proxy != "" {
-		parsed, err := url.Parse(proxy)
-		if err == nil {
-			client.Transport = &http.Transport{
-				Proxy: http.ProxyURL(parsed),
-			}
-		} else {
-			log.Printf("openai_compat: invalid proxy URL %q: %v", proxy, err)
-		}
-	}
-
 	p := &Provider{
-		apiKey:       apiKey,
-		apiBase:      strings.TrimRight(apiBase, "/"),
-		endpointPath: "/chat/completions",
-		httpClient:   client,
+		apiKey:     apiKey,
+		apiBase:    strings.TrimRight(apiBase, "/"),
+		httpClient: common.NewHTTPClient(proxy),
 	}
 
 	for _, opt := range opts {
@@ -149,27 +116,24 @@ func NewProviderWithMaxTokensFieldAndTimeout(
 	)
 }
 
-// streamBufferSize is the channel buffer size for ChatStream events.
-const streamBufferSize = 32
-
-// buildHTTPRequest constructs a ready-to-send *http.Request for the chat API.
-func (p *Provider) buildHTTPRequest(
-	ctx context.Context,
-	messages []Message,
-	tools []ToolDefinition,
-	model string,
-	options map[string]any,
-	stream bool,
-) (*http.Request, error) {
-	if p.apiBase == "" {
-		return nil, fmt.Errorf("API base not configured")
+// chatURL returns the full URL for the chat endpoint, respecting any custom endpointPath.
+func (p *Provider) chatURL() string {
+	path := p.endpointPath
+	if path == "" {
+		path = "/chat/completions"
 	}
+	return p.apiBase + path
+}
 
+// buildRequestBody constructs the common request body for Chat and ChatStream.
+func (p *Provider) buildRequestBody(
+	messages []Message, tools []ToolDefinition, model string, options map[string]any,
+) map[string]any {
 	model = normalizeModel(model, p.apiBase)
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": serializeMessages(messages),
+		"messages": common.SerializeMessages(messages),
 	}
 
 	// When fallback uses a different provider (e.g. DeepSeek), that provider must not inject web_search_preview.
@@ -180,7 +144,7 @@ func (p *Provider) buildHTTPRequest(
 		requestBody["tool_choice"] = "auto"
 	}
 
-	if maxTokens, ok := asInt(options["max_tokens"]); ok {
+	if maxTokens, ok := common.AsInt(options["max_tokens"]); ok {
 		fieldName := p.maxTokensField
 		if fieldName == "" {
 			lowerModel := strings.ToLower(model)
@@ -194,7 +158,7 @@ func (p *Provider) buildHTTPRequest(
 		requestBody[fieldName] = maxTokens
 	}
 
-	if temperature, ok := asFloat(options["temperature"]); ok {
+	if temperature, ok := common.AsFloat(options["temperature"]); ok {
 		lowerModel := strings.ToLower(model)
 		if strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2") {
 			requestBody["temperature"] = 1.0
@@ -203,14 +167,8 @@ func (p *Provider) buildHTTPRequest(
 		}
 	}
 
-	if stream {
-		requestBody["stream"] = true
-	}
-
 	// Prompt caching: pass a stable cache key so OpenAI can bucket requests
 	// with the same key and reuse prefix KV cache across calls.
-	// The key is typically the agent ID -- stable per agent, shared across requests.
-	// See: https://platform.openai.com/docs/guides/prompt-caching
 	// Prompt caching is only supported by OpenAI-native endpoints.
 	// Non-OpenAI providers reject unknown fields with 422 errors.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
@@ -225,41 +183,7 @@ func (p *Provider) buildHTTPRequest(
 		requestBody[k] = v
 	}
 
-	jsonData, err := json.Marshal(requestBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+p.endpointPath, bytes.NewReader(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if p.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	}
-
-	return req, nil
-}
-
-// waitForInterval enforces the minimum interval between consecutive API requests.
-// It sleeps if needed, then records the current time as the last request time.
-func (p *Provider) waitForInterval() {
-	if p.minInterval <= 0 {
-		return
-	}
-	p.mu.Lock()
-	if !p.lastRequestAt.IsZero() {
-		elapsed := time.Since(p.lastRequestAt)
-		if wait := p.minInterval - elapsed; wait > 0 {
-			p.mu.Unlock()
-			time.Sleep(wait)
-			p.mu.Lock()
-		}
-	}
-	p.lastRequestAt = time.Now()
-	p.mu.Unlock()
+	return requestBody
 }
 
 func (p *Provider) Chat(
@@ -269,22 +193,31 @@ func (p *Provider) Chat(
 	model string,
 	options map[string]any,
 ) (*LLMResponse, error) {
-	// When streaming is enabled, delegate to ChatStream + AccumulateStream
-	// so that the SSE→channel path is always exercised.
+	// When stream mode is enabled via WithStream, delegate to ChatStream.
 	if p.stream {
-		ch, err := p.ChatStream(ctx, messages, tools, model, options)
-		if err != nil {
-			return nil, err
-		}
-		return AccumulateStream(ch)
+		return p.ChatStream(ctx, messages, tools, model, options, nil)
 	}
 
-	req, err := p.buildHTTPRequest(ctx, messages, tools, model, options, false)
+	if p.apiBase == "" {
+		return nil, fmt.Errorf("API base not configured")
+	}
+
+	requestBody := p.buildRequestBody(messages, tools, model, options)
+
+	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	p.waitForInterval()
+	req, err := http.NewRequestWithContext(ctx, "POST", p.chatURL(), bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -292,471 +225,200 @@ func (p *Provider) Chat(
 	}
 	defer resp.Body.Close()
 
-	contentType := resp.Header.Get("Content-Type")
-
-	// Non-200: read a prefix to tell HTML error page apart from JSON error body.
 	if resp.StatusCode != http.StatusOK {
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 256))
-		if readErr != nil {
-			return nil, fmt.Errorf("failed to read response: %w", readErr)
-		}
-		if looksLikeHTML(body, contentType) {
-			return nil, wrapHTMLResponseError(resp.StatusCode, body, contentType, p.apiBase)
-		}
-		return nil, fmt.Errorf(
-			"API request failed:\n  Status: %d\n  Body:   %s",
-			resp.StatusCode,
-			responsePreview(body, 128),
-		)
+		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	// Peek without consuming so the full stream reaches the JSON decoder.
-	reader := bufio.NewReader(resp.Body)
-	prefix, err := reader.Peek(256) // io.EOF/ErrBufferFull are normal; only real errors abort
-	if err != nil && err != io.EOF && err != bufio.ErrBufferFull {
-		return nil, fmt.Errorf("failed to inspect response: %w", err)
-	}
-	if looksLikeHTML(prefix, contentType) {
-		return nil, wrapHTMLResponseError(resp.StatusCode, prefix, contentType, p.apiBase)
-	}
-
-	out, err := parseResponse(reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
-	}
-
-	return out, nil
+	return common.ReadAndParseResponse(resp, p.apiBase)
 }
 
-// CanStream returns true when this provider is configured for SSE streaming.
-func (p *Provider) CanStream() bool {
-	return p.stream
-}
-
-// ChatStream opens an SSE connection and returns a channel of StreamEvent.
-// The channel is closed when the stream ends or an error occurs.
-// Canceling ctx will abort the HTTP request and close the channel.
+// ChatStream implements streaming via OpenAI-compatible SSE (stream: true).
+// onChunk receives the accumulated text so far on each text delta.
 func (p *Provider) ChatStream(
 	ctx context.Context,
 	messages []Message,
 	tools []ToolDefinition,
 	model string,
 	options map[string]any,
-) (<-chan protocoltypes.StreamEvent, error) {
-	req, err := p.buildHTTPRequest(ctx, messages, tools, model, options, true)
-	if err != nil {
-		return nil, err
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	if p.apiBase == "" {
+		return nil, fmt.Errorf("API base not configured")
 	}
 
-	p.waitForInterval()
+	requestBody := p.buildRequestBody(messages, tools, model, options)
+	requestBody["stream"] = true
 
-	resp, err := p.httpClient.Do(req) //nolint:bodyclose // closed in goroutine or error path below
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.chatURL(), bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+
+	// Use a client without Timeout for streaming — the http.Client.Timeout covers
+	// the entire request lifecycle including body reads, which would kill long streams.
+	// Context cancellation still provides the safety net.
+	streamClient := &http.Client{Transport: p.httpClient.Transport}
+	resp, err := streamClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
+		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	ch := make(chan protocoltypes.StreamEvent, streamBufferSize)
-	go func() {
-		defer resp.Body.Close()
-		defer close(ch)
-		readSSEIntoChannel(ctx, resp.Body, ch)
-	}()
-
-	return ch, nil
+	return parseStreamResponse(ctx, resp.Body, onChunk)
 }
 
-// readSSEIntoChannel reads SSE lines from r and sends StreamEvent values on ch.
-// It returns when the stream ends, an error occurs, or ctx is canceled.
-func readSSEIntoChannel(ctx context.Context, r io.Reader, ch chan<- protocoltypes.StreamEvent) {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+// parseStreamResponse parses an OpenAI-compatible SSE stream.
+func parseStreamResponse(
+	ctx context.Context,
+	reader io.Reader,
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	var textContent strings.Builder
+	var finishReason string
+	var usage *UsageInfo
 
+	// Tool call assembly: OpenAI streams tool calls as incremental deltas
+	type toolAccum struct {
+		id       string
+		name     string
+		argsJSON strings.Builder
+	}
+	activeTools := map[int]*toolAccum{}
+
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 1MB initial, 10MB max
 	for scanner.Scan() {
-		// Check for context cancellation between lines.
-		select {
-		case <-ctx.Done():
-			return
-		default:
+		// Check for context cancellation between chunks
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 
 		line := scanner.Text()
+
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			return
+			break
 		}
 
-		var chunk streamChunk
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function *struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"delta"`
+				FinishReason *string `json:"finish_reason"`
+			} `json:"choices"`
+			Usage *UsageInfo `json:"usage"`
+		}
+
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue // skip malformed chunks
 		}
 
-		ev := protocoltypes.StreamEvent{}
-
 		if chunk.Usage != nil {
-			ev.Usage = chunk.Usage
+			usage = chunk.Usage
 		}
 
-		if len(chunk.Choices) > 0 {
-			choice := chunk.Choices[0]
-			ev.ContentDelta = choice.Delta.Content
-			ev.ReasoningDelta = choice.Delta.ReasoningContent
-			if choice.FinishReason != "" {
-				ev.FinishReason = choice.FinishReason
-			}
-			for _, tc := range choice.Delta.ToolCalls {
-				delta := protocoltypes.StreamToolCallDelta{
-					Index: tc.Index,
-					ID:    tc.ID,
-				}
-				if tc.Function != nil {
-					delta.Name = tc.Function.Name
-					delta.ArgumentsDelta = tc.Function.Arguments
-				}
-				ev.ToolCallDeltas = append(ev.ToolCallDeltas, delta)
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+
+		choice := chunk.Choices[0]
+
+		// Accumulate text content
+		if choice.Delta.Content != "" {
+			textContent.WriteString(choice.Delta.Content)
+			if onChunk != nil {
+				onChunk(textContent.String())
 			}
 		}
 
-		select {
-		case ch <- ev:
-		case <-ctx.Done():
-			return
+		// Accumulate tool call deltas
+		for _, tc := range choice.Delta.ToolCalls {
+			acc, ok := activeTools[tc.Index]
+			if !ok {
+				acc = &toolAccum{}
+				activeTools[tc.Index] = acc
+			}
+			if tc.ID != "" {
+				acc.id = tc.ID
+			}
+			if tc.Function != nil {
+				if tc.Function.Name != "" {
+					acc.name = tc.Function.Name
+				}
+				if tc.Function.Arguments != "" {
+					acc.argsJSON.WriteString(tc.Function.Arguments)
+				}
+			}
+		}
+
+		if choice.FinishReason != nil {
+			finishReason = *choice.FinishReason
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		select {
-		case ch <- protocoltypes.StreamEvent{Err: fmt.Errorf("reading stream: %w", err)}:
-		case <-ctx.Done():
-		}
-	}
-}
-
-// AccumulateStream drains a StreamEvent channel and returns a complete LLMResponse.
-func AccumulateStream(ch <-chan protocoltypes.StreamEvent) (*LLMResponse, error) {
-	var content strings.Builder
-	var reasoning strings.Builder
-	var toolCalls []streamToolCallAcc
-	var finishReason string
-	var usage *UsageInfo
-
-	for ev := range ch {
-		if ev.Err != nil {
-			return nil, ev.Err
-		}
-		if ev.ContentDelta != "" {
-			content.WriteString(ev.ContentDelta)
-		}
-		if ev.ReasoningDelta != "" {
-			reasoning.WriteString(ev.ReasoningDelta)
-		}
-		if ev.FinishReason != "" {
-			finishReason = ev.FinishReason
-		}
-		if ev.Usage != nil {
-			usage = ev.Usage
-		}
-		for _, tc := range ev.ToolCallDeltas {
-			for len(toolCalls) <= tc.Index {
-				toolCalls = append(toolCalls, streamToolCallAcc{})
-			}
-			if tc.ID != "" {
-				toolCalls[tc.Index].ID = tc.ID
-			}
-			if tc.Name != "" {
-				toolCalls[tc.Index].Name = tc.Name
-			}
-			toolCalls[tc.Index].Arguments.WriteString(tc.ArgumentsDelta)
-		}
+		return nil, fmt.Errorf("streaming read error: %w", err)
 	}
 
-	result := &LLMResponse{
-		Content:      content.String(),
-		Reasoning:    reasoning.String(),
-		FinishReason: finishReason,
-		Usage:        usage,
-	}
-
-	for _, tc := range toolCalls {
-		arguments := make(map[string]any)
-		argStr := tc.Arguments.String()
-		if argStr != "" {
-			if err := json.Unmarshal([]byte(argStr), &arguments); err != nil {
-				log.Printf("openai_compat: failed to decode streamed tool call arguments for %q: %v", tc.Name, err)
-				arguments["raw"] = argStr
+	// Assemble tool calls from accumulated deltas
+	var toolCalls []ToolCall
+	for i := 0; i < len(activeTools); i++ {
+		acc, ok := activeTools[i]
+		if !ok {
+			continue
+		}
+		args := make(map[string]any)
+		raw := acc.argsJSON.String()
+		if raw != "" {
+			if err := json.Unmarshal([]byte(raw), &args); err != nil {
+				log.Printf("openai_compat stream: failed to decode tool call arguments for %q: %v", acc.name, err)
+				args["raw"] = raw
 			}
 		}
-		result.ToolCalls = append(result.ToolCalls, ToolCall{
-			ID:        tc.ID,
-			Name:      tc.Name,
-			Arguments: arguments,
-			Function: &FunctionCall{
-				Name:      tc.Name,
-				Arguments: cloneOpenAIToolArgs(arguments),
-			},
+		toolCalls = append(toolCalls, ToolCall{
+			ID:        acc.id,
+			Name:      acc.name,
+			Arguments: args,
 		})
 	}
 
-	return result, nil
-}
-
-func wrapHTMLResponseError(statusCode int, body []byte, contentType, apiBase string) error {
-	respPreview := responsePreview(body, 128)
-	return fmt.Errorf(
-		"API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  Body:   %s",
-		apiBase,
-		contentType,
-		statusCode,
-		respPreview,
-	)
-}
-
-func looksLikeHTML(body []byte, contentType string) bool {
-	contentType = strings.ToLower(strings.TrimSpace(contentType))
-	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "application/xhtml+xml") {
-		return true
-	}
-	prefix := bytes.ToLower(leadingTrimmedPrefix(body, 128))
-	return bytes.HasPrefix(prefix, []byte("<!doctype html")) ||
-		bytes.HasPrefix(prefix, []byte("<html")) ||
-		bytes.HasPrefix(prefix, []byte("<head")) ||
-		bytes.HasPrefix(prefix, []byte("<body"))
-}
-
-func leadingTrimmedPrefix(body []byte, maxLen int) []byte {
-	i := 0
-	for i < len(body) {
-		switch body[i] {
-		case ' ', '\t', '\n', '\r', '\f', '\v':
-			i++
-		default:
-			end := i + maxLen
-			if end > len(body) {
-				end = len(body)
-			}
-			return body[i:end]
-		}
-	}
-	return nil
-}
-
-func responsePreview(body []byte, maxLen int) string {
-	trimmed := bytes.TrimSpace(body)
-	if len(trimmed) == 0 {
-		return "<empty>"
-	}
-	if len(trimmed) <= maxLen {
-		return string(trimmed)
-	}
-	return string(trimmed[:maxLen]) + "..."
-}
-
-func parseResponse(body io.Reader) (*LLMResponse, error) {
-	var apiResponse struct {
-		Choices []struct {
-			Message struct {
-				Content          string            `json:"content"`
-				ReasoningContent string            `json:"reasoning_content"`
-				Reasoning        string            `json:"reasoning"`
-				ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
-				ToolCalls        []struct {
-					ID       string `json:"id"`
-					Type     string `json:"type"`
-					Function *struct {
-						Name      string          `json:"name"`
-						Arguments json.RawMessage `json:"arguments"`
-					} `json:"function"`
-					ExtraContent *struct {
-						Google *struct {
-							ThoughtSignature string `json:"thought_signature"`
-						} `json:"google"`
-					} `json:"extra_content"`
-				} `json:"tool_calls"`
-			} `json:"message"`
-			FinishReason string `json:"finish_reason"`
-		} `json:"choices"`
-		Usage *UsageInfo `json:"usage"`
-	}
-
-	if err := json.NewDecoder(body).Decode(&apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(apiResponse.Choices) == 0 {
-		return &LLMResponse{
-			Content:      "",
-			FinishReason: "stop",
-		}, nil
-	}
-
-	choice := apiResponse.Choices[0]
-	toolCalls := make([]ToolCall, 0, len(choice.Message.ToolCalls))
-	for _, tc := range choice.Message.ToolCalls {
-		arguments := make(map[string]any)
-		name := ""
-
-		// Extract thought_signature from Gemini/Google-specific extra content
-		thoughtSignature := ""
-		if tc.ExtraContent != nil && tc.ExtraContent.Google != nil {
-			thoughtSignature = tc.ExtraContent.Google.ThoughtSignature
-		}
-
-		if tc.Function != nil {
-			name = tc.Function.Name
-			arguments = decodeToolCallArguments(tc.Function.Arguments, name)
-		}
-
-		// Build ToolCall with ExtraContent for Gemini 3 thought_signature persistence
-		toolCall := ToolCall{
-			ID:               tc.ID,
-			Name:             name,
-			Arguments:        arguments,
-			ThoughtSignature: thoughtSignature,
-			Function: &FunctionCall{
-				Name:             name,
-				Arguments:        cloneOpenAIToolArgs(arguments),
-				ThoughtSignature: thoughtSignature,
-			},
-		}
-
-		if thoughtSignature != "" {
-			toolCall.ExtraContent = &ExtraContent{
-				Google: &GoogleExtra{
-					ThoughtSignature: thoughtSignature,
-				},
-			}
-		}
-
-		toolCalls = append(toolCalls, toolCall)
+	if finishReason == "" {
+		finishReason = "stop"
 	}
 
 	return &LLMResponse{
-		Content:          choice.Message.Content,
-		ReasoningContent: choice.Message.ReasoningContent,
-		Reasoning:        choice.Message.Reasoning,
-		ReasoningDetails: choice.Message.ReasoningDetails,
-		ToolCalls:        toolCalls,
-		FinishReason:     choice.FinishReason,
-		Usage:            apiResponse.Usage,
+		Content:      textContent.String(),
+		ToolCalls:    toolCalls,
+		FinishReason: finishReason,
+		Usage:        usage,
 	}, nil
-}
-
-func decodeToolCallArguments(raw json.RawMessage, name string) map[string]any {
-	arguments := make(map[string]any)
-	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
-		return arguments
-	}
-
-	var decoded any
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		log.Printf("openai_compat: failed to decode tool call arguments payload for %q: %v", name, err)
-		arguments["raw"] = string(raw)
-		return arguments
-	}
-
-	switch v := decoded.(type) {
-	case string:
-		if strings.TrimSpace(v) == "" {
-			return arguments
-		}
-		if err := json.Unmarshal([]byte(v), &arguments); err != nil {
-			log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
-			arguments["raw"] = v
-		}
-		return arguments
-	case map[string]any:
-		return v
-	default:
-		log.Printf("openai_compat: unsupported tool call arguments type for %q: %T", name, decoded)
-		arguments["raw"] = string(raw)
-		return arguments
-	}
-}
-
-// openaiMessage is the wire-format message for OpenAI-compatible APIs.
-// It mirrors protocoltypes.Message but omits SystemParts, which is an
-// internal field that would be unknown to third-party endpoints.
-type openaiMessage struct {
-	Role             string     `json:"role"`
-	Content          string     `json:"content"`
-	ReasoningContent string     `json:"reasoning_content,omitempty"`
-	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID       string     `json:"tool_call_id,omitempty"`
-}
-
-// serializeMessages converts internal Message structs to the OpenAI wire format.
-// - Strips SystemParts (unknown to third-party endpoints)
-// - Converts messages with Media to multipart content format (text + image_url parts)
-// - Preserves ToolCallID, ToolCalls, and ReasoningContent for all messages
-func serializeMessages(messages []Message) []any {
-	out := make([]any, 0, len(messages))
-	for _, m := range messages {
-		if len(m.Media) == 0 {
-			out = append(out, openaiMessage{
-				Role:             m.Role,
-				Content:          m.Content,
-				ReasoningContent: m.ReasoningContent,
-				ToolCalls:        m.ToolCalls,
-				ToolCallID:       m.ToolCallID,
-			})
-			continue
-		}
-
-		// Multipart content format for messages with media
-		parts := make([]map[string]any, 0, 1+len(m.Media))
-		if m.Content != "" {
-			parts = append(parts, map[string]any{
-				"type": "text",
-				"text": m.Content,
-			})
-		}
-		for _, mediaURL := range m.Media {
-			if strings.HasPrefix(mediaURL, "data:image/") {
-				parts = append(parts, map[string]any{
-					"type": "image_url",
-					"image_url": map[string]any{
-						"url": mediaURL,
-					},
-				})
-			}
-		}
-
-		msg := map[string]any{
-			"role":    m.Role,
-			"content": parts,
-		}
-		if m.ToolCallID != "" {
-			msg["tool_call_id"] = m.ToolCallID
-		}
-		if len(m.ToolCalls) > 0 {
-			msg["tool_calls"] = m.ToolCalls
-		}
-		if m.ReasoningContent != "" {
-			msg["reasoning_content"] = m.ReasoningContent
-		}
-		out = append(out, msg)
-	}
-	return out
-}
-
-func cloneOpenAIToolArgs(src map[string]any) map[string]any {
-	if len(src) == 0 {
-		return map[string]any{}
-	}
-	dst := make(map[string]any, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
 }
 
 func normalizeModel(model, apiBase string) string {
@@ -771,41 +433,11 @@ func normalizeModel(model, apiBase string) string {
 
 	prefix := strings.ToLower(before)
 	switch prefix {
-	case "openai", "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek",
-		"google", "openrouter", "zhipu", "minimax", "mistral", "vivgrid", "novita":
+	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google",
+		"openrouter", "zhipu", "mistral", "vivgrid", "minimax", "novita":
 		return after
 	default:
 		return model
-	}
-}
-
-func asInt(v any) (int, bool) {
-	switch val := v.(type) {
-	case int:
-		return val, true
-	case int64:
-		return int(val), true
-	case float64:
-		return int(val), true
-	case float32:
-		return int(val), true
-	default:
-		return 0, false
-	}
-}
-
-func asFloat(v any) (float64, bool) {
-	switch val := v.(type) {
-	case float64:
-		return val, true
-	case float32:
-		return float64(val), true
-	case int:
-		return float64(val), true
-	case int64:
-		return float64(val), true
-	default:
-		return 0, false
 	}
 }
 
@@ -834,42 +466,6 @@ func isNativeSearchHost(apiBase string) bool {
 	}
 	host := u.Hostname()
 	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
-}
-
-// --- SSE streaming support ---
-
-type streamChunk struct {
-	Choices []streamChoice `json:"choices"`
-	Usage   *UsageInfo     `json:"usage"`
-}
-
-type streamChoice struct {
-	Delta        streamDelta `json:"delta"`
-	FinishReason string      `json:"finish_reason"`
-}
-
-type streamDelta struct {
-	Content          string          `json:"content"`
-	ReasoningContent string          `json:"reasoning_content"`
-	ToolCalls        []streamDeltaTC `json:"tool_calls"`
-}
-
-type streamDeltaTC struct {
-	Index    int                  `json:"index"`
-	ID       string               `json:"id"`
-	Type     string               `json:"type"`
-	Function *streamDeltaFunction `json:"function"`
-}
-
-type streamDeltaFunction struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-}
-
-type streamToolCallAcc struct {
-	ID        string
-	Name      string
-	Arguments strings.Builder
 }
 
 // supportsPromptCacheKey reports whether the given API base is known to
