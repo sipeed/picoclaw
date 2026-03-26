@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,6 +42,13 @@ type Provider struct {
 type Option func(*Provider)
 
 const defaultRequestTimeout = common.DefaultRequestTimeout
+
+var (
+	longCatToolCallBlockPattern = regexp.MustCompile(`(?is)<longcat_tool_call>(.*?)</longcat_tool_call>`)
+	longCatArgPattern           = regexp.MustCompile(
+		`(?is)<longcat_arg_key>\s*(.*?)\s*</longcat_arg_key>\s*<longcat_arg_value>\s*(.*?)\s*</longcat_arg_value>`,
+	)
+)
 
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {
@@ -194,7 +202,12 @@ func (p *Provider) Chat(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return common.ReadAndParseResponse(resp, p.apiBase)
+	out, err := common.ReadAndParseResponse(resp, p.apiBase)
+	if err != nil {
+		return nil, err
+	}
+	applyLongCatToolCallFallback(out, p.apiBase)
+	return out, nil
 }
 
 // ChatStream implements streaming via OpenAI-compatible SSE (stream: true).
@@ -244,7 +257,7 @@ func (p *Provider) ChatStream(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return parseStreamResponse(ctx, resp.Body, onChunk)
+	return parseStreamResponse(ctx, resp.Body, onChunk, isLongCatAPIBase(p.apiBase))
 }
 
 // parseStreamResponse parses an OpenAI-compatible SSE stream.
@@ -252,6 +265,7 @@ func parseStreamResponse(
 	ctx context.Context,
 	reader io.Reader,
 	onChunk func(accumulated string),
+	longCatFallback bool,
 ) (*LLMResponse, error) {
 	var textContent strings.Builder
 	var finishReason string
@@ -374,16 +388,96 @@ func parseStreamResponse(
 		})
 	}
 
+	content := textContent.String()
+	if longCatFallback && len(toolCalls) == 0 {
+		if parsedCalls, stripped := parseLongCatToolCalls(content); len(parsedCalls) > 0 {
+			toolCalls = parsedCalls
+			content = stripped
+			finishReason = "tool_calls"
+		}
+	}
+
 	if finishReason == "" {
 		finishReason = "stop"
 	}
 
 	return &LLMResponse{
-		Content:      textContent.String(),
+		Content:      content,
 		ToolCalls:    toolCalls,
 		FinishReason: finishReason,
 		Usage:        usage,
 	}, nil
+}
+
+func applyLongCatToolCallFallback(resp *LLMResponse, apiBase string) {
+	if resp == nil || len(resp.ToolCalls) > 0 || !isLongCatAPIBase(apiBase) {
+		return
+	}
+	toolCalls, strippedContent := parseLongCatToolCalls(resp.Content)
+	if len(toolCalls) == 0 {
+		return
+	}
+	resp.ToolCalls = toolCalls
+	resp.Content = strippedContent
+	resp.FinishReason = "tool_calls"
+}
+
+func parseLongCatToolCalls(content string) ([]ToolCall, string) {
+	matches := longCatToolCallBlockPattern.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return nil, content
+	}
+
+	toolCalls := make([]ToolCall, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		block := strings.TrimSpace(match[1])
+		if block == "" {
+			continue
+		}
+
+		toolNameRaw := block
+		if idx := strings.Index(strings.ToLower(block), "<longcat_arg_key>"); idx >= 0 {
+			toolNameRaw = block[:idx]
+		}
+		nameFields := strings.Fields(strings.TrimSpace(toolNameRaw))
+		if len(nameFields) == 0 {
+			continue
+		}
+		name := nameFields[0]
+
+		args := map[string]any{}
+		for _, argMatch := range longCatArgPattern.FindAllStringSubmatch(block, -1) {
+			if len(argMatch) < 3 {
+				continue
+			}
+			key := strings.TrimSpace(argMatch[1])
+			value := strings.TrimSpace(argMatch[2])
+			if key != "" {
+				args[key] = value
+			}
+		}
+
+		argsJSON, _ := json.Marshal(args)
+		toolCalls = append(toolCalls, ToolCall{
+			ID:        fmt.Sprintf("longcat_call_%d", len(toolCalls)+1),
+			Type:      "function",
+			Name:      name,
+			Arguments: args,
+			Function: &FunctionCall{
+				Name:      name,
+				Arguments: string(argsJSON),
+			},
+		})
+	}
+
+	if len(toolCalls) == 0 {
+		return nil, content
+	}
+	stripped := strings.TrimSpace(longCatToolCallBlockPattern.ReplaceAllString(content, ""))
+	return toolCalls, stripped
 }
 
 func normalizeModel(model, apiBase string) string {
@@ -431,6 +525,15 @@ func isNativeSearchHost(apiBase string) bool {
 	}
 	host := u.Hostname()
 	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+}
+
+func isLongCatAPIBase(apiBase string) bool {
+	u, err := url.Parse(apiBase)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == "longcat.chat" || strings.HasSuffix(host, ".longcat.chat")
 }
 
 // supportsPromptCacheKey reports whether the given API base is known to
