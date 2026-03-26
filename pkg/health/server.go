@@ -17,6 +17,7 @@ import (
 type ChatRequest struct {
 	Message   string `json:"message"`
 	SessionID string `json:"session_id,omitempty"`
+	ChatID    string `json:"chat_id,omitempty"` // Alias for session_id to match PicoClaw terminology
 }
 
 // ChatResponse is the JSON response from /chat.
@@ -43,7 +44,7 @@ type Server struct {
 	startTime     time.Time
 	reloadFunc    func() error
 	authToken     string // optional bearer token for protected endpoints
-	chatFunc      func(ctx context.Context, message, sessionID string) (string, error)
+	chatFunc      func(ctx context.Context, message, sessionID, chatID string) (string, error)
 	apiKey        string
 	chatResults   map[string]*chatStatus
 	chatResultsMu sync.RWMutex
@@ -157,7 +158,7 @@ func (s *Server) SetReloadFunc(fn func() error) {
 // fn receives the user message and an optional session ID and must return the
 // agent's reply (or an error). It is called synchronously inside the HTTP
 // handler, so the write timeout on the server governs the maximum duration.
-func (s *Server) SetChatFunc(fn func(ctx context.Context, message, sessionID string) (string, error)) {
+func (s *Server) SetChatFunc(fn func(ctx context.Context, message, sessionID, chatID string) (string, error)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.chatFunc = fn
@@ -335,6 +336,56 @@ func (s *Server) handlePostChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := req.SessionID
+	if sessionID == "" && req.ChatID != "" {
+		sessionID = req.ChatID
+	}
+
+	chatID := req.ChatID
+	if chatID == "" {
+		// Try to extract ChatID/TenantID from common headers
+		// These are ordered by specificity/reliability
+		headers := []string{
+			"X-PicoClaw-Chat-ID",
+			"X-User-ID",
+			"X-Session-ID",
+			"X-MS-CLIENT-PRINCIPAL-ID",   // Azure App Service / Container Apps (EasyAuth)
+			"X-MS-CLIENT-PRINCIPAL-NAME", // Azure App Service Email/Username
+			"Ocp-Apim-Subscription-Id",   // Azure APIM (if configured)
+		}
+
+		for _, h := range headers {
+			if val := r.Header.Get(h); val != "" {
+				chatID = val
+				break
+			}
+		}
+
+		// Fallback to SessionID if provided in body, otherwise empty (global)
+		if chatID == "" {
+			chatID = req.SessionID
+		}
+	}
+
+	if chatID != "" {
+		logger.InfoCF("api", "Resolved isolation ID for request", map[string]any{
+			"chat_id":    chatID,
+			"session_id": sessionID,
+		})
+	} else {
+		// Log all headers for debugging (excluding sensitive ones)
+		headers := make(map[string]string)
+		for k, v := range r.Header {
+			if k == "Authorization" || k == "X-Api-Key" || k == "Ocp-Apim-Subscription-Key" {
+				headers[k] = "REDACTED"
+			} else if len(v) > 0 {
+				headers[k] = v[0]
+			}
+		}
+		logger.DebugCF("api", "Chat request received without explicit ChatID. Checking headers...", map[string]any{
+			"headers": headers,
+		})
+	}
+
 	if sessionID == "" {
 		sessionID = fmt.Sprintf("chat-%d", time.Now().UnixNano())
 	}
@@ -352,7 +403,7 @@ func (s *Server) handlePostChat(w http.ResponseWriter, r *http.Request) {
 		// which will be cancelled when this request finishes.
 		ctx := context.Background()
 		logger.Debugf("Starting async chat for session %s", sessionID)
-		reply, err := chatFunc(ctx, req.Message, sessionID)
+		reply, err := chatFunc(ctx, req.Message, sessionID, chatID)
 
 		s.chatResultsMu.Lock()
 		defer s.chatResultsMu.Unlock()
