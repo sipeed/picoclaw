@@ -1,0 +1,66 @@
+name: Build and Deploy to GCE
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write' # Required for Workload Identity Federation
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libolm-dev
+
+      - name: Build Go backend
+        run: make build
+
+      - name: Determine binary name
+        id: binary
+        run: |
+          # The Makefile outputs a binary named picoclaw-linux-amd64
+          echo "path=build/picoclaw-linux-amd64" >> $GITHUB_OUTPUT
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: 'Deploy binary to GCE'
+        run: |
+          # Ensure ~/.local/bin exists
+          gcloud compute ssh ${{ secrets.GCE_INSTANCE }} \
+            --zone=${{ secrets.GCE_ZONE }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --command="mkdir -p ~/.local/bin"
+
+          # Copy the binary to the instance
+          gcloud compute scp ${{ steps.binary.outputs.path }} ${{ secrets.GCE_INSTANCE }}:~/.local/bin/picoclaw \
+            --zone=${{ secrets.GCE_ZONE }} \
+            --project=${{ secrets.GCP_PROJECT_ID }}
+
+          # Make it executable and restart the service
+          gcloud compute ssh ${{ secrets.GCE_INSTANCE }} \
+            --zone=${{ secrets.GCE_ZONE }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --command="chmod +x ~/.local/bin/picoclaw && sudo systemctl restart picoclaw"
