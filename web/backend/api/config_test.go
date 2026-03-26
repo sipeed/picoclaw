@@ -143,74 +143,64 @@ func TestHandlePatchConfig_AllowsInvalidExecRegexPatternsWhenExecDisabled(t *tes
 	}
 }
 
-func TestHandlePatchConfig_PreservesWebSearchAPIKeysWhenOmitted(t *testing.T) {
-	configPath, cleanup := setupOAuthTestEnv(t)
-	defer cleanup()
-	seedWebSearchAPIKeys(t, configPath, "glm-existing-key", "baidu-existing-key")
+func runConfigRequest(t *testing.T, configPath, method, body string) {
+	t.Helper()
 
 	h := NewHandler(configPath)
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
-	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
-		"gateway": {
-			"log_level": "info"
-		}
-	}`))
+	req := httptest.NewRequest(method, "/api/config", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf("%s /api/config status = %d, want %d, body=%s", method, rec.Code, http.StatusOK, rec.Body.String())
 	}
+}
+
+func assertWebSearchAPIKeys(t *testing.T, configPath, wantGLMAPIKey, wantBaiduAPIKey string) {
+	t.Helper()
 
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if got := cfg.Tools.Web.GLMSearch.APIKey(); got != "glm-existing-key" {
-		t.Fatalf("tools.web.glm_search.api_key = %q, want %q", got, "glm-existing-key")
+	if got := cfg.Tools.Web.GLMSearch.APIKey(); got != wantGLMAPIKey {
+		t.Fatalf("tools.web.glm_search.api_key = %q, want %q", got, wantGLMAPIKey)
 	}
-	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != "baidu-existing-key" {
-		t.Fatalf("tools.web.baidu_search.api_key = %q, want %q", got, "baidu-existing-key")
+	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != wantBaiduAPIKey {
+		t.Fatalf("tools.web.baidu_search.api_key = %q, want %q", got, wantBaiduAPIKey)
 	}
+}
+
+func TestHandlePatchConfig_PreservesWebSearchAPIKeysWhenOmitted(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	seedWebSearchAPIKeys(t, configPath, "glm-existing-key", "baidu-existing-key")
+
+	runConfigRequest(t, configPath, http.MethodPatch, `{
+		"gateway": {
+			"log_level": "info"
+		}
+	}`)
+	assertWebSearchAPIKeys(t, configPath, "glm-existing-key", "baidu-existing-key")
 }
 
 func TestHandlePatchConfig_UpdatesWebSearchAPIKeys(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
-	h := NewHandler(configPath)
-	mux := http.NewServeMux()
-	h.RegisterRoutes(mux)
-
-	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+	runConfigRequest(t, configPath, http.MethodPatch, `{
 		"tools": {
 			"web": {
 				"glm_search": { "api_key": "glm-updated-key" },
 				"baidu_search": { "api_key": "baidu-updated-key" }
 			}
 		}
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	if got := cfg.Tools.Web.GLMSearch.APIKey(); got != "glm-updated-key" {
-		t.Fatalf("tools.web.glm_search.api_key = %q, want %q", got, "glm-updated-key")
-	}
-	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != "baidu-updated-key" {
-		t.Fatalf("tools.web.baidu_search.api_key = %q, want %q", got, "baidu-updated-key")
-	}
+	}`)
+	assertWebSearchAPIKeys(t, configPath, "glm-updated-key", "baidu-updated-key")
 }
 
 func TestHandleUpdateConfig_PreservesWebSearchAPIKeysWhenOmitted(t *testing.T) {
@@ -218,11 +208,7 @@ func TestHandleUpdateConfig_PreservesWebSearchAPIKeysWhenOmitted(t *testing.T) {
 	defer cleanup()
 	seedWebSearchAPIKeys(t, configPath, "glm-existing-key-via-put", "baidu-existing-key-via-put")
 
-	h := NewHandler(configPath)
-	mux := http.NewServeMux()
-	h.RegisterRoutes(mux)
-
-	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(`{
+	runConfigRequest(t, configPath, http.MethodPut, `{
 		"version": 1,
 		"agents": {
 			"defaults": {
@@ -237,36 +223,15 @@ func TestHandleUpdateConfig_PreservesWebSearchAPIKeysWhenOmitted(t *testing.T) {
 				"api_keys": ["sk-default"]
 			}
 		]
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	if got := cfg.Tools.Web.GLMSearch.APIKey(); got != "glm-existing-key-via-put" {
-		t.Fatalf("tools.web.glm_search.api_key = %q, want %q", got, "glm-existing-key-via-put")
-	}
-	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != "baidu-existing-key-via-put" {
-		t.Fatalf("tools.web.baidu_search.api_key = %q, want %q", got, "baidu-existing-key-via-put")
-	}
+	}`)
+	assertWebSearchAPIKeys(t, configPath, "glm-existing-key-via-put", "baidu-existing-key-via-put")
 }
 
 func TestHandleUpdateConfig_UpdatesWebSearchAPIKeys(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
-	h := NewHandler(configPath)
-	mux := http.NewServeMux()
-	h.RegisterRoutes(mux)
-
-	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(`{
+	runConfigRequest(t, configPath, http.MethodPut, `{
 		"version": 1,
 		"agents": {
 			"defaults": {
@@ -287,25 +252,8 @@ func TestHandleUpdateConfig_UpdatesWebSearchAPIKeys(t *testing.T) {
 				"baidu_search": { "api_key": "baidu-updated-key-via-put" }
 			}
 		}
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	if got := cfg.Tools.Web.GLMSearch.APIKey(); got != "glm-updated-key-via-put" {
-		t.Fatalf("tools.web.glm_search.api_key = %q, want %q", got, "glm-updated-key-via-put")
-	}
-	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != "baidu-updated-key-via-put" {
-		t.Fatalf("tools.web.baidu_search.api_key = %q, want %q", got, "baidu-updated-key-via-put")
-	}
+	}`)
+	assertWebSearchAPIKeys(t, configPath, "glm-updated-key-via-put", "baidu-updated-key-via-put")
 }
 
 func seedWebSearchAPIKeys(t *testing.T, configPath, glmAPIKey, baiduAPIKey string) {
