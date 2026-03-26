@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"slices"
 	"testing"
@@ -11,6 +12,19 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
+
+// TestRunCommandFatalPrintsToStdout verifies that when a subcommand fails,
+// runCommand prints a prominent error to the provided writer (stdout in production),
+// so the error is visible in environments where stderr is redirected (e.g. docker).
+func TestRunCommandFatalPrintsToStdout(t *testing.T) {
+	var buf bytes.Buffer
+	// Pass an unknown flag to trigger a cobra error without any real I/O.
+	err := runCommand(&buf, []string{"gateway", "--no-such-flag"})
+	require.Error(t, err)
+	out := buf.String()
+	assert.Contains(t, out, "FATAL", "fatal error must be printed to stdout")
+	assert.Contains(t, out, err.Error(), "error message must appear in stdout output")
+}
 
 func TestNewPicoclawCommand(t *testing.T) {
 	cmd := NewPicoclawCommand()

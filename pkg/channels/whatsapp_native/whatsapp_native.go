@@ -385,6 +385,7 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 	}
 
 	if !c.IsAllowedSender(sender) {
+		logger.DebugCF("whatsapp", "WhatsApp message blocked (not in allow_from)", map[string]any{"sender_id": senderID})
 		return
 	}
 
