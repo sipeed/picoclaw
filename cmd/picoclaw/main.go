@@ -8,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -64,10 +65,24 @@ const (
 		"\033[0m\r\n"
 )
 
+// runCommand executes picoclaw with the given args, writing output to w.
+// On failure it prints a prominent error to w so the message is visible
+// even when os.Stderr has been redirected (e.g. to a panic-log file).
+func runCommand(w io.Writer, args []string) error {
+	cmd := NewPicoclawCommand()
+	cmd.SetOut(w)
+	cmd.SetErr(w)
+	cmd.SetArgs(args)
+	if err := cmd.Execute(); err != nil {
+		fmt.Fprintf(w, "\n\033[1;31m✗ FATAL: %v\033[0m\n", err)
+		return err
+	}
+	return nil
+}
+
 func main() {
 	fmt.Printf("%s", banner)
-	cmd := NewPicoclawCommand()
-	if err := cmd.Execute(); err != nil {
+	if err := runCommand(os.Stdout, os.Args[1:]); err != nil {
 		os.Exit(1)
 	}
 }
