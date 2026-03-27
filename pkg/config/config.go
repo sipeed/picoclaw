@@ -1770,7 +1770,7 @@ func SaveConfig(path string, cfg *Config) error {
 		cfg.security.Channels.Weixin = &WeixinSecurity{
 			Token: cfg.Channels.Weixin.Token(),
 		}
-		cfg.Channels.Discord.secDirty = false
+		cfg.Channels.Weixin.secDirty = false
 	}
 	if cfg.Channels.QQ.secDirty {
 		cfg.security.Channels.QQ = &QQSecurity{
