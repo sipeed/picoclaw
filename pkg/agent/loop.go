@@ -404,6 +404,9 @@ func registerSharedTools(
 		} else if (spawnEnabled || spawnStatusEnabled) && !cfg.Tools.IsToolEnabled("subagent") {
 			logger.WarnCF("agent", "spawn/spawn_status tools require subagent to be enabled", nil)
 		}
+		// Register MCP and discovery tools to this agent
+		al.RegisterMCPToolsToAgent(agentID, agent)
+
 		// Apply global tools whitelist
 		agent.Tools.Filter(cfg.Tools.Whitelist, cfg.Tools.WhitelistEnabled)
 	}

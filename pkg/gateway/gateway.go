@@ -83,18 +83,30 @@ func (p *startupBlockedProvider) GetDefaultModel() string {
 
 // Run starts the gateway runtime using the configuration loaded from configPath.
 func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error {
+	fmt.Printf("🚀 PicoClaw Gateway starting...\n")
+	fmt.Printf("📂 Home Path: %s\n", homePath)
+	fmt.Printf("📄 Config Path: %s\n", configPath)
+
 	panicPath := filepath.Join(homePath, logPath, panicFile)
+	fmt.Printf("🔧 Initializing panic log: %s\n", panicPath)
 	panicFunc, err := logger.InitPanic(panicPath)
 	if err != nil {
-		return fmt.Errorf("error initializing panic log: %w", err)
+		fmt.Printf("⚠️  Warning: error initializing panic log (continuing): %v\n", err)
+	} else if panicFunc != nil {
+		defer panicFunc()
+		fmt.Println("✓ Panic log initialized")
 	}
-	defer panicFunc()
 
-	if err = logger.EnableFileLogging(filepath.Join(homePath, logPath, logFile)); err != nil {
-		panic(fmt.Sprintf("error enabling file logging: %v", err))
+	logFilePath := filepath.Join(homePath, logPath, logFile)
+	fmt.Printf("🔧 Enabling file logging: %s\n", logFilePath)
+	if err = logger.EnableFileLogging(logFilePath); err != nil {
+		fmt.Printf("⚠️  Warning: error enabling file logging (continuing): %v\n", err)
+	} else {
+		defer logger.DisableFileLogging()
+		fmt.Println("✓ File logging enabled")
 	}
-	defer logger.DisableFileLogging()
 
+	fmt.Println("🔍 Loading configuration...")
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("error loading config: %w", err)
@@ -107,7 +119,6 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		fmt.Println("🔍 Debug mode enabled")
 	}
 
-	fmt.Printf("🔍 Creating startup provider for model: %s (allow empty: %v)\n", cfg.Agents.Defaults.GetModelName(), allowEmptyStartup)
 	provider, modelID, err := createStartupProvider(cfg, allowEmptyStartup)
 	if err != nil {
 		fmt.Printf("❌ Error creating provider: %v\n", err)

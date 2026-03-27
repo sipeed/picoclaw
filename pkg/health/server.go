@@ -342,6 +342,8 @@ func (s *Server) handlePostChat(w http.ResponseWriter, r *http.Request) {
 		// These are ordered by specificity/reliability
 		headers := []string{
 			"X-PicoClaw-Chat-ID",
+			"X-MS-CONVERSATION-ID", // Teams Conversation ID
+			"X-MS-TENANT-ID",       // Teams Tenant ID
 			"X-User-ID",
 			"X-Session-ID",
 			"X-MS-CLIENT-PRINCIPAL-ID",   // Azure App Service / Container Apps (EasyAuth)

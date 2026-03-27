@@ -923,6 +923,8 @@ type ReadFileToolConfig struct {
 type ToolsConfig struct {
 	AllowReadPaths  []string `json:"allow_read_paths"  yaml:"-" env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
 	AllowWritePaths []string `json:"allow_write_paths" yaml:"-" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
+	DenyReadPaths   []string `json:"deny_read_paths"   yaml:"-" env:"PICOCLAW_TOOLS_DENY_READ_PATHS"`
+	DenyWritePaths  []string `json:"deny_write_paths"  yaml:"-" env:"PICOCLAW_TOOLS_DENY_WRITE_PATHS"`
 	// FilterSensitiveData controls whether to filter sensitive values (API keys,
 	// tokens, secrets) from tool results before sending to the LLM.
 	// Default: true (enabled)

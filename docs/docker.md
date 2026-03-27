@@ -67,6 +67,21 @@ docker compose -f docker/docker-compose.yml pull
 docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
+### 🔒 Hardened & Non-Root Deployment
+
+For production environments (like Azure Container Apps or Kubernetes), use the **full hardened image** (`docker/Dockerfile.full`).
+
+This image provides several security and reliability enhancements:
+- **Non-Root Execution**: Runs as the `picoclaw` user (UID 1000) instead of root, meeting strict security requirements.
+- **Volume Compatibility**: Fixed UID 1000 ensures compatibility with Azure Files and other cloud volume mounts without manual `chown` hacks.
+- **Self-Contained**: Includes the full system suite (Node.js, Python, etc.) required for all tools.
+- **Automated Onboarding**: The image entrypoint automatically triggers `picoclaw onboard --yes` if the environment is not initialized.
+
+To build it manually:
+```bash
+docker build -f docker/Dockerfile.full -t picoclaw-full:latest .
+```
+
 ### 🚀 Quick Start
 
 > [!TIP]

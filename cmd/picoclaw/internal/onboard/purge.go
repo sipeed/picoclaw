@@ -35,7 +35,7 @@ func NewPurgeCommand() *cobra.Command {
 			}
 
 			fmt.Println("Purging...")
-			
+
 			if err := os.RemoveAll(workspace); err != nil {
 				fmt.Printf("Error deleting workspace: %v\n", err)
 			} else {
@@ -47,7 +47,7 @@ func NewPurgeCommand() *cobra.Command {
 			} else {
 				fmt.Println("✓ Logs deleted")
 			}
-			
+
 			fmt.Println("Purge complete.")
 		},
 	}

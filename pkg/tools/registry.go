@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -439,7 +440,22 @@ func (r *ToolRegistry) Filter(whitelist []string, enabled bool) {
 
 	removed := 0
 	for name := range r.tools {
-		if _, allowed := whitelistMap[name]; !allowed {
+		allowed := false
+		if _, exact := whitelistMap[name]; exact {
+			allowed = true
+		} else {
+			// Check for prefix matches (e.g. "monday" matches "mcp_monday_...")
+			for _, w := range whitelist {
+				// Match exact (redundant but safe) or prefix with underscore
+				// We also check for "mcp_" prefix specifically to support MCP tool grouping
+				if strings.HasPrefix(name, "mcp_"+w+"_") || strings.HasPrefix(name, "tool_"+w+"_") || strings.HasPrefix(name, w+"_") {
+					allowed = true
+					break
+				}
+			}
+		}
+
+		if !allowed {
 			delete(r.tools, name)
 			removed++
 		}

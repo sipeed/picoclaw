@@ -70,18 +70,20 @@ func NewAgentInstance(
 	// Compile path whitelist patterns from config.
 	allowReadPaths := buildAllowReadPatterns(cfg)
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
+	denyReadPaths := compilePatterns(cfg.Tools.DenyReadPaths)
+	denyWritePaths := compilePatterns(cfg.Tools.DenyWritePaths)
 
 	toolsRegistry := tools.NewToolRegistry()
 
 	if cfg.Tools.IsToolEnabled("read_file") {
 		maxReadFileSize := cfg.Tools.ReadFile.MaxReadFileSize
-		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
+		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, maxReadFileSize, allowReadPaths, denyReadPaths))
 	}
 	if cfg.Tools.IsToolEnabled("write_file") {
-		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths, denyWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("list_dir") {
-		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths, denyReadPaths))
 	}
 	if cfg.Tools.IsToolEnabled("exec") {
 		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg, allowReadPaths)
@@ -94,10 +96,10 @@ func NewAgentInstance(
 	}
 
 	if cfg.Tools.IsToolEnabled("edit_file") {
-		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths, denyWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("append_file") {
-		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths, denyWritePaths))
 	}
 
 	// Use main agent workspace (no isolation) for sessions so that session history
