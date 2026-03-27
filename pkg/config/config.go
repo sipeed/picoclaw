@@ -390,6 +390,7 @@ type ChannelsConfig struct {
 	Pico       PicoConfig       `json:"pico"`
 	PicoClient PicoClientConfig `json:"pico_client"`
 	IRC        IRCConfig        `json:"irc"`
+	Zalo       ZaloConfig       `json:"zalo"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
@@ -2193,4 +2194,18 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 	default:
 		return true
 	}
+}
+
+// ZaloConfig holds credentials for the Zalo OA channel.
+type ZaloConfig struct {
+	Enabled          bool                `json:"enabled"            env:"PICOCLAW_CHANNELS_ZALO_ENABLED"`
+	OAID             string              `json:"oa_id"              env:"PICOCLAW_CHANNELS_ZALO_OA_ID"`
+	AppID            string              `json:"app_id"             env:"PICOCLAW_CHANNELS_ZALO_APP_ID"`
+	AppSecret        string              `json:"app_secret"         env:"PICOCLAW_CHANNELS_ZALO_APP_SECRET"`
+	OASecretKey      string              `json:"oa_secret_key"      env:"PICOCLAW_CHANNELS_ZALO_OA_SECRET_KEY"`
+	AccessToken      string              `json:"access_token"       env:"PICOCLAW_CHANNELS_ZALO_ACCESS_TOKEN"`
+	RefreshToken     string              `json:"refresh_token"      env:"PICOCLAW_CHANNELS_ZALO_REFRESH_TOKEN"`
+	WebhookPath      string              `json:"webhook_path"       env:"PICOCLAW_CHANNELS_ZALO_WEBHOOK_PATH"`
+	AllowFrom        FlexibleStringSlice `json:"allow_from"         env:"PICOCLAW_CHANNELS_ZALO_ALLOW_FROM"`
+	OAuthRedirectURI string              `json:"oauth_redirect_uri" env:"PICOCLAW_CHANNELS_ZALO_OAUTH_REDIRECT_URI"`
 }
