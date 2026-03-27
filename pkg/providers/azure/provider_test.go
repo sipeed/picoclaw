@@ -8,14 +8,26 @@ import (
 	"time"
 )
 
-// writeValidResponse writes a minimal valid Azure OpenAI chat completion response.
+// writeValidResponse writes a minimal valid Responses API response.
 func writeValidResponse(w http.ResponseWriter) {
 	resp := map[string]any{
-		"choices": []map[string]any{
+		"id":     "resp_test",
+		"object": "response",
+		"status": "completed",
+		"output": []map[string]any{
 			{
-				"message":       map[string]any{"content": "ok"},
-				"finish_reason": "stop",
+				"type": "message",
+				"content": []map[string]any{
+					{"type": "output_text", "text": "ok"},
+				},
 			},
+		},
+		"usage": map[string]any{
+			"input_tokens":          5,
+			"output_tokens":         2,
+			"total_tokens":          7,
+			"input_tokens_details":  map[string]any{"cached_tokens": 0},
+			"output_tokens_details": map[string]any{"reasoning_tokens": 0},
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -24,11 +36,9 @@ func writeValidResponse(w http.ResponseWriter) {
 
 func TestProviderChat_AzureURLConstruction(t *testing.T) {
 	var capturedPath string
-	var capturedAPIVersion string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedPath = r.URL.Path
-		capturedAPIVersion = r.URL.Query().Get("api-version")
 		writeValidResponse(w)
 	}))
 	defer server.Close()
@@ -39,22 +49,19 @@ func TestProviderChat_AzureURLConstruction(t *testing.T) {
 		t.Fatalf("Chat() error = %v", err)
 	}
 
-	wantPath := "/openai/deployments/my-gpt5-deployment/chat/completions"
+	wantPath := "/openai/v1/responses"
 	if capturedPath != wantPath {
 		t.Errorf("URL path = %q, want %q", capturedPath, wantPath)
-	}
-	if capturedAPIVersion != azureAPIVersion {
-		t.Errorf("api-version = %q, want %q", capturedAPIVersion, azureAPIVersion)
 	}
 }
 
 func TestProviderChat_AzureAuthHeader(t *testing.T) {
-	var capturedAPIKey string
 	var capturedAuth string
+	var capturedAPIKey string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedAPIKey = r.Header.Get("Api-Key")
 		capturedAuth = r.Header.Get("Authorization")
+		capturedAPIKey = r.Header.Get("Api-Key")
 		writeValidResponse(w)
 	}))
 	defer server.Close()
@@ -65,15 +72,15 @@ func TestProviderChat_AzureAuthHeader(t *testing.T) {
 		t.Fatalf("Chat() error = %v", err)
 	}
 
-	if capturedAPIKey != "test-azure-key" {
-		t.Errorf("api-key header = %q, want %q", capturedAPIKey, "test-azure-key")
+	if capturedAuth != "Bearer test-azure-key" {
+		t.Errorf("Authorization header = %q, want %q", capturedAuth, "Bearer test-azure-key")
 	}
-	if capturedAuth != "" {
-		t.Errorf("Authorization header should be empty, got %q", capturedAuth)
+	if capturedAPIKey != "" {
+		t.Errorf("Api-Key header should be empty, got %q", capturedAPIKey)
 	}
 }
 
-func TestProviderChat_AzureOmitsModelFromBody(t *testing.T) {
+func TestProviderChat_AzureRequestBodyContainsModel(t *testing.T) {
 	var requestBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -83,17 +90,17 @@ func TestProviderChat_AzureOmitsModelFromBody(t *testing.T) {
 	defer server.Close()
 
 	p := NewProvider("test-key", server.URL, "")
-	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "my-deployment", nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
 
-	if _, exists := requestBody["model"]; exists {
-		t.Error("request body should not contain 'model' field for Azure OpenAI")
+	if requestBody["model"] != "my-deployment" {
+		t.Errorf("model = %v, want %q", requestBody["model"], "my-deployment")
 	}
 }
 
-func TestProviderChat_AzureUsesMaxCompletionTokens(t *testing.T) {
+func TestProviderChat_AzureUsesMaxOutputTokens(t *testing.T) {
 	var requestBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -114,11 +121,34 @@ func TestProviderChat_AzureUsesMaxCompletionTokens(t *testing.T) {
 		t.Fatalf("Chat() error = %v", err)
 	}
 
-	if _, exists := requestBody["max_completion_tokens"]; !exists {
-		t.Error("request body should contain 'max_completion_tokens'")
+	if requestBody["max_output_tokens"] == nil {
+		t.Error("request body should contain 'max_output_tokens'")
 	}
 	if _, exists := requestBody["max_tokens"]; exists {
 		t.Error("request body should not contain 'max_tokens'")
+	}
+	if _, exists := requestBody["max_completion_tokens"]; exists {
+		t.Error("request body should not contain 'max_completion_tokens'")
+	}
+}
+
+func TestProviderChat_AzureStoreIsFalse(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&requestBody)
+		writeValidResponse(w)
+	}))
+	defer server.Close()
+
+	p := NewProvider("test-key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if requestBody["store"] != false {
+		t.Errorf("store = %v, want false", requestBody["store"])
 	}
 }
 
@@ -135,26 +165,65 @@ func TestProviderChat_AzureHTTPError(t *testing.T) {
 	}
 }
 
+func TestProviderChat_AzureParseTextOutput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"id":     "resp_1",
+			"object": "response",
+			"status": "completed",
+			"output": []map[string]any{
+				{
+					"type": "message",
+					"content": []map[string]any{
+						{"type": "output_text", "text": "Hello there!"},
+					},
+				},
+			},
+			"usage": map[string]any{
+				"input_tokens": 10, "output_tokens": 5, "total_tokens": 15,
+				"input_tokens_details":  map[string]any{"cached_tokens": 0},
+				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("test-key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if out.Content != "Hello there!" {
+		t.Errorf("Content = %q, want %q", out.Content, "Hello there!")
+	}
+	if out.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", out.FinishReason, "stop")
+	}
+	if out.Usage.TotalTokens != 15 {
+		t.Errorf("TotalTokens = %d, want 15", out.Usage.TotalTokens)
+	}
+}
+
 func TestProviderChat_AzureParseToolCalls(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]any{
-			"choices": []map[string]any{
+			"id":     "resp_2",
+			"object": "response",
+			"status": "completed",
+			"output": []map[string]any{
 				{
-					"message": map[string]any{
-						"content": "",
-						"tool_calls": []map[string]any{
-							{
-								"id":   "call_1",
-								"type": "function",
-								"function": map[string]any{
-									"name":      "get_weather",
-									"arguments": `{"city":"Seattle"}`,
-								},
-							},
-						},
-					},
-					"finish_reason": "tool_calls",
+					"type":      "function_call",
+					"call_id":   "call_1",
+					"name":      "get_weather",
+					"arguments": `{"city":"Seattle"}`,
 				},
+			},
+			"usage": map[string]any{
+				"input_tokens": 10, "output_tokens": 8, "total_tokens": 18,
+				"input_tokens_details":  map[string]any{"cached_tokens": 0},
+				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -167,12 +236,62 @@ func TestProviderChat_AzureParseToolCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
-
 	if len(out.ToolCalls) != 1 {
 		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
 	}
 	if out.ToolCalls[0].Name != "get_weather" {
 		t.Errorf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "get_weather")
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Errorf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+}
+
+func TestProviderChat_AzurePreviousResponseID(t *testing.T) {
+	var firstRequestBody, secondRequestBody map[string]any
+	callCount := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if callCount == 1 {
+			firstRequestBody = body
+		} else {
+			secondRequestBody = body
+		}
+		resp := map[string]any{
+			"id":     "resp_turn_1",
+			"object": "response",
+			"status": "completed",
+			"output": []map[string]any{
+				{"type": "message", "content": []map[string]any{
+					{"type": "output_text", "text": "ok"},
+				}},
+			},
+			"usage": map[string]any{
+				"input_tokens": 5, "output_tokens": 2, "total_tokens": 7,
+				"input_tokens_details":  map[string]any{"cached_tokens": 0},
+				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("test-key", server.URL, "")
+
+	// First call — no previous_response_id
+	_, _ = p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)
+	if firstRequestBody["previous_response_id"] != nil {
+		t.Error("first call should not have previous_response_id")
+	}
+
+	// Second call — should include previous_response_id from first response
+	_, _ = p.Chat(t.Context(), []Message{{Role: "user", Content: "hello again"}}, nil, "deployment", nil)
+	if secondRequestBody["previous_response_id"] != "resp_turn_1" {
+		t.Errorf("previous_response_id = %v, want %q", secondRequestBody["previous_response_id"], "resp_turn_1")
 	}
 }
 
@@ -202,31 +321,5 @@ func TestProvider_AzureNewProviderWithTimeout(t *testing.T) {
 	p := NewProviderWithTimeout("test-key", "https://example.com", "", 180)
 	if p.httpClient.Timeout != 180*time.Second {
 		t.Errorf("timeout = %v, want %v", p.httpClient.Timeout, 180*time.Second)
-	}
-}
-
-func TestProviderChat_AzureDeploymentNameEscaped(t *testing.T) {
-	var capturedPath string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedPath = r.URL.RawPath // use RawPath to see percent-encoding
-		if capturedPath == "" {
-			capturedPath = r.URL.Path
-		}
-		writeValidResponse(w)
-	}))
-	defer server.Close()
-
-	p := NewProvider("test-key", server.URL, "")
-
-	// Deployment name with characters that could cause path injection
-	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "my deploy/../../admin", nil)
-	if err != nil {
-		t.Fatalf("Chat() error = %v", err)
-	}
-
-	// The slash and special chars in the deployment name must be escaped, not treated as path separators
-	if capturedPath == "/openai/deployments/my deploy/../../admin/chat/completions" {
-		t.Fatal("deployment name was interpolated without escaping — path injection possible")
 	}
 }
