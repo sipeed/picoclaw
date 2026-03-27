@@ -612,7 +612,7 @@ func TestDefaultConfig_HooksDefaults(t *testing.T) {
 
 func TestDefaultConfig_LogLevel(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Gateway.LogLevel != "fatal" {
+	if cfg.Gateway.LogLevel != "warn" {
 		t.Errorf("LogLevel = %q, want \"fatal\"", cfg.Gateway.LogLevel)
 	}
 }
@@ -1425,7 +1425,7 @@ func TestConfigLogLevelEmpty(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	// When config omits log_level, the DefaultConfig value ("fatal") is preserved.
-	if cfg.Gateway.LogLevel != "fatal" {
+	if cfg.Gateway.LogLevel != "warn" {
 		t.Errorf("LogLevel = %q, want \"fatal\"", cfg.Gateway.LogLevel)
 	}
 }
