@@ -87,6 +87,24 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 	return result
 }
 
+func buildArtifactTags(store media.MediaStore, refs []string) []string {
+	if store == nil || len(refs) == 0 {
+		return nil
+	}
+
+	tags := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		localPath, meta, err := store.ResolveWithMeta(ref)
+		if err != nil {
+			continue
+		}
+		mime := detectMIME(localPath, meta)
+		tags = append(tags, buildPathTag(mime, localPath))
+	}
+
+	return tags
+}
+
 // detectMIME determines the MIME type from metadata or magic-bytes detection.
 // Returns empty string if detection fails.
 func detectMIME(localPath string, meta media.MediaMeta) string {

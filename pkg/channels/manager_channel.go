@@ -49,15 +49,7 @@ func hiddenValues(key string, value map[string]any, ch config.ChannelsConfig) {
 		value["token"] = ch.LINE.ChannelAccessToken()
 		value["secret"] = ch.LINE.ChannelSecret()
 	case "wecom":
-		value["token"] = ch.WeCom.Token()
-		value["key"] = ch.WeCom.EncodingAESKey()
-	case "wecom_app":
-		value["token"] = ch.WeComApp.Token()
-		value["secret"] = ch.WeComApp.CorpSecret()
-	case "wecom_aibot":
-		value["token"] = ch.WeComAIBot.Token()
-		value["key"] = ch.WeComAIBot.EncodingAESKey()
-		value["secret"] = ch.WeComAIBot.Secret()
+		value["secret"] = ch.WeCom.Secret()
 	case "dingtalk":
 		value["secret"] = ch.QQ.AppSecret()
 	case "qq":
@@ -156,16 +148,7 @@ func updateKeys(newcfg, old *config.ChannelsConfig) {
 		newcfg.LINE.SetChannelSecret(old.LINE.ChannelSecret())
 	}
 	if newcfg.WeCom.Enabled {
-		newcfg.WeCom.SetToken(old.WeCom.Token())
-		newcfg.WeCom.SetEncodingAESKey(old.WeCom.EncodingAESKey())
-	}
-	if newcfg.WeComApp.Enabled {
-		newcfg.WeComApp.SetToken(old.WeComApp.Token())
-		newcfg.WeComApp.SetCorpSecret(old.WeComApp.CorpSecret())
-	}
-	if newcfg.WeComAIBot.Enabled {
-		newcfg.WeComAIBot.SetToken(old.WeComAIBot.Token())
-		newcfg.WeComAIBot.SetEncodingAESKey(old.WeComAIBot.EncodingAESKey())
+		newcfg.WeCom.SetSecret(old.WeCom.Secret())
 	}
 	if newcfg.DingTalk.Enabled {
 		newcfg.DingTalk.SetClientSecret(old.DingTalk.ClientSecret())

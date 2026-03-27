@@ -123,6 +123,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"ollama", "ollama"},
 		{"longcat", "longcat"},
 		{"modelscope", "modelscope"},
+		{"mimo", "mimo"},
 	}
 
 	for _, tt := range tests {
@@ -249,6 +250,35 @@ func TestCreateProviderFromConfig_Novita(t *testing.T) {
 func TestGetDefaultAPIBase_Novita(t *testing.T) {
 	if got := getDefaultAPIBase("novita"); got != "https://api.novita.ai/openai" {
 		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "novita", got, "https://api.novita.ai/openai")
+	}
+}
+
+func TestCreateProviderFromConfig_Mimo(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-mimo",
+		Model:     "mimo/mimo-v2-pro",
+		APIBase:   "https://api.xiaomimimo.com/v1",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "mimo-v2-pro" {
+		t.Errorf("modelID = %q, want %q", modelID, "mimo-v2-pro")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestGetDefaultAPIBase_Mimo(t *testing.T) {
+	if got := getDefaultAPIBase("mimo"); got != "https://api.xiaomimimo.com/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "mimo", got, "https://api.xiaomimimo.com/v1")
 	}
 }
 

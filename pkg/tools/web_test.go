@@ -426,6 +426,96 @@ func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
 	}
 }
 
+func TestNormalizeSearchRange(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "empty", input: "", want: ""},
+		{name: "day", input: "d", want: "d"},
+		{name: "week uppercase trimmed", input: " W ", want: "w"},
+		{name: "month", input: "m", want: "m"},
+		{name: "year", input: "y", want: "y"},
+		{name: "invalid", input: "q", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeSearchRange(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("normalizeSearchRange(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSearchRangeMappings(t *testing.T) {
+	if got := mapBraveFreshness("d"); got != "pd" {
+		t.Fatalf("mapBraveFreshness(d) = %q, want pd", got)
+	}
+	if got := mapBraveFreshness("y"); got != "py" {
+		t.Fatalf("mapBraveFreshness(y) = %q, want py", got)
+	}
+	if got := mapTavilyTimeRange("w"); got != "week" {
+		t.Fatalf("mapTavilyTimeRange(w) = %q, want week", got)
+	}
+	if got := mapPerplexityRecencyFilter("m"); got != "month" {
+		t.Fatalf("mapPerplexityRecencyFilter(m) = %q, want month", got)
+	}
+	if got := mapDuckDuckGoDateFilter("y"); got != "t" {
+		t.Fatalf("mapDuckDuckGoDateFilter(y) = %q, want t", got)
+	}
+	if got := mapSearXNGTimeRange("d"); got != "day" {
+		t.Fatalf("mapSearXNGTimeRange(d) = %q, want day", got)
+	}
+	if got := mapGLMRecencyFilter("w"); got != "oneWeek" {
+		t.Fatalf("mapGLMRecencyFilter(w) = %q, want oneWeek", got)
+	}
+	if got := mapGLMRecencyFilter(""); got != "noLimit" {
+		t.Fatalf("mapGLMRecencyFilter(\"\") = %q, want noLimit", got)
+	}
+	if got := mapBaiduRecencyFilter("d"); got != "week" {
+		t.Fatalf("mapBaiduRecencyFilter(d) = %q, want week", got)
+	}
+	if got := mapBaiduRecencyFilter("m"); got != "month" {
+		t.Fatalf("mapBaiduRecencyFilter(m) = %q, want month", got)
+	}
+}
+
+func TestWebTool_WebSearch_InvalidRange(t *testing.T) {
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		BraveEnabled:    true,
+		BraveAPIKeys:    []string{"test-key"},
+		BraveMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"query": "test query",
+		"range": "invalid",
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected invalid range to return error")
+	}
+	if !strings.Contains(result.ForLLM, "range must be one of: d, w, m, y") {
+		t.Fatalf("unexpected error message: %q", result.ForLLM)
+	}
+}
+
 // TestWebTool_WebFetch_HTMLExtraction verifies HTML text extraction
 func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	withPrivateWebFetchHostsAllowed(t)
@@ -1069,6 +1159,45 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 	}
 }
 
+func TestWebTool_TavilySearch_RangeMapping(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("failed to decode payload: %v", err)
+		}
+		if payload["time_range"] != "week" {
+			t.Fatalf("expected time_range=week, got %v", payload["time_range"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"results": []map[string]any{
+				{"title": "Recent result", "url": "https://example.com/recent", "content": "snippet"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		TavilyEnabled:    true,
+		TavilyAPIKeys:    []string{"test-key"},
+		TavilyBaseURL:    server.URL,
+		TavilyMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"query": "test query",
+		"range": "w",
+	})
+	if result.IsError {
+		t.Fatalf("expected success, got %s", result.ForLLM)
+	}
+}
+
 // TestWebFetchTool_CloudflareChallenge_RetryWithHonestUA verifies that a 403 response
 // with cf-mitigated: challenge triggers a retry using the honest picoclaw User-Agent,
 // and that the retry response is returned when it succeeds.
@@ -1297,6 +1426,39 @@ func TestWebTool_TavilySearch_Failover(t *testing.T) {
 	}
 }
 
+func TestWebTool_SearXNGSearch_RangeMapping(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("time_range"); got != "year" {
+			t.Fatalf("expected time_range=year, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"results": []map[string]any{
+				{"title": "Recent result", "url": "https://example.com/1", "content": "snippet"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		SearXNGEnabled:    true,
+		SearXNGBaseURL:    server.URL,
+		SearXNGMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"query": "test query",
+		"range": "y",
+	})
+	if result.IsError {
+		t.Fatalf("expected success, got %s", result.ForLLM)
+	}
+}
+
 func TestWebTool_GLMSearch_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
@@ -1362,6 +1524,83 @@ func TestWebTool_GLMSearch_Success(t *testing.T) {
 	}
 	if !strings.Contains(result.ForUser, "via GLM Search") {
 		t.Errorf("Expected 'via GLM Search' in output, got: %s", result.ForUser)
+	}
+}
+
+func TestWebTool_GLMSearch_RangeMapping(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("failed to decode payload: %v", err)
+		}
+		if payload["search_recency_filter"] != "oneMonth" {
+			t.Fatalf("expected search_recency_filter=oneMonth, got %v", payload["search_recency_filter"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"search_result": []map[string]any{
+				{"title": "Recent GLM Result", "content": "snippet", "link": "https://example.com/glm-range"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		GLMSearchEnabled: true,
+		GLMSearchAPIKey:  "test-glm-key",
+		GLMSearchBaseURL: server.URL,
+		GLMSearchEngine:  "search_std",
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"query": "test query",
+		"range": "m",
+	})
+	if result.IsError {
+		t.Fatalf("expected success, got %s", result.ForLLM)
+	}
+}
+
+func TestWebTool_BaiduSearch_RangeMapping(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("failed to decode payload: %v", err)
+		}
+		if payload["search_recency_filter"] != "week" {
+			t.Fatalf("expected search_recency_filter=week for day fallback, got %v", payload["search_recency_filter"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"references": []map[string]any{
+				{"title": "Recent Baidu Result", "url": "https://example.com/baidu", "content": "snippet"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		BaiduSearchEnabled: true,
+		BaiduSearchAPIKey:  "test-baidu-key",
+		BaiduSearchBaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"query": "test query",
+		"range": "d",
+	})
+	if result.IsError {
+		t.Fatalf("expected success, got %s", result.ForLLM)
 	}
 }
 

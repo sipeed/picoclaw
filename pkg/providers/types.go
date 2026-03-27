@@ -71,13 +71,14 @@ type NativeSearchCapable interface {
 type FailoverReason string
 
 const (
-	FailoverAuth       FailoverReason = "auth"
-	FailoverRateLimit  FailoverReason = "rate_limit"
-	FailoverBilling    FailoverReason = "billing"
-	FailoverTimeout    FailoverReason = "timeout"
-	FailoverFormat     FailoverReason = "format"
-	FailoverOverloaded FailoverReason = "overloaded"
-	FailoverUnknown    FailoverReason = "unknown"
+	FailoverAuth            FailoverReason = "auth"
+	FailoverRateLimit       FailoverReason = "rate_limit"
+	FailoverBilling         FailoverReason = "billing"
+	FailoverTimeout         FailoverReason = "timeout"
+	FailoverFormat          FailoverReason = "format"
+	FailoverContextOverflow FailoverReason = "context_overflow"
+	FailoverOverloaded      FailoverReason = "overloaded"
+	FailoverUnknown         FailoverReason = "unknown"
 )
 
 // FailoverError wraps an LLM provider error with classification metadata.
@@ -101,7 +102,7 @@ func (e *FailoverError) Unwrap() error {
 // IsRetriable returns true if this error should trigger fallback to next candidate.
 // Non-retriable: Format errors (bad request structure, image dimension/size).
 func (e *FailoverError) IsRetriable() bool {
-	return e.Reason != FailoverFormat
+	return e.Reason != FailoverFormat && e.Reason != FailoverContextOverflow
 }
 
 // ModelConfig holds primary model and fallback list.

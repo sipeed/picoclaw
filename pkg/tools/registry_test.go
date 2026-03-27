@@ -3,10 +3,13 @@ package tools
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -44,6 +47,15 @@ type mockAsyncRegistryTool struct {
 func (m *mockAsyncRegistryTool) ExecuteAsync(_ context.Context, args map[string]any, cb AsyncCallback) *ToolResult {
 	m.lastCB = cb
 	return m.result
+}
+
+type mockMediaStoreAwareTool struct {
+	mockRegistryTool
+	store media.MediaStore
+}
+
+func (m *mockMediaStoreAwareTool) SetMediaStore(store media.MediaStore) {
+	m.store = store
 }
 
 // --- helpers ---
@@ -619,5 +631,104 @@ func TestToolRegistry_Execute_PanicDoesNotAffectOtherTools(t *testing.T) {
 	}
 	if result2.ForLLM != "success" {
 		t.Errorf("expected 'success', got %q", result2.ForLLM)
+	}
+}
+
+func TestToolRegistry_SetMediaStore_PropagatesToExistingAndNewTools(t *testing.T) {
+	r := NewToolRegistry()
+	store := media.NewFileMediaStore()
+
+	existing := &mockMediaStoreAwareTool{
+		mockRegistryTool: *newMockTool("existing", "existing tool"),
+	}
+	r.Register(existing)
+
+	r.SetMediaStore(store)
+	if existing.store != store {
+		t.Fatal("expected existing tool to receive media store")
+	}
+
+	later := &mockMediaStoreAwareTool{
+		mockRegistryTool: *newMockTool("later", "later tool"),
+	}
+	r.Register(later)
+
+	if later.store != store {
+		t.Fatal("expected newly registered tool to inherit media store")
+	}
+}
+
+func TestToolRegistry_ExecuteWithContext_SanitizesLargeBase64Payload(t *testing.T) {
+	r := NewToolRegistry()
+	payload := strings.Repeat("QUJD", 400)
+	r.Register(&mockRegistryTool{
+		name:   "base64_tool",
+		desc:   "returns huge base64",
+		params: map[string]any{},
+		result: SilentResult(payload),
+	})
+
+	result := r.ExecuteWithContext(context.Background(), "base64_tool", nil, "telegram", "chat-1", nil)
+
+	if result.ForLLM != largeBase64OmittedMessage {
+		t.Fatalf("expected sanitized payload, got %q", result.ForLLM)
+	}
+}
+
+func TestToolRegistry_ExecuteWithContext_ExtractsInlineMediaDataURL(t *testing.T) {
+	r := NewToolRegistry()
+	store := media.NewFileMediaStore()
+	r.SetMediaStore(store)
+
+	payload := "![screenshot](data:image/png;base64,aGVsbG8=)"
+	r.Register(&mockRegistryTool{
+		name:   "inline_media_tool",
+		desc:   "returns inline data url",
+		params: map[string]any{},
+		result: SilentResult(payload),
+	})
+
+	result := r.ExecuteWithContext(context.Background(), "inline_media_tool", nil, "telegram", "chat-42", nil)
+
+	if len(result.Media) != 1 {
+		t.Fatalf("expected 1 media ref, got %d", len(result.Media))
+	}
+	if strings.Contains(result.ForLLM, "data:image/png;base64") {
+		t.Fatalf("expected inline data URL to be stripped from ForLLM, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "registered as a media attachment") {
+		t.Fatalf("expected delivery note in ForLLM, got %q", result.ForLLM)
+	}
+
+	path, err := store.Resolve(result.Media[0])
+	if err != nil {
+		t.Fatalf("expected stored media ref to resolve: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected stored media file to exist: %v", err)
+	}
+	if filepath.Ext(path) != ".png" {
+		t.Fatalf("expected stored inline media to use png extension, got %q", path)
+	}
+}
+
+func TestToolRegistry_ExecuteWithContext_SanitizesInlineMediaWithoutStore(t *testing.T) {
+	r := NewToolRegistry()
+
+	payload := "before ![img](data:image/png;base64,aGVsbG8=) after"
+	r.Register(&mockRegistryTool{
+		name:   "inline_media_no_store",
+		desc:   "returns inline data url without store",
+		params: map[string]any{},
+		result: SilentResult(payload),
+	})
+
+	result := r.ExecuteWithContext(context.Background(), "inline_media_no_store", nil, "telegram", "chat-42", nil)
+
+	if strings.Contains(result.ForLLM, "data:image/png;base64") {
+		t.Fatalf("expected inline data URL to be removed from ForLLM, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, inlineMediaOmittedMessage) {
+		t.Fatalf("expected inline media omission note, got %q", result.ForLLM)
 	}
 }

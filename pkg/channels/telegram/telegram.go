@@ -402,10 +402,7 @@ func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (s
 		return "", nil
 	}
 
-	text := phCfg.Text
-	if text == "" {
-		text = "Thinking... 💭"
-	}
+	text := phCfg.GetRandomText()
 
 	cid, threadID, err := parseTelegramChatID(chatID)
 	if err != nil {
@@ -642,8 +639,12 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		}
 	}
 
+	if content == "" && len(mediaPaths) == 0 {
+		return nil
+	}
+
 	if content == "" {
-		content = "[empty message]"
+		content = "[media only]"
 	}
 
 	// In group chats, apply unified group trigger filtering
