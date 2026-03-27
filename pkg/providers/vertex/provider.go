@@ -87,7 +87,14 @@ func (p *Provider) buildURL(model string, action string) string {
 		if region == "" {
 			region = "us-central1"
 		}
-		baseURL = fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:%s", region, p.projectID, region, model, action)
+		baseURL = fmt.Sprintf(
+			"https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:%s",
+			region,
+			p.projectID,
+			region,
+			model,
+			action,
+		)
 	}
 
 	// Only append ?key= for custom apiBase endpoints
