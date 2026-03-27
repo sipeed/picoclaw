@@ -450,7 +450,7 @@ PicoClaw puede buscar en la web para proporcionar información actualizada. Conf
 | Motor de Búsqueda | Clave API | Plan Gratuito | Enlace |
 |-------------------|-----------|---------------|--------|
 | DuckDuckGo | No requerida | Ilimitado | Fallback integrado |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Requerida | 1000 consultas/día | Optimizado para IA, optimizado para China |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Requerida | 1000 consultas/día | Potenciado por IA, optimizado para China |
 | [Tavily](https://tavily.com) | Requerida | 1000 consultas/mes | Optimizado para Agentes de IA |
 | [Brave Search](https://brave.com/search/api) | Requerida | 2000 consultas/mes | Rápido y privado |
 | [Perplexity](https://www.perplexity.ai) | Requerida | De pago | Búsqueda potenciada por IA |
