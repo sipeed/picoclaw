@@ -177,7 +177,11 @@ func setupAndStartChannelServices(
 	}
 
 	if runningServices.ListenHost != "" {
-		fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", runningServices.ListenHost, runningServices.ListenPort)
+		fmt.Printf(
+			"✓ Health endpoints available at http://%s:%d/health and /ready\n",
+			runningServices.ListenHost,
+			runningServices.ListenPort,
+		)
 	} else {
 		fmt.Println("⚠ Shared HTTP server disabled; /health and webhook endpoints are unavailable")
 	}
@@ -190,10 +194,14 @@ func resolveChannelOnlyListenHost(host string, port int) (string, error) {
 		return host, nil
 	} else if isLoopbackHost(host) {
 		if fallbackErr := probeTCPBind("0.0.0.0", port); fallbackErr == nil {
-			logger.WarnCF("channels", "Loopback host unavailable in channel-only mode, fallback to wildcard", map[string]any{
-				"host": host,
-				"port": port,
-			})
+			logger.WarnCF(
+				"channels",
+				"Loopback host unavailable in channel-only mode, fallback to wildcard",
+				map[string]any{
+					"host": host,
+					"port": port,
+				},
+			)
 			return "0.0.0.0", nil
 		}
 		return "", fmt.Errorf("bind %s:%d failed: %w", host, port, err)
@@ -221,7 +229,11 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func shutdownChannelRuntime(runningServices *channelServices, agentLoop *agent.AgentLoop, provider providers.LLMProvider) {
+func shutdownChannelRuntime(
+	runningServices *channelServices,
+	agentLoop *agent.AgentLoop,
+	provider providers.LLMProvider,
+) {
 	if cp, ok := provider.(providers.StatefulProvider); ok {
 		cp.Close()
 	}

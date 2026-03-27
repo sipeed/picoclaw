@@ -21,7 +21,7 @@ func newStartCommand() *cobra.Command {
 		Short: "Start channels without gateway side services",
 		Long: "Start enabled channels and AgentLoop without gateway side services.\n\n" +
 			"This mode is channel-agnostic and follows your config. Current runtime validation is primarily focused on QQ; other channels are continuously validated.",
-		Args:  cobra.NoArgs,
+		Args: cobra.NoArgs,
 		PreRunE: func(_ *cobra.Command, _ []string) error {
 			if noTruncate && !debug {
 				return fmt.Errorf("the --no-truncate option can only be used in conjunction with --debug (-d)")

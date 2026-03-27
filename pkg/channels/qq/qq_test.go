@@ -135,7 +135,9 @@ func TestHandleGroupATMessage_PrefersGroupOpenIDFromRawPayload(t *testing.T) {
 		ctx:         context.Background(),
 	}
 
-	raw := []byte(`{"d":{"group_openid":"group-openid-abc","author":{"id":"legacy-member-id","member_openid":"member-openid-xyz"}}}`)
+	raw := []byte(
+		`{"d":{"group_openid":"group-openid-abc","author":{"id":"legacy-member-id","member_openid":"member-openid-xyz"}}}`,
+	)
 	err := ch.handleGroupATMessage()(&dto.WSPayload{RawMessage: raw}, &dto.WSGroupATMessageData{
 		ID:      "group-openid-msg",
 		GroupID: "legacy-group-id",
@@ -169,7 +171,9 @@ func TestHandleGroupATMessage_AllowListFallsBackToLegacyMemberID(t *testing.T) {
 		ctx:         context.Background(),
 	}
 
-	raw := []byte(`{"d":{"group_openid":"group-openid-abc","author":{"id":"legacy-member-id","member_openid":"member-openid-xyz"}}}`)
+	raw := []byte(
+		`{"d":{"group_openid":"group-openid-abc","author":{"id":"legacy-member-id","member_openid":"member-openid-xyz"}}}`,
+	)
 	err := ch.handleGroupATMessage()(&dto.WSPayload{RawMessage: raw}, &dto.WSGroupATMessageData{
 		ID:      "group-allow-fallback",
 		GroupID: "legacy-group-id",
@@ -196,11 +200,11 @@ func TestHandleGroupATMessage_AllowListFallsBackToLegacyMemberID(t *testing.T) {
 
 func TestParseQQOpenIDs(t *testing.T) {
 	tests := []struct {
-		name         string
-		raw          []byte
-		wantUser     string
-		wantMember   string
-		wantGroup    string
+		name       string
+		raw        []byte
+		wantUser   string
+		wantMember string
+		wantGroup  string
 	}{
 		{
 			name:       "empty",
@@ -217,8 +221,10 @@ func TestParseQQOpenIDs(t *testing.T) {
 			wantGroup:  "",
 		},
 		{
-			name:       "all openids",
-			raw:        []byte(`{"d":{"group_openid":"group-1","author":{"user_openid":"user-1","member_openid":"member-1"}}}`),
+			name: "all openids",
+			raw: []byte(
+				`{"d":{"group_openid":"group-1","author":{"user_openid":"user-1","member_openid":"member-1"}}}`,
+			),
 			wantUser:   "user-1",
 			wantMember: "member-1",
 			wantGroup:  "group-1",
