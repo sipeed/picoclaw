@@ -53,7 +53,13 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 	// Try []interface{} to handle mixed types
 	var raw []any
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
+		var s string
+		// fail over to compatible to old format string
+		if err = json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		*f = []string{s}
+		return nil
 	}
 
 	result := make([]string, 0, len(raw))
