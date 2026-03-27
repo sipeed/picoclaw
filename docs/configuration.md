@@ -295,8 +295,8 @@ Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous
 |------------|------|---------|-------------|
 | `tools.read_file.enabled` | bool | `true` | Enables the `read_file` tool |
 | `tools.read_file.mode` | string | `bytes` | Selects the `read_file` implementation: `bytes` or `lines` |
-| `tools.read_file.max_read_file_size` | int | `65536` | Maximum bytes returned by `read_file` and byte budget used by `read_file_lines` |
-| `tools.read_file_lines.enabled` | bool | `false` | Enables the separate line-oriented `read_file_lines` tool |
+| `tools.read_file.max_read_file_size` | int | `65536` | Maximum bytes returned by `read_file` and byte budget used by `read_file` |
+| `tools.read_file.enabled` | bool | `false` | Enables the separate line-oriented `read_file` tool |
 
 #### Mode: `bytes`
 
@@ -328,9 +328,8 @@ Behavior notes:
 
 * Binary-looking files are rejected with guidance to use `read_file`
 * Extremely long single lines are truncated rather than skipped
-* If truncation happens mid-line, the tool explicitly suggests falling back to `read_file` for byte-wise inspection
 
-Use `read_file_lines` when:
+Use `mode = lines` when:
 
 * The agent mostly reads text files
 * You want line-based pagination in prompts and tool calls

@@ -59,8 +59,13 @@ func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 	}
 
 	// Should contain error message
-	if !strings.Contains(result.ForLLM, "failed to open file") && !strings.Contains(result.ForUser, "failed to open") {
-		t.Errorf("Expected error message, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
+	if !strings.Contains(result.ForLLM, "failed to open file") &&
+		!strings.Contains(result.ForUser, "failed to open") {
+		t.Errorf(
+			"Expected error message, got ForLLM: %s, ForUser: %s",
+			result.ForLLM,
+			result.ForUser,
+		)
 	}
 }
 
@@ -78,7 +83,8 @@ func TestFilesystemTool_ReadFile_MissingPath(t *testing.T) {
 	}
 
 	// Should mention required parameter
-	if !strings.Contains(result.ForLLM, "path is required") && !strings.Contains(result.ForUser, "path is required") {
+	if !strings.Contains(result.ForLLM, "path is required") &&
+		!strings.Contains(result.ForUser, "path is required") {
 		t.Errorf("Expected 'path is required' message, got ForLLM: %s", result.ForLLM)
 	}
 }
@@ -297,7 +303,12 @@ func TestFilesystemTool_WriteFile_OverwriteSandboxed(t *testing.T) {
 		"content":   "replaced in sandbox",
 		"overwrite": true,
 	})
-	assert.False(t, result.IsError, "expected success in sandbox mode with overwrite=true, got: %s", result.ForLLM)
+	assert.False(
+		t,
+		result.IsError,
+		"expected success in sandbox mode with overwrite=true, got: %s",
+		result.ForLLM,
+	)
 
 	data, err := os.ReadFile(filepath.Join(workspace, testFile))
 	assert.NoError(t, err)
@@ -325,7 +336,8 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 	}
 
 	// Should list files and directories
-	if !strings.Contains(result.ForLLM, "file1.txt") || !strings.Contains(result.ForLLM, "file2.txt") {
+	if !strings.Contains(result.ForLLM, "file1.txt") ||
+		!strings.Contains(result.ForLLM, "file2.txt") {
 		t.Errorf("Expected files in listing, got: %s", result.ForLLM)
 	}
 	if !strings.Contains(result.ForLLM, "subdir") {
@@ -349,8 +361,13 @@ func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 	}
 
 	// Should contain error message
-	if !strings.Contains(result.ForLLM, "failed to read") && !strings.Contains(result.ForUser, "failed to read") {
-		t.Errorf("Expected error message, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
+	if !strings.Contains(result.ForLLM, "failed to read") &&
+		!strings.Contains(result.ForUser, "failed to read") {
+		t.Errorf(
+			"Expected error message, got ForLLM: %s, ForUser: %s",
+			result.ForLLM,
+			result.ForUser,
+		)
 	}
 }
 
@@ -397,7 +414,8 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 	// os.Root might return different errors depending on platform/implementation
 	// but it definitely should error.
 	// Our wrapper returns "access denied or file not found"
-	if !strings.Contains(result.ForLLM, "access denied") && !strings.Contains(result.ForLLM, "file not found") &&
+	if !strings.Contains(result.ForLLM, "access denied") &&
+		!strings.Contains(result.ForLLM, "file not found") &&
 		!strings.Contains(result.ForLLM, "no such file") {
 		t.Fatalf("expected symlink escape error, got: %s", result.ForLLM)
 	}
@@ -416,10 +434,20 @@ func TestFilesystemTool_EmptyWorkspace_AccessDenied(t *testing.T) {
 	})
 
 	// We EXPECT IsError=true (access blocked due to empty workspace)
-	assert.True(t, result.IsError, "Security Regression: Empty workspace allowed access! content: %s", result.ForLLM)
+	assert.True(
+		t,
+		result.IsError,
+		"Security Regression: Empty workspace allowed access! content: %s",
+		result.ForLLM,
+	)
 
 	// Verify it failed for the right reason
-	assert.Contains(t, result.ForLLM, "workspace is not defined", "Expected 'workspace is not defined' error")
+	assert.Contains(
+		t,
+		result.ForLLM,
+		"workspace is not defined",
+		"Expected 'workspace is not defined' error",
+	)
 }
 
 // TestRootMkdirAll verifies that root.MkdirAll (used by atomicWriteFileInRoot) handles all cases:
@@ -653,7 +681,10 @@ func TestWhitelistFs_BlocksSymlinkEscapeInAllowedDir(t *testing.T) {
 	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(allowedDir))}
 	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
 
-	result := tool.Execute(context.Background(), map[string]any{"path": filepath.Join(linkPath, "secret.txt")})
+	result := tool.Execute(
+		context.Background(),
+		map[string]any{"path": filepath.Join(linkPath, "secret.txt")},
+	)
 	if !result.IsError {
 		t.Fatalf("expected symlink escape from allowed dir to be blocked, got: %s", result.ForLLM)
 	}
@@ -1011,9 +1042,6 @@ func TestReadFileLinesTool_TruncatesSingleLongLineAtByteBudget(t *testing.T) {
 	}
 	if !strings.Contains(result.ForLLM, "was cut mid-line") {
 		t.Fatalf("expected explicit mid-line truncation warning, got: %s", result.ForLLM)
-	}
-	if !strings.Contains(result.ForLLM, "Use read_file for byte-wise inspection") {
-		t.Fatalf("expected byte-tool guidance for long line, got: %s", result.ForLLM)
 	}
 	if strings.Contains(result.ForLLM, "second line") {
 		t.Fatalf("did not expect second line after truncation, got: %s", result.ForLLM)

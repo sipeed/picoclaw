@@ -24,7 +24,11 @@ import (
 
 const MaxReadFileSize = 64 * 1024 // 64KB limit to avoid context overflow
 
-func validatePathWithAllowPaths(path, workspace string, restrict bool, patterns []*regexp.Regexp) (string, error) {
+func validatePathWithAllowPaths(
+	path, workspace string,
+	restrict bool,
+	patterns []*regexp.Regexp,
+) (string, error) {
 	if workspace == "" {
 		return path, fmt.Errorf("workspace is not defined")
 	}
@@ -328,7 +332,7 @@ func (t *ReadFileTool) Description() string {
 }
 
 func (t *ReadFileLinesTool) Description() string {
-	return "Read a UTF-8 text file from a specific line range. Uses 1-indexed line offsets and stops when the configured byte budget is reached."
+	return "Read a UTF-8 text file from the filesystem. Output always includes line numbers in the format `LINE_NUMBER|LINE_CONTENT` (1-indexed). Supports partial reads via `start_line` and `max_lines` for large text files."
 }
 
 func (t *ReadFileTool) Parameters() map[string]any {
@@ -638,18 +642,18 @@ func (t *ReadFileLinesTool) Execute(ctx context.Context, args map[string]any) *T
 	switch {
 	case lineTruncated:
 		header += fmt.Sprintf(
-			"\n[TRUNCATED - line %d exceeded the %d byte read budget and was cut mid-line. Use read_file for byte-wise inspection of the remaining content.]",
+			"\n[TRUNCATED - line %d exceeded the %d byte read budget and was cut mid-line.",
 			endLine,
 			t.maxSize,
 		)
 	case byteBudgetTruncated:
 		header += fmt.Sprintf(
-			"\n[TRUNCATED - byte budget reached. Call read_file_lines again with offset=%d to continue at the next line.]",
+			"\n[TRUNCATED - byte budget reached. Call read_file again with offset=%d to continue at the next line.]",
 			startLine+linesRead,
 		)
 	case !reachedEOF && limit > 0 && linesRead >= limit:
 		header += fmt.Sprintf(
-			"\n[PARTIAL - more content remains. Call read_file_lines again with offset=%d to continue.]",
+			"\n[PARTIAL - more content remains. Call read_file again with offset=%d to continue.]",
 			startLine+linesRead,
 		)
 	default:
@@ -822,7 +826,11 @@ type WriteFileTool struct {
 	fs fileSystem
 }
 
-func NewWriteFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *WriteFileTool {
+func NewWriteFileTool(
+	workspace string,
+	restrict bool,
+	allowPaths ...[]*regexp.Regexp,
+) *WriteFileTool {
 	var patterns []*regexp.Regexp
 	if len(allowPaths) > 0 {
 		patterns = allowPaths[0]
@@ -875,7 +883,9 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 
 	if !overwrite {
 		if _, err := t.fs.Open(path); err == nil {
-			return ErrorResult(fmt.Sprintf("file: %s already exists. Set overwrite=true to replace.", path))
+			return ErrorResult(
+				fmt.Sprintf("file: %s already exists. Set overwrite=true to replace.", path),
+			)
 		}
 	}
 
