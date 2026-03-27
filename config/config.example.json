@@ -428,6 +428,13 @@
     },
     "write_file": {
       "enabled": true
+    },
+    "affine": {
+      "enabled": false,
+      "mcp_endpoint": "https://app.affine.pro/api/workspaces/YOUR_WORKSPACE_ID/mcp",
+      "api_key": "YOUR_AFFINE_MCP_TOKEN",
+      "workspace_id": "YOUR_WORKSPACE_ID",
+      "timeout_seconds": 30
     }
   },
   "heartbeat": {

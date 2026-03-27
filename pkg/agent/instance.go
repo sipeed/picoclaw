@@ -99,6 +99,16 @@ func NewAgentInstance(
 		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
 	}
 
+	// Register Affine tool if enabled
+	if cfg.Tools.Affine.Enabled && cfg.Tools.Affine.MCPEndpoint != "" {
+		toolsRegistry.Register(tools.NewAffineSimpleTool(tools.AffineSimpleToolOptions{
+			MCPEndpoint:    cfg.Tools.Affine.MCPEndpoint,
+			APIKey:         cfg.Tools.Affine.APIKey,
+			WorkspaceID:    cfg.Tools.Affine.WorkspaceID,
+			TimeoutSeconds: cfg.Tools.Affine.TimeoutSeconds,
+		}))
+	}
+
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessions := initSessionStore(sessionsDir)
 

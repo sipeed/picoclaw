@@ -1156,6 +1156,15 @@ type ReadFileToolConfig struct {
 	MaxReadFileSize int  `json:"max_read_file_size"`
 }
 
+type AffineConfig struct {
+	Enabled        bool   `json:"enabled"         env:"PICOCLAW_TOOLS_AFFINE_ENABLED"`
+	APIURL         string `json:"api_url"         env:"PICOCLAW_TOOLS_AFFINE_API_URL"`
+	APIKey         string `json:"api_key"         env:"PICOCLAW_TOOLS_AFFINE_API_KEY"`
+	WorkspaceID    string `json:"workspace_id"    env:"PICOCLAW_TOOLS_AFFINE_WORKSPACE_ID"`
+	TimeoutSeconds int    `json:"timeout_seconds" env:"PICOCLAW_TOOLS_AFFINE_TIMEOUT_SECONDS"`
+	MCPEndpoint    string `json:"mcp_endpoint"    env:"PICOCLAW_TOOLS_AFFINE_MCP_ENDPOINT"` // Optional: direct MCP endpoint URL
+}
+
 type ToolsConfig struct {
 	AllowReadPaths  []string `json:"allow_read_paths"  env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
 	AllowWritePaths []string `json:"allow_write_paths" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
@@ -1188,6 +1197,7 @@ type ToolsConfig struct {
 	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
 	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig         `json:"write_file"                                               envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
+	Affine          AffineConfig       `json:"affine"`
 }
 
 // IsFilterSensitiveDataEnabled returns true if sensitive data filtering is enabled

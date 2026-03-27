@@ -115,7 +115,7 @@ all: build
 generate:
 	@echo "Run generate..."
 	@rm -r ./$(CMD_DIR)/workspace 2>/dev/null || true
-	@$(GO) generate ./...
+	@GOTOOLCHAIN=auto $(GO) generate ./...
 	@echo "Run generate complete"
 
 ## build: Build the picoclaw binary for current platform
