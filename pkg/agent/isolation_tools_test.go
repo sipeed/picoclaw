@@ -195,8 +195,8 @@ func TestProcessMessage_IsolatedTenant_UsesPrivateWorkspace(t *testing.T) {
 	}
 
 	// Verify history is in the base sessions directory with the isolated key
-	// agent:::main:tenant-A becomes agent___main_tenant-A
-	isoSessionPath := filepath.Join(tmpDir, "sessions", "agent___main_tenant-A.jsonl")
+	// agent:main:tenant-A becomes agent_main_tenant-A
+	isoSessionPath := filepath.Join(tmpDir, "sessions", "agent_main_tenant-A.jsonl")
 	if _, err := os.Stat(isoSessionPath); os.IsNotExist(err) {
 		t.Errorf("expected history at %s to exist", isoSessionPath)
 	} else {
