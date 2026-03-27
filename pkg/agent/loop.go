@@ -1375,6 +1375,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			// Set its ID to match the routed agent so prompts and logs match
 			agent.ID = route.AgentID
 
+			// Inject media store so tools (like send_file) can function
+			agent.Tools.SetMediaStore(al.mediaStore)
+
 			// Re-register shared tools (web, message, spawn) to this transient agent
 			// We pass a mini-registry containing only this agent
 			registerSharedTools(al, al.cfg, al.bus, &AgentRegistry{agents: map[string]*AgentInstance{agent.ID: agent}}, baseAgent.Provider)
