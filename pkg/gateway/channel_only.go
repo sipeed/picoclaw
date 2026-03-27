@@ -68,7 +68,7 @@ func RunChannelsOnly(debug bool, homePath, configPath string, allowEmptyStartup 
 	}
 
 	if allowEmptyStartup {
-		fmt.Println("⚠️ Channel-only runtime started in limited mode (--allow-empty); no startup agents are configured.")
+		fmt.Println(" ⚠ Channel-only runtime started in limited mode")
 	}
 	if modelID != "" {
 		cfg.Agents.Defaults.ModelName = modelID
