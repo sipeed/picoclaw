@@ -148,7 +148,10 @@ func TestResolveToolCall_FromNameAndArguments(t *testing.T) {
 		Name:      "get_weather",
 		Arguments: map[string]any{"city": "SF"},
 	}
-	name, args := ResolveToolCall(tc)
+	name, args, ok := ResolveToolCall(tc)
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
 	if name != "get_weather" {
 		t.Errorf("name = %q, want %q", name, "get_weather")
 	}
@@ -165,7 +168,10 @@ func TestResolveToolCall_FromFunctionField(t *testing.T) {
 			Arguments: `{"path":"README.md"}`,
 		},
 	}
-	name, args := ResolveToolCall(tc)
+	name, args, ok := ResolveToolCall(tc)
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
 	if name != "read_file" {
 		t.Errorf("name = %q, want %q", name, "read_file")
 	}
@@ -176,15 +182,18 @@ func TestResolveToolCall_FromFunctionField(t *testing.T) {
 
 func TestResolveToolCall_EmptyName(t *testing.T) {
 	tc := protocoltypes.ToolCall{}
-	name, _ := ResolveToolCall(tc)
-	if name != "" {
-		t.Errorf("name = %q, want empty", name)
+	_, _, ok := ResolveToolCall(tc)
+	if ok {
+		t.Error("expected ok=false for empty tool call")
 	}
 }
 
 func TestResolveToolCall_NoArgsFallsBackToEmptyObject(t *testing.T) {
 	tc := protocoltypes.ToolCall{Name: "do_something"}
-	name, args := ResolveToolCall(tc)
+	name, args, ok := ResolveToolCall(tc)
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
 	if name != "do_something" {
 		t.Errorf("name = %q, want %q", name, "do_something")
 	}
