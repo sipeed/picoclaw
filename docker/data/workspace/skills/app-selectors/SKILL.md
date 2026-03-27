@@ -5,7 +5,7 @@ description: Global login and organization selection flow for dashboard.int3nt.i
 
 # Global Login & Org Selection
 
-> Generated: 2026-03-27T06:39:25.621Z
+> Generated: 2026-03-27T09:36:49.125Z
 
 ## Test Credentials
 

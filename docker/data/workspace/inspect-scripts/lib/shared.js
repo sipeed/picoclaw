@@ -101,6 +101,7 @@ async function extractAllComponents(page) {
       dialogs: [], menus: [],
       expansionPanels: [], navDrawerItems: [], toolbarItems: [], pagination: [],
       images: [], avatarCount: 0, badges: [], hasDividers: false, tooltipTriggers: [],
+      vueFlow: null, monacoEditors: [],
       elementRegistry: [],
     };
 
@@ -371,6 +372,80 @@ async function extractAllComponents(page) {
     // TOOLTIPS
     document.querySelectorAll('[title]:not(iframe)').forEach(el => { if (isVis(el) && el.title && el.title.length < 200) C.tooltipTriggers.push({ tooltip: el.title, tag: el.tagName.toLowerCase() }); });
     C.tooltipTriggers = C.tooltipTriggers.slice(0, 20);
+
+    // VUE FLOW — nodes, edges, panels, toolbar controls
+    // Use permissive check: just look for the root element existing, skip isVis
+    // because the canvas container may have unusual layout (overflow, transforms).
+    const vfRoot = document.querySelector('.vue-flow, .basic-flow, .dnd-flow');
+    if (vfRoot) {
+      const vf = { nodes: [], edges: [], panels: [], hasCanvas: true };
+
+      // Nodes may be inside a deeply transformed container; query globally
+      document.querySelectorAll('[data-id].vue-flow__node, .vue-flow__node[data-id]').forEach(node => {
+        const dataId = node.getAttribute('data-id') || '';
+        const typeClass = Array.from(node.classList).find(c => c.startsWith('vue-flow__node-') && c !== 'vue-flow__node') || '';
+        const nodeType = typeClass.replace('vue-flow__node-', '');
+        const label = node.querySelector('.node-container span, .terminal-node span, .default-node span')?.textContent?.trim() || dataId;
+        const icon = node.querySelector('.mdi')
+          ? Array.from(node.querySelector('.mdi').classList).find(c => c.startsWith('mdi-') && c !== 'mdi') || ''
+          : '';
+        vf.nodes.push({ dataId, nodeType, label, icon, selector: `[data-id="${dataId}"]` });
+      });
+
+      // Fallback: if no nodes found via class, try by data-id inside the flow container
+      if (!vf.nodes.length) {
+        vfRoot.querySelectorAll('[data-id][role="group"]').forEach(node => {
+          const dataId = node.getAttribute('data-id') || '';
+          const label = node.querySelector('span')?.textContent?.trim() || dataId;
+          vf.nodes.push({ dataId, nodeType: 'unknown', label, icon: '', selector: `[data-id="${dataId}"]` });
+        });
+      }
+
+      document.querySelectorAll('.vue-flow__edge, [data-id][aria-roledescription="edge"]').forEach(edge => {
+        const dataId = edge.getAttribute('data-id') || '';
+        const ariaLabel = edge.getAttribute('aria-label') || '';
+        const pathEl = edge.querySelector('path.vue-flow__edge-path') || edge.querySelector('path[class*="edge-path"]');
+        const source = pathEl?.getAttribute('source') || '';
+        const target = pathEl?.getAttribute('target') || '';
+        vf.edges.push({ dataId, source, target, ariaLabel, selector: `[data-id="${dataId}"]` });
+      });
+
+      document.querySelectorAll('.vue-flow__panel').forEach(panel => {
+        const posClasses = Array.from(panel.classList).filter(c => /^(top|bottom|left|right)$/.test(c));
+        const position = posClasses.join(' ') || 'unknown';
+        const buttons = [];
+        panel.querySelectorAll('button, [role="button"], .v-icon--clickable').forEach(btn => {
+          const r = btn.getBoundingClientRect();
+          if (r.width < 5 || r.height < 5) return;
+          const btnText = btn.textContent?.trim().replace(/\s+/g, ' ') || '';
+          const iconEl = btn.querySelector('.mdi, [class*="mdi-"]');
+          const iconCls = iconEl ? Array.from(iconEl.classList).find(c => c.startsWith('mdi-') && c !== 'mdi') || '' : '';
+          const cc = Array.from(btn.classList).filter(c => c.length > 2 && !FW_RE.test(c));
+          buttons.push({ text: btnText, icon: iconCls, customClass: cc[0] || '', selector: cc[0] ? `.${cc[0]}` : (iconCls ? `button:has(.${iconCls})` : '') });
+        });
+        vf.panels.push({ position, buttons });
+      });
+
+      C.vueFlow = vf;
+    }
+
+    // MONACO EDITORS
+    document.querySelectorAll('.overflow-guard, .monaco-editor').forEach((editor, i) => {
+      if (!isVis(editor)) return;
+      const rect = editor.getBoundingClientRect();
+      const textarea = editor.querySelector('textarea[role="textbox"]');
+      const ariaLabel = textarea?.getAttribute('aria-label') || '';
+      const lineCount = editor.querySelectorAll('.view-line').length;
+      C.monacoEditors.push({
+        index: i,
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        ariaLabel,
+        lineCount,
+        selector: `page.locator('.overflow-guard').nth(${i})`,
+        textareaSelector: `page.locator('textarea[role="textbox"]').nth(${i})`,
+      });
+    });
 
     // ELEMENT REGISTRY — all elements with custom classes, IDs, or test IDs
     const regSeen = new Set();
@@ -925,7 +1000,174 @@ async function inspectPage(page, url, pageName, skipExploration = false) {
     console.log('  ④ Modals...'); modals = await exploreModals(page, url);
     console.log('  ⑤ Panels...'); panels = await exploreExpansionPanels(page);
     console.log('  ⑥ Dropdowns...'); dropdowns = await exploreDropdowns(page);
-  } else { console.log('  ③–⑥ Skipping exploration (public page)'); }
+    // ⑦ Vue Flow exploration — panel buttons + node clicks
+    if (components.vueFlow) {
+      const vf = components.vueFlow;
+      console.log(`  ⑦ Vue Flow (${vf.nodes.length} nodes, ${vf.edges.length} edges, ${vf.panels.length} panels)...`);
+
+      // Helper: after clicking something on the flow canvas, detect what appeared.
+      // Checks Vuetify overlays, then custom dropdown menus (non-Vuetify), then Vuetify menus.
+      async function detectFlowUIAfterClick(page, beforeKeys, triggerLabel) {
+        // 1. Standard Vuetify overlay (modals, dialogs)
+        const overlay = await identifyNewOverlay(page, beforeKeys);
+        if (overlay) {
+          console.log(`    ✓ Overlay: ${overlay.selector} (${overlay.allClasses})`);
+          try {
+            const loadEl = page.locator('.v-overlay--active, .custom-drawer-overlay').locator('text=/loading/i').first();
+            if (await loadEl.isVisible({ timeout: 1000 }).catch(() => false)) {
+              await loadEl.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+              await page.waitForTimeout(1000);
+            }
+          } catch (_) {}
+          const comps = await extractAllComponents(page);
+          const dds = await exploreDropdowns(page);
+          modals.push({ trigger: triggerLabel, overlaySelector: overlay.selector, overlayClassName: overlay.allClasses, overlayId: overlay.id, components: comps, dropdowns: dds, subExplorations: [] });
+          await closeAnyOverlay(page, overlay.selector);
+          await forceCloseAllOverlays(page, url);
+          return true;
+        }
+
+        // 2. Custom dropdown menus (not Vuetify overlays — rendered inline/absolute)
+        const customDDSels = [
+          '[class*="dropdown-menu"]:visible',
+          '.custom-dialog:visible',
+          '.modal-card:visible',
+        ];
+        for (const ddSel of customDDSels) {
+          try {
+            const dd = page.locator(ddSel).first();
+            if (await dd.isVisible({ timeout: 1000 }).catch(() => false)) {
+              const ddClass = await dd.evaluate(el => {
+                const cc = Array.from(el.classList).filter(c => c.length > 2 && !/^(v-|pa-|ma-|d-|text-)/.test(c));
+                return cc[0] || el.className?.toString?.().slice(0, 60) || 'custom-dropdown';
+              });
+              console.log(`    ✓ Custom dropdown: .${ddClass}`);
+              const comps = await extractAllComponents(page);
+              const dds = await exploreDropdowns(page);
+              const items = await dd.locator('[class*="dropdown-item"]').allTextContents().catch(() => []);
+              modals.push({ trigger: triggerLabel, overlaySelector: `.${ddClass}`, overlayClassName: ddClass, overlayId: '', components: comps, dropdowns: dds, subExplorations: [], menuItems: items.map(t => t.trim()).filter(Boolean) });
+              // Close by clicking elsewhere or Escape
+              await page.keyboard.press('Escape');
+              await page.waitForTimeout(500);
+              // If still visible, click on the canvas background to dismiss
+              if (await dd.isVisible({ timeout: 300 }).catch(() => false)) {
+                await page.locator('.vue-flow__pane').click({ position: { x: 10, y: 10 }, force: true }).catch(() => {});
+                await page.waitForTimeout(500);
+              }
+              return true;
+            }
+          } catch (_) {}
+        }
+
+        // 3. Vuetify overlay that may have appeared (re-check directly)
+        try {
+          const directOverlay = page.locator('.v-overlay--active .v-card, .v-overlay--active .v-list').first();
+          if (await directOverlay.isVisible({ timeout: 1000 }).catch(() => false)) {
+            const isList = await directOverlay.evaluate(el => el.classList.contains('v-list'));
+            if (isList) {
+              console.log('    ✓ Vuetify menu appeared');
+              const items = await page.locator('.v-overlay--active .v-list-item').allTextContents();
+              const comps = await extractAllComponents(page);
+              modals.push({ trigger: triggerLabel, overlaySelector: '.v-overlay--active', overlayClassName: '', overlayId: '', components: comps, dropdowns: [], subExplorations: [], menuItems: items.map(t => t.trim()).filter(Boolean) });
+            } else {
+              console.log('    ✓ Vuetify modal appeared');
+              const comps = await extractAllComponents(page);
+              const dds = await exploreDropdowns(page);
+              modals.push({ trigger: triggerLabel, overlaySelector: '.v-overlay--active .v-card', overlayClassName: '', overlayId: '', components: comps, dropdowns: dds, subExplorations: [] });
+            }
+            await page.keyboard.press('Escape');
+            await page.waitForTimeout(500);
+            await forceCloseAllOverlays(page, url).catch(() => {});
+            return true;
+          }
+        } catch (_) {}
+
+        console.log(`    ✗ No UI detected from "${triggerLabel}"`);
+        return false;
+      }
+
+      // 7a: Click each panel button to discover menus/overlays/dropdowns
+      const SKIP_ICONS = /mdi-undo|mdi-redo|mdi-magnify-minus|mdi-magnify-plus|mdi-content-save/i;
+      for (const panel of vf.panels) {
+        for (const btn of panel.buttons) {
+          if (!btn.selector) continue;
+          if (SKIP_ICONS.test(btn.icon)) continue;
+          if (btn.customClass && /history-button-container/i.test(btn.customClass)) continue;
+          try {
+            const el = page.locator(btn.selector).first();
+            if (!(await el.isVisible({ timeout: 1500 }).catch(() => false))) continue;
+            if (await el.evaluate(e => e.disabled || e.classList.contains('v-btn--disabled')).catch(() => false)) continue;
+
+            // Dismiss anything open first
+            await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+            await page.locator('.vue-flow__pane').click({ position: { x: 10, y: 10 }, force: true }).catch(() => {});
+            await page.waitForTimeout(300);
+            await forceCloseAllOverlays(page, url).catch(() => {});
+            await page.waitForTimeout(300);
+
+            const beforeSnap = await snapshotOverlays(page);
+            const beforeKeys = beforeSnap.map(o => `${o.tag}|${o.className}|${o.id}`);
+            const label = btn.text || btn.icon || btn.customClass;
+            console.log(`    🔍 Clicking panel button "${label}" (${btn.selector})...`);
+            await el.click({ timeout: CLICK_TIMEOUT_MS });
+            await page.waitForTimeout(3000);
+
+            await detectFlowUIAfterClick(page, beforeKeys, `Panel: ${label}`);
+          } catch (e) {
+            console.log(`    ✗ Panel button "${btn.text || btn.icon}": ${e.message?.slice(0, 60)}`);
+            await page.keyboard.press('Escape').catch(() => {});
+            await forceCloseAllOverlays(page, url).catch(() => {});
+          }
+        }
+      }
+
+      // 7b: Click each non-terminal node to discover config modals/drawers
+      for (const node of vf.nodes) {
+        if (/^(START|END)$/i.test(node.dataId)) continue;
+        try {
+          const nodeEl = page.locator(`[data-id="${node.dataId}"]`).first();
+          if (!(await nodeEl.isVisible({ timeout: 2000 }).catch(() => false))) continue;
+
+          await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+          await forceCloseAllOverlays(page, url).catch(() => {});
+          const beforeSnap = await snapshotOverlays(page);
+          const beforeKeys = beforeSnap.map(o => `${o.tag}|${o.className}|${o.id}`);
+          console.log(`    🔍 Clicking node "${node.label}" (${node.dataId})...`);
+          await nodeEl.click({ timeout: CLICK_TIMEOUT_MS });
+          await page.waitForTimeout(2000);
+
+          await detectFlowUIAfterClick(page, beforeKeys, `Node: ${node.label}`);
+        } catch (e) {
+          console.log(`    ✗ Node "${node.label}": ${e.message?.slice(0, 60)}`);
+          await page.keyboard.press('Escape').catch(() => {});
+          await forceCloseAllOverlays(page, url).catch(() => {});
+        }
+      }
+
+      // 7c: Click each edge to discover edge config modals
+      for (const edge of vf.edges) {
+        try {
+          const edgeEl = page.locator(`[data-id="${edge.dataId}"]`).first();
+          if (!(await edgeEl.isVisible({ timeout: 2000 }).catch(() => false))) continue;
+
+          await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+          await forceCloseAllOverlays(page, url).catch(() => {});
+          const beforeSnap = await snapshotOverlays(page);
+          const beforeKeys = beforeSnap.map(o => `${o.tag}|${o.className}|${o.id}`);
+          const edgeLabel = edge.ariaLabel || `${edge.source} → ${edge.target}`;
+          console.log(`    🔍 Clicking edge "${edgeLabel}" (${edge.dataId})...`);
+          await edgeEl.click({ timeout: CLICK_TIMEOUT_MS });
+          await page.waitForTimeout(2000);
+
+          await detectFlowUIAfterClick(page, beforeKeys, `Edge: ${edgeLabel}`);
+        } catch (e) {
+          console.log(`    ✗ Edge "${edge.dataId}": ${e.message?.slice(0, 60)}`);
+          await page.keyboard.press('Escape').catch(() => {});
+          await forceCloseAllOverlays(page, url).catch(() => {});
+        }
+      }
+    }
+  } else { console.log('  ③–⑦ Skipping exploration (public page)'); }
   const explored = { tabs, modals, panels, dropdowns };
   const counts = Object.entries(components).filter(([, v]) => Array.isArray(v) ? v.length > 0 : (typeof v === 'number' ? v > 0 : !!v)).map(([k, v]) => `${k}:${Array.isArray(v) ? v.length : v}`).join('  ');
   console.log(`  → ${counts}`);
@@ -1066,6 +1308,61 @@ function generatePageSection(data) {
   if (C.btnToggles?.length) { s += '**Button Toggles (\`.v-btn-toggle\`):**\n'; C.btnToggles.forEach((bt, i) => { const sel = pickSel(bt, `.v-btn-toggle:nth(${i})`); const active = bt.options.find(o => o.active); s += `- **${bt.groupLabel || 'Toggle ' + (i + 1)}:** ${bt.options.map(o => o.text).join(' | ')}`; if (active) s += ` — active: "${active.text}"`; s += '\n  Selector: \`page.locator(\'' + sel + '\')\`\n  To select an option: \`page.locator(\'' + sel + '\').getByText(\'OPTION_TEXT\').click()\`\n'; }); s += '\n'; }
   if (C.fileInputs.length) { s += `**File Inputs:**\n`; C.fileInputs.forEach((fi, i) => { s += `- ${fi.label || `File ${i + 1}`}`; if (fi.accept) s += ` (${fi.accept})`; s += `\n`; }); s += '\n'; }
 
+  // VUE FLOW
+  if (C.vueFlow) {
+    const vf = C.vueFlow;
+    s += '### Vue Flow Canvas\n\n';
+    s += 'Container: `page.locator(\'.vue-flow\')`\n\n';
+
+    if (vf.nodes.length) {
+      s += `**Nodes (${vf.nodes.length}):**\n\n`;
+      s += '| data-id | Type | Label | Icon | Selector |\n|---------|------|-------|------|----------|\n';
+      vf.nodes.forEach(n => {
+        s += `| ${n.dataId} | ${n.nodeType} | ${n.label} | ${n.icon} | \`page.locator('${n.selector}')\` |\n`;
+      });
+      s += '\n';
+      s += 'To click a node: `await page.locator(\'[data-id="NODE_ID"]\').click();`\n\n';
+    }
+
+    if (vf.edges.length) {
+      s += `**Edges (${vf.edges.length}):**\n\n`;
+      s += '| data-id | Source | Target | Description |\n|---------|--------|--------|-------------|\n';
+      vf.edges.forEach(e => {
+        s += `| ${e.dataId} | ${e.source} | ${e.target} | ${e.ariaLabel} |\n`;
+      });
+      s += '\n';
+      s += 'To click an edge: `await page.locator(\'[data-id="EDGE_ID"]\').click();`\n\n';
+    }
+
+    if (vf.panels.length) {
+      s += '**Toolbar Panels:**\n\n';
+      vf.panels.forEach(p => {
+        if (!p.buttons.length) return;
+        s += `- **${p.position}**: `;
+        s += p.buttons.map(b => {
+          const label = b.text || b.icon || 'icon-button';
+          const sel = b.selector || 'button';
+          return '`' + label + '` (' + sel + ')';
+        }).join(', ');
+        s += '\n';
+      });
+      s += '\n';
+    }
+  }
+
+  // MONACO EDITORS
+  if (C.monacoEditors?.length) {
+    s += `**Monaco Code Editors (${C.monacoEditors.length}):**\n\n`;
+    C.monacoEditors.forEach((ed, i) => {
+      s += `- Editor ${i + 1}: ${ed.width}x${ed.height}px, ${ed.lineCount} visible lines`;
+      if (ed.ariaLabel) s += `, aria-label: "${ed.ariaLabel}"`;
+      s += '\n';
+      s += `  Container: \`${ed.selector}\`\n`;
+      s += `  To type into editor: \`await ${ed.textareaSelector}.fill('code here');\` or use \`await ${ed.textareaSelector}.type('code');\`\n`;
+    });
+    s += '\n';
+  }
+
   const panelTitleSet = new Set((C.expansionPanels || []).map(p => (p.title || '').replace(/\s+/g, ' ').trim()).filter(Boolean));
   const stableBtns = []; const dynBtns = [];
   C.buttons.forEach(btn => {
@@ -1123,9 +1420,18 @@ function generatePageSection(data) {
   if (data.explored?.modals?.length) {
     s += `#### Discovered Modals / Dialogs\n\n`;
     for (const m of data.explored.modals) {
-      s += `**Trigger:** \`page.locator('button:has-text("${m.trigger}")').click()\`\n`;
+      const trigger = m.trigger || '';
+      if (/^(Node|Panel|Menu):/.test(trigger)) {
+        s += `**Trigger:** ${trigger}\n`;
+      } else {
+        s += `**Trigger:** \`page.locator('button:has-text("${trigger}")').click()\`\n`;
+      }
       if (m.overlaySelector) { s += `**Overlay:** \`page.locator('${m.overlaySelector}')\`\n**Wait:** \`await page.locator('${m.overlaySelector}').waitFor({ state: 'visible', timeout: 10000 })\`\n`; }
       if (m.overlayClassName) s += `**Classes:** \`${m.overlayClassName}\`\n`;
+      if (m.menuItems?.length) {
+        s += `**Menu items:** ${m.menuItems.map(t => `\`${t}\``).join(', ')}\n`;
+        s += `  Pick: \`await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /ITEM_TEXT/ }).click()\`\n`;
+      }
       s += '\n' + summarize(m.components, m.overlaySelector);
       if (m.dropdowns?.length) {
         s += `**Dropdowns in modal:**\n`;
@@ -1194,6 +1500,8 @@ function summarize(C, overlaySel) {
   if (C.switches?.length) extra.push(`${C.switches.length} switch(es)`);
   if (C.tables?.length) extra.push(`${C.tables.length} table(s)`);
   if (C.cards?.length) extra.push(`${C.cards.length} card(s)`);
+  if (C.vueFlow) extra.push(`Vue Flow: ${C.vueFlow.nodes.length} node(s), ${C.vueFlow.edges.length} edge(s)`);
+  if (C.monacoEditors?.length) extra.push(`${C.monacoEditors.length} Monaco editor(s)`);
   if (C.headings?.length) extra.push(`headings: ${C.headings.map(h => h.text).join(', ')}`);
   const sb = (C.buttons || []).filter(b => {
     const normalized = (b.text || '').replace(/\s+/g, ' ').trim();
@@ -1240,7 +1548,7 @@ async function runAllInspections() {
   ];
   const PROTECTED = [
     { path: '/', name: 'Dashboard' }, { path: '/manage-chatbot', name: 'Manage Chatbot' },
-    { path: '/config-test', name: 'Config Test' }, { path: '/flow-designer', name: 'Flow Designer' }, { path: '/flow-designer/209', name: 'Flow Designer Canvas' },
+    { path: '/config-test', name: 'Config Test' }, { path: '/flow-designer', name: 'Flow Designer' }, { path: '/flow-designer/206', name: 'Flow Designer Canvas' },
     { path: '/knowledge-management', name: 'Knowledge Management' }, { path: '/knowledge-base', name: 'Knowledge Base' },
     { path: '/sentiment', name: 'Sentiment Dashboard' }, { path: '/organization', name: 'Organization' },
     { path: '/profile', name: 'Profile' }, { path: '/change-email', name: 'Change Email' },

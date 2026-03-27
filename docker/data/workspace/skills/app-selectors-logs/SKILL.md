@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Logs page on dashboard.int3
 
 # Logs — Component Map
 
-> Generated: 2026-03-27T06:44:04.043Z
+> Generated: 2026-03-27T09:44:14.264Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Logs

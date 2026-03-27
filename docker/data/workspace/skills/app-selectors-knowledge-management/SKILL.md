@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Knowledge Management page o
 
 # Knowledge Management — Component Map
 
-> Generated: 2026-03-27T06:40:08.537Z
+> Generated: 2026-03-27T09:40:19.423Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Knowledge Management

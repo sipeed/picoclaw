@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Set Password Page page on d
 
 # Set Password Page — Component Map
 
-> Generated: 2026-03-27T06:39:15.612Z
+> Generated: 2026-03-27T09:36:39.194Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Set Password Page

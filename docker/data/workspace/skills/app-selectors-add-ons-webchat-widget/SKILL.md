@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Add-Ons Webchat Widget page
 
 # Add-Ons Webchat Widget — Component Map
 
-> Generated: 2026-03-27T06:44:19.611Z
+> Generated: 2026-03-27T09:44:31.357Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Add-Ons Webchat Widget

@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Add-Ons Twilio Detail page 
 
 # Add-Ons Twilio Detail — Component Map
 
-> Generated: 2026-03-27T06:44:35.546Z
+> Generated: 2026-03-27T09:44:48.256Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Add-Ons Twilio Detail

@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Sentiment Dashboard page on
 
 # Sentiment Dashboard — Component Map
 
-> Generated: 2026-03-27T06:41:44.786Z
+> Generated: 2026-03-27T09:41:54.793Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Sentiment Dashboard

@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Add-Ons Webchat Widget Inst
 
 # Add-Ons Webchat Widget Install — Component Map
 
-> Generated: 2026-03-27T06:44:29.646Z
+> Generated: 2026-03-27T09:44:42.321Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Add-Ons Webchat Widget Install
@@ -32,7 +32,7 @@ description: DOM selectors and component map for the Add-Ons Webchat Widget Inst
 - **Service ID** (select)
   - Selector: `.v-select:nth(0)`
   - Open: `page.locator('.v-select:nth(0)').click()`
-  - Options: `Untitled`, `Untitled`, `Untitled`, `Untitled`
+  - Options: `Testing`, `Untitled`, `Untitled`, `Untitled`
   - Pick: `page.locator('.v-list-item:has-text("OPTION")').click()`
 
 **Buttons (2):**

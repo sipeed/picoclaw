@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Add-Ons Twilio Install page
 
 # Add-Ons Twilio Install — Component Map
 
-> Generated: 2026-03-27T06:44:43.615Z
+> Generated: 2026-03-27T09:44:56.337Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Add-Ons Twilio Install
@@ -35,7 +35,7 @@ description: DOM selectors and component map for the Add-Ons Twilio Install page
 - **Service ID** (select)
   - Selector: `.v-select:nth(0)`
   - Open: `page.locator('.v-select:nth(0)').click()`
-  - Options: `Untitled`, `Untitled`, `Untitled`, `Untitled`
+  - Options: `Testing`, `Untitled`, `Untitled`, `Untitled`
   - Pick: `page.locator('.v-list-item:has-text("OPTION")').click()`
 - **Token Streaming Mode (optional)** (select) — current: "Disabled (no streaming)"
   - Selector: `.v-select:nth(1)`

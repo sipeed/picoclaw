@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Dashboard page on dashboard
 
 # Dashboard — Component Map
 
-> Generated: 2026-03-27T06:39:30.905Z
+> Generated: 2026-03-27T09:36:54.321Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Dashboard

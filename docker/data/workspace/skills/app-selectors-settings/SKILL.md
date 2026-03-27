@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Settings page on dashboard.
 
 # Settings — Component Map
 
-> Generated: 2026-03-27T06:43:54.322Z
+> Generated: 2026-03-27T09:44:04.416Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Settings

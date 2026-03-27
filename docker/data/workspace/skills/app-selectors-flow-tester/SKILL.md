@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 
 # Flow Tester — Component Map
 
-> Generated: 2026-03-27T06:44:54.834Z
+> Generated: 2026-03-27T09:45:14.390Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Flow Tester
@@ -17,7 +17,7 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 
 **Text Content (3):**
 - [p] "Organization" → `.org-title`
-- [v-card-title] "Select Conversation FlowUntitledSelect Versionv1.0Enable SSEOnOff" → `.chatbox-title`
+- [v-card-title] "Select Conversation FlowTestingSelect VersionEdited else edgeEnable SSEOnOff" → `.chatbox-title`
 - [v-card-text] "Additional bot response"
 
 **Input Fields (1):**
@@ -29,10 +29,10 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 **Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
 **Dropdowns / Selects (1):**
-- **Select Conversation Flow** (select) — current: "Untitled"
+- **Select Conversation Flow** (select) — current: "Testing"
   - Selector: `.tester-select`
   - Open: `page.locator('.tester-select').click()`
-  - Options: `Untitled`, `Untitled`, `Untitled`, `Untitled`
+  - Options: `Testing`, `Untitled`, `Untitled`, `Untitled`
   - Pick: `page.locator('.v-list-item:has-text("OPTION")').click()`
 
 **Button Toggles (`.v-btn-toggle`):**
@@ -50,7 +50,7 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 - mdi-pencil-outline (`mdi-pencil-outline`) → `.change-logo-btn`
 
 **Cards (1):**
-- **Select Conversation FlowUntitledSelect Versionv1.0Enable SSEOnOff** → `.tester-container-card`
+- **Select Conversation FlowTestingSelect VersionEdited else edgeEnable SSEOnOff** → `.tester-container-card`
   "Additional bot response"
 
 **Sidebar (8):**
@@ -95,14 +95,14 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 | `.menu-item-container` | `div` | `menu-item-container` | Dashboard |
 | `.mdi` | `i` | `mdi notranslate menu-item-icon` |  |
 | `.menu-item` | `span` | `menu-item` | Dashboard |
-| `.main-layout-margin-left` | `main` | `main-layout-margin-left` | Select Conversation FlowUntitledSelect Versionv1.0Enable SSE |
-| `.tester-container` | `div` | `tester-container` | Select Conversation FlowUntitledSelect Versionv1.0Enable SSE |
-| `.tester-container-card` | `div` | `tester-container-card` | Select Conversation FlowUntitledSelect Versionv1.0Enable SSE |
-| `.chatbox-title` | `div` | `chatbox-title` | Select Conversation FlowUntitledSelect Versionv1.0Enable SSE |
-| `.tester-select` | `div` | `tester-select` | Untitled |
-| `.version-selector-container` | `div` | `version-selector-container` | v1.0 |
-| `.version-selector-button` | `button` | `version-selector-button` | v1.0 |
-| `.version-selector-text` | `span` | `version-selector-text` | v1.0 |
+| `.main-layout-margin-left` | `main` | `main-layout-margin-left` | Select Conversation FlowTestingSelect VersionEdited else edg |
+| `.tester-container` | `div` | `tester-container` | Select Conversation FlowTestingSelect VersionEdited else edg |
+| `.tester-container-card` | `div` | `tester-container-card` | Select Conversation FlowTestingSelect VersionEdited else edg |
+| `.chatbox-title` | `div` | `chatbox-title` | Select Conversation FlowTestingSelect VersionEdited else edg |
+| `.tester-select` | `div` | `tester-select` | Testing |
+| `.version-selector-container` | `div` | `version-selector-container` | Edited else edge |
+| `.version-selector-button` | `button` | `version-selector-button` | Edited else edge |
+| `.version-selector-text` | `span` | `version-selector-text` | Edited else edge |
 | `.stream-toggle` | `div` | `stream-toggle` | Enable SSEOnOff |
 | `.stream-toggle-label` | `h4` | `stream-toggle-label` | Enable SSE |
 | `.stream-toggle-buttons` | `div` | `stream-toggle-buttons` | OnOff |
@@ -112,6 +112,26 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 | `` | `label` | `` | Type here |
 | `` | `input` | `` |  |
 
+#### Discovered Modals / Dialogs
+
+**Trigger:** `page.locator('button:has-text("Edited else edge")').click()`
+**Overlay:** `page.locator('.version-dropdown-menu')`
+**Wait:** `await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 10000 })`
+**Classes:** `version-dropdown-menu`
+
+- 1 input(s): Type here
+- 2 dropdown(s): Select Conversation Flow, ?
+- toggle(s): Enable SSE [**On** | Off]
+- 1 card(s)
+- headings: Select Version, Enable SSE
+- buttons: Edited else edge, On, Off
+- custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
+
+**Dropdowns in modal:**
+- **"Select Conversation Flow"**: `Testing`, `Untitled`, `Untitled`, `Untitled`
+  Open: `page.locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(0).click()`
+  Pick: `await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click()`
+
 #### Explored Expansion Panels
 
 **Panel "Additional bot response" (0):**
@@ -120,7 +140,7 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 - toggle(s): Enable SSE [**On** | Off]
 - 1 card(s)
 - headings: Enable SSE
-- buttons: v1.0, On, Off
+- buttons: Edited else edge, On, Off
 - custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
 
 ---

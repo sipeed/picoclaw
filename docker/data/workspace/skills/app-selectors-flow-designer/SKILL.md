@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Flow Designer page on dashb
 
 # Flow Designer — Component Map
 
-> Generated: 2026-03-27T06:39:56.521Z
+> Generated: 2026-03-27T09:37:20.035Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Flow Designer
@@ -56,12 +56,12 @@ description: DOM selectors and component map for the Flow Designer page on dashb
 **Table 1:** `.flow-data-table`
 - Columns: `Flow Name` | `Last Update` | `Actions`
 - Rows: 3 (paginated)
-- Sample: Untitled | 27 Mar 2026, 6:29 AM | 
+- Sample: Untitled | 27 Mar 2026, 9:33 AM | 
 
 **Table 2:**
 - Columns: `Flow Name` | `Last Update` | `Actions`
 - Rows: 3
-- Sample: Untitled | 27 Mar 2026, 6:29 AM | 
+- Sample: Untitled | 27 Mar 2026, 9:33 AM | 
 
 **Sidebar (8):**
 - `page.locator('a:has-text("Dashboard")')`
@@ -109,12 +109,12 @@ description: DOM selectors and component map for the Flow Designer page on dashb
 | `.tab-header` | `div` | `tab-header` | ActiveArchived |
 | `.tab` | `div` | `tab active` | Active |
 | `.tab` | `div` | `tab` | Archived |
-| `.flow-table-container` | `div` | `flow-table-container` | Flow NameLast UpdateActionsUntitled27 Mar 2026, 6:29 AMUntit |
+| `.flow-table-container` | `div` | `flow-table-container` | Flow NameLast UpdateActionsUntitled27 Mar 2026, 9:33 AMUntit |
 | `.table-controls` | `div` | `table-controls` |  |
 | `.search-section` | `div` | `search-section` |  |
 | `.search-input` | `div` | `search-input` |  |
 | `` | `input` | `` |  |
-| `.flow-data-table` | `div` | `flow-data-table` | Flow NameLast UpdateActionsUntitled27 Mar 2026, 6:29 AMUntit |
+| `.flow-data-table` | `div` | `flow-data-table` | Flow NameLast UpdateActionsUntitled27 Mar 2026, 9:33 AMUntit |
 | `.action-icons` | `div` | `action-icons` |  |
 | `.action-btn` | `button` | `action-btn` |  |
 | `[data-testid="v-pagination-root"]` | `nav` | `` |  |

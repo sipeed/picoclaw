@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Add-Ons page on dashboard.i
 
 # Add-Ons — Component Map
 
-> Generated: 2026-03-27T06:44:13.487Z
+> Generated: 2026-03-27T09:44:24.211Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Add-Ons

@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 
 # Knowledge Base — Component Map
 
-> Generated: 2026-03-27T06:41:31.203Z
+> Generated: 2026-03-27T09:41:41.702Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Knowledge Base
@@ -279,6 +279,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 3 input(s): Enter knowledge group name, Enter the name of GCS Bucket (Optional), Limit access to a specific folder/path prefix
 - 1 textarea(s)
 - 2 dropdown(s): LLM transformer model to parse documents (optional), Source Type *
+- 2 Monaco editor(s)
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Google Cloud Storage Configuration
 - buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Test Connection, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer

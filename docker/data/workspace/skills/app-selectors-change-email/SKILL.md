@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Change Email page on dashbo
 
 # Change Email — Component Map
 
-> Generated: 2026-03-27T06:43:34.164Z
+> Generated: 2026-03-27T09:43:44.482Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Change Email

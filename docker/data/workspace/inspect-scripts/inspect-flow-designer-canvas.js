@@ -10,5 +10,6 @@ if (!flowId) {
 runPageInspection({
   path: `/flow-designer/${flowId}`,
   name: `Flow Designer Canvas ${flowId}`,
+  skillFolder: 'app-selectors-flow-designer-canvas',
   needsLogin: true,
 });
