@@ -353,7 +353,6 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 			"chat_kind": chatKind,
 			"error":     err.Error(),
 		})
-		fmt.Printf("QQ send failed: %v\n", err)
 		return fmt.Errorf("qq send: %w", channels.ErrTemporary)
 	}
 
