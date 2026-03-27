@@ -425,6 +425,13 @@ func DefaultConfig() *Config {
 				AllowRemote:        true,
 				TimeoutSeconds:     60,
 			},
+			Execline: ExeclineConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
+				DenyDefaultsEnable: true,
+				TimeoutSeconds:     60,
+			},
 			Skills: SkillsToolsConfig{
 				ToolConfig: ToolConfig{
 					Enabled: true,
