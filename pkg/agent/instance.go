@@ -164,6 +164,19 @@ func NewAgentInstance(
 		summarizeTokenPercent = 75
 	}
 
+	// Try to create a provider specific to this agent's model. This allows agents
+	// configured with a different provider type (e.g. claude-cli, codex-cli) to
+	// work independently of the global default HTTP provider.
+	// The agent's workspace is injected so CLI-based providers run in the right directory.
+	if agentModelCfg, err := resolvedModelConfig(cfg, model, workspace); err == nil {
+		if agentProvider, _, err := providers.CreateProviderFromConfig(agentModelCfg); err == nil {
+			provider = agentProvider
+		} else {
+			logger.WarnCF("agent", "Per-agent provider init failed; using global provider",
+				map[string]any{"agent_id": agentID, "model": model, "error": err.Error()})
+		}
+	}
+
 	// Resolve fallback candidates
 	candidates := resolveModelCandidates(cfg, defaults.Provider, model, fallbacks)
 
