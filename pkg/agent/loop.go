@@ -110,7 +110,7 @@ const (
 	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
 	toolRepeatLoopResponse     = "Detected repeated tool calls without progress; stopping to avoid an infinite loop."
 	handledToolResponseSummary = "Requested output delivered via tool attachment."
-	sessionKeyAgentPrefix      = "agent::"
+	sessionKeyAgentPrefix      = "agent"
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"
@@ -1333,64 +1333,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
-	route, baseAgent, routeErr := al.resolveMessageRoute(msg)
+	route, _, routeErr := al.resolveMessageRoute(msg)
 	if routeErr != nil {
 		return "", routeErr
 	}
 
-	agent := baseAgent
-	isolationID := msg.ChatID
-	if isolationID != "" && isolationID != "direct" {
-		// Check agent instance cache first (keyed by channel:chatID)
-		cacheKey := msg.Channel + ":" + isolationID
-		if cached, ok := al.agentCache.Load(cacheKey); ok {
-			agent = cached.(*AgentInstance)
-			// Update last access time for TTL tracking
-			al.lastCacheCheck.Store(cacheKey, time.Now())
-
-			logger.InfoCF("agent", "Reusing cached agent instance", map[string]any{
-				"agent_id":     agent.ID,
-				"cache_key":    cacheKey,
-				"isolation_id": isolationID,
-			})
-		} else {
-			// Create a transient isolated instance for this chat session
-			// This ensures workspace, memory, and sessions are private to the chat_id.
-
-			// Determine the original config for this agent to preserve its specialized prompt/skills
-			var ac *config.AgentConfig
-			for i := range al.cfg.Agents.List {
-				if routing.NormalizeAgentID(al.cfg.Agents.List[i].ID) == route.AgentID {
-					ac = &al.cfg.Agents.List[i]
-					break
-				}
-			}
-
-			// Create a new instance with the isolationID
-			// NewAgentInstance uses isolationID to sub-path the workspace
-			agent = NewAgentInstance(ac, &al.cfg.Agents.Defaults, al.cfg, baseAgent.Provider, isolationID)
-
-			// Set its ID to match the routed agent so prompts and logs match
-			agent.ID = route.AgentID
-
-			// Inject media store so tools (like send_file) can function
-			agent.Tools.SetMediaStore(al.mediaStore)
-
-			// Re-register shared tools (web, message, spawn) to this transient agent
-			// We pass a mini-registry containing only this agent
-			registerSharedTools(al, al.cfg, al.bus, &AgentRegistry{agents: map[string]*AgentInstance{agent.ID: agent}}, baseAgent.Provider)
-
-			// Cache this agent instance per chat session
-			al.agentCache.Store(cacheKey, agent)
-			al.lastCacheCheck.Store(cacheKey, time.Now())
-
-			logger.InfoCF("agent", "Created isolated transient agent", map[string]any{
-				"agent_id":     agent.ID,
-				"cache_key":    cacheKey,
-				"isolation_id": isolationID,
-				"workspace":    agent.Workspace,
-			})
-		}
+	agent, err := al.getOrCreateIsolatedAgent(route.AgentID, msg.Channel, msg.ChatID)
+	if err != nil {
+		return "", err
 	}
 
 	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
@@ -1510,6 +1460,68 @@ func (al *AgentLoop) requeueInboundMessage(msg bus.InboundMessage) error {
 	})
 }
 
+func (al *AgentLoop) getOrCreateIsolatedAgent(agentID, channel, isolationID string) (*AgentInstance, error) {
+	if isolationID == "" || isolationID == "direct" {
+		agent, ok := al.GetRegistry().GetAgent(agentID)
+		if !ok {
+			agent = al.GetRegistry().GetDefaultAgent()
+		}
+		if agent == nil {
+			return nil, fmt.Errorf("no agent available for id %s", agentID)
+		}
+		return agent, nil
+	}
+
+	cacheKey := channel + ":" + isolationID
+	if cached, ok := al.agentCache.Load(cacheKey); ok {
+		agent := cached.(*AgentInstance)
+		al.lastCacheCheck.Store(cacheKey, time.Now())
+		return agent, nil
+	}
+
+	// Create a transient isolated instance for this chat session
+	// This ensures workspace, memory, and sessions are private to the chat_id.
+
+	// Determine the original config for this agent to preserve its specialized prompt/skills
+	var ac *config.AgentConfig
+	for i := range al.cfg.Agents.List {
+		if routing.NormalizeAgentID(al.cfg.Agents.List[i].ID) == agentID {
+			ac = &al.cfg.Agents.List[i]
+			break
+		}
+	}
+
+	baseAgent, ok := al.GetRegistry().GetAgent(agentID)
+	if !ok {
+		baseAgent = al.GetRegistry().GetDefaultAgent()
+	}
+	if baseAgent == nil {
+		return nil, fmt.Errorf("base agent %s not found", agentID)
+	}
+
+	agent := NewAgentInstance(ac, &al.cfg.Agents.Defaults, al.cfg, baseAgent.Provider, isolationID)
+	agent.ID = agentID
+
+	// Inject media store so tools (like send_file) can function
+	agent.Tools.SetMediaStore(al.mediaStore)
+
+	// Re-register shared tools (web, message, spawn) to this transient agent
+	registerSharedTools(al, al.cfg, al.bus, &AgentRegistry{agents: map[string]*AgentInstance{agent.ID: agent}}, baseAgent.Provider)
+
+	// Cache this agent instance per chat session
+	al.agentCache.Store(cacheKey, agent)
+	al.lastCacheCheck.Store(cacheKey, time.Now())
+
+	logger.InfoCF("agent", "Created isolated transient agent", map[string]any{
+		"agent_id":     agent.ID,
+		"cache_key":    cacheKey,
+		"isolation_id": isolationID,
+		"workspace":    agent.Workspace,
+	})
+
+	return agent, nil
+}
+
 func (al *AgentLoop) processSystemMessage(
 	ctx context.Context,
 	msg bus.InboundMessage,
@@ -1555,14 +1567,18 @@ func (al *AgentLoop) processSystemMessage(
 		return "", nil
 	}
 
-	// Use default agent for system messages
-	agent := al.GetRegistry().GetDefaultAgent()
-	if agent == nil {
-		return "", fmt.Errorf("no default agent for system message")
+	// Use default agent for system messages, but lookup/create isolated tenant instances
+	// that match the origin of the follow-up task. This ensures workspace isolation.
+	agent, err := al.getOrCreateIsolatedAgent(routing.DefaultAgentID, originChannel, originChatID)
+	if err != nil {
+		return "", err
 	}
 
-	// Use the origin session for context
-	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
+	// Use provided session key if available, otherwise fall back to main
+	sessionKey := msg.SessionKey
+	if sessionKey == "" {
+		sessionKey = routing.BuildAgentMainSessionKey(agent.ID)
+	}
 
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
@@ -2229,21 +2245,16 @@ turnLoop:
 			},
 		)
 
-		llmResponseFields := map[string]any{
-			"agent_id":       ts.agent.ID,
-			"iteration":      iteration,
-			"content_chars":  len(response.Content),
-			"tool_calls":     len(response.ToolCalls),
-			"reasoning":      response.Reasoning,
-			"target_channel": al.targetReasoningChannelID(ts.channel),
-			"channel":        ts.channel,
-		}
-		if response.Usage != nil {
-			llmResponseFields["prompt_tokens"] = response.Usage.PromptTokens
-			llmResponseFields["completion_tokens"] = response.Usage.CompletionTokens
-			llmResponseFields["total_tokens"] = response.Usage.TotalTokens
-		}
-		logger.DebugCF("agent", "LLM response", llmResponseFields)
+		logger.DebugCF("agent", "LLM response",
+			map[string]any{
+				"agent_id":       ts.agent.ID,
+				"iteration":      iteration,
+				"content_chars":  len(response.Content),
+				"tool_calls":     len(response.ToolCalls),
+				"reasoning":      response.Reasoning,
+				"target_channel": al.targetReasoningChannelID(ts.channel),
+				"channel":        ts.channel,
+			})
 
 		if len(response.ToolCalls) == 0 || gracefulTerminal {
 			responseContent := response.Content
@@ -2535,10 +2546,11 @@ turnLoop:
 				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer pubCancel()
 				_ = al.bus.PublishInbound(pubCtx, bus.InboundMessage{
-					Channel:  "system",
-					SenderID: fmt.Sprintf("async:%s", asyncToolName),
-					ChatID:   fmt.Sprintf("%s:%s", ts.channel, ts.chatID),
-					Content:  content,
+					Channel:    "system",
+					SenderID:   fmt.Sprintf("async:%s", asyncToolName),
+					ChatID:     fmt.Sprintf("%s:%s", ts.channel, ts.chatID),
+					Content:    content,
+					SessionKey: ts.opts.SessionKey,
 				})
 			}
 
