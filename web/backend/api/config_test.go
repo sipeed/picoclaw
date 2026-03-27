@@ -143,6 +143,197 @@ func TestHandlePatchConfig_AllowsInvalidExecRegexPatternsWhenExecDisabled(t *tes
 	}
 }
 
+func runConfigRequest(t *testing.T, configPath, method, body string) {
+	t.Helper()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(method, "/api/config", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s /api/config status = %d, want %d, body=%s", method, rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+type webSearchAPIKeys struct {
+	brave      string
+	tavily     string
+	perplexity string
+	glm        string
+	baidu      string
+}
+
+func assertWebSearchAPIKeys(t *testing.T, configPath string, want webSearchAPIKeys) {
+	t.Helper()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := cfg.Tools.Web.Brave.APIKey(); got != want.brave {
+		t.Fatalf("tools.web.brave.api_key = %q, want %q", got, want.brave)
+	}
+	if got := cfg.Tools.Web.Tavily.APIKey(); got != want.tavily {
+		t.Fatalf("tools.web.tavily.api_key = %q, want %q", got, want.tavily)
+	}
+	if got := cfg.Tools.Web.Perplexity.APIKey(); got != want.perplexity {
+		t.Fatalf("tools.web.perplexity.api_key = %q, want %q", got, want.perplexity)
+	}
+	if got := cfg.Tools.Web.GLMSearch.APIKey(); got != want.glm {
+		t.Fatalf("tools.web.glm_search.api_key = %q, want %q", got, want.glm)
+	}
+	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != want.baidu {
+		t.Fatalf("tools.web.baidu_search.api_key = %q, want %q", got, want.baidu)
+	}
+}
+
+func TestHandlePatchConfig_PreservesWebSearchAPIKeysWhenOmitted(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	seedWebSearchAPIKeys(t, configPath, webSearchAPIKeys{
+		brave:      "brave-existing-key",
+		tavily:     "tavily-existing-key",
+		perplexity: "perplexity-existing-key",
+		glm:        "glm-existing-key",
+		baidu:      "baidu-existing-key",
+	})
+
+	runConfigRequest(t, configPath, http.MethodPatch, `{
+		"gateway": {
+			"log_level": "info"
+		}
+	}`)
+	assertWebSearchAPIKeys(t, configPath, webSearchAPIKeys{
+		brave:      "brave-existing-key",
+		tavily:     "tavily-existing-key",
+		perplexity: "perplexity-existing-key",
+		glm:        "glm-existing-key",
+		baidu:      "baidu-existing-key",
+	})
+}
+
+func TestHandlePatchConfig_UpdatesWebSearchAPIKeys(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	runConfigRequest(t, configPath, http.MethodPatch, `{
+		"tools": {
+			"web": {
+				"brave": { "api_key": "brave-updated-key" },
+				"tavily": { "api_key": "tavily-updated-key" },
+				"perplexity": { "api_key": "perplexity-updated-key" },
+				"glm_search": { "api_key": "glm-updated-key" },
+				"baidu_search": { "api_key": "baidu-updated-key" }
+			}
+		}
+	}`)
+	assertWebSearchAPIKeys(t, configPath, webSearchAPIKeys{
+		brave:      "brave-updated-key",
+		tavily:     "tavily-updated-key",
+		perplexity: "perplexity-updated-key",
+		glm:        "glm-updated-key",
+		baidu:      "baidu-updated-key",
+	})
+}
+
+func TestHandleUpdateConfig_PreservesWebSearchAPIKeysWhenOmitted(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	seedWebSearchAPIKeys(t, configPath, webSearchAPIKeys{
+		brave:      "brave-existing-key-via-put",
+		tavily:     "tavily-existing-key-via-put",
+		perplexity: "perplexity-existing-key-via-put",
+		glm:        "glm-existing-key-via-put",
+		baidu:      "baidu-existing-key-via-put",
+	})
+
+	runConfigRequest(t, configPath, http.MethodPut, `{
+		"version": 1,
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model_name": "custom-default"
+			}
+		},
+		"model_list": [
+			{
+				"model_name": "custom-default",
+				"model": "openai/gpt-4o",
+				"api_keys": ["sk-default"]
+			}
+		]
+	}`)
+	assertWebSearchAPIKeys(t, configPath, webSearchAPIKeys{
+		brave:      "brave-existing-key-via-put",
+		tavily:     "tavily-existing-key-via-put",
+		perplexity: "perplexity-existing-key-via-put",
+		glm:        "glm-existing-key-via-put",
+		baidu:      "baidu-existing-key-via-put",
+	})
+}
+
+func TestHandleUpdateConfig_UpdatesWebSearchAPIKeys(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	runConfigRequest(t, configPath, http.MethodPut, `{
+		"version": 1,
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model_name": "custom-default"
+			}
+		},
+		"model_list": [
+			{
+				"model_name": "custom-default",
+				"model": "openai/gpt-4o",
+				"api_keys": ["sk-default"]
+			}
+		],
+		"tools": {
+			"web": {
+				"brave": { "api_key": "brave-updated-key-via-put" },
+				"tavily": { "api_key": "tavily-updated-key-via-put" },
+				"perplexity": { "api_key": "perplexity-updated-key-via-put" },
+				"glm_search": { "api_key": "glm-updated-key-via-put" },
+				"baidu_search": { "api_key": "baidu-updated-key-via-put" }
+			}
+		}
+	}`)
+	assertWebSearchAPIKeys(t, configPath, webSearchAPIKeys{
+		brave:      "brave-updated-key-via-put",
+		tavily:     "tavily-updated-key-via-put",
+		perplexity: "perplexity-updated-key-via-put",
+		glm:        "glm-updated-key-via-put",
+		baidu:      "baidu-updated-key-via-put",
+	})
+}
+
+func seedWebSearchAPIKeys(t *testing.T, configPath string, keys webSearchAPIKeys) {
+	t.Helper()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	cfg.Tools.Web.Brave.SetAPIKey(keys.brave)
+	cfg.Tools.Web.Tavily.SetAPIKey(keys.tavily)
+	cfg.Tools.Web.Perplexity.SetAPIKey(keys.perplexity)
+	cfg.Tools.Web.GLMSearch.SetAPIKey(keys.glm)
+	cfg.Tools.Web.BaiduSearch.SetAPIKey(keys.baidu)
+
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+}
+
 // setupPicoEnabledEnv creates a test environment with Pico channel enabled and
 // its token stored only in .security.yml (not in the JSON payload).
 func setupPicoEnabledEnv(t *testing.T) (string, func()) {
