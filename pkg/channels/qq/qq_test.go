@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -59,6 +60,187 @@ func TestHandleC2CMessage_IncludesAccountIDMetadata(t *testing.T) {
 			}
 			return
 		}
+	}
+}
+
+func TestHandleC2CMessage_PrefersUserOpenIDFromRawPayload(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &QQChannel{
+		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		dedup:       make(map[string]time.Time),
+		done:        make(chan struct{}),
+		ctx:         context.Background(),
+	}
+
+	raw := []byte(`{"d":{"author":{"id":"legacy-id","user_openid":"user-openid-123"}}}`)
+	err := ch.handleC2CMessage()(&dto.WSPayload{RawMessage: raw}, &dto.WSC2CMessageData{
+		ID:      "msg-openid",
+		Content: "hello",
+		Author: &dto.User{
+			ID: "legacy-id",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleC2CMessage() error = %v", err)
+	}
+
+	inbound := waitInboundMessage(t, messageBus)
+	if inbound.Metadata["account_id"] != "user-openid-123" {
+		t.Fatalf("account_id metadata = %q, want %q", inbound.Metadata["account_id"], "user-openid-123")
+	}
+	if inbound.ChatID != "user-openid-123" {
+		t.Fatalf("inbound.ChatID = %q, want %q", inbound.ChatID, "user-openid-123")
+	}
+}
+
+func TestHandleC2CMessage_AllowListFallsBackToLegacyID(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &QQChannel{
+		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, []string{"legacy-id"}),
+		dedup:       make(map[string]time.Time),
+		done:        make(chan struct{}),
+		ctx:         context.Background(),
+	}
+
+	raw := []byte(`{"d":{"author":{"id":"legacy-id","user_openid":"user-openid-123"}}}`)
+	err := ch.handleC2CMessage()(&dto.WSPayload{RawMessage: raw}, &dto.WSC2CMessageData{
+		ID:      "msg-allow-fallback",
+		Content: "hello",
+		Author: &dto.User{
+			ID: "legacy-id",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleC2CMessage() error = %v", err)
+	}
+
+	inbound := waitInboundMessage(t, messageBus)
+	if inbound.SenderID != "user-openid-123" {
+		t.Fatalf("inbound.SenderID = %q, want %q", inbound.SenderID, "user-openid-123")
+	}
+	if inbound.Metadata["account_id"] != "user-openid-123" {
+		t.Fatalf("account_id metadata = %q, want %q", inbound.Metadata["account_id"], "user-openid-123")
+	}
+	if inbound.Metadata["legacy_account_id"] != "legacy-id" {
+		t.Fatalf("legacy_account_id metadata = %q, want %q", inbound.Metadata["legacy_account_id"], "legacy-id")
+	}
+}
+
+func TestHandleGroupATMessage_PrefersGroupOpenIDFromRawPayload(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &QQChannel{
+		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		dedup:       make(map[string]time.Time),
+		done:        make(chan struct{}),
+		ctx:         context.Background(),
+	}
+
+	raw := []byte(`{"d":{"group_openid":"group-openid-abc","author":{"id":"legacy-member-id","member_openid":"member-openid-xyz"}}}`)
+	err := ch.handleGroupATMessage()(&dto.WSPayload{RawMessage: raw}, &dto.WSGroupATMessageData{
+		ID:      "group-openid-msg",
+		GroupID: "legacy-group-id",
+		Content: "@bot hello",
+		Author: &dto.User{
+			ID: "legacy-member-id",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleGroupATMessage() error = %v", err)
+	}
+
+	inbound := waitInboundMessage(t, messageBus)
+	if inbound.Peer.ID != "group-openid-abc" {
+		t.Fatalf("inbound.Peer.ID = %q, want %q", inbound.Peer.ID, "group-openid-abc")
+	}
+	if inbound.Metadata["group_id"] != "group-openid-abc" {
+		t.Fatalf("group_id metadata = %q, want %q", inbound.Metadata["group_id"], "group-openid-abc")
+	}
+	if inbound.Metadata["account_id"] != "member-openid-xyz" {
+		t.Fatalf("account_id metadata = %q, want %q", inbound.Metadata["account_id"], "member-openid-xyz")
+	}
+}
+
+func TestHandleGroupATMessage_AllowListFallsBackToLegacyMemberID(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &QQChannel{
+		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, []string{"legacy-member-id"}),
+		dedup:       make(map[string]time.Time),
+		done:        make(chan struct{}),
+		ctx:         context.Background(),
+	}
+
+	raw := []byte(`{"d":{"group_openid":"group-openid-abc","author":{"id":"legacy-member-id","member_openid":"member-openid-xyz"}}}`)
+	err := ch.handleGroupATMessage()(&dto.WSPayload{RawMessage: raw}, &dto.WSGroupATMessageData{
+		ID:      "group-allow-fallback",
+		GroupID: "legacy-group-id",
+		Content: "@bot hello",
+		Author: &dto.User{
+			ID: "legacy-member-id",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleGroupATMessage() error = %v", err)
+	}
+
+	inbound := waitInboundMessage(t, messageBus)
+	if inbound.SenderID != "member-openid-xyz" {
+		t.Fatalf("inbound.SenderID = %q, want %q", inbound.SenderID, "member-openid-xyz")
+	}
+	if inbound.Metadata["account_id"] != "member-openid-xyz" {
+		t.Fatalf("account_id metadata = %q, want %q", inbound.Metadata["account_id"], "member-openid-xyz")
+	}
+	if inbound.Metadata["legacy_account_id"] != "legacy-member-id" {
+		t.Fatalf("legacy_account_id metadata = %q, want %q", inbound.Metadata["legacy_account_id"], "legacy-member-id")
+	}
+}
+
+func TestParseQQOpenIDs(t *testing.T) {
+	tests := []struct {
+		name         string
+		raw          []byte
+		wantUser     string
+		wantMember   string
+		wantGroup    string
+	}{
+		{
+			name:       "empty",
+			raw:        nil,
+			wantUser:   "",
+			wantMember: "",
+			wantGroup:  "",
+		},
+		{
+			name:       "invalid json",
+			raw:        []byte("{not-json}"),
+			wantUser:   "",
+			wantMember: "",
+			wantGroup:  "",
+		},
+		{
+			name:       "all openids",
+			raw:        []byte(`{"d":{"group_openid":"group-1","author":{"user_openid":"user-1","member_openid":"member-1"}}}`),
+			wantUser:   "user-1",
+			wantMember: "member-1",
+			wantGroup:  "group-1",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			userOpenID, memberOpenID, groupOpenID := parseQQOpenIDs(tc.raw)
+			if userOpenID != tc.wantUser || memberOpenID != tc.wantMember || groupOpenID != tc.wantGroup {
+				t.Fatalf(
+					"parseQQOpenIDs(%s) = (%q, %q, %q), want (%q, %q, %q)",
+					tc.name,
+					userOpenID,
+					memberOpenID,
+					groupOpenID,
+					tc.wantUser,
+					tc.wantMember,
+					tc.wantGroup,
+				)
+			}
+		})
 	}
 }
 
@@ -682,7 +864,7 @@ func waitInboundMessage(t *testing.T, messageBus *bus.MessageBus) bus.InboundMes
 func writeTempFile(t *testing.T, dir, name string, content []byte) string {
 	t.Helper()
 
-	path := dir + "/" + name
+	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
