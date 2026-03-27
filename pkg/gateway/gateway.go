@@ -21,6 +21,7 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
 	_ "github.com/sipeed/picoclaw/pkg/channels/discord"
 	_ "github.com/sipeed/picoclaw/pkg/channels/feishu"
+	_ "github.com/sipeed/picoclaw/pkg/channels/http"
 	_ "github.com/sipeed/picoclaw/pkg/channels/irc"
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
@@ -227,10 +228,11 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	if cfg.Gateway.ChatEnabled {
 		runningServices.HealthServer.SetChatFunc(func(ctx context.Context, message, sessionID, chatID string) (string, error) {
 			if sessionID == "" {
-				sessionID = "http-chat"
+				sessionID = fmt.Sprintf("chat-%s", time.Now().Format("20060102-150405"))
 			}
 			if chatID == "" {
-				chatID = "chat"
+				// Default to sessionID to ensure isolation
+				chatID = sessionID
 			}
 			return agentLoop.ProcessDirectWithChannel(ctx, message, sessionID, "http", chatID)
 		})
