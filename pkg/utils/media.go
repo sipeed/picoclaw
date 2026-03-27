@@ -56,8 +56,23 @@ func SanitizeFilename(filename string) string {
 
 	// Remove any directory traversal attempts
 	base = strings.ReplaceAll(base, "..", "")
-	base = strings.ReplaceAll(base, "/", "_")
-	base = strings.ReplaceAll(base, "\\", "_")
+
+	// Replace filesystem invalid characters with underscore
+	// These characters are not allowed in filenames on various OS:
+	// Windows: < > : " / \ | ? *
+	// Unix/macOS: / (and : can cause issues in Finder)
+	invalidChars := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"}
+	for _, char := range invalidChars {
+		base = strings.ReplaceAll(base, char, "_")
+	}
+
+	// Trim spaces and dots from start/end
+	base = strings.Trim(base, " .")
+
+	// Ensure filename is not empty after sanitization
+	if base == "" {
+		base = "unnamed_file"
+	}
 
 	return base
 }

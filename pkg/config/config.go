@@ -474,6 +474,8 @@ type FeishuConfig struct {
 	ReasoningChannelID  string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
 	RandomReactionEmoji FlexibleStringSlice `json:"random_reaction_emoji"   env:"PICOCLAW_CHANNELS_FEISHU_RANDOM_REACTION_EMOJI"`
 	IsLark              bool                `json:"is_lark"                 env:"PICOCLAW_CHANNELS_FEISHU_IS_LARK"`
+	DownloadDir             string              `json:"download_dir,omitempty"              env:"PICOCLAW_CHANNELS_FEISHU_DOWNLOAD_DIR"`
+	DownloadReadonlyDisable bool                `json:"download_readonly_disable,omitempty" env:"PICOCLAW_CHANNELS_FEISHU_DOWNLOAD_READONLY_DISABLE"`
 	secDirty            bool
 }
 

@@ -30,6 +30,7 @@ Feishu (international name: Lark) is an enterprise collaboration platform by Byt
 | verification_token    | string | No       | Token used for Webhook event verification                          |
 | allow_from            | array  | No       | Allowlist of user IDs; empty means all users are allowed           |
 | random_reaction_emoji | array  | No       | List of random reaction emojis; empty uses the default "Pin"       |
+| download_dir          | string | No       | Custom directory for downloaded files (relative/absolute paths)    |
 
 ## Setup
 
@@ -50,3 +51,63 @@ Feishu (international name: Lark) is an enterprise collaboration platform by Byt
 ## Platform Limitations
 
 > ⚠️ **Feishu channel does not support 32-bit devices.** The Feishu SDK only provides 64-bit builds. Devices running armv6, armv7, mipsle, or other 32-bit architectures cannot use the Feishu channel. For messaging on 32-bit devices, use Telegram, Discord, or OneBot instead.
+
+## Download Directory Configuration
+
+The `download_dir` field specifies where files received from Feishu (images, documents, etc.) are stored.
+
+### Path Resolution
+
+1. **Relative path** (recommended): Resolved relative to the PicoClaw workspace directory
+   - Default workspace: `~/.picoclaw/workspace` (or `$PICOCLAW_HOME/workspace`)
+   - Example: If workspace is `~/.picoclaw/workspace`, `download_dir: "downloads"` resolves to `~/.picoclaw/workspace/downloads`
+   ```json
+   {
+     "channels": {
+       "feishu": {
+         "download_dir": "downloads"
+       }
+     }
+   }
+   ```
+
+2. **Absolute path**: Use an absolute path directly
+   ```json
+   {
+     "channels": {
+       "feishu": {
+         "download_dir": "/Users/username/Downloads/feishu"
+       }
+     }
+   }
+   ```
+
+3. **Home directory shorthand**: Use `~` for your home directory
+   ```json
+   {
+     "channels": {
+       "feishu": {
+         "download_dir": "~/Downloads/feishu"
+       }
+     }
+   }
+   ```
+
+4. **Default (not configured)**: Files are downloaded to the system temp directory
+   - macOS: `/var/folders/.../picoclaw_media`
+   - Linux: `/tmp/picoclaw_media`
+   - Windows: `C:\Users\xxx\AppData\Local\Temp\picoclaw_media`
+
+### Safety & Fallback
+
+- The directory will be created automatically if it doesn't exist
+- Write permissions are verified before use
+- If the configured directory cannot be accessed (no permission, path conflicts, etc.), the system automatically falls back to the system temp directory to ensure files are received successfully
+
+### Environment Variable
+
+You can also configure via environment variable:
+
+```bash
+export PICOCLAW_CHANNELS_FEISHU_DOWNLOAD_DIR="downloads"
+```
