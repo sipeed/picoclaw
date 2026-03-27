@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Change Password page on das
 
 # Change Password — Component Map
 
-> Generated: 2026-03-26T12:28:27.789Z
+> Generated: 2026-03-27T06:43:39.328Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Change Password

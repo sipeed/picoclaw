@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Sign Up Page page on dashbo
 
 # Sign Up Page — Component Map
 
-> Generated: 2026-03-26T12:23:44.327Z
+> Generated: 2026-03-27T06:39:07.746Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Sign Up Page

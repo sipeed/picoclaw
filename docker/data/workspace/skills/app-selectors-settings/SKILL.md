@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Settings page on dashboard.
 
 # Settings — Component Map
 
-> Generated: 2026-03-26T12:28:42.194Z
+> Generated: 2026-03-27T06:43:54.322Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Settings
@@ -56,7 +56,7 @@ description: DOM selectors and component map for the Settings page on dashboard.
 - Rows: 11
 - Sample: e8d40*****1d3f3 | document_search | Auto-generated for document search: Picotestwebcrawler2 | Revoked | 24 Mar 2026, 4:00 AM | 24 Mar 2027, 4:00 AM | 
 
-**Chips:** `Revoked`, `Active`, `Revoked`, `Revoked`, `Revoked`, `Revoked`, `Revoked`, `Active`, `Revoked`, `Active`, `Revoked`
+**Chips:** `Revoked`, `Active`, `Revoked`, `Revoked`, `Revoked`, `Revoked`, `Revoked`, `Revoked`, `Active`, `Revoked`, `Revoked`
 
 **Sidebar (8):**
 - `page.locator('a:has-text("Dashboard")')`

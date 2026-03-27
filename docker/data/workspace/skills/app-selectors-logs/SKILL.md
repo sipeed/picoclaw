@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Logs page on dashboard.int3
 
 # Logs — Component Map
 
-> Generated: 2026-03-26T12:28:51.228Z
+> Generated: 2026-03-27T06:44:04.043Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Logs
@@ -29,9 +29,9 @@ description: DOM selectors and component map for the Logs page on dashboard.int3
   classes: `v-btn v-btn--disabled v-theme--mainTheme v-btn--density-default v-btn--size-default v-btn--variant-flat export-button`
 
 **⚠️ Dynamic Buttons:**
-- "Datetime Start: Feb 26, 2026" → pattern: `Datetime Start: {DATE}`
+- "Datetime Start: Feb 27, 2026" → pattern: `Datetime Start: {DATE}`
   Use: `page.locator('button:visible').nth(N)`
-- "Datetime End: Mar 26, 2026" → pattern: `Datetime End: {DATE}`
+- "Datetime End: Mar 27, 2026" → pattern: `Datetime End: {DATE}`
   Use: `page.locator('button:visible').nth(N)`
 
 **Icon Buttons (1):**
@@ -84,12 +84,12 @@ description: DOM selectors and component map for the Logs page on dashboard.int3
 | `.menu-item-container` | `div` | `menu-item-container` | Dashboard |
 | `.mdi` | `i` | `mdi notranslate menu-item-icon` |  |
 | `.menu-item` | `span` | `menu-item` | Dashboard |
-| `.main-layout-margin-left` | `main` | `main-layout-margin-left` | Conversation LogsDatetime Start: Feb 26, 2026Datetime End: M |
-| `.logs-container` | `div` | `logs-container` | Conversation LogsDatetime Start: Feb 26, 2026Datetime End: M |
-| `.filter-controls` | `div` | `filter-controls` | Datetime Start: Feb 26, 2026Datetime End: Mar 26, 2026 Load  |
-| `.dropdown-button` | `button` | `dropdown-button` | Datetime Start: Feb 26, 2026 |
-| `.dropdown-text` | `span` | `dropdown-text` | Datetime Start: Feb 26, 2026 |
-| `.dropdown-value` | `span` | `dropdown-value` | Feb 26, 2026 |
+| `.main-layout-margin-left` | `main` | `main-layout-margin-left` | Conversation LogsDatetime Start: Feb 27, 2026Datetime End: M |
+| `.logs-container` | `div` | `logs-container` | Conversation LogsDatetime Start: Feb 27, 2026Datetime End: M |
+| `.filter-controls` | `div` | `filter-controls` | Datetime Start: Feb 27, 2026Datetime End: Mar 27, 2026 Load  |
+| `.dropdown-button` | `button` | `dropdown-button` | Datetime Start: Feb 27, 2026 |
+| `.dropdown-text` | `span` | `dropdown-text` | Datetime Start: Feb 27, 2026 |
+| `.dropdown-value` | `span` | `dropdown-value` | Feb 27, 2026 |
 | `.table-container` | `div` | `table-container` | Show columnEvent Timestamp Node Type Node ID Name Conversati |
 | `.agent-data-table` | `div` | `agent-data-table` | Show columnEvent Timestamp Node Type Node ID Name Conversati |
 | `.table-dropdown` | `button` | `table-dropdown` | Show column |

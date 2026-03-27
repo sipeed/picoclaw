@@ -1,42 +1,50 @@
 ---
-name: app-selectors-change-email
-description: DOM selectors and component map for the Change Email page on dashboard.int3nt.info. Use when writing Playwright tests for this page.
+name: app-selectors-add-ons-webchat-widget-install
+description: DOM selectors and component map for the Add-Ons Webchat Widget Install page on dashboard.int3nt.info. Use when writing Playwright tests for this page.
 ---
 
-# Change Email — Component Map
+# Add-Ons Webchat Widget Install — Component Map
 
-> Generated: 2026-03-27T06:43:34.164Z
+> Generated: 2026-03-27T06:44:29.646Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
-### Change Email
-**URL:** `/change-email`
+### Add-Ons Webchat Widget Install
+**URL:** `/add-ons/webchat-widget/install`
 
 **Headings:**
-- `h2` — "Change Email"
+- `h2` — "Webchat Widget Installation"
 
 
-**Text Content (2):**
+**Text Content (3):**
 - [p] "Organization" → `.org-title`
-- [p] "Change your current email" → `.subtitle`
+- [p] "Add a customizable webchat widget to your website for seamless customer interactions"
+- [p] "Enter the allowed origins for the widget" → `.form-section-description`
 
-**Input Fields (2):**
+**Input Fields (1):**
 
 | # | Label | Type | Selector |
 |---|-------|------|----------|
-| 1 | New Email | `text` | `input[placeholder="New Email"]` |
-| 2 | Confirm New Email | `text` | `input[placeholder="Confirm New Email"]` |
+| 1 | Enter origin | `text` | `input[placeholder="Enter origin"]` |
 
 **Input selector rule:** Use `input[placeholder="..."]` or `.nth(N)` on scoped container inputs. Do NOT use `.filter({ hasText })` on a `div` to match placeholder text — placeholders are attributes, not visible text content.
 
-**Buttons (1):**
-- `page.locator('.confirm-btn')` [disabled]
-  classes: `v-btn v-btn--block v-btn--disabled v-theme--mainTheme v-btn--density-default v-btn--size-default v-btn--variant-elevated confirm-btn`
+**Dropdowns / Selects (1):**
+- **Service ID** (select)
+  - Selector: `.v-select:nth(0)`
+  - Open: `page.locator('.v-select:nth(0)').click()`
+  - Options: `Untitled`, `Untitled`, `Untitled`, `Untitled`
+  - Pick: `page.locator('.v-list-item:has-text("OPTION")').click()`
+
+**Buttons (2):**
+- `page.locator('button:has-text("Add Origin")')`
+- `page.locator('button:has-text("Save")')`
 
 **Icon Buttons (1):**
 - mdi-pencil-outline (`mdi-pencil-outline`) → `.change-logo-btn`
 
-**Links (1):**
-- [Profile Settings](/profile) → `page.locator('a:has-text("Profile Settings")')`
+**Links (2):**
+- [Add-Ons](/add-ons) → `page.locator('a:has-text("Add-Ons")')`
+- [Webchat Widget](/add-ons/webchat-widget) → `page.locator('a:has-text("Webchat Widget")')`
 
 **Sidebar (8):**
 - `page.locator('a:has-text("Dashboard")')`
@@ -44,11 +52,11 @@ description: DOM selectors and component map for the Change Email page on dashbo
 - `page.locator('a:has-text("Flow Tester")')`
 - `page.locator('a:has-text("Knowledge Base")')`
 - `page.locator('a:has-text("Logs")')`
-- `page.locator('a:has-text("Add-Ons")')`
+- `page.locator('a:has-text("Add-Ons")')` ★
 - `page.locator('a:has-text("Settings")')`
 - `page.locator('a:has-text("Organization")')`
 
-**Custom Elements & IDs (37):**
+**Custom Elements & IDs (34):**
 
 | Selector | Tag | Classes | Text |
 |----------|-----|---------|------|
@@ -75,20 +83,17 @@ description: DOM selectors and component map for the Change Email page on dashbo
 | `.menu-item-container` | `div` | `menu-item-container` | Dashboard |
 | `.mdi` | `i` | `mdi notranslate menu-item-icon` |  |
 | `.menu-item` | `span` | `menu-item` | Dashboard |
-| `.main-layout-margin-left` | `main` | `main-layout-margin-left` | Profile SettingsChange EmailChange EmailChange your current  |
-| `.profile-container` | `div` | `profile-container` | Profile SettingsChange EmailChange EmailChange your current  |
-| `.profile-header` | `div` | `profile-header` | Profile SettingsChange EmailChange EmailChange your current  |
-| `.breadcrumb` | `nav` | `breadcrumb` | Profile SettingsChange Email |
-| `.breadcrumb-item` | `a` | `breadcrumb-item` | Profile Settings |
+| `.main-layout-margin-left` | `main` | `main-layout-margin-left` | Add-OnsWebchat WidgetInstall Webchat Widget InstallationAdd  |
+| `.breadcrumb` | `nav` | `breadcrumb` | Add-OnsWebchat WidgetInstall |
+| `.router-link-active` | `a` | `router-link-active breadcrumb-item` | Add-Ons |
 | `.mdi` | `i` | `mdi notranslate breadcrumb-separator` |  |
-| `.breadcrumb-item` | `span` | `breadcrumb-item` | Change Email |
-| `.subtitle` | `p` | `subtitle` | Change your current email |
-| `.email-form` | `div` | `email-form` | New Email * Confirm New Email * Confirm |
+| `.breadcrumb-item` | `a` | `breadcrumb-item` | Webchat Widget |
+| `.breadcrumb-item` | `span` | `breadcrumb-item` | Install |
+| `.form-section-label` | `label` | `form-section-label` | Allowed Origins |
+| `.form-section-description` | `p` | `form-section-description` | Enter the allowed origins for the widget |
 | `` | `input` | `` |  |
 | `` | `div` | `` |  |
 | `` | `input` | `` |  |
-| `` | `div` | `` |  |
-| `.confirm-btn` | `button` | `confirm-btn` | Confirm |
 
 ---
 

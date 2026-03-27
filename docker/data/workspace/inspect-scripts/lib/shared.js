@@ -10,6 +10,7 @@ const ORG_NAME = 'Testing2026!';
 const DESTRUCTIVE_RE = /delete|remove|confirm|save|submit|export|download|logout|sign\s*out|sign\s*up|sign\s*in|discard|back\s+to|login|log\s*in|send\s+email|set\s+password|reset|forgot|cancel/i;
 const MODAL_TRIGGER_RE = /add|create|new|edit|invite|upload|import|schedule|filter|sort|column|show|manage|configure|change|select version|continue|next|proceed/i;
 const MAX_MODALS = 10;
+const CLICK_TIMEOUT_MS = 60000;
 const FRAMEWORK_RE_SRC = '^(v-|mdi-|d-|ma-|pa-|mt-|mb-|ml-|mr-|mx-|my-|px-|py-|pt-|pb-|pl-|pr-|ga-|text-|font-|bg-|rounded|elevation|float-|position-|overflow-|align-|justify-|flex-|order-|col-|row-|container|spacer|fill-|w-|h-|min-|max-|gap-|border|opacity|cursor|transition|--v-)';
 
 function stripDynamic(t) {
@@ -541,8 +542,16 @@ async function exploreDropdowns(page) {
 
 async function closeAnyOverlay(page, overlaySelector) {
   const closeSels = [
+    // Custom drawer overlay close controls
+    '.custom-drawer-overlay .drawer-header button',
+    '.custom-drawer-overlay .custom-drawer .drawer-header button',
+    '.custom-drawer-overlay button:has(.mdi-close)',
+    // Specific overlay selector first
     `${overlaySelector} button:has-text("Cancel")`,
     `${overlaySelector} button:has-text("Close")`,
+    `${overlaySelector} .drawer-header button`,
+    `${overlaySelector} button:has(.mdi-close)`,
+    // Vuetify overlay fallbacks
     '.v-overlay--active button:has-text("Cancel")',
     '.v-overlay--active button:has-text("Close")',
     '.v-overlay--active .mdi-close',
@@ -561,7 +570,7 @@ async function closeAnyOverlay(page, overlaySelector) {
 
 async function isOverlayStillOpen(page) {
   return page.evaluate(() => {
-    const overlays = document.querySelectorAll('.v-overlay--active .v-overlay__content');
+    const overlays = document.querySelectorAll('.v-overlay--active .v-overlay__content, .custom-drawer-overlay, .custom-drawer');
     for (const ov of overlays) {
       const r = ov.getBoundingClientRect();
       if (r.width > 50 && r.height > 50) return true;
@@ -573,6 +582,12 @@ async function isOverlayStillOpen(page) {
 async function forceCloseAllOverlays(page, pageUrl) {
   for (let attempt = 0; attempt < 5; attempt++) {
     if (!(await isOverlayStillOpen(page))) return;
+    // Try clicking explicit close controls before Escape.
+    const closedByButton = await closeAnyOverlay(page, '.custom-drawer-overlay').catch(() => false);
+    if (closedByButton) {
+      await page.waitForTimeout(500);
+      if (!(await isOverlayStillOpen(page))) return;
+    }
     await page.keyboard.press('Escape');
     await page.waitForTimeout(600);
   }
@@ -598,11 +613,36 @@ async function exploreModals(page, pageUrl) {
       if (await btn.evaluate(el => !!el.closest('.v-navigation-drawer'))) continue;
       seenTriggers.add(t);
 
+      // Ensure no previous overlay is still blocking interactions.
+      await forceCloseAllOverlays(page, pageUrl).catch(() => {});
+      await page.waitForTimeout(500);
+
       const before = await snapshotOverlays(page);
       const bKeys = before.map(o => `${o.tag}|${o.className}|${o.id}`);
       const urlBefore = page.url();
       console.log(`    🔍 Clicking "${t}"...`);
-      await btn.click();
+      try {
+        await btn.click({ timeout: CLICK_TIMEOUT_MS });
+      } catch (clickErr) {
+        // Fallback: re-find a fresh trigger by text in case the original handle
+        // is stale/covered after prior modal interactions.
+        const safeText = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const candidates = await page.locator('button:visible,[role="button"]:visible')
+          .filter({ hasText: new RegExp(`^\\s*${safeText}\\s*$`, 'i') })
+          .all();
+        let clicked = false;
+        for (const c of candidates) {
+          try {
+            const blocked = await c.evaluate(el => !!el.closest('.v-overlay--active,.v-overlay__content,.custom-drawer-overlay,.custom-drawer'));
+            if (blocked) continue;
+            await c.scrollIntoViewIfNeeded().catch(() => {});
+            await c.click({ timeout: CLICK_TIMEOUT_MS });
+            clicked = true;
+            break;
+          } catch (_) {}
+        }
+        if (!clicked) throw clickErr;
+      }
       await page.waitForTimeout(3000);
 
       if (page.url() !== urlBefore) {
@@ -662,7 +702,7 @@ async function exploreModals(page, pageUrl) {
               if (!(await dd.isVisible().catch(() => false))) continue;
               if (await dd.evaluate(el => el.classList.contains('v-input--disabled'))) continue;
               const ddLabel = await dd.evaluate(el => el.closest('.v-input')?.querySelector('.v-label,.v-field__label')?.textContent?.trim() || null);
-              await dd.click(); await page.waitForTimeout(800);
+                  await dd.click({ timeout: CLICK_TIMEOUT_MS }); await page.waitForTimeout(800);
               const opts = await page.locator('.v-overlay--active .v-list-item:visible').allTextContents();
               await page.keyboard.press('Escape'); await page.waitForTimeout(500);
               if (opts.length <= 1) continue;
@@ -671,8 +711,8 @@ async function exploreModals(page, pageUrl) {
                 if (!ot) continue;
                 try {
                   console.log(`    🔄 Trying dropdown "${ddLabel || di}" → "${ot}" path...`);
-                  await dd.click(); await page.waitForTimeout(500);
-                  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: new RegExp(ot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).first().click();
+                  await dd.click({ timeout: CLICK_TIMEOUT_MS }); await page.waitForTimeout(500);
+                  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: new RegExp(ot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).first().click({ timeout: CLICK_TIMEOUT_MS });
                   await page.waitForTimeout(1000);
                   // Capture state right after option selection (before moving to next step).
                   // Website Crawler panels live on this step.
@@ -690,7 +730,7 @@ async function exploreModals(page, pageUrl) {
                   }
                   const wizBtn = page.locator('.v-overlay--active button:visible, .custom-drawer button:visible').filter({ hasText: /continue|next/i }).first();
                   if (await wizBtn.isVisible({ timeout: 1000 }).catch(() => false) && !(await wizBtn.evaluate(el => el.disabled || el.classList.contains('v-btn--disabled')).catch(() => true))) {
-                    await wizBtn.click(); await page.waitForTimeout(2000);
+                    await wizBtn.click({ timeout: CLICK_TIMEOUT_MS }); await page.waitForTimeout(2000);
                     const pathComps = await extractAllComponents(page);
                     const pathDds = await exploreDropdowns(page);
                     const pathPanels = await exploreExpansionPanels(page);
@@ -706,7 +746,7 @@ async function exploreModals(page, pageUrl) {
                       await forceCloseAllOverlays(page, pageUrl);
                       await page.waitForTimeout(1000);
                       // Re-click the original trigger button
-                      try { await page.locator(`button:has-text("${t}")`).first().click(); await page.waitForTimeout(2000); } catch (e) { break; }
+                      try { await page.locator(`button:has-text("${t}")`).first().click({ timeout: CLICK_TIMEOUT_MS }); await page.waitForTimeout(2000); } catch (e) { break; }
                       // Re-fill dummy inputs
                       const reInputs = await page.locator('.v-overlay--active input[type="text"]:visible, .custom-drawer input[type="text"]:visible, .custom-drawer-overlay input[type="text"]:visible').all();
                       for (const ri of reInputs) { try { const v = await ri.inputValue().catch(() => ''); if (!v) await ri.fill('__inspect_dummy__'); } catch (e) {} }
@@ -731,7 +771,7 @@ async function exploreModals(page, pageUrl) {
             if (!MODAL_TRIGGER_RE.test(subText)) continue;
             if (await subBtn.evaluate(el => el.disabled || el.classList.contains('v-btn--disabled'))) continue;
             console.log(`    🔍 Sub-clicking "${subText}" inside overlay...`);
-            await subBtn.click();
+            await subBtn.click({ timeout: CLICK_TIMEOUT_MS });
             await page.waitForTimeout(2000);
             const subComps = await extractAllComponents(page);
             console.log(`    📋 Exploring dropdowns after sub-click...`);
@@ -1200,12 +1240,18 @@ async function runAllInspections() {
   ];
   const PROTECTED = [
     { path: '/', name: 'Dashboard' }, { path: '/manage-chatbot', name: 'Manage Chatbot' },
-    { path: '/config-test', name: 'Config Test' }, { path: '/flow-designer', name: 'Flow Designer' },
+    { path: '/config-test', name: 'Config Test' }, { path: '/flow-designer', name: 'Flow Designer' }, { path: '/flow-designer/209', name: 'Flow Designer Canvas' },
     { path: '/knowledge-management', name: 'Knowledge Management' }, { path: '/knowledge-base', name: 'Knowledge Base' },
     { path: '/sentiment', name: 'Sentiment Dashboard' }, { path: '/organization', name: 'Organization' },
     { path: '/profile', name: 'Profile' }, { path: '/change-email', name: 'Change Email' },
     { path: '/change-password', name: 'Change Password' }, { path: '/settings', name: 'Settings' },
-    { path: '/logs', name: 'Logs' }, { path: '/add-ons', name: 'Add-Ons' }, { path: '/flow-tester', name: 'Flow Tester' },
+    { path: '/logs', name: 'Logs' },
+    { path: '/add-ons', name: 'Add-Ons' },
+    { path: '/add-ons/webchat-widget', name: 'Add-Ons Webchat Widget' },
+    { path: '/add-ons/webchat-widget/install', name: 'Add-Ons Webchat Widget Install' },
+    { path: '/add-ons/twilio', name: 'Add-Ons Twilio Detail' },
+    { path: '/add-ons/twilio/install', name: 'Add-Ons Twilio Install' },
+    { path: '/flow-tester', name: 'Flow Tester' },
   ];
 
   const browser = await chromium.launch({ headless: true });

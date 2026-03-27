@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Dashboard page on dashboard
 
 # Dashboard — Component Map
 
-> Generated: 2026-03-26T12:24:07.698Z
+> Generated: 2026-03-27T06:39:30.905Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Dashboard
@@ -22,7 +22,7 @@ description: DOM selectors and component map for the Dashboard page on dashboard
 - `h1` — "–" (selector: `.metric-value`)
 - `h2` — "Total Tokens" (selector: `.metric-title`)
 - `h2` — "Knowledge Base Buckets" (selector: `.metric-title`)
-- `h1` — "3" (selector: `.metric-value`)
+- `h1` — "2" (selector: `.metric-value`)
 
 
 **Text Content (1):**
@@ -72,12 +72,12 @@ description: DOM selectors and component map for the Dashboard page on dashboard
 | `.menu-item-container` | `div` | `menu-item-container` | Dashboard |
 | `.mdi` | `i` | `mdi notranslate menu-item-icon` |  |
 | `.menu-item` | `span` | `menu-item` | Dashboard |
-| `.main-layout-margin-left` | `main` | `main-layout-margin-left` | DashboardMar 19, 2026 - Mar 26, 2026Total Conversations0Exec |
-| `.dashboard-container` | `div` | `dashboard-container` | DashboardMar 19, 2026 - Mar 26, 2026Total Conversations0Exec |
+| `.main-layout-margin-left` | `main` | `main-layout-margin-left` | DashboardMar 20, 2026 - Mar 27, 2026Total Conversations0Exec |
+| `.dashboard-container` | `div` | `dashboard-container` | DashboardMar 20, 2026 - Mar 27, 2026Total Conversations0Exec |
 | `.dashboard-header` | `div` | `dashboard-header` | Dashboard |
-| `.date-range-button` | `button` | `date-range-button` | Mar 19, 2026 - Mar 26, 2026 |
-| `.date-range-text` | `span` | `date-range-text` | Mar 19, 2026 - Mar 26, 2026 |
-| `.date-range-value` | `span` | `date-range-value` | Mar 19, 2026 - Mar 26, 2026 |
+| `.date-range-button` | `button` | `date-range-button` | Mar 20, 2026 - Mar 27, 2026 |
+| `.date-range-text` | `span` | `date-range-text` | Mar 20, 2026 - Mar 27, 2026 |
+| `.date-range-value` | `span` | `date-range-value` | Mar 20, 2026 - Mar 27, 2026 |
 | `.metrics-section` | `div` | `metrics-section` | Total Conversations0Executions0Error Rate0.00%Latency–Total  |
 | `.metric-card` | `div` | `metric-card` | Total Conversations0 |
 | `.metric-title` | `h2` | `metric-title` | Total Conversations |

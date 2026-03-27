@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Profile page on dashboard.i
 
 # Profile — Component Map
 
-> Generated: 2026-03-26T12:28:18.020Z
+> Generated: 2026-03-27T06:43:29.090Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Profile

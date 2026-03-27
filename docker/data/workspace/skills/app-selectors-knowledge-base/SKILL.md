@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 
 # Knowledge Base — Component Map
 
-> Generated: 2026-03-26T12:26:24.472Z
+> Generated: 2026-03-27T06:41:31.203Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Knowledge Base
@@ -18,7 +18,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 **Text Content (1):**
 - [p] "Organization" → `.org-title`
 
-**Buttons (7):**
+**Buttons (5):**
 - `page.locator('.create-button')`
   classes: `v-btn v-theme--mainTheme v-btn--density-default v-btn--size-default v-btn--variant-flat create-button`
 - `page.locator('.schedule-button')`
@@ -29,14 +29,9 @@ description: DOM selectors and component map for the Knowledge Base page on dash
   classes: `v-btn v-theme--mainTheme v-btn--density-default v-btn--size-default v-btn--variant-text schedule-button`
 - `page.locator('.sync-button')` *(dup)*
   classes: `v-btn v-theme--mainTheme v-btn--density-default v-btn--size-default v-btn--variant-text sync-button`
-- `page.locator('.schedule-button')` *(dup)*
-  classes: `v-btn v-theme--mainTheme v-btn--density-default v-btn--size-default v-btn--variant-text schedule-button`
-- `page.locator('.sync-button')` *(dup)*
-  classes: `v-btn v-theme--mainTheme v-btn--density-default v-btn--size-default v-btn--variant-text sync-button`
 
-**Icon Buttons (4):**
+**Icon Buttons (3):**
 - mdi-pencil-outline (`mdi-pencil-outline`) → `.change-logo-btn`
-- mdi-dots-vertical (`mdi-dots-vertical`)
 - mdi-dots-vertical (`mdi-dots-vertical`)
 - mdi-dots-vertical (`mdi-dots-vertical`)
 
@@ -77,25 +72,25 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 | `.menu-item-container` | `div` | `menu-item-container` | Dashboard |
 | `.mdi` | `i` | `mdi notranslate menu-item-icon` |  |
 | `.menu-item` | `span` | `menu-item` | Dashboard |
-| `.main-layout-margin-left` | `main` | `main-layout-margin-left` | Knowledge BaseCreate Knowledge Base BucketPicotest1ReadySour |
-| `.knowledge-base-container` | `div` | `knowledge-base-container` | Knowledge BaseCreate Knowledge Base BucketPicotest1ReadySour |
+| `.main-layout-margin-left` | `main` | `main-layout-margin-left` | Knowledge BaseCreate Knowledge Base BucketPicotest2ReadySour |
+| `.knowledge-base-container` | `div` | `knowledge-base-container` | Knowledge BaseCreate Knowledge Base BucketPicotest2ReadySour |
 | `.knowledge-base-header` | `div` | `knowledge-base-header` | Knowledge BaseCreate Knowledge Base Bucket |
 | `.create-button` | `button` | `create-button` | Create Knowledge Base Bucket |
-| `.bucket-grid` | `div` | `bucket-grid` | Picotest1ReadySource TypeGoogle Cloud StorageKnowledge files |
-| `.bucket-card` | `div` | `bucket-card` | Picotest1ReadySource TypeGoogle Cloud StorageKnowledge files |
-| `.bucket-header` | `div` | `bucket-header` | Picotest1Ready |
-| `.bucket-title` | `div` | `bucket-title` | Picotest1Ready |
-| `.bucket-name` | `span` | `bucket-name` | Picotest1 |
+| `.bucket-grid` | `div` | `bucket-grid` | Picotest2ReadySource TypeWebsite CrawlerWeb pages (0)Schedul |
+| `.bucket-card` | `div` | `bucket-card` | Picotest2ReadySource TypeWebsite CrawlerWeb pages (0)Schedul |
+| `.bucket-header` | `div` | `bucket-header` | Picotest2Ready |
+| `.bucket-title` | `div` | `bucket-title` | Picotest2Ready |
+| `.bucket-name` | `span` | `bucket-name` | Picotest2 |
 | `.knowledge-base-status-pill` | `span` | `knowledge-base-status-pill knowledge-base-status-pill--ready` | Ready |
-| `.bucket-info` | `div` | `bucket-info` | Source TypeGoogle Cloud StorageKnowledge filesScheduleSync |
-| `.source-type` | `div` | `source-type` | Source TypeGoogle Cloud Storage |
+| `.bucket-info` | `div` | `bucket-info` | Source TypeWebsite CrawlerWeb pages (0)ScheduleSync |
+| `.source-type` | `div` | `source-type` | Source TypeWebsite Crawler |
 | `.label` | `div` | `label` | Source Type |
-| `.value` | `div` | `value` | Google Cloud Storage |
-| `.files-count` | `div` | `files-count is-clickable` | Knowledge files |
+| `.value` | `div` | `value` | Website Crawler |
+| `.files-count` | `div` | `files-count` | Web pages (0) |
 | `.action-buttons` | `div` | `action-buttons` | ScheduleSync |
 | `.schedule-button` | `button` | `schedule-button` | Schedule |
 | `.sync-button` | `button` | `sync-button` | Sync |
-| `.files-count` | `div` | `files-count` | Web pages (0) |
+| `.files-count` | `div` | `files-count is-clickable` | Knowledge files |
 
 #### Discovered Modals / Dialogs
 
@@ -123,7 +118,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 1 input(s): Enter knowledge group name
 - 2 dropdown(s): LLM transformer model to parse documents (optional), Source Type *
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
 
 **Dropdowns in modal:**
@@ -154,7 +149,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 1 input(s): Enter knowledge group name
 - 2 dropdown(s): LLM transformer model to parse documents (optional), Source Type *
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
 
 **Dropdowns after "Selected dropdown = None":**
@@ -188,7 +183,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 input(s): https://file/ioO2IQEG6cEqO3eZJVZAz2V?node, 2309230_3ANM
 - 1 dropdown(s): Search Engine
 - headings: Knowledge Base, Create KB Bucket, Step 2: Search Engine Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Back, Submit
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Back, Submit
 - custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
 
 **Dropdowns after "Continue (dropdown = None)":**
@@ -216,7 +211,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 1 input(s): Enter knowledge group name
 - 2 dropdown(s): LLM transformer model to parse documents (optional), Source Type *
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
 
 **Dropdowns after "Selected dropdown = gemini-flash-2.5":**
@@ -250,7 +245,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 input(s): https://file/ioO2IQEG6cEqO3eZJVZAz2V?node, 2309230_3ANM
 - 1 dropdown(s): Search Engine
 - headings: Knowledge Base, Create KB Bucket, Step 2: Search Engine Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Back, Submit
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Back, Submit
 - custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
 
 **Dropdowns after "Continue (dropdown = gemini-flash-2.5)":**
@@ -282,10 +277,11 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - Container: `.drawer-actions` (classes: `drawer-actions`)
 - Buttons: `Continue`
 - 3 input(s): Enter knowledge group name, Enter the name of GCS Bucket (Optional), Limit access to a specific folder/path prefix
+- 1 textarea(s)
 - 2 dropdown(s): LLM transformer model to parse documents (optional), Source Type *
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Google Cloud Storage Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Test Connection, Continue
-- custom: .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer, .org-title
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Test Connection, Continue
+- custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 **Dropdowns after "Selected dropdown = Google Cloud Storage":**
 - **"LLM transformer model to parse documents (optional)"**: `None`, `gemini-flash-2.5`
@@ -318,7 +314,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 input(s): https://file/ioO2IQEG6cEqO3eZJVZAz2V?node, 2309230_3ANM
 - 1 dropdown(s): Search Engine
 - headings: Knowledge Base, Create KB Bucket, Step 2: Search Engine Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Back, Submit
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Back, Submit
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 **Dropdowns after "Continue (dropdown = Google Cloud Storage)":**
@@ -349,7 +345,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 input(s): Enter knowledge group name, Website URL
 - 2 dropdown(s): LLM transformer model to parse documents (optional), Source Type *
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 **Dropdowns after "Selected dropdown = Azure Blob Storage":**
@@ -383,7 +379,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 input(s): https://file/ioO2IQEG6cEqO3eZJVZAz2V?node, 2309230_3ANM
 - 1 dropdown(s): Search Engine
 - headings: Knowledge Base, Create KB Bucket, Step 2: Search Engine Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Back, Submit
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Back, Submit
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 **Dropdowns after "Continue (dropdown = Azure Blob Storage)":**
@@ -414,7 +410,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 input(s): Enter knowledge group name, https://example.com
 - 2 dropdown(s): LLM transformer model to parse documents (optional), Source Type *
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 **Dropdowns after "Selected dropdown = Website Crawler":**
@@ -454,7 +450,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 textarea(s)
 - 2 dropdown(s): LLM transformer model to parse documents (optional), Source Type *
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 - **"Authentication"** (index 1)
@@ -494,7 +490,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 textarea(s)
 - 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 - **"HTML Processing"** (index 2)
@@ -537,7 +533,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 textarea(s)
 - 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 - **"Crawl Rules"** (index 3)
@@ -580,7 +576,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 textarea(s)
 - 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 - **"Extraction Rules"** (index 4)
@@ -623,7 +619,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 textarea(s)
 - 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 - **"Crawl Depth and Limits"** (index 5)
@@ -675,7 +671,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 2 textarea(s)
 - 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 - **"Purge and Extraction Settings"** (index 6)
@@ -728,7 +724,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
 - 4 checkbox(es)
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 - **"Field Size Limits"** (index 7)
@@ -808,7 +804,7 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
 - 4 checkbox(es)
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 - **"URL Limits"** (index 8)
@@ -903,857 +899,46 @@ description: DOM selectors and component map for the Knowledge Base page on dash
 - 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
 - 4 checkbox(es)
 - headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Continue
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
 
-#### Explored Expansion Panels
+**Trigger:** `page.locator('button:has-text("Schedule")').click()`
+**Overlay:** `page.locator('.modal-content')`
+**Wait:** `await page.locator('.modal-content').waitFor({ state: 'visible', timeout: 10000 })`
+**Classes:** `v-card-text modal-content`
 
-**Panel "Web Crawler Parameters" (0):**
-- Container: `.custom-drawer-overlay` (classes: `custom-drawer-overlay`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.custom-drawer` (classes: `custom-drawer`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-header` (classes: `drawer-header`)
-- Container: `.drawer-content` (classes: `drawer-content`)
-- Title: "Step 1: Source Settings"
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-actions` (classes: `drawer-actions`)
-- Buttons: `Continue`
-- 24 input(s): Enter knowledge group name, https://example.com, 0 /6    (every 6 hours), username, password, Bearer token123..., script, style, nav (comma-separated), 1, 1000, 1, 1000, 5242880, 512, 512, 10, 10, 512, 512, 10485760, 900, 2048, 16, 10, 10
-- 2 textarea(s)
-- 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
-- 4 checkbox(es)
-- headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+- Title: "Manage Schedule"
+- Buttons: `Create Schedule`
+- Container: `.modal-header` (classes: `v-card-title modal-header`)
+- Title: "Manage Schedule"
+- Container: `.modal-content` (classes: `v-card-text modal-content`)
+- Buttons: `Create Schedule`
+- headings: Knowledge Base, Manage Schedule, No Schedule Set
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Create Schedule
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
-**Panel "Authentication" (1):**
-- Container: `.custom-drawer-overlay` (classes: `custom-drawer-overlay`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.custom-drawer` (classes: `custom-drawer`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-header` (classes: `drawer-header`)
-- Container: `.drawer-content` (classes: `drawer-content`)
-- Title: "Step 1: Source Settings"
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-actions` (classes: `drawer-actions`)
-- Buttons: `Continue`
-- 24 input(s): Enter knowledge group name, https://example.com, 0 /6    (every 6 hours), username, password, Bearer token123..., script, style, nav (comma-separated), 1, 1000, 1, 1000, 5242880, 512, 512, 10, 10, 512, 512, 10485760, 900, 2048, 16, 10, 10
-- 2 textarea(s)
-- 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
-- 4 checkbox(es)
-- headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
+**After clicking "Create Schedule" inside modal:**
+- Title: "Manage Schedule"
+- Buttons: `Simple`, `Advanced`, `Cancel`, `Save`
+- Container: `.modal-header` (classes: `v-card-title modal-header`)
+- Title: "Manage Schedule"
+- Container: `.modal-content` (classes: `v-card-text modal-content`)
+- Buttons: `Simple`, `Advanced`, `Cancel`, `Save`
+- 2 dropdown(s): Frequency, Run every
+- radio group(s): ? [Full Sync, Incremental Sync]
+- toggle(s): Cron Expression * [**Simple** | Advanced]
+- headings: Knowledge Base, Manage Schedule
+- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Simple, Advanced, Cancel, Save
 - custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
 
-**Panel "HTML Processing" (2):**
-- Container: `.custom-drawer-overlay` (classes: `custom-drawer-overlay`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.custom-drawer` (classes: `custom-drawer`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-header` (classes: `drawer-header`)
-- Container: `.drawer-content` (classes: `drawer-content`)
-- Title: "Step 1: Source Settings"
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-actions` (classes: `drawer-actions`)
-- Buttons: `Continue`
-- 24 input(s): Enter knowledge group name, https://example.com, 0 /6    (every 6 hours), username, password, Bearer token123..., script, style, nav (comma-separated), 1, 1000, 1, 1000, 5242880, 512, 512, 10, 10, 512, 512, 10485760, 900, 2048, 16, 10, 10
-- 2 textarea(s)
-- 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
-- 4 checkbox(es)
-- headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
-- custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
-
-**Panel "Crawl Rules" (3):**
-- Container: `.custom-drawer-overlay` (classes: `custom-drawer-overlay`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.custom-drawer` (classes: `custom-drawer`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-header` (classes: `drawer-header`)
-- Container: `.drawer-content` (classes: `drawer-content`)
-- Title: "Step 1: Source Settings"
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-actions` (classes: `drawer-actions`)
-- Buttons: `Continue`
-- 24 input(s): Enter knowledge group name, https://example.com, 0 /6    (every 6 hours), username, password, Bearer token123..., script, style, nav (comma-separated), 1, 1000, 1, 1000, 5242880, 512, 512, 10, 10, 512, 512, 10485760, 900, 2048, 16, 10, 10
-- 2 textarea(s)
-- 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
-- 4 checkbox(es)
-- headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
-- custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
-
-**Panel "Extraction Rules" (4):**
-- Container: `.custom-drawer-overlay` (classes: `custom-drawer-overlay`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.custom-drawer` (classes: `custom-drawer`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-header` (classes: `drawer-header`)
-- Container: `.drawer-content` (classes: `drawer-content`)
-- Title: "Step 1: Source Settings"
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-actions` (classes: `drawer-actions`)
-- Buttons: `Continue`
-- 24 input(s): Enter knowledge group name, https://example.com, 0 /6    (every 6 hours), username, password, Bearer token123..., script, style, nav (comma-separated), 1, 1000, 1, 1000, 5242880, 512, 512, 10, 10, 512, 512, 10485760, 900, 2048, 16, 10, 10
-- 2 textarea(s)
-- 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
-- 4 checkbox(es)
-- headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
-- custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
-
-**Panel "Crawl Depth and Limits" (5):**
-- Container: `.custom-drawer-overlay` (classes: `custom-drawer-overlay`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.custom-drawer` (classes: `custom-drawer`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-header` (classes: `drawer-header`)
-- Container: `.drawer-content` (classes: `drawer-content`)
-- Title: "Step 1: Source Settings"
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-actions` (classes: `drawer-actions`)
-- Buttons: `Continue`
-- 24 input(s): Enter knowledge group name, https://example.com, 0 /6    (every 6 hours), username, password, Bearer token123..., script, style, nav (comma-separated), 1, 1000, 1, 1000, 5242880, 512, 512, 10, 10, 512, 512, 10485760, 900, 2048, 16, 10, 10
-- 2 textarea(s)
-- 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
-- 4 checkbox(es)
-- headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
-- custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
-
-**Panel "Purge and Extraction Settings" (6):**
-- Container: `.custom-drawer-overlay` (classes: `custom-drawer-overlay`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.custom-drawer` (classes: `custom-drawer`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-header` (classes: `drawer-header`)
-- Container: `.drawer-content` (classes: `drawer-content`)
-- Title: "Step 1: Source Settings"
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-actions` (classes: `drawer-actions`)
-- Buttons: `Continue`
-- 24 input(s): Enter knowledge group name, https://example.com, 0 /6    (every 6 hours), username, password, Bearer token123..., script, style, nav (comma-separated), 1, 1000, 1, 1000, 5242880, 512, 512, 10, 10, 512, 512, 10485760, 900, 2048, 16, 10, 10
-- 2 textarea(s)
-- 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
-- 4 checkbox(es)
-- headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
-- custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
-
-**Panel "Field Size Limits" (7):**
-- Container: `.custom-drawer-overlay` (classes: `custom-drawer-overlay`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.custom-drawer` (classes: `custom-drawer`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-header` (classes: `drawer-header`)
-- Container: `.drawer-content` (classes: `drawer-content`)
-- Title: "Step 1: Source Settings"
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-actions` (classes: `drawer-actions`)
-- Buttons: `Continue`
-- 24 input(s): Enter knowledge group name, https://example.com, 0 /6    (every 6 hours), username, password, Bearer token123..., script, style, nav (comma-separated), 1, 1000, 1, 1000, 5242880, 512, 512, 10, 10, 512, 512, 10485760, 900, 2048, 16, 10, 10
-- 2 textarea(s)
-- 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
-- 4 checkbox(es)
-- headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
-- custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
-
-**Panel "URL Limits" (8):**
-- Container: `.custom-drawer-overlay` (classes: `custom-drawer-overlay`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.custom-drawer` (classes: `custom-drawer`)
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-header` (classes: `drawer-header`)
-- Container: `.drawer-content` (classes: `drawer-content`)
-- Title: "Step 1: Source Settings"
-- Inputs:
-  - Enter knowledge group name (`text`)
-  - https://example.com (`text`)
-  - 0 /6    (every 6 hours) (`text`)
-  - username (`text`)
-  - password (`password`)
-  - Bearer token123... (`text`)
-  - script, style, nav (comma-separated) (`text`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 1 (`number`)
-  - 1000 (`number`)
-  - 5242880 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-  - 512 (`number`)
-  - 512 (`number`)
-  - 10485760 (`number`)
-  - 900 (`number`)
-  - 2048 (`number`)
-  - 16 (`number`)
-  - 10 (`number`)
-  - 10 (`number`)
-- Buttons: `Continue`
-- Container: `.drawer-actions` (classes: `drawer-actions`)
-- Buttons: `Continue`
-- 24 input(s): Enter knowledge group name, https://example.com, 0 /6    (every 6 hours), username, password, Bearer token123..., script, style, nav (comma-separated), 1, 1000, 1, 1000, 5242880, 512, 512, 10, 10, 512, 512, 10485760, 900, 2048, 16, 10, 10
-- 2 textarea(s)
-- 3 dropdown(s): LLM transformer model to parse documents (optional), Source Type *, Authentication Type
-- 4 checkbox(es)
-- headings: Knowledge Base, Create KB Bucket, Step 1: Source Settings, Website Crawler Configuration
-- buttons: Create Knowledge Base Bucket, Schedule, Sync, Schedule, Sync, Schedule, Sync, Continue
-- custom: .enable-motion, .topbar-intent, .logo-container, .logo-wrapper, .logo-intent, .change-logo-btn, .mdi, #menu-activator, .mdi, .nav-drawer
+**Dropdowns after "Create Schedule":**
+- **"Frequency"**: `Hourly`, `Daily`, `Weekly`, `Monthly`
+  Open: `page.locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(0).click()`
+  Pick: `await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click()`
+- **"Run every"**: `1`, `2`, `3`, `4`, `6`, `8`, `12`
+  Open: `page.locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(1).click()`
+  Pick: `await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click()`
 
 ---
 

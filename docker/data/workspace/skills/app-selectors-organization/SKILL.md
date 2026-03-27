@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Organization page on dashbo
 
 # Organization — Component Map
 
-> Generated: 2026-03-26T12:27:57.684Z
+> Generated: 2026-03-27T06:43:05.894Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Organization

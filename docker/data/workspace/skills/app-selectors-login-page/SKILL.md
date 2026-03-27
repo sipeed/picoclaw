@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Login Page page on dashboar
 
 # Login Page — Component Map
 
-> Generated: 2026-03-26T12:23:40.474Z
+> Generated: 2026-03-27T06:39:03.955Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Login Page

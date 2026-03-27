@@ -5,7 +5,7 @@ description: DOM selectors and component map for the Forgot Password Page page o
 
 # Forgot Password Page — Component Map
 
-> Generated: 2026-03-26T12:23:48.380Z
+> Generated: 2026-03-27T06:39:11.752Z
 > Selectors derived from actual DOM classes, IDs, and data-testid attributes.
 
 ### Forgot Password Page
