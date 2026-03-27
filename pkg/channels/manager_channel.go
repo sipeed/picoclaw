@@ -51,9 +51,9 @@ func hiddenValues(key string, value map[string]any, ch config.ChannelsConfig) {
 	case "wecom":
 		value["secret"] = ch.WeCom.Secret()
 	case "dingtalk":
-		value["secret"] = ch.QQ.AppSecret()
-	case "qq":
 		value["secret"] = ch.DingTalk.ClientSecret()
+	case "qq":
+		value["secret"] = ch.QQ.AppSecret()
 	case "irc":
 		value["password"] = ch.IRC.Password()
 		value["serv_password"] = ch.IRC.NickServPassword()
