@@ -320,7 +320,7 @@ func (t *ReadFileTool) Name() string {
 }
 
 func (t *ReadFileLinesTool) Name() string {
-	return "read_file_lines"
+	return "read_file"
 }
 
 func (t *ReadFileTool) Description() string {

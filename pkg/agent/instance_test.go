@@ -275,8 +275,14 @@ func TestNewAgentInstance_ReadFileModeSelectsSchema(t *testing.T) {
 
 	params := readTool.Parameters()
 	props, _ := params["properties"].(map[string]any)
-	if _, ok := props["limit"]; !ok {
-		t.Fatalf("expected line-mode schema to expose limit, got %#v", props)
+	if _, ok := props["start_line"]; !ok {
+		t.Fatalf("expected line-mode schema to expose start_line, got %#v", props)
+	}
+	if _, ok := props["max_lines"]; !ok {
+		t.Fatalf("expected line-mode schema to expose max_lines, got %#v", props)
+	}
+	if _, ok := props["offset"]; ok {
+		t.Fatalf("did not expect line-mode schema to expose offset, got %#v", props)
 	}
 	if _, ok := props["length"]; ok {
 		t.Fatalf("did not expect line-mode schema to expose length, got %#v", props)
