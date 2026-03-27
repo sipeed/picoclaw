@@ -1279,7 +1279,10 @@ func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			logger.WarnF("config file not found, using default config", map[string]any{"path": path})
+			logger.WarnF(
+				"config file not found, using default config",
+				map[string]any{"path": path},
+			)
 			return DefaultConfig(), nil
 		}
 		logger.Errorf("failed to read config file: %v", err)
@@ -1302,7 +1305,10 @@ func LoadConfig(path string) (*Config, error) {
 	var cfg *Config
 	switch versionInfo.Version {
 	case 0:
-		logger.InfoF("config migrate start", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		logger.InfoF(
+			"config migrate start",
+			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+		)
 		// Legacy config (no version field)
 		v, e := loadConfigV0(data)
 		if e != nil {
@@ -1310,10 +1316,16 @@ func LoadConfig(path string) (*Config, error) {
 		}
 		cfg, e = v.Migrate()
 		if e != nil {
-			logger.ErrorF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+			logger.ErrorF(
+				"config migrate fail",
+				map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+			)
 			return nil, e
 		}
-		logger.InfoF("config migrate success", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		logger.InfoF(
+			"config migrate success",
+			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+		)
 		err = makeBackup(path)
 		if err != nil {
 			return nil, err
@@ -1321,13 +1333,19 @@ func LoadConfig(path string) (*Config, error) {
 		// Load existing security config and merge with migrated one to prevent data loss
 		existingSec, secErr := loadSecurityConfig(securityPath(path))
 		if secErr != nil {
-			logger.WarnF("failed to load existing security config during migration", map[string]any{"error": secErr})
+			logger.WarnF(
+				"failed to load existing security config during migration",
+				map[string]any{"error": secErr},
+			)
 		}
 		if existingSec != nil && cfg.security != nil {
 			cfg.security = mergeSecurityConfig(existingSec, cfg.security)
 			// Re-apply the merged security config to update all channels and models
 			if err = applySecurityConfig(cfg, cfg.security); err != nil {
-				logger.WarnF("failed to re-apply merged security config during migration", map[string]any{"error": err})
+				logger.WarnF(
+					"failed to re-apply merged security config during migration",
+					map[string]any{"error": err},
+				)
 			}
 		}
 		defer func(cfg *Config) {
@@ -1348,7 +1366,10 @@ func LoadConfig(path string) (*Config, error) {
 
 		tmpCfgMigrated, e := tmpCfg.Migrate()
 		if e != nil {
-			logger.ErrorF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+			logger.ErrorF(
+				"config migrate fail",
+				map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+			)
 			return nil, e
 		}
 
@@ -1371,9 +1392,11 @@ func LoadConfig(path string) (*Config, error) {
 		for _, m := range cfg.ModelList {
 			for _, k := range m.apiKeys {
 				if k != "" && !strings.HasPrefix(k, "enc://") && !strings.HasPrefix(k, "file://") {
-					fmt.Fprintf(os.Stderr,
+					fmt.Fprintf(
+						os.Stderr,
 						"picoclaw: warning: model %q has a plaintext api_key; call SaveConfig to encrypt it\n",
-						m.ModelName)
+						m.ModelName,
+					)
 					break // Only warn once per model
 				}
 			}

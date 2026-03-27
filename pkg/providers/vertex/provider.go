@@ -445,7 +445,11 @@ func (p *Provider) ChatStream(
 				if part.FunctionCall != nil {
 					argsJSON, _ := json.Marshal(part.FunctionCall.Args)
 					toolCall := ToolCall{
-						ID:        fmt.Sprintf("call_%s_%d", part.FunctionCall.Name, time.Now().UnixNano()),
+						ID: fmt.Sprintf(
+							"call_%s_%d",
+							part.FunctionCall.Name,
+							time.Now().UnixNano(),
+						),
 						Name:      part.FunctionCall.Name,
 						Arguments: part.FunctionCall.Args,
 						Function: &FunctionCall{

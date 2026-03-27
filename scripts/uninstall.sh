@@ -20,6 +20,14 @@ else
   echo "Executable ${INSTALL_BIN_DIR}/${BINARY_NAME} not found. Skipping."
 fi
 
+# Remove the launcher binary
+if [ -f "${INSTALL_BIN_DIR}/picoclaw-launcher" ]; then
+  rm -f "${INSTALL_BIN_DIR}/picoclaw-launcher"
+  echo "Removed executable: ${INSTALL_BIN_DIR}/picoclaw-launcher"
+else
+  echo "Executable ${INSTALL_BIN_DIR}/picoclaw-launcher not found. Skipping."
+fi
+
 # Remove the workspace and configurations
 if [ -d "${PICOCLAW_HOME}" ]; then
   rm -rf "${PICOCLAW_HOME}"

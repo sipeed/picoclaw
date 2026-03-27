@@ -223,6 +223,25 @@ install: build
 	@echo "Installed uninstaller script to $(INSTALL_BIN_DIR)/$(BINARY_NAME)-uninstall"
 	@echo "Installation complete!"
 
+## install-pico: Build core, web and install picoclaw and picoclaw-launcher to system
+install-pico: build build-launcher
+	@echo "Installing $(BINARY_NAME) and picoclaw-launcher..."
+	@mkdir -p $(INSTALL_BIN_DIR)
+	# Copy core binary with temporary suffix to ensure atomic update
+	@cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX)
+	@chmod +x $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX)
+	@mv -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX) $(INSTALL_BIN_DIR)/$(BINARY_NAME)
+	@echo "Installed binary to $(INSTALL_BIN_DIR)/$(BINARY_NAME)"
+	# Copy launcher binary with temporary suffix
+	@cp $(BUILD_DIR)/picoclaw-launcher $(INSTALL_BIN_DIR)/picoclaw-launcher$(INSTALL_TMP_SUFFIX)
+	@chmod +x $(INSTALL_BIN_DIR)/picoclaw-launcher$(INSTALL_TMP_SUFFIX)
+	@mv -f $(INSTALL_BIN_DIR)/picoclaw-launcher$(INSTALL_TMP_SUFFIX) $(INSTALL_BIN_DIR)/picoclaw-launcher
+	@echo "Installed launcher to $(INSTALL_BIN_DIR)/picoclaw-launcher"
+	@cp scripts/uninstall.sh $(INSTALL_BIN_DIR)/$(BINARY_NAME)-uninstall
+	@chmod +x $(INSTALL_BIN_DIR)/$(BINARY_NAME)-uninstall
+	@echo "Installed uninstaller script to $(INSTALL_BIN_DIR)/$(BINARY_NAME)-uninstall"
+	@echo "Installation complete!"
+
 ## uninstall: Remove picoclaw from system
 uninstall:
 	@echo "Uninstalling $(BINARY_NAME)..."
