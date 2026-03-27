@@ -16,6 +16,9 @@ import (
 // JobExecutor is the interface for executing cron jobs through the agent
 type JobExecutor interface {
 	ProcessDirectWithChannel(ctx context.Context, content, sessionKey, channel, chatID string) (string, error)
+	// PublishResponseIfNeeded sends response to the outbound bus only when the
+	// agent did not already deliver content through the message tool in this round.
+	PublishResponseIfNeeded(ctx context.Context, channel, chatID, response string)
 }
 
 // CronTool provides scheduling capabilities for the agent
@@ -110,6 +113,11 @@ func (t *CronTool) Parameters() map[string]any {
 			"job_id": map[string]any{
 				"type":        "string",
 				"description": "Job ID (for remove/enable/disable)",
+			},
+			"type": map[string]any{
+				"type":        "string",
+				"enum":        []string{"message", "directive"},
+				"description": "Message generation strategy. 'message' (default): content is sent directly as-is. 'directive': content is treated as instructions for an AI agent to execute before delivery.",
 			},
 			"deliver": map[string]any{
 				"type":        "boolean",
@@ -236,6 +244,13 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		t.cronService.UpdateJob(job)
 	}
 
+	// Read and set message type (default to empty string which means "message")
+	msgType, _ := args["type"].(string)
+	if msgType != "" {
+		job.Payload.Type = msgType
+		t.cronService.UpdateJob(job)
+	}
+
 	return SilentResult(fmt.Sprintf("Cron job added: %s (id: %s)", job.Name, job.ID))
 }
 
@@ -347,8 +362,13 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return "ok"
 	}
 
-	// If deliver=true, send message directly without agent processing
-	if job.Payload.Deliver {
+	// Determine message generation strategy
+	// Type="directive": treat message as instructions for AI agent to execute
+	// Type="" or "message" (default): static message content
+	isDirective := job.Payload.Type == "directive"
+
+	// If deliver=true and not directive, send message directly without agent processing
+	if job.Payload.Deliver && !isDirective {
 		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer pubCancel()
 		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
@@ -359,13 +379,20 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return "ok"
 	}
 
-	// For deliver=false, process through agent (for complex tasks)
+	// For deliver=false OR directive mode, process through agent
 	sessionKey := fmt.Sprintf("cron-%s", job.ID)
 
-	// Call agent with job's message
+	// Prepare the prompt based on type
+	prompt := job.Payload.Message
+	if isDirective {
+		// For directive type, prefix to clarify this is an instruction
+		prompt = fmt.Sprintf("Please execute the following directive and provide the result:\n\n%s", job.Payload.Message)
+	}
+
+	// Call agent with the prepared prompt
 	response, err := t.executor.ProcessDirectWithChannel(
 		ctx,
-		job.Payload.Message,
+		prompt,
 		sessionKey,
 		channel,
 		chatID,
@@ -374,7 +401,8 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return fmt.Sprintf("Error: %v", err)
 	}
 
-	// Response is automatically sent via MessageBus by AgentLoop
-	_ = response // Will be sent by AgentLoop
+	if response != "" {
+		t.executor.PublishResponseIfNeeded(ctx, channel, chatID, response)
+	}
 	return "ok"
 }
