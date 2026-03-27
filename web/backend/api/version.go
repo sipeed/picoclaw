@@ -83,17 +83,12 @@ func (h *Handler) resolveSystemVersionInfo() systemVersionResponse {
 	return parsed
 }
 
-// executePicoclawVersion runs version commands against the discovered picoclaw
-// executable. It tries subcommand form first, then --version fallback.
+// executePicoclawVersion runs the version subcommand against the
+// discovered picoclaw executable.
 func executePicoclawVersion(ctx context.Context, execPath string) (string, error) {
 	out, err := exec.CommandContext(ctx, execPath, "version").CombinedOutput()
 	if err == nil {
 		return string(out), nil
-	}
-
-	flagOut, flagErr := exec.CommandContext(ctx, execPath, "--version").CombinedOutput()
-	if flagErr == nil {
-		return string(flagOut), nil
 	}
 
 	return string(out), fmt.Errorf("failed to execute version command: %w", err)
