@@ -1,0 +1,21 @@
+--- pkg/config/migration.go
++++ pkg/config/migration.go
+@@ -515,11 +515,16 @@
+	// zero-initializing them, so fields absent from the user's JSON (e.g. api_base)
+	// would silently inherit values from the DefaultConfig template at the same
+	// index position. We only reset cfg.ModelList when the user actually provides
+	// entries; when count is 0 we keep DefaultConfig's built-in list as fallback.
+-	var tmp Config
++	var tmp struct {
++		ModelList json.RawMessage `json:"model_list"`
++	}
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return nil, err
+	}
+-	if len(tmp.ModelList) > 0 {
++	if tmp.ModelList != nil {
++		// User explicitly defined model_list, even if it's empty []
+		cfg.ModelList = nil
+	}
+
+	if err := json.Unmarshal(data, cfg); err != nil {
