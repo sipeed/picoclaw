@@ -111,6 +111,7 @@ type continuationTarget struct {
 const (
 	defaultResponse            = "The model returned an empty response. This may indicate a provider error or token limit."
 	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
+	toolRepeatLoopResponse     = "Detected repeated tool calls without progress; stopping to avoid an infinite loop."
 	handledToolResponseSummary = "Requested output delivered via tool attachment."
 	sessionKeyAgentPrefix      = "agent::"
 	metadataKeyAccountID       = "account_id"
@@ -1914,6 +1915,9 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 	}
 	pendingMessages := append([]providers.Message(nil), ts.opts.InitialSteeringMessages...)
 	var finalContent string
+	lastToolCallsFingerprint := ""
+	consecutiveRepeatedToolCalls := 0
+	const maxConsecutiveRepeatedToolCalls = 3
 
 turnLoop:
 	for ts.currentIteration() < ts.agent.MaxIterations || len(pendingMessages) > 0 || func() bool {
@@ -2410,6 +2414,53 @@ turnLoop:
 				"count":     len(normalizedToolCalls),
 				"iteration": iteration,
 			})
+
+		// Guardrail: if the model keeps requesting the exact same tool calls
+		// over and over (often due to missing/filtered tool results), stop
+		// early instead of running until max_tool_iterations.
+		type toolCallFP struct {
+			Name string          `json:"name"`
+			Args json.RawMessage `json:"args"`
+		}
+		fpParts := make([]toolCallFP, 0, len(normalizedToolCalls))
+		fingerprintBytes := make([]byte, 0)
+		for _, tc := range normalizedToolCalls {
+			argsJSON, err := json.Marshal(tc.Arguments)
+			if err != nil {
+				continue
+			}
+			fpParts = append(fpParts, toolCallFP{
+				Name: tc.Name,
+				Args: json.RawMessage(argsJSON),
+			})
+		}
+		if len(fpParts) > 0 {
+			if fp, err := json.Marshal(fpParts); err == nil {
+				fingerprintBytes = fp
+			}
+		}
+		if len(fingerprintBytes) > 0 {
+			toolCallsFingerprint := string(fingerprintBytes)
+			if toolCallsFingerprint == lastToolCallsFingerprint {
+				consecutiveRepeatedToolCalls++
+			} else {
+				lastToolCallsFingerprint = toolCallsFingerprint
+				consecutiveRepeatedToolCalls = 1
+			}
+
+			if consecutiveRepeatedToolCalls >= maxConsecutiveRepeatedToolCalls {
+				turnStatus = TurnEndStatusError
+				finalContent = toolRepeatLoopResponse
+				logger.WarnCF("agent", "Stopping repeated tool call loop",
+					map[string]any{
+						"agent_id":            ts.agent.ID,
+						"fingerprint_repeats": consecutiveRepeatedToolCalls,
+						"tools":               toolNames,
+						"iteration":           iteration,
+					})
+				break turnLoop
+			}
+		}
 
 		allResponsesHandled := len(normalizedToolCalls) > 0
 		assistantMsg := providers.Message{
