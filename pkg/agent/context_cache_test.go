@@ -711,7 +711,7 @@ func TestBuildMessages_IncludesMediaOnlyCurrentMessage(t *testing.T) {
 	tmpDir := setupWorkspace(t, nil)
 	defer os.RemoveAll(tmpDir)
 
-	cb := NewContextBuilder(tmpDir)
+	cb := NewContextBuilder(tmpDir, tmpDir)
 	msgs := cb.BuildMessages(
 		nil,
 		"",
