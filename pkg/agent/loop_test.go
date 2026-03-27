@@ -1697,6 +1697,119 @@ func TestProcessMessage_SwitchModelRoutesSubsequentRequestsToSelectedProvider(t 
 	}
 }
 
+// TestProcessMessage_PerAgentProviderUsedForNamedAgent verifies that a named agent configured
+// with a different model uses its own provider rather than the global default one.
+func TestProcessMessage_PerAgentProviderUsedForNamedAgent(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	globalCalls := 0
+	globalModel := ""
+	globalServer := newChatCompletionTestServer(t, "global", "global reply", &globalCalls, &globalModel)
+	defer globalServer.Close()
+
+	agentCalls := 0
+	agentModel := ""
+	agentServer := newChatCompletionTestServer(t, "agent", "agent reply", &agentCalls, &agentModel)
+	defer agentServer.Close()
+
+	cfg := &config.Config{
+		Bindings: []config.AgentBinding{
+			{
+				AgentID: "special",
+				Match: config.BindingMatch{
+					Channel:   "telegram",
+					AccountID: "*",
+					Peer:      &config.PeerMatch{Kind: "direct", ID: "agent-user"},
+				},
+			},
+		},
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "global-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+			List: []config.AgentConfig{
+				{
+					ID:      "main",
+					Default: true,
+					Model:   &config.AgentModelConfig{Primary: "global-model"},
+				},
+				{
+					ID:    "special",
+					Model: &config.AgentModelConfig{Primary: "agent-model"},
+				},
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "global-model",
+				Model:     "openai/global-v1",
+				APIBase:   globalServer.URL,
+				APIKeys:   config.SimpleSecureStrings("global-key"),
+			},
+			{
+				ModelName: "agent-model",
+				Model:     "openai/agent-v1",
+				APIBase:   agentServer.URL,
+				APIKeys:   config.SimpleSecureStrings("agent-key"),
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	globalProvider, _, err := providers.CreateProvider(cfg)
+	if err != nil {
+		t.Fatalf("CreateProvider() error = %v", err)
+	}
+	al := NewAgentLoop(cfg, msgBus, globalProvider)
+	helper := testHelper{al: al}
+
+	// Message from a regular user goes to global provider.
+	resp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "default-user",
+		ChatID:   "chat-default",
+		Content:  "hello from default",
+		Peer:     bus.Peer{Kind: "direct", ID: "default-user"},
+	})
+	if resp != "global reply" {
+		t.Fatalf("default agent response = %q, want %q", resp, "global reply")
+	}
+	if globalCalls != 1 {
+		t.Fatalf("global calls = %d, want 1", globalCalls)
+	}
+	if agentCalls != 0 {
+		t.Fatalf("agent calls after default message = %d, want 0", agentCalls)
+	}
+
+	// Message routed to the named agent uses the agent-specific provider.
+	resp2 := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "agent-user",
+		ChatID:   "chat-special",
+		Content:  "hello from special peer",
+		Peer:     bus.Peer{Kind: "direct", ID: "agent-user"},
+	})
+	if resp2 != "agent reply" {
+		t.Fatalf("named agent response = %q, want %q", resp2, "agent reply")
+	}
+	if agentCalls != 1 {
+		t.Fatalf("agent calls = %d, want 1", agentCalls)
+	}
+	if globalCalls != 1 {
+		t.Fatalf("global calls after named-agent message = %d, want 1", globalCalls)
+	}
+	if agentModel != "agent-v1" {
+		t.Fatalf("agent model = %q, want %q", agentModel, "agent-v1")
+	}
+}
+
 // TestToolResult_SilentToolDoesNotSendUserMessage verifies silent tools don't trigger outbound
 func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
