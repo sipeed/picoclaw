@@ -881,47 +881,47 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
 
 	result1 := tool.Execute(context.Background(), map[string]any{
-		"path":   testFile,
-		"offset": 0,
-		"limit":  2,
+		"path":       testFile,
+		"start_line": 1,
+		"limit":      2,
 	})
 	if result1.IsError {
 		t.Fatalf("Chunk 1 failed: %s", result1.ForLLM)
 	}
-	if !strings.Contains(result1.ForLLM, "line 1\nline 2\n") {
+	if !strings.Contains(result1.ForLLM, "line 2\nline 3\n") {
 		t.Fatalf("expected first two lines, got: %s", result1.ForLLM)
 	}
-	if !strings.Contains(result1.ForLLM, "lines 0-1") {
-		t.Fatalf("expected line range 0-1, got: %s", result1.ForLLM)
+	if !strings.Contains(result1.ForLLM, "lines 1-2") {
+		t.Fatalf("expected line range 1-2, got: %s", result1.ForLLM)
 	}
-	if !strings.Contains(result1.ForLLM, "offset=2") {
-		t.Fatalf("expected continuation offset=2, got: %s", result1.ForLLM)
+	if !strings.Contains(result1.ForLLM, "offset=3") {
+		t.Fatalf("expected continuation offset=3, got: %s", result1.ForLLM)
 	}
 
 	result2 := tool.Execute(context.Background(), map[string]any{
-		"path":   testFile,
-		"offset": 2,
-		"limit":  2,
+		"path":       testFile,
+		"start_line": 3,
+		"limit":      2,
 	})
 	if result2.IsError {
 		t.Fatalf("Chunk 2 failed: %s", result2.ForLLM)
 	}
-	if !strings.Contains(result2.ForLLM, "line 3\nline 4\n") {
+	if !strings.Contains(result2.ForLLM, "line 4\nline 5\n") {
 		t.Fatalf("expected middle chunk, got: %s", result2.ForLLM)
 	}
-	if !strings.Contains(result2.ForLLM, "offset=4") {
-		t.Fatalf("expected continuation offset=4, got: %s", result2.ForLLM)
+	if !strings.Contains(result2.ForLLM, "offset=5") {
+		t.Fatalf("expected continuation offset=5, got: %s", result2.ForLLM)
 	}
 
 	result3 := tool.Execute(context.Background(), map[string]any{
-		"path":   testFile,
-		"offset": 4,
-		"limit":  2,
+		"path":       testFile,
+		"start_line": 5,
+		"limit":      2,
 	})
 	if result3.IsError {
 		t.Fatalf("Chunk 3 failed: %s", result3.ForLLM)
 	}
-	if !strings.Contains(result3.ForLLM, "line 5\nline 6\n") {
+	if !strings.Contains(result3.ForLLM, "line 6\n") {
 		t.Fatalf("expected final chunk, got: %s", result3.ForLLM)
 	}
 	if !strings.Contains(result3.ForLLM, "[END OF FILE") {
@@ -939,15 +939,18 @@ func TestReadFileLinesTool_DefaultOffsetAndRemainingLines(t *testing.T) {
 	}
 
 	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
-	result := tool.Execute(context.Background(), map[string]any{"path": testFile})
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+	})
 	if result.IsError {
 		t.Fatalf("Execute() error = %s", result.ForLLM)
 	}
-	if !strings.Contains(result.ForLLM, "line 1\nline 2\nline 3\n") {
+	if !strings.Contains(result.ForLLM, "line 2\nline 3\n") {
 		t.Fatalf("expected remaining lines by default, got: %s", result.ForLLM)
 	}
-	if !strings.Contains(result.ForLLM, "lines 0-2") {
-		t.Fatalf("expected line range 0-2, got: %s", result.ForLLM)
+	if !strings.Contains(result.ForLLM, "lines 1-2") {
+		t.Fatalf("expected line range 1-2, got: %s", result.ForLLM)
 	}
 }
 
@@ -991,8 +994,8 @@ func TestReadFileLinesTool_OffsetBeyondEOF(t *testing.T) {
 
 	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
 	result := tool.Execute(context.Background(), map[string]any{
-		"path":   testFile,
-		"offset": int64(100),
+		"path":       testFile,
+		"start_line": int64(100),
 	})
 	if result.IsError {
 		t.Fatalf("unexpected error: %s", result.ForLLM)
@@ -1013,7 +1016,10 @@ func TestReadFileLinesTool_BinaryFileRejected(t *testing.T) {
 	}
 
 	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
-	result := tool.Execute(context.Background(), map[string]any{"path": testFile})
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+	})
 	if !result.IsError {
 		t.Fatalf("expected binary file rejection in line mode, got: %s", result.ForLLM)
 	}
@@ -1029,21 +1035,24 @@ func TestReadFileLinesTool_TruncatesSingleLongLineAtByteBudget(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "long_line.txt")
 
-	content := strings.Repeat("x", 70*1024) + "\nsecond line\n"
+	content := "first line\n" + strings.Repeat("x", 70*1024) + "\n"
 	err := os.WriteFile(testFile, []byte(content), 0o644)
 	if err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
 	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
-	result := tool.Execute(context.Background(), map[string]any{"path": testFile})
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+	})
 	if result.IsError {
 		t.Fatalf("Execute() error = %s", result.ForLLM)
 	}
 	if !strings.Contains(result.ForLLM, "was cut mid-line") {
 		t.Fatalf("expected explicit mid-line truncation warning, got: %s", result.ForLLM)
 	}
-	if strings.Contains(result.ForLLM, "second line") {
-		t.Fatalf("did not expect second line after truncation, got: %s", result.ForLLM)
+	if strings.Contains(result.ForLLM, "first line") {
+		t.Fatalf("did not expect the skipped first line in output, got: %s", result.ForLLM)
 	}
 }
