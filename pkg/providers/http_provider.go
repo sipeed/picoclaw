@@ -51,10 +51,14 @@ func NewAzureAIProvider(apiKey, apiBase, proxy string, requestTimeoutSeconds int
 			apiKey,
 			apiBase,
 			proxy,
-			openai_compat.WithAzureHeaders(),
+			openai_compat.WithAzureHeaders(true),
 			openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
 		),
 	}
+}
+
+func (p *HTTPProvider) SetUseAzureHeaders(use bool) {
+	p.delegate.SetUseAzureHeaders(use)
 }
 
 func (p *HTTPProvider) Chat(
@@ -82,10 +86,6 @@ func (p *HTTPProvider) ChatStream(
 
 func (p *HTTPProvider) GetDefaultModel() string {
 	return ""
-}
-
-func (p *HTTPProvider) SetUseAzureHeaders(use bool) {
-	p.delegate.SetUseAzureHeaders(use)
 }
 
 func (p *HTTPProvider) SupportsNativeSearch() bool {

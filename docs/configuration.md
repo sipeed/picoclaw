@@ -77,7 +77,7 @@ When an incoming message includes a **ChatID** (passed in the `/chat` API or ext
  
 1.  **Isolated Workspace:** The agent's operations are restricted to `workspace/sessions/{isolationID}/workspace`.
 2.  **Isolated Memory:** Long-term memory (`MEMORY.md`) is stored and read from the isolated session path.
-3.  **Isolated Tools:** Tools like `read_file` and `write_file` are automatically pointed to the isolated workspace, preventing any tenant from accessing another's files or the global base workspace.
+3.  **Isolated Tools:** Tools like `read_file` and `write_file` are automatically pointed to the isolated workspace. Additionally, **MCP server tools** (e.g., Harvest, Monday) and discovery search tools are dynamically registered to each isolated instance, ensuring they inherit the same security boundaries.
  
 #### Tenant Identification (Inbound Integration)
  
@@ -98,6 +98,33 @@ If no `ChatID` is detected, the request is routed to the **Global Agent** contex
 -   **Session Agents:** Every request with a `chatID` creates a transient isolated agent instance that "routes" all file and memory operations into its session-specific subdirectory.
  
 This mechanism is transparent to the end-user and the AI agent itself, ensuring a secure and portable multi-user environment out-of-the-box.
+
+### 🚀 Onboarding & Automation
+
+For automated deployments (like Azure Container Apps or CI/CD), the `onboard` command supports non-interactive execution and environment cleanup.
+
+#### Automated Setup
+
+Use the `--yes` (or `-y`) flag to skip all interactive prompts and automatically generate default credentials/keys:
+
+```bash
+picoclaw onboard --yes
+```
+
+#### Environment Purge
+
+If you need to reset an environment (e.g., before a clean redeploy), use the `purge` subcommand. This removes existing workspaces, logs, and generated keys:
+
+```bash
+# Safe purge (checks if files exist)
+picoclaw onboard purge
+
+# Force purge (no confirmation)
+picoclaw onboard purge --force
+```
+
+> [!WARNING]
+> The `purge` command is destructive. It will delete your local session history, memory, and encrypted secrets. Only use it when you are prepared to start from a clean slate.
  
 ### Skill Sources
 

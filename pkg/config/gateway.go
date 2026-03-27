@@ -18,7 +18,6 @@ type GatewayConfig struct {
 	LogLevel    string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
 }
 
-
 func canonicalGatewayLogLevel(level logger.LogLevel) string {
 	switch level {
 	case logger.DEBUG:

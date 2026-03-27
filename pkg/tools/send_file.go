@@ -23,6 +23,7 @@ type SendFileTool struct {
 	maxFileSize int
 	mediaStore  media.MediaStore
 	allowPaths  []*regexp.Regexp
+	denyPaths   []*regexp.Regexp
 
 	defaultChannel string
 	defaultChatID  string
@@ -33,21 +34,26 @@ func NewSendFileTool(
 	restrict bool,
 	maxFileSize int,
 	store media.MediaStore,
-	allowPaths ...[]*regexp.Regexp,
+	configs ...[]*regexp.Regexp,
 ) *SendFileTool {
 	if maxFileSize <= 0 {
 		maxFileSize = config.DefaultMaxMediaSize
 	}
-	var patterns []*regexp.Regexp
-	if len(allowPaths) > 0 {
-		patterns = allowPaths[0]
+	var allowPatterns []*regexp.Regexp
+	var denyPatterns []*regexp.Regexp
+	if len(configs) > 0 {
+		allowPatterns = configs[0]
+	}
+	if len(configs) > 1 {
+		denyPatterns = configs[1]
 	}
 	return &SendFileTool{
 		workspace:   workspace,
 		restrict:    restrict,
 		maxFileSize: maxFileSize,
 		mediaStore:  store,
-		allowPaths:  patterns,
+		allowPaths:  allowPatterns,
+		denyPaths:   denyPatterns,
 	}
 }
 
@@ -105,7 +111,7 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("media store not configured")
 	}
 
-	resolved, err := validatePathWithAllowPaths(path, t.workspace, t.restrict, t.allowPaths)
+	resolved, err := validatePathWithConfigs(path, t.workspace, t.restrict, t.allowPaths, t.denyPaths)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("invalid path: %v", err))
 	}

@@ -217,7 +217,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return provider, modelID, nil
 
-	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "nvidia", "venice",
+	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "venice",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
@@ -250,6 +250,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 		)

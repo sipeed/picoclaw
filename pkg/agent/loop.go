@@ -178,6 +178,7 @@ func registerSharedTools(
 	provider providers.LLMProvider,
 ) {
 	allowReadPaths := buildAllowReadPatterns(cfg)
+	denyReadPaths := compilePatterns(cfg.Tools.DenyReadPaths)
 	var ttsProvider tts.TTSProvider
 	if cfg.Tools.IsToolEnabled("send_tts") {
 		ttsProvider = tts.DetectTTS(cfg)
@@ -296,14 +297,15 @@ func registerSharedTools(
 				agent.Workspace,
 				cfg.Agents.Defaults.RestrictToWorkspace,
 				cfg.Agents.Defaults.GetMaxMediaSize(),
-				nil,
+				al.mediaStore,
 				allowReadPaths,
+				denyReadPaths,
 			)
 			agent.Tools.Register(sendFileTool)
 		}
 
 		if ttsProvider != nil {
-			agent.Tools.Register(tools.NewSendTTSTool(ttsProvider, nil))
+			agent.Tools.Register(tools.NewSendTTSTool(ttsProvider, al.mediaStore))
 		}
 
 		if cfg.Tools.IsToolEnabled("load_image") {
@@ -467,6 +469,9 @@ func registerSharedTools(
 		} else if (spawnEnabled || spawnStatusEnabled) && !cfg.Tools.IsToolEnabled("subagent") {
 			logger.WarnCF("agent", "spawn/spawn_status tools require subagent to be enabled", nil)
 		}
+		// Register MCP and discovery tools to this agent
+		al.RegisterMCPToolsToAgent(agentID, agent)
+
 		// Apply global tools whitelist
 		agent.Tools.Filter(cfg.Tools.Whitelist, cfg.Tools.WhitelistEnabled)
 	}
@@ -1144,6 +1149,12 @@ func (al *AgentLoop) GetConfig() *config.Config {
 }
 
 // SetMediaStore injects a MediaStore for media lifecycle management.
+func (al *AgentLoop) GetMediaStore() media.MediaStore {
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+	return al.mediaStore
+}
+
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
 

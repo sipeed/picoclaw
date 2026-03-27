@@ -144,13 +144,19 @@ func (s *SecureStrings) UnmarshalJSON(value []byte) error {
 	if string(value) == notHere {
 		return nil
 	}
+	// Try []string first
 	var v []*SecureString
-	err := json.Unmarshal(value, &v)
-	if err != nil {
-		return err
+	if err := json.Unmarshal(value, &v); err == nil {
+		*s = v
+		return nil
 	}
-	*s = v
-	return nil
+	// Fallback to single string
+	var single *SecureString
+	if err := json.Unmarshal(value, &single); err == nil {
+		*s = []*SecureString{single}
+		return nil
+	}
+	return json.Unmarshal(value, &v) // Return original error
 }
 
 // SecureString the string value that can be decrypted or resolved

@@ -190,7 +190,7 @@ func TestNewAgentInstance_PreservesDistinctLimiterIdentityForSharedResolvedModel
 		},
 	}
 
-	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{}, "")
 	if len(agent.Candidates) != 2 {
 		t.Fatalf("len(Candidates) = %d, want 2", len(agent.Candidates))
 	}
@@ -319,7 +319,7 @@ func TestNewAgentInstance_ReadFileModeSelectsSchema(t *testing.T) {
 		},
 	}
 
-	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{}, "")
 	readTool, ok := agent.Tools.Get("read_file")
 	if !ok {
 		t.Fatal("read_file tool not registered")

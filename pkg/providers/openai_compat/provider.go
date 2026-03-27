@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
@@ -43,32 +42,29 @@ type Provider struct {
 	mu              sync.RWMutex // Protect useAzureHeaders
 }
 
-
-
 type Option func(*Provider)
 
 const defaultRequestTimeout = common.DefaultRequestTimeout
 
 var stripModelPrefixProviders = map[string]struct{}{
-	"litellm":    {},
-	"venice":     {},
-	"moonshot":   {},
-	"nvidia":     {},
-	"groq":       {},
-	"ollama":     {},
-	"deepseek":   {},
-	"google":     {},
-	"openrouter": {},
-	"zhipu":      {},
-	"mistral":    {},
-	"vivgrid":    {},
-	"minimax":    {},
+	"litellm":       {},
+	"venice":        {},
+	"moonshot":      {},
+	"nvidia":        {},
+	"groq":          {},
+	"ollama":        {},
+	"deepseek":      {},
+	"google":        {},
+	"openrouter":    {},
+	"zhipu":         {},
+	"mistral":       {},
+	"vivgrid":       {},
+	"minimax":       {},
 	"novita":        {},
 	"lmstudio":      {},
 	"azure-ai":      {},
 	"azure-foundry": {},
 }
-
 
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {
@@ -107,7 +103,6 @@ func (p *Provider) SetUseAzureHeaders(use bool) {
 	defer p.mu.Unlock()
 	p.useAzureHeaders = use
 }
-
 
 func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 	p := &Provider{

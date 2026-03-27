@@ -37,7 +37,18 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
 # Copy binary
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
 
-# Create picoclaw home directory
+# Create non-root user and group
+# node image already has a 'node' user with UID 1000, so we remove it first
+RUN deluser --remove-home node || true && \
+    addgroup -g 1000 picoclaw && \
+    adduser -D -u 1000 -G picoclaw picoclaw
+
+# Switch to non-root user
+USER picoclaw
+WORKDIR /home/picoclaw
+
+# Run onboard to create initial directories and config
+# HOME will be /home/picoclaw
 RUN /usr/local/bin/picoclaw onboard
 
 ENTRYPOINT ["picoclaw"]

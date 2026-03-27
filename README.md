@@ -97,6 +97,8 @@
 
 🧠 **Smart routing**: Rule-based model routing — simple queries go to lightweight models, saving API costs.
 
+🛡️ **Hardened Multi-User Isolation**: Built-in [Tenant Isolation](docs/configuration.md#🔒-multi-tenant-agent-isolation) for shared infrastructure (Azure/ACA) — automatically partitions workspaces, memory, and tools (including MCP) per-user session.
+
 _*Recent builds may use 10-20MB due to rapid PR merges. Resource optimization is planned. Boot speed comparison based on 0.8GHz single-core benchmarks (see table below)._
 
 <div align="center">

@@ -13,6 +13,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
+// Mux defines the interface required for registering health handlers.
+type Mux interface {
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}
+
 // ChatRequest is the JSON body for POST /chat.
 type ChatRequest struct {
 	Message   string `json:"message"`
@@ -36,7 +41,6 @@ type chatStatus struct {
 }
 
 type Server struct {
-
 	server        *http.Server
 	mu            sync.RWMutex
 	ready         bool
@@ -49,7 +53,6 @@ type Server struct {
 	chatResults   map[string]*chatStatus
 	chatResultsMu sync.RWMutex
 }
-
 
 type Check struct {
 	Name      string    `json:"name"`
@@ -271,7 +274,7 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 
 // RegisterOnMux registers /health, /ready, /reload and /chat handlers onto the
 // given mux. This allows the health endpoints to be served by a shared HTTP server.
-func (s *Server) RegisterOnMux(mux *http.ServeMux) {
+func (s *Server) RegisterOnMux(mux Mux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
@@ -346,6 +349,8 @@ func (s *Server) handlePostChat(w http.ResponseWriter, r *http.Request) {
 		// These are ordered by specificity/reliability
 		headers := []string{
 			"X-PicoClaw-Chat-ID",
+			"X-MS-CONVERSATION-ID", // Teams Conversation ID
+			"X-MS-TENANT-ID",       // Teams Tenant ID
 			"X-User-ID",
 			"X-Session-ID",
 			"X-MS-CLIENT-PRINCIPAL-ID",   // Azure App Service / Container Apps (EasyAuth)

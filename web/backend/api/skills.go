@@ -609,7 +609,7 @@ func findWorkspaceSkillByDirectory(cfg *config.Config, directory string) *skillS
 }
 
 func findWorkspaceSkillInfoByDirectory(workspace, directory string) *skills.SkillInfo {
-	loader := skills.NewSkillsLoader(workspace, "", "")
+	loader := skills.NewSkillsLoader(workspace, "", "", "", nil, false)
 	for _, skill := range loader.ListSkills() {
 		if skill.Source != "workspace" {
 			continue
