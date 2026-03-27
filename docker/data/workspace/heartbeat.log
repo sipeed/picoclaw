@@ -137,3 +137,15 @@
 [2026-03-26 11:37:03] [INFO] Heartbeat OK - silent
 [2026-03-26 12:13:08] [INFO] Resolved channel: , chatID:  (from lastChannel: )
 [2026-03-26 12:13:10] [INFO] Heartbeat OK - silent
+[2026-03-26 12:43:30] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 12:43:32] [INFO] Heartbeat OK - silent
+[2026-03-26 13:13:29] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 13:13:32] [INFO] Heartbeat OK - silent
+[2026-03-26 13:17:53] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 13:17:55] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: API request failed:
+  Status: 401
+  Body:   {"error":{"message":"litellm.AuthenticationError: BedrockException Invalid Authentication - Unable to locate credentials","type":null,"param":null,"code":"401"}}
+[2026-03-26 13:21:14] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 13:21:15] [INFO] Heartbeat OK - silent
+[2026-03-26 13:51:13] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 13:51:15] [INFO] Heartbeat OK - silent

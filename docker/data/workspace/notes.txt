@@ -67,5 +67,55 @@ Expected result:
 6. Schedule saved successfully
 7. Notification appears: "Schedule updated successfully"
 8. Manage Schedule modal now displays the updated Cron Expression
-   EOF
-   )"
+EOF
+)"
+
+# Creating Playwright Script Prompt:
+
+docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m "$(cat <<'EOF'
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-knowledge-base/SKILL.md
+
+IMPORTANT RULES:
+
+1. You MUST only use selectors from the SKILL.md files above. Copy them exactly.
+2. NEVER guess or invent Vuetify selectors like .v-dialog, .v-dialog--active, .v-overlay, .v-card, etc.
+3. For login, use the EXACT credentials and selectors from /skills/app-selectors/SKILL.md. Do NOT use env vars or placeholder credentials.
+4. For modals/dialogs, use the actual custom CSS classes from the Discovered Modals or Custom Elements section. NEVER use generic Vuetify wrappers.
+5. TypeScript-safe Playwright only: NEVER use .filter({ hasAttribute: ... }) because it is invalid in Playwright.
+6. Logging rule: print "✅ PASS" only AFTER the step assertion succeeds. Never print optimistic PASS logs.
+7. Loading states in modals: after a modal/overlay opens, ALWAYS wait for any "Loading..." text to disappear before asserting content. Use: await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+8. NEVER guess component types (e.g. .v-radio-group, .v-tabs). Always check the SKILL.md "Discovered Modals / Dialogs" section for the EXACT elements and their selectors. If a toggle, mode selector, or form field is not documented in the SKILL.md, use getByRole('button') or getByText() with exact visible text.
+
+Create a Playwright test file at /tests/knowledge-base/delete-kb.spec.ts.
+
+After creating the test, auto-run it and include the terminal output + result summary:
+
+- Command: npx playwright test tests/knowledge-base/delete-kb.spec.ts
+
+Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing2026!
+
+1. Perform case "Login"
+2. On Select Organization page, select organization "Testing2026!"
+3. User redirected to https://dashboard.intentai.com/
+4. Click "Knowledge Base" on the left sidebar
+5. Locate knowledge base bucket "Picotest1"
+6. Click the three-dot (⋮) action menu on the bucket card
+7. Click "Delete"
+8. Delete Knowledge Base Bucket confirmation modal appears
+9. Verify the modal displays message:
+"Are you sure you want to delete 'Picotest1'? This action cannot be undone."
+10. Click Delete
+
+Expected result:
+
+1. User able to click Delete
+2. Knowledge base bucket is removed from the list
+3. Notification appears at the bottom-right of the screen:
+"Bucket deleted successfully"
+4. The deleted bucket no longer appears in the Knowledge Base list
+EOF
+)"
