@@ -33,6 +33,28 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Channel-Only Runtime
+
+Use `picoclaw channel start` when you want to run enabled channels and AgentLoop without starting Gateway side services.
+
+```bash
+# Start all enabled channels from config.json
+picoclaw channel start
+
+# Same startup checks as gateway command
+picoclaw channel start --allow-empty
+picoclaw channel start --debug
+```
+
+Compared with `picoclaw gateway`, channel-only runtime:
+
+- Keeps MessageBus + AgentLoop + ChannelManager (full chat processing path)
+- Starts shared HTTP server for channel webhooks and `/health`/`/ready`
+- Does **not** start Cron service, Heartbeat service, Device service
+- Does **not** enable config hot reload or `/reload`
+
+Use `picoclaw gateway` if you need the full control plane and background services.
+
 ### Gateway Log Level
 
 `gateway.log_level` controls Gateway log verbosity and is configurable in `config.json`.

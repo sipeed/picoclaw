@@ -31,6 +31,28 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Channel 独立运行模式
+
+当你希望在不启动 gateway 侧服务的情况下，仅运行已启用的 channel 与 AgentLoop 时，可使用 `picoclaw channel start`。
+
+```bash
+# 启动 config.json 中所有已启用 channel
+picoclaw channel start
+
+# 与 gateway 启动校验保持一致
+picoclaw channel start --allow-empty
+picoclaw channel start --debug
+```
+
+与 `picoclaw gateway` 相比，channel 独立运行模式：
+
+- 保留 MessageBus + AgentLoop + ChannelManager（完整消息处理链路）
+- 启动共享 HTTP 服务，用于 channel webhook 与 `/health`/`/ready`
+- **不会** 启动 Cron、Heartbeat、Device 服务
+- **不会** 启用配置热更新和 `/reload`
+
+若需要完整控制面与后台服务，请使用 `picoclaw gateway`。
+
 ### Gateway 日志等级
 
 `gateway.log_level` 控制 Gateway 的日志详细程度，可在 `config.json` 中配置：
