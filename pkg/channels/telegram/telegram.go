@@ -374,6 +374,13 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 		_, err = c.bot.EditMessageText(ctx, tu.EditMessageText(tu.ID(cid), mid, content))
 	}
 
+	if err != nil && isPostConnectError(err) {
+		logger.WarnCF("telegram", "EditMessage timed out or connection dropped; assuming it landed to prevent duplicate", map[string]any{
+			"error": err.Error(),
+		})
+		return nil // Swallow the error to prevent Manager from sending a duplicate
+	}
+
 	return err
 }
 
@@ -984,4 +991,22 @@ func cryptoRandInt() int {
 	var b [4]byte
 	_, _ = rand.Read(b[:])
 	return int(binary.BigEndian.Uint32(b[:])) | 1 // ensure non-zero
+}
+
+// isPostConnectError returns true if the error is likely a network drop that occurred
+// after the request reached the Telegram server (timeout, connection reset/closed).
+// Swallowing these in EditMessage avoids sending a duplicate fallback message
+// when the edit likely actually succeeded on the platform.
+func isPostConnectError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	// These common network/timeout markers often indicate a client-side failure to read the response.
+	return strings.Contains(msg, "timeout") ||
+		strings.Contains(msg, "reset") ||
+		strings.Contains(msg, "socket") ||
+		strings.Contains(msg, "network") ||
+		strings.Contains(msg, "closed") ||
+		strings.Contains(msg, "fetch failed")
 }
