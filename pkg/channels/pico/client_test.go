@@ -106,7 +106,7 @@ func TestClientChannel_ConnectAndSend(t *testing.T) {
 	mb := bus.NewMessageBus()
 	ch, err := NewPicoClientChannel(config.PicoClientConfig{
 		URL:          wsURL(srv.URL),
-		Token:        "test-token",
+		Token:        *config.NewSecureString("test-token"),
 		SessionID:    "sess-1",
 		PingInterval: 60,
 		ReadTimeout:  10,
@@ -139,7 +139,7 @@ func TestClientChannel_AuthFailure(t *testing.T) {
 
 	ch, err := NewPicoClientChannel(config.PicoClientConfig{
 		URL:   wsURL(srv.URL),
-		Token: "wrong-token",
+		Token: *config.NewSecureString("wrong-token"),
 	}, bus.NewMessageBus())
 	if err != nil {
 		t.Fatal(err)

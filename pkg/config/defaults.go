@@ -357,7 +357,7 @@ func DefaultConfig() *Config {
 			Host:      "127.0.0.1",
 			Port:      18790,
 			HotReload: false,
-			LogLevel:  "fatal",
+			LogLevel:  "warn",
 		},
 		Tools: ToolsConfig{
 			FilterSensitiveData: true,
@@ -518,12 +518,6 @@ func DefaultConfig() *Config {
 			GitCommit: GitCommit,
 			BuildTime: BuildTime,
 			GoVersion: GoVersion,
-		},
-		security: &SecurityConfig{
-			ModelList: map[string]ModelSecurityEntry{},
-			Channels:  &ChannelsSecurity{},
-			Web:       &WebToolsSecurity{},
-			Skills:    &SkillsSecurity{},
 		},
 	}
 }

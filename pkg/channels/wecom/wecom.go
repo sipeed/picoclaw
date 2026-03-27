@@ -109,7 +109,7 @@ func (s *recentMessageSet) Mark(id string) bool {
 }
 
 func NewChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*WeComChannel, error) {
-	if cfg.BotID == "" || cfg.Secret() == "" {
+	if cfg.BotID == "" || cfg.Secret.String() == "" {
 		return nil, fmt.Errorf("wecom bot_id and secret are required")
 	}
 	if cfg.WebSocketURL == "" {
@@ -356,7 +356,7 @@ func (c *WeComChannel) runConnection() error {
 		Headers: wecomHeaders{ReqID: randomID(10)},
 		Body: map[string]string{
 			"bot_id": c.config.BotID,
-			"secret": c.config.Secret(),
+			"secret": c.config.Secret.String(),
 		},
 	}, wecomCommandTimeout); writeErr != nil {
 		return writeErr

@@ -81,8 +81,8 @@ func (c *PicoClientChannel) Stop(ctx context.Context) error {
 
 func (c *PicoClientChannel) dial() error {
 	header := http.Header{}
-	if c.config.Token != "" {
-		header.Set("Authorization", "Bearer "+c.config.Token)
+	if c.config.Token.String() != "" {
+		header.Set("Authorization", "Bearer "+c.config.Token.String())
 	}
 
 	ws, resp, err := websocket.DefaultDialer.DialContext(c.ctx, c.config.URL, header)

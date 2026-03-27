@@ -34,7 +34,7 @@ func TestEnsurePicoChannel_FreshConfig(t *testing.T) {
 	if !cfg.Channels.Pico.Enabled {
 		t.Error("expected Pico to be enabled after setup")
 	}
-	if cfg.Channels.Pico.Token() == "" {
+	if cfg.Channels.Pico.Token.String() == "" {
 		t.Error("expected a non-empty token after setup")
 	}
 }
@@ -144,8 +144,8 @@ func TestEnsurePicoChannel_PreservesUserSettings(t *testing.T) {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
 
-	if cfg.Channels.Pico.Token() != "user-custom-token" {
-		t.Errorf("token = %q, want %q", cfg.Channels.Pico.Token(), "user-custom-token")
+	if cfg.Channels.Pico.Token.String() != "user-custom-token" {
+		t.Errorf("token = %q, want %q", cfg.Channels.Pico.Token.String(), "user-custom-token")
 	}
 	if !cfg.Channels.Pico.AllowTokenQuery {
 		t.Error("user's allow_token_query=true must be preserved")
@@ -185,7 +185,7 @@ func TestEnsurePicoChannel_ExistingConfigWithoutSecurityFile(t *testing.T) {
 	if !cfg.Channels.Pico.Enabled {
 		t.Error("expected Pico to be enabled after setup")
 	}
-	if cfg.Channels.Pico.Token() == "" {
+	if cfg.Channels.Pico.Token.String() == "" {
 		t.Error("expected a non-empty token after setup")
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(configPath), config.SecurityConfigFile)); err != nil {
@@ -215,7 +215,7 @@ func TestEnsurePicoChannel_ConfiguresPicoWithoutGateway(t *testing.T) {
 	if !cfg.Channels.Pico.Enabled {
 		t.Error("expected Pico to be enabled after launcher startup setup")
 	}
-	if cfg.Channels.Pico.Token() == "" {
+	if cfg.Channels.Pico.Token.String() == "" {
 		t.Error("expected a non-empty token after launcher startup setup")
 	}
 }
@@ -232,7 +232,7 @@ func TestEnsurePicoChannel_Idempotent(t *testing.T) {
 	}
 
 	cfg1, _ := config.LoadConfig(configPath)
-	token1 := cfg1.Channels.Pico.Token()
+	token1 := cfg1.Channels.Pico.Token.String()
 
 	// Second call should be a no-op
 	changed, err := h.EnsurePicoChannel(origin)
@@ -244,7 +244,7 @@ func TestEnsurePicoChannel_Idempotent(t *testing.T) {
 	}
 
 	cfg2, _ := config.LoadConfig(configPath)
-	if cfg2.Channels.Pico.Token() != token1 {
+	if cfg2.Channels.Pico.Token.String() != token1 {
 		t.Error("token should not change on subsequent calls")
 	}
 }

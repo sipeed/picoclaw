@@ -68,7 +68,7 @@ func (c *IRCChannel) Start(ctx context.Context) error {
 		Nick:        c.config.Nick,
 		User:        user,
 		RealName:    realName,
-		Password:    c.config.Password(),
+		Password:    c.config.Password.String(),
 		UseTLS:      c.config.TLS,
 		RequestCaps: caps,
 		QuitMessage: "Goodbye",
@@ -83,9 +83,9 @@ func (c *IRCChannel) Start(ctx context.Context) error {
 	}
 
 	// SASL auth (takes priority over NickServ)
-	if c.config.SASLUser != "" && c.config.SASLPassword() != "" {
+	if c.config.SASLUser != "" && c.config.SASLPassword.String() != "" {
 		conn.SASLLogin = c.config.SASLUser
-		conn.SASLPassword = c.config.SASLPassword()
+		conn.SASLPassword = c.config.SASLPassword.String()
 	}
 
 	// Register event handlers

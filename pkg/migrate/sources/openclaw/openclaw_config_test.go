@@ -711,8 +711,8 @@ func TestToStandardConfig(t *testing.T) {
 	if !stdCfg.Channels.Telegram.Enabled {
 		t.Error("telegram should be enabled")
 	}
-	if stdCfg.Channels.Telegram.Token() != "test-token" {
-		t.Errorf("expected token 'test-token', got '%s'", stdCfg.Channels.Telegram.Token())
+	if stdCfg.Channels.Telegram.Token.String() != "test-token" {
+		t.Errorf("expected token 'test-token', got '%s'", stdCfg.Channels.Telegram.Token.String())
 	}
 
 	if stdCfg.Gateway.Port != 8080 {

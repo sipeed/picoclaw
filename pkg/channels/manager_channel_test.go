@@ -41,11 +41,11 @@ func TestToChannelHashes(t *testing.T) {
 	cc, err := toChannelConfig(cfg3, added)
 	assert.NoError(t, err)
 	logger.Debugf("cc: %#v", cc.Telegram)
-	assert.Equal(t, "114314", cc.Telegram.Token())
+	assert.Equal(t, "114314", cc.Telegram.Token.String())
 	assert.Equal(t, true, cc.Telegram.Enabled)
 	cc, err = toChannelConfig(cfg2, added)
 	assert.NoError(t, err)
 	logger.Debugf("cc: %#v", cc.Telegram)
-	assert.Equal(t, "", cc.Telegram.Token())
+	assert.Equal(t, "", cc.Telegram.Token.String())
 	assert.Equal(t, false, cc.Telegram.Enabled)
 }

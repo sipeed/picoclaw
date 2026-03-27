@@ -17,8 +17,8 @@ import (
 // onConnect is called after a successful connection (and on reconnect).
 func (c *IRCChannel) onConnect(conn *ircevent.Connection) {
 	// NickServ auth (only if SASL is not configured)
-	if c.config.NickServPassword() != "" && c.config.SASLUser == "" {
-		conn.Privmsg("NickServ", "IDENTIFY "+c.config.NickServPassword())
+	if c.config.NickServPassword.String() != "" && c.config.SASLUser == "" {
+		conn.Privmsg("NickServ", "IDENTIFY "+c.config.NickServPassword.String())
 	}
 
 	// Join configured channels
