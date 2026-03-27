@@ -322,14 +322,17 @@ This creates `~/.picoclaw/config.json` and the workspace directory.
   "model_list": [
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
-      "api_key": "sk-your-api-key"
+      "model": "openai/gpt-5.4"
+      // api_key is now loaded from .security.yml
     }
   ]
 }
 ```
 
 > See `config/config.example.json` in the repo for a complete configuration template with all available options.
+> 
+> Please note: config.example.json format is version 0, with sensitive codes in it, and will be auto migrated to version 1+, then, the config.json will only store insensitive data, the sensitive codes will be stored in .security.yml, if you need manually modify the codes, please see `docs/security_configuration.md` for more details.
+
 
 **3. Chat**
 
@@ -373,6 +376,9 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 | [Azure OpenAI](https://portal.azure.com/) | `azure/` | Required | Enterprise Azure deployment |
 | [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | Device code login |
 | [Antigravity](https://console.cloud.google.com/) | `antigravity/` | OAuth | Google Cloud AI |
+| [AWS Bedrock](https://console.aws.amazon.com/bedrock)* | `bedrock/` | AWS credentials | Claude, Llama, Mistral on AWS |
+
+> \* AWS Bedrock requires build tag: `go build -tags bedrock`. Set `api_base` to a region name (e.g., `us-east-1`) for automatic endpoint resolution across all AWS partitions (aws, aws-cn, aws-us-gov). When using a full endpoint URL instead, you must also configure `AWS_REGION` via environment variable or AWS config/profile.
 
 <details>
 <summary><b>Local deployment (Ollama, vLLM, etc.)</b></summary>
@@ -520,7 +526,7 @@ Connect PicoClaw to the Agent Social Network simply by sending a single message 
 | Command                   | Description                      |
 | ------------------------- | -------------------------------- |
 | `picoclaw onboard`        | Initialize config & workspace    |
-| `picoclaw onboard weixin` | Connect WeChat account via QR |
+| `picoclaw auth weixin` | Connect WeChat account via QR |
 | `picoclaw agent -m "..."` | Chat with the agent              |
 | `picoclaw agent`          | Interactive chat mode            |
 | `picoclaw gateway`        | Start the gateway                |

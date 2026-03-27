@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,22 @@ var rrCounter atomic.Uint64
 type FlexibleStringSlice []string
 
 func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
+	// Accept a single JSON string for convenience, e.g.:
+	// "text": "Thinking..."
+	var singleString string
+	if err := json.Unmarshal(data, &singleString); err == nil {
+		*f = FlexibleStringSlice{singleString}
+		return nil
+	}
+
+	// Accept a single JSON number too, to keep symmetry with mixed allow_from
+	// payloads that may contain numeric identifiers.
+	var singleNumber float64
+	if err := json.Unmarshal(data, &singleNumber); err == nil {
+		*f = FlexibleStringSlice{fmt.Sprintf("%.0f", singleNumber)}
+		return nil
+	}
+
 	// Try []string first
 	var ss []string
 	if err := json.Unmarshal(data, &ss); err == nil {
@@ -106,12 +123,32 @@ func (c *Config) WithSecurity(sec *SecurityConfig) *Config {
 		c.security = sec
 		return c
 	}
+	sec = normalizeSecurityConfig(sec)
 	err := applySecurityConfig(c, sec)
 	if err != nil {
 		return nil
 	}
 	c.security = sec
 	return c
+}
+
+// FilterSensitiveData filters sensitive values from content before sending to LLM.
+// This prevents the LLM from seeing its own credentials.
+// Uses strings.Replacer for O(n+m) performance (computed once per SecurityConfig).
+// Short content (below FilterMinLength) is returned unchanged for performance.
+func (c *Config) FilterSensitiveData(content string) string {
+	if c.security == nil || content == "" {
+		return content
+	}
+	// Check if filtering is enabled (default: true)
+	if !c.Tools.IsFilterSensitiveDataEnabled() {
+		return content
+	}
+	// Fast path: skip filtering for short content
+	if len(content) < c.Tools.GetFilterMinLength() {
+		return content
+	}
+	return c.security.SensitiveDataReplacer().Replace(content)
 }
 
 type HooksConfig struct {
@@ -299,12 +336,10 @@ type AgentDefaults struct {
 	SteeringMode              string             `json:"steering_mode,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_STEERING_MODE"` // "one-at-a-time" (default) or "all"
 	SubTurn                   SubTurnConfig      `json:"subturn"                                                                                     envPrefix:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_"`
 	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
+	SplitOnMarker             bool               `json:"split_on_marker"                 env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
 }
 
-const (
-	DefaultMaxMediaSize                = 20 * 1024 * 1024 // 20 MB
-	DefaultWeComAIBotProcessingMessage = "⏳ Processing, please wait. The results will be sent shortly."
-)
+const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB
 
 func (d *AgentDefaults) GetMaxMediaSize() int {
 	if d.MaxMediaSize > 0 {
@@ -344,9 +379,7 @@ type ChannelsConfig struct {
 	Matrix     MatrixConfig     `json:"matrix"`
 	LINE       LINEConfig       `json:"line"`
 	OneBot     OneBotConfig     `json:"onebot"`
-	WeCom      WeComConfig      `json:"wecom"`
-	WeComApp   WeComAppConfig   `json:"wecom_app"`
-	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
+	WeCom      WeComConfig      `json:"wecom"       envPrefix:"PICOCLAW_CHANNELS_WECOM_"`
 	Weixin     WeixinConfig     `json:"weixin"`
 	Pico       PicoConfig       `json:"pico"`
 	PicoClient PicoClientConfig `json:"pico_client"`
@@ -366,8 +399,20 @@ type TypingConfig struct {
 
 // PlaceholderConfig controls placeholder message behavior (Phase 10).
 type PlaceholderConfig struct {
-	Enabled bool   `json:"enabled,omitempty"`
-	Text    string `json:"text,omitempty"`
+	Enabled bool                `json:"enabled"`
+	Text    FlexibleStringSlice `json:"text,omitempty"`
+}
+
+// GetRandomText returns a random placeholder text, or default if none set.
+func (p *PlaceholderConfig) GetRandomText() string {
+	if len(p.Text) == 0 {
+		return "Thinking..."
+	}
+	if len(p.Text) == 1 {
+		return p.Text[0]
+	}
+	idx := rand.Intn(len(p.Text))
+	return p.Text[idx]
 }
 
 type StreamingConfig struct {
@@ -571,18 +616,20 @@ func (c *SlackConfig) SetAppToken(token string) {
 }
 
 type MatrixConfig struct {
-	Enabled            bool   `json:"enabled"                  env:"PICOCLAW_CHANNELS_MATRIX_ENABLED"`
-	Homeserver         string `json:"homeserver"               env:"PICOCLAW_CHANNELS_MATRIX_HOMESERVER"`
-	UserID             string `json:"user_id"                  env:"PICOCLAW_CHANNELS_MATRIX_USER_ID"`
+	Enabled            bool   `json:"enabled"                        env:"PICOCLAW_CHANNELS_MATRIX_ENABLED"`
+	Homeserver         string `json:"homeserver"                     env:"PICOCLAW_CHANNELS_MATRIX_HOMESERVER"`
+	UserID             string `json:"user_id"                        env:"PICOCLAW_CHANNELS_MATRIX_USER_ID"`
 	accessToken        string
-	DeviceID           string              `json:"device_id,omitempty"      env:"PICOCLAW_CHANNELS_MATRIX_DEVICE_ID"`
-	JoinOnInvite       bool                `json:"join_on_invite"           env:"PICOCLAW_CHANNELS_MATRIX_JOIN_ON_INVITE"`
-	MessageFormat      string              `json:"message_format,omitempty" env:"PICOCLAW_CHANNELS_MATRIX_MESSAGE_FORMAT"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"               env:"PICOCLAW_CHANNELS_MATRIX_ALLOW_FROM"`
+	DeviceID           string              `json:"device_id,omitempty"            env:"PICOCLAW_CHANNELS_MATRIX_DEVICE_ID"`
+	JoinOnInvite       bool                `json:"join_on_invite"                 env:"PICOCLAW_CHANNELS_MATRIX_JOIN_ON_INVITE"`
+	MessageFormat      string              `json:"message_format,omitempty"       env:"PICOCLAW_CHANNELS_MATRIX_MESSAGE_FORMAT"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"                     env:"PICOCLAW_CHANNELS_MATRIX_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"           env:"PICOCLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
 	secDirty           bool
+	CryptoDatabasePath string `json:"crypto_database_path,omitempty" env:"PICOCLAW_CHANNELS_MATRIX_CRYPTO_DATABASE_PATH"`
+	CryptoPassphrase   string `json:"crypto_passphrase,omitempty"    env:"PICOCLAW_CHANNELS_MATRIX_CRYPTO_PASSPHRASE"`
 }
 
 // AccessToken returns the Matrix access token
@@ -658,136 +705,28 @@ func (c *OneBotConfig) SetAccessToken(token string) {
 	c.secDirty = true
 }
 
+type WeComGroupConfig struct {
+	AllowFrom FlexibleStringSlice `json:"allow_from,omitempty"`
+}
+
 type WeComConfig struct {
-	Enabled            bool `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_ENABLED"`
-	token              string
-	encodingAESKey     string
-	WebhookURL         string              `json:"webhook_url"             env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_URL"`
-	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_WECOM_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_REPLY_TIMEOUT"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_REASONING_CHANNEL_ID"`
-	secDirty           bool
+	Enabled             bool   `json:"enabled"                 env:"ENABLED"`
+	BotID               string `json:"bot_id"                  env:"BOT_ID"`
+	secret              string
+	WebSocketURL        string              `json:"websocket_url,omitempty" env:"WEBSOCKET_URL"`
+	SendThinkingMessage bool                `json:"send_thinking_message"   env:"SEND_THINKING_MESSAGE"`
+	AllowFrom           FlexibleStringSlice `json:"allow_from"              env:"ALLOW_FROM"`
+	ReasoningChannelID  string              `json:"reasoning_channel_id"    env:"REASONING_CHANNEL_ID"`
+	secDirty            bool
 }
 
-// Token returns the WeCom token
-func (c *WeComConfig) Token() string {
-	return c.token
-}
-
-// SetToken sets the WeCom token
-func (c *WeComConfig) SetToken(token string) {
-	c.token = token
-	c.secDirty = true
-}
-
-// EncodingAESKey returns the WeCom encoding AES key
-func (c *WeComConfig) EncodingAESKey() string {
-	return c.encodingAESKey
-}
-
-// SetEncodingAESKey sets the WeCom encoding AES key
-func (c *WeComConfig) SetEncodingAESKey(key string) {
-	c.encodingAESKey = key
-	c.secDirty = true
-}
-
-type WeComAppConfig struct {
-	Enabled            bool   `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_APP_ENABLED"`
-	CorpID             string `json:"corp_id"                 env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_ID"`
-	corpSecret         string
-	AgentID            int64 `json:"agent_id"                env:"PICOCLAW_CHANNELS_WECOM_APP_AGENT_ID"`
-	token              string
-	encodingAESKey     string
-	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_WECOM_APP_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_APP_REASONING_CHANNEL_ID"`
-	secDirty           bool
-}
-
-// CorpSecret returns the corporate secret for WeCom app
-func (c *WeComAppConfig) CorpSecret() string {
-	return c.corpSecret
-}
-
-// SetCorpSecret sets the corporate secret for WeCom app
-func (c *WeComAppConfig) SetCorpSecret(secret string) {
-	c.corpSecret = secret
-	c.secDirty = true
-}
-
-// Token returns the webhook token for WeCom app
-func (c *WeComAppConfig) Token() string {
-	return c.token
-}
-
-// SetToken sets the webhook token for WeCom app
-func (c *WeComAppConfig) SetToken(token string) {
-	c.token = token
-	c.secDirty = true
-}
-
-// EncodingAESKey returns the encoding AES key for WeCom app
-func (c *WeComAppConfig) EncodingAESKey() string {
-	return c.encodingAESKey
-}
-
-// SetEncodingAESKey sets the encoding AES key for WeCom app
-func (c *WeComAppConfig) SetEncodingAESKey(key string) {
-	c.encodingAESKey = key
-	c.secDirty = true
-}
-
-type WeComAIBotConfig struct {
-	Enabled            bool   `json:"enabled"                      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENABLED"`
-	BotID              string `json:"bot_id,omitempty"             env:"PICOCLAW_CHANNELS_WECOM_AIBOT_BOT_ID"`
-	secret             string
-	token              string
-	encodingAESKey     string
-	WebhookPath        string              `json:"webhook_path,omitempty"       env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"                   env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"                env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REPLY_TIMEOUT"`
-	MaxSteps           int                 `json:"max_steps"                    env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"`       // Maximum streaming steps
-	WelcomeMessage     string              `json:"welcome_message"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"` // Sent on enter_chat event; empty = no welcome
-	ProcessingMessage  string              `json:"processing_message,omitempty" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_PROCESSING_MESSAGE"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"         env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
-	secDirty           bool
-}
-
-// Token returns the webhook token for WeCom AI bot
-func (c *WeComAIBotConfig) Token() string {
-	return c.token
-}
-
-// EncodingAESKey returns the encoding AES key for WeCom AI bot
-func (c *WeComAIBotConfig) EncodingAESKey() string {
-	return c.encodingAESKey
-}
-
-// SetToken sets the token for WeCom AI bot
-func (c *WeComAIBotConfig) SetToken(token string) {
-	c.token = token
-	c.secDirty = true
-}
-
-// SetEncodingAESKey sets the encoding AES key for WeCom AI bot
-func (c *WeComAIBotConfig) SetEncodingAESKey(key string) {
-	c.encodingAESKey = key
-	c.secDirty = true
-}
-
-func (c *WeComAIBotConfig) Secret() string {
+// Secret returns the WeCom bot secret.
+func (c *WeComConfig) Secret() string {
 	return c.secret
 }
 
-func (c *WeComAIBotConfig) SetSecret(secret string) {
+// SetSecret sets the WeCom bot secret.
+func (c *WeComConfig) SetSecret(secret string) {
 	c.secret = secret
 	c.secDirty = true
 }
@@ -795,6 +734,7 @@ func (c *WeComAIBotConfig) SetSecret(secret string) {
 type WeixinConfig struct {
 	Enabled            bool `json:"enabled"              env:"PICOCLAW_CHANNELS_WEIXIN_ENABLED"`
 	token              string
+	AccountID          string              `json:"account_id,omitempty" env:"PICOCLAW_CHANNELS_WEIXIN_ACCOUNT_ID"`
 	BaseURL            string              `json:"base_url"             env:"PICOCLAW_CHANNELS_WEIXIN_BASE_URL"`
 	CDNBaseURL         string              `json:"cdn_base_url"         env:"PICOCLAW_CHANNELS_WEIXIN_CDN_BASE_URL"`
 	Proxy              string              `json:"proxy"                env:"PICOCLAW_CHANNELS_WEIXIN_PROXY"`
@@ -909,8 +849,9 @@ type DevicesConfig struct {
 }
 
 type VoiceConfig struct {
-	ModelName         string `json:"model_name,omitempty" env:"PICOCLAW_VOICE_MODEL_NAME"`
-	EchoTranscription bool   `json:"echo_transcription"   env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
+	ModelName         string `json:"model_name,omitempty"         env:"PICOCLAW_VOICE_MODEL_NAME"`
+	EchoTranscription bool   `json:"echo_transcription"           env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
+	ElevenLabsAPIKey  string `json:"elevenlabs_api_key,omitempty" env:"PICOCLAW_VOICE_ELEVENLABS_API_KEY"`
 }
 
 // ModelConfig represents a model-centric provider configuration.
@@ -946,6 +887,10 @@ type ModelConfig struct {
 	secModelName string
 	apiKeys      []string
 	secDirty     bool
+
+	// isVirtual marks this model as a virtual model generated from multi-key expansion.
+	// Virtual models should not be persisted to config files.
+	isVirtual bool
 }
 
 // APIKey returns the first API key from apiKeys
@@ -954,6 +899,11 @@ func (c *ModelConfig) APIKey() string {
 		return c.apiKeys[0]
 	}
 	return ""
+}
+
+// IsVirtual returns true if this model was generated from multi-key expansion.
+func (c *ModelConfig) IsVirtual() bool {
+	return c.isVirtual
 }
 
 // Validate checks if the ModelConfig has all required fields.
@@ -1201,8 +1151,16 @@ type ReadFileToolConfig struct {
 }
 
 type ToolsConfig struct {
-	AllowReadPaths  []string           `json:"allow_read_paths"  env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
-	AllowWritePaths []string           `json:"allow_write_paths" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
+	AllowReadPaths  []string `json:"allow_read_paths"  env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
+	AllowWritePaths []string `json:"allow_write_paths" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
+	// FilterSensitiveData controls whether to filter sensitive values (API keys,
+	// tokens, secrets) from tool results before sending to the LLM.
+	// Default: true (enabled)
+	FilterSensitiveData bool `json:"filter_sensitive_data" env:"PICOCLAW_TOOLS_FILTER_SENSITIVE_DATA"`
+	// FilterMinLength is the minimum content length required for filtering.
+	// Content shorter than this will be returned unchanged for performance.
+	// Default: 8
+	FilterMinLength int                `json:"filter_min_length" env:"PICOCLAW_TOOLS_FILTER_MIN_LENGTH"`
 	Web             WebToolsConfig     `json:"web"`
 	Cron            CronToolsConfig    `json:"cron"`
 	Exec            ExecConfig         `json:"exec"`
@@ -1224,6 +1182,19 @@ type ToolsConfig struct {
 	Subagent        ToolConfig         `json:"subagent"                                                 envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
 	WebFetch        ToolConfig         `json:"web_fetch"                                                envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig         `json:"write_file"                                               envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
+}
+
+// IsFilterSensitiveDataEnabled returns true if sensitive data filtering is enabled
+func (c *ToolsConfig) IsFilterSensitiveDataEnabled() bool {
+	return c.FilterSensitiveData
+}
+
+// GetFilterMinLength returns the minimum content length for filtering (default: 8)
+func (c *ToolsConfig) GetFilterMinLength() int {
+	if c.FilterMinLength <= 0 {
+		return 8
+	}
+	return c.FilterMinLength
 }
 
 type SearchCacheConfig struct {
@@ -1309,11 +1280,14 @@ type MCPConfig struct {
 }
 
 func LoadConfig(path string) (*Config, error) {
+	logger.Debugf("loading config from %s", path)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			logger.WarnF("config file not found, using default config", map[string]any{"path": path})
 			return DefaultConfig(), nil
 		}
+		logger.Errorf("failed to read config file: %v", err)
 		return nil, err
 	}
 
@@ -1325,6 +1299,7 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to detect config version: %w", e)
 	}
 	if len(data) <= 10 {
+		logger.Warn(fmt.Sprintf("content is [%s]", string(data)))
 		return DefaultConfig().WithSecurity(&SecurityConfig{}), nil
 	}
 
@@ -1340,34 +1315,61 @@ func LoadConfig(path string) (*Config, error) {
 		}
 		cfg, e = v.Migrate()
 		if e != nil {
-			logger.DebugF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+			logger.ErrorF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
 			return nil, e
 		}
-		logger.DebugF("config migrate success", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
-		defer func() {
+		logger.InfoF("config migrate success", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		err = makeBackup(path)
+		if err != nil {
+			return nil, err
+		}
+		// Load existing security config and merge with migrated one to prevent data loss
+		existingSec, secErr := loadSecurityConfig(securityPath(path))
+		if secErr != nil {
+			logger.WarnF("failed to load existing security config during migration", map[string]any{"error": secErr})
+		}
+		if existingSec != nil && cfg.security != nil {
+			cfg.security = mergeSecurityConfig(existingSec, cfg.security)
+			// Re-apply the merged security config to update all channels and models
+			if err = applySecurityConfig(cfg, cfg.security); err != nil {
+				logger.WarnF("failed to re-apply merged security config during migration", map[string]any{"error": err})
+			}
+		}
+		defer func(cfg *Config) {
 			_ = SaveConfig(path, cfg)
-		}()
+		}(cfg)
 	case CurrentVersion:
 		// Current version
 		cfg, err = loadConfig(data)
 		if err != nil {
 			return nil, err
 		}
+
+		// Legacy config (no version field)
+		tmpCfg, e := loadConfigV0(data)
+		if e != nil {
+			return nil, e
+		}
+
+		tmpCfgMigrated, e := tmpCfg.Migrate()
+		if e != nil {
+			logger.ErrorF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+			return nil, e
+		}
+
+		// Load security configuration from .security.yml
+		secPath := securityPath(path)
+		sec, err := loadSecurityConfig(secPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load security config: %w", err)
+		}
+
+		// Merge security configs: config.json takes precedence over .security.yml
+		if err := applySecurityConfigWithPrecedence(cfg, tmpCfgMigrated, sec); err != nil {
+			return nil, fmt.Errorf("failed to merge security config: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported config version: %d", versionInfo.Version)
-	}
-
-	// Load security configuration
-	securityPath := securityPath(path)
-	sec, err := loadSecurityConfig(securityPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load security config: %w", err)
-	}
-
-	// Apply security references from .security.yml BEFORE resolveAPIKeys
-	// This resolves ref: references to actual values
-	if err := applySecurityConfig(cfg, sec); err != nil {
-		return nil, fmt.Errorf("failed to apply security config: %w", err)
 	}
 
 	if passphrase := credential.PassphraseProvider(); passphrase != "" {
@@ -1421,6 +1423,19 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
+func makeBackup(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+	// Create backup of the config file before migration
+	bakPath := path + ".bak"
+	if err := fileutil.CopyFile(path, bakPath, 0o600); err != nil {
+		logger.ErrorF("failed to create config backup", map[string]any{"error": err})
+		return fmt.Errorf("failed to create config backup: %w", err)
+	}
+	return nil
+}
+
 func copyArray[T any](dst, src *[]T) {
 	*dst = make([]T, len(*src))
 	copy(*dst, *src)
@@ -1433,32 +1448,36 @@ func applySecurityConfig(cfg *Config, sec *SecurityConfig) error {
 		return nil
 	}
 
-	if sec.Web.Brave != nil && len(sec.Web.Brave.APIKeys) > 0 {
-		copyArray(&cfg.Tools.Web.Brave.apiKeys, &sec.Web.Brave.APIKeys)
+	if sec.Web != nil {
+		if sec.Web.Brave != nil && len(sec.Web.Brave.APIKeys) > 0 {
+			copyArray(&cfg.Tools.Web.Brave.apiKeys, &sec.Web.Brave.APIKeys)
+		}
+
+		if sec.Web.Tavily != nil && len(sec.Web.Tavily.APIKeys) > 0 {
+			copyArray(&cfg.Tools.Web.Tavily.apiKeys, &sec.Web.Tavily.APIKeys)
+		}
+
+		if sec.Web.Perplexity != nil && len(sec.Web.Perplexity.APIKeys) > 0 {
+			copyArray(&cfg.Tools.Web.Perplexity.apiKeys, &sec.Web.Perplexity.APIKeys)
+		}
+
+		if sec.Web.GLMSearch != nil && sec.Web.GLMSearch.APIKey != "" {
+			cfg.Tools.Web.GLMSearch.apiKey = sec.Web.GLMSearch.APIKey
+		}
+
+		if sec.Web.BaiduSearch != nil && sec.Web.BaiduSearch.APIKey != "" {
+			cfg.Tools.Web.BaiduSearch.apiKey = sec.Web.BaiduSearch.APIKey
+		}
 	}
 
-	if sec.Web.Tavily != nil && len(sec.Web.Tavily.APIKeys) > 0 {
-		copyArray(&cfg.Tools.Web.Tavily.apiKeys, &sec.Web.Tavily.APIKeys)
-	}
+	if sec.Skills != nil {
+		if sec.Skills.Github != nil && sec.Skills.Github.Token != "" {
+			cfg.Tools.Skills.Github.token = sec.Skills.Github.Token
+		}
 
-	if sec.Web.Perplexity != nil && len(sec.Web.Perplexity.APIKeys) > 0 {
-		copyArray(&cfg.Tools.Web.Perplexity.apiKeys, &sec.Web.Perplexity.APIKeys)
-	}
-
-	if sec.Web.GLMSearch != nil && sec.Web.GLMSearch.APIKey != "" {
-		cfg.Tools.Web.GLMSearch.apiKey = sec.Web.GLMSearch.APIKey
-	}
-
-	if sec.Web.BaiduSearch != nil && sec.Web.BaiduSearch.APIKey != "" {
-		cfg.Tools.Web.BaiduSearch.apiKey = sec.Web.BaiduSearch.APIKey
-	}
-
-	if sec.Skills.Github != nil && sec.Skills.Github.Token != "" {
-		cfg.Tools.Skills.Github.token = sec.Skills.Github.Token
-	}
-
-	if sec.Skills.ClawHub != nil && sec.Skills.ClawHub.AuthToken != "" {
-		cfg.Tools.Skills.Registries.ClawHub.authToken = sec.Skills.ClawHub.AuthToken
+		if sec.Skills.ClawHub != nil && sec.Skills.ClawHub.AuthToken != "" {
+			cfg.Tools.Skills.Registries.ClawHub.authToken = sec.Skills.ClawHub.AuthToken
+		}
 	}
 
 	names := toNameIndex(cfg.ModelList)
@@ -1480,131 +1499,126 @@ func applySecurityConfig(cfg *Config, sec *SecurityConfig) error {
 		}
 	}
 
-	// Handle Telegram token
-	if sec.Channels.Telegram != nil && sec.Channels.Telegram.Token != "" {
-		cfg.Channels.Telegram.token = sec.Channels.Telegram.Token
-	}
+	if sec.Channels != nil {
+		// Handle Telegram token
+		if sec.Channels.Telegram != nil && sec.Channels.Telegram.Token != "" {
+			cfg.Channels.Telegram.token = sec.Channels.Telegram.Token
+		}
 
-	// Handle Feishu credentials
-	if sec.Channels.Feishu != nil {
-		if sec.Channels.Feishu.AppSecret != "" {
-			cfg.Channels.Feishu.appSecret = sec.Channels.Feishu.AppSecret
+		// Handle Feishu credentials
+		if sec.Channels.Feishu != nil {
+			if sec.Channels.Feishu.AppSecret != "" {
+				cfg.Channels.Feishu.appSecret = sec.Channels.Feishu.AppSecret
+			}
+			if sec.Channels.Feishu.EncryptKey != "" {
+				cfg.Channels.Feishu.encryptKey = sec.Channels.Feishu.EncryptKey
+			}
+			if sec.Channels.Feishu.VerificationToken != "" {
+				cfg.Channels.Feishu.verificationToken = sec.Channels.Feishu.VerificationToken
+			}
 		}
-		if sec.Channels.Feishu.EncryptKey != "" {
-			cfg.Channels.Feishu.encryptKey = sec.Channels.Feishu.EncryptKey
-		}
-		if sec.Channels.Feishu.VerificationToken != "" {
-			cfg.Channels.Feishu.verificationToken = sec.Channels.Feishu.VerificationToken
-		}
-	}
 
-	// Handle Discord token
-	if sec.Channels.Discord != nil && sec.Channels.Discord.Token != "" {
-		cfg.Channels.Discord.token = sec.Channels.Discord.Token
-	}
+		// Handle Discord token
+		if sec.Channels.Discord != nil && sec.Channels.Discord.Token != "" {
+			cfg.Channels.Discord.token = sec.Channels.Discord.Token
+		}
 
-	// Handle Weixin token
-	if sec.Channels.Weixin != nil && sec.Channels.Weixin.Token != "" {
-		cfg.Channels.Discord.token = sec.Channels.Discord.Token
-	}
+		// Handle Weixin token
+		if sec.Channels.Weixin != nil && sec.Channels.Weixin.Token != "" {
+			cfg.Channels.Weixin.token = sec.Channels.Weixin.Token
+		}
 
-	// Handle DingTalk client secret
-	if sec.Channels.DingTalk != nil && sec.Channels.DingTalk.ClientSecret != "" {
-		cfg.Channels.DingTalk.clientSecret = sec.Channels.DingTalk.ClientSecret
-	}
+		// Handle DingTalk client secret
+		if sec.Channels.DingTalk != nil && sec.Channels.DingTalk.ClientSecret != "" {
+			cfg.Channels.DingTalk.clientSecret = sec.Channels.DingTalk.ClientSecret
+		}
 
-	// Handle Slack tokens
-	if sec.Channels.Slack != nil {
-		if sec.Channels.Slack.BotToken != "" {
-			cfg.Channels.Slack.botToken = sec.Channels.Slack.BotToken
+		// Handle Slack tokens
+		if sec.Channels.Slack != nil {
+			if sec.Channels.Slack.BotToken != "" {
+				cfg.Channels.Slack.botToken = sec.Channels.Slack.BotToken
+			}
+			if sec.Channels.Slack.AppToken != "" {
+				cfg.Channels.Slack.appToken = sec.Channels.Slack.AppToken
+			}
 		}
-		if sec.Channels.Slack.AppToken != "" {
-			cfg.Channels.Slack.appToken = sec.Channels.Slack.AppToken
-		}
-	}
 
-	// Handle Matrix access token
-	if sec.Channels.Matrix != nil && sec.Channels.Matrix.AccessToken != "" {
-		cfg.Channels.Matrix.accessToken = sec.Channels.Matrix.AccessToken
-	}
+		// Handle Matrix access token
+		if sec.Channels.Matrix != nil && sec.Channels.Matrix.AccessToken != "" {
+			cfg.Channels.Matrix.accessToken = sec.Channels.Matrix.AccessToken
+		}
 
-	// Handle LINE credentials
-	if sec.Channels.LINE != nil {
-		if sec.Channels.LINE.ChannelSecret != "" {
-			cfg.Channels.LINE.channelSecret = sec.Channels.LINE.ChannelSecret
+		// Handle LINE credentials
+		if sec.Channels.LINE != nil {
+			if sec.Channels.LINE.ChannelSecret != "" {
+				cfg.Channels.LINE.channelSecret = sec.Channels.LINE.ChannelSecret
+			}
+			if sec.Channels.LINE.ChannelAccessToken != "" {
+				cfg.Channels.LINE.channelAccessToken = sec.Channels.LINE.ChannelAccessToken
+			}
 		}
-		if sec.Channels.LINE.ChannelAccessToken != "" {
-			cfg.Channels.LINE.channelAccessToken = sec.Channels.LINE.ChannelAccessToken
-		}
-	}
 
-	// Handle OneBot access token
-	if sec.Channels.OneBot != nil && sec.Channels.OneBot.AccessToken != "" {
-		cfg.Channels.OneBot.accessToken = sec.Channels.OneBot.AccessToken
-	}
+		// Handle OneBot access token
+		if sec.Channels.OneBot != nil && sec.Channels.OneBot.AccessToken != "" {
+			cfg.Channels.OneBot.accessToken = sec.Channels.OneBot.AccessToken
+		}
 
-	// Handle WeCom token and encoding key
-	if sec.Channels.WeCom != nil {
-		if sec.Channels.WeCom.Token != "" {
-			cfg.Channels.WeCom.token = sec.Channels.WeCom.Token
+		// Handle WeCom bot secret
+		if sec.Channels.WeCom != nil {
+			if sec.Channels.WeCom.Secret != "" {
+				cfg.Channels.WeCom.secret = sec.Channels.WeCom.Secret
+			}
 		}
-		if sec.Channels.WeCom.EncodingAESKey != "" {
-			cfg.Channels.WeCom.encodingAESKey = sec.Channels.WeCom.EncodingAESKey
-		}
-	}
 
-	// Handle WeCom App credentials
-	if sec.Channels.WeComApp != nil {
-		if sec.Channels.WeComApp.CorpSecret != "" {
-			cfg.Channels.WeComApp.corpSecret = sec.Channels.WeComApp.CorpSecret
+		// Handle Pico channel token
+		if sec.Channels.Pico != nil && sec.Channels.Pico.Token != "" {
+			cfg.Channels.Pico.token = sec.Channels.Pico.Token
 		}
-		if sec.Channels.WeComApp.Token != "" {
-			cfg.Channels.WeComApp.token = sec.Channels.WeComApp.Token
-		}
-		if sec.Channels.WeComApp.EncodingAESKey != "" {
-			cfg.Channels.WeComApp.encodingAESKey = sec.Channels.WeComApp.EncodingAESKey
-		}
-	}
 
-	// Handle WeCom AI Bot credentials
-	if sec.Channels.WeComAIBot != nil {
-		if sec.Channels.WeComAIBot.Token != "" {
-			cfg.Channels.WeComAIBot.token = sec.Channels.WeComAIBot.Token
+		// Handle IRC passwords
+		if sec.Channels.IRC != nil {
+			if sec.Channels.IRC.Password != "" {
+				cfg.Channels.IRC.password = sec.Channels.IRC.Password
+			}
+			if sec.Channels.IRC.NickServPassword != "" {
+				cfg.Channels.IRC.nickServPassword = sec.Channels.IRC.NickServPassword
+			}
+			if sec.Channels.IRC.SASLPassword != "" {
+				cfg.Channels.IRC.saslPassword = sec.Channels.IRC.SASLPassword
+			}
 		}
-		if sec.Channels.WeComAIBot.EncodingAESKey != "" {
-			cfg.Channels.WeComAIBot.encodingAESKey = sec.Channels.WeComAIBot.EncodingAESKey
-		}
-		if sec.Channels.WeComAIBot.Secret != "" {
-			cfg.Channels.WeComAIBot.secret = sec.Channels.WeComAIBot.Secret
-		}
-	}
 
-	// Handle Pico channel token
-	if sec.Channels.Pico != nil && sec.Channels.Pico.Token != "" {
-		cfg.Channels.Pico.token = sec.Channels.Pico.Token
-	}
-
-	// Handle IRC passwords
-	if sec.Channels.IRC != nil {
-		if sec.Channels.IRC.Password != "" {
-			cfg.Channels.IRC.password = sec.Channels.IRC.Password
+		// Handle QQ app secret
+		if sec.Channels.QQ != nil && sec.Channels.QQ.AppSecret != "" {
+			cfg.Channels.QQ.appSecret = sec.Channels.QQ.AppSecret
 		}
-		if sec.Channels.IRC.NickServPassword != "" {
-			cfg.Channels.IRC.nickServPassword = sec.Channels.IRC.NickServPassword
-		}
-		if sec.Channels.IRC.SASLPassword != "" {
-			cfg.Channels.IRC.saslPassword = sec.Channels.IRC.SASLPassword
-		}
-	}
-
-	// Handle QQ app secret
-	if sec.Channels.QQ != nil && sec.Channels.QQ.AppSecret != "" {
-		cfg.Channels.QQ.appSecret = sec.Channels.QQ.AppSecret
 	}
 
 	cfg.security = sec
 
 	return nil
+}
+
+// applySecurityConfigWithPrecedence merges security config from tmpCfg (migrated from configV0) and sec (SecurityConfig),
+// with tmpCfg taking precedence. It then applies the merged security config to cfg.
+func applySecurityConfigWithPrecedence(cfg *Config, tmpCfg *Config, sec *SecurityConfig) error {
+	// Get security config from tmpCfg (already extracted during migration)
+	var tmpSec *SecurityConfig
+	if tmpCfg != nil {
+		tmpSec = tmpCfg.security
+	}
+
+	// If tmpCfg has no security config, just apply sec directly
+	if tmpSec == nil {
+		return applySecurityConfig(cfg, sec)
+	}
+
+	// Merge sec and tmpSec, with tmpSec (from config.json) taking precedence
+	// mergeSecurityConfig(existing, newer) - newer takes precedence
+	mergedSec := mergeSecurityConfig(sec, tmpSec)
+
+	// Apply the merged security config to cfg
+	return applySecurityConfig(cfg, mergedSec)
 }
 
 func toNameIndex(list []*ModelConfig) []string {
@@ -1701,6 +1715,7 @@ func SaveConfig(path string, cfg *Config) error {
 		logger.ErrorC("config", "security is nil")
 		return fmt.Errorf("security is nil")
 	}
+	cfg.security = normalizeSecurityConfig(cfg.security)
 	// Ensure version is always set when saving
 	if cfg.Version == 0 {
 		cfg.Version = CurrentVersion
@@ -1797,26 +1812,9 @@ func SaveConfig(path string, cfg *Config) error {
 	}
 	if cfg.Channels.WeCom.secDirty {
 		cfg.security.Channels.WeCom = &WeComSecurity{
-			Token:          cfg.Channels.WeCom.Token(),
-			EncodingAESKey: cfg.Channels.WeCom.EncodingAESKey(),
+			Secret: cfg.Channels.WeCom.Secret(),
 		}
 		cfg.Channels.WeCom.secDirty = false
-	}
-	if cfg.Channels.WeComApp.secDirty {
-		cfg.security.Channels.WeComApp = &WeComAppSecurity{
-			CorpSecret:     cfg.Channels.WeComApp.CorpSecret(),
-			Token:          cfg.Channels.WeComApp.Token(),
-			EncodingAESKey: cfg.Channels.WeComApp.EncodingAESKey(),
-		}
-		cfg.Channels.WeComApp.secDirty = false
-	}
-	if cfg.Channels.WeComAIBot.secDirty {
-		cfg.security.Channels.WeComAIBot = &WeComAIBotSecurity{
-			Token:          cfg.Channels.WeComAIBot.Token(),
-			EncodingAESKey: cfg.Channels.WeComAIBot.EncodingAESKey(),
-			Secret:         cfg.Channels.WeComAIBot.Secret(),
-		}
-		cfg.Channels.WeComAIBot.secDirty = false
 	}
 	if cfg.Tools.Web.Brave.secDirty {
 		cfg.security.Web.Brave = &BraveSecurity{
@@ -1875,10 +1873,24 @@ func SaveConfig(path string, cfg *Config) error {
 		return err
 	}
 
+	// Filter out virtual models before serializing to config file
+	nonVirtualModels := make([]*ModelConfig, 0, len(cfg.ModelList))
+	for _, m := range cfg.ModelList {
+		if !m.isVirtual {
+			nonVirtualModels = append(nonVirtualModels, m)
+		}
+	}
+	// Temporarily replace ModelList with filtered version for serialization
+	originalModelList := cfg.ModelList
+	cfg.ModelList = nonVirtualModels
+
 	data, err := json.MarshalIndent(cfg, "", "  ")
+	// Restore original ModelList after serialization
+	cfg.ModelList = originalModelList
 	if err != nil {
 		return err
 	}
+	logger.Infof("saving config to %s", path)
 	return fileutil.WriteFileAtomic(path, data, 0o600)
 }
 
@@ -1942,6 +1954,17 @@ func (c *Config) ValidateModelList() error {
 
 func (c *Config) SecurityCopyFrom(cfg *Config) {
 	c.security = cfg.security
+	if c.security != nil {
+		if err := applySecurityConfig(c, c.security); err != nil {
+			logger.Errorf("failed to apply security config in SecurityCopyFrom: %v", err)
+		}
+	}
+}
+
+// ApplySecurity re-applies the stored security config to populate private fields (tokens, API keys, etc.).
+// Call this after SecurityCopyFrom when you need private fields to be accessible for validation or use.
+func (c *Config) ApplySecurity() error {
+	return applySecurityConfig(c, c.security)
 }
 
 func MergeAPIKeys(apiKey string, apiKeys []string) []string {
@@ -2081,6 +2104,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 				RequestTimeout: m.RequestTimeout,
 				ThinkingLevel:  m.ThinkingLevel,
 				ExtraBody:      m.ExtraBody,
+				isVirtual:      true,
 			}
 			expanded = append(expanded, additionalEntry)
 			fallbackNames = append(fallbackNames, expandedName)

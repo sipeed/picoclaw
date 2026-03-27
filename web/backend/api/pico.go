@@ -90,14 +90,14 @@ func (h *Handler) handleRegenPicoToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ensurePicoChannel enables the Pico channel with sane defaults if it isn't
+// EnsurePicoChannel enables the Pico channel with sane defaults if it isn't
 // already configured. Returns true when the config was modified.
 //
 // callerOrigin is the Origin header from the setup request. If non-empty and
 // no origins are configured yet, it's written as the allowed origin so the
 // WebSocket handshake works for whatever host the caller is on (LAN, custom
 // port, etc.). Pass "" when there's no request context.
-func (h *Handler) ensurePicoChannel(callerOrigin string) (bool, error) {
+func (h *Handler) EnsurePicoChannel(callerOrigin string) (bool, error) {
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to load config: %w", err)
@@ -134,7 +134,7 @@ func (h *Handler) ensurePicoChannel(callerOrigin string) (bool, error) {
 //
 //	POST /api/pico/setup
 func (h *Handler) handlePicoSetup(w http.ResponseWriter, r *http.Request) {
-	changed, err := h.ensurePicoChannel(r.Header.Get("Origin"))
+	changed, err := h.EnsurePicoChannel(r.Header.Get("Origin"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

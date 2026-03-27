@@ -11,6 +11,7 @@
 | ------------ | --------------------------------------- | ------------------------------------------------------------ |
 | `gemini`     | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)           |
 | `zhipu`      | LLM (Zhipu direct)                      | [bigmodel.cn](https://bigmodel.cn)                           |
+| `zai-coding` | LLM (Z.AI Coding Plan)                | [z.ai](https://z.ai/manage-apikey/apikey-list)           |
 | `volcengine` | LLM(Volcengine direct)                  | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw)                 |
 | `openrouter` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                       |
 | `anthropic`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com)       |
@@ -27,6 +28,7 @@
 | `mistral`    | LLM (Mistral direct)                    | [console.mistral.ai](https://console.mistral.ai)            |
 | `longcat`    | LLM (Longcat direct)                    | [longcat.ai](https://longcat.ai)                             |
 | `modelscope` | LLM (ModelScope direct)                 | [modelscope.cn](https://modelscope.cn)                       |
+| `mimo`       | LLM (Xiaomi MiMo direct)                | [platform.xiaomimimo.com](https://platform.xiaomimimo.com)   |
 
 ### Model Configuration (model_list)
 
@@ -46,6 +48,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **OpenAI**          | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
 | **Anthropic**       | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**   | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **Z.AI Coding Plan** | `openai/`         | `https://api.z.ai/api/coding/paas/v4`              | OpenAI    | [Get Key](https://z.ai/manage-apikey/apikey-list) |
 | **DeepSeek**        | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [Get Key](https://platform.deepseek.com)                         |
 | **Google Gemini**   | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Get Key](https://aistudio.google.com/api-keys)                  |
 | **Groq**            | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [Get Key](https://console.groq.com)                              |
@@ -63,6 +66,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Get Key](https://longcat.chat/platform)                         |
 | **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [Get Token](https://modelscope.cn/my/tokens)                     |
+| **Xiaomi MiMo**     | `mimo/`           | `https://api.xiaomimimo.com/v1`                     | OpenAI    | [Get Key](https://platform.xiaomimimo.com)                       |
 | **Azure OpenAI**    | `azure/`          | `https://{resource}.openai.azure.com`               | Azure     | [Get Key](https://portal.azure.com)                              |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
@@ -160,6 +164,17 @@ If `voice.model_name` is not configured, PicoClaw will continue to fall back to 
 }
 ```
 
+**Z.AI Coding Plan (GLM)**
+> Z.AI and 智谱 AI are two brands of the same provider. For the Z.AI Coding Plan use the `openai` model key and the api base as follows, rather than the zhipu config
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "openai/glm-4.7",
+  "api_key": "your-z.ai-key"
+  "api_base": "https://api.z.ai/api/coding/paas/v4"
+}
+```
+
 **DeepSeek**
 
 ```json
@@ -236,6 +251,21 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 
 PicoClaw strips only the outer `litellm/` prefix before sending the request, so proxy aliases like `litellm/lite-gpt4` send `lite-gpt4`, while `litellm/openai/gpt-4o` sends `openai/gpt-4o`.
 
+**Z.AI Coding Plan**
+
+If the standard Zhipu endpoint (`https://open.bigmodel.cn/api/paas/v4`) returns 429 (code 1113: insufficient balance), try using the Z.AI Coding Plan endpoint instead:
+
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "openai/glm-4.7",
+  "api_key": "your-zhipu-api-key",
+  "api_base": "https://api.z.ai/api/coding/paas/v4"
+}
+```
+
+**Note:** The Z.AI Coding Plan endpoint and standard Zhipu endpoint use the same API key format but have separate billing. If you encounter 429 errors with the standard Zhipu endpoint, the Z.AI Coding Plan endpoint may have available balance.
+
 #### Load Balancing
 
 Configure multiple endpoints for the same model name—PicoClaw will automatically round-robin between them:
@@ -258,6 +288,45 @@ Configure multiple endpoints for the same model name—PicoClaw will automatical
   ]
 }
 ```
+
+#### Automatic Model Failover (Cascade)
+
+PicoClaw already supports automatic failover when you configure `primary` + `fallbacks` in the agent model settings.
+The runtime fallback chain retries the next candidate for retriable failures such as HTTP `429`, quota/rate-limit errors, and timeout errors.
+It also applies cooldown tracking per candidate to avoid immediately retrying a recently failed target.
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "qwen-main",
+      "model": "openai/qwen3.5:cloud",
+      "api_base": "https://api.example.com/v1",
+      "api_key": "sk-main"
+    },
+    {
+      "model_name": "deepseek-backup",
+      "model": "deepseek/deepseek-chat",
+      "api_key": "sk-backup-1"
+    },
+    {
+      "model_name": "gemini-backup",
+      "model": "gemini/gemini-2.5-flash",
+      "api_key": "sk-backup-2"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "qwen-main",
+        "fallbacks": ["deepseek-backup", "gemini-backup"]
+      }
+    }
+  }
+}
+```
+
+If you use key-level failover for the same model, PicoClaw can chain through additional key-backed candidates before moving to cross-model backups.
 
 #### Migration from Legacy `providers` Config
 

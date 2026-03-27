@@ -54,6 +54,10 @@ func DetectTranscriber(cfg *config.Config) Transcriber {
 		}
 	}
 
+	// ElevenLabs voice config (supports Scribe STT).
+	if key := strings.TrimSpace(cfg.Voice.ElevenLabsAPIKey); key != "" {
+		return NewElevenLabsTranscriber(key)
+	}
 	// Fall back to any model-list entry that uses the groq/ protocol.
 	for _, mc := range cfg.ModelList {
 		if strings.HasPrefix(mc.Model, "groq/") && mc.APIKey() != "" {

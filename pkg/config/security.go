@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/tencent-connect/botgo/log"
@@ -22,19 +25,41 @@ const (
 	SecurityConfigFile = ".security.yml"
 )
 
+func normalizeSecurityConfig(sec *SecurityConfig) *SecurityConfig {
+	if sec == nil {
+		sec = &SecurityConfig{}
+	}
+	if sec.ModelList == nil {
+		sec.ModelList = map[string]ModelSecurityEntry{}
+	}
+	if sec.Channels == nil {
+		sec.Channels = &ChannelsSecurity{}
+	}
+	if sec.Web == nil {
+		sec.Web = &WebToolsSecurity{}
+	}
+	if sec.Skills == nil {
+		sec.Skills = &SkillsSecurity{}
+	}
+	return sec
+}
+
 // SecurityConfig stores all sensitive data (API keys, tokens, secrets, passwords)
 // This data is loaded from security.yml and kept separate from the main config
 type SecurityConfig struct {
 	// Model API keys. Map key is model_name, can include suffix like "abc:0", "abc:1"
 	// for load balancing with same model_name. The suffix ":N" is used to distinguish
 	// multiple configs that share the same base model_name.
-	ModelList map[string]ModelSecurityEntry `yaml:"model_list,omitempty"`
+	ModelList map[string]ModelSecurityEntry `yaml:"model_list"`
 
 	// Channel tokens/secrets
-	Channels ChannelsSecurity `yaml:"channels,omitempty"`
+	Channels *ChannelsSecurity `yaml:"channels,omitempty"`
 
-	Web    WebToolsSecurity `yaml:"web,omitempty"`
-	Skills SkillsSecurity   `yaml:"skills,omitempty"`
+	Web    *WebToolsSecurity `yaml:"web,omitempty"`
+	Skills *SkillsSecurity   `yaml:"skills,omitempty"`
+
+	// cache for sensitive values and compiled regex (computed once)
+	sensitiveCache *SensitiveDataCache
 }
 
 // ModelSecurityEntry stores security data for a model
@@ -44,21 +69,19 @@ type ModelSecurityEntry struct {
 
 // ChannelsSecurity stores channel-related security data
 type ChannelsSecurity struct {
-	Telegram   *TelegramSecurity   `yaml:"telegram,omitempty"`
-	Feishu     *FeishuSecurity     `yaml:"feishu,omitempty"`
-	Discord    *DiscordSecurity    `yaml:"discord,omitempty"`
-	Weixin     *WeixinSecurity     `yaml:"weixin,omitempty"`
-	QQ         *QQSecurity         `yaml:"qq,omitempty"`
-	DingTalk   *DingTalkSecurity   `yaml:"dingtalk,omitempty"`
-	Slack      *SlackSecurity      `yaml:"slack,omitempty"`
-	Matrix     *MatrixSecurity     `yaml:"matrix,omitempty"`
-	LINE       *LINESecurity       `yaml:"line,omitempty"`
-	OneBot     *OneBotSecurity     `yaml:"onebot,omitempty"`
-	WeCom      *WeComSecurity      `yaml:"wecom,omitempty"`
-	WeComApp   *WeComAppSecurity   `yaml:"wecom_app,omitempty"`
-	WeComAIBot *WeComAIBotSecurity `yaml:"wecom_aibot,omitempty"`
-	Pico       *PicoSecurity       `yaml:"pico,omitempty"`
-	IRC        *IRCSecurity        `yaml:"irc,omitempty"`
+	Telegram *TelegramSecurity `yaml:"telegram,omitempty"`
+	Feishu   *FeishuSecurity   `yaml:"feishu,omitempty"`
+	Discord  *DiscordSecurity  `yaml:"discord,omitempty"`
+	Weixin   *WeixinSecurity   `yaml:"weixin,omitempty"`
+	QQ       *QQSecurity       `yaml:"qq,omitempty"`
+	DingTalk *DingTalkSecurity `yaml:"dingtalk,omitempty"`
+	Slack    *SlackSecurity    `yaml:"slack,omitempty"`
+	Matrix   *MatrixSecurity   `yaml:"matrix,omitempty"`
+	LINE     *LINESecurity     `yaml:"line,omitempty"`
+	OneBot   *OneBotSecurity   `yaml:"onebot,omitempty"`
+	WeCom    *WeComSecurity    `yaml:"wecom,omitempty"`
+	Pico     *PicoSecurity     `yaml:"pico,omitempty"`
+	IRC      *IRCSecurity      `yaml:"irc,omitempty"`
 }
 
 type TelegramSecurity struct {
@@ -106,20 +129,7 @@ type OneBotSecurity struct {
 }
 
 type WeComSecurity struct {
-	Token          string `yaml:"token,omitempty"            env:"PICOCLAW_CHANNELS_WECOM_TOKEN"`
-	EncodingAESKey string `yaml:"encoding_aes_key,omitempty" env:"PICOCLAW_CHANNELS_WECOM_ENCODING_AES_KEY"`
-}
-
-type WeComAppSecurity struct {
-	CorpSecret     string `yaml:"corp_secret,omitempty"      env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_SECRET"`
-	Token          string `yaml:"token,omitempty"            env:"PICOCLAW_CHANNELS_WECOM_APP_TOKEN"`
-	EncodingAESKey string `yaml:"encoding_aes_key,omitempty" env:"PICOCLAW_CHANNELS_WECOM_APP_ENCODING_AES_KEY"`
-}
-
-type WeComAIBotSecurity struct {
-	Secret         string `yaml:"secret,omitempty"           env:"PICOCLAW_CHANNELS_WECOM_AIBOT_SECRET"`
-	Token          string `yaml:"token,omitempty"            env:"PICOCLAW_CHANNELS_WECOM_AIBOT_TOKEN"`
-	EncodingAESKey string `yaml:"encoding_aes_key,omitempty" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENCODING_AES_KEY"`
+	Secret string `yaml:"secret,omitempty" env:"PICOCLAW_CHANNELS_WECOM_SECRET"`
 }
 
 type PicoSecurity struct {
@@ -185,7 +195,7 @@ func loadSecurityConfig(securityPath string) (*SecurityConfig, error) {
 	data, err := os.ReadFile(securityPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &SecurityConfig{}, nil
+			return normalizeSecurityConfig(nil), nil
 		}
 		return nil, fmt.Errorf("failed to read security config: %w", err)
 	}
@@ -204,7 +214,7 @@ func loadSecurityConfig(securityPath string) (*SecurityConfig, error) {
 		return nil, err
 	}
 
-	return &sec, nil
+	return normalizeSecurityConfig(&sec), nil
 }
 
 // saveSecurityConfig saves the security configuration to security.yml
@@ -217,4 +227,220 @@ func saveSecurityConfig(securityPath string, sec *SecurityConfig) error {
 		return fmt.Errorf("failed to marshal security config: %w", err)
 	}
 	return fileutil.WriteFileAtomic(securityPath, buf.Bytes(), 0o600)
+}
+
+// mergeSecurityConfig merges two SecurityConfig instances, preferring non-empty values from 'newer'.
+// This is used during config migration to preserve existing security data while adding new entries.
+func mergeSecurityConfig(existing, newer *SecurityConfig) *SecurityConfig {
+	if existing == nil {
+		return normalizeSecurityConfig(newer)
+	}
+	if newer == nil {
+		return normalizeSecurityConfig(existing)
+	}
+
+	result := normalizeSecurityConfig(nil)
+
+	// Merge ModelList: prefer newer if it has keys, otherwise use existing
+	for k, v := range existing.ModelList {
+		result.ModelList[k] = v
+	}
+	for k, v := range newer.ModelList {
+		if len(v.APIKeys) > 0 {
+			result.ModelList[k] = v
+		}
+	}
+
+	// Merge Channels
+	if existing.Channels != nil {
+		result.Channels = existing.Channels
+	}
+	if newer.Channels != nil {
+		if result.Channels == nil {
+			result.Channels = &ChannelsSecurity{}
+		}
+		mergeChannelsSecurity(result.Channels, newer.Channels)
+	}
+
+	// Merge Web
+	if existing.Web != nil {
+		result.Web = existing.Web
+	}
+	if newer.Web != nil {
+		if result.Web == nil {
+			result.Web = &WebToolsSecurity{}
+		}
+		mergeWebToolsSecurity(result.Web, newer.Web)
+	}
+
+	// Merge Skills
+	if existing.Skills != nil {
+		result.Skills = existing.Skills
+	}
+	if newer.Skills != nil {
+		if result.Skills == nil {
+			result.Skills = &SkillsSecurity{}
+		}
+		mergeSkillsSecurity(result.Skills, newer.Skills)
+	}
+
+	return result
+}
+
+func mergeChannelsSecurity(dst, src *ChannelsSecurity) {
+	if src.Telegram != nil && src.Telegram.Token != "" {
+		dst.Telegram = src.Telegram
+	}
+	if src.Feishu != nil &&
+		(src.Feishu.AppSecret != "" || src.Feishu.EncryptKey != "" || src.Feishu.VerificationToken != "") {
+		dst.Feishu = src.Feishu
+	}
+	if src.Discord != nil && src.Discord.Token != "" {
+		dst.Discord = src.Discord
+	}
+	if src.Weixin != nil && src.Weixin.Token != "" {
+		dst.Weixin = src.Weixin
+	}
+	if src.QQ != nil && src.QQ.AppSecret != "" {
+		dst.QQ = src.QQ
+	}
+	if src.DingTalk != nil && src.DingTalk.ClientSecret != "" {
+		dst.DingTalk = src.DingTalk
+	}
+	if src.Slack != nil && (src.Slack.BotToken != "" || src.Slack.AppToken != "") {
+		dst.Slack = src.Slack
+	}
+	if src.Matrix != nil && src.Matrix.AccessToken != "" {
+		dst.Matrix = src.Matrix
+	}
+	if src.LINE != nil && (src.LINE.ChannelSecret != "" || src.LINE.ChannelAccessToken != "") {
+		dst.LINE = src.LINE
+	}
+	if src.OneBot != nil && src.OneBot.AccessToken != "" {
+		dst.OneBot = src.OneBot
+	}
+	if src.WeCom != nil && src.WeCom.Secret != "" {
+		dst.WeCom = src.WeCom
+	}
+	if src.Pico != nil && src.Pico.Token != "" {
+		dst.Pico = src.Pico
+	}
+	if src.IRC != nil && (src.IRC.Password != "" || src.IRC.NickServPassword != "" || src.IRC.SASLPassword != "") {
+		dst.IRC = src.IRC
+	}
+}
+
+func mergeWebToolsSecurity(dst, src *WebToolsSecurity) {
+	if src.Brave != nil && len(src.Brave.APIKeys) > 0 {
+		dst.Brave = src.Brave
+	}
+	if src.Tavily != nil && len(src.Tavily.APIKeys) > 0 {
+		dst.Tavily = src.Tavily
+	}
+	if src.Perplexity != nil && len(src.Perplexity.APIKeys) > 0 {
+		dst.Perplexity = src.Perplexity
+	}
+	if src.GLMSearch != nil && src.GLMSearch.APIKey != "" {
+		dst.GLMSearch = src.GLMSearch
+	}
+	if src.BaiduSearch != nil && src.BaiduSearch.APIKey != "" {
+		dst.BaiduSearch = src.BaiduSearch
+	}
+}
+
+func mergeSkillsSecurity(dst, src *SkillsSecurity) {
+	if src.Github != nil && src.Github.Token != "" {
+		dst.Github = src.Github
+	}
+	if src.ClawHub != nil && src.ClawHub.AuthToken != "" {
+		dst.ClawHub = src.ClawHub
+	}
+}
+
+// SensitiveDataCache caches the compiled regex for filtering sensitive data.
+// SensitiveDataCache caches the strings.Replacer for filtering sensitive data.
+// Computed once on first access via sync.Once.
+type SensitiveDataCache struct {
+	replacer *strings.Replacer
+	once     sync.Once
+}
+
+// SensitiveDataReplacer returns the strings.Replacer for filtering sensitive data.
+// It is computed once on first access via sync.Once.
+func (sec *SecurityConfig) SensitiveDataReplacer() *strings.Replacer {
+	sec.initSensitiveCache()
+	return sec.sensitiveCache.replacer
+}
+
+// initSensitiveCache initializes the sensitive data cache if not already done.
+func (sec *SecurityConfig) initSensitiveCache() {
+	if sec.sensitiveCache == nil {
+		sec.sensitiveCache = &SensitiveDataCache{}
+	}
+	sec.sensitiveCache.once.Do(func() {
+		values := sec.collectSensitiveValues()
+		if len(values) == 0 {
+			sec.sensitiveCache.replacer = strings.NewReplacer()
+			return
+		}
+
+		// Build old/new pairs for strings.Replacer
+		var pairs []string
+		for _, v := range values {
+			if len(v) > 3 {
+				pairs = append(pairs, v, "[FILTERED]")
+			}
+		}
+		if len(pairs) == 0 {
+			sec.sensitiveCache.replacer = strings.NewReplacer()
+			return
+		}
+		sec.sensitiveCache.replacer = strings.NewReplacer(pairs...)
+	})
+}
+
+// collectSensitiveValues collects all sensitive strings from SecurityConfig using reflection.
+func (sec *SecurityConfig) collectSensitiveValues() []string {
+	var values []string
+	collectSensitive(reflect.ValueOf(sec), &values)
+	return values
+}
+
+// collectSensitive recursively traverses the value and collects all non-empty string fields.
+func collectSensitive(v reflect.Value, values *[]string) {
+	// Dereference pointers/interfaces to get the underlying value
+	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+
+	switch v.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Field(i)
+			fieldType := v.Type().Field(i)
+			if !fieldType.IsExported() {
+				continue
+			}
+			collectSensitive(field, values)
+		}
+	case reflect.String:
+		if v.String() != "" {
+			*values = append(*values, v.String())
+		}
+	case reflect.Slice:
+		if v.Type().Elem().Kind() == reflect.String {
+			for i := 0; i < v.Len(); i++ {
+				if s := v.Index(i).String(); s != "" {
+					*values = append(*values, s)
+				}
+			}
+		}
+	case reflect.Map:
+		for _, key := range v.MapKeys() {
+			collectSensitive(v.MapIndex(key), values)
+		}
+	}
 }

@@ -104,6 +104,9 @@ func TestSendFileTool_Success(t *testing.T) {
 	if result.Media[0][:8] != "media://" {
 		t.Errorf("expected media:// ref, got %q", result.Media[0])
 	}
+	if !result.ResponseHandled {
+		t.Fatal("expected send_file success to mark response handled")
+	}
 
 	_, meta, err := store.ResolveWithMeta(result.Media[0])
 	if err != nil {

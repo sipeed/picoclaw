@@ -26,6 +26,9 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 > [!TIP]
 > **Docker Users**: By default, the Gateway listens on `127.0.0.1` which is not accessible from the host. If you need to access the health endpoints or expose ports, set `PICOCLAW_GATEWAY_HOST=0.0.0.0` in your environment or update `config.json`.
 
+> [!NOTE]
+> The `gateway` profile only serves the webhook handlers (including Pico when enabled) and health endpoints on the gateway port, so it does not expose generic REST chat endpoints such as `/chat` or `/a2a`. Launcher mode adds the browser UI plus `/api/pico/token` and a `/pico/ws` proxy on the launcher port, but `/pico/ws` is also available directly on the gateway whenever the Pico channel is enabled.
+
 ```bash
 # 5. Check logs
 docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway

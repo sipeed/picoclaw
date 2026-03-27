@@ -179,7 +179,7 @@ PicoClaw hỗ trợ kết nối với tài khoản WeChat cá nhân của bạn 
 
 Chạy luồng đăng nhập QR tương tác:
 ```bash
-picoclaw onboard weixin
+picoclaw auth weixin
 ```
 Quét mã QR được in ra bằng ứng dụng WeChat trên điện thoại. Sau khi đăng nhập thành công, token sẽ được lưu vào cấu hình.
 

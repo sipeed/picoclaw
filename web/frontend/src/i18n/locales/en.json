@@ -154,7 +154,8 @@
       "unconfigured": "Not configured"
     },
     "badge": {
-      "default": "Default"
+      "default": "Default",
+      "virtual": "Virtual"
     },
     "action": {
       "edit": "Edit API key",
@@ -208,7 +209,9 @@
       "thinkingLevel": "Thinking Level",
       "thinkingLevelHint": "Extended thinking budget: off, low, medium, high, xhigh, adaptive.",
       "maxTokensField": "Max Tokens Field",
-      "maxTokensFieldHint": "Override the request field name for max tokens, e.g. max_completion_tokens."
+      "maxTokensFieldHint": "Override the request field name for max tokens, e.g. max_completion_tokens.",
+      "extraBody": "Extra Body",
+      "extraBodyHint": "Additional JSON fields to inject into the request body, e.g. {\"reasoning_split\": true}."
     },
     "edit": {
       "title": "Configure {{name}}",
@@ -233,14 +236,47 @@
       "qq": "QQ",
       "onebot": "OneBot",
       "wecom": "WeCom",
-      "wecom_app": "WeCom App",
-      "wecom_aibot": "WeCom AI Bot",
       "whatsapp": "WhatsApp",
       "whatsapp_native": "WhatsApp Native",
       "pico": "Web",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
-      "irc": "IRC"
+      "irc": "IRC",
+      "weixin": "WeChat"
+    },
+    "weixin": {
+      "warningTitle": "Testing phase, use with caution",
+      "warningDesc": "The WeChat channel is still experimental and may carry a risk of account suspension. Use it only if you understand and accept the risk.",
+      "bindTitle": "WeChat Account Binding",
+      "bindDesc": "Scan the QR code with WeChat to bind your personal account.",
+      "bind": "Bind WeChat",
+      "rebind": "Re-bind",
+      "bound": "WeChat Bound",
+      "notBound": "WeChat account not bound yet.",
+      "generating": "Generating QR code...",
+      "scanHint": "Open WeChat and scan the QR code",
+      "scanned": "Scanned — please confirm in WeChat",
+      "expired": "QR code expired",
+      "retry": "Try Again",
+      "refresh": "Refresh QR",
+      "errorGeneric": "An error occurred. Please try again."
+    },
+    "wecom": {
+      "bindTitle": "WeCom Binding",
+      "bindDesc": "Scan the QR code with WeCom to bind your AI Bot.",
+      "enableDesc": "Once bound, you can enable or disable the channel here.",
+      "enableBindFirst": "Bind the bot first, then enable the channel.",
+      "bind": "Bind WeCom",
+      "rebind": "Re-bind",
+      "bound": "WeCom Bound",
+      "notBound": "WeCom AI Bot not bound yet.",
+      "generating": "Generating QR code...",
+      "scanHint": "Open WeCom and scan the QR code",
+      "scanned": "Scanned, please confirm in WeCom",
+      "expired": "QR code expired",
+      "retry": "Try Again",
+      "refresh": "Refresh QR",
+      "errorGeneric": "An error occurred. Please try again."
     },
     "field": {
       "token": "Bot Token",
@@ -273,7 +309,9 @@
       "saveError": "Failed to save channel configuration",
       "enabled": "enabled",
       "docLink": "Documentation",
-      "enableLabel": "Enable channel"
+      "enableLabel": "Enable channel",
+      "restartRequiredTitle": "Gateway restart required",
+      "restartRequiredDesc": "The latest {{name}} configuration has been saved. Restart the gateway for it to take effect."
     },
     "form": {
       "desc": {
@@ -396,6 +434,12 @@
       "workspace_hint": "Base directory for agent file operations.",
       "restrict_workspace": "Restrict to Workspace",
       "restrict_workspace_hint": "Only allow file operations inside workspace.",
+      "split_on_marker": "Chatty Mode",
+      "split_on_marker_hint": "Split long messages into short ones like real human chatting.",
+      "tool_feedback_enabled": "Tool Feedback",
+      "tool_feedback_enabled_hint": "Send a short tool-call preview into the current chat before each tool execution.",
+      "tool_feedback_max_args_length": "Tool Feedback Args Preview Length",
+      "tool_feedback_max_args_length_hint": "Maximum number of argument characters shown in each tool feedback message. Set to 0 to use the default.",
       "exec_enabled": "Allow Commands",
       "exec_enabled_hint": "Enable or disable command execution for the app. When disabled, no command requests will run.",
       "allow_remote": "Allow Remote Commands",
@@ -409,6 +453,13 @@
       "custom_allow_patterns": "Command Whitelist",
       "custom_allow_patterns_hint": "Add extra command-allow rules, one regular expression per line. A command matching any rule here skips blacklist matching, but other safety limits still apply.",
       "custom_patterns_placeholder": "^rm\\s+-rf\\b\n^git\\s+push\\b",
+      "pattern_detector_title": "Pattern Detection Tool",
+      "pattern_detector_hint": "Enter a command to test if it matches any blacklist or whitelist patterns.",
+      "pattern_detector_input_placeholder": "Enter a command to test, e.g., rm -rf /tmp",
+      "pattern_detector_test_button": "Test",
+      "pattern_detector_result_allowed": "Allowed (matches whitelist)",
+      "pattern_detector_result_blocked": "Blocked (matches blacklist)",
+      "pattern_detector_result_no_match": "No match (will use default rules)",
       "allow_shell_execution": "Allow Scheduled Commands",
       "allow_shell_execution_hint": "Allow scheduled tasks to run commands by default. When disabled, users must pass command_confirm=true to schedule a command task.",
       "cron_exec_timeout": "Scheduled Command Timeout (minutes)",

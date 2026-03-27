@@ -17,13 +17,12 @@ import (
 
 // Test JSON unmarshal of private fields
 func TestJSONUnmarshalPrivateFields(t *testing.T) {
-	//nolint: govet
 	type testStruct struct {
 		PublicField  string `json:"public"`
-		privateField string `json:"private"`
+		privateField string
 	}
 
-	data := `{"public": "pub", "private": "priv"}`
+	data := `{"public": "pub", "privateField": "priv"}`
 	var s testStruct
 	if err := json.Unmarshal([]byte(data), &s); err != nil {
 		t.Fatalf("JSON unmarshal failed: %v", err)
@@ -35,9 +34,8 @@ func TestJSONUnmarshalPrivateFields(t *testing.T) {
 	if s.PublicField != "pub" {
 		t.Errorf("PublicField = %q, want 'pub'", s.PublicField)
 	}
-	// This should fail because privateField is unexported
-	if s.privateField != "priv" {
-		t.Logf("privateField = %q, want 'priv' - THIS IS EXPECTED TO FAIL", s.privateField)
+	if s.privateField != "" {
+		t.Errorf("privateField = %q, want empty because unexported fields are ignored", s.privateField)
 	}
 }
 
@@ -45,7 +43,8 @@ func TestSecurityConfigIntegration(t *testing.T) {
 	t.Run("Full workflow with security references", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
-		// Create config.json with references
+		// Create config.json with direct security values (not ref: references)
+		// These values should take precedence over .security.yml
 		configPath := filepath.Join(tmpDir, "config.json")
 		configContent := `{
   "version": 1,
@@ -54,25 +53,25 @@ func TestSecurityConfigIntegration(t *testing.T) {
       "model_name": "test-model",
       "model": "openai/test-model",
       "api_base": "https://api.openai.com/v1",
-      "api_key": "ref:model_list.test-model.api_key"
+      "api_key": "sk-from-config-json-direct"
     }
   ],
   "channels": {
     "telegram": {
       "enabled": true,
-      "token": "ref:channels.telegram.token"
+      "token": "token-from-config-json-direct"
     }
   },
   "tools": {
     "web": {
       "brave": {
         "enabled": true,
-        "api_key": "ref:web.brave.api_key"
+        "api_key": "BSA-from-config-json-direct"
       }
     },
     "skills": {
       "github": {
-        "token": "ref:skills.github.token"
+        "token": "ghp-from-config-json-direct"
       }
     }
   }
@@ -80,46 +79,47 @@ func TestSecurityConfigIntegration(t *testing.T) {
 		err := os.WriteFile(configPath, []byte(configContent), 0o644)
 		require.NoError(t, err)
 
-		// Create .security.yml with actual values
+		// Create .security.yml with different values
+		// These should be overridden by config.json values
 		securityPath := filepath.Join(tmpDir, SecurityConfigFile)
 		securityContent := `model_list:
   test-model:
     api_keys:
-      - "sk-test-api-key-12345"
+      - "sk-from-security-yml"
 
 channels:
   telegram:
-    token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+    token: "token-from-security-yml"
 
 web:
   brave:
     api_keys:
-      - "BSAbrave-api-key-67890"
+      - "BSA-from-security-yml"
 
 skills:
   github:
-    token: "ghp_github-token-abc123"`
+    token: "ghp-from-security-yml"`
 		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
 		require.NoError(t, err)
 
-		// Load config and verify references are resolved
+		// Load config and verify config.json values take precedence
 		cfg, err := LoadConfig(configPath)
 		require.NoError(t, err)
 		require.NotNil(t, cfg)
 
-		// Verify model API key is resolved
+		// Verify model API key from config.json takes precedence
 		assert.Equal(t, 1, len(cfg.ModelList))
 		assert.Equal(t, "test-model", cfg.ModelList[0].ModelName)
-		assert.Equal(t, "sk-test-api-key-12345", cfg.ModelList[0].apiKeys[0])
+		assert.Equal(t, "sk-from-config-json-direct", cfg.ModelList[0].apiKeys[0])
 
-		// Verify channel token is resolved
-		assert.Equal(t, "123456789:ABCdefGHIjklMNOpqrsTUVwxyz", cfg.Channels.Telegram.token)
+		// Verify channel token from config.json takes precedence
+		assert.Equal(t, "token-from-config-json-direct", cfg.Channels.Telegram.token)
 
-		// Verify web tool API key is resolved
-		assert.Equal(t, "BSAbrave-api-key-67890", cfg.Tools.Web.Brave.APIKey())
+		// Verify web tool API key from config.json takes precedence
+		assert.Equal(t, "BSA-from-config-json-direct", cfg.Tools.Web.Brave.APIKey())
 
-		// Verify skills token is resolved
-		assert.Equal(t, "ghp_github-token-abc123", cfg.Tools.Skills.Github.token)
+		// Verify skills token from config.json takes precedence
+		assert.Equal(t, "ghp-from-config-json-direct", cfg.Tools.Skills.Github.token)
 	})
 }
 
@@ -242,15 +242,7 @@ func TestAllSecurityKeysAccessible(t *testing.T) {
     },
     "wecom": {
       "enabled": true,
-      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook"
-    },
-    "wecom_app": {
-      "enabled": true,
-      "corp_id": "test_corp_id",
-      "agent_id": 123456
-    },
-    "wecom_aibot": {
-      "enabled": true
+      "bot_id": "test_wecom_bot_id"
     },
     "pico": {
       "enabled": true
@@ -317,15 +309,7 @@ channels:
   onebot:
     access_token: "onebot_test_access_token"
   wecom:
-    token: "wecom_test_webhook_token"
-    encoding_aes_key: "wecom_test_aes_key"
-  wecom_app:
-    corp_secret: "wecom_app_test_corp_secret"
-    token: "wecom_app_test_token"
-    encoding_aes_key: "wecom_app_test_aes_key"
-  wecom_aibot:
-    token: "wecom_aibot_test_token"
-    encoding_aes_key: "wecom_aibot_test_aes_key"
+    secret: "wecom_test_secret"
   pico:
     token: "pico_test_token"
   irc:
@@ -411,24 +395,10 @@ skills:
 		t.Logf("OneBot AccessToken(): %s", cfg.Channels.OneBot.AccessToken())
 
 		// WeCom
-		assert.Equal(t, "wecom_test_webhook_token", cfg.Channels.WeCom.Token())
-		assert.Equal(t, "wecom_test_aes_key", cfg.Channels.WeCom.EncodingAESKey())
-		t.Logf("WeCom Token(): %s", cfg.Channels.WeCom.Token())
-		t.Logf("WeCom EncodingAESKey(): %s", cfg.Channels.WeCom.EncodingAESKey())
-
-		// WeCom App
-		assert.Equal(t, "wecom_app_test_corp_secret", cfg.Channels.WeComApp.CorpSecret())
-		assert.Equal(t, "wecom_app_test_token", cfg.Channels.WeComApp.Token())
-		assert.Equal(t, "wecom_app_test_aes_key", cfg.Channels.WeComApp.EncodingAESKey())
-		t.Logf("WeComApp CorpSecret(): %s", cfg.Channels.WeComApp.CorpSecret())
-		t.Logf("WeComApp Token(): %s", cfg.Channels.WeComApp.Token())
-		t.Logf("WeComApp EncodingAESKey(): %s", cfg.Channels.WeComApp.EncodingAESKey())
-
-		// WeCom AI Bot
-		assert.Equal(t, "wecom_aibot_test_token", cfg.Channels.WeComAIBot.Token())
-		assert.Equal(t, "wecom_aibot_test_aes_key", cfg.Channels.WeComAIBot.EncodingAESKey())
-		t.Logf("WeComAIBot Token(): %s", cfg.Channels.WeComAIBot.Token())
-		t.Logf("WeComAIBot EncodingAESKey(): %s", cfg.Channels.WeComAIBot.EncodingAESKey())
+		assert.Equal(t, "test_wecom_bot_id", cfg.Channels.WeCom.BotID)
+		assert.Equal(t, "wecom_test_secret", cfg.Channels.WeCom.Secret())
+		t.Logf("WeCom BotID: %s", cfg.Channels.WeCom.BotID)
+		t.Logf("WeCom Secret(): %s", cfg.Channels.WeCom.Secret())
 
 		// Pico
 		assert.Equal(t, "pico_test_token", cfg.Channels.Pico.Token())

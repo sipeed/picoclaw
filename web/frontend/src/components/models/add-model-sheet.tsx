@@ -20,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { Textarea } from "@/components/ui/textarea"
 
 interface AddForm {
   modelName: string
@@ -34,6 +35,7 @@ interface AddForm {
   maxTokensField: string
   requestTimeout: string
   thinkingLevel: string
+  extraBody: string
 }
 
 const EMPTY_ADD_FORM: AddForm = {
@@ -49,6 +51,7 @@ const EMPTY_ADD_FORM: AddForm = {
   maxTokensField: "",
   requestTimeout: "",
   thinkingLevel: "",
+  extraBody: "",
 }
 
 interface AddModelSheetProps {
@@ -100,7 +103,8 @@ export function AddModelSheet({
   }
 
   const setField =
-    (key: keyof AddForm) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    (key: keyof AddForm) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setForm((f) => ({ ...f, [key]: e.target.value }))
       if (fieldErrors[key]) {
         setFieldErrors((prev) => ({ ...prev, [key]: undefined }))
@@ -129,6 +133,9 @@ export function AddModelSheet({
           ? Number(form.requestTimeout)
           : undefined,
         thinking_level: form.thinkingLevel.trim() || undefined,
+        extra_body: form.extraBody.trim()
+          ? JSON.parse(form.extraBody.trim())
+          : undefined,
       })
       if (setAsDefault) {
         await setDefaultModel(modelName)
@@ -303,6 +310,18 @@ export function AddModelSheet({
                   value={form.maxTokensField}
                   onChange={setField("maxTokensField")}
                   placeholder="max_completion_tokens"
+                />
+              </Field>
+
+              <Field
+                label={t("models.field.extraBody")}
+                hint={t("models.field.extraBodyHint")}
+              >
+                <Textarea
+                  value={form.extraBody}
+                  onChange={setField("extraBody")}
+                  placeholder='{"key": "value"}'
+                  rows={3}
                 />
               </Field>
             </AdvancedSection>

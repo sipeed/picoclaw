@@ -154,7 +154,8 @@
       "unconfigured": "未配置"
     },
     "badge": {
-      "default": "默认"
+      "default": "默认",
+      "virtual": "虚拟"
     },
     "action": {
       "edit": "编辑 API Key",
@@ -208,7 +209,9 @@
       "thinkingLevel": "思考级别",
       "thinkingLevelHint": "扩展思考预算：off、low、medium、high、xhigh、adaptive。",
       "maxTokensField": "Max Tokens 字段名",
-      "maxTokensFieldHint": "覆盖请求中 max_tokens 的字段名，例如 max_completion_tokens。"
+      "maxTokensFieldHint": "覆盖请求中 max_tokens 的字段名，例如 max_completion_tokens。",
+      "extraBody": "Extra Body",
+      "extraBodyHint": "要注入到请求体中的额外 JSON 字段，例如 {\"reasoning_split\": true}。"
     },
     "edit": {
       "title": "配置 {{name}}",
@@ -233,14 +236,47 @@
       "qq": "QQ",
       "onebot": "OneBot",
       "wecom": "企业微信",
-      "wecom_app": "企业微信应用",
-      "wecom_aibot": "企业微信 AI 机器人",
       "whatsapp": "WhatsApp",
       "whatsapp_native": "WhatsApp Native",
       "pico": "Web",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
-      "irc": "IRC"
+      "irc": "IRC",
+      "weixin": "微信"
+    },
+    "weixin": {
+      "warningTitle": "测试阶段，请谨慎使用",
+      "warningDesc": "微信 Channel 当前仍处于测试阶段，存在封号风险。请仅在充分了解风险的前提下使用。",
+      "bindTitle": "微信账号绑定",
+      "bindDesc": "使用微信扫描二维码以绑定您的个人微信账号。",
+      "bind": "绑定微信",
+      "rebind": "重新绑定",
+      "bound": "微信已绑定",
+      "notBound": "尚未绑定微信账号。",
+      "generating": "正在生成二维码...",
+      "scanHint": "打开微信，扫描二维码",
+      "scanned": "已扫码 — 请在微信中确认",
+      "expired": "二维码已过期",
+      "retry": "重试",
+      "refresh": "刷新二维码",
+      "errorGeneric": "发生错误，请重试。"
+    },
+    "wecom": {
+      "bindTitle": "企业微信绑定",
+      "bindDesc": "使用企业微信扫描二维码以绑定您的 AI Bot。",
+      "enableDesc": "绑定后可在这里直接启用或停用频道。",
+      "enableBindFirst": "请先完成绑定，然后再启用频道。",
+      "bind": "绑定企业微信",
+      "rebind": "重新绑定",
+      "bound": "企业微信已绑定",
+      "notBound": "尚未绑定企业微信 AI Bot。",
+      "generating": "正在生成二维码...",
+      "scanHint": "打开企业微信，扫描二维码",
+      "scanned": "已扫码，请在企业微信中确认",
+      "expired": "二维码已过期",
+      "retry": "重试",
+      "refresh": "刷新二维码",
+      "errorGeneric": "发生错误，请重试。"
     },
     "field": {
       "token": "Bot Token",
@@ -273,7 +309,9 @@
       "saveError": "保存频道配置失败",
       "enabled": "已启用",
       "docLink": "配置文档",
-      "enableLabel": "启用频道"
+      "enableLabel": "启用频道",
+      "restartRequiredTitle": "需要重启服务",
+      "restartRequiredDesc": "{{name}} 的最新配置已保存。重启服务后才能正式生效。"
     },
     "form": {
       "desc": {
@@ -396,6 +434,12 @@
       "workspace_hint": "智能体执行文件读写操作时使用的基础目录。",
       "restrict_workspace": "限制工作目录访问",
       "restrict_workspace_hint": "仅允许在工作目录内执行文件操作。",
+      "split_on_marker": "连续短消息",
+      "split_on_marker_hint": "像真人聊天一样，把长难句拆成多条短消息快速发出",
+      "tool_feedback_enabled": "工具反馈",
+      "tool_feedback_enabled_hint": "在每次执行工具前，先向当前会话发送一条简短的工具调用预览。",
+      "tool_feedback_max_args_length": "工具反馈参数预览长度",
+      "tool_feedback_max_args_length_hint": "每条工具反馈消息中展示的参数字符上限。设为 0 时使用默认值。",
       "exec_enabled": "允许命令执行",
       "exec_enabled_hint": "控制应用是否允许执行命令。关闭后，所有命令请求都不会执行。",
       "allow_remote": "允许远程命令执行",
@@ -409,6 +453,13 @@
       "custom_allow_patterns": "命令白名单",
       "custom_allow_patterns_hint": "用于补充额外的命令放行规则，每行一个正则表达式。命中任意一条规则的命令会跳过黑名单检查，但仍受其他安全限制约束。",
       "custom_patterns_placeholder": "^rm\\s+-rf\\b\n^git\\s+push\\b",
+      "pattern_detector_title": "规则检测工具",
+      "pattern_detector_hint": "输入命令以检测其是否匹配黑名单或白名单规则。",
+      "pattern_detector_input_placeholder": "输入要检测的命令，例如 rm -rf /tmp",
+      "pattern_detector_test_button": "检测",
+      "pattern_detector_result_allowed": "允许（匹配白名单）",
+      "pattern_detector_result_blocked": "阻止（匹配黑名单）",
+      "pattern_detector_result_no_match": "无匹配（将使用默认规则）",
       "allow_shell_execution": "允许定时任务运行命令",
       "allow_shell_execution_hint": "开启后，定时任务默认允许运行命令。关闭后，必须显式传入 command_confirm=true 才能创建运行命令的定时任务。",
       "cron_exec_timeout": "定时命令超时（分钟）",

@@ -98,7 +98,7 @@ func main() {
 		defer logger.DisableFileLogging()
 	}
 
-	logger.InfoC("web", "PicoClaw Launcher starting...")
+	logger.InfoC("web", fmt.Sprintf("%s Launcher %s starting...", appName, appVersion))
 	logger.InfoC("web", fmt.Sprintf("PicoClaw Home: %s", picoHome))
 
 	// Set language from command line or auto-detect
@@ -169,6 +169,9 @@ func main() {
 
 	// API Routes (e.g. /api/status)
 	apiHandler = api.NewHandler(absPath)
+	if _, err = apiHandler.EnsurePicoChannel(""); err != nil {
+		logger.ErrorC("web", fmt.Sprintf("Warning: failed to ensure pico channel on startup: %v", err))
+	}
 	apiHandler.SetServerOptions(portNum, effectivePublic, explicitPublic, launcherCfg.AllowedCIDRs)
 	apiHandler.RegisterRoutes(mux)
 

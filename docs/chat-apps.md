@@ -6,7 +6,7 @@
 
 Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, WeCom, Feishu, Slack, IRC, OneBot, MaixCam, or Pico (native protocol)
 
-> **Note**: All webhook-based channels (LINE, WeCom, etc.) are served on a single shared Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). There are no per-channel ports to configure. Note: Feishu uses WebSocket/SDK mode and does not use the shared HTTP webhook server.
+> **Note**: Channels that rely on HTTP callbacks share a single Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). Socket/stream-based channels such as Feishu, DingTalk, and WeCom do not rely on the shared webhook server for inbound delivery.
 
 | Channel              | Difficulty         | Description                                           | Documentation                                                                                                    |
 | -------------------- | ------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -19,7 +19,7 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk,
 | **QQ**               | ⭐⭐ Medium        | Official bot API, Chinese community                   | [Docs](channels/qq/README.md)                                                                                |
 | **DingTalk**         | ⭐⭐ Medium        | Stream mode (no public IP needed), enterprise         | [Docs](channels/dingtalk/README.md)                                                                          |
 | **LINE**             | ⭐⭐⭐ Advanced    | HTTPS Webhook required                                | [Docs](channels/line/README.md)                                                                              |
-| **WeCom (企业微信)** | ⭐⭐⭐ Advanced    | Group Bot (Webhook), custom App (API), AI Bot         | [Bot](channels/wecom/wecom_bot/README.md) / [App](channels/wecom/wecom_app/README.md) / [AI Bot](channels/wecom/wecom_aibot/README.md) |
+| **WeCom (企业微信)** | ⭐⭐⭐ Advanced    | Official AI Bot over WebSocket, streaming + media     | [Docs](channels/wecom/README.md) |
 | **Feishu (飞书)**    | ⭐⭐⭐ Advanced    | Enterprise collaboration, feature-rich                | [Docs](channels/feishu/README.md)                                                                            |
 | **IRC**              | ⭐⭐ Medium        | Server + TLS configuration                            | [Docs](#irc)                                                                                                     |
 | **OneBot**           | ⭐⭐ Medium        | NapCat/Go-CQHTTP compatible, community ecosystem      | [Docs](channels/onebot/README.md)                                                                            |
@@ -190,7 +190,7 @@ PicoClaw supports connecting to your personal WeChat account using the official 
 
 Run the interactive QR login flow:
 ```bash
-picoclaw onboard weixin
+picoclaw auth weixin
 ```
 Scan the printed QR code with your WeChat mobile app. On success, the token is saved to your config.
 
@@ -380,102 +380,34 @@ picoclaw gateway
 <details>
 <summary><b>WeCom (企业微信)</b></summary>
 
-PicoClaw supports three types of WeCom integration:
+PicoClaw now exposes WeCom as a single AI Bot channel over WebSocket.
+No public webhook callback URL is required.
 
-**Option 1: WeCom Bot (Bot)** - Easier setup, supports group chats
-**Option 2: WeCom App (Custom App)** - More features, proactive messaging, private chat only
-**Option 3: WeCom AI Bot (AI Bot)** - Official AI Bot, streaming replies, supports group & private chat
+See [WeCom Configuration Guide](channels/wecom/README.md) for the full configuration reference and migration notes.
 
-See [WeCom AI Bot Configuration Guide](channels/wecom/wecom_aibot/README.md) for detailed setup instructions.
+**Quick Setup - Recommended**
 
-**Quick Setup - WeCom Bot:**
+**1. Authenticate**
 
-**1. Create a bot**
+```bash
+picoclaw auth wecom
+```
 
-* Go to WeCom Admin Console → Group Chat → Add Group Bot
-* Copy the webhook URL (format: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+This command shows a QR code, waits for approval in WeCom, and writes `bot_id` + `secret` into `channels.wecom`.
 
-**2. Configure**
+**2. Configure manually if needed**
 
 ```json
 {
   "channels": {
     "wecom": {
       "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_path": "/webhook/wecom",
-      "allow_from": []
-    }
-  }
-}
-```
-
-> WeCom webhook is served on the shared Gateway server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`).
-
-**Quick Setup - WeCom App:**
-
-**1. Create an app**
-
-* Go to WeCom Admin Console → App Management → Create App
-* Copy **AgentId** and **Secret**
-* Go to "My Company" page, copy **CorpID**
-
-**2. Configure receive message**
-
-* In App details, click "Receive Message" → "Set API"
-* Set URL to `http://your-server:18790/webhook/wecom-app`
-* Generate **Token** and **EncodingAESKey**
-
-**3. Configure**
-
-```json
-{
-  "channels": {
-    "wecom_app": {
-      "enabled": true,
-      "corp_id": "wwxxxxxxxxxxxxxxxx",
-      "corp_secret": "YOUR_CORP_SECRET",
-      "agent_id": 1000002,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-app",
-      "allow_from": []
-    }
-  }
-}
-```
-
-**4. Run**
-
-```bash
-picoclaw gateway
-```
-
-> **Note**: WeCom webhook callbacks are served on the Gateway port (default 18790). Use a reverse proxy for HTTPS.
-
-**Quick Setup - WeCom AI Bot:**
-
-**1. Create an AI Bot**
-
-* Go to WeCom Admin Console → App Management → AI Bot
-* In the AI Bot settings, configure callback URL: `http://your-server:18790/webhook/wecom-aibot`
-* Copy **Token** and click "Random Generate" for **EncodingAESKey**
-
-**2. Configure**
-
-```json
-{
-  "channels": {
-    "wecom_aibot": {
-      "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-aibot",
+      "bot_id": "YOUR_BOT_ID",
+      "secret": "YOUR_SECRET",
+      "websocket_url": "wss://openws.work.weixin.qq.com",
+      "send_thinking_message": true,
       "allow_from": [],
-      "welcome_message": "Hello! How can I help you?",
-      "processing_message": "⏳ Processing, please wait. The results will be sent shortly."
+      "reasoning_channel_id": ""
     }
   }
 }
@@ -487,7 +419,7 @@ picoclaw gateway
 picoclaw gateway
 ```
 
-> **Note**: WeCom AI Bot uses streaming pull protocol — no reply timeout concerns. Long tasks (>30 seconds) automatically switch to `response_url` push delivery.
+> Legacy `wecom_app` and `wecom_aibot` entries are replaced by the unified `channels.wecom` config in this branch.
 
 </details>
 
