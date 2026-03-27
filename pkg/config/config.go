@@ -1739,17 +1739,35 @@ func SaveConfig(path string, cfg *Config) error {
 		cfg.Version = CurrentVersion
 	}
 	names := toNameIndex(cfg.ModelList)
+	newModelList := make(map[string]ModelSecurityEntry)
+
 	for i, m := range cfg.ModelList {
-		if m.secDirty {
-			if m.secModelName == "" {
-				m.secModelName = names[i]
-			}
-			cfg.security.ModelList[m.secModelName] = ModelSecurityEntry{
-				APIKeys: m.apiKeys,
-			}
-			m.secDirty = false
+		if m.IsVirtual() {
+			continue
 		}
+
+		newName := names[i]
+		oldName := m.secModelName
+
+		if m.secDirty {
+			newModelList[newName] = ModelSecurityEntry{APIKeys: m.apiKeys}
+			m.secDirty = false
+		} else {
+			if oldName == "" {
+				oldName = newName
+			}
+			if entry, ok := cfg.security.ModelList[oldName]; ok {
+				newModelList[newName] = entry
+			} else {
+				// Fallback to storing plaintext if not found, will trigger encrypt later if enabled
+				newModelList[newName] = ModelSecurityEntry{APIKeys: m.apiKeys}
+			}
+		}
+
+		m.secModelName = newName
 	}
+	
+	cfg.security.ModelList = newModelList
 	if cfg.Channels.Pico.secDirty {
 		cfg.security.Channels.Pico = &PicoSecurity{
 			Token: cfg.Channels.Pico.Token(),

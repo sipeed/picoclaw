@@ -22,9 +22,13 @@ func TestNewHTTPClient_DefaultTimeout(t *testing.T) {
 
 func TestNewHTTPClient_WithProxy(t *testing.T) {
 	client := NewHTTPClient("http://127.0.0.1:8080")
-	transport, ok := client.Transport.(*http.Transport)
+	lrt, ok := client.Transport.(*LoggingRoundTripper)
+	if !ok || lrt == nil {
+		t.Fatalf("expected *LoggingRoundTripper, got %T", client.Transport)
+	}
+	transport, ok := lrt.Proxied.(*http.Transport)
 	if !ok || transport == nil {
-		t.Fatalf("expected http.Transport with proxy, got %T", client.Transport)
+		t.Fatalf("expected http.Transport with proxy, got %T", lrt.Proxied)
 	}
 	req := &http.Request{URL: &url.URL{Scheme: "https", Host: "api.example.com"}}
 	gotProxy, err := transport.Proxy(req)
@@ -38,8 +42,12 @@ func TestNewHTTPClient_WithProxy(t *testing.T) {
 
 func TestNewHTTPClient_NoProxy(t *testing.T) {
 	client := NewHTTPClient("")
-	if client.Transport != nil {
-		t.Errorf("expected nil transport without proxy, got %T", client.Transport)
+	lrt, ok := client.Transport.(*LoggingRoundTripper)
+	if !ok || lrt == nil {
+		t.Fatalf("expected *LoggingRoundTripper, got %T", client.Transport)
+	}
+	if lrt.Proxied != http.DefaultTransport {
+		t.Errorf("expected Proxied to be http.DefaultTransport without proxy, got %T", lrt.Proxied)
 	}
 }
 

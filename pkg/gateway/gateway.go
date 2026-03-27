@@ -100,6 +100,9 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
+	if err = cfg.ApplySecurity(); err != nil {
+		return fmt.Errorf("error applying security config: %w", err)
+	}
 	logger.SetLevelFromString(cfg.Gateway.LogLevel)
 
 	if debug {
@@ -201,6 +204,11 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 			}
 			if err = newCfg.ValidateModelList(); err != nil {
 				logger.Errorf("Config validation failed: %v", err)
+				runningServices.reloading.Store(false)
+				continue
+			}
+			if err = newCfg.ApplySecurity(); err != nil {
+				logger.Errorf("Failed to apply security config: %v", err)
 				runningServices.reloading.Store(false)
 				continue
 			}
@@ -581,7 +589,11 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 						logger.Warn("  Using previous valid config")
 						continue
 					}
-
+					if err := newCfg.ApplySecurity(); err != nil {
+						logger.Errorf("  ⚠ Failed to apply security to new config: %v", err)
+						logger.Warn("  Using previous valid config")
+						continue
+					}
 					logger.Info("✓ Config file validated and loaded")
 
 					select {

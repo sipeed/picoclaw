@@ -519,9 +519,13 @@ func TestProvider_ProxyConfigured(t *testing.T) {
 	proxyURL := "http://127.0.0.1:8080"
 	p := NewProvider("key", "https://example.com", proxyURL)
 
-	transport, ok := p.httpClient.Transport.(*http.Transport)
+	lrt, ok := p.httpClient.Transport.(*common.LoggingRoundTripper)
+	if !ok || lrt == nil {
+		t.Fatalf("expected *common.LoggingRoundTripper, got %T", p.httpClient.Transport)
+	}
+	transport, ok := lrt.Proxied.(*http.Transport)
 	if !ok || transport == nil {
-		t.Fatalf("expected http transport with proxy, got %T", p.httpClient.Transport)
+		t.Fatalf("expected http transport with proxy, got %T", lrt.Proxied)
 	}
 
 	req := &http.Request{URL: &url.URL{Scheme: "https", Host: "api.example.com"}}

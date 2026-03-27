@@ -38,11 +38,19 @@ type (
 
 const DefaultRequestTimeout = 120 * time.Second
 
-// NewHTTPClient creates an *http.Client with an optional proxy and the default timeout.
+// NewHTTPClient creates an *http.Client with an optional proxy, the default timeout, and debug logging installed.
 func NewHTTPClient(proxy string) *http.Client {
+	return NewHTTPClientWithTimeout(proxy, DefaultRequestTimeout)
+}
+
+// NewHTTPClientWithTimeout creates an *http.Client with an optional proxy, a custom timeout, and debug logging installed.
+func NewHTTPClientWithTimeout(proxy string, timeout time.Duration) *http.Client {
 	client := &http.Client{
-		Timeout: DefaultRequestTimeout,
+		Timeout: timeout,
 	}
+
+	var baseTransport http.RoundTripper = http.DefaultTransport
+
 	if proxy != "" {
 		parsed, err := url.Parse(proxy)
 		if err == nil {
@@ -50,10 +58,10 @@ func NewHTTPClient(proxy string) *http.Client {
 			if base, ok := http.DefaultTransport.(*http.Transport); ok {
 				tr := base.Clone()
 				tr.Proxy = http.ProxyURL(parsed)
-				client.Transport = tr
+				baseTransport = tr
 			} else {
 				// Fallback: minimal transport if DefaultTransport is not *http.Transport.
-				client.Transport = &http.Transport{
+				baseTransport = &http.Transport{
 					Proxy: http.ProxyURL(parsed),
 				}
 			}
@@ -61,6 +69,9 @@ func NewHTTPClient(proxy string) *http.Client {
 			log.Printf("common: invalid proxy URL %q: %v", proxy, err)
 		}
 	}
+
+	// Wrap with debug logger
+	client.Transport = &LoggingRoundTripper{Proxied: baseTransport}
 	return client
 }
 

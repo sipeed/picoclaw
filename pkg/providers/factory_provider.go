@@ -240,14 +240,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey() == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey(),
 			apiBase,
-			cfg.Proxy,
-			cfg.MaxTokensField,
 			cfg.RequestTimeout,
-			cfg.ExtraBody,
-			cfg.ExtraHeaders,
 		), modelID, nil
 
 	case "anthropic-messages":

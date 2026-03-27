@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -59,9 +60,7 @@ func NewProviderWithTimeout(apiKey, apiBase string, timeoutSeconds int) *Provide
 	return &Provider{
 		apiKey:  apiKey,
 		apiBase: baseURL,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
+		httpClient: common.NewHTTPClientWithTimeout("", timeout),
 	}
 }
 

@@ -229,6 +229,16 @@ func saveSecurityConfig(securityPath string, sec *SecurityConfig) error {
 	return fileutil.WriteFileAtomic(securityPath, buf.Bytes(), 0o600)
 }
 
+// MergeAndApplySecurity merges explicitly provided security tokens from JSON API payloads
+// into the current configuration's security state, preventing them from being dropped
+// when json.Unmarshal ignores the unexported Token fields.
+func (c *Config) MergeAndApplySecurity(newer *SecurityConfig) error {
+	if newer == nil {
+		return c.ApplySecurity()
+	}
+	c.security = mergeSecurityConfig(c.security, newer)
+	return applySecurityConfig(c, c.security)
+}
 // mergeSecurityConfig merges two SecurityConfig instances, preferring non-empty values from 'newer'.
 // This is used during config migration to preserve existing security data while adding new entries.
 func mergeSecurityConfig(existing, newer *SecurityConfig) *SecurityConfig {

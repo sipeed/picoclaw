@@ -65,6 +65,14 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.SecurityCopyFrom(oldCfg)
 
+	// Intercept explicitly provided security tokens from JSON payload that json.Unmarshal drops.
+	var incomingSec config.SecurityConfig
+	if err := json.Unmarshal(body, &incomingSec); err == nil {
+		cfg.MergeAndApplySecurity(&incomingSec)
+	} else {
+		cfg.ApplySecurity()
+	}
+
 	if errs := validateConfig(&cfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -154,12 +162,13 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Restore security fields (tokens/keys) from the loaded config before validation,
-	// because private fields are lost during JSON round-trip.
+	// Restore security fields from existing config and merge explicitly provided overrides.
 	newCfg.SecurityCopyFrom(cfg)
-	if err := newCfg.ApplySecurity(); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to apply security config: %v", err), http.StatusInternalServerError)
-		return
+	var incomingSec config.SecurityConfig
+	if err := json.Unmarshal(patchBody, &incomingSec); err == nil {
+		newCfg.MergeAndApplySecurity(&incomingSec)
+	} else {
+		newCfg.ApplySecurity()
 	}
 
 	if errs := validateConfig(&newCfg); len(errs) > 0 {
