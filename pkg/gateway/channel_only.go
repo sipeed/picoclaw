@@ -192,14 +192,26 @@ func resolveChannelOnlyListenHost(host string, port int) (string, error) {
 	if err := probeTCPBind(host, port); err == nil {
 		return host, nil
 	} else if isLoopbackHost(host) {
-		if fallbackErr := probeTCPBind("0.0.0.0", port); fallbackErr == nil {
-			logger.WarnCF("channels", "Loopback host unavailable in channel-only mode, fallback to wildcard", map[string]any{
-				"host": host,
-				"port": port,
-			})
+		fallbackErr := probeTCPBind("0.0.0.0", port)
+		if fallbackErr == nil {
+			logger.WarnCF(
+				"channels",
+				"Loopback host unavailable in channel-only mode, fallback to wildcard",
+				map[string]any{
+					"host": host,
+					"port": port,
+				},
+			)
 			return "0.0.0.0", nil
 		}
-		return "", fmt.Errorf("bind %s:%d failed: %w", host, port, err)
+		return "", fmt.Errorf(
+			"bind fallback 0.0.0.0:%d failed after %s:%d failed: %w (original error: %v)",
+			port,
+			host,
+			port,
+			fallbackErr,
+			err,
+		)
 	} else {
 		return "", fmt.Errorf("bind %s:%d failed: %w", host, port, err)
 	}
