@@ -357,6 +357,7 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string
 			"error":     err.Error(),
 		})
 		return nil, fmt.Errorf("qq send: %w", channels.ErrTemporary)
+)
 	}
 
 	if sentMsg == nil {
