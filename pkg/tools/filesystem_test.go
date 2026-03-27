@@ -888,14 +888,14 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 	if result1.IsError {
 		t.Fatalf("Chunk 1 failed: %s", result1.ForLLM)
 	}
-	if !strings.Contains(result1.ForLLM, "line 2\nline 3\n") {
+	if !strings.Contains(result1.ForLLM, "1|line 1\n2|line 2\n") {
 		t.Fatalf("expected first two lines, got: %s", result1.ForLLM)
 	}
 	if !strings.Contains(result1.ForLLM, "lines 1-2") {
 		t.Fatalf("expected line range 1-2, got: %s", result1.ForLLM)
 	}
-	if !strings.Contains(result1.ForLLM, "offset=3") {
-		t.Fatalf("expected continuation offset=3, got: %s", result1.ForLLM)
+	if !strings.Contains(result1.ForLLM, "start_line=3") {
+		t.Fatalf("expected continuation start_line=3, got: %s", result1.ForLLM)
 	}
 
 	result2 := tool.Execute(context.Background(), map[string]any{
@@ -906,11 +906,11 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 	if result2.IsError {
 		t.Fatalf("Chunk 2 failed: %s", result2.ForLLM)
 	}
-	if !strings.Contains(result2.ForLLM, "line 4\nline 5\n") {
+	if !strings.Contains(result2.ForLLM, "3|line 3\n4|line 4\n") {
 		t.Fatalf("expected middle chunk, got: %s", result2.ForLLM)
 	}
-	if !strings.Contains(result2.ForLLM, "offset=5") {
-		t.Fatalf("expected continuation offset=5, got: %s", result2.ForLLM)
+	if !strings.Contains(result2.ForLLM, "start_line=5") {
+		t.Fatalf("expected continuation start_line=5, got: %s", result2.ForLLM)
 	}
 
 	result3 := tool.Execute(context.Background(), map[string]any{
@@ -921,7 +921,7 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 	if result3.IsError {
 		t.Fatalf("Chunk 3 failed: %s", result3.ForLLM)
 	}
-	if !strings.Contains(result3.ForLLM, "line 6\n") {
+	if !strings.Contains(result3.ForLLM, "5|line 5\n6|line 6\n") {
 		t.Fatalf("expected final chunk, got: %s", result3.ForLLM)
 	}
 	if !strings.Contains(result3.ForLLM, "[END OF FILE") {
@@ -946,11 +946,11 @@ func TestReadFileLinesTool_DefaultOffsetAndRemainingLines(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("Execute() error = %s", result.ForLLM)
 	}
-	if !strings.Contains(result.ForLLM, "line 2\nline 3\n") {
+	if !strings.Contains(result.ForLLM, "1|line 1\n2|line 2\n3|line 3\n") {
 		t.Fatalf("expected remaining lines by default, got: %s", result.ForLLM)
 	}
-	if !strings.Contains(result.ForLLM, "lines 1-2") {
-		t.Fatalf("expected line range 1-2, got: %s", result.ForLLM)
+	if !strings.Contains(result.ForLLM, "lines 1-3") {
+		t.Fatalf("expected line range 1-3, got: %s", result.ForLLM)
 	}
 }
 
@@ -1052,7 +1052,10 @@ func TestReadFileLinesTool_TruncatesSingleLongLineAtByteBudget(t *testing.T) {
 	if !strings.Contains(result.ForLLM, "was cut mid-line") {
 		t.Fatalf("expected explicit mid-line truncation warning, got: %s", result.ForLLM)
 	}
-	if strings.Contains(result.ForLLM, "first line") {
-		t.Fatalf("did not expect the skipped first line in output, got: %s", result.ForLLM)
+	if !strings.Contains(result.ForLLM, "1|first line\n") {
+		t.Fatalf("expected the first line with line prefix, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "2|") {
+		t.Fatalf("expected line prefix for the truncated line, got: %s", result.ForLLM)
 	}
 }

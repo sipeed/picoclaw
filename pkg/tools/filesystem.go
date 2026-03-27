@@ -569,7 +569,7 @@ func (t *ReadFileLinesTool) Execute(ctx context.Context, args map[string]any) *T
 	reader := bufio.NewReaderSize(io.MultiReader(bytes.NewReader(sample), file), 32*1024)
 
 	var content strings.Builder
-	var lineIndex int64
+	lineIndex := int64(1)
 	var linesRead int64
 	var bytesRead int64
 	var reachedEOF bool
@@ -589,7 +589,8 @@ func (t *ReadFileLinesTool) Execute(ctx context.Context, args map[string]any) *T
 	}
 
 	for !reachedEOF && (limit < 0 || linesRead < limit) {
-		remaining := t.maxSize - bytesRead
+		prefix := formatReadFileLinePrefix(lineIndex)
+		remaining := t.maxSize - bytesRead - int64(len(prefix))
 		if remaining <= 0 {
 			byteBudgetTruncated = true
 			break
@@ -604,8 +605,9 @@ func (t *ReadFileLinesTool) Execute(ctx context.Context, args map[string]any) *T
 			break
 		}
 
+		content.WriteString(prefix)
 		content.Write(line)
-		bytesRead += int64(len(line))
+		bytesRead += int64(len(prefix) + len(line))
 		linesRead++
 		lineIndex++
 
@@ -648,12 +650,12 @@ func (t *ReadFileLinesTool) Execute(ctx context.Context, args map[string]any) *T
 		)
 	case byteBudgetTruncated:
 		header += fmt.Sprintf(
-			"\n[TRUNCATED - byte budget reached. Call read_file again with offset=%d to continue at the next line.]",
+			"\n[TRUNCATED - byte budget reached. Call read_file again with start_line=%d to continue at the next line.]",
 			startLine+linesRead,
 		)
 	case !reachedEOF && limit > 0 && linesRead >= limit:
 		header += fmt.Sprintf(
-			"\n[PARTIAL - more content remains. Call read_file again with offset=%d to continue.]",
+			"\n[PARTIAL - more content remains. Call read_file again with start_line=%d to continue.]",
 			startLine+linesRead,
 		)
 	default:
@@ -670,6 +672,10 @@ func (t *ReadFileLinesTool) Execute(ctx context.Context, args map[string]any) *T
 		})
 
 	return NewToolResult(header + "\n\n" + content.String())
+}
+
+func formatReadFileLinePrefix(lineNumber int64) string {
+	return strconv.FormatInt(lineNumber, 10) + "|"
 }
 
 func isBinaryReadFileData(data []byte) bool {
