@@ -255,6 +255,11 @@ func (c *QQChannel) Start(ctx context.Context) error {
 			return fmt.Errorf("failed to establish QQ websocket session: %w", err)
 		}
 		return fmt.Errorf("QQ websocket session exited unexpectedly during startup")
+	case <-c.ctx.Done():
+		if c.cancel != nil {
+			c.cancel()
+		}
+		return fmt.Errorf("QQ websocket startup canceled: %w", c.ctx.Err())
 	case <-time.After(qqStartupProbe):
 		if c.cancel != nil {
 			c.cancel()
