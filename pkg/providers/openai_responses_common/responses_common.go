@@ -61,8 +61,8 @@ func TranslateMessages(messages []protocoltypes.Message) (input responses.Respon
 					})
 				}
 				for _, tc := range msg.ToolCalls {
-					name, args := ResolveToolCall(tc)
-					if name == "" {
+					name, args, ok := ResolveToolCall(tc)
+					if !ok {
 						continue
 					}
 					input = append(input, responses.ResponseInputItemUnionParam{
@@ -152,28 +152,29 @@ func ParseDataAudioURL(mediaURL string) (format, data string, ok bool) {
 }
 
 // ResolveToolCall extracts the function name and JSON arguments string from a ToolCall.
-func ResolveToolCall(tc protocoltypes.ToolCall) (name string, arguments string) {
+// Returns ok=false if the tool call has no name or if arguments fail to marshal.
+func ResolveToolCall(tc protocoltypes.ToolCall) (name string, arguments string, ok bool) {
 	name = tc.Name
 	if name == "" && tc.Function != nil {
 		name = tc.Function.Name
 	}
 	if name == "" {
-		return "", ""
+		return "", "", false
 	}
 
 	if len(tc.Arguments) > 0 {
 		argsJSON, err := json.Marshal(tc.Arguments)
 		if err != nil {
-			return name, "{}"
+			return "", "", false
 		}
-		return name, string(argsJSON)
+		return name, string(argsJSON), true
 	}
 
 	if tc.Function != nil && tc.Function.Arguments != "" {
-		return name, tc.Function.Arguments
+		return name, tc.Function.Arguments, true
 	}
 
-	return name, "{}"
+	return name, "{}", true
 }
 
 // TranslateTools converts internal ToolDefinition entries to the OpenAI Responses API
