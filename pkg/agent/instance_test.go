@@ -33,7 +33,7 @@ func TestNewAgentInstance_UsesDefaultsTemperatureAndMaxTokens(t *testing.T) {
 	cfg.Agents.Defaults.Temperature = &configuredTemp
 
 	provider := &mockProvider{}
-	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider, "")
 
 	if agent.MaxTokens != 1234 {
 		t.Fatalf("MaxTokens = %d, want %d", agent.MaxTokens, 1234)
@@ -65,7 +65,7 @@ func TestNewAgentInstance_DefaultsTemperatureWhenZero(t *testing.T) {
 	cfg.Agents.Defaults.Temperature = &configuredTemp
 
 	provider := &mockProvider{}
-	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider, "")
 
 	if agent.Temperature != 0.0 {
 		t.Fatalf("Temperature = %f, want %f", agent.Temperature, 0.0)
@@ -91,7 +91,7 @@ func TestNewAgentInstance_DefaultsTemperatureWhenUnset(t *testing.T) {
 	}
 
 	provider := &mockProvider{}
-	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider, "")
 
 	if agent.Temperature != 0.7 {
 		t.Fatalf("Temperature = %f, want %f", agent.Temperature, 0.7)
@@ -150,7 +150,7 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 			}
 
 			provider := &mockProvider{}
-			agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
+			agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider, "")
 
 			if len(agent.Candidates) != 1 {
 				t.Fatalf("len(Candidates) = %d, want 1", len(agent.Candidates))
@@ -205,7 +205,7 @@ func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 		},
 	}
 
-	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{}, "")
 
 	readTool, ok := agent.Tools.Get("read_file")
 	if !ok {
@@ -268,7 +268,7 @@ func TestNewAgentInstance_InvalidExecConfigDoesNotExit(t *testing.T) {
 		},
 	}
 
-	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{}, "")
 	if agent == nil {
 		t.Fatal("expected agent instance, got nil")
 	}
@@ -279,5 +279,33 @@ func TestNewAgentInstance_InvalidExecConfigDoesNotExit(t *testing.T) {
 
 	if _, ok := agent.Tools.Get("read_file"); !ok {
 		t.Fatal("read_file tool should still be registered")
+	}
+}
+func TestNewAgentInstance_IsolatedWorkspace(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: tmpDir,
+				ModelName: "test-model",
+			},
+		},
+	}
+
+	isolationID := "user-123"
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{}, isolationID)
+
+	expectedWorkspace := filepath.Join(tmpDir, "sessions", isolationID, "workspace")
+	if agent.Workspace != expectedWorkspace {
+		t.Fatalf("Workspace = %q, want %q", agent.Workspace, expectedWorkspace)
+	}
+
+	// Verify the directory exists
+	info, err := os.Stat(agent.Workspace)
+	if err != nil {
+		t.Fatalf("os.Stat(agent.Workspace) failed: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("agent.Workspace is not a directory")
 	}
 }

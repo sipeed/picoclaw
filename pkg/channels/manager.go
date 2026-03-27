@@ -425,6 +425,9 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("irc", "IRC")
 	}
 
+	// Always initialize HTTP channel as it is used for synchronous gateway chat
+	m.initChannel("http", "HTTP")
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})

@@ -18,7 +18,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0o644)
 
-	tool := NewReadFileTool("", false, MaxReadFileSize)
+	tool := NewReadFileTool("", false, MaxReadFileSize, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": testFile,
@@ -45,7 +45,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 
 // TestFilesystemTool_ReadFile_NotFound verifies error handling for missing file
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
-	tool := NewReadFileTool("", false, MaxReadFileSize)
+	tool := NewReadFileTool("", false, MaxReadFileSize, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/nonexistent_file_12345.txt",
@@ -88,7 +88,7 @@ func TestFilesystemTool_WriteFile_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "newfile.txt")
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path":    testFile,
@@ -127,7 +127,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "subdir", "newfile.txt")
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path":    testFile,
@@ -153,7 +153,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 
 // TestFilesystemTool_WriteFile_MissingPath verifies error handling for missing path
 func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"content": "test",
@@ -169,7 +169,7 @@ func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 
 // TestFilesystemTool_WriteFile_MissingContent verifies error handling for missing content
 func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/tmp/test.txt",
@@ -196,7 +196,7 @@ func TestFilesystemTool_WriteFile_OverwriteDefaultBlocked(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "existing.txt")
 	os.WriteFile(testFile, []byte("original"), 0o644)
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":    testFile,
 		"content": "new content",
@@ -219,7 +219,7 @@ func TestFilesystemTool_WriteFile_OverwriteExplicitAllowed(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "existing.txt")
 	os.WriteFile(testFile, []byte("original"), 0o644)
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":      testFile,
 		"content":   "replaced",
@@ -239,7 +239,7 @@ func TestFilesystemTool_WriteFile_NewFileNoOverwriteFlag(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "newfile.txt")
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":    testFile,
 		"content": "brand new",
@@ -259,7 +259,7 @@ func TestFilesystemTool_WriteFile_OverwriteFalseExplicitBlocked(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "existing.txt")
 	os.WriteFile(testFile, []byte("original"), 0o644)
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":      testFile,
 		"content":   "new content",
@@ -281,7 +281,7 @@ func TestFilesystemTool_WriteFile_OverwriteSandboxed(t *testing.T) {
 	testFile := "file.txt"
 	os.WriteFile(filepath.Join(workspace, testFile), []byte("original"), 0o644)
 
-	tool := NewWriteFileTool(workspace, true)
+	tool := NewWriteFileTool(workspace, true, nil)
 
 	// Without overwrite=true → blocked
 	result := tool.Execute(context.Background(), map[string]any{
@@ -311,7 +311,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("content"), 0o644)
 	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0o755)
 
-	tool := NewListDirTool("", false)
+	tool := NewListDirTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": tmpDir,
@@ -335,7 +335,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 
 // TestFilesystemTool_ListDir_NotFound verifies error handling for non-existent directory
 func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
-	tool := NewListDirTool("", false)
+	tool := NewListDirTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/nonexistent_directory_12345",
@@ -356,7 +356,7 @@ func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 
 // TestFilesystemTool_ListDir_DefaultPath verifies default to current directory
 func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
-	tool := NewListDirTool("", false)
+	tool := NewListDirTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{}
 
@@ -386,7 +386,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 		t.Skipf("symlink not supported in this environment: %v", err)
 	}
 
-	tool := NewReadFileTool(workspace, true, MaxReadFileSize)
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path": link,
 	})
@@ -404,7 +404,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestFilesystemTool_EmptyWorkspace_AccessDenied(t *testing.T) {
-	tool := NewReadFileTool("", true, MaxReadFileSize) // restrict=true but workspace=""
+	tool := NewReadFileTool("", true, MaxReadFileSize, nil) // restrict=true but workspace=""
 
 	// Try to read a sensitive file (simulated by a temp file outside workspace)
 	tmpDir := t.TempDir()
@@ -457,7 +457,7 @@ func TestRootMkdirAll(t *testing.T) {
 
 func TestFilesystemTool_WriteFile_Restricted_CreateDir(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewWriteFileTool(workspace, true)
+	tool := NewWriteFileTool(workspace, true, nil)
 	ctx := context.Background()
 
 	testFile := "deep/nested/path/to/file.txt"
@@ -733,7 +733,7 @@ func TestReadFileTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize, nil)
 	ctx := context.Background()
 
 	// --- Step 1: Read the first chunk (10 bytes) ---
@@ -822,7 +822,7 @@ func TestReadFileTool_OffsetBeyondEOF(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize, nil)
 	ctx := context.Background()
 
 	args := map[string]any{
@@ -842,4 +842,67 @@ func TestReadFileTool_OffsetBeyondEOF(t *testing.T) {
 	if result.ForLLM != expectedMsg {
 		t.Errorf("The message %q was expected, obtained: %q", expectedMsg, result.ForLLM)
 	}
+}
+
+func TestFileSystem_DenyPatterns(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+
+	// Create a simulated skills directory
+	skillsDir := filepath.Join(tmpDir, "skills", "secret-skill")
+	os.MkdirAll(skillsDir, 0o755)
+	skillFile := filepath.Join(skillsDir, "SKILL.md")
+	os.WriteFile(skillFile, []byte("forbidden content"), 0o644)
+
+	// Create a normal file
+	normalFile := filepath.Join(tmpDir, "report.txt")
+	os.WriteFile(normalFile, []byte("allowed content"), 0o644)
+
+	// Test with deny patterns: block anything under skills/
+	denyPatterns := []*regexp.Regexp{regexp.MustCompile(`^skills(/.*)?$`)}
+
+	t.Run("WriteFile blocked", func(t *testing.T) {
+		tool := NewWriteFileTool(tmpDir, true, nil, denyPatterns)
+		args := map[string]any{
+			"path":    "skills/new-skill.md",
+			"content": "hacker stuff",
+		}
+		result := tool.Execute(ctx, args)
+		if !result.IsError {
+			t.Fatal("Expected error when writing to denied path, but got success")
+		}
+		if !strings.Contains(result.ForLLM, "access denied") {
+			t.Errorf("Expected 'access denied' error, got: %s", result.ForLLM)
+		}
+	})
+
+	t.Run("ReadFile blocked", func(t *testing.T) {
+		tool := NewReadFileTool(tmpDir, true, 0, nil, denyPatterns)
+		args := map[string]any{"path": "skills/secret-skill/SKILL.md"}
+		result := tool.Execute(ctx, args)
+		if !result.IsError {
+			t.Fatal("Expected error when reading from denied path, but got success")
+		}
+	})
+
+	t.Run("ListDir blocked", func(t *testing.T) {
+		tool := NewListDirTool(tmpDir, true, nil, denyPatterns)
+		args := map[string]any{"path": "skills"}
+		result := tool.Execute(ctx, args)
+		if !result.IsError {
+			t.Fatal("Expected error when listing denied path, but got success")
+		}
+	})
+
+	t.Run("Normal file allowed", func(t *testing.T) {
+		tool := NewReadFileTool(tmpDir, true, 0, nil, denyPatterns)
+		args := map[string]any{"path": "report.txt"}
+		result := tool.Execute(ctx, args)
+		if result.IsError {
+			t.Fatalf("Expected success for normal file, got error: %s", result.ForLLM)
+		}
+		if !strings.Contains(result.ForLLM, "allowed content") {
+			t.Errorf("Got unexpected content: %s", result.ForLLM)
+		}
+	})
 }

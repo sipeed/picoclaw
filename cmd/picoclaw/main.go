@@ -68,6 +68,7 @@ func main() {
 	fmt.Printf("%s", banner)
 	cmd := NewPicoclawCommand()
 	if err := cmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "\n❌ FATAL: %v\n", err)
 		os.Exit(1)
 	}
 }

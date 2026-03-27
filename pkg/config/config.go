@@ -464,6 +464,10 @@ type DiscordConfig struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-"               env:"PICOCLAW_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
 }
 
+func (c *DiscordConfig) SetToken(token string) {
+	c.Token = *NewSecureString(token)
+}
+
 type MaixCamConfig struct {
 	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_MAIXCAM_ENABLED"`
 	Host               string              `json:"host"                 env:"PICOCLAW_CHANNELS_MAIXCAM_HOST"`
@@ -502,6 +506,14 @@ type SlackConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"        yaml:"-"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"   yaml:"-"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-"                   env:"PICOCLAW_CHANNELS_SLACK_REASONING_CHANNEL_ID"`
+}
+
+func (c *SlackConfig) SetBotToken(token string) {
+	c.BotToken = *NewSecureString(token)
+}
+
+func (c *SlackConfig) SetAppToken(token string) {
+	c.AppToken = *NewSecureString(token)
 }
 
 type MatrixConfig struct {
@@ -680,6 +692,24 @@ type ModelConfig struct {
 	isVirtual bool
 }
 
+func (c *ModelConfig) UnmarshalJSON(data []byte) error {
+	type Alias ModelConfig
+	aux := &struct {
+		APIKey  string              `json:"api_key"`
+		APIKeys FlexibleStringSlice `json:"api_keys"`
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	c.APIKeys = SimpleSecureStrings(MergeAPIKeys(aux.APIKey, aux.APIKeys)...)
+	return nil
+}
+
 // APIKey returns the first API key from apiKeys
 func (c *ModelConfig) APIKey() string {
 	if len(c.APIKeys) > 0 {
@@ -713,10 +743,12 @@ func (c *ModelConfig) SetAPIKey(value string) {
 }
 
 type GatewayConfig struct {
-	Host      string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
-	Port      int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
-	HotReload bool   `json:"hot_reload"          env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
-	LogLevel  string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
+	Host        string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
+	Port        int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
+	APIKey      string `json:"api_key"             env:"PICOCLAW_GATEWAY_API_KEY"`
+	ChatEnabled bool   `json:"chat_enabled"        env:"PICOCLAW_GATEWAY_CHAT_ENABLED"`
+	HotReload   bool   `json:"hot_reload"          env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
+	LogLevel    string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
 }
 
 type ToolDiscoveryConfig struct {
@@ -873,6 +905,8 @@ type SkillsToolsConfig struct {
 	Github                SkillsGithubConfig     `yaml:"github,omitempty"                                     json:"github"`
 	MaxConcurrentSearches int                    `yaml:"-"                                                    json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
 	SearchCache           SearchCacheConfig      `yaml:"-"                                                    json:"search_cache"`
+	Whitelist             FlexibleStringSlice    `json:"whitelist,omitempty"                                  yaml:"-" env:"PICOCLAW_TOOLS_SKILLS_WHITELIST"`
+	WhitelistEnabled      bool                   `json:"whitelist_enabled,omitempty"                          yaml:"-" env:"PICOCLAW_TOOLS_SKILLS_WHITELIST_ENABLED"`
 }
 
 type MediaCleanupConfig struct {
@@ -889,6 +923,8 @@ type ReadFileToolConfig struct {
 type ToolsConfig struct {
 	AllowReadPaths  []string `json:"allow_read_paths"  yaml:"-" env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
 	AllowWritePaths []string `json:"allow_write_paths" yaml:"-" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
+	DenyReadPaths   []string `json:"deny_read_paths"   yaml:"-" env:"PICOCLAW_TOOLS_DENY_READ_PATHS"`
+	DenyWritePaths  []string `json:"deny_write_paths"  yaml:"-" env:"PICOCLAW_TOOLS_DENY_WRITE_PATHS"`
 	// FilterSensitiveData controls whether to filter sensitive values (API keys,
 	// tokens, secrets) from tool results before sending to the LLM.
 	// Default: true (enabled)
@@ -896,28 +932,30 @@ type ToolsConfig struct {
 	// FilterMinLength is the minimum content length required for filtering.
 	// Content shorter than this will be returned unchanged for performance.
 	// Default: 8
-	FilterMinLength int                `json:"filter_min_length" yaml:"-"                env:"PICOCLAW_TOOLS_FILTER_MIN_LENGTH"`
-	Web             WebToolsConfig     `json:"web"               yaml:"web,omitempty"`
-	Cron            CronToolsConfig    `json:"cron"              yaml:"-"`
-	Exec            ExecConfig         `json:"exec"              yaml:"-"`
-	Skills          SkillsToolsConfig  `json:"skills"            yaml:"skills,omitempty"`
-	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"     yaml:"-"`
-	MCP             MCPConfig          `json:"mcp"               yaml:"-"`
-	AppendFile      ToolConfig         `json:"append_file"       yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_APPEND_FILE_"`
-	EditFile        ToolConfig         `json:"edit_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_EDIT_FILE_"`
-	FindSkills      ToolConfig         `json:"find_skills"       yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_FIND_SKILLS_"`
-	I2C             ToolConfig         `json:"i2c"               yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_I2C_"`
-	InstallSkill    ToolConfig         `json:"install_skill"     yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_INSTALL_SKILL_"`
-	ListDir         ToolConfig         `json:"list_dir"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_LIST_DIR_"`
-	Message         ToolConfig         `json:"message"           yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
-	ReadFile        ReadFileToolConfig `json:"read_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
-	SendFile        ToolConfig         `json:"send_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
-	Spawn           ToolConfig         `json:"spawn"             yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
-	SpawnStatus     ToolConfig         `json:"spawn_status"      yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_STATUS_"`
-	SPI             ToolConfig         `json:"spi"               yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPI_"`
-	Subagent        ToolConfig         `json:"subagent"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
-	WebFetch        ToolConfig         `json:"web_fetch"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
-	WriteFile       ToolConfig         `json:"write_file"        yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
+	FilterMinLength  int                 `json:"filter_min_length" yaml:"-"                env:"PICOCLAW_TOOLS_FILTER_MIN_LENGTH"`
+	Web              WebToolsConfig      `json:"web"               yaml:"web,omitempty"`
+	Cron             CronToolsConfig     `json:"cron"              yaml:"-"`
+	Exec             ExecConfig          `json:"exec"              yaml:"-"`
+	Skills           SkillsToolsConfig   `json:"skills"            yaml:"skills,omitempty"`
+	MediaCleanup     MediaCleanupConfig  `json:"media_cleanup"     yaml:"-"`
+	Whitelist        FlexibleStringSlice `json:"whitelist,omitempty"         yaml:"-" env:"PICOCLAW_TOOLS_WHITELIST"`
+	WhitelistEnabled bool                `json:"whitelist_enabled,omitempty" yaml:"-" env:"PICOCLAW_TOOLS_WHITELIST_ENABLED"`
+	MCP              MCPConfig           `json:"mcp"               yaml:"-"`
+	AppendFile       ToolConfig          `json:"append_file"       yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_APPEND_FILE_"`
+	EditFile         ToolConfig          `json:"edit_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_EDIT_FILE_"`
+	FindSkills       ToolConfig          `json:"find_skills"       yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_FIND_SKILLS_"`
+	I2C              ToolConfig          `json:"i2c"               yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_I2C_"`
+	InstallSkill     ToolConfig          `json:"install_skill"     yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_INSTALL_SKILL_"`
+	ListDir          ToolConfig          `json:"list_dir"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_LIST_DIR_"`
+	Message          ToolConfig          `json:"message"           yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
+	ReadFile         ReadFileToolConfig  `json:"read_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
+	SendFile         ToolConfig          `json:"send_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
+	Spawn            ToolConfig          `json:"spawn"             yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
+	SpawnStatus      ToolConfig          `json:"spawn_status"      yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_STATUS_"`
+	SPI              ToolConfig          `json:"spi"               yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPI_"`
+	Subagent         ToolConfig          `json:"subagent"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
+	WebFetch         ToolConfig          `json:"web_fetch"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
+	WriteFile        ToolConfig          `json:"write_file"        yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
 }
 
 // IsFilterSensitiveDataEnabled returns true if sensitive data filtering is enabled
@@ -1235,7 +1273,7 @@ func MergeAPIKeys(apiKey string, apiKeys []string) []string {
 	}
 
 	for _, k := range apiKeys {
-		if trimmed := strings.TrimSpace(k); trimmed != "" {
+		if trimmed := strings.TrimSpace(k); trimmed != "" && trimmed != "[NOT_HERE]" {
 			if _, exists := seen[trimmed]; !exists {
 				seen[trimmed] = struct{}{}
 				all = append(all, trimmed)

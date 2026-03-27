@@ -192,8 +192,11 @@ func (h *Handler) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 func newSkillsLoader(workspace string) *skills.SkillsLoader {
 	return skills.NewSkillsLoader(
 		workspace,
+		workspace,
 		filepath.Join(globalConfigDir(), "skills"),
 		builtinSkillsDir(),
+		nil,
+		false,
 	)
 }
 

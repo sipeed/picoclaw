@@ -732,3 +732,42 @@ func TestToolRegistry_ExecuteWithContext_SanitizesInlineMediaWithoutStore(t *tes
 		t.Fatalf("expected inline media omission note, got %q", result.ForLLM)
 	}
 }
+
+func TestToolRegistry_Filter_SupportsPrefix(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(newMockTool("read_file", "core tool"))
+	r.Register(newMockTool("write_file", "core tool"))
+	r.Register(newMockTool("mcp_monday_get_items", "mcp tool"))
+	r.Register(newMockTool("mcp_harvest_get_entries", "mcp tool"))
+	r.Register(newMockTool("tool_search_regex", "discovery tool"))
+
+	whitelist := []string{"read_file", "monday", "search"}
+	r.Filter(whitelist, true)
+
+	// expected: read_file (exact), mcp_monday_get_items (mcp_monday_ prefix), tool_search_regex (tool_search_ prefix)
+	if r.Count() != 3 {
+		t.Errorf("expected 3 tools after filtering, got %d: %v", r.Count(), r.List())
+	}
+
+	allowed := r.List()
+	expected := map[string]bool{
+		"read_file":            true,
+		"mcp_monday_get_items": true,
+		"tool_search_regex":    true,
+	}
+
+	for _, name := range allowed {
+		if !expected[name] {
+			t.Errorf("tool %q should have been filtered out", name)
+		}
+		delete(expected, name)
+	}
+
+	if len(expected) > 0 {
+		var missing []string
+		for m := range expected {
+			missing = append(missing, m)
+		}
+		t.Errorf("missing expected tools after filter: %v", missing)
+	}
+}

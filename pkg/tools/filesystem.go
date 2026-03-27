@@ -248,6 +248,19 @@ func isWithinWorkspace(candidate, workspace string) bool {
 	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }
 
+func isDeniedPath(path string, patterns []*regexp.Regexp) bool {
+	if len(patterns) == 0 {
+		return false
+	}
+	cleaned := filepath.Clean(path)
+	for _, pattern := range patterns {
+		if pattern.MatchString(cleaned) {
+			return true
+		}
+	}
+	return false
+}
+
 type ReadFileTool struct {
 	fs      fileSystem
 	maxSize int64
@@ -257,11 +270,12 @@ func NewReadFileTool(
 	workspace string,
 	restrict bool,
 	maxReadFileSize int,
-	allowPaths ...[]*regexp.Regexp,
+	allowPaths []*regexp.Regexp,
+	denyPaths ...[]*regexp.Regexp,
 ) *ReadFileTool {
-	var patterns []*regexp.Regexp
-	if len(allowPaths) > 0 {
-		patterns = allowPaths[0]
+	var denyPatterns []*regexp.Regexp
+	if len(denyPaths) > 0 {
+		denyPatterns = denyPaths[0]
 	}
 
 	maxSize := int64(maxReadFileSize)
@@ -270,7 +284,7 @@ func NewReadFileTool(
 	}
 
 	return &ReadFileTool{
-		fs:      buildFs(workspace, restrict, patterns),
+		fs:      buildFs(workspace, restrict, allowPaths, denyPatterns),
 		maxSize: maxSize,
 	}
 }
@@ -483,12 +497,12 @@ type WriteFileTool struct {
 	fs fileSystem
 }
 
-func NewWriteFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *WriteFileTool {
-	var patterns []*regexp.Regexp
-	if len(allowPaths) > 0 {
-		patterns = allowPaths[0]
+func NewWriteFileTool(workspace string, restrict bool, allowPaths []*regexp.Regexp, denyPaths ...[]*regexp.Regexp) *WriteFileTool {
+	var denyPatterns []*regexp.Regexp
+	if len(denyPaths) > 0 {
+		denyPatterns = denyPaths[0]
 	}
-	return &WriteFileTool{fs: buildFs(workspace, restrict, patterns)}
+	return &WriteFileTool{fs: buildFs(workspace, restrict, allowPaths, denyPatterns)}
 }
 
 func (t *WriteFileTool) Name() string {
@@ -551,12 +565,12 @@ type ListDirTool struct {
 	fs fileSystem
 }
 
-func NewListDirTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *ListDirTool {
-	var patterns []*regexp.Regexp
-	if len(allowPaths) > 0 {
-		patterns = allowPaths[0]
+func NewListDirTool(workspace string, restrict bool, allowPaths []*regexp.Regexp, denyPaths ...[]*regexp.Regexp) *ListDirTool {
+	var denyPatterns []*regexp.Regexp
+	if len(denyPaths) > 0 {
+		denyPatterns = denyPaths[0]
 	}
-	return &ListDirTool{fs: buildFs(workspace, restrict, patterns)}
+	return &ListDirTool{fs: buildFs(workspace, restrict, allowPaths, denyPatterns)}
 }
 
 func (t *ListDirTool) Name() string {
@@ -615,9 +629,14 @@ type fileSystem interface {
 }
 
 // hostFs is an unrestricted fileReadWriter that operates directly on the host filesystem.
-type hostFs struct{}
+type hostFs struct {
+	denyPatterns []*regexp.Regexp
+}
 
 func (h *hostFs) ReadFile(path string) ([]byte, error) {
+	if isDeniedPath(path, h.denyPatterns) {
+		return nil, fmt.Errorf("access denied: path is blocked by security policy")
+	}
 	content, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -632,16 +651,25 @@ func (h *hostFs) ReadFile(path string) ([]byte, error) {
 }
 
 func (h *hostFs) ReadDir(path string) ([]os.DirEntry, error) {
+	if isDeniedPath(path, h.denyPatterns) {
+		return nil, fmt.Errorf("access denied: path is blocked by security policy")
+	}
 	return os.ReadDir(path)
 }
 
 func (h *hostFs) WriteFile(path string, data []byte) error {
+	if isDeniedPath(path, h.denyPatterns) {
+		return fmt.Errorf("access denied: path is blocked by security policy")
+	}
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	// Using 0o600 (owner read/write only) for secure default permissions.
 	return fileutil.WriteFileAtomic(path, data, 0o600)
 }
 
 func (h *hostFs) Open(path string) (fs.File, error) {
+	if isDeniedPath(path, h.denyPatterns) {
+		return nil, fmt.Errorf("access denied: path is blocked by security policy")
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -657,7 +685,8 @@ func (h *hostFs) Open(path string) (fs.File, error) {
 
 // sandboxFs is a sandboxed fileSystem that operates within a strictly defined workspace using os.Root.
 type sandboxFs struct {
-	workspace string
+	workspace    string
+	denyPatterns []*regexp.Regexp
 }
 
 func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) error) error {
@@ -674,6 +703,10 @@ func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) 
 	relPath, err := getSafeRelPath(r.workspace, path)
 	if err != nil {
 		return err
+	}
+
+	if isDeniedPath(relPath, r.denyPatterns) {
+		return fmt.Errorf("access denied: path is blocked by security policy")
 	}
 
 	return fn(root, relPath)
@@ -828,13 +861,13 @@ func (w *whitelistFs) Open(path string) (fs.File, error) {
 
 // buildFs returns the appropriate fileSystem implementation based on restriction
 // settings and optional path whitelist patterns.
-func buildFs(workspace string, restrict bool, patterns []*regexp.Regexp) fileSystem {
+func buildFs(workspace string, restrict bool, allowPatterns, denyPatterns []*regexp.Regexp) fileSystem {
 	if !restrict {
-		return &hostFs{}
+		return &hostFs{denyPatterns: denyPatterns}
 	}
-	sandbox := &sandboxFs{workspace: workspace}
-	if len(patterns) > 0 {
-		return &whitelistFs{sandbox: sandbox, patterns: patterns}
+	sandbox := &sandboxFs{workspace: workspace, denyPatterns: denyPatterns}
+	if len(allowPatterns) > 0 {
+		return &whitelistFs{sandbox: sandbox, patterns: allowPatterns}
 	}
 	return sandbox
 }
