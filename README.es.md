@@ -323,7 +323,6 @@ Esto crea `~/.picoclaw/config.json` y el directorio workspace.
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4"
-      // api_key ahora se carga desde .security.yml
     }
   ]
 }
