@@ -53,6 +53,8 @@ Compared with `picoclaw gateway`, channel-only runtime:
 - Does **not** start Cron service, Heartbeat service, Device service
 - Does **not** enable config hot reload or `/reload`
 
+Validation note: channel-only runtime is channel-agnostic by design. Current runtime validation is primarily focused on QQ, while other channels are continuously validated.
+
 Use `picoclaw gateway` if you need the full control plane and background services.
 
 ### Gateway Log Level

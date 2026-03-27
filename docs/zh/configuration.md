@@ -51,6 +51,8 @@ picoclaw channel start --debug
 - **不会** 启动 Cron、Heartbeat、Device 服务
 - **不会** 启用配置热更新和 `/reload`
 
+验证说明：channel 独立运行模式在设计上对各渠道通用。当前运行时验证主要覆盖 QQ，其他渠道仍在持续验证中。
+
 若需要完整控制面与后台服务，请使用 `picoclaw gateway`。
 
 ### Gateway 日志等级
