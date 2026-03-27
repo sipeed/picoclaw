@@ -42,7 +42,8 @@ type FeishuChannel struct {
 	wsClient   *larkws.Client
 	tokenCache *tokenCache // custom cache that supports invalidation
 
-	botOpenID atomic.Value // stores string; populated lazily for @mention detection
+	botOpenID atomic.Value // stores string; probed identity for @mention detection
+	botName   atomic.Value // stores string; probed identity for @mention detection
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -74,9 +75,9 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("feishu app_id or app_secret is empty")
 	}
 
-	// Fetch bot open_id via API for reliable @mention detection.
+	// Fetch bot identity (ID and Name) via API for reliable @mention detection.
 	if err := c.fetchBotOpenID(ctx); err != nil {
-		logger.ErrorCF("feishu", "Failed to fetch bot open_id, @mention detection may not work", map[string]any{
+		logger.ErrorCF("feishu", "Failed to fetch bot identity, @mention detection may not work", map[string]any{
 			"error": err.Error(),
 		})
 	}
@@ -487,7 +488,7 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 
 // --- Internal helpers ---
 
-// fetchBotOpenID calls the Feishu bot info API to retrieve and store the bot's open_id.
+// fetchBotOpenID calls the Feishu bot info API to retrieve the bot's identity (ID and Name).
 func (c *FeishuChannel) fetchBotOpenID(ctx context.Context) error {
 	resp, err := c.client.Do(ctx, &larkcore.ApiReq{
 		HttpMethod:                http.MethodGet,
@@ -502,6 +503,7 @@ func (c *FeishuChannel) fetchBotOpenID(ctx context.Context) error {
 		Code int `json:"code"`
 		Bot  struct {
 			OpenID string `json:"open_id"`
+			Name   string `json:"name"`
 		} `json:"bot"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &result); err != nil {
@@ -516,31 +518,39 @@ func (c *FeishuChannel) fetchBotOpenID(ctx context.Context) error {
 	}
 
 	c.botOpenID.Store(result.Bot.OpenID)
-	logger.InfoCF("feishu", "Fetched bot open_id from API", map[string]any{
-		"open_id": result.Bot.OpenID,
+	c.botName.Store(result.Bot.Name)
+	logger.InfoCF("feishu", "Fetched bot identity from API", map[string]any{
+		"open_id":  result.Bot.OpenID,
+		"bot_name": result.Bot.Name,
 	})
 	return nil
 }
 
 // isBotMentioned checks if the bot was @mentioned in the message.
 func (c *FeishuChannel) isBotMentioned(message *larkim.EventMessage) bool {
-	if message.Mentions == nil {
-		return false
-	}
-
 	knownID, _ := c.botOpenID.Load().(string)
-	if knownID == "" {
-		logger.DebugCF("feishu", "Bot open_id unknown, cannot detect @mention", nil)
-		return false
+	knownName, _ := c.botName.Load().(string)
+
+	// Case 1: Structured Mentions check via OpenID match
+	if message.Mentions != nil {
+		for _, m := range message.Mentions {
+			if m.Id != nil && m.Id.OpenId != nil && *m.Id.OpenId == knownID {
+				return true
+			}
+		}
 	}
 
-	for _, m := range message.Mentions {
-		if m.Id == nil {
-			continue
-		}
-		if m.Id.OpenId != nil && *m.Id.OpenId == knownID {
+	// Case 2: Unstructured Name-based fallback check (e.g. "@BotName hello")
+	// This happens if the platform/client fails to resolve the mention as a structured ID.
+	if knownName != "" && message.MessageType != nil && *message.MessageType == larkim.MsgTypeText {
+		content := stringValue(message.Content)
+		if strings.Contains(content, "@"+knownName) {
 			return true
 		}
+	}
+
+	if knownID == "" {
+		logger.DebugCF("feishu", "Bot open_id unknown, cannot detect @mention", nil)
 	}
 	return false
 }
