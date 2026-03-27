@@ -259,7 +259,11 @@ func (c *BaseChannel) HandleMessage(
 	}
 	if sender.CanonicalID != "" || sender.PlatformID != "" {
 		if !c.IsAllowedSender(sender) {
-			return
+			// Backward-compatible fallback for channels that already resolved sender
+			// via a legacy identifier before publishing.
+			if !c.IsAllowed(senderID) {
+				return
+			}
 		}
 	} else {
 		if !c.IsAllowed(senderID) {
