@@ -293,8 +293,10 @@ Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous
 
 | Config Key | Type | Default | Description |
 |------------|------|---------|-------------|
+| `tools.read_file.enabled` | bool | `true` | Enables the `read_file` tool |
 | `tools.read_file.mode` | string | `bytes` | Selects the `read_file` implementation: `bytes` or `lines` |
-| `tools.read_file.max_read_file_size` | int | `65536` | Maximum bytes returned in `bytes` mode and the output budget source for `lines` mode truncation |
+| `tools.read_file.max_read_file_size` | int | `65536` | Maximum bytes returned by `read_file` and byte budget used by `read_file_lines` |
+| `tools.read_file_lines.enabled` | bool | `false` | Enables the separate line-oriented `read_file_lines` tool |
 
 #### Mode: `bytes`
 
@@ -314,22 +316,21 @@ Use `bytes` when:
 
 #### Mode: `lines`
 
-Text-oriented behavior, optimized for source files, markdown, logs, and configs.
+Text-oriented behavior, optimized for source files, markdown, logs, and configs. The tool reads sequentially by line and stops when the configured byte budget is reached.
 
 Parameters:
 
 * `path` (required): File path
-* `offset` (optional): Starting line number, 1-indexed, default `1`
-* `limit` (optional): Maximum number of lines to read, default = all remaining lines
+* `offset` (optional): Starting line number, 1-indexed and inclusive, default `0`
+* `limit` (optional): Maximum number of lines to read, default = all remaining lines until EOF or byte budget
 
-When content exceeds the estimated token budget, PicoClaw truncates it intelligently:
+Behavior notes:
 
-* Estimates the token count heuristically
-* Keeps the head and tail of the selected text
-* Cuts on newline boundaries when possible
-* Inserts an explicit truncation notice in the middle
+* Binary-looking files are rejected with guidance to use `read_file`
+* Extremely long single lines are truncated rather than skipped
+* If truncation happens mid-line, the tool explicitly suggests falling back to `read_file` for byte-wise inspection
 
-Use `lines` when:
+Use `read_file_lines` when:
 
 * The agent mostly reads text files
 * You want line-based pagination in prompts and tool calls
@@ -342,9 +343,11 @@ Use `lines` when:
   "tools": {
     "read_file": {
       "enabled": true,
-      "mode": "lines",
       "max_read_file_size": 65536
-    }
+    },
+    "read_file_lines": {
+      "enabled": true
+    }    
   }
 }
 ```
