@@ -115,8 +115,14 @@ func TestHandleC2CMessage_AllowListFallsBackToLegacyID(t *testing.T) {
 	}
 
 	inbound := waitInboundMessage(t, messageBus)
-	if inbound.SenderID != "user-openid-123" {
-		t.Fatalf("inbound.SenderID = %q, want %q", inbound.SenderID, "user-openid-123")
+	if inbound.SenderID != "qq:user-openid-123" {
+		t.Fatalf("inbound.SenderID = %q, want %q", inbound.SenderID, "qq:user-openid-123")
+	}
+	if inbound.Sender.PlatformID != "user-openid-123" {
+		t.Fatalf("inbound.Sender.PlatformID = %q, want %q", inbound.Sender.PlatformID, "user-openid-123")
+	}
+	if inbound.Sender.CanonicalID != "qq:user-openid-123" {
+		t.Fatalf("inbound.Sender.CanonicalID = %q, want %q", inbound.Sender.CanonicalID, "qq:user-openid-123")
 	}
 	if inbound.Metadata["account_id"] != "user-openid-123" {
 		t.Fatalf("account_id metadata = %q, want %q", inbound.Metadata["account_id"], "user-openid-123")
@@ -187,8 +193,14 @@ func TestHandleGroupATMessage_AllowListFallsBackToLegacyMemberID(t *testing.T) {
 	}
 
 	inbound := waitInboundMessage(t, messageBus)
-	if inbound.SenderID != "member-openid-xyz" {
-		t.Fatalf("inbound.SenderID = %q, want %q", inbound.SenderID, "member-openid-xyz")
+	if inbound.SenderID != "qq:member-openid-xyz" {
+		t.Fatalf("inbound.SenderID = %q, want %q", inbound.SenderID, "qq:member-openid-xyz")
+	}
+	if inbound.Sender.PlatformID != "member-openid-xyz" {
+		t.Fatalf("inbound.Sender.PlatformID = %q, want %q", inbound.Sender.PlatformID, "member-openid-xyz")
+	}
+	if inbound.Sender.CanonicalID != "qq:member-openid-xyz" {
+		t.Fatalf("inbound.Sender.CanonicalID = %q, want %q", inbound.Sender.CanonicalID, "qq:member-openid-xyz")
 	}
 	if inbound.Metadata["account_id"] != "member-openid-xyz" {
 		t.Fatalf("account_id metadata = %q, want %q", inbound.Metadata["account_id"], "member-openid-xyz")

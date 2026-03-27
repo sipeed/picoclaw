@@ -130,7 +130,9 @@ func (c *QQChannel) resolveAllowedSender(primaryOpenID, legacyID string) (bus.Se
 			PlatformID: legacyID,
 		}
 		if c.IsAllowedSender(legacy) {
-			return legacy, true, true
+			// Keep openid/canonical sender identity in published messages,
+			// while recording that allow_from matched via legacy fallback.
+			return primary, true, true
 		}
 	}
 
@@ -769,10 +771,15 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 			metadata["legacy_account_id"] = legacyAuthorID
 		}
 
+		allowCheckSenderID := senderID
+		if usedLegacyFallback && legacyAuthorID != "" {
+			allowCheckSenderID = legacyAuthorID
+		}
+
 		c.HandleMessage(c.ctx,
 			bus.Peer{Kind: "direct", ID: chatID},
 			data.ID,
-			senderID,
+			allowCheckSenderID,
 			chatID,
 			content,
 			mediaPaths,
@@ -885,10 +892,15 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			metadata["legacy_account_id"] = legacyMemberID
 		}
 
+		allowCheckSenderID := senderID
+		if usedLegacyFallback && legacyMemberID != "" {
+			allowCheckSenderID = legacyMemberID
+		}
+
 		c.HandleMessage(c.ctx,
 			bus.Peer{Kind: "group", ID: chatID},
 			data.ID,
-			senderID,
+			allowCheckSenderID,
 			chatID,
 			content,
 			mediaPaths,
