@@ -1384,7 +1384,7 @@ func TestProcessMessage_UsesRouteSessionKey(t *testing.T) {
 	}
 
 	// With chatID isolation, session key is derived from chatID
-	sessionKey := fmt.Sprintf("agent:::main:%s", msg.ChatID)
+	sessionKey := fmt.Sprintf("agent:main:%s", msg.ChatID)
 
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {
