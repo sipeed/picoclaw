@@ -521,11 +521,13 @@ func loadConfig(data []byte) (*Config, error) {
 	// would silently inherit values from the DefaultConfig template at the same
 	// index position. We only reset cfg.ModelList when the user actually provides
 	// entries; when count is 0 we keep DefaultConfig's built-in list as fallback.
-	var tmp Config
+	var tmp struct {
+		ModelList json.RawMessage `json:"model_list"`
+	}
 	if err := json.Unmarshal(data, &tmp); err != nil {
 		return nil, err
 	}
-	if len(tmp.ModelList) > 0 {
+	if tmp.ModelList != nil {
 		cfg.ModelList = nil
 	}
 
