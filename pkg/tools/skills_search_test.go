@@ -10,19 +10,19 @@ import (
 )
 
 func TestFindSkillsToolName(t *testing.T) {
-	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil)
+	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil, nil, false)
 	assert.Equal(t, "find_skills", tool.Name())
 }
 
 func TestFindSkillsToolMissingQuery(t *testing.T) {
-	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil)
+	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil, nil, false)
 	result := tool.Execute(context.Background(), map[string]any{})
 	assert.True(t, result.IsError)
 	assert.Contains(t, result.ForLLM, "query is required")
 }
 
 func TestFindSkillsToolEmptyQuery(t *testing.T) {
-	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil)
+	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil, nil, false)
 	result := tool.Execute(context.Background(), map[string]any{
 		"query": "   ",
 	})
@@ -35,7 +35,7 @@ func TestFindSkillsToolCacheHit(t *testing.T) {
 		{Slug: "github", Score: 0.9, RegistryName: "clawhub"},
 	})
 
-	tool := NewFindSkillsTool(skills.NewRegistryManager(), cache)
+	tool := NewFindSkillsTool(skills.NewRegistryManager(), cache, nil, false)
 	result := tool.Execute(context.Background(), map[string]any{
 		"query": "github",
 	})
@@ -46,7 +46,7 @@ func TestFindSkillsToolCacheHit(t *testing.T) {
 }
 
 func TestFindSkillsToolParameters(t *testing.T) {
-	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil)
+	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil, nil, false)
 	params := tool.Parameters()
 
 	props, ok := params["properties"].(map[string]any)
@@ -60,7 +60,7 @@ func TestFindSkillsToolParameters(t *testing.T) {
 }
 
 func TestFindSkillsToolDescription(t *testing.T) {
-	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil)
+	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil, nil, false)
 	assert.NotEmpty(t, tool.Description())
 	assert.Contains(t, tool.Description(), "skill")
 }

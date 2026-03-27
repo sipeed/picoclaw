@@ -1,0 +1,2 @@
+{"level":"warn","path":"/home/stevef/dev/tomerge/github/picoclaw/config.json","time":"2026-03-24T08:13:49+01:00","caller":"/home/stevef/dev/tomerge/github/picoclaw/pkg/config/config.go:1363","message":"config file not found, using default config"}
+{"level":"warn","path":"/home/stevef/dev/tomerge/github/picoclaw/config.json","time":"2026-03-24T08:15:23+01:00","caller":"/home/stevef/dev/tomerge/github/picoclaw/pkg/config/config.go:1363","message":"config file not found, using default config"}

@@ -67,6 +67,65 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 
 > **Note:** Changes to `AGENT.md`, `SOUL.md`, `USER.md` and `memory/MEMORY.md` are automatically detected at runtime via file modification time (mtime) tracking. You do **not** need to restart the gateway after editing these files — the agent picks up the new content on the next request.
 
+### 🔒 Multi-Tenant Agent Isolation
+ 
+PicoClaw supports safe multi-tenancy on shared infrastructure (e.g., Azure deployments). It dynamically isolates each chat session into its own private sub-workspace to prevent data collisions and ensure privacy between different users/callers (like n8n, Foundation Agents, etc.).
+ 
+#### Isolation Strategy
+ 
+When an incoming message includes a **ChatID** (passed in the `/chat` API or extracted from internal channels), PicoClaw automatically activates **Tenant Isolation**:
+ 
+1.  **Isolated Workspace:** The agent's operations are restricted to `workspace/sessions/{isolationID}/workspace`.
+2.  **Isolated Memory:** Long-term memory (`MEMORY.md`) is stored and read from the isolated session path.
+3.  **Isolated Tools:** Tools like `read_file` and `write_file` are automatically pointed to the isolated workspace. Additionally, **MCP server tools** (e.g., Harvest, Monday) and discovery search tools are dynamically registered to each isolated instance, ensuring they inherit the same security boundaries.
+ 
+#### Tenant Identification (Inbound Integration)
+ 
+PicoClaw automatically detects the **ChatID** for isolation from several sources:
+ 
+1.  **API Headers (Automatic):** It checks for common tenant-identifying headers from API Gateways:
+    - `X-PicoClaw-Chat-ID`: Custom header for manual control.
+    - `Ocp-Apim-Subscription-Id`: Automatically captures the **Azure APIM Subscription ID** as the tenant identifier.
+2.  **API Body:** The JSON payload for `/chat` can include a `chat_id` (or `session_id`) field.
+3.  **Channel Context:** Channels like Microsoft Teams, Telegram, and Discord automatically pass their respective `ChatID`.
+ 
+**What happens if no ID is present?**
+If no `ChatID` is detected, the request is routed to the **Global Agent** context, which uses the root workspace. This is the default for standalone single-user deployments. For secure multi-tenancy on shared infrastructure, ensuring a persistent `ChatID` is passed from your API Gateway or client is highly recommended.
+ 
+#### Path Resolution
+ 
+-   **Global Agents:** Agents initialized at startup (without a specific session) use the root workspace.
+-   **Session Agents:** Every request with a `chatID` creates a transient isolated agent instance that "routes" all file and memory operations into its session-specific subdirectory.
+ 
+This mechanism is transparent to the end-user and the AI agent itself, ensuring a secure and portable multi-user environment out-of-the-box.
+
+### 🚀 Onboarding & Automation
+
+For automated deployments (like Azure Container Apps or CI/CD), the `onboard` command supports non-interactive execution and environment cleanup.
+
+#### Automated Setup
+
+Use the `--yes` (or `-y`) flag to skip all interactive prompts and automatically generate default credentials/keys:
+
+```bash
+picoclaw onboard --yes
+```
+
+#### Environment Purge
+
+If you need to reset an environment (e.g., before a clean redeploy), use the `purge` subcommand. This removes existing workspaces, logs, and generated keys:
+
+```bash
+# Safe purge (checks if files exist)
+picoclaw onboard purge
+
+# Force purge (no confirmation)
+picoclaw onboard purge --force
+```
+
+> [!WARNING]
+> The `purge` command is destructive. It will delete your local session history, memory, and encrypted secrets. Only use it when you are prepared to start from a clean slate.
+ 
 ### Skill Sources
 
 By default, skills are loaded from:

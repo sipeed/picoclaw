@@ -654,7 +654,7 @@ func TestProcessMessage_MediaToolHandledSkipsFollowUpLLMAndFinalText(t *testing.
 	if err != nil {
 		t.Fatalf("resolveMessageRoute() error = %v", err)
 	}
-	sessionKey := resolveScopeKey(route, "")
+	sessionKey := resolveScopeKey(route, "", "chat1", route.AgentID)
 	history := defaultAgent.Sessions.GetHistory(sessionKey)
 	if len(history) == 0 {
 		t.Fatal("expected session history to be saved")
@@ -1343,11 +1343,8 @@ func TestProcessMessage_UsesRouteSessionKey(t *testing.T) {
 		},
 	}
 
-	route := al.registry.ResolveRoute(routing.RouteInput{
-		Channel: msg.Channel,
-		Peer:    extractPeer(msg),
-	})
-	sessionKey := route.SessionKey
+	// With chatID isolation, session key is derived from chatID
+	sessionKey := fmt.Sprintf("agent:::main:%s", msg.ChatID)
 
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {
@@ -1945,7 +1942,7 @@ func TestAgentLoop_ToolLimitUsesDedicatedFallback(t *testing.T) {
 	al := NewAgentLoop(cfg, msgBus, provider)
 	al.RegisterTool(&toolLimitTestTool{})
 
-	response, err := al.ProcessDirectWithChannel(context.Background(), "hello", "tool-limit", "test", "chat1")
+	response, err := al.ProcessDirectWithChannel(context.Background(), "hello", "tool-limit", "test", "direct")
 	if err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}

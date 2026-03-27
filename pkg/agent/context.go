@@ -22,6 +22,7 @@ import (
 
 type ContextBuilder struct {
 	workspace          string
+	baseWorkspace      string
 	skillsLoader       *skills.SkillsLoader
 	memory             *MemoryStore
 	toolDiscoveryBM25  bool
@@ -69,7 +70,11 @@ func getGlobalConfigDir() string {
 	return filepath.Join(home, pkg.DefaultPicoClawHome)
 }
 
-func NewContextBuilder(workspace string) *ContextBuilder {
+func NewContextBuilder(workspace string, baseWorkspace string) *ContextBuilder {
+	// If isolationID logic is needed, it should be handled by the caller
+	// ensuring workspace and baseWorkspace are correctly distinct.
+	os.MkdirAll(workspace, 0o755)
+
 	// builtin skills: skills directory in current project
 	// Use the skills/ directory under the current working directory
 	builtinSkillsDir := strings.TrimSpace(os.Getenv(config.EnvBuiltinSkills))
@@ -80,9 +85,10 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
 
 	return &ContextBuilder{
-		workspace:    workspace,
-		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
-		memory:       NewMemoryStore(workspace),
+		workspace:     workspace,
+		baseWorkspace: baseWorkspace,
+		skillsLoader:  skills.NewSkillsLoader(workspace, baseWorkspace, globalSkillsDir, builtinSkillsDir, nil, false),
+		memory:        NewMemoryStore(workspace),
 	}
 }
 
@@ -111,6 +117,8 @@ Your workspace is at: %s
 3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
+
+5. **Path Resolution** - ALWAYS use paths relative to your workspace root (e.g., "relay_project/go.mod"). DO NOT start paths with a leading slash ("/") or use absolute paths, as they are blocked for security.
 
 %s`,
 		version, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
@@ -468,7 +476,13 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 
 	if agentDefinition.Source != AgentDefinitionSourceAgent {
 		filePath := filepath.Join(cb.workspace, "IDENTITY.md")
-		if data, err := os.ReadFile(filePath); err == nil {
+		data, err := os.ReadFile(filePath)
+		if err != nil && cb.baseWorkspace != "" && cb.baseWorkspace != cb.workspace {
+			// Fallback to base workspace
+			filePath = filepath.Join(cb.baseWorkspace, "IDENTITY.md")
+			data, err = os.ReadFile(filePath)
+		}
+		if err == nil {
 			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", "IDENTITY.md", data)
 		}
 	}

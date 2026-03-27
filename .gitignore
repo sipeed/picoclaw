@@ -67,3 +67,4 @@ web/backend/dist/*
 .claude/
 
 docker/data
+workspace/
