@@ -2113,6 +2113,46 @@ func TestAgentLoop_ToolLimitUsesDedicatedFallback(t *testing.T) {
 	}
 }
 
+func TestAgentLoop_ToolRepeatLoopBreaksEarly(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: tmpDir,
+				ModelName: "test-model",
+				MaxTokens: 4096,
+				// Keep this high so the loop-breaker (not the iteration limit)
+				// is what terminates the turn.
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &toolLimitOnlyProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	al.RegisterTool(&toolLimitTestTool{})
+
+	response, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"tool-repeat-loop",
+		"test",
+		"direct",
+	)
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+	if response != toolRepeatLoopResponse {
+		t.Fatalf("response = %q, want %q", response, toolRepeatLoopResponse)
+	}
+}
+
 // TestProcessDirectWithChannel_TriggersMCPInitialization verifies that
 // ProcessDirectWithChannel triggers MCP initialization when MCP is enabled.
 // Note: Manager is only initialized when at least one MCP server is configured
