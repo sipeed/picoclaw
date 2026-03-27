@@ -79,6 +79,12 @@
   "labels": {
     "loading": "加载中..."
   },
+  "footer": {
+    "version": "版本",
+    "commit": "提交",
+    "build": "构建",
+    "version_unknown": "未知"
+  },
   "credentials": {
     "description": "管理已支持服务商的 OAuth 与 Token 凭据。",
     "loading": "正在加载凭据...",

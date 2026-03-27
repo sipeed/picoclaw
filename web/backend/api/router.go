@@ -76,6 +76,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Launcher service parameters (port/public)
 	h.registerLauncherConfigRoutes(mux)
 
+	// Runtime build/version metadata
+	h.registerVersionRoutes(mux)
+
 	// WeChat QR login flow
 	h.registerWeixinRoutes(mux)
 
