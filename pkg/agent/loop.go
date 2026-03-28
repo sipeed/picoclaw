@@ -414,7 +414,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			}
 
 			// Process message
-			func() {
+			go func() {
 				defer func() {
 					if al.channelManager != nil {
 						al.channelManager.InvokeTypingStop(msg.Channel, msg.ChatID)
