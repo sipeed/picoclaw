@@ -75,6 +75,7 @@ UNAME_M:=$(shell uname -m)
 
 # Platform-specific settings
 EXE=
+GO_BUILD_ENV=
 ifeq ($(UNAME_S),Linux)
 	PLATFORM=linux
 	ifeq ($(UNAME_M),x86_64)
@@ -105,6 +106,7 @@ else ifeq ($(UNAME_S),Darwin)
 else ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME_S)))
 	PLATFORM=windows
 	EXE=.exe
+	GO_BUILD_ENV=GOOS=windows GOARCH=$(ARCH)
 	ifeq ($(UNAME_M),x86_64)
 		ARCH=amd64
 	else ifeq ($(UNAME_M),aarch64)
@@ -133,21 +135,29 @@ generate:
 build: generate
 	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH) ./$(CMD_DIR)
+	@$(GO_BUILD_ENV) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)"
-	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXE) $(BUILD_DIR)/$(BINARY_NAME)$(EXE)
+	@if [ "$(PLATFORM)" = "windows" ]; then \
+		cp -f $(BINARY_PATH) $(BUILD_DIR)/$(BINARY_NAME)$(EXE); \
+	else \
+		ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXE) $(BUILD_DIR)/$(BINARY_NAME)$(EXE); \
+	fi
 
 ## build-launcher: Build the picoclaw-launcher (web console) binary
 build-launcher:
 	@echo "Building picoclaw-launcher for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
 	@$(MAKE) -C web build \
-		OUTPUT="$(CURDIR)/$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)" \
-		WEB_GO='$(WEB_GO)' \
+		OUTPUT="$(CURDIR)/$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXE)" \
+		WEB_GO='$(strip $(GO_BUILD_ENV) $(WEB_GO))' \
 		GO_BUILD_TAGS='$(GO_BUILD_TAGS)' \
 		LDFLAGS='$(LDFLAGS)'
-	@ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher
-	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher"
+	@if [ "$(PLATFORM)" = "windows" ]; then \
+		cp -f $(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXE) $(BUILD_DIR)/picoclaw-launcher$(EXE); \
+	else \
+		ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXE) $(BUILD_DIR)/picoclaw-launcher$(EXE); \
+	fi
+	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher$(EXE)"
 
 build-launcher-frontend:
 	@$(MAKE) -C web build-frontend
@@ -156,8 +166,12 @@ build-launcher-frontend:
 build-launcher-tui:
 	@echo "Building picoclaw-launcher-tui for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	@$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-tui-$(PLATFORM)-$(ARCH)$(EXE) ./cmd/picoclaw-launcher-tui
-	@ln -sf picoclaw-launcher-tui-$(PLATFORM)-$(ARCH)$(EXE) $(BUILD_DIR)/picoclaw-launcher-tui$(EXE)
+	@$(GO_BUILD_ENV) $(GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-tui-$(PLATFORM)-$(ARCH)$(EXE) ./cmd/picoclaw-launcher-tui
+	@if [ "$(PLATFORM)" = "windows" ]; then \
+		cp -f $(BUILD_DIR)/picoclaw-launcher-tui-$(PLATFORM)-$(ARCH)$(EXE) $(BUILD_DIR)/picoclaw-launcher-tui$(EXE); \
+	else \
+		ln -sf picoclaw-launcher-tui-$(PLATFORM)-$(ARCH)$(EXE) $(BUILD_DIR)/picoclaw-launcher-tui$(EXE); \
+	fi
 	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher-tui$(EXE)"
 
 ## build-whatsapp-native: Build with WhatsApp native (whatsmeow) support; larger binary
