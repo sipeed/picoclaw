@@ -315,6 +315,69 @@ func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestShellTool_RelativeOperand_SymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	outside := filepath.Join(root, "outside")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatalf("failed to create outside dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("top secret"), 0o600); err != nil {
+		t.Fatalf("failed to create outside secret: %v", err)
+	}
+
+	link := filepath.Join(workspace, "leak")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks not supported in this environment: %v", err)
+	}
+
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": "cat leak/secret.txt",
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected symlink operand escape to be blocked, got output: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "blocked") {
+		t.Errorf("expected 'blocked' in error, got: %s", result.ForLLM)
+	}
+}
+
+func TestShellTool_RelativeOperand_InsideWorkspaceAllowed(t *testing.T) {
+	workspace := t.TempDir()
+	dir := filepath.Join(workspace, "docs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("failed to create docs dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatalf("failed to create workspace file: %v", err)
+	}
+
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": "cat docs/note.txt",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected in-workspace relative operand to be allowed, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "hello") {
+		t.Errorf("expected file contents in output, got: %s", result.ForLLM)
+	}
+}
+
 // TestShellTool_RemoteChannelBlockedByDefault verifies exec is blocked for remote channels
 func TestShellTool_RemoteChannelBlockedByDefault(t *testing.T) {
 	cfg := &config.Config{}
