@@ -252,6 +252,75 @@ func TestProviderChat_PreservesReasoningContentInHistory(t *testing.T) {
 	}
 }
 
+func TestProviderChat_OmitsReasoningContentForMistral(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		reqMessages, _ := requestBody["messages"].([]any)
+		for _, rawMsg := range reqMessages {
+			msg, ok := rawMsg.(map[string]any)
+			if !ok {
+				continue
+			}
+			if _, exists := msg["reasoning_content"]; exists {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_, _ = w.Write([]byte(
+					`{"object":"error","message":"Extra inputs are not permitted","type":"invalid_request_error"}`,
+				))
+				return
+			}
+		}
+
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	p.apiBase = "https://api.mistral.ai/v1"
+	p.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.URL, _ = url.Parse(server.URL + r.URL.Path)
+			return http.DefaultTransport.RoundTrip(r)
+		}),
+	}
+
+	messages := []Message{
+		{Role: "user", Content: "What is 1+1?"},
+		{Role: "assistant", Content: "2", ReasoningContent: "Let me think... 1+1=2"},
+		{Role: "user", Content: "What about 2+2?"},
+	}
+
+	if _, err := p.Chat(t.Context(), messages, nil, "mistral-small-latest", nil); err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	reqMessages, ok := requestBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any: %T", requestBody["messages"])
+	}
+	assistantMsg, ok := reqMessages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("assistant message is not map[string]any: %T", reqMessages[1])
+	}
+	if _, exists := assistantMsg["reasoning_content"]; exists {
+		t.Fatal("reasoning_content should be omitted for Mistral requests")
+	}
+}
+
 func TestProviderChat_HTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -925,6 +994,25 @@ func TestSupportsPromptCacheKey(t *testing.T) {
 	for _, tt := range tests {
 		if got := supportsPromptCacheKey(tt.apiBase); got != tt.want {
 			t.Errorf("supportsPromptCacheKey(%q) = %v, want %v", tt.apiBase, got, tt.want)
+		}
+	}
+}
+
+func TestIsReasoningContentUnsupportedHost(t *testing.T) {
+	tests := []struct {
+		apiBase string
+		want    bool
+	}{
+		{"https://api.mistral.ai/v1", true},
+		{"https://edge.mistral.ai/v1", true},
+		{"https://api.openai.com/v1", false},
+		{"https://api.deepseek.com/v1", false},
+		{"", false},
+		{"not-a-url", false},
+	}
+	for _, tt := range tests {
+		if got := isReasoningContentUnsupportedHost(tt.apiBase); got != tt.want {
+			t.Errorf("isReasoningContentUnsupportedHost(%q) = %v, want %v", tt.apiBase, got, tt.want)
 		}
 	}
 }
