@@ -2110,16 +2110,21 @@ turnLoop:
 			},
 		)
 
-		logger.DebugCF("agent", "LLM response",
-			map[string]any{
-				"agent_id":       ts.agent.ID,
-				"iteration":      iteration,
-				"content_chars":  len(response.Content),
-				"tool_calls":     len(response.ToolCalls),
-				"reasoning":      response.Reasoning,
-				"target_channel": al.targetReasoningChannelID(ts.channel),
-				"channel":        ts.channel,
-			})
+		llmResponseFields := map[string]any{
+			"agent_id":       ts.agent.ID,
+			"iteration":      iteration,
+			"content_chars":  len(response.Content),
+			"tool_calls":     len(response.ToolCalls),
+			"reasoning":      response.Reasoning,
+			"target_channel": al.targetReasoningChannelID(ts.channel),
+			"channel":        ts.channel,
+		}
+		if response.Usage != nil {
+			llmResponseFields["prompt_tokens"] = response.Usage.PromptTokens
+			llmResponseFields["completion_tokens"] = response.Usage.CompletionTokens
+			llmResponseFields["total_tokens"] = response.Usage.TotalTokens
+		}
+		logger.DebugCF("agent", "LLM response", llmResponseFields)
 
 		if len(response.ToolCalls) == 0 || gracefulTerminal {
 			responseContent := response.Content
