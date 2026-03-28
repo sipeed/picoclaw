@@ -73,7 +73,25 @@ type AgentContextDefinition struct {
 // structured files are absent, it falls back to the legacy AGENTS.md layout so
 // the current runtime can transition incrementally.
 func (cb *ContextBuilder) LoadAgentDefinition() AgentContextDefinition {
-	return loadAgentDefinition(cb.workspace)
+	def := loadAgentDefinition(cb.workspace)
+	if def.Source == "" && cb.baseWorkspace != "" && cb.baseWorkspace != cb.workspace {
+		// Fallback to base workspace if nothing found in isolated workspace
+		baseDef := loadAgentDefinition(cb.baseWorkspace)
+		if baseDef.Source != "" {
+			// Inherit Agent and Source from base, but keep Tenant's User/Soul if they exist
+			if def.Agent == nil {
+				def.Agent = baseDef.Agent
+				def.Source = baseDef.Source
+			}
+			if def.Soul == nil {
+				def.Soul = baseDef.Soul
+			}
+			if def.User == nil {
+				def.User = baseDef.User
+			}
+		}
+	}
+	return def
 }
 
 func loadAgentDefinition(workspace string) AgentContextDefinition {

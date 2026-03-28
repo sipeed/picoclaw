@@ -8,7 +8,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -57,14 +56,20 @@ func (r *mcpRuntime) hasManager() bool {
 	return r.manager != nil
 }
 
+func (r *mcpRuntime) getManager() *mcp.Manager {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.manager
+}
+
 // ensureMCPInitialized loads MCP servers/tools once so both Run() and direct
 // agent mode share the same initialization path.
-func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
+func (al *AgentLoop) EnsureMCPInitialized(ctx context.Context) error {
 	if !al.cfg.Tools.IsToolEnabled("mcp") {
 		return nil
 	}
 
-	if al.cfg.Tools.MCP.Servers == nil || len(al.cfg.Tools.MCP.Servers) == 0 {
+	if len(al.cfg.Tools.MCP.Servers) == 0 {
 		logger.WarnCF("agent", "MCP is enabled but no servers are configured, skipping MCP initialization", nil)
 		return nil
 	}
@@ -103,108 +108,98 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 			return
 		}
 
-		// Register MCP tools for all agents
-		servers := mcpManager.GetServers()
-		uniqueTools := 0
-		totalRegistrations := 0
-		agentIDs := al.registry.ListAgentIDs()
-		agentCount := len(agentIDs)
-
-		for serverName, conn := range servers {
-			uniqueTools += len(conn.Tools)
-
-			// Determine whether this server's tools should be deferred (hidden).
-			// Per-server "deferred" field takes precedence over the global Discovery.Enabled.
-			serverCfg := al.cfg.Tools.MCP.Servers[serverName]
-			registerAsHidden := serverIsDeferred(al.cfg.Tools.MCP.Discovery.Enabled, serverCfg)
-
-			for _, tool := range conn.Tools {
-				for _, agentID := range agentIDs {
-					agent, ok := al.registry.GetAgent(agentID)
-					if !ok {
-						continue
-					}
-
-					mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
-
-					if registerAsHidden {
-						agent.Tools.RegisterHidden(mcpTool)
-					} else {
-						agent.Tools.Register(mcpTool)
-					}
-
-					totalRegistrations++
-					logger.DebugCF("agent", "Registered MCP tool",
-						map[string]any{
-							"agent_id": agentID,
-							"server":   serverName,
-							"tool":     tool.Name,
-							"name":     mcpTool.Name(),
-							"deferred": registerAsHidden,
-						})
-				}
-			}
-		}
-		logger.InfoCF("agent", "MCP tools registered successfully",
-			map[string]any{
-				"server_count":        len(servers),
-				"unique_tools":        uniqueTools,
-				"total_registrations": totalRegistrations,
-				"agent_count":         agentCount,
-			})
-
-		// Initializes Discovery Tools only if enabled by configuration
-		if al.cfg.Tools.MCP.Enabled && al.cfg.Tools.MCP.Discovery.Enabled {
-			useBM25 := al.cfg.Tools.MCP.Discovery.UseBM25
-			useRegex := al.cfg.Tools.MCP.Discovery.UseRegex
-
-			// Fail fast: If discovery is enabled but no search method is turned on
-			if !useBM25 && !useRegex {
-				al.mcp.setInitErr(fmt.Errorf(
-					"tool discovery is enabled but neither 'use_bm25' nor 'use_regex' is set to true in the configuration",
-				))
-				if closeErr := mcpManager.Close(); closeErr != nil {
-					logger.ErrorCF("agent", "Failed to close MCP manager",
-						map[string]any{
-							"error": closeErr.Error(),
-						})
-				}
-				return
-			}
-
-			ttl := al.cfg.Tools.MCP.Discovery.TTL
-			if ttl <= 0 {
-				ttl = 5 // Default value
-			}
-
-			maxSearchResults := al.cfg.Tools.MCP.Discovery.MaxSearchResults
-			if maxSearchResults <= 0 {
-				maxSearchResults = 5 // Default value
-			}
-
-			logger.InfoCF("agent", "Initializing tool discovery", map[string]any{
-				"bm25": useBM25, "regex": useRegex, "ttl": ttl, "max_results": maxSearchResults,
-			})
-
-			for _, agentID := range agentIDs {
-				agent, ok := al.registry.GetAgent(agentID)
-				if !ok {
-					continue
-				}
-
-				if useRegex {
-					agent.Tools.Register(tools.NewRegexSearchTool(agent.Tools, ttl, maxSearchResults))
-				}
-				if useBM25 {
-					agent.Tools.Register(tools.NewBM25SearchTool(agent.Tools, ttl, maxSearchResults))
-				}
-			}
-		}
-
 		al.mcp.setManager(mcpManager)
+
+		// Register MCP and discovery tools for all currently known agents
+		agentIDs := al.registry.ListAgentIDs()
+		for _, agentID := range agentIDs {
+			agent, ok := al.registry.GetAgent(agentID)
+			if !ok {
+				continue
+			}
+			al.RegisterMCPToolsToAgent(agentID, agent)
+		}
+
+		logger.InfoCF("agent", "MCP initialization complete",
+			map[string]any{
+				"server_count": len(mcpManager.GetServers()),
+				"agent_count":  len(agentIDs),
+			})
 	})
 
 	return al.mcp.getInitErr()
+}
+
+// RegisterMCPToolsToAgent registers all currently active MCP tools and discovery tools to the given agent instance.
+func (al *AgentLoop) RegisterMCPToolsToAgent(agentID string, agent *AgentInstance) {
+	if !al.cfg.Tools.MCP.Enabled {
+		return
+	}
+
+	mcpManager := al.mcp.getManager()
+	if mcpManager == nil {
+		return
+	}
+
+	// 1. Register MCP server tools
+	servers := mcpManager.GetServers()
+	uniqueTools := 0
+	totalRegistrations := 0
+
+	for serverName, conn := range servers {
+		uniqueTools += len(conn.Tools)
+
+		serverCfg := al.cfg.Tools.MCP.Servers[serverName]
+		registerAsHidden := serverIsDeferred(al.cfg.Tools.MCP.Discovery.Enabled, serverCfg)
+
+		for _, tool := range conn.Tools {
+			mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
+
+			if registerAsHidden {
+				agent.Tools.RegisterHidden(mcpTool)
+			} else {
+				agent.Tools.Register(mcpTool)
+			}
+			totalRegistrations++
+		}
+	}
+
+	if totalRegistrations > 0 {
+		logger.DebugCF("agent", "Registered MCP tools to agent",
+			map[string]any{
+				"agent_id":     agentID,
+				"server_count": len(servers),
+				"tool_count":   totalRegistrations,
+			})
+	}
+
+	// 2. Initializes Discovery Tools only if enabled by configuration
+	if al.cfg.Tools.MCP.Discovery.Enabled {
+		useBM25 := al.cfg.Tools.MCP.Discovery.UseBM25
+		useRegex := al.cfg.Tools.MCP.Discovery.UseRegex
+
+		if useBM25 || useRegex {
+			ttl := al.cfg.Tools.MCP.Discovery.TTL
+			if ttl <= 0 {
+				ttl = 5
+			}
+			maxSearchResults := al.cfg.Tools.MCP.Discovery.MaxSearchResults
+			if maxSearchResults <= 0 {
+				maxSearchResults = 5
+			}
+
+			if useRegex {
+				agent.Tools.Register(tools.NewRegexSearchTool(agent.Tools, ttl, maxSearchResults))
+			}
+			if useBM25 {
+				agent.Tools.Register(tools.NewBM25SearchTool(agent.Tools, ttl, maxSearchResults))
+			}
+
+			logger.DebugCF("agent", "Initialized tool discovery for agent", map[string]any{
+				"agent_id": agentID, "bm25": useBM25, "regex": useRegex,
+			})
+		}
+	}
 }
 
 // serverIsDeferred reports whether an MCP server's tools should be registered

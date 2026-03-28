@@ -298,7 +298,7 @@ func TestAgentLoop_Continue_NoMessages(t *testing.T) {
 		t.Fatal("expected provider to be initialized")
 	}
 
-	resp, err := al.Continue(context.Background(), "test-session", "test", "chat1")
+	resp, err := al.Continue(context.Background(), "test-session", "test", "direct")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestAgentLoop_Continue_WithMessages(t *testing.T) {
 
 	al.Steer(providers.Message{Role: "user", Content: "new direction"})
 
-	resp, err := al.Continue(context.Background(), "test-session", "test", "chat1")
+	resp, err := al.Continue(context.Background(), "test-session", "test", "direct")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestDrainBusToSteering_RequeuesDifferentScopeMessage(t *testing.T) {
 	activeMsg := bus.InboundMessage{
 		Channel:  "telegram",
 		SenderID: "user1",
-		ChatID:   "chat1",
+		ChatID:   "direct",
 		Content:  "active turn",
 		Peer: bus.Peer{
 			Kind: "direct",
@@ -701,7 +701,7 @@ func TestAgentLoop_Steering_SkipsRemainingTools(t *testing.T) {
 			"do something",
 			"test-session",
 			"test",
-			"chat1",
+			"direct",
 		)
 		resultCh <- result{resp, err}
 	}()
@@ -783,7 +783,7 @@ func TestAgentLoop_Steering_InitialPoll(t *testing.T) {
 		"initial message",
 		"test-session",
 		"test",
-		"chat1",
+		"direct",
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -843,7 +843,7 @@ func TestAgentLoop_Run_AutoContinuesLateSteeringMessage(t *testing.T) {
 	first := bus.InboundMessage{
 		Channel:  "test",
 		SenderID: "user1",
-		ChatID:   "chat1",
+		ChatID:   "direct",
 		Content:  "first message",
 		Peer: bus.Peer{
 			Kind: "direct",
@@ -853,7 +853,7 @@ func TestAgentLoop_Run_AutoContinuesLateSteeringMessage(t *testing.T) {
 	late := bus.InboundMessage{
 		Channel:  "test",
 		SenderID: "user1",
-		ChatID:   "chat1",
+		ChatID:   "direct",
 		Content:  "late append",
 		Peer: bus.Peer{
 			Kind: "direct",
@@ -970,7 +970,7 @@ func TestAgentLoop_Steering_DirectResponseContinuesWithQueuedMessage(t *testing.
 			"initial request",
 			sessionKey,
 			"test",
-			"chat1",
+			"direct",
 		)
 		resultCh <- struct {
 			resp string
@@ -1073,7 +1073,7 @@ func TestAgentLoop_Continue_PreservesSteeringMedia(t *testing.T) {
 		t.Fatalf("Steer failed: %v", err)
 	}
 
-	resp, err := al.Continue(context.Background(), sessionKey, "test", "chat1")
+	resp, err := al.Continue(context.Background(), sessionKey, "test", "direct")
 	if err != nil {
 		t.Fatalf("Continue failed: %v", err)
 	}
@@ -1184,7 +1184,7 @@ func TestAgentLoop_InterruptGraceful_UsesTerminalNoToolCall(t *testing.T) {
 			"do something",
 			sessionKey,
 			"test",
-			"chat1",
+			"direct",
 		)
 		resultCh <- result{resp: resp, err: err}
 	}()
@@ -1202,7 +1202,7 @@ func TestAgentLoop_InterruptGraceful_UsesTerminalNoToolCall(t *testing.T) {
 	if active.SessionKey != sessionKey {
 		t.Fatalf("expected active session %q, got %q", sessionKey, active.SessionKey)
 	}
-	if active.Channel != "test" || active.ChatID != "chat1" {
+	if active.Channel != "test" || active.ChatID != "direct" {
 		t.Fatalf("unexpected active turn target: %#v", active)
 	}
 
@@ -1349,7 +1349,7 @@ func TestAgentLoop_InterruptHard_RestoresSession(t *testing.T) {
 			"do work",
 			sessionKey,
 			"test",
-			"chat1",
+			"direct",
 		)
 		resultCh <- result{resp: resp, err: err}
 	}()
@@ -1518,7 +1518,7 @@ func TestAgentLoop_Steering_SkippedToolsHaveErrorResults(t *testing.T) {
 	resultCh := make(chan string, 1)
 	go func() {
 		resp, _ := al.ProcessDirectWithChannel(
-			context.Background(), "go", "test-session", "test", "chat1",
+			context.Background(), "go", "test-session", "test", "direct",
 		)
 		resultCh <- resp
 	}()

@@ -332,7 +332,7 @@ func (al *AgentLoop) Continue(ctx context.Context, sessionKey, channel, chatID s
 	if err := al.ensureHooksInitialized(ctx); err != nil {
 		return "", err
 	}
-	if err := al.ensureMCPInitialized(ctx); err != nil {
+	if err := al.EnsureMCPInitialized(ctx); err != nil {
 		return "", err
 	}
 

@@ -58,10 +58,19 @@ type AgentLoop struct {
 	steering       *steeringQueue
 	pendingSkills  sync.Map
 	mu             sync.RWMutex
+	manualTools    []tools.Tool
 
 	// Concurrent turn management (from HEAD)
 	activeTurnStates sync.Map     // key: sessionKey (string), value: *turnState
 	subTurnCounter   atomic.Int64 // Counter for generating unique SubTurn IDs
+
+	// Agent instance caching for multi-user isolation
+	// Each unique chatID gets its own agent instance to maintain state/model selection
+	agentCache     sync.Map // key: channel:chatID, value: *AgentInstance
+	agentCacheMu   sync.RWMutex
+	agentCacheTTL  time.Duration // How long to keep cached agents alive
+	agentCleaner   *time.Ticker  // Periodic cleanup of stale cached agents
+	lastCacheCheck sync.Map      // key: channel:chatID, value: time.Time (last access time)
 
 	// Turn tracking (from Incoming)
 	turnSeq        atomic.Uint64
@@ -99,8 +108,9 @@ type continuationTarget struct {
 const (
 	defaultResponse            = "The model returned an empty response. This may indicate a provider error or token limit."
 	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
+	toolRepeatLoopResponse     = "Detected repeated tool calls without progress; stopping to avoid an infinite loop."
 	handledToolResponseSummary = "Requested output delivered via tool attachment."
-	sessionKeyAgentPrefix      = "agent:"
+	sessionKeyAgentPrefix      = "agent"
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"
@@ -162,6 +172,13 @@ func registerSharedTools(
 		if !ok {
 			continue
 		}
+
+		// Re-register manual tools first so they can be overwritten by core shared tools if needed
+		al.mu.RLock()
+		for _, tool := range al.manualTools {
+			agent.Tools.Register(tool)
+		}
+		al.mu.RUnlock()
 
 		if cfg.Tools.IsToolEnabled("web") {
 			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
@@ -272,11 +289,25 @@ func registerSharedTools(
 					cfg.Tools.Skills.SearchCache.MaxSize,
 					time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second,
 				)
-				agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
+				agent.Tools.Register(
+					tools.NewFindSkillsTool(
+						registryMgr,
+						searchCache,
+						cfg.Tools.Skills.Whitelist,
+						cfg.Tools.Skills.WhitelistEnabled,
+					),
+				)
 			}
 
 			if install_skills_enable {
-				agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
+				agent.Tools.Register(
+					tools.NewInstallSkillTool(
+						registryMgr,
+						agent.Workspace,
+						cfg.Tools.Skills.Whitelist,
+						cfg.Tools.Skills.WhitelistEnabled,
+					),
+				)
 			}
 		}
 
@@ -374,6 +405,11 @@ func registerSharedTools(
 		} else if (spawnEnabled || spawnStatusEnabled) && !cfg.Tools.IsToolEnabled("subagent") {
 			logger.WarnCF("agent", "spawn/spawn_status tools require subagent to be enabled", nil)
 		}
+		// Register MCP and discovery tools to this agent
+		al.RegisterMCPToolsToAgent(agentID, agent)
+
+		// Apply global tools whitelist
+		agent.Tools.Filter(cfg.Tools.Whitelist, cfg.Tools.WhitelistEnabled)
 	}
 }
 
@@ -383,7 +419,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	if err := al.ensureHooksInitialized(ctx); err != nil {
 		return err
 	}
-	if err := al.ensureMCPInitialized(ctx); err != nil {
+	if err := al.EnsureMCPInitialized(ctx); err != nil {
 		return err
 	}
 
@@ -651,7 +687,7 @@ func (al *AgentLoop) buildContinuationTarget(msg bus.InboundMessage) (*continuat
 	}
 
 	return &continuationTarget{
-		SessionKey: resolveScopeKey(route, msg.SessionKey),
+		SessionKey: resolveScopeKey(route, msg.SessionKey, msg.ChatID, route.AgentID),
 		Channel:    msg.Channel,
 		ChatID:     msg.ChatID,
 	}, nil
@@ -905,6 +941,21 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 		if agent, ok := registry.GetAgent(agentID); ok {
 			agent.Tools.Register(tool)
 		}
+	}
+
+	al.mu.Lock()
+	defer al.mu.Unlock()
+	// Check for duplicates by name and overwrite
+	found := false
+	for i, t := range al.manualTools {
+		if t.Name() == tool.Name() {
+			al.manualTools[i] = tool
+			found = true
+			break
+		}
+	}
+	if !found {
+		al.manualTools = append(al.manualTools, tool)
 	}
 }
 
@@ -1207,7 +1258,7 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 	if err := al.ensureHooksInitialized(ctx); err != nil {
 		return "", err
 	}
-	if err := al.ensureMCPInitialized(ctx); err != nil {
+	if err := al.EnsureMCPInitialized(ctx); err != nil {
 		return "", err
 	}
 
@@ -1231,7 +1282,7 @@ func (al *AgentLoop) ProcessHeartbeat(
 	if err := al.ensureHooksInitialized(ctx); err != nil {
 		return "", err
 	}
-	if err := al.ensureMCPInitialized(ctx); err != nil {
+	if err := al.EnsureMCPInitialized(ctx); err != nil {
 		return "", err
 	}
 
@@ -1285,9 +1336,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
-	route, agent, routeErr := al.resolveMessageRoute(msg)
+	route, _, routeErr := al.resolveMessageRoute(msg)
 	if routeErr != nil {
 		return "", routeErr
+	}
+
+	agent, err := al.getOrCreateIsolatedAgent(route.AgentID, msg.Channel, msg.ChatID)
+	if err != nil {
+		return "", err
 	}
 
 	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
@@ -1298,7 +1354,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	// Resolve session key from route, while preserving explicit agent-scoped keys.
-	scopeKey := resolveScopeKey(route, msg.SessionKey)
+	// If caller provides a session key, respect it. Otherwise, derive from chatID for isolation.
+	scopeKey := resolveScopeKey(route, msg.SessionKey, msg.ChatID, agent.ID)
 	sessionKey := scopeKey
 
 	logger.InfoCF("agent", "Routed message",
@@ -1364,10 +1421,19 @@ func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.Resolv
 	return route, agent, nil
 }
 
-func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
+func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey, chatID, agentID string) string {
+	// 1. If caller explicitly provides a session key with agent prefix, use it as-is
 	if msgSessionKey != "" && strings.HasPrefix(msgSessionKey, sessionKeyAgentPrefix) {
 		return msgSessionKey
 	}
+
+	// 2. If a unique chatID is provided, use it to create an isolated session per chat
+	// This ensures each Teams conversation (or any unique chat) has separate session history
+	if chatID != "" && chatID != "direct" {
+		return fmt.Sprintf("%s:%s:%s", sessionKeyAgentPrefix, agentID, chatID)
+	}
+
+	// 3. Fall back to route's default session key
 	return route.SessionKey
 }
 
@@ -1381,7 +1447,7 @@ func (al *AgentLoop) resolveSteeringTarget(msg bus.InboundMessage) (string, stri
 		return "", "", false
 	}
 
-	return resolveScopeKey(route, msg.SessionKey), agent.ID, true
+	return resolveScopeKey(route, msg.SessionKey, msg.ChatID, agent.ID), agent.ID, true
 }
 
 func (al *AgentLoop) requeueInboundMessage(msg bus.InboundMessage) error {
@@ -1395,6 +1461,68 @@ func (al *AgentLoop) requeueInboundMessage(msg bus.InboundMessage) error {
 		ChatID:  msg.ChatID,
 		Content: msg.Content,
 	})
+}
+
+func (al *AgentLoop) getOrCreateIsolatedAgent(agentID, channel, isolationID string) (*AgentInstance, error) {
+	if isolationID == "" || isolationID == "direct" {
+		agent, ok := al.GetRegistry().GetAgent(agentID)
+		if !ok {
+			agent = al.GetRegistry().GetDefaultAgent()
+		}
+		if agent == nil {
+			return nil, fmt.Errorf("no agent available for id %s", agentID)
+		}
+		return agent, nil
+	}
+
+	cacheKey := channel + ":" + isolationID
+	if cached, ok := al.agentCache.Load(cacheKey); ok {
+		agent := cached.(*AgentInstance)
+		al.lastCacheCheck.Store(cacheKey, time.Now())
+		return agent, nil
+	}
+
+	// Create a transient isolated instance for this chat session
+	// This ensures workspace, memory, and sessions are private to the chat_id.
+
+	// Determine the original config for this agent to preserve its specialized prompt/skills
+	var ac *config.AgentConfig
+	for i := range al.cfg.Agents.List {
+		if routing.NormalizeAgentID(al.cfg.Agents.List[i].ID) == agentID {
+			ac = &al.cfg.Agents.List[i]
+			break
+		}
+	}
+
+	baseAgent, ok := al.GetRegistry().GetAgent(agentID)
+	if !ok {
+		baseAgent = al.GetRegistry().GetDefaultAgent()
+	}
+	if baseAgent == nil {
+		return nil, fmt.Errorf("base agent %s not found", agentID)
+	}
+
+	agent := NewAgentInstance(ac, &al.cfg.Agents.Defaults, al.cfg, baseAgent.Provider, isolationID)
+	agent.ID = agentID
+
+	// Inject media store so tools (like send_file) can function
+	agent.Tools.SetMediaStore(al.mediaStore)
+
+	// Re-register shared tools (web, message, spawn) to this transient agent
+	registerSharedTools(al, al.cfg, al.bus, &AgentRegistry{agents: map[string]*AgentInstance{agent.ID: agent}}, baseAgent.Provider)
+
+	// Cache this agent instance per chat session
+	al.agentCache.Store(cacheKey, agent)
+	al.lastCacheCheck.Store(cacheKey, time.Now())
+
+	logger.InfoCF("agent", "Created isolated transient agent", map[string]any{
+		"agent_id":     agent.ID,
+		"cache_key":    cacheKey,
+		"isolation_id": isolationID,
+		"workspace":    agent.Workspace,
+	})
+
+	return agent, nil
 }
 
 func (al *AgentLoop) processSystemMessage(
@@ -1442,14 +1570,18 @@ func (al *AgentLoop) processSystemMessage(
 		return "", nil
 	}
 
-	// Use default agent for system messages
-	agent := al.GetRegistry().GetDefaultAgent()
-	if agent == nil {
-		return "", fmt.Errorf("no default agent for system message")
+	// Use default agent for system messages, but lookup/create isolated tenant instances
+	// that match the origin of the follow-up task. This ensures workspace isolation.
+	agent, err := al.getOrCreateIsolatedAgent(routing.DefaultAgentID, originChannel, originChatID)
+	if err != nil {
+		return "", err
 	}
 
-	// Use the origin session for context
-	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
+	// Use provided session key if available, otherwise fall back to main
+	sessionKey := msg.SessionKey
+	if sessionKey == "" {
+		sessionKey = routing.BuildAgentMainSessionKey(agent.ID)
+	}
 
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
@@ -1690,6 +1822,9 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 	}
 	pendingMessages := append([]providers.Message(nil), ts.opts.InitialSteeringMessages...)
 	var finalContent string
+	lastToolCallsFingerprint := ""
+	consecutiveRepeatedToolCalls := 0
+	const maxConsecutiveRepeatedToolCalls = 3
 
 turnLoop:
 	for ts.currentIteration() < ts.agent.MaxIterations || len(pendingMessages) > 0 || func() bool {
@@ -2117,21 +2252,16 @@ turnLoop:
 			},
 		)
 
-		llmResponseFields := map[string]any{
-			"agent_id":       ts.agent.ID,
-			"iteration":      iteration,
-			"content_chars":  len(response.Content),
-			"tool_calls":     len(response.ToolCalls),
-			"reasoning":      response.Reasoning,
-			"target_channel": al.targetReasoningChannelID(ts.channel),
-			"channel":        ts.channel,
-		}
-		if response.Usage != nil {
-			llmResponseFields["prompt_tokens"] = response.Usage.PromptTokens
-			llmResponseFields["completion_tokens"] = response.Usage.CompletionTokens
-			llmResponseFields["total_tokens"] = response.Usage.TotalTokens
-		}
-		logger.DebugCF("agent", "LLM response", llmResponseFields)
+		logger.DebugCF("agent", "LLM response",
+			map[string]any{
+				"agent_id":       ts.agent.ID,
+				"iteration":      iteration,
+				"content_chars":  len(response.Content),
+				"tool_calls":     len(response.ToolCalls),
+				"reasoning":      response.Reasoning,
+				"target_channel": al.targetReasoningChannelID(ts.channel),
+				"channel":        ts.channel,
+			})
 
 		if len(response.ToolCalls) == 0 || gracefulTerminal {
 			responseContent := response.Content
@@ -2174,6 +2304,53 @@ turnLoop:
 				"count":     len(normalizedToolCalls),
 				"iteration": iteration,
 			})
+
+		// Guardrail: if the model keeps requesting the exact same tool calls
+		// over and over (often due to missing/filtered tool results), stop
+		// early instead of running until max_tool_iterations.
+		type toolCallFP struct {
+			Name string          `json:"name"`
+			Args json.RawMessage `json:"args"`
+		}
+		fpParts := make([]toolCallFP, 0, len(normalizedToolCalls))
+		fingerprintBytes := make([]byte, 0)
+		for _, tc := range normalizedToolCalls {
+			argsJSON, err := json.Marshal(tc.Arguments)
+			if err != nil {
+				continue
+			}
+			fpParts = append(fpParts, toolCallFP{
+				Name: tc.Name,
+				Args: json.RawMessage(argsJSON),
+			})
+		}
+		if len(fpParts) > 0 {
+			if fp, err := json.Marshal(fpParts); err == nil {
+				fingerprintBytes = fp
+			}
+		}
+		if len(fingerprintBytes) > 0 {
+			toolCallsFingerprint := string(fingerprintBytes)
+			if toolCallsFingerprint == lastToolCallsFingerprint {
+				consecutiveRepeatedToolCalls++
+			} else {
+				lastToolCallsFingerprint = toolCallsFingerprint
+				consecutiveRepeatedToolCalls = 1
+			}
+
+			if consecutiveRepeatedToolCalls >= maxConsecutiveRepeatedToolCalls {
+				turnStatus = TurnEndStatusError
+				finalContent = toolRepeatLoopResponse
+				logger.WarnCF("agent", "Stopping repeated tool call loop",
+					map[string]any{
+						"agent_id":            ts.agent.ID,
+						"fingerprint_repeats": consecutiveRepeatedToolCalls,
+						"tools":               toolNames,
+						"iteration":           iteration,
+					})
+				break turnLoop
+			}
+		}
 
 		allResponsesHandled := len(normalizedToolCalls) > 0
 		assistantMsg := providers.Message{
@@ -2376,10 +2553,11 @@ turnLoop:
 				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer pubCancel()
 				_ = al.bus.PublishInbound(pubCtx, bus.InboundMessage{
-					Channel:  "system",
-					SenderID: fmt.Sprintf("async:%s", asyncToolName),
-					ChatID:   fmt.Sprintf("%s:%s", ts.channel, ts.chatID),
-					Content:  content,
+					Channel:    "system",
+					SenderID:   fmt.Sprintf("async:%s", asyncToolName),
+					ChatID:     fmt.Sprintf("%s:%s", ts.channel, ts.chatID),
+					Content:    content,
+					SessionKey: ts.opts.SessionKey,
 				})
 			}
 

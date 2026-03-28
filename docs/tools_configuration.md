@@ -37,6 +37,34 @@ See [Sensitive Data Filtering](../sensitive_data_filtering.md) for full document
 | `filter_sensitive_data` | bool | `true` | Enable/disable filtering |
 | `filter_min_length` | int | `8` | Minimum content length to trigger filtering |
 
+## File Paths & Workspace Security
+
+PicoClaw provides path-level security for all filesystem-related tools (`read_file`, `write_file`, `list_dir`, `edit_file`, `append_file`). This allows you to restrict the agent's access to specific patterns or block sensitive directories (like a `skills/` folder) even if they are inside the workspace.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `allow_read_paths` | array | `[]` | Explicit regex patterns to allow reading from (even outside workspace) |
+| `allow_write_paths` | array | `[]` | Explicit regex patterns to allow writing to (even outside workspace) |
+| `deny_read_paths` | array | `[]` | Regex patterns to explicitly block from reading (overrides workspace access) |
+| `deny_write_paths` | array | `[]` | Regex patterns to explicitly block from writing (overrides workspace access) |
+
+### Path Deny Patterns
+
+Deny patterns are useful for "hardening" a workspace. For example, to prevent an agent from manually tampering with its own skill configuration (the `skills/` directory), you can apply global block rules.
+
+**Blocking the skills directory:**
+
+```json
+{
+  "tools": {
+    "deny_read_paths": ["^skills(/.*)?$"],
+    "deny_write_paths": ["^skills(/.*)?$"]
+  }
+}
+```
+
+> **Note:** Deny patterns apply to the relative path within the workspace (when restricted) or the absolute path (when unrestricted). They take precedence over workspace access and whitelist patterns.
+
 ## Web Tools
 
 Web tools are used for web search and fetching.

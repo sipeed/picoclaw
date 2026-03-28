@@ -28,6 +28,75 @@ The security configuration works through **direct field mapping**, NOT through `
 - If a value exists in `.security.yml`, it **overrides** the value in `config.json`
 - You can omit sensitive fields from `config.json` entirely (recommended)
 
+## Security Shield (Active Protection)
+
+PicoClaw includes a "Security Shield" consisting of multiple active protection layers implemented as hooks. These layers protect against prompt injection, data leakage, and unauthorized tool usage.
+
+### Available Security Hooks
+
+| Hook ID | Category | Description |
+| :--- | :--- | :--- |
+| `security_canary` | LLM Interceptor | Detects system prompt leakage using random canary tokens. |
+| `security_pii` | LLM Interceptor | Automatically redacts PII (Emails, IPs, Phone Numbers) from messages. |
+| `security_ipia` | Tool Interceptor | Detects Indirect Prompt Injection in tool outputs. |
+| `security_policy` | Tool Approver | Enforces Policy-as-Code (whitelisting, manual approval). |
+| `security_behavior`| Tool Interceptor | Monitors and limits tool calling patterns and data volume. |
+
+### Configuration Example
+
+The Security Shield is configured in the `hooks.builtins` section of `config.json`.
+
+```json
+{
+  "hooks": {
+    "enabled": true,
+    "builtins": {
+      "security_canary": { "enabled": true, "priority": 100 },
+      "security_pii": { "enabled": true, "priority": 90 },
+      "security_policy": {
+        "enabled": true,
+        "priority": 80,
+        "config": {
+          "disallowed_tools": { "exec": true },
+          "requires_approval": { "write_file": true }
+        }
+      },
+      "security_behavior": {
+        "enabled": true,
+        "priority": 70,
+        "config": {
+          "max_tool_calls": 5,
+          "max_total_bytes": 1048576
+        }
+      },
+      "security_ipia": { "enabled": true, "priority": 60 }
+    }
+  }
+}
+```
+
+### Protection Details
+
+#### 1. Canary Defense (`security_canary`)
+Injects a unique, random string into the system prompt. If the LLM repeats this string in its output (a sign of prompt injection or system leakage), the Shield triggers a **Hard Abort**, terminating the turn immediately.
+
+#### 2. PII Redaction (`security_pii`)
+Scans all user messages and LLM responses for patterns matching emails, IPv4 addresses, and phone numbers. Matches are replaced with generic placeholders like `[EMAIL]` or `[IP]`.
+
+#### 3. Policy-as-Code (`security_policy`)
+Allows for granular control over tool execution:
+- **`disallowed_tools`**: Tools that are completely blocked.
+- **`requires_approval`**: Tools that trigger a "Human-in-the-Loop" approval request.
+- **`allowed_tools`**: If non-empty, sets a strict whitelist (any tool not listed is blocked).
+
+#### 4. Behavioral Monitoring (`security_behavior`)
+Tracks tool activity within a single turn:
+- **`max_tool_calls`**: Prevents infinite loops where an agent recursively calls tools.
+- **`max_total_bytes`**: Limits the cumulative size of tool outputs to prevent large-scale data exfiltration.
+
+#### 5. IPIA Detector (`security_ipia`)
+Scans tool results (e.g., from web search or file reading) for hidden instructions like "ignore previous instructions" or "DAN mode", protecting the agent from processing malicious external content.
+
 ## Security Configuration Structure
 
 ### Complete Example: .security.yml

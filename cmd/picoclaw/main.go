@@ -24,6 +24,7 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/status"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/version"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/security"
 )
 
 func NewPicoclawCommand() *cobra.Command {
@@ -65,9 +66,11 @@ const (
 )
 
 func main() {
+	security.Init()
 	fmt.Printf("%s", banner)
 	cmd := NewPicoclawCommand()
 	if err := cmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "\n❌ FATAL: %v\n", err)
 		os.Exit(1)
 	}
 }
