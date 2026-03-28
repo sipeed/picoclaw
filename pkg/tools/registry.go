@@ -351,6 +351,31 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 		name, _ := fn["name"].(string)
 		desc, _ := fn["description"].(string)
 		params, _ := fn["parameters"].(map[string]any)
+		// Normalize params so they include a properties field for object schemas.
+		// While JSON Schema does not require properties, some MCP servers omit it
+		// and strict OpenAI-compatible API validators (e.g., LM Studio) then fail.
+		if params == nil {
+			params = map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			}
+		} else {
+			// Ensure properties is a non-nil map[string]any. Some tools may provide
+			// properties with the wrong type or as a typed-nil map, which strict
+			// validators may reject.
+			propsVal, hasProps := params["properties"]
+			propsMap, okPropsMap := propsVal.(map[string]any)
+			if !hasProps || !okPropsMap || propsMap == nil {
+				// Make a defensive copy to avoid mutating the original tool schema,
+				// which could cause concurrent map writes if called from multiple goroutines.
+				paramsCopy := make(map[string]any, len(params)+1)
+				for k, v := range params {
+					paramsCopy[k] = v
+				}
+				paramsCopy["properties"] = map[string]any{}
+				params = paramsCopy
+			}
+		}
 
 		definitions = append(definitions, providers.ToolDefinition{
 			Type: "function",
