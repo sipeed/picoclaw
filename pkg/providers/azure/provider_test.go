@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
 // writeValidResponse writes a minimal valid Responses API response.
@@ -273,5 +275,106 @@ func TestProvider_AzureNewProviderWithTimeout(t *testing.T) {
 	p := NewProviderWithTimeout("test-key", "https://example.com", "", 180)
 	if p.httpClient.Timeout != 180*time.Second {
 		t.Errorf("timeout = %v, want %v", p.httpClient.Timeout, 180*time.Second)
+	}
+}
+
+func TestProviderChat_AzureNativeWebSearchInjection(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&requestBody)
+		writeValidResponse(w)
+	}))
+	defer server.Close()
+
+	tools := []ToolDefinition{
+		{
+			Type: "function",
+			Function: protocoltypes.ToolFunctionDefinition{
+				Name:        "web_search",
+				Description: "local web search",
+				Parameters:  map[string]any{"type": "object"},
+			},
+		},
+		{
+			Type: "function",
+			Function: protocoltypes.ToolFunctionDefinition{
+				Name:        "read_file",
+				Description: "read a file",
+				Parameters:  map[string]any{"type": "object"},
+			},
+		},
+	}
+
+	p := NewProvider("test-key", server.URL, "")
+
+	// With native_search=true: user-defined web_search should be replaced by built-in
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, tools, "deployment",
+		map[string]any{"native_search": true})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	toolsAny, ok := requestBody["tools"].([]any)
+	if !ok {
+		t.Fatal("request body should contain 'tools' array")
+	}
+	if len(toolsAny) != 2 {
+		t.Fatalf("len(tools) = %d, want 2 (read_file + web_search builtin)", len(toolsAny))
+	}
+
+	// First tool should be read_file (user-defined web_search was skipped)
+	firstTool, _ := toolsAny[0].(map[string]any)
+	if firstTool["name"] != "read_file" {
+		t.Errorf("first tool name = %v, want %q", firstTool["name"], "read_file")
+	}
+
+	// Second tool should be built-in web_search
+	secondTool, _ := toolsAny[1].(map[string]any)
+	if secondTool["type"] != "web_search" {
+		t.Errorf("second tool type = %v, want %q", secondTool["type"], "web_search")
+	}
+}
+
+func TestProviderChat_AzureNoNativeWebSearch(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&requestBody)
+		writeValidResponse(w)
+	}))
+	defer server.Close()
+
+	tools := []ToolDefinition{
+		{
+			Type: "function",
+			Function: protocoltypes.ToolFunctionDefinition{
+				Name:        "web_search",
+				Description: "local web search",
+				Parameters:  map[string]any{"type": "object"},
+			},
+		},
+	}
+
+	p := NewProvider("test-key", server.URL, "")
+
+	// Without native_search: user-defined web_search should be kept as-is
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, tools, "deployment", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	toolsAny, ok := requestBody["tools"].([]any)
+	if !ok {
+		t.Fatal("request body should contain 'tools' array")
+	}
+	if len(toolsAny) != 1 {
+		t.Fatalf("len(tools) = %d, want 1", len(toolsAny))
+	}
+
+	// Should be the user-defined function tool, not built-in
+	tool, _ := toolsAny[0].(map[string]any)
+	if tool["type"] != "function" {
+		t.Errorf("tool type = %v, want %q", tool["type"], "function")
 	}
 }
