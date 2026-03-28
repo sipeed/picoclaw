@@ -64,6 +64,53 @@ docker compose -f docker/docker-compose.yml pull
 docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
+## 🐳 Docker Compose - Sandbox
+
+Bạn có thể chạy PicoClaw trong môi trường Docker sandbox để tăng cường cách ly với host. Các file compose sandbox bổ sung các biện pháp bảo mật: filesystem chỉ đọc, loại bỏ capability, giới hạn tài nguyên (2 GB RAM, 2 CPU, 500 PID) và mạng chuyên dụng.
+
+```bash
+# 1. Lần chạy đầu tiên — tự động tạo docker/data/config.json rồi thoát
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up
+# Container hiển thị "First-run setup complete." và dừng lại.
+
+# 2. Cấu hình API key của bạn
+vim docker/data/config.json   # Set provider API keys, bot tokens, etc.
+
+# 3. Khởi động
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up -d
+```
+
+```bash
+# 4. Kiểm tra log
+docker compose -f docker/docker-compose-sandbox.yml logs -f picoclaw-gateway
+
+# 5. Dừng
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway down
+```
+
+### Chế Độ Launcher (Web Console)
+
+```bash
+docker compose -f docker/docker-compose-sandbox.yml --profile launcher up -d
+```
+
+### Chế Độ Agent (One-shot)
+
+```bash
+# Đặt câu hỏi
+docker compose -f docker/docker-compose-sandbox.yml run --rm picoclaw-agent -m "What is 2+2?"
+
+# Chế độ tương tác
+docker compose -f docker/docker-compose-sandbox.yml run --rm picoclaw-agent
+```
+
+### Cập Nhật
+
+```bash
+docker compose -f docker/docker-compose-sandbox.yml pull
+docker compose -f docker/docker-compose-sandbox.yml --profile gateway up -d
+```
+
 ### 🚀 Bắt Đầu Nhanh
 
 > [!TIP]
