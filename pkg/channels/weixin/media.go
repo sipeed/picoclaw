@@ -34,6 +34,8 @@ const (
 	weixinMediaMaxBytes         = 100 << 20
 	weixinTypingKeepAlive       = 5 * time.Second
 	weixinUploadRetryMax        = 3
+	weixinDownloadRetryMax      = 2
+	weixinDownloadRetryDelay    = 300 * time.Millisecond
 	weixinVoiceTranscodeTimeout = 15 * time.Second
 )
 
@@ -163,10 +165,58 @@ func buildCDNDownloadURL(base, encryptedQueryParam string) string {
 		"/download?encrypted_query_param=" + url.QueryEscape(encryptedQueryParam)
 }
 
+func shouldRetryCDNDownload(statusCode int) bool {
+	// statusCode=0 represents transport/build errors from the HTTP client.
+	return statusCode == 0 || statusCode >= 500 || statusCode == http.StatusTooManyRequests
+}
+
 func buildCDNUploadURL(base, uploadParam, filekey string) string {
 	return strings.TrimRight(base, "/") +
 		"/upload?encrypted_query_param=" + url.QueryEscape(uploadParam) +
 		"&filekey=" + url.QueryEscape(filekey)
+}
+
+func uniqCDNURLs(urls []string) []string {
+	seen := make(map[string]struct{}, len(urls))
+	out := make([]string, 0, len(urls))
+	for _, raw := range urls {
+		u := strings.TrimSpace(raw)
+		if u == "" {
+			continue
+		}
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		out = append(out, u)
+	}
+	return out
+}
+
+func (c *WeixinChannel) downloadCDNBufferOnce(ctx context.Context, downloadURL string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	resp, err := c.api.HttpClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, resp.StatusCode, fmt.Errorf("cdn download HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, weixinMediaMaxBytes+1))
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	if len(data) > weixinMediaMaxBytes {
+		return nil, resp.StatusCode, fmt.Errorf("cdn media too large: %d bytes", len(data))
+	}
+	return data, resp.StatusCode, nil
 }
 
 func (c *WeixinChannel) downloadCDNBuffer(
@@ -174,38 +224,40 @@ func (c *WeixinChannel) downloadCDNBuffer(
 	encryptedQueryParam,
 	fullURL string,
 ) ([]byte, error) {
-	downloadURL := strings.TrimSpace(fullURL)
-	if downloadURL == "" {
-		downloadURL = buildCDNDownloadURL(c.cdnBaseURL(), encryptedQueryParam)
-	}
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodGet,
-		downloadURL,
-		nil,
-	)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.api.HttpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("cdn download HTTP %d: %s", resp.StatusCode, string(body))
+	candidates := uniqCDNURLs([]string{
+		strings.TrimSpace(fullURL),
+		func() string {
+			if strings.TrimSpace(encryptedQueryParam) == "" {
+				return ""
+			}
+			return buildCDNDownloadURL(c.cdnBaseURL(), encryptedQueryParam)
+		}(),
+	})
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("missing CDN download URL")
 	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, weixinMediaMaxBytes+1))
-	if err != nil {
-		return nil, err
+	var lastErr error
+	for _, downloadURL := range candidates {
+		for attempt := 1; attempt <= weixinDownloadRetryMax; attempt++ {
+			data, statusCode, err := c.downloadCDNBufferOnce(ctx, downloadURL)
+			if err == nil {
+				return data, nil
+			}
+			lastErr = fmt.Errorf("%w (attempt=%d url=%s)", err, attempt, downloadURL)
+			if !shouldRetryCDNDownload(statusCode) {
+				break
+			}
+			if attempt < weixinDownloadRetryMax {
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(weixinDownloadRetryDelay):
+				}
+			}
+		}
 	}
-	if len(data) > weixinMediaMaxBytes {
-		return nil, fmt.Errorf("cdn media too large: %d bytes", len(data))
-	}
-	return data, nil
+	return nil, lastErr
 }
 
 func (c *WeixinChannel) downloadAndDecryptCDNBuffer(
@@ -222,6 +274,33 @@ func (c *WeixinChannel) downloadAndDecryptCDNBuffer(
 		return data, nil
 	}
 	return decryptAESECB(data, key)
+}
+
+func (c *WeixinChannel) downloadImageBuffer(
+	ctx context.Context,
+	img *ImageItem,
+	key []byte,
+) ([]byte, error) {
+	if img == nil {
+		return nil, fmt.Errorf("image item is nil")
+	}
+	if img.Media != nil {
+		data, err := c.downloadAndDecryptCDNBuffer(ctx, img.Media.EncryptQueryParam, img.Media.FullURL, key)
+		if err == nil {
+			return data, nil
+		}
+		if img.ThumbMedia == nil {
+			return nil, fmt.Errorf("image download failed: %w", err)
+		}
+	}
+	if img.ThumbMedia != nil {
+		data, err := c.downloadAndDecryptCDNBuffer(ctx, img.ThumbMedia.EncryptQueryParam, img.ThumbMedia.FullURL, key)
+		if err == nil {
+			return data, nil
+		}
+		return nil, fmt.Errorf("image download failed: %w", err)
+	}
+	return nil, fmt.Errorf("image media is nil")
 }
 
 func detectMediaMetadata(data []byte, fallbackName, fallbackContentType string) (string, string) {
@@ -446,21 +525,20 @@ func (c *WeixinChannel) downloadMediaFromItem(
 
 	switch item.Type {
 	case MessageItemTypeImage:
+		if item.ImageItem == nil {
+			return "", fmt.Errorf("image media is nil")
+		}
 		key, ok, err := imageAESKey(item.ImageItem)
 		if err != nil {
 			return "", err
 		}
-		data, err := c.downloadAndDecryptCDNBuffer(
-			ctx,
-			item.ImageItem.Media.EncryptQueryParam,
-			item.ImageItem.Media.FullURL,
-			func() []byte {
-				if ok {
-					return key
-				}
-				return nil
-			}(),
-		)
+		decryptKey := func() []byte {
+			if ok {
+				return key
+			}
+			return nil
+		}()
+		data, err := c.downloadImageBuffer(ctx, item.ImageItem, decryptKey)
 		if err != nil {
 			return "", err
 		}
