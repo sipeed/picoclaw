@@ -47,7 +47,7 @@ spec:
         - name: picoclaw-data
           mountPath: /home/picoclaw/.picoclaw
         - name: picoclaw-secrets
-          mountPath: /etc/picoclaw/secrets
+          mountPath: /home/picoclaw/.picoclaw/secrets
           readOnly: true
       volumes:
       - name: picoclaw-data
