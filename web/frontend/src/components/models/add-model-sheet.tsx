@@ -32,6 +32,7 @@ interface AddForm {
   connectMode: string
   workspace: string
   rpm: string
+  maxTokens: string
   maxTokensField: string
   requestTimeout: string
   thinkingLevel: string
@@ -48,6 +49,7 @@ const EMPTY_ADD_FORM: AddForm = {
   connectMode: "",
   workspace: "",
   rpm: "",
+  maxTokens: "",
   maxTokensField: "",
   requestTimeout: "",
   thinkingLevel: "",
@@ -128,6 +130,7 @@ export function AddModelSheet({
         connect_mode: form.connectMode.trim() || undefined,
         workspace: form.workspace.trim() || undefined,
         rpm: form.rpm ? Number(form.rpm) : undefined,
+        max_tokens: form.maxTokens ? Number(form.maxTokens) : undefined,
         max_tokens_field: form.maxTokensField.trim() || undefined,
         request_timeout: form.requestTimeout
           ? Number(form.requestTimeout)
@@ -299,6 +302,19 @@ export function AddModelSheet({
                   value={form.thinkingLevel}
                   onChange={setField("thinkingLevel")}
                   placeholder="off"
+                />
+              </Field>
+
+              <Field
+                label={t("models.field.maxTokens")}
+                hint={t("models.field.maxTokensHint")}
+              >
+                <Input
+                  value={form.maxTokens}
+                  onChange={setField("maxTokens")}
+                  placeholder="0"
+                  type="number"
+                  min={0}
                 />
               </Field>
 

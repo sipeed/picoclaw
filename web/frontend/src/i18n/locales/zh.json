@@ -208,6 +208,8 @@
       "rpmHint": "每分钟最大请求数，0 表示不限制。",
       "thinkingLevel": "思考级别",
       "thinkingLevelHint": "扩展思考预算：off、low、medium、high、xhigh、adaptive。",
+      "maxTokens": "最大 Token 数",
+      "maxTokensHint": "单次请求允许生成的最大 Token 数。若设置为 0，则使用默认配置。",
       "maxTokensField": "Max Tokens 字段名",
       "maxTokensFieldHint": "覆盖请求中 max_tokens 的字段名，例如 max_completion_tokens。",
       "extraBody": "Extra Body",

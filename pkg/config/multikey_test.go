@@ -192,6 +192,7 @@ func TestExpandMultiKeyModels_PreservesOtherFields(t *testing.T) {
 		APIBase:        "https://api.example.com",
 		Proxy:          "http://proxy:8080",
 		RPM:            60,
+		MaxTokens:      1024,
 		MaxTokensField: "max_completion_tokens",
 		RequestTimeout: 30,
 		ThinkingLevel:  "high",
@@ -211,6 +212,9 @@ func TestExpandMultiKeyModels_PreservesOtherFields(t *testing.T) {
 	}
 	if primary.RPM != 60 {
 		t.Errorf("expected rpm preserved, got %d", primary.RPM)
+	}
+	if primary.MaxTokens != 1024 {
+		t.Errorf("expected max_tokens preserved, got %d", primary.MaxTokens)
 	}
 	if primary.MaxTokensField != "max_completion_tokens" {
 		t.Errorf("expected max_tokens_field preserved, got %q", primary.MaxTokensField)

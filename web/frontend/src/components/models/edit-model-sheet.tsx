@@ -30,6 +30,7 @@ interface EditForm {
   connectMode: string
   workspace: string
   rpm: string
+  maxTokens: string
   maxTokensField: string
   requestTimeout: string
   thinkingLevel: string
@@ -58,6 +59,7 @@ export function EditModelSheet({
     connectMode: "",
     workspace: "",
     rpm: "",
+    maxTokens: "",
     maxTokensField: "",
     requestTimeout: "",
     thinkingLevel: "",
@@ -77,6 +79,7 @@ export function EditModelSheet({
         connectMode: model.connect_mode ?? "",
         workspace: model.workspace ?? "",
         rpm: model.rpm ? String(model.rpm) : "",
+        maxTokens: model.max_tokens ? String(model.max_tokens) : "",
         maxTokensField: model.max_tokens_field ?? "",
         requestTimeout: model.request_timeout
           ? String(model.request_timeout)
@@ -111,6 +114,7 @@ export function EditModelSheet({
         connect_mode: form.connectMode || undefined,
         workspace: form.workspace || undefined,
         rpm: form.rpm ? Number(form.rpm) : undefined,
+        max_tokens: form.maxTokens ? Number(form.maxTokens) : undefined,
         max_tokens_field: form.maxTokensField || undefined,
         request_timeout: form.requestTimeout
           ? Number(form.requestTimeout)
@@ -270,6 +274,19 @@ export function EditModelSheet({
                   value={form.thinkingLevel}
                   onChange={setField("thinkingLevel")}
                   placeholder="off"
+                />
+              </Field>
+
+              <Field
+                label={t("models.field.maxTokens")}
+                hint={t("models.field.maxTokensHint")}
+              >
+                <Input
+                  value={form.maxTokens}
+                  onChange={setField("maxTokens")}
+                  placeholder="0"
+                  type="number"
+                  min={0}
                 />
               </Field>
 
