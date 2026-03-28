@@ -245,15 +245,18 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 // ReactToMessage implements channels.ReactionCapable.
 // Adds a reaction (randomly chosen from config) and returns an undo function to remove it.
 func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
-	// Get emoji list from config
-	emojiList := c.config.RandomReactionEmoji
-	var chosenEmoji string
-	if len(emojiList) == 0 {
-		// Default to "Pin" if no config
-		chosenEmoji = "Pin"
-	} else {
-		idx := rand.Intn(len(emojiList))
-		chosenEmoji = emojiList[idx]
+	// Get emoji list from config (Feishu emoji_type keys, e.g. Pin, THUMBSUP).
+	// Ignore empty entries so a list like ["", "Pin"] does not randomly pick "" (API 231001).
+	var candidates []string
+	for _, e := range c.config.RandomReactionEmoji {
+		e = strings.TrimSpace(e)
+		if e != "" {
+			candidates = append(candidates, e)
+		}
+	}
+	chosenEmoji := "Pin"
+	if len(candidates) > 0 {
+		chosenEmoji = candidates[rand.Intn(len(candidates))]
 	}
 
 	req := larkim.NewCreateMessageReactionReqBuilder().
