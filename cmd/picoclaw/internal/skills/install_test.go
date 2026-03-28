@@ -8,12 +8,12 @@ import (
 )
 
 func TestNewInstallSubcommand(t *testing.T) {
-	cmd := newInstallCommand(nil)
+	cmd := newInstallCommand(nil, "")
 
 	require.NotNil(t, cmd)
 
 	assert.Equal(t, "install", cmd.Use)
-	assert.Equal(t, "Install skill from GitHub", cmd.Short)
+	assert.Equal(t, "Install skill from GitHub, URL, or domain with .well-known support", cmd.Short)
 
 	assert.Nil(t, cmd.Run)
 	assert.NotNil(t, cmd.RunE)
@@ -46,14 +46,14 @@ func TestInstallCommandArgs(t *testing.T) {
 			args:        []string{},
 			registry:    "",
 			expectError: true,
-			errorMsg:    "exactly 1 argument is required: <github>",
+			errorMsg:    "exactly 1 argument is required: <github>, <url>, or <domain>",
 		},
 		{
 			name:        "no registry, too many args",
 			args:        []string{"arg1", "arg2"},
 			registry:    "",
 			expectError: true,
-			errorMsg:    "exactly 1 argument is required: <github>",
+			errorMsg:    "exactly 1 argument is required: <github>, <url>, or <domain>",
 		},
 		{
 			name:        "with registry, one arg",
@@ -79,7 +79,7 @@ func TestInstallCommandArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := newInstallCommand(nil)
+			cmd := newInstallCommand(nil, "")
 
 			if tt.registry != "" {
 				require.NoError(t, cmd.Flags().Set("registry", tt.registry))
