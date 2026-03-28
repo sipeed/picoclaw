@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"html"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -714,7 +714,7 @@ func (h *Handler) persistCredentialAndConfig(provider, authMethod string, cred *
 		if cp.Email == "" {
 			email, err := oauthFetchGoogleUserEmailFunc(cp.AccessToken)
 			if err != nil {
-				log.Printf("oauth warning: could not fetch google email: %v", err)
+				logger.ErrorC("oauth", fmt.Sprintf("oauth warning: could not fetch google email: %v", err))
 			} else {
 				cp.Email = email
 			}
@@ -722,7 +722,7 @@ func (h *Handler) persistCredentialAndConfig(provider, authMethod string, cred *
 		if cp.ProjectID == "" {
 			projectID, err := oauthFetchAntigravityProject(cp.AccessToken)
 			if err != nil {
-				log.Printf("oauth warning: could not fetch antigravity project id: %v", err)
+				logger.ErrorC("oauth", fmt.Sprintf("oauth warning: could not fetch antigravity project id: %v", err))
 			} else {
 				cp.ProjectID = projectID
 			}
@@ -742,17 +742,6 @@ func (h *Handler) syncProviderAuthMethod(provider, authMethod string) error {
 	cfg, err := oauthLoadConfig(h.configPath)
 	if err != nil {
 		return err
-	}
-
-	switch provider {
-	case oauthProviderOpenAI:
-		cfg.Providers.OpenAI.AuthMethod = authMethod
-	case oauthProviderAnthropic:
-		cfg.Providers.Anthropic.AuthMethod = authMethod
-	case oauthProviderGoogleAntigravity:
-		cfg.Providers.Antigravity.AuthMethod = authMethod
-	default:
-		return fmt.Errorf("unsupported provider %q", provider)
 	}
 
 	found := false
@@ -787,28 +776,28 @@ func modelBelongsToProvider(provider, model string) bool {
 	}
 }
 
-func defaultModelConfigForProvider(provider, authMethod string) config.ModelConfig {
+func defaultModelConfigForProvider(provider, authMethod string) *config.ModelConfig {
 	switch provider {
 	case oauthProviderOpenAI:
-		return config.ModelConfig{
-			ModelName:  "gpt-5.2",
-			Model:      "openai/gpt-5.2",
+		return &config.ModelConfig{
+			ModelName:  "gpt-5.4",
+			Model:      "openai/gpt-5.4",
 			AuthMethod: authMethod,
 		}
 	case oauthProviderAnthropic:
-		return config.ModelConfig{
+		return &config.ModelConfig{
 			ModelName:  "claude-sonnet-4.6",
 			Model:      "anthropic/claude-sonnet-4.6",
 			AuthMethod: authMethod,
 		}
 	case oauthProviderGoogleAntigravity:
-		return config.ModelConfig{
+		return &config.ModelConfig{
 			ModelName:  "gemini-flash",
 			Model:      "antigravity/gemini-3-flash",
 			AuthMethod: authMethod,
 		}
 	default:
-		return config.ModelConfig{}
+		return &config.ModelConfig{}
 	}
 }
 

@@ -17,7 +17,7 @@
   "chat": {
     "welcome": "How can I help you today?",
     "welcomeDesc": "Ask me about weather, settings, or any other tasks. I'm here to assist you.",
-    "placeholder": "Start a new message...",
+    "placeholder": "Start a new message...\nPress Enter to send, Shift + Enter for a new line",
     "newChat": "New Chat",
     "notConnected": "Gateway is not running. Start it to chat.",
     "thinking": {
@@ -58,11 +58,15 @@
       },
       "action": {
         "start": "Start Gateway",
-        "stop": "Stop Gateway"
+        "stop": "Stop Gateway",
+        "restart": "Restart Gateway"
       },
       "status": {
-        "starting": "Starting Gateway..."
-      }
+        "starting": "Starting Gateway...",
+        "restarting": "Restarting Gateway...",
+        "stopping": "Stopping Gateway..."
+      },
+      "restartRequired": "Model changes require a gateway restart to take effect."
     }
   },
   "common": {
@@ -150,7 +154,8 @@
       "unconfigured": "Not configured"
     },
     "badge": {
-      "default": "Default"
+      "default": "Default",
+      "virtual": "Virtual"
     },
     "action": {
       "edit": "Edit API key",
@@ -204,7 +209,9 @@
       "thinkingLevel": "Thinking Level",
       "thinkingLevelHint": "Extended thinking budget: off, low, medium, high, xhigh, adaptive.",
       "maxTokensField": "Max Tokens Field",
-      "maxTokensFieldHint": "Override the request field name for max tokens, e.g. max_completion_tokens."
+      "maxTokensFieldHint": "Override the request field name for max tokens, e.g. max_completion_tokens.",
+      "extraBody": "Extra Body",
+      "extraBodyHint": "Additional JSON fields to inject into the request body, e.g. {\"reasoning_split\": true}."
     },
     "edit": {
       "title": "Configure {{name}}",
@@ -229,14 +236,47 @@
       "qq": "QQ",
       "onebot": "OneBot",
       "wecom": "WeCom",
-      "wecom_app": "WeCom App",
-      "wecom_aibot": "WeCom AI Bot",
       "whatsapp": "WhatsApp",
       "whatsapp_native": "WhatsApp Native",
       "pico": "Web",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
-      "irc": "IRC"
+      "irc": "IRC",
+      "weixin": "WeChat"
+    },
+    "weixin": {
+      "warningTitle": "Testing phase, use with caution",
+      "warningDesc": "The WeChat channel is still experimental and may carry a risk of account suspension. Use it only if you understand and accept the risk.",
+      "bindTitle": "WeChat Account Binding",
+      "bindDesc": "Scan the QR code with WeChat to bind your personal account.",
+      "bind": "Bind WeChat",
+      "rebind": "Re-bind",
+      "bound": "WeChat Bound",
+      "notBound": "WeChat account not bound yet.",
+      "generating": "Generating QR code...",
+      "scanHint": "Open WeChat and scan the QR code",
+      "scanned": "Scanned — please confirm in WeChat",
+      "expired": "QR code expired",
+      "retry": "Try Again",
+      "refresh": "Refresh QR",
+      "errorGeneric": "An error occurred. Please try again."
+    },
+    "wecom": {
+      "bindTitle": "WeCom Binding",
+      "bindDesc": "Scan the QR code with WeCom to bind your AI Bot.",
+      "enableDesc": "Once bound, you can enable or disable the channel here.",
+      "enableBindFirst": "Bind the bot first, then enable the channel.",
+      "bind": "Bind WeCom",
+      "rebind": "Re-bind",
+      "bound": "WeCom Bound",
+      "notBound": "WeCom AI Bot not bound yet.",
+      "generating": "Generating QR code...",
+      "scanHint": "Open WeCom and scan the QR code",
+      "scanned": "Scanned, please confirm in WeCom",
+      "expired": "QR code expired",
+      "retry": "Try Again",
+      "refresh": "Refresh QR",
+      "errorGeneric": "An error occurred. Please try again."
     },
     "field": {
       "token": "Bot Token",
@@ -255,6 +295,7 @@
       "placeholderText": "Placeholder Text",
       "groupTriggerMentionOnly": "Group Mention Only",
       "groupTriggerPrefixes": "Group Trigger Prefixes",
+      "isLark": "Lark (International)",
       "allowFrom": "Allow From",
       "allowFromPlaceholder": "e.g. 123456, 789012",
       "allowOrigins": "Allow Origins",
@@ -268,7 +309,9 @@
       "saveError": "Failed to save channel configuration",
       "enabled": "enabled",
       "docLink": "Documentation",
-      "enableLabel": "Enable channel"
+      "enableLabel": "Enable channel",
+      "restartRequiredTitle": "Gateway restart required",
+      "restartRequiredDesc": "The latest {{name}} configuration has been saved. Restart the gateway for it to take effect."
     },
     "form": {
       "desc": {
@@ -286,6 +329,7 @@
         "placeholderEnabled": "Enable temporary placeholder messages before the final reply is sent.",
         "groupTriggerMentionOnly": "In group chats, respond only when the bot is mentioned.",
         "groupTriggerPrefixes": "Custom group-chat trigger prefixes, separated by commas.",
+        "isLark": "Use Lark international domain (open.larksuite.com) instead of Feishu domain (open.feishu.cn).",
         "allowFrom": "Allowed user or group IDs, separated by commas.",
         "allowOrigins": "Allowed origin domains, separated by commas.",
         "wsUrl": "WebSocket service URL.",
@@ -321,6 +365,7 @@
         "realName": "Displayed real name.",
         "channels": "IRC channels to join.",
         "requestCaps": "IRC capability list requested on connect.",
+        "maxBase64FileSizeMiB": "Maximum size in MiB for converting local files to base64 before upload. 0 means unlimited. Applies only to local files, not URL uploads.",
         "genericField": "Used to configure {{field}}."
       }
     },
@@ -331,33 +376,10 @@
   "pages": {
     "agent": {
       "load_error": "Failed to load agent support information.",
-      "stats": {
-        "workspace": "Workspace",
-        "workspace_hint": "The default agent workspace used for runtime files and workspace skills.",
-        "skills": "Available Skills",
-        "skills_hint": "Skills discovered from workspace, global, and builtin roots.",
-        "tools": "Enabled Tools",
-        "tools_hint": "{{blocked}} blocked by missing dependencies."
-      },
       "skills": {
-        "title": "Skills",
         "description": "Skills are loaded from the workspace, global PicoClaw home, and builtin directories.",
-        "hero_title": "Skill Library",
-        "hero_description": "Browse every capability package the agent can load, then drill straight into the effective SKILL.md without leaving the page.",
-        "stats": {
-          "total": "Total Skills",
-          "workspace": "Workspace",
-          "shared": "Shared"
-        },
         "empty": "No skills are currently available.",
         "import": "Import Skill",
-        "import_title": "Import Skill",
-        "import_description": "Create a workspace skill by uploading a markdown file as the new SKILL.md.",
-        "import_name": "Skill Name",
-        "import_name_placeholder": "e.g. my-workflow",
-        "import_file": "Markdown File",
-        "import_file_hint": "Upload a .md file. The backend stores it as workspace/skills/<name>/SKILL.md.",
-        "import_confirm": "Import Skill",
         "import_success": "Skill imported.",
         "import_error": "Failed to import skill.",
         "view": "View",
@@ -371,28 +393,11 @@
         "viewer_description": "Read the current effective SKILL.md content here.",
         "loading_detail": "Loading skill content...",
         "load_detail_error": "Failed to load skill content.",
-        "source": "Source",
         "path": "Skill Path",
-        "no_description": "No description provided.",
-        "sources": {
-          "workspace": "Workspace",
-          "global": "Global",
-          "builtin": "Builtin"
-        },
-        "errors": {
-          "file_required": "Please choose a markdown file to import."
-        }
+        "no_description": "No description provided."
       },
       "tools": {
-        "title": "Tools",
         "description": "This view reflects whether each agent tool is enabled, disabled, or blocked by a missing prerequisite.",
-        "hero_title": "Tool Surface",
-        "hero_description": "Inspect what the agent can actually call right now, which capabilities are blocked, and where each tool is controlled in config.",
-        "stats": {
-          "enabled": "Enabled",
-          "blocked": "Blocked",
-          "categories": "Categories"
-        },
         "empty": "No tools are available.",
         "enable": "Enable",
         "disable": "Disable",
@@ -429,10 +434,40 @@
       "workspace_hint": "Base directory for agent file operations.",
       "restrict_workspace": "Restrict to Workspace",
       "restrict_workspace_hint": "Only allow file operations inside workspace.",
-      "allow_remote": "Allow Remote Shell Execution",
-      "allow_remote_hint": "When enabled, shell commands can also run for remote sessions or non-local contexts. When disabled, shell execution stays limited to local safe contexts.",
+      "split_on_marker": "Chatty Mode",
+      "split_on_marker_hint": "Split long messages into short ones like real human chatting.",
+      "tool_feedback_enabled": "Tool Feedback",
+      "tool_feedback_enabled_hint": "Send a short tool-call preview into the current chat before each tool execution.",
+      "tool_feedback_max_args_length": "Tool Feedback Args Preview Length",
+      "tool_feedback_max_args_length_hint": "Maximum number of argument characters shown in each tool feedback message. Set to 0 to use the default.",
+      "exec_enabled": "Allow Commands",
+      "exec_enabled_hint": "Enable or disable command execution for the app. When disabled, no command requests will run.",
+      "allow_remote": "Allow Remote Commands",
+      "allow_remote_hint": "When enabled, remote sessions or non-local contexts can also run commands. When disabled, command execution stays limited to local safe contexts.",
+      "enable_deny_patterns": "Enable Blacklist",
+      "enable_deny_patterns_hint": "When enabled, the app blocks commands that match its built-in dangerous patterns and the custom command blacklist below.",
+      "exec_timeout_seconds": "Command Timeout (seconds)",
+      "exec_timeout_seconds_hint": "Maximum runtime for command requests. Set to 0 to use the default timeout.",
+      "custom_deny_patterns": "Command Blacklist",
+      "custom_deny_patterns_hint": "Add extra command-blocking rules, one regular expression per line. A command matching any rule here will be blocked.",
+      "custom_allow_patterns": "Command Whitelist",
+      "custom_allow_patterns_hint": "Add extra command-allow rules, one regular expression per line. A command matching any rule here skips blacklist matching, but other safety limits still apply.",
+      "custom_patterns_placeholder": "^rm\\s+-rf\\b\n^git\\s+push\\b",
+      "pattern_detector_title": "Pattern Detection Tool",
+      "pattern_detector_hint": "Enter a command to test if it matches any blacklist or whitelist patterns.",
+      "pattern_detector_input_placeholder": "Enter a command to test, e.g., rm -rf /tmp",
+      "pattern_detector_test_button": "Test",
+      "pattern_detector_result_allowed": "Allowed (matches whitelist)",
+      "pattern_detector_result_blocked": "Blocked (matches blacklist)",
+      "pattern_detector_result_no_match": "No match (will use default rules)",
+      "allow_shell_execution": "Allow Scheduled Commands",
+      "allow_shell_execution_hint": "Allow scheduled tasks to run commands by default. When disabled, users must pass command_confirm=true to schedule a command task.",
+      "cron_exec_timeout": "Scheduled Command Timeout (minutes)",
+      "cron_exec_timeout_hint": "Maximum runtime for scheduled commands. Set to 0 to disable the timeout.",
       "max_tokens": "Max Tokens",
       "max_tokens_hint": "Upper token limit per model response.",
+      "context_window": "Context Window",
+      "context_window_hint": "Model input context capacity in tokens. Leave empty to use the default (4x max tokens).",
       "max_tool_iterations": "Max Tool Iterations",
       "max_tool_iterations_hint": "Maximum tool-call loops in a single task.",
       "summarize_threshold": "Summarize Message Threshold",
@@ -468,13 +503,17 @@
       "allowed_cidrs": "Allowed Network CIDRs",
       "allowed_cidrs_hint": "Only clients from these CIDR ranges can access the service. One per line or comma-separated. Leave empty to allow all.",
       "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
-      "launcher_load_error": "Failed to load service parameters.",
-      "launcher_restart_hint": "Service parameter changes apply after restarting PicoClaw Web.",
-      "advanced_desc": "Open the raw JSON page to edit every field directly.",
+      "sections": {
+        "agent": "Agent",
+        "runtime": "Runtime",
+        "exec": "Run Commands",
+        "cron": "Cron Tasks",
+        "launcher": "Service",
+        "devices": "Devices"
+      },
       "open_raw": "Raw Config",
       "back_to_visual": "Visual Config",
       "raw_json_title": "Raw JSON Configuration",
-      "raw_json_desc": "Advanced users can directly edit the raw JSON configuration below.",
       "json_placeholder": "Enter valid JSON configuration...",
       "save_success": "Configuration saved successfully.",
       "save_error": "Failed to save configuration.",
@@ -488,7 +527,6 @@
       "unsaved_changes": "You have unsaved changes."
     },
     "logs": {
-      "description": "System logs and monitoring.",
       "clear": "Clear logs",
       "empty": "Waiting for logs..."
     }

@@ -17,8 +17,6 @@ type HTTPProvider struct {
 	delegate *openai_compat.Provider
 }
 
-// NewHTTPProvider forwards optional provider-specific compatibility flags
-// without changing the shared HTTP provider interface.
 func NewHTTPProvider(apiKey, apiBase, proxy string, opts ...openai_compat.Option) *HTTPProvider {
 	return &HTTPProvider{
 		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy, opts...),
@@ -26,19 +24,19 @@ func NewHTTPProvider(apiKey, apiBase, proxy string, opts ...openai_compat.Option
 }
 
 func NewHTTPProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *HTTPProvider {
-	return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(apiKey, apiBase, proxy, maxTokensField, 0)
+	return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(apiKey, apiBase, proxy, maxTokensField, 0, nil)
 }
 
 func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 	apiKey, apiBase, proxy, maxTokensField string,
 	requestTimeoutSeconds int,
+	extraBody map[string]any,
 	opts ...openai_compat.Option,
 ) *HTTPProvider {
-	// Apply the legacy defaults first, then append any protocol-specific
-	// behavior switches such as OpenAI's /responses preference.
 	providerOpts := []openai_compat.Option{
 		openai_compat.WithMaxTokensField(maxTokensField),
 		openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds) * time.Second),
+		openai_compat.WithExtraBody(extraBody),
 	}
 	providerOpts = append(providerOpts, opts...)
 
@@ -57,6 +55,23 @@ func (p *HTTPProvider) Chat(
 	return p.delegate.Chat(ctx, messages, tools, model, options)
 }
 
+// ChatStream implements providers.StreamingProvider by delegating to the
+// OpenAI-compatible streaming endpoint (SSE with stream: true).
+func (p *HTTPProvider) ChatStream(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	return p.delegate.ChatStream(ctx, messages, tools, model, options, onChunk)
+}
+
 func (p *HTTPProvider) GetDefaultModel() string {
 	return ""
+}
+
+func (p *HTTPProvider) SupportsNativeSearch() bool {
+	return p.delegate.SupportsNativeSearch()
 }

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/chzyer/readline"
+	"github.com/ergochat/readline"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/agent"
@@ -23,14 +23,16 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 		sessionKey = "cli:default"
 	}
 
-	if debug {
-		logger.SetLevel(logger.DEBUG)
-		fmt.Println("🔍 Debug mode enabled")
-	}
-
 	cfg, err := internal.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("error loading config: %w", err)
+	}
+
+	logger.ConfigureFromEnv()
+
+	if debug {
+		logger.SetLevel(logger.DEBUG)
+		fmt.Println("🔍 Debug mode enabled")
 	}
 
 	if model != "" {

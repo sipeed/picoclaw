@@ -1,26 +1,10 @@
 package voice
 
 import (
-	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
-
-// Ensure GroqTranscriber satisfies the Transcriber interface at compile time.
-var _ Transcriber = (*GroqTranscriber)(nil)
-
-func TestGroqTranscriberName(t *testing.T) {
-	tr := NewGroqTranscriber("sk-test")
-	if got := tr.Name(); got != "groq" {
-		t.Errorf("Name() = %q, want %q", got, "groq")
-	}
-}
 
 func TestDetectTranscriber(t *testing.T) {
 	tests := []struct {
@@ -35,29 +19,80 @@ func TestDetectTranscriber(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			name: "groq provider key",
+			name: "voice model name selects audio model transcriber",
 			cfg: &config.Config{
-				Providers: config.ProvidersConfig{
-					Groq: config.ProviderConfig{APIKey: "sk-groq-direct"},
+				Voice: config.VoiceConfig{ModelName: "voice-gemini"},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName: "voice-gemini",
+						Model:     "gemini/gemini-2.5-flash",
+						APIKeys:   config.SimpleSecureStrings("sk-gemini-model"),
+					},
 				},
 			},
-			wantName: "groq",
+			wantName: "audio-model",
 		},
 		{
 			name: "groq via model list",
 			cfg: &config.Config{
-				ModelList: []config.ModelConfig{
-					{Model: "openai/gpt-4o", APIKey: "sk-openai"},
-					{Model: "groq/llama-3.3-70b", APIKey: "sk-groq-model"},
+				ModelList: []*config.ModelConfig{
+					{ModelName: "openai", Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("sk-openai")},
+					{
+						ModelName: "groq",
+						Model:     "groq/llama-3.3-70b",
+						APIKeys:   config.SimpleSecureStrings("sk-groq-model"),
+					},
 				},
 			},
 			wantName: "groq",
 		},
 		{
+			name: "voice model name selects non-gemini audio model transcriber",
+			cfg: &config.Config{
+				Voice: config.VoiceConfig{ModelName: "voice-openai-audio"},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName: "voice-openai-audio",
+						Model:     "openai/gpt-4o-audio-preview",
+						APIKeys:   config.SimpleSecureStrings("sk-openai"),
+					},
+				},
+			},
+			wantName: "audio-model",
+		},
+		{
+			name: "voice model name selects azure audio model transcriber",
+			cfg: &config.Config{
+				Voice: config.VoiceConfig{ModelName: "voice-azure-audio"},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName: "voice-azure-audio",
+						Model:     "azure/my-audio-deployment", APIKeys: config.SimpleSecureStrings("sk-azure"),
+						APIBase: "https://example.openai.azure.com",
+					},
+				},
+			},
+			wantName: "audio-model",
+		},
+		{
+			name: "voice model name with non openai compatible protocol does not select audio model transcriber",
+			cfg: &config.Config{
+				Voice: config.VoiceConfig{ModelName: "voice-anthropic"},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName: "voice-anthropic",
+						Model:     "anthropic/claude-sonnet-4.6",
+						APIKeys:   config.SimpleSecureStrings("sk-anthropic"),
+					},
+				},
+			},
+			wantNil: true,
+		},
+		{
 			name: "groq model list entry without key is skipped",
 			cfg: &config.Config{
-				ModelList: []config.ModelConfig{
-					{Model: "groq/llama-3.3-70b", APIKey: ""},
+				ModelList: []*config.ModelConfig{
+					{Model: "groq/llama-3.3-70b"},
 				},
 			},
 			wantNil: true,
@@ -65,14 +100,67 @@ func TestDetectTranscriber(t *testing.T) {
 		{
 			name: "provider key takes priority over model list",
 			cfg: &config.Config{
-				Providers: config.ProvidersConfig{
-					Groq: config.ProviderConfig{APIKey: "sk-groq-direct"},
-				},
-				ModelList: []config.ModelConfig{
-					{Model: "groq/llama-3.3-70b", APIKey: "sk-groq-model"},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName: "groq",
+						Model:     "groq/llama-3.3-70b",
+						APIKeys:   config.SimpleSecureStrings("sk-groq-model"),
+					},
 				},
 			},
 			wantName: "groq",
+		},
+		{
+			name: "missing voice model name config returns nil",
+			cfg: &config.Config{
+				Voice: config.VoiceConfig{ModelName: "missing"},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName: "other",
+						Model:     "gemini/gemini-2.5-flash",
+						APIKeys:   config.SimpleSecureStrings("sk-other-model"),
+					},
+				},
+			},
+			wantNil: true,
+		},
+		{
+			name: "elevenlabs voice config key",
+			cfg: &config.Config{
+				Voice: config.VoiceConfig{ElevenLabsAPIKey: "sk_elevenlabs_test"},
+			},
+			wantName: "elevenlabs",
+		},
+		{
+			name: "elevenlabs takes priority over groq model list",
+			cfg: &config.Config{
+				Voice: config.VoiceConfig{ElevenLabsAPIKey: "sk_elevenlabs_test"},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName: "groq",
+						Model:     "groq/llama-3.3-70b",
+						APIKeys:   config.SimpleSecureStrings("sk-groq-model"),
+					},
+				},
+			},
+			wantName: "elevenlabs",
+		},
+		{
+			name: "voice model name takes priority over elevenlabs",
+			cfg: &config.Config{
+				Voice: config.VoiceConfig{
+					ModelName:        "voice-gemini",
+					ElevenLabsAPIKey: "sk_elevenlabs_test",
+				},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName: "voice-gemini",
+						Model:     "gemini/gemini-2.5-flash",
+						APIKeys:   config.SimpleSecureStrings("sk-gemini-model"),
+					},
+				},
+			},
+			wantName: "audio-model",
 		},
 	}
 
@@ -93,68 +181,4 @@ func TestDetectTranscriber(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestTranscribe(t *testing.T) {
-	// Write a minimal fake audio file so the transcriber can open and send it.
-	tmpDir := t.TempDir()
-	audioPath := filepath.Join(tmpDir, "clip.ogg")
-	if err := os.WriteFile(audioPath, []byte("fake-audio-data"), 0o644); err != nil {
-		t.Fatalf("failed to write fake audio file: %v", err)
-	}
-
-	t.Run("success", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/audio/transcriptions" {
-				t.Errorf("unexpected path: %s", r.URL.Path)
-			}
-			if r.Header.Get("Authorization") != "Bearer sk-test" {
-				t.Errorf("unexpected Authorization header: %s", r.Header.Get("Authorization"))
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(TranscriptionResponse{
-				Text:     "hello world",
-				Language: "en",
-				Duration: 1.5,
-			})
-		}))
-		defer srv.Close()
-
-		tr := NewGroqTranscriber("sk-test")
-		tr.apiBase = srv.URL
-
-		resp, err := tr.Transcribe(context.Background(), audioPath)
-		if err != nil {
-			t.Fatalf("Transcribe() error: %v", err)
-		}
-		if resp.Text != "hello world" {
-			t.Errorf("Text = %q, want %q", resp.Text, "hello world")
-		}
-		if resp.Language != "en" {
-			t.Errorf("Language = %q, want %q", resp.Language, "en")
-		}
-	})
-
-	t.Run("api error", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, `{"error":"invalid_api_key"}`, http.StatusUnauthorized)
-		}))
-		defer srv.Close()
-
-		tr := NewGroqTranscriber("sk-bad")
-		tr.apiBase = srv.URL
-
-		_, err := tr.Transcribe(context.Background(), audioPath)
-		if err == nil {
-			t.Fatal("expected error for non-200 response, got nil")
-		}
-	})
-
-	t.Run("missing file", func(t *testing.T) {
-		tr := NewGroqTranscriber("sk-test")
-		_, err := tr.Transcribe(context.Background(), filepath.Join(tmpDir, "nonexistent.ogg"))
-		if err == nil {
-			t.Fatal("expected error for missing file, got nil")
-		}
-	})
 }

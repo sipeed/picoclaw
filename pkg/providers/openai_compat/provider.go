@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -35,12 +36,13 @@ type Provider struct {
 	apiBase         string
 	maxTokensField  string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	httpClient      *http.Client
-	preferResponses bool // Prefer /responses for OpenAI-native models selected via the factory.
+	extraBody       map[string]any // Additional fields to inject into request body
+	preferResponses bool           // Prefer /responses for OpenAI-native configs.
 }
 
 type Option func(*Provider)
 
-const defaultRequestTimeout = 120 * time.Second
+const defaultRequestTimeout = common.DefaultRequestTimeout
 
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {
@@ -56,34 +58,23 @@ func WithRequestTimeout(timeout time.Duration) Option {
 	}
 }
 
-// WithResponsesPreferred marks this provider instance as OpenAI-native so it
-// prefers /responses even after the factory strips the outer "openai/" prefix.
 func WithResponsesPreferred() Option {
 	return func(p *Provider) {
 		p.preferResponses = true
 	}
 }
 
+func WithExtraBody(extraBody map[string]any) Option {
+	return func(p *Provider) {
+		p.extraBody = extraBody
+	}
+}
+
 func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
-	client := &http.Client{
-		Timeout: defaultRequestTimeout,
-	}
-
-	if proxy != "" {
-		parsed, err := url.Parse(proxy)
-		if err == nil {
-			client.Transport = &http.Transport{
-				Proxy: http.ProxyURL(parsed),
-			}
-		} else {
-			log.Printf("openai_compat: invalid proxy URL %q: %v", proxy, err)
-		}
-	}
-
 	p := &Provider{
 		apiKey:     apiKey,
 		apiBase:    strings.TrimRight(apiBase, "/"),
-		httpClient: client,
+		httpClient: common.NewHTTPClient(proxy),
 	}
 
 	for _, opt := range opts {
@@ -112,88 +103,26 @@ func NewProviderWithMaxTokensFieldAndTimeout(
 	)
 }
 
-func (p *Provider) Chat(
-	ctx context.Context,
-	messages []Message,
-	tools []ToolDefinition,
-	model string,
-	options map[string]any,
-) (*LLMResponse, error) {
-	if p.apiBase == "" {
-		return nil, fmt.Errorf("API base not configured")
-	}
-
-	normalizedModel := normalizeModel(model, p.apiBase)
-	// Keep the legacy chat/completions path for histories that already depend on
-	// reasoning_content, because Responses represents reasoning state differently.
-	if shouldPreferResponses(model, normalizedModel, p.preferResponses) && !hasReasoningContentHistory(messages) {
-		out, err := p.chatResponses(ctx, messages, tools, normalizedModel, options)
-		if err == nil {
-			return out, nil
-		}
-		if ctx.Err() != nil {
-			return nil, err
-		}
-		log.Printf("openai_compat: /responses failed for %q, falling back to /chat/completions: %v", normalizedModel, err)
-
-		fallbackOut, fallbackErr := p.chatCompletions(ctx, messages, tools, normalizedModel, options)
-		if fallbackErr != nil {
-			return nil, fmt.Errorf("responses request failed; fallback chat/completions failed: %w", errors.Join(err, fallbackErr))
-		}
-		return fallbackOut, nil
-	}
-
-	return p.chatCompletions(ctx, messages, tools, normalizedModel, options)
-}
-
-func (p *Provider) chatCompletions(
-	ctx context.Context,
-	messages []Message,
-	tools []ToolDefinition,
-	model string,
-	options map[string]any,
-) (*LLMResponse, error) {
-	requestBody := buildChatCompletionsRequestBody(messages, tools, model, options, p.maxTokensField, p.apiBase)
-	return p.doRequest(ctx, "/chat/completions", requestBody, parseResponse)
-}
-
-func (p *Provider) chatResponses(
-	ctx context.Context,
-	messages []Message,
-	tools []ToolDefinition,
-	model string,
-	options map[string]any,
-) (*LLMResponse, error) {
-	requestBody, err := buildResponsesRequestBody(messages, tools, model, options, p.apiBase)
-	if err != nil {
-		return nil, err
-	}
-	return p.doRequest(ctx, "/responses", requestBody, parseResponsesResponse)
-}
-
-func buildChatCompletionsRequestBody(
-	messages []Message,
-	tools []ToolDefinition,
-	model string,
-	options map[string]any,
-	maxTokensField string,
-	apiBase string,
+// buildRequestBody constructs the common request body for Chat and ChatStream.
+func (p *Provider) buildRequestBody(
+	messages []Message, tools []ToolDefinition, model string, options map[string]any,
 ) map[string]any {
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": serializeMessages(messages),
+		"messages": common.SerializeMessages(messages),
 	}
 
-	if len(tools) > 0 {
-		requestBody["tools"] = tools
+	// When fallback uses a different provider (e.g. DeepSeek), that provider must not inject web_search_preview.
+	nativeSearch, _ := options["native_search"].(bool)
+	nativeSearch = nativeSearch && isNativeSearchHost(p.apiBase)
+	if len(tools) > 0 || nativeSearch {
+		requestBody["tools"] = buildToolsList(tools, nativeSearch)
 		requestBody["tool_choice"] = "auto"
 	}
 
-	if maxTokens, ok := asInt(options["max_tokens"]); ok {
-		// Use configured maxTokensField if specified, otherwise fallback to model-based detection.
-		fieldName := maxTokensField
+	if maxTokens, ok := common.AsInt(options["max_tokens"]); ok {
+		fieldName := p.maxTokensField
 		if fieldName == "" {
-			// Fallback: detect from model name for backward compatibility.
 			lowerModel := strings.ToLower(model)
 			if strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "o1") ||
 				strings.Contains(lowerModel, "gpt-5") {
@@ -211,29 +140,61 @@ func buildChatCompletionsRequestBody(
 
 	// Prompt caching: pass a stable cache key so OpenAI can bucket requests
 	// with the same key and reuse prefix KV cache across calls.
-	// The key is typically the agent ID - stable per agent, shared across requests.
-	// See: https://platform.openai.com/docs/guides/prompt-caching
 	// Prompt caching is only supported by OpenAI-native endpoints.
-	// Non-OpenAI providers (Mistral, Gemini, DeepSeek, etc.) reject unknown
-	// fields with 422 errors, so only include it for OpenAI APIs.
+	// Non-OpenAI providers reject unknown fields with 422 errors.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
-		if supportsPromptCacheKey(apiBase) {
+		if supportsPromptCacheKey(p.apiBase) {
 			requestBody["prompt_cache_key"] = cacheKey
 		}
+	}
+
+	// Merge extra body fields configured per-provider/model.
+	// These are injected last so they take precedence over defaults.
+	for k, v := range p.extraBody {
+		requestBody[k] = v
 	}
 
 	return requestBody
 }
 
-// buildResponsesRequestBody keeps the option handling close to the legacy
-// chat/completions path so the new route can reuse the existing compatibility
-// knobs with minimal behavioral drift.
-func buildResponsesRequestBody(
+func requestTemperature(model string, options map[string]any) (float64, bool) {
+	temperature, ok := common.AsFloat(options["temperature"])
+	if !ok {
+		return 0, false
+	}
+
+	lowerModel := strings.ToLower(model)
+	if strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2") {
+		return 1.0, true
+	}
+
+	return temperature, true
+}
+
+func shouldPreferResponses(rawModel, normalizedModel string, preferOpenAIModels bool) bool {
+	rawModel = strings.ToLower(strings.TrimSpace(rawModel))
+	normalizedModel = strings.ToLower(strings.TrimSpace(normalizedModel))
+
+	return preferOpenAIModels ||
+		strings.HasPrefix(rawModel, "gpt-5") ||
+		strings.HasPrefix(normalizedModel, "gpt-5")
+}
+
+func hasReasoningContentHistory(messages []Message) bool {
+	for _, message := range messages {
+		if strings.TrimSpace(message.ReasoningContent) != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (p *Provider) buildResponsesRequestBody(
 	messages []Message,
 	tools []ToolDefinition,
 	model string,
 	options map[string]any,
-	apiBase string,
 ) (map[string]any, error) {
 	input, err := buildResponsesInput(messages)
 	if err != nil {
@@ -245,12 +206,15 @@ func buildResponsesRequestBody(
 		"input": input,
 	}
 
-	if len(tools) > 0 {
-		requestBody["tools"] = serializeResponseTools(tools)
+	nativeSearch, _ := options["native_search"].(bool)
+	nativeSearch = nativeSearch && isNativeSearchHost(p.apiBase)
+	responseTools := buildResponsesToolsList(tools, nativeSearch)
+	if len(responseTools) > 0 {
+		requestBody["tools"] = responseTools
 		requestBody["tool_choice"] = "auto"
 	}
 
-	if maxTokens, ok := asInt(options["max_tokens"]); ok {
+	if maxTokens, ok := common.AsInt(options["max_tokens"]); ok {
 		requestBody["max_output_tokens"] = maxTokens
 	}
 
@@ -258,19 +222,19 @@ func buildResponsesRequestBody(
 		requestBody["temperature"] = temperature
 	}
 
-	// Prompt caching follows the same compatibility rule as chat/completions:
-	// send the key only to endpoints that are expected to understand it.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
-		if supportsPromptCacheKey(apiBase) {
+		if supportsPromptCacheKey(p.apiBase) {
 			requestBody["prompt_cache_key"] = cacheKey
 		}
+	}
+
+	for k, v := range p.extraBody {
+		requestBody[k] = v
 	}
 
 	return requestBody, nil
 }
 
-// buildResponsesInput translates the existing conversation format into the
-// item-based Responses input shape while preserving tool call history.
 func buildResponsesInput(messages []Message) ([]any, error) {
 	input := make([]any, 0, len(messages))
 
@@ -321,8 +285,6 @@ func buildResponsesInput(messages []Message) ([]any, error) {
 	return input, nil
 }
 
-// serializeResponsesMessageContent converts plain text and inline image data
-// into the content format expected by the Responses API.
 func serializeResponsesMessageContent(m Message) any {
 	effectiveText := m.Content
 	if effectiveText == "" {
@@ -357,11 +319,12 @@ func serializeResponsesMessageContent(m Message) any {
 	return parts
 }
 
-// serializeResponseTools maps the existing OpenAI-compatible tool schema to the
-// smaller function-tool shape accepted by the Responses API.
-func serializeResponseTools(tools []ToolDefinition) []map[string]any {
-	result := make([]map[string]any, 0, len(tools))
+func buildResponsesToolsList(tools []ToolDefinition, nativeSearch bool) []any {
+	result := make([]any, 0, len(tools)+1)
 	for _, tool := range tools {
+		if nativeSearch && strings.EqualFold(tool.Function.Name, "web_search") {
+			continue
+		}
 		if tool.Type != "" && tool.Type != "function" {
 			continue
 		}
@@ -380,11 +343,14 @@ func serializeResponseTools(tools []ToolDefinition) []map[string]any {
 
 		result = append(result, entry)
 	}
+
+	if nativeSearch {
+		result = append(result, map[string]any{"type": "web_search_preview"})
+	}
+
 	return result
 }
 
-// resolveResponseToolCall rebuilds the assistant-side tool call record into the
-// stringified argument form required by Responses conversation history.
 func resolveResponseToolCall(tc ToolCall) (name string, arguments string, ok bool) {
 	name = tc.Name
 	if name == "" && tc.Function != nil {
@@ -409,40 +375,61 @@ func resolveResponseToolCall(tc ToolCall) (name string, arguments string, ok boo
 	return name, "{}", true
 }
 
-func requestTemperature(model string, options map[string]any) (float64, bool) {
-	temperature, ok := asFloat(options["temperature"])
-	if !ok {
-		return 0, false
+func (p *Provider) Chat(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
+	if p.apiBase == "" {
+		return nil, fmt.Errorf("API base not configured")
 	}
 
-	lowerModel := strings.ToLower(model)
-	if strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2") {
-		return 1.0, true
-	}
-	return temperature, true
-}
-
-// shouldPreferResponses centralizes the opt-in rule so OpenAI-native configs
-// and gpt-5 models can try /responses first while other compat backends keep
-// their existing chat/completions behavior even when model IDs are namespaced.
-func shouldPreferResponses(rawModel, normalizedModel string, preferOpenAIModels bool) bool {
-	rawModel = strings.ToLower(strings.TrimSpace(rawModel))
-	normalizedModel = strings.ToLower(strings.TrimSpace(normalizedModel))
-
-	return preferOpenAIModels ||
-		strings.HasPrefix(rawModel, "gpt-5") ||
-		strings.HasPrefix(normalizedModel, "gpt-5")
-}
-
-// hasReasoningContentHistory detects histories that already rely on the legacy
-// reasoning_content field so they can stay on the older wire format.
-func hasReasoningContentHistory(messages []Message) bool {
-	for _, message := range messages {
-		if strings.TrimSpace(message.ReasoningContent) != "" {
-			return true
+	normalizedModel := normalizeModel(model, p.apiBase)
+	if shouldPreferResponses(model, normalizedModel, p.preferResponses) && !hasReasoningContentHistory(messages) {
+		out, err := p.chatResponses(ctx, messages, tools, normalizedModel, options)
+		if err == nil {
+			return out, nil
 		}
+		if ctx.Err() != nil {
+			return nil, err
+		}
+		log.Printf("openai_compat: /responses failed for %q, falling back to /chat/completions: %v", normalizedModel, err)
+
+		fallbackOut, fallbackErr := p.chatCompletions(ctx, messages, tools, normalizedModel, options)
+		if fallbackErr != nil {
+			return nil, fmt.Errorf("responses request failed; fallback chat/completions failed: %w", errors.Join(err, fallbackErr))
+		}
+		return fallbackOut, nil
 	}
-	return false
+
+	return p.chatCompletions(ctx, messages, tools, normalizedModel, options)
+}
+
+func (p *Provider) chatCompletions(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
+	requestBody := p.buildRequestBody(messages, tools, model, options)
+	return p.doRequest(ctx, "/chat/completions", requestBody, nil)
+}
+
+func (p *Provider) chatResponses(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
+	requestBody, err := p.buildResponsesRequestBody(messages, tools, model, options)
+	if err != nil {
+		return nil, err
+	}
+	return p.doRequest(ctx, "/responses", requestBody, parseResponsesResponse)
 }
 
 func (p *Provider) doRequest(
@@ -472,31 +459,22 @@ func (p *Provider) doRequest(
 	}
 	defer resp.Body.Close()
 
-	contentType := resp.Header.Get("Content-Type")
-	// Non-200: read a prefix to tell HTML error page apart from JSON error body.
 	if resp.StatusCode != http.StatusOK {
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 256))
-		if readErr != nil {
-			return nil, fmt.Errorf("failed to read response: %w", readErr)
-		}
-		if looksLikeHTML(body, contentType) {
-			return nil, wrapHTMLResponseError(resp.StatusCode, body, contentType, p.apiBase)
-		}
-		return nil, fmt.Errorf(
-			"API request failed:\n  Status: %d\n  Body:   %s",
-			resp.StatusCode,
-			responsePreview(body, 128),
-		)
+		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	// Peek without consuming so the full stream reaches the JSON decoder.
+	if parse == nil {
+		return common.ReadAndParseResponse(resp, p.apiBase)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
 	reader := bufio.NewReader(resp.Body)
-	prefix, err := reader.Peek(256) // io.EOF/ErrBufferFull are normal; only real errors abort
+	prefix, err := reader.Peek(256)
 	if err != nil && err != io.EOF && err != bufio.ErrBufferFull {
 		return nil, fmt.Errorf("failed to inspect response: %w", err)
 	}
-	if looksLikeHTML(prefix, contentType) {
-		return nil, wrapHTMLResponseError(resp.StatusCode, prefix, contentType, p.apiBase)
+	if common.LooksLikeHTML(prefix, contentType) {
+		return nil, common.WrapHTMLResponseError(resp.StatusCode, prefix, contentType, p.apiBase)
 	}
 
 	out, err := parse(reader)
@@ -507,144 +485,196 @@ func (p *Provider) doRequest(
 	return out, nil
 }
 
-func wrapHTMLResponseError(statusCode int, body []byte, contentType, apiBase string) error {
-	respPreview := responsePreview(body, 128)
-	return fmt.Errorf(
-		"API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  Body:   %s",
-		apiBase,
-		contentType,
-		statusCode,
-		respPreview,
-	)
-}
-
-func looksLikeHTML(body []byte, contentType string) bool {
-	contentType = strings.ToLower(strings.TrimSpace(contentType))
-	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "application/xhtml+xml") {
-		return true
+// ChatStream implements streaming via OpenAI-compatible SSE (stream: true).
+// onChunk receives the accumulated text so far on each text delta.
+func (p *Provider) ChatStream(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	if p.apiBase == "" {
+		return nil, fmt.Errorf("API base not configured")
 	}
-	prefix := bytes.ToLower(leadingTrimmedPrefix(body, 128))
-	return bytes.HasPrefix(prefix, []byte("<!doctype html")) ||
-		bytes.HasPrefix(prefix, []byte("<html")) ||
-		bytes.HasPrefix(prefix, []byte("<head")) ||
-		bytes.HasPrefix(prefix, []byte("<body"))
+
+	normalizedModel := normalizeModel(model, p.apiBase)
+	requestBody := p.buildRequestBody(messages, tools, normalizedModel, options)
+	requestBody["stream"] = true
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+
+	// Use a client without Timeout for streaming — the http.Client.Timeout covers
+	// the entire request lifecycle including body reads, which would kill long streams.
+	// Context cancellation still provides the safety net.
+	streamClient := &http.Client{Transport: p.httpClient.Transport}
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, common.HandleErrorResponse(resp, p.apiBase)
+	}
+
+	return parseStreamResponse(ctx, resp.Body, onChunk)
 }
 
-func leadingTrimmedPrefix(body []byte, maxLen int) []byte {
-	i := 0
-	for i < len(body) {
-		switch body[i] {
-		case ' ', '\t', '\n', '\r', '\f', '\v':
-			i++
-		default:
-			end := i + maxLen
-			if end > len(body) {
-				end = len(body)
+// parseStreamResponse parses an OpenAI-compatible SSE stream.
+func parseStreamResponse(
+	ctx context.Context,
+	reader io.Reader,
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	var textContent strings.Builder
+	var finishReason string
+	var usage *UsageInfo
+
+	// Tool call assembly: OpenAI streams tool calls as incremental deltas
+	type toolAccum struct {
+		id       string
+		name     string
+		argsJSON strings.Builder
+	}
+	activeTools := map[int]*toolAccum{}
+
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 1MB initial, 10MB max
+	for scanner.Scan() {
+		// Check for context cancellation between chunks
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		line := scanner.Text()
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function *struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"delta"`
+				FinishReason *string `json:"finish_reason"`
+			} `json:"choices"`
+			Usage *UsageInfo `json:"usage"`
+		}
+
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue // skip malformed chunks
+		}
+
+		if chunk.Usage != nil {
+			usage = chunk.Usage
+		}
+
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+
+		choice := chunk.Choices[0]
+
+		// Accumulate text content
+		if choice.Delta.Content != "" {
+			textContent.WriteString(choice.Delta.Content)
+			if onChunk != nil {
+				onChunk(textContent.String())
 			}
-			return body[i:end]
-		}
-	}
-	return nil
-}
-
-func responsePreview(body []byte, maxLen int) string {
-	trimmed := bytes.TrimSpace(body)
-	if len(trimmed) == 0 {
-		return "<empty>"
-	}
-	if len(trimmed) <= maxLen {
-		return string(trimmed)
-	}
-	return string(trimmed[:maxLen]) + "..."
-}
-
-func parseResponse(body io.Reader) (*LLMResponse, error) {
-	var apiResponse struct {
-		Choices []struct {
-			Message struct {
-				Content          string            `json:"content"`
-				ReasoningContent string            `json:"reasoning_content"`
-				Reasoning        string            `json:"reasoning"`
-				ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
-				ToolCalls        []struct {
-					ID       string `json:"id"`
-					Type     string `json:"type"`
-					Function *struct {
-						Name      string          `json:"name"`
-						Arguments json.RawMessage `json:"arguments"`
-					} `json:"function"`
-					ExtraContent *struct {
-						Google *struct {
-							ThoughtSignature string `json:"thought_signature"`
-						} `json:"google"`
-					} `json:"extra_content"`
-				} `json:"tool_calls"`
-			} `json:"message"`
-			FinishReason string `json:"finish_reason"`
-		} `json:"choices"`
-		Usage *UsageInfo `json:"usage"`
-	}
-
-	if err := json.NewDecoder(body).Decode(&apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(apiResponse.Choices) == 0 {
-		return &LLMResponse{
-			Content:      "",
-			FinishReason: "stop",
-		}, nil
-	}
-
-	choice := apiResponse.Choices[0]
-	toolCalls := make([]ToolCall, 0, len(choice.Message.ToolCalls))
-	for _, tc := range choice.Message.ToolCalls {
-		arguments := make(map[string]any)
-		name := ""
-
-		// Extract thought_signature from Gemini/Google-specific extra content
-		thoughtSignature := ""
-		if tc.ExtraContent != nil && tc.ExtraContent.Google != nil {
-			thoughtSignature = tc.ExtraContent.Google.ThoughtSignature
 		}
 
-		if tc.Function != nil {
-			name = tc.Function.Name
-			arguments = decodeToolCallArguments(tc.Function.Arguments, name)
-		}
-
-		// Build ToolCall with ExtraContent for Gemini 3 thought_signature persistence
-		toolCall := ToolCall{
-			ID:               tc.ID,
-			Name:             name,
-			Arguments:        arguments,
-			ThoughtSignature: thoughtSignature,
-		}
-
-		if thoughtSignature != "" {
-			toolCall.ExtraContent = &ExtraContent{
-				Google: &GoogleExtra{
-					ThoughtSignature: thoughtSignature,
-				},
+		// Accumulate tool call deltas
+		for _, tc := range choice.Delta.ToolCalls {
+			acc, ok := activeTools[tc.Index]
+			if !ok {
+				acc = &toolAccum{}
+				activeTools[tc.Index] = acc
+			}
+			if tc.ID != "" {
+				acc.id = tc.ID
+			}
+			if tc.Function != nil {
+				if tc.Function.Name != "" {
+					acc.name = tc.Function.Name
+				}
+				if tc.Function.Arguments != "" {
+					acc.argsJSON.WriteString(tc.Function.Arguments)
+				}
 			}
 		}
 
-		toolCalls = append(toolCalls, toolCall)
+		if choice.FinishReason != nil {
+			finishReason = *choice.FinishReason
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("streaming read error: %w", err)
+	}
+
+	// Assemble tool calls from accumulated deltas
+	var toolCalls []ToolCall
+	for i := 0; i < len(activeTools); i++ {
+		acc, ok := activeTools[i]
+		if !ok {
+			continue
+		}
+		args := make(map[string]any)
+		raw := acc.argsJSON.String()
+		if raw != "" {
+			if err := json.Unmarshal([]byte(raw), &args); err != nil {
+				log.Printf("openai_compat stream: failed to decode tool call arguments for %q: %v", acc.name, err)
+				args["raw"] = raw
+			}
+		}
+		toolCalls = append(toolCalls, ToolCall{
+			ID:        acc.id,
+			Name:      acc.name,
+			Arguments: args,
+		})
+	}
+
+	if finishReason == "" {
+		finishReason = "stop"
 	}
 
 	return &LLMResponse{
-		Content:          choice.Message.Content,
-		ReasoningContent: choice.Message.ReasoningContent,
-		Reasoning:        choice.Message.Reasoning,
-		ReasoningDetails: choice.Message.ReasoningDetails,
-		ToolCalls:        toolCalls,
-		FinishReason:     choice.FinishReason,
-		Usage:            apiResponse.Usage,
+		Content:      textContent.String(),
+		ToolCalls:    toolCalls,
+		FinishReason: finishReason,
+		Usage:        usage,
 	}, nil
 }
 
-// parseResponsesResponse maps the Responses API envelope back to the legacy
-// provider response shape used by the rest of the codebase.
 func parseResponsesResponse(body io.Reader) (*LLMResponse, error) {
 	var apiResponse struct {
 		Status string `json:"status"`
@@ -793,114 +823,14 @@ func parseResponsesResponse(body io.Reader) (*LLMResponse, error) {
 	}, nil
 }
 
-// firstNonEmpty prefers call_id but falls back to the raw item id when the
-// response item omits it.
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
 			return value
 		}
 	}
+
 	return ""
-}
-
-func decodeToolCallArguments(raw json.RawMessage, name string) map[string]any {
-	arguments := make(map[string]any)
-	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
-		return arguments
-	}
-
-	var decoded any
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		log.Printf("openai_compat: failed to decode tool call arguments payload for %q: %v", name, err)
-		arguments["raw"] = string(raw)
-		return arguments
-	}
-
-	switch v := decoded.(type) {
-	case string:
-		if strings.TrimSpace(v) == "" {
-			return arguments
-		}
-		if err := json.Unmarshal([]byte(v), &arguments); err != nil {
-			log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
-			arguments["raw"] = v
-		}
-		return arguments
-	case map[string]any:
-		return v
-	default:
-		log.Printf("openai_compat: unsupported tool call arguments type for %q: %T", name, decoded)
-		arguments["raw"] = string(raw)
-		return arguments
-	}
-}
-
-// openaiMessage is the wire-format message for OpenAI-compatible APIs.
-// It mirrors protocoltypes.Message but omits SystemParts, which is an
-// internal field that would be unknown to third-party endpoints.
-type openaiMessage struct {
-	Role             string     `json:"role"`
-	Content          string     `json:"content"`
-	ReasoningContent string     `json:"reasoning_content,omitempty"`
-	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID       string     `json:"tool_call_id,omitempty"`
-}
-
-// serializeMessages converts internal Message structs to the OpenAI wire format.
-// - Strips SystemParts (unknown to third-party endpoints)
-// - Converts messages with Media to multipart content format (text + image_url parts)
-// - Preserves ToolCallID, ToolCalls, and ReasoningContent for all messages
-func serializeMessages(messages []Message) []any {
-	out := make([]any, 0, len(messages))
-	for _, m := range messages {
-		if len(m.Media) == 0 {
-			out = append(out, openaiMessage{
-				Role:             m.Role,
-				Content:          m.Content,
-				ReasoningContent: m.ReasoningContent,
-				ToolCalls:        m.ToolCalls,
-				ToolCallID:       m.ToolCallID,
-			})
-			continue
-		}
-
-		// Multipart content format for messages with media
-		parts := make([]map[string]any, 0, 1+len(m.Media))
-		if m.Content != "" {
-			parts = append(parts, map[string]any{
-				"type": "text",
-				"text": m.Content,
-			})
-		}
-		for _, mediaURL := range m.Media {
-			if strings.HasPrefix(mediaURL, "data:image/") {
-				parts = append(parts, map[string]any{
-					"type": "image_url",
-					"image_url": map[string]any{
-						"url": mediaURL,
-					},
-				})
-			}
-		}
-
-		msg := map[string]any{
-			"role":    m.Role,
-			"content": parts,
-		}
-		if m.ToolCallID != "" {
-			msg["tool_call_id"] = m.ToolCallID
-		}
-		if len(m.ToolCalls) > 0 {
-			msg["tool_calls"] = m.ToolCalls
-		}
-		if m.ReasoningContent != "" {
-			msg["reasoning_content"] = m.ReasoningContent
-		}
-		out = append(out, msg)
-	}
-	return out
 }
 
 func normalizeModel(model, apiBase string) string {
@@ -916,41 +846,38 @@ func normalizeModel(model, apiBase string) string {
 	prefix := strings.ToLower(before)
 	switch prefix {
 	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google",
-		"openrouter", "zhipu", "mistral", "vivgrid", "minimax":
+		"openrouter", "zhipu", "mistral", "vivgrid", "minimax", "novita":
 		return after
 	default:
 		return model
 	}
 }
 
-func asInt(v any) (int, bool) {
-	switch val := v.(type) {
-	case int:
-		return val, true
-	case int64:
-		return int(val), true
-	case float64:
-		return int(val), true
-	case float32:
-		return int(val), true
-	default:
-		return 0, false
+func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {
+	result := make([]any, 0, len(tools)+1)
+	for _, t := range tools {
+		if nativeSearch && strings.EqualFold(t.Function.Name, "web_search") {
+			continue
+		}
+		result = append(result, t)
 	}
+	if nativeSearch {
+		result = append(result, map[string]any{"type": "web_search_preview"})
+	}
+	return result
 }
 
-func asFloat(v any) (float64, bool) {
-	switch val := v.(type) {
-	case float64:
-		return val, true
-	case float32:
-		return float64(val), true
-	case int:
-		return float64(val), true
-	case int64:
-		return float64(val), true
-	default:
-		return 0, false
+func (p *Provider) SupportsNativeSearch() bool {
+	return isNativeSearchHost(p.apiBase)
+}
+
+func isNativeSearchHost(apiBase string) bool {
+	u, err := url.Parse(apiBase)
+	if err != nil {
+		return false
 	}
+	host := u.Hostname()
+	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
 }
 
 // supportsPromptCacheKey reports whether the given API base is known to

@@ -6,6 +6,7 @@ import {
   IconMoon,
   IconPlayerPlay,
   IconPower,
+  IconRefresh,
   IconSun,
 } from "@tabler/icons-react"
 import { Link } from "@tanstack/react-router"
@@ -31,6 +32,11 @@ import {
 } from "@/components/ui/dropdown-menu.tsx"
 import { Separator } from "@/components/ui/separator.tsx"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useGateway } from "@/hooks/use-gateway.ts"
 import { useTheme } from "@/hooks/use-theme.ts"
 
@@ -41,25 +47,39 @@ export function AppHeader() {
     state: gwState,
     loading: gwLoading,
     canStart,
+    restartRequired,
     start,
+    restart,
     stop,
   } = useGateway()
 
   const isRunning = gwState === "running"
   const isStarting = gwState === "starting"
+  const isRestarting = gwState === "restarting"
+  const isStopping = gwState === "stopping"
   const isStopped = gwState === "stopped" || gwState === "unknown"
   const showNotConnectedHint =
-    canStart && (gwState === "stopped" || gwState === "error")
+    !isRestarting &&
+    !isStopping &&
+    canStart &&
+    (gwState === "stopped" || gwState === "error")
 
   const [showStopDialog, setShowStopDialog] = React.useState(false)
 
   const handleGatewayToggle = () => {
-    if (gwLoading || (!isRunning && !canStart)) return
+    if (gwLoading || isRestarting || isStopping || (!isRunning && !canStart)) {
+      return
+    }
     if (isRunning) {
       setShowStopDialog(true)
     } else {
-      start()
+      void start()
     }
+  }
+
+  const handleGatewayRestart = () => {
+    if (gwLoading || isRestarting || !restartRequired || !canStart) return
+    void restart()
   }
 
   const confirmStop = () => {
@@ -115,35 +135,73 @@ export function AppHeader() {
       </AlertDialog>
 
       <div className="text-muted-foreground flex items-center gap-1 text-sm font-medium md:gap-2">
+        {restartRequired && (
+          <Tooltip delayDuration={700}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="secondary"
+                size="icon-sm"
+                className="bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 hover:text-amber-800 dark:text-amber-300 dark:hover:bg-amber-500/25"
+                onClick={handleGatewayRestart}
+                disabled={gwLoading || isRestarting || isStopping || !canStart}
+                aria-label={t("header.gateway.action.restart")}
+              >
+                <IconRefresh className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t("header.gateway.restartRequired")}
+            </TooltipContent>
+          </Tooltip>
+        )}
+
         {/* Gateway Start/Stop */}
-        <Button
-          variant={isStarting ? "secondary" : "default"}
-          size="sm"
-          className={`h-8 gap-2 px-3 ${
-            isRunning
-              ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
-              : isStopped
-                ? "bg-green-500 text-white hover:bg-green-600"
-                : ""
-          }`}
-          onClick={handleGatewayToggle}
-          disabled={gwLoading || isStarting || (!isRunning && !canStart)}
-        >
-          {gwLoading || isStarting ? (
-            <IconLoader2 className="h-4 w-4 animate-spin opacity-70" />
-          ) : isRunning ? (
-            <IconPower className="h-4 w-4 opacity-80" />
-          ) : (
-            <IconPlayerPlay className="h-4 w-4 opacity-80" />
-          )}
-          <span className="text-xs font-semibold">
-            {isRunning
-              ? t("header.gateway.action.stop")
-              : isStarting
-                ? t("header.gateway.status.starting")
-                : t("header.gateway.action.start")}
-          </span>
-        </Button>
+        {isRunning ? (
+          <Tooltip delayDuration={700}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="destructive"
+                size="icon-sm"
+                className="size-8"
+                onClick={handleGatewayToggle}
+                disabled={gwLoading}
+                aria-label={t("header.gateway.action.stop")}
+              >
+                <IconPower className="h-4 w-4 opacity-80" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("header.gateway.action.stop")}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Button
+            variant={
+              isStarting || isRestarting || isStopping ? "secondary" : "default"
+            }
+            size="sm"
+            className={`h-8 gap-2 px-3 ${
+              isStopped ? "bg-green-500 text-white hover:bg-green-600" : ""
+            }`}
+            onClick={handleGatewayToggle}
+            disabled={
+              gwLoading || isStarting || isRestarting || isStopping || !canStart
+            }
+          >
+            {gwLoading || isStarting || isRestarting || isStopping ? (
+              <IconLoader2 className="h-4 w-4 animate-spin opacity-70" />
+            ) : (
+              <IconPlayerPlay className="h-4 w-4 opacity-80" />
+            )}
+            <span className="text-xs font-semibold">
+              {isStopping
+                ? t("header.gateway.status.stopping")
+                : isRestarting
+                  ? t("header.gateway.status.restarting")
+                  : isStarting
+                    ? t("header.gateway.status.starting")
+                    : t("header.gateway.action.start")}
+            </span>
+          </Button>
+        )}
 
         <Separator
           className="mx-4 my-2 hidden md:block"

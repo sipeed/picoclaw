@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next"
 
 import type { ChannelConfig } from "@/api/channels"
 import { maskedSecretPlaceholder } from "@/components/secret-placeholder"
-import { Field, KeyInput } from "@/components/shared-form"
+import { Field, KeyInput, SwitchCardField } from "@/components/shared-form"
 import { Input } from "@/components/ui/input"
 
 interface FeishuFormProps {
@@ -14,6 +14,10 @@ interface FeishuFormProps {
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : ""
+}
+
+function asBool(value: unknown): boolean {
+  return typeof value === "boolean" ? value : false
 }
 
 function asStringArray(value: unknown): string[] {
@@ -98,6 +102,12 @@ export function FeishuForm({
           )}
         />
       </Field>
+      <SwitchCardField
+        label={t("channels.field.isLark")}
+        hint={t("channels.form.desc.isLark")}
+        checked={asBool(config.is_lark)}
+        onCheckedChange={(checked) => onChange("is_lark", checked)}
+      />
       <Field
         label={t("channels.field.allowFrom")}
         hint={t("channels.form.desc.allowFrom")}

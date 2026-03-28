@@ -1,19 +1,19 @@
 package middleware
 
 import (
-	"log"
+	"fmt"
 	"net/http"
 	"runtime/debug"
-	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // JSONContentType sets the Content-Type header to application/json for
 // API requests handled by the wrapped handler.
-// SSE endpoints (text/event-stream) are excluded.
 func JSONContentType(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasSuffix(r.URL.Path, "/events") {
+		if len(r.URL.Path) >= 5 && r.URL.Path[:5] == "/api/" {
 			w.Header().Set("Content-Type", "application/json")
 		}
 		next.ServeHTTP(w, r)
@@ -32,7 +32,6 @@ func (rr *responseRecorder) WriteHeader(code int) {
 }
 
 // Flush delegates to the underlying ResponseWriter if it implements http.Flusher.
-// This is required for SSE (Server-Sent Events) to work through the middleware.
 func (rr *responseRecorder) Flush() {
 	if f, ok := rr.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
@@ -51,7 +50,7 @@ func Logger(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.statusCode, time.Since(start))
+		logger.DebugC("http", fmt.Sprintf("%s %s %d %s", r.Method, r.URL.Path, rec.statusCode, time.Since(start)))
 	})
 }
 
@@ -61,7 +60,7 @@ func Recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("panic recovered: %v\n%s", err, debug.Stack())
+				logger.ErrorC("http", fmt.Sprintf("panic recovered: %v\n%s", err, debug.Stack()))
 				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 			}
 		}()

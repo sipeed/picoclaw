@@ -13,9 +13,10 @@ import {
   setLauncherConfig as updateLauncherConfig,
 } from "@/api/system"
 import {
-  AdvancedSection,
   AgentDefaultsSection,
+  CronSection,
   DevicesSection,
+  ExecSection,
   LauncherSection,
   RuntimeSection,
 } from "@/components/config/config-sections"
@@ -27,10 +28,10 @@ import {
   buildFormFromConfig,
   parseCIDRText,
   parseIntField,
+  parseMultilineList,
 } from "@/components/config/form-model"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 
 export function ConfigPage() {
   const { t } = useTranslation()
@@ -56,11 +57,7 @@ export function ConfigPage() {
     },
   })
 
-  const {
-    data: launcherConfig,
-    isLoading: isLauncherLoading,
-    error: launcherError,
-  } = useQuery({
+  const { data: launcherConfig, isLoading: isLauncherLoading } = useQuery({
     queryKey: ["system", "launcher-config"],
     queryFn: getLauncherConfig,
   })
@@ -111,10 +108,6 @@ export function ConfigPage() {
       ? t("pages.config.autostart_unsupported")
       : t("pages.config.autostart_hint")
 
-  const launcherHint = launcherError
-    ? t("pages.config.launcher_load_error")
-    : t("pages.config.launcher_restart_hint")
-
   const updateField = <K extends keyof CoreConfigForm>(
     key: K,
     value: CoreConfigForm[K],
@@ -154,10 +147,18 @@ export function ConfigPage() {
         const maxTokens = parseIntField(form.maxTokens, "Max tokens", {
           min: 1,
         })
+        const contextWindow = form.contextWindow.trim()
+          ? parseIntField(form.contextWindow, "Context window", { min: 1 })
+          : undefined
         const maxToolIterations = parseIntField(
           form.maxToolIterations,
           "Max tool iterations",
           { min: 1 },
+        )
+        const toolFeedbackMaxArgsLength = parseIntField(
+          form.toolFeedbackMaxArgsLength,
+          "Tool feedback max args length",
+          { min: 0 },
         )
         const summarizeMessageThreshold = parseIntField(
           form.summarizeMessageThreshold,
@@ -174,13 +175,46 @@ export function ConfigPage() {
           "Heartbeat interval",
           { min: 1 },
         )
+        const cronExecTimeoutMinutes = parseIntField(
+          form.cronExecTimeoutMinutes,
+          "Cron exec timeout",
+          { min: 0 },
+        )
+        const execConfigPatch: Record<string, unknown> = {
+          enabled: form.execEnabled,
+        }
+
+        if (form.execEnabled) {
+          execConfigPatch.allow_remote = form.allowRemote
+          execConfigPatch.enable_deny_patterns = form.enableDenyPatterns
+          execConfigPatch.custom_allow_patterns = parseMultilineList(
+            form.customAllowPatternsText,
+          )
+          execConfigPatch.timeout_seconds = parseIntField(
+            form.execTimeoutSeconds,
+            "Exec timeout",
+            { min: 0 },
+          )
+
+          if (form.enableDenyPatterns) {
+            execConfigPatch.custom_deny_patterns = parseMultilineList(
+              form.customDenyPatternsText,
+            )
+          }
+        }
 
         await patchAppConfig({
           agents: {
             defaults: {
               workspace,
               restrict_to_workspace: form.restrictToWorkspace,
+              split_on_marker: form.splitOnMarker,
+              tool_feedback: {
+                enabled: form.toolFeedbackEnabled,
+                max_args_length: toolFeedbackMaxArgsLength,
+              },
               max_tokens: maxTokens,
+              context_window: contextWindow,
               max_tool_iterations: maxToolIterations,
               summarize_message_threshold: summarizeMessageThreshold,
               summarize_token_percent: summarizeTokenPercent,
@@ -190,9 +224,11 @@ export function ConfigPage() {
             dm_scope: dmScope,
           },
           tools: {
-            exec: {
-              allow_remote: form.allowRemote,
+            cron: {
+              allow_command: form.allowCommand,
+              exec_timeout_minutes: cronExecTimeoutMinutes,
             },
+            exec: execConfigPatch,
           },
           heartbeat: {
             enabled: form.heartbeatEnabled,
@@ -287,20 +323,17 @@ export function ConfigPage() {
 
               <AgentDefaultsSection form={form} onFieldChange={updateField} />
 
-              <Separator />
-
               <RuntimeSection form={form} onFieldChange={updateField} />
 
-              <Separator />
+              <ExecSection form={form} onFieldChange={updateField} />
+
+              <CronSection form={form} onFieldChange={updateField} />
 
               <LauncherSection
                 launcherForm={launcherForm}
                 onFieldChange={updateLauncherField}
-                launcherHint={launcherHint}
                 disabled={saving || isLauncherLoading}
               />
-
-              <Separator />
 
               <DevicesSection
                 form={form}
@@ -315,10 +348,6 @@ export function ConfigPage() {
                 }
                 onAutoStartChange={setAutoStartEnabled}
               />
-
-              <Separator />
-
-              <AdvancedSection />
 
               <div className="flex justify-end gap-2">
                 <Button

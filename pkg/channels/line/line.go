@@ -32,6 +32,10 @@ const (
 	lineBotInfoEndpoint  = lineAPIBase + "/info"
 	lineLoadingEndpoint  = lineAPIBase + "/chat/loading/start"
 	lineReplyTokenMaxAge = 25 * time.Second
+
+	// Limit request body to prevent memory exhaustion (DoS).
+	// LINE webhook payloads are typically a few KB; 1 MiB is generous.
+	maxWebhookBodySize = 1 << 20 // 1 MiB
 )
 
 type replyTokenEntry struct {
@@ -58,7 +62,7 @@ type LINEChannel struct {
 
 // NewLINEChannel creates a new LINE channel instance.
 func NewLINEChannel(cfg config.LINEConfig, messageBus *bus.MessageBus) (*LINEChannel, error) {
-	if cfg.ChannelSecret == "" || cfg.ChannelAccessToken == "" {
+	if cfg.ChannelSecret.String() == "" || cfg.ChannelAccessToken.String() == "" {
 		return nil, fmt.Errorf("line channel_secret and channel_access_token are required")
 	}
 
@@ -106,7 +110,7 @@ func (c *LINEChannel) fetchBotInfo() error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken)
+	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken.String())
 
 	resp, err := c.infoClient.Do(req)
 	if err != nil {
@@ -166,12 +170,17 @@ func (c *LINEChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBodySize+1))
 	if err != nil {
 		logger.ErrorCF("line", "Failed to read request body", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	if int64(len(body)) > maxWebhookBodySize {
+		logger.WarnC("line", "Webhook request body too large, rejected")
+		http.Error(w, "Request entity too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -207,7 +216,7 @@ func (c *LINEChannel) verifySignature(body []byte, signature string) bool {
 		return false
 	}
 
-	mac := hmac.New(sha256.New, []byte(c.config.ChannelSecret))
+	mac := hmac.New(sha256.New, []byte(c.config.ChannelSecret.String()))
 	mac.Write(body)
 	expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 
@@ -292,8 +301,9 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	storeMedia := func(localPath, filename string) string {
 		if store := c.GetMediaStore(); store != nil {
 			ref, err := store.Store(localPath, media.MediaMeta{
-				Filename: filename,
-				Source:   "line",
+				Filename:      filename,
+				Source:        "line",
+				CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 			}, scope)
 			if err == nil {
 				return ref
@@ -645,7 +655,7 @@ func (c *LINEChannel) callAPI(ctx context.Context, endpoint string, payload any)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken)
+	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken.String())
 
 	resp, err := c.apiClient.Do(req)
 	if err != nil {
@@ -670,7 +680,7 @@ func (c *LINEChannel) downloadContent(messageID, filename string) string {
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "line",
 		ExtraHeaders: map[string]string{
-			"Authorization": "Bearer " + c.config.ChannelAccessToken,
+			"Authorization": "Bearer " + c.config.ChannelAccessToken.String(),
 		},
 	})
 }

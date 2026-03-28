@@ -59,6 +59,9 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 		}
 	}
 
+	// Keep track of explicit username format
+	isAtUsername := strings.HasPrefix(allowed, "@")
+
 	// Strip leading "@" for username matching
 	trimmed := strings.TrimPrefix(allowed, "@")
 
@@ -75,11 +78,9 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 		return true
 	}
 
-	// Match against Username
-	if sender.Username != "" {
-		if sender.Username == trimmed || sender.Username == allowedUser {
-			return true
-		}
+	// Match against Username only when explicitly requested via "@username"
+	if isAtUsername && sender.Username != "" && sender.Username == trimmed {
+		return true
 	}
 
 	// Match compound sender format against allowed parts
@@ -93,13 +94,18 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 	return false
 }
 
-// isNumeric returns true if s consists entirely of digits.
+// isNumeric returns true if s consists entirely of digits, allowing for an optional leading minus sign
+// (required for Telegram group/channel IDs like -1001234567890).
 func isNumeric(s string) bool {
 	if s == "" {
 		return false
 	}
-	for _, r := range s {
-		if r < '0' || r > '9' {
+	start := 0
+	if s[0] == '-' && len(s) > 1 {
+		start = 1
+	}
+	for i := start; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
 			return false
 		}
 	}

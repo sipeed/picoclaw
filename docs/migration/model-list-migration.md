@@ -40,7 +40,7 @@ The new `model_list` configuration offers several advantages:
   "agents": {
     "defaults": {
       "provider": "openai",
-      "model": "gpt-5.2"
+      "model": "gpt-5.4"
     }
   }
 }
@@ -53,7 +53,7 @@ The new `model_list` configuration offers several advantages:
   "model_list": [
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-openai-key",
       "api_base": "https://api.openai.com/v1"
     },
@@ -70,7 +70,7 @@ The new `model_list` configuration offers several advantages:
   ],
   "agents": {
     "defaults": {
-      "model": "gpt4"
+      "model_name": "gpt4"
     }
   }
 }
@@ -82,7 +82,7 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 
 | Prefix | Description | Example |
 |--------|-------------|---------|
-| `openai/` | OpenAI API (default) | `openai/gpt-5.2` |
+| `openai/` | OpenAI API (default) | `openai/gpt-5.4` |
 | `anthropic/` | Anthropic API | `anthropic/claude-opus-4` |
 | `antigravity/` | Google via Antigravity OAuth | `antigravity/gemini-2.0-flash` |
 | `gemini/` | Google Gemini API | `gemini/gemini-2.0-flash-exp` |
@@ -109,7 +109,7 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 | Field | Required | Description |
 |-------|----------|-------------|
 | `model_name` | Yes | User-facing alias for the model |
-| `model` | Yes | Protocol and model identifier (e.g., `openai/gpt-5.2`) |
+| `model` | Yes | Protocol and model identifier (e.g., `openai/gpt-5.4`) |
 | `api_base` | No | API endpoint URL |
 | `api_key` | No* | API authentication key |
 | `proxy` | No | HTTP proxy URL |
@@ -130,19 +130,19 @@ Configure multiple endpoints for the same model to distribute load:
   "model_list": [
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-key1",
       "api_base": "https://api1.example.com/v1"
     },
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-key2",
       "api_base": "https://api2.example.com/v1"
     },
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-key3",
       "api_base": "https://api3.example.com/v1"
     }
@@ -184,7 +184,7 @@ During the migration period, your existing `providers` configuration will contin
 - [ ] Identify all providers you're currently using
 - [ ] Create `model_list` entries for each provider
 - [ ] Use appropriate protocol prefixes
-- [ ] Update `agents.defaults.model` to reference the new `model_name`
+- [ ] Update `agents.defaults.model_name` to reference the new `model_name`
 - [ ] Test that all models work correctly
 - [ ] Remove or comment out the old `providers` section
 
@@ -196,7 +196,7 @@ During the migration period, your existing `providers` configuration will contin
 model "xxx" not found in model_list or providers
 ```
 
-**Solution**: Ensure the `model_name` in `model_list` matches the value in `agents.defaults.model`.
+**Solution**: Ensure the `model_name` in `model_list` matches the value in `agents.defaults.model_name`.
 
 ### Unknown protocol error
 

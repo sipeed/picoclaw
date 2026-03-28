@@ -159,10 +159,7 @@ func RunToolLoop(
 
 		// Append results in original order
 		for _, r := range results {
-			contentForLLM := r.result.ForLLM
-			if contentForLLM == "" && r.result.Err != nil {
-				contentForLLM = r.result.Err.Error()
-			}
+			contentForLLM := r.result.ContentForLLM()
 
 			messages = append(messages, providers.Message{
 				Role:       "tool",

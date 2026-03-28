@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -19,9 +20,14 @@ type ToolEntry struct {
 }
 
 type ToolRegistry struct {
-	tools   map[string]*ToolEntry
-	mu      sync.RWMutex
-	version atomic.Uint64 // incremented on Register/RegisterHidden for cache invalidation
+	tools      map[string]*ToolEntry
+	mu         sync.RWMutex
+	version    atomic.Uint64 // incremented on Register/RegisterHidden for cache invalidation
+	mediaStore media.MediaStore
+}
+
+type mediaStoreAware interface {
+	SetMediaStore(store media.MediaStore)
 }
 
 func NewToolRegistry() *ToolRegistry {
@@ -43,6 +49,9 @@ func (r *ToolRegistry) Register(tool Tool) {
 		IsCore: true,
 		TTL:    0, // Core tools do not use TTL
 	}
+	if aware, ok := tool.(mediaStoreAware); ok && r.mediaStore != nil {
+		aware.SetMediaStore(r.mediaStore)
+	}
 	r.version.Add(1)
 	logger.DebugCF("tools", "Registered core tool", map[string]any{"name": name})
 }
@@ -61,8 +70,25 @@ func (r *ToolRegistry) RegisterHidden(tool Tool) {
 		IsCore: false,
 		TTL:    0,
 	}
+	if aware, ok := tool.(mediaStoreAware); ok && r.mediaStore != nil {
+		aware.SetMediaStore(r.mediaStore)
+	}
 	r.version.Add(1)
 	logger.DebugCF("tools", "Registered hidden tool", map[string]any{"name": name})
+}
+
+// SetMediaStore injects a MediaStore into all registered tools that can
+// consume it, and remembers it for future registrations.
+func (r *ToolRegistry) SetMediaStore(store media.MediaStore) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.mediaStore = store
+	for _, entry := range r.tools {
+		if aware, ok := entry.Tool.(mediaStoreAware); ok {
+			aware.SetMediaStore(store)
+		}
+	}
 }
 
 // PromoteTools atomically sets the TTL for multiple non-core tools.
@@ -180,6 +206,14 @@ func (r *ToolRegistry) ExecuteWithContext(
 		return ErrorResult(fmt.Sprintf("tool %q not found", name)).WithError(fmt.Errorf("tool not found"))
 	}
 
+	// Validate arguments against the tool's declared schema.
+	if err := validateToolArgs(tool.Parameters(), args); err != nil {
+		logger.WarnCF("tool", "Tool argument validation failed",
+			map[string]any{"tool": name, "error": err.Error()})
+		return ErrorResult(fmt.Sprintf("invalid arguments for tool %q: %s", name, err)).
+			WithError(fmt.Errorf("argument validation failed: %w", err))
+	}
+
 	// Inject channel/chatID into ctx so tools read them via ToolChannel(ctx)/ToolChatID(ctx).
 	// Always inject — tools validate what they require.
 	ctx = WithToolContext(ctx, channel, chatID)
@@ -188,15 +222,50 @@ func (r *ToolRegistry) ExecuteWithContext(
 	// The callback is a call parameter, not mutable state on the tool instance.
 	var result *ToolResult
 	start := time.Now()
-	if asyncExec, ok := tool.(AsyncExecutor); ok && asyncCallback != nil {
-		logger.DebugCF("tool", "Executing async tool via ExecuteAsync",
-			map[string]any{
-				"tool": name,
-			})
-		result = asyncExec.ExecuteAsync(ctx, args, asyncCallback)
-	} else {
-		result = tool.Execute(ctx, args)
+
+	// Use recover to catch any panics during tool execution
+	// This prevents tool crashes from killing the entire agent
+	func() {
+		defer func() {
+			if re := recover(); re != nil {
+				errMsg := fmt.Sprintf("Tool '%s' crashed with panic: %v", name, re)
+				logger.ErrorCF("tool", "Tool execution panic recovered",
+					map[string]any{
+						"tool":  name,
+						"panic": fmt.Sprintf("%v", re),
+					})
+				result = &ToolResult{
+					ForLLM:  errMsg,
+					ForUser: errMsg,
+					IsError: true,
+					Err:     fmt.Errorf("panic: %v", re),
+				}
+			}
+		}()
+
+		if asyncExec, ok := tool.(AsyncExecutor); ok && asyncCallback != nil {
+			logger.DebugCF("tool", "Executing async tool via ExecuteAsync",
+				map[string]any{
+					"tool": name,
+				})
+			result = asyncExec.ExecuteAsync(ctx, args, asyncCallback)
+		} else {
+			result = tool.Execute(ctx, args)
+		}
+	}()
+
+	// Handle nil result (should not happen, but defensive)
+	if result == nil {
+		result = &ToolResult{
+			ForLLM:  fmt.Sprintf("Tool '%s' returned nil result unexpectedly", name),
+			ForUser: fmt.Sprintf("Tool '%s' returned nil result unexpectedly", name),
+			IsError: true,
+			Err:     fmt.Errorf("nil result from tool"),
+		}
 	}
+
+	result = normalizeToolResult(result, name, r.mediaStore, channel, chatID)
+
 	duration := time.Since(start)
 
 	// Log based on result type
@@ -218,7 +287,7 @@ func (r *ToolRegistry) ExecuteWithContext(
 			map[string]any{
 				"tool":          name,
 				"duration_ms":   duration.Milliseconds(),
-				"result_length": len(result.ForLLM),
+				"result_length": len(result.ContentForLLM()),
 			})
 	}
 
@@ -303,6 +372,29 @@ func (r *ToolRegistry) List() []string {
 	return r.sortedToolNames()
 }
 
+// Clone creates an independent copy of the registry containing the same tool
+// entries (shallow copy of each ToolEntry). This is used to give subagents a
+// snapshot of the parent agent's tools without sharing the same registry —
+// tools registered on the parent after cloning (e.g. spawn, spawn_status)
+// will NOT be visible to the clone, preventing recursive subagent spawning.
+// The version counter is reset to 0 in the clone as it's a new independent registry.
+func (r *ToolRegistry) Clone() *ToolRegistry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	clone := &ToolRegistry{
+		tools:      make(map[string]*ToolEntry, len(r.tools)),
+		mediaStore: r.mediaStore,
+	}
+	for name, entry := range r.tools {
+		clone.tools[name] = &ToolEntry{
+			Tool:   entry.Tool,
+			IsCore: entry.IsCore,
+			TTL:    entry.TTL,
+		}
+	}
+	return clone
+}
+
 // Count returns the number of registered tools.
 func (r *ToolRegistry) Count() int {
 	r.mu.RLock()
@@ -328,4 +420,23 @@ func (r *ToolRegistry) GetSummaries() []string {
 		summaries = append(summaries, fmt.Sprintf("- `%s` - %s", entry.Tool.Name(), entry.Tool.Description()))
 	}
 	return summaries
+}
+
+// GetAll returns all registered tools (both core and non-core with TTL > 0).
+// Used by SubTurn to inherit parent's tool set.
+func (r *ToolRegistry) GetAll() []Tool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sorted := r.sortedToolNames()
+	tools := make([]Tool, 0, len(sorted))
+	for _, name := range sorted {
+		entry := r.tools[name]
+
+		// Include core tools and non-core tools with active TTL
+		if entry.IsCore || entry.TTL > 0 {
+			tools = append(tools, entry.Tool)
+		}
+	}
+	return tools
 }

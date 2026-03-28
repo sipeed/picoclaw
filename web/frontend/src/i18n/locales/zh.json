@@ -17,7 +17,7 @@
   "chat": {
     "welcome": "今天我能为您做些什么？",
     "welcomeDesc": "您可以询问我天气、设置或其他任何任务，我随时为您效劳。",
-    "placeholder": "输入新消息...",
+    "placeholder": "输入新消息...\n按 Enter 发送，Shift + Enter 换行",
     "newChat": "新建对话",
     "notConnected": "服务未运行，请先启动以进行对话。",
     "thinking": {
@@ -58,11 +58,15 @@
       },
       "action": {
         "start": "启动服务",
-        "stop": "停止服务"
+        "stop": "停止服务",
+        "restart": "重启服务"
       },
       "status": {
-        "starting": "服务启动中..."
-      }
+        "starting": "服务启动中...",
+        "restarting": "服务重启中...",
+        "stopping": "服务停止中..."
+      },
+      "restartRequired": "切换默认模型后需要重启服务才能生效。"
     }
   },
   "common": {
@@ -150,7 +154,8 @@
       "unconfigured": "未配置"
     },
     "badge": {
-      "default": "默认"
+      "default": "默认",
+      "virtual": "虚拟"
     },
     "action": {
       "edit": "编辑 API Key",
@@ -204,7 +209,9 @@
       "thinkingLevel": "思考级别",
       "thinkingLevelHint": "扩展思考预算：off、low、medium、high、xhigh、adaptive。",
       "maxTokensField": "Max Tokens 字段名",
-      "maxTokensFieldHint": "覆盖请求中 max_tokens 的字段名，例如 max_completion_tokens。"
+      "maxTokensFieldHint": "覆盖请求中 max_tokens 的字段名，例如 max_completion_tokens。",
+      "extraBody": "Extra Body",
+      "extraBodyHint": "要注入到请求体中的额外 JSON 字段，例如 {\"reasoning_split\": true}。"
     },
     "edit": {
       "title": "配置 {{name}}",
@@ -229,14 +236,47 @@
       "qq": "QQ",
       "onebot": "OneBot",
       "wecom": "企业微信",
-      "wecom_app": "企业微信应用",
-      "wecom_aibot": "企业微信 AI 机器人",
       "whatsapp": "WhatsApp",
       "whatsapp_native": "WhatsApp Native",
       "pico": "Web",
       "maixcam": "MaixCam",
       "matrix": "Matrix",
-      "irc": "IRC"
+      "irc": "IRC",
+      "weixin": "微信"
+    },
+    "weixin": {
+      "warningTitle": "测试阶段，请谨慎使用",
+      "warningDesc": "微信 Channel 当前仍处于测试阶段，存在封号风险。请仅在充分了解风险的前提下使用。",
+      "bindTitle": "微信账号绑定",
+      "bindDesc": "使用微信扫描二维码以绑定您的个人微信账号。",
+      "bind": "绑定微信",
+      "rebind": "重新绑定",
+      "bound": "微信已绑定",
+      "notBound": "尚未绑定微信账号。",
+      "generating": "正在生成二维码...",
+      "scanHint": "打开微信，扫描二维码",
+      "scanned": "已扫码 — 请在微信中确认",
+      "expired": "二维码已过期",
+      "retry": "重试",
+      "refresh": "刷新二维码",
+      "errorGeneric": "发生错误，请重试。"
+    },
+    "wecom": {
+      "bindTitle": "企业微信绑定",
+      "bindDesc": "使用企业微信扫描二维码以绑定您的 AI Bot。",
+      "enableDesc": "绑定后可在这里直接启用或停用频道。",
+      "enableBindFirst": "请先完成绑定，然后再启用频道。",
+      "bind": "绑定企业微信",
+      "rebind": "重新绑定",
+      "bound": "企业微信已绑定",
+      "notBound": "尚未绑定企业微信 AI Bot。",
+      "generating": "正在生成二维码...",
+      "scanHint": "打开企业微信，扫描二维码",
+      "scanned": "已扫码，请在企业微信中确认",
+      "expired": "二维码已过期",
+      "retry": "重试",
+      "refresh": "刷新二维码",
+      "errorGeneric": "发生错误，请重试。"
     },
     "field": {
       "token": "Bot Token",
@@ -255,6 +295,7 @@
       "placeholderText": "占位文案",
       "groupTriggerMentionOnly": "群聊仅提及时响应",
       "groupTriggerPrefixes": "群聊触发前缀",
+      "isLark": "Lark（国际版）",
       "allowFrom": "允许来源",
       "allowFromPlaceholder": "例如 123456, 789012",
       "allowOrigins": "允许来源域名",
@@ -268,7 +309,9 @@
       "saveError": "保存频道配置失败",
       "enabled": "已启用",
       "docLink": "配置文档",
-      "enableLabel": "启用频道"
+      "enableLabel": "启用频道",
+      "restartRequiredTitle": "需要重启服务",
+      "restartRequiredDesc": "{{name}} 的最新配置已保存。重启服务后才能正式生效。"
     },
     "form": {
       "desc": {
@@ -286,6 +329,7 @@
         "placeholderEnabled": "在最终回复发送前，先发送临时占位消息。",
         "groupTriggerMentionOnly": "在群聊中仅当提及机器人时才响应。",
         "groupTriggerPrefixes": "群聊触发前缀，多个值用逗号分隔。",
+        "isLark": "使用 Lark 国际版域名（open.larksuite.com）替代飞书域名（open.feishu.cn）。",
         "allowFrom": "允许访问的用户或群组 ID，多个值用逗号分隔。",
         "allowOrigins": "允许访问的来源域名，多个值用逗号分隔。",
         "wsUrl": "WebSocket 服务地址。",
@@ -321,6 +365,7 @@
         "realName": "显示名称。",
         "channels": "要加入的 IRC 频道列表。",
         "requestCaps": "连接时请求的 IRC 扩展能力列表。",
+        "maxBase64FileSizeMiB": "本地文件转为 base64 上传的最大体积，单位 MiB；0 表示不限制，仅影响本地文件，不影响 URL 直传。",
         "genericField": "用于配置{{field}}。"
       }
     },
@@ -331,33 +376,10 @@
   "pages": {
     "agent": {
       "load_error": "加载 Agent 支持信息失败。",
-      "stats": {
-        "workspace": "工作目录",
-        "workspace_hint": "默认 Agent 运行时使用的工作目录，也用于加载工作区技能。",
-        "skills": "可用技能数",
-        "skills_hint": "从工作区、全局目录和内置目录发现的技能。",
-        "tools": "已启用工具",
-        "tools_hint": "其中 {{blocked}} 个因依赖未满足而不可用。"
-      },
       "skills": {
-        "title": "技能",
         "description": "技能会从工作区、PicoClaw 全局目录和内置目录中加载。",
-        "hero_title": "技能库",
-        "hero_description": "在这里查看 Agent 当前可加载的能力包，并且不离开页面就能直接阅读生效后的 SKILL.md。",
-        "stats": {
-          "total": "技能总数",
-          "workspace": "工作区技能",
-          "shared": "共享技能"
-        },
         "empty": "当前没有可用技能。",
         "import": "导入技能",
-        "import_title": "导入技能",
-        "import_description": "通过上传 Markdown 文件创建工作区技能，文件会保存为新的 SKILL.md。",
-        "import_name": "技能名称",
-        "import_name_placeholder": "例如 my-workflow",
-        "import_file": "Markdown 文件",
-        "import_file_hint": "上传一个 .md 文件。后端会保存到 workspace/skills/<name>/SKILL.md。",
-        "import_confirm": "导入技能",
         "import_success": "技能导入成功。",
         "import_error": "导入技能失败。",
         "view": "查看",
@@ -371,28 +393,11 @@
         "viewer_description": "这里展示当前生效的 SKILL.md 内容。",
         "loading_detail": "正在加载技能内容...",
         "load_detail_error": "加载技能内容失败。",
-        "source": "来源",
         "path": "技能路径",
-        "no_description": "未提供描述。",
-        "sources": {
-          "workspace": "工作区",
-          "global": "全局",
-          "builtin": "内置"
-        },
-        "errors": {
-          "file_required": "请先选择要导入的 Markdown 文件。"
-        }
+        "no_description": "未提供描述。"
       },
       "tools": {
-        "title": "工具",
         "description": "这里展示每个 Agent 工具当前是已启用、已禁用，还是被依赖条件阻塞。",
-        "hero_title": "工具面板",
-        "hero_description": "集中查看 Agent 现在真正可调用的工具、被阻塞的能力，以及它们分别受哪项配置控制。",
-        "stats": {
-          "enabled": "已启用",
-          "blocked": "被阻塞",
-          "categories": "分类数"
-        },
         "empty": "当前没有可用工具。",
         "enable": "启用",
         "disable": "禁用",
@@ -429,10 +434,40 @@
       "workspace_hint": "智能体执行文件读写操作时使用的基础目录。",
       "restrict_workspace": "限制工作目录访问",
       "restrict_workspace_hint": "仅允许在工作目录内执行文件操作。",
-      "allow_remote": "允许远程执行 Shell 命令",
-      "allow_remote_hint": "开启后，来自远程会话或非本地上下文的请求也可以执行 shell 命令；关闭后，仅允许本地安全上下文执行。",
+      "split_on_marker": "连续短消息",
+      "split_on_marker_hint": "像真人聊天一样，把长难句拆成多条短消息快速发出",
+      "tool_feedback_enabled": "工具反馈",
+      "tool_feedback_enabled_hint": "在每次执行工具前，先向当前会话发送一条简短的工具调用预览。",
+      "tool_feedback_max_args_length": "工具反馈参数预览长度",
+      "tool_feedback_max_args_length_hint": "每条工具反馈消息中展示的参数字符上限。设为 0 时使用默认值。",
+      "exec_enabled": "允许命令执行",
+      "exec_enabled_hint": "控制应用是否允许执行命令。关闭后，所有命令请求都不会执行。",
+      "allow_remote": "允许远程命令执行",
+      "allow_remote_hint": "开启后，来自远程会话或非本地上下文的请求也可以执行命令；关闭后，仅允许本地安全上下文执行命令。",
+      "enable_deny_patterns": "启用黑名单",
+      "enable_deny_patterns_hint": "开启后，应用会拦截匹配内置危险模式以及下方自定义命令黑名单的命令。",
+      "exec_timeout_seconds": "命令超时（秒）",
+      "exec_timeout_seconds_hint": "命令请求的最长运行时间。设置为 0 表示使用默认超时。",
+      "custom_deny_patterns": "命令黑名单",
+      "custom_deny_patterns_hint": "用于补充额外的命令拦截规则，每行一个正则表达式。命中任意一条规则的命令都会被阻止。",
+      "custom_allow_patterns": "命令白名单",
+      "custom_allow_patterns_hint": "用于补充额外的命令放行规则，每行一个正则表达式。命中任意一条规则的命令会跳过黑名单检查，但仍受其他安全限制约束。",
+      "custom_patterns_placeholder": "^rm\\s+-rf\\b\n^git\\s+push\\b",
+      "pattern_detector_title": "规则检测工具",
+      "pattern_detector_hint": "输入命令以检测其是否匹配黑名单或白名单规则。",
+      "pattern_detector_input_placeholder": "输入要检测的命令，例如 rm -rf /tmp",
+      "pattern_detector_test_button": "检测",
+      "pattern_detector_result_allowed": "允许（匹配白名单）",
+      "pattern_detector_result_blocked": "阻止（匹配黑名单）",
+      "pattern_detector_result_no_match": "无匹配（将使用默认规则）",
+      "allow_shell_execution": "允许定时任务运行命令",
+      "allow_shell_execution_hint": "开启后，定时任务默认允许运行命令。关闭后，必须显式传入 command_confirm=true 才能创建运行命令的定时任务。",
+      "cron_exec_timeout": "定时命令超时（分钟）",
+      "cron_exec_timeout_hint": "定时任务中命令的最长运行时间。设置为 0 表示不限制超时。",
       "max_tokens": "最大 Token 数",
       "max_tokens_hint": "单次模型响应允许的最大 Token 数。",
+      "context_window": "上下文窗口",
+      "context_window_hint": "模型输入上下文容量（Token 数）。留空使用默认值（最大 Token 数的 4 倍）。",
       "max_tool_iterations": "最大工具迭代次数",
       "max_tool_iterations_hint": "单个任务中允许的工具调用循环上限。",
       "summarize_threshold": "触发摘要的消息阈值",
@@ -465,16 +500,20 @@
       "server_port_hint": "PicoClaw Web 的 HTTP 监听端口。",
       "lan_access": "启用局域网访问",
       "lan_access_hint": "允许局域网中的其他设备访问当前服务。",
-      "allowed_cidrs": "允许访问网段（CIDR）",
+      "allowed_cidrs": "允许访问网段",
       "allowed_cidrs_hint": "仅允许这些 CIDR 网段的客户端访问服务。可按行或逗号分隔；留空表示允许所有来源。",
       "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
-      "launcher_load_error": "加载服务参数失败。",
-      "launcher_restart_hint": "服务参数变更需重启 PicoClaw Web 后生效。",
-      "advanced_desc": "可打开原始 JSON 页面直接编辑全部字段。",
+      "sections": {
+        "agent": "智能体",
+        "runtime": "运行时",
+        "exec": "运行命令",
+        "cron": "定时任务",
+        "launcher": "服务参数",
+        "devices": "设备"
+      },
       "open_raw": "原始配置",
       "back_to_visual": "可视化配置",
       "raw_json_title": "原始 JSON 配置",
-      "raw_json_desc": "高级用户可以直接编辑下方的原始 JSON 配置。",
       "json_placeholder": "请输入有效的 JSON 配置...",
       "save_success": "配置保存成功。",
       "save_error": "配置保存失败。",
@@ -488,7 +527,6 @@
       "unsaved_changes": "您有未保存的更改。"
     },
     "logs": {
-      "description": "系统日志和监控。",
       "clear": "清空日志",
       "empty": "等待日志中..."
     }

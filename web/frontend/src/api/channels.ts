@@ -62,4 +62,46 @@ export async function patchAppConfig(
   })
 }
 
+// WeChat QR login flow API
+
+export interface WeixinFlowResponse {
+  flow_id: string
+  status: "wait" | "scaned" | "confirmed" | "expired" | "error"
+  qr_data_uri?: string
+  account_id?: string
+  error?: string
+}
+
+export interface WecomFlowResponse {
+  flow_id: string
+  status: "wait" | "scaned" | "confirmed" | "expired" | "error"
+  qr_data_uri?: string
+  bot_id?: string
+  error?: string
+}
+
+export async function startWeixinFlow(): Promise<WeixinFlowResponse> {
+  return request<WeixinFlowResponse>("/api/weixin/flows", { method: "POST" })
+}
+
+export async function pollWeixinFlow(
+  flowID: string,
+): Promise<WeixinFlowResponse> {
+  return request<WeixinFlowResponse>(
+    `/api/weixin/flows/${encodeURIComponent(flowID)}`,
+  )
+}
+
+export async function startWecomFlow(): Promise<WecomFlowResponse> {
+  return request<WecomFlowResponse>("/api/wecom/flows", { method: "POST" })
+}
+
+export async function pollWecomFlow(
+  flowID: string,
+): Promise<WecomFlowResponse> {
+  return request<WecomFlowResponse>(
+    `/api/wecom/flows/${encodeURIComponent(flowID)}`,
+  )
+}
+
 export type { ChannelsCatalogResponse, ConfigActionResponse }

@@ -438,7 +438,7 @@ type ProviderAuthResult = {
 
 ### 1. Required Environment/Dependencies
 
-- Go ≥ 1.21
+- Go ≥ 1.25
 - PicoClaw codebase (`pkg/providers/` and `pkg/auth/`)
 - `crypto` and `net/http` standard library packages
 
@@ -584,7 +584,7 @@ Each SSE message (`data: {...}`) is wrapped in a `response` field:
   ],
   "agents": {
     "defaults": {
-      "model": "gemini-flash"
+      "model_name": "gemini-flash"
     }
   }
 }
@@ -674,7 +674,7 @@ Add a default entry in `pkg/config/defaults.go`:
 
 #### 5. Add Auth Support (Optional)
 
-If your provider requires OAuth or special authentication, add a case to `cmd/picoclaw/cmd_auth.go`:
+If your provider requires OAuth or special authentication, add a case to `cmd/picoclaw/internal/auth/helpers.go`:
 
 ```go
 case "your-provider":
@@ -736,7 +736,7 @@ export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/m
   - `pkg/auth/store.go` - Auth credential storage (`~/.picoclaw/auth.json`)
   - `pkg/providers/factory.go` - Provider factory and protocol routing
   - `pkg/providers/types.go` - Provider interface definitions
-  - `cmd/picoclaw/cmd_auth.go` - Auth CLI commands
+  - `cmd/picoclaw/internal/auth/helpers.go` - Auth CLI commands
 
 - **Documentation:**
   - `docs/ANTIGRAVITY_USAGE.md` - Antigravity usage guide

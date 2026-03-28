@@ -1,6 +1,8 @@
+> 返回 [README](../../../README.zh.md)
+
 # Telegram
 
-Telegram Channel 通过 Telegram 机器人 API 使用长轮询实现基于机器人的通信。它支持文本消息、媒体附件（照片、语音、音频、文档）、通过 Groq Whisper 进行语音转录以及内置命令处理器。
+Telegram Channel 通过 Telegram 机器人 API 使用长轮询实现基于机器人的通信。它支持文本消息、媒体附件（照片、语音、音频、文档）、语音转录（配置见[提供商与模型配置](../../zh/providers.md#语音转录)），以及内置命令处理器。
 
 ## 配置
 
@@ -31,3 +33,23 @@ Telegram Channel 通过 Telegram 机器人 API 使用长轮询实现基于机器
 3. 获取 HTTP API Token
 4. 将 Token 填入配置文件中
 5. (可选) 配置 `allow_from` 以限制允许互动的用户 ID (可通过 `@userinfobot` 获取 ID)
+
+## 内置命令
+
+Telegram 会在启动时自动注册 PicoClaw 的顶级 Bot 命令，包括 `/start`、`/help`、`/show`、`/list` 和 `/use`。
+
+与技能相关的命令：
+
+- `/list skills`：列出当前 Agent 可见的已安装技能。
+- `/use <skill> <message>`：只在本次请求中强制使用指定技能。
+- `/use <skill>`：为同一聊天中的下一条消息预先启用该技能。
+- `/use clear`：清除待应用的技能覆盖。
+
+示例：
+
+```text
+/list skills
+/use git explain how to squash the last 3 commits
+/use italiapersonalfinance
+dammi le ultime news
+```

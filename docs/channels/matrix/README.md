@@ -1,3 +1,5 @@
+> Back to [README](../../../README.md)
+
 # Matrix Channel Configuration Guide
 
 ## 1. Example Configuration
@@ -20,10 +22,12 @@ Add this to `config.json`:
       },
       "placeholder": {
         "enabled": true,
-        "text": "Thinking..."
+        "text": ["Thinking...", "Processing...", "Typing..."]
       },
       "reasoning_channel_id": "",
-      "message_format": "richtext"
+      "message_format": "richtext",
+      "crypto_database_path": "",
+      "crypto_passphrase": "YOUR_MATRIX_CRYPTO_PICKLE_KEY"
     }
   }
 }
@@ -41,9 +45,18 @@ Add this to `config.json`:
 | join_on_invite       | bool     | No       | Auto-join invited rooms |
 | allow_from           | []string | No       | User whitelist (Matrix user IDs) |
 | group_trigger        | object   | No       | Group trigger strategy (`mention_only` / `prefixes`) |
-| placeholder          | object   | No       | Placeholder message config |
+| placeholder          | object   | No       | Placeholder message config (see below) |
 | reasoning_channel_id | string   | No       | Target channel for reasoning output |
 | message_format       | string   | No       | Output format: `"richtext"` (default) renders markdown as HTML; `"plain"` sends plain text only |
+| crypto_database_path | string   | No       | Path to store the crypto database (uses workspace path `~/.picoclaw/workspace` if empty) |
+| crypto_passphrase    | string   | No       | Serialization key for encrypting session keys in the database; must remain unchanged once set |
+
+### Placeholder Config
+
+| Field   | Type           | Required | Description |
+|---------|----------------|----------|-------------|
+| enabled | bool           | No       | Enable placeholder messages (default: false) |
+| text    | string/[]string | No       | Placeholder text(s). Can be a single string or array of strings. If multiple texts are provided, one is randomly selected at runtime. Default: "Thinking..." |
 
 ## 3. Currently Supported
 
@@ -56,6 +69,7 @@ Add this to `config.json`:
 - Typing state (`m.typing`)
 - Placeholder message + final reply replacement
 - Auto-join invited rooms (can be disabled)
+- End-to-end encryption (E2EE) support for encrypted messages
 
 ## 4. TODO
 
