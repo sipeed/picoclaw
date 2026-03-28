@@ -1680,7 +1680,20 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.recordPersistedMessage(rootMsg)
 	}
 
-	activeCandidates, activeModel := al.selectCandidates(ts.agent, ts.userMessage, messages)
+	currentTurnResolved := resolveMediaRefs([]providers.Message{
+		{Role: "user", Media: append([]string(nil), ts.media...)},
+	}, al.mediaStore, maxMediaSize)
+	var currentTurnMedia []string
+	if len(currentTurnResolved) > 0 {
+		currentTurnMedia = currentTurnResolved[0].Media
+	}
+
+	activeCandidates, activeModel, useImageFallback := al.selectCandidates(
+		ts.agent,
+		ts.userMessage,
+		messages,
+		currentTurnMedia,
+	)
 	pendingMessages := append([]providers.Message(nil), ts.opts.InitialSteeringMessages...)
 	var finalContent string
 
@@ -1898,13 +1911,19 @@ turnLoop:
 			defer al.activeRequests.Done()
 
 			if len(activeCandidates) > 1 && al.fallback != nil {
-				fbResult, fbErr := al.fallback.Execute(
-					providerCtx,
-					activeCandidates,
-					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return ts.agent.Provider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
-					},
+				runCandidate := func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
+					return ts.agent.Provider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
+				}
+
+				var (
+					fbResult *providers.FallbackResult
+					fbErr    error
 				)
+				if useImageFallback {
+					fbResult, fbErr = al.fallback.ExecuteImage(providerCtx, activeCandidates, runCandidate)
+				} else {
+					fbResult, fbErr = al.fallback.Execute(providerCtx, activeCandidates, runCandidate)
+				}
 				if fbErr != nil {
 					return nil, fbErr
 				}
@@ -2747,9 +2766,19 @@ func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
 	userMsg string,
 	history []providers.Message,
-) (candidates []providers.FallbackCandidate, model string) {
+	currentTurnMedia []string,
+) (candidates []providers.FallbackCandidate, model string, useImageFallback bool) {
+	if hasImageMediaRefs(currentTurnMedia) && len(agent.ImageCandidates) > 0 {
+		logger.InfoCF("agent", "Image model selected",
+			map[string]any{
+				"agent_id":    agent.ID,
+				"image_model": agent.ImageModel,
+			})
+		return agent.ImageCandidates, resolvedCandidateModel(agent.ImageCandidates, agent.ImageModel), true
+	}
+
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
-		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
+		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false
 	}
 
 	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
@@ -2760,7 +2789,7 @@ func (al *AgentLoop) selectCandidates(
 				"score":     score,
 				"threshold": agent.Router.Threshold(),
 			})
-		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
+		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false
 	}
 
 	logger.InfoCF("agent", "Model routing: light model selected",
@@ -2770,7 +2799,16 @@ func (al *AgentLoop) selectCandidates(
 			"score":       score,
 			"threshold":   agent.Router.Threshold(),
 		})
-	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel())
+	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel()), false
+}
+
+func hasImageMediaRefs(mediaRefs []string) bool {
+	for _, ref := range mediaRefs {
+		if strings.HasPrefix(strings.ToLower(ref), "data:image/") {
+			return true
+		}
+	}
+	return false
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
