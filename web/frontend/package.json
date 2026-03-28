@@ -16,7 +16,7 @@
     "@fontsource-variable/inter": "^5.2.8",
     "@tabler/icons-react": "^3.40.0",
     "@tailwindcss/vite": "^4.2.2",
-    "@tanstack/react-query": "^5.90.21",
+    "@tanstack/react-query": "^5.95.2",
     "@tanstack/react-router": "^1.167.0",
     "@tanstack/react-router-devtools": "^1.163.3",
     "class-variance-authority": "^0.7.1",
