@@ -31,6 +31,30 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Channel 独立运行模式
+
+当你希望在不启动 gateway 侧服务的情况下，仅运行已启用的 channel 与 AgentLoop 时，可使用 `picoclaw channel start`。
+
+```bash
+# 启动 config.json 中所有已启用 channel
+picoclaw channel start
+
+# 与 gateway 启动校验保持一致
+picoclaw channel start --allow-empty
+picoclaw channel start --debug
+```
+
+与 `picoclaw gateway` 相比，channel 独立运行模式：
+
+- 保留 MessageBus + AgentLoop + ChannelManager（完整消息处理链路）
+- 启动共享 HTTP 服务，用于 channel webhook 与 `/health`/`/ready`
+- **不会** 启动 Cron、Heartbeat、Device 服务
+- **不会** 启用配置热更新和 `/reload`
+
+验证说明：channel 独立运行模式在设计上对各渠道通用。当前运行时验证主要覆盖 QQ，其他渠道仍在持续验证中。
+
+若需要完整控制面与后台服务，请使用 `picoclaw gateway`。
+
 ### 工作区布局 (Workspace Layout)
 
 PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/workspace`）：

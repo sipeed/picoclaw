@@ -35,12 +35,13 @@ import (
 )
 
 const (
-	dedupTTL      = 5 * time.Minute
-	dedupInterval = 60 * time.Second
-	dedupMaxSize  = 10000 // hard cap on dedup map entries
-	typingResend  = 8 * time.Second
-	typingSeconds = 10
-	bytesPerMiB   = 1024 * 1024
+	dedupTTL       = 5 * time.Minute
+	dedupInterval  = 60 * time.Second
+	dedupMaxSize   = 10000 // hard cap on dedup map entries
+	typingResend   = 8 * time.Second
+	typingSeconds  = 10
+	bytesPerMiB    = 1024 * 1024
+	qqStartupProbe = 15 * time.Second
 )
 
 type qqAPI interface {
@@ -80,6 +81,62 @@ type QQChannel struct {
 	// done is closed on Stop to shut down the dedup janitor.
 	done     chan struct{}
 	stopOnce sync.Once
+}
+
+type qqRawAuthor struct {
+	UserOpenID   string `json:"user_openid"`
+	MemberOpenID string `json:"member_openid"`
+}
+
+type qqRawEnvelope struct {
+	D struct {
+		Author      qqRawAuthor `json:"author"`
+		GroupOpenID string      `json:"group_openid"`
+	} `json:"d"`
+}
+
+func parseQQOpenIDs(raw []byte) (userOpenID, memberOpenID, groupOpenID string) {
+	if len(raw) == 0 {
+		return "", "", ""
+	}
+
+	var env qqRawEnvelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return "", "", ""
+	}
+
+	return strings.TrimSpace(env.D.Author.UserOpenID),
+		strings.TrimSpace(env.D.Author.MemberOpenID),
+		strings.TrimSpace(env.D.GroupOpenID)
+}
+
+// resolveAllowedSender validates sender against allow_from using openid first,
+// then falls back to legacy author/member id for backward compatibility.
+func (c *QQChannel) resolveAllowedSender(primaryOpenID, legacyID string) (bus.SenderInfo, bool, bool) {
+	primary := bus.SenderInfo{
+		Platform:    "qq",
+		PlatformID:  primaryOpenID,
+		CanonicalID: identity.BuildCanonicalID("qq", primaryOpenID),
+	}
+
+	if c.IsAllowedSender(primary) {
+		return primary, true, false
+	}
+
+	legacyID = strings.TrimSpace(legacyID)
+	if legacyID != "" && legacyID != primaryOpenID {
+		legacy := bus.SenderInfo{
+			Platform:   "qq",
+			PlatformID: legacyID,
+		}
+		if c.IsAllowedSender(legacy) {
+			// Keep openid/canonical sender identity in published messages,
+			// while recording that allow_from matched via legacy fallback.
+			return primary, true, true
+		}
+	}
+
+	return primary, false, false
 }
 
 func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
@@ -127,8 +184,24 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	// initialize OpenAPI client
 	c.api = botgo.NewOpenAPI(c.config.AppID, c.tokenSource).WithTimeout(5 * time.Second)
 
+	readyCh := make(chan struct{}, 1)
+	sessionErrCh := make(chan error, 1)
+
 	// register event handlers
 	intent := event.RegisterHandlers(
+		event.ReadyHandler(func(_ *dto.WSPayload, _ *dto.WSReadyData) {
+			select {
+			case readyCh <- struct{}{}:
+			default:
+			}
+		}),
+		event.ErrorNotifyHandler(func(err error) {
+			fmt.Printf("QQ gateway error: %v\n", err)
+			select {
+			case sessionErrCh <- err:
+			default:
+			}
+		}),
 		c.handleC2CMessage(),
 		c.handleGroupATMessage(),
 	)
@@ -145,16 +218,54 @@ func (c *QQChannel) Start(ctx context.Context) error {
 
 	// create and save sessionManager
 	c.sessionManager = botgo.NewSessionManager()
+	startupErr := make(chan error, 1)
 
 	// start WebSocket connection in goroutine to avoid blocking
 	go func() {
-		if err := c.sessionManager.Start(wsInfo, c.tokenSource, &intent); err != nil {
+		err := c.sessionManager.Start(wsInfo, c.tokenSource, &intent)
+		if err != nil {
 			logger.ErrorCF("qq", "WebSocket session error", map[string]any{
 				"error": err.Error(),
 			})
+			fmt.Printf("QQ WebSocket session error: %v\n", err)
 			c.SetRunning(false)
 		}
+		select {
+		case startupErr <- err:
+		default:
+		}
 	}()
+
+	select {
+	case <-readyCh:
+		fmt.Println("QQ WebSocket ready")
+	case err := <-sessionErrCh:
+		if c.cancel != nil {
+			c.cancel()
+		}
+		if err != nil {
+			return fmt.Errorf("QQ websocket failed before ready: %w", err)
+		}
+		return fmt.Errorf("QQ websocket failed before ready")
+	case err := <-startupErr:
+		if c.cancel != nil {
+			c.cancel()
+		}
+		if err != nil {
+			return fmt.Errorf("failed to establish QQ websocket session: %w", err)
+		}
+		return fmt.Errorf("QQ websocket session exited unexpectedly during startup")
+	case <-c.ctx.Done():
+		if c.cancel != nil {
+			c.cancel()
+		}
+		return fmt.Errorf("QQ websocket startup canceled: %w", c.ctx.Err())
+	case <-time.After(qqStartupProbe):
+		if c.cancel != nil {
+			c.cancel()
+		}
+		return fmt.Errorf("timeout waiting for QQ websocket READY event")
+	}
 
 	// start dedup janitor goroutine
 	go c.dedupJanitor()
@@ -586,28 +697,52 @@ func (c *QQChannel) maxBase64FileSizeBytes() int64 {
 // handleC2CMessage handles QQ private messages.
 func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 	return func(event *dto.WSPayload, data *dto.WSC2CMessageData) error {
+		if data == nil {
+			return nil
+		}
+
 		// deduplication check
 		if c.isDuplicate(data.ID) {
 			return nil
 		}
 
-		// extract user info
-		var senderID string
-		if data.Author != nil && data.Author.ID != "" {
-			senderID = data.Author.ID
-		} else {
+		var raw []byte
+		if event != nil {
+			raw = event.RawMessage
+		}
+		userOpenID, _, _ := parseQQOpenIDs(raw)
+		legacyAuthorID := ""
+		if data.Author != nil {
+			legacyAuthorID = strings.TrimSpace(data.Author.ID)
+		}
+
+		// QQ C2C endpoint requires user_openid; fallback to author.id for compatibility.
+		senderID := userOpenID
+		if senderID == "" {
+			senderID = legacyAuthorID
+		}
+		if senderID == "" {
 			logger.WarnC("qq", "Received message with no sender ID")
 			return nil
 		}
 
-		sender := bus.SenderInfo{
-			Platform:    "qq",
-			PlatformID:  data.Author.ID,
-			CanonicalID: identity.BuildCanonicalID("qq", data.Author.ID),
-		}
-
-		if !c.IsAllowedSender(sender) {
+		sender, allowed, usedLegacyFallback := c.resolveAllowedSender(senderID, legacyAuthorID)
+		if !allowed {
+			logger.WarnCF("qq", "Dropped C2C message by allow_from", map[string]any{
+				"sender_openid": senderID,
+				"legacy_id":     legacyAuthorID,
+				"message_id":    data.ID,
+			})
+			fmt.Println("QQ inbound C2C dropped by allow_from")
 			return nil
+		}
+		if usedLegacyFallback {
+			logger.WarnCF("qq", "allow_from matched legacy QQ sender id", map[string]any{
+				"sender_openid": senderID,
+				"legacy_id":     legacyAuthorID,
+				"message_id":    data.ID,
+			})
+			fmt.Println("QQ inbound C2C allow_from matched legacy id")
 		}
 
 		content := strings.TrimSpace(data.Content)
@@ -627,21 +762,30 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		})
 
 		// Store chat routing context.
-		c.chatType.Store(senderID, "direct")
-		c.lastMsgID.Store(senderID, data.ID)
+		chatID := senderID
+		c.chatType.Store(chatID, "direct")
+		c.lastMsgID.Store(chatID, data.ID)
 
 		// Reset msg_seq counter for new inbound message.
-		c.msgSeqCounters.Store(senderID, new(atomic.Uint64))
+		c.msgSeqCounters.Store(chatID, new(atomic.Uint64))
 
 		metadata := map[string]string{
 			"account_id": senderID,
 		}
+		if legacyAuthorID != "" && legacyAuthorID != senderID {
+			metadata["legacy_account_id"] = legacyAuthorID
+		}
+
+		allowCheckSenderID := senderID
+		if usedLegacyFallback && legacyAuthorID != "" {
+			allowCheckSenderID = legacyAuthorID
+		}
 
 		c.HandleMessage(c.ctx,
-			bus.Peer{Kind: "direct", ID: senderID},
+			bus.Peer{Kind: "direct", ID: chatID},
 			data.ID,
-			senderID,
-			senderID,
+			allowCheckSenderID,
+			chatID,
 			content,
 			mediaPaths,
 			metadata,
@@ -655,32 +799,67 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 // handleGroupATMessage handles QQ group @ messages.
 func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 	return func(event *dto.WSPayload, data *dto.WSGroupATMessageData) error {
+		if data == nil {
+			return nil
+		}
+
 		// deduplication check
 		if c.isDuplicate(data.ID) {
 			return nil
 		}
 
-		// extract user info
-		var senderID string
-		if data.Author != nil && data.Author.ID != "" {
-			senderID = data.Author.ID
-		} else {
+		var raw []byte
+		if event != nil {
+			raw = event.RawMessage
+		}
+		_, memberOpenID, groupOpenID := parseQQOpenIDs(raw)
+		legacyMemberID := ""
+		if data.Author != nil {
+			legacyMemberID = strings.TrimSpace(data.Author.ID)
+		}
+
+		// For QQ group callbacks, member_openid/group_openid are preferred identifiers.
+		senderID := memberOpenID
+		if senderID == "" {
+			senderID = legacyMemberID
+		}
+		if senderID == "" {
 			logger.WarnC("qq", "Received group message with no sender ID")
 			return nil
 		}
 
-		sender := bus.SenderInfo{
-			Platform:    "qq",
-			PlatformID:  data.Author.ID,
-			CanonicalID: identity.BuildCanonicalID("qq", data.Author.ID),
+		chatID := groupOpenID
+		if chatID == "" {
+			chatID = strings.TrimSpace(data.GroupID)
 		}
-
-		if !c.IsAllowedSender(sender) {
+		if chatID == "" {
+			logger.WarnC("qq", "Received group message with no group ID")
 			return nil
 		}
 
+		sender, allowed, usedLegacyFallback := c.resolveAllowedSender(senderID, legacyMemberID)
+		if !allowed {
+			logger.WarnCF("qq", "Dropped group message by allow_from", map[string]any{
+				"sender_openid": senderID,
+				"legacy_id":     legacyMemberID,
+				"group_id":      chatID,
+				"message_id":    data.ID,
+			})
+			fmt.Println("QQ inbound group dropped by allow_from")
+			return nil
+		}
+		if usedLegacyFallback {
+			logger.WarnCF("qq", "allow_from matched legacy QQ member id", map[string]any{
+				"sender_openid": senderID,
+				"legacy_id":     legacyMemberID,
+				"group_id":      chatID,
+				"message_id":    data.ID,
+			})
+			fmt.Println("QQ inbound group allow_from matched legacy id")
+		}
+
 		content := strings.TrimSpace(data.Content)
-		mediaPaths, attachmentNotes := c.extractInboundAttachments(data.GroupID, data.ID, data.Attachments)
+		mediaPaths, attachmentNotes := c.extractInboundAttachments(chatID, data.ID, data.Attachments)
 		for _, note := range attachmentNotes {
 			content = appendContent(content, note)
 		}
@@ -698,28 +877,36 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 
 		logger.InfoCF("qq", "Received group AT message", map[string]any{
 			"sender":      senderID,
-			"group":       data.GroupID,
+			"group":       chatID,
 			"length":      len(content),
 			"media_count": len(mediaPaths),
 		})
 
 		// Store chat routing context using GroupID as chatID.
-		c.chatType.Store(data.GroupID, "group")
-		c.lastMsgID.Store(data.GroupID, data.ID)
+		c.chatType.Store(chatID, "group")
+		c.lastMsgID.Store(chatID, data.ID)
 
 		// Reset msg_seq counter for new inbound message.
-		c.msgSeqCounters.Store(data.GroupID, new(atomic.Uint64))
+		c.msgSeqCounters.Store(chatID, new(atomic.Uint64))
 
 		metadata := map[string]string{
 			"account_id": senderID,
-			"group_id":   data.GroupID,
+			"group_id":   chatID,
+		}
+		if legacyMemberID != "" && legacyMemberID != senderID {
+			metadata["legacy_account_id"] = legacyMemberID
+		}
+
+		allowCheckSenderID := senderID
+		if usedLegacyFallback && legacyMemberID != "" {
+			allowCheckSenderID = legacyMemberID
 		}
 
 		c.HandleMessage(c.ctx,
-			bus.Peer{Kind: "group", ID: data.GroupID},
+			bus.Peer{Kind: "group", ID: chatID},
 			data.ID,
-			senderID,
-			data.GroupID,
+			allowCheckSenderID,
+			chatID,
 			content,
 			mediaPaths,
 			metadata,
