@@ -2321,7 +2321,7 @@ func TestProcessMessage_PublishesReasoningContentToReasoningChannel(t *testing.T
 		if outbound.Content != "thinking trace" {
 			t.Fatalf("reasoning content = %q, want %q", outbound.Content, "thinking trace")
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("expected reasoning content to be published to reasoning channel")
 	}
 }

@@ -353,6 +353,10 @@ func WarnCF(component string, message string, fields map[string]any) {
 	logMessage(WARN, component, message, fields)
 }
 
+func Warnf(message string, ss ...any) {
+	logMessage(WARN, "", fmt.Sprintf(message, ss...), nil)
+}
+
 func Error(message string) {
 	logMessage(ERROR, "", message, nil)
 }
