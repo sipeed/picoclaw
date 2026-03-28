@@ -245,6 +245,14 @@ func buildRequestBody(
 				content = append(content, toolUse)
 			}
 
+			// Skip empty assistant messages that have no content and no valid tool calls.
+			// This prevents breaking the Anthropic API requirement where a user message
+			// containing tool results must immediately follow the assistant message
+			// containing the corresponding tool calls.
+			if len(content) == 0 {
+				continue
+			}
+
 			apiMessages = append(apiMessages, map[string]any{
 				"role":    "assistant",
 				"content": content,

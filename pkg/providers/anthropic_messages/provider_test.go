@@ -506,6 +506,25 @@ func TestBuildRequestBodyEdgeCases(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "skip empty assistant messages",
+			messages: []Message{
+				{Role: "user", Content: "hello"},
+				{Role: "assistant", Content: "", ToolCalls: []ToolCall{}}, // Should be skipped
+				{Role: "assistant", Content: "valid message", ToolCalls: []ToolCall{}},
+				{Role: "assistant", Content: "", ToolCalls: []ToolCall{
+					{ID: "tool-valid", Name: "test_tool", Arguments: map[string]any{"arg": "value"}},
+				}},
+				{Role: "assistant", Content: "", ToolCalls: []ToolCall{
+					{ID: "tool-empty", Name: "", Arguments: map[string]any{"ignored": true}},
+				}}, // Should be skipped because tool call is empty and content is empty
+			},
+			model: "test-model",
+			options: map[string]any{
+				"max_tokens": 8192,
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -556,6 +575,16 @@ func TestBuildRequestBodyEdgeCases(t *testing.T) {
 				}
 				if gotID := toolUse["id"]; gotID != "tool-valid" {
 					t.Fatalf("tool_use id = %v, want %q", gotID, "tool-valid")
+				}
+			}
+
+			if tt.name == "skip empty assistant messages" {
+				messages, ok := got["messages"].([]any)
+				if !ok {
+					t.Fatalf("messages is not []any")
+				}
+				if len(messages) != 3 {
+					t.Fatalf("expected 3 API messages (user, assistant with text, assistant with tool_use), got %d: %#v", len(messages), messages)
 				}
 			}
 		})
