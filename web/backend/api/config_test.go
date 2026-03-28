@@ -282,7 +282,7 @@ func TestHandlePatchConfig_SavesDiscordTokenFromPayload(t *testing.T) {
 	if !cfg.Channels.Discord.Enabled {
 		t.Fatal("discord should be enabled after PATCH")
 	}
-	if got := cfg.Channels.Discord.Token(); got != "discord-test-token" {
+	if got := cfg.Channels.Discord.Token.String(); got != "discord-test-token" {
 		t.Fatalf("discord token = %q, want %q", got, "discord-test-token")
 	}
 }

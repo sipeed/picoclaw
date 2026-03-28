@@ -368,21 +368,21 @@ func applyConfigSecretsFromMap(cfg *config.Config, raw map[string]any) {
 		}
 		if feishu, hasFeishu := asMapField(channels, "feishu"); hasFeishu {
 			if appSecret, hasAppSecret := getSecretString(feishu, "app_secret"); hasAppSecret {
-				cfg.Channels.Feishu.SetAppSecret(appSecret)
+				cfg.Channels.Feishu.AppSecret.Set(appSecret)
 			}
 			if encryptKey, hasEncryptKey := getSecretString(feishu, "encrypt_key"); hasEncryptKey {
-				cfg.Channels.Feishu.SetEncryptKey(encryptKey)
+				cfg.Channels.Feishu.EncryptKey.Set(encryptKey)
 			}
 			if verificationToken, hasVerificationToken := getSecretString(
 				feishu,
 				"verification_token",
 			); hasVerificationToken {
-				cfg.Channels.Feishu.SetVerificationToken(verificationToken)
+				cfg.Channels.Feishu.VerificationToken.Set(verificationToken)
 			}
 		}
 		if discord, hasDiscord := asMapField(channels, "discord"); hasDiscord {
 			if token, hasToken := getSecretString(discord, "token"); hasToken {
-				cfg.Channels.Discord.SetToken(token)
+				cfg.Channels.Discord.Token.Set(token)
 			}
 		}
 		if weixin, hasWeixin := asMapField(channels, "weixin"); hasWeixin {
@@ -392,41 +392,41 @@ func applyConfigSecretsFromMap(cfg *config.Config, raw map[string]any) {
 		}
 		if qq, hasQQ := asMapField(channels, "qq"); hasQQ {
 			if appSecret, hasAppSecret := getSecretString(qq, "app_secret"); hasAppSecret {
-				cfg.Channels.QQ.SetAppSecret(appSecret)
+				cfg.Channels.QQ.AppSecret.Set(appSecret)
 			}
 		}
 		if dingtalk, hasDingTalk := asMapField(channels, "dingtalk"); hasDingTalk {
 			if clientSecret, hasClientSecret := getSecretString(dingtalk, "client_secret"); hasClientSecret {
-				cfg.Channels.DingTalk.SetClientSecret(clientSecret)
+				cfg.Channels.DingTalk.ClientSecret.Set(clientSecret)
 			}
 		}
 		if slack, hasSlack := asMapField(channels, "slack"); hasSlack {
 			if botToken, hasBotToken := getSecretString(slack, "bot_token"); hasBotToken {
-				cfg.Channels.Slack.SetBotToken(botToken)
+				cfg.Channels.Slack.BotToken.Set(botToken)
 			}
 			if appToken, hasAppToken := getSecretString(slack, "app_token"); hasAppToken {
-				cfg.Channels.Slack.SetAppToken(appToken)
+				cfg.Channels.Slack.AppToken.Set(appToken)
 			}
 		}
 		if matrix, hasMatrix := asMapField(channels, "matrix"); hasMatrix {
 			if accessToken, hasAccessToken := getSecretString(matrix, "access_token"); hasAccessToken {
-				cfg.Channels.Matrix.SetAccessToken(accessToken)
+				cfg.Channels.Matrix.AccessToken.Set(accessToken)
 			}
 		}
 		if line, hasLine := asMapField(channels, "line"); hasLine {
 			if channelSecret, hasChannelSecret := getSecretString(line, "channel_secret"); hasChannelSecret {
-				cfg.Channels.LINE.SetChannelSecret(channelSecret)
+				cfg.Channels.LINE.ChannelSecret.Set(channelSecret)
 			}
 			if channelAccessToken, hasChannelAccessToken := getSecretString(
 				line,
 				"channel_access_token",
 			); hasChannelAccessToken {
-				cfg.Channels.LINE.SetChannelAccessToken(channelAccessToken)
+				cfg.Channels.LINE.ChannelAccessToken.Set(channelAccessToken)
 			}
 		}
 		if onebot, hasOneBot := asMapField(channels, "onebot"); hasOneBot {
 			if accessToken, hasAccessToken := getSecretString(onebot, "access_token"); hasAccessToken {
-				cfg.Channels.OneBot.SetAccessToken(accessToken)
+				cfg.Channels.OneBot.AccessToken.Set(accessToken)
 			}
 		}
 		if wecom, hasWeCom := asMapField(channels, "wecom"); hasWeCom {
@@ -441,13 +441,13 @@ func applyConfigSecretsFromMap(cfg *config.Config, raw map[string]any) {
 		}
 		if irc, hasIRC := asMapField(channels, "irc"); hasIRC {
 			if password, hasPassword := getSecretString(irc, "password"); hasPassword {
-				cfg.Channels.IRC.SetPassword(password)
+				cfg.Channels.IRC.Password.Set(password)
 			}
 			if nickservPassword, hasNickservPassword := getSecretString(irc, "nickserv_password"); hasNickservPassword {
-				cfg.Channels.IRC.SetNickServPassword(nickservPassword)
+				cfg.Channels.IRC.NickServPassword.Set(nickservPassword)
 			}
 			if saslPassword, hasSASLPassword := getSecretString(irc, "sasl_password"); hasSASLPassword {
-				cfg.Channels.IRC.SetSASLPassword(saslPassword)
+				cfg.Channels.IRC.SASLPassword.Set(saslPassword)
 			}
 		}
 	}
@@ -462,7 +462,7 @@ func applyConfigSecretsFromMap(cfg *config.Config, raw map[string]any) {
 	}
 	if github, hasGithub := asMapField(skills, "github"); hasGithub {
 		if token, hasToken := getSecretString(github, "token"); hasToken {
-			cfg.Tools.Skills.Github.SetToken(token)
+			cfg.Tools.Skills.Github.Token.Set(token)
 		}
 	}
 	registries, hasRegistries := asMapField(skills, "registries")
@@ -471,7 +471,7 @@ func applyConfigSecretsFromMap(cfg *config.Config, raw map[string]any) {
 	}
 	if clawHub, hasClawHub := asMapField(registries, "clawhub"); hasClawHub {
 		if authToken, hasAuthToken := getSecretString(clawHub, "auth_token"); hasAuthToken {
-			cfg.Tools.Skills.Registries.ClawHub.SetAuthToken(authToken)
+			cfg.Tools.Skills.Registries.ClawHub.AuthToken.Set(authToken)
 		}
 	}
 }
