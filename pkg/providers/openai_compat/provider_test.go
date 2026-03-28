@@ -17,7 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
-func TestProviderChat_PrefersResponsesWhenConfigured(t *testing.T) {
+func TestProviderChat_PrefersResponsesForGPT5Models(t *testing.T) {
 	var paths []string
 	var responsesBody map[string]any
 
@@ -64,12 +64,12 @@ func TestProviderChat_PrefersResponsesWhenConfigured(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewProvider("key", server.URL, "", WithResponsesPreferred())
+	p := NewProvider("key", server.URL, "")
 	out, err := p.Chat(
 		t.Context(),
 		[]Message{{Role: "user", Content: "hi"}},
 		nil,
-		"gpt-4o",
+		"gpt-5.2",
 		map[string]any{"max_tokens": 256},
 	)
 	if err != nil {
@@ -82,8 +82,8 @@ func TestProviderChat_PrefersResponsesWhenConfigured(t *testing.T) {
 	if !reflect.DeepEqual(paths, []string{"/responses"}) {
 		t.Fatalf("paths = %v, want [/responses]", paths)
 	}
-	if responsesBody["model"] != "gpt-4o" {
-		t.Fatalf("model = %v, want gpt-4o", responsesBody["model"])
+	if responsesBody["model"] != "gpt-5.2" {
+		t.Fatalf("model = %v, want gpt-5.2", responsesBody["model"])
 	}
 	if _, ok := responsesBody["input"]; !ok {
 		t.Fatalf("expected responses request body to contain input")
@@ -124,7 +124,7 @@ func TestProviderChat_ResponsesBodyUsesSharedTranslatorSemantics(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewProvider("key", server.URL, "", WithResponsesPreferred())
+	p := NewProvider("key", server.URL, "")
 	_, err := p.Chat(
 		t.Context(),
 		[]Message{
@@ -132,7 +132,7 @@ func TestProviderChat_ResponsesBodyUsesSharedTranslatorSemantics(t *testing.T) {
 			{Role: "user", Content: "Transcribe this", Media: []string{"data:audio/wav;base64,AAAA"}},
 		},
 		nil,
-		"gpt-4o",
+		"gpt-5.2",
 		nil,
 	)
 	if err != nil {
@@ -151,6 +151,49 @@ func TestProviderChat_ResponsesBodyUsesSharedTranslatorSemantics(t *testing.T) {
 	}
 	if !strings.Contains(body, `"filename":"audio.wav"`) {
 		t.Fatalf("expected audio filename in multipart payload, got %s", body)
+	}
+}
+
+func TestProviderChat_UsesChatCompletionsForNonGPT5Models(t *testing.T) {
+	var paths []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+
+		switch r.URL.Path {
+		case "/chat/completions":
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "from chat completions"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		case "/responses":
+			http.Error(w, "responses should not be used", http.StatusBadRequest)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"Qwen3.5-35B-A3B",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if out.Content != "from chat completions" {
+		t.Fatalf("Content = %q, want %q", out.Content, "from chat completions")
+	}
+	if !reflect.DeepEqual(paths, []string{"/chat/completions"}) {
+		t.Fatalf("paths = %v, want [/chat/completions]", paths)
 	}
 }
 
@@ -616,7 +659,9 @@ func TestProviderChat_ParsesRefusalFromResponses(t *testing.T) {
 }
 
 func TestParseResponsesResponse_FailedStatusUsesServerMessage(t *testing.T) {
-	_, err := parseResponsesResponse(strings.NewReader(`{"status":" failed ","error":{"message":"responses failed"}}`))
+	_, err := parseResponsesResponse(
+		strings.NewReader(`{"status":" failed ","error":{"message":"responses failed"}}`),
+	)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -626,7 +671,11 @@ func TestParseResponsesResponse_FailedStatusUsesServerMessage(t *testing.T) {
 }
 
 func TestParseResponsesResponse_UsesNormalizedIncompleteStatus(t *testing.T) {
-	out, err := parseResponsesResponse(strings.NewReader(`{"status":" incomplete ","output":[{"type":"message","content":[{"type":"output_text","text":"partial answer"}]}],"incomplete_details":{"reason":"content_filter"}}`))
+	out, err := parseResponsesResponse(
+		strings.NewReader(
+			`{"status":" incomplete ","output":[{"type":"message","content":[{"type":"output_text","text":"partial answer"}]}],"incomplete_details":{"reason":"content_filter"}}`,
+		),
+	)
 	if err != nil {
 		t.Fatalf("parseResponsesResponse() error = %v", err)
 	}

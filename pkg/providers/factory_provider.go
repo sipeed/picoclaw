@@ -15,7 +15,6 @@ import (
 	anthropicmessages "github.com/sipeed/picoclaw/pkg/providers/anthropic_messages"
 	"github.com/sipeed/picoclaw/pkg/providers/azure"
 	"github.com/sipeed/picoclaw/pkg/providers/bedrock"
-	"github.com/sipeed/picoclaw/pkg/providers/openai_compat"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -99,7 +98,6 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
-			openai_compat.WithResponsesPreferred(),
 		), modelID, nil
 
 	case "azure", "azure-openai":

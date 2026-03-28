@@ -360,7 +360,9 @@ func parseResponseEnvelope(apiResp *responseEnvelope) (*protocoltypes.LLMRespons
 		finishReason = "tool_calls"
 	} else if status == "incomplete" {
 		finishReason = "length"
-		if apiResp.IncompleteDetails != nil && apiResp.IncompleteDetails.Reason != "" && apiResp.IncompleteDetails.Reason != "max_output_tokens" {
+		if apiResp.IncompleteDetails != nil &&
+			apiResp.IncompleteDetails.Reason != "" &&
+			apiResp.IncompleteDetails.Reason != "max_output_tokens" {
 			finishReason = apiResp.IncompleteDetails.Reason
 		}
 	}

@@ -33,11 +33,12 @@ func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 	extraBody map[string]any,
 	opts ...openai_compat.Option,
 ) *HTTPProvider {
-	providerOpts := []openai_compat.Option{
+	providerOpts := make([]openai_compat.Option, 0, 3+len(opts))
+	providerOpts = append(providerOpts,
 		openai_compat.WithMaxTokensField(maxTokensField),
-		openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds) * time.Second),
+		openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
 		openai_compat.WithExtraBody(extraBody),
-	}
+	)
 	providerOpts = append(providerOpts, opts...)
 
 	return &HTTPProvider{

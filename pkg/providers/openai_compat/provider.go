@@ -16,6 +16,7 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
+
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	orc "github.com/sipeed/picoclaw/pkg/providers/openai_responses_common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
@@ -34,12 +35,11 @@ type (
 )
 
 type Provider struct {
-	apiKey          string
-	apiBase         string
-	maxTokensField  string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
-	httpClient      *http.Client
-	extraBody       map[string]any // Additional fields to inject into request body
-	preferResponses bool           // Prefer /responses for OpenAI-native configs.
+	apiKey         string
+	apiBase        string
+	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	httpClient     *http.Client
+	extraBody      map[string]any // Additional fields to inject into request body
 }
 
 type Option func(*Provider)
@@ -57,12 +57,6 @@ func WithRequestTimeout(timeout time.Duration) Option {
 		if timeout > 0 {
 			p.httpClient.Timeout = timeout
 		}
-	}
-}
-
-func WithResponsesPreferred() Option {
-	return func(p *Provider) {
-		p.preferResponses = true
 	}
 }
 
@@ -173,13 +167,14 @@ func requestTemperature(model string, options map[string]any) (float64, bool) {
 	return temperature, true
 }
 
-func shouldPreferResponses(rawModel, normalizedModel string, preferOpenAIModels bool) bool {
+func shouldPreferResponses(rawModel, normalizedModel string) bool {
 	rawModel = strings.ToLower(strings.TrimSpace(rawModel))
 	normalizedModel = strings.ToLower(strings.TrimSpace(normalizedModel))
 
-	return preferOpenAIModels ||
-		strings.HasPrefix(rawModel, "gpt-5") ||
-		strings.HasPrefix(normalizedModel, "gpt-5")
+	// Keep the automatic route conservative: only gpt-5 models are forced
+	// onto /responses, and all other model families stay on chat/completions
+	// unless they are explicitly routed elsewhere by the caller.
+	return strings.HasPrefix(rawModel, "gpt-5") || strings.HasPrefix(normalizedModel, "gpt-5")
 }
 
 func hasReasoningContentHistory(messages []Message) bool {
@@ -233,6 +228,8 @@ func (p *Provider) buildResponsesRequestBody(
 		}
 	}
 
+	// Marshal through the SDK type first so we keep its validation/defaulting for
+	// Responses API fields, then convert back to a generic map to merge extraBody.
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal responses request: %w", err)
@@ -262,7 +259,7 @@ func (p *Provider) Chat(
 	}
 
 	normalizedModel := normalizeModel(model, p.apiBase)
-	if shouldPreferResponses(model, normalizedModel, p.preferResponses) && !hasReasoningContentHistory(messages) {
+	if shouldPreferResponses(model, normalizedModel) && !hasReasoningContentHistory(messages) {
 		out, err := p.chatResponses(ctx, messages, tools, normalizedModel, options)
 		if err == nil {
 			return out, nil
@@ -270,11 +267,19 @@ func (p *Provider) Chat(
 		if ctx.Err() != nil {
 			return nil, err
 		}
-		log.Printf("openai_compat: /responses failed for %q, falling back to /chat/completions: %v", normalizedModel, err)
+		log.Printf(
+			"openai_compat: /responses failed for %q, falling back to /chat/completions: %v",
+			normalizedModel,
+			err,
+		)
 
 		fallbackOut, fallbackErr := p.chatCompletions(ctx, messages, tools, normalizedModel, options)
 		if fallbackErr != nil {
-			return nil, fmt.Errorf("responses request failed; fallback chat/completions failed: %w", errors.Join(err, fallbackErr))
+			joinedErr := errors.Join(err, fallbackErr)
+			return nil, fmt.Errorf(
+				"responses request failed; fallback chat/completions failed: %w",
+				joinedErr,
+			)
 		}
 		return fallbackOut, nil
 	}
