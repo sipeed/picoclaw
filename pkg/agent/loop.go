@@ -252,6 +252,17 @@ func registerSharedTools(
 			agent.Tools.Register(sendFileTool)
 		}
 
+		if cfg.Tools.IsToolEnabled("load_image") {
+			loadImageTool := tools.NewLoadImageTool(
+				agent.Workspace,
+				cfg.Agents.Defaults.RestrictToWorkspace,
+				cfg.Agents.Defaults.GetMaxMediaSize(),
+				nil,
+				allowReadPaths,
+			)
+			agent.Tools.Register(loadImageTool)
+		}
+
 		// Skill discovery and installation tools
 		skills_enabled := cfg.Tools.IsToolEnabled("skills")
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
