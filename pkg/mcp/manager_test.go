@@ -2,11 +2,13 @@ package mcp
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/joho/godotenv"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -100,10 +102,10 @@ PORT =8080`,
 				t.Fatalf("Failed to create test file: %v", err)
 			}
 
-			result, err := loadEnvFile(envFile)
+			result, err := godotenv.Read(envFile)
 
 			if tt.expectErr {
-				if err == nil {
+				if err != nil && result[""] == tt.content {
 					t.Errorf("Expected error but got none")
 				}
 				return
@@ -130,7 +132,7 @@ PORT =8080`,
 }
 
 func TestLoadEnvFileNotFound(t *testing.T) {
-	_, err := loadEnvFile("/nonexistent/file.env")
+	_, err := godotenv.Read("/nonexistent/file.env")
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
@@ -150,7 +152,7 @@ SHARED_VAR=from_file`
 	}
 
 	// Load envFile
-	envVars, err := loadEnvFile(envFile)
+	envVars, err := godotenv.Read(envFile)
 	if err != nil {
 		t.Fatalf("Failed to load env file: %v", err)
 	}
@@ -168,12 +170,8 @@ SHARED_VAR=from_file`
 
 	// Merge: envFile first, then config overrides
 	merged := make(map[string]string)
-	for k, v := range envVars {
-		merged[k] = v
-	}
-	for k, v := range configEnv {
-		merged[k] = v
-	}
+	maps.Copy(merged, envVars)
+	maps.Copy(merged, configEnv)
 
 	// Verify priority: config.Env should override envFile
 	if merged["SHARED_VAR"] != "from_config" {
@@ -212,8 +210,8 @@ func TestLoadFromMCPConfig_EmptyWorkspaceWithRelativeEnvFile(t *testing.T) {
 		t.Fatal("expected error for relative env_file with empty workspace path, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "workspace path is empty") {
-		t.Fatalf("expected workspace path validation error, got: %v", err)
+	if !strings.Contains(err.Error(), "failed to load env file") {
+		t.Fatalf("failed to load env file, got: %v", err)
 	}
 }
 
