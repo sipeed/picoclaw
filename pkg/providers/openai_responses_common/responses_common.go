@@ -268,8 +268,13 @@ func parseResponse(apiResp *responses.Response) *protocoltypes.LLMResponse {
 	if len(toolCalls) > 0 {
 		finishReason = "tool_calls"
 	}
-	if apiResp.Status == "incomplete" {
+	switch apiResp.Status {
+	case responses.ResponseStatusIncomplete:
 		finishReason = "length"
+	case responses.ResponseStatusFailed:
+		finishReason = "error"
+	case responses.ResponseStatusCancelled:
+		finishReason = "canceled"
 	}
 
 	var usage *protocoltypes.UsageInfo

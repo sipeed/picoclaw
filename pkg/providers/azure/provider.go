@@ -26,6 +26,7 @@ type (
 
 const (
 	defaultRequestTimeout = common.DefaultRequestTimeout
+	responsesAPIPath      = "openai/v1/responses"
 )
 
 // Provider implements the LLM provider interface for Azure OpenAI endpoints.
@@ -87,7 +88,7 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("Azure API base not configured")
 	}
 
-	requestURL, err := url.JoinPath(p.apiBase, "openai/v1/responses")
+	requestURL, err := url.JoinPath(p.apiBase, responsesAPIPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure request URL: %w", err)
 	}
