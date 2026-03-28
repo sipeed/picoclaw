@@ -534,6 +534,12 @@ func (t *ReadFileLinesTool) Execute(ctx context.Context, args map[string]any) *T
 	if startLine < 1 {
 		return ErrorResult("start_line must be >= 1")
 	}
+	if _, exists := args["offset"]; exists {
+		return ErrorResult("offset is not supported in line mode; use start_line")
+	}
+	if _, exists := args["length"]; exists {
+		return ErrorResult("length is not supported in line mode; use max_lines")
+	}
 
 	limit := int64(-1)
 	if raw, exists := args["max_lines"]; exists && raw != nil {
@@ -644,19 +650,28 @@ func (t *ReadFileLinesTool) Execute(ctx context.Context, args map[string]any) *T
 	switch {
 	case lineTruncated:
 		header += fmt.Sprintf(
-			"\n[TRUNCATED - line %d exceeded the %d byte read budget and was cut mid-line.",
+			"\n[TRUNCATED - line %d exceeded the %d byte read budget and was cut mid-line.]",
 			endLine,
 			t.maxSize,
 		)
 	case byteBudgetTruncated:
-		header += fmt.Sprintf(
-			"\n[TRUNCATED - byte budget reached. Call read_file again with start_line=%d to continue at the next line.]",
-			startLine+linesRead,
-		)
+		if limit > 0 {
+			header += fmt.Sprintf(
+				"\n[TRUNCATED - byte budget reached. Call read_file again with start_line=%d and max_lines=%d to continue at the next line.]",
+				startLine+linesRead,
+				limit,
+			)
+		} else {
+			header += fmt.Sprintf(
+				"\n[TRUNCATED - byte budget reached. Call read_file again with start_line=%d to continue at the next line.]",
+				startLine+linesRead,
+			)
+		}
 	case !reachedEOF && limit > 0 && linesRead >= limit:
 		header += fmt.Sprintf(
-			"\n[PARTIAL - more content remains. Call read_file again with start_line=%d to continue.]",
+			"\n[PARTIAL - more content remains. Call read_file again with start_line=%d and max_lines=%d to continue.]",
 			startLine+linesRead,
+			limit,
 		)
 	default:
 		header += "\n[END OF FILE - no further content.]"

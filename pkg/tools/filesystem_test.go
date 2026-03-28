@@ -897,6 +897,9 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 	if !strings.Contains(result1.ForLLM, "start_line=3") {
 		t.Fatalf("expected continuation start_line=3, got: %s", result1.ForLLM)
 	}
+	if !strings.Contains(result1.ForLLM, "max_lines=2") {
+		t.Fatalf("expected continuation max_lines=2, got: %s", result1.ForLLM)
+	}
 
 	result2 := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
@@ -911,6 +914,9 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 	}
 	if !strings.Contains(result2.ForLLM, "start_line=5") {
 		t.Fatalf("expected continuation start_line=5, got: %s", result2.ForLLM)
+	}
+	if !strings.Contains(result2.ForLLM, "max_lines=2") {
+		t.Fatalf("expected continuation max_lines=2, got: %s", result2.ForLLM)
 	}
 
 	result3 := tool.Execute(context.Background(), map[string]any{
@@ -1039,6 +1045,52 @@ func TestReadFileLinesTool_RegistryValidationSupportsMaxLinesAndRejectsLimit(t *
 	}
 	if !strings.Contains(result.ForLLM, "unexpected property \"limit\"") {
 		t.Fatalf("expected registry validation error for limit, got: %s", result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_RejectsOffset(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "legacy_offset.txt")
+
+	err := os.WriteFile(testFile, []byte("line 1\nline 2\n"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+		"offset":     1,
+	})
+	if !result.IsError {
+		t.Fatalf("expected offset to be rejected, got success: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "offset is not supported in line mode; use start_line") {
+		t.Fatalf("unexpected error for offset in line mode: %s", result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_RejectsLength(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "legacy_length.txt")
+
+	err := os.WriteFile(testFile, []byte("line 1\nline 2\n"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+		"length":     1,
+	})
+	if !result.IsError {
+		t.Fatalf("expected length to be rejected, got success: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "length is not supported in line mode; use max_lines") {
+		t.Fatalf("unexpected error for length in line mode: %s", result.ForLLM)
 	}
 }
 
