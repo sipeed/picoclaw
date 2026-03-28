@@ -300,6 +300,118 @@ func TestToolRegistry_ToProviderDefs(t *testing.T) {
 	}
 }
 
+func TestToolRegistry_ToProviderDefs_NilParams(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockRegistryTool{
+		name:   "nil-params",
+		desc:   "tool with nil params",
+		params: nil,
+		result: SilentResult("ok"),
+	})
+
+	defs := r.ToProviderDefs()
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 provider def, got %d", len(defs))
+	}
+
+	params := defs[0].Function.Parameters
+	if params == nil {
+		t.Fatal("expected non-nil parameters")
+	}
+	if params["type"] != "object" {
+		t.Errorf("expected type 'object', got %v", params["type"])
+	}
+	propsMap, ok := params["properties"].(map[string]any)
+	if !ok || propsMap == nil {
+		t.Errorf("expected properties to be non-nil map[string]any, got %T", params["properties"])
+	}
+}
+
+func TestToolRegistry_ToProviderDefs_MissingProperties(t *testing.T) {
+	r := NewToolRegistry()
+	originalParams := map[string]any{"type": "object"}
+	r.Register(&mockRegistryTool{
+		name:   "missing-props",
+		desc:   "tool with params missing properties",
+		params: originalParams,
+		result: SilentResult("ok"),
+	})
+
+	defs := r.ToProviderDefs()
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 provider def, got %d", len(defs))
+	}
+
+	params := defs[0].Function.Parameters
+	propsMap, ok := params["properties"].(map[string]any)
+	if !ok || propsMap == nil {
+		t.Errorf("expected properties to be non-nil map[string]any, got %T", params["properties"])
+	}
+
+	// Verify original params was not mutated (defensive copy)
+	if _, ok := originalParams["properties"]; ok {
+		t.Error("original params should not be mutated")
+	}
+}
+
+func TestToolRegistry_ToProviderDefs_WrongTypeProperties(t *testing.T) {
+	r := NewToolRegistry()
+	// properties is a string instead of map[string]any
+	originalParams := map[string]any{"type": "object", "properties": "invalid"}
+	r.Register(&mockRegistryTool{
+		name:   "wrong-type-props",
+		desc:   "tool with wrong type properties",
+		params: originalParams,
+		result: SilentResult("ok"),
+	})
+
+	defs := r.ToProviderDefs()
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 provider def, got %d", len(defs))
+	}
+
+	params := defs[0].Function.Parameters
+	propsMap, ok := params["properties"].(map[string]any)
+	if !ok || propsMap == nil {
+		t.Errorf("expected properties to be non-nil map[string]any, got %T", params["properties"])
+	}
+
+	// Verify original params was not mutated (defensive copy)
+	if originalParams["properties"] != "invalid" {
+		t.Error("original params should not be mutated")
+	}
+}
+
+func TestToolRegistry_ToProviderDefs_TypedNilProperties(t *testing.T) {
+	r := NewToolRegistry()
+	// properties is a typed-nil map
+	var typedNil map[string]any
+	originalParams := map[string]any{"type": "object", "properties": typedNil}
+	r.Register(&mockRegistryTool{
+		name:   "typed-nil-props",
+		desc:   "tool with typed-nil properties",
+		params: originalParams,
+		result: SilentResult("ok"),
+	})
+
+	defs := r.ToProviderDefs()
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 provider def, got %d", len(defs))
+	}
+
+	params := defs[0].Function.Parameters
+	propsMap, ok := params["properties"].(map[string]any)
+	if !ok || propsMap == nil {
+		t.Errorf("expected properties to be non-nil map[string]any, got %T", params["properties"])
+	}
+
+	// Verify original params was not mutated (defensive copy)
+	// The original should still have the typed-nil value
+	if origProps, ok := originalParams["properties"].(map[string]any); !ok || origProps != nil {
+		t.Error("original params should not be mutated")
+	}
+}
+
 func TestToolRegistry_List(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(newMockTool("x", ""))
