@@ -247,54 +247,6 @@ func TestProviderChat_AzureParseToolCalls(t *testing.T) {
 	}
 }
 
-func TestProviderChat_AzurePreviousResponseID(t *testing.T) {
-	var firstRequestBody, secondRequestBody map[string]any
-	callCount := 0
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
-		if callCount == 1 {
-			firstRequestBody = body
-		} else {
-			secondRequestBody = body
-		}
-		resp := map[string]any{
-			"id":     "resp_turn_1",
-			"object": "response",
-			"status": "completed",
-			"output": []map[string]any{
-				{"type": "message", "content": []map[string]any{
-					{"type": "output_text", "text": "ok"},
-				}},
-			},
-			"usage": map[string]any{
-				"input_tokens": 5, "output_tokens": 2, "total_tokens": 7,
-				"input_tokens_details":  map[string]any{"cached_tokens": 0},
-				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
-	p := NewProvider("test-key", server.URL, "")
-
-	// First call — no previous_response_id
-	_, _ = p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)
-	if firstRequestBody["previous_response_id"] != nil {
-		t.Error("first call should not have previous_response_id")
-	}
-
-	// Second call — should include previous_response_id from first response
-	_, _ = p.Chat(t.Context(), []Message{{Role: "user", Content: "hello again"}}, nil, "deployment", nil)
-	if secondRequestBody["previous_response_id"] != "resp_turn_1" {
-		t.Errorf("previous_response_id = %v, want %q", secondRequestBody["previous_response_id"], "resp_turn_1")
-	}
-}
-
 func TestProvider_AzureEmptyAPIBase(t *testing.T) {
 	p := NewProvider("test-key", "", "")
 	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)

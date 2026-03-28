@@ -32,10 +32,9 @@ const (
 // It handles Azure-specific authentication (Bearer token), URL construction
 // (Responses API), and request/response formatting.
 type Provider struct {
-	apiKey         string
-	apiBase        string
-	httpClient     *http.Client
-	lastResponseID string // tracks the previous response ID for multi-turn reasoning context
+	apiKey     string
+	apiBase    string
+	httpClient *http.Client
 }
 
 // Option configures the Azure Provider.
@@ -107,11 +106,6 @@ func (p *Provider) Chat(
 		requestBody.Instructions = openai.Opt(instructions)
 	}
 
-	// Use previous_response_id for multi-turn reasoning context
-	if p.lastResponseID != "" {
-		requestBody.PreviousResponseID = openai.Opt(p.lastResponseID)
-	}
-
 	if len(tools) > 0 {
 		enableWebSearch, _ := options["native_search"].(bool)
 		requestBody.Tools = orc.TranslateTools(tools, enableWebSearch)
@@ -157,7 +151,7 @@ func (p *Provider) Chat(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return orc.ParseResponseBody(resp.Body, &p.lastResponseID)
+	return orc.ParseResponseBody(resp.Body)
 }
 
 // GetDefaultModel returns an empty string as Azure deployments are user-configured.

@@ -317,8 +317,7 @@ func TestParseResponseBody_TextOutput(t *testing.T) {
 		}
 	}`)
 
-	var respID string
-	result, err := ParseResponseBody(body, &respID)
+	result, err := ParseResponseBody(body)
 	if err != nil {
 		t.Fatalf("ParseResponseBody error: %v", err)
 	}
@@ -327,9 +326,6 @@ func TestParseResponseBody_TextOutput(t *testing.T) {
 	}
 	if result.FinishReason != "stop" {
 		t.Errorf("FinishReason = %q, want %q", result.FinishReason, "stop")
-	}
-	if respID != "resp_123" {
-		t.Errorf("responseID = %q, want %q", respID, "resp_123")
 	}
 	if result.Usage.TotalTokens != 15 {
 		t.Errorf("TotalTokens = %d, want 15", result.Usage.TotalTokens)
@@ -358,7 +354,7 @@ func TestParseResponseBody_FunctionCall(t *testing.T) {
 		}
 	}`)
 
-	result, err := ParseResponseBody(body, nil)
+	result, err := ParseResponseBody(body)
 	if err != nil {
 		t.Fatalf("ParseResponseBody error: %v", err)
 	}
@@ -401,7 +397,7 @@ func TestParseResponseBody_Reasoning(t *testing.T) {
 		}
 	}`)
 
-	result, err := ParseResponseBody(body, nil)
+	result, err := ParseResponseBody(body)
 	if err != nil {
 		t.Fatalf("ParseResponseBody error: %v", err)
 	}
@@ -433,7 +429,7 @@ func TestParseResponseBody_Refusal(t *testing.T) {
 		}
 	}`)
 
-	result, err := ParseResponseBody(body, nil)
+	result, err := ParseResponseBody(body)
 	if err != nil {
 		t.Fatalf("ParseResponseBody error: %v", err)
 	}
@@ -458,7 +454,7 @@ func TestParseResponseBody_IncompleteStatus(t *testing.T) {
 			"output_tokens_details": {"reasoning_tokens": 0}}
 	}`)
 
-	result, err := ParseResponseBody(body, nil)
+	result, err := ParseResponseBody(body)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -478,31 +474,13 @@ func TestParseResponseBody_FailedStatus(t *testing.T) {
 			"output_tokens_details": {"reasoning_tokens": 0}}
 	}`)
 
-	result, err := ParseResponseBody(body, nil)
+	result, err := ParseResponseBody(body)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
 	// failed/cancelled statuses are not specially mapped; they fall through to "stop"
 	if result.FinishReason != "stop" {
 		t.Errorf("FinishReason = %q, want %q", result.FinishReason, "stop")
-	}
-}
-
-func TestParseResponseBody_NilResponseID(t *testing.T) {
-	body := strings.NewReader(`{
-		"id": "resp_nil",
-		"object": "response",
-		"status": "completed",
-		"output": [],
-		"usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
-			"input_tokens_details": {"cached_tokens": 0},
-			"output_tokens_details": {"reasoning_tokens": 0}}
-	}`)
-
-	// Should not panic when responseID is nil
-	_, err := ParseResponseBody(body, nil)
-	if err != nil {
-		t.Fatalf("error: %v", err)
 	}
 }
 
