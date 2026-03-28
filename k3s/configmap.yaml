@@ -46,7 +46,7 @@ data:
         },
         "telegram": {
           "enabled": true,
-          "token": "REDACTED",
+          "token": "<TELEGRAM_TOKEN>",
           "base_url": "",
           "proxy": "",
           "allow_from": [
@@ -285,13 +285,13 @@ data:
           "model_name": "nemotron-3-super-120b-a12b",
           "model": "nvidia/nemotron-3-super-120b-a12b",
           "api_base": "https://integrate.api.nvidia.com/v1",
-          "api_key": "REDACTED"
+          "api_key": "<NVIDIA_API_KEY>"
         },
         {
           "model_name": "azure-grok",
           "model": "openai/grok-4-fast-non-reasoning",
           "api_base": "https://TestSJF.openai.azure.com/openai/v1/",
-          "api_key": "REDACTED"
+          "api_key": "<AZURE_API_KEY>"
         },
         {
           "model_name": "cerebras-llama-3.3-70b",
@@ -454,7 +454,10 @@ data:
           "enable_deny_patterns": true,
           "allow_remote": true,
           "custom_deny_patterns": null,
-          "custom_allow_patterns": null,
+          "custom_allow_patterns": [
+            "^git\\s+push\\b",
+            "^git\\s+force\\b"
+          ],
           "timeout_seconds": 60
         },
         "skills": {
@@ -497,7 +500,22 @@ data:
             "use_bm25": true,
             "use_regex": false
           },
-          "servers": {}
+          "servers": {
+            "hdn-server": {
+              "enabled": true,
+              "command": "",
+              "type": "sse",
+              "url": "http://hdn-server:8080/mcp"
+            },
+            "n8n-test": {
+              "enabled": true,
+              "type": "sse",
+              "url": "https://n8namber.app.n8n.cloud/mcp/a5747ff8-db9b-4326-8bef-474301f65251",
+              "headers": {
+                "Authorization": "Bearer 97340696-89AE-43B2-B6E2-080E062150C9"
+              }
+            }
+          }
         },
         "whitelist": [
           "spawn",
@@ -511,7 +529,9 @@ data:
           "message",
           "weather",
           "summarize",
-          "github"
+          "github",
+          "hdn-server",
+          "n8n-test"
         ],
         "whitelist_enabled": true,
         "append_file": {
