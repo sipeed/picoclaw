@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	ppid "github.com/sipeed/picoclaw/pkg/pid"
 )
 
 func TestEnsurePicoChannel_FreshConfig(t *testing.T) {
@@ -335,8 +336,20 @@ func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
+	gateway.pidData = &ppid.PidFileData{}
+	gateway.picoToken = "pico"
 	req1 := httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
+	req1.Header.Set(protocolKey, tokenPrefix+"wrong_token")
 	rec1 := httptest.NewRecorder()
+	handler(rec1, req1)
+
+	if rec1.Code != http.StatusForbidden {
+		t.Fatalf("first status = %d, want %d", rec1.Code, http.StatusForbidden)
+	}
+
+	req1 = httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
+	req1.Header.Set(protocolKey, tokenPrefix+"pico")
+	rec1 = httptest.NewRecorder()
 	handler(rec1, req1)
 
 	if rec1.Code != http.StatusOK {
@@ -352,6 +365,7 @@ func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 	}
 
 	req2 := httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
+	req2.Header.Set(protocolKey, tokenPrefix+"pico")
 	rec2 := httptest.NewRecorder()
 	handler(rec2, req2)
 

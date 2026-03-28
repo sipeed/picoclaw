@@ -470,9 +470,6 @@ func TestGatewayStatusReportsRunningFromHealthProbe(t *testing.T) {
 	if got := body["gateway_status"]; got != "running" {
 		t.Fatalf("gateway_status = %#v, want %q", got, "running")
 	}
-	if got := body["pid"]; got != float64(cmd.Process.Pid) {
-		t.Fatalf("pid = %#v, want %d", got, cmd.Process.Pid)
-	}
 	if got := body["gateway_restart_required"]; got != false {
 		t.Fatalf("gateway_restart_required = %#v, want false", got)
 	}

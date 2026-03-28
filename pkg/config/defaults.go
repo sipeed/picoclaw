@@ -6,7 +6,6 @@
 package config
 
 import (
-	"os"
 	"path/filepath"
 
 	"github.com/sipeed/picoclaw/pkg"
@@ -14,16 +13,7 @@ import (
 
 // DefaultConfig returns the default configuration for PicoClaw.
 func DefaultConfig() *Config {
-	// Determine the base path for the workspace.
-	// Priority: $PICOCLAW_HOME > ~/.picoclaw
-	var homePath string
-	if picoclawHome := os.Getenv(EnvHome); picoclawHome != "" {
-		homePath = picoclawHome
-	} else {
-		userHome, _ := os.UserHomeDir()
-		homePath = filepath.Join(userHome, pkg.DefaultPicoClawHome)
-	}
-	workspacePath := filepath.Join(homePath, pkg.WorkspaceName)
+	workspacePath := filepath.Join(GetHome(), pkg.WorkspaceName)
 
 	return &Config{
 		Version: CurrentVersion,

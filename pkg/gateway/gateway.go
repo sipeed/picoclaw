@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -36,6 +37,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/pid"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -61,6 +63,7 @@ type services struct {
 	HealthServer     *health.Server
 	manualReloadChan chan struct{}
 	reloading        atomic.Bool
+	authToken        string
 }
 
 type startupBlockedProvider struct {
@@ -107,6 +110,13 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		fmt.Println("🔍 Debug mode enabled")
 	}
 
+	// Enforce singleton: write PID file with generated token.
+	pidData, err := pid.WritePidFile(homePath, cfg.Gateway.Host, cfg.Gateway.Port)
+	if err != nil {
+		return fmt.Errorf("singleton check failed: %w", err)
+	}
+	defer pid.RemovePidFile(homePath)
+
 	provider, modelID, err := createStartupProvider(cfg, allowEmptyStartup)
 	if err != nil {
 		return fmt.Errorf("error creating provider: %w", err)
@@ -133,7 +143,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 			"skills_available": skillsInfo["available"],
 		})
 
-	runningServices, err := setupAndStartServices(cfg, agentLoop, msgBus)
+	runningServices, err := setupAndStartServices(cfg, agentLoop, msgBus, pidData.Token)
 	if err != nil {
 		return err
 	}
@@ -224,6 +234,9 @@ func executeReload(
 	allowEmptyStartup bool,
 ) error {
 	defer runningServices.reloading.Store(false)
+
+	overridePicoToken(newCfg, runningServices.authToken)
+
 	return handleConfigReload(ctx, agentLoop, newCfg, provider, runningServices, msgBus, allowEmptyStartup)
 }
 
@@ -248,6 +261,7 @@ func setupAndStartServices(
 	cfg *config.Config,
 	agentLoop *agent.AgentLoop,
 	msgBus *bus.MessageBus,
+	authToken string,
 ) (*services, error) {
 	runningServices := &services{}
 
@@ -290,6 +304,8 @@ func setupAndStartServices(
 		fms.Start()
 	}
 
+	overridePicoToken(cfg, authToken)
+
 	runningServices.ChannelManager, err = channels.NewManager(cfg, msgBus, runningServices.MediaStore)
 	if err != nil {
 		if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
@@ -314,7 +330,8 @@ func setupAndStartServices(
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
-	runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	runningServices.authToken = authToken
+	runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, authToken)
 	runningServices.ChannelManager.SetupHTTPServer(addr, runningServices.HealthServer)
 
 	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
@@ -524,6 +541,9 @@ func restartServices(
 		logger.InfoCF("voice", "Transcription disabled", nil)
 	}
 
+	// NOTE: PID file is written once at startup and not updated on reload.
+	// Changing the gateway listen address requires a full restart.
+
 	return nil
 }
 
@@ -640,6 +660,22 @@ func setupCronTool(
 	}
 
 	return cronService, nil
+}
+
+const picoTokenPrefix = "pico-"
+
+// overridePicoToken replaces the pico channel token with the one from the PID file.
+// The PID file is the single source of truth for the pico auth token;
+// it is generated once at gateway startup and remains unchanged across reloads.
+func overridePicoToken(cfg *config.Config, token string) {
+	if !cfg.Channels.Pico.Enabled {
+		return
+	}
+	picoToken := cfg.Channels.Pico.Token.String()
+	if picoToken == "" || strings.HasPrefix(picoToken, picoTokenPrefix) {
+		return
+	}
+	cfg.Channels.Pico.SetToken(picoTokenPrefix + token + picoToken)
 }
 
 func createHeartbeatHandler(agentLoop *agent.AgentLoop) func(prompt, channel, chatID string) *tools.ToolResult {

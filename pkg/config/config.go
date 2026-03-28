@@ -1081,12 +1081,7 @@ func LoadConfig(path string) (*Config, error) {
 
 	// Ensure Workspace has a default if not set
 	if cfg.Agents.Defaults.Workspace == "" {
-		homePath, _ := os.UserHomeDir()
-		if picoclawHome := os.Getenv(EnvHome); picoclawHome != "" {
-			homePath = picoclawHome
-		} else if homePath != "" {
-			homePath = filepath.Join(homePath, pkg.DefaultPicoClawHome)
-		}
+		homePath := GetHome()
 		cfg.Agents.Defaults.Workspace = filepath.Join(homePath, pkg.WorkspaceName)
 	}
 
