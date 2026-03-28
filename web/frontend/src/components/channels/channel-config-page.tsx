@@ -91,18 +91,18 @@ function buildSavePayload(
 ): ChannelConfig {
   const payload: ChannelConfig = { enabled }
 
-  for (const [key, value] of Object.entries(editConfig)) {
-    if (key.startsWith("_")) continue
-    if (key === "enabled") continue
+  for (const [k, v] of Object.entries(editConfig)) {
+    if (k === "enabled" || k.startsWith("_")) continue;
+    payload[k] = v;
+  }
 
-    if (key in SECRET_FIELD_MAP) {
-      const editKey = SECRET_FIELD_MAP[key]
-      const incoming = asString(editConfig[editKey])
-      payload[key] = incoming !== "" ? incoming : value
-      continue
+  for (const [secret, editKey] of Object.entries(SECRET_FIELD_MAP)) {
+    const incoming = asString(editConfig[editKey]);
+    if (incoming !== "") {
+      payload[secret] = incoming;
+    } else if (secret in editConfig) {
+      payload[secret] = editConfig[secret];
     }
-
-    payload[key] = value
   }
 
   if (channel.name === "whatsapp_native") {
