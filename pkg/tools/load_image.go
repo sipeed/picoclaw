@@ -71,10 +71,6 @@ func (t *LoadImageTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Path to the local image file. Relative paths are resolved from workspace.",
 			},
-			"prompt": map[string]any{
-				"type":        "string",
-				"description": "Optional question or instruction about the image, e.g. 'What objects are in this image?'",
-			},
 		},
 		"required": []string{"path"},
 	}
@@ -154,13 +150,7 @@ func (t *LoadImageTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	// Build the tool result text. The media:// ref will be picked up by
 	// resolveMediaRefs in loop_media.go and converted to a base64 data URL
 	// before the next LLM call, exactly like channel-received images.
-	prompt, _ := args["prompt"].(string)
-	var msg string
-	if prompt != "" {
-		msg = fmt.Sprintf("Image loaded: %s\n%s\n[image: %s]", filename, prompt, ref)
-	} else {
-		msg = fmt.Sprintf("Image loaded: %s\n[image: %s]", filename, ref)
-	}
+	msg := fmt.Sprintf("Image loaded: %s\n[image: %s]", filename, ref)
 
 	return &ToolResult{
 		ForLLM:  msg,
