@@ -66,9 +66,22 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.SecurityCopyFrom(oldCfg)
 
 	// Intercept explicitly provided security tokens from JSON payload that json.Unmarshal drops.
-	var incomingSec config.SecurityConfig
+	// We need to decode into an anonymous struct with json tags because SecurityConfig
+	// doesn't have json tags for its fields (it uses yaml tags).
+	var incomingSec struct {
+		ModelList map[string]config.ModelSecurityEntry `json:"model_list"`
+		Channels  *config.ChannelsSecurity             `json:"channels,omitempty"`
+		Web       *config.WebToolsSecurity             `json:"web,omitempty"`
+		Skills    *config.SkillsSecurity               `json:"skills,omitempty"`
+	}
 	if err := json.Unmarshal(body, &incomingSec); err == nil {
-		cfg.MergeAndApplySecurity(&incomingSec)
+		secConfig := config.SecurityConfig{
+			ModelList: incomingSec.ModelList,
+			Channels:  incomingSec.Channels,
+			Web:       incomingSec.Web,
+			Skills:    incomingSec.Skills,
+		}
+		cfg.MergeAndApplySecurity(&secConfig)
 	} else {
 		cfg.ApplySecurity()
 	}
@@ -164,9 +177,20 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Restore security fields from existing config and merge explicitly provided overrides.
 	newCfg.SecurityCopyFrom(cfg)
-	var incomingSec config.SecurityConfig
-	if err := json.Unmarshal(patchBody, &incomingSec); err == nil {
-		newCfg.MergeAndApplySecurity(&incomingSec)
+	var patchSec struct {
+		ModelList map[string]config.ModelSecurityEntry `json:"model_list"`
+		Channels  *config.ChannelsSecurity             `json:"channels,omitempty"`
+		Web       *config.WebToolsSecurity             `json:"web,omitempty"`
+		Skills    *config.SkillsSecurity               `json:"skills,omitempty"`
+	}
+	if err := json.Unmarshal(patchBody, &patchSec); err == nil {
+		secConfig := config.SecurityConfig{
+			ModelList: patchSec.ModelList,
+			Channels:  patchSec.Channels,
+			Web:       patchSec.Web,
+			Skills:    patchSec.Skills,
+		}
+		newCfg.MergeAndApplySecurity(&secConfig)
 	} else {
 		newCfg.ApplySecurity()
 	}

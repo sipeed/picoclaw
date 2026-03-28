@@ -58,8 +58,8 @@ func NewProviderWithTimeout(apiKey, apiBase string, timeoutSeconds int) *Provide
 	}
 
 	return &Provider{
-		apiKey:  apiKey,
-		apiBase: baseURL,
+		apiKey:     apiKey,
+		apiBase:    baseURL,
 		httpClient: common.NewHTTPClientWithTimeout("", timeout),
 	}
 }
@@ -102,7 +102,10 @@ func (p *Provider) Chat(
 
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", p.apiKey) //nolint:canonicalheader // Anthropic API requires exact header name
+	req.Header.Set(
+		"X-API-Key",
+		p.apiKey,
+	) //nolint:canonicalheader // Anthropic API requires exact header name
 	req.Header.Set("Anthropic-Version", defaultAPIVersion)
 
 	// Execute request
@@ -134,7 +137,11 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("service unavailable (503): %s", string(body))
 	default:
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+			return nil, fmt.Errorf(
+				"API request failed with status %d: %s",
+				resp.StatusCode,
+				string(body),
+			)
 		}
 	}
 
@@ -194,7 +201,8 @@ func buildRequestBody(
 					"content":     msg.Content,
 				}
 				if len(apiMessages) > 0 {
-					if prev, ok := apiMessages[len(apiMessages)-1].(map[string]any); ok && prev["role"] == "user" {
+					if prev, ok := apiMessages[len(apiMessages)-1].(map[string]any); ok &&
+						prev["role"] == "user" {
 						if content, ok := prev["content"].([]map[string]any); ok {
 							prev["content"] = append(content, toolResultBlock)
 							continue
@@ -258,7 +266,8 @@ func buildRequestBody(
 				"content":     msg.Content,
 			}
 			if len(apiMessages) > 0 {
-				if prev, ok := apiMessages[len(apiMessages)-1].(map[string]any); ok && prev["role"] == "user" {
+				if prev, ok := apiMessages[len(apiMessages)-1].(map[string]any); ok &&
+					prev["role"] == "user" {
 					if content, ok := prev["content"].([]map[string]any); ok {
 						prev["content"] = append(content, toolResultBlock)
 						continue
@@ -310,7 +319,10 @@ func parseResponseBody(body []byte) (*LLMResponse, error) {
 
 	// Extract content and tool calls
 	var content strings.Builder
-	toolCalls := make([]ToolCall, 0) // Initialize as empty slice (not nil) for consistent JSON serialization
+	toolCalls := make(
+		[]ToolCall,
+		0,
+	) // Initialize as empty slice (not nil) for consistent JSON serialization
 
 	for _, block := range resp.Content {
 		switch block.Type {

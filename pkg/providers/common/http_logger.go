@@ -48,8 +48,8 @@ func (lrt *LoggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 
 		// Optional: Log Response Body
 		if res.Body != nil {
-			bodyBytes, err := io.ReadAll(res.Body)
-			if err == nil {
+			bodyBytes, readErr := io.ReadAll(res.Body)
+			if readErr == nil {
 				res.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 				// Truncate response body if too long to avoid flooding logs
 				respStr := string(bodyBytes)
