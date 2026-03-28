@@ -28,13 +28,16 @@ jobs:
           sudo apt-get install -y libolm-dev
 
       - name: Build Go backend
-        run: make build
+        run: |
+          make build
+          make build-launcher-tui
 
       - name: Determine binary name
         id: binary
         run: |
           # The Makefile outputs a binary named picoclaw-linux-amd64
           echo "path=build/picoclaw-linux-amd64" >> $GITHUB_OUTPUT
+          echo "tui_path=build/picoclaw-launcher-tui-linux-amd64" >> $GITHUB_OUTPUT
 
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
@@ -47,7 +50,7 @@ jobs:
         uses: 'google-github-actions/setup-gcloud@v2'
         
       - name: Verify build artifact
-        run: ls -lh ${{ steps.binary.outputs.path }}
+        run: ls -lh ${{ steps.binary.outputs.path }} ${{ steps.binary.outputs.tui_path }}
 
       - name: 'Deploy binary to GCE'
         run: |
@@ -57,13 +60,16 @@ jobs:
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --command="mkdir -p ~/.local/bin"
 
-          # Copy the binary to the instance
+          # Copy the binaries to the instance
           gcloud compute scp ${{ steps.binary.outputs.path }} ${{ secrets.GCE_INSTANCE }}:~/.local/bin/picoclaw \
             --zone=${{ secrets.GCE_ZONE }} \
             --project=${{ secrets.GCP_PROJECT_ID }}
+          gcloud compute scp ${{ steps.binary.outputs.tui_path }} ${{ secrets.GCE_INSTANCE }}:~/.local/bin/picoclaw-launcher-tui \
+            --zone=${{ secrets.GCE_ZONE }} \
+            --project=${{ secrets.GCP_PROJECT_ID }}
 
-          # Make it executable and restart the service
+          # Make it executable and restart the gateway service via command line
           gcloud compute ssh ${{ secrets.GCE_INSTANCE }} \
             --zone=${{ secrets.GCE_ZONE }} \
             --project=${{ secrets.GCP_PROJECT_ID }} \
-            --command="chmod +x ~/.local/bin/picoclaw && sudo systemctl restart picoclaw"
+            --command="chmod +x ~/.local/bin/picoclaw ~/.local/bin/picoclaw-launcher-tui && pkill -f 'picoclaw gate -E' || true && nohup ~/.local/bin/picoclaw gate -E > /dev/null 2>&1 &"
