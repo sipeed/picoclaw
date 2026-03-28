@@ -34,18 +34,18 @@ export interface LauncherForm {
 
 export const DM_SCOPE_OPTIONS = [
   {
+    value: "per-account-channel-peer",
+    labelKey: "pages.config.session_scope_per_account_channel_peer",
+    labelDefault: "Per Account + Channel + Peer",
+    descKey: "pages.config.session_scope_per_account_channel_peer_desc",
+    descDefault: "Separate context for each user in each channel for each account.",
+  },
+  {
     value: "per-channel-peer",
     labelKey: "pages.config.session_scope_per_channel_peer",
     labelDefault: "Per Channel + Peer",
     descKey: "pages.config.session_scope_per_channel_peer_desc",
     descDefault: "Separate context for each user in each channel.",
-  },
-  {
-    value: "per-channel",
-    labelKey: "pages.config.session_scope_per_channel",
-    labelDefault: "Per Channel",
-    descKey: "pages.config.session_scope_per_channel_desc",
-    descDefault: "One shared context per channel.",
   },
   {
     value: "per-peer",
@@ -55,10 +55,10 @@ export const DM_SCOPE_OPTIONS = [
     descDefault: "One context per user across channels.",
   },
   {
-    value: "global",
-    labelKey: "pages.config.session_scope_global",
-    labelDefault: "Global",
-    descKey: "pages.config.session_scope_global_desc",
+    value: "main",
+    labelKey: "pages.config.session_scope_main",
+    labelDefault: "Main",
+    descKey: "pages.config.session_scope_main_desc",
     descDefault: "All messages share one global context.",
   },
 ] as const
