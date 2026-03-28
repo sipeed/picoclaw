@@ -478,7 +478,7 @@ func TestParseResponseBody_FailedStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	// failed/cancelled statuses are not specially mapped; they fall through to "stop"
+	// failed/canceled statuses are not specially mapped; they fall through to "stop"
 	if result.FinishReason != "stop" {
 		t.Errorf("FinishReason = %q, want %q", result.FinishReason, "stop")
 	}
