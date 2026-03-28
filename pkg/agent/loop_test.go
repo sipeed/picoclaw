@@ -1296,6 +1296,46 @@ func newChatCompletionTestServer(
 	}))
 }
 
+func newStrictChatCompletionTestServer(
+	t *testing.T,
+	label string,
+	expectedModel string,
+	response string,
+	calls *int,
+) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("%s server path = %q, want /chat/completions", label, r.URL.Path)
+		}
+		*calls = *calls + 1
+		defer r.Body.Close()
+
+		var req struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode %s request: %v", label, err)
+		}
+		if req.Model != expectedModel {
+			t.Fatalf("%s server model = %q, want %q", label, req.Model, expectedModel)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": response},
+					"finish_reason": "stop",
+				},
+			},
+		}); err != nil {
+			t.Fatalf("encode %s response: %v", label, err)
+		}
+	}))
+}
+
 func (h testHelper) executeAndGetResponse(tb testing.TB, ctx context.Context, msg bus.InboundMessage) string {
 	// Use a short timeout to avoid hanging
 	timeoutCtx, cancel := context.WithTimeout(ctx, responseTimeout)
@@ -1694,6 +1734,96 @@ func TestProcessMessage_SwitchModelRoutesSubsequentRequestsToSelectedProvider(t 
 			remoteModel,
 			"deepseek-v3.2",
 		)
+	}
+}
+
+func TestProcessMessage_ModelRoutingUsesLightProvider(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	heavyCalls := 0
+	heavyServer := newStrictChatCompletionTestServer(
+		t,
+		"heavy",
+		"gemini-2.5-flash",
+		"heavy reply",
+		&heavyCalls,
+	)
+	defer heavyServer.Close()
+
+	lightCalls := 0
+	lightServer := newStrictChatCompletionTestServer(
+		t,
+		"light",
+		"qwen2.5:0.5b",
+		"light reply",
+		&lightCalls,
+	)
+	defer lightServer.Close()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "gemini-main",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				Routing: &config.RoutingConfig{
+					Enabled:    true,
+					LightModel: "qwen-light",
+					Threshold:  0.99,
+				},
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "gemini-main",
+				Model:     "gemini/gemini-2.5-flash",
+				APIBase:   heavyServer.URL,
+			},
+			{
+				ModelName: "qwen-light",
+				Model:     "ollama/qwen2.5:0.5b",
+				APIBase:   lightServer.URL,
+			},
+		},
+	}
+	cfg.WithSecurity(&config.SecurityConfig{
+		ModelList: map[string]config.ModelSecurityEntry{
+			"gemini-main": {APIKeys: []string{"heavy-key"}},
+			"qwen-light":  {APIKeys: []string{"light-key"}},
+		},
+	})
+
+	msgBus := bus.NewMessageBus()
+	provider, _, err := providers.CreateProvider(cfg)
+	if err != nil {
+		t.Fatalf("CreateProvider() error = %v", err)
+	}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	resp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hi",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if resp != "light reply" {
+		t.Fatalf("response = %q, want %q", resp, "light reply")
+	}
+	if heavyCalls != 0 {
+		t.Fatalf("heavy calls = %d, want 0", heavyCalls)
+	}
+	if lightCalls != 1 {
+		t.Fatalf("light calls = %d, want 1", lightCalls)
 	}
 }
 
