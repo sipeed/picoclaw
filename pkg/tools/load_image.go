@@ -22,33 +22,36 @@ import (
 //   - SendFileTool  → MediaResult + WithResponseHandled() → sends file to user, ends turn
 //   - LoadImageTool → plain ToolResult with media:// in ForLLM  → LLM sees the image next turn
 type LoadImageTool struct {
-	workspace  string
-	restrict   bool
-	maxSize    int
-	mediaStore media.MediaStore
-	allowPaths []*regexp.Regexp
+	workspace   string
+	restrict    bool
+	maxFileSize int
+	mediaStore  media.MediaStore
+	allowPaths  []*regexp.Regexp
+
+	defaultChannel string
+	defaultChatID  string
 }
 
 func NewLoadImageTool(
 	workspace string,
 	restrict bool,
-	maxSize int,
+	maxFileSize int,
 	store media.MediaStore,
 	allowPaths ...[]*regexp.Regexp,
 ) *LoadImageTool {
-	if maxSize <= 0 {
-		maxSize = config.DefaultMaxMediaSize
+	if maxFileSize <= 0 {
+		maxFileSize = config.DefaultMaxMediaSize
 	}
 	var patterns []*regexp.Regexp
 	if len(allowPaths) > 0 {
 		patterns = allowPaths[0]
 	}
 	return &LoadImageTool{
-		workspace:  workspace,
-		restrict:   restrict,
-		maxSize:    maxSize,
-		mediaStore: store,
-		allowPaths: patterns,
+		workspace:   workspace,
+		restrict:    restrict,
+		maxFileSize: maxFileSize,
+		mediaStore:  store,
+		allowPaths:  patterns,
 	}
 }
 
@@ -77,6 +80,11 @@ func (t *LoadImageTool) Parameters() map[string]any {
 	}
 }
 
+func (t *LoadImageTool) SetContext(channel, chatID string) {
+	t.defaultChannel = channel
+	t.defaultChatID = chatID
+}
+
 func (t *LoadImageTool) SetMediaStore(store media.MediaStore) {
 	t.mediaStore = store
 }
@@ -85,6 +93,19 @@ func (t *LoadImageTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	path, _ := args["path"].(string)
 	if strings.TrimSpace(path) == "" {
 		return ErrorResult("path is required")
+	}
+
+	// Prefer context-injected channel/chatID (set by ExecuteWithContext), fall back to SetContext values.
+	channel := ToolChannel(ctx)
+	if channel == "" {
+		channel = t.defaultChannel
+	}
+	chatID := ToolChatID(ctx)
+	if chatID == "" {
+		chatID = t.defaultChatID
+	}
+	if channel == "" || chatID == "" {
+		return ErrorResult("no target channel/chat available")
 	}
 
 	if t.mediaStore == nil {
@@ -103,9 +124,9 @@ func (t *LoadImageTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	if info.IsDir() {
 		return ErrorResult("path is a directory, expected an image file")
 	}
-	if info.Size() > int64(t.maxSize) {
+	if info.Size() > int64(t.maxFileSize) {
 		return ErrorResult(fmt.Sprintf(
-			"file too large: %d bytes (max %d bytes)", info.Size(), t.maxSize,
+			"file too large: %d bytes (max %d bytes)", info.Size(), t.maxFileSize,
 		))
 	}
 
@@ -118,7 +139,7 @@ func (t *LoadImageTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	}
 
 	filename := filepath.Base(resolved)
-	scope := fmt.Sprintf("tool:load_image:%s", filename)
+	scope := fmt.Sprintf("tool:load_image:%s:%s", channel, chatID)
 
 	ref, err := t.mediaStore.Store(resolved, media.MediaMeta{
 		Filename:      filename,
@@ -143,7 +164,7 @@ func (t *LoadImageTool) Execute(ctx context.Context, args map[string]any) *ToolR
 
 	return &ToolResult{
 		ForLLM:  msg,
-		ForUser: fmt.Sprintf("📷 Loaded image: %s", filename),
+		ForUser: fmt.Sprintf("Loaded image: %s", filename),
 		// Media refs inside ForLLM are resolved by resolveMediaRefs in the
 		// agent loop before the next LLM call. Do NOT use MediaResult here —
 		// that would send the file to the user channel instead.

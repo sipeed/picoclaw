@@ -363,7 +363,12 @@ func registerSharedTools(
 			// tools registered so far (file, web, etc.) but NOT spawn/
 			// spawn_status which are added below — preventing recursive
 			// subagent spawning.
-			subagentManager.SetTools(agent.Tools.Clone())
+			subagentTools := agent.Tools.Clone()
+			// load_image depends on resolveMediaRefs which only runs in
+			// the main agent loop, not in RunToolLoop. Remove it from
+			// sub-agent tools so the LLM won't call it in vain.
+			subagentTools.Unregister("load_image")
+			subagentManager.SetTools(subagentTools)
 			if spawnEnabled {
 				spawnTool := tools.NewSpawnTool(subagentManager)
 				spawnTool.SetSpawner(NewSubTurnSpawner(al))
@@ -1817,6 +1822,10 @@ turnLoop:
 			providerToolDefs = filtered
 		}
 
+		// Resolve media:// refs produced by tool results (e.g. load_image).
+		// Skipped on iteration 1 because inbound user media is already resolved
+		// before entering the loop; only subsequent iterations can contain new
+		// tool-generated media refs that need base64 encoding.
 		if iteration > 1 {
 			messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 		}
