@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -102,7 +103,7 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	c.mu.Unlock()
 
 	c.SetRunning(true)
-	logger.InfoC("feishu", "Feishu channel started (websocket mode)")
+	logger.InfoC("feishu", "Feishu channel started (websocket mode, replyctx-v4)")
 
 	go func() {
 		if err := wsClient.Start(runCtx); err != nil {
@@ -433,24 +434,8 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	// Append media tags to content (like Telegram does)
 	content = appendMediaTags(content, messageType, mediaRefs)
 
-	if content == "" {
-		content = "[empty message]"
-	}
-
-	metadata := map[string]string{}
-	if messageID != "" {
-		metadata["message_id"] = messageID
-	}
-	if messageType != "" {
-		metadata["message_type"] = messageType
-	}
 	chatType := stringValue(message.ChatType)
-	if chatType != "" {
-		metadata["chat_type"] = chatType
-	}
-	if sender != nil && sender.TenantKey != nil {
-		metadata["tenant_key"] = *sender.TenantKey
-	}
+	metadata := buildInboundMetadata(message, sender)
 
 	var peer bus.Peer
 	if chatType == "p2p" {
@@ -474,11 +459,22 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		content = cleaned
 	}
 
+	content, mediaRefs = c.prependReplyContext(ctx, message, chatID, content, mediaRefs)
+	if content == "" {
+		content = "[empty message]"
+	}
+
 	logger.InfoCF("feishu", "Feishu message received", map[string]any{
 		"sender_id":  senderID,
 		"chat_id":    chatID,
 		"message_id": messageID,
 		"preview":    utils.Truncate(content, 80),
+	})
+	logger.InfoCF("feishu", "Feishu reply linkage", map[string]any{
+		"message_id": messageID,
+		"parent_id":  stringValue(message.ParentId),
+		"root_id":    stringValue(message.RootId),
+		"thread_id":  stringValue(message.ThreadId),
 	})
 
 	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaRefs, metadata, senderInfo)
@@ -486,6 +482,270 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 }
 
 // --- Internal helpers ---
+
+// buildInboundMetadata builds Feishu-specific metadata for downstream routing/context.
+func buildInboundMetadata(message *larkim.EventMessage, sender *larkim.EventSender) map[string]string {
+	metadata := map[string]string{}
+	if message == nil {
+		return metadata
+	}
+
+	messageID := stringValue(message.MessageId)
+	if messageID != "" {
+		metadata["message_id"] = messageID
+	}
+
+	messageType := stringValue(message.MessageType)
+	if messageType != "" {
+		metadata["message_type"] = messageType
+	}
+
+	chatType := stringValue(message.ChatType)
+	if chatType != "" {
+		metadata["chat_type"] = chatType
+	}
+
+	parentID := stringValue(message.ParentId)
+	if parentID != "" {
+		metadata["parent_id"] = parentID
+	}
+
+	rootID := stringValue(message.RootId)
+	if rootID != "" {
+		metadata["root_id"] = rootID
+	}
+
+	if replyTo := replyTargetMessageID(message); replyTo != "" {
+		metadata["reply_to_message_id"] = replyTo
+	}
+
+	threadID := stringValue(message.ThreadId)
+	if threadID != "" {
+		metadata["thread_id"] = threadID
+	}
+
+	if sender != nil && sender.TenantKey != nil && *sender.TenantKey != "" {
+		metadata["tenant_key"] = *sender.TenantKey
+	}
+
+	return metadata
+}
+
+// prependReplyContext best-effort fetches replied message content and prepends it
+// so session history keeps local conversational context for reply messages.
+func (c *FeishuChannel) prependReplyContext(
+	ctx context.Context,
+	message *larkim.EventMessage,
+	chatID string,
+	content string,
+	mediaRefs []string,
+) (string, []string) {
+	if message == nil {
+		return content, mediaRefs
+	}
+
+	lookupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	targetMessageID := c.resolveReplyTargetMessageID(lookupCtx, message)
+	if targetMessageID == "" {
+		logger.DebugCF("feishu", "No reply target resolved; skip reply context", map[string]any{
+			"message_id": stringValue(message.MessageId),
+			"parent_id":  stringValue(message.ParentId),
+			"root_id":    stringValue(message.RootId),
+			"thread_id":  stringValue(message.ThreadId),
+		})
+		return content, mediaRefs
+	}
+
+	repliedMessage, err := c.fetchMessageByID(lookupCtx, targetMessageID)
+	if err != nil {
+		logger.DebugCF("feishu", "Failed to fetch replied message context", map[string]any{
+			"target_message_id": targetMessageID,
+			"error":             err.Error(),
+		})
+		return content, mediaRefs
+	}
+
+	messageType := stringValue(repliedMessage.MsgType)
+	rawContent := ""
+	if repliedMessage.Body != nil {
+		rawContent = stringValue(repliedMessage.Body.Content)
+	}
+
+	var repliedMediaRefs []string
+	if store := c.GetMediaStore(); store != nil {
+		repliedMediaRefs = c.downloadInboundMedia(lookupCtx, chatID, targetMessageID, messageType, rawContent, store)
+		if messageType == larkim.MsgTypeInteractive {
+			_, externalURLs := extractCardImageKeys(rawContent)
+			if len(externalURLs) > 0 {
+				repliedMediaRefs = append(repliedMediaRefs, externalURLs...)
+			}
+		}
+	}
+
+	repliedContent := normalizeRepliedContent(messageType, rawContent, repliedMediaRefs)
+	if len(repliedMediaRefs) > 0 {
+		mediaRefs = append(mediaRefs, repliedMediaRefs...)
+	}
+
+	return formatReplyContext(targetMessageID, repliedContent, content), mediaRefs
+}
+
+func replyTargetMessageID(message *larkim.EventMessage) string {
+	if message == nil {
+		return ""
+	}
+	if parentID := stringValue(message.ParentId); parentID != "" {
+		return parentID
+	}
+	return stringValue(message.RootId)
+}
+
+// resolveReplyTargetMessageID resolves the replied target message ID.
+// It first checks event fields, then falls back to querying current message detail.
+func (c *FeishuChannel) resolveReplyTargetMessageID(ctx context.Context, message *larkim.EventMessage) string {
+	if targetID := replyTargetMessageID(message); targetID != "" {
+		logger.DebugCF("feishu", "Resolved reply target from event payload", map[string]any{
+			"message_id": stringValue(message.MessageId),
+			"parent_id":  stringValue(message.ParentId),
+			"root_id":    stringValue(message.RootId),
+			"target_id":  targetID,
+		})
+		return targetID
+	}
+
+	currentMessageID := stringValue(message.MessageId)
+	if currentMessageID == "" {
+		return ""
+	}
+
+	msg, err := c.fetchMessageByID(ctx, currentMessageID)
+	if err != nil {
+		logger.DebugCF("feishu", "Failed to query current message detail for reply info", map[string]any{
+			"message_id": currentMessageID,
+			"error":      err.Error(),
+		})
+		return ""
+	}
+
+	targetID := replyTargetFromMessage(msg)
+	if targetID != "" {
+		logger.DebugCF("feishu", "Resolved reply target from message detail", map[string]any{
+			"message_id": currentMessageID,
+			"parent_id":  stringValue(msg.ParentId),
+			"root_id":    stringValue(msg.RootId),
+			"target_id":  targetID,
+		})
+	}
+	return targetID
+}
+
+func replyTargetFromMessage(message *larkim.Message) string {
+	if message == nil {
+		return ""
+	}
+	if parentID := stringValue(message.ParentId); parentID != "" {
+		return parentID
+	}
+	return stringValue(message.RootId)
+}
+
+func (c *FeishuChannel) fetchMessageByID(ctx context.Context, messageID string) (*larkim.Message, error) {
+	req := larkim.NewGetMessageReqBuilder().
+		MessageId(messageID).
+		Build()
+
+	resp, err := c.client.Im.V1.Message.Get(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("feishu get message: %w", err)
+	}
+	if !resp.Success() {
+		c.invalidateTokenOnAuthError(resp.Code)
+		return nil, fmt.Errorf("feishu get message api error (code=%d msg=%s)", resp.Code, resp.Msg)
+	}
+	if resp.Data == nil || len(resp.Data.Items) == 0 || resp.Data.Items[0] == nil {
+		return nil, fmt.Errorf("feishu get message: empty response")
+	}
+
+	return resp.Data.Items[0], nil
+}
+
+func normalizeRepliedContent(messageType, rawContent string, mediaRefs []string) string {
+	content := extractContent(messageType, rawContent)
+
+	if containsFeishuUpgradePlaceholder(rawContent) || containsFeishuUpgradePlaceholder(content) {
+		content = ""
+	}
+
+	content = appendMediaTags(content, messageType, mediaRefs)
+	if strings.TrimSpace(content) != "" {
+		return content
+	}
+
+	switch messageType {
+	case larkim.MsgTypeImage:
+		return "[replied image]"
+	case larkim.MsgTypeFile:
+		return "[replied file]"
+	case larkim.MsgTypeAudio:
+		return "[replied audio]"
+	case larkim.MsgTypeMedia:
+		return "[replied video]"
+	case larkim.MsgTypeInteractive:
+		return "[replied interactive card]"
+	default:
+		return "[replied message content unavailable]"
+	}
+}
+
+func containsFeishuUpgradePlaceholder(s string) bool {
+	const upgradePromptPrefix = "\u8bf7\u5347\u7ea7\u81f3\u6700\u65b0\u7248\u672c\u5ba2\u6237\u7aef"
+	const upgradePromptPrefixEscaped = "\\u8bf7\\u5347\\u7ea7\\u81f3\\u6700\\u65b0\\u7248\\u672c\\u5ba2\\u6237\\u7aef"
+	return strings.Contains(s, upgradePromptPrefix) || strings.Contains(s, upgradePromptPrefixEscaped)
+}
+
+func formatReplyContext(parentID, repliedContent, content string) string {
+	parentID = strings.TrimSpace(parentID)
+	repliedContent = strings.TrimSpace(repliedContent)
+	content = strings.TrimSpace(content)
+
+	if parentID == "" || repliedContent == "" {
+		return content
+	}
+
+	repliedContent = utils.Truncate(repliedContent, 600)
+	repliedContent = sanitizeReplyContextContent(repliedContent)
+	content = sanitizeReplyContextContent(content)
+	header := fmt.Sprintf("[replied_message id=%q]", parentID)
+	footer := "[/replied_message]"
+	if content == "" {
+		return header + "\n" + repliedContent + "\n" + footer
+	}
+	if hasLeadingCommandPrefix(content) {
+		return content + "\n\n" + header + "\n" + repliedContent + "\n" + footer
+	}
+	return header + "\n" + repliedContent + "\n" + footer + "\n\n[current_message]\n" + content + "\n[/current_message]"
+}
+
+func hasLeadingCommandPrefix(s string) bool {
+	tokens := strings.Fields(strings.TrimSpace(s))
+	if len(tokens) == 0 {
+		return false
+	}
+	first := tokens[0]
+	return strings.HasPrefix(first, "/") || strings.HasPrefix(first, "!")
+}
+
+func sanitizeReplyContextContent(s string) string {
+	tagEscaper := strings.NewReplacer(
+		"[replied_message", `\\[replied_message`,
+		"[/replied_message]", `\\[/replied_message]`,
+		"[current_message]", `\\[current_message]`,
+		"[/current_message]", `\\[/current_message]`,
+	)
+	return tagEscaper.Replace(s)
+}
 
 // fetchBotOpenID calls the Feishu bot info API to retrieve and store the bot's open_id.
 func (c *FeishuChannel) fetchBotOpenID(ctx context.Context) error {
