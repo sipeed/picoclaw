@@ -239,6 +239,7 @@ func (c *Config) MergeAndApplySecurity(newer *SecurityConfig) error {
 	c.security = mergeSecurityConfig(c.security, newer)
 	return applySecurityConfig(c, c.security)
 }
+
 // mergeSecurityConfig merges two SecurityConfig instances, preferring non-empty values from 'newer'.
 // This is used during config migration to preserve existing security data while adding new entries.
 func mergeSecurityConfig(existing, newer *SecurityConfig) *SecurityConfig {
@@ -335,7 +336,8 @@ func mergeChannelsSecurity(dst, src *ChannelsSecurity) {
 	if src.Pico != nil && src.Pico.Token != "" {
 		dst.Pico = src.Pico
 	}
-	if src.IRC != nil && (src.IRC.Password != "" || src.IRC.NickServPassword != "" || src.IRC.SASLPassword != "") {
+	if src.IRC != nil &&
+		(src.IRC.Password != "" || src.IRC.NickServPassword != "" || src.IRC.SASLPassword != "") {
 		dst.IRC = src.IRC
 	}
 }
