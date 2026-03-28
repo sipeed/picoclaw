@@ -1017,6 +1017,10 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Save old config so we can revert on error.
+	oldConfig := m.config
+
+	// Update config early: initChannel uses m.config via factory(m.config, m.bus).
 	m.config = cfg
 
 	list := toChannelHashes(cfg)
@@ -1044,11 +1048,15 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 	cc, err := toChannelConfig(cfg, added)
 	if err != nil {
 		logger.ErrorC("channels", fmt.Sprintf("toChannelConfig error: %v", err))
+		m.config = oldConfig
+		cancel()
 		return err
 	}
 	err = m.initChannels(cc)
 	if err != nil {
 		logger.ErrorC("channels", fmt.Sprintf("initChannels error: %v", err))
+		m.config = oldConfig
+		cancel()
 		return err
 	}
 	for _, name := range added {
@@ -1073,6 +1081,7 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 		})
 	}
 
+	// Commit hashes only on full success.
 	m.channelHashes = list
 	go func() {
 		for _, f := range deferFuncs {
