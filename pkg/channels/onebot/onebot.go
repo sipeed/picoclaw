@@ -1104,3 +1104,8 @@ func truncate(s string, n int) string {
 	}
 	return string(runes[:n]) + "..."
 }
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *OneBotChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
+}

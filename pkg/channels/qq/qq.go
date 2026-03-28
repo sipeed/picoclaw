@@ -991,3 +991,8 @@ func sanitizeURLs(text string) string {
 		return scheme + domain + path
 	})
 }
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *QQChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
+}
