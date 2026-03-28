@@ -12,7 +12,7 @@ data:
       "version": 1,
       "agents": {
         "defaults": {
-          "workspace": "/home/picoclaw/.picoclaw",
+          "workspace": "",
           "restrict_to_workspace": true,
           "allow_read_outside_workspace": false,
           "provider": "",
