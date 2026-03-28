@@ -36,6 +36,10 @@ type syncCursorFile struct {
 	GetUpdatesBuf string `json:"get_updates_buf"`
 }
 
+type contextTokensFile struct {
+	Tokens map[string]string `json:"tokens"`
+}
+
 func picoclawHomeDir() string {
 	if home := os.Getenv(config.EnvHome); home != "" {
 		return home
@@ -44,14 +48,21 @@ func picoclawHomeDir() string {
 	return filepath.Join(userHome, ".picoclaw")
 }
 
-func buildWeixinSyncBufPath(cfg config.WeixinConfig) string {
-	key := "default"
+func genWeixinAccountKey(cfg config.WeixinConfig) string {
 	token := strings.TrimSpace(cfg.Token.String())
-	if token != "" {
-		sum := sha256.Sum256([]byte(strings.TrimSpace(cfg.BaseURL) + "|" + token))
-		key = hex.EncodeToString(sum[:8])
+	if token == "" {
+		return "default"
 	}
-	return filepath.Join(picoclawHomeDir(), "channels", "weixin", "sync", key+".json")
+	sum := sha256.Sum256([]byte(strings.TrimSpace(cfg.BaseURL) + "|" + token))
+	return hex.EncodeToString(sum[:8])
+}
+
+func buildWeixinSyncBufPath(cfg config.WeixinConfig) string {
+	return filepath.Join(picoclawHomeDir(), "channels", "weixin", "sync", genWeixinAccountKey(cfg)+".json")
+}
+
+func buildWeixinContextTokensPath(cfg config.WeixinConfig) string {
+	return filepath.Join(picoclawHomeDir(), "channels", "weixin", "context-tokens", genWeixinAccountKey(cfg)+".json")
 }
 
 func loadGetUpdatesBuf(path string) (string, error) {
@@ -73,6 +84,29 @@ func loadGetUpdatesBuf(path string) (string, error) {
 
 func saveGetUpdatesBuf(path, cursor string) error {
 	data, err := json.Marshal(syncCursorFile{GetUpdatesBuf: cursor})
+	if err != nil {
+		return err
+	}
+	return fileutil.WriteFileAtomic(path, data, 0o600)
+}
+
+func loadContextTokens(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var decoded contextTokensFile
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return nil, err
+	}
+	return decoded.Tokens, nil
+}
+
+func saveContextTokens(path string, tokens map[string]string) error {
+	data, err := json.Marshal(contextTokensFile{Tokens: tokens})
 	if err != nil {
 		return err
 	}
