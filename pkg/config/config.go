@@ -314,6 +314,7 @@ type ChannelsConfig struct {
 	IRC          IRCConfig          `json:"irc"           yaml:"irc,omitempty"`
 	VK           VKConfig           `json:"vk"            yaml:"vk,omitempty"`
 	TeamsWebhook TeamsWebhookConfig `json:"teams_webhook" yaml:"teams_webhook,omitempty"`
+	Email        EmailConfig        `json:"email"         yaml:"email,omitempty"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
@@ -594,6 +595,26 @@ type TeamsWebhookConfig struct {
 type TeamsWebhookTarget struct {
 	WebhookURL SecureString `json:"webhook_url,omitzero" yaml:"webhook_url,omitempty"`
 	Title      string       `json:"title,omitempty"      yaml:"-"`
+}
+
+type EmailConfig struct {
+	Enabled bool `json:"enabled" env:"PICOCLAW_CHANNELS_EMAIL_ENABLED"`
+	// SMTP (outbound)
+	SMTPHost       string       `json:"smtp_host"       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_HOST"`
+	SMTPPort       int          `json:"smtp_port"       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PORT"`
+	SMTPFrom       string       `json:"smtp_from"       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_FROM"`
+	SMTPUser       string       `json:"smtp_user"       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_USER"`
+	SMTPPassword   SecureString `json:"smtp_password,omitzero" yaml:"smtp_password,omitempty" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PASSWORD"`
+	DefaultSubject string       `json:"default_subject" env:"PICOCLAW_CHANNELS_EMAIL_DEFAULT_SUBJECT"`
+	// IMAP (inbound)
+	IMAPHost         string              `json:"imap_host"          env:"PICOCLAW_CHANNELS_EMAIL_IMAP_HOST"`
+	IMAPPort         int                 `json:"imap_port"          env:"PICOCLAW_CHANNELS_EMAIL_IMAP_PORT"`
+	IMAPUser         string              `json:"imap_user"          env:"PICOCLAW_CHANNELS_EMAIL_IMAP_USER"`
+	IMAPPassword     SecureString        `json:"imap_password,omitzero" yaml:"imap_password,omitempty" env:"PICOCLAW_CHANNELS_EMAIL_IMAP_PASSWORD"`
+	PollIntervalSecs int                 `json:"poll_interval_secs" env:"PICOCLAW_CHANNELS_EMAIL_POLL_INTERVAL_SECS"`
+	// Common
+	AllowFrom          FlexibleStringSlice `json:"allow_from"            env:"PICOCLAW_CHANNELS_EMAIL_ALLOW_FROM"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"  env:"PICOCLAW_CHANNELS_EMAIL_REASONING_CHANNEL_ID"`
 }
 
 type HeartbeatConfig struct {
