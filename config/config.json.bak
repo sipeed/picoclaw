@@ -1,0 +1,546 @@
+{
+  "providers": {
+    "anthropic": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "openai": {
+      "api_key": "",
+      "api_base": "",
+      "web_search": true
+    },
+    "litellm": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "openrouter": {
+      "api_key": "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",
+      "api_base": ""
+    },
+    "groq": {
+      "api_key": "gsk_xxx",
+      "api_base": ""
+    },
+    "zhipu": {
+      "api_key": "YOUR_ZHIPU_API_KEY",
+      "api_base": ""
+    },
+    "vllm": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "gemini": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "nvidia": {
+      "api_key": "nvapi-xxx",
+      "api_base": "",
+      "proxy": "http://127.0.0.1:7890"
+    },
+    "ollama": {
+      "api_key": "",
+      "api_base": "http://localhost:11434/v1"
+    },
+    "moonshot": {
+      "api_key": "sk-xxx",
+      "api_base": ""
+    },
+    "shengsuanyun": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "deepseek": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "cerebras": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "vivgrid": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "volcengine": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "github_copilot": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "antigravity": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "qwen": {
+      "api_key": "sk-xxx",
+      "api_base": ""
+    },
+    "mistral": {
+      "api_key": "",
+      "api_base": "https://api.mistral.ai/v1"
+    },
+    "avian": {
+      "api_key": "",
+      "api_base": "https://api.avian.io/v1"
+    },
+    "minimax": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "longcat": {
+      "api_key": "",
+      "api_base": "https://api.longcat.chat/openai"
+    }
+  },
+  "session": {
+    "dm_scope": "per-channel-peer"
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "~/.picoclaw/workspace",
+      "restrict_to_workspace": true,
+      "allow_read_outside_workspace": false,
+      "provider": "",
+      "model_name": "miniMax",
+      "model": "openrouter/minimax/minimax-m2.7",
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "max_tool_iterations": 20,
+      "summarize_message_threshold": 20,
+      "summarize_token_percent": 75
+    },
+    "list": [
+      {
+        "id": "the-clinician",
+        "name": "Medical Persona",
+        "workspace": "/home/picoclaw/.picoclaw/Obsidian_Vault/Patients"
+      },
+      {
+        "id": "coding",
+        "name": "Coding Persona",
+        "workspace": "/home/picoclaw/.picoclaw/workspace/code",
+        "mcp_servers": [
+          "github",
+          "bash"
+        ]
+      },
+      {
+        "id": "google",
+        "name": "Google Persona",
+        "workspace": "/home/picoclaw/.picoclaw/workspace/google",
+        "mcp_servers": [
+          "gmail",
+          "calendar"
+        ]
+      },
+      {
+        "id": "communications",
+        "name": "Communications Persona",
+        "workspace": "/home/picoclaw/.picoclaw/workspace/communications",
+        "mcp_servers": [
+          "slack",
+          "discord"
+        ]
+      },
+      {
+        "id": "financial",
+        "name": "Financial Persona",
+        "workspace": "/home/picoclaw/.picoclaw/workspace/finance",
+        "mcp_servers": [
+          "alpaca"
+        ]
+      }
+    ]
+  },
+  "channels": {
+    "whatsapp": {
+      "enabled": false,
+      "bridge_url": "ws://localhost:3001",
+      "use_native": false,
+      "session_store_path": "",
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "telegram": {
+      "enabled": false,
+      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "base_url": "",
+      "proxy": "",
+      "allow_from": [
+        "YOUR_USER_ID"
+      ],
+      "group_trigger": {},
+      "typing": {
+        "enabled": true
+      },
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
+      "reasoning_channel_id": ""
+    },
+    "discord": {
+      "enabled": false,
+      "token": "YOUR_DISCORD_BOT_TOKEN",
+      "proxy": "",
+      "allow_from": [],
+      "mention_only": false,
+      "group_trigger": {},
+      "typing": {},
+      "placeholder": {},
+      "reasoning_channel_id": ""
+    },
+    "maixcam": {
+      "enabled": false,
+      "host": "0.0.0.0",
+      "port": 18790,
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "qq": {
+      "enabled": false,
+      "app_id": "",
+      "app_secret": "",
+      "allow_from": [],
+      "group_trigger": {},
+      "max_message_length": 2000,
+      "send_markdown": false,
+      "reasoning_channel_id": ""
+    },
+    "dingtalk": {
+      "enabled": false,
+      "client_id": "",
+      "client_secret": "",
+      "allow_from": [],
+      "group_trigger": {},
+      "reasoning_channel_id": ""
+    },
+    "slack": {
+      "enabled": false,
+      "bot_token": "",
+      "app_token": "",
+      "allow_from": [],
+      "group_trigger": {},
+      "typing": {},
+      "placeholder": {},
+      "reasoning_channel_id": ""
+    },
+    "matrix": {
+      "enabled": false,
+      "homeserver": "https://matrix.org",
+      "user_id": "",
+      "access_token": "",
+      "join_on_invite": true,
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
+      "reasoning_channel_id": ""
+    },
+    "line": {
+      "enabled": false,
+      "channel_secret": "",
+      "channel_access_token": "",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18791,
+      "webhook_path": "/webhook/line",
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "typing": {},
+      "placeholder": {},
+      "reasoning_channel_id": ""
+    },
+    "onebot": {
+      "enabled": false,
+      "ws_url": "ws://127.0.0.1:3001",
+      "access_token": "",
+      "reconnect_interval": 5,
+      "group_trigger_prefix": [],
+      "allow_from": [],
+      "group_trigger": {},
+      "typing": {},
+      "placeholder": {},
+      "reasoning_channel_id": ""
+    },
+    "pico": {
+      "enabled": true,
+      "token": "2ef049450d7806c91ecfa18bb81a8cbe",
+      "allow_token_query": true,
+      "allow_origins": [
+        "*"
+      ],
+      "ping_interval": 30,
+      "read_timeout": 60,
+      "write_timeout": 10,
+      "max_connections": 100,
+      "allow_from": [],
+      "placeholder": {}
+    },
+    "irc": {
+      "enabled": false,
+      "server": "irc.libera.chat:6697",
+      "tls": true,
+      "nick": "mybot",
+      "password": "",
+      "nickserv_password": "",
+      "sasl_user": "",
+      "sasl_password": "",
+      "channels": [
+        "#mychannel"
+      ],
+      "request_caps": [
+        "server-time",
+        "message-tags"
+      ],
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "typing": {},
+      "reasoning_channel_id": ""
+    },
+    "gmessages": {
+      "enabled": false,
+      "data_dir": "",
+      "allow_from": null,
+      "group_trigger": {},
+      "typing": {},
+      "placeholder": {},
+      "reasoning_channel_id": ""
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "miniMax",
+      "model": "openrouter/minimax/minimax-m2.7",
+      "api_base": "https://openrouter.ai/api/v1",
+      "api_key": ""
+    }
+  ],
+  "logger": {
+    "time_format": "15:04:05"
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
+  },
+  "tools": {
+    "alpaca": {},
+    "allow_read_paths": null,
+    "allow_write_paths": null,
+    "web": {
+      "enabled": true,
+      "brave": {
+        "enabled": false,
+        "api_key": "YOUR_BRAVE_API_KEY",
+        "api_keys": [
+          "YOUR_BRAVE_API_KEY"
+        ],
+        "max_results": 5
+      },
+      "tavily": {
+        "enabled": false,
+        "api_key": "",
+        "api_keys": null,
+        "base_url": "",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
+      },
+      "perplexity": {
+        "enabled": false,
+        "api_key": "",
+        "api_keys": null,
+        "max_results": 5
+      },
+      "searxng": {
+        "enabled": false,
+        "base_url": "http://localhost:8888",
+        "max_results": 5
+      },
+      "glm_search": {
+        "enabled": false,
+        "api_key": "",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4/web_search",
+        "search_engine": "search_std",
+        "max_results": 5
+      },
+      "fetch_limit_bytes": 10485760
+    },
+    "jules": {
+      "enabled": true,
+      "api_key": ""
+    },
+    "cron": {
+      "enabled": true,
+      "exec_timeout_minutes": 5
+    },
+    "exec": {
+      "enabled": true,
+      "enable_deny_patterns": true,
+      "allow_remote": true,
+      "custom_deny_patterns": null,
+      "custom_allow_patterns": null,
+      "timeout_seconds": 60
+    },
+    "skills": {
+      "enabled": false,
+      "registries": {
+        "clawhub": {
+          "enabled": true,
+          "base_url": "https://clawhub.ai",
+          "auth_token": "",
+          "search_path": "",
+          "skills_path": "",
+          "download_path": "",
+          "timeout": 0,
+          "max_zip_size": 0,
+          "max_response_size": 0
+        }
+      },
+      "max_concurrent_searches": 2,
+      "search_cache": {
+        "max_size": 50,
+        "ttl_seconds": 300
+      }
+    },
+    "media_cleanup": {
+      "enabled": true,
+      "max_age_minutes": 30,
+      "interval_minutes": 5
+    },
+    "mcp": {
+      "enabled": true,
+      "discovery": {
+        "enabled": false,
+        "ttl": 5,
+        "max_search_results": 5,
+        "use_bm25": true,
+        "use_regex": false
+      },
+      "servers": {
+        "brave-search": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-brave-search"
+          ],
+          "env": {
+            "BRAVE_API_KEY": "YOUR_BRAVE_API_KEY"
+          }
+        },
+        "context7": {
+          "enabled": false,
+          "command": "",
+          "type": "http",
+          "url": "https://mcp.context7.com/mcp",
+          "headers": {
+            "CONTEXT7_API_KEY": "ctx7sk-xx"
+          }
+        },
+        "filesystem": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "/tmp"
+          ]
+        },
+        "postgres": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-postgres",
+            "postgresql://user:password@localhost/dbname"
+          ]
+        }
+      }
+    },
+    "append_file": {
+      "enabled": true
+    },
+    "edit_file": {
+      "enabled": true
+    },
+    "find_skills": {
+      "enabled": true
+    },
+    "i2c": {
+      "enabled": false
+    },
+    "install_skill": {
+      "enabled": true
+    },
+    "list_dir": {
+      "enabled": true
+    },
+    "message": {
+      "enabled": true
+    },
+    "mcp2cli": {
+      "enabled": false
+    },
+    "read_file": {
+      "enabled": true,
+      "max_read_file_size": 65536
+    },
+    "send_file": {
+      "enabled": true
+    },
+    "spawn": {
+      "enabled": true
+    },
+    "spi": {
+      "enabled": false
+    },
+    "subagent": {
+      "enabled": true
+    },
+    "web_fetch": {
+      "enabled": true
+    },
+    "write_file": {
+      "enabled": true
+    },
+    "browser_action": {
+      "enabled": true
+    },
+    "go_eval": {
+      "enabled": true
+    },
+    "calculator": {
+      "enabled": false
+    }
+  },
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
+  },
+  "devices": {
+    "enabled": false,
+    "monitor_usb": true
+  },
+  "voice": {
+    "echo_transcription": false
+  },
+  "build_info": {
+    "version": "dev",
+    "git_commit": "",
+    "build_time": "",
+    "go_version": ""
+  }
+}

@@ -1,0 +1,9 @@
+{"level":"info","component":"web","time":"2026-03-28T06:12:13Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:101","message":"PicoClaw Launcher dev starting..."}
+{"level":"info","component":"web","time":"2026-03-28T06:12:13Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:102","message":"PicoClaw Home: /root/.picoclaw"}
+{"level":"info","from":0,"to":1,"time":"2026-03-28T06:12:14Z","caller":"/home/runner/work/picoclaw/picoclaw/pkg/config/config.go:1280","message":"config migrate start"}
+{"level":"info","from":0,"to":1,"time":"2026-03-28T06:12:14Z","caller":"/home/runner/work/picoclaw/picoclaw/pkg/config/config.go:1291","message":"config migrate success"}
+{"level":"info","time":"2026-03-28T06:12:14Z","caller":"/home/runner/work/picoclaw/picoclaw/pkg/config/config.go:1863","message":"saving config to /root/.picoclaw/config.json"}
+{"level":"info","component":"web","time":"2026-03-28T06:12:14Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:209","message":"Server will listen on http://localhost:18800"}
+{"level":"info","component":"web","time":"2026-03-28T06:12:14Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:212","message":"Public access enabled at http://172.17.0.5:18800"}
+{"level":"info","component":"web","time":"2026-03-28T06:12:14Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:230","message":"Server listening on 0.0.0.0:18800"}
+{"level":"info","component":"gateway","time":"2026-03-28T06:12:15Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/api/gateway.go:133","message":"Skip auto-starting gateway: default model \"miniMax\" has no credentials configured"}

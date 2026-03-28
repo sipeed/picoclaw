@@ -1,0 +1,13 @@
+model_list: {}
+channels:
+  telegram:
+    token: YOUR_TELEGRAM_BOT_TOKEN
+  discord:
+    token: YOUR_DISCORD_BOT_TOKEN
+  pico:
+    token: 2ef049450d7806c91ecfa18bb81a8cbe
+web:
+  brave:
+    api_keys:
+      - YOUR_BRAVE_API_KEY
+skills: {}
