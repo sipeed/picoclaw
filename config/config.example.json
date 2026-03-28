@@ -412,7 +412,8 @@
       "enabled": true
     },
     "read_file": {
-      "enabled": true
+      "enabled": true,
+      "mode": "bytes"
     },
     "spawn": {
       "enabled": true

@@ -882,8 +882,25 @@ type MediaCleanupConfig struct {
 }
 
 type ReadFileToolConfig struct {
-	Enabled         bool `json:"enabled"`
-	MaxReadFileSize int  `json:"max_read_file_size"`
+	Enabled         bool   `json:"enabled"`
+	Mode            string `json:"mode"`
+	MaxReadFileSize int    `json:"max_read_file_size"`
+}
+
+const (
+	ReadFileModeBytes = "bytes"
+	ReadFileModeLines = "lines"
+)
+
+func (c ReadFileToolConfig) EffectiveMode() string {
+	switch strings.ToLower(strings.TrimSpace(c.Mode)) {
+	case ReadFileModeLines:
+		return ReadFileModeLines
+	case "", ReadFileModeBytes:
+		return ReadFileModeBytes
+	default:
+		return ReadFileModeBytes
+	}
 }
 
 type ToolsConfig struct {

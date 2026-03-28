@@ -317,6 +317,13 @@ func TestDefaultConfig_WebTools(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ReadFileMode(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Tools.ReadFile.EffectiveMode() != ReadFileModeBytes {
+		t.Fatalf("expected default read_file mode %q, got %q", ReadFileModeBytes, cfg.Tools.ReadFile.EffectiveMode())
+	}
+}
+
 func TestSaveConfig_FilePermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("file permission bits are not enforced on Windows")

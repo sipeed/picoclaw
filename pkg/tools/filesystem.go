@@ -1,18 +1,22 @@
 package tools
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -20,7 +24,11 @@ import (
 
 const MaxReadFileSize = 64 * 1024 // 64KB limit to avoid context overflow
 
-func validatePathWithAllowPaths(path, workspace string, restrict bool, patterns []*regexp.Regexp) (string, error) {
+func validatePathWithAllowPaths(
+	path, workspace string,
+	restrict bool,
+	patterns []*regexp.Regexp,
+) (string, error) {
 	if workspace == "" {
 		return path, fmt.Errorf("workspace is not defined")
 	}
@@ -253,6 +261,11 @@ type ReadFileTool struct {
 	maxSize int64
 }
 
+type ReadFileLinesTool struct {
+	fs      fileSystem
+	maxSize int64
+}
+
 func NewReadFileTool(
 	workspace string,
 	restrict bool,
@@ -275,12 +288,51 @@ func NewReadFileTool(
 	}
 }
 
+func NewReadFileBytesTool(
+	workspace string,
+	restrict bool,
+	maxReadFileSize int,
+	allowPaths ...[]*regexp.Regexp,
+) *ReadFileTool {
+	return NewReadFileTool(workspace, restrict, maxReadFileSize, allowPaths...)
+}
+
+func NewReadFileLinesTool(
+	workspace string,
+	restrict bool,
+	maxReadFileSize int,
+	allowPaths ...[]*regexp.Regexp,
+) *ReadFileLinesTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
+	}
+
+	maxSize := int64(maxReadFileSize)
+	if maxSize <= 0 {
+		maxSize = MaxReadFileSize
+	}
+
+	return &ReadFileLinesTool{
+		fs:      buildFs(workspace, restrict, patterns),
+		maxSize: maxSize,
+	}
+}
+
 func (t *ReadFileTool) Name() string {
+	return "read_file"
+}
+
+func (t *ReadFileLinesTool) Name() string {
 	return "read_file"
 }
 
 func (t *ReadFileTool) Description() string {
 	return "Read the contents of a file. Supports pagination via `offset` and `length`."
+}
+
+func (t *ReadFileLinesTool) Description() string {
+	return "Read a UTF-8 text file from the filesystem. Output always includes line numbers in the format `LINE_NUMBER|LINE_CONTENT` (1-indexed). Supports partial reads via `start_line` and `max_lines` for large text files."
 }
 
 func (t *ReadFileTool) Parameters() map[string]any {
@@ -300,6 +352,28 @@ func (t *ReadFileTool) Parameters() map[string]any {
 				"type":        "integer",
 				"description": "Maximum number of bytes to read.",
 				"default":     t.maxSize,
+			},
+		},
+		"required": []string{"path"},
+	}
+}
+
+func (t *ReadFileLinesTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Path to the file to read.",
+			},
+			"start_line": map[string]any{
+				"type":        "integer",
+				"description": "Line number to start reading from (1-indexed, inclusive).",
+				"default":     1,
+			},
+			"max_lines": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of lines to read.",
 			},
 		},
 		"required": []string{"path"},
@@ -447,6 +521,302 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	return NewToolResult(header + "\n\n" + string(data))
 }
 
+func (t *ReadFileLinesTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+	path, ok := args["path"].(string)
+	if !ok {
+		return ErrorResult("path is required")
+	}
+
+	startLine, err := getInt64Arg(args, "start_line", 1)
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	if startLine < 1 {
+		return ErrorResult("start_line must be >= 1")
+	}
+	if _, exists := args["offset"]; exists {
+		return ErrorResult("offset is not supported in line mode; use start_line")
+	}
+	if _, exists := args["length"]; exists {
+		return ErrorResult("length is not supported in line mode; use max_lines")
+	}
+	if _, exists := args["limit"]; exists {
+		return ErrorResult("limit is not supported in line mode; use max_lines")
+	}
+
+	limit := int64(-1)
+	if raw, exists := args["max_lines"]; exists && raw != nil {
+		limit, err = getInt64Arg(args, "max_lines", -1)
+		if err != nil {
+			return ErrorResult(err.Error())
+		}
+		if limit <= 0 {
+			return ErrorResult("max_lines, if provided, must be > 0")
+		}
+	}
+
+	file, err := t.fs.Open(path)
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	defer file.Close()
+
+	if info, statErr := file.Stat(); statErr == nil && info.IsDir() {
+		return ErrorResult(fmt.Sprintf("failed to open file: path is a directory: %s", path))
+	}
+
+	sample := make([]byte, 512)
+	sampleN, readErr := file.Read(sample)
+	if readErr != nil && readErr != io.EOF {
+		return ErrorResult(fmt.Sprintf("failed to read file: %v", readErr))
+	}
+	sample = sample[:sampleN]
+	if isBinaryReadFileData(sample) {
+		return ErrorResult("file appears to be binary; switch read_file mode to 'bytes' for byte-based inspection")
+	}
+
+	reader := bufio.NewReaderSize(io.MultiReader(bytes.NewReader(sample), file), 32*1024)
+
+	var content strings.Builder
+	lineIndex := int64(1)
+	var linesRead int64
+	var fileBytesRead int64
+	var outputBytesRead int64
+	var reachedEOF bool
+	var byteBudgetTruncated bool
+	var lineTruncated bool
+
+	for lineIndex < startLine {
+		hasLine, consumeErr := consumeNextLine(reader)
+		if consumeErr != nil {
+			return ErrorResult(fmt.Sprintf("failed to read file content: %v", consumeErr))
+		}
+		if !hasLine {
+			reachedEOF = true
+			break
+		}
+		lineIndex++
+	}
+
+	for !reachedEOF && (limit < 0 || linesRead < limit) {
+		prefix := formatReadFileLinePrefix(lineIndex)
+		remaining := t.maxSize - outputBytesRead - int64(len(prefix))
+		if remaining <= 0 {
+			byteBudgetTruncated = true
+			break
+		}
+
+		line, complete, hasLine, readLineErr := readNextLinePrefix(reader, remaining)
+		if readLineErr != nil {
+			return ErrorResult(fmt.Sprintf("failed to read file content: %v", readLineErr))
+		}
+		if !hasLine {
+			reachedEOF = true
+			break
+		}
+
+		content.WriteString(prefix)
+		content.Write(line)
+		fileBytesRead += int64(len(line))
+		outputBytesRead += int64(len(prefix) + len(line))
+		linesRead++
+		lineIndex++
+
+		if !complete {
+			byteBudgetTruncated = true
+			lineTruncated = true
+			break
+		}
+	}
+
+	if !reachedEOF && !lineTruncated {
+		hasMoreContent, peekErr := readerHasMoreContent(reader)
+		if peekErr != nil {
+			return ErrorResult(fmt.Sprintf("failed to inspect remaining file content: %v", peekErr))
+		}
+		if !hasMoreContent {
+			reachedEOF = true
+			byteBudgetTruncated = false
+		}
+	}
+
+	if linesRead == 0 && content.Len() == 0 {
+		return NewToolResult(fmt.Sprintf("[END OF FILE - no content at or after start_line=%d]", startLine))
+	}
+
+	start := startLine
+	endLine := startLine + linesRead - 1
+	displayPath := filepath.Base(path)
+	header := fmt.Sprintf(
+		"[file: %s | read: lines %d-%d (1-indexed) | file_bytes: %d | output_bytes: %d]",
+		displayPath, start, endLine, fileBytesRead, outputBytesRead,
+	)
+
+	switch {
+	case lineTruncated:
+		header += fmt.Sprintf(
+			"\n[TRUNCATED - line %d exceeded the %d byte read budget and was cut mid-line.]",
+			endLine,
+			t.maxSize,
+		)
+	case byteBudgetTruncated:
+		if limit > 0 {
+			header += fmt.Sprintf(
+				"\n[TRUNCATED - byte budget reached. Call read_file again with start_line=%d and max_lines=%d to continue at the next line.]",
+				startLine+linesRead,
+				limit,
+			)
+		} else {
+			header += fmt.Sprintf(
+				"\n[TRUNCATED - byte budget reached. Call read_file again with start_line=%d to continue at the next line.]",
+				startLine+linesRead,
+			)
+		}
+	case !reachedEOF && limit > 0 && linesRead >= limit:
+		header += fmt.Sprintf(
+			"\n[PARTIAL - more content remains. Call read_file again with start_line=%d and max_lines=%d to continue.]",
+			startLine+linesRead,
+			limit,
+		)
+	default:
+		header += "\n[END OF FILE - no further content.]"
+	}
+
+	logger.DebugCF("tool", "ReadFileTool execution completed successfully",
+		map[string]any{
+			"path":              path,
+			"lines_read":        linesRead,
+			"file_bytes_read":   fileBytesRead,
+			"output_bytes_read": outputBytesRead,
+			"truncated":         byteBudgetTruncated,
+			"tool":              t.Name(),
+		})
+
+	return NewToolResult(header + "\n\n" + content.String())
+}
+
+func formatReadFileLinePrefix(lineNumber int64) string {
+	return strconv.FormatInt(lineNumber, 10) + "|"
+}
+
+func isBinaryReadFileData(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+
+	sample := data
+	if len(sample) > 512 {
+		sample = sample[:512]
+	}
+
+	if bytes.IndexByte(sample, 0) >= 0 {
+		return true
+	}
+
+	contentType := http.DetectContentType(sample)
+	if strings.HasPrefix(contentType, "text/") {
+		return false
+	}
+	if strings.HasSuffix(contentType, "/json") ||
+		strings.HasSuffix(contentType, "+json") ||
+		strings.HasSuffix(contentType, "/xml") ||
+		strings.HasSuffix(contentType, "+xml") ||
+		strings.Contains(contentType, "javascript") {
+		return false
+	}
+
+	if !utf8.Valid(sample) {
+		return true
+	}
+
+	controlChars := 0
+	for _, b := range sample {
+		if b < 0x20 && b != '\n' && b != '\r' && b != '\t' && b != '\f' && b != '\b' {
+			controlChars++
+		}
+	}
+
+	return float64(controlChars)/float64(len(sample)) > 0.1
+}
+
+func consumeNextLine(reader *bufio.Reader) (bool, error) {
+	sawData := false
+
+	for {
+		fragment, err := reader.ReadSlice('\n')
+		if len(fragment) > 0 {
+			sawData = true
+		}
+
+		switch {
+		case err == nil:
+			return true, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF):
+			return sawData, nil
+		default:
+			return false, err
+		}
+	}
+}
+
+func readNextLinePrefix(reader *bufio.Reader, maxBytes int64) ([]byte, bool, bool, error) {
+	if maxBytes <= 0 {
+		return nil, false, false, nil
+	}
+
+	var out bytes.Buffer
+	sawData := false
+	complete := true
+
+	for {
+		fragment, err := reader.ReadSlice('\n')
+		if len(fragment) > 0 {
+			sawData = true
+			if remaining := maxBytes - int64(out.Len()); remaining > 0 {
+				take := len(fragment)
+				if int64(take) > remaining {
+					take = int(remaining)
+					complete = false
+				}
+				out.Write(fragment[:take])
+			} else {
+				complete = false
+			}
+		}
+
+		switch {
+		case err == nil:
+			return out.Bytes(), complete, sawData, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			if !complete {
+				return out.Bytes(), false, true, nil
+			}
+			continue
+		case errors.Is(err, io.EOF):
+			if !sawData {
+				return nil, true, false, nil
+			}
+			return out.Bytes(), complete, true, nil
+		default:
+			return nil, false, false, err
+		}
+	}
+}
+
+func readerHasMoreContent(reader *bufio.Reader) (bool, error) {
+	_, err := reader.Peek(1)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, io.EOF):
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
 // getInt64Arg extracts an integer argument from the args map, returning the
 // provided default if the key is absent.
 func getInt64Arg(args map[string]any, key string, defaultVal int64) (int64, error) {
@@ -483,7 +853,11 @@ type WriteFileTool struct {
 	fs fileSystem
 }
 
-func NewWriteFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *WriteFileTool {
+func NewWriteFileTool(
+	workspace string,
+	restrict bool,
+	allowPaths ...[]*regexp.Regexp,
+) *WriteFileTool {
 	var patterns []*regexp.Regexp
 	if len(allowPaths) > 0 {
 		patterns = allowPaths[0]
@@ -536,7 +910,9 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 
 	if !overwrite {
 		if _, err := t.fs.Open(path); err == nil {
-			return ErrorResult(fmt.Sprintf("file: %s already exists. Set overwrite=true to replace.", path))
+			return ErrorResult(
+				fmt.Sprintf("file: %s already exists. Set overwrite=true to replace.", path),
+			)
 		}
 	}
 

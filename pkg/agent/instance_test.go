@@ -248,6 +248,47 @@ func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 	}
 }
 
+func TestNewAgentInstance_ReadFileModeSelectsSchema(t *testing.T) {
+	workspace := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "test-model",
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{
+				Enabled:         true,
+				Mode:            config.ReadFileModeLines,
+				MaxReadFileSize: 4096,
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	readTool, ok := agent.Tools.Get("read_file")
+	if !ok {
+		t.Fatal("read_file tool not registered")
+	}
+
+	params := readTool.Parameters()
+	props, _ := params["properties"].(map[string]any)
+	if _, ok := props["start_line"]; !ok {
+		t.Fatalf("expected line-mode schema to expose start_line, got %#v", props)
+	}
+	if _, ok := props["max_lines"]; !ok {
+		t.Fatalf("expected line-mode schema to expose max_lines, got %#v", props)
+	}
+	if _, ok := props["offset"]; ok {
+		t.Fatalf("did not expect line-mode schema to expose offset, got %#v", props)
+	}
+	if _, ok := props["length"]; ok {
+		t.Fatalf("did not expect line-mode schema to expose length, got %#v", props)
+	}
+}
+
 func TestNewAgentInstance_InvalidExecConfigDoesNotExit(t *testing.T) {
 	workspace := t.TempDir()
 
