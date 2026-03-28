@@ -46,6 +46,9 @@ spec:
         volumeMounts:
         - name: picoclaw-data
           mountPath: /home/picoclaw/.picoclaw
+        - name: picoclaw-secrets
+          mountPath: /etc/picoclaw/secrets
+          readOnly: true
       volumes:
       - name: picoclaw-data
         persistentVolumeClaim:
@@ -53,3 +56,6 @@ spec:
       - name: picoclaw-config-source
         configMap:
           name: picoclaw-config
+      - name: picoclaw-secrets
+        secret:
+          secretName: picoclaw-secrets

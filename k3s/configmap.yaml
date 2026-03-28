@@ -46,7 +46,7 @@ data:
         },
         "telegram": {
           "enabled": true,
-          "token": "<TELEGRAM_TOKEN>",
+          "token": "file:///etc/picoclaw/secrets/telegram-token",
           "base_url": "",
           "proxy": "",
           "allow_from": [
@@ -285,13 +285,13 @@ data:
           "model_name": "nemotron-3-super-120b-a12b",
           "model": "nvidia/nemotron-3-super-120b-a12b",
           "api_base": "https://integrate.api.nvidia.com/v1",
-          "api_key": "<NVIDIA_API_KEY>"
+          "api_key": "file:///etc/picoclaw/secrets/nvidia-api-key"
         },
         {
           "model_name": "azure-grok",
           "model": "openai/grok-4-fast-non-reasoning",
           "api_base": "https://TestSJF.openai.azure.com/openai/v1/",
-          "api_key": "<AZURE_API_KEY>"
+          "api_key": "file:///etc/picoclaw/secrets/azure-api-key"
         },
         {
           "model_name": "cerebras-llama-3.3-70b",
