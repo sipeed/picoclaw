@@ -93,16 +93,43 @@ func requestWSScheme(r *http.Request) string {
 	return "ws"
 }
 
+// buildWsURL returns the correct WebSocket URL for the frontend.
+// It intelligently detects the external port it is using
+// so custom ports (Docker, Tailscale, etc.) work correctly.
 func (h *Handler) buildWsURL(r *http.Request, cfg *config.Config) string {
-	host := h.effectiveGatewayBindHost(cfg)
-	if host == "" || host == "0.0.0.0" {
-		host = requestHostName(r)
+	// Get host from request (respects X-Forwarded-Host, Host header, etc.)
+	host := requestHostName(r)
+
+	// Determine the correct WebSocket port
+	var wsPort int
+
+	// Priority 1: Use the actual port from the incoming request (best for custom ports)
+	if forwardedPort := strings.TrimSpace(r.Header.Get("X-Forwarded-Port")); forwardedPort != "" {
+		if p, err := strconv.Atoi(forwardedPort); err == nil && p > 0 {
+			wsPort = p
+		}
 	}
-	// Use web server port instead of gateway port to avoid exposing extra ports
-	// The WebSocket connection will be proxied by the backend to the gateway
-	wsPort := h.serverPort
+
+	// Priority 2: Use the port from the Host header
 	if wsPort == 0 {
-		wsPort = 18800 // default web server port
+		if _, portStr, err := net.SplitHostPort(r.Host); err == nil {
+			if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
+				wsPort = p
+			}
+		}
 	}
-	return requestWSScheme(r) + "://" + net.JoinHostPort(host, strconv.Itoa(wsPort)) + "/pico/ws"
+
+	// Priority 3: Fall back to the web server port if explicitly configured (non-zero)
+	if wsPort == 0 && h.serverPort > 0 {
+		wsPort = h.serverPort
+	}
+
+	// Priority 4: Ultimate fallback to default launcher port
+	if wsPort == 0 {
+		wsPort = 18800
+	}
+
+	scheme := requestWSScheme(r)
+
+	return scheme + "://" + net.JoinHostPort(host, strconv.Itoa(wsPort)) + "/pico/ws"
 }
