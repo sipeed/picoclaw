@@ -60,7 +60,7 @@ type JSONLStore struct {
 
 // NewJSONLStore creates a new JSONL-backed store rooted at dir.
 func NewJSONLStore(dir string) (*JSONLStore, error) {
-	err := os.MkdirAll(dir, 0o755)
+	err := os.MkdirAll(dir, 0o700)
 	if err != nil {
 		return nil, fmt.Errorf("memory: create directory: %w", err)
 	}
@@ -121,7 +121,7 @@ func (s *JSONLStore) writeMeta(key string, meta sessionMeta) error {
 	if err != nil {
 		return fmt.Errorf("memory: encode meta: %w", err)
 	}
-	return fileutil.WriteFileAtomic(s.metaPath(key), data, 0o644)
+	return fileutil.WriteFileAtomic(s.metaPath(key), data, 0o600)
 }
 
 // readMessages reads valid JSON lines from a .jsonl file, skipping
@@ -230,7 +230,7 @@ func (s *JSONLStore) addMsg(sessionKey string, msg providers.Message) error {
 	f, err := os.OpenFile(
 		s.jsonlPath(sessionKey),
 		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
-		0o644,
+		0o600,
 	)
 	if err != nil {
 		return fmt.Errorf("memory: open jsonl for append: %w", err)
@@ -452,7 +452,7 @@ func (s *JSONLStore) rewriteJSONL(
 		buf.Write(line)
 		buf.WriteByte('\n')
 	}
-	return fileutil.WriteFileAtomic(s.jsonlPath(sessionKey), buf.Bytes(), 0o644)
+	return fileutil.WriteFileAtomic(s.jsonlPath(sessionKey), buf.Bytes(), 0o600)
 }
 
 func (s *JSONLStore) Close() error {

@@ -394,6 +394,35 @@ func TestShellTool_AllowRemoteBypassesChannelCheck(t *testing.T) {
 	}
 }
 
+// TestShellTool_DefaultConfigBlocksRemote verifies that DefaultConfig() blocks remote exec
+func TestShellTool_DefaultConfigBlocksRemote(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	tool, err := NewExecToolWithConfig("", false, cfg)
+	if err != nil {
+		t.Fatalf("NewExecToolWithConfig() error: %v", err)
+	}
+
+	// Remote channel should be blocked with default config
+	ctx := WithToolContext(context.Background(), "telegram", "chat-1")
+	result := tool.Execute(ctx, map[string]any{"command": "echo hi"})
+
+	if !result.IsError {
+		t.Fatal("expected default config to block remote exec")
+	}
+	if !strings.Contains(result.ForLLM, "restricted to internal channels") {
+		t.Errorf("expected restriction message, got: %s", result.ForLLM)
+	}
+
+	// Internal channel should still work
+	ctx = WithToolContext(context.Background(), "cli", "direct")
+	result = tool.Execute(ctx, map[string]any{"command": "echo hi"})
+
+	if result.IsError {
+		t.Fatalf("expected default config to allow internal exec, got: %s", result.ForLLM)
+	}
+}
+
 // TestShellTool_RestrictToWorkspace verifies workspace restriction
 func TestShellTool_RestrictToWorkspace(t *testing.T) {
 	tmpDir := t.TempDir()
