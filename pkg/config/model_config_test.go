@@ -195,6 +195,15 @@ func TestModelConfig_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid per-model cooldown strategy",
+			config: ModelConfig{
+				ModelName:        "router-model",
+				Model:            "litellm/openai/gpt-4o",
+				CooldownStrategy: "per-model",
+			},
+			wantErr: false,
+		},
+		{
 			name: "missing model_name",
 			config: ModelConfig{
 				Model: "openai/gpt-4o",
@@ -213,6 +222,15 @@ func TestModelConfig_Validate(t *testing.T) {
 			config:  ModelConfig{},
 			wantErr: true,
 		},
+		{
+			name: "invalid cooldown strategy",
+			config: ModelConfig{
+				ModelName:        "test",
+				Model:            "openai/gpt-4o",
+				CooldownStrategy: "backend",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -220,6 +238,29 @@ func TestModelConfig_Validate(t *testing.T) {
 			err := tt.config.Validate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestNormalizeCooldownStrategy(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "", want: "provider"},
+		{input: "provider", want: "provider"},
+		{input: "model", want: "model"},
+		{input: "per-model", want: "model"},
+		{input: "per_model", want: "model"},
+		{input: " Per_Model ", want: "model"},
+		{input: "backend", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := NormalizeCooldownStrategy(tt.input); got != tt.want {
+				t.Fatalf("NormalizeCooldownStrategy(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
