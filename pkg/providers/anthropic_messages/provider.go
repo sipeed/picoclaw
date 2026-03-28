@@ -103,9 +103,9 @@ func (p *Provider) Chat(
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(
-		"X-API-Key",
+		"X-Api-Key",
 		p.apiKey,
-	) //nolint:canonicalheader // Anthropic API requires exact header name
+	)
 	req.Header.Set("Anthropic-Version", defaultAPIVersion)
 
 	// Execute request

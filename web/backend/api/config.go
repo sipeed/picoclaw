@@ -68,12 +68,13 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	// Intercept explicitly provided security tokens from JSON payload that json.Unmarshal drops.
 	// We need to decode into an anonymous struct with json tags because SecurityConfig
 	// doesn't have json tags for its fields (it uses yaml tags).
-	var incomingSec struct {
+	type securityConfigPayload struct {
 		ModelList map[string]config.ModelSecurityEntry `json:"model_list"`
 		Channels  *config.ChannelsSecurity             `json:"channels,omitempty"`
 		Web       *config.WebToolsSecurity             `json:"web,omitempty"`
 		Skills    *config.SkillsSecurity               `json:"skills,omitempty"`
 	}
+	var incomingSec securityConfigPayload
 	if err := json.Unmarshal(body, &incomingSec); err == nil {
 		secConfig := config.SecurityConfig{
 			ModelList: incomingSec.ModelList,
@@ -177,12 +178,13 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Restore security fields from existing config and merge explicitly provided overrides.
 	newCfg.SecurityCopyFrom(cfg)
-	var patchSec struct {
+	type patchSecurityConfigPayload struct {
 		ModelList map[string]config.ModelSecurityEntry `json:"model_list"`
 		Channels  *config.ChannelsSecurity             `json:"channels,omitempty"`
 		Web       *config.WebToolsSecurity             `json:"web,omitempty"`
 		Skills    *config.SkillsSecurity               `json:"skills,omitempty"`
 	}
+	var patchSec patchSecurityConfigPayload
 	if err := json.Unmarshal(patchBody, &patchSec); err == nil {
 		secConfig := config.SecurityConfig{
 			ModelList: patchSec.ModelList,
