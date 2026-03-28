@@ -52,7 +52,7 @@ var (
 		regexp.MustCompile(`\brmdir\s+/s\b`),
 		// Match disk wiping commands (must be followed by space/args)
 		regexp.MustCompile(
-			`\b(format|mkfs|diskpart)\b\s`,
+			`(^|[^-\w])\b(format|mkfs|diskpart)\b\s`,
 		),
 		regexp.MustCompile(`\bdd\s+if=`),
 		// Block writes to block devices (all common naming schemes).
