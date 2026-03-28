@@ -1042,29 +1042,6 @@ func TestReadFileLinesTool_RegistryValidationSupportsMaxLinesAndRejectsLimit(t *
 	}
 }
 
-func TestReadFileLinesTool_RejectsLegacyLimit(t *testing.T) {
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "legacy_limit.txt")
-
-	err := os.WriteFile(testFile, []byte("line 1\nline 2\n"), 0o644)
-	if err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
-	result := tool.Execute(context.Background(), map[string]any{
-		"path":       testFile,
-		"start_line": 1,
-		"limit":      1,
-	})
-	if !result.IsError {
-		t.Fatalf("expected limit to be rejected, got success: %s", result.ForLLM)
-	}
-	if !strings.Contains(result.ForLLM, "limit is no longer supported; use max_lines") {
-		t.Fatalf("unexpected error for legacy limit: %s", result.ForLLM)
-	}
-}
-
 func TestReadFileLinesTool_BinaryFileRejected(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "binary.dat")
