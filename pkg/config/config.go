@@ -1048,14 +1048,14 @@ type SearXNGConfig struct {
 }
 
 type GLMSearchConfig struct {
-	Enabled  bool `json:"enabled"  env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
+	Enabled  bool `json:"enabled" env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
 	apiKey   string
 	secDirty bool
 	BaseURL  string `json:"base_url" env:"PICOCLAW_TOOLS_WEB_GLM_BASE_URL"`
 	// SearchEngine specifies the search backend: "search_std" (default),
 	// "search_pro", "search_pro_sogou", or "search_pro_quark".
 	SearchEngine string `json:"search_engine" env:"PICOCLAW_TOOLS_WEB_GLM_SEARCH_ENGINE"`
-	MaxResults   int    `json:"max_results"   env:"PICOCLAW_TOOLS_WEB_GLM_MAX_RESULTS"`
+	MaxResults   int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_GLM_MAX_RESULTS"`
 }
 
 // APIKey returns the GLM search API key
@@ -1766,7 +1766,7 @@ func SaveConfig(path string, cfg *Config) error {
 
 		m.secModelName = newName
 	}
-	
+
 	cfg.security.ModelList = newModelList
 	if cfg.Channels.Pico.secDirty {
 		cfg.security.Channels.Pico = &PicoSecurity{

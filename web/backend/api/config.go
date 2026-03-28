@@ -67,7 +67,7 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Intercept explicitly provided security tokens from JSON payload that json.Unmarshal drops.
 	var incomingSec config.SecurityConfig
-	if err := json.Unmarshal(body, &incomingSec); err == nil {
+	if err := json.Unmarshal(body, &incomingSec); err == nil { //nolint:musttag // SecurityConfig uses yaml tags
 		cfg.MergeAndApplySecurity(&incomingSec)
 	} else {
 		cfg.ApplySecurity()
@@ -164,9 +164,9 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Restore security fields from existing config and merge explicitly provided overrides.
 	newCfg.SecurityCopyFrom(cfg)
-	var incomingSec config.SecurityConfig
-	if err := json.Unmarshal(patchBody, &incomingSec); err == nil {
-		newCfg.MergeAndApplySecurity(&incomingSec)
+	var patchSec config.SecurityConfig
+	if err := json.Unmarshal(patchBody, &patchSec); err == nil { //nolint:musttag // SecurityConfig uses yaml tags
+		newCfg.MergeAndApplySecurity(&patchSec)
 	} else {
 		newCfg.ApplySecurity()
 	}
