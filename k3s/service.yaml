@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: picoclaw-agent
+  namespace: agi
+spec:
+  selector:
+    app: picoclaw-agent
+  ports:
+    - protocol: TCP
+      port: 18790
+      targetPort: 18790
+  type: ClusterIP
