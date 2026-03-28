@@ -299,6 +299,14 @@ func registerSharedTools(
 			subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace)
 			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 
+			// Inject a media resolver so the legacy RunToolLoop fallback path can
+			// resolve media:// refs in the same way the main AgentLoop does.
+			// This keeps subagent vision support working even when the optimized
+			// sub-turn spawner path is unavailable.
+			subagentManager.SetMediaResolver(func(msgs []providers.Message) []providers.Message {
+				return resolveMediaRefs(msgs, al.mediaStore, cfg.Agents.Defaults.GetMaxMediaSize())
+			})
+
 			// Set the spawner that links into AgentLoop's turnState
 			subagentManager.SetSpawner(func(
 				ctx context.Context,
@@ -363,12 +371,7 @@ func registerSharedTools(
 			// tools registered so far (file, web, etc.) but NOT spawn/
 			// spawn_status which are added below — preventing recursive
 			// subagent spawning.
-			subagentTools := agent.Tools.Clone()
-			// load_image depends on resolveMediaRefs which only runs in
-			// the main agent loop, not in RunToolLoop. Remove it from
-			// sub-agent tools so the LLM won't call it in vain.
-			subagentTools.Unregister("load_image")
-			subagentManager.SetTools(subagentTools)
+			subagentManager.SetTools(agent.Tools.Clone())
 			if spawnEnabled {
 				spawnTool := tools.NewSpawnTool(subagentManager)
 				spawnTool.SetSpawner(NewSubTurnSpawner(al))

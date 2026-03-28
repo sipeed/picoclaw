@@ -395,18 +395,6 @@ func (r *ToolRegistry) Clone() *ToolRegistry {
 	return clone
 }
 
-// Unregister removes a tool by name. Returns true if the tool was found and removed.
-func (r *ToolRegistry) Unregister(name string) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, exists := r.tools[name]; !exists {
-		return false
-	}
-	delete(r.tools, name)
-	r.version.Add(1)
-	return true
-}
-
 // Count returns the number of registered tools.
 func (r *ToolRegistry) Count() int {
 	r.mu.RLock()
