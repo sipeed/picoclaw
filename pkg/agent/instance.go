@@ -51,6 +51,10 @@ type AgentInstance struct {
 	// LightProvider is the concrete provider instance for the configured light model.
 	// It is only used when routing selects the light tier for a turn.
 	LightProvider providers.LLMProvider
+	// SilentProcessing suppresses the automatic empty-response fallback when the
+	// LLM produces no text output (e.g. only tool calls). The agent still runs
+	// fully and sends a response when the LLM produces text.
+	SilentProcessing bool
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -225,6 +229,7 @@ func NewAgentInstance(
 		Router:                    router,
 		LightCandidates:           lightCandidates,
 		LightProvider:             lightProvider,
+		SilentProcessing:          defaults.SilentProcessing,
 	}
 }
 

@@ -144,6 +144,27 @@ You can also trigger by keyword prefixes (e.g. `!bot`):
 }
 ```
 
+**Optional: Silent observer mode**
+
+To have the agent silently read all messages (e.g. for memory/context gathering) while only responding when explicitly addressed, use `agents.defaults.silent_processing` without `group_trigger.mention_only`. Setting `mention_only` would drop non-mention messages before the agent sees them, defeating the purpose:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "silent_processing": true
+    }
+  },
+  "channels": {
+    "discord": {
+      "allow_from": ["YOUR_USER_ID", "YOUR_SERVER_ID"]
+    }
+  }
+}
+```
+
+The agent processes every message (tool calls, memory writes) but sends nothing when the LLM produces no text. Instruct the LLM via `AGENT.md` to only produce text when directly addressed.
+
 **6. Run**
 
 ```bash
