@@ -2,8 +2,10 @@
 
 # WeCom
 
-PicoClaw now exposes WeCom as a single `channels.wecom` channel built on the official WeCom AI Bot WebSocket API.
-This replaces the legacy `wecom`, `wecom_app`, and `wecom_aibot` split with one configuration model.
+PicoClaw exposes WeCom as a single `channels.wecom` channel built on the official WeCom AI Bot WebSocket API.
+This replaces the legacy `wecom`, `wecom_app`, and `wecom_aibot` split with one unified configuration model.
+
+> No public webhook callback URL is required. PicoClaw opens an outbound WebSocket connection to WeCom.
 
 ## What This Channel Supports
 
@@ -11,14 +13,22 @@ This replaces the legacy `wecom`, `wecom_app`, and `wecom_aibot` split with one 
 - Channel-side streaming replies over WeCom's AI Bot protocol
 - Incoming text, voice, image, file, video, and mixed messages
 - Outbound text and media replies (`image`, `file`, `voice`, `video`)
-- QR-based CLI onboarding with `picoclaw auth wecom`
+- QR-based onboarding via Web UI or CLI
 - Shared allowlist and `reasoning_channel_id` routing
 
-> No public webhook callback URL is required for this channel. PicoClaw opens an outbound WebSocket connection to WeCom.
+---
 
 ## Quick Start
 
-### Option 1: QR Login From CLI
+### Option 1: Web UI QR Binding (Recommended)
+
+Open the Web UI, navigate to **Channels → WeCom**, and click the QR binding button. Scan the QR code with WeCom and confirm in the app — credentials are saved automatically.
+
+<p align="center">
+<img src="../../../assets/wecom-qr-binding.jpg" alt="WeCom QR binding in Web UI" width="600">
+</p>
+
+### Option 2: CLI QR Login
 
 Run:
 
@@ -26,16 +36,23 @@ Run:
 picoclaw auth wecom
 ```
 
-The command prints a QR code in the terminal, waits for confirmation in WeCom, and then writes the resulting
-`bot_id` and `secret` into `channels.wecom`.
+The command:
+1. Requests a QR code from WeCom and prints it in the terminal
+2. Also prints a **QR Code Link** you can open in a browser if the terminal QR is hard to scan
+3. Polls for confirmation — after scanning, you must also **confirm the login inside the WeCom app**
+4. On success, writes `bot_id` and `secret` into `channels.wecom` and saves the config
 
-Use `--timeout` if you want to wait longer:
+The default timeout is **5 minutes**. Use `--timeout` to extend it:
 
 ```bash
 picoclaw auth wecom --timeout 10m
 ```
 
-### Option 2: Configure Manually
+> ⚠️ Scanning the QR code is not enough — you must also tap **Confirm** inside the WeCom app, otherwise the command will time out.
+
+### Option 3: Configure Manually
+
+If you already have a `bot_id` and `secret` from the WeCom AI Bot platform, configure directly:
 
 ```json
 {
@@ -53,52 +70,79 @@ picoclaw auth wecom --timeout 10m
 }
 ```
 
+---
+
 ## Configuration
 
-| Field | Type | Required | Description |
-| ----- | ---- | -------- | ----------- |
-| `enabled` | bool | No | Enables the WeCom channel. |
-| `bot_id` | string | Yes | WeCom AI Bot identifier. Required when the channel is enabled. |
-| `secret` | string | Yes | WeCom AI Bot secret. Required when the channel is enabled. |
-| `websocket_url` | string | No | WebSocket endpoint. Defaults to `wss://openws.work.weixin.qq.com`. |
-| `send_thinking_message` | bool | No | Sends an initial `Processing...` chunk before the final streamed reply. Defaults to `true`. |
-| `allow_from` | array | No | Sender allowlist. Empty means allow all senders. |
-| `reasoning_channel_id` | string | No | Optional destination for reasoning/thinking output. |
+| Field | Type | Default | Description |
+| ----- | ---- | ------- | ----------- |
+| `enabled` | bool | `false` | Enable the WeCom channel. |
+| `bot_id` | string | — | WeCom AI Bot identifier. Required when enabled. |
+| `secret` | string | — | WeCom AI Bot secret. Stored encrypted in `.security.yml`. Required when enabled. |
+| `websocket_url` | string | `wss://openws.work.weixin.qq.com` | WeCom WebSocket endpoint. |
+| `send_thinking_message` | bool | `true` | Send a `Processing...` message before the streamed reply begins. |
+| `allow_from` | array | `[]` | Sender allowlist. Empty means allow all senders. |
+| `reasoning_channel_id` | string | `""` | Optional chat ID to route reasoning/thinking output to a separate conversation. |
+
+### Environment Variables
+
+All fields can be overridden via environment variables with the prefix `PICOCLAW_CHANNELS_WECOM_`:
+
+| Environment Variable | Corresponding Field |
+| -------------------- | ------------------- |
+| `PICOCLAW_CHANNELS_WECOM_ENABLED` | `enabled` |
+| `PICOCLAW_CHANNELS_WECOM_BOT_ID` | `bot_id` |
+| `PICOCLAW_CHANNELS_WECOM_SECRET` | `secret` |
+| `PICOCLAW_CHANNELS_WECOM_WEBSOCKET_URL` | `websocket_url` |
+| `PICOCLAW_CHANNELS_WECOM_SEND_THINKING_MESSAGE` | `send_thinking_message` |
+| `PICOCLAW_CHANNELS_WECOM_ALLOW_FROM` | `allow_from` |
+| `PICOCLAW_CHANNELS_WECOM_REASONING_CHANNEL_ID` | `reasoning_channel_id` |
+
+---
 
 ## Runtime Behavior
 
-- PicoClaw keeps the active WeCom turn so normal replies can continue the same stream when possible.
-- If streaming is no longer available, replies fall back to active push delivery to the resolved chat route.
-- Incoming media is downloaded into the media store before being handed to the agent.
-- Outbound media is uploaded to WeCom in temporary chunks and then sent as a regular media message.
+- PicoClaw maintains an active WeCom turn so streaming replies can continue on the same stream when possible.
+- Streaming replies have a maximum duration of **5.5 minutes** and a minimum send interval of **500ms**.
+- If streaming is no longer available, replies fall back to active push delivery.
+- Chat route associations expire after **30 minutes** of inactivity.
+- Incoming media is downloaded into the local media store before being passed to the agent.
+- Outbound media is uploaded to WeCom as a temporary file and then sent as a media message.
+- Duplicate messages are detected and suppressed (ring buffer of last 1000 message IDs).
 
-## Migration Notes
+---
 
-This branch removes the old multi-channel WeCom model.
+## Migration from Legacy WeCom Config
 
-| Previous config | Now |
-| --------------- | --- |
-| `channels.wecom` webhook bot | Replace with `channels.wecom` using `bot_id` + `secret`. |
-| `channels.wecom_app` | Remove it and use `channels.wecom`. |
-| `channels.wecom_aibot` | Move the config to `channels.wecom`. |
-| `token`, `encoding_aes_key`, `webhook_url`, `webhook_path` | No longer used by the WeCom channel. |
-| `corp_id`, `corp_secret`, `agent_id` | No longer used by the WeCom channel. |
-| `welcome_message`, `processing_message`, `max_steps` under WeCom | No longer part of the WeCom channel config. |
+| Previous config | Migration |
+| --------------- | --------- |
+| `channels.wecom` (webhook bot) | Replace with `channels.wecom` using `bot_id` + `secret`. |
+| `channels.wecom_app` | Remove. Use `channels.wecom` instead. |
+| `channels.wecom_aibot` | Move `bot_id` and `secret` to `channels.wecom`. |
+| `token`, `encoding_aes_key`, `webhook_url`, `webhook_path` | No longer used. Remove from config. |
+| `corp_id`, `corp_secret`, `agent_id` | No longer used. Remove from config. |
+| `welcome_message`, `processing_message`, `max_steps` | No longer part of the WeCom channel config. |
+
+---
 
 ## Troubleshooting
 
-### `picoclaw auth wecom` times out
+### QR binding times out
 
-- Re-run with a larger `--timeout`.
-- Make sure the QR code was confirmed inside WeCom, not only scanned.
+- After scanning the QR code, you must also **confirm the login inside the WeCom app**. Scanning alone is not enough.
+- Re-run with a larger `--timeout`: `picoclaw auth wecom --timeout 10m`
+- If the QR code in the terminal is hard to scan, use the **QR Code Link** printed below it to open in a browser.
+
+### QR code expired
+
+- The QR code has a limited validity. Re-run `picoclaw auth wecom` to get a fresh one.
 
 ### WebSocket connection fails
 
-- Verify `bot_id` and `secret`.
-- Confirm the host can reach `wss://openws.work.weixin.qq.com`.
+- Verify `bot_id` and `secret` are correct.
+- Confirm the host can reach `wss://openws.work.weixin.qq.com` (outbound WebSocket, no inbound port needed).
 
 ### Replies do not arrive
 
-- Check whether `allow_from` blocks the sender.
-- Check launcher or startup validation for missing `channels.wecom.bot_id` / `channels.wecom.secret`.
-
+- Check whether `allow_from` is blocking the sender.
+- Check that `channels.wecom.bot_id` and `channels.wecom.secret` are set and non-empty.

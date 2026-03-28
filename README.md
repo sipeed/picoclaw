@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | **English**
+[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [Malay](README.my.md) | **English**
 
 </div>
 
@@ -56,16 +56,18 @@
 
 ## 📢 News
 
+2026-03-25 🚀 **v0.2.4 Released!** Agent architecture overhaul (SubTurn, Hooks, Steering, EventBus), WeChat/WeCom integration, security hardening (.security.yml, sensitive data filtering), new providers (AWS Bedrock, Azure, Xiaomi MiMo), and 35 bug fixes. PicoClaw has reached **26K Stars**!
+
 2026-03-17 🚀 **v0.2.3 Released!** System tray UI (Windows & Linux), sub-agent status query (`spawn_status`), experimental Gateway hot-reload, Cron security gating, and 2 security fixes. PicoClaw has reached **25K Stars**!
 
 2026-03-09 🎉 **v0.2.1 — Biggest update yet!** MCP protocol support, 4 new channels (Matrix/IRC/WeCom/Discord Proxy), 3 new providers (Kimi/Minimax/Avian), vision pipeline, JSONL memory store, model routing.
 
 2026-02-28 📦 **v0.2.0** released with Docker Compose and Web UI Launcher support.
 
-2026-02-26 🎉 PicoClaw hits **20K Stars** in just 17 days! Channel auto-orchestration and capability interfaces are live.
-
 <details>
 <summary>Earlier news...</summary>
+
+2026-02-26 🎉 PicoClaw hits **20K Stars** in just 17 days! Channel auto-orchestration and capability interfaces are live.
 
 2026-02-16 🎉 PicoClaw breaks 12K Stars in one week! Community maintainer roles and [Roadmap](ROADMAP.md) officially launched.
 
@@ -254,6 +256,29 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 
 </details>
 
+<details>
+<summary><b>macOS — First Launch Security Warning</b></summary>
+
+macOS may block `picoclaw-launcher` on first launch because it is downloaded from the internet and not notarized through the Mac App Store.
+
+**Step 1:** Double-click `picoclaw-launcher`. You will see a security warning:
+
+<p align="center">
+<img src="assets/macos-gatekeeper-warning.jpg" alt="macOS Gatekeeper warning" width="400">
+</p>
+
+> *"picoclaw-launcher" Not Opened — Apple could not verify "picoclaw-launcher" is free of malware that may harm your Mac or compromise your privacy.*
+
+**Step 2:** Open **System Settings** → **Privacy & Security** → scroll down to the **Security** section → click **Open Anyway** → confirm by clicking **Open Anyway** in the dialog.
+
+<p align="center">
+<img src="assets/macos-gatekeeper-allow.jpg" alt="macOS Privacy & Security — Open Anyway" width="600">
+</p>
+
+After this one-time step, `picoclaw-launcher` will open normally on subsequent launches.
+
+</details>
+
 ### 💻 TUI Launcher (Recommended for Headless / SSH)
 
 The TUI (Terminal UI) Launcher provides a full-featured terminal interface for configuration and management. Ideal for servers, Raspberry Pi, and other headless environments.
@@ -370,6 +395,7 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 | [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | Required | NVIDIA hosted models |
 | [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | Required | Fast inference |
 | [Novita AI](https://novita.ai/) | `novita/` | Required | Various open models |
+| [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Required | MiMo models |
 | [Ollama](https://ollama.com/) | `ollama/` | Not needed | Local models, self-hosted |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Not needed | Local deployment, OpenAI-compatible |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Varies | Proxy for 100+ providers |
@@ -429,9 +455,7 @@ Talk to your PicoClaw through 17+ messaging platforms:
 | **DingTalk** | Medium (client credentials) | Stream | [Guide](docs/channels/dingtalk/README.md) |
 | **Feishu / Lark** | Medium (App ID + Secret) | WebSocket/SDK | [Guide](docs/channels/feishu/README.md) |
 | **LINE** | Medium (credentials + webhook) | Webhook | [Guide](docs/channels/line/README.md) |
-| **WeCom Bot** | Medium (webhook URL) | Webhook | [Guide](docs/channels/wecom/wecom_bot/README.md) |
-| **WeCom App** | Medium (corp credentials) | Webhook | [Guide](docs/channels/wecom/wecom_app/README.md) |
-| **WeCom AI Bot** | Medium (token + AES key) | WebSocket / Webhook | [Guide](docs/channels/wecom/wecom_aibot/README.md) |
+| **WeCom** | Easy (QR login or manual) | WebSocket | [Guide](docs/channels/wecom/README.md) |
 | **IRC** | Medium (server + nick) | IRC protocol | [Guide](docs/chat-apps.md#irc) |
 | **OneBot** | Medium (WebSocket URL) | OneBot v11 | [Guide](docs/channels/onebot/README.md) |
 | **MaixCam** | Easy (enable) | TCP socket | [Guide](docs/channels/maixcam/README.md) |

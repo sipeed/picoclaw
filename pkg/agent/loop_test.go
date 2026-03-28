@@ -1783,20 +1783,16 @@ func TestProcessMessage_ModelRoutingUsesLightProvider(t *testing.T) {
 				ModelName: "gemini-main",
 				Model:     "gemini/gemini-2.5-flash",
 				APIBase:   heavyServer.URL,
+				APIKeys:   config.SimpleSecureStrings("heavy-key"),
 			},
 			{
 				ModelName: "qwen-light",
 				Model:     "ollama/qwen2.5:0.5b",
 				APIBase:   lightServer.URL,
+				APIKeys:   config.SimpleSecureStrings("light-key"),
 			},
 		},
 	}
-	cfg.WithSecurity(&config.SecurityConfig{
-		ModelList: map[string]config.ModelSecurityEntry{
-			"gemini-main": {APIKeys: []string{"heavy-key"}},
-			"qwen-light":  {APIKeys: []string{"light-key"}},
-		},
-	})
 
 	msgBus := bus.NewMessageBus()
 	provider, _, err := providers.CreateProvider(cfg)
