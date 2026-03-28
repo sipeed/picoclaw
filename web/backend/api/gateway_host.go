@@ -47,6 +47,13 @@ func gatewayProbeHost(bindHost string) string {
 	return bindHost
 }
 
+func firstForwardedValue(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	return strings.TrimSpace(strings.Split(raw, ",")[0])
+}
+
 func (h *Handler) gatewayProxyURL() *url.URL {
 	cfg, err := config.LoadConfig(h.configPath)
 	port := 18790
@@ -62,17 +69,6 @@ func (h *Handler) gatewayProxyURL() *url.URL {
 		Scheme: "http",
 		Host:   net.JoinHostPort(gatewayProbeHost(bindHost), strconv.Itoa(port)),
 	}
-}
-
-func requestHostName(r *http.Request) string {
-	reqHost, _, err := net.SplitHostPort(r.Host)
-	if err == nil {
-		return reqHost
-	}
-	if strings.TrimSpace(r.Host) != "" {
-		return r.Host
-	}
-	return "127.0.0.1"
 }
 
 func requestWSScheme(r *http.Request) string {
@@ -93,16 +89,37 @@ func requestWSScheme(r *http.Request) string {
 	return "ws"
 }
 
-func (h *Handler) buildWsURL(r *http.Request, cfg *config.Config) string {
-	host := h.effectiveGatewayBindHost(cfg)
-	if host == "" || host == "0.0.0.0" {
-		host = requestHostName(r)
+func requestWSAuthority(r *http.Request) string {
+	scheme := requestWSScheme(r)
+	authority := firstForwardedValue(r.Header.Get("X-Forwarded-Host"))
+	if authority == "" {
+		authority = strings.TrimSpace(r.Host)
 	}
-	// Use web server port instead of gateway port to avoid exposing extra ports
-	// The WebSocket connection will be proxied by the backend to the gateway
-	wsPort := h.serverPort
-	if wsPort == 0 {
-		wsPort = 18800 // default web server port
+	if authority == "" {
+		return "127.0.0.1"
 	}
-	return requestWSScheme(r) + "://" + net.JoinHostPort(host, strconv.Itoa(wsPort)) + "/pico/ws"
+
+	parsed, err := url.Parse("//" + authority)
+	if err != nil {
+		return authority
+	}
+	if parsed.Port() != "" {
+		return authority
+	}
+
+	forwardedPort := firstForwardedValue(r.Header.Get("X-Forwarded-Port"))
+	if forwardedPort == "" {
+		return authority
+	}
+	if (scheme == "wss" && forwardedPort == "443") || (scheme == "ws" && forwardedPort == "80") {
+		return authority
+	}
+	if parsed.Hostname() == "" {
+		return authority
+	}
+	return net.JoinHostPort(parsed.Hostname(), forwardedPort)
+}
+
+func buildWsURL(r *http.Request) string {
+	return requestWSScheme(r) + "://" + requestWSAuthority(r) + "/pico/ws"
 }
