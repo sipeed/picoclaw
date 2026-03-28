@@ -168,6 +168,76 @@ func TestProcessMessage_IncludesCurrentSenderInDynamicContext(t *testing.T) {
 	}
 }
 
+func TestPublishResponseIfNeeded_UsesSessionAgentMessageState(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+			List: []config.AgentConfig{
+				{ID: "worker"},
+			},
+		},
+		Tools: config.ToolsConfig{
+			Message: config.ToolConfig{Enabled: true},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &mockProvider{})
+
+	worker, ok := al.registry.GetAgent("worker")
+	if !ok {
+		t.Fatal("expected named agent to be registered")
+	}
+
+	tool, ok := worker.Tools.Get("message")
+	if !ok {
+		t.Fatal("expected message tool to be registered on named agent")
+	}
+
+	messageTool, ok := tool.(*tools.MessageTool)
+	if !ok {
+		t.Fatalf("expected *tools.MessageTool, got %T", tool)
+	}
+
+	messageTool.ResetSentInRound()
+	result := messageTool.Execute(
+		tools.WithToolContext(context.Background(), "discord", "chat-1"),
+		map[string]any{"content": "tool message"},
+	)
+	if result == nil || result.Err != nil {
+		t.Fatalf("message tool execute failed: %+v", result)
+	}
+
+	sessionKey := routing.BuildAgentMainSessionKey(worker.ID)
+	al.publishResponseIfNeeded(context.Background(), sessionKey, "discord", "chat-1", "final response")
+
+	select {
+	case msg := <-msgBus.OutboundChan():
+		if msg.Content != "tool message" {
+			t.Fatalf("first outbound content = %q, want %q", msg.Content, "tool message")
+		}
+	default:
+		t.Fatal("expected tool message to be published")
+	}
+
+	select {
+	case msg := <-msgBus.OutboundChan():
+		t.Fatalf("unexpected duplicate outbound message: %+v", msg)
+	default:
+	}
+}
+
 func TestProcessMessage_UseCommandLoadsRequestedSkill(t *testing.T) {
 	tmpDir := t.TempDir()
 	skillDir := filepath.Join(tmpDir, "skills", "shell")
