@@ -3,7 +3,7 @@
 **Objective:** Evolve JANE from a passive information retriever into an active, first-principles agent capable of autonomous task execution.
 
 ## 1. Audit of Current Workflows & Friction Points
-After analyzing JANE (PicoClaw)'s current workflow implementation and tools available in `pkg/tools` and `pkg/agent`, the following friction points have been identified where JANE can transition from "answering" to "doing":
+After analyzing Jane AI's current workflow implementation and the tools available in `pkg/tools` and `pkg/agent`, the following friction points have been identified where JANE can transition from "answering" to "doing":
 
 *   **Action Limitation (The "Answering" Trap):** JANE's existing toolset is heavily geared toward data fetching (`web_search`, `web_fetch`, `read_file`) and answering user queries based on that fetched context. Actions are largely constrained to simple single-step primitives (`write_file`, `exec`, `browser_action`).
 *   **Web Automation Rigidity:** The `browser_action` tool provides primitive Playwright-based navigation, clicking, typing, and extraction. However, it lacks continuous, scriptable control logic inside the sandbox, requiring a round-trip to the LLM for every single atomic browser operation.

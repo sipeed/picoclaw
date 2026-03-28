@@ -1,12 +1,12 @@
 {
-  "name": "picoclaw-web",
+  "name": "jane-ai-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "build:backend": "tsc -b && vite build --outDir ../backend/dist --emptyOutDir",
+    "build": "vite build",
+    "build:backend": "vite build --outDir ../backend/dist --emptyOutDir",
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "prettier --check .",

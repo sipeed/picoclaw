@@ -328,7 +328,7 @@
     "agent": {
       "load_error": "加载 Agent 支持信息失败。",
       "skills": {
-        "description": "技能会从工作区、PicoClaw 全局目录和内置目录中加载。",
+        "description": "技能会从工作区、Jane AI 全局目录和内置目录中加载。",
         "empty": "当前没有可用技能。",
         "import": "导入技能",
         "import_success": "技能导入成功。",
@@ -414,11 +414,11 @@
       "monitor_usb": "监听 USB",
       "monitor_usb_hint": "在启用设备功能时，监听 USB 插拔事件。",
       "autostart_label": "开机自启",
-      "autostart_hint": "登录系统后自动启动 PicoClaw Web。",
+      "autostart_hint": "登录系统后自动启动 Jane AI Web。",
       "autostart_unsupported": "当前平台不支持开机自启。",
       "autostart_load_error": "加载开机自启状态失败。",
       "server_port": "服务端口",
-      "server_port_hint": "PicoClaw Web 的 HTTP 监听端口。",
+      "server_port_hint": "Jane AI Web 的 HTTP 监听端口。",
       "lan_access": "启用局域网访问",
       "lan_access_hint": "允许局域网中的其他设备访问当前服务。",
       "allowed_cidrs": "允许访问网段",
