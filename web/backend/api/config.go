@@ -66,23 +66,9 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.SecurityCopyFrom(oldCfg)
 
 	// Intercept explicitly provided security tokens from JSON payload that json.Unmarshal drops.
-	// We need to decode into an anonymous struct with json tags because SecurityConfig
-	// doesn't have json tags for its fields (it uses yaml tags).
-	type securityConfigPayload struct {
-		ModelList map[string]config.ModelSecurityEntry `json:"model_list"`
-		Channels  *config.ChannelsSecurity             `json:"channels,omitempty"`
-		Web       *config.WebToolsSecurity             `json:"web,omitempty"`
-		Skills    *config.SkillsSecurity               `json:"skills,omitempty"`
-	}
-	var incomingSec securityConfigPayload
-	if err := json.Unmarshal(body, &incomingSec); err == nil {
-		secConfig := config.SecurityConfig{
-			ModelList: incomingSec.ModelList,
-			Channels:  incomingSec.Channels,
-			Web:       incomingSec.Web,
-			Skills:    incomingSec.Skills,
-		}
-		cfg.MergeAndApplySecurity(&secConfig)
+	var incomingSec config.SecurityConfig
+	if err := json.Unmarshal(body, &incomingSec); err == nil { //nolint:musttag // SecurityConfig uses yaml tags
+		cfg.MergeAndApplySecurity(&incomingSec)
 	} else {
 		cfg.ApplySecurity()
 	}
@@ -178,21 +164,9 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Restore security fields from existing config and merge explicitly provided overrides.
 	newCfg.SecurityCopyFrom(cfg)
-	type patchSecurityConfigPayload struct {
-		ModelList map[string]config.ModelSecurityEntry `json:"model_list"`
-		Channels  *config.ChannelsSecurity             `json:"channels,omitempty"`
-		Web       *config.WebToolsSecurity             `json:"web,omitempty"`
-		Skills    *config.SkillsSecurity               `json:"skills,omitempty"`
-	}
-	var patchSec patchSecurityConfigPayload
-	if err := json.Unmarshal(patchBody, &patchSec); err == nil {
-		secConfig := config.SecurityConfig{
-			ModelList: patchSec.ModelList,
-			Channels:  patchSec.Channels,
-			Web:       patchSec.Web,
-			Skills:    patchSec.Skills,
-		}
-		newCfg.MergeAndApplySecurity(&secConfig)
+	var patchSec config.SecurityConfig
+	if err := json.Unmarshal(patchBody, &patchSec); err == nil { //nolint:musttag // SecurityConfig uses yaml tags
+		newCfg.MergeAndApplySecurity(&patchSec)
 	} else {
 		newCfg.ApplySecurity()
 	}
