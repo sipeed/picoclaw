@@ -381,7 +381,8 @@ func TestParseResponseBody_Reasoning(t *testing.T) {
 			{
 				"type": "reasoning",
 				"id": "rs_1",
-				"summary": [{"type": "summary_text", "text": "Thinking about it..."}]
+				"summary": [{"type": "summary_text", "text": "Thinking about it..."}],
+				"content": [{"type": "reasoning_text", "text": "Step by step"}]
 			},
 			{
 				"type": "message",
@@ -404,8 +405,14 @@ func TestParseResponseBody_Reasoning(t *testing.T) {
 	if result.Content != "The answer is 42." {
 		t.Errorf("Content = %q, want %q", result.Content, "The answer is 42.")
 	}
-	if result.ReasoningContent != "Thinking about it..." {
-		t.Errorf("ReasoningContent = %q, want %q", result.ReasoningContent, "Thinking about it...")
+	if result.Reasoning != "Thinking about it..." {
+		t.Errorf("Reasoning = %q, want %q", result.Reasoning, "Thinking about it...")
+	}
+	if result.ReasoningContent != "Step by step" {
+		t.Errorf("ReasoningContent = %q, want %q", result.ReasoningContent, "Step by step")
+	}
+	if len(result.ReasoningDetails) != 2 {
+		t.Fatalf("len(ReasoningDetails) = %d, want 2", len(result.ReasoningDetails))
 	}
 }
 
@@ -442,13 +449,14 @@ func TestParseResponseBody_IncompleteStatus(t *testing.T) {
 	body := strings.NewReader(`{
 		"id": "resp_inc",
 		"object": "response",
-		"status": "incomplete",
+		"status": " incomplete ",
 		"output": [
 			{
 				"type": "message",
 				"content": [{"type": "output_text", "text": "partial"}]
 			}
 		],
+		"incomplete_details": {"reason": "content_filter"},
 		"usage": {"input_tokens": 5, "output_tokens": 2, "total_tokens": 7,
 			"input_tokens_details": {"cached_tokens": 0},
 			"output_tokens_details": {"reasoning_tokens": 0}}
@@ -458,8 +466,8 @@ func TestParseResponseBody_IncompleteStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	if result.FinishReason != "length" {
-		t.Errorf("FinishReason = %q, want %q", result.FinishReason, "length")
+	if result.FinishReason != "content_filter" {
+		t.Errorf("FinishReason = %q, want %q", result.FinishReason, "content_filter")
 	}
 }
 
@@ -467,20 +475,20 @@ func TestParseResponseBody_FailedStatus(t *testing.T) {
 	body := strings.NewReader(`{
 		"id": "resp_fail",
 		"object": "response",
-		"status": "failed",
+		"status": " failed ",
+		"error": {"message": "responses failed"},
 		"output": [],
 		"usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
 			"input_tokens_details": {"cached_tokens": 0},
 			"output_tokens_details": {"reasoning_tokens": 0}}
 	}`)
 
-	result, err := ParseResponseBody(body)
-	if err != nil {
-		t.Fatalf("error: %v", err)
+	_, err := ParseResponseBody(body)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	// failed/canceled statuses are not specially mapped; they fall through to "stop"
-	if result.FinishReason != "stop" {
-		t.Errorf("FinishReason = %q, want %q", result.FinishReason, "stop")
+	if err.Error() != "responses failed" {
+		t.Fatalf("error = %q, want %q", err.Error(), "responses failed")
 	}
 }
 

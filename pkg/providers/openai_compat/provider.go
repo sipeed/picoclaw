@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,7 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/responses"
+
 	"github.com/sipeed/picoclaw/pkg/providers/common"
+	orc "github.com/sipeed/picoclaw/pkg/providers/openai_responses_common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -27,7 +32,6 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
-	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
 
 type Provider struct {
@@ -99,8 +103,6 @@ func NewProviderWithMaxTokensFieldAndTimeout(
 func (p *Provider) buildRequestBody(
 	messages []Message, tools []ToolDefinition, model string, options map[string]any,
 ) map[string]any {
-	model = normalizeModel(model, p.apiBase)
-
 	requestBody := map[string]any{
 		"model":    model,
 		"messages": common.SerializeMessages(messages),
@@ -128,13 +130,8 @@ func (p *Provider) buildRequestBody(
 		requestBody[fieldName] = maxTokens
 	}
 
-	if temperature, ok := common.AsFloat(options["temperature"]); ok {
-		lowerModel := strings.ToLower(model)
-		if strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2") {
-			requestBody["temperature"] = 1.0
-		} else {
-			requestBody["temperature"] = temperature
-		}
+	if temperature, ok := requestTemperature(model, options); ok {
+		requestBody["temperature"] = temperature
 	}
 
 	// Prompt caching: pass a stable cache key so OpenAI can bucket requests
@@ -156,6 +153,100 @@ func (p *Provider) buildRequestBody(
 	return requestBody
 }
 
+func requestTemperature(model string, options map[string]any) (float64, bool) {
+	temperature, ok := common.AsFloat(options["temperature"])
+	if !ok {
+		return 0, false
+	}
+
+	lowerModel := strings.ToLower(model)
+	if strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2") {
+		return 1.0, true
+	}
+
+	return temperature, true
+}
+
+func shouldPreferResponses(rawModel, normalizedModel string) bool {
+	rawModel = strings.ToLower(strings.TrimSpace(rawModel))
+	normalizedModel = strings.ToLower(strings.TrimSpace(normalizedModel))
+
+	// Keep the automatic route conservative: only gpt-5 models are forced
+	// onto /responses, and all other model families stay on chat/completions
+	// unless they are explicitly routed elsewhere by the caller.
+	return strings.HasPrefix(rawModel, "gpt-5") || strings.HasPrefix(normalizedModel, "gpt-5")
+}
+
+func hasReasoningContentHistory(messages []Message) bool {
+	for _, message := range messages {
+		if strings.TrimSpace(message.ReasoningContent) != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (p *Provider) buildResponsesRequestBody(
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (map[string]any, error) {
+	input, instructions := orc.TranslateMessages(messages)
+	requestBody := responses.ResponseNewParams{
+		Model: model,
+		Input: responses.ResponseNewParamsInputUnion{
+			OfInputItemList: input,
+		},
+	}
+	if instructions != "" {
+		requestBody.Instructions = openai.Opt(instructions)
+	}
+
+	nativeSearch, _ := options["native_search"].(bool)
+	nativeSearch = nativeSearch && isNativeSearchHost(p.apiBase)
+	responseTools := orc.TranslateTools(tools, nativeSearch)
+	if len(responseTools) > 0 {
+		requestBody.Tools = responseTools
+		requestBody.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
+			OfToolChoiceMode: openai.Opt(responses.ToolChoiceOptionsAuto),
+		}
+	}
+
+	if maxTokens, ok := common.AsInt(options["max_tokens"]); ok {
+		requestBody.MaxOutputTokens = openai.Opt(int64(maxTokens))
+	}
+
+	if temperature, ok := requestTemperature(model, options); ok {
+		requestBody.Temperature = openai.Opt(temperature)
+	}
+
+	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
+		if supportsPromptCacheKey(p.apiBase) {
+			requestBody.PromptCacheKey = openai.Opt(cacheKey)
+		}
+	}
+
+	// Marshal through the SDK type first so we keep its validation/defaulting for
+	// Responses API fields, then convert back to a generic map to merge extraBody.
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal responses request: %w", err)
+	}
+
+	var genericBody map[string]any
+	if err := json.Unmarshal(jsonData, &genericBody); err != nil {
+		return nil, fmt.Errorf("failed to normalize responses request body: %w", err)
+	}
+
+	for k, v := range p.extraBody {
+		genericBody[k] = v
+	}
+
+	return genericBody, nil
+}
+
 func (p *Provider) Chat(
 	ctx context.Context,
 	messages []Message,
@@ -167,14 +258,72 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("API base not configured")
 	}
 
-	requestBody := p.buildRequestBody(messages, tools, model, options)
+	normalizedModel := normalizeModel(model, p.apiBase)
+	if shouldPreferResponses(model, normalizedModel) && !hasReasoningContentHistory(messages) {
+		out, err := p.chatResponses(ctx, messages, tools, normalizedModel, options)
+		if err == nil {
+			return out, nil
+		}
+		if ctx.Err() != nil {
+			return nil, err
+		}
+		log.Printf(
+			"openai_compat: /responses failed for %q, falling back to /chat/completions: %v",
+			normalizedModel,
+			err,
+		)
 
+		fallbackOut, fallbackErr := p.chatCompletions(ctx, messages, tools, normalizedModel, options)
+		if fallbackErr != nil {
+			joinedErr := errors.Join(err, fallbackErr)
+			return nil, fmt.Errorf(
+				"responses request failed; fallback chat/completions failed: %w",
+				joinedErr,
+			)
+		}
+		return fallbackOut, nil
+	}
+
+	return p.chatCompletions(ctx, messages, tools, normalizedModel, options)
+}
+
+func (p *Provider) chatCompletions(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
+	requestBody := p.buildRequestBody(messages, tools, model, options)
+	return p.doRequest(ctx, "/chat/completions", requestBody, nil)
+}
+
+func (p *Provider) chatResponses(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
+	requestBody, err := p.buildResponsesRequestBody(messages, tools, model, options)
+	if err != nil {
+		return nil, err
+	}
+	return p.doRequest(ctx, "/responses", requestBody, parseResponsesResponse)
+}
+
+func (p *Provider) doRequest(
+	ctx context.Context,
+	path string,
+	requestBody map[string]any,
+	parse func(io.Reader) (*LLMResponse, error),
+) (*LLMResponse, error) {
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+path, bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -194,7 +343,26 @@ func (p *Provider) Chat(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return common.ReadAndParseResponse(resp, p.apiBase)
+	if parse == nil {
+		return common.ReadAndParseResponse(resp, p.apiBase)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	reader := bufio.NewReader(resp.Body)
+	prefix, err := reader.Peek(256)
+	if err != nil && err != io.EOF && err != bufio.ErrBufferFull {
+		return nil, fmt.Errorf("failed to inspect response: %w", err)
+	}
+	if common.LooksLikeHTML(prefix, contentType) {
+		return nil, common.WrapHTMLResponseError(resp.StatusCode, prefix, contentType, p.apiBase)
+	}
+
+	out, err := parse(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return out, nil
 }
 
 // ChatStream implements streaming via OpenAI-compatible SSE (stream: true).
@@ -211,7 +379,8 @@ func (p *Provider) ChatStream(
 		return nil, fmt.Errorf("API base not configured")
 	}
 
-	requestBody := p.buildRequestBody(messages, tools, model, options)
+	normalizedModel := normalizeModel(model, p.apiBase)
+	requestBody := p.buildRequestBody(messages, tools, normalizedModel, options)
 	requestBody["stream"] = true
 
 	jsonData, err := json.Marshal(requestBody)
@@ -384,6 +553,10 @@ func parseStreamResponse(
 		FinishReason: finishReason,
 		Usage:        usage,
 	}, nil
+}
+
+func parseResponsesResponse(body io.Reader) (*LLMResponse, error) {
+	return orc.ParseResponseBody(body)
 }
 
 func normalizeModel(model, apiBase string) string {
