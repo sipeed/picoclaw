@@ -3,6 +3,7 @@ package policy
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/agent"
 )
@@ -50,7 +51,26 @@ func (c *Checker) ApproveTool(ctx context.Context, req *agent.ToolApprovalReques
 
 	// 2. Whitelisting (if enabled)
 	if len(c.Config.AllowedTools) > 0 {
-		if !c.Config.AllowedTools[req.Tool] {
+		allowed := false
+		if c.Config.AllowedTools[req.Tool] {
+			allowed = true
+		} else {
+			// Check for prefix matches (e.g. "monday" matches "mcp_monday_...")
+			// Match logic consistent with ToolRegistry.Filter
+			for w, ok := range c.Config.AllowedTools {
+				if !ok {
+					continue
+				}
+				if strings.HasPrefix(req.Tool, "mcp_"+w+"_") ||
+					strings.HasPrefix(req.Tool, "tool_"+w+"_") ||
+					strings.HasPrefix(req.Tool, w+"_") {
+					allowed = true
+					break
+				}
+			}
+		}
+
+		if !allowed {
 			return agent.ApprovalDecision{
 				Approved: false,
 				Reason:   fmt.Sprintf("Tool %q is not in the allowed tools whitelist", req.Tool),

@@ -63,11 +63,6 @@ type StatusResponse struct {
 }
 
 func NewServer(host string, port int) *Server {
-	if envPort := os.Getenv("PORT"); envPort != "" {
-		if _, err := fmt.Sscanf(envPort, "%d", &port); err == nil {
-			logger.Infof("Overriding server port with PORT environment variable: %d", port)
-		}
-	}
 	mux := http.NewServeMux()
 	s := &Server{
 		ready:       false,
