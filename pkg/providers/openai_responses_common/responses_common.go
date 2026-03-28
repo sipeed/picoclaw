@@ -214,15 +214,10 @@ func TranslateTools(tools []protocoltypes.ToolDefinition, enableWebSearch bool) 
 
 // ParseResponseBody parses an OpenAI Responses API JSON body into an LLMResponse.
 // Handles output item types: "message" (output_text + refusal), "function_call", and "reasoning".
-// If responseID is non-nil, stores the response ID for multi-turn context.
-func ParseResponseBody(body io.Reader, responseID *string) (*protocoltypes.LLMResponse, error) {
+func ParseResponseBody(body io.Reader) (*protocoltypes.LLMResponse, error) {
 	var apiResp responses.Response
 	if err := json.NewDecoder(body).Decode(&apiResp); err != nil {
 		return nil, err
-	}
-
-	if responseID != nil && apiResp.ID != "" {
-		*responseID = apiResp.ID
 	}
 
 	return parseResponse(&apiResp), nil

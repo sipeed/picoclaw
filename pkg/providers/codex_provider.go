@@ -96,7 +96,7 @@ func (p *CodexProvider) Chat(
 	}
 
 	// Respect tools.web.prefer_native: only inject native search when the agent
-	// loop requested it (options["native_search"]), so prefer_native: false
+	// loop passes options["native_search"]=true, so prefer_native=false means no injection.
 	useNativeSearch := p.enableWebSearch && (options["native_search"] == true)
 	params := buildCodexParams(messages, tools, resolvedModel, options, useNativeSearch)
 
