@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [English](README.md) | **Bahasa Indonesia**
+[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Malay](README.my.md) | [English](README.md) | **Bahasa Indonesia**
 
 </div>
 
@@ -56,16 +56,18 @@
 
 ## 📢 Berita
 
+2026-03-25 🚀 **v0.2.4 Dirilis!** Perombakan arsitektur Agent (SubTurn, Hooks, Steering, EventBus), integrasi WeChat/WeCom, penguatan keamanan (.security.yml, penyaringan data sensitif), provider baru (AWS Bedrock, Azure, Xiaomi MiMo), dan 35 perbaikan bug. PicoClaw telah mencapai **26K Stars**!
+
 2026-03-17 🚀 **v0.2.3 Dirilis!** UI system tray (Windows & Linux), pelacakan status sub-agent (`spawn_status`), eksperimental Gateway hot-reload, gerbang keamanan Cron, dan 2 perbaikan keamanan. PicoClaw telah mencapai **25K Stars**!
 
-2026-03-09 🎉 **v0.2.1 — Update terbesar sejauh ini!** Dukungan protokol MCP, 4 channel baru (Matrix/IRC/WeCom/Discord Proxy), 3 provider baru (Kimi/Minimax/Avian), pipeline vision, penyimpanan memori JSONL, routing model.
+2026-03-09 🎉 **v0.2.1 — Pembaruan terbesar sejauh ini!** Dukungan protokol MCP, 4 channel baru (Matrix/IRC/WeCom/Discord Proxy), 3 provider baru (Kimi/Minimax/Avian), pipeline visi, penyimpanan memori JSONL, perutean model.
 
 2026-02-28 📦 **v0.2.0** dirilis dengan dukungan Docker Compose dan Web UI Launcher.
 
-2026-02-26 🎉 PicoClaw mencapai **20K Stars** hanya dalam 17 hari! Orkestrasi channel otomatis dan antarmuka kapabilitas kini aktif.
-
 <details>
 <summary>Berita sebelumnya...</summary>
+
+2026-02-26 🎉 PicoClaw mencapai **20K Stars** hanya dalam 17 hari! Orkestrasi channel otomatis dan antarmuka kapabilitas kini aktif.
 
 2026-02-16 🎉 PicoClaw menembus 12K Stars dalam satu minggu! Peran maintainer komunitas dan [Roadmap](ROADMAP.md) resmi diluncurkan.
 
@@ -254,6 +256,29 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 
 </details>
 
+<details>
+<summary><b>macOS — Peringatan Keamanan saat Pertama Kali Diluncurkan</b></summary>
+
+macOS mungkin memblokir `picoclaw-launcher` saat pertama kali diluncurkan karena diunduh dari internet dan tidak dinotarisasi melalui Mac App Store.
+
+**Langkah 1:** Klik dua kali `picoclaw-launcher`. Anda akan melihat peringatan keamanan:
+
+<p align="center">
+<img src="assets/macos-gatekeeper-warning.jpg" alt="Peringatan macOS Gatekeeper" width="400">
+</p>
+
+> *"picoclaw-launcher" Tidak Dapat Dibuka — Apple tidak dapat memverifikasi bahwa "picoclaw-launcher" bebas dari malware yang dapat membahayakan Mac Anda atau mengancam privasi Anda.*
+
+**Langkah 2:** Buka **Pengaturan Sistem** → **Privasi & Keamanan** → gulir ke bawah ke bagian **Keamanan** → klik **Tetap Buka** → konfirmasi dengan mengklik **Tetap Buka** pada dialog.
+
+<p align="center">
+<img src="assets/macos-gatekeeper-allow.jpg" alt="macOS Privasi & Keamanan — Tetap Buka" width="600">
+</p>
+
+Setelah langkah satu kali ini, `picoclaw-launcher` akan terbuka secara normal pada peluncuran berikutnya.
+
+</details>
+
 ### 💻 TUI Launcher (Direkomendasikan untuk Headless / SSH)
 
 TUI (Terminal UI) Launcher menyediakan antarmuka terminal lengkap untuk konfigurasi dan manajemen. Ideal untuk server, Raspberry Pi, dan lingkungan headless lainnya.
@@ -367,6 +392,7 @@ PicoClaw mendukung 30+ provider LLM melalui konfigurasi `model_list`. Gunakan fo
 | [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | Diperlukan | Model yang di-host NVIDIA |
 | [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | Diperlukan | Inferensi cepat |
 | [Novita AI](https://novita.ai/) | `novita/` | Diperlukan | Berbagai model open |
+| [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Diperlukan | Model MiMo |
 | [Ollama](https://ollama.com/) | `ollama/` | Tidak perlu | Model lokal, self-hosted |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Tidak perlu | Deploy lokal, kompatibel OpenAI |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Bervariasi | Proxy untuk 100+ provider |
@@ -423,9 +449,7 @@ Bicara dengan PicoClaw Anda melalui 17+ platform pesan:
 | **DingTalk** | Sedang (client credentials) | Stream | [Panduan](docs/channels/dingtalk/README.md) |
 | **Feishu / Lark** | Sedang (App ID + Secret) | WebSocket/SDK | [Panduan](docs/channels/feishu/README.md) |
 | **LINE** | Sedang (credentials + webhook) | Webhook | [Panduan](docs/channels/line/README.md) |
-| **WeCom Bot** | Sedang (webhook URL) | Webhook | [Panduan](docs/channels/wecom/wecom_bot/README.md) |
-| **WeCom App** | Sedang (corp credentials) | Webhook | [Panduan](docs/channels/wecom/wecom_app/README.md) |
-| **WeCom AI Bot** | Sedang (token + AES key) | WebSocket / Webhook | [Panduan](docs/channels/wecom/wecom_aibot/README.md) |
+| **WeCom** | Mudah (login QR atau manual) | WebSocket | [Panduan](docs/channels/wecom/README.md) |
 | **IRC** | Sedang (server + nick) | IRC protocol | [Panduan](docs/chat-apps.md#irc) |
 | **OneBot** | Sedang (WebSocket URL) | OneBot v11 | [Panduan](docs/channels/onebot/README.md) |
 | **MaixCam** | Mudah (aktifkan) | TCP socket | [Panduan](docs/channels/maixcam/README.md) |

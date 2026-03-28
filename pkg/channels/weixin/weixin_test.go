@@ -72,12 +72,122 @@ func TestDownloadAndDecryptCDNBuffer(t *testing.T) {
 		typingCache: make(map[string]typingTicketCacheEntry),
 	}
 
-	got, err := ch.downloadAndDecryptCDNBuffer(context.Background(), "token", key)
+	got, err := ch.downloadAndDecryptCDNBuffer(context.Background(), "token", "", key)
 	if err != nil {
 		t.Fatalf("downloadAndDecryptCDNBuffer() error = %v", err)
 	}
 	if !bytes.Equal(got, plaintext) {
 		t.Fatalf("downloadAndDecryptCDNBuffer() = %q, want %q", got, plaintext)
+	}
+}
+
+func TestDownloadAndDecryptCDNBufferUsesFullURLWhenProvided(t *testing.T) {
+	key := []byte("1234567890abcdef")
+	plaintext := []byte("hello weixin")
+	ciphertext, err := encryptAESECB(plaintext, key)
+	if err != nil {
+		t.Fatalf("encryptAESECB() error = %v", err)
+	}
+
+	fullURLAttempts := 0
+	ch := &WeixinChannel{
+		api: &ApiClient{
+			HttpClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.URL.String() == "https://full.example.com/download" {
+					fullURLAttempts++
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(bytes.NewReader(ciphertext)),
+						Header:     make(http.Header),
+					}, nil
+				}
+				t.Fatalf("unexpected fallback request: %s", r.URL.String())
+				return nil, nil
+			})},
+		},
+		config: config.WeixinConfig{
+			CDNBaseURL: "https://cdn.example.com",
+		},
+		typingCache: make(map[string]typingTicketCacheEntry),
+	}
+
+	got, err := ch.downloadAndDecryptCDNBuffer(context.Background(), "token", "https://full.example.com/download", key)
+	if err != nil {
+		t.Fatalf("downloadAndDecryptCDNBuffer() error = %v", err)
+	}
+	if !bytes.Equal(got, plaintext) {
+		t.Fatalf("downloadAndDecryptCDNBuffer() = %q, want %q", got, plaintext)
+	}
+	if fullURLAttempts == 0 {
+		t.Fatalf("fullURLAttempts = %d, want > 0", fullURLAttempts)
+	}
+}
+
+func TestDownloadAndDecryptCDNBufferFallsBackToConstructedURLWhenFullURLFails(t *testing.T) {
+	key := []byte("1234567890abcdef")
+	plaintext := []byte("hello weixin")
+	ciphertext, err := encryptAESECB(plaintext, key)
+	if err != nil {
+		t.Fatalf("encryptAESECB() error = %v", err)
+	}
+
+	fullURLAttempts := 0
+	constructedAttempts := 0
+	ch := &WeixinChannel{
+		api: &ApiClient{
+			HttpClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.URL.String() == "https://full.example.com/download?encrypted_query_param=token&taskid=123" {
+					fullURLAttempts++
+					return &http.Response{
+						StatusCode: http.StatusInternalServerError,
+						Body:       io.NopCloser(bytes.NewReader(nil)),
+						Header:     make(http.Header),
+					}, nil
+				}
+				if r.URL.String() != "https://cdn.example.com/download?encrypted_query_param=token" {
+					t.Fatalf("unexpected fallback request: %s", r.URL.String())
+				}
+				constructedAttempts++
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewReader(ciphertext)),
+					Header:     make(http.Header),
+				}, nil
+			})},
+		},
+		config: config.WeixinConfig{
+			CDNBaseURL: "https://cdn.example.com",
+		},
+		typingCache: make(map[string]typingTicketCacheEntry),
+	}
+
+	got, err := ch.downloadAndDecryptCDNBuffer(
+		context.Background(),
+		"token",
+		"https://full.example.com/download?encrypted_query_param=token&taskid=123",
+		key,
+	)
+	if err != nil {
+		t.Fatalf("downloadAndDecryptCDNBuffer() error = %v", err)
+	}
+	if !bytes.Equal(got, plaintext) {
+		t.Fatalf("downloadAndDecryptCDNBuffer() = %q, want %q", got, plaintext)
+	}
+	if fullURLAttempts == 0 {
+		t.Fatalf("fullURLAttempts = %d, want > 0", fullURLAttempts)
+	}
+	if constructedAttempts == 0 {
+		t.Fatalf("constructedAttempts = %d, want > 0", constructedAttempts)
+	}
+}
+
+func TestBuildCDNDownloadURLEscapesOpaqueToken(t *testing.T) {
+	token := "MFcCAQAESzBJAgEAAgSieMV9AgM9CcwCBEoKPqICBGnHZB0EJDk4OWY5YWU0LTc4OGItNGQ5Ni1iMjZhLWU4YjhlMmEwOWVkZgIEIR0IAgIBAAQFAExUPQA%3D"
+
+	got := buildCDNDownloadURL("https://cdn.example.com", token)
+
+	if got != "https://cdn.example.com/download?encrypted_query_param=MFcCAQAESzBJAgEAAgSieMV9AgM9CcwCBEoKPqICBGnHZB0EJDk4OWY5YWU0LTc4OGItNGQ5Ni1iMjZhLWU4YjhlMmEwOWVkZgIEIR0IAgIBAAQFAExUPQA%253D" {
+		t.Fatalf("buildCDNDownloadURL() = %q", got)
 	}
 }
 
@@ -120,7 +230,7 @@ func TestUploadBufferToCDN(t *testing.T) {
 		typingCache: make(map[string]typingTicketCacheEntry),
 	}
 
-	got, err := ch.uploadBufferToCDN(context.Background(), plaintext, "upload-param", "file-key", key)
+	got, err := ch.uploadBufferToCDN(context.Background(), plaintext, "upload-param", "", "file-key", key)
 	if err != nil {
 		t.Fatalf("uploadBufferToCDN() error = %v", err)
 	}

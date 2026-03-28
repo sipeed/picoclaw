@@ -38,6 +38,7 @@ type GetUploadUrlResp struct {
 	APIStatus
 	UploadParam      string `json:"upload_param,omitempty"`
 	ThumbUploadParam string `json:"thumb_upload_param,omitempty"`
+	UploadFullURL    string `json:"upload_full_url,omitempty"`
 }
 
 const (
@@ -69,6 +70,7 @@ type CDNMedia struct {
 	EncryptQueryParam string `json:"encrypt_query_param,omitempty"`
 	AesKey            string `json:"aes_key,omitempty"` // base64 encoded
 	EncryptType       int    `json:"encrypt_type,omitempty"`
+	FullURL           string `json:"full_url,omitempty"`
 }
 
 type ImageItem struct {
@@ -202,9 +204,10 @@ type QRCodeResponse struct {
 }
 
 type StatusResponse struct {
-	Status      string `json:"status"` // "wait", "scaned", "confirmed", "expired"
-	BotToken    string `json:"bot_token,omitempty"`
-	IlinkBotID  string `json:"ilink_bot_id,omitempty"`
-	Baseurl     string `json:"baseurl,omitempty"`
-	IlinkUserID string `json:"ilink_user_id,omitempty"`
+	Status       string `json:"status"` // "wait", "scaned", "confirmed", "expired", "scaned_but_redirect"
+	BotToken     string `json:"bot_token,omitempty"`
+	IlinkBotID   string `json:"ilink_bot_id,omitempty"`
+	Baseurl      string `json:"baseurl,omitempty"`
+	IlinkUserID  string `json:"ilink_user_id,omitempty"`
+	RedirectHost string `json:"redirect_host,omitempty"`
 }
