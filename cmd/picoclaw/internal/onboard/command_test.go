@@ -13,7 +13,7 @@ func TestNewOnboardCommand(t *testing.T) {
 	require.NotNil(t, cmd)
 
 	assert.Equal(t, "onboard", cmd.Use)
-	assert.Equal(t, "Initialize picoclaw configuration and workspace", cmd.Short)
+	assert.Equal(t, "Initialize Jane AI configuration and workspace", cmd.Short)
 
 	assert.Len(t, cmd.Aliases, 1)
 	assert.True(t, cmd.HasAlias("o"))

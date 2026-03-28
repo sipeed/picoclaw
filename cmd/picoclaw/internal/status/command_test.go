@@ -17,7 +17,7 @@ func TestNewStatusCommand(t *testing.T) {
 	assert.Len(t, cmd.Aliases, 1)
 	assert.True(t, cmd.HasAlias("s"))
 
-	assert.Equal(t, "Show picoclaw status", cmd.Short)
+	assert.Equal(t, "Show Jane AI status", cmd.Short)
 
 	assert.False(t, cmd.HasSubCommands())
 

@@ -1,13 +1,13 @@
-// PicoClaw Web Console - Web-based chat and management interface
+// Jane AI Web Console - Web-based chat and management interface
 //
-// Provides a web UI for chatting with PicoClaw via the Pico Channel WebSocket,
+// Provides a web UI for chatting with Jane AI via the Pico Channel WebSocket,
 // with configuration management and gateway process control.
 //
 // Usage:
 //
-//	go build -o picoclaw-web ./web/backend/
-//	./picoclaw-web [config.json]
-//	./picoclaw-web -public config.json
+//	go build -o jane-ai-web ./web/backend/
+//	./jane-ai-web [config.json]
+//	./jane-ai-web -public config.json
 
 package main
 
@@ -34,10 +34,10 @@ func main() {
 	noBrowser := flag.Bool("no-browser", false, "Do not auto-open browser on startup")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "PicoClaw Launcher - A web-based configuration editor\n\n")
+		fmt.Fprintf(os.Stderr, "Jane AI Launcher - A web-based configuration editor\n\n")
 		fmt.Fprintf(os.Stderr, "Usage: %s [options] [config.json]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Arguments:\n")
-		fmt.Fprintf(os.Stderr, "  config.json    Path to the configuration file (default: ~/.picoclaw/config.json)\n\n")
+		fmt.Fprintf(os.Stderr, "  config.json    Path to the configuration file (default: ~/.jane-ai/config.json)\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
@@ -63,7 +63,7 @@ func main() {
 	}
 	err = utils.EnsureOnboarded(absPath)
 	if err != nil {
-		logger.WarnCF("main", "Failed to initialize PicoClaw config automatically", map[string]any{"error": err.Error()})
+		logger.WarnCF("main", "Failed to initialize Jane AI config automatically", map[string]any{"error": err.Error()})
 	}
 
 	var explicitPort bool

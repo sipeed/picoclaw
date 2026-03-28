@@ -33,7 +33,7 @@ func onboard() {
 	workspace := cfg.WorkspacePath()
 	createWorkspaceTemplates(workspace)
 
-	fmt.Printf("%s picoclaw is ready!\n", internal.Logo)
+	fmt.Printf("%s Jane AI is ready!\n", internal.Logo)
 	fmt.Println("\nNext steps:")
 	fmt.Println("  1. Add your API key to", configPath)
 	fmt.Println("")
@@ -43,7 +43,7 @@ func onboard() {
 	fmt.Println("")
 	fmt.Println("     See README.md for 17+ supported providers.")
 	fmt.Println("")
-	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
+	fmt.Println("  2. Chat: jane-ai agent -m \"Hello!\"")
 }
 
 func createWorkspaceTemplates(workspace string) {

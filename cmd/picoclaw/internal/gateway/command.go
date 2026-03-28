@@ -16,7 +16,7 @@ func NewGatewayCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "gateway",
 		Aliases: []string{"g"},
-		Short:   "Start picoclaw gateway",
+		Short:   "Start the Jane AI gateway",
 		Args:    cobra.NoArgs,
 		PreRunE: func(_ *cobra.Command, _ []string) error {
 			if noTruncate && !debug {

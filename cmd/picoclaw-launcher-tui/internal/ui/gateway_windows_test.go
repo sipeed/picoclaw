@@ -53,10 +53,10 @@ func TestIsGatewayProcessRunning(t *testing.T) {
 			if got != tt.wantResult {
 				t.Errorf("isGatewayProcessRunning() = %v, want %v", got, tt.wantResult)
 			}
-			if gotName != "tasklist" {
-				t.Errorf("expected command name tasklist, got %s", gotName)
+			if gotName != "cmd" {
+				t.Errorf("expected command name cmd, got %s", gotName)
 			}
-			expectedArgs := []string{"/FI", "IMAGENAME eq picoclaw.exe"}
+			expectedArgs := []string{"/C", `tasklist /FI "IMAGENAME eq jane-ai.exe" | findstr /I /C:"jane-ai.exe" >NUL || tasklist /FI "IMAGENAME eq picoclaw.exe" | findstr /I /C:"picoclaw.exe" >NUL`}
 			if !reflect.DeepEqual(gotArgs, expectedArgs) {
 				t.Errorf("expected args %v, got %v", expectedArgs, gotArgs)
 			}
@@ -106,10 +106,10 @@ func TestStopGatewayProcess(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("stopGatewayProcess() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if gotName != "taskkill" {
-				t.Errorf("expected command name taskkill, got %s", gotName)
+			if gotName != "cmd" {
+				t.Errorf("expected command name cmd, got %s", gotName)
 			}
-			expectedArgs := []string{"/F", "/IM", "picoclaw.exe"}
+			expectedArgs := []string{"/C", `taskkill /F /IM jane-ai.exe >NUL 2>&1 || taskkill /F /IM picoclaw.exe >NUL 2>&1`}
 			if !reflect.DeepEqual(gotArgs, expectedArgs) {
 				t.Errorf("expected args %v, got %v", expectedArgs, gotArgs)
 			}

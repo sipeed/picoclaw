@@ -34,34 +34,7 @@ func GetDefaultConfigPath() string {
 //  2. Same directory as the current executable
 //  3. Falls back to "jane-ai" or "picoclaw" on $PATH
 func FindPicoclawBinary() string {
-	if p := os.Getenv("JANE_AI_BINARY"); p != "" {
-		if info, _ := os.Stat(p); info != nil && !info.IsDir() {
-			return p
-		}
-	}
-	if p := os.Getenv("PICOCLAW_BINARY"); p != "" {
-		if info, _ := os.Stat(p); info != nil && !info.IsDir() {
-			return p
-		}
-	}
-
-	binaryNames := []string{"jane-ai", "picoclaw"}
-	if runtime.GOOS == "windows" {
-		binaryNames = []string{"jane-ai.exe", "picoclaw.exe"}
-	}
-	if exe, err := os.Executable(); err == nil {
-		for _, binaryName := range binaryNames {
-			candidate := filepath.Join(filepath.Dir(exe), binaryName)
-			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-				return candidate
-			}
-		}
-	}
-
-	if path, err := exec.LookPath(binaryNames[0]); err == nil {
-		return path
-	}
-	return "picoclaw"
+	return runtimepaths.BinaryPath()
 }
 
 // GetLocalIP returns the local IP address of the machine.

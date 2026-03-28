@@ -162,7 +162,7 @@ func authLoginGoogleAntigravity() error {
 
 	fmt.Println("\n✓ Google Antigravity login successful!")
 	fmt.Println("Default model set to: gemini-flash")
-	fmt.Println("Try it: picoclaw agent -m \"Hello world\"")
+	fmt.Println("Try it: jane-ai agent -m \"Hello world\"")
 
 	return nil
 }
@@ -412,7 +412,7 @@ func authStatusCmd() error {
 
 	if len(store.Credentials) == 0 {
 		fmt.Println("No authenticated providers.")
-		fmt.Println("Run: picoclaw auth login --provider <name>")
+		fmt.Println("Run: jane-ai auth login --provider <name>")
 		return nil
 	}
 
@@ -460,7 +460,7 @@ func authModelsCmd() error {
 	cred, err := auth.GetCredential("google-antigravity")
 	if err != nil || cred == nil {
 		return fmt.Errorf(
-			"not logged in to Google Antigravity.\nrun: picoclaw auth login --provider google-antigravity",
+			"not logged in to Google Antigravity.\nrun: jane-ai auth login --provider google-antigravity",
 		)
 	}
 
