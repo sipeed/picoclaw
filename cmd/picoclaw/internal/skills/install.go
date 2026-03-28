@@ -88,7 +88,12 @@ func skillsInstallCmdWithProxy(installer *skills.SkillInstaller, input string, p
 	}
 }
 
-func installFromWellKnown(ctx context.Context, installer *skills.SkillInstaller, client *http.Client, resolved *skills.ResolvedSource) error {
+func installFromWellKnown(
+	ctx context.Context,
+	installer *skills.SkillInstaller,
+	client *http.Client,
+	resolved *skills.ResolvedSource,
+) error {
 	index := resolved.SkillIndex
 	fmt.Printf("Resolving skills from %s...\n", resolved.URL)
 	fmt.Printf("Found %d skills:\n", len(index.Skills))
@@ -137,7 +142,12 @@ func installFromWellKnown(ctx context.Context, installer *skills.SkillInstaller,
 	return nil
 }
 
-func installFromJSONURL(ctx context.Context, installer *skills.SkillInstaller, client *http.Client, url string) error {
+func installFromJSONURL(
+	ctx context.Context,
+	installer *skills.SkillInstaller,
+	client *http.Client,
+	url string,
+) error {
 	fmt.Printf("Installing skill from %s...\n", url)
 
 	if strings.Contains(url, "github.com") {
