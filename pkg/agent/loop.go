@@ -1219,7 +1219,34 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 		SessionKey: sessionKey,
 	}
 
-	return al.processMessage(ctx, msg)
+	response, err := al.processMessage(ctx, msg)
+	if err != nil {
+		return response, err
+	}
+
+	// Publish response if non-empty and the message tool hasn't already sent it.
+	// This mirrors the publish logic in Run() for direct/cron invocations that
+	// bypass the main message loop.
+	if response != "" {
+		alreadySent := false
+		defaultAgent := al.GetRegistry().GetDefaultAgent()
+		if defaultAgent != nil {
+			if tool, ok := defaultAgent.Tools.Get("message"); ok {
+				if mt, ok := tool.(*tools.MessageTool); ok {
+					alreadySent = mt.HasSentInRound()
+				}
+			}
+		}
+		if !alreadySent {
+			al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+				Channel: msg.Channel,
+				ChatID:  msg.ChatID,
+				Content: response,
+			})
+		}
+	}
+
+	return response, nil
 }
 
 // ProcessHeartbeat processes a heartbeat request without session history.
