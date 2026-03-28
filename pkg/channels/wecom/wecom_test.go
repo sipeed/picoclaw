@@ -190,7 +190,7 @@ func TestSend_StreamFailureFallsBackToActualChatID(t *testing.T) {
 		return wecomTestAck(nil), nil
 	}
 
-	if err := ch.Send(context.Background(), bus.OutboundMessage{
+	if _, err := ch.Send(context.Background(), bus.OutboundMessage{
 		Channel: "wecom",
 		ChatID:  "chat-1",
 		Content: "hello",
@@ -247,7 +247,7 @@ func TestSend_DoesNotSplitStreamReply(t *testing.T) {
 	}
 
 	content := strings.Repeat("\u4e2d", 30000)
-	if err := ch.Send(context.Background(), bus.OutboundMessage{
+	if _, err := ch.Send(context.Background(), bus.OutboundMessage{
 		Channel: "wecom",
 		ChatID:  "chat-1",
 		Content: content,
@@ -283,7 +283,7 @@ func TestSend_DoesNotSplitActivePush(t *testing.T) {
 	}
 
 	content := strings.Repeat("a", 30000)
-	if err := ch.Send(context.Background(), bus.OutboundMessage{
+	if _, err := ch.Send(context.Background(), bus.OutboundMessage{
 		Channel: "wecom",
 		ChatID:  "chat-1",
 		Content: content,

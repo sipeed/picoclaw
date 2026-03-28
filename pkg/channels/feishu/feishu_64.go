@@ -131,26 +131,26 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 
 // Send sends a message using Interactive Card format for markdown rendering.
 // Falls back to plain text message if card sending fails (e.g., table limit exceeded).
-func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	if msg.ChatID == "" {
-		return fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
 	}
 
 	// Build interactive card with markdown content
 	cardContent, err := buildMarkdownCard(msg.Content)
 	if err != nil {
 		// If card build fails, fall back to plain text
-		return c.sendText(ctx, msg.ChatID, msg.Content)
+		return nil, c.sendText(ctx, msg.ChatID, msg.Content)
 	}
 
 	// First attempt: try sending as interactive card
 	err = c.sendCard(ctx, msg.ChatID, cardContent)
 	if err == nil {
-		return nil
+		return nil, nil
 	}
 
 	// Check if error is due to card table limit (error code 11310)
@@ -167,14 +167,14 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		// Second attempt: fall back to plain text message
 		textErr := c.sendText(ctx, msg.ChatID, msg.Content)
 		if textErr == nil {
-			return nil
+			return nil, nil
 		}
 		// If text also fails, return the text error
-		return textErr
+		return nil, textErr
 	}
 
 	// For other errors, return the original card error
-	return err
+	return nil, err
 }
 
 // EditMessage implements channels.MessageEditor.

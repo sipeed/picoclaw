@@ -431,6 +431,130 @@ func TestDrainBusToSteering_RequeuesDifferentScopeMessage(t *testing.T) {
 	}
 }
 
+func TestDrainBusToSteering_PreservesSenderAndThreadingMetadata(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Session: config.SessionConfig{
+			DMScope: "per-peer",
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &mockProvider{})
+
+	activeMsg := bus.InboundMessage{
+		Channel:          "telegram",
+		SenderID:         "telegram:100",
+		Sender:           bus.SenderInfo{DisplayName: "Alice", Username: "alice"},
+		ChatID:           "chat1",
+		Content:          "follow up",
+		MessageID:        "in-2",
+		ReplyToMessageID: "in-1",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "100",
+		},
+	}
+	activeScope, activeAgentID, ok := al.resolveSteeringTarget(activeMsg)
+	if !ok {
+		t.Fatal("expected active message to resolve to a steering scope")
+	}
+
+	if err := msgBus.PublishInbound(context.Background(), activeMsg); err != nil {
+		t.Fatalf("PublishInbound failed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	al.drainBusToSteering(ctx, activeScope, activeAgentID)
+
+	msgs := al.dequeueSteeringMessagesForScope(activeScope)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 steering message, got %d", len(msgs))
+	}
+	if len(msgs[0].MessageIDs) != 1 || msgs[0].MessageIDs[0] != "in-2" {
+		t.Fatalf("expected steering message_ids [in-2], got %v", msgs[0].MessageIDs)
+	}
+	if msgs[0].ReplyToMessageID != "in-1" {
+		t.Fatalf("expected ReplyToMessageID in-1, got %q", msgs[0].ReplyToMessageID)
+	}
+	if msgs[0].Sender == nil || msgs[0].Sender.FirstName != "Alice" || msgs[0].Sender.Username != "alice" {
+		t.Fatalf("expected sender to be preserved, got %+v", msgs[0].Sender)
+	}
+}
+
+func TestContinueWithSteeringMessages_ReturnsTrackedAssistantDelivery(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &simpleMockProvider{response: "continued response"})
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	sessionKey := "agent:test-continue-delivery"
+	response, err := al.continueWithSteeringMessages(
+		context.Background(), defaultAgent, sessionKey, "test", "chat1",
+		[]providers.Message{{Role: "user", Content: "new direction"}},
+	)
+	if err != nil {
+		t.Fatalf("continueWithSteeringMessages failed: %v", err)
+	}
+	if response.Content != "continued response" {
+		t.Fatalf("expected continued response, got %q", response.Content)
+	}
+	if response.OnDelivered == nil {
+		t.Fatal("expected OnDelivered callback for continued response")
+	}
+
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 1 || history[0].Role != "user" {
+		t.Fatalf("expected only steering user message before delivery, got %#v", history)
+	}
+
+	response.OnDelivered([]string{"out-continue"})
+
+	history = defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 2 {
+		t.Fatalf("expected 2 messages after delivery, got %d", len(history))
+	}
+	if history[1].Role != "assistant" {
+		t.Fatalf("expected assistant message, got %+v", history[1])
+	}
+	if len(history[1].MessageIDs) != 1 || history[1].MessageIDs[0] != "out-continue" {
+		t.Fatalf("expected assistant message_ids [out-continue], got %v", history[1].MessageIDs)
+	}
+}
+
 // slowTool simulates a tool that takes some time to execute.
 type slowTool struct {
 	name     string

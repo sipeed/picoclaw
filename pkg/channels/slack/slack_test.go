@@ -1,9 +1,13 @@
 package slack
 
 import (
+	"context"
 	"testing"
 
+	"github.com/slack-go/slack/slackevents"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -167,4 +171,30 @@ func TestSlackChannelIsAllowed(t *testing.T) {
 			t.Error("non-allowed user should be blocked")
 		}
 	})
+}
+
+func TestHandleMessageEvent_PreservesReplyToMessageIDFromThreadTS(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &SlackChannel{
+		BaseChannel: channels.NewBaseChannel("slack", nil, messageBus, nil),
+		ctx:         context.Background(),
+		teamID:      "T1",
+	}
+
+	ch.handleMessageEvent(&slackevents.MessageEvent{
+		Type:            "message",
+		User:            "U123",
+		Text:            "hello",
+		ThreadTimeStamp: "1710000000.000100",
+		TimeStamp:       "1710000000.000200",
+		Channel:         "C123",
+	})
+
+	inbound := <-messageBus.InboundChan()
+	if inbound.MessageID != "1710000000.000200" {
+		t.Fatalf("expected MessageID to be message ts, got %q", inbound.MessageID)
+	}
+	if inbound.ReplyToMessageID != "1710000000.000100" {
+		t.Fatalf("expected ReplyToMessageID thread root ts, got %q", inbound.ReplyToMessageID)
+	}
 }

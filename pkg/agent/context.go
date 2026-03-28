@@ -112,6 +112,8 @@ Your workspace is at: %s
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
 
+5. **Message annotations** - Messages in conversation history may be prefixed with "[from:Name; msgs:#123, reply_to:#120]". These are read-only metadata added by the system for context. Do NOT reproduce or imitate this format in your own responses.
+
 %s`,
 		version, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
 }
@@ -607,8 +609,15 @@ func (cb *ContextBuilder) BuildMessages(
 		SystemParts: contentBlocks,
 	})
 
-	// Add conversation history
-	messages = append(messages, history...)
+	// Add conversation history, annotating messages that have threading IDs
+	// so the LLM can navigate thread structure from persisted sessions.
+	for _, msg := range history {
+		annotated := msg
+		if prefix := messageHistoryAnnotation(msg); prefix != "" {
+			annotated.Content = prefix + msg.Content
+		}
+		messages = append(messages, annotated)
+	}
 
 	// Add current user message
 	if strings.TrimSpace(currentMessage) != "" {
@@ -855,5 +864,68 @@ func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
 		"total":     len(allSkills),
 		"available": len(allSkills),
 		"names":     skillNames,
+	}
+}
+
+func messageHistoryAnnotation(msg providers.Message) string {
+	parts := make([]string, 0, 2)
+	if sender := messageSenderAnnotation(msg.Sender); sender != "" {
+		parts = append(parts, sender)
+	}
+	if thread := messageThreadAnnotationBody(msg); thread != "" {
+		parts = append(parts, thread)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("[%s] ", strings.Join(parts, "; "))
+}
+
+func messageSenderAnnotation(sender *providers.MessageSender) string {
+	if sender == nil {
+		return ""
+	}
+
+	nameParts := make([]string, 0, 2)
+	if first := strings.TrimSpace(sender.FirstName); first != "" {
+		nameParts = append(nameParts, first)
+	}
+	if last := strings.TrimSpace(sender.LastName); last != "" {
+		nameParts = append(nameParts, last)
+	}
+	name := strings.TrimSpace(strings.Join(nameParts, " "))
+
+	username := strings.TrimSpace(sender.Username)
+	if username != "" && !strings.HasPrefix(username, "@") {
+		username = "@" + username
+	}
+
+	switch {
+	case name != "" && username != "":
+		return fmt.Sprintf("from:%s (%s)", name, username)
+	case name != "":
+		return fmt.Sprintf("from:%s", name)
+	case username != "":
+		return fmt.Sprintf("from:%s", username)
+	default:
+		return ""
+	}
+}
+
+func messageThreadAnnotationBody(msg providers.Message) string {
+	msgIDs := msg.MessageIDs
+	formattedIDs := strings.Join(msgIDs, ",#")
+	if formattedIDs != "" {
+		formattedIDs = "#" + formattedIDs
+	}
+	switch {
+	case len(msgIDs) > 0 && msg.ReplyToMessageID != "":
+		return fmt.Sprintf("msgs:%s, reply_to:#%s", formattedIDs, msg.ReplyToMessageID)
+	case len(msgIDs) > 0:
+		return fmt.Sprintf("msgs:%s", formattedIDs)
+	case msg.ReplyToMessageID != "":
+		return fmt.Sprintf("reply_to:#%s", msg.ReplyToMessageID)
+	default:
+		return ""
 	}
 }

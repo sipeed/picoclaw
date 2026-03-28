@@ -14,6 +14,8 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
 )
@@ -384,5 +386,47 @@ func TestMessageContent(t *testing.T) {
 	mc := plain.messageContent("**hi**")
 	if mc.Format != "" || mc.FormattedBody != "" {
 		t.Errorf("plain: expected no formatting, got format=%q formattedBody=%q", mc.Format, mc.FormattedBody)
+	}
+}
+
+func TestHandleMessageEvent_PreservesReplyToMessageID(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	roomID := id.RoomID("!room:matrix.test")
+	ch := &MatrixChannel{
+		BaseChannel:   channels.NewBaseChannel("matrix", nil, messageBus, nil),
+		client:        &mautrix.Client{UserID: id.UserID("@bot:matrix.test")},
+		startTime:     time.Unix(0, 0),
+		roomKindCache: newRoomKindCache(4, time.Minute),
+	}
+	ch.roomKindCache.set(roomID.String(), false, time.Now())
+
+	msgContent := &event.MessageEventContent{
+		MsgType: event.MsgText,
+		Body:    "hello",
+		RelatesTo: &event.RelatesTo{
+			InReplyTo: &event.InReplyTo{EventID: id.EventID("$parent")},
+		},
+	}
+
+	ch.handleMessageEvent(context.Background(), &event.Event{
+		Sender:    id.UserID("@alice:matrix.test"),
+		Type:      event.EventMessage,
+		Timestamp: time.Now().UnixMilli(),
+		ID:        id.EventID("$event"),
+		RoomID:    roomID,
+		Content: event.Content{
+			Parsed: msgContent,
+		},
+	})
+
+	inbound := <-messageBus.InboundChan()
+	if inbound.MessageID != "$event" {
+		t.Fatalf("expected MessageID $event, got %q", inbound.MessageID)
+	}
+	if inbound.ReplyToMessageID != "$parent" {
+		t.Fatalf("expected ReplyToMessageID $parent, got %q", inbound.ReplyToMessageID)
+	}
+	if inbound.Metadata["reply_to_message_id"] != "$parent" {
+		t.Fatalf("expected metadata reply_to_message_id $parent, got %q", inbound.Metadata["reply_to_message_id"])
 	}
 }

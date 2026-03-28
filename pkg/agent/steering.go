@@ -291,8 +291,8 @@ func (al *AgentLoop) continueWithSteeringMessages(
 	agent *AgentInstance,
 	sessionKey, channel, chatID string,
 	steeringMsgs []providers.Message,
-) (string, error) {
-	return al.runAgentLoop(ctx, agent, processOptions{
+) (agentResponse, error) {
+	response, err := al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:              sessionKey,
 		Channel:                 channel,
 		ChatID:                  chatID,
@@ -302,6 +302,43 @@ func (al *AgentLoop) continueWithSteeringMessages(
 		InitialSteeringMessages: steeringMsgs,
 		SkipInitialSteeringPoll: true,
 	})
+	if err != nil {
+		return agentResponse{}, err
+	}
+	return response, nil
+}
+
+func (al *AgentLoop) continueResponse(
+	ctx context.Context,
+	sessionKey, channel, chatID string,
+) (agentResponse, error) {
+	if active := al.GetActiveTurn(); active != nil {
+		return agentResponse{}, fmt.Errorf("turn %s is still active", active.TurnID)
+	}
+	if err := al.ensureHooksInitialized(ctx); err != nil {
+		return agentResponse{}, err
+	}
+	if err := al.ensureMCPInitialized(ctx); err != nil {
+		return agentResponse{}, err
+	}
+
+	steeringMsgs := al.dequeueSteeringMessagesForScopeWithFallback(sessionKey)
+	if len(steeringMsgs) == 0 {
+		return agentResponse{}, nil
+	}
+
+	agent := al.agentForSession(sessionKey)
+	if agent == nil {
+		return agentResponse{}, fmt.Errorf("no agent available for session %q", sessionKey)
+	}
+
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if resetter, ok := tool.(interface{ ResetSentInRound() }); ok {
+			resetter.ResetSentInRound()
+		}
+	}
+
+	return al.continueWithSteeringMessages(ctx, agent, sessionKey, channel, chatID, steeringMsgs)
 }
 
 func (al *AgentLoop) agentForSession(sessionKey string) *AgentInstance {
@@ -326,33 +363,14 @@ func (al *AgentLoop) agentForSession(sessionKey string) *AgentInstance {
 //
 // If no steering messages are pending, it returns an empty string.
 func (al *AgentLoop) Continue(ctx context.Context, sessionKey, channel, chatID string) (string, error) {
-	if active := al.GetActiveTurn(); active != nil {
-		return "", fmt.Errorf("turn %s is still active", active.TurnID)
-	}
-	if err := al.ensureHooksInitialized(ctx); err != nil {
+	response, err := al.continueResponse(ctx, sessionKey, channel, chatID)
+	if err != nil {
 		return "", err
 	}
-	if err := al.ensureMCPInitialized(ctx); err != nil {
-		return "", err
+	if response.OnDelivered != nil {
+		response.OnDelivered(nil)
 	}
-
-	steeringMsgs := al.dequeueSteeringMessagesForScopeWithFallback(sessionKey)
-	if len(steeringMsgs) == 0 {
-		return "", nil
-	}
-
-	agent := al.agentForSession(sessionKey)
-	if agent == nil {
-		return "", fmt.Errorf("no agent available for session %q", sessionKey)
-	}
-
-	if tool, ok := agent.Tools.Get("message"); ok {
-		if resetter, ok := tool.(interface{ ResetSentInRound() }); ok {
-			resetter.ResetSentInRound()
-		}
-	}
-
-	return al.continueWithSteeringMessages(ctx, agent, sessionKey, channel, chatID, steeringMsgs)
+	return response.Content, nil
 }
 
 func (al *AgentLoop) InterruptGraceful(hint string) error {

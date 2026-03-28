@@ -36,8 +36,8 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 }
 
 // Send is a stub method to satisfy the Channel interface
-func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
-	return errUnsupported
+func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
+	return nil, errUnsupported
 }
 
 // EditMessage is a stub method to satisfy MessageEditor

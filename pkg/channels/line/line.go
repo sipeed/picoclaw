@@ -496,9 +496,9 @@ func (c *LINEChannel) resolveChatID(source lineSource) string {
 
 // Send sends a message to LINE. It first tries the Reply API (free)
 // using a cached reply token, then falls back to the Push API.
-func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	// Load and consume quote token for this chat
@@ -516,14 +516,14 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 					"chat_id": msg.ChatID,
 					"quoted":  quoteToken != "",
 				})
-				return nil
+				return nil, nil
 			}
 			logger.DebugC("line", "Reply API failed, falling back to Push API")
 		}
 	}
 
 	// Fall back to Push API
-	return c.sendPush(ctx, msg.ChatID, msg.Content, quoteToken)
+	return nil, c.sendPush(ctx, msg.ChatID, msg.Content, quoteToken)
 }
 
 // SendMedia implements the channels.MediaSender interface.

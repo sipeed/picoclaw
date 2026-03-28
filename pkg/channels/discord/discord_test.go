@@ -1,11 +1,15 @@
 package discord
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
+
+	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 )
 
 func TestApplyDiscordProxy_CustomProxy(t *testing.T) {
@@ -87,5 +91,45 @@ func TestApplyDiscordProxy_InvalidProxyURL(t *testing.T) {
 
 	if err = applyDiscordProxy(session, "://bad-proxy"); err == nil {
 		t.Fatal("applyDiscordProxy() expected error for invalid proxy URL, got nil")
+	}
+}
+
+func TestHandleMessage_PreservesReplyToMessageID(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &DiscordChannel{
+		BaseChannel: channels.NewBaseChannel("discord", nil, messageBus, nil),
+		ctx:         context.Background(),
+	}
+
+	session := &discordgo.Session{
+		State: &discordgo.State{
+			Ready: discordgo.Ready{
+				User: &discordgo.User{ID: "bot"},
+			},
+		},
+	}
+
+	ch.handleMessage(session, &discordgo.MessageCreate{
+		Message: &discordgo.Message{
+			ID:        "msg-2",
+			ChannelID: "chan-1",
+			Content:   "hello",
+			Author: &discordgo.User{
+				ID:       "user-1",
+				Username: "alice",
+			},
+			MessageReference: &discordgo.MessageReference{
+				MessageID: "msg-1",
+				ChannelID: "chan-1",
+			},
+		},
+	})
+
+	inbound := <-messageBus.InboundChan()
+	if inbound.MessageID != "msg-2" {
+		t.Fatalf("expected MessageID msg-2, got %q", inbound.MessageID)
+	}
+	if inbound.ReplyToMessageID != "msg-1" {
+		t.Fatalf("expected ReplyToMessageID msg-1, got %q", inbound.ReplyToMessageID)
 	}
 }

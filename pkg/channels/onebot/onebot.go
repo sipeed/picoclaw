@@ -391,15 +391,15 @@ func (c *OneBotChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	// Check ctx before entering write path
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
 
@@ -408,12 +408,12 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	c.mu.Unlock()
 
 	if conn == nil {
-		return fmt.Errorf("OneBot WebSocket not connected")
+		return nil, fmt.Errorf("OneBot WebSocket not connected")
 	}
 
 	action, params, err := c.buildSendRequest(msg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	echo := fmt.Sprintf("send_%d", atomic.AddInt64(&c.echoCounter, 1))
@@ -426,7 +426,7 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 
 	data, err := json.Marshal(req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal OneBot request: %w", err)
+		return nil, fmt.Errorf("failed to marshal OneBot request: %w", err)
 	}
 
 	c.writeMu.Lock()
@@ -439,10 +439,10 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		logger.ErrorCF("onebot", "Failed to send message", map[string]any{
 			"error": err.Error(),
 		})
-		return fmt.Errorf("onebot send: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("onebot send: %w", channels.ErrTemporary)
 	}
 
-	return nil
+	return nil, nil
 }
 
 // SendMedia implements the channels.MediaSender interface.

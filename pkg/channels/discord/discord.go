@@ -128,21 +128,25 @@ func (c *DiscordChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	channelID := msg.ChatID
 	if channelID == "" {
-		return fmt.Errorf("channel ID is empty")
+		return nil, fmt.Errorf("channel ID is empty")
 	}
 
 	if len([]rune(msg.Content)) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return c.sendChunk(ctx, channelID, msg.Content, msg.ReplyToMessageID)
+	msgID, err := c.sendChunk(ctx, channelID, msg.Content, msg.ReplyToMessageID)
+	if err != nil {
+		return nil, err
+	}
+	return []string{msgID}, nil
 }
 
 // SendMedia implements the channels.MediaSender interface.
@@ -264,18 +268,25 @@ func (c *DiscordChannel) SendPlaceholder(ctx context.Context, chatID string) (st
 	return msg.ID, nil
 }
 
-func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content, replyToID string) error {
+func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content, replyToID string) (string, error) {
 	// Use the passed ctx for timeout control
 	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 
-	done := make(chan error, 1)
+	type sendResult struct {
+		id  string
+		err error
+	}
+	done := make(chan sendResult, 1)
 	go func() {
-		var err error
+		var (
+			msg *discordgo.Message
+			err error
+		)
 
 		// If we have an ID, we send the message as "Reply"
 		if replyToID != "" {
-			_, err = c.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+			msg, err = c.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
 				Content: content,
 				Reference: &discordgo.MessageReference{
 					MessageID: replyToID,
@@ -284,20 +295,24 @@ func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content, repl
 			})
 		} else {
 			// Otherwise, we send a normal message
-			_, err = c.session.ChannelMessageSend(channelID, content)
+			msg, err = c.session.ChannelMessageSend(channelID, content)
 		}
 
-		done <- err
+		if err != nil {
+			done <- sendResult{err: err}
+			return
+		}
+		done <- sendResult{id: msg.ID}
 	}()
 
 	select {
-	case err := <-done:
-		if err != nil {
-			return fmt.Errorf("discord send: %w", channels.ErrTemporary)
+	case result := <-done:
+		if result.err != nil {
+			return "", fmt.Errorf("discord send: %w", channels.ErrTemporary)
 		}
-		return nil
+		return result.id, nil
 	case <-sendCtx.Done():
-		return sendCtx.Err()
+		return "", sendCtx.Err()
 	}
 }
 
@@ -456,6 +471,9 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		"guild_id":     m.GuildID,
 		"channel_id":   m.ChannelID,
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
+	}
+	if m.MessageReference != nil && m.MessageReference.MessageID != "" {
+		metadata["reply_to_message_id"] = m.MessageReference.MessageID
 	}
 
 	c.HandleMessage(c.ctx, peer, m.ID, senderID, m.ChannelID, content, mediaPaths, metadata, sender)

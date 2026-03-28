@@ -108,14 +108,14 @@ func (c *SlackChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	channelID, threadTS := parseSlackChatID(msg.ChatID)
 	if channelID == "" {
-		return fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
+		return nil, fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
 	}
 
 	opts := []slack.MsgOption{
@@ -130,9 +130,9 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		opts = append(opts, slack.MsgOptionTS(threadTS))
 	}
 
-	_, _, err := c.api.PostMessageContext(ctx, channelID, opts...)
+	_, ts, err := c.api.PostMessageContext(ctx, channelID, opts...)
 	if err != nil {
-		return fmt.Errorf("slack send: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("slack send: %w", channels.ErrTemporary)
 	}
 
 	if ref, ok := c.pendingAcks.LoadAndDelete(msg.ChatID); ok {
@@ -148,7 +148,7 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		"thread_ts":  threadTS,
 	})
 
-	return nil
+	return []string{ts}, nil
 }
 
 // SendMedia implements the channels.MediaSender interface.
@@ -369,6 +369,9 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		"platform":   "slack",
 		"team_id":    c.teamID,
 	}
+	if threadTS != "" && threadTS != messageTS {
+		metadata["reply_to_message_id"] = threadTS
+	}
 
 	logger.DebugCF("slack", "Received message", map[string]any{
 		"sender_id":  senderID,
@@ -440,6 +443,9 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 		"platform":   "slack",
 		"is_mention": "true",
 		"team_id":    c.teamID,
+	}
+	if threadTS != "" && threadTS != messageTS {
+		metadata["reply_to_message_id"] = threadTS
 	}
 
 	c.HandleMessage(c.ctx, mentionPeer, messageTS, senderID, chatID, content, nil, metadata, mentionSender)

@@ -98,7 +98,12 @@ func (s *multipartRecordingConstructor) MultipartRequest(
 // successResponse returns a ta.Response that telego will treat as a successful SendMessage.
 func successResponse(t *testing.T) *ta.Response {
 	t.Helper()
-	msg := &telego.Message{MessageID: 1}
+	return successResponseWithMessageID(t, 1)
+}
+
+func successResponseWithMessageID(t *testing.T, messageID int) *ta.Response {
+	t.Helper()
+	msg := &telego.Message{MessageID: messageID}
 	b, err := json.Marshal(msg)
 	require.NoError(t, err)
 	return &ta.Response{Ok: true, Result: b}
@@ -231,7 +236,7 @@ func TestSend_EmptyContent(t *testing.T) {
 	}
 	ch := newTestChannel(t, caller)
 
-	err := ch.Send(context.Background(), bus.OutboundMessage{
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "12345",
 		Content: "",
 	})
@@ -248,7 +253,7 @@ func TestSend_ShortMessage_SingleCall(t *testing.T) {
 	}
 	ch := newTestChannel(t, caller)
 
-	err := ch.Send(context.Background(), bus.OutboundMessage{
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "12345",
 		Content: "Hello, world!",
 	})
@@ -271,13 +276,34 @@ func TestSend_LongMessage_SingleCall(t *testing.T) {
 
 	longContent := strings.Repeat("a", 4000)
 
-	err := ch.Send(context.Background(), bus.OutboundMessage{
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "12345",
 		Content: longContent,
 	})
 
 	assert.NoError(t, err)
 	assert.Len(t, caller.calls, 1, "pre-split message within limit should result in one SendMessage call")
+}
+
+func TestSendMessageWithIDs_ReturnsAllChunkIDsAfterHTMLResplit(t *testing.T) {
+	caller := &stubCaller{}
+	caller.callFn = func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+		return successResponseWithMessageID(t, len(caller.calls)), nil
+	}
+	ch := newTestChannel(t, caller)
+
+	chunk := "[x](https://example.com/" + strings.Repeat("a", 20) + ") "
+	content := strings.Repeat(chunk, 120)
+
+	ids, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "12345",
+		Content: content,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, ids, 2)
+	assert.Equal(t, []string{"1", "2"}, ids)
+	assert.Len(t, caller.calls, 2)
 }
 
 func TestSend_HTMLFallback_PerChunk(t *testing.T) {
@@ -294,7 +320,7 @@ func TestSend_HTMLFallback_PerChunk(t *testing.T) {
 	}
 	ch := newTestChannel(t, caller)
 
-	err := ch.Send(context.Background(), bus.OutboundMessage{
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "12345",
 		Content: "Hello **world**",
 	})
@@ -312,7 +338,7 @@ func TestSend_HTMLFallback_BothFail(t *testing.T) {
 	}
 	ch := newTestChannel(t, caller)
 
-	err := ch.Send(context.Background(), bus.OutboundMessage{
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "12345",
 		Content: "Hello",
 	})
@@ -334,7 +360,7 @@ func TestSend_LongMessage_HTMLFallback_StopsOnError(t *testing.T) {
 
 	longContent := strings.Repeat("x", 4001)
 
-	err := ch.Send(context.Background(), bus.OutboundMessage{
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "12345",
 		Content: longContent,
 	})
@@ -364,7 +390,7 @@ func TestSend_MarkdownShortButHTMLLong_MultipleCalls(t *testing.T) {
 		"HTML expansion must exceed Telegram limit for this test to be meaningful",
 	)
 
-	err := ch.Send(context.Background(), bus.OutboundMessage{
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "12345",
 		Content: markdownContent,
 	})
@@ -399,7 +425,7 @@ func TestSend_HTMLOverflow_WordBoundary(t *testing.T) {
 	// Ensure the test content matches the intended boundary conditions.
 	assert.LessOrEqual(t, len([]rune(content)), 4000, "markdown content must not exceed chunk size for this test")
 
-	err := ch.Send(context.Background(), bus.OutboundMessage{
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "123456",
 		Content: content,
 	})
@@ -435,7 +461,7 @@ func TestSend_NotRunning(t *testing.T) {
 	ch := newTestChannel(t, caller)
 	ch.SetRunning(false)
 
-	err := ch.Send(context.Background(), bus.OutboundMessage{
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "12345",
 		Content: "Hello",
 	})
@@ -453,7 +479,7 @@ func TestSend_InvalidChatID(t *testing.T) {
 	}
 	ch := newTestChannel(t, caller)
 
-	err := ch.Send(context.Background(), bus.OutboundMessage{
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "not-a-number",
 		Content: "Hello",
 	})
@@ -510,7 +536,7 @@ func TestSend_WithForumThreadID(t *testing.T) {
 	}
 	ch := newTestChannel(t, caller)
 
-	err := ch.Send(context.Background(), bus.OutboundMessage{
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "-1001234567890/42",
 		Content: "Hello from topic",
 	})
@@ -672,4 +698,38 @@ func TestHandleMessage_EmptyContent_Ignored(t *testing.T) {
 		t.Fatal("Empty message should not be published to message bus")
 	default:
 	}
+}
+
+func TestHandleMessage_ReplyToMessageID_Preserved(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
+		chatIDs:     make(map[string]int64),
+		ctx:         context.Background(),
+	}
+
+	msg := &telego.Message{
+		Text:      "reply in group",
+		MessageID: 30,
+		Chat: telego.Chat{
+			ID:   -100999,
+			Type: "supergroup",
+		},
+		From: &telego.User{
+			ID:        10,
+			FirstName: "Dana",
+		},
+		ReplyToMessage: &telego.Message{
+			MessageID: 25,
+		},
+	}
+
+	err := ch.handleMessage(context.Background(), msg)
+	require.NoError(t, err)
+
+	inbound, ok := <-messageBus.InboundChan()
+	require.True(t, ok)
+	assert.Equal(t, "30", inbound.MessageID)
+	assert.Equal(t, "25", inbound.ReplyToMessageID)
+	assert.Equal(t, "25", inbound.Metadata["reply_to_message_id"])
 }
