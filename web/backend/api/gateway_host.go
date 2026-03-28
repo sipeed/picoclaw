@@ -119,8 +119,8 @@ func (h *Handler) buildWsURL(r *http.Request, cfg *config.Config) string {
 		}
 	}
 
-	// Priority 3: Fall back to the web server port (launcher port)
-	if wsPort == 0 {
+	// Priority 3: Fall back to the web server port if explicitly configured (non-zero)
+	if wsPort == 0 && h.serverPort > 0 {
 		wsPort = h.serverPort
 	}
 
