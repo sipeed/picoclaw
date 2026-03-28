@@ -1,6 +1,6 @@
 # PicoClaw: Ultra-Efficient AI Assistant in Go
 
-This repository is intended for development purposes only.
+CAUTION: This repos is not maintained and should not be used. It has been left here in case the branches are useful to the picoclaw maintainers.
 
 The main project is maintained at [sipeed/picoclaw](https://github.com/sipeed/picoclaw).
 
