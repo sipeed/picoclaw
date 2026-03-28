@@ -70,12 +70,21 @@ WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
 BUILTIN_SKILLS_DIR=$(CURDIR)/skills
 
 # OS detection
+# Git Bash on Windows reports MINGW64_NT-* or MSYS_NT-*
 UNAME_S:=$(shell uname -s)
 UNAME_M:=$(shell uname -m)
 
+# Detect Windows (Git Bash / MSYS2)
+IS_WINDOWS:=$(if $(findstring MINGW,$(UNAME_S)),yes,$(if $(findstring MSYS,$(UNAME_S)),yes,$(if $(findstring CYGWIN,$(UNAME_S)),yes,no)))
+
 # Platform-specific settings
-ifeq ($(UNAME_S),Linux)
+ifeq ($(IS_WINDOWS),yes)
+	PLATFORM=windows
+	ARCH=amd64
+	EXE=.exe
+else ifeq ($(UNAME_S),Linux)
 	PLATFORM=linux
+	EXE=
 	ifeq ($(UNAME_M),x86_64)
 		ARCH=amd64
 	else ifeq ($(UNAME_M),aarch64)
@@ -93,6 +102,7 @@ ifeq ($(UNAME_S),Linux)
 	endif
 else ifeq ($(UNAME_S),Darwin)
 	PLATFORM=darwin
+	EXE=
 	WEB_GO=CGO_ENABLED=1 go
 	ifeq ($(UNAME_M),x86_64)
 		ARCH=amd64
@@ -104,9 +114,10 @@ else ifeq ($(UNAME_S),Darwin)
 else
 	PLATFORM=$(UNAME_S)
 	ARCH=$(UNAME_M)
+	EXE=
 endif
 
-BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
+BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXE)
 
 # Default target
 all: build
@@ -122,9 +133,14 @@ generate:
 build: generate
 	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
+ifeq ($(IS_WINDOWS),yes)
+	@GOOS=windows GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH) ./$(CMD_DIR)
+	@cp $(BINARY_PATH) $(BUILD_DIR)/$(BINARY_NAME)$(EXE)
+else
 	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH) ./$(CMD_DIR)
+	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXE) $(BUILD_DIR)/$(BINARY_NAME)$(EXE)
+endif
 	@echo "Build complete: $(BINARY_PATH)"
-	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
 
 ## build-launcher: Build the picoclaw-launcher (web console) binary
 build-launcher:
@@ -134,9 +150,14 @@ build-launcher:
 		echo "Building frontend..."; \
 		cd web/frontend && pnpm install && pnpm build:backend; \
 	fi
-	@$(WEB_GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH) ./web/backend
-	@ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher
-	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher"
+ifeq ($(IS_WINDOWS),yes)
+	@GOOS=windows GOARCH=amd64 $(WEB_GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXE) ./web/backend
+	@cp $(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXE) $(BUILD_DIR)/picoclaw-launcher$(EXE)
+else
+	@$(WEB_GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXE) ./web/backend
+	@ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXE) $(BUILD_DIR)/picoclaw-launcher$(EXE)
+endif
+	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher$(EXE)"
 
 ## build-launcher-tui: Build the picoclaw-launcher TUI binary
 build-launcher-tui:
@@ -214,17 +235,17 @@ install: build
 	@echo "Installing $(BINARY_NAME)..."
 	@mkdir -p $(INSTALL_BIN_DIR)
 	# Copy binary with temporary suffix to ensure atomic update
-	@cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX)
-	@chmod +x $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX)
-	@mv -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX) $(INSTALL_BIN_DIR)/$(BINARY_NAME)
-	@echo "Installed binary to $(INSTALL_BIN_DIR)/$(BINARY_NAME)"
+	@cp $(BUILD_DIR)/$(BINARY_NAME)$(EXE) $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX)$(EXE)
+	@chmod +x $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX)$(EXE)
+	@mv -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX)$(EXE) $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(EXE)
+	@echo "Installed binary to $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(EXE)"
 	@echo "Installation complete!"
 
 ## uninstall: Remove picoclaw from system
 uninstall:
 	@echo "Uninstalling $(BINARY_NAME)..."
-	@rm -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)
-	@echo "Removed binary from $(INSTALL_BIN_DIR)/$(BINARY_NAME)"
+	@rm -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(EXE)
+	@echo "Removed binary from $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(EXE)"
 	@echo "Note: Only the executable file has been deleted."
 	@echo "If you need to delete all configurations (config.json, workspace, etc.), run 'make uninstall-all'"
 
@@ -279,7 +300,7 @@ check: deps fmt vet test
 
 ## run: Build and run picoclaw
 run: build
-	@$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
+	@$(BUILD_DIR)/$(BINARY_NAME)$(EXE) $(ARGS)
 
 ## docker-build: Build Docker image (minimal Alpine-based)
 docker-build:
