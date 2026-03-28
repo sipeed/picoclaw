@@ -69,11 +69,15 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 
 ### Web launcher dashboard
 
-When you run **picoclaw-launcher** and use the browser UI, you sign in first. The dashboard token and session signing material are **generated in memory each run** (new after every restart); check the terminal output for the token.
+**picoclaw-launcher** serves a browser UI that requires sign-in first. By default, the **dashboard token** and **session signing key** are **generated in memory on each start** (a new random token after every restart). Set **`PICOCLAW_LAUNCHER_TOKEN`** to pin a fixed token for that process (startup logs do not print the secret when this env var is used).
 
-- **Where it lives**: Same folder as `config.json` (or the file pointed to by `PICOCLAW_CONFIG`). The launcher-specific file is named `launcher-config.json`.
-- **Everyday use**: Enter the token on the login page. You can also open a page URL that includes the `token` parameter.
-- **Stable token**: Set `PICOCLAW_LAUNCHER_TOKEN` to use a fixed dashboard token for that process.
+**Where to read the token**: In **console mode** (`-console`), it is printed at startup. In **tray / GUI mode**, use the tray action **Copy dashboard token**, and check **`$PICOCLAW_HOME/logs/launcher.log`** (typically `~/.picoclaw/logs/launcher.log` if `PICOCLAW_HOME` is unset) for the random token logged on startup. The login page shows hints that match how the launcher is running (including the absolute log path); **responses do not include the token itself**.
+
+- **Config file**: Same directory as `config.json` (or the file pointed to by `PICOCLAW_CONFIG`). The launcher-specific file is `launcher-config.json`.
+- **Sign-in and links**: Enter the token on the login page, or open with `?token=` when the browser is launched automatically. All responses include **`Referrer-Policy: no-referrer`** to reduce leakage of `token` via the `Referer` header.
+- **Sign-out**: Use **`POST /api/auth/logout`** with **`Content-Type: application/json`** (body may be `{}`). Do not rely on a GET URL for logout (CSRF-safe pattern).
+- **Brute-force**: **`POST /api/auth/login`** is **rate-limited per client IP per minute** (HTTP 429 when exceeded).
+- **Session lifetime**: The HttpOnly session cookie lasts about **7 days** by default; sign in again with the token after it expires.
 
 ### Skill Sources
 

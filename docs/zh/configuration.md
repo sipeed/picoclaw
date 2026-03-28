@@ -53,11 +53,15 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 ### Web 启动器控制台
 
-用 **picoclaw-launcher** 在浏览器里打开控制台时，需要先登录。访问口令与浏览器会话签名密钥均在**每次启动时在内存中重新生成**（重启后口令会变）；请查看启动时终端输出的口令。
+用 **picoclaw-launcher** 打开浏览器控制台前需要先登录。**访问口令**与 **会话签名密钥**默认在**每次启动时在内存中生成**（重启后随机口令会变）。若设置环境变量 **`PICOCLAW_LAUNCHER_TOKEN`**，则该进程使用固定口令（启动日志中不会打印具体口令值）。
 
-- **文件在哪**：与 `config.json` 同一目录（若设置了 `PICOCLAW_CONFIG`，则与它所指的文件同目录）。启动器专用配置的文件名是 `launcher-config.json`。
-- **平时怎么用**：在浏览器里按登录页提示输入口令即可；也支持在页面链接里带上`token`参数。
-- **固定口令**：可通过环境变量 `PICOCLAW_LAUNCHER_TOKEN` 为当前进程指定口令。
+**到哪里找口令**：**控制台模式**（`-console`）请看启动时的终端输出；**托盘 / GUI 模式**可使用托盘菜单中的「复制控制台口令」，并在 **`$PICOCLAW_HOME/logs/launcher.log`**（未设置 `PICOCLAW_HOME` 时一般为 `~/.picoclaw/logs/launcher.log`）中查看本次启动写入的随机口令。登录页在未登录时会根据当前运行方式展示提示（含日志文件绝对路径等；**接口与页面均不会返回口令本身**）。
+
+- **配置文件**：与 `config.json` 同一目录（若设置了 `PICOCLAW_CONFIG`，则与它所指的文件同目录）。启动器专用文件名为 `launcher-config.json`。
+- **登录与链接**：在登录页输入口令；自动打开浏览器时可在 URL 上使用 `?token=`。全站响应携带 **`Referrer-Policy: no-referrer`**，减轻 `token` 经 `Referer` 头泄露的风险。
+- **退出登录**：应使用 **`POST /api/auth/logout`**，且请求头为 **`Content-Type: application/json`**（请求体可为 `{}`），勿使用可被第三方页面触发的 GET 链接登出。
+- **暴力尝试**：`POST /api/auth/login` 对同一远程地址有 **每分钟尝试次数上限**（超限返回 HTTP 429）。
+- **会话时长**：登录后的 HttpOnly 会话 Cookie 默认约 **7 天**有效，到期需重新用口令登录。
 
 ### 技能来源 (Skill Sources)
 
