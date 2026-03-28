@@ -461,7 +461,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				if target == nil {
 					cancelDrain()
 					if finalResponse != "" {
-						al.publishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, finalResponse)
+						al.PublishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, finalResponse)
 					}
 					return
 				}
@@ -521,7 +521,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				}
 
 				if finalResponse != "" {
-					al.publishResponseIfNeeded(ctx, target.Channel, target.ChatID, finalResponse)
+					al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, finalResponse)
 				}
 			}()
 		}
@@ -603,7 +603,7 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
-func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
+func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
 	if response == "" {
 		return
 	}
