@@ -46,20 +46,23 @@ func supportsAudioTranscription(model string) bool {
 func DetectTranscriber(cfg *config.Config) Transcriber {
 	if modelName := strings.TrimSpace(cfg.Voice.ModelName); modelName != "" {
 		modelCfg, err := cfg.GetModelConfig(modelName)
-		if err != nil {
-			return nil
-		}
-		if supportsAudioTranscription(modelCfg.Model) {
-			return NewAudioModelTranscriber(modelCfg)
+		if err == nil {
+			protocol, _ := providers.ExtractProtocol(modelCfg.Model)
+			if protocol == "elevenlabs" && modelCfg.APIKey() != "" {
+				return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase)
+			}
+			if supportsAudioTranscription(modelCfg.Model) {
+				return NewAudioModelTranscriber(modelCfg)
+			}
 		}
 	}
 
-	// ElevenLabs voice config (supports Scribe STT).
-	if key := strings.TrimSpace(cfg.Voice.ElevenLabsAPIKey); key != "" {
-		return NewElevenLabsTranscriber(key)
-	}
-	// Fall back to any model-list entry that uses the groq/ protocol.
+	// Fall back to scanning ModelList for suitable ASR providers
 	for _, mc := range cfg.ModelList {
+		protocol, _ := providers.ExtractProtocol(mc.Model)
+		if protocol == "elevenlabs" && mc.APIKey() != "" {
+			return NewElevenLabsTranscriber(mc.APIKey(), mc.APIBase)
+		}
 		if (strings.HasPrefix(mc.Model, "groq/") || mc.ModelName == "groq" || mc.Model == "whisper-large-v3-turbo") &&
 			mc.APIKey() != "" {
 			return NewGroqTranscriber(mc.APIKey())

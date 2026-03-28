@@ -19,6 +19,12 @@ type TTSProvider interface {
 }
 
 func DetectTTS(cfg *config.Config) TTSProvider {
+	if modelName := strings.TrimSpace(cfg.Voice.TTSModelName); modelName != "" {
+		if mc, err := cfg.GetModelConfig(modelName); err == nil && mc.APIKey() != "" {
+			return NewOpenAITTSProvider(mc.APIKey(), mc.APIBase, mc.Proxy)
+		}
+	}
+
 	for _, mc := range cfg.ModelList {
 		if strings.Contains(strings.ToLower(mc.Model), "tts") && mc.APIKey() != "" {
 			return NewOpenAITTSProvider(mc.APIKey(), mc.APIBase, mc.Proxy)
