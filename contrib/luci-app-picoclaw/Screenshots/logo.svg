@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e88e5;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1565c0;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="claw" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e3f2fd;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="60" cy="60" r="56" fill="url(#bg)" />
+  <!-- Pico Claw icon -->
+  <g transform="translate(60,55)">
+    <!-- Body -->
+    <ellipse cx="0" cy="5" rx="22" ry="18" fill="url(#claw)" opacity="0.95"/>
+    <!-- Eyes -->
+    <circle cx="-8" cy="-2" r="4" fill="#1e88e5"/>
+    <circle cx="8" cy="-2" r="4" fill="#1e88e5"/>
+    <circle cx="-7" cy="-3" r="1.5" fill="white"/>
+    <circle cx="9" cy="-3" r="1.5" fill="white"/>
+    <!-- Antenna -->
+    <line x1="0" y1="-13" x2="0" y2="-28" stroke="url(#claw)" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="0" cy="-30" r="4" fill="#ff7043"/>
+    <!-- Claws left -->
+    <path d="M-18,10 Q-28,0 -24,-8" stroke="url(#claw)" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M-16,14 Q-30,8 -28,-2" stroke="url(#claw)" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <!-- Claws right -->
+    <path d="M18,10 Q28,0 24,-8" stroke="url(#claw)" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M16,14 Q30,8 28,-2" stroke="url(#claw)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  </g>
+  <!-- OpenWrt text hint -->
+  <text x="60" y="98" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" font-weight="bold" fill="white" opacity="0.8">OpenWrt</text>
+</svg>

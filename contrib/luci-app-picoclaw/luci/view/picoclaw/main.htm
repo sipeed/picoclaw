@@ -1,0 +1,810 @@
+<%+header%>
+<style>
+.pc{max-width:960px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.pc-card{background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:20px 24px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.pc-status{display:flex;align-items:center;gap:14px;padding:16px;border-radius:8px;flex-wrap:wrap}
+.pc-status.run{background:#e8f5e9}.pc-status.stop{background:#ffebee}
+.dot{width:14px;height:14px;border-radius:50%}
+.dot.on{background:#4caf50;box-shadow:0 0 8px #4caf50}.dot.off{background:#f44336}
+.pc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-top:14px}
+.pc-metric{text-align:center;padding:12px;background:#f8f9fa;border-radius:6px}
+.pc-metric .val{font-size:22px;font-weight:700;color:#333}
+.pc-metric .lbl{font-size:12px;color:#888;margin-top:4px}
+.pc-btn{display:inline-block;padding:7px 18px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;margin:2px;transition:all .2s;text-decoration:none;color:#fff}
+.pc-btn:active{transform:scale(.97)}.pc-btn:hover{box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.pc-btn.green{background:#43a047}.pc-btn.orange{background:#ef6c00}
+.pc-btn.blue{background:#1e88e5}.pc-btn.purple{background:#8e24aa}
+.pc-btn.gray{background:#616161}.pc-btn:visited{color:#fff}
+.pc-tabs{display:flex;border-bottom:2px solid #e0e0e0;margin-bottom:0}
+.pc-tab{padding:10px 20px;cursor:pointer;font-size:14px;color:#888;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
+.pc-tab.act{color:#1976d2;border-bottom-color:#1976d2;font-weight:600}
+.pc-tab:hover{color:#1976d2}
+.pc-panel{display:none;padding-top:16px}.pc-panel.act{display:block}
+.ch-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0}
+.ch-row:last-child{border:none}
+.ch-name{font-size:14px;font-weight:500}
+.badge{display:inline-block;padding:3px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.badge-on{background:#c8e6c9;color:#2e7d32}.badge-off{background:#ffcdd2;color:#c62828}
+.cfg-section{margin-bottom:20px}.cfg-section:last-child{margin-bottom:0}
+.cfg-section-head{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;padding:12px 16px;background:#f5f7fa;border-radius:8px;margin-bottom:2px;transition:background .2s}
+.cfg-section-head:hover{background:#eef1f6}
+.cfg-section-head .icon{font-size:18px;width:28px;text-align:center;flex-shrink:0}
+.cfg-section-head h4{margin:0;font-size:15px;font-weight:600;color:#333;flex:1}
+.cfg-section-head .arrow{font-size:12px;color:#999;transition:transform .2s}
+.cfg-section.closed .arrow{transform:rotate(-90deg)}
+.cfg-section-body{padding:14px 16px;border:1px solid #eee;border-top:none;border-radius:0 0 8px 8px;background:#fafbfc}
+.cfg-section.closed .cfg-section-body{display:none}
+.cfg-row{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid #f0f0f0}
+.cfg-row:last-child{border-bottom:none}
+.cfg-label{flex:0 0 160px;font-size:13px;color:#555;padding-top:6px;line-height:1.4}
+.cfg-label small{display:block;font-size:11px;color:#999;margin-top:2px}
+.cfg-field{flex:1;min-width:0}
+.cfg-input{width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;transition:border-color .2s,box-shadow .2s;background:#fff}
+.cfg-input:focus{outline:none;border-color:#1976d2;box-shadow:0 0 0 3px rgba(25,118,210,.1)}
+.cfg-input-sm{width:200px}.cfg-input-xs{width:80px}
+.toggle-wrap{display:flex;align-items:center;gap:10px;padding-top:4px}
+.toggle{position:relative;width:44px;height:24px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#ccc;border-radius:24px;transition:all .25s}
+.toggle .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:all .25s}
+.toggle input:checked+.slider{background:#1976d2}
+.toggle input:checked+.slider:before{transform:translateX(20px)}
+.toggle-label{font-size:13px;color:#666;transition:color .2s}
+.toggle-label.on{color:#2e7d32}.toggle-label.off{color:#999}
+.cfg-mode-bar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.mode-label{font-size:13px;color:#666;font-weight:600}
+.cfg-mode-btns{display:flex;gap:6px}
+.cfg-mode-btn{padding:6px 16px;border:2px solid #e0e0e0;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;color:#666;transition:all .2s}
+.cfg-mode-btn.act{border-color:#1976d2;color:#1976d2;background:#e3f2fd;font-weight:600}
+.cfg-mode-btn:hover{border-color:#90caf9}
+.pc-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.pc-editor{width:100%;min-height:400px;font-family:'Courier New',monospace;font-size:13px;padding:12px;border:1px solid #ddd;border-radius:8px;box-sizing:border-box;resize:vertical;background:#fafbfc}
+.pc-log{background:#1e1e1e;color:#d4d4d4;padding:14px;border-radius:8px;font-family:'Courier New',monospace;font-size:12px;max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6}
+.update-banner{display:flex;align-items:center;gap:14px;padding:14px;border-radius:8px;margin-bottom:14px}
+.update-banner.available{background:#fff3e0}.update-banner.latest{background:#e8f5e9}.update-banner.error{background:#f5f5f5}
+.update-icon{font-size:28px;flex-shrink:0}
+.update-text{flex:1}.update-text strong{display:block;font-size:14px}.update-text .detail{font-size:12px;color:#666;margin-top:2px}
+.ver-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
+.ver-row:last-child{border:none}
+.ver-row .label{color:#888}.ver-row .value{color:#333;font-weight:500}
+.flash-ok{padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px}
+.flash-ok.flash-ok{background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9}
+.flash-ok.flash-err{background:#ffebee;color:#c62828;border:1px solid #ffcdd2}
+.lang-bar{display:flex;gap:4px}
+.lang-btn{padding:4px 10px;border:1px solid #e0e0e0;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;color:#888;transition:all .15s}
+.lang-btn.act{background:#1976d2;color:#fff;border-color:#1976d2}
+.lang-btn:hover{border-color:#90caf9}
+</style>
+<%
+local flash_msg = flash_msg or ""
+local flash_ok = flash_ok or "1"
+if flash_msg ~= "" then
+%>
+<div class="pc-card" style="padding:0">
+<div class="<% if flash_ok == "1" then %>flash-ok<% else %>flash-err<% end %>">
+  <% if flash_ok == "1" then %>&#10003;<% else %>&#9888;<% end %> <%=flash_msg%>
+</div>
+</div>
+<% end %>
+
+<div class="pc">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+  <h2 style="margin:0;font-size:20px;font-weight:700;color:#333">PicoClaw AI</h2>
+  <div class="lang-bar">
+    <button class="lang-btn act" onclick="setLang('zh')">中文</button>
+    <button class="lang-btn" onclick="setLang('en')">EN</button>
+    <button class="lang-btn" onclick="setLang('ja')">日本語</button>
+    <button class="lang-btn" onclick="setLang('pt')">PT</button>
+    <button class="lang-btn" onclick="setLang('de')">DE</button>
+  </div>
+</div>
+
+<!-- Version Card -->
+<div class="pc-card">
+  <h3 data-i18n="version_info">版本信息</h3>
+  <% if has_update then %>
+  <div class="update-banner available">
+    <div class="update-icon">&#128679;</div>
+    <div class="update-text">
+      <strong data-i18n="update_available">发现新版本</strong>
+      <div class="detail">v<%=cur_ver%> → v<%=latest_ver%></div>
+    </div>
+    <form method="post" action="<%=action_url%>" style="display:inline;flex-shrink:0">
+      <input type="hidden" name="action" value="update">
+      <button type="submit" class="pc-btn purple" onclick="return confirm(I('confirm_update'))" data-i18n="update_now">立即更新</button>
+    </form>
+  </div>
+  <% elseif latest_ver ~= "" and not has_update then %>
+  <div class="update-banner latest">
+    <div class="update-icon">&#9989;</div>
+    <div class="update-text">
+      <strong data-i18n="latest_version">已是最新版本</strong>
+      <div class="detail">v<%=cur_ver%></div>
+    </div>
+  </div>
+  <% elseif check_err ~= "" then %>
+  <div class="update-banner error">
+    <div class="update-icon">&#128268;</div>
+    <div class="update-text">
+      <strong data-i18n="check_failed">版本检测中...</strong>
+      <div class="detail">v<%=cur_ver%></div>
+    </div>
+  </div>
+  <% end %>
+  <div class="ver-row"><span class="label" data-i18n="current_version">当前版本</span><span class="value">v<%=cur_ver%></span></div>
+  <% if git_commit ~= "" then %>
+  <div class="ver-row"><span class="label">Git Commit</span><span class="value" style="font-family:monospace;font-size:13px"><%=git_commit%></span></div>
+  <% end %>
+  <% if build_time ~= "" then %>
+  <div class="ver-row"><span class="label" data-i18n="build_time">构建时间</span><span class="value"><%=build_time%></span></div>
+  <% end %>
+  <% if latest_ver ~= "" then %>
+  <div class="ver-row"><span class="label" data-i18n="latest_ver_label">最新版本</span><span class="value">v<%=latest_ver%></span></div>
+  <% end %>
+</div>
+
+<!-- Status Card -->
+<div class="pc-card">
+  <h3 data-i18n="service_status">服务状态</h3>
+  <div class="pc-status <% if running then %>run<% else %>stop<% end %>">
+    <div class="dot <% if running then %>on<% else %>off<% end %>"></div>
+    <div>
+      <strong style="font-size:16px"><% if running then %><span data-i18n="running">运行中</span><% else %><span data-i18n="stopped">已停止</span><% end %></strong>
+      <div style="font-size:12px;color:#666;margin-top:2px">
+        <% if running then %>PID: <%=pid%> | Port 18790: <% if port_active then %><span data-i18n="normal">正常</span><% else %><span data-i18n="abnormal">异常</span><% end %><% else %><span data-i18n="service_not_running">服务未运行</span><% end %>
+      </div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <form method="post" action="<%=action_url%>" style="display:inline"><input type="hidden" name="action" value="start"><button type="submit" class="pc-btn green" data-i18n="start">启动</button></form>
+      <form method="post" action="<%=action_url%>" style="display:inline"><input type="hidden" name="action" value="stop"><button type="submit" class="pc-btn orange" data-i18n="stop">停止</button></form>
+      <form method="post" action="<%=action_url%>" style="display:inline"><input type="hidden" name="action" value="restart"><button type="submit" class="pc-btn blue" data-i18n="restart">重启</button></form>
+      <div style="width:1px;height:24px;background:#ddd;margin:0 4px"></div>
+      <% if autostart then %>
+      <form method="post" action="<%=action_url%>" style="display:inline"><input type="hidden" name="action" value="autostart_off"><button type="submit" class="pc-btn" style="background:#e8f5e9;color:#2e7d32;border-color:#c8e6c9" data-i18n="autostart_on">&#9889; 开机自启: 开</button></form>
+      <% else %>
+      <form method="post" action="<%=action_url%>" style="display:inline"><input type="hidden" name="action" value="autostart_on"><button type="submit" class="pc-btn gray" data-i18n="autostart_off">&#9889; 开机自启: 关</button></form>
+      <% end %>
+    </div>
+  </div>
+  <div class="pc-grid">
+    <div class="pc-metric"><div class="val"><%=memory_mb%></div><div class="lbl" data-i18n="memory_mb">内存 (MB)</div></div>
+    <div class="pc-metric"><div class="val"><%=pid%></div><div class="lbl" data-i18n="process_id">进程 ID</div></div>
+    <div class="pc-metric"><div class="val"><% if port_active then %><span data-i18n="normal">正常</span><% else %><span data-i18n="abnormal">异常</span><% end %></div><div class="lbl" data-i18n="port_18790">端口 18790</div></div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="pc-card" style="padding:0;overflow:hidden">
+  <div class="pc-tabs" style="padding:0 24px">
+    <button class="pc-tab act" onclick="switchTab('channels',this)" data-i18n="tab_channels">通道列表</button>
+    <button class="pc-tab" onclick="switchTab('config',this)" data-i18n="tab_config">配置编辑</button>
+    <button class="pc-tab" onclick="switchTab('logs',this)" data-i18n="tab_logs">系统日志</button>
+  </div>
+
+  <!-- Channels Panel -->
+  <div class="pc-panel act" id="panel-channels" style="padding:16px 24px 24px">
+    <div id="channels-list"></div>
+  </div>
+
+  <!-- Config Panel -->
+  <div class="pc-panel" id="panel-config" style="padding:16px 24px 24px">
+    <div class="cfg-mode-bar">
+      <span class="mode-label" data-i18n="select_mode">选择编辑模式：</span>
+      <div class="cfg-mode-btns">
+        <button class="cfg-mode-btn act" onclick="switchCfgMode('form',this)">&#127968; <span data-i18n="mode_form">表单模式</span></button>
+        <button class="cfg-mode-btn" onclick="switchCfgMode('json',this)">{ } <span data-i18n="mode_json">JSON 模式</span></button>
+      </div>
+    </div>
+
+    <!-- Form Mode -->
+    <div id="cfg-form-mode">
+      <form id="config-form" method="post" action="<%=action_url%>">
+        <input type="hidden" name="action" value="save_form_config">
+        <input type="hidden" name="config" id="form-config-json" value="">
+
+        <!-- AI Model Section -->
+        <div class="cfg-section">
+          <div class="cfg-section-head" onclick="toggleSection(this)">
+            <span class="icon">&#129302;</span>
+            <h4 data-i18n="sec_ai_model">AI 模型配置</h4>
+            <span class="arrow">&#9660;</span>
+          </div>
+          <div class="cfg-section-body">
+            <div class="cfg-row">
+              <div class="cfg-label" data-i18n="lbl_provider">AI 提供商<small>provider</small></div>
+              <div class="cfg-field"><select class="cfg-input cfg-input-sm" data-path="agents.defaults.provider">
+                <option value="zhipu">Zhipu / 智谱</option>
+                <option value="openai">OpenAI</option>
+                <option value="chatgpt">ChatGPT / OpenAI GPT</option>
+                <option value="claude">Claude / Anthropic</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="ollama">Ollama</option>
+                <option value="azure">Azure OpenAI</option>
+              </select></div>
+            </div>
+            <div class="cfg-row">
+              <div class="cfg-label" data-i18n="lbl_model">模型名称<small>model_name</small></div>
+              <div class="cfg-field"><input type="text" class="cfg-input cfg-input-sm" data-path="agents.defaults.model_name" placeholder="glm-4-air"></div>
+            </div>
+            <div class="cfg-row">
+              <div class="cfg-label" data-i18n="lbl_max_tokens">Token 上限<small>max_tokens</small></div>
+              <div class="cfg-field"><input type="number" class="cfg-input cfg-input-xs" data-path="agents.defaults.max_tokens" min="100" max="200000"></div>
+            </div>
+            <div class="cfg-row">
+              <div class="cfg-label" data-i18n="lbl_tool_iters">迭代次数<small>max_tool_iterations</small></div>
+              <div class="cfg-field"><input type="number" class="cfg-input cfg-input-xs" data-path="agents.defaults.max_tool_iterations" min="1" max="50"></div>
+            </div>
+            <div class="cfg-row">
+              <div class="cfg-label" data-i18n="lbl_steering">并发模式<small>steering_mode</small></div>
+              <div class="cfg-field"><select class="cfg-input cfg-input-sm" data-path="steering_mode">
+                <option value="one-at-a-time">one-at-a-time</option>
+                <option value="parallel">parallel</option>
+              </select></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Channels Section -->
+        <div class="cfg-section">
+          <div class="cfg-section-head" onclick="toggleSection(this)">
+            <span class="icon">&#128225;</span>
+            <h4 data-i18n="sec_channels">通道管理</h4>
+            <span class="arrow">&#9660;</span>
+          </div>
+          <div class="cfg-section-body" id="channels-form-body"></div>
+        </div>
+
+        <!-- Providers Section -->
+        <div class="cfg-section">
+          <div class="cfg-section-head" onclick="toggleSection(this)">
+            <span class="icon">&#128273;</span>
+            <h4 data-i18n="sec_providers">API 密钥与提供商</h4>
+            <span class="arrow">&#9660;</span>
+          </div>
+          <div class="cfg-section-body" id="providers-form-body"></div>
+        </div>
+
+        <!-- System Section -->
+        <div class="cfg-section">
+          <div class="cfg-section-head" onclick="toggleSection(this)">
+            <span class="icon">&#9881;</span>
+            <h4 data-i18n="sec_system">系统设置</h4>
+            <span class="arrow">&#9660;</span>
+          </div>
+          <div class="cfg-section-body" id="system-form-body"></div>
+        </div>
+
+        <!-- Tools Section -->
+        <div class="cfg-section closed">
+          <div class="cfg-section-head" onclick="toggleSection(this)">
+            <span class="icon">&#128295;</span>
+            <h4 data-i18n="sec_tools">工具与功能</h4>
+            <span class="arrow">&#9660;</span>
+          </div>
+          <div class="cfg-section-body" id="tools-form-body"></div>
+        </div>
+
+        <div class="pc-actions">
+          <button type="button" class="pc-btn green" onclick="saveFormConfig()" data-i18n="save_restart">&#128190; 保存并重启</button>
+          <button type="button" class="pc-btn gray" onclick="loadFormFromJSON()" data-i18n="reset_form">&#128260; 重置</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- JSON Mode -->
+    <div id="cfg-json-mode" style="display:none">
+      <form method="post" action="<%=action_url%>">
+        <input type="hidden" name="action" value="save_config">
+        <textarea name="config" class="pc-editor" id="json-editor"><%=config_content%></textarea>
+        <div class="pc-actions">
+          <button type="submit" class="pc-btn green" onclick="return confirm(I('confirm_save'))">&#128190; <span data-i18n="save_restart">保存并重启</span></button>
+          <button type="button" class="pc-btn blue" onclick="formatJSON()">&#128221; <span data-i18n="format_json">格式化</span></button>
+          <button type="button" class="pc-btn gray" onclick="loadJSONFromForm()">&#128260; <span data-i18n="sync_from_form">从表单同步</span></button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Logs Panel -->
+  <div class="pc-panel" id="panel-logs" style="padding:16px 24px 24px">
+    <div class="pc-log"><% if logs and logs ~= "" then %><%=logs%><% else %><span data-i18n="no_logs">暂无 picoclaw 日志</span><% end %></div>
+    <div style="margin-top:8px"><a href="<%=action_url%>" class="pc-btn blue" data-i18n="refresh_logs">刷新日志</a></div>
+  </div>
+</div>
+</div>
+
+<script>
+var _origConfig = <%=config_raw or "{}"%>;
+var _curLang = localStorage.getItem('pc_lang') || 'zh';
+
+// ========== i18n ==========
+var T = {
+zh: {
+  version_info:"版本信息", current_version:"当前版本", build_time:"构建时间", latest_ver_label:"最新版本",
+  latest_version:"已是最新版本", update_available:"发现新版本", update_now:"立即更新",
+  confirm_update:"确定要更新 PicoClaw 吗？更新过程中服务会短暂中断。",
+  check_failed:"版本检测中...", service_status:"服务状态", running:"运行中", stopped:"已停止",
+  service_not_running:"服务未运行", start:"启动", stop:"停止", restart:"重启", normal:"正常", abnormal:"异常",
+  autostart_on:"开机自启: 开", autostart_off:"开机自启: 关",
+  memory_mb:"内存 (MB)", process_id:"进程 ID", port_18790:"端口 18790",
+  tab_channels:"通道列表", tab_config:"配置编辑", tab_logs:"系统日志",
+  select_mode:"选择编辑模式：", mode_form:"表单模式", mode_json:"JSON 模式",
+  save_restart:"保存并重启", reset_form:"重置", format_json:"格式化", sync_from_form:"从表单同步",
+  no_logs:"暂无 picoclaw 日志", refresh_logs:"刷新日志",
+  enabled:"已启用", disabled:"已禁用", no_channels:"暂无配置的通道",
+  sec_ai_model:"AI 模型配置", lbl_provider:"AI 提供商", lbl_model:"模型名称",
+  lbl_max_tokens:"Token 上限", lbl_tool_iters:"迭代次数", lbl_steering:"并发模式",
+  sec_channels:"通道管理", sec_providers:"API 密钥与提供商", sec_system:"系统设置", sec_tools:"工具与功能",
+  confirm_save:"确定保存配置并重启 PicoClaw？", json_error:"JSON 错误：",
+  ch_feishu:"飞书", ch_telegram:"Telegram", ch_discord:"Discord", ch_wecom:"企业微信",
+  ch_weixin:"微信个人号", ch_slack:"Slack", ch_qq:"QQ", ch_line:"LINE",
+  ch_dingtalk:"钉钉", ch_whatsapp:"WhatsApp", ch_maixcam:"MaixCam", ch_wechat_work:"企业微信(WeCom)",
+  tl_feishu:"飞书机器人", tl_telegram:"Telegram Bot", tl_discord:"Discord Bot",
+  tl_wecom:"企业微信(WeCom Bot)", tl_weixin:"微信个人号（需扫码授权）",
+  tl_slack:"Slack Bot", tl_qq:"QQ Bot", tl_line:"LINE Bot",
+  tl_dingtalk:"钉钉机器人", tl_whatsapp:"WhatsApp", tl_maixcam:"MaixCam 设备",
+  tl_wechat_work:"企业微信", tl_pico:"Pico 协议", tl_pico_client:"Pico 客户端",
+  lbl_listen:"监听地址", lbl_heartbeat:"心跳检测", lbl_heartbeat_interval:"心跳间隔 (秒)",
+  lbl_media_cleanup:"媒体清理", lbl_session_scope:"会话作用域",
+  tl_heartbeat:"启用心跳", tl_media_cleanup:"自动清理过期媒体文件",
+  scope_per_peer:"per-channel-peer", scope_per_channel:"per-channel", scope_global:"global",
+  lbl_exec:"命令执行", lbl_exec_timeout:"执行超时 (秒)", lbl_exec_remote:"远程执行",
+  lbl_cron:"定时任务", lbl_cron_timeout:"Cron 超时 (分)", lbl_web_fetch:"网页抓取",
+  lbl_file_rw:"文件读写", lbl_skills:"技能系统", lbl_mcp:"MCP", lbl_subagent:"子代理",
+  tl_exec:"允许 AI 执行命令", tl_exec_remote:"允许远程执行",
+  tl_cron:"启用定时任务", tl_web_fetch:"启用网页抓取",
+  tl_read_file:"允许读取文件", tl_write_file:"允许写入文件",
+  tl_skills:"启用技能系统", tl_mcp:"启用 MCP", tl_subagent:"启用子代理",
+  lbl_api_key:"API Key", lbl_base_url:"Base URL", ph_api_key:"粘贴 API Key", ph_optional:"可选",
+  save_confirm:"确定保存配置并重启 PicoClaw？",
+  weixin_guide_title:"微信个人号接入", weixin_not_connected:"尚未接入微信",
+  weixin_authorized_not_enabled:"已授权，但通道未启用", weixin_go_enable:"前往启用",
+  weixin_connected:"微信已连接"
+},
+en: {
+  version_info:"Version Info", current_version:"Current Version", build_time:"Build Time", latest_ver_label:"Latest Version",
+  latest_version:"Up to date", update_available:"New version available", update_now:"Update Now",
+  confirm_update:"Update PicoClaw? Service will restart briefly.",
+  check_failed:"Checking for updates...", service_status:"Service Status", running:"Running", stopped:"Stopped",
+  service_not_running:"Service not running", start:"Start", stop:"Stop", restart:"Restart", normal:"OK", abnormal:"Error",
+  autostart_on:"Auto-start: ON", autostart_off:"Auto-start: OFF",
+  memory_mb:"Memory (MB)", process_id:"Process ID", port_18790:"Port 18790",
+  tab_channels:"Channels", tab_config:"Config Editor", tab_logs:"System Logs",
+  select_mode:"Mode:", mode_form:"Form", mode_json:"JSON",
+  save_restart:"Save & Restart", reset_form:"Reset", format_json:"Format", sync_from_form:"Sync from Form",
+  no_logs:"No picoclaw logs", refresh_logs:"Refresh Logs",
+  enabled:"Enabled", disabled:"Disabled", no_channels:"No channels configured",
+  sec_ai_model:"AI Model", lbl_provider:"AI Provider", lbl_model:"Model Name",
+  lbl_max_tokens:"Max Tokens", lbl_tool_iters:"Max Tool Iterations", lbl_steering:"Steering Mode",
+  sec_channels:"Channel Management", sec_providers:"API Keys & Providers", sec_system:"System Settings", sec_tools:"Tools & Features",
+  confirm_save:"Save config and restart PicoClaw?", json_error:"JSON Error: ",
+  ch_feishu:"Feishu", ch_telegram:"Telegram", ch_discord:"Discord", ch_wecom:"WeCom Bot",
+  ch_weixin:"WeChat", ch_slack:"Slack", ch_qq:"QQ", ch_line:"LINE",
+  ch_dingtalk:"DingTalk", ch_whatsapp:"WhatsApp", ch_maixcam:"MaixCam", ch_wechat_work:"WeCom",
+  tl_feishu:"Feishu Bot", tl_telegram:"Telegram Bot", tl_discord:"Discord Bot",
+  tl_wecom:"WeCom Bot", tl_weixin:"WeChat Personal (QR auth needed)",
+  tl_slack:"Slack Bot", tl_qq:"QQ Bot", tl_line:"LINE Bot",
+  tl_dingtalk:"DingTalk Bot", tl_whatsapp:"WhatsApp", tl_maixcam:"MaixCam Device",
+  tl_wechat_work:"WeCom Bot", tl_pico:"Pico Protocol", tl_pico_client:"Pico Client",
+  lbl_listen:"Listen Address", lbl_heartbeat:"Heartbeat", lbl_heartbeat_interval:"Heartbeat Interval (s)",
+  lbl_media_cleanup:"Media Cleanup", lbl_session_scope:"Session Scope",
+  tl_heartbeat:"Enable heartbeat", tl_media_cleanup:"Auto cleanup expired media",
+  scope_per_peer:"per-channel-peer", scope_per_channel:"per-channel", scope_global:"global",
+  lbl_exec:"Command Exec", lbl_exec_timeout:"Exec Timeout (s)", lbl_exec_remote:"Remote Exec",
+  lbl_cron:"Cron Jobs", lbl_cron_timeout:"Cron Timeout (min)", lbl_web_fetch:"Web Fetch",
+  lbl_file_rw:"File Read/Write", lbl_skills:"Skills", lbl_mcp:"MCP", lbl_subagent:"Subagent",
+  tl_exec:"Allow AI to execute commands", tl_exec_remote:"Allow remote execution",
+  tl_cron:"Enable cron jobs", tl_web_fetch:"Enable web fetch",
+  tl_read_file:"Enable file read", tl_write_file:"Enable file write",
+  tl_skills:"Enable skills", tl_mcp:"Enable MCP", tl_subagent:"Enable subagent",
+  lbl_api_key:"API Key", lbl_base_url:"Base URL", ph_api_key:"Paste API Key", ph_optional:"Optional",
+  save_confirm:"Save config and restart PicoClaw?",
+  weixin_guide_title:"WeChat Setup", weixin_not_connected:"WeChat not connected",
+  weixin_authorized_not_enabled:"Authorized but channel disabled", weixin_go_enable:"Enable",
+  weixin_connected:"WeChat Connected"
+},
+ja: {
+  version_info:"バージョン情報", current_version:"現在のバージョン", build_time:"ビルド時間", latest_ver_label:"最新バージョン",
+  latest_version:"最新です", update_available:"新バージョンあり", update_now:"今すぐ更新",
+  confirm_update:"PicoClawを更新しますか？サービスが一時的に再起動します。",
+  check_failed:"更新確認中...", service_status:"サービス状態", running:"実行中", stopped:"停止",
+  service_not_running:"サービス未実行", start:"起動", stop:"停止", restart:"再起動", normal:"正常", abnormal:"異常",
+  autostart_on:"自動起動: ON", autostart_off:"自動起動: OFF",
+  memory_mb:"メモリ (MB)", process_id:"プロセス ID", port_18790:"ポート 18790",
+  tab_channels:"チャンネル一覧", tab_config:"設定編集", tab_logs:"システムログ",
+  select_mode:"編集モード：", mode_form:"フォーム", mode_json:"JSON",
+  save_restart:"保存＆再起動", reset_form:"リセット", format_json:"フォーマット", sync_from_form:"フォームから同期",
+  no_logs:"picoclawログなし", refresh_logs:"ログ更新",
+  enabled:"有効", disabled:"無効", no_channels:"設定済みチャンネルなし",
+  sec_ai_model:"AIモデル設定", lbl_provider:"AIプロバイダー", lbl_model:"モデル名",
+  lbl_max_tokens:"最大トークン数", lbl_tool_iters:"最大ツール反復", lbl_steering:"並行モード",
+  sec_channels:"チャンネル管理", sec_providers:"APIキー＆プロバイダー", sec_system:"システム設定", sec_tools:"ツール＆機能",
+  confirm_save:"設定を保存して再起動しますか？", json_error:"JSONエラー: ",
+  ch_feishu:"Feishu", ch_telegram:"Telegram", ch_discord:"Discord", ch_wecom:"WeCom Bot",
+  ch_weixin:"WeChat", ch_slack:"Slack", ch_qq:"QQ", ch_line:"LINE",
+  ch_dingtalk:"DingTalk", ch_whatsapp:"WhatsApp", ch_maixcam:"MaixCam", ch_wechat_work:"WeCom",
+  tl_feishu:"Feishu Bot", tl_telegram:"Telegram Bot", tl_discord:"Discord Bot",
+  tl_wecom:"WeCom Bot", tl_weixin:"WeChat個人（QR認証必要）",
+  tl_slack:"Slack Bot", tl_qq:"QQ Bot", tl_line:"LINE Bot",
+  tl_dingtalk:"DingTalk Bot", tl_whatsapp:"WhatsApp", tl_maixcam:"MaixCamデバイス",
+  tl_wechat_work:"WeCom Bot", lbl_listen:"リスニングアドレス", lbl_heartbeat:"ハートビート", lbl_heartbeat_interval:"ハートビート間隔 (秒)",
+  lbl_media_cleanup:"メディアクリーニング", lbl_session_scope:"セッションスコープ",
+  tl_heartbeat:"ハートビート有効", tl_media_cleanup:"期限切れメディアを自動削除",
+  scope_per_peer:"per-channel-peer", scope_per_channel:"per-channel", scope_global:"global",
+  lbl_exec:"コマンド実行", lbl_cron:"Cronジョブ", lbl_web_fetch:"Webフェッチ",
+  lbl_file_rw:"ファイル読書", lbl_skills:"スキル", lbl_mcp:"MCP", lbl_subagent:"サブエージェント",
+  tl_exec:"AIのコマンド実行を許可", tl_cron:"Cronジョブ有効", tl_web_fetch:"Webフェッチ有効",
+  tl_read_file:"ファイル読取有効", tl_write_file:"ファイル書込有効",
+  tl_skills:"スキル有効", tl_mcp:"MCP有効", tl_subagent:"サブエージェント有効",
+  lbl_api_key:"APIキー", lbl_base_url:"Base URL", ph_api_key:"APIキーを貼り付け", ph_optional:"任意",
+  save_confirm:"設定を保存してPicoClawを再起動しますか？",
+  weixin_guide_title:"WeChat個人アカウント", weixin_not_connected:"WeChat未接続",
+  weixin_authorized_not_enabled:"認証済み、チャンネル無効", weixin_go_enable:"有効化",
+  weixin_connected:"WeChat接続済み"
+},
+pt: {
+  version_info:"Versão", current_version:"Versão Atual", build_time:"Build", latest_ver_label:"Última Versão",
+  latest_version:"Atualizado", update_available:"Nova versão disponível", update_now:"Atualizar",
+  confirm_update:"Atualizar PicoClaw? O serviço será reiniciado.",
+  check_failed:"Verificando...", service_status:"Status do Serviço", running:"Executando", stopped:"Parado",
+  service_not_running:"Serviço parado", start:"Iniciar", stop:"Parar", restart:"Reiniciar", normal:"OK", abnormal:"Erro",
+  autostart_on:"Início automático: ON", autostart_off:"Início automático: OFF",
+  memory_mb:"Memória (MB)", process_id:"Process ID", port_18790:"Porta 18790",
+  tab_channels:"Canais", tab_config:"Editor de Config", tab_logs:"Logs do Sistema",
+  select_mode:"Modo:", mode_form:"Formulário", mode_json:"JSON",
+  save_restart:"Salvar & Reiniciar", reset_form:"Resetar", format_json:"Formatar", sync_from_form:"Sincronizar",
+  no_logs:"Sem logs", refresh_logs:"Atualizar",
+  enabled:"Ativado", disabled:"Desativado", no_channels:"Nenhum canal",
+  sec_ai_model:"Config IA", lbl_provider:"Provedor IA", lbl_model:"Modelo",
+  sec_channels:"Canais", sec_providers:"API Keys", sec_system:"Sistema", sec_tools:"Ferramentas",
+  confirm_save:"Salvar e reiniciar?", json_error:"Erro JSON: ",
+  ch_feishu:"Feishu", ch_telegram:"Telegram", ch_discord:"Discord", ch_wecom:"WeCom Bot",
+  ch_weixin:"WeChat", ch_slack:"Slack", ch_qq:"QQ", ch_line:"LINE", ch_dingtalk:"DingTalk",
+  ch_whatsapp:"WhatsApp", ch_maixcam:"MaixCam", ch_wechat_work:"WeCom",
+  weixin_guide_title:"WeChat", weixin_not_connected:"WeChat não conectado",
+  weixin_authorized_not_enabled:"Autorizado mas desativado", weixin_go_enable:"Ativar",
+  weixin_connected:"WeChat Conectado", save_confirm:"Salvar config e reiniciar?"
+},
+de: {
+  version_info:"Versionsinfo", current_version:"Aktuelle Version", build_time:"Build-Zeit", latest_ver_label:"Neueste Version",
+  latest_version:"Aktuell", update_available:"Neue Version verfügbar", update_now:"Aktualisieren",
+  confirm_update:"PicoClaw aktualisieren? Dienst wird kurz neu gestartet.",
+  check_failed:"Prüfe Updates...", service_status:"Dienststatus", running:"Läuft", stopped:"Gestoppt",
+  service_not_running:"Dienst läuft nicht", start:"Start", stop:"Stop", restart:"Neustart", normal:"OK", abnormal:"Fehler",
+  autostart_on:"Autostart: AN", autostart_off:"Autostart: AUS",
+  memory_mb:"Speicher (MB)", process_id:"Prozess-ID", port_18790:"Port 18790",
+  tab_channels:"Kanäle", tab_config:"Konfig Editor", tab_logs:"Systemprotokolle",
+  select_mode:"Modus:", mode_form:"Formular", mode_json:"JSON",
+  save_restart:"Speichern & Neustart", reset_form:"Zurücksetzen", format_json:"Formatieren", sync_from_form:"Vom Formular",
+  no_logs:"Keine Logs", refresh_logs:"Aktualisieren",
+  enabled:"Aktiviert", disabled:"Deaktiviert", no_channels:"Keine Kanäle",
+  sec_ai_model:"KI-Modell", lbl_provider:"KI-Anbieter", lbl_model:"Modellname",
+  sec_channels:"Kanalverwaltung", sec_providers:"API-Schlüssel", sec_system:"Systemeinstellungen", sec_tools:"Werkzeuge",
+  confirm_save:"Konfiguration speichern und neustarten?", json_error:"JSON Fehler: ",
+  ch_feishu:"Feishu", ch_telegram:"Telegram", ch_discord:"Discord", ch_wecom:"WeCom Bot",
+  ch_weixin:"WeChat", ch_slack:"Slack", ch_qq:"QQ", ch_line:"LINE", ch_dingtalk:"DingTalk",
+  ch_whatsapp:"WhatsApp", ch_maixcam:"MaixCam", ch_wechat_work:"WeCom",
+  weixin_guide_title:"WeChat", weixin_not_connected:"WeChat nicht verbunden",
+  weixin_authorized_not_enabled:"Autorisiert, Kanal deaktiviert", weixin_go_enable:"Aktivieren",
+  weixin_connected:"WeChat Verbunden", save_confirm:"Konfiguration speichern und neustarten?"
+}
+};
+
+function I(key, fallback) {
+  return (T[_curLang] && T[_curLang][key]) || T.zh[key] || fallback || key;
+}
+
+function setLang(lang) {
+  _curLang = lang;
+  localStorage.setItem('pc_lang', lang);
+  document.querySelectorAll('.lang-btn').forEach(function(b) {
+    b.classList.toggle('act', b.textContent.trim() === {zh:'中文',en:'EN',ja:'日本語',pt:'PT',de:'DE'}[lang]);
+  });
+  applyI18n();
+}
+
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(function(el) {
+    var key = el.getAttribute('data-i18n');
+    var val = I(key);
+    if (val) {
+      var small = el.querySelector('small');
+      if (small) {
+        var nodes = el.childNodes;
+        for (var i = 0; i < nodes.length; i++) {
+          if (nodes[i].nodeType === 3) { nodes[i].textContent = val + ' '; break; }
+        }
+      } else {
+        el.textContent = val;
+      }
+    }
+  });
+  buildChannelsList();
+  buildChannelsForm();
+  buildProvidersForm();
+  buildSystemForm();
+  buildToolsForm();
+  loadFormFromJSON();
+}
+
+// ========== Channel definitions ==========
+var CHANNELS = [
+  {key:'feishu', fields:[{path:'channels.feishu.app_id',ph:'App ID',sm:true},{path:'channels.feishu.app_secret',ph:'App Secret',sm:true,pw:true}]},
+  {key:'telegram', fields:[{path:'channels.telegram.base_url',ph:'Base URL (optional)'},{path:'channels.telegram.proxy',ph:'Proxy (optional)'}]},
+  {key:'discord', fields:[]},
+  {key:'wechat_work', fields:[]},
+  {key:'weixin', fields:[{path:'channels.weixin.base_url',ph:'Base URL'},{path:'channels.weixin.cdn_base_url',ph:'CDN Base URL'},{path:'channels.weixin.proxy',ph:'Proxy'}]},
+  {key:'wecom', fields:[{path:'channels.wecom.bot_id',ph:'Bot ID',sm:true}]},
+  {key:'slack', fields:[]},
+  {key:'qq', fields:[{path:'channels.qq.app_id',ph:'App ID',sm:true}]},
+  {key:'dingtalk', fields:[]},
+  {key:'whatsapp', fields:[]},
+  {key:'line', fields:[]},
+  {key:'maixcam', fields:[]}
+];
+
+function buildChannelsList() {
+  var html = '';
+  var found = false;
+  CHANNELS.forEach(function(ch) {
+    var enabled = getByPath(_origConfig, 'channels.' + ch.key + '.enabled');
+    if (enabled === undefined) return;
+    found = true;
+    var cls = enabled ? 'badge-on' : 'badge-off';
+    var txt = enabled ? I('enabled') : I('disabled');
+    html += '<div class="ch-row"><span class="ch-name">' + I('ch_' + ch.key, ch.key) + '</span><span class="badge ' + cls + '">' + txt + '</span></div>';
+  });
+  document.getElementById('channels-list').innerHTML = found ? html : '<div style="padding:20px;text-align:center;color:#888">' + I('no_channels') + '</div>';
+}
+
+function buildChannelsForm() {
+  var html = '';
+  CHANNELS.forEach(function(ch) {
+    html += '<div class="cfg-row"><div class="cfg-label">' + I('ch_' + ch.key, ch.key) + '</div><div class="cfg-field">';
+    html += '<div class="toggle-wrap"><label class="toggle"><input type="checkbox" data-path="channels.' + ch.key + '.enabled" data-type="bool"><span class="slider"></span></label>';
+    html += '<span class="toggle-label">' + (I('tl_' + ch.key, '') || ch.key) + '</span></div>';
+    if (ch.fields.length) {
+      html += '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">';
+      ch.fields.forEach(function(f) {
+        var cls = 'cfg-input' + (f.sm ? ' cfg-input-sm' : '');
+        html += '<input type="' + (f.pw ? 'password' : 'text') + '" class="' + cls + '" data-path="' + f.path + '" placeholder="' + f.ph + '">';
+      });
+      html += '</div>';
+    }
+    html += '</div></div>';
+  });
+  document.getElementById('channels-form-body').innerHTML = html;
+  bindToggles();
+}
+
+function buildProvidersForm() {
+  var providers = [
+    {id:'zhipu',url:'https://open.bigmodel.cn/api/paas/v4/'},
+    {id:'openai',url:'https://api.openai.com/v1/'},
+    {id:'chatgpt',url:'https://api.openai.com/v1/'},
+    {id:'claude',url:'https://api.anthropic.com/'},
+    {id:'deepseek',url:'https://api.deepseek.com/'},
+    {id:'anthropic',url:'https://api.anthropic.com/'}
+  ];
+  var html = '';
+  providers.forEach(function(p) {
+    html += '<div class="cfg-row"><div class="cfg-label">' + p.id + ' ' + I('lbl_api_key') + '</div>';
+    html += '<div class="cfg-field"><input type="password" class="cfg-input" data-path="providers.' + p.id + '.api_key" placeholder="' + I('ph_api_key') + '"></div></div>';
+    html += '<div class="cfg-row"><div class="cfg-label">' + p.id + ' ' + I('lbl_base_url') + '<small>' + I('ph_optional') + '</small></div>';
+    html += '<div class="cfg-field"><input type="text" class="cfg-input" data-path="providers.' + p.id + '.base_url" placeholder="' + p.url + '"></div></div>';
+  });
+  html += '<div class="cfg-row"><div class="cfg-label">Ollama ' + I('lbl_base_url') + '</div>';
+  html += '<div class="cfg-field"><input type="text" class="cfg-input" data-path="providers.ollama.base_url" placeholder="http://localhost:11434/"></div></div>';
+  document.getElementById('providers-form-body').innerHTML = html;
+}
+
+function buildSystemForm() {
+  var html = '';
+  html += '<div class="cfg-row"><div class="cfg-label">' + I('lbl_listen') + '<small>listen</small></div>';
+  html += '<div class="cfg-field"><input type="text" class="cfg-input cfg-input-sm" data-path="listen" placeholder="0.0.0.0:18790"></div></div>';
+  html += '<div class="cfg-row"><div class="cfg-label">' + I('lbl_heartbeat') + '</div>';
+  html += '<div class="cfg-field"><div class="toggle-wrap"><label class="toggle"><input type="checkbox" data-path="heartbeat.enabled" data-type="bool"><span class="slider"></span></label><span class="toggle-label">' + I('tl_heartbeat') + '</span></div></div></div>';
+  html += '<div class="cfg-row"><div class="cfg-label">' + I('lbl_heartbeat_interval') + '</div>';
+  html += '<div class="cfg-field"><input type="number" class="cfg-input cfg-input-xs" data-path="heartbeat.interval" min="5" max="300"></div></div>';
+  html += '<div class="cfg-row"><div class="cfg-label">' + I('lbl_media_cleanup') + '</div>';
+  html += '<div class="cfg-field"><div class="toggle-wrap"><label class="toggle"><input type="checkbox" data-path="media_cleanup.enabled" data-type="bool"><span class="slider"></span></label><span class="toggle-label">' + I('tl_media_cleanup') + '</span></div></div></div>';
+  html += '<div class="cfg-row"><div class="cfg-label">' + I('lbl_session_scope') + '</div>';
+  html += '<div class="cfg-field"><select class="cfg-input cfg-input-sm" data-path="session.dm_scope">';
+  html += '<option value="per-channel-peer">' + I('scope_per_peer') + '</option>';
+  html += '<option value="per-channel">' + I('scope_per_channel') + '</option>';
+  html += '<option value="global">' + I('scope_global') + '</option>';
+  html += '</select></div></div>';
+  document.getElementById('system-form-body').innerHTML = html;
+  bindToggles();
+}
+
+function buildToolsForm() {
+  var rows = [
+    {lbl:'lbl_exec',path:'tools.exec.enabled',tl:'tl_exec'},
+    {lbl:'lbl_exec_timeout',path:'tools.exec.timeout_seconds',type:'number'},
+    {lbl:'lbl_exec_remote',path:'tools.exec.allow_remote',tl:'tl_exec_remote'},
+    {lbl:'lbl_cron',path:'tools.cron.enabled',tl:'tl_cron'},
+    {lbl:'lbl_cron_timeout',path:'tools.cron.exec_timeout_minutes',type:'number'},
+    {lbl:'lbl_web_fetch',path:'tools.web_fetch.enabled',tl:'tl_web_fetch'}
+  ];
+  var html = '';
+  rows.forEach(function(r) {
+    html += '<div class="cfg-row"><div class="cfg-label">' + I(r.lbl) + '</div><div class="cfg-field">';
+    if (r.tl) {
+      html += '<div class="toggle-wrap"><label class="toggle"><input type="checkbox" data-path="' + r.path + '" data-type="bool"><span class="slider"></span></label><span class="toggle-label">' + I(r.tl) + '</span></div>';
+    } else {
+      html += '<input type="number" class="cfg-input cfg-input-xs" data-path="' + r.path + '" min="1" max="600">';
+    }
+    html += '</div></div>';
+  });
+  html += '<div class="cfg-row"><div class="cfg-label">' + I('lbl_file_rw') + '</div><div class="cfg-field">';
+  html += '<div class="toggle-wrap"><label class="toggle"><input type="checkbox" data-path="tools.read_file.enabled" data-type="bool"><span class="slider"></span></label><span class="toggle-label">' + I('tl_read_file') + '</span></div>';
+  html += '<div class="toggle-wrap" style="margin-left:16px"><label class="toggle"><input type="checkbox" data-path="tools.write_file.enabled" data-type="bool"><span class="slider"></span></label><span class="toggle-label">' + I('tl_write_file') + '</span></div>';
+  html += '</div></div>';
+  [['lbl_skills','tools.skills.enabled','tl_skills'],['lbl_mcp','tools.mcp.enabled','tl_mcp'],['lbl_subagent','tools.subagent.enabled','tl_subagent']].forEach(function(r) {
+    html += '<div class="cfg-row"><div class="cfg-label">' + I(r[0]) + '</div><div class="cfg-field">';
+    html += '<div class="toggle-wrap"><label class="toggle"><input type="checkbox" data-path="' + r[1] + '" data-type="bool"><span class="slider"></span></label><span class="toggle-label">' + I(r[2]) + '</span></div>';
+    html += '</div></div>';
+  });
+  document.getElementById('tools-form-body').innerHTML = html;
+  bindToggles();
+}
+
+// ========== Core functions ==========
+function switchTab(name, el) {
+  document.querySelectorAll('.pc-tab').forEach(function(t){t.classList.remove('act')});
+  document.querySelectorAll('.pc-panel').forEach(function(p){p.classList.remove('act')});
+  el.classList.add('act');
+  document.getElementById('panel-'+name).classList.add('act');
+}
+
+function switchCfgMode(mode, el) {
+  document.querySelectorAll('.cfg-mode-btn').forEach(function(b){b.classList.remove('act')});
+  el.classList.add('act');
+  if (mode === 'form') {
+    document.getElementById('cfg-form-mode').style.display = '';
+    document.getElementById('cfg-json-mode').style.display = 'none';
+    loadFormFromJSON();
+  } else {
+    document.getElementById('cfg-form-mode').style.display = 'none';
+    document.getElementById('cfg-json-mode').style.display = '';
+    loadJSONFromForm();
+  }
+}
+
+function toggleSection(head) { head.parentElement.classList.toggle('closed'); }
+
+function getByPath(obj, path) {
+  var parts = path.split('.'), cur = obj;
+  for (var i = 0; i < parts.length; i++) {
+    if (cur == null || typeof cur !== 'object') return undefined;
+    cur = cur[parts[i]];
+  }
+  return cur;
+}
+
+function setByPath(obj, path, val) {
+  var parts = path.split('.'), cur = obj;
+  for (var i = 0; i < parts.length - 1; i++) {
+    if (cur[parts[i]] == null || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {};
+    cur = cur[parts[i]];
+  }
+  cur[parts[parts.length-1]] = val;
+}
+
+function loadFormFromJSON() {
+  document.querySelectorAll('#cfg-form-mode [data-path]').forEach(function(el) {
+    var path = el.getAttribute('data-path');
+    var val = getByPath(_origConfig, path);
+    if (val === undefined) return;
+    var type = el.getAttribute('data-type');
+    if (type === 'bool') el.checked = !!val;
+    else if (el.tagName === 'SELECT') el.value = val;
+    else if (el.tagName === 'INPUT') el.value = val;
+  });
+  updateToggleLabels();
+}
+
+function loadJSONFromForm() {
+  var obj = JSON.parse(JSON.stringify(_origConfig));
+  collectFormValues(obj);
+  var editor = document.getElementById('json-editor');
+  if (editor) editor.value = JSON.stringify(obj, null, 2);
+}
+
+function collectFormValues(obj) {
+  document.querySelectorAll('#cfg-form-mode [data-path]').forEach(function(el) {
+    var path = el.getAttribute('data-path');
+    var type = el.getAttribute('data-type');
+    var val;
+    if (type === 'bool') val = el.checked;
+    else if (el.type === 'number') val = parseInt(el.value) || 0;
+    else val = el.value;
+    if (val !== '' && val !== undefined) setByPath(obj, path, val);
+  });
+  return obj;
+}
+
+function formatJSON() {
+  var editor = document.getElementById('json-editor');
+  try { var obj = JSON.parse(editor.value); editor.value = JSON.stringify(obj, null, 2); }
+  catch(e) { alert(I('json_error') + e.message); }
+}
+
+function saveFormConfig() {
+  var obj = JSON.parse(JSON.stringify(_origConfig));
+  collectFormValues(obj);
+  document.getElementById('form-config-json').value = JSON.stringify(obj, null, 2);
+  if (confirm(I('save_confirm'))) document.getElementById('config-form').submit();
+}
+
+function updateToggleLabels() {
+  document.querySelectorAll('.toggle-wrap').forEach(function(wrap) {
+    var cb = wrap.querySelector('input[type="checkbox"]');
+    var lbl = wrap.querySelector('.toggle-label');
+    if (cb && lbl) {
+      lbl.classList.toggle('on', cb.checked);
+      lbl.classList.toggle('off', !cb.checked);
+    }
+  });
+}
+
+function bindToggles() {
+  document.querySelectorAll('#cfg-form-mode .toggle input[type="checkbox"]').forEach(function(cb) {
+    if (!cb._bound) { cb.addEventListener('change', updateToggleLabels); cb._bound = true; }
+  });
+}
+
+// ========== Init ==========
+setLang(_curLang);
+</script>
+
+<!-- WeChat Guide Card (bottom of page) -->
+<% if weixin_status == "none" then %>
+<div class="pc-card" style="border-color:#e3f2fd;background:#f8fbff">
+  <h3 data-i18n="weixin_guide_title">&#128172; 微信个人号接入</h3>
+  <div style="display:flex;align-items:center;gap:14px;padding:14px;background:#e3f2fd;border-radius:8px;margin-bottom:12px">
+    <div style="font-size:28px;flex-shrink:0">&#128247;</div>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:600;color:#1565c0" data-i18n="weixin_not_connected">尚未接入微信</div>
+      <div style="font-size:12px;color:#1976d2;margin-top:3px;line-height:1.5">
+        通过 <code style="background:#bbdefb;padding:1px 5px;border-radius:3px;font-size:11px">picoclaw auth weixin</code> 命令扫码授权后，即可通过微信个人号与 AI 助手对话
+      </div>
+    </div>
+  </div>
+  <div style="font-size:13px;color:#555;line-height:1.8">
+    <div style="margin-bottom:8px"><strong>接入步骤：</strong></div>
+    <div style="background:#fff;border-radius:6px;padding:12px 16px;border:1px solid #bbdefb">
+      <div style="margin-bottom:6px">&#10102; SSH 登录路由器</div>
+      <div style="margin-bottom:6px">&#10103; 执行命令：<code style="background:#e8eaf6;padding:2px 8px;border-radius:4px">picoclaw auth weixin</code></div>
+      <div style="margin-bottom:6px">&#10104; 用微信扫描终端显示的二维码</div>
+      <div style="margin-bottom:6px">&#10105; 授权成功后，回到此处开启通道即可</div>
+    </div>
+  </div>
+</div>
+<% elseif weixin_status == "configured" then %>
+<div class="pc-card" style="border-color:#fff3e0;background:#fffbf5">
+  <h3 data-i18n="weixin_guide_title">&#128172; 微信个人号接入</h3>
+  <div style="display:flex;align-items:center;gap:14px;padding:14px;background:#fff3e0;border-radius:8px">
+    <div style="font-size:28px;flex-shrink:0">&#9989;</div>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:600;color:#e65100" data-i18n="weixin_authorized_not_enabled">已授权，但通道未启用</div>
+      <div style="font-size:12px;color:#ef6c00;margin-top:3px">微信扫码授权已完成，请到「配置编辑 → 通道管理」中开启微信通道</div>
+    </div>
+    <button class="pc-btn green" onclick="switchTab('config',document.querySelectorAll('.pc-tab')[1])" data-i18n="weixin_go_enable">前往启用</button>
+  </div>
+</div>
+<% elseif weixin_status == "connected" then %>
+<div class="pc-card" style="border-color:#e8f5e9;background:#f8fff8">
+  <h3 data-i18n="weixin_guide_title">&#128172; 微信个人号接入</h3>
+  <div style="display:flex;align-items:center;gap:14px;padding:14px;background:#e8f5e9;border-radius:8px">
+    <div style="font-size:28px;flex-shrink:0">&#128994;</div>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:600;color:#2e7d32" data-i18n="weixin_connected">微信已连接</div>
+      <div style="font-size:12px;color:#43a047;margin-top:3px">微信个人号通道已启用，可以直接通过微信与 AI 助手对话</div>
+    </div>
+  </div>
+</div>
+<% end %>
+<%+footer%>
