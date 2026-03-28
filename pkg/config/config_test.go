@@ -546,10 +546,10 @@ func TestLoadConfig_WebPreferNativeCanBeDisabled(t *testing.T) {
 	}
 }
 
-func TestDefaultConfig_ExecAllowRemoteEnabled(t *testing.T) {
+func TestDefaultConfig_ExecAllowRemoteDisabled(t *testing.T) {
 	cfg := DefaultConfig()
-	if !cfg.Tools.Exec.AllowRemote {
-		t.Fatal("DefaultConfig().Tools.Exec.AllowRemote should be true")
+	if cfg.Tools.Exec.AllowRemote {
+		t.Fatal("DefaultConfig().Tools.Exec.AllowRemote should be false")
 	}
 }
 
@@ -617,7 +617,7 @@ func TestDefaultConfig_LogLevel(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_ExecAllowRemoteDefaultsTrueWhenUnset(t *testing.T) {
+func TestLoadConfig_ExecAllowRemoteDefaultsFalseWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(configPath, []byte(`{"version":1,"tools":{"exec":{"enable_deny_patterns":true}}}`),
@@ -629,8 +629,8 @@ func TestLoadConfig_ExecAllowRemoteDefaultsTrueWhenUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error: %v", err)
 	}
-	if !cfg.Tools.Exec.AllowRemote {
-		t.Fatal("tools.exec.allow_remote should remain true when unset in config file")
+	if cfg.Tools.Exec.AllowRemote {
+		t.Fatal("tools.exec.allow_remote should remain false when unset in config file")
 	}
 }
 
