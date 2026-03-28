@@ -350,22 +350,23 @@ func TestCronTool_ExecuteJobDirectiveAddsPromptPrefix(t *testing.T) {
 	executor := &stubJobExecutor{response: "directive result"}
 	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
 
+	originalMsg := "check the weather and summarize"
 	job := &cron.CronJob{ID: "job-dir-1"}
 	job.Payload.Channel = "telegram"
 	job.Payload.To = "chat-1"
-	job.Payload.Message = "check the weather and summarize"
+	job.Payload.Message = originalMsg
 	job.Payload.Type = "directive"
 
 	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
 		t.Fatalf("ExecuteJob() = %q, want ok", got)
 	}
 
-	wantPrefix := "Please execute the following directive and provide the result:"
-	if !strings.Contains(executor.lastPrompt, wantPrefix) {
-		t.Fatalf("prompt = %q, want prefix %q", executor.lastPrompt, wantPrefix)
+	wantPrompt := "Please execute the following directive and provide the result:\n\n" + originalMsg
+	if executor.lastPrompt != wantPrompt {
+		t.Fatalf("prompt = %q, want exact %q", executor.lastPrompt, wantPrompt)
 	}
-	if !strings.Contains(executor.lastPrompt, "check the weather and summarize") {
-		t.Fatalf("prompt = %q, want original message included", executor.lastPrompt)
+	if executor.publishedResp != "directive result" {
+		t.Fatalf("published response = %q, want %q", executor.publishedResp, "directive result")
 	}
 }
 
@@ -402,34 +403,6 @@ func TestCronTool_ExecuteJobDirectiveWithDeliverRoutesToAgent(t *testing.T) {
 	}
 }
 
-func TestCronTool_ExecuteJobDirectivePassesCorrectContent(t *testing.T) {
-	executor := &stubJobExecutor{response: "ok"}
-	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
-
-	originalMsg := "fetch stock prices for AAPL and GOOG"
-	job := &cron.CronJob{ID: "job-dir-content"}
-	job.Payload.Channel = "discord"
-	job.Payload.To = "general"
-	job.Payload.Message = originalMsg
-	job.Payload.Type = "directive"
-
-	tool.ExecuteJob(context.Background(), job)
-
-	wantPrompt := "Please execute the following directive and provide the result:\n\n" + originalMsg
-	if executor.lastPrompt != wantPrompt {
-		t.Fatalf("prompt = %q, want %q", executor.lastPrompt, wantPrompt)
-	}
-	if executor.lastKey != "cron-job-dir-content" {
-		t.Fatalf("sessionKey = %q, want cron-job-dir-content", executor.lastKey)
-	}
-	if executor.lastChan != "discord" {
-		t.Fatalf("channel = %q, want discord", executor.lastChan)
-	}
-	if executor.lastChatID != "general" {
-		t.Fatalf("chatID = %q, want general", executor.lastChatID)
-	}
-}
-
 func TestCronTool_ExecuteJobDeliverMessageDirectlyToBus(t *testing.T) {
 	executor := &stubJobExecutor{response: "should not be called"}
 	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
@@ -461,7 +434,10 @@ func TestCronTool_ExecuteJobDeliverMessageDirectlyToBus(t *testing.T) {
 }
 
 func TestCronTool_ExecuteJobReturnsErrorWithoutPublish(t *testing.T) {
-	executor := &stubJobExecutor{err: fmt.Errorf("agent failure")}
+	executor := &stubJobExecutor{
+		response: "this response must not be published",
+		err:      fmt.Errorf("agent failure"),
+	}
 	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
 
 	job := &cron.CronJob{ID: "job-err"}
