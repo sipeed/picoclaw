@@ -226,6 +226,42 @@ func TestProcessMessage_UseCommandLoadsRequestedSkill(t *testing.T) {
 	}
 }
 
+func TestRequeueInboundMessage_PublishesBackToInboundBus(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	al := &AgentLoop{bus: msgBus}
+
+	original := bus.InboundMessage{
+		Channel:   "feishu",
+		SenderID:  "feishu:user-1",
+		ChatID:    "chat-1",
+		Content:   "follow-up message",
+		MessageID: "msg-1",
+	}
+
+	if err := al.requeueInboundMessage(original); err != nil {
+		t.Fatalf("requeueInboundMessage() error = %v", err)
+	}
+
+	select {
+	case got := <-msgBus.InboundChan():
+		if got.Channel != original.Channel ||
+			got.SenderID != original.SenderID ||
+			got.ChatID != original.ChatID ||
+			got.Content != original.Content ||
+			got.MessageID != original.MessageID {
+			t.Fatalf("requeued message = %+v, want %+v", got, original)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for requeued inbound message")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		t.Fatalf("unexpected outbound message after requeue: %+v", outbound)
+	default:
+	}
+}
+
 func TestHandleCommand_UseCommandRejectsUnknownSkill(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := &config.Config{
