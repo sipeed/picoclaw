@@ -30,10 +30,11 @@ type InboundMessage struct {
 }
 
 type OutboundMessage struct {
-	Channel          string `json:"channel"`
-	ChatID           string `json:"chat_id"`
-	Content          string `json:"content"`
-	ReplyToMessageID string `json:"reply_to_message_id,omitempty"`
+	Channel          string            `json:"channel"`
+	ChatID           string            `json:"chat_id"`
+	Content          string            `json:"content"`
+	ReplyToMessageID string            `json:"reply_to_message_id,omitempty"`
+	Metadata         map[string]string `json:"metadata,omitempty"`
 }
 
 // MediaPart describes a single media attachment to send.
@@ -50,4 +51,26 @@ type OutboundMediaMessage struct {
 	Channel string      `json:"channel"`
 	ChatID  string      `json:"chat_id"`
 	Parts   []MediaPart `json:"parts"`
+}
+
+// AudioChunk represents a chunk of streaming voice data.
+type AudioChunk struct {
+	SessionID  string `json:"session_id"`
+	SpeakerID  string `json:"speaker_id"` // User ID or SSRC
+	ChatID     string `json:"chat_id"`    // Where to respond
+	Channel    string `json:"channel"`    // Source channel type (e.g. "discord")
+	Sequence   uint64 `json:"sequence"`
+	Timestamp  uint32 `json:"timestamp"`
+	SampleRate int    `json:"sample_rate"`
+	Channels   int    `json:"channels"`
+	Format     string `json:"format"` // "opus", "pcm", etc
+	Data       []byte `json:"data"`
+}
+
+// VoiceControl represents state or commands for voice sessions.
+type VoiceControl struct {
+	SessionID string `json:"session_id"`
+	ChatID    string `json:"chat_id"`
+	Type      string `json:"type"`   // "state", "command"
+	Action    string `json:"action"` // "idle", "listening", "start", "stop", "leave"
 }

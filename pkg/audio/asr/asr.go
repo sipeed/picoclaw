@@ -1,4 +1,4 @@
-package voice
+package asr
 
 import (
 	"context"
@@ -60,7 +60,8 @@ func DetectTranscriber(cfg *config.Config) Transcriber {
 	}
 	// Fall back to any model-list entry that uses the groq/ protocol.
 	for _, mc := range cfg.ModelList {
-		if strings.HasPrefix(mc.Model, "groq/") && mc.APIKey() != "" {
+		if (strings.HasPrefix(mc.Model, "groq/") || mc.ModelName == "groq" || mc.Model == "whisper-large-v3-turbo") &&
+			mc.APIKey() != "" {
 			return NewGroqTranscriber(mc.APIKey())
 		}
 	}
