@@ -1,3 +1,5 @@
+import { launcherFetch } from "@/api/http"
+
 export interface AutoStartStatus {
   enabled: boolean
   supported: boolean
@@ -12,7 +14,7 @@ export interface LauncherConfig {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, options)
+  const res = await launcherFetch(path, options)
   if (!res.ok) {
     let message = `API error: ${res.status} ${res.statusText}`
     try {

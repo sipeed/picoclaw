@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test JSON unmarshal of private fields
+// Test JSON unmarshal of private fields (unexported fields are never filled, with or without json tag).
 func TestJSONUnmarshalPrivateFields(t *testing.T) {
 	type testStruct struct {
 		PublicField  string `json:"public"`

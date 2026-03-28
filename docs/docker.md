@@ -48,7 +48,7 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 Open http://localhost:18800 in your browser. The launcher manages the gateway process automatically.
 
 > [!WARNING]
-> The web console does not yet support authentication. Avoid exposing it to the public internet.
+> The web console uses a dashboard token (in-memory per run unless `PICOCLAW_LAUNCHER_TOKEN` is set). **Do not** expose the launcher to untrusted networks or the public internet. See [Web launcher dashboard](configuration.md#web-launcher-dashboard) in the Configuration Guide.
 
 ### Agent Mode (One-shot)
 

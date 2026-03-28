@@ -14,6 +14,20 @@
     "config": "配置",
     "logs": "日志"
   },
+  "launcherLogin": {
+    "title": "Launcher 访问验证",
+    "description": "请使用当前 Launcher 进程的访问口令登录（每次重启可能变化，除非用环境变量固定）。",
+    "tokenLabel": "令牌",
+    "tokenPlaceholder": "输入访问令牌",
+    "submit": "进入 Dashboard",
+    "errorInvalid": "令牌错误，请重试。",
+    "errorNetwork": "网络错误，请重试。",
+    "helpTitle": "口令在哪里",
+    "helpConsole": "控制台模式：启动时在终端输出。",
+    "helpTray": "托盘模式：菜单「复制控制台口令」。",
+    "helpLogFile": "日志文件（启动时会写入口令）：{{path}}",
+    "helpEnv": "固定口令：设置环境变量 {{env}}。"
+  },
   "chat": {
     "welcome": "今天我能为您做些什么？",
     "welcomeDesc": "您可以询问我天气、设置或其他任何任务，我随时为您效劳。",

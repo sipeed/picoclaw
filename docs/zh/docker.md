@@ -42,10 +42,10 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 docker compose -f docker/docker-compose.yml --profile launcher up -d
 ```
 
-在浏览器中打开 http://localhost:18800。Launcher 会自动管理 Gateway 进程。
+在浏览器中打开 <http://localhost:18800>。Launcher 会自动管理 Gateway 进程。
 
 > [!WARNING]
-> Web 控制台尚不支持身份验证。请勿将其暴露到公网。
+> Web 控制台通过 dashboard 令牌鉴权（默认每次启动在内存中生成；可用 `PICOCLAW_LAUNCHER_TOKEN` 固定）。**不要**将启动器暴露到不可信网络或公网。完整说明见 [配置指南](configuration.md) 中的「Web 启动器控制台」一节。
 
 ### Agent 模式 (一次性运行)
 

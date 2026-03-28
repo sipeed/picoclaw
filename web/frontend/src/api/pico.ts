@@ -1,3 +1,5 @@
+import { launcherFetch } from "@/api/http"
+
 // API client for Pico Channel configuration.
 
 interface PicoTokenResponse {
@@ -16,7 +18,7 @@ interface PicoSetupResponse {
 const BASE_URL = ""
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, options)
+  const res = await launcherFetch(`${BASE_URL}${path}`, options)
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`)
   }

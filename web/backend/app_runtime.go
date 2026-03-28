@@ -55,8 +55,12 @@ func shutdownApp() {
 }
 
 func openBrowser() error {
-	if serverAddr == "" {
+	target := browserLaunchURL
+	if target == "" {
+		target = serverAddr
+	}
+	if target == "" {
 		return fmt.Errorf("server address not set")
 	}
-	return utils.OpenBrowser(serverAddr)
+	return utils.OpenBrowser(target)
 }

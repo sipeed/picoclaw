@@ -14,6 +14,20 @@
     "config": "Config",
     "logs": "Logs"
   },
+  "launcherLogin": {
+    "title": "Launcher access",
+    "description": "Sign in with the dashboard access token for this launcher process (it may change after each restart unless you pin it with an environment variable).",
+    "tokenLabel": "Token",
+    "tokenPlaceholder": "Enter access token",
+    "submit": "Continue to Dashboard",
+    "errorInvalid": "Invalid token. Please try again.",
+    "errorNetwork": "Network error. Please try again.",
+    "helpTitle": "Where to find the token",
+    "helpConsole": "Console mode: printed in the terminal when the launcher starts.",
+    "helpTray": "Tray mode: menu «Copy dashboard token».",
+    "helpLogFile": "Log file (startup line includes the token): {{path}}",
+    "helpEnv": "Stable token: set {{env}}."
+  },
   "chat": {
     "welcome": "How can I help you today?",
     "welcomeDesc": "Ask me about weather, settings, or any other tasks. I'm here to assist you.",

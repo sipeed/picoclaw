@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import { patchAppConfig } from "@/api/channels"
+import { launcherFetch } from "@/api/http"
 import {
   getAutoStartStatus,
   getLauncherConfig,
@@ -50,7 +51,7 @@ export function ConfigPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["config"],
     queryFn: async () => {
-      const res = await fetch("/api/config")
+      const res = await launcherFetch("/api/config")
       if (!res.ok) {
         throw new Error("Failed to load config")
       }
