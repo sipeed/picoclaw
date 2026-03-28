@@ -478,6 +478,8 @@
       "session_scope_hint": "定义不同用户/频道之间如何隔离会话上下文。",
       "session_scope_per_channel_peer": "按频道+用户隔离",
       "session_scope_per_channel_peer_desc": "同一频道内不同用户使用独立上下文。",
+      "session_scope_per_account_channel_peer": "按账号+频道+用户隔离",
+      "session_scope_per_account_channel_peer_desc": "不同频道账号实例中的不同用户使用独立上下文。",
       "session_scope_per_channel": "按频道隔离",
       "session_scope_per_channel_desc": "同一频道内共享一个上下文。",
       "session_scope_per_peer": "按用户隔离",

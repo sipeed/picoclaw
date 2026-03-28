@@ -478,6 +478,8 @@
       "session_scope_hint": "How chat context is isolated across peers/channels.",
       "session_scope_per_channel_peer": "Per Channel + Peer",
       "session_scope_per_channel_peer_desc": "Separate context for each user in each channel.",
+      "session_scope_per_account_channel_peer": "Per Account + Channel + Peer",
+      "session_scope_per_account_channel_peer_desc": "Separate context for each user on each channel account instance.",
       "session_scope_per_channel": "Per Channel",
       "session_scope_per_channel_desc": "One shared context per channel.",
       "session_scope_per_peer": "Per Peer",
