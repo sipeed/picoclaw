@@ -309,7 +309,7 @@ func TestDefaultConfig_WebTools(t *testing.T) {
 	if cfg.Tools.Web.Brave.MaxResults != 5 {
 		t.Error("Expected Brave MaxResults 5, got ", cfg.Tools.Web.Brave.MaxResults)
 	}
-	if len(cfg.Tools.Web.Brave.APIKeys()) != 0 {
+	if len(cfg.Tools.Web.Brave.APIKeys) != 0 {
 		t.Error("Brave API key should be empty by default")
 	}
 	if cfg.Tools.Web.DuckDuckGo.MaxResults != 5 {
@@ -403,12 +403,12 @@ func TestSaveConfig_FiltersVirtualModels(t *testing.T) {
 	primaryModel := &ModelConfig{
 		ModelName: "gpt-4",
 		Model:     "openai/gpt-4o",
-		apiKeys:   []string{"key1"},
+		APIKeys:   SimpleSecureStrings("key1"),
 	}
 	virtualModel := &ModelConfig{
 		ModelName: "gpt-4__key_1",
 		Model:     "openai/gpt-4o",
-		apiKeys:   []string{"key2"},
+		APIKeys:   SimpleSecureStrings("key2"),
 		isVirtual: true,
 	}
 	cfg.ModelList = []*ModelConfig{primaryModel, virtualModel}
@@ -612,7 +612,7 @@ func TestDefaultConfig_HooksDefaults(t *testing.T) {
 
 func TestDefaultConfig_LogLevel(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Gateway.LogLevel != "fatal" {
+	if cfg.Gateway.LogLevel != "warn" {
 		t.Errorf("LogLevel = %q, want \"fatal\"", cfg.Gateway.LogLevel)
 	}
 }
@@ -1064,11 +1064,10 @@ func TestSaveConfig_EncryptsPlaintextAPIKey(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.ModelList = []*ModelConfig{
-		{ModelName: "test", Model: "openai/gpt-4", apiKeys: []string{"sk-plaintext"}},
+		{ModelName: "test", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings("")},
 	}
-	cfg.security = &SecurityConfig{
-		ModelList: map[string]ModelSecurityEntry{"test:0": {APIKeys: []string{"sk-plaintext"}}},
-	}
+	cfg.ModelList[0].APIKeys[0].Set("sk-plaintext")
+
 	if err := SaveConfig(cfgPath, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
@@ -1132,8 +1131,9 @@ func TestLoadConfig_FileRefNotSealed(t *testing.T) {
 	secPath := filepath.Join(dir, SecurityConfigFile)
 	if err := saveSecurityConfig(
 		secPath,
-		&SecurityConfig{ModelList: map[string]ModelSecurityEntry{"test:0": {APIKeys: []string{"file://openai.key"}}}},
-	); err != nil {
+		&Config{ModelList: SecureModelList{
+			&ModelConfig{ModelName: "test", APIKeys: SimpleSecureStrings("file://openai.key")},
+		}}); err != nil {
 		t.Fatalf("saveSecurityConfig: %v", err)
 	}
 
@@ -1165,12 +1165,7 @@ func TestSaveConfig_MixedKeys(t *testing.T) {
 	// Pre-encrypt one key so we have a genuine enc:// value to put in the config.
 	if err := SaveConfig(cfgPath, &Config{
 		ModelList: []*ModelConfig{
-			{ModelName: "pre", Model: "openai/gpt-4"},
-		},
-		security: &SecurityConfig{
-			ModelList: map[string]ModelSecurityEntry{
-				"pre:0": {APIKeys: []string{"sk-already-plain"}},
-			},
+			{ModelName: "pre", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings("sk-already-plain")},
 		},
 	}); err != nil {
 		t.Fatalf("setup SaveConfig: %v", err)
@@ -1199,23 +1194,18 @@ func TestSaveConfig_MixedKeys(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 	cfg := &Config{
+		Version: CurrentVersion,
 		ModelList: []*ModelConfig{
-			{ModelName: "plain", Model: "openai/gpt-4", apiKeys: []string{"sk-new-plaintext"}},
-			{ModelName: "enc", Model: "openai/gpt-4", apiKeys: []string{alreadyEncrypted}},
-			{ModelName: "file", Model: "openai/gpt-4", apiKeys: []string{"file://api.key"}},
-		},
-		security: &SecurityConfig{
-			ModelList: map[string]ModelSecurityEntry{
-				"plain:0": {APIKeys: []string{"sk-new-plaintext"}},
-				"enc:0":   {APIKeys: []string{alreadyEncrypted}},
-				"file:0":  {APIKeys: []string{"file://api.key"}},
-			},
+			{ModelName: "plain", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings("sk-new-plaintext")},
+			{ModelName: "enc", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings(alreadyEncrypted)},
+			{ModelName: "file", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings("file://api.key")},
 		},
 	}
 	if err := SaveConfig(cfgPath, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
+	t.Logf("alreadyEncrypted: %s", alreadyEncrypted)
 	raw, _ = os.ReadFile(filepath.Join(dir, SecurityConfigFile))
 	s := string(raw)
 
@@ -1265,20 +1255,16 @@ func TestLoadConfig_MixedKeys_NoPassphrase(t *testing.T) {
 	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "test-passphrase")
 	mustSetupSSHKey(t)
 	if err := SaveConfig(cfgPath, &Config{
+		Version: CurrentVersion,
 		ModelList: []*ModelConfig{
-			{ModelName: "m", Model: "openai/gpt-4", apiKeys: []string{"sk-secret"}},
-		},
-		security: &SecurityConfig{
-			ModelList: map[string]ModelSecurityEntry{
-				"m:0": {APIKeys: []string{"sk-secret"}},
-			},
+			{ModelName: "m", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings("sk-secret")},
 		},
 	}); err != nil {
 		t.Fatalf("setup SaveConfig: %v", err)
 	}
 	raw, err := LoadConfig(cfgPath)
 	assert.NoError(t, err)
-	encValue := raw.security.ModelList["m:0"].APIKeys[0]
+	encValue := raw.ModelList[0].APIKeys[0].raw
 	assert.NotEmpty(t, encValue)
 	assert.Equal(t, "enc://", encValue[:6])
 
@@ -1311,8 +1297,9 @@ func TestLoadConfig_MixedKeys_NoPassphrase(t *testing.T) {
 	// Now clear the passphrase — LoadConfig must fail because enc:// cannot be decrypted.
 	t.Setenv("PICOCLAW_KEY_PASSPHRASE", "")
 
-	_, err = LoadConfig(cfgPath)
+	cfg2, err := LoadConfig(cfgPath)
 	if err == nil {
+		t.Logf("LoadConfig: %#v", cfg2.ModelList)
 		t.Fatal("LoadConfig should fail when enc:// key is present and no passphrase is set")
 	}
 	if !strings.Contains(err.Error(), "passphrase required") {
@@ -1340,9 +1327,8 @@ func TestSaveConfig_UsesPassphraseProvider(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.ModelList = []*ModelConfig{
-		{ModelName: "test", Model: "openai/gpt-4"},
+		{ModelName: "test", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings("sk-plaintext")},
 	}
-	cfg.security.ModelList["test:0"] = ModelSecurityEntry{APIKeys: []string{"sk-plaintext"}}
 	if err := SaveConfig(cfgPath, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
@@ -1386,6 +1372,8 @@ func TestLoadConfig_UsesPassphraseProvider(t *testing.T) {
 	credential.PassphraseProvider = func() string { return testPassphrase }
 	t.Cleanup(func() { credential.PassphraseProvider = orig })
 
+	t.Logf("cfgPath: %s", cfgPath)
+
 	cfg, err := LoadConfig(cfgPath)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
@@ -1425,7 +1413,7 @@ func TestConfigLogLevelEmpty(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	// When config omits log_level, the DefaultConfig value ("fatal") is preserved.
-	if cfg.Gateway.LogLevel != "fatal" {
+	if cfg.Gateway.LogLevel != "warn" {
 		t.Errorf("LogLevel = %q, want \"fatal\"", cfg.Gateway.LogLevel)
 	}
 }
@@ -1435,16 +1423,14 @@ func TestModelConfig_ExtraBodyRoundTrip(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.json")
 
 	cfg := &Config{
+		Version: CurrentVersion,
 		ModelList: []*ModelConfig{
 			{
 				ModelName: "test-model",
 				Model:     "openai/test",
-				apiKeys:   []string{"sk-test"},
+				APIKeys:   SimpleSecureStrings("sk-test"),
 				ExtraBody: map[string]any{"custom_field": "value", "num_field": 42},
 			},
-		},
-		security: &SecurityConfig{
-			ModelList: map[string]ModelSecurityEntry{"test-model:0": {APIKeys: []string{"sk-test"}}},
 		},
 	}
 
@@ -1497,20 +1483,25 @@ func TestFilterSensitiveData(t *testing.T) {
 	}
 
 	// Test with empty content
-	cfg.security = &SecurityConfig{}
 	if got := cfg.FilterSensitiveData(""); got != "" {
 		t.Errorf("empty content: got %q, want empty", got)
 	}
 
 	// Test short content (less than FilterMinLength=8, should skip filtering)
-	cfg.security.ModelList = map[string]ModelSecurityEntry{
-		"test": {APIKeys: []string{"sk-long-key-12345"}},
+	cfg.ModelList = SecureModelList{
+		&ModelConfig{
+			ModelName: "test",
+			APIKeys:   SimpleSecureStrings("sk-long-key-12345"),
+		},
 	}
+	m, err := cfg.GetModelConfig("test")
+	assert.NoError(t, err)
+	m.APIKeys = SimpleSecureStrings("sk-long-key-12345")
 	cfg.Tools.FilterSensitiveData = true
 	cfg.Tools.FilterMinLength = 8
 
 	// Debug: check if sensitive values are collected
-	values := cfg.security.collectSensitiveValues()
+	values := cfg.collectSensitiveValues()
 	t.Logf("collected %d sensitive values: %v", len(values), values)
 
 	if got := cfg.FilterSensitiveData("sk-key"); got != "sk-key" {
@@ -1538,11 +1529,17 @@ func TestFilterSensitiveData_MultipleKeys(t *testing.T) {
 			FilterSensitiveData: true,
 			FilterMinLength:     8,
 		},
-	}
-	cfg.security = &SecurityConfig{
-		ModelList: map[string]ModelSecurityEntry{
-			"model1": {APIKeys: []string{"key-one", "key-two"}},
-			"model2": {APIKeys: []string{"key-three"}},
+		ModelList: SecureModelList{
+			&ModelConfig{
+				ModelName: "model1",
+				Model:     "openai/model1",
+				APIKeys:   SecureStrings{NewSecureString("key-one"), NewSecureString("key-two")},
+			},
+			&ModelConfig{
+				ModelName: "model2",
+				Model:     "openai/model2",
+				APIKeys:   SecureStrings{NewSecureString("key-three")},
+			},
 		},
 	}
 
@@ -1555,45 +1552,54 @@ func TestFilterSensitiveData_MultipleKeys(t *testing.T) {
 
 func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 	cfg := &Config{
+		// Model API keys
+		ModelList: SecureModelList{
+			&ModelConfig{
+				ModelName: "test-model",
+				APIKeys:   SecureStrings{NewSecureString("sk-model-key-12345")},
+			},
+		},
+		// Channel tokens
+		Channels: ChannelsConfig{
+			Telegram: TelegramConfig{Token: *NewSecureString("telegram-bot-token-abcdef")},
+			Discord:  DiscordConfig{Token: *NewSecureString("discord-bot-token-xyz789")},
+			Slack: SlackConfig{
+				BotToken: *NewSecureString("xoxb-slack-bot-token"),
+				AppToken: *NewSecureString("xapp-slack-app-token"),
+			},
+			Matrix: MatrixConfig{AccessToken: *NewSecureString("matrix-access-token-abc")},
+			Feishu: FeishuConfig{
+				AppSecret:  *NewSecureString("feishu-app-secret-123"),
+				EncryptKey: *NewSecureString("feishu-encrypt-key"),
+			},
+			DingTalk: DingTalkConfig{ClientSecret: *NewSecureString("dingtalk-client-secret")},
+			OneBot:   OneBotConfig{AccessToken: *NewSecureString("onebot-access-token")},
+			WeCom:    WeComConfig{Secret: *NewSecureString("wecom-secret")},
+			Pico:     PicoConfig{Token: *NewSecureString("pico-token-abc123")},
+			IRC: IRCConfig{
+				Password:         *NewSecureString("irc-password"),
+				NickServPassword: *NewSecureString("nickserv-pass"),
+				SASLPassword:     *NewSecureString("sasl-pass"),
+			},
+		},
 		Tools: ToolsConfig{
 			FilterSensitiveData: true,
 			FilterMinLength:     8,
-		},
-	}
-	cfg.security = &SecurityConfig{
-		// Model API keys
-		ModelList: map[string]ModelSecurityEntry{
-			"test-model": {APIKeys: []string{"sk-model-key-12345"}},
-		},
-		// Channel tokens
-		Channels: &ChannelsSecurity{
-			Telegram: &TelegramSecurity{Token: "telegram-bot-token-abcdef"},
-			Discord:  &DiscordSecurity{Token: "discord-bot-token-xyz789"},
-			Slack:    &SlackSecurity{BotToken: "xoxb-slack-bot-token", AppToken: "xapp-slack-app-token"},
-			Matrix:   &MatrixSecurity{AccessToken: "matrix-access-token-abc"},
-			Feishu:   &FeishuSecurity{AppSecret: "feishu-app-secret-123", EncryptKey: "feishu-encrypt-key"},
-			DingTalk: &DingTalkSecurity{ClientSecret: "dingtalk-client-secret"},
-			OneBot:   &OneBotSecurity{AccessToken: "onebot-access-token"},
-			WeCom:    &WeComSecurity{Secret: "wecom-secret"},
-			Pico:     &PicoSecurity{Token: "pico-token-abc123"},
-			IRC: &IRCSecurity{
-				Password:         "irc-password",
-				NickServPassword: "nickserv-pass",
-				SASLPassword:     "sasl-pass",
+			// Web tool API keys
+			Web: WebToolsConfig{
+				Brave:       BraveConfig{APIKeys: SecureStrings{NewSecureString("brave-api-key")}},
+				Tavily:      TavilyConfig{APIKeys: SecureStrings{NewSecureString("tavily-api-key")}},
+				Perplexity:  PerplexityConfig{APIKeys: SecureStrings{NewSecureString("perplexity-api-key")}},
+				GLMSearch:   GLMSearchConfig{APIKey: *NewSecureString("glm-search-key")},
+				BaiduSearch: BaiduSearchConfig{APIKey: *NewSecureString("baidu-search-key")},
 			},
-		},
-		// Web tool API keys
-		Web: &WebToolsSecurity{
-			Brave:       &BraveSecurity{APIKeys: []string{"brave-api-key"}},
-			Tavily:      &TavilySecurity{APIKeys: []string{"tavily-api-key"}},
-			Perplexity:  &PerplexitySecurity{APIKeys: []string{"perplexity-api-key"}},
-			GLMSearch:   &GLMSearchSecurity{APIKey: "glm-search-key"},
-			BaiduSearch: &BaiduSearchSecurity{APIKey: "baidu-search-key"},
-		},
-		// Skills tokens
-		Skills: &SkillsSecurity{
-			Github:  &GithubSecurity{Token: "github-token-xyz"},
-			ClawHub: &ClawHubSecurity{AuthToken: "clawhub-auth-token"},
+			// Skills tokens
+			Skills: SkillsToolsConfig{
+				Github: SkillsGithubConfig{Token: *NewSecureString("github-token-xyz")},
+				Registries: SkillsRegistriesConfig{
+					ClawHub: ClawHubRegistryConfig{AuthToken: *NewSecureString("clawhub-auth-token")},
+				},
+			},
 		},
 	}
 

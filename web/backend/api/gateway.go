@@ -730,8 +730,8 @@ func (h *Handler) gatewayStatusData() map[string]any {
 		gateway.mu.Unlock()
 		logger.ErrorC("gateway", fmt.Sprintf("Gateway health check failed: %v", err))
 	} else {
-		logger.InfoC("gateway", fmt.Sprintf("Gateway health status: %d", statusCode))
 		if statusCode != http.StatusOK {
+			logger.WarnC("gateway", fmt.Sprintf("Gateway health status: %d", statusCode))
 			gateway.mu.Lock()
 			setGatewayRuntimeStatusLocked("error")
 			gateway.mu.Unlock()

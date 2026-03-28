@@ -163,17 +163,11 @@ func setupPicoEnabledEnv(t *testing.T) (string, func()) {
 	cfg.ModelList = []*config.ModelConfig{{
 		ModelName: "custom-default",
 		Model:     "openai/gpt-4o",
+		APIKeys:   config.SimpleSecureStrings("sk-default"),
 	}}
 	cfg.Agents.Defaults.ModelName = "custom-default"
 	cfg.Channels.Pico.Enabled = true
-	cfg.WithSecurity(&config.SecurityConfig{
-		ModelList: map[string]config.ModelSecurityEntry{
-			"custom-default": {APIKeys: []string{"sk-default"}},
-		},
-		Channels: &config.ChannelsSecurity{
-			Pico: &config.PicoSecurity{Token: "test-pico-token"},
-		},
-	})
+	cfg.Channels.Pico.Token = *config.NewSecureString("test-pico-token")
 
 	configPath := filepath.Join(tmp, "config.json")
 	if err := config.SaveConfig(configPath, cfg); err != nil {

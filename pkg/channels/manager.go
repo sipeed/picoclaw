@@ -83,7 +83,7 @@ type Manager struct {
 	config        *config.Config
 	mediaStore    media.MediaStore
 	dispatchTask  *asyncTask
-	mux           *http.ServeMux
+	mux           *dynamicServeMux
 	httpServer    *http.Server
 	mu            sync.RWMutex
 	placeholders  sync.Map          // "channel:chatID" → placeholderID (string)
@@ -353,7 +353,7 @@ func (m *Manager) initChannel(name, displayName string) {
 func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 	logger.InfoC("channels", "Initializing channel manager")
 
-	if channels.Telegram.Enabled && channels.Telegram.Token() != "" {
+	if channels.Telegram.Enabled && channels.Telegram.Token.String() != "" {
 		m.initChannel("telegram", "Telegram")
 	}
 
@@ -370,7 +370,7 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("feishu", "Feishu")
 	}
 
-	if channels.Discord.Enabled && channels.Discord.Token() != "" {
+	if channels.Discord.Enabled && channels.Discord.Token.String() != "" {
 		m.initChannel("discord", "Discord")
 	}
 
@@ -386,18 +386,18 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("dingtalk", "DingTalk")
 	}
 
-	if channels.Slack.Enabled && channels.Slack.BotToken() != "" {
+	if channels.Slack.Enabled && channels.Slack.BotToken.String() != "" {
 		m.initChannel("slack", "Slack")
 	}
 
 	if channels.Matrix.Enabled &&
 		m.config.Channels.Matrix.Homeserver != "" &&
 		m.config.Channels.Matrix.UserID != "" &&
-		m.config.Channels.Matrix.AccessToken() != "" {
+		m.config.Channels.Matrix.AccessToken.String() != "" {
 		m.initChannel("matrix", "Matrix")
 	}
 
-	if channels.LINE.Enabled && channels.LINE.ChannelAccessToken() != "" {
+	if channels.LINE.Enabled && channels.LINE.ChannelAccessToken.String() != "" {
 		m.initChannel("line", "LINE")
 	}
 
@@ -405,15 +405,15 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("onebot", "OneBot")
 	}
 
-	if channels.WeCom.Enabled && channels.WeCom.BotID != "" && channels.WeCom.Secret() != "" {
+	if channels.WeCom.Enabled && channels.WeCom.BotID != "" && channels.WeCom.Secret.String() != "" {
 		m.initChannel("wecom", "WeCom")
 	}
 
-	if channels.Weixin.Enabled && channels.Weixin.Token() != "" {
+	if channels.Weixin.Enabled && channels.Weixin.Token.String() != "" {
 		m.initChannel("weixin", "Weixin")
 	}
 
-	if channels.Pico.Enabled && channels.Pico.Token() != "" {
+	if channels.Pico.Enabled && channels.Pico.Token.String() != "" {
 		m.initChannel("pico", "Pico")
 	}
 
@@ -436,7 +436,7 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 // It registers health endpoints from the health server and discovers channels
 // that implement WebhookHandler and/or HealthChecker to register their handlers.
 func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
-	m.mux = http.NewServeMux()
+	m.mux = newDynamicServeMux()
 
 	// Register health endpoints
 	if healthServer != nil {
@@ -444,28 +444,60 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 	}
 
 	// Discover and register webhook handlers and health checkers
-	for name, ch := range m.channels {
-		if wh, ok := ch.(WebhookHandler); ok {
-			m.mux.Handle(wh.WebhookPath(), wh)
-			logger.InfoCF("channels", "Webhook handler registered", map[string]any{
-				"channel": name,
-				"path":    wh.WebhookPath(),
-			})
-		}
-		if hc, ok := ch.(HealthChecker); ok {
-			m.mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
-			logger.InfoCF("channels", "Health endpoint registered", map[string]any{
-				"channel": name,
-				"path":    hc.HealthPath(),
-			})
-		}
-	}
+	m.registerHTTPHandlersLocked()
 
 	m.httpServer = &http.Server{
 		Addr:         addr,
 		Handler:      m.mux,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
+	}
+}
+
+// registerHTTPHandlersLocked registers webhook and health-check handlers for
+// all channels currently in m.channels. Caller must hold m.mu (or ensure
+// exclusive access).
+func (m *Manager) registerHTTPHandlersLocked() {
+	for name, ch := range m.channels {
+		m.registerChannelHTTPHandler(name, ch)
+	}
+}
+
+// registerChannelHTTPHandler registers the webhook/health handlers for a
+// single channel onto m.mux.
+func (m *Manager) registerChannelHTTPHandler(name string, ch Channel) {
+	if wh, ok := ch.(WebhookHandler); ok {
+		m.mux.Handle(wh.WebhookPath(), wh)
+		logger.InfoCF("channels", "Webhook handler registered", map[string]any{
+			"channel": name,
+			"path":    wh.WebhookPath(),
+		})
+	}
+	if hc, ok := ch.(HealthChecker); ok {
+		m.mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
+		logger.InfoCF("channels", "Health endpoint registered", map[string]any{
+			"channel": name,
+			"path":    hc.HealthPath(),
+		})
+	}
+}
+
+// unregisterChannelHTTPHandler removes the webhook/health handlers for a
+// single channel from m.mux.
+func (m *Manager) unregisterChannelHTTPHandler(name string, ch Channel) {
+	if wh, ok := ch.(WebhookHandler); ok {
+		m.mux.Unhandle(wh.WebhookPath())
+		logger.InfoCF("channels", "Webhook handler unregistered", map[string]any{
+			"channel": name,
+			"path":    wh.WebhookPath(),
+		})
+	}
+	if hc, ok := ch.(HealthChecker); ok {
+		m.mux.Unhandle(hc.HealthPath())
+		logger.InfoCF("channels", "Health endpoint unregistered", map[string]any{
+			"channel": name,
+			"path":    hc.HealthPath(),
+		})
 	}
 }
 
@@ -984,8 +1016,17 @@ func (m *Manager) GetEnabledChannels() []string {
 func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Save old config so we can revert on error.
+	oldConfig := m.config
+
+	// Update config early: initChannel uses m.config via factory(m.config, m.bus).
+	m.config = cfg
+
 	list := toChannelHashes(cfg)
 	added, removed := compareChannels(m.channelHashes, list)
+
+	deferFuncs := make([]func(), 0, len(removed)+len(added))
 	for _, name := range removed {
 		// Stop all channels
 		channel := m.channels[name]
@@ -998,20 +1039,24 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 				"error":   err.Error(),
 			})
 		}
-		go func() {
+		deferFuncs = append(deferFuncs, func() {
 			m.UnregisterChannel(name)
-		}()
+		})
 	}
 	dispatchCtx, cancel := context.WithCancel(ctx)
 	m.dispatchTask = &asyncTask{cancel: cancel}
 	cc, err := toChannelConfig(cfg, added)
 	if err != nil {
 		logger.ErrorC("channels", fmt.Sprintf("toChannelConfig error: %v", err))
+		m.config = oldConfig
+		cancel()
 		return err
 	}
 	err = m.initChannels(cc)
 	if err != nil {
 		logger.ErrorC("channels", fmt.Sprintf("initChannels error: %v", err))
+		m.config = oldConfig
+		cancel()
 		return err
 	}
 	for _, name := range added {
@@ -1031,13 +1076,18 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 		m.workers[name] = w
 		go m.runWorker(dispatchCtx, name, w)
 		go m.runMediaWorker(dispatchCtx, name, w)
-		go func() {
+		deferFuncs = append(deferFuncs, func() {
 			m.RegisterChannel(name, channel)
-		}()
+		})
 	}
 
-	m.config = cfg
-	m.channelHashes = toChannelHashes(cfg)
+	// Commit hashes only on full success.
+	m.channelHashes = list
+	go func() {
+		for _, f := range deferFuncs {
+			f()
+		}
+	}()
 	return nil
 }
 
@@ -1045,11 +1095,17 @@ func (m *Manager) RegisterChannel(name string, channel Channel) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.channels[name] = channel
+	if m.mux != nil {
+		m.registerChannelHTTPHandler(name, channel)
+	}
 }
 
 func (m *Manager) UnregisterChannel(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if ch, ok := m.channels[name]; ok && m.mux != nil {
+		m.unregisterChannelHTTPHandler(name, ch)
+	}
 	if w, ok := m.workers[name]; ok && w != nil {
 		close(w.queue)
 		<-w.done

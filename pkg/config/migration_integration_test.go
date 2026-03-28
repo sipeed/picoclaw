@@ -103,8 +103,8 @@ func TestMigration_Integration_LegacyConfigWithoutWorkspace(t *testing.T) {
 	if !cfg.Channels.Telegram.Enabled {
 		t.Error("Telegram.Enabled should be true")
 	}
-	if cfg.Channels.Telegram.Token() != "test-token" {
-		t.Errorf("Telegram.Token = %q, want %q", cfg.Channels.Telegram.Token(), "test-token")
+	if cfg.Channels.Telegram.Token.String() != "test-token" {
+		t.Errorf("Telegram.Token = %q, want %q", cfg.Channels.Telegram.Token.String(), "test-token")
 	}
 	if cfg.Gateway.Port != 18790 {
 		t.Errorf("Gateway.Port = %d, want %d", cfg.Gateway.Port, 18790)
@@ -643,15 +643,15 @@ web:
 
 	// Verify that the migrated config has the existing security values
 	// Telegram token should be preserved
-	if cfg.Channels.Telegram.Token() != "existing-telegram-token-from-env" {
+	if cfg.Channels.Telegram.Token.String() != "existing-telegram-token-from-env" {
 		t.Errorf("Telegram token was overwritten: got %q, want %q",
-			cfg.Channels.Telegram.Token(), "existing-telegram-token-from-env")
+			cfg.Channels.Telegram.Token.String(), "existing-telegram-token-from-env")
 	}
 
 	// Discord token should be preserved (even though legacy config didn't have it)
-	if cfg.Channels.Discord.Token() != "existing-discord-token-from-env" {
+	if cfg.Channels.Discord.Token.String() != "existing-discord-token-from-env" {
 		t.Errorf("Discord token was overwritten: got %q, want %q",
-			cfg.Channels.Discord.Token(), "existing-discord-token-from-env")
+			cfg.Channels.Discord.Token.String(), "existing-discord-token-from-env")
 	}
 
 	// Model API key should be preserved
@@ -667,17 +667,17 @@ web:
 	}
 
 	// Reload the security config from disk to verify it wasn't corrupted
-	reloadedSec, err := loadSecurityConfig(securityPath)
+	reloadedSec := cfg
+	err = loadSecurityConfig(cfg, securityPath)
 	if err != nil {
 		t.Fatalf("Failed to reload security config: %v", err)
 	}
 
-	if reloadedSec.Channels.Telegram == nil ||
-		reloadedSec.Channels.Telegram.Token != "existing-telegram-token-from-env" {
+	if reloadedSec.Channels.Telegram.Token.String() != "existing-telegram-token-from-env" {
 		t.Error("Telegram token not preserved in .security.yml file")
 	}
 
-	if reloadedSec.Channels.Discord == nil || reloadedSec.Channels.Discord.Token != "existing-discord-token-from-env" {
+	if reloadedSec.Channels.Discord.Token.String() != "existing-discord-token-from-env" {
 		t.Error("Discord token not preserved in .security.yml file")
 	}
 }

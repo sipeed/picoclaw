@@ -80,6 +80,7 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 			ModelName: "vllm-remote",
 			Model:     "vllm/custom-model",
 			APIBase:   "https://models.example.com/v1",
+			APIKeys:   config.SimpleSecureStrings("remote-key"),
 		},
 		{
 			ModelName:  "copilot-gpt-5.4",
@@ -88,11 +89,6 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 			AuthMethod: "oauth",
 		},
 	}
-	cfg.WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
-		"vllm-remote": {
-			APIKeys: []string{"remote-key"},
-		},
-	}})
 	cfg.Agents.Defaults.ModelName = "openai-oauth"
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)

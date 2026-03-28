@@ -57,7 +57,7 @@ func (h *Handler) handleGetPicoToken(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":   cfg.Channels.Pico.Token(),
+		"token":   cfg.Channels.Pico.Token.String(),
 		"ws_url":  wsURL,
 		"enabled": cfg.Channels.Pico.Enabled,
 	})
@@ -110,7 +110,7 @@ func (h *Handler) EnsurePicoChannel(callerOrigin string) (bool, error) {
 		changed = true
 	}
 
-	if cfg.Channels.Pico.Token() == "" {
+	if cfg.Channels.Pico.Token.String() == "" {
 		cfg.Channels.Pico.SetToken(generateSecureToken())
 		changed = true
 	}
@@ -150,7 +150,7 @@ func (h *Handler) handlePicoSetup(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":   cfg.Channels.Pico.Token(),
+		"token":   cfg.Channels.Pico.Token.String(),
 		"ws_url":  wsURL,
 		"enabled": true,
 		"changed": changed,
