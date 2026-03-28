@@ -274,6 +274,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return NewCodexCliProvider(workspace), modelID, nil
 
+	case "gemini-cli", "geminicli":
+		workspace := cfg.Workspace
+		if workspace == "" {
+			workspace = "."
+		}
+		return NewGeminiCliProvider(workspace), modelID, nil
+
 	case "github-copilot", "copilot":
 		apiBase := cfg.APIBase
 		if apiBase == "" {
