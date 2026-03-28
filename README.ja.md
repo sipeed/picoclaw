@@ -56,16 +56,18 @@
 
 ## 📢 ニュース
 
+2026-03-25 🚀 **v0.2.4 リリース！** Agent アーキテクチャ全面刷新（SubTurn、Hooks、Steering、EventBus）、WeChat/WeCom 統合、セキュリティ強化（.security.yml、機密データフィルタリング）、新プロバイダー（AWS Bedrock、Azure、Xiaomi MiMo）、35 件のバグ修正。PicoClaw **26K ⭐** 達成！
+
 2026-03-17 🚀 **v0.2.3 リリース！** システムトレイ UI（Windows & Linux）、サブエージェントステータス追跡（`spawn_status`）、実験的 Gateway ホットリロード、cron セキュリティゲート、セキュリティ修正 2 件。PicoClaw **25K ⭐** 達成！
 
-2026-03-09 🎉 **v0.2.1 — 史上最大のアップデート！** MCP プロトコル対応、4 つの新 Channel（Matrix/IRC/WeCom/Discord Proxy）、3 つの新 Provider（Kimi/Minimax/Avian）、ビジョンパイプライン、JSONL メモリストア、モデルルーティング。
+2026-03-09 🎉 **v0.2.1 — 最大のアップデート！** MCP プロトコルサポート、4 つの新チャンネル (Matrix/IRC/WeCom/Discord Proxy)、3 つの新プロバイダー (Kimi/Minimax/Avian)、ビジョンパイプライン、JSONL メモリストア、モデルルーティング。
 
-2026-02-28 📦 **v0.2.0** リリース — Docker Compose 対応と Web UI Launcher。
-
-2026-02-26 🎉 PicoClaw がわずか 17 日で **20K スター** 達成！Channel 自動オーケストレーションとケイパビリティインターフェースが実装されました。
+2026-02-28 📦 **v0.2.0** リリース — Docker Compose と Web UI Launcher サポート。
 
 <details>
 <summary>過去のニュース...</summary>
+
+2026-02-26 🎉 PicoClaw がわずか 17 日で **20K スター** 達成！Channel 自動オーケストレーションとケイパビリティインターフェースが実装されました。
 
 2026-02-16 🎉 PicoClaw が 1 週間で 12K スター達成！コミュニティメンテナーの役割と[ロードマップ](ROADMAP.md)が正式に公開されました。
 
@@ -254,6 +256,29 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 
 </details>
 
+<details>
+<summary><b>macOS — 初回起動時のセキュリティ警告</b></summary>
+
+`picoclaw-launcher` はインターネットからダウンロードされ、Mac App Store を通じて公証されていないため、macOS が初回起動時にブロックする場合があります。
+
+**ステップ 1：** `picoclaw-launcher` をダブルクリックすると、セキュリティ警告が表示されます：
+
+<p align="center">
+<img src="assets/macos-gatekeeper-warning.jpg" alt="macOS Gatekeeper 警告" width="400">
+</p>
+
+> *"picoclaw-launcher" は開けません — "picoclaw-launcher" がMacに害を与えたりプライバシーを侵害するマルウェアを含まないことをAppleは確認できません。*
+
+**ステップ 2：** **システム設定** → **プライバシーとセキュリティ** を開き、**セキュリティ** セクションまでスクロールして **このまま開く** をクリック → ダイアログで再度 **開く** をクリックします。
+
+<p align="center">
+<img src="assets/macos-gatekeeper-allow.jpg" alt="macOS プライバシーとセキュリティ — このまま開く" width="600">
+</p>
+
+この操作を一度行うと、以降の起動では警告が表示されなくなります。
+
+</details>
+
 ### 💻 TUI Launcher（ヘッドレス / SSH 向け推奨）
 
 TUI（Terminal UI）Launcher は設定と管理のためのフル機能ターミナルインターフェースを提供します。サーバー、Raspberry Pi、その他のヘッドレス環境に最適です。
@@ -367,6 +392,7 @@ PicoClaw は `model_list` 設定を通じて 30 以上の LLM Provider をサポ
 | [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | 必須 | NVIDIA ホスティングモデル |
 | [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | 必須 | 高速推論 |
 | [Novita AI](https://novita.ai/) | `novita/` | 必須 | 各種オープンモデル |
+| [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | 必須 | MiMo モデル |
 | [Ollama](https://ollama.com/) | `ollama/` | 不要 | ローカルモデル、セルフホスト |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | 不要 | ローカルデプロイ、OpenAI 互換 |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | 場合による | 100 以上の Provider のプロキシ |
@@ -423,9 +449,7 @@ Provider の完全な設定詳細は [Provider とモデル](docs/ja/providers.m
 | **DingTalk** | 中級（クライアント認証情報） | Stream | [ガイド](docs/channels/dingtalk/README.ja.md) |
 | **Feishu / Lark** | 中級（App ID + Secret） | WebSocket/SDK | [ガイド](docs/channels/feishu/README.ja.md) |
 | **LINE** | 中級（認証情報 + webhook） | Webhook | [ガイド](docs/channels/line/README.ja.md) |
-| **WeCom Bot** | 中級（webhook URL） | Webhook | [ガイド](docs/channels/wecom/wecom_bot/README.ja.md) |
-| **WeCom App** | 中級（corp 認証情報） | Webhook | [ガイド](docs/channels/wecom/wecom_app/README.ja.md) |
-| **WeCom AI Bot** | 中級（トークン + AES キー） | WebSocket / Webhook | [ガイド](docs/channels/wecom/wecom_aibot/README.ja.md) |
+| **WeCom** | 簡単（QR ログインまたは手動） | WebSocket | [ガイド](docs/channels/wecom/README.md) |
 | **IRC** | 中級（サーバー + nick） | IRC protocol | [ガイド](docs/ja/chat-apps.md#irc) |
 | **OneBot** | 中級（WebSocket URL） | OneBot v11 | [ガイド](docs/channels/onebot/README.ja.md) |
 | **MaixCam** | 簡単（有効化） | TCP socket | [ガイド](docs/channels/maixcam/README.ja.md) |
