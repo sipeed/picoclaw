@@ -1886,43 +1886,97 @@ turnLoop:
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		callLLM := func(messagesForCall []providers.Message, toolDefsForCall []providers.ToolDefinition) (*providers.LLMResponse, error) {
-			providerCtx, providerCancel := context.WithCancel(turnCtx)
-			ts.setProviderCancel(providerCancel)
-			defer func() {
-				providerCancel()
-				ts.clearProviderCancel(providerCancel)
-			}()
+		// Acquire a streamer once per turn before entering the retry loop.
+        // GetStreamer calls BeginStream on the channel (e.g. Telegram's
+        // sendMessageDraft path). Returns nil when streaming is disabled
+        // in config or the channel doesn't implement StreamingCapable.
+        var activeStreamer bus.Streamer
+        if ts.opts.SendResponse && ts.channel != "" && ts.chatID != "" {
+                if s, ok := al.bus.GetStreamer(turnCtx, ts.channel, ts.chatID); ok {
+                        activeStreamer = s
+                }
+        }
 
-			al.activeRequests.Add(1)
-			defer al.activeRequests.Done()
+        // streamingProvider is the interface subset of ChatStream we need.
+        type streamingProvider interface {
+                ChatStream(
+                        ctx context.Context,
+                        messages []providers.Message,
+                        tools []providers.ToolDefinition,
+                        model string,
+                        options map[string]any,
+                        onChunk func(accumulated string),
+                ) (*providers.LLMResponse, error)
+        }
 
-			if len(activeCandidates) > 1 && al.fallback != nil {
-				fbResult, fbErr := al.fallback.Execute(
-					providerCtx,
-					activeCandidates,
-					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return ts.agent.Provider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
-					},
-				)
-				if fbErr != nil {
-					return nil, fbErr
-				}
-				if fbResult.Provider != "" && len(fbResult.Attempts) > 0 {
-					logger.InfoCF(
-						"agent",
-						fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
-							fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
-						map[string]any{"agent_id": ts.agent.ID, "iteration": iteration},
-					)
-				}
-				return fbResult.Response, nil
-			}
-			return ts.agent.Provider.Chat(providerCtx, messagesForCall, toolDefsForCall, llmModel, llmOpts)
-		}
+        callLLM := func(messagesForCall []providers.Message, toolDefsForCall []providers.ToolDefinition) (*providers.LLMResponse, error) {
+                providerCtx, providerCancel := context.WithCancel(turnCtx)
+                ts.setProviderCancel(providerCancel)
+                defer func() {
+                        providerCancel()
+                        ts.clearProviderCancel(providerCancel)
+                }()
+                al.activeRequests.Add(1)
+                defer al.activeRequests.Done()
 
-		var response *providers.LLMResponse
-		var err error
+                // Streaming path: only when a streamer is available AND there are
+                // no tool definitions for this call (tool-calling iterations use
+                // normal Chat() so tool JSON is parsed correctly).
+                if activeStreamer != nil && len(toolDefsForCall) == 0 {
+                        if sp, ok := ts.agent.Provider.(streamingProvider); ok {
+                                resp, streamErr := sp.ChatStream(
+                                        providerCtx,
+                                        messagesForCall,
+                                        toolDefsForCall,
+                                        llmModel,
+                                        llmOpts,
+                                        func(accumulated string) {
+                                                _ = activeStreamer.Update(providerCtx, accumulated)
+                                        },
+                                )
+                                if streamErr == nil {
+                                        // Deliver the final formatted message and mark streamActive
+                                        // so preSend skips the duplicate PublishOutbound send.
+                                        if finalizeErr := activeStreamer.Finalize(providerCtx, resp.Content); finalizeErr != nil {
+                                                logger.WarnCF("agent", "Streamer finalize failed",
+                                                        map[string]any{"error": finalizeErr.Error()})
+                                        }
+                                        activeStreamer = nil // prevent double-finalize on retry
+                                        return resp, nil
+                                }
+                                // ChatStream failed — cancel streamer and fall through to Chat()
+                                logger.WarnCF("agent", "ChatStream failed, falling back to Chat()",
+                                        map[string]any{"error": streamErr.Error()})
+                                activeStreamer.Cancel(providerCtx)
+                                activeStreamer = nil
+                        }
+                }
+
+                if len(activeCandidates) > 1 && al.fallback != nil {
+                        fbResult, fbErr := al.fallback.Execute(
+                                providerCtx,
+                                activeCandidates,
+                                func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
+                                        return ts.agent.Provider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
+                                },
+                        )
+                        if fbErr != nil {
+                                return nil, fbErr
+                        }
+                        if fbResult.Provider != "" && len(fbResult.Attempts) > 0 {
+                                logger.InfoCF(
+                                        "agent",
+                                        fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
+                                                fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
+                                        map[string]any{"agent_id": ts.agent.ID, "iteration": iteration},
+                                )
+                        }
+                        return fbResult.Response, nil
+                }
+                return ts.agent.Provider.Chat(providerCtx, messagesForCall, toolDefsForCall, llmModel, llmOpts)
+        }
+        var response *providers.LLMResponse
+        var err error
 		maxRetries := 2
 		for retry := 0; retry <= maxRetries; retry++ {
 			response, err = callLLM(callMessages, providerToolDefs)

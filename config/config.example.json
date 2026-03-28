@@ -88,7 +88,9 @@
       "use_markdown_v2": false,
       "reasoning_channel_id": "",
       "streaming": {
-        "enabled": true
+        "enabled": true,
+        "throttle_seconds": 3,
+        "min_growth_chars": 200
       }
     },
     "discord": {
