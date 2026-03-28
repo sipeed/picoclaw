@@ -197,6 +197,16 @@ func (al *AgentLoop) generateSubTurnID() string {
 	return fmt.Sprintf("subturn-%d", al.subTurnCounter.Add(1))
 }
 
+func toolRegistryFromSlice(toolSlice []tools.Tool) *tools.ToolRegistry {
+	registry := tools.NewToolRegistry()
+	for _, tool := range toolSlice {
+		if tool != nil {
+			registry.Register(tool)
+		}
+	}
+	return registry
+}
+
 // ====================== Core Function: spawnSubTurn ======================
 
 // AgentLoopSpawner implements tools.SubTurnSpawner interface.
@@ -344,10 +354,14 @@ func spawnSubTurn(
 	ephemeralStore := newEphemeralSession(nil)
 	agent := *baseAgent // shallow copy
 	agent.Sessions = ephemeralStore
-	// Clone the tool registry so child turn's tool registrations
-	// don't pollute the parent's registry.
 	if baseAgent.Tools != nil {
+		// Inherit the parent's tool registry snapshot so hidden/TTL metadata is preserved.
 		agent.Tools = baseAgent.Tools.Clone()
+	} else if len(cfg.Tools) > 0 {
+		// Fallback path for callers that provide explicit tool slices without a parent registry.
+		agent.Tools = toolRegistryFromSlice(cfg.Tools)
+	} else {
+		agent.Tools = tools.NewToolRegistry()
 	}
 
 	// Create processOptions for the child turn
