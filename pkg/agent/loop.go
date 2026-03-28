@@ -2690,10 +2690,12 @@ turnLoop:
 
 	ts.setPhase(TurnPhaseFinalizing)
 	ts.setFinalContent(finalContent)
-	if !ts.opts.NoHistory && finalContent != "" {
-		finalMsg := providers.Message{Role: "assistant", Content: finalContent}
-		ts.agent.Sessions.AddMessage(ts.sessionKey, finalMsg.Role, finalMsg.Content)
-		ts.recordPersistedMessage(finalMsg)
+	if !ts.opts.NoHistory {
+		if finalContent != "" {
+			finalMsg := providers.Message{Role: "assistant", Content: finalContent}
+			ts.agent.Sessions.AddMessage(ts.sessionKey, finalMsg.Role, finalMsg.Content)
+			ts.recordPersistedMessage(finalMsg)
+		}
 		if err := ts.agent.Sessions.Save(ts.sessionKey); err != nil {
 			turnStatus = TurnEndStatusError
 			al.emitEvent(
