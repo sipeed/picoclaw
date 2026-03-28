@@ -14,7 +14,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/sipeed/picoclaw/pkg/providers/common"
+	orc "github.com/sipeed/picoclaw/pkg/providers/openai_responses_common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -28,7 +31,6 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
-	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
 
 type Provider struct {
@@ -196,183 +198,56 @@ func (p *Provider) buildResponsesRequestBody(
 	model string,
 	options map[string]any,
 ) (map[string]any, error) {
-	input, err := buildResponsesInput(messages)
-	if err != nil {
-		return nil, err
+	input, instructions := orc.TranslateMessages(messages)
+	requestBody := responses.ResponseNewParams{
+		Model: model,
+		Input: responses.ResponseNewParamsInputUnion{
+			OfInputItemList: input,
+		},
 	}
-
-	requestBody := map[string]any{
-		"model": model,
-		"input": input,
+	if instructions != "" {
+		requestBody.Instructions = openai.Opt(instructions)
 	}
 
 	nativeSearch, _ := options["native_search"].(bool)
 	nativeSearch = nativeSearch && isNativeSearchHost(p.apiBase)
-	responseTools := buildResponsesToolsList(tools, nativeSearch)
+	responseTools := orc.TranslateTools(tools, nativeSearch)
 	if len(responseTools) > 0 {
-		requestBody["tools"] = responseTools
-		requestBody["tool_choice"] = "auto"
+		requestBody.Tools = responseTools
+		requestBody.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
+			OfToolChoiceMode: openai.Opt(responses.ToolChoiceOptionsAuto),
+		}
 	}
 
 	if maxTokens, ok := common.AsInt(options["max_tokens"]); ok {
-		requestBody["max_output_tokens"] = maxTokens
+		requestBody.MaxOutputTokens = openai.Opt(int64(maxTokens))
 	}
 
 	if temperature, ok := requestTemperature(model, options); ok {
-		requestBody["temperature"] = temperature
+		requestBody.Temperature = openai.Opt(temperature)
 	}
 
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
 		if supportsPromptCacheKey(p.apiBase) {
-			requestBody["prompt_cache_key"] = cacheKey
+			requestBody.PromptCacheKey = openai.Opt(cacheKey)
 		}
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal responses request: %w", err)
+	}
+
+	var genericBody map[string]any
+	if err := json.Unmarshal(jsonData, &genericBody); err != nil {
+		return nil, fmt.Errorf("failed to normalize responses request body: %w", err)
 	}
 
 	for k, v := range p.extraBody {
-		requestBody[k] = v
+		genericBody[k] = v
 	}
 
-	return requestBody, nil
-}
-
-func buildResponsesInput(messages []Message) ([]any, error) {
-	input := make([]any, 0, len(messages))
-
-	for _, m := range messages {
-		switch m.Role {
-		case "system", "user":
-			input = append(input, map[string]any{
-				"type":    "message",
-				"role":    m.Role,
-				"content": serializeResponsesMessageContent(m),
-			})
-		case "assistant":
-			if strings.TrimSpace(m.Content) != "" || strings.TrimSpace(m.ReasoningContent) != "" || len(m.Media) > 0 || len(m.ToolCalls) == 0 {
-				input = append(input, map[string]any{
-					"type":    "message",
-					"role":    m.Role,
-					"content": serializeResponsesMessageContent(m),
-				})
-			}
-
-			for _, tc := range m.ToolCalls {
-				name, args, ok := resolveResponseToolCall(tc)
-				if !ok {
-					log.Printf("openai_compat: skipping invalid assistant tool call in responses history: id=%q", tc.ID)
-					continue
-				}
-				input = append(input, map[string]any{
-					"type":      "function_call",
-					"call_id":   tc.ID,
-					"name":      name,
-					"arguments": args,
-				})
-			}
-		case "tool":
-			if strings.TrimSpace(m.ToolCallID) == "" {
-				return nil, fmt.Errorf("tool message missing tool_call_id")
-			}
-			input = append(input, map[string]any{
-				"type":    "function_call_output",
-				"call_id": m.ToolCallID,
-				"output":  m.Content,
-			})
-		default:
-			return nil, fmt.Errorf("unsupported message role: %s", m.Role)
-		}
-	}
-
-	return input, nil
-}
-
-func serializeResponsesMessageContent(m Message) any {
-	effectiveText := m.Content
-	if effectiveText == "" {
-		effectiveText = m.ReasoningContent
-	}
-
-	if len(m.Media) == 0 {
-		return effectiveText
-	}
-
-	parts := make([]map[string]any, 0, 1+len(m.Media))
-	if effectiveText != "" {
-		parts = append(parts, map[string]any{
-			"type": "input_text",
-			"text": effectiveText,
-		})
-	}
-
-	for _, mediaURL := range m.Media {
-		if strings.HasPrefix(mediaURL, "data:image/") {
-			parts = append(parts, map[string]any{
-				"type":      "input_image",
-				"image_url": mediaURL,
-			})
-		}
-	}
-
-	if len(parts) == 0 {
-		return effectiveText
-	}
-
-	return parts
-}
-
-func buildResponsesToolsList(tools []ToolDefinition, nativeSearch bool) []any {
-	result := make([]any, 0, len(tools)+1)
-	for _, tool := range tools {
-		if nativeSearch && strings.EqualFold(tool.Function.Name, "web_search") {
-			continue
-		}
-		if tool.Type != "" && tool.Type != "function" {
-			continue
-		}
-
-		entry := map[string]any{
-			"type":       "function",
-			"name":       tool.Function.Name,
-			"parameters": tool.Function.Parameters,
-		}
-		if entry["parameters"] == nil {
-			entry["parameters"] = map[string]any{"type": "object", "properties": map[string]any{}}
-		}
-		if tool.Function.Description != "" {
-			entry["description"] = tool.Function.Description
-		}
-
-		result = append(result, entry)
-	}
-
-	if nativeSearch {
-		result = append(result, map[string]any{"type": "web_search_preview"})
-	}
-
-	return result
-}
-
-func resolveResponseToolCall(tc ToolCall) (name string, arguments string, ok bool) {
-	name = tc.Name
-	if name == "" && tc.Function != nil {
-		name = tc.Function.Name
-	}
-	if name == "" {
-		return "", "", false
-	}
-
-	if len(tc.Arguments) > 0 {
-		argsJSON, err := json.Marshal(tc.Arguments)
-		if err != nil {
-			return "", "", false
-		}
-		return name, string(argsJSON), true
-	}
-
-	if tc.Function != nil && tc.Function.Arguments != "" {
-		return name, tc.Function.Arguments, true
-	}
-
-	return name, "{}", true
+	return genericBody, nil
 }
 
 func (p *Provider) Chat(
@@ -676,161 +551,7 @@ func parseStreamResponse(
 }
 
 func parseResponsesResponse(body io.Reader) (*LLMResponse, error) {
-	var apiResponse struct {
-		Status string `json:"status"`
-		Error  *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-		Output []struct {
-			ID        string `json:"id"`
-			Type      string `json:"type"`
-			CallID    string `json:"call_id"`
-			Name      string `json:"name"`
-			Arguments string `json:"arguments"`
-			Summary   []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"summary"`
-			Content []struct {
-				Type    string `json:"type"`
-				Text    string `json:"text"`
-				Refusal string `json:"refusal"`
-			} `json:"content"`
-		} `json:"output"`
-		IncompleteDetails *struct {
-			Reason string `json:"reason"`
-		} `json:"incomplete_details"`
-		Usage *struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-			TotalTokens  int `json:"total_tokens"`
-		} `json:"usage"`
-	}
-
-	if err := json.NewDecoder(body).Decode(&apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	status := strings.TrimSpace(apiResponse.Status)
-	switch status {
-	case "completed", "incomplete":
-		if len(apiResponse.Output) == 0 {
-			return nil, errors.New("openai responses returned terminal status with empty output")
-		}
-	case "failed":
-		if apiResponse.Error != nil {
-			if msg := strings.TrimSpace(apiResponse.Error.Message); msg != "" {
-				return nil, errors.New(msg)
-			}
-		}
-		return nil, errors.New("openai responses request failed")
-	default:
-		return nil, fmt.Errorf("openai responses returned unexpected or non-terminal status: %q", status)
-	}
-
-	var content strings.Builder
-	var reasoning strings.Builder
-	var reasoningContent strings.Builder
-	reasoningDetails := make([]ReasoningDetail, 0)
-	toolCalls := make([]ToolCall, 0)
-	for _, item := range apiResponse.Output {
-		switch item.Type {
-		case "message":
-			for _, part := range item.Content {
-				if part.Text != "" {
-					content.WriteString(part.Text)
-					continue
-				}
-				if part.Refusal != "" {
-					content.WriteString(part.Refusal)
-				}
-			}
-		case "reasoning":
-			for _, part := range item.Summary {
-				if part.Text == "" {
-					continue
-				}
-				if reasoning.Len() > 0 {
-					reasoning.WriteString("\n")
-				}
-				reasoning.WriteString(part.Text)
-				reasoningDetails = append(reasoningDetails, ReasoningDetail{
-					Format: "text",
-					Index:  len(reasoningDetails),
-					Type:   part.Type,
-					Text:   part.Text,
-				})
-			}
-			for _, part := range item.Content {
-				if part.Text == "" {
-					continue
-				}
-				if reasoningContent.Len() > 0 {
-					reasoningContent.WriteString("\n")
-				}
-				reasoningContent.WriteString(part.Text)
-				reasoningDetails = append(reasoningDetails, ReasoningDetail{
-					Format: "text",
-					Index:  len(reasoningDetails),
-					Type:   part.Type,
-					Text:   part.Text,
-				})
-			}
-		case "function_call":
-			arguments := make(map[string]any)
-			if item.Arguments != "" {
-				if err := json.Unmarshal([]byte(item.Arguments), &arguments); err != nil {
-					log.Printf("openai_compat: failed to decode responses tool call arguments for %q: %v", item.Name, err)
-					arguments["raw"] = item.Arguments
-				}
-			}
-
-			toolCalls = append(toolCalls, ToolCall{
-				ID:        firstNonEmpty(item.CallID, item.ID),
-				Name:      item.Name,
-				Arguments: arguments,
-			})
-		}
-	}
-
-	finishReason := "stop"
-	if len(toolCalls) > 0 {
-		finishReason = "tool_calls"
-	} else if status == "incomplete" {
-		finishReason = "length"
-		if apiResponse.IncompleteDetails != nil && apiResponse.IncompleteDetails.Reason != "" && apiResponse.IncompleteDetails.Reason != "max_output_tokens" {
-			finishReason = apiResponse.IncompleteDetails.Reason
-		}
-	}
-
-	var usage *UsageInfo
-	if apiResponse.Usage != nil {
-		usage = &UsageInfo{
-			PromptTokens:     apiResponse.Usage.InputTokens,
-			CompletionTokens: apiResponse.Usage.OutputTokens,
-			TotalTokens:      apiResponse.Usage.TotalTokens,
-		}
-	}
-
-	return &LLMResponse{
-		Content:          content.String(),
-		ReasoningContent: reasoningContent.String(),
-		Reasoning:        reasoning.String(),
-		ReasoningDetails: reasoningDetails,
-		ToolCalls:        toolCalls,
-		FinishReason:     finishReason,
-		Usage:            usage,
-	}, nil
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-
-	return ""
+	return orc.ParseResponseBody(body)
 }
 
 func normalizeModel(model, apiBase string) string {

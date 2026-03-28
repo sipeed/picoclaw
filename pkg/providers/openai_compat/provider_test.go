@@ -96,6 +96,64 @@ func TestProviderChat_PrefersResponsesWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestProviderChat_ResponsesBodyUsesSharedTranslatorSemantics(t *testing.T) {
+	var requestBody []byte
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		var err error
+		requestBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		resp := map[string]any{
+			"status": "completed",
+			"output": []map[string]any{{
+				"type":    "message",
+				"content": []map[string]any{{"type": "output_text", "text": "ok"}},
+			}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "", WithResponsesPreferred())
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{
+			{Role: "system", Content: "You are helpful"},
+			{Role: "user", Content: "Transcribe this", Media: []string{"data:audio/wav;base64,AAAA"}},
+		},
+		nil,
+		"gpt-4o",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	body := string(requestBody)
+	if !strings.Contains(body, `"instructions":"You are helpful"`) {
+		t.Fatalf("expected responses body to contain instructions, got %s", body)
+	}
+	if strings.Contains(body, `"role":"system"`) {
+		t.Fatalf("did not expect system message to remain in input, got %s", body)
+	}
+	if !strings.Contains(body, `"type":"input_file"`) {
+		t.Fatalf("expected audio media to be translated as input_file, got %s", body)
+	}
+	if !strings.Contains(body, `"filename":"audio.wav"`) {
+		t.Fatalf("expected audio filename in multipart payload, got %s", body)
+	}
+}
+
 func TestProviderChat_FallsBackToChatCompletionsWhenResponsesFails(t *testing.T) {
 	var paths []string
 
