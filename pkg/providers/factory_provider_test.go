@@ -296,8 +296,8 @@ func TestCreateProviderFromConfig_Anthropic(t *testing.T) {
 	if provider == nil {
 		t.Fatal("CreateProviderFromConfig() returned nil provider")
 	}
-	if modelID != "claude-sonnet-4.6" {
-		t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4.6")
+	if modelID != "claude-sonnet-4-6" {
+		t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4-6")
 	}
 }
 
