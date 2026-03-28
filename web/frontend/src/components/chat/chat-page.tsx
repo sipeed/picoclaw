@@ -66,6 +66,12 @@ export function ChatPage() {
     setIsAtBottom(scrollHeight - scrollTop <= clientHeight + 10)
   }
 
+  const liveAssistantMessageId = isTyping
+    ? [...messages]
+        .reverse()
+        .find((message) => message.role === "assistant")?.id
+    : undefined
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     syncScrollState(e.currentTarget)
   }
@@ -152,6 +158,7 @@ export function ChatPage() {
                 <AssistantMessage
                   content={msg.content}
                   timestamp={msg.timestamp}
+                  isStreaming={msg.id === liveAssistantMessageId}
                 />
               ) : (
                 <UserMessage content={msg.content} />
