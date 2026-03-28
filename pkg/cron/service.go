@@ -25,7 +25,7 @@ type CronSchedule struct {
 
 type CronPayload struct {
 	Kind    string `json:"kind"`
-	Type    string `json:"type,omitempty"` // "message" (default) or "directive"
+	Type    string `json:"type"`
 	Message string `json:"message"`
 	Command string `json:"command,omitempty"`
 	Deliver bool   `json:"deliver"`
