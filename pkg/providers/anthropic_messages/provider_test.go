@@ -584,7 +584,11 @@ func TestBuildRequestBodyEdgeCases(t *testing.T) {
 					t.Fatalf("messages is not []any")
 				}
 				if len(messages) != 3 {
-					t.Fatalf("expected 3 API messages (user, assistant with text, assistant with tool_use), got %d: %#v", len(messages), messages)
+					t.Fatalf(
+						"expected 3 API messages (user, assistant with text, assistant with tool_use), got %d: %#v",
+						len(messages),
+						messages,
+					)
 				}
 			}
 		})
