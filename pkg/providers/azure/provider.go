@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	orc "github.com/sipeed/picoclaw/pkg/providers/openai_responses_common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
@@ -137,6 +139,11 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	logger.InfoCF("provider.azure", "Responses API request", map[string]any{
+		"url":  requestURL,
+		"body": string(jsonData),
+	})
+
 	req, err := http.NewRequestWithContext(ctx, "POST", requestURL, bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -157,7 +164,17 @@ func (p *Provider) Chat(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return orc.ParseResponseBody(resp.Body, &p.lastResponseID)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	logger.InfoCF("provider.azure", "Responses API response", map[string]any{
+		"status": resp.StatusCode,
+		"body":   string(respBody),
+	})
+
+	return orc.ParseResponseBody(bytes.NewReader(respBody), &p.lastResponseID)
 }
 
 // GetDefaultModel returns an empty string as Azure deployments are user-configured.
