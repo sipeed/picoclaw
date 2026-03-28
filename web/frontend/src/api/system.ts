@@ -11,6 +11,13 @@ export interface LauncherConfig {
   allowed_cidrs: string[]
 }
 
+export interface SystemVersionInfo {
+  version: string
+  git_commit?: string
+  build_time?: string
+  go_version: string
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, options)
   if (!res.ok) {
@@ -59,4 +66,8 @@ export async function setLauncherConfig(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   })
+}
+
+export async function getSystemVersionInfo(): Promise<SystemVersionInfo> {
+  return request<SystemVersionInfo>("/api/system/version")
 }

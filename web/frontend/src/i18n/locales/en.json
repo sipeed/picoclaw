@@ -79,6 +79,12 @@
   "labels": {
     "loading": "Loading..."
   },
+  "footer": {
+    "version": "Version",
+    "commit": "Commit",
+    "build": "Build",
+    "version_unknown": "Unknown"
+  },
   "credentials": {
     "description": "Manage OAuth and token-based credentials for supported providers.",
     "loading": "Loading credentials...",
