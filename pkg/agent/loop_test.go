@@ -2904,3 +2904,49 @@ func TestProcessMessage_ContextOverflow_AnthropicStyle(t *testing.T) {
 		t.Fatalf("expected 2 calls for retry, got %d", provider.calls)
 	}
 }
+
+// TestProcessSystemMessage_UsesOriginSessionKey verifies that when an async tool
+// completes and publishes a system message with a SessionKey, the resulting turn
+// runs in that session rather than the default "agent:main:main" session.
+func TestProcessSystemMessage_UsesOriginSessionKey(t *testing.T) {
+	al := NewAgentLoop(&config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         t.TempDir(),
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}, bus.NewMessageBus(), &mockProvider{})
+
+	const wantSessionKey = "agent:main:weixin:direct:testchatid"
+
+	sub := al.SubscribeEvents(32)
+	defer al.UnsubscribeEvents(sub.ID)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := al.processMessage(context.Background(), bus.InboundMessage{
+			Channel:    "system",
+			SenderID:   "async:spawn",
+			ChatID:     "weixin:testchatid",
+			Content:    "task completed",
+			SessionKey: wantSessionKey,
+		})
+		done <- err
+	}()
+
+	evt := waitForEvent(t, sub.C, 5*time.Second, func(e Event) bool {
+		return e.Kind == EventKindTurnStart
+	})
+
+	if evt.Meta.SessionKey != wantSessionKey {
+		t.Errorf("turn started with session_key=%q, want %q (got agent:main:main means bug is present)",
+			evt.Meta.SessionKey, wantSessionKey)
+	}
+
+	if err := <-done; err != nil {
+		t.Logf("processMessage returned error (acceptable in test env): %v", err)
+	}
+}
