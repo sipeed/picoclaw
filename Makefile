@@ -147,9 +147,11 @@ build-launcher-tui:
 	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher-tui"
 
 ## build-whatsapp-native: Build with WhatsApp native (whatsmeow) support; larger binary
+## Only platforms where modernc.org/sqlite (libc) works: linux amd64/arm/arm64, darwin, windows amd64.
+## loong64/riscv64/mipsle are excluded (build constraints exclude all Go files in libc).
 build-whatsapp-native: generate
 ## @echo "Building $(BINARY_NAME) with WhatsApp native for $(PLATFORM)/$(ARCH)..."
-	@echo "Building for multiple platforms..."
+	@echo "Building for multiple platforms (whatsapp_native: sqlite-supported only)..."
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 $(GO) build -tags $(GO_BUILD_TAGS),whatsapp_native -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=arm GOARM=7 $(GO) build -tags $(GO_BUILD_TAGS),whatsapp_native -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm ./$(CMD_DIR)
