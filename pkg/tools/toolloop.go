@@ -161,11 +161,15 @@ func RunToolLoop(
 		for _, r := range results {
 			contentForLLM := r.result.ContentForLLM()
 
-			messages = append(messages, providers.Message{
+			toolMsg := providers.Message{
 				Role:       "tool",
 				Content:    contentForLLM,
 				ToolCallID: r.tc.ID,
-			})
+			}
+			if len(r.result.Media) > 0 {
+				toolMsg.Media = append(toolMsg.Media, r.result.Media...)
+			}
+			messages = append(messages, toolMsg)
 		}
 	}
 

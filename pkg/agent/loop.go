@@ -246,6 +246,17 @@ func registerSharedTools(
 			agent.Tools.Register(sendFileTool)
 		}
 
+		if cfg.Tools.IsToolEnabled("load_image") {
+			loadImageTool := tools.NewLoadImageTool(
+				agent.Workspace,
+				cfg.Agents.Defaults.RestrictToWorkspace,
+				cfg.Agents.Defaults.GetMaxMediaSize(),
+				nil,
+				allowReadPaths,
+			)
+			agent.Tools.Register(loadImageTool)
+		}
+
 		// Skill discovery and installation tools
 		skills_enabled := cfg.Tools.IsToolEnabled("skills")
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
@@ -1806,6 +1817,10 @@ turnLoop:
 			providerToolDefs = filtered
 		}
 
+		if iteration > 1 {
+			messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
+		}
+
 		callMessages := messages
 		if gracefulTerminal {
 			callMessages = append(append([]providers.Message(nil), messages...), ts.interruptHintMessage())
@@ -2498,6 +2513,9 @@ turnLoop:
 				Role:       "tool",
 				Content:    contentForLLM,
 				ToolCallID: toolCallID,
+			}
+			if len(toolResult.Media) > 0 && !toolResult.ResponseHandled {
+				toolResultMsg.Media = append(toolResultMsg.Media, toolResult.Media...)
 			}
 			al.emitEvent(
 				EventKindToolExecEnd,
