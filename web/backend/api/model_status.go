@@ -20,7 +20,8 @@ var (
 	probeOpenAICompatibleModelFunc = probeOpenAICompatibleModel
 )
 
-func hasModelConfiguration(m config.ModelConfig) bool {
+func hasModelConfiguration(cfg *config.Config, m config.ModelConfig) bool {
+	m = effectiveModelConfig(cfg, m)
 	authMethod := strings.ToLower(strings.TrimSpace(m.AuthMethod))
 	apiKey := strings.TrimSpace(m.APIKey)
 
@@ -44,8 +45,9 @@ func hasModelConfiguration(m config.ModelConfig) bool {
 
 // isModelConfigured reports whether a model is currently available to use.
 // Local models must be reachable; remote/API-key models only need saved config.
-func isModelConfigured(m config.ModelConfig) bool {
-	if !hasModelConfiguration(m) {
+func isModelConfigured(cfg *config.Config, m config.ModelConfig) bool {
+	m = effectiveModelConfig(cfg, m)
+	if !hasModelConfiguration(cfg, m) {
 		return false
 	}
 	if requiresRuntimeProbe(m) {
@@ -73,6 +75,46 @@ func requiresRuntimeProbe(m config.ModelConfig) bool {
 	}
 
 	return false
+}
+
+func effectiveModelConfig(cfg *config.Config, m config.ModelConfig) config.ModelConfig {
+	if cfg == nil || strings.TrimSpace(m.APIKey) != "" {
+		return m
+	}
+	switch modelProtocol(m.Model) {
+	case "openrouter":
+		m.APIKey, m.Proxy = cfg.Providers.OpenRouter.APIKey, cfg.Providers.OpenRouter.Proxy
+		if m.APIBase == "" {
+			m.APIBase = cfg.Providers.OpenRouter.APIBase
+		}
+	case "openai":
+		m.APIKey, m.Proxy = cfg.Providers.OpenAI.APIKey, cfg.Providers.OpenAI.Proxy
+		if m.APIBase == "" {
+			m.APIBase = cfg.Providers.OpenAI.APIBase
+		}
+	case "anthropic":
+		m.APIKey, m.Proxy, m.AuthMethod = cfg.Providers.Anthropic.APIKey, cfg.Providers.Anthropic.Proxy, cfg.Providers.Anthropic.AuthMethod
+		if m.APIBase == "" {
+			m.APIBase = cfg.Providers.Anthropic.APIBase
+		}
+	case "groq":
+		m.APIKey, m.Proxy = cfg.Providers.Groq.APIKey, cfg.Providers.Groq.Proxy
+	case "zhipu":
+		m.APIKey, m.Proxy = cfg.Providers.Zhipu.APIKey, cfg.Providers.Zhipu.Proxy
+	case "gemini":
+		m.APIKey, m.Proxy = cfg.Providers.Gemini.APIKey, cfg.Providers.Gemini.Proxy
+	case "vllm":
+		m.APIKey, m.Proxy = cfg.Providers.VLLM.APIKey, cfg.Providers.VLLM.Proxy
+	case "ollama":
+		m.APIKey, m.Proxy = cfg.Providers.Ollama.APIKey, cfg.Providers.Ollama.Proxy
+	case "mistral":
+		m.APIKey, m.Proxy = cfg.Providers.Mistral.APIKey, cfg.Providers.Mistral.Proxy
+	case "avian":
+		m.APIKey, m.Proxy = cfg.Providers.Avian.APIKey, cfg.Providers.Avian.Proxy
+	case "minimax":
+		m.APIKey, m.Proxy = cfg.Providers.Minimax.APIKey, cfg.Providers.Minimax.Proxy
+	}
+	return m
 }
 
 func probeLocalModelAvailability(m config.ModelConfig) bool {

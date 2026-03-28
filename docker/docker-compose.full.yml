@@ -10,8 +10,10 @@ services:
     container_name: picoclaw-agent-full
     profiles:
       - agent
+    env_file:
+      - ../.env.local
     volumes:
-      - ../config/config.json:/root/.picoclaw/config.json:ro
+      - ../config:/root/.picoclaw
       - picoclaw-workspace:/root/.picoclaw/workspace
       - picoclaw-npm-cache:/root/.npm # npm cache for faster MCP server installs
     entrypoint: ["picoclaw", "agent"]
@@ -30,14 +32,36 @@ services:
     restart: unless-stopped
     profiles:
       - gateway
+    env_file:
+      - ../.env.local
     volumes:
-      # Configuration file
-      - ../config/config.json:/root/.picoclaw/config.json:ro
-      # Persistent workspace (sessions, memory, logs)
+      - ../config:/root/.picoclaw
       - picoclaw-workspace:/root/.picoclaw/workspace
-      # NPM cache for faster MCP server installs
       - picoclaw-npm-cache:/root/.npm
     command: ["gateway"]
+
+  # ─────────────────────────────────────────────
+  # PicoClaw Launcher (Web Console + Gateway) - Built from local source
+  #   docker compose -f docker/docker-compose.full.yml --profile launcher up -d
+  # ─────────────────────────────────────────────
+  picoclaw-launcher:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.launcher.local
+    container_name: picoclaw-launcher-full
+    restart: unless-stopped
+    profiles:
+      - launcher
+    env_file:
+      - ../.env.local
+    environment:
+      - PICOCLAW_GATEWAY_HOST=0.0.0.0
+    ports:
+      - "127.0.0.1:18800:18800"
+      - "127.0.0.1:18790:18790"
+    volumes:
+      - ../config:/root/.picoclaw
+      - picoclaw-workspace:/root/.picoclaw/workspace
 
 volumes:
   picoclaw-workspace:

@@ -1,0 +1,16 @@
+{"level":"info","component":"web","time":"2026-03-28T04:49:55Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:101","message":"PicoClaw Launcher dev starting..."}
+{"level":"info","component":"web","time":"2026-03-28T04:49:55Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:102","message":"PicoClaw Home: /root/.picoclaw"}
+{"level":"info","time":"2026-03-28T04:49:56Z","caller":"/home/runner/work/picoclaw/picoclaw/pkg/config/config.go:1863","message":"saving config to /root/.picoclaw/config.json"}
+{"level":"info","component":"web","time":"2026-03-28T04:49:56Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:209","message":"Server will listen on http://localhost:18800"}
+{"level":"info","component":"web","time":"2026-03-28T04:49:56Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:212","message":"Public access enabled at http://172.20.0.2:18800"}
+{"level":"info","component":"web","time":"2026-03-28T04:49:56Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:230","message":"Server listening on 0.0.0.0:18800"}
+{"level":"info","component":"gateway","time":"2026-03-28T04:49:57Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/api/gateway.go:133","message":"Skip auto-starting gateway: no default model configured"}
+{"level":"error","component":"gateway","time":"2026-03-28T04:51:06Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/api/gateway.go:731","message":"Gateway health check failed: Get \"http://127.0.0.1:18790/health\": dial tcp 127.0.0.1:18790: connect: connection refused"}
+{"level":"info","component":"web","time":"2026-03-28T04:59:35Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:101","message":"PicoClaw Launcher dev starting..."}
+{"level":"info","component":"web","time":"2026-03-28T04:59:35Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:102","message":"PicoClaw Home: /root/.picoclaw"}
+{"level":"info","component":"web","time":"2026-03-28T04:59:35Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:209","message":"Server will listen on http://localhost:18800"}
+{"level":"info","component":"web","time":"2026-03-28T04:59:35Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:212","message":"Public access enabled at http://172.20.0.2:18800"}
+{"level":"info","component":"web","time":"2026-03-28T04:59:35Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/main.go:230","message":"Server listening on 0.0.0.0:18800"}
+{"level":"info","component":"gateway","time":"2026-03-28T04:59:36Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/api/gateway.go:133","message":"Skip auto-starting gateway: default model \"llama3\" is not reachable"}
+{"level":"error","component":"gateway","time":"2026-03-28T04:59:48Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/api/gateway.go:731","message":"Gateway health check failed: Get \"http://127.0.0.1:18790/health\": dial tcp 127.0.0.1:18790: connect: connection refused"}
+{"level":"error","component":"gateway","time":"2026-03-28T05:01:52Z","caller":"/home/runner/work/picoclaw/picoclaw/web/backend/api/gateway.go:731","message":"Gateway health check failed: Get \"http://127.0.0.1:18790/health\": dial tcp 127.0.0.1:18790: connect: connection refused"}

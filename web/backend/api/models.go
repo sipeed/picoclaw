@@ -60,7 +60,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 	for i, m := range cfg.ModelList {
 		go func(i int, m config.ModelConfig) {
 			defer wg.Done()
-			configured[i] = isModelConfigured(m)
+			configured[i] = isModelConfigured(cfg, m)
 		}(i, m)
 	}
 	wg.Wait()

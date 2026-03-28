@@ -7,7 +7,6 @@ import {
   IconBrandQq,
   IconBrandSlack,
   IconBrandTelegram,
-  IconBrandWechat,
   IconBrandWhatsapp,
   IconCamera,
   IconMessages,

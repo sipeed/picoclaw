@@ -50,6 +50,19 @@ func CreateProvider(cfg *config.Config) (LLMProvider, string, error) {
 	if modelCfg.Workspace == "" {
 		modelCfg.Workspace = cfg.WorkspacePath()
 	}
+	if modelCfg.APIKey == "" || modelCfg.APIBase == "" || modelCfg.Proxy == "" {
+		if sel, err := resolveProviderSelection(cfg); err == nil {
+			if modelCfg.APIKey == "" {
+				modelCfg.APIKey = sel.apiKey
+			}
+			if modelCfg.APIBase == "" {
+				modelCfg.APIBase = sel.apiBase
+			}
+			if modelCfg.Proxy == "" {
+				modelCfg.Proxy = sel.proxy
+			}
+		}
+	}
 
 	// Use factory to create provider
 	provider, modelID, err := CreateProviderFromConfig(modelCfg)

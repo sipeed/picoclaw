@@ -24,6 +24,8 @@ build/
 
 # Secrets & Config (keep templates, ignore actual secrets)
 .env
+.env.local
+.env.local.*
 config/config.json
 
 # Test

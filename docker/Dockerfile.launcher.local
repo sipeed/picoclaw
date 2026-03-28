@@ -1,0 +1,22 @@
+FROM oven/bun:1 AS frontend
+WORKDIR /src/web/frontend
+COPY web/frontend/package.json web/frontend/pnpm-lock.yaml ./
+RUN bun install
+COPY web/frontend ./
+RUN bun run build:backend
+
+FROM golang:1.26.0-alpine AS builder
+RUN apk add --no-cache git make
+WORKDIR /src
+COPY go.mod ./
+RUN go mod download
+COPY . .
+COPY --from=frontend /src/web/backend/dist /src/web/backend/dist
+RUN go mod tidy && make build && make build-launcher
+
+FROM alpine:3.23
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
+COPY --from=builder /src/build/picoclaw-launcher /usr/local/bin/picoclaw-launcher
+ENTRYPOINT ["picoclaw-launcher"]
+CMD ["-public", "-no-browser"]
