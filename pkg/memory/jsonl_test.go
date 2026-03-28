@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -33,6 +34,101 @@ func TestNewJSONLStore_CreatesDirectory(t *testing.T) {
 	}
 	if !info.IsDir() {
 		t.Errorf("expected directory, got file")
+	}
+}
+
+func TestJSONLStore_TightensPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission bits are not enforced on Windows")
+	}
+
+	dir := filepath.Join(t.TempDir(), "nested", "sessions")
+	store, err := NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.AddMessage(context.Background(), "s1", "user", "hello"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("Stat dir: %v", err)
+	}
+	if got := dirInfo.Mode().Perm(); got != sessionDirPerm {
+		t.Fatalf("dir perms = %04o, want %04o", got, sessionDirPerm)
+	}
+
+	jsonlInfo, err := os.Stat(store.jsonlPath("s1"))
+	if err != nil {
+		t.Fatalf("Stat jsonl: %v", err)
+	}
+	if got := jsonlInfo.Mode().Perm(); got != sessionFilePerm {
+		t.Fatalf("jsonl perms = %04o, want %04o", got, sessionFilePerm)
+	}
+
+	metaInfo, err := os.Stat(store.metaPath("s1"))
+	if err != nil {
+		t.Fatalf("Stat meta: %v", err)
+	}
+	if got := metaInfo.Mode().Perm(); got != sessionFilePerm {
+		t.Fatalf("meta perms = %04o, want %04o", got, sessionFilePerm)
+	}
+}
+
+func TestJSONLStore_TightensExistingLoosePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission bits are not enforced on Windows")
+	}
+
+	dir := filepath.Join(t.TempDir(), "sessions")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	jsonlPath := filepath.Join(dir, "legacy.jsonl")
+	metaPath := filepath.Join(dir, "legacy.meta.json")
+	if err := os.WriteFile(jsonlPath, []byte(""), 0o644); err != nil {
+		t.Fatalf("WriteFile jsonl: %v", err)
+	}
+	if err := os.WriteFile(metaPath, []byte(`{"key":"legacy"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile meta: %v", err)
+	}
+
+	store, err := NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.AddMessage(context.Background(), "legacy", "user", "hello"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("Stat dir: %v", err)
+	}
+	if got := dirInfo.Mode().Perm(); got != sessionDirPerm {
+		t.Fatalf("dir perms = %04o, want %04o", got, sessionDirPerm)
+	}
+
+	jsonlInfo, err := os.Stat(jsonlPath)
+	if err != nil {
+		t.Fatalf("Stat jsonl: %v", err)
+	}
+	if got := jsonlInfo.Mode().Perm(); got != sessionFilePerm {
+		t.Fatalf("jsonl perms = %04o, want %04o", got, sessionFilePerm)
+	}
+
+	metaInfo, err := os.Stat(metaPath)
+	if err != nil {
+		t.Fatalf("Stat meta: %v", err)
+	}
+	if got := metaInfo.Mode().Perm(); got != sessionFilePerm {
+		t.Fatalf("meta perms = %04o, want %04o", got, sessionFilePerm)
 	}
 }
 
