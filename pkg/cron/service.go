@@ -178,6 +178,12 @@ func (cs *CronService) checkJobs() {
 		return
 	}
 
+	if err := cs.reloadStoreUnsafe(); err != nil {
+		log.Printf("[cron] failed to reload store: %v", err)
+		cs.mu.Unlock()
+		return
+	}
+
 	now := time.Now().UnixMilli()
 	var dueJobIDs []string
 
@@ -246,6 +252,10 @@ func (cs *CronService) executeJobByID(jobID string) {
 	// Now acquire lock to update state
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
+
+	if reloadErr := cs.reloadStoreUnsafe(); reloadErr != nil {
+		log.Printf("[cron] failed to reload store before updating job state: %v", reloadErr)
+	}
 
 	var job *CronJob
 	for i := range cs.store.Jobs {
@@ -378,6 +388,15 @@ func (cs *CronService) SetOnJob(handler JobHandler) {
 	cs.onJob = handler
 }
 
+func (cs *CronService) reloadStoreUnsafe() error {
+	current := cs.store
+	if err := cs.loadStore(); err != nil {
+		cs.store = current
+		return err
+	}
+	return nil
+}
+
 func (cs *CronService) loadStore() error {
 	cs.store = &CronStore{
 		Version: 1,
@@ -414,6 +433,10 @@ func (cs *CronService) AddJob(
 ) (*CronJob, error) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
+
+	if err := cs.reloadStoreUnsafe(); err != nil {
+		log.Printf("[cron] failed to reload store before add: %v", err)
+	}
 
 	now := time.Now().UnixMilli()
 
@@ -454,6 +477,10 @@ func (cs *CronService) UpdateJob(job *CronJob) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
+	if err := cs.reloadStoreUnsafe(); err != nil {
+		log.Printf("[cron] failed to reload store before update: %v", err)
+	}
+
 	for i := range cs.store.Jobs {
 		if cs.store.Jobs[i].ID == job.ID {
 			cs.store.Jobs[i] = *job
@@ -470,6 +497,10 @@ func (cs *CronService) UpdateJob(job *CronJob) error {
 func (cs *CronService) RemoveJob(jobID string) bool {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
+
+	if err := cs.reloadStoreUnsafe(); err != nil {
+		log.Printf("[cron] failed to reload store before remove: %v", err)
+	}
 
 	return cs.removeJobUnsafe(jobID)
 }
@@ -500,6 +531,10 @@ func (cs *CronService) EnableJob(jobID string, enabled bool) *CronJob {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
+	if err := cs.reloadStoreUnsafe(); err != nil {
+		log.Printf("[cron] failed to reload store before enable: %v", err)
+	}
+
 	for i := range cs.store.Jobs {
 		job := &cs.store.Jobs[i]
 		if job.ID == jobID {
@@ -526,14 +561,18 @@ func (cs *CronService) EnableJob(jobID string, enabled bool) *CronJob {
 }
 
 func (cs *CronService) ListJobs(includeDisabled bool) []CronJob {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 
-	if includeDisabled {
-		return cs.store.Jobs
+	if err := cs.reloadStoreUnsafe(); err != nil {
+		log.Printf("[cron] failed to reload store before list: %v", err)
 	}
 
-	var enabled []CronJob
+	if includeDisabled {
+		return append([]CronJob(nil), cs.store.Jobs...)
+	}
+
+	enabled := make([]CronJob, 0, len(cs.store.Jobs))
 	for _, job := range cs.store.Jobs {
 		if job.Enabled {
 			enabled = append(enabled, job)
@@ -544,8 +583,12 @@ func (cs *CronService) ListJobs(includeDisabled bool) []CronJob {
 }
 
 func (cs *CronService) Status() map[string]any {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	if err := cs.reloadStoreUnsafe(); err != nil {
+		log.Printf("[cron] failed to reload store before status: %v", err)
+	}
 
 	var enabledCount int
 	for _, job := range cs.store.Jobs {
