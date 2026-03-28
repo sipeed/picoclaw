@@ -205,6 +205,12 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		deliver = d
 	}
 
+	// Validate type parameter (server-side whitelist, not just LLM schema hint)
+	msgType, _ := args["type"].(string)
+	if msgType != "" && msgType != "message" && msgType != "directive" {
+		return ErrorResult(fmt.Sprintf("invalid type %q, must be 'message' or 'directive'", msgType))
+	}
+
 	// GHSA-pv8c-p6jf-3fpp: command scheduling requires internal channel. When
 	// allow_command is disabled, explicit confirmation is required as an override.
 	// Non-command reminders remain open to all channels.
@@ -238,16 +244,17 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		return ErrorResult(fmt.Sprintf("Error adding job: %v", err))
 	}
 
+	// Apply optional payload fields and persist in a single UpdateJob call
+	needsUpdate := false
 	if command != "" {
 		job.Payload.Command = command
-		// Need to save the updated payload
-		t.cronService.UpdateJob(job)
+		needsUpdate = true
 	}
-
-	// Read and set message type (default to empty string which means "message")
-	msgType, _ := args["type"].(string)
 	if msgType != "" {
 		job.Payload.Type = msgType
+		needsUpdate = true
+	}
+	if needsUpdate {
 		t.cronService.UpdateJob(job)
 	}
 

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -342,5 +343,178 @@ func TestCronTool_ExecuteJobSkipsWhenMessageToolAlreadySent(t *testing.T) {
 
 	if executor.publishedResp != "" {
 		t.Fatalf("expected no published response when message tool already sent, got: %q", executor.publishedResp)
+	}
+}
+
+func TestCronTool_ExecuteJobDirectiveAddsPromptPrefix(t *testing.T) {
+	executor := &stubJobExecutor{response: "directive result"}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	job := &cron.CronJob{ID: "job-dir-1"}
+	job.Payload.Channel = "telegram"
+	job.Payload.To = "chat-1"
+	job.Payload.Message = "check the weather and summarize"
+	job.Payload.Type = "directive"
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	wantPrefix := "Please execute the following directive and provide the result:"
+	if !strings.Contains(executor.lastPrompt, wantPrefix) {
+		t.Fatalf("prompt = %q, want prefix %q", executor.lastPrompt, wantPrefix)
+	}
+	if !strings.Contains(executor.lastPrompt, "check the weather and summarize") {
+		t.Fatalf("prompt = %q, want original message included", executor.lastPrompt)
+	}
+}
+
+func TestCronTool_ExecuteJobDirectiveWithDeliverRoutesToAgent(t *testing.T) {
+	executor := &stubJobExecutor{response: "agent processed"}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	job := &cron.CronJob{ID: "job-dir-deliver"}
+	job.Payload.Channel = "telegram"
+	job.Payload.To = "chat-1"
+	job.Payload.Message = "generate daily report"
+	job.Payload.Type = "directive"
+	job.Payload.Deliver = true
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	if executor.lastPrompt == "" {
+		t.Fatal("expected agent to be called for directive+deliver, but ProcessDirectWithChannel was not invoked")
+	}
+	if executor.publishedResp != "agent processed" {
+		t.Fatalf("published response = %q, want %q", executor.publishedResp, "agent processed")
+	}
+
+	// Verify no direct publish happened on the bus (agent path, not direct path)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	select {
+	case msg := <-tool.msgBus.OutboundChan():
+		t.Fatalf("unexpected direct bus message: %+v", msg)
+	case <-ctx.Done():
+		// expected: no direct bus message
+	}
+}
+
+func TestCronTool_ExecuteJobDirectivePassesCorrectContent(t *testing.T) {
+	executor := &stubJobExecutor{response: "ok"}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	originalMsg := "fetch stock prices for AAPL and GOOG"
+	job := &cron.CronJob{ID: "job-dir-content"}
+	job.Payload.Channel = "discord"
+	job.Payload.To = "general"
+	job.Payload.Message = originalMsg
+	job.Payload.Type = "directive"
+
+	tool.ExecuteJob(context.Background(), job)
+
+	wantPrompt := "Please execute the following directive and provide the result:\n\n" + originalMsg
+	if executor.lastPrompt != wantPrompt {
+		t.Fatalf("prompt = %q, want %q", executor.lastPrompt, wantPrompt)
+	}
+	if executor.lastKey != "cron-job-dir-content" {
+		t.Fatalf("sessionKey = %q, want cron-job-dir-content", executor.lastKey)
+	}
+	if executor.lastChan != "discord" {
+		t.Fatalf("channel = %q, want discord", executor.lastChan)
+	}
+	if executor.lastChatID != "general" {
+		t.Fatalf("chatID = %q, want general", executor.lastChatID)
+	}
+}
+
+func TestCronTool_ExecuteJobDeliverMessageDirectlyToBus(t *testing.T) {
+	executor := &stubJobExecutor{response: "should not be called"}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	job := &cron.CronJob{ID: "job-deliver"}
+	job.Payload.Channel = "telegram"
+	job.Payload.To = "chat-1"
+	job.Payload.Message = "hello world"
+	job.Payload.Deliver = true
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	if executor.lastPrompt != "" {
+		t.Fatal("expected agent NOT to be invoked for deliver=true message type")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	select {
+	case msg := <-tool.msgBus.OutboundChan():
+		if msg.Content != "hello world" {
+			t.Fatalf("bus content = %q, want %q", msg.Content, "hello world")
+		}
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for direct bus message")
+	}
+}
+
+func TestCronTool_ExecuteJobReturnsErrorWithoutPublish(t *testing.T) {
+	executor := &stubJobExecutor{err: fmt.Errorf("agent failure")}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	job := &cron.CronJob{ID: "job-err"}
+	job.Payload.Channel = "telegram"
+	job.Payload.To = "chat-1"
+	job.Payload.Message = "do something"
+
+	got := tool.ExecuteJob(context.Background(), job)
+	if !strings.Contains(got, "agent failure") {
+		t.Fatalf("ExecuteJob() = %q, want error message", got)
+	}
+
+	if executor.publishedResp != "" {
+		t.Fatalf("unexpected publish on error path: %q", executor.publishedResp)
+	}
+}
+
+func TestCronTool_AddJobRejectsInvalidType(t *testing.T) {
+	tool := newTestCronTool(t)
+	ctx := WithToolContext(context.Background(), "cli", "direct")
+	result := tool.Execute(ctx, map[string]any{
+		"action":     "add",
+		"message":    "test",
+		"at_seconds": float64(60),
+		"type":       "invalid_type",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected error for invalid type parameter")
+	}
+	if !strings.Contains(result.ForLLM, "invalid type") {
+		t.Errorf("expected 'invalid type' error, got: %s", result.ForLLM)
+	}
+}
+
+func TestCronTool_AddJobAcceptsValidTypes(t *testing.T) {
+	for _, msgType := range []string{"", "message", "directive"} {
+		t.Run("type="+msgType, func(t *testing.T) {
+			tool := newTestCronTool(t)
+			ctx := WithToolContext(context.Background(), "cli", "direct")
+			args := map[string]any{
+				"action":     "add",
+				"message":    "test",
+				"at_seconds": float64(60),
+			}
+			if msgType != "" {
+				args["type"] = msgType
+			}
+
+			result := tool.Execute(ctx, args)
+			if result.IsError {
+				t.Fatalf("expected valid type %q to succeed, got: %s", msgType, result.ForLLM)
+			}
+		})
 	}
 }
