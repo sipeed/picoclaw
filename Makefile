@@ -186,6 +186,23 @@ build-linux-mipsle: generate
 	$(call PATCH_MIPS_FLAGS,$(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle)
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle"
 
+## build-android: Build picoclaw + picoclaw-launcher for Android (ARM64)
+build-android: generate
+	@echo "Building $(BINARY_NAME) for Android (linux/arm64)..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
+	@cp $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(BUILD_DIR)/libpicoclaw.so
+	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 -> libpicoclaw.so"
+	@echo ""
+	@echo "Building picoclaw-launcher for Android (linux/arm64)..."
+	@if [ ! -f web/backend/dist/index.html ]; then \
+		echo "Building frontend..."; \
+		cd web/frontend && pnpm install && pnpm build:backend; \
+	fi
+	GOOS=linux GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/picoclaw-launcher-linux-arm64 ./web/backend
+	@cp $(BUILD_DIR)/picoclaw-launcher-linux-arm64 $(BUILD_DIR)/libpicoclaw-web.so
+	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher-linux-arm64 -> libpicoclaw-web.so"
+
 ## build-pi-zero: Build for Raspberry Pi Zero 2 W (32-bit and 64-bit)
 build-pi-zero: build-linux-arm build-linux-arm64
 	@echo "Pi Zero 2 W builds: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm (32-bit), $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 (64-bit)"
