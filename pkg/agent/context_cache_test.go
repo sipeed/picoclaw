@@ -330,6 +330,34 @@ func TestCacheStability(t *testing.T) {
 	}
 }
 
+func TestBuildSystemPrompt_SkillsAreNotCallableTools(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"skills/skill-vetter/SKILL.md": `---
+name: skill-vetter
+description: Vet installed skills for security.
+---
+
+# Skill Vetter
+
+Review skills before installing them.
+`,
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	prompt := cb.BuildSystemPrompt()
+
+	if !strings.Contains(prompt, "Skills are documents, not callable tools.") {
+		t.Fatalf("system prompt should explain that skills are not tools: %q", prompt)
+	}
+	if !strings.Contains(prompt, `do not turn "skill-vetter" into "skill_vetter"`) {
+		t.Fatalf("system prompt should warn against rewriting hyphenated skill names: %q", prompt)
+	}
+	if !strings.Contains(prompt, "<name>skill-vetter</name>") {
+		t.Fatalf("system prompt should still list the installed skill: %q", prompt)
+	}
+}
+
 // TestNewFileCreationInvalidatesCache verifies that creating a source file that
 // did not exist when the cache was built triggers a cache rebuild.
 // This catches the "from nothing to something" edge case that the old
