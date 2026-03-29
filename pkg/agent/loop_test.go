@@ -526,7 +526,7 @@ func TestSelectCandidates_DoesNotUseImageModelForHistoricalImages(t *testing.T) 
 	}
 
 	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
-	candidates, model, useImageFallback := (&AgentLoop{}).selectCandidates(
+	candidates, model, usedLight, useImageFallback := (&AgentLoop{}).selectCandidates(
 		agent,
 		"text-only follow-up",
 		[]providers.Message{
@@ -537,6 +537,9 @@ func TestSelectCandidates_DoesNotUseImageModelForHistoricalImages(t *testing.T) 
 		nil,
 	)
 
+	if usedLight {
+		t.Fatal("did not expect light-model routing for text-only current turn")
+	}
 	if useImageFallback {
 		t.Fatal("expected image fallback to be disabled for text-only current turn")
 	}
