@@ -1,12 +1,18 @@
 package slack
 
-import "testing"
+import (
+	"strings"
+	"testing"
 
-func Test_markdownToSlackMrkdwn(t *testing.T) {
+	goslack "github.com/slack-go/slack"
+)
+
+func Test_convertMessage_text(t *testing.T) {
 	cases := []struct {
 		name     string
 		input    string
 		expected string
+		hasTable bool
 	}{
 		{
 			name:     "empty string",
@@ -141,23 +147,18 @@ func Test_markdownToSlackMrkdwn(t *testing.T) {
 			expected: "1. first\n2. second",
 		},
 
-		// Tables
+		// Tables → extracted as Block Kit table, removed from text
 		{
-			name: "simple table",
-			input: "| Name | Age |\n| --- | --- |\n| Alice | 30 |\n| Bob | 25 |",
-			expected: "```\nName | Age\nAlice | 30\nBob | 25\n```",
+			name:     "table extracted from text",
+			input:    "| A | B |\n| --- | --- |\n| 1 | 2 |",
+			expected: "",
+			hasTable: true,
 		},
 		{
-			name: "table with surrounding text",
-			input: "Here is a table:\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nEnd.",
-			expected: "Here is a table:\n\n```\nA | B\n1 | 2\n```\n\nEnd.",
-		},
-
-		// Mixed content
-		{
-			name: "realistic LLM output",
-			input: "## Summary\n\nHere are the **key points**:\n\n- First item with `code`\n- Second item with [a link](https://example.com)\n- ~~Removed~~ item\n\n### Details\n\n| Feature | Status |\n| --- | --- |\n| Auth | Done |\n| API | WIP |\n\n> Note: check the docs.",
-			expected: "*Summary*\n\nHere are the *key points*:\n\n\u2022 First item with `code`\n\u2022 Second item with <https://example.com|a link>\n\u2022 ~Removed~ item\n\n*Details*\n\n```\nFeature | Status\nAuth | Done\nAPI | WIP\n```\n\n> Note: check the docs.",
+			name:     "table with surrounding text",
+			input:    "Here is a table:\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nEnd.",
+			expected: "Here is a table:\n\nEnd.",
+			hasTable: true,
 		},
 
 		// Edge cases
@@ -180,68 +181,151 @@ func Test_markdownToSlackMrkdwn(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := markdownToSlackMrkdwn(tc.input)
-			if actual != tc.expected {
-				t.Errorf("\ninput:    %q\nexpected: %q\nactual:   %q", tc.input, tc.expected, actual)
+			msg := convertMessage(tc.input)
+			if msg.text != tc.expected {
+				t.Errorf("\ninput:    %q\nexpected: %q\nactual:   %q", tc.input, tc.expected, msg.text)
+			}
+			if tc.hasTable && msg.table == nil {
+				t.Error("expected table block, got nil")
+			}
+			if !tc.hasTable && msg.table != nil {
+				t.Error("expected no table block, got one")
 			}
 		})
 	}
 }
 
-func Test_convertTables(t *testing.T) {
+func Test_convertMessage_table(t *testing.T) {
 	cases := []struct {
-		name     string
-		input    string
-		expected string
+		name        string
+		input       string
+		wantRows    int
+		wantCols    int
+		wantHeader  []string
+		wantDataRow []string
 	}{
 		{
-			name:     "no table",
-			input:    "just some text",
-			expected: "just some text",
+			name:        "simple two column",
+			input:       "| Name | Age |\n| --- | --- |\n| Alice | 30 |",
+			wantRows:    2,
+			wantCols:    2,
+			wantHeader:  []string{"Name", "Age"},
+			wantDataRow: []string{"Alice", "30"},
 		},
 		{
-			name:     "simple two column",
-			input:    "| A | B |\n| --- | --- |\n| 1 | 2 |",
-			expected: "```\nA | B\n1 | 2\n```",
+			name:        "three columns",
+			input:       "| A | B | C |\n| --- | --- | --- |\n| 1 | 2 | 3 |",
+			wantRows:    2,
+			wantCols:    3,
+			wantHeader:  []string{"A", "B", "C"},
+			wantDataRow: []string{"1", "2", "3"},
 		},
 		{
-			name:     "three columns with alignment markers",
-			input:    "| Left | Center | Right |\n| :--- | :---: | ---: |\n| a | b | c |",
-			expected: "```\nLeft | Center | Right\na | b | c\n```",
+			name:        "bold stripped from cells",
+			input:       "| Feature | **Status** |\n| --- | --- |\n| **Auth** | Done |",
+			wantRows:    2,
+			wantCols:    2,
+			wantHeader:  []string{"Feature", "Status"},
+			wantDataRow: []string{"Auth", "Done"},
 		},
 		{
-			name:     "multiple tables separated by text",
-			input:    "| A | B |\n| - | - |\n| 1 | 2 |\n\ntext\n\n| C | D |\n| - | - |\n| 3 | 4 |",
-			expected: "```\nA | B\n1 | 2\n```\n\ntext\n\n```\nC | D\n3 | 4\n```",
+			name:        "strikethrough stripped from cells",
+			input:       "| Item | Status |\n| --- | --- |\n| ~~old~~ | removed |",
+			wantRows:    2,
+			wantCols:    2,
+			wantHeader:  []string{"Item", "Status"},
+			wantDataRow: []string{"old", "removed"},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := convertTables(tc.input)
-			if actual != tc.expected {
-				t.Errorf("\ninput:    %q\nexpected: %q\nactual:   %q", tc.input, tc.expected, actual)
+			msg := convertMessage(tc.input)
+			if msg.table == nil {
+				t.Fatal("expected table block, got nil")
+			}
+
+			if len(msg.table.Rows) != tc.wantRows {
+				t.Fatalf("rows: got %d, want %d", len(msg.table.Rows), tc.wantRows)
+			}
+
+			if len(msg.table.Rows[0]) != tc.wantCols {
+				t.Fatalf("cols: got %d, want %d", len(msg.table.Rows[0]), tc.wantCols)
+			}
+
+			for i, want := range tc.wantHeader {
+				got := cellText(msg.table.Rows[0][i])
+				if got != want {
+					t.Errorf("header[%d]: got %q, want %q", i, got, want)
+				}
+			}
+
+			if tc.wantDataRow != nil && len(msg.table.Rows) > 1 {
+				for i, want := range tc.wantDataRow {
+					got := cellText(msg.table.Rows[1][i])
+					if got != want {
+						t.Errorf("data[0][%d]: got %q, want %q", i, got, want)
+					}
+				}
 			}
 		})
 	}
 }
 
-func Test_formatTableRow(t *testing.T) {
+func Test_convertMessage_multipleTablesSecondFallsBack(t *testing.T) {
+	input := "| A | B |\n| - | - |\n| 1 | 2 |\n\ntext\n\n| C | D |\n| - | - |\n| 3 | 4 |"
+	msg := convertMessage(input)
+
+	if msg.table == nil {
+		t.Fatal("expected first table as Block Kit table")
+	}
+
+	if !strings.Contains(msg.text, "```\nC | D") {
+		t.Errorf("expected second table as code block in text, got: %q", msg.text)
+	}
+}
+
+func Test_splitTableRow(t *testing.T) {
 	cases := []struct {
 		input    string
-		expected string
+		expected []string
 	}{
-		{"| A | B |", "A | B"},
-		{"| one | two | three |", "one | two | three"},
-		{"|  spaced  |  cells  |", "spaced | cells"},
+		{"| A | B |", []string{"A", "B"}},
+		{"| one | two | three |", []string{"one", "two", "three"}},
+		{"|  spaced  |  cells  |", []string{"spaced", "cells"}},
+		{"| **Bold** | ~~strike~~ |", []string{"Bold", "strike"}},
+		{"| `code` | __under__ |", []string{"code", "under"}},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.input, func(t *testing.T) {
-			actual := formatTableRow(tc.input)
-			if actual != tc.expected {
-				t.Errorf("formatTableRow(%q) = %q, want %q", tc.input, actual, tc.expected)
+			actual := splitTableRow(tc.input)
+			if len(actual) != len(tc.expected) {
+				t.Fatalf("len: got %d, want %d", len(actual), len(tc.expected))
+			}
+			for i := range tc.expected {
+				if actual[i] != tc.expected[i] {
+					t.Errorf("[%d]: got %q, want %q", i, actual[i], tc.expected[i])
+				}
 			}
 		})
 	}
+}
+
+// cellText extracts the text string from a RichTextBlock table cell.
+func cellText(cell *goslack.RichTextBlock) string {
+	for _, elem := range cell.Elements {
+		section, ok := elem.(*goslack.RichTextSection)
+		if !ok {
+			continue
+		}
+		for _, se := range section.Elements {
+			textElem, ok := se.(*goslack.RichTextSectionTextElement)
+			if !ok {
+				continue
+			}
+			return textElem.Text
+		}
+	}
+	return ""
 }

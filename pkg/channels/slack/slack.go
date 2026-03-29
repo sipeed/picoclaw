@@ -118,8 +118,23 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		return fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
 	}
 
+	converted := convertMessage(msg.Content)
+
 	opts := []slack.MsgOption{
-		slack.MsgOptionText(markdownToSlackMrkdwn(msg.Content), false),
+		slack.MsgOptionText(converted.text, false),
+	}
+
+	if converted.table != nil {
+		// Build blocks: a section block for the mrkdwn text, plus the table.
+		// Slack renders the table at the bottom regardless of block order.
+		blocks := []slack.Block{
+			slack.NewSectionBlock(
+				slack.NewTextBlockObject("mrkdwn", converted.text, false, false),
+				nil, nil,
+			),
+			converted.table,
+		}
+		opts = append(opts, slack.MsgOptionBlocks(blocks...))
 	}
 
 	if msg.ReplyToMessageID != "" && threadTS == "" {
@@ -187,7 +202,7 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 			title = filename
 		}
 
-		_, err = c.api.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
+		_, err = c.api.UploadFileContext(ctx, slack.UploadFileParameters{
 			Channel:  channelID,
 			File:     localPath,
 			Filename: filename,
