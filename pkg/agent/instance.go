@@ -51,6 +51,10 @@ type AgentInstance struct {
 	// LightProvider is the concrete provider instance for the configured light model.
 	// It is only used when routing selects the light tier for a turn.
 	LightProvider providers.LLMProvider
+	// CandidateProviders maps "provider/model" keys to per-candidate LLMProvider
+	// instances. This allows each fallback model to use its own api_base and api_key
+	// from model_list, instead of inheriting the primary model's provider config.
+	CandidateProviders map[string]providers.LLMProvider
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -170,6 +174,10 @@ func NewAgentInstance(
 	// Resolve fallback candidates
 	candidates := resolveModelCandidates(cfg, defaults.Provider, model, fallbacks)
 
+	candidateProviders := make(map[string]providers.LLMProvider)
+	modelIndex := buildModelIndex(cfg)
+	populateCandidateProviders(modelIndex, cfg.WorkspacePath(), candidates, candidateProviders)
+
 	// Model routing setup: pre-resolve light model candidates at creation time
 	// to avoid repeated model_list lookups on every incoming message.
 	var router *routing.Router
@@ -194,6 +202,7 @@ func NewAgentInstance(
 					})
 					lightCandidates = resolved
 					lightProvider = lp
+					populateCandidateProviders(modelIndex, cfg.WorkspacePath(), resolved, candidateProviders)
 				}
 			}
 		} else {
@@ -225,7 +234,83 @@ func NewAgentInstance(
 		Router:                    router,
 		LightCandidates:           lightCandidates,
 		LightProvider:             lightProvider,
+		CandidateProviders:        candidateProviders,
 	}
+}
+
+// buildModelIndex returns a normalised "provider/model" → *ModelConfig lookup for
+// cfg.ModelList. First entry wins for duplicate keys. Returns nil when the list is empty.
+//
+// Uses ExtractProtocol + NormalizeProvider (not cfg.GetModelConfig) because candidates
+// hold resolved (Provider, Model) pairs that must be matched against the Model field,
+// not the model_name alias.
+func buildModelIndex(cfg *config.Config) map[string]*config.ModelConfig {
+	if cfg == nil || len(cfg.ModelList) == 0 {
+		return nil
+	}
+	index := make(map[string]*config.ModelConfig, len(cfg.ModelList))
+	for _, mc := range cfg.ModelList {
+		entry := strings.TrimSpace(mc.Model)
+		if entry == "" {
+			continue
+		}
+		protocol, modelID := providers.ExtractProtocol(entry)
+		k := providers.ModelKey(providers.NormalizeProvider(protocol), modelID)
+		if _, exists := index[k]; !exists {
+			index[k] = mc
+		}
+	}
+	return index
+}
+
+// populateCandidateProviders creates an LLMProvider for each candidate using the
+// pre-built model index and stores it in out. Candidates absent from the index are
+// skipped with a warning; they inherit the primary provider's credentials at runtime.
+func populateCandidateProviders(
+	index map[string]*config.ModelConfig,
+	workspacePath string,
+	candidates []providers.FallbackCandidate,
+	out map[string]providers.LLMProvider,
+) {
+	for _, c := range candidates {
+		key := providers.ModelKey(c.Provider, c.Model)
+		if _, exists := out[key]; exists {
+			continue
+		}
+		mc, found := index[key]
+		if !found {
+			logger.WarnCF(
+				"agent",
+				"fallback provider: no model_list entry found; will inherit primary provider credentials",
+				map[string]any{"provider": c.Provider, "model": c.Model},
+			)
+			continue
+		}
+		mCopy := *mc
+		if mCopy.Workspace == "" {
+			mCopy.Workspace = workspacePath
+		}
+		p, _, err := providers.CreateProviderFromConfig(&mCopy)
+		if err == nil {
+			out[key] = p
+		} else {
+			logger.WarnCF("agent", "fallback provider: failed to create provider",
+				map[string]any{"model": mc.Model, "error": err.Error()})
+		}
+	}
+}
+
+// registerCandidateProviders is the test-facing entry point that wraps
+// buildModelIndex + populateCandidateProviders in a single call.
+func registerCandidateProviders(
+	cfg *config.Config,
+	candidates []providers.FallbackCandidate,
+	out map[string]providers.LLMProvider,
+) {
+	if cfg == nil || len(cfg.ModelList) == 0 || len(candidates) == 0 {
+		return
+	}
+	populateCandidateProviders(buildModelIndex(cfg), cfg.WorkspacePath(), candidates, out)
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.

@@ -9,6 +9,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 func TestNewAgentInstance_UsesDefaultsTemperatureAndMaxTokens(t *testing.T) {
@@ -245,6 +246,228 @@ func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 	}
 	if !strings.Contains(execResult.ForLLM, "attachment content") {
 		t.Fatalf("exec output missing media content: %s", execResult.ForLLM)
+	}
+}
+
+// TestRegisterCandidateProviders_NilCfgIsNoop verifies that passing a nil
+// config does not panic and leaves the output map empty.
+func TestRegisterCandidateProviders_NilCfgIsNoop(t *testing.T) {
+	out := map[string]providers.LLMProvider{}
+	registerCandidateProviders(nil, []providers.FallbackCandidate{{Provider: "openai", Model: "gpt-4o"}}, out)
+	if len(out) != 0 {
+		t.Fatalf("expected empty map, got %d entries", len(out))
+	}
+}
+
+// TestRegisterCandidateProviders_SkipsExistingKeys verifies that a key already
+// present in the output map is not overwritten.
+func TestRegisterCandidateProviders_SkipsExistingKeys(t *testing.T) {
+	existing := &mockProvider{}
+	key := providers.ModelKey("openai", "gpt-4o")
+	out := map[string]providers.LLMProvider{key: existing}
+
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("test-key")},
+		},
+	}
+	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "openai", Model: "gpt-4o"}}, out)
+
+	if out[key] != existing {
+		t.Fatal("existing provider entry was overwritten; expected it to be preserved")
+	}
+}
+
+// TestRegisterCandidateProviders_MatchesBareModelName verifies that a
+// model_list entry without a provider prefix (e.g. "gpt-4o") still matches a
+// candidate whose provider is "openai" — the default protocol that
+// ExtractProtocol assigns to bare names.
+func TestRegisterCandidateProviders_MatchesBareModelName(t *testing.T) {
+	workspace := t.TempDir()
+	out := map[string]providers.LLMProvider{}
+
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			// Bare name — no "openai/" prefix. ExtractProtocol should
+			// assign "openai" as the default protocol.
+			{Model: "gpt-4o", APIBase: "https://api.openai.com/v1", Workspace: workspace},
+		},
+	}
+	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "openai", Model: "gpt-4o"}}, out)
+
+	key := providers.ModelKey("openai", "gpt-4o")
+	if out[key] == nil {
+		t.Fatalf("expected CandidateProviders[%q] to be populated for bare model name", key)
+	}
+}
+
+// TestRegisterCandidateProviders_MatchesWithProtocolPrefix verifies that a
+// model_list entry using full "provider/model" notation (e.g.
+// "gemini/gemma-3-27b-it") is matched correctly.
+func TestRegisterCandidateProviders_MatchesWithProtocolPrefix(t *testing.T) {
+	workspace := t.TempDir()
+	out := map[string]providers.LLMProvider{}
+
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{
+				Model:     "gemini/gemma-3-27b-it",
+				APIKeys:   config.SimpleSecureStrings("gemini-test-key"),
+				Workspace: workspace,
+			},
+		},
+	}
+	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "gemini", Model: "gemma-3-27b-it"}}, out)
+
+	key := providers.ModelKey("gemini", "gemma-3-27b-it")
+	if out[key] == nil {
+		t.Fatalf("expected CandidateProviders[%q] to be populated for protocol-prefixed model name", key)
+	}
+}
+
+// TestRegisterCandidateProviders_EmptyCandidatesIsNoop verifies the early-exit
+// path when the candidates slice is empty — no index is built and the map
+// remains unchanged.
+func TestRegisterCandidateProviders_EmptyCandidatesIsNoop(t *testing.T) {
+	out := map[string]providers.LLMProvider{}
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("key")},
+		},
+	}
+	registerCandidateProviders(cfg, nil, out)
+	if len(out) != 0 {
+		t.Fatalf("expected empty map, got %d entries", len(out))
+	}
+}
+
+// TestRegisterCandidateProviders_EmptyModelListIsNoop verifies the early-exit
+// path when model_list is empty — no provider can be created.
+func TestRegisterCandidateProviders_EmptyModelListIsNoop(t *testing.T) {
+	out := map[string]providers.LLMProvider{}
+	cfg := &config.Config{}
+	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "openai", Model: "gpt-4o"}}, out)
+	if len(out) != 0 {
+		t.Fatalf("expected empty map, got %d entries", len(out))
+	}
+}
+
+// TestRegisterCandidateProviders_FirstModelListEntryWinsForDuplicates verifies
+// that when model_list contains two entries with the same normalised
+// provider/model key, the first one is used (mirrors model_list precedence).
+func TestRegisterCandidateProviders_FirstModelListEntryWinsForDuplicates(t *testing.T) {
+	workspace := t.TempDir()
+	out := map[string]providers.LLMProvider{}
+
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{Model: "openai/gpt-4o", APIBase: "https://first.example.com/v1", Workspace: workspace},
+			{Model: "openai/gpt-4o", APIBase: "https://second.example.com/v1", Workspace: workspace},
+		},
+	}
+	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "openai", Model: "gpt-4o"}}, out)
+
+	key := providers.ModelKey("openai", "gpt-4o")
+	if out[key] == nil {
+		t.Fatalf("expected CandidateProviders[%q] to be populated", key)
+	}
+	// Only one entry should be registered despite two model_list entries.
+	if len(out) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(out))
+	}
+}
+
+// TestRegisterCandidateProviders_UnmatchedCandidateIsSkipped verifies that a
+// candidate with no matching model_list entry is silently skipped and does not
+// cause a panic or leave a nil entry in the map.
+func TestRegisterCandidateProviders_UnmatchedCandidateIsSkipped(t *testing.T) {
+	out := map[string]providers.LLMProvider{}
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("key")},
+		},
+	}
+	// "anthropic/claude-3-opus" has no matching model_list entry.
+	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "anthropic", Model: "claude-3-opus"}}, out)
+
+	if len(out) != 0 {
+		t.Fatalf("expected empty map for unmatched candidate, got %d entries", len(out))
+	}
+}
+
+// TestNewAgentInstance_CandidateProvidersPopulatedForCrossProviderFallbacks
+// mirrors the exact scenario from bug #2140: primary model on OpenRouter with
+// Gemini fallbacks. Each entry must get its own provider instance so that
+// fallback requests go to the correct API endpoint, not the primary's.
+func TestNewAgentInstance_CandidateProvidersPopulatedForCrossProviderFallbacks(t *testing.T) {
+	workspace := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:      workspace,
+				ModelName:      "mistral-small-3.1",
+				ModelFallbacks: []string{"gemma-3-27b", "gemini-images"},
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "mistral-small-3.1",
+				Model:     "openrouter/mistralai/mistral-small-3.1-24b-instruct:free",
+				APIBase:   "https://openrouter.ai/api/v1",
+				APIKeys:   config.SimpleSecureStrings("sk-or-test"),
+				Workspace: workspace,
+			},
+			{
+				ModelName: "gemma-3-27b",
+				Model:     "gemini/gemma-3-27b-it",
+				APIKeys:   config.SimpleSecureStrings("AIzaSy-test"),
+				Workspace: workspace,
+			},
+			{
+				ModelName: "gemini-images",
+				Model:     "gemini/gemini-2.5-flash-lite",
+				APIKeys:   config.SimpleSecureStrings("AIzaSy-test"),
+				Workspace: workspace,
+			},
+		},
+	}
+
+	primaryProvider := &mockProvider{}
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, primaryProvider)
+
+	wantKeys := []string{
+		providers.ModelKey("openrouter", "mistralai/mistral-small-3.1-24b-instruct:free"),
+		providers.ModelKey("gemini", "gemma-3-27b-it"),
+		providers.ModelKey("gemini", "gemini-2.5-flash-lite"),
+	}
+
+	for _, key := range wantKeys {
+		p, ok := agent.CandidateProviders[key]
+		if !ok {
+			t.Errorf("CandidateProviders missing key %q", key)
+			continue
+		}
+		if p == nil {
+			t.Errorf("CandidateProviders[%q] is nil", key)
+		}
+		// Each fallback must use its own provider, not the injected primary.
+		if p == primaryProvider {
+			t.Errorf(
+				"CandidateProviders[%q] is the same instance as the primary provider; fallback would inherit primary credentials",
+				key,
+			)
+		}
+	}
+
+	if t.Failed() {
+		t.Logf("CandidateProviders keys present: %v", func() []string {
+			keys := make([]string, 0, len(agent.CandidateProviders))
+			for k := range agent.CandidateProviders {
+				keys = append(keys, k)
+			}
+			return keys
+		}())
 	}
 }
 
