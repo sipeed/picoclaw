@@ -119,7 +119,7 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 	}
 
 	opts := []slack.MsgOption{
-		slack.MsgOptionText(msg.Content, false),
+		slack.MsgOptionText(markdownToSlackMrkdwn(msg.Content), false),
 	}
 
 	if msg.ReplyToMessageID != "" && threadTS == "" {
