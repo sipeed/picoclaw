@@ -2494,6 +2494,13 @@ turnLoop:
 			}
 
 			if len(toolResult.Media) > 0 && !toolResult.ResponseHandled {
+				// For tools like load_image that produce media refs without sending them
+				// to the user channel (ResponseHandled == false), both Media and ArtifactTags
+				// coexist on the result:
+				//   - Media: carries media:// refs that resolveMediaRefs will base64-encode
+				//     into image_url parts in the next LLM iteration (enabling vision).
+				//   - ArtifactTags: exposes the local file path as a structured [file:…] tag
+				//     in the tool result text, so the LLM knows an artifact was produced.
 				toolResult.ArtifactTags = buildArtifactTags(al.mediaStore, toolResult.Media)
 			}
 
