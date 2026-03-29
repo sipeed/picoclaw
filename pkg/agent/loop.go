@@ -1448,7 +1448,7 @@ func (al *AgentLoop) observeMessage(ctx context.Context, msg bus.InboundMessage)
 			"channel": msg.Channel,
 			"error":   err.Error(),
 		})
-		return "", nil
+		return "", nil //nolint:nilerr // route resolution failure is not an error for observe-only messages
 	}
 
 	sessionKey := resolveScopeKey(route, msg.SessionKey)

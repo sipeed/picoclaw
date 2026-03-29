@@ -353,13 +353,13 @@ type StreamingConfig struct {
 }
 
 type WhatsAppConfig struct {
-	Enabled            bool                `json:"enabled"              yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
-	BridgeURL          string              `json:"bridge_url"           yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
-	UseNative          bool                `json:"use_native"           yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_USE_NATIVE"`
-	SessionStorePath   string              `json:"session_store_path"   yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_SESSION_STORE_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"           yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled"                 yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
+	BridgeURL          string              `json:"bridge_url"              yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
+	UseNative          bool                `json:"use_native"              yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_USE_NATIVE"`
+	SessionStorePath   string              `json:"session_store_path"      yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_SESSION_STORE_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty" yaml:"-"`
-	ReasoningChannelID string              `json:"reasoning_channel_id" yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_REASONING_CHANNEL_ID"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_REASONING_CHANNEL_ID"`
 }
 
 type TelegramConfig struct {

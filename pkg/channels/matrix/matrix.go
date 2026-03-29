@@ -728,7 +728,9 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 				"room_id":  roomID,
 				"platform": "matrix",
 			}
-			c.ObserveGroupMessage(ctx, observePeer, evt.ID.String(), senderID, roomID, content, mediaPaths, observeMeta, sender)
+			c.ObserveGroupMessage(
+				ctx, observePeer, evt.ID.String(), senderID, roomID, content, mediaPaths, observeMeta, sender,
+			)
 			return
 		}
 		content = cleaned

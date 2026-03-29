@@ -367,7 +367,9 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 				"platform":    "line",
 				"source_type": event.Source.Type,
 			}
-			c.ObserveGroupMessage(c.ctx, observePeer, msg.ID, senderID, chatID, content, mediaPaths, observeMeta, observeSender)
+			c.ObserveGroupMessage(
+				c.ctx, observePeer, msg.ID, senderID, chatID, content, mediaPaths, observeMeta, observeSender,
+			)
 			return
 		}
 		content = cleaned
