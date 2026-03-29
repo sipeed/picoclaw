@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog"
+	"golang.org/x/term"
 )
 
 type LogLevel = zerolog.Level
@@ -46,6 +47,8 @@ func init() {
 	once.Do(func() {
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
+		isTTY := term.IsTerminal(int(os.Stdout.Fd()))
+
 		consoleWriter := zerolog.ConsoleWriter{
 			Out:        os.Stdout,
 			TimeFormat: "15:04:05", // TODO: make it configurable???
@@ -61,9 +64,12 @@ func init() {
 			},
 			FieldsExclude: []string{Component},
 			FormatPrepare: func(fields map[string]any) error {
-				fields[Component] = fmt.Sprintf("\x1b[33m%v\x1b[0m", fields[Component])
+				if isTTY {
+					fields[Component] = fmt.Sprintf("\x1b[33m%v\x1b[0m", fields[Component])
+				}
 				return nil
 			},
+			NoColor: !isTTY,
 		}
 
 		logger = zerolog.New(consoleWriter).With().Timestamp().Caller().Logger()
@@ -207,16 +213,25 @@ func ConfigureFromEnv() {
 	}
 }
 
+const (
+	locUnknown = "<unknown>"
+)
+
 func getPackageNameFromFile(filePath string) string {
 	dir := filepath.Dir(filePath)
 	importPath := filepath.ToSlash(dir)
 
 	parts := strings.Split(importPath, "/")
 	if len(parts) == 0 {
-		return ""
+		return locUnknown
 	}
 
-	return parts[len(parts)-1]
+	pkg := parts[len(parts)-1]
+	if pkg == "." {
+		return "<main>"
+	}
+
+	return pkg
 }
 
 func getCallerSkip() (int, string) {
@@ -246,7 +261,7 @@ func getCallerSkip() (int, string) {
 		return i - 1, getPackageNameFromFile(file)
 	}
 
-	return 3, "<unknown>"
+	return 3, locUnknown
 }
 
 //nolint:zerologlint
