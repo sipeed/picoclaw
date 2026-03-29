@@ -76,7 +76,10 @@ type processOptions struct {
 	Channel                 string              // Target channel for tool execution
 	ChatID                  string              // Target chat ID for tool execution
 	SenderID                string              // Current sender ID for dynamic context
+	SenderUsername          string              // Current sender username for thread annotations
 	SenderDisplayName       string              // Current sender display name for dynamic context
+	MessageID               string              // Current inbound platform message ID
+	ReplyToMessageID        string              // Current inbound reply target message ID
 	UserMessage             string              // User message content (may include prefix)
 	ForcedSkills            []string            // Skills explicitly requested for this message
 	SystemPromptOverride    string              // Override the default system prompt (Used by SubTurns)
@@ -106,6 +109,7 @@ const (
 	metadataKeyTeamID          = "team_id"
 	metadataKeyParentPeerKind  = "parent_peer_kind"
 	metadataKeyParentPeerID    = "parent_peer_id"
+	metadataKeyReplyToMessage  = "reply_to_message_id"
 )
 
 func NewAgentLoop(
@@ -1316,7 +1320,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:           msg.Channel,
 		ChatID:            msg.ChatID,
 		SenderID:          msg.SenderID,
+		SenderUsername:    msg.Sender.Username,
 		SenderDisplayName: msg.Sender.DisplayName,
+		MessageID:         msg.MessageID,
+		ReplyToMessageID:  inboundMetadata(msg, metadataKeyReplyToMessage),
 		UserMessage:       msg.Content,
 		Media:             msg.Media,
 		DefaultResponse:   defaultResponse,
@@ -1469,6 +1476,15 @@ func (al *AgentLoop) runAgentLoop(
 	agent *AgentInstance,
 	opts processOptions,
 ) (string, error) {
+	opts.UserMessage = formatUserMessageWithThreadMetadata(
+		opts.UserMessage,
+		opts.SenderDisplayName,
+		opts.SenderUsername,
+		opts.SenderID,
+		opts.MessageID,
+		opts.ReplyToMessageID,
+	)
+
 	// Record last channel for heartbeat notifications (skip internal channels and cli)
 	if opts.Channel != "" && opts.ChatID != "" && !constants.IsInternalChannel(opts.Channel) {
 		channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
@@ -3537,6 +3553,56 @@ func inboundMetadata(msg bus.InboundMessage, key string) string {
 		return ""
 	}
 	return msg.Metadata[key]
+}
+
+func formatUserMessageWithThreadMetadata(
+	content string,
+	senderDisplayName string,
+	senderUsername string,
+	senderID string,
+	messageID string,
+	replyToMessageID string,
+) string {
+	messageID = strings.TrimSpace(messageID)
+	replyToMessageID = strings.TrimSpace(replyToMessageID)
+	if messageID == "" && replyToMessageID == "" {
+		return content
+	}
+
+	metaParts := make([]string, 0, 3)
+	from := formatThreadSender(senderDisplayName, senderUsername, senderID)
+	if from != "" {
+		metaParts = append(metaParts, fmt.Sprintf("from:%s", from))
+	}
+	if messageID != "" {
+		metaParts = append(metaParts, fmt.Sprintf("msg:#%s", messageID))
+	}
+	if replyToMessageID != "" {
+		metaParts = append(metaParts, fmt.Sprintf("reply_to:#%s", replyToMessageID))
+	}
+
+	annotation := fmt.Sprintf("[%s]", strings.Join(metaParts, "; "))
+	if strings.TrimSpace(content) == "" {
+		return annotation
+	}
+	return annotation + "\n" + content
+}
+
+func formatThreadSender(displayName string, username string, senderID string) string {
+	displayName = strings.TrimSpace(displayName)
+	username = strings.TrimPrefix(strings.TrimSpace(username), "@")
+	senderID = strings.TrimSpace(senderID)
+
+	switch {
+	case displayName != "" && username != "":
+		return fmt.Sprintf("%s (@%s)", displayName, username)
+	case displayName != "":
+		return displayName
+	case username != "":
+		return fmt.Sprintf("@%s", username)
+	default:
+		return senderID
+	}
 }
 
 // extractParentPeer extracts the parent peer (reply-to) from inbound message metadata.

@@ -168,6 +168,106 @@ func TestProcessMessage_IncludesCurrentSenderInDynamicContext(t *testing.T) {
 	}
 }
 
+func TestFormatUserMessageWithThreadMetadata(t *testing.T) {
+	t.Run("no message IDs keeps original content", func(t *testing.T) {
+		got := formatUserMessageWithThreadMetadata("hello", "Alice", "alice", "discord:1", "", "")
+		if got != "hello" {
+			t.Fatalf("formatUserMessageWithThreadMetadata() = %q, want %q", got, "hello")
+		}
+	})
+
+	t.Run("includes from, message and reply IDs", func(t *testing.T) {
+		got := formatUserMessageWithThreadMetadata("ping", "Alice", "@alice", "discord:1", "123", "120")
+		want := "[from:Alice (@alice); msg:#123; reply_to:#120]\nping"
+		if got != want {
+			t.Fatalf("formatUserMessageWithThreadMetadata() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("empty content returns annotation only", func(t *testing.T) {
+		got := formatUserMessageWithThreadMetadata("", "", "", "discord:1", "123", "")
+		want := "[from:discord:1; msg:#123]"
+		if got != want {
+			t.Fatalf("formatUserMessageWithThreadMetadata() = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestProcessMessage_AnnotatesThreadMetadataInPromptAndHistory(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	msg := bus.InboundMessage{
+		Channel:   "discord",
+		SenderID:  "discord:123",
+		ChatID:    "group-1",
+		Content:   "hello",
+		MessageID: "123",
+		Sender: bus.SenderInfo{
+			DisplayName: "Alice",
+			Username:    "@alice",
+		},
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "discord:123",
+		},
+		Metadata: map[string]string{
+			metadataKeyReplyToMessage: "120",
+		},
+	}
+
+	response, err := al.processMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "Mock response")
+	}
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("provider did not receive any messages")
+	}
+
+	wantAnnotated := "[from:Alice (@alice); msg:#123; reply_to:#120]\nhello"
+	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
+	if lastMessage.Role != "user" || lastMessage.Content != wantAnnotated {
+		t.Fatalf("last provider message = %+v, want user annotation %q", lastMessage, wantAnnotated)
+	}
+
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: msg.Channel,
+		Peer:    extractPeer(msg),
+	})
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	history := defaultAgent.Sessions.GetHistory(route.SessionKey)
+	if len(history) != 2 {
+		t.Fatalf("expected history len=2, got %d", len(history))
+	}
+	if history[0].Role != "user" || history[0].Content != wantAnnotated {
+		t.Fatalf("history user message = %+v, want %q", history[0], wantAnnotated)
+	}
+}
+
 func TestProcessMessage_UseCommandLoadsRequestedSkill(t *testing.T) {
 	tmpDir := t.TempDir()
 	skillDir := filepath.Join(tmpDir, "skills", "shell")
