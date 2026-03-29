@@ -92,7 +92,7 @@ func (t *CronTool) Parameters() map[string]any {
 			},
 			"command": map[string]any{
 				"type":        "string",
-				"description": "Optional: Shell command to execute directly (e.g., 'df -h'). If set, the agent will run this command and report output instead of just showing the message. 'deliver' will be forced to false for commands.",
+				"description": "Optional: Shell command to execute directly (e.g., 'df -h'). If set, the agent will run this command and report output instead of just showing the message.",
 			},
 			"command_confirm": map[string]any{
 				"type":        "boolean",
@@ -113,15 +113,6 @@ func (t *CronTool) Parameters() map[string]any {
 			"job_id": map[string]any{
 				"type":        "string",
 				"description": "Job ID (for remove/enable/disable)",
-			},
-			"type": map[string]any{
-				"type":        "string",
-				"enum":        []string{"message", "directive"},
-				"description": "Message generation strategy. 'message' (default): content is sent directly as-is. 'directive': content is treated as instructions for an AI agent to execute before delivery.",
-			},
-			"deliver": map[string]any{
-				"type":        "boolean",
-				"description": "If true, send message directly to channel. If false, let agent process message (for complex tasks). Default: false",
 			},
 		},
 		"required": []string{"action"},
@@ -199,18 +190,6 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		return ErrorResult("one of at_seconds, every_seconds, or cron_expr is required")
 	}
 
-	// Read deliver parameter, default to false so scheduled tasks execute through the agent
-	deliver := false
-	if d, ok := args["deliver"].(bool); ok {
-		deliver = d
-	}
-
-	// Validate type parameter (server-side whitelist, not just LLM schema hint)
-	msgType, _ := args["type"].(string)
-	if msgType != "" && msgType != "message" && msgType != "directive" {
-		return ErrorResult(fmt.Sprintf("invalid type %q, must be 'message' or 'directive'", msgType))
-	}
-
 	// GHSA-pv8c-p6jf-3fpp: command scheduling requires internal channel. When
 	// allow_command is disabled, explicit confirmation is required as an override.
 	// Non-command reminders remain open to all channels.
@@ -226,7 +205,6 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		if !t.allowCommand && !commandConfirm {
 			return ErrorResult("command_confirm=true is required when allow_command is disabled")
 		}
-		deliver = false
 	}
 
 	// Truncate message for job name (max 30 chars)
@@ -236,7 +214,6 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		messagePreview,
 		schedule,
 		message,
-		deliver,
 		channel,
 		chatID,
 	)
@@ -248,10 +225,6 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 	needsUpdate := false
 	if command != "" {
 		job.Payload.Command = command
-		needsUpdate = true
-	}
-	if msgType != "" {
-		job.Payload.Type = msgType
 		needsUpdate = true
 	}
 	if needsUpdate {
@@ -369,40 +342,12 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return "ok"
 	}
 
-	// Determine message generation strategy
-	// Type="directive": treat message as instructions for AI agent to execute
-	// Type="" or "message" (default): static message content
-	isDirective := job.Payload.Type == "directive"
-
-	// If deliver=true and not directive, send message directly without agent processing
-	if job.Payload.Deliver && !isDirective {
-		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer pubCancel()
-		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-			Channel: channel,
-			ChatID:  chatID,
-			Content: job.Payload.Message,
-		})
-		return "ok"
-	}
-
-	// For deliver=false OR directive mode, process through agent
 	sessionKey := fmt.Sprintf("cron-%s", job.ID)
 
-	// Prepare the prompt based on type
-	prompt := job.Payload.Message
-	if isDirective {
-		// For directive type, prefix to clarify this is an instruction
-		prompt = fmt.Sprintf(
-			"Please execute the following directive and provide the result:\n\n%s",
-			job.Payload.Message,
-		)
-	}
-
-	// Call agent with the prepared prompt
+	// Call agent with the job message
 	response, err := t.executor.ProcessDirectWithChannel(
 		ctx,
-		prompt,
+		job.Payload.Message,
 		sessionKey,
 		channel,
 		chatID,
