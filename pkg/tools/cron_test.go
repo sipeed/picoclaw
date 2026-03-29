@@ -329,7 +329,7 @@ func TestCronTool_ExecuteJobSkipsEmptyAgentResponse(t *testing.T) {
 }
 
 func TestCronTool_ExecuteJobSkipsWhenMessageToolAlreadySent(t *testing.T) {
-	executor := &stubJobExecutor{response: "已发送。", alreadySent: true}
+	executor := &stubJobExecutor{response: "Sent.", alreadySent: true}
 	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
 
 	job := &cron.CronJob{ID: "job-msg-sent"}

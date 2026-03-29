@@ -393,7 +393,10 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 	prompt := job.Payload.Message
 	if isDirective {
 		// For directive type, prefix to clarify this is an instruction
-		prompt = fmt.Sprintf("Please execute the following directive and provide the result:\n\n%s", job.Payload.Message)
+		prompt = fmt.Sprintf(
+			"Please execute the following directive and provide the result:\n\n%s",
+			job.Payload.Message,
+		)
 	}
 
 	// Call agent with the prepared prompt
