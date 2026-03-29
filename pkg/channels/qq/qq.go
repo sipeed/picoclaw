@@ -56,7 +56,6 @@ const (
 var emojiRegexp = regexp.MustCompile(`<[^<]*?ext="([^"]+)"[^<]*?faceType=(\d+)[^<]*?>|<[^<]*?faceType=(\d+)[^<]*?ext="([^"]+)"[^<]*?>`)
 var extRegexp = regexp.MustCompile(`ext="([^"]+)"`)
 
-
 type qqAPI interface {
 	WS(ctx context.Context, params map[string]string, body string) (*dto.WebsocketAP, error)
 	PostGroupMessage(
@@ -71,7 +70,7 @@ type qqAPI interface {
 type QQChannel struct {
 	*channels.BaseChannel
 	config         config.QQConfig
-	api           qqAPI
+	api            qqAPI
 	tokenSource    oauth2.TokenSource
 	ctx            context.Context
 	cancel         context.CancelFunc
@@ -355,7 +354,7 @@ func (c *QQChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage)
 	return err
 }
 
-func (c *QQChannel) uploadMedia( ctx context.Context,
+func (c *QQChannel) uploadMedia(ctx context.Context,
 	chatKind kindType, chatID string, part bus.MediaPart) ([]byte, error) {
 
 	payload, err := c.buildMediaUpload(part)
@@ -500,8 +499,6 @@ func (c *QQChannel) outboundMediaType(part bus.MediaPart, localPath string) stri
 	return "audio"
 }
 
-
-
 // Fix the sendUploadedMedia function syntax error
 func (c *QQChannel) sendUploadedMedia(ctx context.Context, chatKind kindType, chatID string, part bus.MediaPart,
 	fileInfo []byte) error {
@@ -515,7 +512,6 @@ func (c *QQChannel) sendUploadedMedia(ctx context.Context, chatKind kindType, ch
 	}
 
 	msg.MsgID, msg.MsgSeq = c.getReplyExtInfo(ctx, chatID)
-
 	if chatKind == kindGroup {
 		if msg.Content != "" {
 			msg.Content = sanitizeURLs(msg.Content)
@@ -606,33 +602,30 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 			return nil
 		}
 
-	logger.InfoCF("qq", "Received C2C message", map[string]any{
-		"sender":      senderID,
-		"length":      len(content),
-		"media_count": len(mediaPaths),
-		"sender": senderID,
-		"length": len(content),
+		logger.InfoCF("qq", "Received C2C message", map[string]any{
+			"sender":      senderID,
+			"length":      len(content),
+			"media_count": len(mediaPaths),
 		})
 
 		// Store chat routing context.
 		c.saveChatKind(senderID, kindDirect)
 		c.lastMsgID.Store(senderID, data.ID)
 
-	metadata := map[string]string{
-		"account_id": senderID,
-	}
+		metadata := map[string]string{
+			"account_id": senderID,
+		}
 
-	c.HandleMessage(c.ctx,
-		bus.Peer{Kind: string(kindDirect), ID: senderID},
-		data.ID,
-		senderID,
-		senderID,
-		content,
-		mediaPaths,
-		metadata,
-		sender,
-	)
-
+		c.HandleMessage(c.ctx,
+			bus.Peer{Kind: string(kindDirect), ID: senderID},
+			data.ID,
+			senderID,
+			senderID,
+			content,
+			mediaPaths,
+			metadata,
+			sender,
+		)
 		return nil
 	}
 }
@@ -658,18 +651,8 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			Platform:    "qq",
 			PlatformID:  data.Author.ID,
 			CanonicalID: identity.BuildCanonicalID("qq", data.Author.ID),
+			Username:    data.Author.Username,
 		}
-
-		if !c.IsAllowedSender(sender) {
-			return nil
-		}
-
-		content := strings.TrimSpace(data.Content)
-		mediaPaths, attachmentNotes := c.extractInboundAttachments(data.GroupID, data.ID, data.Attachments)
-		for _, note := range attachmentNotes {
-			content = appendContent(content, note)
-		}
-
 
 		if !c.IsAllowedSender(sender) {
 			logger.Infof("qq", "Received group message from unauthorized sender", map[string]any{
@@ -680,7 +663,7 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 
 		scope := channels.BuildMediaScope("qq", data.GroupID, data.ID)
 
-		content, mediaPaths = c.decodeMessage(context.Background(), event, (*dto.Message)(data), scope)
+		content, mediaPaths := c.decodeMessage(context.Background(), event, (*dto.Message)(data), scope)
 		if content == "" {
 			logger.DebugC("qq", "Received empty group message, ignoring")
 			return nil
@@ -712,23 +695,23 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			"group_id":   data.GroupID,
 		}
 
-	c.HandleMessage(c.ctx,
-		bus.Peer{Kind: string(kindGroup), ID: data.GroupID},
-		data.ID,
-		senderID,
-		data.GroupID,
-		content,
-		mediaPaths,
-		metadata,
-		sender,
-	)
+		c.HandleMessage(c.ctx,
+			bus.Peer{Kind: string(kindGroup), ID: data.GroupID},
+			data.ID,
+			senderID,
+			data.GroupID,
+			content,
+			mediaPaths,
+			metadata,
+			sender,
+		)
 
 		return nil
 	}
 }
 
-func (c *QQChannel) extractInboundAttachments( chatID, messageID string,
-	attachments []*dto.MessageAttachment ) ([]string, []string) {
+func (c *QQChannel) extractInboundAttachments(chatID, messageID string,
+	attachments []*dto.MessageAttachment) ([]string, []string) {
 
 	if len(attachments) == 0 {
 		return nil, nil
@@ -1167,8 +1150,6 @@ func (c *QQChannel) processAttachments(ctx context.Context, attachments []Messag
 	return mediaPaths, content
 }
 
-
-
 // getAttachmentType determines the type of attachment (image, audio, video, file)
 func (c *QQChannel) getAttachmentType(attachment MessageAttachment) string {
 	if strings.HasPrefix(attachment.ContentType, "image") {
@@ -1236,8 +1217,6 @@ func sanitizeURLs(text string) string {
 		return scheme + domain + path
 	})
 }
-
-
 
 func getVoiceInfo(event *dto.WSPayload) (string, string) {
 	_raw, err := json.Marshal(event.Data)
