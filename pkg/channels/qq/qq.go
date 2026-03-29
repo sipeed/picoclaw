@@ -6,10 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/sipeed/picoclaw/pkg/identity"
-	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/tencent-connect/botgo/constant"
-	"github.com/tencent-connect/botgo/openapi/options"
+	"sync/atomic"
+
 	"math"
 	"net/http"
 	"net/url"
@@ -19,15 +17,18 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/tidwall/gjson"
 
+	"github.com/sipeed/picoclaw/pkg/identity"
+	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/tencent-connect/botgo"
+	"github.com/tencent-connect/botgo/constant"
 	"github.com/tencent-connect/botgo/dto"
 	"github.com/tencent-connect/botgo/event"
+	"github.com/tencent-connect/botgo/openapi/options"
 	"github.com/tencent-connect/botgo/token"
 	"golang.org/x/oauth2"
 
@@ -575,20 +576,6 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		}
 
 		if !c.IsAllowedSender(sender) {
-			return nil
-		}
-
-		content := strings.TrimSpace(data.Content)
-		mediaPaths, attachmentNotes := c.extractInboundAttachments(senderID, data.ID, data.Attachments)
-		for _, note := range attachmentNotes {
-			content = appendContent(content, note)
-		}
-		if content == "" && len(mediaPaths) == 0 {
-			logger.DebugC("qq", "Received empty C2C message with no content/attachments, ignoring")
-			return nil
-		}
-
-		if !c.IsAllowedSender(sender) {
 			logger.ErrorCF("qq", "Received message from unauthorized sender", map[string]any{
 				"sender": sender,
 			})
@@ -596,9 +583,9 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		}
 
 		scope := channels.BuildMediaScope("qq", senderID, data.ID)
-		content, mediaPaths = c.decodeMessage(context.Background(), event, (*dto.Message)(data), scope)
-		if content == "" {
-			logger.DebugC("qq", "Received empty C2C message, ignoring")
+		content, mediaPaths := c.decodeMessage(context.Background(), event, (*dto.Message)(data), scope)
+		if content == "" && len(mediaPaths) == 0 {
+			logger.DebugC("qq", "Received empty C2C message with no content/attachments, ignoring")
 			return nil
 		}
 
@@ -662,7 +649,6 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		}
 
 		scope := channels.BuildMediaScope("qq", data.GroupID, data.ID)
-
 		content, mediaPaths := c.decodeMessage(context.Background(), event, (*dto.Message)(data), scope)
 		if content == "" {
 			logger.DebugC("qq", "Received empty group message, ignoring")
@@ -959,113 +945,6 @@ func (c *QQChannel) getReplyExtInfo(ctx context.Context, chatID string) (replyID
 	return replyID, seq
 }
 
-// sendOneMedia uploads a file and sends it via the API.
-// QQ groups do not support file sending.
-// When sending local files via QQ, the file size cannot exceed 10 MB.
-func (c *QQChannel) sendOneMedia(ctx context.Context, chatID string, part bus.MediaPart) error {
-	chatKind := c.getChatKind(chatID)
-
-	mediaPath := part.Ref
-	var meta media.MediaMeta
-	if !isHTTPURL(mediaPath) {
-		store := c.GetMediaStore()
-		if store == nil {
-			logger.WarnCF("qq", "QQ media requires HTTP/HTTPS URL, no media store available", map[string]any{
-				"ref": part.Ref,
-			})
-			return fmt.Errorf("store not available")
-		}
-		var resolved string
-		var err error
-		resolved, meta, err = store.ResolveWithMeta(part.Ref)
-		if err != nil {
-			logger.ErrorCF("qq", "Failed to resolve media ref", map[string]any{
-				"ref":   part.Ref,
-				"error": err.Error(),
-			})
-			return fmt.Errorf("store resolve failed")
-		}
-		mediaPath = resolved
-	}
-
-	// Map part type to QQ file type: 1=image, 2=video, 3=audio, 4=file.
-	var fileType uint64
-	switch part.Type {
-	case "image":
-		fileType = 1
-	case "video":
-		fileType = 2
-	case "audio":
-		fileType = 3
-	default:
-		fileType = 4 // file
-	}
-
-	richMedia := &RichMediaMessage{FileType: fileType}
-	if isHTTPURL(mediaPath) {
-		richMedia.URL = mediaPath
-	} else {
-		fdata, err := os.ReadFile(mediaPath)
-		if err != nil {
-			logger.ErrorCF("qq", "Failed to read media file", map[string]any{"path": mediaPath,
-				"error": err.Error()})
-			return fmt.Errorf("qq send media: read file failed: %w", channels.ErrSendFailed)
-		}
-		richMedia.FileData = fdata
-		richMedia.FileName = meta.Filename
-	}
-
-	if chatKind == kindGroup && fileType == 4 {
-		logger.WarnCF("qq", "Group does not support file send", map[string]any{
-			"filename": richMedia.FileName})
-		return fmt.Errorf("qq send media: group does not support file send: %w", channels.ErrSendFailed)
-	}
-
-	if len(richMedia.FileData) > 10*1024*1024 {
-		logger.WarnCF("qq", "File size exceeds 10M, skipping send", map[string]any{
-			"filename": richMedia.FileName, "size": len(richMedia.FileData)})
-		return fmt.Errorf("qq send media: file size exceeds 10M: %w ", channels.ErrSendFailed)
-	}
-
-	var sendErr error
-	var result *dto.Message
-	if chatKind == kindDirect {
-		result, sendErr = c.api.PostC2CMessage(ctx, chatID, richMedia)
-	} else {
-		result, sendErr = c.api.PostGroupMessage(ctx, chatID, richMedia)
-	}
-
-	if sendErr != nil {
-		logger.ErrorCF("qq", "Failed to send media", map[string]any{
-			"type":    part.Type,
-			"chat_id": chatID,
-			"error":   sendErr.Error(),
-		})
-		return fmt.Errorf("qq send media: %w err:%v", channels.ErrTemporary, sendErr)
-	}
-
-	msg := dto.MessageToCreate{
-		MsgType: dto.RichMediaMsg,
-		Media:   &dto.MediaInfo{FileInfo: result.FileInfo},
-	}
-	msg.MsgID, msg.MsgSeq = c.getReplyExtInfo(ctx, chatID)
-
-	if chatKind == kindDirect {
-		result, sendErr = c.api.PostC2CMessage(ctx, chatID, msg)
-	} else {
-		result, sendErr = c.api.PostGroupMessage(ctx, chatID, msg)
-	}
-	if sendErr != nil {
-		logger.ErrorCF("qq", "Failed to send media", map[string]any{
-			"type":    part.Type,
-			"chat_id": chatID,
-			"error":   sendErr.Error(),
-		})
-		return fmt.Errorf("qq send media: %w err:%v", channels.ErrTemporary, sendErr)
-	}
-	return nil
-}
-
 func (c *QQChannel) decodeMessage(ctx context.Context, event *dto.WSPayload, data *dto.Message,
 	scope string) (content string, mediaPaths []string) {
 
@@ -1132,19 +1011,19 @@ func (c *QQChannel) processAttachments(ctx context.Context, attachments []Messag
 
 	for _, attachment := range attachments {
 		attachmentType := c.getAttachmentType(attachment)
+		ref := attachment.URL
 		localPath := c.downloadAttachment(attachment.URL, attachment.FileName)
-		if localPath == "" {
-			mediaPaths = append(mediaPaths, attachment.URL)
-			content = appendContent(content, fmt.Sprintf("[%v: %s]", attachment.ContentType, attachment.URL))
-			continue
+		if localPath != "" {
+			if ref = storeMedia(localPath, attachment.FileName); ref == "" {
+				ref = localPath
+			}
 		}
-		ref := storeMedia(localPath, attachment.FileName)
-		mediaPaths = append(mediaPaths, ref)
 		if attachmentType == "audio" && attachment.AsrReferText != "" {
 			content = appendContent(content, fmt.Sprintf("[audio: %s]", attachment.AsrReferText))
-			continue
+		} else {
+			content = appendContent(content, fmt.Sprintf("[%v: %s]", attachmentType, ref))
 		}
-		content = appendContent(content, fmt.Sprintf("[%v: %s]", attachment.ContentType, ref))
+		mediaPaths = append(mediaPaths, ref)
 	}
 
 	return mediaPaths, content
