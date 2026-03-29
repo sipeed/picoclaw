@@ -968,9 +968,6 @@ func (c *QQChannel) decodeMessage(ctx context.Context, event *dto.WSPayload, dat
 		})
 	}
 	processedPaths, attachmentContent := c.processAttachments(ctx, attachments, scope)
-	if asrReferText != "" {
-		attachmentContent = fmt.Sprintf("[audio: %v]", asrReferText)
-	}
 	mediaPaths = processedPaths
 	if content != "" {
 		content += "\n"
