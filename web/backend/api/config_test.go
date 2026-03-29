@@ -184,10 +184,10 @@ func assertWebSearchAPIKeys(t *testing.T, configPath string, want webSearchAPIKe
 	if got := cfg.Tools.Web.Perplexity.APIKey(); got != want.perplexity {
 		t.Fatalf("tools.web.perplexity.api_key = %q, want %q", got, want.perplexity)
 	}
-	if got := cfg.Tools.Web.GLMSearch.APIKey(); got != want.glm {
+	if got := cfg.Tools.Web.GLMSearch.APIKey.String(); got != want.glm {
 		t.Fatalf("tools.web.glm_search.api_key = %q, want %q", got, want.glm)
 	}
-	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != want.baidu {
+	if got := cfg.Tools.Web.BaiduSearch.APIKey.String(); got != want.baidu {
 		t.Fatalf("tools.web.baidu_search.api_key = %q, want %q", got, want.baidu)
 	}
 }
@@ -326,8 +326,8 @@ func seedWebSearchAPIKeys(t *testing.T, configPath string, keys webSearchAPIKeys
 	cfg.Tools.Web.Brave.SetAPIKey(keys.brave)
 	cfg.Tools.Web.Tavily.SetAPIKey(keys.tavily)
 	cfg.Tools.Web.Perplexity.SetAPIKey(keys.perplexity)
-	cfg.Tools.Web.GLMSearch.SetAPIKey(keys.glm)
-	cfg.Tools.Web.BaiduSearch.SetAPIKey(keys.baidu)
+	cfg.Tools.Web.GLMSearch.APIKey.Set(keys.glm)
+	cfg.Tools.Web.BaiduSearch.APIKey.Set(keys.baidu)
 
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)

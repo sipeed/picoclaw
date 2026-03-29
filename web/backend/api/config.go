@@ -256,10 +256,10 @@ func applyWebSearchAPIKeyPatch(cfg *config.Config, patch webSearchAPIKeyPatch) {
 		cfg.Tools.Web.Perplexity.SetAPIKey(strings.TrimSpace(*patch.perplexityAPIKey))
 	}
 	if patch.glmSearchAPIKey != nil {
-		cfg.Tools.Web.GLMSearch.SetAPIKey(strings.TrimSpace(*patch.glmSearchAPIKey))
+		cfg.Tools.Web.GLMSearch.APIKey.Set(strings.TrimSpace(*patch.glmSearchAPIKey))
 	}
 	if patch.baiduSearchAPIKey != nil {
-		cfg.Tools.Web.BaiduSearch.SetAPIKey(strings.TrimSpace(*patch.baiduSearchAPIKey))
+		cfg.Tools.Web.BaiduSearch.APIKey.Set(strings.TrimSpace(*patch.baiduSearchAPIKey))
 	}
 }
 
