@@ -10,7 +10,7 @@ func TestMessageTool_Execute_Success(t *testing.T) {
 	tool := NewMessageTool()
 
 	var sentChannel, sentChatID, sentContent string
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
 		sentChannel = channel
 		sentChatID = chatID
 		sentContent = content
@@ -61,7 +61,7 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 	tool := NewMessageTool()
 
 	var sentChannel, sentChatID string
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
 		sentChannel = channel
 		sentChatID = chatID
 		return nil
@@ -96,7 +96,7 @@ func TestMessageTool_Execute_SendFailure(t *testing.T) {
 	tool := NewMessageTool()
 
 	sendErr := errors.New("network error")
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
 		return sendErr
 	})
 
@@ -149,7 +149,7 @@ func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
 	tool := NewMessageTool()
 	// No WithToolContext — channel/chatID are empty
 
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
 		return nil
 	})
 
@@ -250,5 +250,38 @@ func TestMessageTool_Parameters(t *testing.T) {
 	}
 	if chatIDProp["type"] != "string" {
 		t.Error("Expected chat_id type to be 'string'")
+	}
+
+	// Check reply_to_message_id property (optional)
+	replyToProp, ok := props["reply_to_message_id"].(map[string]any)
+	if !ok {
+		t.Error("Expected 'reply_to_message_id' property")
+	}
+	if replyToProp["type"] != "string" {
+		t.Error("Expected reply_to_message_id type to be 'string'")
+	}
+}
+
+func TestMessageTool_Execute_WithReplyToMessageID(t *testing.T) {
+	tool := NewMessageTool()
+
+	var sentReplyTo string
+	tool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
+		sentReplyTo = replyToMessageID
+		return nil
+	})
+
+	ctx := WithToolContext(context.Background(), "test-channel", "test-chat-id")
+	args := map[string]any{
+		"content":             "Reply test",
+		"reply_to_message_id": "msg-123",
+	}
+
+	result := tool.Execute(ctx, args)
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if sentReplyTo != "msg-123" {
+		t.Fatalf("expected reply_to_message_id msg-123, got %q", sentReplyTo)
 	}
 }

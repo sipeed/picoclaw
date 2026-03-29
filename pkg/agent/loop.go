@@ -75,6 +75,8 @@ type processOptions struct {
 	SessionKey              string              // Session identifier for history/context
 	Channel                 string              // Target channel for tool execution
 	ChatID                  string              // Target chat ID for tool execution
+	MessageID               string              // Current inbound platform message ID
+	ReplyToMessageID        string              // Current inbound reply target message ID
 	SenderID                string              // Current sender ID for dynamic context
 	SenderDisplayName       string              // Current sender display name for dynamic context
 	UserMessage             string              // User message content (may include prefix)
@@ -104,6 +106,7 @@ const (
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"
+	metadataKeyReplyToMessage  = "reply_to_message_id"
 	metadataKeyParentPeerKind  = "parent_peer_kind"
 	metadataKeyParentPeerID    = "parent_peer_id"
 )
@@ -222,16 +225,36 @@ func registerSharedTools(
 		// Message tool
 		if cfg.Tools.IsToolEnabled("message") {
 			messageTool := tools.NewMessageTool()
-			messageTool.SetSendCallback(func(channel, chatID, content string) error {
+			messageTool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
 				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer pubCancel()
 				return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-					Channel: channel,
-					ChatID:  chatID,
-					Content: content,
+					Channel:          channel,
+					ChatID:           chatID,
+					Content:          content,
+					ReplyToMessageID: replyToMessageID,
 				})
 			})
 			agent.Tools.Register(messageTool)
+		}
+		if cfg.Tools.IsToolEnabled("reaction") {
+			reactionTool := tools.NewReactionTool()
+			reactionTool.SetReactionCallback(func(ctx context.Context, channel, chatID, messageID string) error {
+				if al.channelManager == nil {
+					return fmt.Errorf("channel manager not configured")
+				}
+				ch, ok := al.channelManager.GetChannel(channel)
+				if !ok {
+					return fmt.Errorf("channel %s not found", channel)
+				}
+				rc, ok := ch.(channels.ReactionCapable)
+				if !ok {
+					return fmt.Errorf("channel %s does not support reactions", channel)
+				}
+				_, err := rc.ReactToMessage(ctx, chatID, messageID)
+				return err
+			})
+			agent.Tools.Register(reactionTool)
 		}
 
 		// Send file tool (outbound media via MediaStore — store injected later by SetMediaStore)
@@ -1315,6 +1338,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		SessionKey:        sessionKey,
 		Channel:           msg.Channel,
 		ChatID:            msg.ChatID,
+		MessageID:         msg.MessageID,
+		ReplyToMessageID:  inboundMetadata(msg, metadataKeyReplyToMessage),
 		SenderID:          msg.SenderID,
 		SenderDisplayName: msg.Sender.DisplayName,
 		UserMessage:       msg.Content,
@@ -2384,8 +2409,15 @@ turnLoop:
 			}
 
 			toolStart := time.Now()
-			toolResult := ts.agent.Tools.ExecuteWithContext(
+			execCtx := tools.WithToolInboundContext(
 				turnCtx,
+				ts.channel,
+				ts.chatID,
+				ts.opts.MessageID,
+				ts.opts.ReplyToMessageID,
+			)
+			toolResult := ts.agent.Tools.ExecuteWithContext(
+				execCtx,
 				toolName,
 				toolArgs,
 				ts.channel,

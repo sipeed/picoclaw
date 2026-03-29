@@ -531,6 +531,20 @@ func TestToolContext_Updates(t *testing.T) {
 	if got := tools.ToolChannel(context.Background()); got != "" {
 		t.Errorf("expected empty channel from bare context, got %q", got)
 	}
+
+	inboundCtx := tools.WithToolInboundContext(
+		context.Background(),
+		"telegram",
+		"chat-42",
+		"msg-123",
+		"msg-100",
+	)
+	if got := tools.ToolMessageID(inboundCtx); got != "msg-123" {
+		t.Errorf("expected messageID 'msg-123', got %q", got)
+	}
+	if got := tools.ToolReplyToMessageID(inboundCtx); got != "msg-100" {
+		t.Errorf("expected replyToMessageID 'msg-100', got %q", got)
+	}
 }
 
 // TestToolRegistry_GetDefinitions verifies tool definitions can be retrieved

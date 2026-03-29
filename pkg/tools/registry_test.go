@@ -190,6 +190,33 @@ func TestToolRegistry_ExecuteWithContext_EmptyContext(t *testing.T) {
 	}
 }
 
+func TestToolRegistry_ExecuteWithContext_PreservesMessageContext(t *testing.T) {
+	r := NewToolRegistry()
+	ct := &mockContextAwareTool{
+		mockRegistryTool: *newMockTool("ctx_tool", "needs context"),
+	}
+	r.Register(ct)
+
+	baseCtx := WithToolMessageContext(context.Background(), "msg-123", "msg-100")
+	r.ExecuteWithContext(baseCtx, "ctx_tool", nil, "telegram", "chat-42", nil)
+
+	if ct.lastCtx == nil {
+		t.Fatal("expected Execute to be called")
+	}
+	if got := ToolChannel(ct.lastCtx); got != "telegram" {
+		t.Errorf("expected channel 'telegram', got %q", got)
+	}
+	if got := ToolChatID(ct.lastCtx); got != "chat-42" {
+		t.Errorf("expected chatID 'chat-42', got %q", got)
+	}
+	if got := ToolMessageID(ct.lastCtx); got != "msg-123" {
+		t.Errorf("expected messageID 'msg-123', got %q", got)
+	}
+	if got := ToolReplyToMessageID(ct.lastCtx); got != "msg-100" {
+		t.Errorf("expected replyToMessageID 'msg-100', got %q", got)
+	}
+}
+
 func TestToolRegistry_ExecuteWithContext_AsyncCallback(t *testing.T) {
 	r := NewToolRegistry()
 	at := &mockAsyncRegistryTool{
