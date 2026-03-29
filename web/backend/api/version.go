@@ -51,8 +51,11 @@ var (
 	currentGatewayVersionState  = gatewayVersionState
 	launcherBuildInfoForVersion = fallbackSystemVersionInfoFromConfig
 	versionInfoCache            = newSystemVersionCache()
-	versionLinePattern          = regexp.MustCompile(`^(?:[^A-Za-z0-9]*\s*)?picoclaw(?:\.exe)?\s+([^\s(]+)(?:\s+\(git:\s*([^)]+)\))?\s*$`)
 	ansiEscapePattern           = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	versionLinePattern          = regexp.MustCompile(
+		`^(?:[^A-Za-z0-9]*\s*)?picoclaw(?:\.exe)?\s+([^\s(]+)` +
+			`(?:\s+\(git:\s*([^)]+)\))?\s*$`,
+	)
 )
 
 func (h *Handler) registerVersionRoutes(mux *http.ServeMux) {
