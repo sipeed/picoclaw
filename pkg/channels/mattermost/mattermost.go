@@ -52,7 +52,7 @@ func NewMattermostChannel(cfg config.MattermostConfig, messageBus *bus.MessageBu
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("mattermost url is required")
 	}
-	if cfg.BotToken == "" {
+	if cfg.BotToken.String() == "" {
 		return nil, fmt.Errorf("mattermost bot_token is required")
 	}
 
@@ -129,7 +129,7 @@ func (c *MattermostChannel) doJSON(method, path string, body any) (*http.Respons
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.config.BotToken)
+	req.Header.Set("Authorization", "Bearer "+c.config.BotToken.String())
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -199,7 +199,10 @@ func (c *MattermostChannel) websocketLoop() {
 }
 
 func (c *MattermostChannel) runWebSocket(wsURL string) (bool, error) {
-	conn, _, err := websocket.Dial(c.ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(c.ctx, wsURL, nil)
+	if resp != nil && resp.Body != nil {
+		resp.Body.Close()
+	}
 	if err != nil {
 		return false, fmt.Errorf("dial: %w", err)
 	}
@@ -209,7 +212,7 @@ func (c *MattermostChannel) runWebSocket(wsURL string) (bool, error) {
 	authMsg := map[string]any{
 		"seq":    1,
 		"action": "authentication_challenge",
-		"data":   map[string]any{"token": c.config.BotToken},
+		"data":   map[string]any{"token": c.config.BotToken.String()},
 	}
 	authData, _ := json.Marshal(authMsg)
 	if err := conn.Write(c.ctx, websocket.MessageText, authData); err != nil {
@@ -640,7 +643,7 @@ func (c *MattermostChannel) downloadFile(fileID, filename string) string {
 	url := c.apiURL("/api/v4/files/" + fileID)
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "mattermost",
-		ExtraHeaders: map[string]string{"Authorization": "Bearer " + c.config.BotToken},
+		ExtraHeaders: map[string]string{"Authorization": "Bearer " + c.config.BotToken.String()},
 	})
 }
 
@@ -662,7 +665,8 @@ func (c *MattermostChannel) uploadFile(channelID, localPath, filename string) (s
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(part, f); err != nil {
+	_, err = io.Copy(part, f)
+	if err != nil {
 		return "", err
 	}
 	w.Close()
@@ -671,7 +675,7 @@ func (c *MattermostChannel) uploadFile(channelID, localPath, filename string) (s
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.config.BotToken)
+	req.Header.Set("Authorization", "Bearer "+c.config.BotToken.String())
 	req.Header.Set("Content-Type", w.FormDataContentType())
 
 	resp, err := c.httpClient.Do(req)

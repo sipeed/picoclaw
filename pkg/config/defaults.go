@@ -143,6 +143,11 @@ func DefaultConfig() *Config {
 				MaxConnections: 100,
 				AllowFrom:      FlexibleStringSlice{},
 			},
+			Mattermost: MattermostConfig{
+				Enabled:   false,
+				AllowFrom: FlexibleStringSlice{},
+				Typing:    TypingConfig{Enabled: true},
+			},
 		},
 		Hooks: HooksConfig{
 			Enabled: true,

@@ -433,7 +433,7 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 
 	if channels.Mattermost.Enabled &&
 		channels.Mattermost.URL != "" &&
-		channels.Mattermost.BotToken != "" {
+		channels.Mattermost.BotToken.String() != "" {
 		m.initChannel("mattermost", "Mattermost")
 	}
 

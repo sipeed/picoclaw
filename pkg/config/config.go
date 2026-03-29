@@ -568,14 +568,14 @@ func (c *VKConfig) SetToken(token string) {
 }
 
 type MattermostConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_MATTERMOST_ENABLED"`
-	URL                string              `json:"url"                     env:"PICOCLAW_CHANNELS_MATTERMOST_URL"`
-	BotToken           string              `json:"bot_token"               env:"PICOCLAW_CHANNELS_MATTERMOST_BOT_TOKEN"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_MATTERMOST_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	Typing             TypingConfig        `json:"typing,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_MATTERMOST_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"                 yaml:"-"                   env:"PICOCLAW_CHANNELS_MATTERMOST_ENABLED"`
+	URL                string              `json:"url"                     yaml:"-"                   env:"PICOCLAW_CHANNELS_MATTERMOST_URL"`
+	BotToken           SecureString        `json:"bot_token,omitzero"      yaml:"bot_token,omitempty" env:"PICOCLAW_CHANNELS_MATTERMOST_BOT_TOKEN"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              yaml:"-"                   env:"PICOCLAW_CHANNELS_MATTERMOST_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty" yaml:"-"`
+	Typing             TypingConfig        `json:"typing,omitempty"        yaml:"-"`
+	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"   yaml:"-"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-"                   env:"PICOCLAW_CHANNELS_MATTERMOST_REASONING_CHANNEL_ID"`
 }
 
 type HeartbeatConfig struct {
