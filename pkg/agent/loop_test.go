@@ -3482,7 +3482,7 @@ func TestObserveOnlyMessage_DoesNotRespondEvenWithContinuation(t *testing.T) {
 	// Confirm history accumulated
 	route := al.registry.ResolveRoute(routing.RouteInput{
 		Channel: "slack",
-		Peer:    bus.Peer{Kind: "channel", ID: "channel1"},
+		Peer:    &routing.RoutePeer{Kind: "channel", ID: "channel1"},
 	})
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {

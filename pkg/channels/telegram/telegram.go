@@ -715,7 +715,10 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 				"first_name": user.FirstName,
 				"is_group":   "true",
 			}
-			c.ObserveGroupMessage(ctx, observePeer, messageIDStr, platformID, compositeChatID, content, mediaPaths, observeMeta, sender)
+			c.ObserveGroupMessage(
+				ctx, observePeer, messageIDStr, platformID,
+				compositeChatID, content, mediaPaths, observeMeta, sender,
+			)
 			return nil
 		}
 		content = cleaned
