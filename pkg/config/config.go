@@ -395,15 +395,27 @@ type MaixCamConfig struct {
 }
 
 type QQConfig struct {
-	Enabled              bool                `json:"enabled"                  yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
-	AppID                string              `json:"app_id"                   yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
-	AppSecret            SecureString        `json:"app_secret,omitzero"      yaml:"app_secret,omitempty" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
-	AllowFrom            FlexibleStringSlice `json:"allow_from"               yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
-	GroupTrigger         GroupTriggerConfig  `json:"group_trigger,omitempty"  yaml:"-"`
-	MaxMessageLength     int                 `json:"max_message_length"       yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_MAX_MESSAGE_LENGTH"`
-	MaxBase64FileSizeMiB int64               `json:"max_base64_file_size_mib" yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_MAX_BASE64_FILE_SIZE_MIB"`
-	SendMarkdown         bool                `json:"send_markdown"            yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
-	ReasoningChannelID   string              `json:"reasoning_channel_id"     yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
+	Enabled              bool   `json:"enabled"                  env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
+	AppID                string `json:"app_id"                   env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
+	appSecret            string
+	AllowFrom            FlexibleStringSlice `json:"allow_from"               env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
+	GroupTrigger         GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	MaxMessageLength     int                 `json:"max_message_length"       env:"PICOCLAW_CHANNELS_QQ_MAX_MESSAGE_LENGTH"`
+	MaxBase64FileSizeMiB int64               `json:"max_base64_file_size_mib" env:"PICOCLAW_CHANNELS_QQ_MAX_BASE64_FILE_SIZE_MIB"`
+	SendMarkdown         bool                `json:"send_markdown"            env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
+	ReasoningChannelID   string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
+	secDirty             bool
+}
+
+// AppSecret returns the QQ app secret
+func (c *QQConfig) AppSecret() string {
+	return c.appSecret
+}
+
+// SetAppSecret sets the QQ app secret
+func (c *QQConfig) SetAppSecret(secret string) {
+	c.appSecret = secret
+	c.secDirty = true
 }
 
 type DingTalkConfig struct {
