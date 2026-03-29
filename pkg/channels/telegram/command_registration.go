@@ -31,16 +31,7 @@ func commandRegistrationDelay(attempt int) time.Duration {
 
 // RegisterCommands registers bot commands on Telegram platform.
 func (c *TelegramChannel) RegisterCommands(ctx context.Context, defs []commands.Definition) error {
-	botCommands := make([]telego.BotCommand, 0, len(defs))
-	for _, def := range defs {
-		if def.Name == "" || def.Description == "" {
-			continue
-		}
-		botCommands = append(botCommands, telego.BotCommand{
-			Command:     def.Name,
-			Description: def.Description,
-		})
-	}
+	botCommands := buildTelegramBotCommands(defs)
 
 	current, err := c.bot.GetMyCommands(ctx, &telego.GetMyCommandsParams{})
 	if err != nil {
@@ -55,6 +46,34 @@ func (c *TelegramChannel) RegisterCommands(ctx context.Context, defs []commands.
 	return c.bot.SetMyCommands(ctx, &telego.SetMyCommandsParams{
 		Commands: botCommands,
 	})
+}
+
+func buildTelegramBotCommands(defs []commands.Definition) []telego.BotCommand {
+	const modelsCommand = "models"
+	const modelsDescription = "List models or switch: /models <name>"
+
+	botCommands := make([]telego.BotCommand, 0, len(defs)+1)
+	hasModelsShortcut := false
+	for _, def := range defs {
+		if def.Name == "" || def.Description == "" {
+			continue
+		}
+		if def.Name == modelsCommand {
+			hasModelsShortcut = true
+		}
+		botCommands = append(botCommands, telego.BotCommand{
+			Command:     def.Name,
+			Description: def.Description,
+		})
+	}
+	if !hasModelsShortcut {
+		botCommands = append(botCommands, telego.BotCommand{
+			Command:     modelsCommand,
+			Description: modelsDescription,
+		})
+	}
+
+	return botCommands
 }
 
 func (c *TelegramChannel) startCommandRegistration(ctx context.Context, defs []commands.Definition) {
