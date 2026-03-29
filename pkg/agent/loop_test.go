@@ -268,6 +268,80 @@ func TestProcessMessage_AnnotatesThreadMetadataInPromptOnly(t *testing.T) {
 	}
 }
 
+func TestProcessMessage_AnnotatesThreadMetadataOnlyPromptWhenContentEmpty(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	msg := bus.InboundMessage{
+		Channel:   "discord",
+		SenderID:  "discord:123",
+		ChatID:    "group-1",
+		Content:   "",
+		MessageID: "123",
+		Sender: bus.SenderInfo{
+			DisplayName: "Alice",
+			Username:    "@alice",
+		},
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "discord:123",
+		},
+		Metadata: map[string]string{
+			metadataKeyReplyToMessage: "120",
+		},
+	}
+
+	response, err := al.processMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "Mock response")
+	}
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("provider did not receive any messages")
+	}
+
+	wantAnnotated := "[from:Alice (@alice); msgs:#123, reply_to:#120]"
+	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
+	if lastMessage.Role != "user" || lastMessage.Content != wantAnnotated {
+		t.Fatalf("last provider message = %+v, want user annotation %q", lastMessage, wantAnnotated)
+	}
+
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: msg.Channel,
+		Peer:    extractPeer(msg),
+	})
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	history := defaultAgent.Sessions.GetHistory(route.SessionKey)
+	for _, h := range history {
+		if h.Role == "user" && h.Content == wantAnnotated {
+			t.Fatalf("history contains annotated prompt message: %+v", h)
+		}
+	}
+}
+
 func TestProcessMessage_UseCommandLoadsRequestedSkill(t *testing.T) {
 	tmpDir := t.TempDir()
 	skillDir := filepath.Join(tmpDir, "skills", "shell")

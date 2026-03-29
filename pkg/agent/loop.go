@@ -1649,7 +1649,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.opts.SenderDisplayName,
 		activeSkillNames(ts.agent, ts.opts)...,
 	)
-	annotateCurrentUserMessageForLLM(messages, ts.userMessage, annotatedUserMessage)
+	messages = annotateCurrentUserMessageForLLM(messages, ts.userMessage, annotatedUserMessage)
 
 	cfg := al.GetConfig()
 	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
@@ -1680,7 +1680,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 				ts.opts.SenderID, ts.opts.SenderDisplayName,
 				activeSkillNames(ts.agent, ts.opts)...,
 			)
-			annotateCurrentUserMessageForLLM(messages, ts.userMessage, annotatedUserMessage)
+			messages = annotateCurrentUserMessageForLLM(messages, ts.userMessage, annotatedUserMessage)
 			messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 		}
 	}
@@ -2053,7 +2053,7 @@ turnLoop:
 					nil, ts.channel, ts.chatID, ts.opts.SenderID, ts.opts.SenderDisplayName,
 					activeSkillNames(ts.agent, ts.opts)...,
 				)
-				annotateCurrentUserMessageForLLM(messages, ts.userMessage, annotatedUserMessage)
+				messages = annotateCurrentUserMessageForLLM(messages, ts.userMessage, annotatedUserMessage)
 				callMessages = messages
 				if gracefulTerminal {
 					callMessages = append(append([]providers.Message(nil), messages...), ts.interruptHintMessage())
@@ -3561,9 +3561,9 @@ func annotateCurrentUserMessageForLLM(
 	messages []providers.Message,
 	rawUserMessage string,
 	annotatedUserMessage string,
-) {
+) []providers.Message {
 	if rawUserMessage == annotatedUserMessage {
-		return
+		return messages
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role != "user" {
@@ -3573,8 +3573,10 @@ func annotateCurrentUserMessageForLLM(
 			continue
 		}
 		messages[i].Content = annotatedUserMessage
-		return
+		return messages
 	}
+	// Keep session history raw, but ensure metadata-only current turns still reach the LLM.
+	return append(messages, providers.Message{Role: "user", Content: annotatedUserMessage})
 }
 
 func formatUserMessageWithThreadMetadata(
