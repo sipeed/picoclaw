@@ -100,11 +100,13 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
-	logger.SetLevelFromString(cfg.Gateway.LogLevel)
-
+	// Debug mode permanently overrides the config log level to DEBUG.
 	if debug {
 		logger.SetLevel(logger.DEBUG)
 		fmt.Println("🔍 Debug mode enabled")
+	} else {
+		logger.SetLevelFromString(cfg.Gateway.LogLevel)
+		logger.Infof("Log level set to %q", cfg.Gateway.LogLevel)
 	}
 
 	provider, modelID, err := createStartupProvider(cfg, allowEmptyStartup)
@@ -187,7 +189,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 				logger.Warn("Config reload skipped: another reload is in progress")
 				continue
 			}
-			err := executeReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
+			err := executeReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup, debug)
 			if err != nil {
 				logger.Errorf("Config reload failed: %v", err)
 			}
@@ -204,7 +206,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 				runningServices.reloading.Store(false)
 				continue
 			}
-			err = executeReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup)
+			err = executeReload(ctx, agentLoop, newCfg, &provider, runningServices, msgBus, allowEmptyStartup, debug)
 			if err != nil {
 				logger.Errorf("Manual reload failed: %v", err)
 			} else {
@@ -222,9 +224,10 @@ func executeReload(
 	runningServices *services,
 	msgBus *bus.MessageBus,
 	allowEmptyStartup bool,
+	debug bool,
 ) error {
 	defer runningServices.reloading.Store(false)
-	return handleConfigReload(ctx, agentLoop, newCfg, provider, runningServices, msgBus, allowEmptyStartup)
+	return handleConfigReload(ctx, agentLoop, newCfg, provider, runningServices, msgBus, allowEmptyStartup, debug)
 }
 
 func createStartupProvider(
@@ -392,6 +395,7 @@ func handleConfigReload(
 	runningServices *services,
 	msgBus *bus.MessageBus,
 	allowEmptyStartup bool,
+	debug bool,
 ) error {
 	logger.Info("🔄 Config file changed, reloading...")
 
@@ -440,6 +444,14 @@ func handleConfigReload(
 	}
 
 	logger.Info("  ✓ Provider, configuration, and services reloaded successfully (thread-safe)")
+
+	// Debug mode permanently overrides the config log level to DEBUG.
+	if !debug {
+		// Update log level last so that reload-related info/warn logs above are not suppressed.
+		logger.SetLevelFromString(newCfg.Gateway.LogLevel)
+		logger.Infof("Log level changing from current to %q", newCfg.Gateway.LogLevel)
+	}
+
 	return nil
 }
 
