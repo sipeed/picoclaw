@@ -12,6 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.50.2
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/caarlos0/env/v11 v11.4.0
+	github.com/chatmail/rpc-client-go/v2 v2.44.0
 	github.com/creack/pty v1.1.24
 	github.com/ergochat/irc-go v0.6.0
 	github.com/ergochat/readline v0.1.3
@@ -61,6 +62,8 @@ require (
 	github.com/aws/smithy-go v1.24.2 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
+	github.com/creachadair/jrpc2 v1.3.5 // indirect
+	github.com/creachadair/mds v0.26.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/elliotchance/orderedmap/v3 v3.1.0 // indirect
