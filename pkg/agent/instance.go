@@ -185,6 +185,10 @@ func NewAgentInstance(
 				logger.WarnCF("agent", "Routing light model config invalid; routing disabled",
 					map[string]any{"light_model": rc.LightModel, "agent_id": agentID, "error": err.Error()})
 			} else {
+				// Reuse the resolved candidate's canonical provider/model form so
+				// routing init stays aligned with model-list resolution behavior.
+				lightModelCfg.Model = providers.ModelKey(resolved[0].Provider, resolved[0].Model)
+
 				lp, _, err := providers.CreateProviderFromConfig(lightModelCfg)
 				if err != nil {
 					logger.WarnCF("agent", "Routing light model provider init failed; routing disabled",

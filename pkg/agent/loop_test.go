@@ -1579,33 +1579,23 @@ func TestProcessMessage_SwitchModelPreservesPerModelCooldownKeys(t *testing.T) {
 				ModelName: "local",
 				Model:     "openai/local-model",
 				APIBase:   "https://local.example.invalid/v1",
+				APIKeys:   config.SimpleSecureStrings("test-key"),
 			},
 			{
 				ModelName:        "router-a",
 				Model:            "litellm/openai/gpt-4o-mini",
 				APIBase:          "https://litellm.example.invalid/v1",
 				CooldownStrategy: "per-model",
+				APIKeys:          config.SimpleSecureStrings("test-key"),
 			},
 			{
 				ModelName: "shared-provider",
 				Model:     "litellm/openai/gpt-4.1",
 				APIBase:   "https://litellm.example.invalid/v1",
+				APIKeys:   config.SimpleSecureStrings("test-key"),
 			},
 		},
 	}
-	cfg.WithSecurity(&config.SecurityConfig{
-		ModelList: map[string]config.ModelSecurityEntry{
-			"local": {
-				APIKeys: []string{"test-key"},
-			},
-			"router-a": {
-				APIKeys: []string{"test-key"},
-			},
-			"shared-provider": {
-				APIKeys: []string{"test-key"},
-			},
-		},
-	})
 
 	msgBus := bus.NewMessageBus()
 	provider := &countingMockProvider{response: "LLM reply"}

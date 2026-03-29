@@ -235,6 +235,8 @@ func TestNewAgentInstance_ResolveLightModelPerModelCooldownKeys(t *testing.T) {
 				ModelName:        "light-model",
 				Model:            " LiteLLM/OpenAI/GPT-4O ",
 				CooldownStrategy: "per_model",
+				APIBase:          "https://litellm.example.invalid/v1",
+				APIKeys:          config.SimpleSecureStrings("test-key"),
 			},
 		},
 	}
