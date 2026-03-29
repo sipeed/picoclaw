@@ -178,7 +178,7 @@ func TestFormatUserMessageWithThreadMetadata(t *testing.T) {
 
 	t.Run("includes from, message and reply IDs", func(t *testing.T) {
 		got := formatUserMessageWithThreadMetadata("ping", "Alice", "@alice", "discord:1", "123", "120")
-		want := "[from:Alice (@alice); msg:#123; reply_to:#120]\nping"
+		want := "[from:Alice (@alice); msgs:#123, reply_to:#120]\nping"
 		if got != want {
 			t.Fatalf("formatUserMessageWithThreadMetadata() = %q, want %q", got, want)
 		}
@@ -186,14 +186,14 @@ func TestFormatUserMessageWithThreadMetadata(t *testing.T) {
 
 	t.Run("empty content returns annotation only", func(t *testing.T) {
 		got := formatUserMessageWithThreadMetadata("", "", "", "discord:1", "123", "")
-		want := "[from:discord:1; msg:#123]"
+		want := "[from:discord:1; msgs:#123]"
 		if got != want {
 			t.Fatalf("formatUserMessageWithThreadMetadata() = %q, want %q", got, want)
 		}
 	})
 }
 
-func TestProcessMessage_AnnotatesThreadMetadataInPromptAndHistory(t *testing.T) {
+func TestProcessMessage_AnnotatesThreadMetadataInPromptOnly(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -245,7 +245,7 @@ func TestProcessMessage_AnnotatesThreadMetadataInPromptAndHistory(t *testing.T) 
 		t.Fatal("provider did not receive any messages")
 	}
 
-	wantAnnotated := "[from:Alice (@alice); msg:#123; reply_to:#120]\nhello"
+	wantAnnotated := "[from:Alice (@alice); msgs:#123, reply_to:#120]\nhello"
 	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
 	if lastMessage.Role != "user" || lastMessage.Content != wantAnnotated {
 		t.Fatalf("last provider message = %+v, want user annotation %q", lastMessage, wantAnnotated)
@@ -263,8 +263,8 @@ func TestProcessMessage_AnnotatesThreadMetadataInPromptAndHistory(t *testing.T) 
 	if len(history) != 2 {
 		t.Fatalf("expected history len=2, got %d", len(history))
 	}
-	if history[0].Role != "user" || history[0].Content != wantAnnotated {
-		t.Fatalf("history user message = %+v, want %q", history[0], wantAnnotated)
+	if history[0].Role != "user" || history[0].Content != "hello" {
+		t.Fatalf("history user message = %+v, want %q", history[0], "hello")
 	}
 }
 

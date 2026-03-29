@@ -1476,15 +1476,6 @@ func (al *AgentLoop) runAgentLoop(
 	agent *AgentInstance,
 	opts processOptions,
 ) (string, error) {
-	opts.UserMessage = formatUserMessageWithThreadMetadata(
-		opts.UserMessage,
-		opts.SenderDisplayName,
-		opts.SenderUsername,
-		opts.SenderID,
-		opts.MessageID,
-		opts.ReplyToMessageID,
-	)
-
 	// Record last channel for heartbeat notifications (skip internal channels and cli)
 	if opts.Channel != "" && opts.ChatID != "" && !constants.IsInternalChannel(opts.Channel) {
 		channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
@@ -1638,6 +1629,14 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		summary = ts.agent.Sessions.GetSummary(ts.sessionKey)
 	}
 	ts.captureRestorePoint(history, summary)
+	annotatedUserMessage := formatUserMessageWithThreadMetadata(
+		ts.userMessage,
+		ts.opts.SenderDisplayName,
+		ts.opts.SenderUsername,
+		ts.opts.SenderID,
+		ts.opts.MessageID,
+		ts.opts.ReplyToMessageID,
+	)
 
 	messages := ts.agent.ContextBuilder.BuildMessages(
 		history,
@@ -1650,6 +1649,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.opts.SenderDisplayName,
 		activeSkillNames(ts.agent, ts.opts)...,
 	)
+	annotateCurrentUserMessageForLLM(messages, ts.userMessage, annotatedUserMessage)
 
 	cfg := al.GetConfig()
 	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
@@ -1680,6 +1680,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 				ts.opts.SenderID, ts.opts.SenderDisplayName,
 				activeSkillNames(ts.agent, ts.opts)...,
 			)
+			annotateCurrentUserMessageForLLM(messages, ts.userMessage, annotatedUserMessage)
 			messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 		}
 	}
@@ -2052,6 +2053,7 @@ turnLoop:
 					nil, ts.channel, ts.chatID, ts.opts.SenderID, ts.opts.SenderDisplayName,
 					activeSkillNames(ts.agent, ts.opts)...,
 				)
+				annotateCurrentUserMessageForLLM(messages, ts.userMessage, annotatedUserMessage)
 				callMessages = messages
 				if gracefulTerminal {
 					callMessages = append(append([]providers.Message(nil), messages...), ts.interruptHintMessage())
@@ -3555,6 +3557,26 @@ func inboundMetadata(msg bus.InboundMessage, key string) string {
 	return msg.Metadata[key]
 }
 
+func annotateCurrentUserMessageForLLM(
+	messages []providers.Message,
+	rawUserMessage string,
+	annotatedUserMessage string,
+) {
+	if rawUserMessage == annotatedUserMessage {
+		return
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != "user" {
+			continue
+		}
+		if messages[i].Content != rawUserMessage {
+			continue
+		}
+		messages[i].Content = annotatedUserMessage
+		return
+	}
+}
+
 func formatUserMessageWithThreadMetadata(
 	content string,
 	senderDisplayName string,
@@ -3574,11 +3596,15 @@ func formatUserMessageWithThreadMetadata(
 	if from != "" {
 		metaParts = append(metaParts, fmt.Sprintf("from:%s", from))
 	}
+	msgMetaParts := make([]string, 0, 2)
 	if messageID != "" {
-		metaParts = append(metaParts, fmt.Sprintf("msg:#%s", messageID))
+		msgMetaParts = append(msgMetaParts, fmt.Sprintf("#%s", messageID))
 	}
 	if replyToMessageID != "" {
-		metaParts = append(metaParts, fmt.Sprintf("reply_to:#%s", replyToMessageID))
+		msgMetaParts = append(msgMetaParts, fmt.Sprintf("reply_to:#%s", replyToMessageID))
+	}
+	if len(msgMetaParts) > 0 {
+		metaParts = append(metaParts, fmt.Sprintf("msgs:%s", strings.Join(msgMetaParts, ", ")))
 	}
 
 	annotation := fmt.Sprintf("[%s]", strings.Join(metaParts, "; "))
