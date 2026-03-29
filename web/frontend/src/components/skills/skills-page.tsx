@@ -169,7 +169,7 @@ export function SkillsPage() {
                   {data.skills.map((skill) => (
                     <Card
                       key={`${skill.source}:${skill.name}`}
-                      className="border-border/60 gap-4 bg-white/80"
+                      className="border-border/60 gap-4"
                       size="sm"
                     >
                       <CardHeader>
@@ -211,7 +211,7 @@ export function SkillsPage() {
                         <div className="text-muted-foreground text-[11px] tracking-[0.18em] uppercase">
                           {t("pages.agent.skills.path")}
                         </div>
-                        <div className="bg-muted/60 overflow-x-auto rounded-lg px-3 py-2 font-mono text-xs leading-relaxed">
+                        <div className="bg-muted text-foreground overflow-x-auto rounded-lg px-3 py-2 font-mono text-xs leading-relaxed">
                           {skill.path}
                         </div>
                       </CardContent>
