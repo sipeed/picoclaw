@@ -243,13 +243,14 @@ func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
 }
 
 type AgentConfig struct {
-	ID        string            `json:"id"`
-	Default   bool              `json:"default,omitempty"`
-	Name      string            `json:"name,omitempty"`
-	Workspace string            `json:"workspace,omitempty"`
-	Model     *AgentModelConfig `json:"model,omitempty"`
-	Skills    []string          `json:"skills,omitempty"`
-	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+	ID           string            `json:"id"`
+	Default      bool              `json:"default,omitempty"`
+	Name         string            `json:"name,omitempty"`
+	Workspace    string            `json:"workspace,omitempty"`
+	Model        *AgentModelConfig `json:"model,omitempty"`
+	Skills       []string          `json:"skills,omitempty"`
+	Subagents    *SubagentsConfig  `json:"subagents,omitempty"`
+	SystemPrompt string            `json:"system_prompt,omitempty"`
 }
 
 type SubagentsConfig struct {
@@ -327,6 +328,7 @@ type AgentDefaults struct {
 	SubTurn                   SubTurnConfig      `json:"subturn"                                                                                     envPrefix:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_"`
 	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
 	SplitOnMarker             bool               `json:"split_on_marker"                 env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
+	SystemPrompt              string             `json:"system_prompt,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_SYSTEM_PROMPT"`
 }
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB

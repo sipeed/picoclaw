@@ -28,6 +28,7 @@ type ContextBuilder struct {
 	toolDiscoveryBM25  bool
 	toolDiscoveryRegex bool
 	splitOnMarker      bool
+	systemPrompt       string
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -56,6 +57,11 @@ func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuil
 
 func (cb *ContextBuilder) WithSplitOnMarker(enabled bool) *ContextBuilder {
 	cb.splitOnMarker = enabled
+	return cb
+}
+
+func (cb *ContextBuilder) WithSystemPrompt(prompt string) *ContextBuilder {
+	cb.systemPrompt = prompt
 	return cb
 }
 
@@ -101,6 +107,7 @@ func (cb *ContextBuilder) getIdentity() string {
 		`# picoclaw 🦞 (%s)
 
 You are picoclaw, a helpful AI assistant.
+%s
 
 ## Workspace
 Your workspace is at: %s
@@ -121,7 +128,7 @@ Your workspace is at: %s
 5. **Path Resolution** - ALWAYS use paths relative to your workspace root (e.g., "relay_project/go.mod"). DO NOT start paths with a leading slash ("/") or use absolute paths, as they are blocked for security.
 
 %s`,
-		version, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
+		version, cb.systemPrompt, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
 }
 
 func (cb *ContextBuilder) getDiscoveryRule() string {
