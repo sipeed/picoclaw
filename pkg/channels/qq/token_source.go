@@ -97,12 +97,16 @@ func (s *qqTokenSource) getNewToken() (*oauth2.Token, error) {
 	}
 
 	if rsp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("qq token request failed: status=%d body=%s", rsp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf(
+			"qq token request failed: status=%d body=%s",
+			rsp.StatusCode,
+			strings.TrimSpace(string(body)),
+		)
 	}
 
 	parsed := &qqTokenResponse{}
-	if err := json.Unmarshal(body, parsed); err != nil {
-		return nil, fmt.Errorf("qq token response decode failed: %w", err)
+	if decodeErr := json.Unmarshal(body, parsed); decodeErr != nil {
+		return nil, fmt.Errorf("qq token response decode failed: %w", decodeErr)
 	}
 
 	if parsed.Code != 0 {
