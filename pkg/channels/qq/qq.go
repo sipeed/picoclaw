@@ -772,14 +772,6 @@ func qqAttachmentFilename(attachment MessageAttachment) string {
 	if attachment.FileName != "" {
 		return attachment.FileName
 	}
-	if attachment.URL != "" {
-		if parsed, err := url.Parse(attachment.URL); err == nil {
-			if base := path.Base(parsed.Path); base != "" && base != "." && base != "/" {
-				return base
-			}
-		}
-	}
-
 	switch qqAttachmentKind(attachment) {
 	case "image":
 		return "image"
@@ -799,9 +791,11 @@ func qqAttachmentKind(attachment MessageAttachment) string {
 	switch {
 	case strings.HasPrefix(contentType, "image/"):
 		return "image"
-	case strings.HasPrefix(contentType, "video/"):
+	case strings.HasPrefix(contentType, "video"):
 		return "video"
-	case strings.HasPrefix(contentType, "audio/"), contentType == "application/ogg", contentType == "application/x-ogg":
+	case strings.HasPrefix(contentType, "voice"),
+		strings.HasPrefix(contentType, "audio/"),
+		contentType == "application/ogg", contentType == "application/x-ogg":
 		return "audio"
 	}
 
@@ -824,11 +818,11 @@ func qqAttachmentNote(attachment MessageAttachment) string {
 	case "image":
 		return fmt.Sprintf("[image: %s]", filename)
 	case "audio":
+		if attachment.AsrReferText != "" {
+			return fmt.Sprintf("[audio: %s (%s)]", filename, attachment.AsrReferText)
+		}
 		return fmt.Sprintf("[audio: %s]", filename)
 	case "video":
-		if attachment.AsrReferText != "" {
-			return fmt.Sprintf("[video: %s]", attachment.AsrReferText)
-		}
 		return fmt.Sprintf("[video: %s]", filename)
 	default:
 		return fmt.Sprintf("[file: %s]", filename)
