@@ -24,7 +24,6 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/irc"
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
-	_ "github.com/sipeed/picoclaw/pkg/channels/matrix"
 	_ "github.com/sipeed/picoclaw/pkg/channels/mattermost"
 	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
 	"github.com/sipeed/picoclaw/pkg/channels/pico"

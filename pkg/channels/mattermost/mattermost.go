@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"nhooyr.io/websocket"
+	"github.com/gorilla/websocket"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -199,14 +199,17 @@ func (c *MattermostChannel) websocketLoop() {
 }
 
 func (c *MattermostChannel) runWebSocket(wsURL string) (bool, error) {
-	conn, resp, err := websocket.Dial(c.ctx, wsURL, nil)
+	dialer := websocket.DefaultDialer
+	conn, resp, err := dialer.DialContext(c.ctx, wsURL, nil)
 	if resp != nil && resp.Body != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	if err != nil {
 		return false, fmt.Errorf("dial: %w", err)
 	}
-	defer conn.CloseNow()
+	defer func() {
+		_ = conn.Close()
+	}()
 
 	// Authenticate
 	authMsg := map[string]any{
@@ -215,7 +218,8 @@ func (c *MattermostChannel) runWebSocket(wsURL string) (bool, error) {
 		"data":   map[string]any{"token": c.config.BotToken.String()},
 	}
 	authData, _ := json.Marshal(authMsg)
-	if err := conn.Write(c.ctx, websocket.MessageText, authData); err != nil {
+	_ = conn.SetWriteDeadline(time.Now().Add(wsPingTimeout))
+	if err := conn.WriteMessage(websocket.TextMessage, authData); err != nil {
 		return false, fmt.Errorf("auth: %w", err)
 	}
 
@@ -223,6 +227,16 @@ func (c *MattermostChannel) runWebSocket(wsURL string) (bool, error) {
 
 	wsCtx, wsCancel := context.WithCancel(c.ctx)
 	defer wsCancel()
+
+	connCloseDone := make(chan struct{})
+	defer close(connCloseDone)
+	go func() {
+		select {
+		case <-wsCtx.Done():
+			_ = conn.Close()
+		case <-connCloseDone:
+		}
+	}()
 
 	// Keepalive: detect half-open connections and force reconnect.
 	pingErrCh := make(chan error, 1)
@@ -234,15 +248,17 @@ func (c *MattermostChannel) runWebSocket(wsURL string) (bool, error) {
 			case <-wsCtx.Done():
 				return
 			case <-ticker.C:
-				pingCtx, cancel := context.WithTimeout(wsCtx, wsPingTimeout)
-				err := conn.Ping(pingCtx)
-				cancel()
+				err := conn.WriteControl(
+					websocket.PingMessage,
+					nil,
+					time.Now().Add(wsPingTimeout),
+				)
 				if err != nil {
 					select {
 					case pingErrCh <- fmt.Errorf("ping: %w", err):
 					default:
 					}
-					conn.CloseNow()
+					_ = conn.Close()
 					return
 				}
 			}
@@ -250,8 +266,11 @@ func (c *MattermostChannel) runWebSocket(wsURL string) (bool, error) {
 	}()
 
 	for {
-		_, data, err := conn.Read(c.ctx)
+		_, data, err := conn.ReadMessage()
 		if err != nil {
+			if c.ctx.Err() != nil {
+				return true, nil
+			}
 			select {
 			case pingErr := <-pingErrCh:
 				return true, pingErr
@@ -575,7 +594,10 @@ func (c *MattermostChannel) sendTyping(chatID string) {
 		logger.DebugCF("mattermost", "Typing indicator failed", map[string]any{"error": err.Error()})
 		return
 	}
-	resp.Body.Close()
+	if resp == nil || resp.Body == nil {
+		return
+	}
+	defer resp.Body.Close()
 }
 
 // --- SendMedia (MediaSender) ---
