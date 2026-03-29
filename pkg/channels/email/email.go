@@ -9,10 +9,9 @@ import (
 	"strings"
 	"time"
 
-	gomail "github.com/emersion/go-message/mail"
-
 	imap "github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	gomail "github.com/emersion/go-message/mail"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -216,12 +215,12 @@ func (c *EmailChannel) pollIMAP() {
 	}
 	defer client.Close()
 
-	if err := client.Login(c.config.IMAPUser, c.config.IMAPPassword.String()).Wait(); err != nil {
+	if err = client.Login(c.config.IMAPUser, c.config.IMAPPassword.String()).Wait(); err != nil {
 		logger.WarnCF("email", "IMAP login failed", map[string]any{"err": err})
 		return
 	}
 
-	if _, err := client.Select("INBOX", nil).Wait(); err != nil {
+	if _, err = client.Select("INBOX", nil).Wait(); err != nil {
 		logger.WarnCF("email", "IMAP SELECT INBOX failed", map[string]any{"err": err})
 		return
 	}
@@ -371,4 +370,3 @@ func extractPlainText(r io.Reader) string {
 	}
 	return ""
 }
-
