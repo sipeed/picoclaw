@@ -280,7 +280,7 @@ func TestCronTool_ExecuteJobPublishesErrorWhenExecDisabled(t *testing.T) {
 	}
 }
 
-func TestCronTool_ExecuteJobPublishesAgentResponse(t *testing.T) {
+func TestCronTool_ExecuteJobDeliverFalseRunsAgentSilently(t *testing.T) {
 	executor := &stubJobExecutor{response: "generated reply"}
 	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
 
@@ -302,11 +302,8 @@ func TestCronTool_ExecuteJobPublishesAgentResponse(t *testing.T) {
 	if executor.lastPrompt != "send me a poem" {
 		t.Fatalf("prompt = %q, want original message", executor.lastPrompt)
 	}
-	if executor.publishedResp != "generated reply" {
-		t.Fatalf("published response = %q, want generated reply", executor.publishedResp)
-	}
-	if executor.publishedChan != "telegram" || executor.publishedChatID != "chat-1" {
-		t.Fatalf("published target = %s/%s, want telegram/chat-1", executor.publishedChan, executor.publishedChatID)
+	if executor.publishedResp != "" {
+		t.Fatalf("expected no published response for deliver=false, got %q", executor.publishedResp)
 	}
 }
 
@@ -365,8 +362,8 @@ func TestCronTool_ExecuteJobDirectiveAddsPromptPrefix(t *testing.T) {
 	if executor.lastPrompt != wantPrompt {
 		t.Fatalf("prompt = %q, want exact %q", executor.lastPrompt, wantPrompt)
 	}
-	if executor.publishedResp != "directive result" {
-		t.Fatalf("published response = %q, want %q", executor.publishedResp, "directive result")
+	if executor.publishedResp != "" {
+		t.Fatalf("expected no published response for deliver=false directive job, got %q", executor.publishedResp)
 	}
 }
 
@@ -400,6 +397,29 @@ func TestCronTool_ExecuteJobDirectiveWithDeliverRoutesToAgent(t *testing.T) {
 		t.Fatalf("unexpected direct bus message: %+v", msg)
 	case <-ctx.Done():
 		// expected: no direct bus message
+	}
+}
+
+func TestCronTool_ExecuteJobDirectiveWithDeliverFalseStaysSilent(t *testing.T) {
+	executor := &stubJobExecutor{response: "agent processed"}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	job := &cron.CronJob{ID: "job-dir-silent"}
+	job.Payload.Channel = "telegram"
+	job.Payload.To = "chat-1"
+	job.Payload.Message = "generate daily report"
+	job.Payload.Type = "directive"
+	job.Payload.Deliver = false
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	if executor.lastPrompt == "" {
+		t.Fatal("expected agent to be called for directive+deliver=false, but ProcessDirectWithChannel was not invoked")
+	}
+	if executor.publishedResp != "" {
+		t.Fatalf("expected no published response for deliver=false directive job, got %q", executor.publishedResp)
 	}
 }
 

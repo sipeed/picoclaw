@@ -411,7 +411,8 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return fmt.Sprintf("Error: %v", err)
 	}
 
-	if response != "" {
+	// deliver=false should execute silently: no outbound publish path.
+	if job.Payload.Deliver && response != "" {
 		t.executor.PublishResponseIfNeeded(ctx, channel, chatID, response)
 	}
 	return "ok"
