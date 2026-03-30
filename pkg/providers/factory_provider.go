@@ -29,6 +29,30 @@ func createClaudeAuthProvider() (LLMProvider, error) {
 	return NewClaudeProviderWithTokenSource(cred.AccessToken, createClaudeTokenSource()), nil
 }
 
+// createHTTPTokenAuthProvider creates an OpenAI-compatible HTTP provider using credentials
+// from the auth store. Used for any provider configured with auth_method: "token".
+func createHTTPTokenAuthProvider(protocol string, cfg *config.ModelConfig) (LLMProvider, error) {
+	cred, err := getCredential(protocol)
+	if err != nil {
+		return nil, fmt.Errorf("loading auth credentials: %w", err)
+	}
+	if cred == nil {
+		return nil, fmt.Errorf("no credentials for %s. Run: picoclaw auth login --provider %s", protocol, protocol)
+	}
+	apiBase := cfg.APIBase
+	if apiBase == "" {
+		apiBase = getDefaultAPIBase(protocol)
+	}
+	return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		cred.AccessToken,
+		apiBase,
+		cfg.Proxy,
+		cfg.MaxTokensField,
+		cfg.RequestTimeout,
+		cfg.ExtraBody,
+	), nil
+}
+
 // createCodexAuthProvider creates a Codex provider using OAuth credentials from auth store.
 func createCodexAuthProvider() (LLMProvider, error) {
 	cred, err := getCredential("openai")
@@ -159,7 +183,15 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
-		// All other OpenAI-compatible HTTP providers
+		// OpenAI-compatible HTTP providers. If auth_method is "token", credentials are
+		// read from the auth store (set via `picoclaw auth login --provider <name>`).
+		if cfg.AuthMethod == "token" {
+			provider, err := createHTTPTokenAuthProvider(protocol, cfg)
+			if err != nil {
+				return nil, "", err
+			}
+			return provider, modelID, nil
+		}
 		if cfg.APIKey() == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}
@@ -178,6 +210,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "minimax":
 		// Minimax requires reasoning_split: true in the request body
+		if cfg.AuthMethod == "token" {
+			provider, err := createHTTPTokenAuthProvider(protocol, cfg)
+			if err != nil {
+				return nil, "", err
+			}
+			return provider, modelID, nil
+		}
 		if cfg.APIKey() == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}

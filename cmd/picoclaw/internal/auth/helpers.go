@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,9 +18,31 @@ import (
 )
 
 const (
-	supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
 	defaultAnthropicModel = "claude-sonnet-4.6"
 )
+
+// httpTokenProviders lists all OpenAI-compatible HTTP providers that support
+// `picoclaw auth login --provider <name>` with API-key (token) auth.
+var httpTokenProviders = map[string]bool{
+	"openrouter": true, "groq": true, "deepseek": true, "mistral": true,
+	"gemini": true, "nvidia": true, "ollama": true, "moonshot": true,
+	"zhipu": true, "novita": true, "cerebras": true, "minimax": true,
+	"vivgrid": true, "volcengine": true, "vllm": true, "litellm": true,
+	"qwen": true, "qwen-intl": true, "qwen-international": true, "dashscope-intl": true,
+	"qwen-us": true, "dashscope-us": true, "avian": true, "longcat": true,
+	"modelscope": true, "shengsuanyun": true, "mimo": true,
+	"coding-plan": true, "alibaba-coding": true, "qwen-coding": true,
+}
+
+func supportedProvidersMsg() string {
+	static := []string{"openai", "anthropic", "google-antigravity"}
+	dynamic := make([]string, 0, len(httpTokenProviders))
+	for p := range httpTokenProviders {
+		dynamic = append(dynamic, p)
+	}
+	sort.Strings(dynamic)
+	return "supported providers: " + strings.Join(append(static, dynamic...), ", ")
+}
 
 func authLoginCmd(provider string, useDeviceCode bool, useOauth bool) error {
 	switch provider {
@@ -30,7 +53,10 @@ func authLoginCmd(provider string, useDeviceCode bool, useOauth bool) error {
 	case "google-antigravity", "antigravity":
 		return authLoginGoogleAntigravity()
 	default:
-		return fmt.Errorf("unsupported provider: %s (%s)", provider, supportedProvidersMsg)
+		if httpTokenProviders[provider] {
+			return authLoginHTTPTokenProvider(provider)
+		}
+		return fmt.Errorf("unsupported provider: %s (%s)", provider, supportedProvidersMsg())
 	}
 }
 
@@ -353,6 +379,10 @@ func authLogoutCmd(provider string) error {
 					if isAntigravityModel(appCfg.ModelList[i].Model) {
 						appCfg.ModelList[i].AuthMethod = ""
 					}
+				default:
+					if isProviderModel(provider, appCfg.ModelList[i].Model) {
+						appCfg.ModelList[i].AuthMethod = ""
+					}
 				}
 			}
 			config.SaveConfig(internal.GetConfigPath(), appCfg)
@@ -482,6 +512,45 @@ func authModelsCmd() error {
 	}
 
 	return nil
+}
+
+func authLoginHTTPTokenProvider(provider string) error {
+	cred, err := auth.LoginPasteToken(provider, os.Stdin)
+	if err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+
+	if err = auth.SetCredential(provider, cred); err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	appCfg, err := internal.LoadConfig()
+	if err == nil {
+		updated := 0
+		for i := range appCfg.ModelList {
+			if isProviderModel(provider, appCfg.ModelList[i].Model) {
+				appCfg.ModelList[i].AuthMethod = "token"
+				updated++
+			}
+		}
+		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
+			return fmt.Errorf("could not update config: %w", err)
+		}
+		if updated > 0 {
+			fmt.Printf("Updated %d %s model(s) to use token auth.\n", updated, provider)
+		} else {
+			fmt.Printf("No %s models found in config. Add models with protocol %s/ to use this credential.\n", provider, provider)
+		}
+	}
+
+	fmt.Printf("Token saved for %s!\n", provider)
+
+	return nil
+}
+
+// isProviderModel reports whether a model string belongs to the given provider protocol.
+func isProviderModel(protocol, model string) bool {
+	return model == protocol || strings.HasPrefix(model, protocol+"/")
 }
 
 // isAntigravityModel checks if a model string belongs to antigravity provider
