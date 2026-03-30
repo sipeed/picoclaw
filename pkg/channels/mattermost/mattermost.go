@@ -160,9 +160,7 @@ func (c *MattermostChannel) fetchBotInfo() error {
 // --- WebSocket loop ---
 
 func (c *MattermostChannel) websocketLoop() {
-	wsURL := strings.Replace(c.config.URL, "https://", "wss://", 1)
-	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
-	wsURL = strings.TrimRight(wsURL, "/") + "/api/v4/websocket"
+	wsURL := buildWSURL(c.config.URL)
 
 	reconnectDelay := time.Second
 
@@ -559,6 +557,7 @@ func (c *MattermostChannel) startTypingLoop(chatID string) {
 	c.typingMu.Unlock()
 
 	go func() {
+		defer c.cleanupTypingLoop(chatID, stop)
 		c.sendTyping(chatID)
 		ticker := time.NewTicker(typingIntervalS)
 		defer ticker.Stop()
@@ -576,6 +575,14 @@ func (c *MattermostChannel) startTypingLoop(chatID string) {
 			}
 		}
 	}()
+}
+
+func (c *MattermostChannel) cleanupTypingLoop(chatID string, stop chan struct{}) {
+	c.typingMu.Lock()
+	defer c.typingMu.Unlock()
+	if current, ok := c.typingStop[chatID]; ok && current == stop {
+		delete(c.typingStop, chatID)
+	}
 }
 
 func (c *MattermostChannel) stopTypingLoop(chatID string) {
@@ -680,28 +687,39 @@ func (c *MattermostChannel) uploadFile(channelID, localPath, filename string) (s
 		filename = filepath.Base(localPath)
 	}
 
-	var buf bytes.Buffer
-	w := multipart.NewWriter(&buf)
-	_ = w.WriteField("channel_id", channelID)
-	part, err := w.CreateFormFile("files", filename)
-	if err != nil {
-		return "", err
-	}
-	_, err = io.Copy(part, f)
-	if err != nil {
-		return "", err
-	}
-	w.Close()
+	bodyReader, bodyWriter := io.Pipe()
+	mpWriter := multipart.NewWriter(bodyWriter)
 
-	req, err := http.NewRequestWithContext(c.ctx, http.MethodPost, c.apiURL("/api/v4/files"), &buf)
+	go func() {
+		defer bodyWriter.Close()
+		if writeErr := mpWriter.WriteField("channel_id", channelID); writeErr != nil {
+			_ = bodyWriter.CloseWithError(writeErr)
+			return
+		}
+		part, createErr := mpWriter.CreateFormFile("files", filename)
+		if createErr != nil {
+			_ = bodyWriter.CloseWithError(createErr)
+			return
+		}
+		if _, copyErr := io.Copy(part, f); copyErr != nil {
+			_ = bodyWriter.CloseWithError(copyErr)
+			return
+		}
+		if closeErr := mpWriter.Close(); closeErr != nil {
+			_ = bodyWriter.CloseWithError(closeErr)
+		}
+	}()
+
+	req, err := http.NewRequestWithContext(c.ctx, http.MethodPost, c.apiURL("/api/v4/files"), bodyReader)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.config.BotToken.String())
-	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Content-Type", mpWriter.FormDataContentType())
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		_ = bodyReader.CloseWithError(err)
 		return "", err
 	}
 	defer resp.Body.Close()
@@ -722,4 +740,10 @@ func (c *MattermostChannel) uploadFile(channelID, localPath, filename string) (s
 		return "", fmt.Errorf("upload returned no file_infos")
 	}
 	return result.FileInfos[0].ID, nil
+}
+
+func buildWSURL(baseURL string) string {
+	wsURL := strings.Replace(baseURL, "https://", "wss://", 1)
+	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
+	return strings.TrimRight(wsURL, "/") + "/api/v4/websocket"
 }
