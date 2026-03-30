@@ -10,12 +10,14 @@ import (
 // FallbackChain orchestrates model fallback across multiple candidates.
 type FallbackChain struct {
 	cooldown *CooldownTracker
+	rl       *RateLimiterRegistry
 }
 
 // FallbackCandidate represents one model/provider to try.
 type FallbackCandidate struct {
 	Provider string
 	Model    string
+	RPM      int // requests per minute; 0 means unrestricted
 }
 
 // FallbackResult contains the successful response and metadata about all attempts.
@@ -36,9 +38,10 @@ type FallbackAttempt struct {
 	Skipped  bool // true if skipped due to cooldown
 }
 
-// NewFallbackChain creates a new fallback chain with the given cooldown tracker.
-func NewFallbackChain(cooldown *CooldownTracker) *FallbackChain {
-	return &FallbackChain{cooldown: cooldown}
+// NewFallbackChain creates a new fallback chain with the given cooldown tracker
+// and rate limiter registry.
+func NewFallbackChain(cooldown *CooldownTracker, rl *RateLimiterRegistry) *FallbackChain {
+	return &FallbackChain{cooldown: cooldown, rl: rl}
 }
 
 // ResolveCandidates parses model config into a deduplicated candidate list.
@@ -136,6 +139,13 @@ func (fc *FallbackChain) Execute(
 			continue
 		}
 
+		// Enforce per-candidate rate limit before calling the provider.
+		if fc.rl != nil {
+			if waitErr := fc.rl.Wait(ctx, cooldownKey); waitErr != nil {
+				return nil, waitErr
+			}
+		}
+
 		// Execute the run function.
 		start := time.Now()
 		resp, err := run(ctx, candidate.Provider, candidate.Model)
@@ -227,6 +237,14 @@ func (fc *FallbackChain) ExecuteImage(
 	for i, candidate := range candidates {
 		if ctx.Err() == context.Canceled {
 			return nil, context.Canceled
+		}
+
+		// Enforce per-candidate rate limit before calling the provider.
+		imageKey := ModelKey(candidate.Provider, candidate.Model)
+		if fc.rl != nil {
+			if waitErr := fc.rl.Wait(ctx, imageKey); waitErr != nil {
+				return nil, waitErr
+			}
 		}
 
 		start := time.Now()

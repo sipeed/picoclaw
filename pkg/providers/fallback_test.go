@@ -19,7 +19,7 @@ func successRun(content string) func(ctx context.Context, provider, model string
 
 func TestFallback_SingleCandidate_Success(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4")}
 	result, err := fc.Execute(context.Background(), candidates, successRun("hello"))
@@ -36,7 +36,7 @@ func TestFallback_SingleCandidate_Success(t *testing.T) {
 
 func TestFallback_SecondCandidateSuccess(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4"),
@@ -69,7 +69,7 @@ func TestFallback_SecondCandidateSuccess(t *testing.T) {
 
 func TestFallback_AllFail(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4"),
@@ -96,7 +96,7 @@ func TestFallback_AllFail(t *testing.T) {
 
 func TestFallback_ContextCanceled(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	candidates := []FallbackCandidate{
@@ -123,7 +123,7 @@ func TestFallback_ContextCanceled(t *testing.T) {
 
 func TestFallback_NonRetriableError(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4"),
@@ -155,7 +155,7 @@ func TestFallback_NonRetriableError(t *testing.T) {
 func TestFallback_CooldownSkip(t *testing.T) {
 	now := time.Now()
 	ct, _ := newTestTracker(now)
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	// Put openai/gpt-4 in cooldown (using ModelKey now)
 	ct.MarkFailure(ModelKey("openai", "gpt-4"), FailoverRateLimit)
@@ -193,7 +193,7 @@ func TestFallback_CooldownSkip(t *testing.T) {
 
 func TestFallback_AllInCooldown(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	// Put all models in cooldown (using ModelKey now)
 	ct.MarkFailure(ModelKey("openai", "gpt-4"), FailoverRateLimit)
@@ -221,7 +221,7 @@ func TestFallback_AllInCooldown(t *testing.T) {
 
 func TestFallback_NoCandidates(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	_, err := fc.Execute(context.Background(), nil, successRun("ok"))
 	if err == nil {
@@ -232,7 +232,7 @@ func TestFallback_NoCandidates(t *testing.T) {
 func TestFallback_EmptyFallbacks(t *testing.T) {
 	// Single primary, no fallbacks: should work like direct call
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4")}
 	result, err := fc.Execute(context.Background(), candidates, successRun("ok"))
@@ -246,7 +246,7 @@ func TestFallback_EmptyFallbacks(t *testing.T) {
 
 func TestFallback_UnclassifiedError(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4"),
@@ -270,7 +270,7 @@ func TestFallback_UnclassifiedError(t *testing.T) {
 
 func TestFallback_SuccessResetsCooldown(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4")}
 	modelKey := ModelKey("openai", "gpt-4")
@@ -297,7 +297,7 @@ func TestFallback_SuccessResetsCooldown(t *testing.T) {
 
 func TestImageFallback_Success(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4o")}
 	result, err := fc.ExecuteImage(context.Background(), candidates, successRun("image result"))
@@ -311,7 +311,7 @@ func TestImageFallback_Success(t *testing.T) {
 
 func TestImageFallback_DimensionError(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4o"),
@@ -335,7 +335,7 @@ func TestImageFallback_DimensionError(t *testing.T) {
 
 func TestImageFallback_SizeError(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4o"),
@@ -359,7 +359,7 @@ func TestImageFallback_SizeError(t *testing.T) {
 
 func TestImageFallback_RetryOnOtherErrors(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4o"),
@@ -386,7 +386,7 @@ func TestImageFallback_RetryOnOtherErrors(t *testing.T) {
 
 func TestImageFallback_NoCandidates(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	_, err := fc.ExecuteImage(context.Background(), nil, successRun("ok"))
 	if err == nil {

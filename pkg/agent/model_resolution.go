@@ -54,7 +54,7 @@ func resolveModelCandidates(
 	primary string,
 	fallbacks []string,
 ) []providers.FallbackCandidate {
-	return providers.ResolveCandidatesWithLookup(
+	candidates := providers.ResolveCandidatesWithLookup(
 		providers.ModelConfig{
 			Primary:   primary,
 			Fallbacks: fallbacks,
@@ -62,6 +62,35 @@ func resolveModelCandidates(
 		defaultProvider,
 		buildModelListResolver(cfg),
 	)
+
+	// Propagate RPM from ModelConfig to each candidate.
+	if cfg != nil {
+		for i := range candidates {
+			mc := lookupModelConfigByProtocolModel(cfg, candidates[i].Provider, candidates[i].Model)
+			if mc != nil && mc.RPM > 0 {
+				candidates[i].RPM = mc.RPM
+			}
+		}
+	}
+
+	return candidates
+}
+
+// lookupModelConfigByProtocolModel finds a ModelConfig whose resolved provider/model matches.
+func lookupModelConfigByProtocolModel(cfg *config.Config, provider, model string) *config.ModelConfig {
+	for _, mc := range cfg.ModelList {
+		if mc == nil || strings.TrimSpace(mc.Model) == "" {
+			continue
+		}
+		p, m := providers.ExtractProtocol(mc.Model)
+		if p == "" {
+			p = "openai"
+		}
+		if p == provider && m == model {
+			return mc
+		}
+	}
+	return nil
 }
 
 func resolvedCandidateModel(candidates []providers.FallbackCandidate, fallback string) string {

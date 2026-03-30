@@ -118,9 +118,18 @@ func NewAgentLoop(
 ) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
-	// Set up shared fallback chain
+	// Set up shared fallback chain with rate limiting.
 	cooldown := providers.NewCooldownTracker()
-	fallbackChain := providers.NewFallbackChain(cooldown)
+	rl := providers.NewRateLimiterRegistry()
+	// Register rate limiters for all agents' candidates so that RPM limits
+	// configured in ModelConfig are enforced before each LLM call.
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
+			rl.RegisterCandidates(agent.Candidates)
+			rl.RegisterCandidates(agent.LightCandidates)
+		}
+	}
+	fallbackChain := providers.NewFallbackChain(cooldown, rl)
 
 	// Create state manager using default agent's workspace for channel recording
 	defaultAgent := registry.GetDefaultAgent()
@@ -1000,8 +1009,15 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	al.cfg = cfg
 	al.registry = registry
 
-	// Also update fallback chain with new config
-	al.fallback = providers.NewFallbackChain(providers.NewCooldownTracker())
+	// Also update fallback chain with new config; rebuild rate limiter registry.
+	newRL := providers.NewRateLimiterRegistry()
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
+			newRL.RegisterCandidates(agent.Candidates)
+			newRL.RegisterCandidates(agent.LightCandidates)
+		}
+	}
+	al.fallback = providers.NewFallbackChain(providers.NewCooldownTracker(), newRL)
 
 	al.mu.Unlock()
 
