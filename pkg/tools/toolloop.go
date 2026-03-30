@@ -190,7 +190,7 @@ func RunToolLoop(
 				Content:    contentForLLM,
 				ToolCallID: r.tc.ID,
 			}
-			if len(r.result.Media) > 0 {
+			if len(r.result.Media) > 0 && !r.result.ResponseHandled {
 				toolMsg.Media = append(toolMsg.Media, r.result.Media...)
 			}
 			messages = append(messages, toolMsg)

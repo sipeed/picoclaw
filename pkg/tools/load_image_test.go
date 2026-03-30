@@ -124,7 +124,7 @@ func TestLoadImage_SuccessPath(t *testing.T) {
 		0xAE, 0x42, 0x60, 0x82, // CRC
 	}
 
-	var pngData []byte
+	pngData := make([]byte, 0, len(pngSignature)+len(ihdr)+len(iend))
 	pngData = append(pngData, pngSignature...)
 	pngData = append(pngData, ihdr...)
 	pngData = append(pngData, iend...)
