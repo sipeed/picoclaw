@@ -352,6 +352,169 @@ func TestHandleAddModel_PersistsAPIKey(t *testing.T) {
 	}
 }
 
+func TestHandleAddModel_PersistsExtraHeaders(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"dual-header-model",
+		"model":"openai/gpt-4o-mini",
+		"api_key":"sk-new-model-key",
+		"extra_headers":{"X-API-Key":"secondary-key","X-Tenant":"tenant-a"}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if len(cfg.ModelList) != 2 {
+		t.Fatalf("len(model_list) = %d, want 2", len(cfg.ModelList))
+	}
+
+	added := cfg.ModelList[1]
+	if got := added.ExtraHeaders["X-API-Key"]; got != "secondary-key" {
+		t.Fatalf("extra_headers[X-API-Key] = %q, want %q", got, "secondary-key")
+	}
+	if got := added.ExtraHeaders["X-Tenant"]; got != "tenant-a" {
+		t.Fatalf("extra_headers[X-Tenant] = %q, want %q", got, "tenant-a")
+	}
+}
+
+func TestHandleUpdateModel_PreservesAndClearsExtraHeaders(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName:    "primary",
+			Model:        "openai/gpt-4o-mini",
+			APIKeys:      config.SimpleSecureStrings("sk-primary"),
+			ExtraHeaders: map[string]string{"X-API-Key": "secondary-key"},
+		},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	// Omit extra_headers: should preserve existing value.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"primary",
+		"model":"openai/gpt-4o-mini",
+		"api_base":"https://api.example.com/v1"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("preserve status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err = config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after preserve error = %v", err)
+	}
+	if got := cfg.ModelList[0].ExtraHeaders["X-API-Key"]; got != "secondary-key" {
+		t.Fatalf("preserve extra_headers[X-API-Key] = %q, want %q", got, "secondary-key")
+	}
+
+	// Send empty object: should clear existing value.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"primary",
+		"model":"openai/gpt-4o-mini",
+		"api_base":"https://api.example.com/v1",
+		"extra_headers":{}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err = config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after clear error = %v", err)
+	}
+	if cfg.ModelList[0].ExtraHeaders != nil {
+		t.Fatalf("extra_headers = %#v, want nil after clear", cfg.ModelList[0].ExtraHeaders)
+	}
+}
+
+func TestHandleListModels_DoesNotLeakExtraHeaderSecrets(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName:    "dual-header-model",
+			Model:        "openai/gpt-4o-mini",
+			APIKeys:      config.SimpleSecureStrings("sk-primary"),
+			ExtraHeaders: map[string]string{"X-API-Key": "secondary-secret"},
+		},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models []struct {
+			ModelName       string            `json:"model_name"`
+			HasExtraHeaders bool              `json:"has_extra_headers"`
+			ExtraHeaders    map[string]string `json:"extra_headers,omitempty"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+	if !resp.Models[0].HasExtraHeaders {
+		t.Fatalf("has_extra_headers = false, want true")
+	}
+	if resp.Models[0].ExtraHeaders != nil {
+		t.Fatalf("extra_headers should be omitted from list response, got %#v", resp.Models[0].ExtraHeaders)
+	}
+	if strings.Contains(rec.Body.String(), "secondary-secret") {
+		t.Fatalf("raw extra header secret leaked in response body: %s", rec.Body.String())
+	}
+}
+
 // TestHandleSetDefaultModel_RejectsNonexistentModel tests that setting a non-existent
 // model as default returns 404. This covers the case where virtual models (which are
 // filtered by SaveConfig) cannot be set as default.
