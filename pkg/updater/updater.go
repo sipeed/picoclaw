@@ -70,7 +70,7 @@ func DownloadAndExtractRelease(releaseURL, platform, arch string) (string, error
 		return "", fmt.Errorf("failed to download asset: status %d", resp.StatusCode)
 	}
 
-	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+	if _, err = io.Copy(tmpFile, resp.Body); err != nil {
 		os.Remove(tmpPath)
 		return "", err
 	}
@@ -119,7 +119,7 @@ func UpdateSelfFromRelease(releaseURL, platform, arch, programName string) error
 
 	// ensure executable bit on non-windows
 	if runtime.GOOS != "windows" {
-		_ = os.Chmod(binPath, 0755)
+		_ = os.Chmod(binPath, 0o755)
 	}
 
 	f, err := os.Open(binPath)
@@ -312,7 +312,10 @@ func looksLikeDirectAssetURL(u string) bool {
 		return false
 	}
 	lower := strings.ToLower(u)
-	if strings.HasSuffix(lower, ".zip") || strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz") || strings.HasSuffix(lower, ".tar") {
+	if strings.HasSuffix(lower, ".zip") ||
+		strings.HasSuffix(lower, ".tar.gz") ||
+		strings.HasSuffix(lower, ".tgz") ||
+		strings.HasSuffix(lower, ".tar") {
 		return true
 	}
 	if strings.Contains(lower, "/releases/download/") {
