@@ -121,6 +121,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"vllm", "vllm"},
 		{"deepseek", "deepseek"},
 		{"ollama", "ollama"},
+		{"lmstudio", "lmstudio"},
 		{"longcat", "longcat"},
 		{"modelscope", "modelscope"},
 		{"mimo", "mimo"},
@@ -153,6 +154,12 @@ func TestGetDefaultAPIBase_LiteLLM(t *testing.T) {
 	}
 }
 
+func TestGetDefaultAPIBase_LMStudio(t *testing.T) {
+	if got := getDefaultAPIBase("lmstudio"); got != "http://localhost:1234/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "lmstudio", got, "http://localhost:1234/v1")
+	}
+}
+
 func TestCreateProviderFromConfig_LiteLLM(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-litellm",
@@ -170,6 +177,135 @@ func TestCreateProviderFromConfig_LiteLLM(t *testing.T) {
 	}
 	if modelID != "my-proxy-alias" {
 		t.Errorf("modelID = %q, want %q", modelID, "my-proxy-alias")
+	}
+}
+
+func TestCreateProviderFromConfig_LMStudio_WithAPIKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-lmstudio",
+		Model:     "lmstudio/openai/gpt-oss-20b",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "openai/gpt-oss-20b" {
+		t.Errorf("modelID = %q, want %q", modelID, "openai/gpt-oss-20b")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_LMStudio_NoAPIKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-lmstudio",
+		Model:     "lmstudio/openai/gpt-oss-20b",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "openai/gpt-oss-20b" {
+		t.Errorf("modelID = %q, want %q", modelID, "openai/gpt-oss-20b")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_Ollama_WithAPIKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-ollama",
+		Model:     "ollama/llama3.1:8b",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "llama3.1:8b" {
+		t.Errorf("modelID = %q, want %q", modelID, "llama3.1:8b")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_Ollama_NoAPIKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-ollama",
+		Model:     "ollama/llama3.1:8b",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "llama3.1:8b" {
+		t.Errorf("modelID = %q, want %q", modelID, "llama3.1:8b")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_VLLM_WithAPIKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-vllm",
+		Model:     "vllm/Qwen/Qwen3-8B",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "Qwen/Qwen3-8B" {
+		t.Errorf("modelID = %q, want %q", modelID, "Qwen/Qwen3-8B")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_VLLM_NoAPIKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-vllm",
+		Model:     "vllm/Qwen/Qwen3-8B",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "Qwen/Qwen3-8B" {
+		t.Errorf("modelID = %q, want %q", modelID, "Qwen/Qwen3-8B")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
 	}
 }
 

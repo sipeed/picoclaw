@@ -365,6 +365,7 @@ Agent 读取 HEARTBEAT.md
 | **通义千问 (Qwen)**     | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [获取](https://dashscope.console.aliyun.com)                     |
 | **NVIDIA**              | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [获取](https://build.nvidia.com)                                 |
 | **Ollama**              | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | 本地（无需 Key）                                                 |
+| **LM Studio**           | `lmstudio/`       | `http://localhost:1234/v1`                          | OpenAI    | 可选（本地默认无需密钥）                                         |
 | **OpenRouter**          | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [获取](https://openrouter.ai/keys)                               |
 | **LiteLLM Proxy**       | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | 你的 LiteLLM 代理 Key                                            |
 | **VLLM**                | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | 本地                                                             |
@@ -503,6 +504,21 @@ Agent 读取 HEARTBEAT.md
   "model": "ollama/llama3"
 }
 ```
+
+</details>
+
+<details>
+<summary><b>LM Studio（本地）</b></summary>
+
+```json
+{
+  "model_name": "lmstudio-local",
+  "model": "lmstudio/openai/gpt-oss-20b"
+}
+```
+
+`api_base` 默认是 `http://localhost:1234/v1`。除非你在 LM Studio 侧启用了认证，否则不需要配置 API Key。
+PicoClaw 向 LM Studio 的 OpenAI 兼容终结点发送请求，且将移除首个 `lmstudio/` 前缀，因此 `lmstudio/openai/gpt-oss-20b` 会发送 `openai/gpt-oss-20b`。
 
 </details>
 

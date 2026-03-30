@@ -154,13 +154,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return provider, modelID, nil
 
-	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
+	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
 		// All other OpenAI-compatible HTTP providers
-		if cfg.APIKey() == "" && cfg.APIBase == "" {
+		if cfg.APIKey() == "" && cfg.APIBase == "" && !isEmptyAPIKeyAllowed(protocol) {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}
 		apiBase := cfg.APIBase
@@ -294,6 +294,15 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 }
 
+func isEmptyAPIKeyAllowed(protocol string) bool {
+	switch protocol {
+	case "ollama", "vllm", "lmstudio":
+		return true
+	default:
+		return false
+	}
+}
+
 // getDefaultAPIBase returns the default API base URL for a given protocol.
 func getDefaultAPIBase(protocol string) string {
 	switch protocol {
@@ -303,6 +312,8 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://openrouter.ai/api/v1"
 	case "litellm":
 		return "http://localhost:4000/v1"
+	case "lmstudio":
+		return "http://localhost:1234/v1"
 	case "novita":
 		return "https://api.novita.ai/openai"
 	case "groq":
