@@ -402,7 +402,8 @@ func TestGatewayStatusRunningSkipsRuntimeProbeForStartCondition(t *testing.T) {
 		APIBase:   "http://127.0.0.1:8000/v1",
 	}}
 	cfg.Agents.Defaults.ModelName = "local-vllm"
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -710,7 +711,8 @@ func TestGatewayStatusRunningRestartRequiredUsesRuntimeProbeForNewLocalDefault(t
 	}
 	cfg.ModelList[0].SetAPIKey("remote-key")
 	cfg.Agents.Defaults.ModelName = "remote-openai"
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
