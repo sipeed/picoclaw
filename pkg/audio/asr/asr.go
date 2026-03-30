@@ -41,31 +41,90 @@ func supportsAudioTranscription(model string) bool {
 	}
 }
 
+func supportsWhisperTranscription(model string) bool {
+	protocol, _ := providers.ExtractProtocol(model)
+
+	switch protocol {
+	case "openai", "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
+		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
+		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
+		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
+		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
+		return true
+	default:
+		return false
+	}
+}
+
+func whisperModelID(modelCfg *config.ModelConfig) string {
+	if modelCfg == nil || modelCfg.APIKey() == "" {
+		return ""
+	}
+
+	if !supportsWhisperTranscription(modelCfg.Model) {
+		return ""
+	}
+
+	_, modelID := providers.ExtractProtocol(strings.TrimSpace(modelCfg.Model))
+	if strings.Contains(strings.ToLower(modelID), "whisper") {
+		return modelID
+	}
+	return ""
+}
+
+func transcriberFromModelConfig(modelCfg *config.ModelConfig) Transcriber {
+	if modelCfg == nil {
+		return nil
+	}
+
+	protocol, _ := providers.ExtractProtocol(modelCfg.Model)
+	if protocol == "elevenlabs" && modelCfg.APIKey() != "" {
+		return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase)
+	}
+	if modelID := whisperModelID(modelCfg); modelID != "" {
+		return NewWhisperTranscriber(modelCfg)
+	}
+	if supportsAudioTranscription(modelCfg.Model) {
+		return NewAudioModelTranscriber(modelCfg)
+	}
+	return nil
+}
+
+func fallbackTranscriberFromModelConfig(modelCfg *config.ModelConfig) Transcriber {
+	if modelCfg == nil {
+		return nil
+	}
+
+	protocol, _ := providers.ExtractProtocol(modelCfg.Model)
+	if protocol == "elevenlabs" && modelCfg.APIKey() != "" {
+		return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase)
+	}
+	if modelID := whisperModelID(modelCfg); modelID != "" {
+		return NewWhisperTranscriber(modelCfg)
+	}
+	return nil
+}
+
 // DetectTranscriber inspects cfg and returns the appropriate Transcriber, or
 // nil if no supported transcription provider is configured.
 func DetectTranscriber(cfg *config.Config) Transcriber {
+	if cfg == nil {
+		return nil
+	}
+
 	if modelName := strings.TrimSpace(cfg.Voice.ModelName); modelName != "" {
 		modelCfg, err := cfg.GetModelConfig(modelName)
 		if err == nil {
-			protocol, _ := providers.ExtractProtocol(modelCfg.Model)
-			if protocol == "elevenlabs" && modelCfg.APIKey() != "" {
-				return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase)
-			}
-			if supportsAudioTranscription(modelCfg.Model) {
-				return NewAudioModelTranscriber(modelCfg)
+			if tr := transcriberFromModelConfig(modelCfg); tr != nil {
+				return tr
 			}
 		}
 	}
 
-	// Fall back to scanning ModelList for suitable ASR providers
+	// Fall back to compatibility scanning for legacy auto-detected ASR providers.
 	for _, mc := range cfg.ModelList {
-		protocol, _ := providers.ExtractProtocol(mc.Model)
-		if protocol == "elevenlabs" && mc.APIKey() != "" {
-			return NewElevenLabsTranscriber(mc.APIKey(), mc.APIBase)
-		}
-		if (strings.HasPrefix(mc.Model, "groq/") || mc.ModelName == "groq" || mc.Model == "whisper-large-v3-turbo") &&
-			mc.APIKey() != "" {
-			return NewGroqTranscriber(mc.APIKey())
+		if tr := fallbackTranscriberFromModelConfig(mc); tr != nil {
+			return tr
 		}
 	}
 	return nil
