@@ -17,14 +17,15 @@ func TestRedactor_Redact(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"Hello, contact me at steve@example.com", "Hello, contact me at [EMAIL]"},
-		{"My IP is 192.168.1.1", "My IP is [IP]"},
-		{"Call me at +1 555-123-4567", "Call me at [PHONE]"},
+		{"Hello, contact me at steve@example.com", "Hello, contact me at [EMAIL_1]"},
+		{"My IP is 192.168.1.1", "My IP is [IP_1]"},
+		{"Call me at +1 555-123-4567", "Call me at [PHONE_1]"},
 		{"Nothing sensitive here", "Nothing sensitive here"},
 	}
 
+	mapping := r.getMapping("test")
 	for _, tt := range tests {
-		assert.Equal(t, tt.expected, r.redact(tt.input))
+		assert.Equal(t, tt.expected, r.redact(tt.input, mapping))
 	}
 }
 
@@ -43,7 +44,7 @@ func TestRedactor_BeforeLLM(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, agent.HookActionContinue, decision.Action)
 
-	assert.Equal(t, "My email is [EMAIL]", next.Messages[0].Content)
+	assert.Equal(t, "My email is [EMAIL_1]", next.Messages[0].Content)
 	assert.Equal(t, "Keep 127.0.0.1", next.Messages[1].Content)
 }
 
@@ -61,5 +62,5 @@ func TestRedactor_AfterLLM(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, agent.HookActionContinue, decision.Action)
 
-	assert.Equal(t, "The user's email was [EMAIL]", next.Response.Content)
+	assert.Equal(t, "The user's email was user@foo.com", next.Response.Content)
 }
