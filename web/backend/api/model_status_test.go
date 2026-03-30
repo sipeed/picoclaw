@@ -37,11 +37,16 @@ func TestProbeLocalModelAvailability_OpenAICompatibleIncludesAPIKey(t *testing.T
 }
 
 func TestRequiresRuntimeProbe_LMStudio(t *testing.T) {
-	if !requiresRuntimeProbe(&config.ModelConfig{Model: "lmstudio/openai/gpt-oss-20b"}) {
+	if !requiresRuntimeProbe(&config.ModelConfig{
+		Model: "lmstudio/openai/gpt-oss-20b",
+	}) {
 		t.Fatal("requiresRuntimeProbe(lmstudio with default base) = false, want true")
 	}
 
-	if requiresRuntimeProbe(&config.ModelConfig{Model: "lmstudio/openai/gpt-oss-20b", APIBase: "https://api.example.com/v1"}) {
+	if requiresRuntimeProbe(&config.ModelConfig{
+		Model:   "lmstudio/openai/gpt-oss-20b",
+		APIBase: "https://api.example.com/v1",
+	}) {
 		t.Fatal("requiresRuntimeProbe(lmstudio with remote base) = true, want false")
 	}
 }
