@@ -2,6 +2,7 @@ package mattermost
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -122,6 +124,16 @@ func TestStripBotMention(t *testing.T) {
 			in:   "hello world",
 			want: "hello world",
 		},
+		{
+			name: "substring mention should not strip",
+			in:   "@PicoclawBotany should stay",
+			want: "@PicoclawBotany should stay",
+		},
+		{
+			name: "email should not strip",
+			in:   "foo@PicoclawBot.com",
+			want: "foo@PicoclawBot.com",
+		},
 	}
 
 	for _, tt := range tests {
@@ -129,6 +141,53 @@ func TestStripBotMention(t *testing.T) {
 			got := ch.stripBotMention(tt.in)
 			if got != tt.want {
 				t.Fatalf("stripBotMention(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasBotMention(t *testing.T) {
+	ch := &MattermostChannel{
+		botUsername: "PicoclawBot",
+	}
+
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{
+			name: "exact mention",
+			in:   "@PicoclawBot hello",
+			want: true,
+		},
+		{
+			name: "mention with punctuation",
+			in:   "@PicoclawBot, hi",
+			want: true,
+		},
+		{
+			name: "substring should not count",
+			in:   "@PicoclawBotany hi",
+			want: false,
+		},
+		{
+			name: "email should not count",
+			in:   "foo@PicoclawBot.com",
+			want: false,
+		},
+		{
+			name: "no mention",
+			in:   "hello world",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ch.hasBotMention(tt.in)
+			if got != tt.want {
+				t.Fatalf("hasBotMention(%q) = %v, want %v", tt.in, got, tt.want)
 			}
 		})
 	}
@@ -244,5 +303,90 @@ func TestUploadFile(t *testing.T) {
 	}
 	if gotFileID != wantFileID {
 		t.Fatalf("uploadFile() fileID = %q, want %q", gotFileID, wantFileID)
+	}
+}
+
+func TestHandlePostedEventIgnoresSystemMessages(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	ch, err := NewMattermostChannel(config.MattermostConfig{
+		URL:      "https://mattermost.example.com",
+		BotToken: *config.NewSecureString("token"),
+	}, msgBus)
+	if err != nil {
+		t.Fatalf("NewMattermostChannel() error: %v", err)
+	}
+	ch.ctx = context.Background()
+	ch.botUserID = "bot-user"
+
+	ch.handlePostedEvent(makePostedEvent("system_join_channel", "user-1", "chan-1", "user joined", "O"))
+
+	expectNoInbound(t, msgBus, 100*time.Millisecond)
+}
+
+func TestHandlePostedEventGroupMentionBoundary(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	cfg := config.MattermostConfig{
+		URL:      "https://mattermost.example.com",
+		BotToken: *config.NewSecureString("token"),
+		GroupTrigger: config.GroupTriggerConfig{
+			MentionOnly: true,
+		},
+	}
+	ch, err := NewMattermostChannel(cfg, msgBus)
+	if err != nil {
+		t.Fatalf("NewMattermostChannel() error: %v", err)
+	}
+	ch.ctx = context.Background()
+	ch.botUserID = "bot-user"
+	ch.botUsername = "mybot"
+
+	ch.handlePostedEvent(makePostedEvent("", "user-1", "chan-1", "@mybotany hi", "O"))
+	expectNoInbound(t, msgBus, 100*time.Millisecond)
+
+	ch.handlePostedEvent(makePostedEvent("", "user-1", "chan-1", "@mybot hi", "O"))
+	msg := mustRecvInbound(t, msgBus, 500*time.Millisecond)
+	if msg.Content != "hi" {
+		t.Fatalf("Content = %q, want %q", msg.Content, "hi")
+	}
+}
+
+func makePostedEvent(postType, userID, channelID, message, channelType string) wsEvent {
+	post := map[string]any{
+		"id":         "post-1",
+		"type":       postType,
+		"user_id":    userID,
+		"channel_id": channelID,
+		"root_id":    "",
+		"message":    message,
+	}
+	postJSON, _ := json.Marshal(post)
+	data := map[string]string{
+		"post":         string(postJSON),
+		"channel_type": channelType,
+	}
+	raw, _ := json.Marshal(data)
+	return wsEvent{
+		Event: "posted",
+		Data:  raw,
+	}
+}
+
+func expectNoInbound(t *testing.T, mb *bus.MessageBus, timeout time.Duration) {
+	t.Helper()
+	select {
+	case msg := <-mb.InboundChan():
+		t.Fatalf("expected no inbound message, got %+v", msg)
+	case <-time.After(timeout):
+	}
+}
+
+func mustRecvInbound(t *testing.T, mb *bus.MessageBus, timeout time.Duration) bus.InboundMessage {
+	t.Helper()
+	select {
+	case msg := <-mb.InboundChan():
+		return msg
+	case <-time.After(timeout):
+		t.Fatal("expected inbound message, got none")
+		return bus.InboundMessage{}
 	}
 }

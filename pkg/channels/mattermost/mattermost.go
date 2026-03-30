@@ -299,6 +299,7 @@ type wsPostedData struct {
 
 type mmPost struct {
 	ID        string   `json:"id"`
+	Type      string   `json:"type"`
 	ChannelID string   `json:"channel_id"`
 	UserID    string   `json:"user_id"`
 	RootID    string   `json:"root_id"`
@@ -329,6 +330,10 @@ func (c *MattermostChannel) handlePostedEvent(event wsEvent) {
 	if post.UserID == c.botUserID {
 		return
 	}
+	// Ignore Mattermost system posts (e.g., system_join_channel)
+	if strings.HasPrefix(post.Type, "system_") {
+		return
+	}
 
 	isDM := posted.ChannelType == "D"
 
@@ -350,10 +355,7 @@ func (c *MattermostChannel) handlePostedEvent(event wsEvent) {
 
 	// Group trigger filtering
 	if !isDM {
-		isMentioned := strings.Contains(
-			strings.ToLower(content),
-			"@"+strings.ToLower(c.botUsername),
-		)
+		isMentioned := c.hasBotMention(content)
 		content = c.stripBotMention(content)
 		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
 		if !respond {
@@ -437,18 +439,74 @@ func (c *MattermostChannel) stripBotMention(text string) string {
 	if c.botUsername == "" {
 		return text
 	}
-	// Case-insensitive replace of @botname
-	lower := strings.ToLower(text)
+	// Case-insensitive replace of standalone @botname mentions.
 	mention := "@" + strings.ToLower(c.botUsername)
+	lower := strings.ToLower(text)
+	var out strings.Builder
+	out.Grow(len(text))
+
+	cursor := 0
+	searchFrom := 0
+	removed := false
 	for {
-		idx := strings.Index(lower, mention)
-		if idx < 0 {
+		idxRel := strings.Index(lower[searchFrom:], mention)
+		if idxRel < 0 {
 			break
 		}
-		text = text[:idx] + text[idx+len(mention):]
-		lower = strings.ToLower(text)
+		start := searchFrom + idxRel
+		end := start + len(mention)
+		if !isMentionBoundary(text, start, end) {
+			searchFrom = end
+			continue
+		}
+		out.WriteString(text[cursor:start])
+		cursor = end
+		searchFrom = end
+		removed = true
 	}
-	return strings.TrimSpace(text)
+	if !removed {
+		return strings.TrimSpace(text)
+	}
+	out.WriteString(text[cursor:])
+	return strings.TrimSpace(out.String())
+}
+
+func (c *MattermostChannel) hasBotMention(text string) bool {
+	if c.botUsername == "" {
+		return false
+	}
+	mention := "@" + strings.ToLower(c.botUsername)
+	lower := strings.ToLower(text)
+	searchFrom := 0
+	for {
+		idxRel := strings.Index(lower[searchFrom:], mention)
+		if idxRel < 0 {
+			return false
+		}
+		start := searchFrom + idxRel
+		end := start + len(mention)
+		if isMentionBoundary(text, start, end) {
+			return true
+		}
+		searchFrom = end
+	}
+}
+
+func isMentionBoundary(text string, start, end int) bool {
+	if start > 0 && isMattermostUsernameChar(text[start-1]) {
+		return false
+	}
+	if end < len(text) && isMattermostUsernameChar(text[end]) {
+		return false
+	}
+	return true
+}
+
+func isMattermostUsernameChar(b byte) bool {
+	return (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9') ||
+		b == '_' || b == '-' || b == '.'
 }
 
 // --- Send ---
