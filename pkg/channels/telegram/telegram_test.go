@@ -673,3 +673,151 @@ func TestHandleMessage_EmptyContent_Ignored(t *testing.T) {
 	default:
 	}
 }
+
+func TestHandleMessage_ReplyCarriesMetadataAndQuotedContext(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
+		chatIDs:     make(map[string]int64),
+		ctx:         context.Background(),
+	}
+
+	msg := &telego.Message{
+		Text:      "what do you think?",
+		MessageID: 21,
+		Chat: telego.Chat{
+			ID:   12345,
+			Type: "private",
+		},
+		From: &telego.User{
+			ID:        10,
+			FirstName: "Bob",
+		},
+		ReplyToMessage: &telego.Message{
+			MessageID: 99,
+			Text:      "this is the old message",
+			From: &telego.User{
+				Username: "alice",
+			},
+		},
+	}
+
+	err := ch.handleMessage(context.Background(), msg)
+	require.NoError(t, err)
+
+	inbound, ok := <-messageBus.InboundChan()
+	require.True(t, ok)
+	assert.Equal(t, "99", inbound.Metadata["reply_to_message_id"])
+	assert.Equal(
+		t,
+		"[quoted message from alice]: this is the old message\n\nwhat do you think?",
+		inbound.Content,
+	)
+}
+
+func TestHandleMessage_ReplyWithoutTextOnlySetsReplyMetadata(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
+		chatIDs:     make(map[string]int64),
+		ctx:         context.Background(),
+	}
+
+	msg := &telego.Message{
+		Text:      "ping",
+		MessageID: 22,
+		Chat: telego.Chat{
+			ID:   12345,
+			Type: "private",
+		},
+		From: &telego.User{
+			ID:        10,
+			FirstName: "Bob",
+		},
+		ReplyToMessage: &telego.Message{
+			MessageID: 100,
+		},
+	}
+
+	err := ch.handleMessage(context.Background(), msg)
+	require.NoError(t, err)
+
+	inbound, ok := <-messageBus.InboundChan()
+	require.True(t, ok)
+	assert.Equal(t, "100", inbound.Metadata["reply_to_message_id"])
+	assert.Equal(t, "ping", inbound.Content)
+}
+
+func TestHandleMessage_ReplyCommandKeepsCommandPrefix(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
+		chatIDs:     make(map[string]int64),
+		ctx:         context.Background(),
+	}
+
+	msg := &telego.Message{
+		Text:      "/new",
+		MessageID: 23,
+		Chat: telego.Chat{
+			ID:   12345,
+			Type: "private",
+		},
+		From: &telego.User{
+			ID:        10,
+			FirstName: "Bob",
+		},
+		ReplyToMessage: &telego.Message{
+			MessageID: 101,
+			Text:      "old context text",
+			From: &telego.User{
+				Username: "alice",
+			},
+		},
+	}
+
+	err := ch.handleMessage(context.Background(), msg)
+	require.NoError(t, err)
+
+	inbound, ok := <-messageBus.InboundChan()
+	require.True(t, ok)
+	assert.Equal(t, "101", inbound.Metadata["reply_to_message_id"])
+	assert.Equal(t, "/new", inbound.Content)
+}
+
+func TestHandleMessage_ReplyBangCommandKeepsCommandPrefix(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
+		chatIDs:     make(map[string]int64),
+		ctx:         context.Background(),
+	}
+
+	msg := &telego.Message{
+		Text:      "!new",
+		MessageID: 24,
+		Chat: telego.Chat{
+			ID:   12345,
+			Type: "private",
+		},
+		From: &telego.User{
+			ID:        10,
+			FirstName: "Bob",
+		},
+		ReplyToMessage: &telego.Message{
+			MessageID: 102,
+			Text:      "old context text",
+			From: &telego.User{
+				Username: "alice",
+			},
+		},
+	}
+
+	err := ch.handleMessage(context.Background(), msg)
+	require.NoError(t, err)
+
+	inbound, ok := <-messageBus.InboundChan()
+	require.True(t, ok)
+	assert.Equal(t, "102", inbound.Metadata["reply_to_message_id"])
+	assert.Equal(t, "!new", inbound.Content)
+}

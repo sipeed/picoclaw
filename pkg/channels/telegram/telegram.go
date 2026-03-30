@@ -659,6 +659,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		}
 		content = cleaned
 	}
+	if quoted := formatQuotedReply(message); quoted != "" && !isCommandMessage(content) {
+		content = fmt.Sprintf("%s\n\n%s", quoted, content)
+	}
 
 	// For forum topics, embed the thread ID as "chatID/threadID" so replies
 	// route to the correct topic and each topic gets its own session.
@@ -693,6 +696,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		"first_name": user.FirstName,
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
+	if message.ReplyToMessage != nil {
+		metadata["reply_to_message_id"] = fmt.Sprintf("%d", message.ReplyToMessage.MessageID)
+	}
 
 	// Set parent_peer metadata for per-topic agent binding.
 	if message.Chat.IsForum && threadID != 0 {
@@ -711,6 +717,36 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		sender,
 	)
 	return nil
+}
+
+func formatQuotedReply(message *telego.Message) string {
+	if message == nil || message.ReplyToMessage == nil {
+		return ""
+	}
+
+	reply := message.ReplyToMessage
+	refContent := strings.TrimSpace(reply.Text)
+	if refContent == "" {
+		refContent = strings.TrimSpace(reply.Caption)
+	}
+	if refContent == "" {
+		return ""
+	}
+
+	refAuthor := "unknown"
+	if reply.From != nil {
+		if username := strings.TrimSpace(reply.From.Username); username != "" {
+			refAuthor = username
+		} else if firstName := strings.TrimSpace(reply.From.FirstName); firstName != "" {
+			refAuthor = firstName
+		}
+	}
+
+	return fmt.Sprintf("[quoted message from %s]: %s", refAuthor, refContent)
+}
+
+func isCommandMessage(content string) bool {
+	return commands.HasCommandPrefix(content)
 }
 
 func (c *TelegramChannel) downloadPhoto(ctx context.Context, fileID string) string {
