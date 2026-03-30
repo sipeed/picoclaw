@@ -458,6 +458,8 @@ Provider の完全な設定詳細は [Provider とモデル](docs/ja/providers.m
 
 > webhook ベースのすべての Channel は単一の Gateway HTTP サーバー（`gateway.host`:`gateway.port`、デフォルト `127.0.0.1:18790`）を共有します。Feishu は WebSocket/SDK モードを使用し、共有 HTTP サーバーを使用しません。
 
+> ログの詳細度は `gateway.log_level` で制御します（デフォルト：`fatal`）。サポートされる値：`debug`、`info`、`warn`、`error`、`fatal`。`PICOCLAW_LOG_LEVEL` 環境変数でも設定可能です。詳細は[設定ガイド](docs/ja/configuration.md#gateway-ログレベル)を参照してください。
+
 Channel の詳細なセットアップ手順は [チャットアプリ設定](docs/ja/chat-apps.md) を参照してください。
 
 ## 🔧 ツール

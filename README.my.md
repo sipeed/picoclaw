@@ -458,6 +458,8 @@ Bercakap dengan PicoClaw anda melalui 17+ platform pemesejan:
 
 > Semua saluran berasaskan webhook berkongsi satu pelayan HTTP Gateway (`gateway.host`:`gateway.port`, lalai `127.0.0.1:18790`). Feishu menggunakan mod WebSocket/SDK dan tidak menggunakan pelayan HTTP yang dikongsi.
 
+> Tahap perincian log dikawal oleh `gateway.log_level` (lalai: `fatal`). Nilai yang disokong: `debug`, `info`, `warn`, `error`, `fatal`. Boleh juga ditetapkan melalui `PICOCLAW_LOG_LEVEL`. Lihat [Konfigurasi](docs/configuration.md#gateway-log-level) untuk butiran.
+
 Untuk arahan persediaan saluran terperinci, lihat [Konfigurasi Aplikasi Sembang](docs/my/chat-apps.md).
 
 ## 🔧 Alat

@@ -458,6 +458,8 @@ Trò chuyện với PicoClaw của bạn qua 17+ nền tảng nhắn tin:
 
 > Tất cả các Channel dựa trên webhook dùng chung một Gateway HTTP server (`gateway.host`:`gateway.port`, mặc định `127.0.0.1:18790`). Feishu sử dụng chế độ WebSocket/SDK và không dùng HTTP server chung.
 
+> Mức độ chi tiết log được kiểm soát bởi `gateway.log_level` (mặc định: `fatal`). Các giá trị được hỗ trợ: `debug`, `info`, `warn`, `error`, `fatal`. Cũng có thể đặt qua `PICOCLAW_LOG_LEVEL`. Xem [Cấu hình](docs/vi/configuration.md#mức-log-của-gateway) để biết thêm chi tiết.
+
 Để biết hướng dẫn thiết lập Channel chi tiết, xem [Cấu hình Ứng dụng Chat](docs/vi/chat-apps.md).
 
 ## 🔧 Tools

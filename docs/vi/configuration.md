@@ -31,6 +31,22 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Mức Log của Gateway
+
+`gateway.log_level` kiểm soát mức độ chi tiết của log Gateway, có thể cấu hình trong `config.json`:
+
+```json
+{
+  "gateway": {
+    "log_level": "fatal"
+  }
+}
+```
+
+Giá trị mặc định là `fatal`. Các giá trị được hỗ trợ: `debug`, `info`, `warn`, `error`, `fatal`.
+
+Cũng có thể ghi đè bằng biến môi trường: `PICOCLAW_LOG_LEVEL=info`
+
 ### Bố Cục Workspace
 
 PicoClaw lưu trữ dữ liệu trong workspace đã cấu hình (mặc định: `~/.picoclaw/workspace`):

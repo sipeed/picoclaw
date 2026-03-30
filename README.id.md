@@ -458,6 +458,8 @@ Bicara dengan PicoClaw Anda melalui 17+ platform pesan:
 
 > Semua channel berbasis webhook berbagi satu server HTTP Gateway (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). Feishu menggunakan mode WebSocket/SDK dan tidak menggunakan server HTTP bersama.
 
+> Verbositas log dikontrol oleh `gateway.log_level` (default: `fatal`). Nilai yang didukung: `debug`, `info`, `warn`, `error`, `fatal`. Juga dapat diatur melalui `PICOCLAW_LOG_LEVEL`. Lihat [Konfigurasi](docs/configuration.md#gateway-log-level) untuk detail.
+
 Untuk instruksi pengaturan channel lengkap, lihat [Konfigurasi Aplikasi Chat](docs/chat-apps.md).
 
 ## 🔧 Tools

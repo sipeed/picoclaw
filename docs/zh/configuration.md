@@ -31,6 +31,22 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Gateway 日志等级
+
+`gateway.log_level` 控制 Gateway 的日志详细程度，可在 `config.json` 中配置：
+
+```json
+{
+  "gateway": {
+    "log_level": "fatal"
+  }
+}
+```
+
+默认值为 `fatal`。支持的值：`debug`、`info`、`warn`、`error`、`fatal`。
+
+也可通过环境变量覆盖：`PICOCLAW_LOG_LEVEL=info`
+
 ### 工作区布局 (Workspace Layout)
 
 PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/workspace`）：

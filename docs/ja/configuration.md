@@ -31,6 +31,22 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Gateway ログレベル
+
+`gateway.log_level` は Gateway のログ詳細度を制御します。`config.json` で設定できます：
+
+```json
+{
+  "gateway": {
+    "log_level": "fatal"
+  }
+}
+```
+
+デフォルト値は `fatal` です。サポートされる値：`debug`、`info`、`warn`、`error`、`fatal`。
+
+環境変数でも上書き可能です：`PICOCLAW_LOG_LEVEL=info`
+
 ### ワークスペースレイアウト
 
 PicoClaw は設定されたワークスペース（デフォルト: `~/.picoclaw/workspace`）にデータを保存します：

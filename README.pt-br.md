@@ -458,6 +458,8 @@ Converse com seu PicoClaw por meio de mais de 17 plataformas de mensagens:
 
 > Todos os channels baseados em webhook compartilham um único servidor HTTP do Gateway (`gateway.host`:`gateway.port`, padrão `127.0.0.1:18790`). O Feishu usa modo WebSocket/SDK e não utiliza o servidor HTTP compartilhado.
 
+> A verbosidade dos logs é controlada por `gateway.log_level` (padrão: `fatal`). Valores suportados: `debug`, `info`, `warn`, `error`, `fatal`. Também pode ser definido via `PICOCLAW_LOG_LEVEL`. Veja [Configuração](docs/pt-br/configuration.md#nível-de-log-do-gateway) para detalhes.
+
 Para instruções detalhadas de configuração de channels, veja [Configuração de Apps de Chat](docs/pt-br/chat-apps.md).
 
 ## 🔧 Ferramentas
