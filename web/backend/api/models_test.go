@@ -90,8 +90,7 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 		},
 	}
 	cfg.Agents.Defaults.ModelName = "openai-oauth"
-	err = config.SaveConfig(configPath, cfg)
-	if err != nil {
+	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -408,7 +407,8 @@ func TestHandleUpdateModel_PreservesAndClearsExtraHeaders(t *testing.T) {
 			ExtraHeaders: map[string]string{"X-API-Key": "secondary-key"},
 		},
 	}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
