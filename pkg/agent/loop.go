@@ -285,7 +285,11 @@ func registerSharedTools(
 		spawnEnabled := cfg.Tools.IsToolEnabled("spawn")
 		spawnStatusEnabled := cfg.Tools.IsToolEnabled("spawn_status")
 		if (spawnEnabled || spawnStatusEnabled) && cfg.Tools.IsToolEnabled("subagent") {
-			subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace)
+			subagentManager := tools.NewSubagentManager(
+				provider,
+				resolveSubagentDefaultModel(agent),
+				agent.Workspace,
+			)
 			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 
 			// Set the spawner that links into AgentLoop's turnState
@@ -375,6 +379,16 @@ func registerSharedTools(
 			logger.WarnCF("agent", "spawn/spawn_status tools require subagent to be enabled", nil)
 		}
 	}
+}
+
+func resolveSubagentDefaultModel(agent *AgentInstance) string {
+	if agent == nil {
+		return ""
+	}
+	if len(agent.Candidates) > 0 && strings.TrimSpace(agent.Candidates[0].Model) != "" {
+		return strings.TrimSpace(agent.Candidates[0].Model)
+	}
+	return agent.Model
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
