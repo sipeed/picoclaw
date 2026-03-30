@@ -158,6 +158,89 @@ func TestProviderChat_ParsesToolCallsWithObjectArguments(t *testing.T) {
 	}
 }
 
+func TestProviderChat_ParsesLongCatMarkupToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `<longcat_tool_call>weather <longcat_arg_key>location</longcat_arg_key> <longcat_arg_value>New York, United States</longcat_arg_value></longcat_tool_call>`,
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	p.apiBase = "https://api.longcat.chat/openai"
+	p.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.URL, _ = url.Parse(server.URL + r.URL.Path)
+			return http.DefaultTransport.RoundTrip(r)
+		}),
+	}
+
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"longcat/LongCat-Flash-Thinking",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want weather", out.ToolCalls[0].Name)
+	}
+	if out.ToolCalls[0].Arguments["location"] != "New York, United States" {
+		t.Fatalf("location = %v, want New York, United States", out.ToolCalls[0].Arguments["location"])
+	}
+	if out.Content != "" {
+		t.Fatalf("Content = %q, want empty after stripping longcat tool tag", out.Content)
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want tool_calls", out.FinishReason)
+	}
+}
+
+func TestProviderChat_DoesNotParseLongCatMarkupForOtherHosts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `<longcat_tool_call>weather <longcat_arg_key>location</longcat_arg_key> <longcat_arg_value>Paris</longcat_arg_value></longcat_tool_call>`,
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if len(out.ToolCalls) != 0 {
+		t.Fatalf("len(ToolCalls) = %d, want 0 for non-longcat host", len(out.ToolCalls))
+	}
+	if !strings.Contains(out.Content, "<longcat_tool_call>") {
+		t.Fatalf("Content should keep raw markup for non-longcat host, got %q", out.Content)
+	}
+}
+
 func TestProviderChat_ParsesReasoningContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]any{
@@ -691,6 +774,36 @@ func TestProviderChat_ExtraBodyOverridesOptions(t *testing.T) {
 	// ExtraBody takes precedence over options since it is merged last.
 	if got := requestBody["temperature"]; got != float64(0.9) {
 		t.Fatalf("temperature = %v, want 0.9 (from extraBody, overriding options)", got)
+	}
+}
+
+func TestParseStreamResponse_LongCatMarkupFallback(t *testing.T) {
+	stream := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"Please check weather: "}}]}`,
+		`data: {"choices":[{"delta":{"content":"<longcat_tool_call>weather <longcat_arg_key>location</longcat_arg_key> <longcat_arg_value>Tokyo</longcat_arg_value></longcat_tool_call>"}}]}`,
+		`data: {"choices":[{"finish_reason":"stop"}]}`,
+		`data: [DONE]`,
+		"",
+	}, "\n")
+
+	out, err := parseStreamResponse(t.Context(), strings.NewReader(stream), nil, true)
+	if err != nil {
+		t.Fatalf("parseStreamResponse() error = %v", err)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want weather", out.ToolCalls[0].Name)
+	}
+	if out.ToolCalls[0].Arguments["location"] != "Tokyo" {
+		t.Fatalf("location = %v, want Tokyo", out.ToolCalls[0].Arguments["location"])
+	}
+	if out.Content != "Please check weather:" {
+		t.Fatalf("Content = %q, want %q", out.Content, "Please check weather:")
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want tool_calls", out.FinishReason)
 	}
 }
 
