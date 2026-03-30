@@ -90,7 +90,8 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 		},
 	}
 	cfg.Agents.Defaults.ModelName = "openai-oauth"
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
