@@ -31,7 +31,7 @@ description: DOM selectors and component map for the Flow Designer page on dashb
   - Selector: `.v-select:nth(0)`
   - Open: `page.locator('.v-select:nth(0)').click()`
   - Options: `10`, `25`, `50`, `100`, `All`
-  - Pick: `page.locator('.v-list-item:has-text("OPTION")').click()`
+  - Pick: `await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click()`
 
 **Buttons (1):**
 - `page.locator('.m-auto')`

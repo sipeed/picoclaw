@@ -379,25 +379,45 @@ async function extractAllComponents(page) {
     const vfRoot = document.querySelector('.vue-flow, .basic-flow, .dnd-flow');
     if (vfRoot) {
       const vf = { nodes: [], edges: [], panels: [], hasCanvas: true };
+      const seenNodes = new Set();
 
       // Nodes may be inside a deeply transformed container; query globally
       document.querySelectorAll('[data-id].vue-flow__node, .vue-flow__node[data-id]').forEach(node => {
         const dataId = node.getAttribute('data-id') || '';
         const typeClass = Array.from(node.classList).find(c => c.startsWith('vue-flow__node-') && c !== 'vue-flow__node') || '';
         const nodeType = typeClass.replace('vue-flow__node-', '');
-        const label = node.querySelector('.node-container span, .terminal-node span, .default-node span')?.textContent?.trim() || dataId;
+        const containerId = node.querySelector('.node-container[id]')?.id || '';
+        const label = node.querySelector('.node-container span, .terminal-node span, .default-node span')?.textContent?.trim() || containerId || dataId;
         const icon = node.querySelector('.mdi')
           ? Array.from(node.querySelector('.mdi').classList).find(c => c.startsWith('mdi-') && c !== 'mdi') || ''
           : '';
-        vf.nodes.push({ dataId, nodeType, label, icon, selector: `[data-id="${dataId}"]` });
+        const stableId = containerId || label || dataId;
+        const selector = containerId ? `.node-container#${containerId}` : `[data-id="${dataId}"]`;
+        if (!stableId || seenNodes.has(stableId)) return;
+        seenNodes.add(stableId);
+        vf.nodes.push({ dataId, nodeId: containerId || null, nodeType, label, icon, selector });
       });
 
-      // Fallback: if no nodes found via class, try by data-id inside the flow container
+      // Fallback A: direct node containers (most stable in this app).
+      vfRoot.querySelectorAll('.node-container[id]').forEach(node => {
+        const nodeId = node.getAttribute('id') || '';
+        if (!nodeId || seenNodes.has(nodeId)) return;
+        const label = node.querySelector('span')?.textContent?.trim() || nodeId;
+        const icon = node.querySelector('.mdi')
+          ? Array.from(node.querySelector('.mdi').classList).find(c => c.startsWith('mdi-') && c !== 'mdi') || ''
+          : '';
+        seenNodes.add(nodeId);
+        vf.nodes.push({ dataId: nodeId, nodeId, nodeType: 'unknown', label, icon, selector: `.node-container#${nodeId}` });
+      });
+
+      // Fallback B: if still empty, use data-id groups
       if (!vf.nodes.length) {
         vfRoot.querySelectorAll('[data-id][role="group"]').forEach(node => {
           const dataId = node.getAttribute('data-id') || '';
           const label = node.querySelector('span')?.textContent?.trim() || dataId;
-          vf.nodes.push({ dataId, nodeType: 'unknown', label, icon: '', selector: `[data-id="${dataId}"]` });
+          if (!dataId || seenNodes.has(dataId)) return;
+          seenNodes.add(dataId);
+          vf.nodes.push({ dataId, nodeId: null, nodeType: 'unknown', label, icon: '', selector: `[data-id="${dataId}"]` });
         });
       }
 
@@ -407,7 +427,9 @@ async function extractAllComponents(page) {
         const pathEl = edge.querySelector('path.vue-flow__edge-path') || edge.querySelector('path[class*="edge-path"]');
         const source = pathEl?.getAttribute('source') || '';
         const target = pathEl?.getAttribute('target') || '';
-        vf.edges.push({ dataId, source, target, ariaLabel, selector: `[data-id="${dataId}"]` });
+        const interactionPath = edge.querySelector('path.vue-flow__edge-interaction');
+        const selector = interactionPath ? `[data-id="${dataId}"] .vue-flow__edge-interaction` : `[data-id="${dataId}"]`;
+        vf.edges.push({ dataId, source, target, ariaLabel, selector });
       });
 
       document.querySelectorAll('.vue-flow__panel').forEach(panel => {
@@ -1123,16 +1145,17 @@ async function inspectPage(page, url, pageName, skipExploration = false) {
 
       // 7b: Click each non-terminal node to discover config modals/drawers
       for (const node of vf.nodes) {
-        if (/^(START|END)$/i.test(node.dataId)) continue;
+        const nodeKey = (node.nodeId || node.dataId || node.label || '').trim();
+        if (/^(START|END)$/i.test(nodeKey)) continue;
         try {
-          const nodeEl = page.locator(`[data-id="${node.dataId}"]`).first();
+          const nodeEl = page.locator(node.selector || `[data-id="${node.dataId}"]`).first();
           if (!(await nodeEl.isVisible({ timeout: 2000 }).catch(() => false))) continue;
 
           await page.keyboard.press('Escape'); await page.waitForTimeout(300);
           await forceCloseAllOverlays(page, url).catch(() => {});
           const beforeSnap = await snapshotOverlays(page);
           const beforeKeys = beforeSnap.map(o => `${o.tag}|${o.className}|${o.id}`);
-          console.log(`    🔍 Clicking node "${node.label}" (${node.dataId})...`);
+          console.log(`    🔍 Clicking node "${node.label}" (${nodeKey})...`);
           await nodeEl.click({ timeout: CLICK_TIMEOUT_MS });
           await page.waitForTimeout(2000);
 
@@ -1147,7 +1170,7 @@ async function inspectPage(page, url, pageName, skipExploration = false) {
       // 7c: Click each edge to discover edge config modals
       for (const edge of vf.edges) {
         try {
-          const edgeEl = page.locator(`[data-id="${edge.dataId}"]`).first();
+          const edgeEl = page.locator(edge.selector || `[data-id="${edge.dataId}"]`).first();
           if (!(await edgeEl.isVisible({ timeout: 2000 }).catch(() => false))) continue;
 
           await page.keyboard.press('Escape'); await page.waitForTimeout(300);
@@ -1316,12 +1339,13 @@ function generatePageSection(data) {
 
     if (vf.nodes.length) {
       s += `**Nodes (${vf.nodes.length}):**\n\n`;
-      s += '| data-id | Type | Label | Icon | Selector |\n|---------|------|-------|------|----------|\n';
+      s += '| data-id | node id | Type | Label | Icon | Selector |\n|---------|---------|------|-------|------|----------|\n';
       vf.nodes.forEach(n => {
-        s += `| ${n.dataId} | ${n.nodeType} | ${n.label} | ${n.icon} | \`page.locator('${n.selector}')\` |\n`;
+        s += `| ${n.dataId} | ${n.nodeId || '-'} | ${n.nodeType} | ${n.label} | ${n.icon} | \`page.locator('${n.selector}')\` |\n`;
       });
       s += '\n';
-      s += 'To click a node: `await page.locator(\'[data-id="NODE_ID"]\').click();`\n\n';
+      s += 'To click a node (preferred): `await page.locator(\'.node-container#NODE_ID\').click();`\n';
+      s += 'Fallback: `await page.locator(\'[data-id=\"NODE_WRAPPER_ID\"]\').click();`\n\n';
     }
 
     if (vf.edges.length) {

@@ -1,0 +1,137 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - banner [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e9]:
+        - img [ref=e11]
+        - button [ref=e12] [cursor=pointer]:
+          - generic [ref=e14]: 󰲶
+      - generic [ref=e16] [cursor=pointer]:
+        - generic [ref=e18]: H
+        - generic [ref=e19]: 󰅀
+  - navigation [ref=e20]:
+    - generic [ref=e21]:
+      - paragraph [ref=e22]: Organization
+      - generic [ref=e25] [cursor=pointer]:
+        - generic [ref=e27]: Testing2026!
+        - img [ref=e29]
+    - generic [ref=e31]:
+      - button "󰅁" [ref=e32] [cursor=pointer]
+      - list [ref=e33]:
+        - link "Dashboard" [ref=e34] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e37]:
+            - generic [ref=e38]: 󰕮
+            - generic [ref=e39]: Dashboard
+        - link "Flow Designer" [ref=e40] [cursor=pointer]:
+          - /url: /flow-designer
+          - generic [ref=e43]:
+            - generic [ref=e44]: 󱦜
+            - generic [ref=e45]: Flow Designer
+        - link "Flow Tester" [ref=e46] [cursor=pointer]:
+          - /url: /flow-tester
+          - generic [ref=e49]:
+            - generic [ref=e50]: 󰙨
+            - generic [ref=e51]: Flow Tester
+        - link "Knowledge Base" [ref=e52] [cursor=pointer]:
+          - /url: /knowledge-base
+          - generic [ref=e55]:
+            - generic [ref=e56]: 󰧑
+            - generic [ref=e57]: Knowledge Base
+        - link "Logs" [ref=e58] [cursor=pointer]:
+          - /url: /logs
+          - generic [ref=e61]:
+            - generic [ref=e62]: 󰧮
+            - generic [ref=e63]: Logs
+        - link "Add-Ons" [ref=e64] [cursor=pointer]:
+          - /url: /add-ons
+          - generic [ref=e67]:
+            - generic [ref=e68]: 󱇙
+            - generic [ref=e69]: Add-Ons
+        - link "Settings" [ref=e70] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=e73]:
+            - generic [ref=e74]: 󰢻
+            - generic [ref=e75]: Settings
+        - link "Organization" [ref=e76] [cursor=pointer]:
+          - /url: /organization
+          - generic [ref=e79]:
+            - generic [ref=e80]: 󰦑
+            - generic [ref=e81]: Organization
+  - main [ref=e82]:
+    - generic [ref=e86]:
+      - generic [ref=e88]:
+        - generic:
+          - img
+          - img:
+            - group "Edge from START to ReplyMessage_3" [ref=e89] [cursor=pointer]
+          - img:
+            - group "Edge from ReplyMessage_3 to input" [ref=e92] [cursor=pointer]
+          - generic:
+            - group [ref=e95]:
+              - generic [ref=e97] [cursor=pointer]:
+                - generic [ref=e99]: 󰋜
+                - generic [ref=e100]: START
+            - group [ref=e102]:
+              - generic [ref=e104] [cursor=pointer]:
+                - generic [ref=e106]: 󰓛
+                - generic [ref=e107]: END
+            - group [ref=e109]:
+              - generic [ref=e111]:
+                - generic [ref=e113]: 󰍪
+                - generic [ref=e114]: ReplyMessage_3
+            - group [active] [ref=e117]:
+              - generic [ref=e119]:
+                - generic [ref=e121]: 󰗋
+                - generic [ref=e122]: input
+            - group [ref=e125]:
+              - generic [ref=e127]:
+                - generic [ref=e129]: 󰍪
+                - generic [ref=e130]: Output
+      - generic [ref=e135]:
+        - generic [ref=e136]:
+          - button "󰚡" [ref=e138] [cursor=pointer]
+          - generic [ref=e139]: 󰅂
+          - paragraph [ref=e140]: User Utterance
+        - generic [ref=e141]:
+          - button [ref=e142] [cursor=pointer]:
+            - generic [ref=e144]: 󰝡
+          - button [ref=e146] [cursor=pointer]:
+            - generic [ref=e148]: 󰙟
+      - generic [ref=e150]:
+        - generic [ref=e151]:
+          - button [ref=e153] [cursor=pointer]:
+            - generic [ref=e155]: 󰍉
+          - button [ref=e157] [cursor=pointer]:
+            - generic [ref=e159]: 󰋚
+          - button [ref=e161] [cursor=pointer]:
+            - generic [ref=e163]: 󰚭
+          - button [ref=e165] [cursor=pointer]:
+            - generic [ref=e167]: 󰤲
+          - button [ref=e169] [cursor=pointer]:
+            - generic [ref=e171]: 󱧾
+          - button [ref=e173] [cursor=pointer]:
+            - generic [ref=e175]: 󰃤
+          - button [ref=e177] [cursor=pointer]:
+            - generic [ref=e179]: 󰆓
+        - button [ref=e181] [cursor=pointer]:
+          - generic [ref=e183]: 󰇙
+        - button "Publish" [ref=e184] [cursor=pointer]:
+          - generic [ref=e185]: Publish
+      - generic [ref=e187]:
+        - generic [ref=e188]:
+          - button "󰛬" [ref=e190] [cursor=pointer]
+          - paragraph [ref=e191]: 131%
+          - button "󰛭" [ref=e193] [cursor=pointer]
+        - generic [ref=e194]:
+          - button [ref=e195] [cursor=pointer]:
+            - generic [ref=e197]: 󰕌
+          - button [disabled]:
+            - generic:
+              - generic: 󰑎
+      - generic [ref=e199]:
+        - generic [ref=e200]: 󱑂
+        - paragraph [ref=e201]: Last saved just now
+```

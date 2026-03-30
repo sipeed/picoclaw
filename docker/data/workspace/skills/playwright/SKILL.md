@@ -96,10 +96,50 @@ Login form selectors:
 
 ## Modals & Overlays
 
-- **NEVER** use `.v-dialog--active`, `.v-dialog`, or `[role="dialog"]` as selectors. Always use the real CSS class from the app-selectors-* SKILL.md.
-- For Vuetify overlay modals: use `.v-overlay--active .v-card` scoped with the custom class documented in the SKILL.md.
-- Look up the modal's actual selector in the "Discovered Modals / Dialogs" section, then scope form fields inside it.
+- **NEVER** use any of these — they do not exist as valid DOM selectors:
+  - `v-dialog` (bare element — `<v-dialog>` is a Vue component tag, not in the real DOM)
+  - `.v-dialog` (class)
+  - `.v-dialog--active` (class)
+  - `[role="dialog"]`
+- `v-dialog` without a dot is NOT the same as `.v-dialog`. Both are wrong. Do not use either.
+
+**Two modal types — pick the right selector:**
+
+**Type A — modals with a custom class** (check "Discovered Modals" in the app-selectors-* SKILL.md):
+```typescript
+await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 10000 });
+```
+
+**Type B — modals WITHOUT a custom class** (standard Vuetify dialogs: save, confirm, etc.):
+```typescript
+// Scope to .v-overlay--active filtered by the visible heading/title text
+const dialog = page.locator('.v-overlay--active').filter({ hasText: /Modal Heading/ });
+await dialog.waitFor({ state: 'visible', timeout: 10000 });
+// Scope ALL child selectors through the dialog variable
+await dialog.locator('.v-field__input').fill('value');
+await dialog.locator('button').filter({ hasText: /^Save$/ }).click();
+```
+
+- Look up the modal's actual selector in the "Discovered Modals / Dialogs" section first.
+- If not listed there, use Type B with the exact visible heading text.
 - **Snackbars**: `await expect(page.locator('.v-snackbar')).toContainText('success')`
+
+---
+
+## Test Timeout
+
+The default Playwright test timeout is **30 seconds**, which is too short for multi-step flow canvas tests that involve node creation, drag-repositioning, modal interactions, and edge connections.
+
+**Always set a longer timeout as the first line inside every test callback:**
+
+```typescript
+test('my test', async ({ page }) => {
+  test.setTimeout(120000); // ← first line, before any steps
+  // ...
+});
+```
+
+Use at least `120000` (2 minutes) for any test that creates nodes or connects edges on the flow canvas.
 
 ---
 
@@ -118,15 +158,22 @@ Login form selectors:
 
 ## Reporting Format
 
-Include `console.log` for every step and a summary at the end. Print `✅ PASS` only AFTER the assertion succeeds.
+> ⚠️ **MANDATORY** — every step MUST use this exact format. Do NOT use `✅ PASS — Description` (em-dash) or any other format.
 
+Before the step action:
 ```typescript
 console.log('📍 Step 5: Verify redirect');
+```
+
+After the assertion/action succeeds:
+```typescript
 await expect(page).toHaveURL(/dashboard/);
 console.log('✅ PASS: Step 5 - Redirected to dashboard');
 ```
 
-Summary block at the end:
+Both lines are required for every step. The `📍` line comes first. The `✅ PASS:` line comes AFTER the assertion.
+
+Summary block at the end of the test:
 
 ```typescript
 console.log('\n' + '='.repeat(70));

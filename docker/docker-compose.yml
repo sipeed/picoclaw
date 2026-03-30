@@ -32,6 +32,7 @@ services:
       - AWS_REGION_NAME=${AWS_REGION_NAME:-ap-southeast-1}
     volumes:
       - ./data:/home/picoclaw/.picoclaw
+      - /Users/maxintent/Documents/Intent/Codes/monorepo/services/dashboard:/home/picoclaw/.picoclaw/workspace/context/dashboard:ro
     shm_size: "1gb"
 
   picoclaw-agent:
@@ -48,6 +49,7 @@ services:
       - AWS_REGION_NAME=${AWS_REGION_NAME:-ap-southeast-1}
     volumes:
       - ./data:/home/picoclaw/.picoclaw
+      - /Users/maxintent/Documents/Intent/Codes/monorepo/services/dashboard:/home/picoclaw/.picoclaw/workspace/context/dashboard:ro
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
     tty: true
