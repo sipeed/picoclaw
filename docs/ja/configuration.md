@@ -319,15 +319,15 @@ HEARTBEAT_OK を返信        ユーザーが直接結果を受信
 ```json
 {
   "model_list": [
-    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api1.example.com/v1", "api_key": "sk-key1" },
-    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api2.example.com/v1", "api_key": "sk-key2" }
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api1.example.com/v1", "api_keys": ["sk-key1"] },
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api2.example.com/v1", "api_keys": ["sk-key2"] }
   ]
 }
 ```
 
 #### 旧 `providers` 設定からの移行
 
-旧 `providers` 設定は**非推奨**ですが後方互換性のためサポートされています。[docs/migration/model-list-migration.md](../migration/model-list-migration.md) を参照してください。
+旧 `providers` 設定は**非推奨**となり、V2 で削除されました。既存の V0/V1 設定は自動的に移行されます。[docs/migration/model-list-migration.md](../migration/model-list-migration.md) を参照してください。
 
 ### Provider アーキテクチャ
 

@@ -319,15 +319,15 @@ Configure múltiplos endpoints para o mesmo nome de modelo — PicoClaw fará ro
 ```json
 {
   "model_list": [
-    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api1.example.com/v1", "api_key": "sk-key1" },
-    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api2.example.com/v1", "api_key": "sk-key2" }
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api1.example.com/v1", "api_keys": ["sk-key1"] },
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api2.example.com/v1", "api_keys": ["sk-key2"] }
   ]
 }
 ```
 
 #### Migração da Configuração Legada `providers`
 
-A configuração antiga `providers` está **depreciada** mas ainda é suportada. Veja [docs/migration/model-list-migration.md](../migration/model-list-migration.md).
+A configuração antiga `providers` está **depreciada** e foi removida no V2. Configs V0/V1 existentes são auto-migradas. Veja [docs/migration/model-list-migration.md](../migration/model-list-migration.md).
 
 ### Arquitetura de Providers
 
