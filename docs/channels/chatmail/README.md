@@ -7,7 +7,7 @@ The Chatmail channel enables PicoClaw to communicate via [Delta Chat](https://de
 ## Prerequisites
 
 - **deltachat-rpc-server**: The Delta Chat RPC server binary must be installed and available in your system's PATH.
-- **Compatible chatemail account**: Check compatibility in [https://providers.delta.chat/](https://providers.delta.chat/).
+- **Chatmail account or compatible chatemail account**: Check the chatmail relays [https://chatmail.at/relays](https://chatmail.at/relays) or compatibility list [https://providers.delta.chat/](https://providers.delta.chat/).
 
 ### Installing deltachat-rpc-server
 
@@ -134,11 +134,11 @@ When the channel starts:
 | Text messages        | ✅      | Send and receive                                         |
 | Direct messages      | ✅      | Full support                                             |
 | Group chats          | ✅      | With trigger configuration                               |
-| Markdown rendering  | ✅      | Messages formatted with markdown                         |
+| Markdown rendering  | ✅      | Messages formatted with markdown (only for ArcaneChat client) |
 | Reactions            | ✅      | 👀 reaction on incoming messages, removed after response  |
-| Media attachments   | ❌      | Not yet supported                                        |
-| Typing indicators   | ❌      | Not yet supported                                        |
-| Message editing      | ❌      | Not yet supported                                        |
+| Media attachments   | ❌      | Not yet integrated                                         |
+| Typing indicators   | ❌      | Not yet integrated                                         |
+| Message editing      | ❌      | Not yet integrated                                        |
 
 ## Security Considerations
 
