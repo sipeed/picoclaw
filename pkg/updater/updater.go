@@ -119,19 +119,14 @@ func UpdateSelfFromRelease(releaseURL, platform, arch, programName string) error
 // UpdateSelf updates the running executable by fetching the latest release
 // and applying the binary matching programName.
 func UpdateSelf(programName string) error {
-    // Default to test repo for now. Use GetProdReleaseAPIURL() for production.
-    return UpdateSelfFromRelease(GetTestReleaseAPIURL(), runtime.GOOS, runtime.GOARCH, programName)
+    // Use production repo by default.
+    return UpdateSelfFromRelease(GetProdReleaseAPIURL(), runtime.GOOS, runtime.GOARCH, programName)
 }
 
 // GetReleaseAPIURL returns the GitHub Releases API URL for the given repo owner.
 // Example: owner="sky5454" -> https://api.github.com/repos/sky5454/picoclaw/releases/latest
 func GetReleaseAPIURL(owner string) string {
     return fmt.Sprintf("https://api.github.com/repos/%s/picoclaw/releases/latest", owner)
-}
-
-// GetTestReleaseAPIURL returns the test release API URL (user fork).
-func GetTestReleaseAPIURL() string {
-    return GetReleaseAPIURL("sky5454")
 }
 
 // GetProdReleaseAPIURL returns the production release API URL (upstream).
@@ -149,13 +144,8 @@ func findAssetURL(releaseURL, platform, arch string) (string, error) {
 
     apiURL := buildReleaseAPIURL(releaseURL)
     if apiURL == "" {
-        // If caller provided an empty releaseURL, default to test repo.
-        // Otherwise fall back to production repo API URL.
-        if strings.TrimSpace(releaseURL) == "" {
-            apiURL = GetTestReleaseAPIURL()
-        } else {
-            apiURL = GetProdReleaseAPIURL()
-        }
+        // Default to production repo API URL when no explicit release URL is provided.
+        apiURL = GetProdReleaseAPIURL()
     }
 
     resp, err := http.Get(apiURL)
