@@ -45,6 +45,9 @@ const (
 	reconnectInitial    = 5 * time.Second
 	reconnectMax        = 5 * time.Minute
 	reconnectMultiplier = 2.0
+
+	maxTypingDuration      = 5 * time.Minute
+	defaultPlaceholderText = "Thinking... 💭"
 )
 
 // WhatsAppNativeChannel implements the WhatsApp channel using whatsmeow (in-process, no external bridge).
@@ -523,6 +526,154 @@ func imageFilenameFromMime(mimetype string) string {
 	default:
 		return "photo.jpg"
 	}
+}
+
+// defaultPlaceholderMessageText returns the placeholder body (config or Telegram-style default).
+func defaultPlaceholderMessageText(cfg config.PlaceholderConfig) string {
+	if cfg.Text != "" {
+		return cfg.Text
+	}
+	return defaultPlaceholderText
+}
+
+// StartTyping implements channels.TypingCapable.
+// It sends composing presence immediately and refreshes every ~4s until stop() or maxTypingDuration.
+// stop is idempotent and sends ChatPresencePaused once.
+func (c *WhatsAppNativeChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+	if !c.config.Typing.Enabled {
+		return func() {}, nil
+	}
+	to, err := parseJID(chatID)
+	if err != nil {
+		return func() {}, err
+	}
+
+	c.mu.Lock()
+	client := c.client
+	c.mu.Unlock()
+	if client == nil || !c.IsRunning() || !client.IsConnected() || client.Store.ID == nil {
+		return func() {}, nil
+	}
+
+	_ = client.SendChatPresence(ctx, to, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+
+	typingCtx, cancel := context.WithCancel(ctx)
+	maxCtx, maxCancel := context.WithTimeout(typingCtx, maxTypingDuration)
+
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			cancel()
+			maxCancel()
+			c.mu.Lock()
+			cl := c.client
+			c.mu.Unlock()
+			if cl != nil && cl.IsConnected() && cl.Store.ID != nil {
+				_ = cl.SendChatPresence(context.Background(), to, types.ChatPresencePaused, types.ChatPresenceMediaText)
+			}
+		})
+	}
+
+	go func() {
+		defer maxCancel()
+		ticker := time.NewTicker(4 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-maxCtx.Done():
+				return
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				c.mu.Lock()
+				cl := c.client
+				c.mu.Unlock()
+				if cl == nil || !cl.IsConnected() || cl.Store.ID == nil {
+					return
+				}
+				_ = cl.SendChatPresence(typingCtx, to, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+			}
+		}
+	}()
+
+	return stop, nil
+}
+
+// SendPlaceholder implements channels.PlaceholderCapable.
+func (c *WhatsAppNativeChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+	if !c.config.Placeholder.Enabled {
+		return "", nil
+	}
+	text := defaultPlaceholderMessageText(c.config.Placeholder)
+
+	if !c.IsRunning() {
+		return "", channels.ErrNotRunning
+	}
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	default:
+	}
+
+	c.mu.Lock()
+	client := c.client
+	c.mu.Unlock()
+
+	if client == nil || !client.IsConnected() {
+		return "", fmt.Errorf("whatsapp connection not established: %w", channels.ErrTemporary)
+	}
+	if client.Store.ID == nil {
+		return "", fmt.Errorf("whatsapp not yet paired (QR login pending): %w", channels.ErrTemporary)
+	}
+
+	to, err := parseJID(chatID)
+	if err != nil {
+		return "", fmt.Errorf("invalid chat id %q: %w", chatID, err)
+	}
+
+	waMsg := &waE2E.Message{
+		Conversation: proto.String(text),
+	}
+	resp, err := client.SendMessage(ctx, to, waMsg)
+	if err != nil {
+		return "", fmt.Errorf("whatsapp send placeholder: %w", channels.ErrTemporary)
+	}
+	return string(resp.ID), nil
+}
+
+// EditMessage implements channels.MessageEditor.
+func (c *WhatsAppNativeChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	c.mu.Lock()
+	client := c.client
+	c.mu.Unlock()
+
+	if client == nil || !client.IsConnected() {
+		return fmt.Errorf("whatsapp connection not established: %w", channels.ErrTemporary)
+	}
+	if client.Store.ID == nil {
+		return fmt.Errorf("whatsapp not yet paired (QR login pending): %w", channels.ErrTemporary)
+	}
+
+	to, err := parseJID(chatID)
+	if err != nil {
+		return fmt.Errorf("invalid chat id %q: %w", chatID, err)
+	}
+
+	id := types.MessageID(messageID)
+	edit := client.BuildEdit(to, id, &waE2E.Message{Conversation: proto.String(content)})
+	if _, err = client.SendMessage(ctx, to, edit); err != nil {
+		return fmt.Errorf("whatsapp edit message: %w", channels.ErrTemporary)
+	}
+	return nil
 }
 
 func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {

@@ -493,11 +493,15 @@ PicoClaw can connect to WhatsApp in two ways:
       "enabled": true,
       "use_native": true,
       "session_store_path": "",
-      "allow_from": []
+      "allow_from": [],
+      "typing": { "enabled": true },
+      "placeholder": { "enabled": true, "text": "Thinking... 💭" }
     }
   }
 }
 ```
+
+Native mode supports **typing** (composing presence via whatsmeow) and **placeholder** messages that are edited into the final reply, same idea as Telegram. Keys: `channels.whatsapp.typing` (`enabled`) and `channels.whatsapp.placeholder` (`enabled`, optional `text`; default text matches Telegram).
 
 If `session_store_path` is empty, the session is stored in `&lt;workspace&gt;/whatsapp/`. Run `picoclaw gateway`; on first run, scan the QR code printed in the terminal with WhatsApp → Linked Devices.
 

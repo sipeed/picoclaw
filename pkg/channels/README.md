@@ -1379,6 +1379,6 @@ agentLoop.Stop()               // Stop Agent
 
 6. **DingTalk uses Stream mode**: DingTalk uses the SDK's Stream/WebSocket mode (not HTTP webhook), so it does not implement `WebhookHandler`.
 
-7. **PlaceholderConfig vs implementation**: `PlaceholderConfig` appears in 6 channel configs (Telegram, Discord, Slack, LINE, OneBot, Pico), but only channels that implement both `PlaceholderCapable` + `MessageEditor` (Telegram, Discord, Pico) can actually use placeholder message editing. The rest are reserved fields.
+7. **PlaceholderConfig vs implementation**: `PlaceholderConfig` appears in multiple channel configs (Telegram, Discord, Slack, LINE, OneBot, Pico, WhatsApp native), but only channels that implement both `PlaceholderCapable` + `MessageEditor` (Telegram, Discord, Pico, **WhatsApp native** with build tag `whatsapp_native`) can actually use placeholder message editing. The rest are reserved fields. WhatsApp native also implements `TypingCapable` (`channels.whatsapp.typing`).
 
 8. **ReasoningChannelID**: Most channel configs include a `reasoning_channel_id` field to route LLM reasoning/thinking output to a designated channel (WhatsApp, Telegram, Feishu, Discord, MaixCam, QQ, DingTalk, Slack, LINE, OneBot, WeCom, WeComApp). Note: `PicoConfig` does not currently expose this field. `BaseChannel` exposes this via the `WithReasoningChannelID` option and `ReasoningChannelID()` method.

@@ -52,6 +52,11 @@ func DefaultConfig() *Config {
 				UseNative:        false,
 				SessionStorePath: "",
 				AllowFrom:        FlexibleStringSlice{},
+				Typing:           TypingConfig{Enabled: true},
+				Placeholder: PlaceholderConfig{
+					Enabled: true,
+					Text:    "Thinking... 💭",
+				},
 			},
 			Telegram: TelegramConfig{
 				Enabled:   false,

@@ -5,6 +5,7 @@ package whatsapp
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -185,5 +186,86 @@ func TestHandleIncoming_ImageOnlyNoCaptionDownloadFails_NoInbound(t *testing.T) 
 		}
 	case <-ctx.Done():
 		// expected: no message
+	}
+}
+
+func TestDefaultPlaceholderMessageText(t *testing.T) {
+	if got := defaultPlaceholderMessageText(config.PlaceholderConfig{}); got != defaultPlaceholderText {
+		t.Fatalf("empty config: got %q want %q", got, defaultPlaceholderText)
+	}
+	if got := defaultPlaceholderMessageText(config.PlaceholderConfig{Text: "Custom"}); got != "Custom" {
+		t.Fatalf("custom text: got %q", got)
+	}
+}
+
+func TestSendPlaceholder_DisabledReturnsEmptyID(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	cfg := config.WhatsAppConfig{
+		Placeholder: config.PlaceholderConfig{Enabled: false},
+	}
+	ch := &WhatsAppNativeChannel{
+		BaseChannel: channels.NewBaseChannel("whatsapp_native", cfg, messageBus, nil),
+		config:      cfg,
+		runCtx:      context.Background(),
+	}
+	ch.SetRunning(true)
+
+	id, err := ch.SendPlaceholder(context.Background(), "1001@s.whatsapp.net")
+	if err != nil {
+		t.Fatalf("SendPlaceholder: %v", err)
+	}
+	if id != "" {
+		t.Fatalf("want empty id, got %q", id)
+	}
+}
+
+func TestSendPlaceholder_EnabledNotRunning_ReturnsErrNotRunning(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	cfg := config.WhatsAppConfig{
+		Placeholder: config.PlaceholderConfig{Enabled: true},
+	}
+	ch := &WhatsAppNativeChannel{
+		BaseChannel: channels.NewBaseChannel("whatsapp_native", cfg, messageBus, nil),
+		config:      cfg,
+		runCtx:      context.Background(),
+	}
+	// IsRunning false by default
+
+	_, err := ch.SendPlaceholder(context.Background(), "1001@s.whatsapp.net")
+	if !errors.Is(err, channels.ErrNotRunning) {
+		t.Fatalf("want ErrNotRunning, got %v", err)
+	}
+}
+
+func TestSendPlaceholder_EnabledUnpairedClient_ReturnsTemporary(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	cfg := config.WhatsAppConfig{
+		Placeholder: config.PlaceholderConfig{Enabled: true},
+	}
+	ch := &WhatsAppNativeChannel{
+		BaseChannel: channels.NewBaseChannel("whatsapp_native", cfg, messageBus, nil),
+		config:      cfg,
+		runCtx:      context.Background(),
+		client:      whatsappTestClient(t),
+	}
+	ch.SetRunning(true)
+
+	_, err := ch.SendPlaceholder(context.Background(), "1001@s.whatsapp.net")
+	if err == nil || !errors.Is(err, channels.ErrTemporary) {
+		t.Fatalf("want wrapped ErrTemporary, got %v", err)
+	}
+}
+
+func TestEditMessage_NotRunning_ReturnsErrNotRunning(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	cfg := config.WhatsAppConfig{}
+	ch := &WhatsAppNativeChannel{
+		BaseChannel: channels.NewBaseChannel("whatsapp_native", cfg, messageBus, nil),
+		config:      cfg,
+		runCtx:      context.Background(),
+	}
+	err := ch.EditMessage(context.Background(), "1001@s.whatsapp.net", "mid", "hi")
+	if !errors.Is(err, channels.ErrNotRunning) {
+		t.Fatalf("want ErrNotRunning, got %v", err)
 	}
 }
