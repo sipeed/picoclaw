@@ -2232,6 +2232,24 @@ turnLoop:
 			ts.recordPersistedMessage(assistantMsg)
 		}
 
+		// When the LLM returns both text content and tool calls in the
+		// same response, deliver the text to the user synchronously
+		// before executing tools. This must use channelManager.SendMessage
+		// (synchronous) rather than bus.PublishOutbound (async) so the
+		// placeholder is consumed before preSendMedia can delete it.
+		if response.Content != "" && al.channelManager != nil && ts.channel != "" && !constants.IsInternalChannel(ts.channel) {
+			// Strip split markers since SendMessage bypasses the worker
+			// loop where SplitByMarker normally runs.
+			contentParts := channels.SplitByMarker(response.Content)
+			for _, part := range contentParts {
+				_ = al.channelManager.SendMessage(ctx, bus.OutboundMessage{
+					Channel: ts.channel,
+					ChatID:  ts.chatID,
+					Content: part,
+				})
+			}
+		}
+
 		ts.setPhase(TurnPhaseTools)
 		for i, tc := range normalizedToolCalls {
 			if ts.hardAbortRequested() {
