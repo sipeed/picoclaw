@@ -1,24 +1,24 @@
 package updater
 
 import (
-    "archive/tar"
-    "archive/zip"
-    "compress/gzip"
-    "encoding/json"
-    "errors"
-    "fmt"
-    "io"
-    "net/http"
-    "net/url"
-    "os"
-    "path/filepath"
-    "runtime"
-    "strings"
+	"archive/tar"
+	"archive/zip"
+	"compress/gzip"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 
-    "github.com/minio/selfupdate"
-    "github.com/spf13/cobra"
+	"github.com/minio/selfupdate"
+	"github.com/spf13/cobra"
 
-    "github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // DownloadAndExtractRelease downloads a release archive (or uses a direct
@@ -119,7 +119,24 @@ func UpdateSelfFromRelease(releaseURL, platform, arch, programName string) error
 // UpdateSelf updates the running executable by fetching the latest release
 // and applying the binary matching programName.
 func UpdateSelf(programName string) error {
-    return UpdateSelfFromRelease("", "", "", programName)
+    // Default to test repo for now. Use GetProdReleaseAPIURL() for production.
+    return UpdateSelfFromRelease(GetTestReleaseAPIURL(), runtime.GOOS, runtime.GOARCH, programName)
+}
+
+// GetReleaseAPIURL returns the GitHub Releases API URL for the given repo owner.
+// Example: owner="sky5454" -> https://api.github.com/repos/sky5454/picoclaw/releases/latest
+func GetReleaseAPIURL(owner string) string {
+    return fmt.Sprintf("https://api.github.com/repos/%s/picoclaw/releases/latest", owner)
+}
+
+// GetTestReleaseAPIURL returns the test release API URL (user fork).
+func GetTestReleaseAPIURL() string {
+    return GetReleaseAPIURL("sky5454")
+}
+
+// GetProdReleaseAPIURL returns the production release API URL (upstream).
+func GetProdReleaseAPIURL() string {
+    return GetReleaseAPIURL("sipeed")
 }
 
 // findAssetURL resolves the appropriate asset URL for the given release
@@ -132,7 +149,13 @@ func findAssetURL(releaseURL, platform, arch string) (string, error) {
 
     apiURL := buildReleaseAPIURL(releaseURL)
     if apiURL == "" {
-        apiURL = "https://api.github.com/repos/sipeed/picoclaw/releases/latest"
+        // If caller provided an empty releaseURL, default to test repo.
+        // Otherwise fall back to production repo API URL.
+        if strings.TrimSpace(releaseURL) == "" {
+            apiURL = GetTestReleaseAPIURL()
+        } else {
+            apiURL = GetProdReleaseAPIURL()
+        }
     }
 
     resp, err := http.Get(apiURL)
