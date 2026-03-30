@@ -1,0 +1,86 @@
+name: Sync & Rebase
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-rebase:
+    name: Sync upstream and rebase sushi30
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/sipeed/picoclaw.git
+
+      - name: Fetch upstream and origin
+        run: |
+          git fetch upstream
+          git fetch origin
+
+      - name: Sync main from upstream
+        run: |
+          git checkout main
+          git reset --hard upstream/main
+          git push origin main
+
+      - name: Attempt rebase of sushi30 onto main
+        id: rebase
+        run: |
+          git checkout -b sushi30 origin/sushi30
+          if git rebase origin/main; then
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            CONFLICTS=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+            echo "conflicts=${CONFLICTS}" >> "$GITHUB_OUTPUT"
+            git rebase --abort
+          fi
+
+      - name: Push rebased sushi30
+        if: steps.rebase.outputs.status == 'success'
+        run: git push origin sushi30 --force-with-lease
+
+      - name: Send conflict notification email
+        if: steps.rebase.outputs.status == 'conflict'
+        uses: dawidd6/action-send-mail@v16
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "[picoclaw] Rebase conflict on sushi30"
+          from: ${{ secrets.MAIL_FROM }}
+          to: ${{ secrets.MAIL_TO }}
+          body: |
+            The scheduled sync-rebase workflow detected conflicts when rebasing sushi30 onto the updated main.
+
+            Conflicting files: ${{ steps.rebase.outputs.conflicts }}
+
+            Resolve manually:
+              git fetch origin
+              git checkout sushi30
+              git rebase origin/main
+
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Fail on conflict
+        if: steps.rebase.outputs.status == 'conflict'
+        run: exit 1
