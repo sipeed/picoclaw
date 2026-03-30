@@ -16,22 +16,15 @@ The Chatmail channel enables PicoClaw to communicate via [Delta Chat](https://de
 ```bash
 # Server
 cargo install --git https://github.com/chatmail/core/ deltachat-rpc-server
-# Repl for configure account
-cargo install --git https://github.com/chatmail/core/ deltachat-repl
 ```
 
 #### From Source
 
 ```bash
-# Server
 git clone https://github.com/chatmail/core.git
 cd deltachat-rpc-server
 cargo build --release
 sudo cp target/release/deltachat-rpc-server /usr/local/bin/
-# Repl for configure account
-cd ../deltachat-repl
-cargo build --release
-sudo cp target/release/deltachat-repl /usr/local/bin/
 ```
 
 ## Configuration
@@ -49,7 +42,8 @@ Add this to your `config.json`:
         "mention_only": false,
         "prefixes": []
       },
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "invite_qr": "dcaccount:https://nine.testrun.org/new"
     }
   }
 }
@@ -60,10 +54,11 @@ Add this to your `config.json`:
 | Field                | Type     | Required | Description                                                                                          |
 |----------------------|----------|----------|------------------------------------------------------------------------------------------------------|
 | enabled              | bool     | Yes      | Whether to enable the Chatmail channel                                                               |
-| account_path         | string   | No       | Path to store the Delta Chat account database. Default: `~/.accounts/chatmail`                      |
+| account_path         | string   | No       | Path to store the Delta Chat account database. Default: `~/.accounts/chatmail`                       |
 | allow_from           | []string | No       | Allowlist of contact IDs; empty means all contacts are allowed                                       |
 | group_trigger        | object   | No       | Group trigger strategy (`mention_only` / `prefixes`)                                                 |
 | reasoning_channel_id | string   | No       | Target channel ID for reasoning output                                                               |
+| invite_qr            | string   | No       | QR content for bot account creation in chatmail replay's                                             |
 
 ### Group Trigger Configuration
 
@@ -168,7 +163,9 @@ If no invite link appears in the logs:
 
 1. Check that the channel is enabled in the configuration
 2. Verify write permissions for `account_path`
-3. Check for errors in the PicoClaw logs
+3. Verify if `account_path` exists and has accounts configured
+4. Check for errors in the PicoClaw logs
+
 
 ## Example Configuration with Group Trigger
 

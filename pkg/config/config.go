@@ -635,6 +635,7 @@ type ChatmailConfig struct {
 	AllowFrom          FlexibleStringSlice `json:"allow_from"           yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty" yaml:"-"`
 	ReasoningChannelID string              `json:"reasoning_channel_id" yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_REASONING_CHANNEL_ID"`
+	InviteQR           string              `json:"invite_qr"            yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_INVITE_QR"`
 }
 
 type HeartbeatConfig struct {

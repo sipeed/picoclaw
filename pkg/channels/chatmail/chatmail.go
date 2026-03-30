@@ -101,6 +101,17 @@ func (c *ChatmailChannel) Start(ctx context.Context) error {
 			return fmt.Errorf("failed to set bot flag: %w", err)
 		}
 		logger.InfoC("chatmail", "Account configured as bot")
+
+		inviteQR := c.config.InviteQR
+		if inviteQR == "" {
+			inviteQR = "dcaccount:https://nine.testrun.org/new"
+		}
+
+		if err := c.rpc.AddTransportFromQr(accId, inviteQR); err != nil {
+			transport.Close()
+			return fmt.Errorf("failed to add transport from QR: %w", err)
+		}
+		logger.InfoCF("chatmail", "Account configured from invite", map[string]any{"qr": inviteQR})
 	}
 
 	inviteLink, err := c.rpc.GetChatSecurejoinQrCode(accId, nil)
