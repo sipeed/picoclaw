@@ -673,3 +673,92 @@ func TestHandleMessage_EmptyContent_Ignored(t *testing.T) {
 	default:
 	}
 }
+
+func handleReplyMessageAndGetInbound(
+	t *testing.T,
+	userText string,
+	messageID int,
+	replyToMessage *telego.Message,
+) bus.InboundMessage {
+	t.Helper()
+
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
+		chatIDs:     make(map[string]int64),
+		ctx:         context.Background(),
+	}
+
+	msg := &telego.Message{
+		Text:      userText,
+		MessageID: messageID,
+		Chat: telego.Chat{
+			ID:   12345,
+			Type: "private",
+		},
+		From: &telego.User{
+			ID:        10,
+			FirstName: "Bob",
+		},
+		ReplyToMessage: replyToMessage,
+	}
+
+	err := ch.handleMessage(context.Background(), msg)
+	require.NoError(t, err)
+
+	inbound, ok := <-messageBus.InboundChan()
+	require.True(t, ok)
+	return inbound
+}
+
+func TestHandleMessage_ReplyCarriesMetadataAndQuotedContext(t *testing.T) {
+	inbound := handleReplyMessageAndGetInbound(t, "what do you think?", 21, &telego.Message{
+		MessageID: 99,
+		Text:      "this is the old message",
+		From: &telego.User{
+			Username: "alice",
+		},
+	})
+
+	assert.Equal(t, "99", inbound.Metadata["reply_to_message_id"])
+	assert.Equal(
+		t,
+		"[quoted message from alice]: this is the old message\n\nwhat do you think?",
+		inbound.Content,
+	)
+}
+
+func TestHandleMessage_ReplyWithoutTextOnlySetsReplyMetadata(t *testing.T) {
+	inbound := handleReplyMessageAndGetInbound(t, "ping", 22, &telego.Message{
+		MessageID: 100,
+	})
+
+	assert.Equal(t, "100", inbound.Metadata["reply_to_message_id"])
+	assert.Equal(t, "ping", inbound.Content)
+}
+
+func TestHandleMessage_ReplyCommandKeepsCommandPrefix(t *testing.T) {
+	inbound := handleReplyMessageAndGetInbound(t, "/new", 23, &telego.Message{
+		MessageID: 101,
+		Text:      "old context text",
+		From: &telego.User{
+			Username: "alice",
+		},
+	})
+
+	assert.Equal(t, "101", inbound.Metadata["reply_to_message_id"])
+	assert.Equal(t, "/new", inbound.Content)
+}
+
+func TestHandleMessage_ReplyBangCommandKeepsCommandPrefix(t *testing.T) {
+	inbound := handleReplyMessageAndGetInbound(t, "!new", 24, &telego.Message{
+		MessageID: 102,
+		Text:      "old context text",
+		From: &telego.User{
+			Username: "alice",
+		},
+	})
+
+	assert.Equal(t, "102", inbound.Metadata["reply_to_message_id"])
+	assert.Equal(t, "!new", inbound.Content)
+}

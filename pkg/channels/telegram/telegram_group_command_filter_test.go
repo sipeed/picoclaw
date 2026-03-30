@@ -147,3 +147,53 @@ func TestIsBotMentioned_MentionEntityUnaffected(t *testing.T) {
 		t.Fatal("expected mention entity to be treated as bot mention")
 	}
 }
+
+func TestHandleMessage_GroupReplyCommandKeepsCommandPrefixAndMetadata(t *testing.T) {
+	ch, messageBus := newGroupMentionOnlyChannel(t, "testbot")
+
+	msg := &telego.Message{
+		Text: "/new@testbot",
+		Entities: []telego.MessageEntity{{
+			Type:   telego.EntityTypeBotCommand,
+			Offset: 0,
+			Length: len([]rune("/new@testbot")),
+		}},
+		MessageID: 43,
+		Chat: telego.Chat{
+			ID:   123,
+			Type: "group",
+		},
+		From: &telego.User{
+			ID:        7,
+			FirstName: "Alice",
+		},
+		ReplyToMessage: &telego.Message{
+			MessageID: 101,
+			Text:      "old context",
+			From: &telego.User{
+				Username: "bob",
+			},
+		},
+	}
+
+	if err := ch.handleMessage(context.Background(), msg); err != nil {
+		t.Fatalf("handleMessage error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for message to be forwarded")
+	case inbound, ok := <-messageBus.InboundChan():
+		if !ok {
+			t.Fatal("expected inbound message to be forwarded")
+		}
+		if inbound.Content != "/new" {
+			t.Fatalf("content=%q want=%q", inbound.Content, "/new")
+		}
+		if got := inbound.Metadata["reply_to_message_id"]; got != "101" {
+			t.Fatalf("reply_to_message_id=%q want=%q", got, "101")
+		}
+	}
+}
