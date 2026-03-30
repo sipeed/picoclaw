@@ -33,6 +33,9 @@ func validateToolArgs(schema map[string]any, args map[string]any) error {
 	additional := allowsAdditional(schema)
 
 	for key, val := range args {
+		if val == nil {
+			continue // skip nil/null values
+		}
 		propSchemaRaw, known := props[key]
 		if !known {
 			if !additional {

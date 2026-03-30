@@ -286,7 +286,8 @@ func TestAgentLoop_Hooks_ToolInterceptorCanRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
 	}
-	if resp != "after:modified" {
+	expected := "<external_data>\nafter:modified\n</external_data>"
+	if resp != expected {
 		t.Fatalf("expected rewritten tool result, got %q", resp)
 	}
 }

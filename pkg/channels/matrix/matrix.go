@@ -1,3 +1,6 @@
+//go:build matrix
+// +build matrix
+
 package matrix
 
 import (

@@ -92,7 +92,8 @@ func TestAgentLoop_MountProcessHook_ToolRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
 	}
-	if resp != "ipc:ipc" {
+	expected := "<external_data>\nipc:ipc\n</external_data>"
+	if resp != expected {
 		t.Fatalf("expected rewritten process-hook tool result, got %q", resp)
 	}
 }
