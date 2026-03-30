@@ -149,6 +149,37 @@ func TestRateLimiterRegistry_RegisterCandidates(t *testing.T) {
 	}
 }
 
+func TestRateLimiterRegistry_RegisterCandidatesUsesStableIdentity(t *testing.T) {
+	r := NewRateLimiterRegistry()
+	candidates := []FallbackCandidate{
+		{Provider: "openai", Model: "gpt-4o", RPM: 1, IdentityKey: "model_name:primary"},
+		{Provider: "openai", Model: "gpt-4o", RPM: 2, IdentityKey: "model_name:fallback"},
+	}
+	r.RegisterCandidates(candidates)
+
+	if err := r.Wait(context.Background(), "model_name:primary"); err != nil {
+		t.Fatalf("primary first call should pass: %v", err)
+	}
+	if err := r.Wait(context.Background(), "model_name:fallback"); err != nil {
+		t.Fatalf("fallback first call should pass: %v", err)
+	}
+	if err := r.Wait(context.Background(), "model_name:fallback"); err != nil {
+		t.Fatalf("fallback second call should pass: %v", err)
+	}
+
+	ctxPrimary, cancelPrimary := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancelPrimary()
+	if err := r.Wait(ctxPrimary, "model_name:primary"); err == nil {
+		t.Fatal("primary second call should have been limited")
+	}
+
+	ctxFallback, cancelFallback := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancelFallback()
+	if err := r.Wait(ctxFallback, "model_name:fallback"); err == nil {
+		t.Fatal("fallback third call should have been limited")
+	}
+}
+
 // TestRateLimiter_Concurrency verifies thread safety under concurrent access.
 func TestRateLimiter_Concurrency(t *testing.T) {
 	rpm := 20

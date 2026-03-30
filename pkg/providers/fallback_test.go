@@ -293,6 +293,42 @@ func TestFallback_SuccessResetsCooldown(t *testing.T) {
 	}
 }
 
+func TestFallback_LocalRateLimitSkipsToHealthyFallback(t *testing.T) {
+	ct := NewCooldownTracker()
+	rl := NewRateLimiterRegistry()
+	rl.Register("model_name:primary", 1)
+	if err := rl.Wait(context.Background(), "model_name:primary"); err != nil {
+		t.Fatalf("failed to pre-drain primary limiter: %v", err)
+	}
+
+	fc := NewFallbackChain(ct, rl)
+	candidates := []FallbackCandidate{
+		{Provider: "openai", Model: "gpt-4o", IdentityKey: "model_name:primary"},
+		{Provider: "anthropic", Model: "claude", IdentityKey: "model_name:fallback"},
+	}
+
+	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		if provider != "anthropic" || model != "claude" {
+			t.Fatalf("expected fallback candidate to run, got %s/%s", provider, model)
+		}
+		return &LLMResponse{Content: "fallback ok", FinishReason: "stop"}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+
+	result, err := fc.Execute(ctx, candidates, run)
+	if err != nil {
+		t.Fatalf("expected fallback success, got error: %v", err)
+	}
+	if result.Provider != "anthropic" || result.Model != "claude" {
+		t.Fatalf("result = %s/%s, want anthropic/claude", result.Provider, result.Model)
+	}
+	if len(result.Attempts) != 1 || !result.Attempts[0].Skipped {
+		t.Fatalf("expected one skipped primary attempt, got %+v", result.Attempts)
+	}
+}
+
 // --- Image Fallback Tests ---
 
 func TestImageFallback_Success(t *testing.T) {
@@ -381,6 +417,42 @@ func TestImageFallback_RetryOnOtherErrors(t *testing.T) {
 	}
 	if result.Provider != "anthropic" {
 		t.Errorf("provider = %q, want anthropic", result.Provider)
+	}
+}
+
+func TestImageFallback_LocalRateLimitSkipsToHealthyFallback(t *testing.T) {
+	ct := NewCooldownTracker()
+	rl := NewRateLimiterRegistry()
+	rl.Register("model_name:primary-image", 1)
+	if err := rl.Wait(context.Background(), "model_name:primary-image"); err != nil {
+		t.Fatalf("failed to pre-drain primary image limiter: %v", err)
+	}
+
+	fc := NewFallbackChain(ct, rl)
+	candidates := []FallbackCandidate{
+		{Provider: "openai", Model: "gpt-4o", IdentityKey: "model_name:primary-image"},
+		{Provider: "anthropic", Model: "claude-sonnet", IdentityKey: "model_name:fallback-image"},
+	}
+
+	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		if provider != "anthropic" || model != "claude-sonnet" {
+			t.Fatalf("expected image fallback candidate to run, got %s/%s", provider, model)
+		}
+		return &LLMResponse{Content: "image fallback ok", FinishReason: "stop"}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+
+	result, err := fc.ExecuteImage(ctx, candidates, run)
+	if err != nil {
+		t.Fatalf("expected image fallback success, got error: %v", err)
+	}
+	if result.Provider != "anthropic" || result.Model != "claude-sonnet" {
+		t.Fatalf("result = %s/%s, want anthropic/claude-sonnet", result.Provider, result.Model)
+	}
+	if len(result.Attempts) != 1 || !result.Attempts[0].Skipped {
+		t.Fatalf("expected one skipped primary attempt, got %+v", result.Attempts)
 	}
 }
 

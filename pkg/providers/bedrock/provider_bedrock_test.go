@@ -583,13 +583,17 @@ func TestIsSSOTokenError(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "full SSO error message",
-			err:      fmt.Errorf("get identity: get credentials: failed to refresh cached credentials, refresh cached SSO token failed, unable to refresh SSO token"),
+			name: "full SSO error message",
+			err: fmt.Errorf(
+				"get identity: get credentials: failed to refresh cached credentials, refresh cached SSO token failed, unable to refresh SSO token",
+			),
 			expected: true,
 		},
 		{
-			name:     "SSO token file missing",
-			err:      fmt.Errorf("get identity: get credentials: failed to refresh cached credentials, failed to read cached SSO token file, open ~/.aws/sso/cache/abc123.json: no such file or directory"),
+			name: "SSO token file missing",
+			err: fmt.Errorf(
+				"get identity: get credentials: failed to refresh cached credentials, failed to read cached SSO token file, open ~/.aws/sso/cache/abc123.json: no such file or directory",
+			),
 			expected: true,
 		},
 	}

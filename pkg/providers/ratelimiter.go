@@ -18,6 +18,15 @@ type RateLimiter struct {
 	nowFunc  func() time.Time // for testing
 }
 
+func (rl *RateLimiter) refillLocked(now time.Time) {
+	elapsed := now.Sub(rl.lastTick).Seconds()
+	rl.lastTick = now
+
+	// Refill tokens proportional to elapsed time.
+	refill := elapsed * float64(rl.rpm) / 60.0
+	rl.tokens = min(rl.maxBurst, rl.tokens+refill)
+}
+
 // newRateLimiter creates a RateLimiter that allows rpm requests/minute.
 func newRateLimiter(rpm int) *RateLimiter {
 	return &RateLimiter{
@@ -35,12 +44,7 @@ func (rl *RateLimiter) Wait(ctx context.Context) error {
 	for {
 		rl.mu.Lock()
 		now := rl.nowFunc()
-		elapsed := now.Sub(rl.lastTick).Seconds()
-		rl.lastTick = now
-
-		// Refill tokens proportional to elapsed time.
-		refill := elapsed * float64(rl.rpm) / 60.0
-		rl.tokens = min(rl.maxBurst, rl.tokens+refill)
+		rl.refillLocked(now)
 
 		if rl.tokens >= 1.0 {
 			rl.tokens--
@@ -53,13 +57,30 @@ func (rl *RateLimiter) Wait(ctx context.Context) error {
 		waitSec := deficit / (float64(rl.rpm) / 60.0)
 		rl.mu.Unlock()
 
+		timer := time.NewTimer(time.Duration(waitSec * float64(time.Second)))
 		select {
 		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
 			return ctx.Err()
-		case <-time.After(time.Duration(waitSec * float64(time.Second))):
+		case <-timer.C:
 			// Loop to re-check (another goroutine may have consumed the token).
 		}
 	}
+}
+
+// TryAcquire attempts to consume a token without blocking.
+func (rl *RateLimiter) TryAcquire() bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	rl.refillLocked(rl.nowFunc())
+	if rl.tokens < 1.0 {
+		return false
+	}
+	rl.tokens--
+	return true
 }
 
 // RateLimiterRegistry holds per-candidate rate limiters.
@@ -100,12 +121,24 @@ func (r *RateLimiterRegistry) Wait(ctx context.Context, key string) error {
 	return rl.Wait(ctx)
 }
 
+// TryAcquire attempts to consume a token for the given key without blocking.
+// If no limiter is registered for key, it returns true.
+func (r *RateLimiterRegistry) TryAcquire(key string) bool {
+	r.mu.RLock()
+	rl := r.limiters[key]
+	r.mu.RUnlock()
+	if rl == nil {
+		return true
+	}
+	return rl.TryAcquire()
+}
+
 // RegisterCandidates registers rate limiters for all candidates that have RPM > 0.
 // Candidates with RPM == 0 are ignored (no restriction).
 func (r *RateLimiterRegistry) RegisterCandidates(candidates []FallbackCandidate) {
 	for _, c := range candidates {
 		if c.RPM > 0 {
-			r.Register(ModelKey(c.Provider, c.Model), c.RPM)
+			r.Register(c.StableKey(), c.RPM)
 		}
 	}
 }

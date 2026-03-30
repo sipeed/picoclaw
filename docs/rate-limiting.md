@@ -74,7 +74,9 @@ model_list:
       - gpt-4o-mini   # must also be in model_list; its own rpm applies
 ```
 
-If the primary candidate's bucket is empty the call blocks until a token is available (or context is cancelled). If context deadline is hit while waiting, the error propagates and the agent retries normally.
+If the current candidate's bucket is empty and there are more candidates available, PicoClaw skips the locally saturated candidate and tries the next fallback immediately. Only the last remaining candidate waits for a token to refill. If the context deadline is hit while waiting on that last candidate, the wait error propagates.
+
+For `model_list` aliases that resolve to the same underlying provider/model, rate limiting is keyed by the stable config identity (for example `model_name`) rather than the resolved runtime model string. This preserves distinct RPM settings for multi-key and alias-based configurations.
 
 ### Burst behaviour
 
@@ -89,5 +91,5 @@ To reduce burstiness for strict APIs, set a lower `rpm` and rely on the steady-s
 | `pkg/providers/ratelimiter.go` | `RateLimiter` (token bucket) + `RateLimiterRegistry` |
 | `pkg/providers/ratelimiter_test.go` | Unit tests for limiter and registry |
 | `pkg/providers/fallback.go` | `FallbackCandidate.RPM` field; `FallbackChain.rl`; `Wait()` call in `Execute`/`ExecuteImage` |
-| `pkg/agent/model_resolution.go` | `lookupModelConfigByProtocolModel`; propagates `RPM` into `FallbackCandidate` |
+| `pkg/agent/model_resolution.go` | Resolves candidates from `model_list`, preserving stable config identity and propagating `RPM` into `FallbackCandidate` |
 | `pkg/agent/loop.go` | Build `RateLimiterRegistry`, register all agents' candidates, pass to `NewFallbackChain` |
