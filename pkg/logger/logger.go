@@ -35,12 +35,13 @@ var (
 		FATAL: "FATAL",
 	}
 
-	currentLevel = INFO
-	logger       zerolog.Logger
-	fileLogger   zerolog.Logger
-	logFile      *os.File
-	once         sync.Once
-	mu           sync.RWMutex
+	currentLevel  = INFO
+	logger        zerolog.Logger
+	logFile       *os.File
+	once          sync.Once
+	mu            sync.RWMutex
+	writers       []io.Writer
+	consoleWriter zerolog.ConsoleWriter
 )
 
 func init() {
@@ -49,7 +50,7 @@ func init() {
 
 		isTTY := term.IsTerminal(int(os.Stdout.Fd()))
 
-		consoleWriter := zerolog.ConsoleWriter{
+		consoleWriter = zerolog.ConsoleWriter{
 			Out:        os.Stdout,
 			TimeFormat: "15:04:05", // TODO: make it configurable???
 
@@ -72,8 +73,9 @@ func init() {
 			NoColor: !isTTY,
 		}
 
-		logger = zerolog.New(consoleWriter).With().Timestamp().Caller().Logger()
-		fileLogger = zerolog.Logger{}
+		writers = append(writers, consoleWriter)
+
+		logger = zerolog.New(io.MultiWriter(writers...)).With().Timestamp().Caller().Logger()
 	})
 }
 
@@ -124,7 +126,15 @@ func SetConsoleLevel(level LogLevel) {
 func DisableConsole() {
 	mu.Lock()
 	defer mu.Unlock()
-	logger = zerolog.New(io.Discard).With().Timestamp().Caller().Logger()
+	writers[0] = io.Discard
+	logger = logger.Output(io.MultiWriter(writers...))
+}
+
+func EnableConsole() {
+	mu.Lock()
+	defer mu.Unlock()
+	writers[0] = consoleWriter
+	logger = logger.Output(io.MultiWriter(writers...))
 }
 
 func GetLevel() LogLevel {
@@ -182,7 +192,14 @@ func EnableFileLogging(filePath string) error {
 	}
 
 	logFile = newFile
-	fileLogger = zerolog.New(logFile).With().Timestamp().Caller().Logger()
+
+	if len(writers) != 1 {
+		return fmt.Errorf("failed to configure file logging: %w", err)
+	}
+
+	writers = append(writers, logFile)
+	logger = logger.Output(io.MultiWriter(writers...))
+
 	return nil
 }
 
@@ -194,7 +211,10 @@ func DisableFileLogging() {
 		logFile.Close()
 		logFile = nil
 	}
-	fileLogger = zerolog.Logger{}
+	if len(writers) > 1 {
+		writers = writers[:1]
+		logger = logger.Output(io.MultiWriter(writers...))
+	}
 }
 
 func ConfigureFromEnv() {
@@ -298,21 +318,8 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 	event.Str(Component, component)
 
 	appendFields(event, fields)
+
 	event.CallerSkipFrame(skip).Msg(message)
-
-	// Also log to file if enabled
-	if fileLogger.GetLevel() != zerolog.NoLevel {
-		fileEvent := getEvent(fileLogger, level)
-
-		fileEvent.Str(Component, component)
-
-		appendFields(fileEvent, fields)
-		fileEvent.CallerSkipFrame(skip).Msg(message)
-	}
-
-	if level == FATAL {
-		os.Exit(1)
-	}
 }
 
 func appendFields(event *zerolog.Event, fields map[string]any) {

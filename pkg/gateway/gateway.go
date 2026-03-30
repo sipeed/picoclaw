@@ -91,13 +91,17 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	defer panicFunc()
 
 	if err = logger.EnableFileLogging(filepath.Join(homePath, logPath, logFile)); err != nil {
-		panic(fmt.Sprintf("error enabling file logging: %v", err))
+		logger.Fatal(fmt.Sprintf("error enabling file logging: %v", err))
 	}
 	defer logger.DisableFileLogging()
 
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
-		return fmt.Errorf("error loading config: %w", err)
+		logger.Fatalf("error loading config: %v", err)
+	}
+
+	if err = preCheckConfig(cfg); err != nil {
+		logger.Fatalf("config pre-check failed: %v", err)
 	}
 
 	logger.SetLevelFromString(cfg.Gateway.LogLevel)
@@ -212,6 +216,13 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 			}
 		}
 	}
+}
+
+func preCheckConfig(cfg *config.Config) error {
+	if cfg.Gateway.Port <= 0 || cfg.Gateway.Port > 65535 {
+		return fmt.Errorf("invalid gateway port: %d, port must be between 1 and 65535", cfg.Gateway.Port)
+	}
+	return nil
 }
 
 func executeReload(
