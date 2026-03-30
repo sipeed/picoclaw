@@ -878,14 +878,17 @@ func (h *Handler) gatewayStatusData() map[string]any {
 	gateway.mu.Lock()
 	bootConfigSignature := gateway.bootConfigSignature
 	gateway.mu.Unlock()
-	data["gateway_restart_required"] = gatewayRestartRequiredBySignature(
+	restartRequired := gatewayRestartRequiredBySignature(
 		bootConfigSignature,
 		currentConfigSignature,
 		gatewayStatus,
 	)
+	data["gateway_restart_required"] = restartRequired
 
 	// Avoid repeated local model probes in steady-state running status polling.
-	ready, reason, readyErr := h.gatewayStartReadyWithRuntimeProbe(gatewayStatus != "running")
+	// Keep probe-based readiness when restart is required for the current config.
+	allowRuntimeProbe := gatewayStatus != "running" || restartRequired
+	ready, reason, readyErr := h.gatewayStartReadyWithRuntimeProbe(allowRuntimeProbe)
 	if readyErr != nil {
 		data["gateway_start_allowed"] = false
 		data["gateway_start_reason"] = readyErr.Error()
