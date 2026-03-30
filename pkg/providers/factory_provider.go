@@ -341,6 +341,20 @@ func isEmptyAPIKeyAllowed(protocol string) bool {
 	return ok && meta.emptyAPIKeyAllowed
 }
 
+// IsEmptyAPIKeyAllowedForProtocol reports whether a protocol allows requests
+// without api_key when using its default local endpoint.
+func IsEmptyAPIKeyAllowedForProtocol(protocol string) bool {
+	protocol = strings.ToLower(strings.TrimSpace(protocol))
+	return isEmptyAPIKeyAllowed(protocol)
+}
+
+// DefaultAPIBaseForProtocol returns the configured default API base for a protocol.
+// It returns empty string if the protocol has no default base.
+func DefaultAPIBaseForProtocol(protocol string) string {
+	protocol = strings.ToLower(strings.TrimSpace(protocol))
+	return getDefaultAPIBase(protocol)
+}
+
 // getDefaultAPIBase returns the default API base URL for a given protocol.
 func getDefaultAPIBase(protocol string) string {
 	meta, ok := protocolMetaByName[protocol]
