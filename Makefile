@@ -130,13 +130,16 @@ build: generate
 build-launcher:
 	@echo "Building picoclaw-launcher for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	@if [ ! -f web/backend/dist/index.html ]; then \
-		echo "Building frontend..."; \
-		cd web/frontend && pnpm install && pnpm build:backend; \
-	fi
-	@$(WEB_GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH) ./web/backend
+	@$(MAKE) -C web build \
+		OUTPUT="$(CURDIR)/$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)" \
+		WEB_GO='$(WEB_GO)' \
+		GO_BUILD_TAGS='$(GO_BUILD_TAGS)' \
+		LDFLAGS='$(LDFLAGS)'
 	@ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher
 	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher"
+
+build-launcher-frontend:
+	@$(MAKE) -C web build-frontend
 
 ## build-launcher-tui: Build the picoclaw-launcher TUI binary
 build-launcher-tui:
