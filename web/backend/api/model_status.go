@@ -15,6 +15,17 @@ import (
 
 const modelProbeTimeout = 800 * time.Millisecond
 
+const (
+	modelStatusConfigured   = "configured"
+	modelStatusUnconfigured = "unconfigured"
+	modelStatusUnreachable  = "unreachable"
+)
+
+type modelConfigurationSummary struct {
+	Available bool
+	Status    string
+}
+
 var (
 	probeTCPServiceFunc            = probeTCPService
 	probeOllamaModelFunc           = probeOllamaModel
@@ -43,16 +54,17 @@ func hasModelConfiguration(m *config.ModelConfig) bool {
 	return apiKey != ""
 }
 
-// isModelConfigured reports whether a model is currently available to use.
-// Local models must be reachable; remote/API-key models only need saved config.
-func isModelConfigured(m *config.ModelConfig) bool {
+func modelConfigurationStatus(m *config.ModelConfig) modelConfigurationSummary {
 	if !hasModelConfiguration(m) {
-		return false
+		return modelConfigurationSummary{Available: false, Status: modelStatusUnconfigured}
 	}
 	if requiresRuntimeProbe(m) {
-		return probeLocalModelAvailability(m)
+		if probeLocalModelAvailability(m) {
+			return modelConfigurationSummary{Available: true, Status: modelStatusConfigured}
+		}
+		return modelConfigurationSummary{Available: false, Status: modelStatusUnreachable}
 	}
-	return true
+	return modelConfigurationSummary{Available: true, Status: modelStatusConfigured}
 }
 
 func requiresRuntimeProbe(m *config.ModelConfig) bool {

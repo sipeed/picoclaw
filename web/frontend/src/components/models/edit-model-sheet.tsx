@@ -133,7 +133,7 @@ export function EditModelSheet({
   }
 
   const isOAuth = model?.auth_method === "oauth"
-  const apiKeyPlaceholder = model?.configured
+  const apiKeyPlaceholder = model?.available
     ? maskedSecretPlaceholder(
         model.api_key,
         t("models.field.apiKeyPlaceholderSet"),
@@ -161,7 +161,7 @@ export function EditModelSheet({
               <Field
                 label={t("models.field.apiKey")}
                 hint={
-                  model?.configured ? t("models.edit.apiKeyHint") : undefined
+                  model?.available ? t("models.edit.apiKeyHint") : undefined
                 }
               >
                 <KeyInput

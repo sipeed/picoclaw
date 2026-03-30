@@ -171,7 +171,8 @@
     "noDefaultHintSuffix": "to set one.",
     "status": {
       "configured": "Configured",
-      "unconfigured": "Not configured"
+      "unconfigured": "Not configured",
+      "unreachable": "Service unreachable"
     },
     "badge": {
       "default": "Default",

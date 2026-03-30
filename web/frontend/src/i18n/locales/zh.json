@@ -171,7 +171,8 @@
     "noDefaultHintSuffix": "设为默认。",
     "status": {
       "configured": "已配置",
-      "unconfigured": "未配置"
+      "unconfigured": "未配置",
+      "unreachable": "服务不可达"
     },
     "badge": {
       "default": "默认",
