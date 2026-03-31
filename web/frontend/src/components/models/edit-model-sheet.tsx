@@ -34,6 +34,7 @@ interface EditForm {
   requestTimeout: string
   thinkingLevel: string
   extraBody: string
+  extraHeaders: string
 }
 
 interface EditModelSheetProps {
@@ -62,9 +63,11 @@ export function EditModelSheet({
     requestTimeout: "",
     thinkingLevel: "",
     extraBody: "",
+    extraHeaders: "",
   })
   const [saving, setSaving] = useState(false)
   const [setAsDefault, setSetAsDefault] = useState(false)
+  const [clearExtraHeaders, setClearExtraHeaders] = useState(false)
   const [error, setError] = useState("")
 
   useEffect(() => {
@@ -85,8 +88,10 @@ export function EditModelSheet({
         extraBody: model.extra_body
           ? JSON.stringify(model.extra_body, null, 2)
           : "",
+        extraHeaders: "",
       })
       setSetAsDefault(model.is_default)
+      setClearExtraHeaders(false)
       setError("")
     }
   }, [model])
@@ -119,6 +124,11 @@ export function EditModelSheet({
         extra_body: form.extraBody.trim()
           ? JSON.parse(form.extraBody.trim())
           : {},
+        extra_headers: clearExtraHeaders
+          ? {}
+          : form.extraHeaders.trim()
+            ? JSON.parse(form.extraHeaders.trim())
+            : undefined,
       })
       if (setAsDefault && !model.is_default) {
         await setDefaultModel(model.model_name)
@@ -295,6 +305,29 @@ export function EditModelSheet({
                   rows={3}
                 />
               </Field>
+
+              <Field
+                label="Extra Headers (JSON)"
+                hint='Write-only HTTP headers for model requests. Leave blank to keep current headers, enter JSON to replace, or use the clear switch below.'
+              >
+                <Textarea
+                  value={form.extraHeaders}
+                  onChange={setField("extraHeaders")}
+                  placeholder='{"X-API-Key": "secondary-key"}'
+                  rows={3}
+                />
+              </Field>
+
+              <SwitchCardField
+                label="Clear Existing Extra Headers"
+                hint={
+                  model?.has_extra_headers
+                    ? "This model currently has saved extra headers. Enable to clear all of them."
+                    : "Enable to send an explicit clear request for extra headers."
+                }
+                checked={clearExtraHeaders}
+                onCheckedChange={setClearExtraHeaders}
+              />
             </AdvancedSection>
 
             {error && (

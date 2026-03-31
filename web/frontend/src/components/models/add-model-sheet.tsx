@@ -36,6 +36,7 @@ interface AddForm {
   requestTimeout: string
   thinkingLevel: string
   extraBody: string
+  extraHeaders: string
 }
 
 const EMPTY_ADD_FORM: AddForm = {
@@ -52,6 +53,7 @@ const EMPTY_ADD_FORM: AddForm = {
   requestTimeout: "",
   thinkingLevel: "",
   extraBody: "",
+  extraHeaders: "",
 }
 
 interface AddModelSheetProps {
@@ -135,6 +137,9 @@ export function AddModelSheet({
         thinking_level: form.thinkingLevel.trim() || undefined,
         extra_body: form.extraBody.trim()
           ? JSON.parse(form.extraBody.trim())
+          : undefined,
+        extra_headers: form.extraHeaders.trim()
+          ? JSON.parse(form.extraHeaders.trim())
           : undefined,
       })
       if (setAsDefault) {
@@ -321,6 +326,18 @@ export function AddModelSheet({
                   value={form.extraBody}
                   onChange={setField("extraBody")}
                   placeholder='{"key": "value"}'
+                  rows={3}
+                />
+              </Field>
+
+              <Field
+                label="Extra Headers (JSON)"
+                hint='Optional HTTP headers sent with model requests, for example {"X-API-Key":"..."}'
+              >
+                <Textarea
+                  value={form.extraHeaders}
+                  onChange={setField("extraHeaders")}
+                  placeholder='{"X-API-Key": "secondary-key"}'
                   rows={3}
                 />
               </Field>

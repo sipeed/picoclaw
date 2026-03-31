@@ -1486,6 +1486,42 @@ func TestModelConfig_ExtraBodyRoundTrip(t *testing.T) {
 	}
 }
 
+func TestModelConfig_ExtraHeadersRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	cfg := &Config{
+		Version: CurrentVersion,
+		ModelList: []*ModelConfig{
+			{
+				ModelName:    "test-model",
+				Model:        "openai/test",
+				APIKeys:      SimpleSecureStrings("sk-test"),
+				ExtraHeaders: map[string]string{"X-API-Key": "test-key", "X-Tenant": "demo"},
+			},
+		},
+	}
+
+	if err := SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("SaveConfig error: %v", err)
+	}
+
+	loaded, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if loaded.ModelList[0].ExtraHeaders == nil {
+		t.Fatal("ExtraHeaders should not be nil after round-trip")
+	}
+	if got := loaded.ModelList[0].ExtraHeaders["X-API-Key"]; got != "test-key" {
+		t.Errorf("ExtraHeaders[X-API-Key] = %v, want test-key", got)
+	}
+	if got := loaded.ModelList[0].ExtraHeaders["X-Tenant"]; got != "demo" {
+		t.Errorf("ExtraHeaders[X-Tenant] = %v, want demo", got)
+	}
+}
+
 func TestDefaultConfig_MinimaxExtraBody(t *testing.T) {
 	cfg := DefaultConfig()
 

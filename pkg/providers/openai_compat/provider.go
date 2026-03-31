@@ -36,6 +36,7 @@ type Provider struct {
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	httpClient     *http.Client
 	extraBody      map[string]any // Additional fields to inject into request body
+	extraHeaders   map[string]string
 }
 
 type Option func(*Provider)
@@ -76,6 +77,12 @@ func WithRequestTimeout(timeout time.Duration) Option {
 func WithExtraBody(extraBody map[string]any) Option {
 	return func(p *Provider) {
 		p.extraBody = extraBody
+	}
+}
+
+func WithExtraHeaders(extraHeaders map[string]string) Option {
+	return func(p *Provider) {
+		p.extraHeaders = extraHeaders
 	}
 }
 
@@ -200,6 +207,9 @@ func (p *Provider) Chat(
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
+	for key, value := range p.extraHeaders {
+		req.Header.Set(key, value)
+	}
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -245,6 +255,9 @@ func (p *Provider) ChatStream(
 	req.Header.Set("Accept", "text/event-stream")
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+	for key, value := range p.extraHeaders {
+		req.Header.Set(key, value)
 	}
 
 	// Use a client without Timeout for streaming — the http.Client.Timeout covers

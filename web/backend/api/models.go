@@ -22,7 +22,7 @@ func (h *Handler) registerModelRoutes(mux *http.ServeMux) {
 }
 
 // modelResponse is the JSON structure returned for each model in the list.
-// All ModelConfig fields are included so the frontend can display and edit them.
+// Sensitive fields are masked and write-only fields are represented by metadata flags.
 type modelResponse struct {
 	Index      int    `json:"index"`
 	ModelName  string `json:"model_name"`
@@ -32,13 +32,14 @@ type modelResponse struct {
 	Proxy      string `json:"proxy,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"`
 	// Advanced fields
-	ConnectMode    string         `json:"connect_mode,omitempty"`
-	Workspace      string         `json:"workspace,omitempty"`
-	RPM            int            `json:"rpm,omitempty"`
-	MaxTokensField string         `json:"max_tokens_field,omitempty"`
-	RequestTimeout int            `json:"request_timeout,omitempty"`
-	ThinkingLevel  string         `json:"thinking_level,omitempty"`
-	ExtraBody      map[string]any `json:"extra_body,omitempty"`
+	ConnectMode     string         `json:"connect_mode,omitempty"`
+	Workspace       string         `json:"workspace,omitempty"`
+	RPM             int            `json:"rpm,omitempty"`
+	MaxTokensField  string         `json:"max_tokens_field,omitempty"`
+	RequestTimeout  int            `json:"request_timeout,omitempty"`
+	ThinkingLevel   string         `json:"thinking_level,omitempty"`
+	ExtraBody       map[string]any `json:"extra_body,omitempty"`
+	HasExtraHeaders bool           `json:"has_extra_headers"`
 	// Meta
 	Enabled    bool `json:"enabled"`
 	Configured bool `json:"configured"`
@@ -72,24 +73,25 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 	models := make([]modelResponse, 0, len(cfg.ModelList))
 	for i, m := range cfg.ModelList {
 		models = append(models, modelResponse{
-			Index:          i,
-			ModelName:      m.ModelName,
-			Model:          m.Model,
-			APIBase:        m.APIBase,
-			APIKey:         maskAPIKey(m.APIKey()),
-			Proxy:          m.Proxy,
-			AuthMethod:     m.AuthMethod,
-			ConnectMode:    m.ConnectMode,
-			Workspace:      m.Workspace,
-			RPM:            m.RPM,
-			MaxTokensField: m.MaxTokensField,
-			RequestTimeout: m.RequestTimeout,
-			ThinkingLevel:  m.ThinkingLevel,
-			ExtraBody:      m.ExtraBody,
-			Enabled:        m.Enabled,
-			Configured:     configured[i],
-			IsDefault:      m.ModelName == defaultModel,
-			IsVirtual:      m.IsVirtual(),
+			Index:           i,
+			ModelName:       m.ModelName,
+			Model:           m.Model,
+			APIBase:         m.APIBase,
+			APIKey:          maskAPIKey(m.APIKey()),
+			Proxy:           m.Proxy,
+			AuthMethod:      m.AuthMethod,
+			ConnectMode:     m.ConnectMode,
+			Workspace:       m.Workspace,
+			RPM:             m.RPM,
+			MaxTokensField:  m.MaxTokensField,
+			RequestTimeout:  m.RequestTimeout,
+			ThinkingLevel:   m.ThinkingLevel,
+			ExtraBody:       m.ExtraBody,
+			HasExtraHeaders: len(m.ExtraHeaders) > 0,
+			Enabled:         m.Enabled,
+			Configured:      configured[i],
+			IsDefault:       m.ModelName == defaultModel,
+			IsVirtual:       m.IsVirtual(),
 		})
 	}
 
@@ -213,6 +215,13 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		mc.ExtraBody = cfg.ModelList[idx].ExtraBody
 	} else if len(mc.ExtraBody) == 0 {
 		mc.ExtraBody = nil
+	}
+	// Preserve existing ExtraHeaders when omitted (nil), but clear them when
+	// the frontend sends an empty object {}.
+	if mc.ExtraHeaders == nil {
+		mc.ExtraHeaders = cfg.ModelList[idx].ExtraHeaders
+	} else if len(mc.ExtraHeaders) == 0 {
+		mc.ExtraHeaders = nil
 	}
 
 	cfg.ModelList[idx] = &mc.ModelConfig

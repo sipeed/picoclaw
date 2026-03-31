@@ -702,6 +702,104 @@ func TestProviderChat_ExtraBodyOverridesOptions(t *testing.T) {
 	}
 }
 
+func TestProviderChat_ExtraHeadersInjected(t *testing.T) {
+	var capturedAuthorization string
+	var capturedAPIKey string
+	var capturedTenant string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuthorization = r.Header.Get("Authorization")
+		capturedAPIKey = r.Header.Get("X-API-Key")
+		capturedTenant = r.Header.Get("X-Tenant")
+
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("bearer-token", server.URL, "", WithExtraHeaders(map[string]string{
+		"X-API-Key": "secondary-key",
+		"X-Tenant":  "tenant-a",
+	}))
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"openai/gpt-4o-mini",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if capturedAuthorization != "Bearer bearer-token" {
+		t.Fatalf("Authorization = %q, want %q", capturedAuthorization, "Bearer bearer-token")
+	}
+	if capturedAPIKey != "secondary-key" {
+		t.Fatalf("X-API-Key = %q, want %q", capturedAPIKey, "secondary-key")
+	}
+	if capturedTenant != "tenant-a" {
+		t.Fatalf("X-Tenant = %q, want %q", capturedTenant, "tenant-a")
+	}
+}
+
+func TestProviderChatStream_ExtraHeadersInjected(t *testing.T) {
+	var capturedAuthorization string
+	var capturedAPIKey string
+	var capturedTenant string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuthorization = r.Header.Get("Authorization")
+		capturedAPIKey = r.Header.Get("X-API-Key")
+		capturedTenant = r.Header.Get("X-Tenant")
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":null}]}\n\n")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	p := NewProvider("bearer-token", server.URL, "", WithExtraHeaders(map[string]string{
+		"X-API-Key": "secondary-key",
+		"X-Tenant":  "tenant-a",
+	}))
+
+	resp, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"openai/gpt-4o-mini",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+
+	if resp.Content != "ok" {
+		t.Fatalf("stream content = %q, want %q", resp.Content, "ok")
+	}
+	if capturedAuthorization != "Bearer bearer-token" {
+		t.Fatalf("Authorization = %q, want %q", capturedAuthorization, "Bearer bearer-token")
+	}
+	if capturedAPIKey != "secondary-key" {
+		t.Fatalf("X-API-Key = %q, want %q", capturedAPIKey, "secondary-key")
+	}
+	if capturedTenant != "tenant-a" {
+		t.Fatalf("X-Tenant = %q, want %q", capturedTenant, "tenant-a")
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
