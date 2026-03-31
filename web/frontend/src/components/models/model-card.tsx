@@ -28,7 +28,7 @@ export function ModelCard({
 }: ModelCardProps) {
   const { t } = useTranslation()
   const isOAuth = model.auth_method === "oauth"
-  const status = model.status ?? (model.available ? "available" : "unconfigured")
+  const status = model.status
   const statusLabel = t(`models.status.${status}`)
   const canSetDefault =
     model.available && !model.is_default && !model.is_virtual
