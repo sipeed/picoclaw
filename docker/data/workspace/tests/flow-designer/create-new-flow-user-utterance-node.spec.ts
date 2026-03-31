@@ -21,13 +21,15 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await page.getByRole('button', { name: /login/i }).click();
   console.log('✅ PASS: Step 4 - Login button clicked');
 
-  console.log('📍 Step 5: Wait for org selection redirect');
-  await page.waitForURL(/\?select_org/, { timeout: 20000 });
-  console.log('✅ PASS: Step 5 - Redirected to org selection');
+  console.log('📍 Step 5: Wait for post-login redirect');
+  await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+  if (page.url().includes('select_org')) {
+    await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+    await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+  }
+  console.log('✅ PASS: Step 5 - Redirected past login');
 
-  console.log('📍 Step 6: Select organization Testing2026!');
-  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
+  console.log('📍 Step 6: Confirm organization selected / dashboard reached');
   console.log('✅ PASS: Step 6 - Organization selected');
 
   console.log('📍 Step 7: Navigate to Flow Designer');
@@ -46,6 +48,12 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await page.locator('.node-container#START').waitFor({ state: 'visible', timeout: 5000 });
   await page.locator('.node-container#END').waitFor({ state: 'visible', timeout: 5000 });
   console.log('✅ PASS: Step 9 - START and END nodes verified');
+
+  // Read canvas transform ONCE — used for all absolute node positioning
+  const tf = await page.locator('.vue-flow__transformationpane').evaluate(el => {
+    const m = new DOMMatrix((el as HTMLElement).style.transform);
+    return { scale: m.a, tx: m.e, ty: m.f };
+  });
 
   console.log('📍 Step 10: Rename flow to "User Utterance"');
   await page.locator('.panel-container p.text-secondary').first().click();
@@ -71,21 +79,19 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 12 - Reply Message node added');
 
-  console.log('📍 Step 13: Position first Reply Message node relative to START');
-  const startWrapper = page.locator('.vue-flow__node').filter({ has: page.locator('.node-container#START') });
-  const startBBox = await startWrapper.boundingBox();
+  console.log('📍 Step 13: Position first Reply Message node at canvas (250, 100)');
   const firstReplyWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
     .first();
   const firstReplyBBox = await firstReplyWrapper.boundingBox();
-  if (!startBBox || !firstReplyBBox) throw new Error('Cannot position first Reply Message — START or new node not found');
-  const gap1 = 200;
-  const targetY1 = startBBox.y + startBBox.height + gap1;
+  if (!firstReplyBBox) throw new Error('Cannot position first Reply Message — node not found');
+  const targetX1 = 250 * tf.scale + tf.tx;
+  const targetY1 = 100 * tf.scale + tf.ty;
   await page.mouse.move(firstReplyBBox.x + firstReplyBBox.width / 2, firstReplyBBox.y + firstReplyBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(firstReplyBBox.x + firstReplyBBox.width / 2, targetY1, { steps: 10 });
+  await page.mouse.move(targetX1, targetY1, { steps: 20 });
   await page.mouse.up();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(500);
   console.log('✅ PASS: Step 13 - First Reply Message positioned');
 
   console.log('📍 Step 14: Click first Reply Message node to open config modal');
@@ -117,6 +123,7 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   // ============ PHASE 4: CONNECT START TO FIRST REPLY MESSAGE ============
 
   console.log('📍 Step 18: Connect START → Reply Message');
+  const edgesBefore1 = await page.locator('.vue-flow__edge[data-id]').count();
   const sourceHandle1 = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#START') })
     .locator('.vue-flow__handle-bottom');
@@ -137,7 +144,8 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   console.log('✅ PASS: Step 18 - START → Reply Message connected');
 
   console.log('📍 Step 19: Verify edge created between START and Reply Message');
-  await page.locator('[data-id^="e-START-"]').waitFor({ state: 'visible', timeout: 5000 });
+  const edgesAfter1 = await page.locator('.vue-flow__edge[data-id]').count();
+  if (edgesAfter1 <= edgesBefore1) throw new Error(`Edge NOT created — count before: ${edgesBefore1}, after: ${edgesAfter1}`);
   console.log('✅ PASS: Step 19 - Edge verified');
 
   // ============ PHASE 5: ADD USER UTTERANCE NODE ============
@@ -154,23 +162,19 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 21 - User Utterance node added');
 
-  console.log('📍 Step 22: Position User Utterance node relative to first Reply Message');
-  const prevReplyWrapper = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
-    .first();
-  const prevReplyBBox = await prevReplyWrapper.boundingBox();
+  console.log('📍 Step 22: Position User Utterance node at canvas (250, 200)');
   const userUtteranceWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /UserUtterance/ }) })
     .first();
   const userUtteranceBBox = await userUtteranceWrapper.boundingBox();
-  if (!prevReplyBBox || !userUtteranceBBox) throw new Error('Cannot position User Utterance — prev Reply Message or new node not found');
-  const gap2 = 150;
-  const targetY2 = prevReplyBBox.y + prevReplyBBox.height + gap2;
+  if (!userUtteranceBBox) throw new Error('Cannot position User Utterance — node not found');
+  const targetX2 = 250 * tf.scale + tf.tx;
+  const targetY2 = 200 * tf.scale + tf.ty;
   await page.mouse.move(userUtteranceBBox.x + userUtteranceBBox.width / 2, userUtteranceBBox.y + userUtteranceBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(userUtteranceBBox.x + userUtteranceBBox.width / 2, targetY2, { steps: 10 });
+  await page.mouse.move(targetX2, targetY2, { steps: 20 });
   await page.mouse.up();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(500);
   console.log('✅ PASS: Step 22 - User Utterance positioned');
 
   console.log('📍 Step 23: Click User Utterance node to open config modal');
@@ -201,6 +205,7 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   // ============ PHASE 6: CONNECT FIRST REPLY MESSAGE TO USER UTTERANCE ============
 
   console.log('📍 Step 27: Connect Reply Message → input (User Utterance)');
+  const edgesBefore2 = await page.locator('.vue-flow__edge[data-id]').count();
   const sourceHandle2 = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
     .first()
@@ -221,7 +226,8 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   console.log('✅ PASS: Step 27 - Reply Message → input connected');
 
   console.log('📍 Step 28: Verify edge created between Reply Message and input');
-  await page.locator('[data-id^="e-ReplyMessage_"]').waitFor({ state: 'visible', timeout: 5000 });
+  const edgesAfter2 = await page.locator('.vue-flow__edge[data-id]').count();
+  if (edgesAfter2 <= edgesBefore2) throw new Error(`Edge NOT created — count before: ${edgesBefore2}, after: ${edgesAfter2}`);
   console.log('✅ PASS: Step 28 - Edge verified');
 
   // ============ PHASE 7: ADD OUTPUT REPLY MESSAGE NODE ============
@@ -238,22 +244,19 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 30 - Second Reply Message node added');
 
-  console.log('📍 Step 31: Position Output Reply Message node relative to input node');
-  const inputWrapper = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container#input') });
-  const inputBBox = await inputWrapper.boundingBox();
+  console.log('📍 Step 31: Position Output Reply Message node at canvas (250, 300)');
   const secondReplyWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
     .nth(1);
   const secondReplyBBox = await secondReplyWrapper.boundingBox();
-  if (!inputBBox || !secondReplyBBox) throw new Error('Cannot position Output Reply Message — input or new node not found');
-  const gap3 = 150;
-  const targetY3 = inputBBox.y + inputBBox.height + gap3;
+  if (!secondReplyBBox) throw new Error('Cannot position Output Reply Message — node not found');
+  const targetX3 = 250 * tf.scale + tf.tx;
+  const targetY3 = 300 * tf.scale + tf.ty;
   await page.mouse.move(secondReplyBBox.x + secondReplyBBox.width / 2, secondReplyBBox.y + secondReplyBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(secondReplyBBox.x + secondReplyBBox.width / 2, targetY3, { steps: 10 });
+  await page.mouse.move(targetX3, targetY3, { steps: 20 });
   await page.mouse.up();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(500);
   console.log('✅ PASS: Step 31 - Output Reply Message positioned');
 
   console.log('📍 Step 32: Click Output Reply Message node to open config modal');
@@ -295,6 +298,7 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   // ============ PHASE 8: CONNECT INPUT TO OUTPUT AND OUTPUT TO END ============
 
   console.log('📍 Step 37: Connect input → Output');
+  const edgesBefore3 = await page.locator('.vue-flow__edge[data-id]').count();
   const sourceHandle3 = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#input') })
     .locator('.vue-flow__handle-bottom');
@@ -314,10 +318,12 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   console.log('✅ PASS: Step 37 - input → Output connected');
 
   console.log('📍 Step 38: Verify edge created between input and Output');
-  await page.locator('[data-id^="e-input-"]').waitFor({ state: 'visible', timeout: 5000 });
+  const edgesAfter3 = await page.locator('.vue-flow__edge[data-id]').count();
+  if (edgesAfter3 <= edgesBefore3) throw new Error(`Edge NOT created — count before: ${edgesBefore3}, after: ${edgesAfter3}`);
   console.log('✅ PASS: Step 38 - Edge verified');
 
   console.log('📍 Step 39: Connect Output → END');
+  const edgesBefore4 = await page.locator('.vue-flow__edge[data-id]').count();
   const sourceHandle4 = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#Output') })
     .locator('.vue-flow__handle-bottom');
@@ -337,7 +343,8 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   console.log('✅ PASS: Step 39 - Output → END connected');
 
   console.log('📍 Step 40: Verify edge created between Output and END');
-  await page.locator('[data-id^="e-Output-"]').waitFor({ state: 'visible', timeout: 5000 });
+  const edgesAfter4 = await page.locator('.vue-flow__edge[data-id]').count();
+  if (edgesAfter4 <= edgesBefore4) throw new Error(`Edge NOT created — count before: ${edgesBefore4}, after: ${edgesAfter4}`);
   console.log('✅ PASS: Step 40 - Edge verified');
 
   // ============ PHASE 9: SAVE FLOW VERSION ============
@@ -372,11 +379,9 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await page.locator('.node-container#END').waitFor({ state: 'visible', timeout: 5000 });
   console.log('✅ PASS: Step 45 - All nodes verified on canvas');
 
-  console.log('📍 Step 46: Verify all edges are connected');
-  await page.locator('[data-id^="e-START-"]').waitFor({ state: 'visible', timeout: 5000 });
-  await page.locator('[data-id^="e-ReplyMessage_"]').waitFor({ state: 'visible', timeout: 5000 });
-  await page.locator('[data-id^="e-input-"]').waitFor({ state: 'visible', timeout: 5000 });
-  await page.locator('[data-id^="e-Output-"]').waitFor({ state: 'visible', timeout: 5000 });
+  console.log('📍 Step 46: Verify all edges are connected (expect 4 total)');
+  const finalEdgeCount = await page.locator('.vue-flow__edge[data-id]').count();
+  if (finalEdgeCount < 4) throw new Error(`Expected at least 4 edges, found ${finalEdgeCount}`);
   console.log('✅ PASS: Step 46 - All edges verified');
 
   console.log('📍 Step 47: Verify flow name is "User Utterance"');
