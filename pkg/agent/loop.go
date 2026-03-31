@@ -35,6 +35,17 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// pendingDelivery holds an undelivered assistant reply together with a monotonic
+// version number. The version lets OnDelivered skip the delete when a newer
+// reply has already overwritten the slot (two in-flight replies, same session).
+type pendingDelivery struct {
+	content string
+	version uint64
+}
+
+// pendingDeliverySeq is a process-wide monotonic counter for pendingDelivery versions.
+var pendingDeliverySeq uint64
+
 type AgentLoop struct {
 	// Core dependencies
 	bus      *bus.MessageBus
@@ -58,7 +69,7 @@ type AgentLoop struct {
 	hookRuntime       hookRuntime
 	steering          *steeringQueue
 	pendingSkills     sync.Map
-	pendingDeliveries sync.Map // sessionKey -> string: last undelivered assistant content
+	pendingDeliveries sync.Map // sessionKey -> pendingDelivery: last undelivered assistant content
 	mu                sync.RWMutex
 
 	// Concurrent turn management (from HEAD)
@@ -1700,12 +1711,23 @@ func (al *AgentLoop) runAgentLoop(
 	if !opts.NoHistory && result.finalContent != "" {
 		// Register the pending content so that fast follow-up inbound turns can
 		// inject it into their LLM context before OnDelivered persists it.
-		al.pendingDeliveries.Store(opts.SessionKey, result.finalContent)
+		// Version prevents an earlier OnDelivered from deleting a newer reply's slot.
+		deliveryVersion := atomic.AddUint64(&pendingDeliverySeq, 1)
+		al.pendingDeliveries.Store(opts.SessionKey, pendingDelivery{
+			content: result.finalContent,
+			version: deliveryVersion,
+		})
 
 		var once sync.Once
 		response.OnDelivered = func(msgIDs []string) {
 			once.Do(func() {
-				al.pendingDeliveries.Delete(opts.SessionKey)
+				// Only evict if this turn still owns the slot (guards against a newer
+				// reply having already overwritten it before our delivery completed).
+				if cur, ok := al.pendingDeliveries.Load(opts.SessionKey); ok {
+					if pd, ok := cur.(pendingDelivery); ok && pd.version == deliveryVersion {
+						al.pendingDeliveries.Delete(opts.SessionKey)
+					}
+				}
 				assistantMsg := providers.Message{
 					Role:       "assistant",
 					Content:    result.finalContent,
@@ -1855,9 +1877,9 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 	// when OnDelivered fires before the next turn starts).
 	if !ts.opts.NoHistory {
 		if pendingRaw, ok := al.pendingDeliveries.Load(ts.sessionKey); ok {
-			if pendingContent, _ := pendingRaw.(string); pendingContent != "" {
+			if pd, ok := pendingRaw.(pendingDelivery); ok && pd.content != "" {
 				if len(history) == 0 || history[len(history)-1].Role != "assistant" {
-					history = append(history, providers.Message{Role: "assistant", Content: pendingContent})
+					history = append(history, providers.Message{Role: "assistant", Content: pd.content})
 				}
 			}
 		}
