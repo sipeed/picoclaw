@@ -56,6 +56,7 @@ func (h *Handler) createWsProxy(origProtocol string, token string) *httputil.Rev
 func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gateway.mu.Lock()
+		ensurePicoTokenCachedLocked(h.configPath)
 		gatewayAvailable := gateway.pidData != nil
 		gateway.mu.Unlock()
 

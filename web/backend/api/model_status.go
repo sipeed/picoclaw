@@ -10,9 +10,21 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 const modelProbeTimeout = 800 * time.Millisecond
+
+const (
+	modelStatusAvailable    = "available"
+	modelStatusUnconfigured = "unconfigured"
+	modelStatusUnreachable  = "unreachable"
+)
+
+type modelConfigurationSummary struct {
+	Available bool
+	Status    string
+}
 
 var (
 	probeTCPServiceFunc            = probeTCPService
@@ -42,16 +54,17 @@ func hasModelConfiguration(m *config.ModelConfig) bool {
 	return apiKey != ""
 }
 
-// isModelConfigured reports whether a model is currently available to use.
-// Local models must be reachable; remote/API-key models only need saved config.
-func isModelConfigured(m *config.ModelConfig) bool {
+func modelConfigurationStatus(m *config.ModelConfig) modelConfigurationSummary {
 	if !hasModelConfiguration(m) {
-		return false
+		return modelConfigurationSummary{Available: false, Status: modelStatusUnconfigured}
 	}
 	if requiresRuntimeProbe(m) {
-		return probeLocalModelAvailability(m)
+		if probeLocalModelAvailability(m) {
+			return modelConfigurationSummary{Available: true, Status: modelStatusAvailable}
+		}
+		return modelConfigurationSummary{Available: false, Status: modelStatusUnreachable}
 	}
-	return true
+	return modelConfigurationSummary{Available: true, Status: modelStatusAvailable}
 }
 
 func requiresRuntimeProbe(m *config.ModelConfig) bool {
@@ -60,10 +73,14 @@ func requiresRuntimeProbe(m *config.ModelConfig) bool {
 		return true
 	}
 
-	switch modelProtocol(m.Model) {
+	protocol := modelProtocol(m.Model)
+
+	switch protocol {
 	case "claude-cli", "claudecli", "codex-cli", "codexcli", "github-copilot", "copilot":
 		return true
-	case "ollama", "vllm":
+	}
+
+	if providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
 		apiBase := strings.TrimSpace(m.APIBase)
 		return apiBase == "" || hasLocalAPIBase(apiBase)
 	}
@@ -81,7 +98,7 @@ func probeLocalModelAvailability(m *config.ModelConfig) bool {
 	switch protocol {
 	case "ollama":
 		return probeOllamaModelFunc(apiBase, modelID)
-	case "vllm":
+	case "vllm", "lmstudio":
 		return probeOpenAICompatibleModelFunc(apiBase, modelID, m.APIKey())
 	case "github-copilot", "copilot":
 		return probeTCPServiceFunc(apiBase)
@@ -100,11 +117,12 @@ func modelProbeAPIBase(m *config.ModelConfig) string {
 		return normalizeModelProbeAPIBase(apiBase)
 	}
 
-	switch modelProtocol(m.Model) {
-	case "ollama":
-		return "http://localhost:11434/v1"
-	case "vllm":
-		return "http://localhost:8000/v1"
+	protocol := modelProtocol(m.Model)
+	if providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
+		return providers.DefaultAPIBaseForProtocol(protocol)
+	}
+
+	switch protocol {
 	case "github-copilot", "copilot":
 		return "localhost:4321"
 	default:

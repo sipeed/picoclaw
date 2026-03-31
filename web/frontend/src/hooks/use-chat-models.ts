@@ -65,32 +65,32 @@ export function useChatModels({ isConnected }: UseChatModelsOptions) {
     [defaultModelName],
   )
 
-  const hasConfiguredModels = useMemo(
-    () => modelList.some((m) => m.configured),
+  const hasAvailableModels = useMemo(
+    () => modelList.some((m) => m.available),
     [modelList],
   )
 
   const oauthModels = useMemo(
-    () => modelList.filter((m) => m.configured && m.auth_method === "oauth"),
+    () => modelList.filter((m) => m.available && m.auth_method === "oauth"),
     [modelList],
   )
 
   const localModels = useMemo(
-    () => modelList.filter((m) => m.configured && isLocalModel(m)),
+    () => modelList.filter((m) => m.available && isLocalModel(m)),
     [modelList],
   )
 
   const apiKeyModels = useMemo(
     () =>
       modelList.filter(
-        (m) => m.configured && m.auth_method !== "oauth" && !isLocalModel(m),
+        (m) => m.available && m.auth_method !== "oauth" && !isLocalModel(m),
       ),
     [modelList],
   )
 
   return {
     defaultModelName,
-    hasConfiguredModels,
+    hasAvailableModels,
     apiKeyModels,
     oauthModels,
     localModels,
