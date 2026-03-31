@@ -123,6 +123,15 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   // ============ PHASE 4: CONNECT START TO FIRST REPLY MESSAGE ============
 
   console.log('📍 Step 18: Connect START → Reply Message');
+  await page.mouse.move(640, 360);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(200);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(500);
   const edgesBefore1 = await page.locator('.vue-flow__edge[data-id]').count();
   const sourceHandle1 = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#START') })
@@ -163,13 +172,17 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   console.log('✅ PASS: Step 21 - User Utterance node added');
 
   console.log('📍 Step 22: Position User Utterance node at canvas (250, 200)');
+  const tfUU = await page.locator('.vue-flow__transformationpane').evaluate(el => {
+    const m = new DOMMatrix((el as HTMLElement).style.transform);
+    return { scale: m.a, tx: m.e, ty: m.f };
+  });
   const userUtteranceWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /UserUtterance/ }) })
     .first();
   const userUtteranceBBox = await userUtteranceWrapper.boundingBox();
   if (!userUtteranceBBox) throw new Error('Cannot position User Utterance — node not found');
-  const targetX2 = 250 * tf.scale + tf.tx;
-  const targetY2 = 200 * tf.scale + tf.ty;
+  const targetX2 = 250 * tfUU.scale + tfUU.tx;
+  const targetY2 = 200 * tfUU.scale + tfUU.ty;
   await page.mouse.move(userUtteranceBBox.x + userUtteranceBBox.width / 2, userUtteranceBBox.y + userUtteranceBBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(targetX2, targetY2, { steps: 20 });
@@ -205,6 +218,15 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   // ============ PHASE 6: CONNECT FIRST REPLY MESSAGE TO USER UTTERANCE ============
 
   console.log('📍 Step 27: Connect Reply Message → input (User Utterance)');
+  await page.mouse.move(640, 360);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(200);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(500);
   const edgesBefore2 = await page.locator('.vue-flow__edge[data-id]').count();
   const sourceHandle2 = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
@@ -245,13 +267,17 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   console.log('✅ PASS: Step 30 - Second Reply Message node added');
 
   console.log('📍 Step 31: Position Output Reply Message node at canvas (250, 300)');
+  const tfReply2 = await page.locator('.vue-flow__transformationpane').evaluate(el => {
+    const m = new DOMMatrix((el as HTMLElement).style.transform);
+    return { scale: m.a, tx: m.e, ty: m.f };
+  });
   const secondReplyWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
     .nth(1);
   const secondReplyBBox = await secondReplyWrapper.boundingBox();
   if (!secondReplyBBox) throw new Error('Cannot position Output Reply Message — node not found');
-  const targetX3 = 250 * tf.scale + tf.tx;
-  const targetY3 = 300 * tf.scale + tf.ty;
+  const targetX3 = 250 * tfReply2.scale + tfReply2.tx;
+  const targetY3 = 300 * tfReply2.scale + tfReply2.ty;
   await page.mouse.move(secondReplyBBox.x + secondReplyBBox.width / 2, secondReplyBBox.y + secondReplyBBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(targetX3, targetY3, { steps: 20 });
@@ -298,6 +324,15 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   // ============ PHASE 8: CONNECT INPUT TO OUTPUT AND OUTPUT TO END ============
 
   console.log('📍 Step 37: Connect input → Output');
+  await page.mouse.move(640, 360);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(200);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(500);
   const edgesBefore3 = await page.locator('.vue-flow__edge[data-id]').count();
   const sourceHandle3 = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#input') })
@@ -323,6 +358,15 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   console.log('✅ PASS: Step 38 - Edge verified');
 
   console.log('📍 Step 39: Connect Output → END');
+  await page.mouse.move(640, 360);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(200);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(500);
   const edgesBefore4 = await page.locator('.vue-flow__edge[data-id]').count();
   const sourceHandle4 = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#Output') })

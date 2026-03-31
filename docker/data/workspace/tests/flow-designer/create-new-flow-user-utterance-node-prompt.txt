@@ -244,6 +244,20 @@ IMPORTANT RULES:
     page.mouse.move(x, targetY, { steps: 10 })  ← only 10 steps — too few for reliable drag
 
     ✅ CORRECT: convert canvas (250, Y) to screen using transform, drag to that screen position
+
+    ⚠️ STALE TRANSFORM: The `tf` variable read at STEP 1 becomes STALE after any zoom operation.
+    Each drag connection includes a zoom-in + zoom-out block that changes the canvas transform.
+    NEVER use the original `tf` for nodes positioned AFTER the first drag connection has run.
+    For every node added after the first edge, re-read the transform immediately before positioning:
+
+      const tfFresh = await page.locator('.vue-flow__transformationpane').evaluate(el => {
+        const m = new DOMMatrix((el as HTMLElement).style.transform);
+        return { scale: m.a, tx: m.e, ty: m.f };
+      });
+      // Use tfFresh (not tf) for this node's target screen position calculation
+
+    Name each fresh read descriptively (tfNode2, tfOutput, tfReply2, etc.) so it is clear
+    which node it belongs to. Never reuse a transform variable from an earlier positioning step.
 15. Clicking nodes on the canvas: ALWAYS use evaluate — NEVER .click() directly (overlap may still occur):
     await page.locator('.node-container').filter({ hasText: /NodeLabel/ }).first().evaluate(el => (el as HTMLElement).click());
 16. Before any drag connection, ALWAYS wait for the canvas to be fully settled:
@@ -253,6 +267,27 @@ IMPORTANT RULES:
     Example after modal close:
       await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
       await page.waitForTimeout(500); // let canvas re-render before connecting
+
+    ⚠️ CRITICAL — ZOOM NORMALIZATION: Before EVERY drag connection, normalize canvas zoom to ~100%.
+    Vue Flow canvas zoom persists between operations. After modals, positioning drags, or previous
+    connections, the canvas may be at minimum zoom (20%) where handles are too small to target.
+    ALWAYS run this block immediately before reading handle boundingBoxes:
+
+      await page.mouse.move(640, 360);
+      await page.keyboard.down('Control');
+      for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); } // zoom in to max (400%)
+      await page.keyboard.up('Control');
+      await page.waitForTimeout(200);
+      await page.keyboard.down('Control');
+      for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); } // zoom out to ~100%
+      await page.keyboard.up('Control');
+      await page.waitForTimeout(500);
+      // THEN get boundingBoxes and drag
+
+    WHY zoom-in THEN zoom-out: If the canvas is already at minimum zoom (20%), zoom-out-only does
+    nothing — handles remain too small. Zoom-in first guarantees a known starting point (400% max),
+    then 10× zoom-out reliably reaches ~100%. NEVER use zoom-out-only for the 2nd+ connection.
+
 17. Vue Flow drag connections: NEVER use dragTo(). Use page.mouse with steps.
     CRITICAL: Vue Flow handles (.vue-flow__handle-bottom, .vue-flow__handle-top) may NOT be inside .node-container.
     They might be siblings of .node-container inside .vue-flow__node.

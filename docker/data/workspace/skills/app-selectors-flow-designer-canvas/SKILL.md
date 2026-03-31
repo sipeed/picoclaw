@@ -3,6 +3,51 @@ name: app-selectors-flow-designer-canvas
 description: DOM selectors and component map for the Flow Designer Canvas 206 page on dashboard.int3nt.info. Use when writing Playwright tests for this page.
 ---
 
+## Drag Connection — Critical Requirements
+
+### 1. Zoom normalization (MANDATORY before EVERY drag)
+
+Vue Flow canvas zoom state persists between operations. After modal interactions the canvas zoom level is unpredictable (may be at 20% minimum). At low zoom, handles are too small to hit reliably.
+
+**Before EVERY drag connection, run this zoom normalization block:**
+
+```typescript
+// Zoom in to max first, then zoom out to ~100%
+// (zoom-in first handles the case where canvas is already at minimum zoom)
+await page.mouse.move(640, 360);
+await page.keyboard.down('Control');
+for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); } // zoom in to max (400%)
+await page.keyboard.up('Control');
+await page.waitForTimeout(200);
+await page.keyboard.down('Control');
+for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); } // zoom out to ~100%
+await page.keyboard.up('Control');
+await page.waitForTimeout(500);
+// NOW read handle boundingBoxes and perform the drag
+```
+
+**Why zoom-in THEN zoom-out:** A zoom-out-only approach silently fails when the canvas is already at minimum zoom (20%) — more zoom-out does nothing, leaving handles too small. Zoom-in first guarantees a known maximum starting point, then zoom-out 10× reliably lands at ~100%.
+
+**NEVER skip this block** even for the very first connection.
+
+### 2. Re-read canvas transform after zoom changes (MANDATORY)
+
+The `tf` variable read at test start becomes **stale** as soon as any zoom operation runs. Using a stale transform for node positioning silently moves nodes to wrong screen positions.
+
+**Rule:** Any node positioned **after** the first zoom normalization block MUST re-read the transform immediately before that positioning:
+
+```typescript
+// Re-read immediately before positioning — do NOT reuse the original tf
+const tfFresh = await page.locator('.vue-flow__transformationpane').evaluate(el => {
+  const m = new DOMMatrix((el as HTMLElement).style.transform);
+  return { scale: m.a, tx: m.e, ty: m.f };
+});
+const targetScreenX = 250 * tfFresh.scale + tfFresh.tx;
+const targetScreenY = 200 * tfFresh.scale + tfFresh.ty;
+```
+
+Name each fresh read descriptively (`tfUU`, `tfReply2`, `tfOutput`, etc.) — never reuse a transform variable from a previous positioning step.
+
 # Flow Designer Canvas 206 — Component Map
 
 > Generated: 2026-03-30T00:13:12.862Z
