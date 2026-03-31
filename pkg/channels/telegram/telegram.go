@@ -3,12 +3,15 @@ package telegram
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -59,23 +62,20 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	var opts []telego.BotOption
 	telegramCfg := cfg.Channels.Telegram
 
+	transport, err := telegramHTTPTransport(telegramCfg)
+	if err != nil {
+		return nil, err
+	}
+	opts = append(opts, telego.WithHTTPClient(&http.Client{Transport: transport}))
+
 	if telegramCfg.Proxy != "" {
 		proxyURL, parseErr := url.Parse(telegramCfg.Proxy)
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid proxy URL %q: %w", telegramCfg.Proxy, parseErr)
 		}
-		opts = append(opts, telego.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			},
-		}))
-	} else if os.Getenv("HTTP_PROXY") != "" || os.Getenv("HTTPS_PROXY") != "" {
-		// Use environment proxy if configured
-		opts = append(opts, telego.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-			},
-		}))
+		transport.Proxy = http.ProxyURL(proxyURL)
+	} else {
+		transport.Proxy = http.ProxyFromEnvironment
 	}
 
 	if baseURL := strings.TrimRight(strings.TrimSpace(telegramCfg.BaseURL), "/"); baseURL != "" {
@@ -103,6 +103,69 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		bot:         bot,
 		config:      cfg,
 		chatIDs:     make(map[string]int64),
+	}, nil
+}
+
+func telegramHTTPTransport(cfg config.TelegramConfig) (*http.Transport, error) {
+	// Start with Go defaults, then inject proxy + TLS tweaks.
+	// We keep timeouts conservative; telego itself also applies request-level timeouts.
+	t := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+	}
+
+	tlsCfg, err := telegramTLSConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if tlsCfg != nil {
+		t.TLSClientConfig = tlsCfg
+	}
+	return t, nil
+}
+
+func telegramTLSConfig(cfg config.TelegramConfig) (*tls.Config, error) {
+	if !cfg.TLSInsecure && strings.TrimSpace(cfg.TLSCAFile) == "" && strings.TrimSpace(cfg.TLSCADir) == "" {
+		return nil, nil
+	}
+
+	base, err := x509.SystemCertPool()
+	if err != nil || base == nil {
+		base = x509.NewCertPool()
+	}
+
+	if caFile := strings.TrimSpace(cfg.TLSCAFile); caFile != "" {
+		pemBytes, readErr := os.ReadFile(caFile)
+		if readErr != nil {
+			return nil, fmt.Errorf("telegram tls_ca_file read %q: %w", caFile, readErr)
+		}
+		if ok := base.AppendCertsFromPEM(pemBytes); !ok {
+			return nil, fmt.Errorf("telegram tls_ca_file %q: no certificates found", caFile)
+		}
+	}
+
+	if caDir := strings.TrimSpace(cfg.TLSCADir); caDir != "" {
+		entries, readErr := os.ReadDir(caDir)
+		if readErr != nil {
+			return nil, fmt.Errorf("telegram tls_ca_dir read %q: %w", caDir, readErr)
+		}
+		for _, ent := range entries {
+			if ent.IsDir() {
+				continue
+			}
+			// Common practice: read every file; ignore parse failures quietly to handle
+			// hashed symlinks / non-PEM files.
+			p := filepath.Join(caDir, ent.Name())
+			b, e := os.ReadFile(p)
+			if e != nil {
+				continue
+			}
+			_ = base.AppendCertsFromPEM(b)
+		}
+	}
+
+	return &tls.Config{
+		RootCAs:            base,
+		InsecureSkipVerify: cfg.TLSInsecure,
 	}, nil
 }
 
