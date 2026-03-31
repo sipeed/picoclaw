@@ -84,6 +84,12 @@ Each **channel** (e.g. Telegram) receives messages and forwards them to the **ag
 
 Runtime config lives in `~/.picoclaw/workspace/config.json` (template: `config/config.example.json`). API keys can be injected via environment variables or stored encrypted in `.security.yml`. The `env://` scheme passes env var names directly as key values without encryption.
 
+### Fork-specific testing conventions
+
+New functionality added in the `sushi30` fork **must be tested in isolated test files** named `*_sushi30_test.go`. This prevents upstream rebases from silently overwriting tests and makes fork additions easy to identify.
+
+Example: `pkg/config/resolve_key_sushi30_test.go` guards the `env://` fix in `resolveKey()`.
+
 ### Frontend stack
 
 React 19 + Vite + TanStack Router + Tailwind CSS 4 + Radix UI + Jotai (state). Build output is embedded into the Go web backend binary via `go:embed`.
