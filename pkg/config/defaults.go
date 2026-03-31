@@ -347,7 +347,7 @@ func DefaultConfig() *Config {
 			Host:      "127.0.0.1",
 			Port:      18790,
 			HotReload: false,
-			LogLevel:  "warn",
+			LogLevel:  DefaultGatewayLogLevel,
 		},
 		Tools: ToolsConfig{
 			FilterSensitiveData: true,

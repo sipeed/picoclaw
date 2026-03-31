@@ -69,6 +69,14 @@ func ensurePicoTokenCachedLocked(configPath string) {
 	refreshPicoTokensLocked(configPath)
 }
 
+func (h *Handler) gatewayCommandArgs() []string {
+	args := []string{"gateway", "-E"}
+	if h.debug {
+		args = append(args, "-d")
+	}
+	return args
+}
+
 const (
 	protocolKey = "Sec-Websocket-Protocol"
 	tokenPrefix = "token."
@@ -531,7 +539,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	execPath := utils.FindPicoclawBinary()
 	logger.InfoC("gateway", fmt.Sprintf("Starting gateway process (%s)", execPath))
 
-	cmd = exec.Command(execPath, "gateway", "-E")
+	cmd = exec.Command(execPath, h.gatewayCommandArgs()...)
 	cmd.Env = os.Environ()
 	// Forward the launcher's config path via the environment variable that
 	// GetConfigPath() already reads, so the gateway sub-process uses the same

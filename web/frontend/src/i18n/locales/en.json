@@ -547,6 +547,7 @@
       "unsaved_changes": "You have unsaved changes."
     },
     "logs": {
+      "log_level_error": "Failed to update log level.",
       "clear": "Clear logs",
       "empty": "Waiting for logs..."
     }

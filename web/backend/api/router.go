@@ -14,6 +14,7 @@ type Handler struct {
 	serverPublic         bool
 	serverPublicExplicit bool
 	serverCIDRs          []string
+	debug                bool
 	oauthMu              sync.Mutex
 	oauthFlows           map[string]*oauthFlow
 	oauthState           map[string]string
@@ -41,6 +42,10 @@ func (h *Handler) SetServerOptions(port int, public bool, publicExplicit bool, a
 	h.serverPublic = public
 	h.serverPublicExplicit = publicExplicit
 	h.serverCIDRs = append([]string(nil), allowedCIDRs...)
+}
+
+func (h *Handler) SetDebug(debug bool) {
+	h.debug = debug
 }
 
 // RegisterRoutes binds all API endpoint handlers to the ServeMux.

@@ -547,6 +547,7 @@
       "unsaved_changes": "您有未保存的更改。"
     },
     "logs": {
+      "log_level_error": "更新日志等级失败。",
       "clear": "清空日志",
       "empty": "等待日志中..."
     }

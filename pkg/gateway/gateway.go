@@ -98,6 +98,12 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	}
 	defer logger.DisableFileLogging()
 
+	if debug {
+		logger.SetLevel(logger.DEBUG)
+	} else {
+		logger.SetLevelFromString(config.ResolveGatewayLogLevel(configPath))
+	}
+
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		logger.Fatalf("error loading config: %v", err)
@@ -109,11 +115,11 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 
 	// Debug mode permanently overrides the config log level to DEBUG.
 	if debug {
-		logger.SetLevel(logger.DEBUG)
 		fmt.Println("🔍 Debug mode enabled")
 	} else {
-		logger.SetLevelFromString(cfg.Gateway.LogLevel)
-		logger.Infof("Log level set to %q", cfg.Gateway.LogLevel)
+		effectiveLogLevel := config.EffectiveGatewayLogLevel(cfg)
+		logger.SetLevelFromString(effectiveLogLevel)
+		logger.Infof("Log level set to %q", effectiveLogLevel)
 	}
 
 	// Enforce singleton: write PID file with generated token.
@@ -476,8 +482,9 @@ func handleConfigReload(
 	// Debug mode permanently overrides the config log level to DEBUG.
 	if !debug {
 		// Update log level last so that reload-related info/warn logs above are not suppressed.
-		logger.SetLevelFromString(newCfg.Gateway.LogLevel)
-		logger.Infof("Log level changing from current to %q", newCfg.Gateway.LogLevel)
+		effectiveLogLevel := config.EffectiveGatewayLogLevel(newCfg)
+		logger.SetLevelFromString(effectiveLogLevel)
+		logger.Infof("Log level changing from current to %q", effectiveLogLevel)
 	}
 
 	return nil
