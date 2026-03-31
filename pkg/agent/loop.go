@@ -2256,6 +2256,56 @@ turnLoop:
 						toolName = toolReq.Tool
 						toolArgs = toolReq.Arguments
 					}
+				case HookActionRespond:
+					// Hook returns result directly, skip tool execution
+					if toolReq != nil && toolReq.HookResult != nil {
+						hookResult := toolReq.HookResult
+						toolDuration := time.Duration(0) // Hook execution time unknown
+
+						// Emit ToolExecEnd event
+						al.emitEvent(
+							EventKindToolExecEnd,
+							ts.eventMeta("runTurn", "turn.tool.end"),
+							ToolExecEndPayload{
+								Tool:       toolName,
+								Duration:   toolDuration,
+								ForLLMLen:  len(hookResult.ContentForLLM()),
+								ForUserLen: len(hookResult.ForUser),
+								IsError:    hookResult.IsError,
+								Async:      hookResult.Async,
+							},
+						)
+
+						// Send ForUser content to user
+						if !hookResult.Silent && hookResult.ForUser != "" && ts.opts.SendResponse {
+							al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+								Channel: ts.channel,
+								ChatID:  ts.chatID,
+								Content: hookResult.ForUser,
+							})
+						}
+
+						// Build tool message
+						contentForLLM := hookResult.ContentForLLM()
+						if al.cfg.Tools.IsFilterSensitiveDataEnabled() {
+							contentForLLM = al.cfg.FilterSensitiveData(contentForLLM)
+						}
+
+						toolResultMsg := providers.Message{
+							Role:       "tool",
+							Content:    contentForLLM,
+							ToolCallID: tc.ID,
+						}
+						messages = append(messages, toolResultMsg)
+						if !ts.opts.NoHistory {
+							ts.agent.Sessions.AddFullMessage(ts.sessionKey, toolResultMsg)
+							ts.recordPersistedMessage(toolResultMsg)
+						}
+
+						// Skip subsequent tool execution flow
+						continue
+					}
+					// If no HookResult, fall back to continue
 				case HookActionDenyTool:
 					allResponsesHandled = false
 					denyContent := hookDeniedToolContent("Tool execution denied by hook", decision.Reason)

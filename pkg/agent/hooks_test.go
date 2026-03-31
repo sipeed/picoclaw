@@ -343,3 +343,171 @@ func TestAgentLoop_Hooks_ToolApproverCanDeny(t *testing.T) {
 		t.Fatalf("expected skipped reason %q, got %q", expected, payload.Reason)
 	}
 }
+
+// respondHook is a test hook for testing HookActionRespond functionality
+type respondHook struct {
+	respondTools map[string]bool // tool names to respond to
+}
+
+func (h *respondHook) BeforeTool(
+	ctx context.Context,
+	call *ToolCallHookRequest,
+) (*ToolCallHookRequest, HookDecision, error) {
+	if h.respondTools[call.Tool] {
+		next := call.Clone()
+		next.HookResult = &tools.ToolResult{
+			ForLLM:   "hook-responded: " + call.Tool,
+			ForUser:  "",
+			Silent:   false,
+			IsError:  false,
+		}
+		return next, HookDecision{Action: HookActionRespond}, nil
+	}
+	return call, HookDecision{Action: HookActionContinue}, nil
+}
+
+func (h *respondHook) AfterTool(
+	ctx context.Context,
+	result *ToolResultHookResponse,
+) (*ToolResultHookResponse, HookDecision, error) {
+	// Should not be called since respond skips tool execution
+	return result, HookDecision{Action: HookActionContinue}, nil
+}
+
+func TestAgentLoop_Hooks_ToolRespondAction(t *testing.T) {
+	provider := &toolHookProvider{}
+	al, agent, cleanup := newHookTestLoop(t, provider)
+	defer cleanup()
+
+	al.RegisterTool(&echoTextTool{})
+	if err := al.MountHook(NamedHook("respond-hook", &respondHook{
+		respondTools: map[string]bool{"echo_text": true},
+	})); err != nil {
+		t.Fatalf("MountHook failed: %v", err)
+	}
+
+	sub := al.SubscribeEvents(16)
+	defer al.UnsubscribeEvents(sub.ID)
+
+	resp, err := al.runAgentLoop(context.Background(), agent, processOptions{
+		SessionKey:      "session-1",
+		Channel:         "cli",
+		ChatID:          "direct",
+		UserMessage:     "run tool",
+		DefaultResponse: defaultResponse,
+		EnableSummary:   false,
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop failed: %v", err)
+	}
+
+	// Verify response comes from hook, not tool
+	expected := "hook-responded: echo_text"
+	if resp != expected {
+		t.Fatalf("expected %q, got %q", expected, resp)
+	}
+
+	// Verify event stream has ToolExecEnd, not actual tool execution
+	events := collectEventStream(sub.C)
+	endEvt, ok := findEvent(events, EventKindToolExecEnd)
+	if !ok {
+		t.Fatal("expected tool exec end event")
+	}
+	payload, ok := endEvt.Payload.(ToolExecEndPayload)
+	if !ok {
+		t.Fatalf("expected ToolExecEndPayload, got %T", endEvt.Payload)
+	}
+	if payload.Tool != "echo_text" {
+		t.Fatalf("expected tool echo_text, got %q", payload.Tool)
+	}
+	if payload.ForLLMLen != len(expected) {
+		t.Fatalf("expected ForLLMLen %d, got %d", len(expected), payload.ForLLMLen)
+	}
+}
+
+// denyToolHook tests HookActionDenyTool functionality
+type denyToolHook struct {
+	denyTools map[string]bool
+}
+
+func (h *denyToolHook) BeforeTool(
+	ctx context.Context,
+	call *ToolCallHookRequest,
+) (*ToolCallHookRequest, HookDecision, error) {
+	if h.denyTools[call.Tool] {
+		return call, HookDecision{Action: HookActionDenyTool, Reason: "tool denied by hook"}, nil
+	}
+	return call, HookDecision{Action: HookActionContinue}, nil
+}
+
+func (h *denyToolHook) AfterTool(
+	ctx context.Context,
+	result *ToolResultHookResponse,
+) (*ToolResultHookResponse, HookDecision, error) {
+	return result, HookDecision{Action: HookActionContinue}, nil
+}
+
+func TestAgentLoop_Hooks_ToolDenyAction(t *testing.T) {
+	provider := &toolHookProvider{}
+	al, agent, cleanup := newHookTestLoop(t, provider)
+	defer cleanup()
+
+	al.RegisterTool(&echoTextTool{})
+	if err := al.MountHook(NamedHook("deny-hook", &denyToolHook{
+		denyTools: map[string]bool{"echo_text": true},
+	})); err != nil {
+		t.Fatalf("MountHook failed: %v", err)
+	}
+
+	resp, err := al.runAgentLoop(context.Background(), agent, processOptions{
+		SessionKey:      "session-1",
+		Channel:         "cli",
+		ChatID:          "direct",
+		UserMessage:     "run tool",
+		DefaultResponse: defaultResponse,
+		EnableSummary:   false,
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop failed: %v", err)
+	}
+
+	expected := "Tool execution denied by hook: tool denied by hook"
+	if resp != expected {
+		t.Fatalf("expected %q, got %q", expected, resp)
+	}
+}
+
+func TestHookManager_BeforeTool_RespondAction(t *testing.T) {
+	hm := NewHookManager(nil)
+	defer hm.Close()
+
+	// Register a hook that returns respond action
+	hook := &respondHook{
+		respondTools: map[string]bool{"test_tool": true},
+	}
+	if err := hm.Mount(NamedHook("respond-test", hook)); err != nil {
+		t.Fatalf("mount hook: %v", err)
+	}
+
+	// Call BeforeTool
+	req := &ToolCallHookRequest{
+		Tool:      "test_tool",
+		Arguments: map[string]any{"arg": "value"},
+	}
+	result, decision := hm.BeforeTool(context.Background(), req)
+
+	// Verify decision is respond
+	if decision.Action != HookActionRespond {
+		t.Fatalf("expected action %q, got %q", HookActionRespond, decision.Action)
+	}
+
+	// Verify HookResult is correctly set
+	if result.HookResult == nil {
+		t.Fatal("expected HookResult to be set")
+	}
+	if result.HookResult.ForLLM != "hook-responded: test_tool" {
+		t.Fatalf("unexpected HookResult.ForLLM: %q", result.HookResult.ForLLM)
+	}
+}
