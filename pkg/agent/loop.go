@@ -1888,15 +1888,36 @@ turnLoop:
 			}
 		}
 
+		// Extract user message preview for logging
+		userMessagePreview := ""
+		for i := len(callMessages) - 1; i >= 0; i-- {
+			if callMessages[i].Role == "user" && callMessages[i].Content != "" {
+				userMessagePreview = callMessages[i].Content
+				if len(userMessagePreview) > 100 {
+					userMessagePreview = userMessagePreview[:97] + "..."
+				}
+				break
+			}
+		}
+
+		// Extract tool names for logging
+		toolNames := make([]string, 0, len(providerToolDefs))
+		for _, tool := range providerToolDefs {
+			toolNames = append(toolNames, tool.Function.Name)
+		}
+
 		al.emitEvent(
 			EventKindLLMRequest,
 			ts.eventMeta("runTurn", "turn.llm.request"),
 			LLMRequestPayload{
-				Model:         llmModel,
-				MessagesCount: len(callMessages),
-				ToolsCount:    len(providerToolDefs),
-				MaxTokens:     ts.agent.MaxTokens,
-				Temperature:   ts.agent.Temperature,
+				Model:               llmModel,
+				MessagesCount:       len(callMessages),
+				ToolsCount:          len(providerToolDefs),
+				MaxTokens:           ts.agent.MaxTokens,
+				Temperature:         ts.agent.Temperature,
+				UserMessagePreview:  userMessagePreview,
+				SystemPromptPreview: "", // Can add if needed
+				ToolNames:           toolNames,
 			},
 		)
 
@@ -2132,13 +2153,44 @@ turnLoop:
 			ts.channel,
 			al.targetReasoningChannelID(ts.channel),
 		)
+		// Extract content preview and tool call details for logging
+		contentPreview := response.Content
+		if len(contentPreview) > 200 {
+			contentPreview = contentPreview[:197] + "..."
+		}
+
+		toolCallDetails := make([]ToolCallDetail, 0, len(response.ToolCalls))
+		for _, tc := range response.ToolCalls {
+			// Skip if Function is nil (some providers may return tool calls without function details)
+			if tc.Function == nil {
+				continue
+			}
+			argsStr := ""
+			for k, v := range tc.Function.Arguments {
+				if argsStr != "" {
+					argsStr += ", "
+				}
+				argsStr += fmt.Sprintf("%v=%v", k, v)
+			}
+			if len(argsStr) > 100 {
+				argsStr = argsStr[:97] + "..."
+			}
+			toolCallDetails = append(toolCallDetails, ToolCallDetail{
+				Name:      tc.Function.Name,
+				Arguments: argsStr,
+			})
+		}
+
 		al.emitEvent(
 			EventKindLLMResponse,
 			ts.eventMeta("runTurn", "turn.llm.response"),
 			LLMResponsePayload{
-				ContentLen:   len(response.Content),
-				ToolCalls:    len(response.ToolCalls),
-				HasReasoning: response.Reasoning != "" || response.ReasoningContent != "",
+				ContentLen:      len(response.Content),
+				ToolCalls:       len(response.ToolCalls),
+				HasReasoning:    response.Reasoning != "" || response.ReasoningContent != "",
+				ContentPreview:  contentPreview,
+				ToolCallDetails: toolCallDetails,
+				FinishReason:    response.FinishReason,
 			},
 		)
 
@@ -2188,14 +2240,14 @@ turnLoop:
 			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
 		}
 
-		toolNames := make([]string, 0, len(normalizedToolCalls))
+		toolCallNames := make([]string, 0, len(normalizedToolCalls))
 		for _, tc := range normalizedToolCalls {
-			toolNames = append(toolNames, tc.Name)
+			toolCallNames = append(toolCallNames, tc.Name)
 		}
 		logger.InfoCF("agent", "LLM requested tool calls",
 			map[string]any{
 				"agent_id":  ts.agent.ID,
-				"tools":     toolNames,
+				"tools":     toolCallNames,
 				"count":     len(normalizedToolCalls),
 				"iteration": iteration,
 			})
