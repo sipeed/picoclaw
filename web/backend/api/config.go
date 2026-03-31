@@ -65,6 +65,7 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
+	webAPIKeyPatch := parseWebSearchAPIKeyPatch(body)
 	if execAllowRemoteOmitted(body) {
 		cfg.Tools.Exec.AllowRemote = config.DefaultConfig().Tools.Exec.AllowRemote
 	}
@@ -77,6 +78,7 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyConfigSecretsFromMap(&cfg, raw)
+	applyWebSearchAPIKeyPatch(&cfg, webAPIKeyPatch)
 
 	if errs := validateConfig(&cfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -134,6 +136,7 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
+	webAPIKeyPatch := parseWebSearchAPIKeyPatch(patchBody)
 
 	// Load existing config and marshal to a map for merging
 	cfg, err := config.LoadConfig(h.configPath)
@@ -176,6 +179,7 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyConfigSecretsFromMap(&newCfg, base)
+	applyWebSearchAPIKeyPatch(&newCfg, webAPIKeyPatch)
 
 	if errs := validateConfig(&newCfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -199,6 +203,79 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+type webSearchAPIKeyPatch struct {
+	braveAPIKey       *string
+	tavilyAPIKey      *string
+	perplexityAPIKey  *string
+	glmSearchAPIKey   *string
+	baiduSearchAPIKey *string
+}
+
+func parseWebSearchAPIKeyPatch(body []byte) webSearchAPIKeyPatch {
+	var raw struct {
+		Tools *struct {
+			Web *struct {
+				Brave *struct {
+					APIKey *string `json:"api_key"`
+				} `json:"brave"`
+				Tavily *struct {
+					APIKey *string `json:"api_key"`
+				} `json:"tavily"`
+				Perplexity *struct {
+					APIKey *string `json:"api_key"`
+				} `json:"perplexity"`
+				GLMSearch *struct {
+					APIKey *string `json:"api_key"`
+				} `json:"glm_search"`
+				BaiduSearch *struct {
+					APIKey *string `json:"api_key"`
+				} `json:"baidu_search"`
+			} `json:"web"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return webSearchAPIKeyPatch{}
+	}
+
+	patch := webSearchAPIKeyPatch{}
+	if raw.Tools != nil && raw.Tools.Web != nil {
+		if raw.Tools.Web.Brave != nil && raw.Tools.Web.Brave.APIKey != nil {
+			patch.braveAPIKey = raw.Tools.Web.Brave.APIKey
+		}
+		if raw.Tools.Web.Tavily != nil && raw.Tools.Web.Tavily.APIKey != nil {
+			patch.tavilyAPIKey = raw.Tools.Web.Tavily.APIKey
+		}
+		if raw.Tools.Web.Perplexity != nil && raw.Tools.Web.Perplexity.APIKey != nil {
+			patch.perplexityAPIKey = raw.Tools.Web.Perplexity.APIKey
+		}
+		if raw.Tools.Web.GLMSearch != nil && raw.Tools.Web.GLMSearch.APIKey != nil {
+			patch.glmSearchAPIKey = raw.Tools.Web.GLMSearch.APIKey
+		}
+		if raw.Tools.Web.BaiduSearch != nil && raw.Tools.Web.BaiduSearch.APIKey != nil {
+			patch.baiduSearchAPIKey = raw.Tools.Web.BaiduSearch.APIKey
+		}
+	}
+	return patch
+}
+
+func applyWebSearchAPIKeyPatch(cfg *config.Config, patch webSearchAPIKeyPatch) {
+	if patch.braveAPIKey != nil {
+		cfg.Tools.Web.Brave.SetAPIKey(strings.TrimSpace(*patch.braveAPIKey))
+	}
+	if patch.tavilyAPIKey != nil {
+		cfg.Tools.Web.Tavily.SetAPIKey(strings.TrimSpace(*patch.tavilyAPIKey))
+	}
+	if patch.perplexityAPIKey != nil {
+		cfg.Tools.Web.Perplexity.SetAPIKey(strings.TrimSpace(*patch.perplexityAPIKey))
+	}
+	if patch.glmSearchAPIKey != nil {
+		cfg.Tools.Web.GLMSearch.APIKey.Set(strings.TrimSpace(*patch.glmSearchAPIKey))
+	}
+	if patch.baiduSearchAPIKey != nil {
+		cfg.Tools.Web.BaiduSearch.APIKey.Set(strings.TrimSpace(*patch.baiduSearchAPIKey))
+	}
 }
 
 // handleTestCommandPatterns tests a command against whitelist and blacklist patterns.
