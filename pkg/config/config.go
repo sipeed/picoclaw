@@ -561,6 +561,9 @@ type VoiceConfig struct {
 	ModelName         string `json:"model_name,omitempty"         env:"PICOCLAW_VOICE_MODEL_NAME"`
 	EchoTranscription bool   `json:"echo_transcription"           env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
 	ElevenLabsAPIKey  string `json:"elevenlabs_api_key,omitempty" env:"PICOCLAW_VOICE_ELEVENLABS_API_KEY"`
+	ParakeetEnabled   bool   `json:"parakeet_enabled"             env:"PICOCLAW_VOICE_PARAKEET_ENABLED"`
+	ParakeetAPIBase   string `json:"parakeet_api_base,omitempty"  env:"PICOCLAW_VOICE_PARAKEET_API_BASE"`
+	ParakeetModel     string `json:"parakeet_model,omitempty"     env:"PICOCLAW_VOICE_PARAKEET_MODEL"`
 }
 
 // ModelConfig represents a model-centric provider configuration.

@@ -440,7 +440,10 @@
   },
   "voice": {
     "model_name": "",
-    "echo_transcription": false
+    "echo_transcription": false,
+    "parakeet_enabled": false,
+    "parakeet_api_base": "http://localhost:5092",
+    "parakeet_model": "parakeet"
   },
   "hooks": {
     "enabled": true,
