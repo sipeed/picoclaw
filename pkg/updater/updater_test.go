@@ -49,7 +49,6 @@ func TestDownloadAndExtractRelease_RealPlatforms(t *testing.T) {
 	apiURL := GetProdReleaseAPIURL()
 	for _, c := range combos {
 		t.Run(c.platform+"_"+c.arch, func(t *testing.T) {
-			// allow these subtests to run sequentially (network heavy)
 			assetURL, err := findAssetURL(apiURL, c.platform, c.arch)
 			if err != nil {
 				t.Fatalf("findAssetURL error for %s/%s: %v", c.platform, c.arch, err)
