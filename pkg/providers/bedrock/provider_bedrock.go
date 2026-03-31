@@ -208,7 +208,10 @@ func (p *Provider) Chat(
 	if err != nil {
 		// Check for SSO token expiration errors and provide actionable guidance
 		if isSSOTokenError(err) {
-			return nil, fmt.Errorf("bedrock converse: AWS credentials may have expired. If using AWS SSO, run 'aws sso login' to refresh: %w", err)
+			return nil, fmt.Errorf(
+				"bedrock converse: AWS credentials may have expired. If using AWS SSO, run 'aws sso login' to refresh: %w",
+				err,
+			)
 		}
 		return nil, fmt.Errorf("bedrock converse: %w", err)
 	}
