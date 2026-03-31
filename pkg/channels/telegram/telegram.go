@@ -590,6 +590,8 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		CanonicalID: identity.BuildCanonicalID("telegram", platformID),
 		Username:    user.Username,
 		DisplayName: user.FirstName,
+		FirstName:   user.FirstName,
+		LastName:    user.LastName,
 	}
 
 	// check allowlist to avoid downloading attachments for rejected users

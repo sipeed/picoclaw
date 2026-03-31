@@ -298,12 +298,12 @@ func TestAgentLoop_Continue_NoMessages(t *testing.T) {
 		t.Fatal("expected provider to be initialized")
 	}
 
-	resp, err := al.Continue(context.Background(), "test-session", "test", "chat1")
+	resp, err := al.continueResponse(context.Background(), "test-session", "test", "chat1", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp != "" {
-		t.Fatalf("expected empty response for no steering messages, got %q", resp)
+	if resp.Content != "" {
+		t.Fatalf("expected empty response for no steering messages, got %q", resp.Content)
 	}
 }
 
@@ -331,12 +331,12 @@ func TestAgentLoop_Continue_WithMessages(t *testing.T) {
 
 	al.Steer(providers.Message{Role: "user", Content: "new direction"})
 
-	resp, err := al.Continue(context.Background(), "test-session", "test", "chat1")
+	resp, err := al.continueResponse(context.Background(), "test-session", "test", "chat1", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp != "continued response" {
-		t.Fatalf("expected 'continued response', got %q", resp)
+	if resp.Content != "continued response" {
+		t.Fatalf("expected 'continued response', got %q", resp.Content)
 	}
 }
 
@@ -1073,12 +1073,12 @@ func TestAgentLoop_Continue_PreservesSteeringMedia(t *testing.T) {
 		t.Fatalf("Steer failed: %v", err)
 	}
 
-	resp, err := al.Continue(context.Background(), sessionKey, "test", "chat1")
+	resp, err := al.continueResponse(context.Background(), sessionKey, "test", "chat1", "")
 	if err != nil {
-		t.Fatalf("Continue failed: %v", err)
+		t.Fatalf("continueResponse failed: %v", err)
 	}
-	if resp != "ack" {
-		t.Fatalf("expected ack, got %q", resp)
+	if resp.Content != "ack" {
+		t.Fatalf("expected ack, got %q", resp.Content)
 	}
 
 	capMu.Lock()
@@ -1582,6 +1582,170 @@ func (w *wrappingProvider) Chat(
 func (w *wrappingProvider) GetDefaultModel() string {
 	return w.inner.GetDefaultModel()
 }
+
+// TestContinueResponse_EphemeralPrefixBeforePersistence verifies the two
+// invariants of the ephemeral-prefix design:
+//
+//  1. The steering continuation's LLM call sees the previous assistant reply
+//     in its message list even though OnDelivered has not fired yet (i.e. the
+//     reply is not yet in session history).
+//
+//  2. Session history does not contain the assistant reply at the time the
+//     continuation starts — only ephemeral context was injected.
+func TestContinueResponse_EphemeralPrefixBeforePersistence(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+
+	// Two-call provider: first returns the initial reply, second (for the
+	// steering continuation) records its message list so we can inspect it.
+	const firstReply = "first assistant reply"
+	const continuationReply = "continuation reply"
+
+	var capturedMessages []providers.Message
+	var captureMu sync.Mutex
+
+	// sequencedProvider returns firstReply on call 1, continuationReply on call 2,
+	// and records the message list for the second (steering continuation) call.
+	seqProv := &sequencedProvider{
+		responses: []string{firstReply, continuationReply},
+		onChat: func(n int, msgs []providers.Message) {
+			if n == 2 {
+				captureMu.Lock()
+				capturedMessages = append([]providers.Message(nil), msgs...)
+				captureMu.Unlock()
+			}
+		},
+	}
+	al := NewAgentLoop(cfg, msgBus, seqProv)
+
+	ctx := context.Background()
+	const sessionKey = "agent:main:main"
+	const channel = "test"
+	const chatID = "chat1"
+
+	// Step 1: process the initial user message.
+	// Do NOT call OnDelivered — the assistant reply must remain unpersisted.
+	msg := bus.InboundMessage{
+		Channel:  channel,
+		SenderID: "user1",
+		ChatID:   chatID,
+		Content:  "hello",
+	}
+	response, err := al.processMessage(ctx, msg)
+	if err != nil {
+		t.Fatalf("processMessage: %v", err)
+	}
+	if response.Content != firstReply {
+		t.Fatalf("first reply = %q, want %q", response.Content, firstReply)
+	}
+
+	// Confirm: assistant message is NOT in session history yet.
+	agent := al.registry.GetDefaultAgent()
+	histBefore := agent.Sessions.GetHistory(sessionKey)
+	for _, m := range histBefore {
+		if m.Role == "assistant" {
+			t.Fatalf("assistant in history before OnDelivered: %+v", m)
+		}
+	}
+
+	// Step 2: enqueue a steering message and run the continuation, passing
+	// the previous assistant reply as ephemeral context.
+	if pushErr := al.steering.pushScope(sessionKey, providers.Message{
+		Role:    "user",
+		Content: "follow-up question",
+	}); pushErr != nil {
+		t.Fatalf("pushScope: %v", pushErr)
+	}
+
+	continued, err := al.continueResponse(ctx, sessionKey, channel, chatID, firstReply)
+	if err != nil {
+		t.Fatalf("continueResponse: %v", err)
+	}
+	if continued.Content != continuationReply {
+		t.Fatalf("continuation reply = %q, want %q", continued.Content, continuationReply)
+	}
+
+	// Step 3: verify the LLM received the ephemeral assistant reply in context.
+	captureMu.Lock()
+	msgs := append([]providers.Message(nil), capturedMessages...)
+	captureMu.Unlock()
+
+	if len(msgs) == 0 {
+		t.Fatal("no messages captured for the continuation LLM call")
+	}
+	var foundEphemeral bool
+	for _, m := range msgs {
+		if m.Role == "assistant" && m.Content == firstReply {
+			foundEphemeral = true
+			break
+		}
+	}
+	if !foundEphemeral {
+		roles := make([]string, len(msgs))
+		for i, m := range msgs {
+			roles[i] = fmt.Sprintf("%s:%q", m.Role, m.Content)
+		}
+		t.Fatalf("ephemeral assistant reply not found in LLM context; messages: %v", roles)
+	}
+
+	// Step 4: verify the session history still does not contain the first
+	// assistant reply (OnDelivered was never called for it).
+	histAfter := agent.Sessions.GetHistory(sessionKey)
+	for _, m := range histAfter {
+		if m.Role == "assistant" && m.Content == firstReply {
+			t.Fatal("first assistant reply persisted to history before OnDelivered")
+		}
+	}
+}
+
+// sequencedProvider returns responses in order, calling onChat(n, msgs) where
+// n is the 1-based call index.
+type sequencedProvider struct {
+	responses []string
+	onChat    func(n int, msgs []providers.Message)
+	mu        sync.Mutex
+	calls     int
+}
+
+func (s *sequencedProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	s.mu.Lock()
+	s.calls++
+	n := s.calls
+	resp := ""
+	if n <= len(s.responses) {
+		resp = s.responses[n-1]
+	}
+	s.mu.Unlock()
+
+	if s.onChat != nil {
+		s.onChat(n, messages)
+	}
+	return &providers.LLMResponse{Content: resp, ToolCalls: []providers.ToolCall{}}, nil
+}
+
+func (s *sequencedProvider) GetDefaultModel() string { return "seq-model" }
 
 // Ensure NormalizeToolCall handles our test tool calls.
 func init() {

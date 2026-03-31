@@ -151,8 +151,8 @@ func TestProcessMessage_IncludesCurrentSenderInDynamicContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("processMessage() error = %v", err)
 	}
-	if response != "Mock response" {
-		t.Fatalf("processMessage() response = %q, want %q", response, "Mock response")
+	if response.Content != "Mock response" {
+		t.Fatalf("processMessage() response = %q, want %q", response.Content, "Mock response")
 	}
 	if len(provider.lastMessages) == 0 {
 		t.Fatal("provider did not receive any messages")
@@ -207,8 +207,8 @@ func TestProcessMessage_UseCommandLoadsRequestedSkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("processMessage() error = %v", err)
 	}
-	if response != "Mock response" {
-		t.Fatalf("processMessage() response = %q, want %q", response, "Mock response")
+	if response.Content != "Mock response" {
+		t.Fatalf("processMessage() response = %q, want %q", response.Content, "Mock response")
 	}
 	if len(provider.lastMessages) == 0 {
 		t.Fatal("provider did not receive any messages")
@@ -297,8 +297,8 @@ func TestProcessMessage_UseCommandArmsSkillForNextMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("processMessage() arm error = %v", err)
 	}
-	if !strings.Contains(response, `Skill "shell" is armed for your next message.`) {
-		t.Fatalf("arm response = %q, want armed confirmation", response)
+	if !strings.Contains(response.Content, `Skill "shell" is armed for your next message.`) {
+		t.Fatalf("arm response = %q, want armed confirmation", response.Content)
 	}
 
 	response, err = al.processMessage(context.Background(), bus.InboundMessage{
@@ -310,8 +310,8 @@ func TestProcessMessage_UseCommandArmsSkillForNextMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("processMessage() follow-up error = %v", err)
 	}
-	if response != "Mock response" {
-		t.Fatalf("follow-up response = %q, want %q", response, "Mock response")
+	if response.Content != "Mock response" {
+		t.Fatalf("follow-up response = %q, want %q", response.Content, "Mock response")
 	}
 	if len(provider.lastMessages) == 0 {
 		t.Fatal("provider did not receive any messages")
@@ -628,8 +628,8 @@ func TestProcessMessage_MediaToolHandledSkipsFollowUpLLMAndFinalText(t *testing.
 	if err != nil {
 		t.Fatalf("processMessage() error = %v", err)
 	}
-	if response != "" {
-		t.Fatalf("expected no final response when media tool already handled delivery, got %q", response)
+	if response.Content != "" {
+		t.Fatalf("expected no final response when media tool already handled delivery, got %q", response.Content)
 	}
 	if provider.calls != 1 {
 		t.Fatalf("expected exactly 1 LLM call, got %d", provider.calls)
@@ -723,8 +723,8 @@ func TestProcessMessage_HandledToolProcessesQueuedSteeringBeforeReturning(t *tes
 	if err != nil {
 		t.Fatalf("processMessage() error = %v", err)
 	}
-	if response != "Handled the queued steering message." {
-		t.Fatalf("response = %q, want queued steering response", response)
+	if response.Content != "Handled the queued steering message." {
+		t.Fatalf("response = %q, want queued steering response", response.Content)
 	}
 	if provider.calls != 2 {
 		t.Fatalf("expected 2 LLM calls after queued steering, got %d", provider.calls)
@@ -774,8 +774,8 @@ func TestProcessMessage_MediaArtifactCanBeForwardedBySendFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("processMessage() error = %v", err)
 	}
-	if response != "" {
-		t.Fatalf("expected no final response after send_file handled delivery, got %q", response)
+	if response.Content != "" {
+		t.Fatalf("expected no final response after send_file handled delivery, got %q", response.Content)
 	}
 	if provider.calls != 2 {
 		t.Fatalf("expected 2 LLM calls (artifact + send_file), got %d", provider.calls)
@@ -1361,7 +1361,13 @@ func (h testHelper) executeAndGetResponse(tb testing.TB, ctx context.Context, ms
 	if err != nil {
 		tb.Fatalf("processMessage failed: %v", err)
 	}
-	return response
+	// In tests there is no channel manager to deliver the message and call
+	// OnDelivered with real platform IDs.  Call it with nil to trigger the
+	// session-history save synchronously, simulating a successful delivery.
+	if response.OnDelivered != nil {
+		response.OnDelivered(nil)
+	}
+	return response.Content
 }
 
 const responseTimeout = 3 * time.Second
@@ -2448,8 +2454,8 @@ func TestProcessMessage_PublishesReasoningContentToReasoningChannel(t *testing.T
 	if err != nil {
 		t.Fatalf("processMessage() error = %v", err)
 	}
-	if response != "final answer" {
-		t.Fatalf("processMessage() response = %q, want %q", response, "final answer")
+	if response.Content != "final answer" {
+		t.Fatalf("processMessage() response = %q, want %q", response.Content, "final answer")
 	}
 
 	select {
@@ -2554,8 +2560,8 @@ func TestProcessMessage_PublishesToolFeedbackWhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("processMessage() error = %v", err)
 	}
-	if response != "HEARTBEAT_OK" {
-		t.Fatalf("processMessage() response = %q, want %q", response, "HEARTBEAT_OK")
+	if response.Content != "HEARTBEAT_OK" {
+		t.Fatalf("processMessage() response = %q, want %q", response.Content, "HEARTBEAT_OK")
 	}
 
 	select {
@@ -2998,8 +3004,8 @@ func TestProcessMessage_ContextOverflowRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("processMessage() error = %v", err)
 	}
-	if response != "Recovered from overflow" {
-		t.Fatalf("response = %q, want %q", response, "Recovered from overflow")
+	if response.Content != "Recovered from overflow" {
+		t.Fatalf("response = %q, want %q", response.Content, "Recovered from overflow")
 	}
 
 	if provider.calls != 2 {
@@ -3039,10 +3045,111 @@ func TestProcessMessage_ContextOverflow_AnthropicStyle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("processMessage() error = %v", err)
 	}
-	if !strings.Contains(response, "Anthropic recovery success") {
-		t.Fatalf("response = %q, want success message", response)
+	if !strings.Contains(response.Content, "Anthropic recovery success") {
+		t.Fatalf("response = %q, want success message", response.Content)
 	}
 	if provider.calls != 2 {
 		t.Fatalf("expected 2 calls for retry, got %d", provider.calls)
+	}
+}
+
+// TestOnDelivered_SavesAssistantMessageWithRealIDs verifies the two-phase
+// persistence design: the assistant message is absent from session history until
+// OnDelivered fires, and the MessageIDs passed to the callback are recorded.
+func TestOnDelivered_SavesAssistantMessageWithRealIDs(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "hello world"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	ctx := context.Background()
+	// ProcessDirectWithChannel calls OnDelivered(nil) internally, so call
+	// processMessage directly to control when delivery is confirmed.
+	msg := bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "cron",
+		ChatID:   "chat1",
+		Content:  "say hello",
+	}
+
+	response, err := al.processMessage(ctx, msg)
+	if err != nil {
+		t.Fatalf("processMessage: %v", err)
+	}
+	if response.Content != "hello world" {
+		t.Fatalf("content = %q, want %q", response.Content, "hello world")
+	}
+	if response.OnDelivered == nil {
+		t.Fatal("OnDelivered must be set for a non-empty response")
+	}
+
+	// Resolve the session key the same way processMessage did.
+	agent := al.registry.GetDefaultAgent()
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: "test",
+		Peer:    &routing.RoutePeer{Kind: "direct", ID: "cron"},
+	})
+	sessionKey := route.SessionKey
+
+	// Before OnDelivered fires: only the user message is in history.
+	histBefore := agent.Sessions.GetHistory(sessionKey)
+	for _, m := range histBefore {
+		if m.Role == "assistant" {
+			t.Fatalf("assistant message in history before OnDelivered: %+v", m)
+		}
+	}
+
+	// Simulate the channel manager confirming delivery with two chunk IDs
+	// (e.g. a long message split into two Telegram messages).
+	wantIDs := []string{"platform-chunk-1", "platform-chunk-2"}
+	response.OnDelivered(wantIDs)
+
+	// After OnDelivered fires: the assistant message must appear with the real IDs.
+	histAfter := agent.Sessions.GetHistory(sessionKey)
+	var got *providers.Message
+	for i := range histAfter {
+		if histAfter[i].Role == "assistant" {
+			got = &histAfter[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("assistant message absent from history after OnDelivered")
+	}
+	if got.Content != "hello world" {
+		t.Fatalf("assistant content = %q, want %q", got.Content, "hello world")
+	}
+	if !slices.Equal(got.MessageIDs, wantIDs) {
+		t.Fatalf("MessageIDs = %v, want %v", got.MessageIDs, wantIDs)
+	}
+
+	// Calling OnDelivered a second time (idempotency via sync.Once) must not
+	// duplicate the assistant message in history.
+	response.OnDelivered([]string{"should-be-ignored"})
+	histFinal := agent.Sessions.GetHistory(sessionKey)
+	assistantCount := 0
+	for _, m := range histFinal {
+		if m.Role == "assistant" {
+			assistantCount++
+		}
+	}
+	if assistantCount != 1 {
+		t.Fatalf("expected 1 assistant message after duplicate OnDelivered, got %d", assistantCount)
 	}
 }

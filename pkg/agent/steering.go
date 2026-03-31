@@ -290,8 +290,16 @@ func (al *AgentLoop) continueWithSteeringMessages(
 	ctx context.Context,
 	agent *AgentInstance,
 	sessionKey, channel, chatID string,
+	prevContent string,
 	steeringMsgs []providers.Message,
-) (string, error) {
+) (agentResponse, error) {
+	// Pass the previous assistant reply as ephemeral context so the model can
+	// see it without it being persisted to session history prematurely (that
+	// happens asynchronously via OnDelivered after channel delivery).
+	var ephemeral []providers.Message
+	if prevContent != "" {
+		ephemeral = []providers.Message{{Role: "assistant", Content: prevContent}}
+	}
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:              sessionKey,
 		Channel:                 channel,
@@ -299,6 +307,7 @@ func (al *AgentLoop) continueWithSteeringMessages(
 		DefaultResponse:         defaultResponse,
 		EnableSummary:           true,
 		SendResponse:            false,
+		EphemeralPrefix:         ephemeral,
 		InitialSteeringMessages: steeringMsgs,
 		SkipInitialSteeringPoll: true,
 	})
@@ -319,31 +328,33 @@ func (al *AgentLoop) agentForSession(sessionKey string) *AgentInstance {
 	return registry.GetDefaultAgent()
 }
 
-// Continue resumes an idle agent by dequeuing any pending steering messages
-// and running them through the agent loop. This is used when the agent's last
-// message was from the assistant (i.e., it has stopped processing) and the
-// user has since enqueued steering messages.
-//
-// If no steering messages are pending, it returns an empty string.
-func (al *AgentLoop) Continue(ctx context.Context, sessionKey, channel, chatID string) (string, error) {
+// continueResponse dequeues pending steering messages and runs them through the agent loop.
+// prevContent is the assistant reply from the immediately preceding turn; it is injected as
+// ephemeral context so the model can reference it before OnDelivered persists it to history.
+// Returns an agentResponse with OnDelivered set for delayed session persistence.
+// If no steering messages are pending, returns an empty agentResponse.
+func (al *AgentLoop) continueResponse(
+	ctx context.Context,
+	sessionKey, channel, chatID, prevContent string,
+) (agentResponse, error) {
 	if active := al.GetActiveTurn(); active != nil {
-		return "", fmt.Errorf("turn %s is still active", active.TurnID)
+		return agentResponse{}, fmt.Errorf("turn %s is still active", active.TurnID)
 	}
 	if err := al.ensureHooksInitialized(ctx); err != nil {
-		return "", err
+		return agentResponse{}, err
 	}
 	if err := al.ensureMCPInitialized(ctx); err != nil {
-		return "", err
+		return agentResponse{}, err
 	}
 
 	steeringMsgs := al.dequeueSteeringMessagesForScopeWithFallback(sessionKey)
 	if len(steeringMsgs) == 0 {
-		return "", nil
+		return agentResponse{}, nil
 	}
 
 	agent := al.agentForSession(sessionKey)
 	if agent == nil {
-		return "", fmt.Errorf("no agent available for session %q", sessionKey)
+		return agentResponse{}, fmt.Errorf("no agent available for session %q", sessionKey)
 	}
 
 	if tool, ok := agent.Tools.Get("message"); ok {
@@ -352,7 +363,7 @@ func (al *AgentLoop) Continue(ctx context.Context, sessionKey, channel, chatID s
 		}
 	}
 
-	return al.continueWithSteeringMessages(ctx, agent, sessionKey, channel, chatID, steeringMsgs)
+	return al.continueWithSteeringMessages(ctx, agent, sessionKey, channel, chatID, prevContent, steeringMsgs)
 }
 
 func (al *AgentLoop) InterruptGraceful(hint string) error {
