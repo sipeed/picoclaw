@@ -177,7 +177,6 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]s
 		}
 	}
 
-	return c.sendChunk(ctx, channelID, msg.Content, msg.ReplyToMessageID)
 	msgID, err := c.sendChunk(ctx, channelID, msg.Content, msg.ReplyToMessageID)
 	if err != nil {
 		return nil, err
