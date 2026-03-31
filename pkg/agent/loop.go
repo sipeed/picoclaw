@@ -102,7 +102,7 @@ type processOptions struct {
 	SendResponse            bool                     // Whether to send response via bus
 	SuppressToolFeedback    bool                     // Whether to suppress inline tool feedback messages
 	NoHistory               bool                     // If true, don't load session history (for heartbeat)
-	SkipInitialSteeringPoll bool                     // If true, skip the steering poll at loop start (used by Continue)
+	SkipInitialSteeringPoll bool                     // If true, skip the steering poll at loop start (used by continueResponse)
 	Sender                  *providers.MessageSender // Author identity (nil for system/automated messages)
 }
 
@@ -112,6 +112,12 @@ type continuationTarget struct {
 	ChatID     string
 }
 
+// agentResponse carries the result of a single agent turn together with the
+// channel/chat routing needed to publish it and the delivery callback.
+// OnDelivered is called by the channel manager after all message chunks have
+// been successfully sent; it receives the platform message IDs of the
+// delivered chunks and is responsible for persisting the assistant message to
+// session history. It may be nil (e.g. NoHistory turns, heartbeats).
 type agentResponse struct {
 	Content     string
 	Channel     string

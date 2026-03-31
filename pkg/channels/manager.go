@@ -752,6 +752,9 @@ func splitByLength(content string, maxLen int) []string {
 //   - ErrNotRunning / ErrSendFailed: permanent, no retry
 //   - ErrRateLimit: fixed delay retry
 //   - ErrTemporary / unknown: exponential backoff retry
+//
+// Returns the platform message IDs returned by the channel and true on
+// success, or nil/false if delivery ultimately failed.
 func (m *Manager) sendWithRetry(
 	ctx context.Context,
 	name string,

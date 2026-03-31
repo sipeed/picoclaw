@@ -39,7 +39,11 @@ type OutboundMessage struct {
 	Content          string            `json:"content"`
 	ReplyToMessageID string            `json:"reply_to_message_id,omitempty"`
 	Metadata         map[string]string `json:"metadata,omitempty"`
-	OnDelivered      func(msgIDs []string) `json:"-"`
+	// OnDelivered is called by the channel manager after all chunks of this
+	// message have been successfully delivered. msgIDs contains the platform
+	// message IDs of each sent chunk; it may be empty if the channel does not
+	// return IDs. The callback fires at most once per OutboundMessage.
+	OnDelivered func(msgIDs []string) `json:"-"`
 }
 
 // MediaPart describes a single media attachment to send.
