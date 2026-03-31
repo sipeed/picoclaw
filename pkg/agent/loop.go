@@ -2127,7 +2127,7 @@ turnLoop:
 			reasoningContent = response.ReasoningContent
 		}
 		go al.handleReasoning(
-			turnCtx,
+			context.WithoutCancel(turnCtx),
 			reasoningContent,
 			ts.channel,
 			al.targetReasoningChannelID(ts.channel),
@@ -3441,6 +3441,7 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 			if len(nextCandidates) == 0 {
 				return "", fmt.Errorf("model %q did not resolve to any provider candidates", value)
 			}
+			nextCandidates = applyCooldownKeys(cfg, nextCandidates)
 
 			oldModel := agent.Model
 			oldProvider := agent.Provider
