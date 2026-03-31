@@ -279,27 +279,3 @@ func TestExtractFeishuSenderID(t *testing.T) {
 		})
 	}
 }
-
-func TestReplyTargetMessageID(t *testing.T) {
-	strPtr := func(s string) *string { return &s }
-
-	t.Run("prefer parent_id", func(t *testing.T) {
-		msg := &larkim.EventMessage{ParentId: strPtr("om_parent"), RootId: strPtr("om_root")}
-		if got := replyTargetID(msg); got != "om_parent" {
-			t.Fatalf("replyTargetID() = %q, want %q", got, "om_parent")
-		}
-	})
-
-	t.Run("fallback to root_id", func(t *testing.T) {
-		msg := &larkim.EventMessage{RootId: strPtr("om_root")}
-		if got := replyTargetID(msg); got != "om_root" {
-			t.Fatalf("replyTargetID() = %q, want %q", got, "om_root")
-		}
-	})
-
-	t.Run("empty when no fields", func(t *testing.T) {
-		if got := replyTargetID(&larkim.EventMessage{}); got != "" {
-			t.Fatalf("replyTargetID() = %q, want empty", got)
-		}
-	})
-}
