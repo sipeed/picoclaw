@@ -1097,12 +1097,12 @@ func (c *WeixinChannel) StartTyping(ctx context.Context, chatID string) (func(),
 }
 
 // SendMedia implements channels.MediaSender.
-func (c *WeixinChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *WeixinChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return basechannels.ErrNotRunning
+		return nil, basechannels.ErrNotRunning
 	}
 	if err := c.ensureSessionActive(); err != nil {
-		return err
+		return nil, err
 	}
 
 	contextToken := ""
@@ -1110,7 +1110,7 @@ func (c *WeixinChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 		contextToken, _ = v.(string)
 	}
 	if contextToken == "" {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"weixin send media: missing context token for chat %s: %w",
 			msg.ChatID,
 			basechannels.ErrSendFailed,
@@ -1125,7 +1125,7 @@ func (c *WeixinChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 				"ref":     part.Ref,
 				"error":   err.Error(),
 			})
-			return fmt.Errorf("weixin send media: %w", basechannels.ErrSendFailed)
+			return nil, fmt.Errorf("weixin send media: %w", basechannels.ErrSendFailed)
 		}
 		func() {
 			if cleanup != nil {
@@ -1147,11 +1147,11 @@ func (c *WeixinChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 				"error":   err.Error(),
 			})
 			if c.remainingPause() > 0 {
-				return fmt.Errorf("weixin send media: %w", basechannels.ErrSendFailed)
+				return nil, fmt.Errorf("weixin send media: %w", basechannels.ErrSendFailed)
 			}
-			return fmt.Errorf("weixin send media: %w", basechannels.ErrTemporary)
+			return nil, fmt.Errorf("weixin send media: %w", basechannels.ErrTemporary)
 		}
 	}
 
-	return nil
+	return nil, nil
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 const modelProbeTimeout = 800 * time.Millisecond
@@ -60,10 +61,14 @@ func requiresRuntimeProbe(m *config.ModelConfig) bool {
 		return true
 	}
 
-	switch modelProtocol(m.Model) {
+	protocol := modelProtocol(m.Model)
+
+	switch protocol {
 	case "claude-cli", "claudecli", "codex-cli", "codexcli", "github-copilot", "copilot":
 		return true
-	case "ollama", "vllm":
+	}
+
+	if providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
 		apiBase := strings.TrimSpace(m.APIBase)
 		return apiBase == "" || hasLocalAPIBase(apiBase)
 	}
@@ -81,7 +86,7 @@ func probeLocalModelAvailability(m *config.ModelConfig) bool {
 	switch protocol {
 	case "ollama":
 		return probeOllamaModelFunc(apiBase, modelID)
-	case "vllm":
+	case "vllm", "lmstudio":
 		return probeOpenAICompatibleModelFunc(apiBase, modelID, m.APIKey())
 	case "github-copilot", "copilot":
 		return probeTCPServiceFunc(apiBase)
@@ -100,11 +105,12 @@ func modelProbeAPIBase(m *config.ModelConfig) string {
 		return normalizeModelProbeAPIBase(apiBase)
 	}
 
-	switch modelProtocol(m.Model) {
-	case "ollama":
-		return "http://localhost:11434/v1"
-	case "vllm":
-		return "http://localhost:8000/v1"
+	protocol := modelProtocol(m.Model)
+	if providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
+		return providers.DefaultAPIBaseForProtocol(protocol)
+	}
+
+	switch protocol {
 	case "github-copilot", "copilot":
 		return "localhost:4321"
 	default:

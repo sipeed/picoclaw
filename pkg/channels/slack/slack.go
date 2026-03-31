@@ -108,14 +108,14 @@ func (c *SlackChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	channelID, threadTS := parseSlackChatID(msg.ChatID)
 	if channelID == "" {
-		return fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
+		return nil, fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
 	}
 
 	opts := []slack.MsgOption{
@@ -130,9 +130,9 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		opts = append(opts, slack.MsgOptionTS(threadTS))
 	}
 
-	_, _, err := c.api.PostMessageContext(ctx, channelID, opts...)
+	_, ts, err := c.api.PostMessageContext(ctx, channelID, opts...)
 	if err != nil {
-		return fmt.Errorf("slack send: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("slack send: %w", channels.ErrTemporary)
 	}
 
 	if ref, ok := c.pendingAcks.LoadAndDelete(msg.ChatID); ok {
@@ -148,23 +148,23 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		"thread_ts":  threadTS,
 	})
 
-	return nil
+	return []string{ts}, nil
 }
 
 // SendMedia implements the channels.MediaSender interface.
-func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	channelID, _ := parseSlackChatID(msg.ChatID)
 	if channelID == "" {
-		return fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
+		return nil, fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
 	}
 
 	store := c.GetMediaStore()
 	if store == nil {
-		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
 	for _, part := range msg.Parts {
@@ -198,11 +198,13 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 				"filename": filename,
 				"error":    err.Error(),
 			})
-			return fmt.Errorf("slack send media: %w", channels.ErrTemporary)
+			return nil, fmt.Errorf("slack send media: %w", channels.ErrTemporary)
 		}
 	}
 
-	return nil
+	// UploadFileV2 does not expose the posted message timestamp in its
+	// response; returning nil avoids conflating file IDs with message IDs.
+	return nil, nil
 }
 
 // ReactToMessage implements channels.ReactionCapable.

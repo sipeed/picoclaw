@@ -48,7 +48,7 @@ type Channel interface {
 	Name() string
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
-	Send(ctx context.Context, msg bus.OutboundMessage) error
+	Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error)
 	IsRunning() bool
 	IsAllowed(senderID string) bool
 	IsAllowedSender(sender bus.SenderInfo) bool

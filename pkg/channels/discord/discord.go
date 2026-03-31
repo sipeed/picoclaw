@@ -128,37 +128,41 @@ func (c *DiscordChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	channelID := msg.ChatID
 	if channelID == "" {
-		return fmt.Errorf("channel ID is empty")
+		return nil, fmt.Errorf("channel ID is empty")
 	}
 
 	if len([]rune(msg.Content)) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return c.sendChunk(ctx, channelID, msg.Content, msg.ReplyToMessageID)
+	msgID, err := c.sendChunk(ctx, channelID, msg.Content, msg.ReplyToMessageID)
+	if err != nil {
+		return nil, err
+	}
+	return []string{msgID}, nil
 }
 
 // SendMedia implements the channels.MediaSender interface.
-func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	channelID := msg.ChatID
 	if channelID == "" {
-		return fmt.Errorf("channel ID is empty")
+		return nil, fmt.Errorf("channel ID is empty")
 	}
 
 	store := c.GetMediaStore()
 	if store == nil {
-		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
 	// Collect all files into a single ChannelMessageSendComplex call
@@ -202,33 +206,41 @@ func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMes
 	}
 
 	if len(files) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 
-	done := make(chan error, 1)
+	type mediaResult struct {
+		id  string
+		err error
+	}
+	done := make(chan mediaResult, 1)
 	go func() {
-		_, err := c.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+		sentMsg, err := c.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
 			Content: caption,
 			Files:   files,
 		})
-		done <- err
+		if err != nil {
+			done <- mediaResult{err: err}
+			return
+		}
+		done <- mediaResult{id: sentMsg.ID}
 	}()
 
 	select {
-	case err := <-done:
+	case r := <-done:
 		// Close all file readers
 		for _, f := range files {
 			if closer, ok := f.Reader.(*os.File); ok {
 				closer.Close()
 			}
 		}
-		if err != nil {
-			return fmt.Errorf("discord send media: %w", channels.ErrTemporary)
+		if r.err != nil {
+			return nil, fmt.Errorf("discord send media: %w", channels.ErrTemporary)
 		}
-		return nil
+		return []string{r.id}, nil
 	case <-sendCtx.Done():
 		// Close all file readers
 		for _, f := range files {
@@ -236,7 +248,7 @@ func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMes
 				closer.Close()
 			}
 		}
-		return sendCtx.Err()
+		return nil, sendCtx.Err()
 	}
 }
 
@@ -264,18 +276,25 @@ func (c *DiscordChannel) SendPlaceholder(ctx context.Context, chatID string) (st
 	return msg.ID, nil
 }
 
-func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content, replyToID string) error {
+func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content, replyToID string) (string, error) {
 	// Use the passed ctx for timeout control
 	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 
-	done := make(chan error, 1)
+	type result struct {
+		id  string
+		err error
+	}
+	done := make(chan result, 1)
 	go func() {
-		var err error
+		var (
+			msg *discordgo.Message
+			err error
+		)
 
 		// If we have an ID, we send the message as "Reply"
 		if replyToID != "" {
-			_, err = c.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+			msg, err = c.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
 				Content: content,
 				Reference: &discordgo.MessageReference{
 					MessageID: replyToID,
@@ -284,20 +303,21 @@ func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content, repl
 			})
 		} else {
 			// Otherwise, we send a normal message
-			_, err = c.session.ChannelMessageSend(channelID, content)
+			msg, err = c.session.ChannelMessageSend(channelID, content)
 		}
 
-		done <- err
+		if err != nil {
+			done <- result{err: fmt.Errorf("discord send: %w", channels.ErrTemporary)}
+			return
+		}
+		done <- result{id: msg.ID}
 	}()
 
 	select {
-	case err := <-done:
-		if err != nil {
-			return fmt.Errorf("discord send: %w", channels.ErrTemporary)
-		}
-		return nil
+	case r := <-done:
+		return r.id, r.err
 	case <-sendCtx.Done():
-		return sendCtx.Err()
+		return "", sendCtx.Err()
 	}
 }
 

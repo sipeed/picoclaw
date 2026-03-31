@@ -104,15 +104,15 @@ func (c *WhatsAppChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	// Check ctx before acquiring lock
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
 
@@ -120,7 +120,7 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	defer c.mu.Unlock()
 
 	if c.conn == nil {
-		return fmt.Errorf("whatsapp connection not established: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("whatsapp connection not established: %w", channels.ErrTemporary)
 	}
 
 	payload := map[string]any{
@@ -131,17 +131,17 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
+		return nil, fmt.Errorf("failed to marshal message: %w", err)
 	}
 
 	_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		_ = c.conn.SetWriteDeadline(time.Time{})
-		return fmt.Errorf("whatsapp send: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("whatsapp send: %w", channels.ErrTemporary)
 	}
 	_ = c.conn.SetWriteDeadline(time.Time{})
 
-	return nil
+	return nil, nil
 }
 
 func (c *WhatsAppChannel) listen() {

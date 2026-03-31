@@ -184,20 +184,20 @@ func (c *WeComChannel) BeginStream(_ context.Context, chatID string) (channels.S
 	}, nil
 }
 
-func (c *WeComChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *WeComChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 	content := strings.TrimSpace(msg.Content)
 	if content == "" {
-		return nil
+		return nil, nil
 	}
 
 	if turn, ok := c.getTurn(msg.ChatID); ok {
 		if time.Since(turn.CreatedAt) <= wecomStreamMaxDuration {
 			if err := c.sendStreamReply(turn, content); err == nil {
 				c.consumeTurn(msg.ChatID, turn)
-				return nil
+				return nil, nil
 			}
 		}
 		c.consumeTurn(msg.ChatID, turn)
@@ -205,20 +205,20 @@ func (c *WeComChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 
 	if route, ok := c.routes.Get(msg.ChatID); ok {
 		if err := c.sendActivePush(route.ChatID, route.ChatType, content); err != nil {
-			return err
+			return nil, err
 		}
-		return nil
+		return nil, nil
 	}
 
 	if err := c.sendActivePush(msg.ChatID, 0, content); err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return nil, nil
 }
 
-func (c *WeComChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *WeComChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	route, chatType, hasTurn := c.resolveMediaRoute(msg.ChatID)
@@ -231,7 +231,7 @@ func (c *WeComChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 		if strings.TrimSpace(part.Ref) == "" {
 			if caption := strings.TrimSpace(part.Caption); caption != "" {
 				if err := c.sendActivePush(chatID, chatType, caption); err != nil {
-					return err
+					return nil, err
 				}
 			}
 			continue
@@ -239,7 +239,7 @@ func (c *WeComChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 
 		localPath, filename, contentType, cleanup, err := c.resolveOutboundPart(ctx, part)
 		if err != nil {
-			return fmt.Errorf("wecom resolve media %q: %v: %w", part.Ref, err, channels.ErrSendFailed)
+			return nil, fmt.Errorf("wecom resolve media %q: %v: %w", part.Ref, err, channels.ErrSendFailed)
 		}
 
 		func() {
@@ -283,11 +283,11 @@ func (c *WeComChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 			}
 		}()
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (c *WeComChannel) connectLoop() {
