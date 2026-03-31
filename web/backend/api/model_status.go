@@ -11,9 +11,10 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
-	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -308,7 +309,7 @@ func (s *modelProbeCacheState) gc(now time.Time, runTTL bool) {
 	}
 
 	effectiveLen := cacheLen - len(expiredKeys)
-	removeCount := max(effectiveLen - modelProbeCacheTrimToEntries, 0)
+	removeCount := max(effectiveLen-modelProbeCacheTrimToEntries, 0)
 
 	candidates := make([]evictionCandidate, 0)
 	if removeCount > 0 {
@@ -360,7 +361,7 @@ func (s *modelProbeCacheState) gc(now time.Time, runTTL bool) {
 	}
 }
 
-func modelProbeBackoffDelay(base, max time.Duration, streak int) time.Duration {
+func modelProbeBackoffDelay(base, maxDelay time.Duration, streak int) time.Duration {
 	if streak <= 0 {
 		streak = 1
 	}
@@ -368,8 +369,8 @@ func modelProbeBackoffDelay(base, max time.Duration, streak int) time.Duration {
 	shift := min(streak-1, modelProbeBackoffMaxShift)
 
 	delay := base * time.Duration(1<<shift)
-	if max > 0 && (delay > max || delay < 0) {
-		return max
+	if maxDelay > 0 && (delay > maxDelay || delay < 0) {
+		return maxDelay
 	}
 	if delay <= 0 {
 		return base
