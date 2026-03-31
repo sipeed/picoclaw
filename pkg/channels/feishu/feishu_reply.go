@@ -71,7 +71,7 @@ func (c *FeishuChannel) prependReplyContext(
 
 	repliedContent := normalizeRepliedContent(messageType, rawContent, repliedMediaRefs)
 	if len(repliedMediaRefs) > 0 {
-		mediaRefs = append(mediaRefs, repliedMediaRefs...)
+		mediaRefs = append(repliedMediaRefs, mediaRefs...)
 	}
 
 	return formatReplyContext(targetMessageID, repliedContent, content), mediaRefs
@@ -90,6 +90,13 @@ func (c *FeishuChannel) resolveReplyTargetMessageID(ctx context.Context, message
 
 	currentMessageID := stringValue(message.MessageId)
 	if currentMessageID == "" {
+		return ""
+	}
+
+	if stringValue(message.ThreadId) == "" {
+		logger.DebugCF("feishu", "No reply target found; message is not in a thread", map[string]any{
+			"message_id": stringValue(message.MessageId),
+		})
 		return ""
 	}
 
