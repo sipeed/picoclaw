@@ -131,3 +131,16 @@ func TestParseModelRef_DefaultProviderNormalization(t *testing.T) {
 		t.Errorf("provider = %q, want openai (normalized from GPT)", ref.Provider)
 	}
 }
+
+func TestParseModelRef_AtPrefixedModelUsesDefaultProvider(t *testing.T) {
+	ref := ParseModelRef("@cf/qwen/qwen1.5-0.5b-chat", "openai")
+	if ref == nil {
+		t.Fatal("expected non-nil ref")
+	}
+	if ref.Provider != "openai" {
+		t.Fatalf("provider = %q, want %q", ref.Provider, "openai")
+	}
+	if ref.Model != "@cf/qwen/qwen1.5-0.5b-chat" {
+		t.Fatalf("model = %q, want full @cf model id", ref.Model)
+	}
+}
