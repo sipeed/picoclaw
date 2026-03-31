@@ -7,6 +7,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// ProviderRow holds one provider's display name and status value.
+type ProviderRow struct {
+	Name string
+	Val  string
+}
+
 // StatusReport is a structured status view for PrintStatus.
 type StatusReport struct {
 	Logo          string
@@ -16,10 +22,8 @@ type StatusReport struct {
 	ConfigOK      bool
 	WorkspacePath string
 	WorkspaceOK   bool
-	Model string
-	// ProviderNames and ProviderVals same length
-	ProviderNames []string
-	ProviderVals  []string
+	Model         string
+	Providers     []ProviderRow
 	OAuthLines    []string // each full line "provider (method): state"
 }
 
@@ -45,8 +49,8 @@ func printStatusPlain(r StatusReport) {
 
 	if r.ConfigOK {
 		fmt.Printf("Model: %s\n", r.Model)
-		for i := range r.ProviderNames {
-			fmt.Printf("%s: %s\n", r.ProviderNames[i], r.ProviderVals[i])
+		for _, p := range r.Providers {
+			fmt.Printf("%s: %s\n", p.Name, p.Val)
 		}
 		if len(r.OAuthLines) > 0 {
 			fmt.Println("\nOAuth/Token Auth:")
@@ -80,7 +84,7 @@ func printStatusFancy(r StatusReport) {
 	fmt.Println(topBox.Render(head.String()))
 	fmt.Println()
 
-	if UseColumnLayout() && len(r.ProviderNames) > 0 && r.ConfigOK {
+	if UseColumnLayout() && len(r.Providers) > 0 && r.ConfigOK {
 		leftW := (inner - 2) / 2
 		rightW := inner - leftW - 2
 		pathsNarrow := pathStatusPanel(r, leftW)
@@ -89,7 +93,7 @@ func printStatusFancy(r StatusReport) {
 		fmt.Println(lipgloss.JoinHorizontal(lipgloss.Top, pathsNarrow, gap, prov))
 	} else {
 		fmt.Println(pathStatusPanel(r, inner))
-		if len(r.ProviderNames) > 0 && r.ConfigOK {
+		if len(r.Providers) > 0 && r.ConfigOK {
 			fmt.Println(providerTablePanel(r, inner))
 		}
 	}
@@ -130,7 +134,7 @@ func statusMark(ok bool) string {
 }
 
 func providerTablePanel(r StatusReport, colW int) string {
-	if len(r.ProviderNames) == 0 {
+	if len(r.Providers) == 0 {
 		return ""
 	}
 	keyW := min(22, colW/3)
@@ -144,9 +148,9 @@ func providerTablePanel(r StatusReport, colW int) string {
 
 	var b strings.Builder
 	b.WriteString(titleBarStyle().Render("Providers & local") + "\n\n")
-	for i := range r.ProviderNames {
-		k := lipgloss.NewStyle().Foreground(accentBlue).Bold(true).Width(keyW).Render(r.ProviderNames[i])
-		v := styleProviderVal(r.ProviderVals[i]).Width(valW).Render(r.ProviderVals[i])
+	for _, p := range r.Providers {
+		k := lipgloss.NewStyle().Foreground(accentBlue).Bold(true).Width(keyW).Render(p.Name)
+		v := styleProviderVal(p.Val).Width(valW).Render(p.Val)
 		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, k, "  ", v))
 		b.WriteString("\n")
 	}

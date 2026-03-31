@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cliui"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/agent"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/auth"
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cliui"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cron"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/gateway"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/migrate"
@@ -40,7 +40,8 @@ func earlyColorDisabled() bool {
 		return true
 	}
 	for i := 1; i < len(os.Args); i++ {
-		if os.Args[i] == "--no-color" {
+		arg := os.Args[i]
+		if arg == "--no-color" || arg == "--no-color=true" || arg == "--no-color=1" {
 			return true
 		}
 	}

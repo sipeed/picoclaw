@@ -98,53 +98,30 @@ func statusCmd() {
 		}
 		ollamaBase, hasOllama := findProtocolBase("ollama")
 
-		status := func(enabled bool) string {
+		val := func(enabled bool, extra ...string) string {
 			if enabled {
+				if len(extra) > 0 && extra[0] != "" {
+					return "✓ " + extra[0]
+				}
 				return "✓"
 			}
 			return "not set"
 		}
 
-		report.ProviderNames = []string{
-			"OpenRouter API",
-			"Anthropic API",
-			"OpenAI API",
-			"Gemini API",
-			"Zhipu API",
-			"Qwen API",
-			"Groq API",
-			"Moonshot API",
-			"DeepSeek API",
-			"VolcEngine API",
-			"Nvidia API",
-		}
-		report.ProviderVals = []string{
-			status(hasOpenRouter),
-			status(hasAnthropic),
-			status(hasOpenAI),
-			status(hasGemini),
-			status(hasZhipu),
-			status(hasQwen),
-			status(hasGroq),
-			status(hasMoonshot),
-			status(hasDeepSeek),
-			status(hasVolcEngine),
-			status(hasNvidia),
-		}
-
-		if hasVLLM {
-			report.ProviderNames = append(report.ProviderNames, "vLLM / local")
-			report.ProviderVals = append(report.ProviderVals, "✓ "+vllmBase)
-		} else {
-			report.ProviderNames = append(report.ProviderNames, "vLLM / local")
-			report.ProviderVals = append(report.ProviderVals, "not set")
-		}
-		if hasOllama {
-			report.ProviderNames = append(report.ProviderNames, "Ollama")
-			report.ProviderVals = append(report.ProviderVals, "✓ "+ollamaBase)
-		} else {
-			report.ProviderNames = append(report.ProviderNames, "Ollama")
-			report.ProviderVals = append(report.ProviderVals, "not set")
+		report.Providers = []cliui.ProviderRow{
+			{"OpenRouter API", val(hasOpenRouter)},
+			{"Anthropic API", val(hasAnthropic)},
+			{"OpenAI API", val(hasOpenAI)},
+			{"Gemini API", val(hasGemini)},
+			{"Zhipu API", val(hasZhipu)},
+			{"Qwen API", val(hasQwen)},
+			{"Groq API", val(hasGroq)},
+			{"Moonshot API", val(hasMoonshot)},
+			{"DeepSeek API", val(hasDeepSeek)},
+			{"VolcEngine API", val(hasVolcEngine)},
+			{"Nvidia API", val(hasNvidia)},
+			{"vLLM / local", val(hasVLLM, vllmBase)},
+			{"Ollama", val(hasOllama, ollamaBase)},
 		}
 
 		store, _ := auth.LoadStore()

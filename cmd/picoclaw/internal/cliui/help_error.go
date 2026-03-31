@@ -67,7 +67,8 @@ func FormatCLIError(msg string, ctx *cobra.Command) string {
 func showErrHint(msg string) bool {
 	m := strings.ToLower(msg)
 	return strings.Contains(m, "unknown flag") ||
-		strings.Contains(m, "flag") ||
+		strings.Contains(m, "unknown shorthand flag") ||
+		strings.Contains(m, "flag needs an argument") ||
 		strings.Contains(m, "invalid") ||
 		strings.Contains(m, "required") ||
 		strings.Contains(m, "usage:")

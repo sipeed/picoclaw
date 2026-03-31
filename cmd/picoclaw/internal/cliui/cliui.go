@@ -96,10 +96,10 @@ func InnerStderrWidth() int {
 }
 
 var (
-	accentBlue  = lipgloss.Color("#3E5DB9")
-	accentRed   = lipgloss.Color("#D54646")
-	colorMuted  = lipgloss.Color("#6B6B6B")
-	colorOK = lipgloss.Color("#2E7D32")
+	accentBlue = lipgloss.Color("#3E5DB9")
+	accentRed  = lipgloss.Color("#D54646")
+	colorMuted = lipgloss.Color("#6B6B6B")
+	colorOK    = lipgloss.Color("#2E7D32")
 )
 
 func borderStyle() lipgloss.Style {

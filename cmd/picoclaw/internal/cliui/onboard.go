@@ -75,7 +75,7 @@ func printOnboardFancy(logo string, encrypt bool, configPath string) {
 
 	// Same order as plain output: numbered steps → recommended → chat line.
 	next := titleBarStyle().Render("Next steps") + "\n\n" +
-		bodyStyle().Width(inner - 4).Render(steps+"\n\n"+rec+"\n\n"+chat)
+		bodyStyle().Width(inner-4).Render(steps+"\n\n"+rec+"\n\n"+chat)
 	fmt.Println(borderStyle().Width(inner).Render(next))
 }
 
