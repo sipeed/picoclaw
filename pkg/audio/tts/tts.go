@@ -24,12 +24,17 @@ func providerFromModelConfig(mc *config.ModelConfig) TTSProvider {
 		return nil
 	}
 
-	_, modelID := providers.ExtractProtocol(mc.Model)
+	protocol, modelID := providers.ExtractProtocol(mc.Model)
 	if modelID == "" {
 		modelID = strings.TrimSpace(mc.Model)
 	}
 
-	return NewOpenAITTSProvider(mc.APIKey(), providers.ResolveAPIBase(mc), mc.Proxy, modelID)
+	switch protocol {
+	case "mimo":
+		return NewMimoTTSProvider(mc.APIKey(), providers.ResolveAPIBase(mc), modelID, mc.Proxy)
+	default:
+		return NewOpenAITTSProvider(mc.APIKey(), providers.ResolveAPIBase(mc), mc.Proxy, modelID)
+	}
 }
 
 func DetectTTS(cfg *config.Config) TTSProvider {
@@ -89,7 +94,14 @@ func SynthesizeAndStore(
 		return "", fmt.Errorf("failed to create media temp dir: %w", err)
 	}
 
-	file, err := os.CreateTemp(media.TempDir(), "tts-*.ogg")
+	fileExt := ".ogg"
+	contentType := "audio/ogg"
+	if provider.Name() == "mimo-tts" {
+		fileExt = ".mp3"
+		contentType = "audio/mpeg"
+	}
+
+	file, err := os.CreateTemp(media.TempDir(), "tts-*"+fileExt)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
@@ -114,20 +126,20 @@ func SynthesizeAndStore(
 
 	filename = strings.TrimSpace(filename)
 	if filename == "" {
-		filename = fmt.Sprintf("tts-%d.ogg", time.Now().Unix())
+		filename = fmt.Sprintf("tts-%d%s", time.Now().Unix(), fileExt)
 	}
 
 	ext := strings.ToLower(filepath.Ext(filename))
 	if ext == "" {
-		filename += ".ogg"
-	} else if ext != ".ogg" {
-		filename = strings.TrimSuffix(filename, filepath.Ext(filename)) + ".ogg"
+		filename += fileExt
+	} else if ext != fileExt {
+		filename = strings.TrimSuffix(filename, filepath.Ext(filename)) + fileExt
 	}
 
 	scope := fmt.Sprintf("tool:send_tts:%s:%s:%d", channel, chatID, time.Now().UnixNano())
 	ref, err := store.Store(file.Name(), media.MediaMeta{
 		Filename:    filename,
-		ContentType: "audio/ogg",
+		ContentType: contentType,
 		Source:      "tool:send_tts",
 	}, scope)
 	if err != nil {

@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 func TestNewOpenAITTSProvider_APIBaseNormalization(t *testing.T) {
@@ -142,7 +144,7 @@ func TestNewOpenAITTSProvider_UsesConfiguredModel(t *testing.T) {
 	}
 }
 
-func TestDetectTTS_UsesConfiguredModelAndProviderBase(t *testing.T) {
+func TestDetectTTS_UsesMimoProviderForMimoModels(t *testing.T) {
 	t.Parallel()
 
 	provider := DetectTTS(&config.Config{
@@ -156,14 +158,90 @@ func TestDetectTTS_UsesConfiguredModelAndProviderBase(t *testing.T) {
 		},
 	})
 
-	ttsProvider, ok := provider.(*OpenAITTSProvider)
+	ttsProvider, ok := provider.(*MimoTTSProvider)
 	if !ok {
-		t.Fatalf("DetectTTS() type = %T, want *OpenAITTSProvider", provider)
+		t.Fatalf("DetectTTS() type = %T, want *MimoTTSProvider", provider)
 	}
 	if ttsProvider.model != "mimo-v2-tts" {
 		t.Fatalf("model mismatch: got %q, want %q", ttsProvider.model, "mimo-v2-tts")
 	}
-	if ttsProvider.apiBase != "https://api.xiaomimimo.com/v1/audio/speech" {
+	if ttsProvider.apiBase != "https://api.xiaomimimo.com/v1/chat/completions" {
 		t.Fatalf("apiBase mismatch: got %q", ttsProvider.apiBase)
+	}
+}
+
+type stubTTSProvider struct {
+	name string
+}
+
+func (s stubTTSProvider) Name() string {
+	return s.name
+}
+
+func (s stubTTSProvider) Synthesize(ctx context.Context, text string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("audio")), nil
+}
+
+func TestSynthesizeAndStore_UsesOggMetadataByDefault(t *testing.T) {
+	t.Parallel()
+
+	store := media.NewFileMediaStore()
+	ref, err := SynthesizeAndStore(
+		context.Background(),
+		stubTTSProvider{name: "openai-tts"},
+		store,
+		"hello",
+		"",
+		"discord",
+		"chat123",
+	)
+	if err != nil {
+		t.Fatalf("SynthesizeAndStore failed: %v", err)
+	}
+
+	path, meta, err := store.ResolveWithMeta(ref)
+	if err != nil {
+		t.Fatalf("ResolveWithMeta failed: %v", err)
+	}
+	if meta.ContentType != "audio/ogg" {
+		t.Fatalf("ContentType = %q, want %q", meta.ContentType, "audio/ogg")
+	}
+	if filepath.Ext(path) != ".ogg" {
+		t.Fatalf("stored file extension = %q, want %q", filepath.Ext(path), ".ogg")
+	}
+	if filepath.Ext(meta.Filename) != ".ogg" {
+		t.Fatalf("filename extension = %q, want %q", filepath.Ext(meta.Filename), ".ogg")
+	}
+}
+
+func TestSynthesizeAndStore_UsesMp3MetadataForMimo(t *testing.T) {
+	t.Parallel()
+
+	store := media.NewFileMediaStore()
+	ref, err := SynthesizeAndStore(
+		context.Background(),
+		stubTTSProvider{name: "mimo-tts"},
+		store,
+		"hello",
+		"",
+		"discord",
+		"chat123",
+	)
+	if err != nil {
+		t.Fatalf("SynthesizeAndStore failed: %v", err)
+	}
+
+	path, meta, err := store.ResolveWithMeta(ref)
+	if err != nil {
+		t.Fatalf("ResolveWithMeta failed: %v", err)
+	}
+	if meta.ContentType != "audio/mpeg" {
+		t.Fatalf("ContentType = %q, want %q", meta.ContentType, "audio/mpeg")
+	}
+	if filepath.Ext(path) != ".mp3" {
+		t.Fatalf("stored file extension = %q, want %q", filepath.Ext(path), ".mp3")
+	}
+	if filepath.Ext(meta.Filename) != ".mp3" {
+		t.Fatalf("filename extension = %q, want %q", filepath.Ext(meta.Filename), ".mp3")
 	}
 }
