@@ -550,5 +550,27 @@
       "clear": "Clear logs",
       "empty": "Waiting for logs..."
     }
+  },
+  "tour": {
+    "skip": "Skip tour",
+    "prev": "Previous",
+    "next": "Next",
+    "finish": "Finish",
+    "welcome": {
+      "title": "Welcome to PicoClaw",
+      "description": "PicoClaw is a powerful AI assistant platform. Let's take a few seconds to help you complete the basic setup."
+    },
+    "models": {
+      "title": "Configure Models",
+      "description": "Click the \"Models\" menu on the left to configure API keys for AI providers. Only configured models can be used for chat."
+    },
+    "gateway": {
+      "title": "Start Gateway",
+      "description": "After configuring models, click the \"Start Gateway\" button at the top to begin chatting with AI."
+    },
+    "docs": {
+      "title": "View Documentation",
+      "description": "Need more help? Click the documentation button in the top right corner to view detailed guides and configuration docs."
+    }
   }
 }
