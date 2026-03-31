@@ -84,7 +84,7 @@ func logOpenRouter429Exhausted(stream bool, resolvedModel string, maxAttempts in
 
 func logOpenRouter429BackoffCancelled(stream bool, resolvedModel string, attempt, maxAttempts int, cancelErr error) {
 	log.Printf(
-		"openai_compat OpenRouter %s: HTTP 429 retry cancelled during backoff (attempt %d/%d, model=%q): %v",
+		"openai_compat OpenRouter %s: HTTP 429 retry cancel during backoff (attempt %d/%d, model=%q): %v",
 		openRouterLogKind(stream), attempt, maxAttempts, resolvedModel, cancelErr,
 	)
 }
@@ -96,8 +96,8 @@ func applyOpenRouterAttributionHeaders(h http.Header, apiBase string) {
 		return
 	}
 	h.Set("Referer", openRouterAttributionReferer)
-	h.Set("X-OpenRouter-Title", openRouterAttributionTitle)
-	h.Set("X-OpenRouter-Categories", openRouterAttributionCategories)
+	h.Set("X-Openrouter-Title", openRouterAttributionTitle)
+	h.Set("X-Openrouter-Categories", openRouterAttributionCategories)
 }
 
 func WithMaxTokensField(maxTokensField string) Option {
