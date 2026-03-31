@@ -6,20 +6,19 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // CreateHTTPClient creates an HTTP client with optional proxy support.
 // If proxyURL is empty, it uses the system environment proxy settings.
 // Supported proxy schemes: http, https, socks5, socks5h.
 func CreateHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  false,
-			TLSHandshakeTimeout: 15 * time.Second,
-		},
+	tr := &http.Transport{
+		MaxIdleConns:        10,
+		IdleConnTimeout:     30 * time.Second,
+		DisableCompression:  false,
+		TLSHandshakeTimeout: 15 * time.Second,
 	}
 
 	if proxyURL != "" {
@@ -39,10 +38,13 @@ func CreateHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, err
 		if proxy.Host == "" {
 			return nil, fmt.Errorf("invalid proxy URL: missing host")
 		}
-		client.Transport.(*http.Transport).Proxy = http.ProxyURL(proxy)
+		tr.Proxy = http.ProxyURL(proxy)
 	} else {
-		client.Transport.(*http.Transport).Proxy = http.ProxyFromEnvironment
+		tr.Proxy = http.ProxyFromEnvironment
 	}
 
-	return client, nil
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: config.WrapTransportUserAgent(tr),
+	}, nil
 }

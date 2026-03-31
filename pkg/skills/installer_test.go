@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestParseGitHubRef(t *testing.T) {
@@ -224,9 +226,10 @@ func TestNewSkillInstaller_WithProxy(t *testing.T) {
 	}
 
 	// Verify the transport has proxy configured
-	transport, ok := installer.client.Transport.(*http.Transport)
+	base := config.UnwrapUserAgent(installer.client.Transport)
+	transport, ok := base.(*http.Transport)
 	if !ok {
-		t.Fatal("client.Transport is not *http.Transport")
+		t.Fatalf("client base transport is not *http.Transport, got %T", base)
 	}
 
 	if transport.Proxy == nil {

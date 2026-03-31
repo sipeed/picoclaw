@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
@@ -519,9 +520,9 @@ func TestProvider_ProxyConfigured(t *testing.T) {
 	proxyURL := "http://127.0.0.1:8080"
 	p := NewProvider("key", "https://example.com", proxyURL)
 
-	transport, ok := p.httpClient.Transport.(*http.Transport)
+	transport, ok := config.UnwrapUserAgent(p.httpClient.Transport).(*http.Transport)
 	if !ok || transport == nil {
-		t.Fatalf("expected http transport with proxy, got %T", p.httpClient.Transport)
+		t.Fatalf("expected http transport with proxy, got %T", config.UnwrapUserAgent(p.httpClient.Transport))
 	}
 
 	req := &http.Request{URL: &url.URL{Scheme: "https", Host: "api.example.com"}}
@@ -1171,5 +1172,154 @@ func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 	raw := string(data)
 	if strings.Contains(raw, "system_parts") {
 		t.Fatal("system_parts should not appear in serialized output")
+	}
+}
+
+func TestProviderChat_OpenRouter429RetriesThenSucceeds(t *testing.T) {
+	var n int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/chat/completions") {
+			http.NotFound(w, r)
+			return
+		}
+		n++
+		if n < 3 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"message":"rate limit"}}`))
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "ok"}, "finish_reason": "stop"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	apiBase := server.URL + "/via-openrouter.ai"
+	p := NewProvider("key", apiBase, "")
+	start := time.Now()
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "m", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if out == nil || out.Content != "ok" {
+		t.Fatalf("unexpected response: %+v", out)
+	}
+	if n != 3 {
+		t.Fatalf("request count = %d, want 3", n)
+	}
+	if d := time.Since(start); d < 2*time.Second-100*time.Millisecond {
+		t.Fatalf("expected ~2s backoff between retries, got %v", d)
+	}
+}
+
+func TestProviderChat_OpenRouter429Exhausted(t *testing.T) {
+	var n int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/chat/completions") {
+			http.NotFound(w, r)
+			return
+		}
+		n++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"rate limit"}}`))
+	}))
+	defer server.Close()
+
+	apiBase := server.URL + "/via-openrouter.ai"
+	p := NewProvider("key", apiBase, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "m", nil)
+	if err == nil {
+		t.Fatal("expected error after 429 exhaustion")
+	}
+	if !strings.Contains(err.Error(), "429") {
+		t.Fatalf("error should mention 429: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("request count = %d, want 3", n)
+	}
+}
+
+func TestProviderChat_OpenRouterSendsAttributionHeaders(t *testing.T) {
+	var gotReferer, gotTitle, gotCat string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/chat/completions") {
+			http.NotFound(w, r)
+			return
+		}
+		gotReferer = r.Header.Get("Referer")
+		gotTitle = r.Header.Get("X-OpenRouter-Title")
+		gotCat = r.Header.Get("X-OpenRouter-Categories")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "ok"}, "finish_reason": "stop"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	apiBase := server.URL + "/via-openrouter.ai"
+	p := NewProvider("key", apiBase, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "m", nil)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if gotReferer != openRouterAttributionReferer {
+		t.Errorf("Referer = %q, want %q", gotReferer, openRouterAttributionReferer)
+	}
+	if gotTitle != openRouterAttributionTitle {
+		t.Errorf("X-OpenRouter-Title = %q, want %q", gotTitle, openRouterAttributionTitle)
+	}
+	if gotCat != openRouterAttributionCategories {
+		t.Errorf("X-OpenRouter-Categories = %q, want %q", gotCat, openRouterAttributionCategories)
+	}
+}
+
+func TestProviderChat_NonOpenRouterOmitsAttributionHeaders(t *testing.T) {
+	var gotReferer string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReferer = r.Header.Get("Referer")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "ok"}, "finish_reason": "stop"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "m", nil)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if gotReferer != "" {
+		t.Errorf("non-OpenRouter base should not set Referer, got %q", gotReferer)
+	}
+}
+
+func TestProviderChat_NonOpenRouterSingle429NoRetry(t *testing.T) {
+	var n int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"slow down"}}`))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "m", nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if n != 1 {
+		t.Fatalf("request count = %d, want 1 (no OpenRouter 429 retry)", n)
 	}
 }
