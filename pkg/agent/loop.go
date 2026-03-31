@@ -1819,6 +1819,21 @@ func (al *AgentLoop) handleReasoning(
 	}
 }
 
+// injectPendingDelivery appends the last undelivered assistant reply to history
+// when the slot is occupied and history doesn't already end with an assistant message.
+// Must be called after every GetHistory so that proactive-compression and
+// context-error-retry rebuilds do not lose the pending content.
+func (al *AgentLoop) injectPendingDelivery(sessionKey string, history []providers.Message) []providers.Message {
+	if pendingRaw, ok := al.pendingDeliveries.Load(sessionKey); ok {
+		if pd, ok := pendingRaw.(pendingDelivery); ok && pd.content != "" {
+			if len(history) == 0 || history[len(history)-1].Role != "assistant" {
+				return append(history, providers.Message{Role: "assistant", Content: pd.content})
+			}
+		}
+	}
+	return history
+}
+
 func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, error) {
 	turnCtx, turnCancel := context.WithCancel(ctx)
 	defer turnCancel()
@@ -1873,16 +1888,8 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 
 	// Inject pending undelivered assistant reply into history so regular inbound turns
 	// see it in LLM context even before OnDelivered persists it to session storage.
-	// Only inject if history doesn't already end with an assistant message (avoids duplication
-	// when OnDelivered fires before the next turn starts).
 	if !ts.opts.NoHistory {
-		if pendingRaw, ok := al.pendingDeliveries.Load(ts.sessionKey); ok {
-			if pd, ok := pendingRaw.(pendingDelivery); ok && pd.content != "" {
-				if len(history) == 0 || history[len(history)-1].Role != "assistant" {
-					history = append(history, providers.Message{Role: "assistant", Content: pd.content})
-				}
-			}
-		}
+		history = al.injectPendingDelivery(ts.sessionKey, history)
 	}
 
 	messages := ts.agent.ContextBuilder.BuildMessages(
@@ -1925,6 +1932,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 				history = resp.History
 				summary = resp.Summary
 			}
+			history = al.injectPendingDelivery(ts.sessionKey, history)
 			messages = ts.agent.ContextBuilder.BuildMessages(
 				history, summary, ts.userMessage,
 				ts.media, ts.channel, ts.chatID,
@@ -2316,6 +2324,7 @@ turnLoop:
 					history = asmResp.History
 					summary = asmResp.Summary
 				}
+				history = al.injectPendingDelivery(ts.sessionKey, history)
 				messages = ts.agent.ContextBuilder.BuildMessages(
 					history, summary, "",
 					nil, ts.channel, ts.chatID, ts.opts.SenderID, ts.opts.SenderDisplayName,
