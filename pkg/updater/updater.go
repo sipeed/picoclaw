@@ -77,8 +77,9 @@ func DownloadAndExtractRelease(releaseURL, platform, arch string) (string, error
 	}
 
 	// verify checksum if available
+	var got string
 	if checksum != "" {
-		got, err := computeSHA256HexFromPath(tmpPath)
+		got, err = computeSHA256HexFromPath(tmpPath)
 		if err != nil {
 			_ = os.Remove(tmpPath)
 			return "", err
@@ -319,7 +320,11 @@ func findAssetInfo(releaseURL, platform, arch string) (string, string, error) {
 		// Look for checksum assets and verify by computing the asset's sha256.
 		for j, a := range data.Assets {
 			n := strings.ToLower(a.Name)
-			if strings.Contains(n, "sha256") || strings.Contains(n, "sha256sum") || strings.Contains(n, "checksums") || strings.HasSuffix(n, ".sha256") || strings.HasSuffix(n, ".sha256sum") {
+			if strings.Contains(n, "sha256") ||
+				strings.Contains(n, "sha256sum") ||
+				strings.Contains(n, "checksums") ||
+				strings.HasSuffix(n, ".sha256") ||
+				strings.HasSuffix(n, ".sha256sum") {
 				resp2, err := http.Get(data.Assets[j].BrowserDownloadURL)
 				if err != nil {
 					continue
@@ -345,12 +350,6 @@ func findAssetInfo(releaseURL, platform, arch string) (string, string, error) {
 
 	// No platform match — require explicit platform+arch; fail fast.
 	return "", "", fmt.Errorf("no release asset matching platform %q and arch %q", platform, arch)
-}
-
-// findAssetURL preserves the original, single-value signature used elsewhere.
-func findAssetURL(releaseURL, platform, arch string) (string, error) {
-	u, _, err := findAssetInfo(releaseURL, platform, arch)
-	return u, err
 }
 
 func looksLikeDirectAssetURL(u string) bool {
@@ -525,39 +524,7 @@ func extractTarGz(archivePath, destDir string) error {
 	}
 	defer gzr.Close()
 	tr := tar.NewReader(gzr)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		target := filepath.Clean(filepath.Join(filepath.Clean(destDir), hdr.Name))
-		if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) && target != filepath.Clean(destDir) {
-			return fmt.Errorf("path traversal detected: %s", hdr.Name)
-		}
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(hdr.Mode))
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
-				return err
-			}
-			out.Close()
-		}
-	}
-	return nil
+	return extractTarFromReader(tr, destDir)
 }
 
 func extractTar(archivePath, destDir string) error {
@@ -567,6 +534,13 @@ func extractTar(archivePath, destDir string) error {
 	}
 	defer f.Close()
 	tr := tar.NewReader(f)
+	return extractTarFromReader(tr, destDir)
+}
+
+// extractTarFromReader contains logic common to extracting entries from a
+// tar.Reader and is used by both extractTarGz and extractTar to avoid
+// duplicated code (golangci-lint: dupl).
+func extractTarFromReader(tr *tar.Reader, destDir string) error {
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
