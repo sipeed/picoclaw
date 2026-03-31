@@ -88,10 +88,10 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			ThinkingLevel:  m.ThinkingLevel,
 			ExtraBody:      m.ExtraBody,
 			Enabled:        m.Enabled,
-			Available: modelStatuses[i].Available,
-			Status:    modelStatuses[i].Status,
-			IsDefault: m.ModelName == defaultModel,
-			IsVirtual: m.IsVirtual(),
+			Available:      modelStatuses[i].Available,
+			Status:         modelStatuses[i].Status,
+			IsDefault:      m.ModelName == defaultModel,
+			IsVirtual:      m.IsVirtual(),
 		})
 	}
 
