@@ -170,7 +170,7 @@
     "noDefaultHintPrefix": "尚未设置默认模型，点击",
     "noDefaultHintSuffix": "设为默认。",
     "status": {
-      "configured": "已配置",
+      "available": "可用",
       "unconfigured": "未配置",
       "unreachable": "服务不可达"
     },

@@ -21,7 +21,7 @@ export interface ModelInfo {
   extra_body?: Record<string, unknown>
   // Meta
   available: boolean
-  status?: "configured" | "unconfigured" | "unreachable"
+  status?: "available" | "unconfigured" | "unreachable"
   is_default: boolean
   is_virtual: boolean
 }

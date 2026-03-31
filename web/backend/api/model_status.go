@@ -16,7 +16,7 @@ import (
 const modelProbeTimeout = 800 * time.Millisecond
 
 const (
-	modelStatusConfigured   = "configured"
+	modelStatusAvailable    = "available"
 	modelStatusUnconfigured = "unconfigured"
 	modelStatusUnreachable  = "unreachable"
 )
@@ -60,11 +60,11 @@ func modelConfigurationStatus(m *config.ModelConfig) modelConfigurationSummary {
 	}
 	if requiresRuntimeProbe(m) {
 		if probeLocalModelAvailability(m) {
-			return modelConfigurationSummary{Available: true, Status: modelStatusConfigured}
+			return modelConfigurationSummary{Available: true, Status: modelStatusAvailable}
 		}
 		return modelConfigurationSummary{Available: false, Status: modelStatusUnreachable}
 	}
-	return modelConfigurationSummary{Available: true, Status: modelStatusConfigured}
+	return modelConfigurationSummary{Available: true, Status: modelStatusAvailable}
 }
 
 func requiresRuntimeProbe(m *config.ModelConfig) bool {

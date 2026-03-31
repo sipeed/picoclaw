@@ -170,7 +170,7 @@
     "noDefaultHintPrefix": "No default model set yet. Click",
     "noDefaultHintSuffix": "to set one.",
     "status": {
-      "configured": "Configured",
+      "available": "Available",
       "unconfigured": "Not configured",
       "unreachable": "Service unreachable"
     },

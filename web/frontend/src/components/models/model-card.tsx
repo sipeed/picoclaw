@@ -28,7 +28,7 @@ export function ModelCard({
 }: ModelCardProps) {
   const { t } = useTranslation()
   const isOAuth = model.auth_method === "oauth"
-  const status = model.status ?? (model.available ? "configured" : "unconfigured")
+  const status = model.status ?? (model.available ? "available" : "unconfigured")
   const statusLabel = t(`models.status.${status}`)
   const canSetDefault =
     model.available && !model.is_default && !model.is_virtual
@@ -49,7 +49,7 @@ export function ModelCard({
               "mt-0.5 h-2 w-2 shrink-0 rounded-full",
               model.is_default
                 ? "bg-green-400 shadow-[0_0_0_2px_rgba(74,222,128,0.35)]"
-                : status === "configured"
+                : status === "available"
                   ? "bg-green-500"
                   : status === "unreachable"
                     ? "bg-amber-500"
@@ -127,7 +127,7 @@ export function ModelCard({
           <span className="text-muted-foreground bg-muted rounded px-1.5 py-0.5 text-[10px] font-medium">
             OAuth
           </span>
-        ) : model.api_key ? (
+        ) : status === "available" && model.api_key ? (
           <span className="text-muted-foreground/70 flex items-center gap-1 font-mono text-[11px]">
             <IconKey className="size-3" />
             {model.api_key}

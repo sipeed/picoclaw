@@ -138,17 +138,17 @@ func TestHandleListModels_AvailabilityUsesRuntimeProbesForLocalModels(t *testing
 	if gotStatus["openai-oauth"] != modelStatusUnconfigured {
 		t.Fatalf("openai oauth model status = %q, want %q", gotStatus["openai-oauth"], modelStatusUnconfigured)
 	}
-	if gotStatus["vllm-local"] != modelStatusConfigured {
-		t.Fatalf("vllm local model status = %q, want %q", gotStatus["vllm-local"], modelStatusConfigured)
+	if gotStatus["vllm-local"] != modelStatusAvailable {
+		t.Fatalf("vllm local model status = %q, want %q", gotStatus["vllm-local"], modelStatusAvailable)
 	}
-	if gotStatus["ollama-default"] != modelStatusConfigured {
-		t.Fatalf("ollama default model status = %q, want %q", gotStatus["ollama-default"], modelStatusConfigured)
+	if gotStatus["ollama-default"] != modelStatusAvailable {
+		t.Fatalf("ollama default model status = %q, want %q", gotStatus["ollama-default"], modelStatusAvailable)
 	}
-	if gotStatus["vllm-remote"] != modelStatusConfigured {
-		t.Fatalf("remote vllm model status = %q, want %q", gotStatus["vllm-remote"], modelStatusConfigured)
+	if gotStatus["vllm-remote"] != modelStatusAvailable {
+		t.Fatalf("remote vllm model status = %q, want %q", gotStatus["vllm-remote"], modelStatusAvailable)
 	}
-	if gotStatus["copilot-gpt-5.4"] != modelStatusConfigured {
-		t.Fatalf("copilot model status = %q, want %q", gotStatus["copilot-gpt-5.4"], modelStatusConfigured)
+	if gotStatus["copilot-gpt-5.4"] != modelStatusAvailable {
+		t.Fatalf("copilot model status = %q, want %q", gotStatus["copilot-gpt-5.4"], modelStatusAvailable)
 	}
 	if len(openAIProbes) != 1 || openAIProbes[0] != "http://127.0.0.1:8000/v1|custom-model|" {
 		t.Fatalf("openAI probes = %#v, want only local vllm probe", openAIProbes)
