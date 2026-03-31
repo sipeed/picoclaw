@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -192,13 +194,17 @@ func modelProbeCacheKey(m *config.ModelConfig) string {
 	protocol, modelID := splitModel(m.Model)
 
 	modelName := strings.ToLower(strings.TrimSpace(m.ModelName))
-	apiBase := strings.ToLower(strings.TrimSpace(modelProbeAPIBase(m)))
+	apiBaseRaw := modelProbeAPIBase(m)
+	apiBase := strings.ToLower(strings.TrimRight(strings.TrimSpace(apiBaseRaw), "/"))
 	authMethod := strings.ToLower(strings.TrimSpace(m.AuthMethod))
 	connectMode := strings.ToLower(strings.TrimSpace(m.ConnectMode))
-	hasAPIKey := strings.TrimSpace(m.APIKey()) != ""
+	apiKeyFingerprint := modelProbeAPIKeyFingerprint(m.APIKey())
 
 	var b strings.Builder
-	b.Grow(len(modelName) + len(protocol) + len(modelID) + len(apiBase) + len(authMethod) + len(connectMode) + 8)
+	b.Grow(
+		len(modelName) + len(protocol) + len(modelID) + len(apiBase) + len(authMethod) +
+			len(connectMode) + len(apiKeyFingerprint) + 8,
+	)
 	b.WriteString(modelName)
 	b.WriteByte('|')
 	b.WriteString(protocol)
@@ -211,13 +217,20 @@ func modelProbeCacheKey(m *config.ModelConfig) string {
 	b.WriteByte('|')
 	b.WriteString(connectMode)
 	b.WriteByte('|')
-	if hasAPIKey {
-		b.WriteByte('1')
-	} else {
-		b.WriteByte('0')
-	}
+	b.WriteString(apiKeyFingerprint)
 
 	return b.String()
+}
+
+func modelProbeAPIKeyFingerprint(raw string) string {
+	apiKey := strings.TrimSpace(raw)
+	if apiKey == "" {
+		return "none"
+	}
+
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(apiKey))
+	return strconv.FormatUint(h.Sum64(), 36)
 }
 
 func (s *modelProbeCacheState) getCachedResult(cacheKey string, now time.Time) (bool, bool) {

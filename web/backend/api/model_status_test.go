@@ -89,6 +89,46 @@ func TestProbeLocalModelAvailability_LMStudioUsesOpenAICompatibleProbe(t *testin
 	}
 }
 
+func TestModelProbeCacheKey_DifferentAPIKeysProduceDifferentKeys(t *testing.T) {
+	base := &config.ModelConfig{
+		ModelName:   "local-vllm",
+		Model:       "vllm/custom-model",
+		APIBase:     "http://127.0.0.1:8000/v1",
+		AuthMethod:  "local",
+		ConnectMode: "",
+	}
+
+	m1 := *base
+	m1.SetAPIKey("key-a")
+	m2 := *base
+	m2.SetAPIKey("key-b")
+
+	k1 := modelProbeCacheKey(&m1)
+	k2 := modelProbeCacheKey(&m2)
+	if k1 == k2 {
+		t.Fatal("modelProbeCacheKey() should differ when api key changes")
+	}
+}
+
+func TestModelProbeCacheKey_NormalizesTrailingSlashInAPIBase(t *testing.T) {
+	m1 := &config.ModelConfig{
+		ModelName: "local-vllm",
+		Model:     "vllm/custom-model",
+		APIBase:   "http://127.0.0.1:8000/v1",
+	}
+	m2 := &config.ModelConfig{
+		ModelName: "local-vllm",
+		Model:     "vllm/custom-model",
+		APIBase:   "http://127.0.0.1:8000/v1/",
+	}
+
+	k1 := modelProbeCacheKey(m1)
+	k2 := modelProbeCacheKey(m2)
+	if k1 != k2 {
+		t.Fatalf("modelProbeCacheKey() mismatch for equivalent api_base values: %q vs %q", k1, k2)
+	}
+}
+
 func TestProbeLocalModelAvailability_SuccessBackoff(t *testing.T) {
 	resetModelProbeHooks(t)
 
@@ -272,13 +312,19 @@ func TestProbeLocalModelAvailability_DeduplicatesInflightProbe(t *testing.T) {
 	const workers = 8
 	var wg sync.WaitGroup
 	results := make(chan bool, workers)
+	workerStarted := make(chan struct{}, workers)
 
 	for range workers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			workerStarted <- struct{}{}
 			results <- probeLocalModelAvailability(model)
 		}()
+	}
+
+	for range workers {
+		<-workerStarted
 	}
 
 	select {
@@ -287,8 +333,6 @@ func TestProbeLocalModelAvailability_DeduplicatesInflightProbe(t *testing.T) {
 		t.Fatal("probe did not start in time")
 	}
 
-	// Give waiting goroutines a short window to join the same inflight call.
-	time.Sleep(50 * time.Millisecond)
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("concurrent probe calls = %d, want 1", got)
 	}
@@ -301,6 +345,10 @@ func TestProbeLocalModelAvailability_DeduplicatesInflightProbe(t *testing.T) {
 		if !result {
 			t.Fatal("deduplicated probe result = false, want true")
 		}
+	}
+
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("final probe calls = %d, want 1", got)
 	}
 }
 
