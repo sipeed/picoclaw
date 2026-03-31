@@ -129,6 +129,9 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	}
 
 	if modelID != "" {
+		if cfg.Agents.Defaults.OriginalModelName == "" {
+			cfg.Agents.Defaults.OriginalModelName = cfg.Agents.Defaults.ModelName
+		}
 		cfg.Agents.Defaults.ModelName = modelID
 	}
 

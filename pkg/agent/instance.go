@@ -131,6 +131,9 @@ func NewAgentInstance(
 	}
 
 	maxTokens := defaults.MaxTokens
+	if mc, err := cfg.GetModelConfig(defaults.OriginalModelName); err == nil {
+		maxTokens = mc.MaxTokens
+	}
 	if maxTokens == 0 {
 		maxTokens = 8192
 	}

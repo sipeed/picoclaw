@@ -35,6 +35,7 @@ type modelResponse struct {
 	ConnectMode    string         `json:"connect_mode,omitempty"`
 	Workspace      string         `json:"workspace,omitempty"`
 	RPM            int            `json:"rpm,omitempty"`
+	MaxTokens      int            `json:"max_tokens,omitempty"`
 	MaxTokensField string         `json:"max_tokens_field,omitempty"`
 	RequestTimeout int            `json:"request_timeout,omitempty"`
 	ThinkingLevel  string         `json:"thinking_level,omitempty"`
@@ -82,6 +83,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			ConnectMode:    m.ConnectMode,
 			Workspace:      m.Workspace,
 			RPM:            m.RPM,
+			MaxTokens:      m.MaxTokens,
 			MaxTokensField: m.MaxTokensField,
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,

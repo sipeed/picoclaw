@@ -499,6 +499,7 @@ func loadConfigV0(data []byte) (migratable, error) {
 				ConnectMode:    m.ConnectMode,
 				Workspace:      m.Workspace,
 				RPM:            m.RPM,
+				MaxTokens:      m.MaxTokens,
 				MaxTokensField: m.MaxTokensField,
 				RequestTimeout: m.RequestTimeout,
 				ThinkingLevel:  m.ThinkingLevel,
