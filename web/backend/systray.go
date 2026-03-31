@@ -3,10 +3,10 @@
 package main
 
 import (
-	_ "embed"
 	"fmt"
 
 	"fyne.io/systray"
+	"github.com/atotto/clipboard"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/web/backend/utils"
@@ -24,6 +24,7 @@ func onReady() {
 
 	// Create menu items
 	mOpen := systray.AddMenuItem(T(MenuOpen), T(MenuOpenTooltip))
+	mCopyTok := systray.AddMenuItem(T(MenuCopyToken), T(MenuCopyTokenHint))
 	mAbout := systray.AddMenuItem(T(MenuAbout), T(MenuAboutTooltip))
 
 	// Add version info under About menu
@@ -49,6 +50,17 @@ func onReady() {
 			case <-mOpen.ClickedCh:
 				if err := openBrowser(); err != nil {
 					logger.Errorf("Failed to open browser: %v", err)
+				}
+
+			case <-mCopyTok.ClickedCh:
+				if launcherDashboardTokenForClipboard == "" {
+					logger.WarnC("web", "Dashboard token is empty; cannot copy")
+					continue
+				}
+				if err := clipboard.WriteAll(launcherDashboardTokenForClipboard); err != nil {
+					logger.Errorf("Failed to copy dashboard token: %v", err)
+				} else {
+					logger.InfoC("web", "Dashboard token copied to clipboard")
 				}
 
 			case <-mVersion.ClickedCh:
@@ -92,9 +104,4 @@ func onReady() {
 // onExit is called when the system tray is exiting
 func onExit() {
 	logger.Info(T(Exiting))
-}
-
-// getIcon returns the system tray icon
-func getIcon() []byte {
-	return iconData
 }

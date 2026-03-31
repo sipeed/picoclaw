@@ -1,0 +1,67 @@
+# ============================================================
+# Stage 1: Build the picoclaw binary
+# ============================================================
+FROM golang:1.26.0-alpine AS builder
+
+RUN apk add --no-cache git make
+
+WORKDIR /src
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source and build
+COPY . .
+RUN make build
+
+# ============================================================
+# Stage 2: Node.js runtime with Python + MCP support
+# ============================================================
+FROM node:24-alpine3.23
+
+RUN apk add --no-cache \
+  ca-certificates \
+  curl \
+  git \
+  python3 \
+  py3-pip \
+  chromium \
+  jq
+
+# Install Playwright browsers for agent-browser
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+RUN npm install -g agent-browser && \
+    npx playwright install chromium && \
+    chmod -R o+rx $PLAYWRIGHT_BROWSERS_PATH
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+  ln -s /root/.local/bin/uv /usr/local/bin/uv && \
+  ln -s /root/.local/bin/uvx /usr/local/bin/uvx && \
+  uv --version
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -q --spider http://localhost:18790/health || exit 1
+
+# Copy binary
+COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
+
+# Reuse existing node user (UID/GID 1000) — rename to picoclaw
+RUN deluser node 2>/dev/null; delgroup node 2>/dev/null; \
+    addgroup -g 1000 picoclaw 2>/dev/null; \
+    adduser -D -u 1000 -G picoclaw -h /home/picoclaw picoclaw 2>/dev/null || true
+
+USER picoclaw
+
+# Run onboard to create initial directories and config
+RUN /usr/local/bin/picoclaw onboard
+
+# Copy default workspace
+COPY --chown=picoclaw:picoclaw workspace/ /home/picoclaw/.picoclaw/workspace/
+
+VOLUME /home/picoclaw/.picoclaw/workspace
+
+ENTRYPOINT ["picoclaw"]
+CMD ["gateway"]

@@ -16,12 +16,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
-	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	userAgent       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	userAgentHonest = "picoclaw/%s (+https://github.com/sipeed/picoclaw; AI assistant bot)"
 
 	// HTTP client timeouts for web tool providers.
 	searchTimeout     = 10 * time.Second // Brave, Tavily, DuckDuckGo
@@ -41,7 +43,9 @@ var (
 	reBlankLines = regexp.MustCompile(`\n{3,}`)
 
 	// DuckDuckGo result extraction
-	reDDGLink    = regexp.MustCompile(`<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>`)
+	reDDGLink = regexp.MustCompile(
+		`<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>`,
+	)
 	reDDGSnippet = regexp.MustCompile(`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`)
 )
 
@@ -84,7 +88,122 @@ func (it *APIKeyIterator) Next() (string, bool) {
 }
 
 type SearchProvider interface {
-	Search(ctx context.Context, query string, count int) (string, error)
+	Search(ctx context.Context, query string, count int, rangeCode string) (string, error)
+}
+
+func normalizeSearchRange(raw string) (string, error) {
+	rangeCode := strings.ToLower(strings.TrimSpace(raw))
+	switch rangeCode {
+	case "", "d", "w", "m", "y":
+		return rangeCode, nil
+	default:
+		return "", fmt.Errorf("range must be one of: d, w, m, y")
+	}
+}
+
+func mapBraveFreshness(rangeCode string) string {
+	switch rangeCode {
+	case "d":
+		return "pd"
+	case "w":
+		return "pw"
+	case "m":
+		return "pm"
+	case "y":
+		return "py"
+	default:
+		return ""
+	}
+}
+
+func mapTavilyTimeRange(rangeCode string) string {
+	switch rangeCode {
+	case "d":
+		return "day"
+	case "w":
+		return "week"
+	case "m":
+		return "month"
+	case "y":
+		return "year"
+	default:
+		return ""
+	}
+}
+
+func mapPerplexityRecencyFilter(rangeCode string) string {
+	switch rangeCode {
+	case "d":
+		return "day"
+	case "w":
+		return "week"
+	case "m":
+		return "month"
+	case "y":
+		return "year"
+	default:
+		return ""
+	}
+}
+
+func mapDuckDuckGoDateFilter(rangeCode string) string {
+	switch rangeCode {
+	case "d":
+		return "d"
+	case "w":
+		return "w"
+	case "m":
+		return "m"
+	case "y":
+		return "t"
+	default:
+		return ""
+	}
+}
+
+func mapSearXNGTimeRange(rangeCode string) string {
+	switch rangeCode {
+	case "d":
+		return "day"
+	case "w":
+		return "week"
+	case "m":
+		return "month"
+	case "y":
+		return "year"
+	default:
+		return ""
+	}
+}
+
+func mapGLMRecencyFilter(rangeCode string) string {
+	switch rangeCode {
+	case "d":
+		return "oneDay"
+	case "w":
+		return "oneWeek"
+	case "m":
+		return "oneMonth"
+	case "y":
+		return "oneYear"
+	default:
+		return "noLimit"
+	}
+}
+
+func mapBaiduRecencyFilter(rangeCode string) string {
+	switch rangeCode {
+	case "d", "w":
+		// Baidu does not expose a day-level filter. Use the closest supported
+		// window to keep recency bias instead of silently dropping the filter.
+		return "week"
+	case "m":
+		return "month"
+	case "y":
+		return "year"
+	default:
+		return ""
+	}
 }
 
 type BraveSearchProvider struct {
@@ -93,9 +212,17 @@ type BraveSearchProvider struct {
 	client  *http.Client
 }
 
-func (p *BraveSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+func (p *BraveSearchProvider) Search(
+	ctx context.Context,
+	query string,
+	count int,
+	rangeCode string,
+) (string, error) {
 	searchURL := fmt.Sprintf("https://api.search.brave.com/res/v1/web/search?q=%s&count=%d",
 		url.QueryEscape(query), count)
+	if freshness := mapBraveFreshness(rangeCode); freshness != "" {
+		searchURL += "&freshness=" + url.QueryEscape(freshness)
+	}
 
 	var lastErr error
 	iter := p.keyPool.NewIterator()
@@ -184,7 +311,12 @@ type TavilySearchProvider struct {
 	client  *http.Client
 }
 
-func (p *TavilySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+func (p *TavilySearchProvider) Search(
+	ctx context.Context,
+	query string,
+	count int,
+	rangeCode string,
+) (string, error) {
 	searchURL := p.baseURL
 	if searchURL == "" {
 		searchURL = "https://api.tavily.com/search"
@@ -207,6 +339,9 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 			"include_images":      false,
 			"include_raw_content": false,
 			"max_results":         count,
+		}
+		if timeRange := mapTavilyTimeRange(rangeCode); timeRange != "" {
+			payload["time_range"] = timeRange
 		}
 
 		bodyBytes, err := json.Marshal(payload)
@@ -287,8 +422,16 @@ type DuckDuckGoSearchProvider struct {
 	client *http.Client
 }
 
-func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+func (p *DuckDuckGoSearchProvider) Search(
+	ctx context.Context,
+	query string,
+	count int,
+	rangeCode string,
+) (string, error) {
 	searchURL := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
+	if dateFilter := mapDuckDuckGoDateFilter(rangeCode); dateFilter != "" {
+		searchURL += "&df=" + url.QueryEscape(dateFilter)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
 	if err != nil {
@@ -311,7 +454,11 @@ func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, cou
 	return p.extractResults(string(body), count, query)
 }
 
-func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query string) (string, error) {
+func (p *DuckDuckGoSearchProvider) extractResults(
+	html string,
+	count int,
+	query string,
+) (string, error) {
 	// Simple regex based extraction for DDG HTML
 	// Strategy: Find all result containers or key anchors directly
 
@@ -379,7 +526,12 @@ type PerplexitySearchProvider struct {
 	client  *http.Client
 }
 
-func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+func (p *PerplexitySearchProvider) Search(
+	ctx context.Context,
+	query string,
+	count int,
+	rangeCode string,
+) (string, error) {
 	searchURL := "https://api.perplexity.ai/chat/completions"
 
 	var lastErr error
@@ -399,11 +551,18 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 					"content": "You are a search assistant. Provide concise search results with titles, URLs, and brief descriptions in the following format:\n1. Title\n   URL\n   Description\n\nDo not add extra commentary.",
 				},
 				{
-					"role":    "user",
-					"content": fmt.Sprintf("Search for: %s. Provide up to %d relevant results.", query, count),
+					"role": "user",
+					"content": fmt.Sprintf(
+						"Search for: %s. Provide up to %d relevant results.",
+						query,
+						count,
+					),
 				},
 			},
 			"max_tokens": 1000,
+		}
+		if recencyFilter := mapPerplexityRecencyFilter(rangeCode); recencyFilter != "" {
+			payload["search_recency_filter"] = recencyFilter
 		}
 
 		payloadBytes, err := json.Marshal(payload)
@@ -411,7 +570,12 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 			return "", fmt.Errorf("failed to marshal request: %w", err)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "POST", searchURL, strings.NewReader(string(payloadBytes)))
+		req, err := http.NewRequestWithContext(
+			ctx,
+			"POST",
+			searchURL,
+			strings.NewReader(string(payloadBytes)),
+		)
 		if err != nil {
 			return "", fmt.Errorf("failed to create request: %w", err)
 		}
@@ -461,7 +625,11 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 			return fmt.Sprintf("No results for: %s", query), nil
 		}
 
-		return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
+		return fmt.Sprintf(
+			"Results for: %s (via Perplexity)\n%s",
+			query,
+			searchResp.Choices[0].Message.Content,
+		), nil
 	}
 
 	return "", fmt.Errorf("all api keys failed, last error: %w", lastErr)
@@ -471,10 +639,18 @@ type SearXNGSearchProvider struct {
 	baseURL string
 }
 
-func (p *SearXNGSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+func (p *SearXNGSearchProvider) Search(
+	ctx context.Context,
+	query string,
+	count int,
+	rangeCode string,
+) (string, error) {
 	searchURL := fmt.Sprintf("%s/search?q=%s&format=json&categories=general",
 		strings.TrimSuffix(p.baseURL, "/"),
 		url.QueryEscape(query))
+	if timeRange := mapSearXNGTimeRange(rangeCode); timeRange != "" {
+		searchURL += "&time_range=" + url.QueryEscape(timeRange)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
 	if err != nil {
@@ -537,7 +713,12 @@ type GLMSearchProvider struct {
 	client       *http.Client
 }
 
-func (p *GLMSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+func (p *GLMSearchProvider) Search(
+	ctx context.Context,
+	query string,
+	count int,
+	rangeCode string,
+) (string, error) {
 	searchURL := p.baseURL
 	if searchURL == "" {
 		searchURL = "https://open.bigmodel.cn/api/paas/v4/web_search"
@@ -549,6 +730,9 @@ func (p *GLMSearchProvider) Search(ctx context.Context, query string, count int)
 		"search_intent": false,
 		"count":         count,
 		"content_size":  "medium",
+	}
+	if recencyFilter := mapGLMRecencyFilter(rangeCode); recencyFilter != "" {
+		payload["search_recency_filter"] = recencyFilter
 	}
 
 	bodyBytes, err := json.Marshal(payload)
@@ -611,39 +795,132 @@ func (p *GLMSearchProvider) Search(ctx context.Context, query string, count int)
 	return strings.Join(lines, "\n"), nil
 }
 
+type BaiduSearchProvider struct {
+	apiKey  string
+	baseURL string
+	proxy   string
+	client  *http.Client
+}
+
+func (p *BaiduSearchProvider) Search(
+	ctx context.Context,
+	query string,
+	count int,
+	rangeCode string,
+) (string, error) {
+	searchURL := p.baseURL
+	if searchURL == "" {
+		searchURL = "https://qianfan.baidubce.com/v2/ai_search/web_search"
+	}
+
+	payload := map[string]any{
+		"messages": []map[string]string{
+			{
+				"role":    "user",
+				"content": query,
+			},
+		},
+		"search_source":        "baidu_search_v2",
+		"resource_type_filter": []map[string]any{{"type": "web", "top_k": count}},
+	}
+	if recencyFilter := mapBaiduRecencyFilter(rangeCode); recencyFilter != "" {
+		payload["search_recency_filter"] = recencyFilter
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("baidu search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("baidu search API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		References []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"references"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(result.References) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	lines := []string{fmt.Sprintf("Results for: %s (via Baidu Search)", query)}
+	for i, item := range result.References {
+		if i >= count {
+			break
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+		if item.Content != "" {
+			lines = append(lines, fmt.Sprintf("   %s", item.Content))
+		}
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
 type WebSearchTool struct {
 	provider   SearchProvider
 	maxResults int
 }
 
 type WebSearchToolOptions struct {
-	BraveAPIKeys         []string
-	BraveMaxResults      int
-	BraveEnabled         bool
-	TavilyAPIKeys        []string
-	TavilyBaseURL        string
-	TavilyMaxResults     int
-	TavilyEnabled        bool
-	DuckDuckGoMaxResults int
-	DuckDuckGoEnabled    bool
-	PerplexityAPIKeys    []string
-	PerplexityMaxResults int
-	PerplexityEnabled    bool
-	SearXNGBaseURL       string
-	SearXNGMaxResults    int
-	SearXNGEnabled       bool
-	GLMSearchAPIKey      string
-	GLMSearchBaseURL     string
-	GLMSearchEngine      string
-	GLMSearchMaxResults  int
-	GLMSearchEnabled     bool
-	Proxy                string
+	BraveAPIKeys          []string
+	BraveMaxResults       int
+	BraveEnabled          bool
+	TavilyAPIKeys         []string
+	TavilyBaseURL         string
+	TavilyMaxResults      int
+	TavilyEnabled         bool
+	DuckDuckGoMaxResults  int
+	DuckDuckGoEnabled     bool
+	PerplexityAPIKeys     []string
+	PerplexityMaxResults  int
+	PerplexityEnabled     bool
+	SearXNGBaseURL        string
+	SearXNGMaxResults     int
+	SearXNGEnabled        bool
+	GLMSearchAPIKey       string
+	GLMSearchBaseURL      string
+	GLMSearchEngine       string
+	GLMSearchMaxResults   int
+	GLMSearchEnabled      bool
+	BaiduSearchAPIKey     string
+	BaiduSearchBaseURL    string
+	BaiduSearchMaxResults int
+	BaiduSearchEnabled    bool
+	Proxy                 string
 }
 
 func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	var provider SearchProvider
-	maxResults := 5
-	// Priority: Perplexity > Brave > SearXNG > Tavily > DuckDuckGo > GLM Search
+	maxResults := 10
+	// Priority: Perplexity > Brave > SearXNG > Tavily > DuckDuckGo > Baidu Search > GLM Search
 	if opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0 {
 		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
@@ -655,7 +932,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			client:  client,
 		}
 		if opts.PerplexityMaxResults > 0 {
-			maxResults = opts.PerplexityMaxResults
+			maxResults = min(opts.PerplexityMaxResults, 10)
 		}
 	} else if opts.BraveEnabled && len(opts.BraveAPIKeys) > 0 {
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
@@ -664,12 +941,12 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		}
 		provider = &BraveSearchProvider{keyPool: NewAPIKeyPool(opts.BraveAPIKeys), proxy: opts.Proxy, client: client}
 		if opts.BraveMaxResults > 0 {
-			maxResults = opts.BraveMaxResults
+			maxResults = min(opts.BraveMaxResults, 10)
 		}
 	} else if opts.SearXNGEnabled && opts.SearXNGBaseURL != "" {
 		provider = &SearXNGSearchProvider{baseURL: opts.SearXNGBaseURL}
 		if opts.SearXNGMaxResults > 0 {
-			maxResults = opts.SearXNGMaxResults
+			maxResults = min(opts.SearXNGMaxResults, 10)
 		}
 	} else if opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0 {
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
@@ -683,7 +960,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			client:  client,
 		}
 		if opts.TavilyMaxResults > 0 {
-			maxResults = opts.TavilyMaxResults
+			maxResults = min(opts.TavilyMaxResults, 10)
 		}
 	} else if opts.DuckDuckGoEnabled {
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
@@ -692,7 +969,21 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		}
 		provider = &DuckDuckGoSearchProvider{proxy: opts.Proxy, client: client}
 		if opts.DuckDuckGoMaxResults > 0 {
-			maxResults = opts.DuckDuckGoMaxResults
+			maxResults = min(opts.DuckDuckGoMaxResults, 10)
+		}
+	} else if opts.BaiduSearchEnabled && opts.BaiduSearchAPIKey != "" {
+		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create HTTP client for Baidu Search: %w", err)
+		}
+		provider = &BaiduSearchProvider{
+			apiKey:  opts.BaiduSearchAPIKey,
+			baseURL: opts.BaiduSearchBaseURL,
+			proxy:   opts.Proxy,
+			client:  client,
+		}
+		if opts.BaiduSearchMaxResults > 0 {
+			maxResults = min(opts.BaiduSearchMaxResults, 10)
 		}
 	} else if opts.GLMSearchEnabled && opts.GLMSearchAPIKey != "" {
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
@@ -711,7 +1002,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			client:       client,
 		}
 		if opts.GLMSearchMaxResults > 0 {
-			maxResults = opts.GLMSearchMaxResults
+			maxResults = min(opts.GLMSearchMaxResults, 10)
 		}
 	} else {
 		return nil, nil
@@ -728,7 +1019,7 @@ func (t *WebSearchTool) Name() string {
 }
 
 func (t *WebSearchTool) Description() string {
-	return "Search the web for current information. Returns titles, URLs, and snippets from search results."
+	return "Search the web for current information. Supports query, count, and an optional temporal range filter. Returns titles, URLs, and snippets from search results."
 }
 
 func (t *WebSearchTool) Parameters() map[string]any {
@@ -741,9 +1032,14 @@ func (t *WebSearchTool) Parameters() map[string]any {
 			},
 			"count": map[string]any{
 				"type":        "integer",
-				"description": "Number of results (1-10)",
+				"description": "Number of results (default: 10, max: 10)",
 				"minimum":     1.0,
 				"maximum":     10.0,
+			},
+			"range": map[string]any{
+				"type":        "string",
+				"description": "Optional time filter: d (day), w (week), m (month), y (year)",
+				"enum":        []string{"d", "w", "m", "y"},
 			},
 		},
 		"required": []string{"query"},
@@ -752,18 +1048,36 @@ func (t *WebSearchTool) Parameters() map[string]any {
 
 func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	query, ok := args["query"].(string)
-	if !ok {
+	if !ok || strings.TrimSpace(query) == "" {
 		return ErrorResult("query is required")
 	}
+	query = strings.TrimSpace(query)
 
+	count64, err := getInt64Arg(args, "count", int64(t.maxResults))
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
 	count := t.maxResults
-	if c, ok := args["count"].(float64); ok {
-		if int(c) > 0 && int(c) <= 10 {
-			count = int(c)
+	if count64 > 0 && count64 <= 10 {
+		count = int(count64)
+	}
+
+	rangeCode, err := normalizeSearchRange("")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	if rawRange, exists := args["range"]; exists {
+		rangeStr, ok := rawRange.(string)
+		if !ok {
+			return ErrorResult("range must be a string")
+		}
+		rangeCode, err = normalizeSearchRange(rangeStr)
+		if err != nil {
+			return ErrorResult(err.Error())
 		}
 	}
 
-	result, err := t.provider.Search(ctx, query, count)
+	result, err := t.provider.Search(ctx, query, count, rangeCode)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("search failed: %v", err))
 	}
@@ -913,28 +1227,63 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to create request: %v", err))
+	doFetch := func(ua string) (*http.Response, []byte, error) {
+		req, reqErr := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
+		if reqErr != nil {
+			return nil, nil, fmt.Errorf("failed to create request: %w", reqErr)
+		}
+		req.Header.Set("User-Agent", ua)
+		resp, doErr := t.client.Do(req)
+		if doErr != nil {
+			return nil, nil, fmt.Errorf("request failed: %w", doErr)
+		}
+		resp.Body = http.MaxBytesReader(nil, resp.Body, t.fetchLimitBytes)
+
+		b, readErr := io.ReadAll(resp.Body)
+		return resp, b, readErr
 	}
 
-	req.Header.Set("User-Agent", userAgent)
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("request failed: %v", err))
+	resp, body, err := doFetch(userAgent)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
 	}
 
-	resp.Body = http.MaxBytesReader(nil, resp.Body, t.fetchLimitBytes)
-
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			return ErrorResult(fmt.Sprintf("failed to read response: size exceeded %d bytes limit", t.fetchLimitBytes))
+			return ErrorResult(
+				fmt.Sprintf(
+					"failed to read response: size exceeded %d bytes limit",
+					t.fetchLimitBytes,
+				),
+			)
 		}
-		return ErrorResult(fmt.Sprintf("failed to read response: %v", err))
+		return ErrorResult(err.Error())
+	}
+
+	// Cloudflare (and similar WAFs) signal bot challenges with 403 + cf-mitigated: challenge.
+	// Retry once with an honest User-Agent that identifies picoclaw, which some
+	// operators explicitly allow-list for AI assistants.
+	if resp.StatusCode == http.StatusForbidden && resp.Header.Get("Cf-Mitigated") == "challenge" {
+		logger.DebugCF("tool", "Cloudflare challenge detected, retrying with honest User-Agent",
+			map[string]any{"url": urlStr})
+		honestUA := fmt.Sprintf(userAgentHonest, config.Version)
+		resp2, body2, err2 := doFetch(honestUA)
+		if resp2 != nil && resp2.Body != nil {
+			defer resp2.Body.Close()
+		}
+
+		if err2 == nil {
+			resp, body = resp2, body2
+		} else {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err2, &maxBytesErr) {
+				return ErrorResult(
+					fmt.Sprintf("failed to read response: size exceeded %d bytes limit", t.fetchLimitBytes),
+				)
+			}
+			return ErrorResult(err2.Error())
+		}
 	}
 
 	bodyStr := string(body)
@@ -957,7 +1306,11 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		// If the charset is not utf-8, we might have to convert the bodyStr
 		// before passing it to the HTML/Markdown parser
 		if strings.ToLower(charset) != "utf-8" {
-			logger.WarnCF("tool", "Note: the content is not in UTF-8", map[string]any{"charset": charset})
+			logger.WarnCF(
+				"tool",
+				"Note: the content is not in UTF-8",
+				map[string]any{"charset": charset},
+			)
 		}
 	}
 
@@ -1004,7 +1357,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	truncated := len(text) > maxChars
 	if truncated {
-		text = text[:maxChars]
+		text = text[:maxChars] + "\n[Content truncated due to size limit]"
 	}
 
 	result := map[string]any{
@@ -1101,7 +1454,11 @@ func newSafeDialContext(
 				continue
 			}
 			attempted++
-			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ipAddr.IP.String(), port))
+			conn, err := dialer.DialContext(
+				ctx,
+				network,
+				net.JoinHostPort(ipAddr.IP.String(), port),
+			)
 			if err == nil {
 				return conn, nil
 			}
@@ -1109,10 +1466,17 @@ func newSafeDialContext(
 		}
 
 		if attempted == 0 {
-			return nil, fmt.Errorf("all resolved addresses for %s are private, restricted, or not whitelisted", host)
+			return nil, fmt.Errorf(
+				"all resolved addresses for %s are private, restricted, or not whitelisted",
+				host,
+			)
 		}
 		if lastErr != nil {
-			return nil, fmt.Errorf("failed connecting to public addresses for %s: %w", host, lastErr)
+			return nil, fmt.Errorf(
+				"failed connecting to public addresses for %s: %w",
+				host,
+				lastErr,
+			)
 		}
 		return nil, fmt.Errorf("failed connecting to public addresses for %s", host)
 	}

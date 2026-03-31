@@ -56,3 +56,24 @@ type ToolFunctionDefinition struct {
 	Description string         `json:"description"`
 	Parameters  map[string]any `json:"parameters"`
 }
+
+type ExecRequest struct {
+	Action     string            `json:"action"`
+	Command    string            `json:"command,omitempty"`
+	PTY        bool              `json:"pty,omitempty"`
+	Background bool              `json:"background,omitempty"`
+	Timeout    int               `json:"timeout,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	Cwd        string            `json:"cwd,omitempty"`
+	SessionID  string            `json:"sessionId,omitempty"`
+	Data       string            `json:"data,omitempty"`
+}
+
+type ExecResponse struct {
+	SessionID string        `json:"sessionId,omitempty"`
+	Status    string        `json:"status,omitempty"`
+	ExitCode  int           `json:"exitCode,omitempty"`
+	Output    string        `json:"output,omitempty"`
+	Error     string        `json:"error,omitempty"`
+	Sessions  []SessionInfo `json:"sessions,omitempty"`
+}

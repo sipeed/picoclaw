@@ -1,6 +1,16 @@
 package tools
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/providers"
+)
+
+const (
+	handledToolLLMNote   = "The requested output has already been delivered to the user in the current chat. Do not call send_file or any other delivery tool again. If you reply, provide only a brief confirmation."
+	artifactPathsLLMNote = "Use `send_file` with one of these paths to send it to the user, or use file/exec tools to save it inside the workspace if requested."
+)
 
 // ToolResult represents the structured return value from tool execution.
 // It provides clear semantics for different types of results and supports
@@ -34,6 +44,53 @@ type ToolResult struct {
 	// Media contains media store refs produced by this tool.
 	// When non-empty, the agent will publish these as OutboundMediaMessage.
 	Media []string `json:"media,omitempty"`
+
+	// Messages holds the ephemeral session history after execution.
+	// Only populated by SubTurn executions; used by evaluator_optimizer
+	// to carry stateful worker context across evaluation iterations.
+	Messages []providers.Message `json:"-"`
+
+	// ArtifactTags exposes local artifact paths back to the LLM in a structured
+	// form, e.g. "[file:/tmp/example.png]". This is used when a tool produced a
+	// reusable local artifact but did not deliver it to the user yet.
+	ArtifactTags []string `json:"artifact_tags,omitempty"`
+
+	// ResponseHandled indicates that this tool execution already satisfied the
+	// user's request at the channel/output level, so the agent loop can stop
+	// without a follow-up assistant response.
+	ResponseHandled bool `json:"response_handled,omitempty"`
+}
+
+// ContentForLLM returns the normalized textual content to append to the
+// conversation after a tool call. Errors fall back to Err when ForLLM is empty.
+func (tr *ToolResult) ContentForLLM() string {
+	if tr == nil {
+		return ""
+	}
+	content := tr.ForLLM
+	if content == "" && tr.Err != nil {
+		content = tr.Err.Error()
+	}
+	if tr.ResponseHandled {
+		if content == "" {
+			return handledToolLLMNote
+		}
+		if !strings.Contains(content, handledToolLLMNote) {
+			content += "\n" + handledToolLLMNote
+		}
+	}
+	if len(tr.ArtifactTags) > 0 {
+		artifactNote := "Local artifact paths: " + strings.Join(tr.ArtifactTags, " ") + "\n" + artifactPathsLLMNote
+		if content == "" {
+			content = artifactNote
+		} else if !strings.Contains(content, artifactNote) {
+			content += "\n" + artifactNote
+		}
+	}
+	if content != "" {
+		return content
+	}
+	return ""
 }
 
 // NewToolResult creates a basic ToolResult with content for the LLM.
@@ -156,5 +213,11 @@ func (tr *ToolResult) MarshalJSON() ([]byte, error) {
 //	result := ErrorResult("Operation failed").WithError(err)
 func (tr *ToolResult) WithError(err error) *ToolResult {
 	tr.Err = err
+	return tr
+}
+
+// WithResponseHandled marks the tool result as already delivered to the user.
+func (tr *ToolResult) WithResponseHandled() *ToolResult {
+	tr.ResponseHandled = true
 	return tr
 }

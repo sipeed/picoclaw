@@ -1,5 +1,7 @@
 // API client for channels navigation and channel-specific config flows.
 
+import { launcherFetch } from "@/api/http"
+
 export type ChannelConfig = Record<string, unknown>
 export type AppConfig = Record<string, unknown>
 
@@ -22,7 +24,7 @@ interface ConfigActionResponse {
 const BASE_URL = ""
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, options)
+  const res = await launcherFetch(`${BASE_URL}${path}`, options)
   if (!res.ok) {
     let message = `API error: ${res.status} ${res.statusText}`
     try {
@@ -60,6 +62,48 @@ export async function patchAppConfig(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   })
+}
+
+// WeChat QR login flow API
+
+export interface WeixinFlowResponse {
+  flow_id: string
+  status: "wait" | "scaned" | "confirmed" | "expired" | "error"
+  qr_data_uri?: string
+  account_id?: string
+  error?: string
+}
+
+export interface WecomFlowResponse {
+  flow_id: string
+  status: "wait" | "scaned" | "confirmed" | "expired" | "error"
+  qr_data_uri?: string
+  bot_id?: string
+  error?: string
+}
+
+export async function startWeixinFlow(): Promise<WeixinFlowResponse> {
+  return request<WeixinFlowResponse>("/api/weixin/flows", { method: "POST" })
+}
+
+export async function pollWeixinFlow(
+  flowID: string,
+): Promise<WeixinFlowResponse> {
+  return request<WeixinFlowResponse>(
+    `/api/weixin/flows/${encodeURIComponent(flowID)}`,
+  )
+}
+
+export async function startWecomFlow(): Promise<WecomFlowResponse> {
+  return request<WecomFlowResponse>("/api/wecom/flows", { method: "POST" })
+}
+
+export async function pollWecomFlow(
+  flowID: string,
+): Promise<WecomFlowResponse> {
+  return request<WecomFlowResponse>(
+    `/api/wecom/flows/${encodeURIComponent(flowID)}`,
+  )
 }
 
 export type { ChannelsCatalogResponse, ConfigActionResponse }

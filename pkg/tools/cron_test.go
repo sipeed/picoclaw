@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,16 +13,57 @@ import (
 	"github.com/sipeed/picoclaw/pkg/cron"
 )
 
-func newTestCronToolWithConfig(t *testing.T, cfg *config.Config) *CronTool {
+type stubJobExecutor struct {
+	response        string
+	err             error
+	alreadySent     bool // simulate message tool having already sent in this round
+	lastPrompt      string
+	lastKey         string
+	lastChan        string
+	lastChatID      string
+	publishedResp   string
+	publishedChan   string
+	publishedChatID string
+}
+
+func (s *stubJobExecutor) ProcessDirectWithChannel(
+	_ context.Context,
+	content, sessionKey, channel, chatID string,
+) (string, error) {
+	s.lastPrompt = content
+	s.lastKey = sessionKey
+	s.lastChan = channel
+	s.lastChatID = chatID
+	return s.response, s.err
+}
+
+func (s *stubJobExecutor) PublishResponseIfNeeded(
+	_ context.Context,
+	channel, chatID, response string,
+) {
+	if s.alreadySent {
+		return
+	}
+	s.publishedResp = response
+	s.publishedChan = channel
+	s.publishedChatID = chatID
+}
+
+func newTestCronToolWithExecutorAndConfig(t *testing.T, executor JobExecutor, cfg *config.Config) *CronTool {
 	t.Helper()
 	storePath := filepath.Join(t.TempDir(), "cron.json")
 	cronService := cron.NewCronService(storePath, nil)
 	msgBus := bus.NewMessageBus()
-	tool, err := NewCronTool(cronService, nil, msgBus, t.TempDir(), true, 0, cfg)
+	tool, err := NewCronTool(cronService, executor, msgBus, t.TempDir(), true, 0, cfg)
 	if err != nil {
 		t.Fatalf("NewCronTool() error: %v", err)
 	}
 	return tool
+}
+
+func newTestCronToolWithConfig(t *testing.T, cfg *config.Config) *CronTool {
+	t.Helper()
+	return newTestCronToolWithExecutorAndConfig(t, nil, cfg)
 }
 
 func newTestCronTool(t *testing.T) *CronTool {
@@ -187,28 +229,6 @@ func TestCronTool_NonCommandJobAllowedFromRemoteChannel(t *testing.T) {
 	}
 }
 
-func TestCronTool_NonCommandJobDefaultsDeliverToFalse(t *testing.T) {
-	tool := newTestCronTool(t)
-	ctx := WithToolContext(context.Background(), "telegram", "chat-1")
-	result := tool.Execute(ctx, map[string]any{
-		"action":     "add",
-		"message":    "send me a poem",
-		"at_seconds": float64(600),
-	})
-
-	if result.IsError {
-		t.Fatalf("expected non-command reminder to succeed, got: %s", result.ForLLM)
-	}
-
-	jobs := tool.cronService.ListJobs(false)
-	if len(jobs) != 1 {
-		t.Fatalf("expected 1 job, got %d", len(jobs))
-	}
-	if jobs[0].Payload.Deliver {
-		t.Fatal("expected deliver=false by default for non-command jobs")
-	}
-}
-
 func TestCronTool_ExecuteJobPublishesErrorWhenExecDisabled(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Tools.Exec.Enabled = false
@@ -235,5 +255,93 @@ func TestCronTool_ExecuteJobPublishesErrorWhenExecDisabled(t *testing.T) {
 	}
 	if !strings.Contains(msg.Content, "command execution is disabled") {
 		t.Fatalf("expected exec disabled message, got: %s", msg.Content)
+	}
+}
+
+func TestCronTool_ExecuteJobPublishesAgentResponse(t *testing.T) {
+	executor := &stubJobExecutor{response: "generated reply"}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	job := &cron.CronJob{ID: "job-1"}
+	job.Payload.Channel = "telegram"
+	job.Payload.To = "chat-1"
+	job.Payload.Message = "send me a poem"
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	if executor.lastKey != "cron-job-1" {
+		t.Fatalf("sessionKey = %q, want cron-job-1", executor.lastKey)
+	}
+	if executor.lastChan != "telegram" || executor.lastChatID != "chat-1" {
+		t.Fatalf("executor target = %s/%s, want telegram/chat-1", executor.lastChan, executor.lastChatID)
+	}
+	if executor.lastPrompt != "send me a poem" {
+		t.Fatalf("prompt = %q, want original message", executor.lastPrompt)
+	}
+	if executor.publishedResp != "generated reply" {
+		t.Fatalf("published response = %q, want generated reply", executor.publishedResp)
+	}
+	if executor.publishedChan != "telegram" || executor.publishedChatID != "chat-1" {
+		t.Fatalf("published target = %s/%s, want telegram/chat-1", executor.publishedChan, executor.publishedChatID)
+	}
+}
+
+func TestCronTool_ExecuteJobSkipsEmptyAgentResponse(t *testing.T) {
+	executor := &stubJobExecutor{}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	job := &cron.CronJob{ID: "job-empty"}
+	job.Payload.Channel = "telegram"
+	job.Payload.To = "chat-1"
+	job.Payload.Message = "say nothing"
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	if executor.publishedResp != "" {
+		t.Fatalf("unexpected published response: %q", executor.publishedResp)
+	}
+}
+
+func TestCronTool_ExecuteJobSkipsWhenMessageToolAlreadySent(t *testing.T) {
+	executor := &stubJobExecutor{response: "Sent.", alreadySent: true}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	job := &cron.CronJob{ID: "job-msg-sent"}
+	job.Payload.Channel = "telegram"
+	job.Payload.To = "chat-1"
+	job.Payload.Message = "send weather"
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	if executor.publishedResp != "" {
+		t.Fatalf("expected no published response when message tool already sent, got: %q", executor.publishedResp)
+	}
+}
+
+func TestCronTool_ExecuteJobReturnsErrorWithoutPublish(t *testing.T) {
+	executor := &stubJobExecutor{
+		response: "this response must not be published",
+		err:      fmt.Errorf("agent failure"),
+	}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	job := &cron.CronJob{ID: "job-err"}
+	job.Payload.Channel = "telegram"
+	job.Payload.To = "chat-1"
+	job.Payload.Message = "do something"
+
+	got := tool.ExecuteJob(context.Background(), job)
+	if !strings.Contains(got, "agent failure") {
+		t.Fatalf("ExecuteJob() = %q, want error message", got)
+	}
+
+	if executor.publishedResp != "" {
+		t.Fatalf("unexpected publish on error path: %q", executor.publishedResp)
 	}
 }

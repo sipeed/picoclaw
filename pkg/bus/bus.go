@@ -14,15 +14,32 @@ var ErrBusClosed = errors.New("message bus closed")
 
 const defaultBusBufferSize = 64
 
+// StreamDelegate is implemented by the channel Manager to provide streaming
+// capabilities to the agent loop without tight coupling.
+type StreamDelegate interface {
+	// GetStreamer returns a Streamer for the given channel+chatID if the channel
+	// supports streaming. Returns nil, false if streaming is unavailable.
+	GetStreamer(ctx context.Context, channel, chatID string) (Streamer, bool)
+}
+
+// Streamer pushes incremental content to a streaming-capable channel.
+// Defined here so the agent loop can use it without importing pkg/channels.
+type Streamer interface {
+	Update(ctx context.Context, content string) error
+	Finalize(ctx context.Context, content string) error
+	Cancel(ctx context.Context)
+}
+
 type MessageBus struct {
 	inbound       chan InboundMessage
 	outbound      chan OutboundMessage
 	outboundMedia chan OutboundMediaMessage
 
-	closeOnce sync.Once
-	done      chan struct{}
-	closed    atomic.Bool
-	wg        sync.WaitGroup
+	closeOnce      sync.Once
+	done           chan struct{}
+	closed         atomic.Bool
+	wg             sync.WaitGroup
+	streamDelegate atomic.Value // stores StreamDelegate
 }
 
 func NewMessageBus() *MessageBus {
@@ -84,6 +101,19 @@ func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMedi
 
 func (mb *MessageBus) OutboundMediaChan() <-chan OutboundMediaMessage {
 	return mb.outboundMedia
+}
+
+// SetStreamDelegate registers a StreamDelegate (typically the channel Manager).
+func (mb *MessageBus) SetStreamDelegate(d StreamDelegate) {
+	mb.streamDelegate.Store(d)
+}
+
+// GetStreamer returns a Streamer for the given channel+chatID via the delegate.
+func (mb *MessageBus) GetStreamer(ctx context.Context, channel, chatID string) (Streamer, bool) {
+	if d, ok := mb.streamDelegate.Load().(StreamDelegate); ok && d != nil {
+		return d.GetStreamer(ctx, channel, chatID)
+	}
+	return nil, false
 }
 
 func (mb *MessageBus) Close() {

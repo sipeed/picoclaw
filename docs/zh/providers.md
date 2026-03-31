@@ -5,7 +5,7 @@
 ### 提供商 (Providers)
 
 > [!NOTE]
-> Groq 通过 Whisper 提供免费的语音转录。如果配置了 Groq，任意渠道的音频消息都将在 Agent 层面自动转录为文字。
+> 语音转录现在可以通过 `voice.model_name` 指定的多模态模型完成；如果未配置语音模型，Groq Whisper 仍可作为回退方案。
 
 | 提供商               | 用途                         | 获取 API Key                                                         |
 | -------------------- | ---------------------------- | -------------------------------------------------------------------- |
@@ -26,6 +26,7 @@
 | `mistral`            | LLM (Mistral 直连)           | [console.mistral.ai](https://console.mistral.ai)                    |
 | `longcat`            | LLM (Longcat 直连)           | [longcat.ai](https://longcat.ai)                                     |
 | `modelscope`         | LLM (ModelScope 直连)        | [modelscope.cn](https://modelscope.cn)                               |
+| `mimo`               | LLM (小米 MiMo 直连)         | [platform.xiaomimimo.com](https://platform.xiaomimimo.com)           |
 
 ### 模型配置 (model_list)
 
@@ -62,6 +63,7 @@
 | **Vivgrid**         | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [获取密钥](https://vivgrid.com)                                   |
 | **LongCat**         | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [获取密钥](https://longcat.chat/platform)                         |
 | **ModelScope (魔搭)**| `modelscope/`    | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [获取 Token](https://modelscope.cn/my/tokens)                    |
+| **小米 MiMo**       | `mimo/`           | `https://api.xiaomimimo.com/v1`                     | OpenAI    | [获取密钥](https://platform.xiaomimimo.com)                      |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | 自定义    | 仅 OAuth                                                          |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                 |
 
@@ -73,27 +75,54 @@
     {
       "model_name": "ark-code-latest",
       "model": "volcengine/ark-code-latest",
-      "api_key": "sk-your-api-key"
+      "api_keys": ["sk-your-api-key"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_key": "sk-your-openai-key"
+      "api_keys": ["sk-your-openai-key"]
     },
     {
       "model_name": "claude-sonnet-4.6",
       "model": "anthropic/claude-sonnet-4.6",
-      "api_key": "sk-ant-your-key"
+      "api_keys": ["sk-ant-your-key"]
     },
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
-      "api_key": "your-zhipu-key"
+      "api_keys": ["your-zhipu-key"]
     }
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-5.4"
+      "model_name": "gpt-5.4"
+    }
+  }
+}
+```
+
+#### 语音转录
+
+你可以通过 `voice.model_name` 为语音转录指定一个专用模型。这样可以直接复用已经配置好的、支持音频输入的多模态 provider，而不必只依赖 Groq。
+
+如果没有配置 `voice.model_name`，且存在 Groq API Key，PicoClaw 会继续回退到 Groq 转录。
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "voice-gemini",
+      "model": "gemini/gemini-2.5-flash",
+      "api_keys": ["your-gemini-key"]
+    }
+  ],
+  "voice": {
+    "model_name": "voice-gemini",
+    "echo_transcription": false
+  },
+  "providers": {
+    "groq": {
+      "api_key": "gsk_xxx"
     }
   }
 }
@@ -107,7 +136,7 @@
 {
   "model_name": "gpt-5.4",
   "model": "openai/gpt-5.4",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -117,7 +146,7 @@
 {
   "model_name": "ark-code-latest",
   "model": "volcengine/ark-code-latest",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -127,7 +156,7 @@
 {
   "model_name": "glm-4.7",
   "model": "zhipu/glm-4.7",
-  "api_key": "your-key"
+  "api_keys": ["your-key"]
 }
 ```
 
@@ -137,7 +166,7 @@
 {
   "model_name": "deepseek-chat",
   "model": "deepseek/deepseek-chat",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -161,7 +190,7 @@
 {
   "model_name": "claude-opus-4-6",
   "model": "anthropic-messages/claude-opus-4-6",
-  "api_key": "sk-ant-your-key",
+  "api_keys": ["sk-ant-your-key"],
   "api_base": "https://api.anthropic.com"
 }
 ```
@@ -189,7 +218,7 @@
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-...",
+  "api_keys": ["sk-..."],
   "request_timeout": 300
 }
 ```
@@ -201,7 +230,7 @@
   "model_name": "lite-gpt4",
   "model": "litellm/lite-gpt4",
   "api_base": "http://localhost:4000/v1",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -218,21 +247,60 @@ PicoClaw 在发送请求前仅去除外层 `litellm/` 前缀，因此 `litellm/l
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
-      "api_key": "sk-key1"
+      "api_keys": ["sk-key1"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
-      "api_key": "sk-key2"
+      "api_keys": ["sk-key2"]
     }
   ]
 }
 ```
 
+#### 自动模型失败切换（Cascade）
+
+当你在 Agent 的模型设置里配置 `primary` + `fallbacks` 时，PicoClaw 已经支持自动失败切换。
+运行时 fallback 链会在可重试错误时切到下一个候选（例如 HTTP `429`、配额/限流错误、超时错误）。
+同时会对每个候选应用 cooldown，避免对刚失败的目标立即重试。
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "qwen-main",
+      "model": "openai/qwen3.5:cloud",
+      "api_base": "https://api.example.com/v1",
+      "api_keys": ["sk-main"]
+    },
+    {
+      "model_name": "deepseek-backup",
+      "model": "deepseek/deepseek-chat",
+      "api_keys": ["sk-backup-1"]
+    },
+    {
+      "model_name": "gemini-backup",
+      "model": "gemini/gemini-2.5-flash",
+      "api_keys": ["sk-backup-2"]
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "qwen-main",
+        "fallbacks": ["deepseek-backup", "gemini-backup"]
+      }
+    }
+  }
+}
+```
+
+如果你在同一模型上启用了 key 级失败切换，PicoClaw 会先在该模型的多 key 候选间切换，再继续切到跨模型备选。
+
 #### 从旧的 `providers` 配置迁移
 
-旧的 `providers` 配置格式**已弃用**，但为向后兼容仍支持。
+旧的 `providers` 配置格式**已弃用**，V2 中已移除。现有 V0/V1 配置会自动迁移。
 
 **旧配置（已弃用）：**
 
@@ -257,16 +325,17 @@ PicoClaw 在发送请求前仅去除外层 `litellm/` 前缀，因此 `litellm/l
 
 ```json
 {
+  "version": 2,
   "model_list": [
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
-      "api_key": "your-key"
+      "api_keys": ["your-key"]
     }
   ],
   "agents": {
     "defaults": {
-      "model": "glm-4.7"
+      "model_name": "glm-4.7"
     }
   }
 }
@@ -298,7 +367,7 @@ PicoClaw 按协议族路由 Provider：
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
+      "model_name": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -328,12 +397,11 @@ picoclaw agent -m "你好"
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model_name": "anthropic/claude-opus-4-5"
     }
   },
   "session": {
-    "dm_scope": "per-channel-peer",
-    "backlog_limit": 20
+    "dm_scope": "per-channel-peer"
   },
   "providers": {
     "openrouter": {
@@ -342,6 +410,10 @@ picoclaw agent -m "你好"
     "groq": {
       "api_key": "gsk_xxx"
     }
+  },
+  "voice": {
+    "model_name": "voice-gemini",
+    "echo_transcription": false
   },
   "channels": {
     "telegram": {

@@ -3,10 +3,14 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 // MockMCPManager is a mock implementation of MCPManager interface for testing
@@ -488,5 +492,145 @@ func TestMCPTool_Parameters_MapSchema(t *testing.T) {
 
 	if nameParam["type"] != "string" {
 		t.Errorf("Name type should be 'string', got '%v'", nameParam["type"])
+	}
+}
+
+func TestMCPTool_Execute_ImageContentStoredAsMedia(t *testing.T) {
+	store := media.NewFileMediaStore()
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.ImageContent{
+						Data:     []byte("fake-image-bytes"),
+						MIMEType: "image/png",
+					},
+				},
+			}, nil
+		},
+	}
+
+	mcpTool := NewMCPTool(manager, "screenshoto", &mcp.Tool{Name: "take_screenshot"})
+	mcpTool.SetMediaStore(store)
+
+	result := mcpTool.Execute(WithToolContext(context.Background(), "telegram", "chat-42"), nil)
+
+	if result.IsError {
+		t.Fatalf("expected success, got %q", result.ForLLM)
+	}
+	if len(result.Media) != 1 {
+		t.Fatalf("expected 1 media ref, got %d", len(result.Media))
+	}
+	if result.ResponseHandled {
+		t.Fatal("expected MCP image artifact not to mark response as handled")
+	}
+	if !strings.Contains(result.ForLLM, "stored as a local media artifact") {
+		t.Fatalf("expected local media artifact note, got %q", result.ForLLM)
+	}
+
+	path, meta, err := store.ResolveWithMeta(result.Media[0])
+	if err != nil {
+		t.Fatalf("expected stored media ref to resolve: %v", err)
+	}
+	if meta.ContentType != "image/png" {
+		t.Fatalf("expected image/png content type, got %q", meta.ContentType)
+	}
+	if filepath.Ext(path) != ".png" {
+		t.Fatalf("expected png temp file, got %q", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected stored media file to be readable: %v", err)
+	}
+	if string(data) != "fake-image-bytes" {
+		t.Fatalf("expected stored media bytes to match input, got %q", string(data))
+	}
+}
+
+func TestMCPTool_Execute_EmbeddedResourceBlobStoredAsMedia(t *testing.T) {
+	store := media.NewFileMediaStore()
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.EmbeddedResource{
+						Resource: &mcp.ResourceContents{
+							URI:      "file:///tmp/report.png",
+							MIMEType: "image/png",
+							Blob:     []byte("blob-bytes"),
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	mcpTool := NewMCPTool(manager, "grafana", &mcp.Tool{Name: "get_dashboard_image"})
+	mcpTool.SetMediaStore(store)
+
+	result := mcpTool.Execute(WithToolContext(context.Background(), "telegram", "chat-42"), nil)
+
+	if len(result.Media) != 1 {
+		t.Fatalf("expected embedded resource blob to be stored as media, got %d refs", len(result.Media))
+	}
+	path, _, err := store.ResolveWithMeta(result.Media[0])
+	if err != nil {
+		t.Fatalf("expected stored media ref to resolve: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected stored media file to be readable: %v", err)
+	}
+	if string(data) != "blob-bytes" {
+		t.Fatalf("expected stored blob bytes to match input, got %q", string(data))
+	}
+}
+
+func TestMCPTool_Execute_RespectsUserAudienceForBinaryContent(t *testing.T) {
+	store := media.NewFileMediaStore()
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.ImageContent{
+						Data:        []byte("assistant-only"),
+						MIMEType:    "image/png",
+						Annotations: &mcp.Annotations{Audience: []mcp.Role{"assistant"}},
+					},
+				},
+			}, nil
+		},
+	}
+
+	mcpTool := NewMCPTool(manager, "screenshoto", &mcp.Tool{Name: "take_screenshot"})
+	mcpTool.SetMediaStore(store)
+
+	result := mcpTool.Execute(WithToolContext(context.Background(), "telegram", "chat-42"), nil)
+
+	if len(result.Media) != 0 {
+		t.Fatalf("expected no media ref for non-user audience, got %d", len(result.Media))
+	}
+	if !strings.Contains(result.ForLLM, "non-user audience") {
+		t.Fatalf("expected audience note, got %q", result.ForLLM)
+	}
+}
+
+func TestMCPTool_Execute_LargeBase64TextIsOmittedFromContext(t *testing.T) {
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: strings.Repeat("QUJD", 400)},
+				},
+			}, nil
+		},
+	}
+
+	mcpTool := NewMCPTool(manager, "test_server", &mcp.Tool{Name: "dump_payload"})
+
+	result := mcpTool.Execute(context.Background(), nil)
+
+	if result.ForLLM != largeBase64OmittedMessage {
+		t.Fatalf("expected sanitized large base64 note, got %q", result.ForLLM)
 	}
 }

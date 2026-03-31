@@ -1,3 +1,5 @@
+import { launcherFetch } from "@/api/http"
+
 export type OAuthProvider = "openai" | "anthropic" | "google-antigravity"
 export type OAuthMethod = "browser" | "device_code" | "token"
 
@@ -51,7 +53,7 @@ interface OAuthProvidersResponse {
 const BASE_URL = ""
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, options)
+  const res = await launcherFetch(`${BASE_URL}${path}`, options)
   if (!res.ok) {
     const message = await res.text()
     throw new Error(message || `API error: ${res.status} ${res.statusText}`)

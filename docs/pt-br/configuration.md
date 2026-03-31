@@ -31,6 +31,22 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Nível de Log do Gateway
+
+`gateway.log_level` controla a verbosidade dos logs do Gateway, configurável em `config.json`:
+
+```json
+{
+  "gateway": {
+    "log_level": "warn"
+  }
+}
+```
+
+O valor padrão é `warn`. Valores suportados: `debug`, `info`, `warn`, `error`, `fatal`.
+
+Também pode ser substituído pela variável de ambiente: `PICOCLAW_LOG_LEVEL=info`
+
 ### Layout do Workspace
 
 O PicoClaw armazena dados no seu workspace configurado (padrão: `~/.picoclaw/workspace`):
@@ -42,12 +58,14 @@ O PicoClaw armazena dados no seu workspace configurado (padrão: `~/.picoclaw/wo
 ├── state/            # Estado persistente (último canal, etc.)
 ├── cron/             # Banco de dados de tarefas agendadas
 ├── skills/           # Skills personalizadas
-├── AGENTS.md         # Guia de comportamento do agente
+├── AGENT.md          # Guia de comportamento do agente
 ├── HEARTBEAT.md      # Prompts de tarefas periódicas (verificados a cada 30 min)
 ├── IDENTITY.md       # Identidade do agente
 ├── SOUL.md           # Alma do agente
 └── USER.md           # Preferências do usuário
 ```
+
+> **Nota:** Alterações em `AGENT.md`, `SOUL.md`, `USER.md` e `memory/MEMORY.md` são detectadas automaticamente em tempo de execução via rastreamento de data de modificação (mtime). **Não é necessário reiniciar o gateway** após editar esses arquivos — o agente carrega o novo conteúdo na próxima requisição.
 
 ### Fontes de Skills
 
@@ -55,7 +73,7 @@ Por padrão, as skills são carregadas de:
 
 1. `~/.picoclaw/workspace/skills` (workspace)
 2. `~/.picoclaw/skills` (global)
-3. `<current-working-directory>/skills` (builtin)
+3. `<caminho-embutido-na-compilação>/skills` (embutido)
 
 Para configurações avançadas/de teste, você pode substituir o diretório raiz de skills builtin com:
 
@@ -214,4 +232,149 @@ Para tarefas de longa duração (busca na web, chamadas de API), use a ferrament
 
 ```markdown
 # Tarefas Periódicas
+
+## Tarefas Rápidas (responder diretamente)
+
+- Informar a hora atual
+
+## Tarefas Longas (usar spawn para assíncrono)
+
+- Pesquisar notícias de IA na web e resumir
+- Verificar e-mails e reportar mensagens importantes
 ```
+
+**Comportamentos principais:**
+
+| Funcionalidade   | Descrição                                                          |
+| ---------------- | ------------------------------------------------------------------ |
+| **spawn**        | Cria subagente assíncrono, não bloqueia o heartbeat                |
+| **Contexto independente** | Subagente tem seu próprio contexto, sem histórico de sessão |
+| **message tool** | Subagente comunica diretamente com o usuário via message tool      |
+| **Não-bloqueante** | Após o spawn, o heartbeat continua para a próxima tarefa         |
+
+#### Fluxo de Comunicação do Subagente
+
+```
+Heartbeat disparado
+    ↓
+Agent lê HEARTBEAT.md
+    ↓
+Tarefa longa: spawn subagente
+    ↓                           ↓
+Continua próxima tarefa    Subagente trabalha independentemente
+    ↓                           ↓
+Todas tarefas concluídas   Subagente usa ferramenta "message"
+    ↓                           ↓
+Responde HEARTBEAT_OK      Usuário recebe resultado diretamente
+```
+
+**Configuração:**
+
+```json
+{
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
+  }
+}
+```
+
+| Opção      | Padrão | Descrição                              |
+| ---------- | ------ | -------------------------------------- |
+| `enabled`  | `true` | Ativar/desativar heartbeat             |
+| `interval` | `30`   | Intervalo em minutos (mínimo: 5)       |
+
+**Variáveis de ambiente:**
+
+* `PICOCLAW_HEARTBEAT_ENABLED=false` para desativar
+* `PICOCLAW_HEARTBEAT_INTERVAL=60` para alterar o intervalo
+
+### Providers
+
+> [!NOTE]
+> O Groq fornece transcrição de voz gratuita via Whisper. Se configurado, mensagens de áudio de qualquer canal serão automaticamente transcritas no nível do agente.
+
+| Provider     | Finalidade                              | Obter API Key                                                |
+| ------------ | --------------------------------------- | ------------------------------------------------------------ |
+| `gemini`     | LLM (Gemini direto)                     | [aistudio.google.com](https://aistudio.google.com)           |
+| `zhipu`      | LLM (Zhipu direto)                      | [bigmodel.cn](https://bigmodel.cn)                           |
+| `volcengine` | LLM (Volcengine direto)                 | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
+| `openrouter` | LLM (recomendado, acesso a todos modelos) | [openrouter.ai](https://openrouter.ai)                     |
+| `anthropic`  | LLM (Claude direto)                     | [console.anthropic.com](https://console.anthropic.com)       |
+| `openai`     | LLM (GPT direto)                        | [platform.openai.com](https://platform.openai.com)           |
+| `deepseek`   | LLM (DeepSeek direto)                   | [platform.deepseek.com](https://platform.deepseek.com)       |
+| `qwen`       | LLM (Qwen direto)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
+| `groq`       | LLM + **Transcrição de voz** (Whisper)  | [console.groq.com](https://console.groq.com)                 |
+| `cerebras`   | LLM (Cerebras direto)                   | [cerebras.ai](https://cerebras.ai)                           |
+| `vivgrid`    | LLM (Vivgrid direto)                    | [vivgrid.com](https://vivgrid.com)                           |
+
+### Configuração de Modelos (model_list)
+
+> **Novidade:** PicoClaw agora usa uma abordagem **centrada no modelo**. Basta especificar o formato `vendor/model` (ex.: `zhipu/glm-4.7`) para adicionar novos providers — **sem alterações de código!**
+
+#### Todos os Vendors Suportados
+
+| Vendor                  | Prefixo `model` | API Base padrão                                     | Protocolo | API Key                                                          |
+| ----------------------- | --------------- | --------------------------------------------------- | --------- | ---------------------------------------------------------------- |
+| **OpenAI**              | `openai/`       | `https://api.openai.com/v1`                         | OpenAI    | [Obter](https://platform.openai.com)                             |
+| **Anthropic**           | `anthropic/`    | `https://api.anthropic.com/v1`                      | Anthropic | [Obter](https://console.anthropic.com)                           |
+| **智谱 AI (GLM)**       | `zhipu/`        | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Obter](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys)   |
+| **DeepSeek**            | `deepseek/`     | `https://api.deepseek.com/v1`                       | OpenAI    | [Obter](https://platform.deepseek.com)                           |
+| **Google Gemini**       | `gemini/`       | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Obter](https://aistudio.google.com/api-keys)                    |
+| **Groq**                | `groq/`         | `https://api.groq.com/openai/v1`                    | OpenAI    | [Obter](https://console.groq.com)                                |
+| **通义千问 (Qwen)**     | `qwen/`         | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Obter](https://dashscope.console.aliyun.com)                    |
+| **Ollama**              | `ollama/`       | `http://localhost:11434/v1`                         | OpenAI    | Local (sem chave)                                                |
+| **OpenRouter**          | `openrouter/`   | `https://openrouter.ai/api/v1`                      | OpenAI    | [Obter](https://openrouter.ai/keys)                              |
+| **VolcEngine (Doubao)** | `volcengine/`   | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Obter](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
+| **Antigravity**         | `antigravity/`  | Google Cloud                                        | Custom    | Somente OAuth                                                    |
+
+#### Balanceamento de Carga
+
+Configure múltiplos endpoints para o mesmo nome de modelo — PicoClaw fará round-robin automaticamente:
+
+```json
+{
+  "model_list": [
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api1.example.com/v1", "api_keys": ["sk-key1"] },
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api2.example.com/v1", "api_keys": ["sk-key2"] }
+  ]
+}
+```
+
+#### Migração da Configuração Legada `providers`
+
+A configuração antiga `providers` está **depreciada** e foi removida no V2. Configs V0/V1 existentes são auto-migradas. Veja [docs/migration/model-list-migration.md](../migration/model-list-migration.md).
+
+### Arquitetura de Providers
+
+PicoClaw roteia providers por família de protocolo:
+
+- **Compatível com OpenAI**: OpenRouter, Groq, Zhipu, endpoints vLLM e a maioria dos outros.
+- **Anthropic**: Comportamento nativo da API Claude.
+- **Codex/OAuth**: Rota de autenticação OAuth/token OpenAI.
+
+### Tarefas Agendadas / Lembretes
+
+PicoClaw suporta tarefas agendadas via ferramenta `cron`.
+
+```json
+{
+  "tools": {
+    "cron": {
+      "enabled": true,
+      "exec_timeout_minutes": 5
+    }
+  }
+}
+```
+
+As tarefas agendadas persistem após reinicializações em `~/.picoclaw/workspace/cron/`.
+
+### Tópicos Avançados
+
+| Tópico | Descrição |
+| ------ | --------- |
+| [Sistema de Hooks](../hooks/README.md) | Hooks orientados a eventos: observadores, interceptores, hooks de aprovação |
+| [Steering](../steering.md) | Injetar mensagens em um loop de agente em execução |
+| [SubTurn](../subturn.md) | Coordenação de subagentes, controle de concorrência, ciclo de vida |
+| [Gerenciamento de Contexto](../agent-refactor/context.md) | Detecção de limites de contexto, compressão |

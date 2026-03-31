@@ -41,14 +41,6 @@ Cài đặt chung để tải và xử lý nội dung trang web.
 | `fetch_limit_bytes`  | int    | 10485760      | Kích thước tối đa của payload trang web cần tải, tính bằng byte (mặc định là 10MB).          |
 | `format`             | string | "plaintext"   | Định dạng đầu ra của nội dung đã tải. Tùy chọn: `plaintext` hoặc `markdown` (khuyến nghị).   |
 
-### Brave
-
-| Cấu hình      | Kiểu   | Mặc định | Mô tả                     |
-|----------------|--------|----------|----------------------------|
-| `enabled`      | bool   | false    | Bật tìm kiếm Brave        |
-| `api_key`      | string | -        | Khóa API Brave Search      |
-| `max_results`  | int    | 5        | Số kết quả tối đa         |
-
 ### DuckDuckGo
 
 | Cấu hình      | Kiểu | Mặc định | Mô tả                        |
@@ -56,13 +48,73 @@ Cài đặt chung để tải và xử lý nội dung trang web.
 | `enabled`      | bool | true     | Bật tìm kiếm DuckDuckGo      |
 | `max_results`  | int  | 5        | Số kết quả tối đa            |
 
+### Baidu Search
+
+| Cấu hình      | Kiểu   | Mặc định                                                        | Mô tả                              |
+|----------------|--------|-----------------------------------------------------------------|------------------------------------|
+| `enabled`      | bool   | false                                                           | Bật tìm kiếm Baidu                |
+| `api_key`      | string | -                                                               | Khóa API Qianfan                   |
+| `base_url`     | string | `https://qianfan.baidubce.com/v2/ai_search/web_search`         | URL API Baidu Search               |
+| `max_results`  | int    | 10                                                              | Số kết quả tối đa                 |
+
+```json
+{
+  "tools": {
+    "web": {
+      "baidu_search": {
+        "enabled": true,
+        "api_key": "YOUR_BAIDU_QIANFAN_API_KEY",
+        "max_results": 10
+      }
+    }
+  }
+}
+```
+
 ### Perplexity
 
 | Cấu hình      | Kiểu   | Mặc định | Mô tả                        |
 |----------------|--------|----------|-------------------------------|
-| `enabled`      | bool   | false    | Bật tìm kiếm Perplexity      |
-| `api_key`      | string | -        | Khóa API Perplexity           |
-| `max_results`  | int    | 5        | Số kết quả tối đa            |
+| `enabled`      | bool     | false    | Bật tìm kiếm Perplexity                                          |
+| `api_key`      | string   | -        | Khóa API Perplexity                                              |
+| `api_keys`     | string[] | -        | Nhiều khóa API Perplexity để xoay vòng (ưu tiên hơn `api_key`)  |
+| `max_results`  | int      | 5        | Số kết quả tối đa                                                |
+
+### Brave
+
+| Cấu hình      | Kiểu   | Mặc định | Mô tả                     |
+|----------------|--------|----------|----------------------------|
+| `enabled`      | bool     | false    | Bật tìm kiếm Brave                                               |
+| `api_key`      | string   | -        | Khóa API Brave Search                                            |
+| `api_keys`     | string[] | -        | Nhiều khóa API Brave Search để xoay vòng (ưu tiên hơn `api_key`) |
+| `max_results`  | int      | 5        | Số kết quả tối đa                                                |
+
+### Tavily
+
+| Cấu hình      | Kiểu   | Mặc định | Mô tả                              |
+|----------------|--------|----------|------------------------------------|
+| `enabled`      | bool   | false    | Bật tìm kiếm Tavily               |
+| `api_key`      | string | -        | Khóa API Tavily                    |
+| `base_url`     | string | -        | URL cơ sở Tavily tùy chỉnh        |
+| `max_results`  | int    | 0        | Số kết quả tối đa (0 = mặc định)  |
+
+### SearXNG
+
+| Cấu hình      | Kiểu   | Mặc định                 | Mô tả                      |
+|----------------|--------|--------------------------|----------------------------|
+| `enabled`      | bool   | false                    | Bật tìm kiếm SearXNG       |
+| `base_url`     | string | `http://localhost:8888`  | URL phiên bản SearXNG      |
+| `max_results`  | int    | 5                        | Số kết quả tối đa          |
+
+### GLM Search
+
+| Cấu hình        | Kiểu   | Mặc định                                             | Mô tả                      |
+|------------------|--------|------------------------------------------------------|----------------------------|
+| `enabled`        | bool   | false                                                | Bật GLM Search             |
+| `api_key`        | string | -                                                    | Khóa API GLM               |
+| `base_url`       | string | `https://open.bigmodel.cn/api/paas/v4/web_search`   | URL API GLM Search         |
+| `search_engine`  | string | `search_std`                                         | Loại công cụ tìm kiếm      |
+| `max_results`    | int    | 5                                                    | Số kết quả tối đa          |
 
 ## Công cụ Exec
 
@@ -70,8 +122,31 @@ Công cụ exec được sử dụng để thực thi các lệnh shell.
 
 | Cấu hình               | Kiểu  | Mặc định | Mô tả                                         |
 |--------------------------|-------|----------|------------------------------------------------|
+| `enabled`                | bool  | true     | Bật công cụ exec                             |
 | `enable_deny_patterns`   | bool  | true     | Bật chặn lệnh nguy hiểm mặc định             |
 | `custom_deny_patterns`   | array | []       | Mẫu từ chối tùy chỉnh (biểu thức chính quy)  |
+
+### Vô hiệu hóa Công cụ Exec
+
+Để hoàn toàn vô hiệu hóa công cụ `exec`, đặt `enabled` thành `false`:
+
+**Qua tệp cấu hình:**
+```json
+{
+  "tools": {
+    "exec": {
+      "enabled": false
+    }
+  }
+}
+```
+
+**Qua biến môi trường:**
+```bash
+PICOCLAW_TOOLS_EXEC_ENABLED=false
+```
+
+> **Lưu ý:** Khi bị vô hiệu hóa, agent sẽ không thể thực thi lệnh shell. Điều này cũng ảnh hưởng đến khả năng chạy lệnh shell theo lịch của công cụ Cron.
 
 ### Chức năng
 
@@ -329,6 +404,7 @@ Tất cả các tùy chọn cấu hình có thể được ghi đè qua biến m
 Ví dụ:
 
 - `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`

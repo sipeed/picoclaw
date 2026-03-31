@@ -5,15 +5,15 @@ import (
 )
 
 func TestExpandMultiKeyModels_SingleKey(t *testing.T) {
-	models := []ModelConfig{
+	models := []*ModelConfig{
 		{
 			ModelName: "gpt-4",
 			Model:     "openai/gpt-4o",
-			APIKey:    "single-key",
+			APIKeys:   SimpleSecureStrings("single-key"),
 		},
 	}
 
-	result := ExpandMultiKeyModels(models)
+	result := expandMultiKeyModels(models)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 model, got %d", len(result))
@@ -23,8 +23,8 @@ func TestExpandMultiKeyModels_SingleKey(t *testing.T) {
 		t.Errorf("expected model_name 'gpt-4', got %q", result[0].ModelName)
 	}
 
-	if result[0].APIKey != "single-key" {
-		t.Errorf("expected api_key 'single-key', got %q", result[0].APIKey)
+	if result[0].APIKey() != "single-key" {
+		t.Errorf("expected api_key 'single-key', got %q", result[0].APIKey())
 	}
 
 	if len(result[0].Fallbacks) != 0 {
@@ -33,16 +33,16 @@ func TestExpandMultiKeyModels_SingleKey(t *testing.T) {
 }
 
 func TestExpandMultiKeyModels_APIKeysOnly(t *testing.T) {
-	models := []ModelConfig{
+	models := []*ModelConfig{
 		{
 			ModelName: "glm-4.7",
 			Model:     "zhipu/glm-4.7",
 			APIBase:   "https://api.example.com",
-			APIKeys:   []string{"key1", "key2", "key3"},
+			APIKeys:   SimpleSecureStrings("key1", "key2", "key3"),
 		},
 	}
 
-	result := ExpandMultiKeyModels(models)
+	result := expandMultiKeyModels(models)
 
 	// Should expand to 3 models
 	if len(result) != 3 {
@@ -54,8 +54,8 @@ func TestExpandMultiKeyModels_APIKeysOnly(t *testing.T) {
 	if primary.ModelName != "glm-4.7" {
 		t.Errorf("expected primary model_name 'glm-4.7', got %q", primary.ModelName)
 	}
-	if primary.APIKey != "key1" {
-		t.Errorf("expected primary api_key 'key1', got %q", primary.APIKey)
+	if primary.APIKey() != "key1" {
+		t.Errorf("expected primary api_key 'key1', got %q", primary.APIKey())
 	}
 	if len(primary.Fallbacks) != 2 {
 		t.Errorf("expected 2 fallbacks, got %d", len(primary.Fallbacks))
@@ -72,8 +72,8 @@ func TestExpandMultiKeyModels_APIKeysOnly(t *testing.T) {
 	if second.ModelName != "glm-4.7__key_1" {
 		t.Errorf("expected second model_name 'glm-4.7__key_1', got %q", second.ModelName)
 	}
-	if second.APIKey != "key2" {
-		t.Errorf("expected second api_key 'key2', got %q", second.APIKey)
+	if second.APIKey() != "key2" {
+		t.Errorf("expected second api_key 'key2', got %q", second.APIKey())
 	}
 
 	// Third entry should be key3
@@ -81,22 +81,21 @@ func TestExpandMultiKeyModels_APIKeysOnly(t *testing.T) {
 	if third.ModelName != "glm-4.7__key_2" {
 		t.Errorf("expected third model_name 'glm-4.7__key_2', got %q", third.ModelName)
 	}
-	if third.APIKey != "key3" {
-		t.Errorf("expected third api_key 'key3', got %q", third.APIKey)
+	if third.APIKey() != "key3" {
+		t.Errorf("expected third api_key 'key3', got %q", third.APIKey())
 	}
 }
 
 func TestExpandMultiKeyModels_APIKeyAndAPIKeys(t *testing.T) {
-	models := []ModelConfig{
+	models := []*ModelConfig{
 		{
 			ModelName: "gpt-4",
 			Model:     "openai/gpt-4o",
-			APIKey:    "key0",
-			APIKeys:   []string{"key1", "key2"},
+			APIKeys:   SimpleSecureStrings("key0", "key1", "key2"),
 		},
 	}
 
-	result := ExpandMultiKeyModels(models)
+	result := expandMultiKeyModels(models)
 
 	// Should expand to 3 models (key0 from APIKey + key1, key2 from APIKeys)
 	if len(result) != 3 {
@@ -105,8 +104,8 @@ func TestExpandMultiKeyModels_APIKeyAndAPIKeys(t *testing.T) {
 
 	// Primary should use key0
 	primary := result[2]
-	if primary.APIKey != "key0" {
-		t.Errorf("expected primary api_key 'key0', got %q", primary.APIKey)
+	if primary.APIKey() != "key0" {
+		t.Errorf("expected primary api_key 'key0', got %q", primary.APIKey())
 	}
 	if len(primary.Fallbacks) != 2 {
 		t.Errorf("expected 2 fallbacks, got %d", len(primary.Fallbacks))
@@ -114,16 +113,15 @@ func TestExpandMultiKeyModels_APIKeyAndAPIKeys(t *testing.T) {
 }
 
 func TestExpandMultiKeyModels_WithExistingFallbacks(t *testing.T) {
-	models := []ModelConfig{
-		{
-			ModelName: "gpt-4",
-			Model:     "openai/gpt-4o",
-			APIKeys:   []string{"key1", "key2"},
-			Fallbacks: []string{"claude-3"},
-		},
+	modelCfg := &ModelConfig{
+		ModelName: "gpt-4",
+		Model:     "openai/gpt-4o",
 	}
+	modelCfg.APIKeys = SimpleSecureStrings("key0", "key1") // Use internal field for multi-key testing
+	modelCfg.Fallbacks = []string{"claude-3"}
+	models := []*ModelConfig{modelCfg}
 
-	result := ExpandMultiKeyModels(models)
+	result := expandMultiKeyModels(models)
 
 	primary := result[1]
 	// With 2 keys, we get 1 key fallback + 1 existing fallback = 2 total
@@ -141,16 +139,15 @@ func TestExpandMultiKeyModels_WithExistingFallbacks(t *testing.T) {
 }
 
 func TestExpandMultiKeyModels_EmptyAPIKeys(t *testing.T) {
-	models := []ModelConfig{
+	models := []*ModelConfig{
 		{
 			ModelName: "gpt-4",
 			Model:     "openai/gpt-4o",
-			APIKey:    "",
-			APIKeys:   []string{},
+			APIKeys:   SimpleSecureStrings(),
 		},
 	}
 
-	result := ExpandMultiKeyModels(models)
+	result := expandMultiKeyModels(models)
 
 	// Should keep as-is with no changes
 	if len(result) != 1 {
@@ -163,25 +160,25 @@ func TestExpandMultiKeyModels_EmptyAPIKeys(t *testing.T) {
 }
 
 func TestExpandMultiKeyModels_Deduplication(t *testing.T) {
-	models := []ModelConfig{
+	models := []*ModelConfig{
 		{
 			ModelName: "gpt-4",
 			Model:     "openai/gpt-4o",
-			APIKey:    "key1",
-			APIKeys:   []string{"key1", "key2", "key1"}, // Duplicate key1
+			APIKeys:   SimpleSecureStrings("key1", "key2", "key1"), // Duplicate key1
 		},
 	}
 
-	result := ExpandMultiKeyModels(models)
+	result := expandMultiKeyModels(models)
 
+	t.Logf("result: %#v", result)
 	// Should only create 2 models (deduplicated keys)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 models (deduplicated), got %d", len(result))
 	}
 
 	primary := result[1]
-	if primary.APIKey != "key1" {
-		t.Errorf("expected primary api_key 'key1', got %q", primary.APIKey)
+	if primary.APIKey() != "key1" {
+		t.Errorf("expected primary api_key 'key1', got %q", primary.APIKey())
 	}
 	if len(primary.Fallbacks) != 1 {
 		t.Errorf("expected 1 fallback, got %d", len(primary.Fallbacks))
@@ -189,21 +186,20 @@ func TestExpandMultiKeyModels_Deduplication(t *testing.T) {
 }
 
 func TestExpandMultiKeyModels_PreservesOtherFields(t *testing.T) {
-	models := []ModelConfig{
-		{
-			ModelName:      "gpt-4",
-			Model:          "openai/gpt-4o",
-			APIBase:        "https://api.example.com",
-			APIKeys:        []string{"key1", "key2"},
-			Proxy:          "http://proxy:8080",
-			RPM:            60,
-			MaxTokensField: "max_completion_tokens",
-			RequestTimeout: 30,
-			ThinkingLevel:  "high",
-		},
+	modelCfg := &ModelConfig{
+		ModelName:      "gpt-4",
+		Model:          "openai/gpt-4o",
+		APIBase:        "https://api.example.com",
+		Proxy:          "http://proxy:8080",
+		RPM:            60,
+		MaxTokensField: "max_completion_tokens",
+		RequestTimeout: 30,
+		ThinkingLevel:  "high",
 	}
+	modelCfg.APIKeys = SimpleSecureStrings("key0", "key1") // Use internal field for multi-key testing
+	models := []*ModelConfig{modelCfg}
 
-	result := ExpandMultiKeyModels(models)
+	result := expandMultiKeyModels(models)
 
 	// Check primary entry preserves all fields
 	primary := result[1]
@@ -236,6 +232,78 @@ func TestExpandMultiKeyModels_PreservesOtherFields(t *testing.T) {
 	}
 }
 
+func TestExpandMultiKeyModels_IsVirtualFlag(t *testing.T) {
+	models := []*ModelConfig{
+		{
+			ModelName: "gpt-4",
+			Model:     "openai/gpt-4o",
+			APIKeys:   SimpleSecureStrings("key1", "key2", "key3"),
+		},
+	}
+
+	result := expandMultiKeyModels(models)
+
+	// Should expand to 3 models
+	if len(result) != 3 {
+		t.Fatalf("expected 3 models, got %d", len(result))
+	}
+
+	// Primary model should NOT be virtual
+	primary := result[2]
+	if primary.isVirtual {
+		t.Errorf("primary model should not be virtual")
+	}
+	if primary.ModelName != "gpt-4" {
+		t.Errorf("expected primary model_name 'gpt-4', got %q", primary.ModelName)
+	}
+
+	// Virtual models should have isVirtual = true
+	virtual1 := result[0]
+	if !virtual1.isVirtual {
+		t.Errorf("gpt-4__key_1 should be virtual")
+	}
+	if virtual1.ModelName != "gpt-4__key_1" {
+		t.Errorf("expected virtual model_name 'gpt-4__key_1', got %q", virtual1.ModelName)
+	}
+
+	virtual2 := result[1]
+	if !virtual2.isVirtual {
+		t.Errorf("gpt-4__key_2 should be virtual")
+	}
+	if virtual2.ModelName != "gpt-4__key_2" {
+		t.Errorf("expected virtual model_name 'gpt-4__key_2', got %q", virtual2.ModelName)
+	}
+
+	// IsVirtual() method should work
+	if !virtual1.IsVirtual() {
+		t.Errorf("IsVirtual() should return true for virtual model")
+	}
+	if primary.IsVirtual() {
+		t.Errorf("IsVirtual() should return false for primary model")
+	}
+}
+
+func TestExpandMultiKeyModels_SingleKey_NotVirtual(t *testing.T) {
+	models := []*ModelConfig{
+		{
+			ModelName: "gpt-4",
+			Model:     "openai/gpt-4o",
+			APIKeys:   SimpleSecureStrings("single-key"),
+		},
+	}
+
+	result := expandMultiKeyModels(models)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(result))
+	}
+
+	// Single key model should NOT be virtual
+	if result[0].isVirtual {
+		t.Errorf("single key model should not be virtual")
+	}
+}
+
 func TestMergeAPIKeys(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -250,13 +318,13 @@ func TestMergeAPIKeys(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name:     "only apiKey",
+			name:     "only ApiKey",
 			apiKey:   "key1",
 			apiKeys:  nil,
 			expected: []string{"key1"},
 		},
 		{
-			name:     "only apiKeys",
+			name:     "only ApiKeys",
 			apiKey:   "",
 			apiKeys:  []string{"key1", "key2"},
 			expected: []string{"key1", "key2"},
@@ -277,7 +345,7 @@ func TestMergeAPIKeys(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := MergeAPIKeys(tt.apiKey, tt.apiKeys)
+			result := mergeAPIKeys(tt.apiKey, tt.apiKeys)
 			if len(result) != len(tt.expected) {
 				t.Fatalf("expected %d keys, got %d", len(tt.expected), len(result))
 			}

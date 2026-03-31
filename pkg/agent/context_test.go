@@ -188,6 +188,31 @@ func TestSanitizeHistoryForProvider_PlainConversation(t *testing.T) {
 	assertRoles(t, result, "user", "assistant", "user", "assistant")
 }
 
+func TestSanitizeHistoryForProvider_DuplicateToolResults(t *testing.T) {
+	history := []providers.Message{
+		msg("user", "do something"),
+		assistantWithTools("A", "B"),
+		toolResult("A"),
+		toolResult("B"),
+		toolResult("A"), // duplicate
+		toolResult("B"), // duplicate
+		msg("assistant", "done"),
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	if len(result) != 5 {
+		t.Fatalf("expected 5 messages, got %d: %+v", len(result), roles(result))
+	}
+	assertRoles(t, result, "user", "assistant", "tool", "tool", "assistant")
+	// Verify the kept tool results have the correct IDs
+	if result[2].ToolCallID != "A" {
+		t.Errorf("expected tool result A, got %q", result[2].ToolCallID)
+	}
+	if result[3].ToolCallID != "B" {
+		t.Errorf("expected tool result B, got %q", result[3].ToolCallID)
+	}
+}
+
 func roles(msgs []providers.Message) []string {
 	r := make([]string, len(msgs))
 	for i, m := range msgs {

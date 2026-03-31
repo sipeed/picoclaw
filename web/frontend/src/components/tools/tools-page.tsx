@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+import { refreshGatewayState } from "@/store/gateway"
 
 export function ToolsPage() {
   const { t } = useTranslation()
@@ -33,6 +34,7 @@ export function ToolsPage() {
           : t("pages.agent.tools.disable_success"),
       )
       void queryClient.invalidateQueries({ queryKey: ["tools"] })
+      void refreshGatewayState({ force: true })
     },
     onError: (err) => {
       toast.error(

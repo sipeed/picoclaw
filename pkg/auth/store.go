@@ -40,11 +40,7 @@ func (c *AuthCredential) NeedsRefresh() bool {
 }
 
 func authFilePath() string {
-	if home := os.Getenv(config.EnvHome); home != "" {
-		return filepath.Join(home, "auth.json")
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "auth.json")
+	return filepath.Join(config.GetHome(), "auth.json")
 }
 
 func LoadStore() (*AuthStore, error) {

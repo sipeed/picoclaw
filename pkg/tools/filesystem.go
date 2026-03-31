@@ -496,7 +496,7 @@ func (t *WriteFileTool) Name() string {
 }
 
 func (t *WriteFileTool) Description() string {
-	return "Write content to a file"
+	return "Write content to a file. If the file already exists, you must set overwrite=true to replace it."
 }
 
 func (t *WriteFileTool) Parameters() map[string]any {
@@ -510,6 +510,11 @@ func (t *WriteFileTool) Parameters() map[string]any {
 			"content": map[string]any{
 				"type":        "string",
 				"description": "Content to write to the file",
+			},
+			"overwrite": map[string]any{
+				"type":        "boolean",
+				"description": "Must be set to true to overwrite an existing file.",
+				"default":     false,
 			},
 		},
 		"required": []string{"path", "content"},
@@ -525,6 +530,14 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	content, ok := args["content"].(string)
 	if !ok {
 		return ErrorResult("content is required")
+	}
+
+	overwrite, _ := args["overwrite"].(bool)
+
+	if !overwrite {
+		if _, err := t.fs.Open(path); err == nil {
+			return ErrorResult(fmt.Sprintf("file: %s already exists. Set overwrite=true to replace.", path))
+		}
 	}
 
 	if err := t.fs.WriteFile(path, []byte(content)); err != nil {

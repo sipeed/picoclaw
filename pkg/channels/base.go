@@ -112,6 +112,18 @@ func NewBaseChannel(
 	for _, opt := range opts {
 		opt(bc)
 	}
+
+	// Security Audit: Check for open-by-default (unsecured) channels.
+	// PicoClaw aims to be secure-by-default. If allow_from is empty, the bot
+	// currently defaults to accepting messages from ANYONE. To explicitly
+	// acknowledge and permit this (e.g. for a public bot), use ["*"].
+	if len(bc.allowList) == 0 {
+		logger.WarnCF("channels", "SECURITY: Channel allows EVERYONE (allow_from is empty)", map[string]any{
+			"channel": bc.name,
+			"hint":    "Set allow_from to your ID, or use '*' to explicitly acknowledge open access.",
+		})
+	}
+
 	return bc
 }
 
@@ -187,6 +199,9 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 	}
 
 	for _, allowed := range c.allowList {
+		if allowed == "*" {
+			return true
+		}
 		// Strip leading "@" from allowed value for username matching
 		trimmed := strings.TrimPrefix(allowed, "@")
 		allowedID := trimmed
@@ -221,7 +236,7 @@ func (c *BaseChannel) IsAllowedSender(sender bus.SenderInfo) bool {
 	}
 
 	for _, allowed := range c.allowList {
-		if identity.MatchAllowed(sender, allowed) {
+		if allowed == "*" || identity.MatchAllowed(sender, allowed) {
 			return true
 		}
 	}
@@ -275,14 +290,18 @@ func (c *BaseChannel) HandleMessage(
 
 	// Auto-trigger typing indicator, message reaction, and placeholder before publishing.
 	// Each capability is independent — all three may fire for the same message.
+	// Note: even when streaming is available, we still show typing + placeholder on inbound.
+	// If streaming actually activates, preSend will skip the placeholder edit (streamActive map)
+	// and the typing stop will still be called. This avoids the problem of compile-time interface
+	// checks incorrectly skipping indicators when streaming may not work at runtime.
 	if c.owner != nil && c.placeholderRecorder != nil {
-		// Typing — independent pipeline
+		// Typing
 		if tc, ok := c.owner.(TypingCapable); ok {
 			if stop, err := tc.StartTyping(ctx, chatID); err == nil {
 				c.placeholderRecorder.RecordTypingStop(c.name, chatID, stop)
 			}
 		}
-		// Reaction — independent pipeline
+		// Reaction
 		if rc, ok := c.owner.(ReactionCapable); ok && messageID != "" {
 			if undo, err := rc.ReactToMessage(ctx, chatID, messageID); err == nil {
 				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, undo)

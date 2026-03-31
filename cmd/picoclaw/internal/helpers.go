@@ -4,19 +4,17 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/sipeed/picoclaw/pkg"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-const Logo = "🦞"
+const Logo = pkg.Logo
 
 // GetPicoclawHome returns the picoclaw home directory.
 // Priority: $PICOCLAW_HOME > ~/.picoclaw
 func GetPicoclawHome() string {
-	if home := os.Getenv(config.EnvHome); home != "" {
-		return home
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw")
+	return config.GetHome()
 }
 
 func GetConfigPath() string {
@@ -27,7 +25,12 @@ func GetConfigPath() string {
 }
 
 func LoadConfig() (*config.Config, error) {
-	return config.LoadConfig(GetConfigPath())
+	cfg, err := config.LoadConfig(GetConfigPath())
+	if err != nil {
+		return nil, err
+	}
+	logger.SetLevelFromString(cfg.Gateway.LogLevel)
+	return cfg, nil
 }
 
 // FormatVersion returns the version string with optional git commit

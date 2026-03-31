@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -62,14 +63,14 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 		BaseChannel: base,
 		config:      cfg,
 		tokenCache:  tc,
-		client:      lark.NewClient(cfg.AppID, cfg.AppSecret, opts...),
+		client:      lark.NewClient(cfg.AppID, cfg.AppSecret.String(), opts...),
 	}
 	ch.SetOwner(ch)
 	return ch, nil
 }
 
 func (c *FeishuChannel) Start(ctx context.Context) error {
-	if c.config.AppID == "" || c.config.AppSecret == "" {
+	if c.config.AppID == "" || c.config.AppSecret.String() == "" {
 		return fmt.Errorf("feishu app_id or app_secret is empty")
 	}
 
@@ -80,7 +81,7 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 		})
 	}
 
-	dispatcher := larkdispatcher.NewEventDispatcher(c.config.VerificationToken, c.config.EncryptKey).
+	dispatcher := larkdispatcher.NewEventDispatcher(c.config.VerificationToken.String(), c.config.EncryptKey.String()).
 		OnP2MessageReceiveV1(c.handleMessageReceive)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -93,7 +94,7 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	}
 	c.wsClient = larkws.NewClient(
 		c.config.AppID,
-		c.config.AppSecret,
+		c.config.AppSecret.String(),
 		larkws.WithEventHandler(dispatcher),
 		larkws.WithDomain(domain),
 	)
@@ -129,6 +130,7 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 }
 
 // Send sends a message using Interactive Card format for markdown rendering.
+// Falls back to plain text message if card sending fails (e.g., table limit exceeded).
 func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
@@ -141,9 +143,38 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	// Build interactive card with markdown content
 	cardContent, err := buildMarkdownCard(msg.Content)
 	if err != nil {
-		return fmt.Errorf("feishu send: card build failed: %w", err)
+		// If card build fails, fall back to plain text
+		return c.sendText(ctx, msg.ChatID, msg.Content)
 	}
-	return c.sendCard(ctx, msg.ChatID, cardContent)
+
+	// First attempt: try sending as interactive card
+	err = c.sendCard(ctx, msg.ChatID, cardContent)
+	if err == nil {
+		return nil
+	}
+
+	// Check if error is due to card table limit (error code 11310)
+	// See: https://open.feishu.cn/document/server-docs/im-api/message-content-description/create_json
+	errMsg := err.Error()
+	isCardLimitError := strings.Contains(errMsg, "11310")
+
+	if isCardLimitError {
+		logger.WarnCF("feishu", "Card send failed (table limit), falling back to text message", map[string]any{
+			"chat_id": msg.ChatID,
+			"error":   errMsg,
+		})
+
+		// Second attempt: fall back to plain text message
+		textErr := c.sendText(ctx, msg.ChatID, msg.Content)
+		if textErr == nil {
+			return nil
+		}
+		// If text also fails, return the text error
+		return textErr
+	}
+
+	// For other errors, return the original card error
+	return err
 }
 
 // EditMessage implements channels.MessageEditor.
@@ -180,10 +211,7 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 		return "", nil
 	}
 
-	text := c.config.Placeholder.Text
-	if text == "" {
-		text = "Thinking..."
-	}
+	text := c.config.Placeholder.GetRandomText()
 
 	cardContent, err := buildMarkdownCard(text)
 	if err != nil {
@@ -217,15 +245,18 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 // ReactToMessage implements channels.ReactionCapable.
 // Adds a reaction (randomly chosen from config) and returns an undo function to remove it.
 func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
-	// Get emoji list from config
-	emojiList := c.config.RandomReactionEmoji
-	var chosenEmoji string
-	if len(emojiList) == 0 {
-		// Default to "Pin" if no config
-		chosenEmoji = "Pin"
-	} else {
-		idx := rand.Intn(len(emojiList))
-		chosenEmoji = emojiList[idx]
+	// Get emoji list from config (Feishu emoji_type keys, e.g. Pin, THUMBSUP).
+	// Ignore empty entries so a list like ["", "Pin"] does not randomly pick "" (API 231001).
+	var candidates []string
+	for _, e := range c.config.RandomReactionEmoji {
+		e = strings.TrimSpace(e)
+		if e != "" {
+			candidates = append(candidates, e)
+		}
+	}
+	chosenEmoji := "Pin"
+	if len(candidates) > 0 {
+		chosenEmoji = candidates[rand.Intn(len(candidates))]
 	}
 
 	req := larkim.NewCreateMessageReactionReqBuilder().
@@ -393,6 +424,15 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		mediaRefs = c.downloadInboundMedia(ctx, chatID, messageID, messageType, rawContent, store)
 	}
 
+	// For interactive cards, pass external image URLs via media refs.
+	// Keep content as valid raw JSON for downstream parsing.
+	if messageType == larkim.MsgTypeInteractive {
+		_, externalURLs := extractCardImageKeys(rawContent)
+		if len(externalURLs) > 0 {
+			mediaRefs = append(mediaRefs, externalURLs...)
+		}
+	}
+
 	// Append media tags to content (like Telegram does)
 	content = appendMediaTags(content, messageType, mediaRefs)
 
@@ -528,6 +568,10 @@ func extractContent(messageType, rawContent string) string {
 		// Pass raw JSON to LLM — structured rich text is more informative than flattened plain text
 		return rawContent
 
+	case larkim.MsgTypeInteractive:
+		// Pass raw JSON to LLM — structured card is more informative than flattened text
+		return rawContent
+
 	case larkim.MsgTypeImage:
 		// Image messages don't have text content
 		return ""
@@ -564,6 +608,18 @@ func (c *FeishuChannel) downloadInboundMedia(
 		if ref != "" {
 			refs = append(refs, ref)
 		}
+
+	case larkim.MsgTypeInteractive:
+		// Extract and download images embedded in interactive cards
+		feishuKeys, _ := extractCardImageKeys(rawContent)
+		// Download Feishu-hosted images via API
+		for _, imageKey := range feishuKeys {
+			ref := c.downloadResource(ctx, messageID, imageKey, "image", ".jpg", store, scope)
+			if ref != "" {
+				refs = append(refs, ref)
+			}
+		}
+		// External URLs are passed directly to LLM, not downloaded
 
 	case larkim.MsgTypeFile, larkim.MsgTypeAudio, larkim.MsgTypeMedia:
 		fileKey := extractFileKey(rawContent)
@@ -669,8 +725,9 @@ func (c *FeishuChannel) downloadResource(
 	out.Close()
 
 	ref, err := store.Store(localPath, media.MediaMeta{
-		Filename: filename,
-		Source:   "feishu",
+		Filename:      filename,
+		Source:        "feishu",
+		CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 	}, scope)
 	if err != nil {
 		logger.ErrorCF("feishu", "Failed to store downloaded resource", map[string]any{
@@ -685,8 +742,15 @@ func (c *FeishuChannel) downloadResource(
 }
 
 // appendMediaTags appends media type tags to content (like Telegram's "[image: photo]").
+// For interactive cards, media tags are not appended because content is raw JSON
+// and appending would produce invalid JSON format.
 func appendMediaTags(content, messageType string, mediaRefs []string) string {
 	if len(mediaRefs) == 0 {
+		return content
+	}
+
+	// Don't append tags to JSON content (interactive cards) - would produce invalid JSON
+	if messageType == larkim.MsgTypeInteractive {
 		return content
 	}
 
@@ -732,6 +796,35 @@ func (c *FeishuChannel) sendCard(ctx context.Context, chatID, cardContent string
 	}
 
 	logger.DebugCF("feishu", "Feishu card message sent", map[string]any{
+		"chat_id": chatID,
+	})
+
+	return nil
+}
+
+// sendText sends a plain text message to a chat (fallback when card fails).
+func (c *FeishuChannel) sendText(ctx context.Context, chatID, text string) error {
+	content, _ := json.Marshal(map[string]string{"text": text})
+
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(larkim.ReceiveIdTypeChatId).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(chatID).
+			MsgType(larkim.MsgTypeText).
+			Content(string(content)).
+			Build()).
+		Build()
+
+	resp, err := c.client.Im.V1.Message.Create(ctx, req)
+	if err != nil {
+		return fmt.Errorf("feishu send text: %w", channels.ErrTemporary)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("feishu text api error (code=%d msg=%s): %w", resp.Code, resp.Msg, channels.ErrTemporary)
+	}
+
+	logger.DebugCF("feishu", "Feishu text message sent (fallback)", map[string]any{
 		"chat_id": chatID,
 	})
 

@@ -8,6 +8,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ChangeEvent, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import ReactMarkdown from "react-markdown"
+import rehypeRaw from "rehype-raw"
+import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
 import { toast } from "sonner"
 
@@ -167,7 +169,7 @@ export function SkillsPage() {
                   {data.skills.map((skill) => (
                     <Card
                       key={`${skill.source}:${skill.name}`}
-                      className="border-border/60 gap-4 bg-white/80"
+                      className="border-border/60 gap-4"
                       size="sm"
                     >
                       <CardHeader>
@@ -209,7 +211,7 @@ export function SkillsPage() {
                         <div className="text-muted-foreground text-[11px] tracking-[0.18em] uppercase">
                           {t("pages.agent.skills.path")}
                         </div>
-                        <div className="bg-muted/60 overflow-x-auto rounded-lg px-3 py-2 font-mono text-xs leading-relaxed">
+                        <div className="bg-muted text-foreground overflow-x-auto rounded-lg px-3 py-2 font-mono text-xs leading-relaxed">
                           {skill.path}
                         </div>
                       </CardContent>
@@ -260,7 +262,10 @@ export function SkillsPage() {
             ) : selectedSkillDetail ? (
               <div className="space-y-5">
                 <div className="prose prose-sm dark:prose-invert prose-pre:rounded-lg prose-pre:border prose-pre:bg-zinc-950 prose-pre:p-3 max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                  >
                     {selectedSkillDetail.content}
                   </ReactMarkdown>
                 </div>

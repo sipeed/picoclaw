@@ -12,6 +12,7 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
 # 2. Lần chạy đầu tiên — tự động tạo docker/data/config.json rồi thoát
+#    (chỉ kích hoạt khi cả config.json và workspace/ đều không tồn tại)
 docker compose -f docker/docker-compose.yml --profile gateway up
 # Container hiển thị "First-run setup complete." và dừng lại.
 
@@ -91,19 +92,19 @@ picoclaw onboard
     {
       "model_name": "ark-code-latest",
       "model": "volcengine/ark-code-latest",
-      "api_key": "sk-your-api-key",
+      "api_keys": ["sk-your-api-key"],
       "api_base":"https://ark.cn-beijing.volces.com/api/coding/v3"
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_key": "your-api-key",
+      "api_keys": ["your-api-key"],
       "request_timeout": 300
     },
     {
       "model_name": "claude-sonnet-4.6",
       "model": "anthropic/claude-sonnet-4.6",
-      "api_key": "your-anthropic-key"
+      "api_keys": ["your-anthropic-key"]
     }
   ],
   "tools": {

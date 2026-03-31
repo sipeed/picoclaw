@@ -290,3 +290,119 @@ func TestStripMentionPlaceholders(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractCardImageKeys(t *testing.T) {
+	tests := []struct {
+		name             string
+		content          string
+		wantFeishuKeys   []string
+		wantExternalURLs []string
+	}{
+		{
+			name:             "empty content",
+			content:          "",
+			wantFeishuKeys:   nil,
+			wantExternalURLs: nil,
+		},
+		{
+			name:             "invalid JSON",
+			content:          "not json",
+			wantFeishuKeys:   nil,
+			wantExternalURLs: nil,
+		},
+		{
+			name:             "card with no images",
+			content:          `{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"text"}]}}`,
+			wantFeishuKeys:   nil,
+			wantExternalURLs: nil,
+		},
+		{
+			name:             "single image with img_key",
+			content:          `{"elements":[{"tag":"img","img_key":"img_abc123"}]}`,
+			wantFeishuKeys:   []string{"img_abc123"},
+			wantExternalURLs: nil,
+		},
+		{
+			name:             "single image with src as Feishu key",
+			content:          `{"elements":[{"tag":"img","src":"img_xyz789"}]}`,
+			wantFeishuKeys:   []string{"img_xyz789"},
+			wantExternalURLs: nil,
+		},
+		{
+			name:             "multiple images",
+			content:          `{"elements":[{"tag":"img","img_key":"img_1"},{"tag":"div","text":{"content":"text"}},{"tag":"img","img_key":"img_2"}]}`,
+			wantFeishuKeys:   []string{"img_1", "img_2"},
+			wantExternalURLs: nil,
+		},
+		{
+			name:             "nested image in columns",
+			content:          `{"elements":[{"tag":"div","columns":[{"tag":"img","img_key":"img_col1"},{"tag":"img","img_key":"img_col2"}]}]}`,
+			wantFeishuKeys:   []string{"img_col1", "img_col2"},
+			wantExternalURLs: nil,
+		},
+		{
+			name:             "image in action",
+			content:          `{"elements":[{"tag":"action","actions":[{"tag":"img","img_key":"img_action"}]}]}`,
+			wantFeishuKeys:   []string{"img_action"},
+			wantExternalURLs: nil,
+		},
+		{
+			name:             "icon element",
+			content:          `{"elements":[{"tag":"icon","icon_key":"icon_123"}]}`,
+			wantFeishuKeys:   []string{"icon_123"},
+			wantExternalURLs: nil,
+		},
+		{
+			name:             "complex card with text and images",
+			content:          `{"header":{"title":{"content":"Title"}},"elements":[{"tag":"div","text":{"content":"Description"}},{"tag":"img","img_key":"img_main"}]}`,
+			wantFeishuKeys:   []string{"img_main"},
+			wantExternalURLs: nil,
+		},
+		{
+			name:             "external URL in src",
+			content:          `{"elements":[{"tag":"img","src":"https://example.com/image.png"}]}`,
+			wantFeishuKeys:   nil,
+			wantExternalURLs: []string{"https://example.com/image.png"},
+		},
+		{
+			name:             "mixed Feishu keys and external URLs",
+			content:          `{"elements":[{"tag":"img","img_key":"img_feishu"},{"tag":"img","src":"https://cdn.example.com/external.jpg"},{"tag":"img","src":"img_another"}]}`,
+			wantFeishuKeys:   []string{"img_feishu", "img_another"},
+			wantExternalURLs: []string{"https://cdn.example.com/external.jpg"},
+		},
+		{
+			name:             "multiple external URLs",
+			content:          `{"elements":[{"tag":"img","src":"https://a.com/1.png"},{"tag":"img","src":"http://b.com/2.jpg"}]}`,
+			wantFeishuKeys:   nil,
+			wantExternalURLs: []string{"https://a.com/1.png", "http://b.com/2.jpg"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotFeishuKeys, gotExternalURLs := extractCardImageKeys(tt.content)
+
+			// Compare Feishu keys
+			if len(gotFeishuKeys) != len(tt.wantFeishuKeys) {
+				t.Errorf("extractCardImageKeys() feishuKeys = %v, want %v", gotFeishuKeys, tt.wantFeishuKeys)
+				return
+			}
+			for i, v := range gotFeishuKeys {
+				if v != tt.wantFeishuKeys[i] {
+					t.Errorf("extractCardImageKeys() feishuKeys[%d] = %q, want %q", i, v, tt.wantFeishuKeys[i])
+				}
+			}
+
+			// Compare external URLs
+			if len(gotExternalURLs) != len(tt.wantExternalURLs) {
+				t.Errorf("extractCardImageKeys() externalURLs = %v, want %v", gotExternalURLs, tt.wantExternalURLs)
+				return
+			}
+			for i, v := range gotExternalURLs {
+				if v != tt.wantExternalURLs[i] {
+					t.Errorf("extractCardImageKeys() externalURLs[%d] = %q, want %q", i, v, tt.wantExternalURLs[i])
+				}
+			}
+		})
+	}
+}

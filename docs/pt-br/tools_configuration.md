@@ -41,14 +41,6 @@ Configurações gerais para busca e processamento de conteúdo de páginas web.
 | `fetch_limit_bytes` | int    | 10485760      | Tamanho máximo do payload da página web a ser buscado, em bytes (padrão é 10MB).              |
 | `format`            | string | "plaintext"   | Formato de saída do conteúdo buscado. Opções: `plaintext` ou `markdown` (recomendado).        |
 
-### Brave
-
-| Config        | Tipo   | Padrão | Descrição                  |
-|---------------|--------|--------|----------------------------|
-| `enabled`     | bool   | false  | Habilitar pesquisa Brave   |
-| `api_key`     | string | -      | Chave API do Brave Search  |
-| `max_results` | int    | 5      | Número máximo de resultados |
-
 ### DuckDuckGo
 
 | Config        | Tipo | Padrão | Descrição                      |
@@ -56,13 +48,73 @@ Configurações gerais para busca e processamento de conteúdo de páginas web.
 | `enabled`     | bool | true   | Habilitar pesquisa DuckDuckGo  |
 | `max_results` | int  | 5      | Número máximo de resultados    |
 
+### Baidu Search
+
+| Config        | Tipo   | Padrão                                                          | Descrição                          |
+|---------------|--------|-----------------------------------------------------------------|------------------------------------|
+| `enabled`     | bool   | false                                                           | Habilitar pesquisa Baidu           |
+| `api_key`     | string | -                                                               | Chave API Qianfan                  |
+| `base_url`    | string | `https://qianfan.baidubce.com/v2/ai_search/web_search`         | URL da API Baidu Search            |
+| `max_results` | int    | 10                                                              | Número máximo de resultados        |
+
+```json
+{
+  "tools": {
+    "web": {
+      "baidu_search": {
+        "enabled": true,
+        "api_key": "YOUR_BAIDU_QIANFAN_API_KEY",
+        "max_results": 10
+      }
+    }
+  }
+}
+```
+
 ### Perplexity
 
 | Config        | Tipo   | Padrão | Descrição                      |
 |---------------|--------|--------|--------------------------------|
-| `enabled`     | bool   | false  | Habilitar pesquisa Perplexity  |
-| `api_key`     | string | -      | Chave API do Perplexity        |
-| `max_results` | int    | 5      | Número máximo de resultados    |
+| `enabled`     | bool     | false  | Habilitar pesquisa Perplexity                                    |
+| `api_key`     | string   | -      | Chave API do Perplexity                                          |
+| `api_keys`    | string[] | -      | Várias chaves API do Perplexity para rotação (prioridade sobre `api_key`) |
+| `max_results` | int      | 5      | Número máximo de resultados                                      |
+
+### Brave
+
+| Config        | Tipo   | Padrão | Descrição                  |
+|---------------|--------|--------|----------------------------|
+| `enabled`     | bool     | false  | Habilitar pesquisa Brave                                         |
+| `api_key`     | string   | -      | Chave API única do Brave Search                                  |
+| `api_keys`    | string[] | -      | Várias chaves API do Brave para rotação (prioridade sobre `api_key`) |
+| `max_results` | int      | 5      | Número máximo de resultados                                      |
+
+### Tavily
+
+| Config        | Tipo   | Padrão | Descrição                          |
+|---------------|--------|--------|------------------------------------|
+| `enabled`     | bool   | false  | Habilitar pesquisa Tavily          |
+| `api_key`     | string | -      | Chave API do Tavily                |
+| `base_url`    | string | -      | URL base personalizada do Tavily   |
+| `max_results` | int    | 0      | Número máximo de resultados (0 = padrão) |
+
+### SearXNG
+
+| Config        | Tipo   | Padrão                   | Descrição                      |
+|---------------|--------|--------------------------|--------------------------------|
+| `enabled`     | bool   | false                    | Habilitar pesquisa SearXNG     |
+| `base_url`    | string | `http://localhost:8888`  | URL da instância SearXNG       |
+| `max_results` | int    | 5                        | Número máximo de resultados    |
+
+### GLM Search
+
+| Config          | Tipo   | Padrão                                               | Descrição                  |
+|-----------------|--------|------------------------------------------------------|----------------------------|
+| `enabled`       | bool   | false                                                | Habilitar GLM Search       |
+| `api_key`       | string | -                                                    | Chave API GLM              |
+| `base_url`      | string | `https://open.bigmodel.cn/api/paas/v4/web_search`   | URL da API GLM Search      |
+| `search_engine` | string | `search_std`                                         | Tipo de motor de busca     |
+| `max_results`   | int    | 5                                                    | Número máximo de resultados |
 
 ## Ferramenta Exec
 
@@ -70,8 +122,31 @@ A ferramenta exec é usada para executar comandos shell.
 
 | Config                 | Tipo  | Padrão | Descrição                                      |
 |------------------------|-------|--------|-------------------------------------------------|
+| `enabled`              | bool  | true   | Habilitar a ferramenta exec                     |
 | `enable_deny_patterns` | bool  | true   | Habilitar bloqueio padrão de comandos perigosos |
 | `custom_deny_patterns` | array | []     | Padrões de negação personalizados (expressões regulares) |
+
+### Desabilitando a Ferramenta Exec
+
+Para desabilitar completamente a ferramenta `exec`, defina `enabled` como `false`:
+
+**Via arquivo de configuração:**
+```json
+{
+  "tools": {
+    "exec": {
+      "enabled": false
+    }
+  }
+}
+```
+
+**Via variável de ambiente:**
+```bash
+PICOCLAW_TOOLS_EXEC_ENABLED=false
+```
+
+> **Nota:** Quando desabilitada, o agent não poderá executar comandos shell. Isso também afeta a capacidade da ferramenta Cron de executar comandos shell agendados.
 
 ### Funcionalidade
 
@@ -329,6 +404,7 @@ Todas as opções de configuração podem ser substituídas via variáveis de am
 Por exemplo:
 
 - `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`

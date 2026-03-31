@@ -41,14 +41,6 @@ Paramètres généraux pour la récupération et le traitement du contenu des pa
 | `fetch_limit_bytes` | int    | 10485760      | Taille maximale du contenu de la page web à récupérer, en octets (par défaut 10 Mo).          |
 | `format`            | string | "plaintext"   | Format de sortie du contenu récupéré. Options : `plaintext` ou `markdown` (recommandé).       |
 
-### Brave
-
-| Config        | Type   | Par défaut | Description               |
-|---------------|--------|------------|---------------------------|
-| `enabled`     | bool   | false      | Activer la recherche Brave |
-| `api_key`     | string | -          | Clé API Brave Search      |
-| `max_results` | int    | 5          | Nombre maximum de résultats |
-
 ### DuckDuckGo
 
 | Config        | Type | Par défaut | Description                    |
@@ -56,13 +48,73 @@ Paramètres généraux pour la récupération et le traitement du contenu des pa
 | `enabled`     | bool | true       | Activer la recherche DuckDuckGo |
 | `max_results` | int  | 5          | Nombre maximum de résultats    |
 
+### Baidu Search
+
+| Config        | Type   | Par défaut                                                      | Description                        |
+|---------------|--------|-----------------------------------------------------------------|------------------------------------|
+| `enabled`     | bool   | false                                                           | Activer la recherche Baidu         |
+| `api_key`     | string | -                                                               | Clé API Qianfan                    |
+| `base_url`    | string | `https://qianfan.baidubce.com/v2/ai_search/web_search`         | URL de l'API Baidu Search          |
+| `max_results` | int    | 10                                                              | Nombre maximum de résultats        |
+
+```json
+{
+  "tools": {
+    "web": {
+      "baidu_search": {
+        "enabled": true,
+        "api_key": "YOUR_BAIDU_QIANFAN_API_KEY",
+        "max_results": 10
+      }
+    }
+  }
+}
+```
+
 ### Perplexity
 
 | Config        | Type   | Par défaut | Description                    |
 |---------------|--------|------------|--------------------------------|
-| `enabled`     | bool   | false      | Activer la recherche Perplexity |
-| `api_key`     | string | -          | Clé API Perplexity             |
-| `max_results` | int    | 5          | Nombre maximum de résultats    |
+| `enabled`     | bool     | false      | Activer la recherche Perplexity                              |
+| `api_key`     | string   | -          | Clé API Perplexity                                           |
+| `api_keys`    | string[] | -          | Plusieurs clés API Perplexity pour la rotation (`api_key` prioritaire) |
+| `max_results` | int      | 5          | Nombre maximum de résultats                                  |
+
+### Brave
+
+| Config        | Type   | Par défaut | Description               |
+|---------------|--------|------------|---------------------------|
+| `enabled`     | bool     | false      | Activer la recherche Brave                                   |
+| `api_key`     | string   | -          | Clé API Brave Search                                         |
+| `api_keys`    | string[] | -          | Plusieurs clés API Brave Search pour la rotation (`api_key` prioritaire) |
+| `max_results` | int      | 5          | Nombre maximum de résultats                                  |
+
+### Tavily
+
+| Config        | Type   | Par défaut | Description                        |
+|---------------|--------|------------|------------------------------------|
+| `enabled`     | bool   | false      | Activer la recherche Tavily        |
+| `api_key`     | string | -          | Clé API Tavily                     |
+| `base_url`    | string | -          | URL de base Tavily personnalisée   |
+| `max_results` | int    | 0          | Nombre maximum de résultats (0 = défaut) |
+
+### SearXNG
+
+| Config        | Type   | Par défaut               | Description                    |
+|---------------|--------|--------------------------|--------------------------------|
+| `enabled`     | bool   | false                    | Activer la recherche SearXNG   |
+| `base_url`    | string | `http://localhost:8888`  | URL de l'instance SearXNG      |
+| `max_results` | int    | 5                        | Nombre maximum de résultats    |
+
+### GLM Search
+
+| Config          | Type   | Par défaut                                           | Description               |
+|-----------------|--------|------------------------------------------------------|---------------------------|
+| `enabled`       | bool   | false                                                | Activer GLM Search        |
+| `api_key`       | string | -                                                    | Clé API GLM               |
+| `base_url`      | string | `https://open.bigmodel.cn/api/paas/v4/web_search`   | URL de l'API GLM Search   |
+| `search_engine` | string | `search_std`                                         | Type de moteur de recherche |
+| `max_results`   | int    | 5                                                    | Nombre maximum de résultats |
 
 ## Outil Exec
 
@@ -70,8 +122,31 @@ L'outil exec est utilisé pour exécuter des commandes shell.
 
 | Config                 | Type  | Par défaut | Description                                    |
 |------------------------|-------|------------|------------------------------------------------|
+| `enabled`              | bool  | true       | Activer l'outil exec                           |
 | `enable_deny_patterns` | bool  | true       | Activer le blocage par défaut des commandes dangereuses |
 | `custom_deny_patterns` | array | []         | Modèles de refus personnalisés (expressions régulières) |
+
+### Désactivation de l'Outil Exec
+
+Pour désactiver complètement l'outil `exec`, définissez `enabled` à `false` :
+
+**Via le fichier de configuration :**
+```json
+{
+  "tools": {
+    "exec": {
+      "enabled": false
+    }
+  }
+}
+```
+
+**Via la variable d'environnement :**
+```bash
+PICOCLAW_TOOLS_EXEC_ENABLED=false
+```
+
+> **Note :** Lorsqu'il est désactivé, l'agent ne pourra pas exécuter de commandes shell. Cela affecte également la capacité de l'outil Cron à exécuter des commandes shell planifiées.
 
 ### Fonctionnalité
 
@@ -329,6 +404,7 @@ Toutes les options de configuration peuvent être remplacées via des variables 
 Par exemple :
 
 - `PICOCLAW_TOOLS_WEB_BRAVE_ENABLED=true`
+- `PICOCLAW_TOOLS_EXEC_ENABLED=false`
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`

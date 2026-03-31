@@ -91,6 +91,44 @@ func TestSerializeMessages_WithMedia(t *testing.T) {
 	}
 }
 
+func TestSerializeMessages_WithAudioMedia(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "transcribe this", Media: []string{"data:audio/ogg;base64,abc123"}},
+	}
+	result := SerializeMessages(messages)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	content, ok := msgs[0]["content"].([]any)
+	if !ok {
+		t.Fatalf("expected array content for media message, got %T", msgs[0]["content"])
+	}
+	if len(content) != 2 {
+		t.Fatalf("expected 2 content parts, got %d", len(content))
+	}
+
+	audioPart, ok := content[1].(map[string]any)
+	if !ok {
+		t.Fatalf("expected audio content part to be an object, got %T", content[1])
+	}
+	if audioPart["type"] != "input_audio" {
+		t.Fatalf("audio part type = %v, want input_audio", audioPart["type"])
+	}
+
+	inputAudio, ok := audioPart["input_audio"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected input_audio object, got %T", audioPart["input_audio"])
+	}
+	if inputAudio["format"] != "ogg" {
+		t.Fatalf("audio format = %v, want ogg", inputAudio["format"])
+	}
+	if inputAudio["data"] != "abc123" {
+		t.Fatalf("audio data = %v, want abc123", inputAudio["data"])
+	}
+}
+
 func TestSerializeMessages_MediaWithToolCallID(t *testing.T) {
 	messages := []Message{
 		{Role: "tool", Content: "result", Media: []string{"data:image/png;base64,xyz"}, ToolCallID: "call_1"},
