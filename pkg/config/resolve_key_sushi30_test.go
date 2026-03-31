@@ -8,6 +8,7 @@
 // Fix: pkg/config/config_struct.go resolveKey() now also dispatches env://.
 // These tests guard against that regression being re-introduced by a future
 // upstream merge or rebase.
+
 package config
 
 import (
@@ -16,7 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestResolveKey_EnvScheme verifies that a SecureString initialised with an
+// TestResolveKey_EnvScheme verifies that a SecureString initialized with an
 // env:// reference resolves to the environment variable value, not the raw
 // reference string.
 func TestResolveKey_EnvScheme(t *testing.T) {

@@ -599,23 +599,23 @@ type TeamsWebhookTarget struct {
 }
 
 type EmailConfig struct {
-	Enabled bool `json:"enabled" env:"PICOCLAW_CHANNELS_EMAIL_ENABLED"`
+	Enabled bool `json:"enabled" yaml:"-" env:"PICOCLAW_CHANNELS_EMAIL_ENABLED"`
 	// SMTP (outbound)
-	SMTPHost       string       `json:"smtp_host"              env:"PICOCLAW_CHANNELS_EMAIL_SMTP_HOST"`
-	SMTPPort       int          `json:"smtp_port"              env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PORT"`
-	SMTPFrom       string       `json:"smtp_from"              env:"PICOCLAW_CHANNELS_EMAIL_SMTP_FROM"`
-	SMTPUser       string       `json:"smtp_user"              env:"PICOCLAW_CHANNELS_EMAIL_SMTP_USER"`
-	SMTPPassword   SecureString `json:"smtp_password,omitzero" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PASSWORD"   yaml:"smtp_password,omitempty"`
-	DefaultSubject string       `json:"default_subject"        env:"PICOCLAW_CHANNELS_EMAIL_DEFAULT_SUBJECT"`
+	SMTPHost       string       `json:"smtp_host"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_HOST"`
+	SMTPPort       int          `json:"smtp_port"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PORT"`
+	SMTPFrom       string       `json:"smtp_from"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_FROM"`
+	SMTPUser       string       `json:"smtp_user"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_USER"`
+	SMTPPassword   SecureString `json:"smtp_password,omitzero" yaml:"smtp_password,omitempty" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PASSWORD"`
+	DefaultSubject string       `json:"default_subject"        yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_DEFAULT_SUBJECT"`
 	// IMAP (inbound)
-	IMAPHost         string       `json:"imap_host"              env:"PICOCLAW_CHANNELS_EMAIL_IMAP_HOST"`
-	IMAPPort         int          `json:"imap_port"              env:"PICOCLAW_CHANNELS_EMAIL_IMAP_PORT"`
-	IMAPUser         string       `json:"imap_user"              env:"PICOCLAW_CHANNELS_EMAIL_IMAP_USER"`
-	IMAPPassword     SecureString `json:"imap_password,omitzero" env:"PICOCLAW_CHANNELS_EMAIL_IMAP_PASSWORD"      yaml:"imap_password,omitempty"`
-	PollIntervalSecs int          `json:"poll_interval_secs"     env:"PICOCLAW_CHANNELS_EMAIL_POLL_INTERVAL_SECS"`
+	IMAPHost         string       `json:"imap_host"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_IMAP_HOST"`
+	IMAPPort         int          `json:"imap_port"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_IMAP_PORT"`
+	IMAPUser         string       `json:"imap_user"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_IMAP_USER"`
+	IMAPPassword     SecureString `json:"imap_password,omitzero" yaml:"imap_password,omitempty" env:"PICOCLAW_CHANNELS_EMAIL_IMAP_PASSWORD"`
+	PollIntervalSecs int          `json:"poll_interval_secs"     yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_POLL_INTERVAL_SECS"`
 	// Common
-	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_EMAIL_ALLOW_FROM"`
-	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_EMAIL_REASONING_CHANNEL_ID"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           yaml:"-" env:"PICOCLAW_CHANNELS_EMAIL_ALLOW_FROM"`
+	ReasoningChannelID string              `json:"reasoning_channel_id" yaml:"-" env:"PICOCLAW_CHANNELS_EMAIL_REASONING_CHANNEL_ID"`
 }
 
 type HeartbeatConfig struct {
