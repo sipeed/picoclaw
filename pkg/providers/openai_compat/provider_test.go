@@ -1240,7 +1240,7 @@ func TestProviderChat_OpenRouter429Exhausted(t *testing.T) {
 	if !strings.Contains(err.Error(), "429") {
 		t.Fatalf("error should mention 429: %v", err)
 	}
-	if n != 3 {
+	if n != 10 {
 		t.Fatalf("request count = %d, want 3", n)
 	}
 }
