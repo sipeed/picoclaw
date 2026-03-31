@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -75,11 +76,11 @@ func NewClawHubRegistry(cfg ClawHubConfig) *ClawHubRegistry {
 		maxResponseSize: maxResp,
 		client: &http.Client{
 			Timeout: timeout,
-			Transport: &http.Transport{
+			Transport: config.WrapTransportUserAgent(&http.Transport{
 				MaxIdleConns:        5,
 				IdleConnTimeout:     30 * time.Second,
 				TLSHandshakeTimeout: 10 * time.Second,
-			},
+			}),
 		},
 	}
 }

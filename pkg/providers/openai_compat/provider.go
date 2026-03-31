@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
@@ -41,6 +42,63 @@ type Provider struct {
 type Option func(*Provider)
 
 const defaultRequestTimeout = common.DefaultRequestTimeout
+
+// OpenRouter free-tier models often return transient HTTP 429; retry a few times before surfacing.
+const (
+	openRouter429MaxAttempts = 10
+	openRouter429Backoff     = time.Second
+)
+
+// OpenRouter app attribution (optional headers for rankings/analytics).
+// See https://openrouter.ai/docs/app-attribution
+const (
+	openRouterAttributionReferer    = "https://picoclaw.io/"
+	openRouterAttributionTitle      = "PicoClaw"
+	openRouterAttributionCategories = "personal-agent,general-chat"
+)
+
+func isOpenRouterHost(apiBase string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(apiBase)), "openrouter.ai")
+}
+
+func openRouterLogKind(stream bool) string {
+	if stream {
+		return "ChatStream"
+	}
+	return "Chat"
+}
+
+func logOpenRouter429Retry(stream bool, resolvedModel string, attempt, maxAttempts int) {
+	logger.WarnC("agent",
+		fmt.Sprintf("openai_compat OpenRouter %s: HTTP 429 (attempt %d/%d), backing off %v then retry (model=%q)",
+			openRouterLogKind(stream), attempt, maxAttempts, openRouter429Backoff, resolvedModel,
+		))
+}
+
+func logOpenRouter429Exhausted(stream bool, resolvedModel string, maxAttempts int) {
+	logger.WarnC("agent",
+		fmt.Sprintf("openai_compat OpenRouter %s: HTTP 429 after %d attempts, giving up (model=%q)",
+			openRouterLogKind(stream), maxAttempts, resolvedModel,
+		))
+}
+
+func logOpenRouter429BackoffCancelled(stream bool, resolvedModel string, attempt, maxAttempts int, cancelErr error) {
+	log.Printf(
+		"openai_compat OpenRouter %s: HTTP 429 retry cancel during backoff (attempt %d/%d, model=%q): %v",
+		openRouterLogKind(stream), attempt, maxAttempts, resolvedModel, cancelErr,
+	)
+}
+
+// applyOpenRouterAttributionHeaders sets Referer, X-OpenRouter-Title, and X-OpenRouter-Categories
+// when the API base is OpenRouter. Uses the standard Referer header name (HTTP-Referer in OpenRouter docs).
+func applyOpenRouterAttributionHeaders(h http.Header, apiBase string) {
+	if !isOpenRouterHost(apiBase) {
+		return
+	}
+	h.Set("Referer", openRouterAttributionReferer)
+	h.Set("X-Openrouter-Title", openRouterAttributionTitle)
+	h.Set("X-Openrouter-Categories", openRouterAttributionCategories)
+}
 
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {
@@ -174,27 +232,56 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	maxAttempts := 1
+	if isOpenRouterHost(p.apiBase) {
+		maxAttempts = openRouter429MaxAttempts
 	}
+	resolvedModel := normalizeModel(model, p.apiBase)
 
-	req.Header.Set("Content-Type", "application/json")
-	if p.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		if p.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
+		applyOpenRouterAttributionHeaders(req.Header, p.apiBase)
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			out, readErr := common.ReadAndParseResponse(resp, p.apiBase)
+			resp.Body.Close()
+			return out, readErr
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests && isOpenRouterHost(p.apiBase) && attempt < maxAttempts {
+			logOpenRouter429Retry(false, resolvedModel, attempt, maxAttempts)
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			select {
+			case <-ctx.Done():
+				logOpenRouter429BackoffCancelled(false, resolvedModel, attempt, maxAttempts, ctx.Err())
+				return nil, ctx.Err()
+			case <-time.After(openRouter429Backoff):
+			}
+			continue
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests && isOpenRouterHost(p.apiBase) {
+			logOpenRouter429Exhausted(false, resolvedModel, maxAttempts)
+		}
+		err = common.HandleErrorResponse(resp, p.apiBase)
+		resp.Body.Close()
+		return nil, err
 	}
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, common.HandleErrorResponse(resp, p.apiBase)
-	}
-
-	return common.ReadAndParseResponse(resp, p.apiBase)
+	return nil, fmt.Errorf("internal error: chat request loop exited without return")
 }
 
 // ChatStream implements streaming via OpenAI-compatible SSE (stream: true).
@@ -219,32 +306,59 @@ func (p *Provider) ChatStream(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	maxAttempts := 1
+	if isOpenRouterHost(p.apiBase) {
+		maxAttempts = openRouter429MaxAttempts
 	}
+	resolvedModel := normalizeModel(model, p.apiBase)
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	if p.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	}
-
-	// Use a client without Timeout for streaming — the http.Client.Timeout covers
-	// the entire request lifecycle including body reads, which would kill long streams.
-	// Context cancellation still provides the safety net.
 	streamClient := &http.Client{Transport: p.httpClient.Transport}
-	resp, err := streamClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, common.HandleErrorResponse(resp, p.apiBase)
-	}
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
 
-	return parseStreamResponse(ctx, resp.Body, onChunk)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		if p.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
+		applyOpenRouterAttributionHeaders(req.Header, p.apiBase)
+
+		resp, err := streamClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			out, streamErr := parseStreamResponse(ctx, resp.Body, onChunk)
+			resp.Body.Close()
+			return out, streamErr
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests && isOpenRouterHost(p.apiBase) && attempt < maxAttempts {
+			logOpenRouter429Retry(true, resolvedModel, attempt, maxAttempts)
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			select {
+			case <-ctx.Done():
+				logOpenRouter429BackoffCancelled(true, resolvedModel, attempt, maxAttempts, ctx.Err())
+				return nil, ctx.Err()
+			case <-time.After(openRouter429Backoff):
+			}
+			continue
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests && isOpenRouterHost(p.apiBase) {
+			logOpenRouter429Exhausted(true, resolvedModel, maxAttempts)
+		}
+		err = common.HandleErrorResponse(resp, p.apiBase)
+		resp.Body.Close()
+		return nil, err
+	}
+	return nil, fmt.Errorf("internal error: chat stream loop exited without return")
 }
 
 // parseStreamResponse parses an OpenAI-compatible SSE stream.

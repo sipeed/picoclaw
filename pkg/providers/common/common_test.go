@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -22,9 +23,10 @@ func TestNewHTTPClient_DefaultTimeout(t *testing.T) {
 
 func TestNewHTTPClient_WithProxy(t *testing.T) {
 	client := NewHTTPClient("http://127.0.0.1:8080")
-	transport, ok := client.Transport.(*http.Transport)
+	base := config.UnwrapUserAgent(client.Transport)
+	transport, ok := base.(*http.Transport)
 	if !ok || transport == nil {
-		t.Fatalf("expected http.Transport with proxy, got %T", client.Transport)
+		t.Fatalf("expected http.Transport with proxy, got %T", base)
 	}
 	req := &http.Request{URL: &url.URL{Scheme: "https", Host: "api.example.com"}}
 	gotProxy, err := transport.Proxy(req)
@@ -38,8 +40,9 @@ func TestNewHTTPClient_WithProxy(t *testing.T) {
 
 func TestNewHTTPClient_NoProxy(t *testing.T) {
 	client := NewHTTPClient("")
-	if client.Transport != nil {
-		t.Errorf("expected nil transport without proxy, got %T", client.Transport)
+	base := config.UnwrapUserAgent(client.Transport)
+	if base == nil {
+		t.Fatal("expected non-nil base transport")
 	}
 }
 
