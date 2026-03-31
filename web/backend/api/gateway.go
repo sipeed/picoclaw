@@ -59,6 +59,16 @@ func refreshPicoTokensLocked(configPath string) {
 	gateway.picoToken = cfg.Channels.Pico.Token.String()
 }
 
+// ensurePicoTokenCachedLocked lazily fills the in-memory pico token cache when
+// the launcher has already discovered a running gateway via pidData, but has
+// not yet refreshed the token into memory.
+func ensurePicoTokenCachedLocked(configPath string) {
+	if gateway.picoToken != "" {
+		return
+	}
+	refreshPicoTokensLocked(configPath)
+}
+
 const (
 	protocolKey = "Sec-Websocket-Protocol"
 	tokenPrefix = "token."
