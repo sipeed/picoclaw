@@ -117,10 +117,11 @@ func (p *Provider) buildRequestBody(
 	messages []Message, tools []ToolDefinition, model string, options map[string]any,
 ) map[string]any {
 	model = normalizeModel(model, p.apiBase)
+	serializedMessages := common.SerializeMessages(messagesForRequest(messages, p.apiBase))
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": common.SerializeMessages(messages),
+		"messages": serializedMessages,
 	}
 
 	// When fallback uses a different provider (e.g. DeepSeek), that provider must not inject web_search_preview.
@@ -171,6 +172,27 @@ func (p *Provider) buildRequestBody(
 	}
 
 	return requestBody
+}
+
+func messagesForRequest(messages []Message, apiBase string) []Message {
+	if !isReasoningContentUnsupportedHost(apiBase) {
+		return messages
+	}
+	out := make([]Message, len(messages))
+	copy(out, messages)
+	for i := range out {
+		out[i].ReasoningContent = ""
+	}
+	return out
+}
+
+func isReasoningContentUnsupportedHost(apiBase string) bool {
+	u, err := url.Parse(apiBase)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == "api.mistral.ai" || strings.HasSuffix(host, ".mistral.ai")
 }
 
 func (p *Provider) Chat(
