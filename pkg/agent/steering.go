@@ -290,16 +290,8 @@ func (al *AgentLoop) continueWithSteeringMessages(
 	ctx context.Context,
 	agent *AgentInstance,
 	sessionKey, channel, chatID string,
-	prevContent string,
 	steeringMsgs []providers.Message,
 ) (agentResponse, error) {
-	// Pass the previous assistant reply as ephemeral context so the model can
-	// see it without it being persisted to session history prematurely (that
-	// happens asynchronously via OnDelivered after channel delivery).
-	var ephemeral []providers.Message
-	if prevContent != "" {
-		ephemeral = []providers.Message{{Role: "assistant", Content: prevContent}}
-	}
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:              sessionKey,
 		Channel:                 channel,
@@ -307,7 +299,6 @@ func (al *AgentLoop) continueWithSteeringMessages(
 		DefaultResponse:         defaultResponse,
 		EnableSummary:           true,
 		SendResponse:            false,
-		EphemeralPrefix:         ephemeral,
 		InitialSteeringMessages: steeringMsgs,
 		SkipInitialSteeringPoll: true,
 	})
@@ -329,13 +320,11 @@ func (al *AgentLoop) agentForSession(sessionKey string) *AgentInstance {
 }
 
 // continueResponse dequeues pending steering messages and runs them through the agent loop.
-// prevContent is the assistant reply from the immediately preceding turn; it is injected as
-// ephemeral context so the model can reference it before OnDelivered persists it to history.
 // Returns an agentResponse with OnDelivered set for delayed session persistence.
 // If no steering messages are pending, returns an empty agentResponse.
 func (al *AgentLoop) continueResponse(
 	ctx context.Context,
-	sessionKey, channel, chatID, prevContent string,
+	sessionKey, channel, chatID string,
 ) (agentResponse, error) {
 	if active := al.GetActiveTurn(); active != nil {
 		return agentResponse{}, fmt.Errorf("turn %s is still active", active.TurnID)
@@ -363,7 +352,7 @@ func (al *AgentLoop) continueResponse(
 		}
 	}
 
-	return al.continueWithSteeringMessages(ctx, agent, sessionKey, channel, chatID, prevContent, steeringMsgs)
+	return al.continueWithSteeringMessages(ctx, agent, sessionKey, channel, chatID, steeringMsgs)
 }
 
 func (al *AgentLoop) InterruptGraceful(hint string) error {

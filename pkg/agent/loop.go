@@ -97,7 +97,6 @@ type processOptions struct {
 	SystemPromptOverride    string                   // Override the default system prompt (Used by SubTurns)
 	Media                   []string                 // media:// refs from inbound message
 	InitialSteeringMessages []providers.Message      // Steering messages from refactor/agent
-	EphemeralPrefix         []providers.Message      // Messages prepended to LLM context but NOT saved to history
 	DefaultResponse         string                   // Response when LLM returns empty
 	EnableSummary           bool                     // Whether to trigger summarization
 	SendResponse            bool                     // Whether to send response via bus
@@ -590,7 +589,6 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				// steering continuation can supersede the initial reply.
 				// We publish exactly once at the end (matching upstream behavior).
 				finalResponse := response
-				prevContent := response.Content
 
 				for al.pendingSteeringCountForScope(target.SessionKey) > 0 {
 					logger.InfoCF("agent", "Continuing queued steering after turn end",
@@ -606,7 +604,6 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						target.SessionKey,
 						target.Channel,
 						target.ChatID,
-						prevContent,
 					)
 					if continueErr != nil {
 						logger.WarnCF("agent", "Failed to continue queued steering",
@@ -621,7 +618,6 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						return
 					}
 					finalResponse = continued
-					prevContent = continued.Content
 				}
 
 				cancelDrain()
@@ -640,7 +636,6 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						target.SessionKey,
 						target.Channel,
 						target.ChatID,
-						prevContent,
 					)
 					if continueErr != nil {
 						logger.WarnCF("agent", "Failed to continue queued steering after shutdown drain",
@@ -655,7 +650,6 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						break
 					}
 					finalResponse = continued
-					prevContent = continued.Content
 				}
 
 				if finalResponse.Content != "" {
@@ -1964,12 +1958,6 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		activeProvider = ts.agent.LightProvider
 	}
 	pendingMessages := append([]providers.Message(nil), ts.opts.InitialSteeringMessages...)
-	// Inject ephemeral prefix into LLM context without saving to session history.
-	// Used to carry the previous turn's assistant reply into a steering continuation
-	// so the model sees it even before OnDelivered persists it.
-	if len(ts.opts.EphemeralPrefix) > 0 {
-		messages = append(messages, ts.opts.EphemeralPrefix...)
-	}
 	var finalContent string
 
 turnLoop:

@@ -298,7 +298,7 @@ func TestAgentLoop_Continue_NoMessages(t *testing.T) {
 		t.Fatal("expected provider to be initialized")
 	}
 
-	resp, err := al.continueResponse(context.Background(), "test-session", "test", "chat1", "")
+	resp, err := al.continueResponse(context.Background(), "test-session", "test", "chat1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestAgentLoop_Continue_WithMessages(t *testing.T) {
 
 	al.Steer(providers.Message{Role: "user", Content: "new direction"})
 
-	resp, err := al.continueResponse(context.Background(), "test-session", "test", "chat1", "")
+	resp, err := al.continueResponse(context.Background(), "test-session", "test", "chat1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1073,7 +1073,7 @@ func TestAgentLoop_Continue_PreservesSteeringMedia(t *testing.T) {
 		t.Fatalf("Steer failed: %v", err)
 	}
 
-	resp, err := al.continueResponse(context.Background(), sessionKey, "test", "chat1", "")
+	resp, err := al.continueResponse(context.Background(), sessionKey, "test", "chat1")
 	if err != nil {
 		t.Fatalf("continueResponse failed: %v", err)
 	}
@@ -1583,16 +1583,15 @@ func (w *wrappingProvider) GetDefaultModel() string {
 	return w.inner.GetDefaultModel()
 }
 
-// TestContinueResponse_EphemeralPrefixBeforePersistence verifies the two
-// invariants of the ephemeral-prefix design:
+// TestContinueResponse_PendingDeliveryVisibleBeforePersistence verifies that
+// a steering continuation sees the previous assistant reply in its LLM context
+// even when OnDelivered has not fired yet (reply not yet in session history).
+// The pending reply is injected via pendingDeliveries/injectPendingDelivery,
+// not via EphemeralPrefix.
 //
-//  1. The steering continuation's LLM call sees the previous assistant reply
-//     in its message list even though OnDelivered has not fired yet (i.e. the
-//     reply is not yet in session history).
-//
-//  2. Session history does not contain the assistant reply at the time the
-//     continuation starts — only ephemeral context was injected.
-func TestContinueResponse_EphemeralPrefixBeforePersistence(t *testing.T) {
+//  1. The steering continuation's LLM call sees the previous assistant reply.
+//  2. Session history does not contain the assistant reply (OnDelivered not called).
+func TestContinueResponse_PendingDeliveryVisibleBeforePersistence(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
@@ -1664,8 +1663,8 @@ func TestContinueResponse_EphemeralPrefixBeforePersistence(t *testing.T) {
 		}
 	}
 
-	// Step 2: enqueue a steering message and run the continuation, passing
-	// the previous assistant reply as ephemeral context.
+	// Step 2: enqueue a steering message and run the continuation.
+	// pendingDeliveries already holds the first reply; no need to pass it explicitly.
 	if pushErr := al.steering.pushScope(sessionKey, providers.Message{
 		Role:    "user",
 		Content: "follow-up question",
@@ -1673,7 +1672,7 @@ func TestContinueResponse_EphemeralPrefixBeforePersistence(t *testing.T) {
 		t.Fatalf("pushScope: %v", pushErr)
 	}
 
-	continued, err := al.continueResponse(ctx, sessionKey, channel, chatID, firstReply)
+	continued, err := al.continueResponse(ctx, sessionKey, channel, chatID)
 	if err != nil {
 		t.Fatalf("continueResponse: %v", err)
 	}
@@ -1681,7 +1680,7 @@ func TestContinueResponse_EphemeralPrefixBeforePersistence(t *testing.T) {
 		t.Fatalf("continuation reply = %q, want %q", continued.Content, continuationReply)
 	}
 
-	// Step 3: verify the LLM received the ephemeral assistant reply in context.
+	// Step 3: verify the LLM received the pending assistant reply in context.
 	captureMu.Lock()
 	msgs := append([]providers.Message(nil), capturedMessages...)
 	captureMu.Unlock()
@@ -1701,7 +1700,7 @@ func TestContinueResponse_EphemeralPrefixBeforePersistence(t *testing.T) {
 		for i, m := range msgs {
 			roles[i] = fmt.Sprintf("%s:%q", m.Role, m.Content)
 		}
-		t.Fatalf("ephemeral assistant reply not found in LLM context; messages: %v", roles)
+		t.Fatalf("pending assistant reply not found in LLM context; messages: %v", roles)
 	}
 
 	// Step 4: verify the session history still does not contain the first
