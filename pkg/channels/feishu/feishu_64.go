@@ -469,6 +469,13 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		content = "[empty message]"
 	}
 
+	if replyTargetID(message) != "" || stringValue(message.ThreadId) != "" {
+		content, mediaRefs = c.prependReplyContext(ctx, message, chatID, content, mediaRefs)
+	}
+	if content == "" {
+		content = "[empty message]"
+	}
+
 	logger.InfoCF("feishu", "Feishu message received", map[string]any{
 		"sender_id":  senderID,
 		"chat_id":    chatID,

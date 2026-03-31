@@ -147,7 +147,8 @@ func (c *FeishuChannel) fetchMessageByID(ctx context.Context, messageID string) 
 	if resp.Data == nil || len(resp.Data.Items) == 0 || resp.Data.Items[0] == nil {
 		return nil, fmt.Errorf("feishu get message: empty response")
 	}
-
+	// Items[0] contains the target message - the Feishu API returns a list
+	// but we request a single message by ID, so the list always has at most one item.
 	msg := resp.Data.Items[0]
 	c.messageCache.Store(messageID, &cachedMessage{msg: msg, expiry: time.Now().Add(messageCacheTTL)})
 	return msg, nil
