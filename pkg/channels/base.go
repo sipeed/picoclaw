@@ -112,6 +112,18 @@ func NewBaseChannel(
 	for _, opt := range opts {
 		opt(bc)
 	}
+
+	// Security Audit: Check for open-by-default (unsecured) channels.
+	// PicoClaw aims to be secure-by-default. If allow_from is empty, the bot
+	// currently defaults to accepting messages from ANYONE. To explicitly
+	// acknowledge and permit this (e.g. for a public bot), use ["*"].
+	if len(bc.allowList) == 0 {
+		logger.WarnCF("channels", "SECURITY: Channel allows EVERYONE (allow_from is empty)", map[string]any{
+			"channel": bc.name,
+			"hint":    "Set allow_from to your ID, or use '*' to explicitly acknowledge open access.",
+		})
+	}
+
 	return bc
 }
 
@@ -187,6 +199,9 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 	}
 
 	for _, allowed := range c.allowList {
+		if allowed == "*" {
+			return true
+		}
 		// Strip leading "@" from allowed value for username matching
 		trimmed := strings.TrimPrefix(allowed, "@")
 		allowedID := trimmed
@@ -221,7 +236,7 @@ func (c *BaseChannel) IsAllowedSender(sender bus.SenderInfo) bool {
 	}
 
 	for _, allowed := range c.allowList {
-		if identity.MatchAllowed(sender, allowed) {
+		if allowed == "*" || identity.MatchAllowed(sender, allowed) {
 			return true
 		}
 	}

@@ -16,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -44,7 +45,12 @@ var (
 
 	server     *http.Server
 	serverAddr string
-	apiHandler *api.Handler
+	// browserLaunchURL is opened by openBrowser() (auto-open + tray "open console").
+	// Includes ?token= for same-machine dashboard login; keep serverAddr without secrets for other use.
+	browserLaunchURL string
+	apiHandler       *api.Handler
+	// launcherDashboardTokenForClipboard is read by the system tray "copy token" action (GUI mode).
+	launcherDashboardTokenForClipboard string
 
 	noBrowser *bool
 )
@@ -57,7 +63,7 @@ func main() {
 	console := flag.Bool("console", false, "Console mode, no GUI")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "PicoClaw Launcher - A web-based configuration editor\n\n")
+		fmt.Fprintf(os.Stderr, "%s Launcher - A web-based configuration editor\n\n", appName)
 		fmt.Fprintf(os.Stderr, "Usage: %s [options] [config.json]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Arguments:\n")
 		fmt.Fprintf(os.Stderr, "  config.json    Path to the configuration file (default: ~/.picoclaw/config.json)\n\n")
@@ -98,8 +104,8 @@ func main() {
 		defer logger.DisableFileLogging()
 	}
 
-	logger.InfoC("web", fmt.Sprintf("%s Launcher %s starting...", appName, appVersion))
-	logger.InfoC("web", fmt.Sprintf("PicoClaw Home: %s", picoHome))
+	logger.InfoC("web", fmt.Sprintf("%s launcher starting (version %s)...", appName, appVersion))
+	logger.InfoC("web", fmt.Sprintf("%s Home: %s", appName, picoHome))
 
 	// Set language from command line or auto-detect
 	if *lang != "" {
@@ -118,7 +124,7 @@ func main() {
 	}
 	err = utils.EnsureOnboarded(absPath)
 	if err != nil {
-		logger.Errorf("Warning: Failed to initialize PicoClaw config automatically: %v", err)
+		logger.Errorf("Warning: Failed to initialize %s config automatically: %v", appName, err)
 	}
 
 	var explicitPort bool
@@ -156,6 +162,13 @@ func main() {
 		logger.Fatalf("Invalid port %q: %v", effectivePort, err)
 	}
 
+	dashboardToken, dashboardSigningKey, newDashTok, dashErr := launcherconfig.EnsureDashboardSecrets()
+	if dashErr != nil {
+		logger.Fatalf("Dashboard auth setup failed: %v", dashErr)
+	}
+	dashboardSessionCookie := middleware.SessionCookieValue(dashboardSigningKey, dashboardToken)
+	launcherDashboardTokenForClipboard = dashboardToken
+
 	// Determine listen address
 	var addr string
 	if effectivePublic {
@@ -166,6 +179,21 @@ func main() {
 
 	// Initialize Server components
 	mux := http.NewServeMux()
+
+	tokenLogFileAbs := ""
+	if !enableConsole {
+		tokenLogFileAbs = filepath.Join(picoHome, logPath, logFile)
+	}
+	api.RegisterLauncherAuthRoutes(mux, api.LauncherAuthRouteOpts{
+		DashboardToken: dashboardToken,
+		SessionCookie:  dashboardSessionCookie,
+		TokenHelp: api.LauncherAuthTokenHelp{
+			EnvVarName:    "PICOCLAW_LAUNCHER_TOKEN",
+			LogFileAbs:    tokenLogFileAbs,
+			TrayCopyMenu:  trayOffersDashboardTokenCopy(),
+			ConsoleStdout: enableConsole,
+		},
+	})
 
 	// API Routes (e.g. /api/status)
 	apiHandler = api.NewHandler(absPath)
@@ -183,14 +211,21 @@ func main() {
 		logger.Fatalf("Invalid allowed CIDR configuration: %v", err)
 	}
 
+	dashAuth := middleware.LauncherDashboardAuth(middleware.LauncherDashboardAuthConfig{
+		ExpectedCookie: dashboardSessionCookie,
+		Token:          dashboardToken,
+	}, accessControlledMux)
+
 	// Apply middleware stack
 	handler := middleware.Recoverer(
 		middleware.Logger(
-			middleware.JSONContentType(accessControlledMux),
+			middleware.ReferrerPolicyNoReferrer(
+				middleware.JSONContentType(dashAuth),
+			),
 		),
 	)
 
-	// Print startup banner (only in console mode)
+	// Print startup banner and token (console mode only).
 	if enableConsole {
 		fmt.Print(utils.Banner)
 		fmt.Println()
@@ -203,6 +238,19 @@ func main() {
 			}
 		}
 		fmt.Println()
+		if newDashTok {
+			fmt.Printf("  Dashboard token (this run): %s\n", dashboardToken)
+		} else if os.Getenv("PICOCLAW_LAUNCHER_TOKEN") != "" {
+			fmt.Printf("  Dashboard token: %s (from PICOCLAW_LAUNCHER_TOKEN)\n", dashboardToken)
+		}
+		fmt.Println()
+	}
+
+	if os.Getenv("PICOCLAW_LAUNCHER_TOKEN") != "" {
+		logger.InfoC("web", "Dashboard token: environment PICOCLAW_LAUNCHER_TOKEN")
+	}
+	if !enableConsole && newDashTok {
+		logger.InfoC("web", "Dashboard token (this run): "+dashboardToken)
 	}
 
 	// Log startup info to file
@@ -215,6 +263,11 @@ func main() {
 
 	// Share the local URL with the launcher runtime.
 	serverAddr = fmt.Sprintf("http://localhost:%s", effectivePort)
+	if dashboardToken != "" {
+		browserLaunchURL = serverAddr + "?token=" + url.QueryEscape(dashboardToken)
+	} else {
+		browserLaunchURL = serverAddr
+	}
 
 	// Auto-open browser will be handled by the launcher runtime.
 

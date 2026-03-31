@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sipeed/picoclaw/web/backend/middleware"
 )
 
 func TestLoadReturnsFallbackWhenMissing(t *testing.T) {
@@ -72,6 +74,51 @@ func TestValidateRejectsInvalidCIDR(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("Validate() expected error for invalid CIDR")
+	}
+}
+
+func TestEnsureDashboardSecrets_GeneratesEphemeral(t *testing.T) {
+	t.Setenv("PICOCLAW_LAUNCHER_TOKEN", "")
+
+	tok, key, newTok, err := EnsureDashboardSecrets()
+	if err != nil {
+		t.Fatalf("EnsureDashboardSecrets() error = %v", err)
+	}
+	if !newTok || tok == "" || len(key) != dashboardSigningKeyBytes {
+		t.Fatalf("unexpected first call: newTok=%v tok=%q keyLen=%d", newTok, tok, len(key))
+	}
+	mac := middleware.SessionCookieValue(key, tok)
+	if mac == "" {
+		t.Fatal("empty session mac")
+	}
+
+	tok2, key2, newTok2, err := EnsureDashboardSecrets()
+	if err != nil {
+		t.Fatalf("EnsureDashboardSecrets() second error = %v", err)
+	}
+	if !newTok2 {
+		t.Fatal("second call without env should generate another random token")
+	}
+	if tok2 == tok {
+		t.Fatal("expected a new random dashboard token")
+	}
+	if string(key2) == string(key) {
+		t.Fatal("expected a new signing key")
+	}
+}
+
+func TestEnsureDashboardSecrets_EnvOverridesGenerated(t *testing.T) {
+	t.Setenv("PICOCLAW_LAUNCHER_TOKEN", "env-only-token-override")
+
+	tok, _, newTok, err := EnsureDashboardSecrets()
+	if err != nil {
+		t.Fatalf("EnsureDashboardSecrets() error = %v", err)
+	}
+	if tok != "env-only-token-override" {
+		t.Fatalf("token = %q, want env value", tok)
+	}
+	if newTok {
+		t.Fatal("newRandomDashboardToken should be false when env is set")
 	}
 }
 

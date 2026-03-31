@@ -531,6 +531,20 @@ func TestToolContext_Updates(t *testing.T) {
 	if got := tools.ToolChannel(context.Background()); got != "" {
 		t.Errorf("expected empty channel from bare context, got %q", got)
 	}
+
+	inboundCtx := tools.WithToolInboundContext(
+		context.Background(),
+		"telegram",
+		"chat-42",
+		"msg-123",
+		"msg-100",
+	)
+	if got := tools.ToolMessageID(inboundCtx); got != "msg-123" {
+		t.Errorf("expected messageID 'msg-123', got %q", got)
+	}
+	if got := tools.ToolReplyToMessageID(inboundCtx); got != "msg-100" {
+		t.Errorf("expected replyToMessageID 'msg-100', got %q", got)
+	}
 }
 
 // TestToolRegistry_GetDefinitions verifies tool definitions can be retrieved
@@ -1783,20 +1797,16 @@ func TestProcessMessage_ModelRoutingUsesLightProvider(t *testing.T) {
 				ModelName: "gemini-main",
 				Model:     "gemini/gemini-2.5-flash",
 				APIBase:   heavyServer.URL,
+				APIKeys:   config.SimpleSecureStrings("heavy-key"),
 			},
 			{
 				ModelName: "qwen-light",
 				Model:     "ollama/qwen2.5:0.5b",
 				APIBase:   lightServer.URL,
+				APIKeys:   config.SimpleSecureStrings("light-key"),
 			},
 		},
 	}
-	cfg.WithSecurity(&config.SecurityConfig{
-		ModelList: map[string]config.ModelSecurityEntry{
-			"gemini-main": {APIKeys: []string{"heavy-key"}},
-			"qwen-light":  {APIKeys: []string{"light-key"}},
-		},
-	})
 
 	msgBus := bus.NewMessageBus()
 	provider, _, err := providers.CreateProvider(cfg)

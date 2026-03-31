@@ -276,14 +276,25 @@ func (m *Manager) ConnectServer(
 		if cfg.URL == "" {
 			return fmt.Errorf("URL is required for SSE/HTTP transport")
 		}
+
+		// Configure DisableStandaloneSSE based on transport type.
+		// - "http": Request-response only mode. Disable the standalone SSE stream
+		//   to avoid compatibility issues with servers that don't support GET /mcp.
+		// - "sse": Bidirectional mode. Enable the standalone SSE stream to receive
+		//   server-initiated notifications (e.g., ToolListChangedNotification).
+		// - Empty or auto-detected: Defaults to "sse" behavior (standalone SSE enabled).
+		disableStandaloneSSE := (cfg.Type == "http")
+
 		logger.DebugCF("mcp", "Using SSE/HTTP transport",
 			map[string]any{
-				"server": name,
-				"url":    cfg.URL,
+				"server":               name,
+				"url":                  cfg.URL,
+				"disableStandaloneSSE": disableStandaloneSSE,
 			})
 
 		sseTransport := &mcp.StreamableClientTransport{
-			Endpoint: cfg.URL,
+			Endpoint:             cfg.URL,
+			DisableStandaloneSSE: disableStandaloneSSE,
 		}
 
 		// Add custom headers if provided

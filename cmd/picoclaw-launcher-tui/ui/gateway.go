@@ -7,9 +7,7 @@ package ui
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -17,61 +15,30 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
-)
 
-const pidFileName = "gateway.pid"
+	"github.com/sipeed/picoclaw/pkg/config"
+	ppid "github.com/sipeed/picoclaw/pkg/pid"
+)
 
 type gatewayStatus struct {
 	running bool
 	pid     int
+	version string
 }
 
-func getPidPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
-	}
-	return filepath.Join(home, ".picoclaw", pidFileName)
-}
-
-func isProcessRunning(pid int) bool {
-	if runtime.GOOS == "windows" {
-		cmd := exec.Command("tasklist", "/FI", fmt.Sprintf("PID eq %d", pid))
-		output, err := cmd.Output()
-		if err != nil {
-			return false
-		}
-		return strings.Contains(string(output), strconv.Itoa(pid))
-	} else if runtime.GOOS == "darwin" {
-		cmd := exec.Command("ps", "aux")
-		output, err := cmd.Output()
-		if err != nil {
-			return false
-		}
-		return strings.Contains(string(output), fmt.Sprintf(" %d ", pid))
-	}
-	// Linux
-	_, err := os.Stat(fmt.Sprintf("/proc/%d", pid))
-	return err == nil
+func picoHome() string {
+	return config.GetHome()
 }
 
 func getGatewayStatus() gatewayStatus {
-	pidPath := getPidPath()
-	data, err := os.ReadFile(pidPath)
-	if err != nil {
-		return gatewayStatus{running: false}
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return gatewayStatus{running: false}
-	}
-	if !isProcessRunning(pid) {
-		os.Remove(pidPath)
+	data := ppid.ReadPidFileWithCheck(picoHome())
+	if data == nil {
 		return gatewayStatus{running: false}
 	}
 	return gatewayStatus{
 		running: true,
-		pid:     pid,
+		pid:     data.PID,
+		version: data.Version,
 	}
 }
 
@@ -81,13 +48,12 @@ func startGateway() error {
 		return fmt.Errorf("gateway is already running (PID: %d)", status.pid)
 	}
 
-	pidPath := getPidPath()
 	var cmd *exec.Cmd
 
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("cmd", "/C", "start /B picoclaw gateway > NUL 2>&1")
 	} else {
-		cmd = exec.Command("sh", "-c", "nohup picoclaw gateway > /dev/null 2>&1 & echo $! > "+pidPath)
+		cmd = exec.Command("sh", "-c", "nohup picoclaw gateway > /dev/null 2>&1 &")
 	}
 
 	err := cmd.Start()
@@ -116,9 +82,8 @@ func startGateway() error {
 			if line == "" {
 				continue
 			}
-			pid, err := strconv.Atoi(line)
+			_, err := strconv.Atoi(line)
 			if err == nil {
-				os.WriteFile(pidPath, []byte(strconv.Itoa(pid)), 0o600)
 				break
 			}
 		}
@@ -141,21 +106,20 @@ func stopGateway() error {
 	if runtime.GOOS == "windows" {
 		err = exec.Command("taskkill", "/F", "/PID", strconv.Itoa(status.pid)).Run()
 	} else {
-		err = exec.Command("kill", "-9", strconv.Itoa(status.pid)).Run()
+		err = exec.Command("kill", strconv.Itoa(status.pid)).Run()
 	}
 	if err != nil {
 		return err
 	}
 
-	// 多次尝试确认进程已停止
+	// Wait for process to stop (ReadPidFileWithCheck cleans up stale pid file)
 	for i := 0; i < 5; i++ {
-		if !isProcessRunning(status.pid) {
+		if !getGatewayStatus().running {
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	os.Remove(getPidPath())
 	return nil
 }
 
@@ -217,7 +181,11 @@ func (a *App) newGatewayPage() tview.Primitive {
 	updateStatus = func() {
 		status := getGatewayStatus()
 		if status.running {
-			statusTV.SetText(fmt.Sprintf("[#39ff14::b]GATEWAY RUNNING[-]\n\nPID: %d", status.pid))
+			versionInfo := ""
+			if status.version != "" {
+				versionInfo = fmt.Sprintf("\nVersion: %s", status.version)
+			}
+			statusTV.SetText(fmt.Sprintf("[#39ff14::b]GATEWAY RUNNING[-]\n\nPID: %d%s", status.pid, versionInfo))
 			buttons.SetItemText(0, " [gray]START[white]   ", "")
 			buttons.SetItemText(1, " [red]STOP[white]    ", "")
 		} else {

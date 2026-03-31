@@ -309,14 +309,7 @@ func loadSkillContent(path string) (string, error) {
 }
 
 func globalConfigDir() string {
-	if home := os.Getenv(config.EnvHome); home != "" {
-		return home
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".picoclaw")
+	return config.GetHome()
 }
 
 func builtinSkillsDir() string {

@@ -1,6 +1,6 @@
 # Credential Encryption
 
-PicoClaw supports encrypting `api_key` values in `model_list` configuration entries.
+PicoClaw supports encrypting `api_key`/`api_keys` values in `model_list` configuration entries.
 Encrypted keys are stored as `enc://<base64>` strings and decrypted automatically at startup.
 
 ---
@@ -41,6 +41,8 @@ enc://AAAA...base64...
 ---
 
 ## Supported `api_key` Formats
+
+The same formats apply to both `api_key` (singular) and individual elements in the `api_keys` (array) field:
 
 | Format | Example | Behaviour |
 |--------|---------|-----------|
