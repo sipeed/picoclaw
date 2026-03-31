@@ -374,31 +374,32 @@ func (c *MatrixChannel) initCrypto(ctx context.Context) error {
 }
 
 func markdownToHTML(md string) string {
-	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs)
-	renderer := mdhtml.NewRenderer(mdhtml.RendererOptions{Flags: mdhtml.CommonFlags})
+	extensions := (parser.CommonExtensions | parser.NoEmptyLineBeforeBlock) &^ parser.DefinitionLists
+	p := parser.NewWithExtensions(extensions)
+	renderer := mdhtml.NewRenderer(mdhtml.RendererOptions{Flags: mdhtml.UseXHTML})
 	return strings.TrimSpace(string(markdown.ToHTML([]byte(md), p, renderer)))
 }
 
-func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	roomID := id.RoomID(strings.TrimSpace(msg.ChatID))
 	if roomID == "" {
-		return fmt.Errorf("matrix room ID is empty: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("matrix room ID is empty: %w", channels.ErrSendFailed)
 	}
 
 	content := strings.TrimSpace(msg.Content)
 	if content == "" {
-		return nil
+		return nil, nil
 	}
 
-	_, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, c.messageContent(content))
+	resp, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, c.messageContent(content))
 	if err != nil {
-		return fmt.Errorf("matrix send: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("matrix send: %w", channels.ErrTemporary)
 	}
-	return nil
+	return []string{resp.EventID.String()}, nil
 }
 
 func (c *MatrixChannel) messageContent(text string) *event.MessageEventContent {
@@ -411,9 +412,9 @@ func (c *MatrixChannel) messageContent(text string) *event.MessageEventContent {
 }
 
 // SendMedia implements channels.MediaSender.
-func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 	sendCtx := ctx
 	if sendCtx == nil {
@@ -422,17 +423,18 @@ func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 
 	roomID := id.RoomID(strings.TrimSpace(msg.ChatID))
 	if roomID == "" {
-		return fmt.Errorf("matrix room ID is empty: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("matrix room ID is empty: %w", channels.ErrSendFailed)
 	}
 
 	store := c.GetMediaStore()
 	if store == nil {
-		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
+	var eventIDs []string
 	for _, part := range msg.Parts {
 		if err := sendCtx.Err(); err != nil {
-			return err
+			return nil, err
 		}
 
 		localPath, meta, err := store.ResolveWithMeta(part.Ref)
@@ -497,7 +499,7 @@ func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 				"type":  part.Type,
 				"error": err.Error(),
 			})
-			return fmt.Errorf("matrix upload media: %w", channels.ErrTemporary)
+			return nil, fmt.Errorf("matrix upload media: %w", channels.ErrTemporary)
 		}
 
 		msgType := matrixOutboundMsgType(part.Type, filename, contentType)
@@ -510,17 +512,21 @@ func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 			uploadResp.ContentURI.CUString(),
 		)
 
-		if _, err := c.client.SendMessageEvent(sendCtx, roomID, event.EventMessage, content); err != nil {
+		sendResp, err := c.client.SendMessageEvent(sendCtx, roomID, event.EventMessage, content)
+		if err != nil {
 			logger.ErrorCF("matrix", "Failed to send media message", map[string]any{
 				"room_id": roomID.String(),
 				"type":    msgType,
 				"error":   err.Error(),
 			})
-			return fmt.Errorf("matrix send media: %w", channels.ErrTemporary)
+			return nil, fmt.Errorf("matrix send media: %w", channels.ErrTemporary)
+		}
+		if sendResp != nil {
+			eventIDs = append(eventIDs, sendResp.EventID.String())
 		}
 	}
 
-	return nil
+	return eventIDs, nil
 }
 
 // StartTyping implements channels.TypingCapable.

@@ -93,16 +93,128 @@ func requestWSScheme(r *http.Request) string {
 	return "ws"
 }
 
-func (h *Handler) buildWsURL(r *http.Request, cfg *config.Config) string {
-	host := h.effectiveGatewayBindHost(cfg)
-	if host == "" || host == "0.0.0.0" {
-		host = requestHostName(r)
+// requestHTTPScheme returns http or https for URLs that are not WebSockets (e.g. SSE).
+func requestHTTPScheme(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
+		proto := strings.ToLower(strings.TrimSpace(strings.Split(forwarded, ",")[0]))
+		if proto == "https" || proto == "wss" {
+			return "https"
+		}
+		if proto == "http" || proto == "ws" {
+			return "http"
+		}
 	}
-	// Use web server port instead of gateway port to avoid exposing extra ports
-	// The WebSocket connection will be proxied by the backend to the gateway
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+// forwardedHostFirst returns the client-visible host from reverse-proxy / tunnel headers
+// (e.g. VS Code port forwarding, nginx). Empty if unset.
+func forwardedHostFirst(r *http.Request) string {
+	raw := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if raw == "" {
+		raw = forwardedRFC7239Host(r)
+	}
+	if raw == "" {
+		return ""
+	}
+	if i := strings.IndexByte(raw, ','); i >= 0 {
+		raw = strings.TrimSpace(raw[:i])
+	}
+	return raw
+}
+
+// forwardedRFC7239Host parses host= from the first Forwarded header element (RFC 7239).
+func forwardedRFC7239Host(r *http.Request) string {
+	v := strings.TrimSpace(r.Header.Get("Forwarded"))
+	if v == "" {
+		return ""
+	}
+	first := strings.TrimSpace(strings.Split(v, ",")[0])
+	for _, part := range strings.Split(first, ";") {
+		part = strings.TrimSpace(part)
+		low := strings.ToLower(part)
+		if !strings.HasPrefix(low, "host=") {
+			continue
+		}
+		val := strings.TrimSpace(part[strings.IndexByte(part, '=')+1:])
+		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+			val = val[1 : len(val)-1]
+		}
+		return val
+	}
+	return ""
+}
+
+// forwardedPortFirst returns the first X-Forwarded-Port value, or empty.
+func forwardedPortFirst(r *http.Request) string {
+	raw := strings.TrimSpace(r.Header.Get("X-Forwarded-Port"))
+	if raw == "" {
+		return ""
+	}
+	if i := strings.IndexByte(raw, ','); i >= 0 {
+		raw = strings.TrimSpace(raw[:i])
+	}
+	return raw
+}
+
+// clientVisiblePort picks the TCP port the browser uses to reach this app (after proxies).
+// Used by picoWebUIAddr → buildWsURL / buildPicoEventsURL / buildPicoSendURL so WebSocket and
+// HTTP URLs match the dashboard page origin (cookies / token flow behind tunnels and reverse proxies).
+func clientVisiblePort(r *http.Request, serverListenPort int) string {
+	if p := forwardedPortFirst(r); p != "" {
+		return p
+	}
+	if _, port, err := net.SplitHostPort(r.Host); err == nil && port != "" {
+		return port
+	}
+	if requestHTTPScheme(r) == "https" {
+		return "443"
+	}
+	return strconv.Itoa(serverListenPort)
+}
+
+// joinClientVisibleHostPort builds host:port for absolute URLs returned to the browser.
+func joinClientVisibleHostPort(r *http.Request, host string, serverListenPort int) string {
+	if h, p, err := net.SplitHostPort(host); err == nil {
+		return net.JoinHostPort(h, p)
+	}
+	return net.JoinHostPort(host, clientVisiblePort(r, serverListenPort))
+}
+
+// picoWebUIAddr is host:port for URLs returned to the browser (/pico/ws, /pico/events, /pico/send).
+// It must match the HTTP Host the client used (or X-Forwarded-*), not cfg.Gateway.Host — otherwise
+// e.g. page on localhost with ws_url 127.0.0.1 omits cookies and the dashboard auth handshake fails.
+func (h *Handler) picoWebUIAddr(r *http.Request) string {
 	wsPort := h.serverPort
 	if wsPort == 0 {
-		wsPort = 18800 // default web server port
+		wsPort = 18800
 	}
-	return requestWSScheme(r) + "://" + net.JoinHostPort(host, strconv.Itoa(wsPort)) + "/pico/ws"
+	if fwdHost := forwardedHostFirst(r); fwdHost != "" {
+		return joinClientVisibleHostPort(r, fwdHost, wsPort)
+	}
+	host := requestHostName(r)
+	// Use clientVisiblePort only when an explicit port is present in headers
+	// or Host header — do not infer from TLS/scheme, as serverPort takes priority.
+	if p := forwardedPortFirst(r); p != "" {
+		return net.JoinHostPort(host, p)
+	}
+	if _, port, err := net.SplitHostPort(r.Host); err == nil && port != "" {
+		return net.JoinHostPort(host, port)
+	}
+	return net.JoinHostPort(host, strconv.Itoa(wsPort))
+}
+
+func (h *Handler) buildWsURL(r *http.Request) string {
+	return requestWSScheme(r) + "://" + h.picoWebUIAddr(r) + "/pico/ws"
+}
+
+func (h *Handler) buildPicoEventsURL(r *http.Request) string {
+	return requestHTTPScheme(r) + "://" + h.picoWebUIAddr(r) + "/pico/events"
+}
+
+func (h *Handler) buildPicoSendURL(r *http.Request) string {
+	return requestHTTPScheme(r) + "://" + h.picoWebUIAddr(r) + "/pico/send"
 }

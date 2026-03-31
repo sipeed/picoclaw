@@ -734,7 +734,8 @@ func (c *configV0) Migrate() (*Config, error) {
 		// Convert []modelConfigV0 to []ModelConfig
 		cfg.ModelList = make([]*ModelConfig, len(c.ModelList))
 		for i, m := range c.ModelList {
-			cfg.ModelList[i] = &ModelConfig{
+			mergedKeys := toSecureStrings(mergeAPIKeys(m.APIKey, m.APIKeys))
+			mc := &ModelConfig{
 				ModelName:      m.ModelName,
 				Model:          m.Model,
 				APIBase:        m.APIBase,
@@ -747,13 +748,64 @@ func (c *configV0) Migrate() (*Config, error) {
 				MaxTokensField: m.MaxTokensField,
 				RequestTimeout: m.RequestTimeout,
 				ThinkingLevel:  m.ThinkingLevel,
-				APIKeys:        toSecureStrings(MergeAPIKeys(m.APIKey, m.APIKeys)),
+				APIKeys:        mergedKeys,
 			}
+			// Infer Enabled during V0→V1 migration
+			if len(mergedKeys) > 0 || m.ModelName == "local-model" {
+				mc.Enabled = true
+			}
+			cfg.ModelList[i] = mc
 		}
 	}
 
 	cfg.Version = CurrentVersion
 	return cfg, nil
+}
+
+type configV1 struct {
+	Config
+}
+
+// Migrate applies V1→Current Version migrations to an already-loaded Config.
+//
+// It must be called AFTER loadSecurityConfig so that API keys (which live in
+// the security file) are available for the Enabled inference.
+func (c *configV1) Migrate() (*Config, error) {
+	c.migrateModelEnabled()
+	c.migrateChannelConfigs()
+	return &c.Config, nil
+}
+
+// migrateModelEnabled infers the Enabled field for models loaded from V1 configs
+// that predate the field (JSON where "enabled" is absent).
+//
+// Rules (only applied when Enabled has not been explicitly set by the user):
+//   - Models with API keys are considered enabled.
+//   - The reserved "local-model" entry is considered enabled.
+func (cfg *configV1) migrateModelEnabled() {
+	for _, m := range cfg.ModelList {
+		if m.Enabled {
+			continue
+		}
+		if len(m.APIKeys) > 0 || m.ModelName == "local-model" {
+			m.Enabled = true
+		}
+	}
+}
+
+// migrateChannelConfigs migrates legacy channel config fields in a V1 Config
+// to the new unified structures.
+func (cfg *configV1) migrateChannelConfigs() {
+	// Discord: mention_only -> group_trigger.mention_only
+	if cfg.Channels.Discord.MentionOnly && !cfg.Channels.Discord.GroupTrigger.MentionOnly {
+		cfg.Channels.Discord.GroupTrigger.MentionOnly = true
+	}
+
+	// OneBot: group_trigger_prefix -> group_trigger.prefixes
+	if len(cfg.Channels.OneBot.GroupTriggerPrefix) > 0 &&
+		len(cfg.Channels.OneBot.GroupTrigger.Prefixes) == 0 {
+		cfg.Channels.OneBot.GroupTrigger.Prefixes = cfg.Channels.OneBot.GroupTriggerPrefix
+	}
 }
 
 type webToolsConfigV0 struct {
@@ -791,7 +843,7 @@ func (v *braveConfigV0) ToBraveConfig() BraveConfig {
 	return BraveConfig{
 		Enabled:    v.Enabled,
 		MaxResults: v.MaxResults,
-		APIKeys:    toSecureStrings(MergeAPIKeys(v.APIKey, v.APIKeys)),
+		APIKeys:    toSecureStrings(mergeAPIKeys(v.APIKey, v.APIKeys)),
 	}
 }
 
@@ -808,7 +860,7 @@ func (v *tavilyConfigV0) ToTavilyConfig() TavilyConfig {
 		Enabled:    v.Enabled,
 		BaseURL:    v.BaseURL,
 		MaxResults: v.MaxResults,
-		APIKeys:    toSecureStrings(MergeAPIKeys(v.APIKey, v.APIKeys)),
+		APIKeys:    toSecureStrings(mergeAPIKeys(v.APIKey, v.APIKeys)),
 	}
 }
 
@@ -823,7 +875,7 @@ func (v *perplexityConfigV0) ToPerplexityConfig() PerplexityConfig {
 	return PerplexityConfig{
 		Enabled:    v.Enabled,
 		MaxResults: v.MaxResults,
-		APIKeys:    toSecureStrings(MergeAPIKeys(v.APIKey, v.APIKeys)),
+		APIKeys:    toSecureStrings(mergeAPIKeys(v.APIKey, v.APIKeys)),
 	}
 }
 

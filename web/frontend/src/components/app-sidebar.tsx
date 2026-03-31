@@ -10,10 +10,12 @@ import {
   IconSparkles,
   IconTools,
 } from "@tabler/icons-react"
+import { useQuery } from "@tanstack/react-query"
 import { Link, useRouterState } from "@tanstack/react-router"
 import * as React from "react"
 import { useTranslation } from "react-i18next"
 
+import { getSystemVersionInfo } from "@/api/system"
 import {
   Collapsible,
   CollapsibleContent,
@@ -27,6 +29,7 @@ import {
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
+  SidebarFooter,
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
@@ -78,6 +81,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     language: (i18n.resolvedLanguage ?? i18n.language ?? "").toLowerCase(),
     t,
   })
+  const { data: versionInfo } = useQuery({
+    queryKey: ["system", "version"],
+    queryFn: getSystemVersionInfo,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const versionText = versionInfo?.version ?? t("footer.version_unknown")
 
   const navGroups: NavGroup[] = React.useMemo(() => {
     return [
@@ -189,6 +199,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                           <SidebarMenuButton
                             asChild
                             isActive={isActive}
+                            data-tour={item.url === "/models" ? "models-nav" : undefined}
                             className={`h-9 px-3 ${isActive ? "bg-accent/80 text-foreground font-medium" : "text-muted-foreground hover:bg-muted/60"}`}
                           >
                             <Link to={item.url}>
@@ -235,6 +246,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </Collapsible>
         ))}
       </SidebarContent>
+      <SidebarFooter className="border-t-border/30 group-data-[collapsible=icon]:hidden border-t px-3 py-2">
+        <div className="text-muted-foreground flex flex-col gap-0.5 text-[11px] leading-4">
+          <div className="truncate" title={versionText}>
+            <span className="text-foreground/80">{t("footer.version")}:</span>{" "}
+            {versionText}
+          </div>
+          {versionInfo?.git_commit && (
+            <div className="truncate" title={versionInfo.git_commit}>
+              <span className="text-foreground/80">{t("footer.commit")}:</span>{" "}
+              {versionInfo.git_commit}
+            </div>
+          )}
+          {versionInfo?.build_time && (
+            <div className="truncate" title={versionInfo.build_time}>
+              <span className="text-foreground/80">{t("footer.build")}:</span>{" "}
+              {versionInfo.build_time}
+            </div>
+          )}
+        </div>
+      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )

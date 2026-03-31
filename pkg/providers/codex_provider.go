@@ -2,7 +2,6 @@ package providers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	orc "github.com/sipeed/picoclaw/pkg/providers/openai_responses_common"
 )
 
 const (
@@ -96,7 +96,7 @@ func (p *CodexProvider) Chat(
 	}
 
 	// Respect tools.web.prefer_native: only inject native search when the agent
-	// loop requested it (options["native_search"]), so prefer_native: false
+	// loop passes options["native_search"]=true, so prefer_native=false means no injection.
 	useNativeSearch := p.enableWebSearch && (options["native_search"] == true)
 	params := buildCodexParams(messages, tools, resolvedModel, options, useNativeSearch)
 
@@ -153,7 +153,7 @@ func (p *CodexProvider) Chat(
 		return nil, fmt.Errorf("codex API call: stream ended without completed response")
 	}
 
-	return parseCodexResponse(resp), nil
+	return orc.ParseResponseFromStruct(resp), nil
 }
 
 func (p *CodexProvider) GetDefaultModel() string {
@@ -209,89 +209,14 @@ func resolveCodexModel(model string) (string, string) {
 func buildCodexParams(
 	messages []Message, tools []ToolDefinition, model string, options map[string]any, enableWebSearch bool,
 ) responses.ResponseNewParams {
-	var inputItems responses.ResponseInputParam
-	var instructions string
-
-	for _, msg := range messages {
-		switch msg.Role {
-		case "system":
-			// Use the full concatenated system prompt (static + dynamic + summary)
-			// as instructions. This keeps behavior consistent with Anthropic and
-			// OpenAI-compat adapters where the complete system context lives in
-			// one place. Prefix caching is handled by prompt_cache_key below,
-			// not by splitting content across instructions vs input messages.
-			instructions = msg.Content
-		case "user":
-			if msg.ToolCallID != "" {
-				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-						CallID: msg.ToolCallID,
-						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
-							OfString: openai.Opt(msg.Content),
-						},
-					},
-				})
-			} else {
-				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-					OfMessage: &responses.EasyInputMessageParam{
-						Role:    responses.EasyInputMessageRoleUser,
-						Content: responses.EasyInputMessageContentUnionParam{OfString: openai.Opt(msg.Content)},
-					},
-				})
-			}
-		case "assistant":
-			if len(msg.ToolCalls) > 0 {
-				if msg.Content != "" {
-					inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-						OfMessage: &responses.EasyInputMessageParam{
-							Role:    responses.EasyInputMessageRoleAssistant,
-							Content: responses.EasyInputMessageContentUnionParam{OfString: openai.Opt(msg.Content)},
-						},
-					})
-				}
-				for _, tc := range msg.ToolCalls {
-					name, args, ok := resolveCodexToolCall(tc)
-					if !ok {
-						logger.WarnCF("provider.codex", "Skipping invalid tool call in history", map[string]any{
-							"call_id": tc.ID,
-						})
-						continue
-					}
-					inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-						OfFunctionCall: &responses.ResponseFunctionToolCallParam{
-							CallID:    tc.ID,
-							Name:      name,
-							Arguments: args,
-						},
-					})
-				}
-			} else {
-				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-					OfMessage: &responses.EasyInputMessageParam{
-						Role:    responses.EasyInputMessageRoleAssistant,
-						Content: responses.EasyInputMessageContentUnionParam{OfString: openai.Opt(msg.Content)},
-					},
-				})
-			}
-		case "tool":
-			inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-				OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-					CallID: msg.ToolCallID,
-					Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
-						OfString: openai.Opt(msg.Content),
-					},
-				},
-			})
-		}
-	}
+	inputItems, instructions := orc.TranslateMessages(messages)
 
 	params := responses.ResponseNewParams{
 		Model: model,
 		Input: responses.ResponseNewParamsInputUnion{
 			OfInputItemList: inputItems,
 		},
-		Instructions: openai.Opt(instructions),
-		Store:        openai.Opt(false),
+		Store: openai.Opt(false),
 	}
 
 	if instructions != "" {
@@ -309,113 +234,10 @@ func buildCodexParams(
 	}
 
 	if len(tools) > 0 || enableWebSearch {
-		params.Tools = translateToolsForCodex(tools, enableWebSearch)
+		params.Tools = orc.TranslateTools(tools, enableWebSearch)
 	}
 
 	return params
-}
-
-func resolveCodexToolCall(tc ToolCall) (name string, arguments string, ok bool) {
-	name = tc.Name
-	if name == "" && tc.Function != nil {
-		name = tc.Function.Name
-	}
-	if name == "" {
-		return "", "", false
-	}
-
-	if len(tc.Arguments) > 0 {
-		argsJSON, err := json.Marshal(tc.Arguments)
-		if err != nil {
-			return "", "", false
-		}
-		return name, string(argsJSON), true
-	}
-
-	if tc.Function != nil && tc.Function.Arguments != "" {
-		return name, tc.Function.Arguments, true
-	}
-
-	return name, "{}", true
-}
-
-func translateToolsForCodex(tools []ToolDefinition, enableWebSearch bool) []responses.ToolUnionParam {
-	capHint := len(tools)
-	if enableWebSearch {
-		capHint++
-	}
-	result := make([]responses.ToolUnionParam, 0, capHint)
-	for _, t := range tools {
-		if t.Type != "function" {
-			continue
-		}
-		if enableWebSearch && strings.EqualFold(t.Function.Name, "web_search") {
-			continue
-		}
-		ft := responses.FunctionToolParam{
-			Name:       t.Function.Name,
-			Parameters: t.Function.Parameters,
-			Strict:     openai.Opt(false),
-		}
-		if t.Function.Description != "" {
-			ft.Description = openai.Opt(t.Function.Description)
-		}
-		result = append(result, responses.ToolUnionParam{OfFunction: &ft})
-	}
-	if enableWebSearch {
-		result = append(result, responses.ToolParamOfWebSearch(responses.WebSearchToolTypeWebSearch))
-	}
-	return result
-}
-
-func parseCodexResponse(resp *responses.Response) *LLMResponse {
-	var content strings.Builder
-	var toolCalls []ToolCall
-
-	for _, item := range resp.Output {
-		switch item.Type {
-		case "message":
-			for _, c := range item.Content {
-				if c.Type == "output_text" {
-					content.WriteString(c.Text)
-				}
-			}
-		case "function_call":
-			var args map[string]any
-			if err := json.Unmarshal([]byte(item.Arguments), &args); err != nil {
-				args = map[string]any{"raw": item.Arguments}
-			}
-			toolCalls = append(toolCalls, ToolCall{
-				ID:        item.CallID,
-				Name:      item.Name,
-				Arguments: args,
-			})
-		}
-	}
-
-	finishReason := "stop"
-	if len(toolCalls) > 0 {
-		finishReason = "tool_calls"
-	}
-	if resp.Status == "incomplete" {
-		finishReason = "length"
-	}
-
-	var usage *UsageInfo
-	if resp.Usage.TotalTokens > 0 {
-		usage = &UsageInfo{
-			PromptTokens:     int(resp.Usage.InputTokens),
-			CompletionTokens: int(resp.Usage.OutputTokens),
-			TotalTokens:      int(resp.Usage.TotalTokens),
-		}
-	}
-
-	return &LLMResponse{
-		Content:      content.String(),
-		ToolCalls:    toolCalls,
-		FinishReason: finishReason,
-		Usage:        usage,
-	}
 }
 
 func createCodexTokenSource() func() (string, string, error) {

@@ -40,6 +40,7 @@ type modelResponse struct {
 	ThinkingLevel  string         `json:"thinking_level,omitempty"`
 	ExtraBody      map[string]any `json:"extra_body,omitempty"`
 	// Meta
+	Enabled    bool `json:"enabled"`
 	Configured bool `json:"configured"`
 	IsDefault  bool `json:"is_default"`
 	IsVirtual  bool `json:"is_virtual"`
@@ -85,6 +86,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,
 			ExtraBody:      m.ExtraBody,
+			Enabled:        m.Enabled,
 			Configured:     configured[i],
 			IsDefault:      m.ModelName == defaultModel,
 			IsVirtual:      m.IsVirtual(),

@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"time"
@@ -42,6 +44,15 @@ func (rr *responseRecorder) Flush() {
 // and interface checks (like http.Flusher) can see through the wrapper.
 func (rr *responseRecorder) Unwrap() http.ResponseWriter {
 	return rr.ResponseWriter
+}
+
+// Hijack implements http.Hijacker so that WebSocket upgrades work through
+// the middleware layer.
+func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := rr.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
 }
 
 // Logger logs each HTTP request with method, path, status code, and duration.

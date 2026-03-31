@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import { patchAppConfig } from "@/api/channels"
+import { launcherFetch } from "@/api/http"
 import {
   getAutoStartStatus,
   getLauncherConfig,
@@ -32,6 +33,7 @@ import {
 } from "@/components/config/form-model"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
+import { refreshGatewayState } from "@/store/gateway"
 
 export function ConfigPage() {
   const { t } = useTranslation()
@@ -49,7 +51,7 @@ export function ConfigPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["config"],
     queryFn: async () => {
-      const res = await fetch("/api/config")
+      const res = await launcherFetch("/api/config")
       if (!res.ok) {
         throw new Error("Failed to load config")
       }
@@ -281,6 +283,7 @@ export function ConfigPage() {
       }
 
       toast.success(t("pages.config.save_success"))
+      void refreshGatewayState({ force: true })
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : t("pages.config.save_error"),

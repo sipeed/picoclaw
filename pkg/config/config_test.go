@@ -1418,6 +1418,38 @@ func TestConfigLogLevelEmpty(t *testing.T) {
 	}
 }
 
+func TestResolveGatewayLogLevel(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	data := `{"version":1,"gateway":{"log_level":"debug"}}`
+	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	if got := ResolveGatewayLogLevel(cfgPath); got != "debug" {
+		t.Fatalf("ResolveGatewayLogLevel() = %q, want %q", got, "debug")
+	}
+}
+
+func TestResolveGatewayLogLevel_UsesEnvOverrideAndNormalizesInvalid(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	data := `{"version":1,"gateway":{"log_level":"debug"}}`
+	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	t.Setenv("PICOCLAW_LOG_LEVEL", "warning")
+	if got := ResolveGatewayLogLevel(cfgPath); got != "warn" {
+		t.Fatalf("ResolveGatewayLogLevel() with env override = %q, want %q", got, "warn")
+	}
+
+	t.Setenv("PICOCLAW_LOG_LEVEL", "garbage")
+	if got := ResolveGatewayLogLevel(cfgPath); got != DefaultGatewayLogLevel {
+		t.Fatalf("ResolveGatewayLogLevel() with invalid env override = %q, want %q", got, DefaultGatewayLogLevel)
+	}
+}
+
 func TestModelConfig_ExtraBodyRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
@@ -1671,5 +1703,165 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// makeBackup tests
+// ---------------------------------------------------------------------------
+
+// TestMakeBackup_WithDateSuffix verifies backup files include a date suffix.
+func TestMakeBackup_WithDateSuffix(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"version":2}`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := makeBackup(configPath); err != nil {
+		t.Fatalf("makeBackup: %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+
+	var hasDatedBackup bool
+	for _, e := range entries {
+		if matched, _ := filepath.Match("config.json.20*.bak", e.Name()); matched {
+			hasDatedBackup = true
+			// Verify backup content matches original
+			bakPath := filepath.Join(dir, e.Name())
+			data, err := os.ReadFile(bakPath)
+			if err != nil {
+				t.Fatalf("ReadFile backup: %v", err)
+			}
+			if string(data) != `{"version":2}` {
+				t.Errorf("backup content = %q, want original content", string(data))
+			}
+			break
+		}
+	}
+	if !hasDatedBackup {
+		t.Error("expected backup file with date suffix pattern config.json.20*.bak")
+	}
+}
+
+// TestMakeBackup_AlsoBacksSecurityFile verifies that the security config file
+// is also backed up with the same date suffix.
+func TestMakeBackup_AlsoBacksSecurityFile(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	secPath := securityPath(configPath)
+
+	os.WriteFile(configPath, []byte(`{"version":2}`), 0o600)
+	os.WriteFile(secPath, []byte(`model_list:\n  test:0:\n    api_keys:\n      - "sk-test"\n`), 0o600)
+
+	if err := makeBackup(configPath); err != nil {
+		t.Fatalf("makeBackup: %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+
+	configBackups := 0
+	secBackups := 0
+	for _, e := range entries {
+		if matched, _ := filepath.Match("config.json.20*.bak", e.Name()); matched {
+			configBackups++
+		}
+		if matched, _ := filepath.Match(".security.yml.20*.bak", e.Name()); matched {
+			secBackups++
+		}
+	}
+	if configBackups != 1 {
+		t.Errorf("expected 1 config backup, got %d", configBackups)
+	}
+	if secBackups != 1 {
+		t.Errorf("expected 1 security backup, got %d", secBackups)
+	}
+}
+
+// TestMakeBackup_NonexistentFileSkipsBackup verifies that makeBackup returns nil
+// when the config file does not exist (no error, no panic).
+func TestMakeBackup_NonexistentFileSkipsBackup(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "nonexistent.json")
+
+	if err := makeBackup(configPath); err != nil {
+		t.Fatalf("makeBackup on nonexistent file should return nil, got: %v", err)
+	}
+}
+
+// TestMakeBackup_OnlyConfigNoSecurity verifies backup succeeds when only
+// the config file exists and no security file.
+func TestMakeBackup_OnlyConfigNoSecurity(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	os.WriteFile(configPath, []byte(`{"version":2}`), 0o600)
+
+	if err := makeBackup(configPath); err != nil {
+		t.Fatalf("makeBackup: %v", err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	configBackups := 0
+	secBackups := 0
+	for _, e := range entries {
+		if matched, _ := filepath.Match("config.json.20*.bak", e.Name()); matched {
+			configBackups++
+		}
+		if matched, _ := filepath.Match(".security.yml.20*.bak", e.Name()); matched {
+			secBackups++
+		}
+	}
+	if configBackups != 1 {
+		t.Errorf("expected 1 config backup, got %d", configBackups)
+	}
+	if secBackups != 0 {
+		t.Errorf("expected 0 security backups when no security file exists, got %d", secBackups)
+	}
+}
+
+// TestMakeBackup_SameDateSuffix verifies that config and security backups
+// share the same date suffix (they are created in the same makeBackup call).
+func TestMakeBackup_SameDateSuffix(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	secPath := securityPath(configPath)
+
+	os.WriteFile(configPath, []byte(`{"version":2}`), 0o600)
+	os.WriteFile(secPath, []byte(`key: value`), 0o600)
+
+	if err := makeBackup(configPath); err != nil {
+		t.Fatalf("makeBackup: %v", err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	var configDate, secDate string
+	for _, e := range entries {
+		name := e.Name()
+		// Extract date part: after the last . before .bak
+		// e.g. config.json.20260330.bak → 20260330
+		if strings.HasPrefix(name, "config.json.") && strings.HasSuffix(name, ".bak") {
+			configDate = strings.TrimPrefix(name, "config.json.")
+			configDate = strings.TrimSuffix(configDate, ".bak")
+		}
+		if strings.HasPrefix(name, ".security.yml.") && strings.HasSuffix(name, ".bak") {
+			secDate = strings.TrimPrefix(name, ".security.yml.")
+			secDate = strings.TrimSuffix(secDate, ".bak")
+		}
+	}
+	if configDate == "" {
+		t.Fatal("config backup file not found")
+	}
+	if secDate == "" {
+		t.Fatal("security backup file not found")
+	}
+	if configDate != secDate {
+		t.Errorf("config backup date = %q, security backup date = %q, should match", configDate, secDate)
 	}
 }

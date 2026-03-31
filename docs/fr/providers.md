@@ -73,22 +73,22 @@ Cette conception permet également le **support multi-agents** avec une sélecti
     {
       "model_name": "ark-code-latest",
       "model": "volcengine/ark-code-latest",
-      "api_key": "sk-your-api-key"
+      "api_keys": ["sk-your-api-key"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_key": "sk-your-openai-key"
+      "api_keys": ["sk-your-openai-key"]
     },
     {
       "model_name": "claude-sonnet-4.6",
       "model": "anthropic/claude-sonnet-4.6",
-      "api_key": "sk-ant-your-key"
+      "api_keys": ["sk-ant-your-key"]
     },
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
-      "api_key": "your-zhipu-key"
+      "api_keys": ["your-zhipu-key"]
     }
   ],
   "agents": {
@@ -107,7 +107,7 @@ Cette conception permet également le **support multi-agents** avec une sélecti
 {
   "model_name": "gpt-5.4",
   "model": "openai/gpt-5.4",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -117,7 +117,7 @@ Cette conception permet également le **support multi-agents** avec une sélecti
 {
   "model_name": "ark-code-latest",
   "model": "volcengine/ark-code-latest",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -127,7 +127,7 @@ Cette conception permet également le **support multi-agents** avec une sélecti
 {
   "model_name": "glm-4.7",
   "model": "zhipu/glm-4.7",
-  "api_key": "your-key"
+  "api_keys": ["your-key"]
 }
 ```
 
@@ -137,7 +137,7 @@ Cette conception permet également le **support multi-agents** avec une sélecti
 {
   "model_name": "deepseek-chat",
   "model": "deepseek/deepseek-chat",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -147,7 +147,7 @@ Cette conception permet également le **support multi-agents** avec une sélecti
 {
   "model_name": "claude-sonnet-4.6",
   "model": "anthropic/claude-sonnet-4.6",
-  "api_key": "sk-ant-your-key"
+  "api_keys": ["sk-ant-your-key"]
 }
 ```
 
@@ -161,7 +161,7 @@ Pour l'accès direct à l'API Anthropic ou les endpoints personnalisés qui ne p
 {
   "model_name": "claude-opus-4-6",
   "model": "anthropic-messages/claude-opus-4-6",
-  "api_key": "sk-ant-your-key",
+  "api_keys": ["sk-ant-your-key"],
   "api_base": "https://api.anthropic.com"
 }
 ```
@@ -189,7 +189,7 @@ Pour l'accès direct à l'API Anthropic ou les endpoints personnalisés qui ne p
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-...",
+  "api_keys": ["sk-..."],
   "request_timeout": 300
 }
 ```
@@ -201,7 +201,7 @@ Pour l'accès direct à l'API Anthropic ou les endpoints personnalisés qui ne p
   "model_name": "lite-gpt4",
   "model": "litellm/lite-gpt4",
   "api_base": "http://localhost:4000/v1",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -218,13 +218,13 @@ Configurez plusieurs endpoints pour le même nom de modèle — PicoClaw effectu
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
-      "api_key": "sk-key1"
+      "api_keys": ["sk-key1"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
-      "api_key": "sk-key2"
+      "api_keys": ["sk-key2"]
     }
   ]
 }
@@ -232,7 +232,7 @@ Configurez plusieurs endpoints pour le même nom de modèle — PicoClaw effectu
 
 #### Migration depuis l'Ancienne Configuration `providers`
 
-L'ancienne configuration `providers` est **dépréciée** mais toujours prise en charge pour la compatibilité ascendante.
+L'ancienne configuration `providers` est **dépréciée** et a été supprimée dans V2. Les configs V0/V1 existantes sont auto-migrées.
 
 **Ancienne configuration (dépréciée) :**
 
@@ -257,11 +257,12 @@ L'ancienne configuration `providers` est **dépréciée** mais toujours prise en
 
 ```json
 {
+  "version": 2,
   "model_list": [
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
-      "api_key": "your-key"
+      "api_keys": ["your-key"]
     }
   ],
   "agents": {

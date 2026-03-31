@@ -56,6 +56,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **通义千问 (Qwen)** | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
 | **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
 | **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
+| **LM Studio**       | `lmstudio/`       | `http://localhost:1234/v1`                          | OpenAI    | Optional (local default: no key)                                 |
 | **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
 | **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                            |
 | **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
@@ -79,22 +80,22 @@ This design also enables **multi-agent support** with flexible provider selectio
     {
       "model_name": "ark-code-latest",
       "model": "volcengine/ark-code-latest",
-      "api_key": "sk-your-api-key"
+      "api_keys": ["sk-your-api-key"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_key": "sk-your-openai-key"
+      "api_keys": ["sk-your-openai-key"]
     },
     {
       "model_name": "claude-sonnet-4.6",
       "model": "anthropic/claude-sonnet-4.6",
-      "api_key": "sk-ant-your-key"
+      "api_keys": ["sk-ant-your-key"]
     },
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
-      "api_key": "your-zhipu-key"
+      "api_keys": ["your-zhipu-key"]
     }
   ],
   "agents": {
@@ -117,7 +118,7 @@ If `voice.model_name` is not configured, PicoClaw will continue to fall back to 
     {
       "model_name": "voice-gemini",
       "model": "gemini/gemini-2.5-flash",
-      "api_key": "your-gemini-key"
+      "api_keys": ["your-gemini-key"]
     }
   ],
   "voice": {
@@ -140,7 +141,7 @@ If `voice.model_name` is not configured, PicoClaw will continue to fall back to 
 {
   "model_name": "gpt-5.4",
   "model": "openai/gpt-5.4",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -150,7 +151,7 @@ If `voice.model_name` is not configured, PicoClaw will continue to fall back to 
 {
   "model_name": "ark-code-latest",
   "model": "volcengine/ark-code-latest",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -160,7 +161,7 @@ If `voice.model_name` is not configured, PicoClaw will continue to fall back to 
 {
   "model_name": "glm-4.7",
   "model": "zhipu/glm-4.7",
-  "api_key": "your-key"
+  "api_keys": ["your-key"]
 }
 ```
 
@@ -170,7 +171,7 @@ If `voice.model_name` is not configured, PicoClaw will continue to fall back to 
 {
   "model_name": "glm-4.7",
   "model": "openai/glm-4.7",
-  "api_key": "your-z.ai-key"
+  "api_keys": ["your-z.ai-key"],
   "api_base": "https://api.z.ai/api/coding/paas/v4"
 }
 ```
@@ -181,7 +182,7 @@ If `voice.model_name` is not configured, PicoClaw will continue to fall back to 
 {
   "model_name": "deepseek-chat",
   "model": "deepseek/deepseek-chat",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -191,7 +192,7 @@ If `voice.model_name` is not configured, PicoClaw will continue to fall back to 
 {
   "model_name": "claude-sonnet-4.6",
   "model": "anthropic/claude-sonnet-4.6",
-  "api_key": "sk-ant-your-key"
+  "api_keys": ["sk-ant-your-key"]
 }
 ```
 
@@ -205,7 +206,7 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 {
   "model_name": "claude-opus-4-6",
   "model": "anthropic-messages/claude-opus-4-6",
-  "api_key": "sk-ant-your-key",
+  "api_keys": ["sk-ant-your-key"],
   "api_base": "https://api.anthropic.com"
 }
 ```
@@ -226,6 +227,18 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 }
 ```
 
+**LM Studio (local)**
+
+```json
+{
+  "model_name": "lmstudio-local",
+  "model": "lmstudio/openai/gpt-oss-20b"
+}
+```
+
+`api_base` defaults to `http://localhost:1234/v1`. API key is optional unless your LM Studio server enables authentication.<br/>
+PicoClaw sends OpenAI-compatible requests to LM Studio, and strips the `lmstudio/` prefix before sending requests, so `lmstudio/openai/gpt-oss-20b` sends `openai/gpt-oss-20b` to the LM Studio server.
+
 **Custom Proxy/API**
 
 ```json
@@ -233,7 +246,7 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-...",
+  "api_keys": ["sk-..."],
   "request_timeout": 300
 }
 ```
@@ -245,7 +258,7 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
   "model_name": "lite-gpt4",
   "model": "litellm/lite-gpt4",
   "api_base": "http://localhost:4000/v1",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -259,7 +272,7 @@ If the standard Zhipu endpoint (`https://open.bigmodel.cn/api/paas/v4`) returns 
 {
   "model_name": "glm-4.7",
   "model": "openai/glm-4.7",
-  "api_key": "your-zhipu-api-key",
+  "api_keys": ["your-zhipu-api-key"],
   "api_base": "https://api.z.ai/api/coding/paas/v4"
 }
 ```
@@ -277,13 +290,13 @@ Configure multiple endpoints for the same model name—PicoClaw will automatical
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
-      "api_key": "sk-key1"
+      "api_keys": ["sk-key1"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
-      "api_key": "sk-key2"
+      "api_keys": ["sk-key2"]
     }
   ]
 }
@@ -302,17 +315,17 @@ It also applies cooldown tracking per candidate to avoid immediately retrying a 
       "model_name": "qwen-main",
       "model": "openai/qwen3.5:cloud",
       "api_base": "https://api.example.com/v1",
-      "api_key": "sk-main"
+      "api_keys": ["sk-main"]
     },
     {
       "model_name": "deepseek-backup",
       "model": "deepseek/deepseek-chat",
-      "api_key": "sk-backup-1"
+      "api_keys": ["sk-backup-1"]
     },
     {
       "model_name": "gemini-backup",
       "model": "gemini/gemini-2.5-flash",
-      "api_key": "sk-backup-2"
+      "api_keys": ["sk-backup-2"]
     }
   ],
   "agents": {
@@ -330,7 +343,7 @@ If you use key-level failover for the same model, PicoClaw can chain through add
 
 #### Migration from Legacy `providers` Config
 
-The old `providers` configuration is **deprecated** but still supported for backward compatibility.
+The old `providers` configuration is **deprecated** and has been removed in V2. Existing V0/V1 configs are auto-migrated.
 
 **Old Config (deprecated):**
 
@@ -355,11 +368,12 @@ The old `providers` configuration is **deprecated** but still supported for back
 
 ```json
 {
+  "version": 2,
   "model_list": [
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
-      "api_key": "your-key"
+      "api_keys": ["your-key"]
     }
   ],
   "agents": {

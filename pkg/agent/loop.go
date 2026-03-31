@@ -76,6 +76,8 @@ type processOptions struct {
 	SessionKey              string              // Session identifier for history/context
 	Channel                 string              // Target channel for tool execution
 	ChatID                  string              // Target chat ID for tool execution
+	MessageID               string              // Current inbound platform message ID
+	ReplyToMessageID        string              // Current inbound reply target message ID
 	SenderID                string              // Current sender ID for dynamic context
 	SenderDisplayName       string              // Current sender display name for dynamic context
 	UserMessage             string              // User message content (may include prefix)
@@ -105,6 +107,7 @@ const (
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"
+	metadataKeyReplyToMessage  = "reply_to_message_id"
 	metadataKeyParentPeerKind  = "parent_peer_kind"
 	metadataKeyParentPeerID    = "parent_peer_id"
 )
@@ -230,16 +233,36 @@ func registerSharedTools(
 		// Message tool
 		if cfg.Tools.IsToolEnabled("message") {
 			messageTool := tools.NewMessageTool()
-			messageTool.SetSendCallback(func(channel, chatID, content string) error {
+			messageTool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
 				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer pubCancel()
 				return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-					Channel: channel,
-					ChatID:  chatID,
-					Content: content,
+					Channel:          channel,
+					ChatID:           chatID,
+					Content:          content,
+					ReplyToMessageID: replyToMessageID,
 				})
 			})
 			agent.Tools.Register(messageTool)
+		}
+		if cfg.Tools.IsToolEnabled("reaction") {
+			reactionTool := tools.NewReactionTool()
+			reactionTool.SetReactionCallback(func(ctx context.Context, channel, chatID, messageID string) error {
+				if al.channelManager == nil {
+					return fmt.Errorf("channel manager not configured")
+				}
+				ch, ok := al.channelManager.GetChannel(channel)
+				if !ok {
+					return fmt.Errorf("channel %s not found", channel)
+				}
+				rc, ok := ch.(channels.ReactionCapable)
+				if !ok {
+					return fmt.Errorf("channel %s does not support reactions", channel)
+				}
+				_, err := rc.ReactToMessage(ctx, chatID, messageID)
+				return err
+			})
+			agent.Tools.Register(reactionTool)
 		}
 
 		// Send file tool (outbound media via MediaStore — store injected later by SetMediaStore)
@@ -399,10 +422,17 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		return err
 	}
 
-	for al.running.Load() {
+	idleTicker := time.NewTicker(100 * time.Millisecond)
+	defer idleTicker.Stop()
+
+	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-idleTicker.C:
+			if !al.running.Load() {
+				return nil
+			}
 		case msg, ok := <-al.bus.InboundChan():
 			if !ok {
 				return nil
@@ -466,7 +496,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				if target == nil {
 					cancelDrain()
 					if finalResponse != "" {
-						al.publishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, finalResponse)
+						al.PublishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, finalResponse)
 					}
 					return
 				}
@@ -526,15 +556,11 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				}
 
 				if finalResponse != "" {
-					al.publishResponseIfNeeded(ctx, target.Channel, target.ChatID, finalResponse)
+					al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, finalResponse)
 				}
 			}()
-		default:
-			time.Sleep(time.Microsecond * 200)
 		}
 	}
-
-	return nil
 }
 
 // drainBusToSteering consumes inbound messages and redirects messages from the
@@ -612,7 +638,7 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
-func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
+func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
 	if response == "" {
 		return
 	}
@@ -1339,6 +1365,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		SessionKey:        sessionKey,
 		Channel:           msg.Channel,
 		ChatID:            msg.ChatID,
+		MessageID:         msg.MessageID,
+		ReplyToMessageID:  inboundMetadata(msg, metadataKeyReplyToMessage),
 		SenderID:          msg.SenderID,
 		SenderDisplayName: msg.Sender.DisplayName,
 		UserMessage:       msg.Content,
@@ -1707,7 +1735,11 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.recordPersistedMessage(rootMsg)
 	}
 
-	activeCandidates, activeModel := al.selectCandidates(ts.agent, ts.userMessage, messages)
+	activeCandidates, activeModel, usedLight := al.selectCandidates(ts.agent, ts.userMessage, messages)
+	activeProvider := ts.agent.Provider
+	if usedLight && ts.agent.LightProvider != nil {
+		activeProvider = ts.agent.LightProvider
+	}
 	pendingMessages := append([]providers.Message(nil), ts.opts.InitialSteeringMessages...)
 	var finalContent string
 
@@ -1929,7 +1961,7 @@ turnLoop:
 					providerCtx,
 					activeCandidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return ts.agent.Provider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
+						return activeProvider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
 					},
 				)
 				if fbErr != nil {
@@ -1945,7 +1977,7 @@ turnLoop:
 				}
 				return fbResult.Response, nil
 			}
-			return ts.agent.Provider.Chat(providerCtx, messagesForCall, toolDefsForCall, llmModel, llmOpts)
+			return activeProvider.Chat(providerCtx, messagesForCall, toolDefsForCall, llmModel, llmOpts)
 		}
 
 		var response *providers.LLMResponse
@@ -2404,8 +2436,15 @@ turnLoop:
 			}
 
 			toolStart := time.Now()
-			toolResult := ts.agent.Tools.ExecuteWithContext(
+			execCtx := tools.WithToolInboundContext(
 				turnCtx,
+				ts.channel,
+				ts.chatID,
+				ts.opts.MessageID,
+				ts.opts.ReplyToMessageID,
+			)
+			toolResult := ts.agent.Tools.ExecuteWithContext(
+				execCtx,
 				toolName,
 				toolArgs,
 				ts.channel,
@@ -2783,9 +2822,9 @@ func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
 	userMsg string,
 	history []providers.Message,
-) (candidates []providers.FallbackCandidate, model string) {
+) (candidates []providers.FallbackCandidate, model string, usedLight bool) {
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
-		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
+		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false
 	}
 
 	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
@@ -2796,7 +2835,7 @@ func (al *AgentLoop) selectCandidates(
 				"score":     score,
 				"threshold": agent.Router.Threshold(),
 			})
-		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model)
+		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false
 	}
 
 	logger.InfoCF("agent", "Model routing: light model selected",
@@ -2806,7 +2845,7 @@ func (al *AgentLoop) selectCandidates(
 			"score":       score,
 			"threshold":   agent.Router.Threshold(),
 		})
-	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel())
+	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel()), true
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.

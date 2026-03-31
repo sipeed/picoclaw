@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | **Français** | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [English](README.md)
+[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | **Français** | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [Malay](README.my.md) | [English](README.md)
 
 </div>
 
@@ -57,16 +57,18 @@
 
 ## 📢 Actualités
 
+2026-03-25 🚀 **v0.2.4 publiée !** Refonte de l'architecture Agent (SubTurn, Hooks, Steering, EventBus), intégration WeChat/WeCom, renforcement de la sécurité (.security.yml, filtrage des données sensibles), nouveaux providers (AWS Bedrock, Azure, Xiaomi MiMo), et 35 corrections de bugs. PicoClaw a atteint **26K Stars** !
+
 2026-03-17 🚀 **v0.2.3 publiée !** Interface system tray (Windows & Linux), requête de statut des sous-agents (`spawn_status`), rechargement à chaud expérimental du Gateway, sécurisation Cron, et 2 correctifs de sécurité. PicoClaw a atteint **25K Stars** !
 
-2026-03-09 🎉 **v0.2.1 — La plus grande mise à jour à ce jour !** Support du protocole MCP, 4 nouveaux channels (Matrix/IRC/WeCom/Discord Proxy), 3 nouveaux providers (Kimi/Minimax/Avian), pipeline vision, stockage mémoire JSONL, routage de modèles.
+2026-03-09 🎉 **v0.2.1 — Plus grande mise à jour à ce jour !** Support du protocole MCP, 4 nouveaux channels (Matrix/IRC/WeCom/Discord Proxy), 3 nouveaux providers (Kimi/Minimax/Avian), pipeline vision, stockage mémoire JSONL, routage de modèles.
 
 2026-02-28 📦 **v0.2.0** publiée avec support Docker Compose et Web UI Launcher.
 
-2026-02-26 🎉 PicoClaw atteint **20K Stars** en seulement 17 jours ! L'orchestration automatique des channels et les interfaces de capacités sont disponibles.
-
 <details>
 <summary>Actualités précédentes...</summary>
+
+2026-02-26 🎉 PicoClaw atteint **20K Stars** en seulement 17 jours ! L'orchestration automatique des channels et les interfaces de capacités sont disponibles.
 
 2026-02-16 🎉 PicoClaw dépasse 12K Stars en une semaine ! Rôles de mainteneurs communautaires et [Roadmap](ROADMAP.md) officiellement lancés.
 
@@ -257,6 +259,29 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 
 </details>
 
+<details>
+<summary><b>macOS — Avertissement de sécurité au premier lancement</b></summary>
+
+macOS peut bloquer `picoclaw-launcher` au premier lancement car il est téléchargé depuis Internet et n'est pas notarisé via le Mac App Store.
+
+**Étape 1 :** Double-cliquez sur `picoclaw-launcher`. Un avertissement de sécurité s'affiche :
+
+<p align="center">
+<img src="assets/macos-gatekeeper-warning.jpg" alt="Avertissement macOS Gatekeeper" width="400">
+</p>
+
+> *"picoclaw-launcher" n'a pas pu être ouvert — Apple n'a pas pu vérifier que "picoclaw-launcher" ne contient pas de logiciel malveillant susceptible de nuire à votre Mac ou de compromettre votre confidentialité.*
+
+**Étape 2 :** Ouvrez **Réglages Système** → **Confidentialité et sécurité** → faites défiler jusqu'à la section **Sécurité** → cliquez sur **Ouvrir quand même** → confirmez en cliquant sur **Ouvrir quand même** dans la boîte de dialogue.
+
+<p align="center">
+<img src="assets/macos-gatekeeper-allow.jpg" alt="macOS Confidentialité et sécurité — Ouvrir quand même" width="600">
+</p>
+
+Après cette étape unique, `picoclaw-launcher` s'ouvrira normalement lors des lancements suivants.
+
+</details>
+
 ### 💻 TUI Launcher (Recommandé pour les environnements sans interface / SSH)
 
 Le TUI (Terminal UI) Launcher fournit une interface terminal complète pour la configuration et la gestion. Idéal pour les serveurs, Raspberry Pi et autres environnements sans interface graphique.
@@ -371,6 +396,7 @@ PicoClaw supporte plus de 30 providers LLM via la configuration `model_list`. Ut
 | [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | Requise | Modèles hébergés NVIDIA |
 | [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | Requise | Inférence rapide |
 | [Novita AI](https://novita.ai/) | `novita/` | Requise | Divers modèles open |
+| [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Requise | Modèles MiMo |
 | [Ollama](https://ollama.com/) | `ollama/` | Non requise | Modèles locaux, auto-hébergé |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Non requise | Déploiement local, compatible OpenAI |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Variable | Proxy pour 100+ providers |
@@ -427,9 +453,7 @@ Parlez à votre PicoClaw via plus de 17 plateformes de messagerie :
 | **DingTalk** | Moyen (identifiants client) | Stream | [Guide](docs/channels/dingtalk/README.fr.md) |
 | **Feishu / Lark** | Moyen (App ID + Secret) | WebSocket/SDK | [Guide](docs/channels/feishu/README.fr.md) |
 | **LINE** | Moyen (identifiants + webhook) | Webhook | [Guide](docs/channels/line/README.fr.md) |
-| **WeCom Bot** | Moyen (URL webhook) | Webhook | [Guide](docs/channels/wecom/wecom_bot/README.fr.md) |
-| **WeCom App** | Moyen (identifiants corp) | Webhook | [Guide](docs/channels/wecom/wecom_app/README.fr.md) |
-| **WeCom AI Bot** | Moyen (token + clé AES) | WebSocket / Webhook | [Guide](docs/channels/wecom/wecom_aibot/README.fr.md) |
+| **WeCom** | Facile (QR login ou manuel) | WebSocket | [Guide](docs/channels/wecom/README.md) |
 | **IRC** | Moyen (serveur + pseudo) | Protocole IRC | [Guide](docs/fr/chat-apps.md#irc) |
 | **OneBot** | Moyen (URL WebSocket) | OneBot v11 | [Guide](docs/channels/onebot/README.fr.md) |
 | **MaixCam** | Facile (activer) | Socket TCP | [Guide](docs/channels/maixcam/README.fr.md) |
@@ -437,6 +461,8 @@ Parlez à votre PicoClaw via plus de 17 plateformes de messagerie :
 | **Pico Client** | Facile (URL WebSocket) | WebSocket | Intégré |
 
 > Tous les channels basés sur webhook partagent un seul serveur HTTP Gateway (`gateway.host`:`gateway.port`, par défaut `127.0.0.1:18790`). Feishu utilise le mode WebSocket/SDK et n'utilise pas le serveur HTTP partagé.
+
+> La verbosité des logs est contrôlée par `gateway.log_level` (par défaut : `warn`). Valeurs supportées : `debug`, `info`, `warn`, `error`, `fatal`. Peut aussi être défini via `PICOCLAW_LOG_LEVEL`. Voir [Configuration](docs/fr/configuration.md#niveau-de-log-du-gateway) pour plus de détails.
 
 Pour les instructions détaillées de configuration des channels, voir [Configuration des applications de chat](docs/fr/chat-apps.md).
 

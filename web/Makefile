@@ -1,12 +1,20 @@
-.PHONY: dev dev-frontend dev-backend build test lint clean
+.PHONY: dev dev-frontend dev-backend build build-frontend build-dev-picoclaw test lint clean
 
 # Go variables
 GO?=CGO_ENABLED=0 go
 WEB_GO?=$(GO)
-GOFLAGS?=-v -tags stdjson
+GO_BUILD_TAGS?=goolm,stdjson
+GOFLAGS?=-v -tags $(GO_BUILD_TAGS)
 
 # Build variables
 BUILD_DIR=build
+OUTPUT?=$(BUILD_DIR)/picoclaw-launcher
+FRONTEND_DIR=frontend
+BACKEND_DIR=backend
+BACKEND_DIST=$(BACKEND_DIR)/dist
+PICOCLAW_BINARY_NAME=picoclaw
+PICOCLAW_BINARY?=$(abspath ../build/$(PICOCLAW_BINARY_NAME))
+LAUNCHER_GUI_LDFLAG=
 
 # Version
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -52,45 +60,63 @@ else ifeq ($(UNAME_S),Darwin)
 else ifeq ($(UNAME_S),Windows)
 	PLATFORM=windows
 	ARCH=$(UNAME_M)
-	LDFLAGS=-H=windowsgui $(LDFLAGS)
+	PICOCLAW_BINARY_NAME=picoclaw.exe
+	LAUNCHER_GUI_LDFLAG=-H=windowsgui
 else
 	PLATFORM=$(UNAME_S)
 	ARCH=$(UNAME_M)
 endif
 
+LAUNCHER_LDFLAGS=$(strip $(LAUNCHER_GUI_LDFLAG) $(LDFLAGS))
+
 # Run both frontend and backend dev servers
-dev:
-	@if [ ! -f $(BUILD_DIR)/picoclaw-launcher ] || [ ! -d backend/dist ]; then \
-		echo "Build artifacts not found, building..."; \
-		$(MAKE) build; \
+dev: build-dev-picoclaw
+	@if [ ! -f "$(BACKEND_DIST)/index.html" ]; then \
+		echo "Embedded frontend not found, building..."; \
+		$(MAKE) build-frontend; \
 	fi
 	@echo "Starting backend and frontend dev servers..."
-	@$(MAKE) dev-backend & $(MAKE) dev-frontend
+	@$(MAKE) dev-backend BACKEND_ARGS='-no-browser' & $(MAKE) dev-frontend
 
 # Start frontend dev server (Vite, with proxy to backend)
 dev-frontend:
-	cd frontend && pnpm dev
+	cd $(FRONTEND_DIR) && pnpm dev
 
 # Start backend dev server
 dev-backend:
-	cd backend && ${WEB_GO} run -ldflags "$(LDFLAGS)" .
+	cd $(BACKEND_DIR) && PICOCLAW_BINARY="$(PICOCLAW_BINARY)" ${WEB_GO} run -ldflags "$(LAUNCHER_LDFLAGS)" . $(BACKEND_ARGS)
 
 # Build frontend and embed into Go binary
-build:
-	cd frontend && pnpm build:backend
-	${WEB_GO} build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/picoclaw-launcher ./backend/
+build: build-frontend
+	@mkdir -p "$$(dirname "$(OUTPUT)")"
+	${WEB_GO} build $(GOFLAGS) -ldflags "$(LAUNCHER_LDFLAGS)" -o "$(OUTPUT)" ./$(BACKEND_DIR)/
+
+build-frontend:
+	@if [ ! -d $(FRONTEND_DIR)/node_modules ] || \
+		[ $(FRONTEND_DIR)/package.json -nt $(FRONTEND_DIR)/node_modules ] || \
+		[ $(FRONTEND_DIR)/pnpm-lock.yaml -nt $(FRONTEND_DIR)/node_modules ]; then \
+		echo "Installing frontend dependencies..."; \
+		cd $(FRONTEND_DIR) && pnpm install --frozen-lockfile; \
+	fi
+	@echo "Building frontend..."
+	@cd $(FRONTEND_DIR) && pnpm build:backend
+
+build-dev-picoclaw:
+	@echo "Building picoclaw for launcher development..."
+	@mkdir -p "$$(dirname "$(PICOCLAW_BINARY)")"
+	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o "$(PICOCLAW_BINARY)" ../cmd/picoclaw
 
 # Run all tests
 test:
-	cd backend && ${WEB_GO} test ./...
-	cd frontend && pnpm lint
+	cd $(BACKEND_DIR) && ${WEB_GO} test ./...
+	cd $(FRONTEND_DIR) && pnpm lint
 
 # Lint and format
 lint:
-	cd backend && ${WEB_GO} vet ./...
-	cd frontend && pnpm check
+	cd $(BACKEND_DIR) && ${WEB_GO} vet ./...
+	cd $(FRONTEND_DIR) && pnpm check
 
 # Clean build artifacts
 clean:
-	rm -rf frontend/dist backend/dist $(BUILD_DIR)
-	mkdir -p backend/dist && touch backend/dist/.gitkeep
+	rm -rf $(FRONTEND_DIR)/dist $(BACKEND_DIST) $(BUILD_DIR)
+	node $(FRONTEND_DIR)/scripts/ensure-backend-gitkeep.cjs

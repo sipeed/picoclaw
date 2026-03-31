@@ -31,6 +31,22 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Gateway 日志等级
+
+`gateway.log_level` 控制 Gateway 的日志详细程度，可在 `config.json` 中配置：
+
+```json
+{
+  "gateway": {
+    "log_level": "warn"
+  }
+}
+```
+
+默认值为 `warn`。支持的值：`debug`、`info`、`warn`、`error`、`fatal`。
+
+也可通过环境变量覆盖：`PICOCLAW_LOG_LEVEL=info`
+
 ### 工作区布局 (Workspace Layout)
 
 PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/workspace`）：
@@ -50,6 +66,18 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 ```
 
 > **提示：** 对 `AGENT.md`、`SOUL.md`、`USER.md` 和 `memory/MEMORY.md` 的修改会通过文件修改时间（mtime）在运行时自动检测。**无需重启 gateway**，Agent 将在下一次请求时自动加载最新内容。
+
+### Web 启动器控制台
+
+用 **picoclaw-launcher** 打开浏览器控制台前需要先登录。**访问口令**与 **会话签名密钥**默认在**每次启动时在内存中生成**（重启后随机口令会变）。若设置环境变量 **`PICOCLAW_LAUNCHER_TOKEN`**，则该进程使用固定口令（启动日志中不会打印具体口令值）。
+
+**到哪里找口令**：**控制台模式**（`-console`）请看启动时的终端输出；**托盘 / GUI 模式**可使用托盘菜单中的「复制控制台口令」，并在 **`$PICOCLAW_HOME/logs/launcher.log`**（未设置 `PICOCLAW_HOME` 时一般为 `~/.picoclaw/logs/launcher.log`）中查看本次启动写入的随机口令。登录页在未登录时会根据当前运行方式展示提示（含日志文件绝对路径等；**接口与页面均不会返回口令本身**）。
+
+- **配置文件**：与 `config.json` 同一目录（若设置了 `PICOCLAW_CONFIG`，则与它所指的文件同目录）。启动器专用文件名为 `launcher-config.json`。
+- **登录与链接**：在登录页输入口令；自动打开浏览器时可在 URL 上使用 `?token=`。全站响应携带 **`Referrer-Policy: no-referrer`**，减轻 `token` 经 `Referer` 头泄露的风险。
+- **退出登录**：应使用 **`POST /api/auth/logout`**，且请求头为 **`Content-Type: application/json`**（请求体可为 `{}`），勿使用可被第三方页面触发的 GET 链接登出。
+- **暴力尝试**：`POST /api/auth/login` 对同一远程地址有 **每分钟尝试次数上限**（超限返回 HTTP 429）。
+- **会话时长**：登录后的 HttpOnly 会话 Cookie 默认约 **7 天**有效，到期需重新用口令登录。
 
 ### 技能来源 (Skill Sources)
 
@@ -337,6 +365,7 @@ Agent 读取 HEARTBEAT.md
 | **通义千问 (Qwen)**     | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [获取](https://dashscope.console.aliyun.com)                     |
 | **NVIDIA**              | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [获取](https://build.nvidia.com)                                 |
 | **Ollama**              | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | 本地（无需 Key）                                                 |
+| **LM Studio**           | `lmstudio/`       | `http://localhost:1234/v1`                          | OpenAI    | 可选（本地默认无需密钥）                                         |
 | **OpenRouter**          | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [获取](https://openrouter.ai/keys)                               |
 | **LiteLLM Proxy**       | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | 你的 LiteLLM 代理 Key                                            |
 | **VLLM**                | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | 本地                                                             |
@@ -358,22 +387,22 @@ Agent 读取 HEARTBEAT.md
     {
       "model_name": "ark-code-latest",
       "model": "volcengine/ark-code-latest",
-      "api_key": "sk-your-api-key"
+      "api_keys": ["sk-your-api-key"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_key": "sk-your-openai-key"
+      "api_keys": ["sk-your-openai-key"]
     },
     {
       "model_name": "claude-sonnet-4.6",
       "model": "anthropic/claude-sonnet-4.6",
-      "api_key": "sk-ant-your-key"
+      "api_keys": ["sk-ant-your-key"]
     },
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
-      "api_key": "your-zhipu-key"
+      "api_keys": ["your-zhipu-key"]
     }
   ],
   "agents": {
@@ -393,7 +422,7 @@ Agent 读取 HEARTBEAT.md
 {
   "model_name": "gpt-5.4",
   "model": "openai/gpt-5.4",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -406,7 +435,7 @@ Agent 读取 HEARTBEAT.md
 {
   "model_name": "ark-code-latest",
   "model": "volcengine/ark-code-latest",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -419,7 +448,7 @@ Agent 读取 HEARTBEAT.md
 {
   "model_name": "glm-4.7",
   "model": "zhipu/glm-4.7",
-  "api_key": "your-key"
+  "api_keys": ["your-key"]
 }
 ```
 
@@ -432,7 +461,7 @@ Agent 读取 HEARTBEAT.md
 {
   "model_name": "deepseek-chat",
   "model": "deepseek/deepseek-chat",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -445,7 +474,7 @@ Agent 读取 HEARTBEAT.md
 {
   "model_name": "claude-sonnet-4.6",
   "model": "anthropic/claude-sonnet-4.6",
-  "api_key": "sk-ant-your-key"
+  "api_keys": ["sk-ant-your-key"]
 }
 ```
 
@@ -457,7 +486,7 @@ Agent 读取 HEARTBEAT.md
 {
   "model_name": "claude-opus-4-6",
   "model": "anthropic-messages/claude-opus-4-6",
-  "api_key": "sk-ant-your-key",
+  "api_keys": ["sk-ant-your-key"],
   "api_base": "https://api.anthropic.com"
 }
 ```
@@ -479,6 +508,21 @@ Agent 读取 HEARTBEAT.md
 </details>
 
 <details>
+<summary><b>LM Studio（本地）</b></summary>
+
+```json
+{
+  "model_name": "lmstudio-local",
+  "model": "lmstudio/openai/gpt-oss-20b"
+}
+```
+
+`api_base` 默认是 `http://localhost:1234/v1`。除非你在 LM Studio 侧启用了认证，否则不需要配置 API Key。
+PicoClaw 向 LM Studio 的 OpenAI 兼容终结点发送请求，且将移除首个 `lmstudio/` 前缀，因此 `lmstudio/openai/gpt-oss-20b` 会发送 `openai/gpt-oss-20b`。
+
+</details>
+
+<details>
 <summary><b>自定义代理 / LiteLLM</b></summary>
 
 ```json
@@ -486,7 +530,7 @@ Agent 读取 HEARTBEAT.md
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -505,13 +549,13 @@ PicoClaw 只剥离最外层的 `litellm/` 前缀再发送请求，因此 `litell
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
-      "api_key": "sk-key1"
+      "api_keys": ["sk-key1"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
-      "api_key": "sk-key2"
+      "api_keys": ["sk-key2"]
     }
   ]
 }
@@ -519,7 +563,7 @@ PicoClaw 只剥离最外层的 `litellm/` 前缀再发送请求，因此 `litell
 
 #### 从旧版 `providers` 配置迁移
 
-旧版 `providers` 配置**已废弃**，但仍向后兼容。完整迁移指南见 [docs/migration/model-list-migration.md](../migration/model-list-migration.md)。
+旧版 `providers` 配置**已废弃**，V2 中已移除。现有 V0/V1 配置会自动迁移。完整迁移指南见 [docs/migration/model-list-migration.md](../migration/model-list-migration.md)。
 
 ### Provider 架构
 

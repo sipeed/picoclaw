@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | **Italiano** | [Bahasa Indonesia](README.id.md) | [English](README.md)
+[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | **Italiano** | [Bahasa Indonesia](README.id.md) | [Malay](README.my.md) | [English](README.md)
 
 </div>
 
@@ -56,16 +56,18 @@
 
 ## 📢 Novità
 
+2026-03-25 🚀 **v0.2.4 rilasciata!** Revisione dell'architettura Agent (SubTurn, Hooks, Steering, EventBus), integrazione WeChat/WeCom, rafforzamento della sicurezza (.security.yml, filtraggio dati sensibili), nuovi provider (AWS Bedrock, Azure, Xiaomi MiMo) e 35 correzioni di bug. PicoClaw raggiunge **26K Stars**!
+
 2026-03-17 🚀 **v0.2.3 rilasciata!** Interfaccia system tray (Windows & Linux), query sullo stato dei sub-agent (`spawn_status`), hot-reload sperimentale del Gateway, gate di sicurezza per Cron e 2 correzioni di sicurezza. PicoClaw raggiunge **25K Stars**!
 
-2026-03-09 🎉 **v0.2.1 — Il più grande aggiornamento di sempre!** Supporto al protocollo MCP, 4 nuovi canali (Matrix/IRC/WeCom/Discord Proxy), 3 nuovi provider (Kimi/Minimax/Avian), pipeline di visione, store di memoria JSONL e routing dei modelli.
+2026-03-09 🎉 **v0.2.1 — Il più grande aggiornamento di sempre!** Supporto al protocollo MCP, 4 nuovi canali (Matrix/IRC/WeCom/Discord Proxy), 3 nuovi provider (Kimi/Minimax/Avian), pipeline visiva, archivio memoria JSONL, routing dei modelli.
 
 2026-02-28 📦 **v0.2.0** rilasciata con supporto Docker Compose e Web UI Launcher.
 
-2026-02-26 🎉 PicoClaw raggiunge **20K stelle** in soli 17 giorni! Orchestrazione automatica dei canali e interfacce di capacità sono attive.
-
 <details>
 <summary>Notizie precedenti...</summary>
+
+2026-02-26 🎉 PicoClaw raggiunge **20K stelle** in soli 17 giorni! Orchestrazione automatica dei canali e interfacce di capacità sono attive.
 
 2026-02-16 🎉 PicoClaw supera 12K stelle in una settimana! Ruoli di maintainer della community e [Roadmap](ROADMAP.md) pubblicati ufficialmente.
 
@@ -254,6 +256,29 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 
 </details>
 
+<details>
+<summary><b>macOS — Avviso di sicurezza al primo avvio</b></summary>
+
+macOS potrebbe bloccare `picoclaw-launcher` al primo avvio perché è stato scaricato da internet e non è notarizzato tramite il Mac App Store.
+
+**Passo 1:** Fai doppio clic su `picoclaw-launcher`. Verrà visualizzato un avviso di sicurezza:
+
+<p align="center">
+<img src="assets/macos-gatekeeper-warning.jpg" alt="Avviso macOS Gatekeeper" width="400">
+</p>
+
+> *"picoclaw-launcher" Non Aperto — Apple non è riuscita a verificare che "picoclaw-launcher" sia privo di malware che potrebbe danneggiare il Mac o compromettere la privacy.*
+
+**Passo 2:** Apri **Impostazioni di Sistema** → **Privacy e sicurezza** → scorri fino alla sezione **Sicurezza** → clicca su **Apri comunque** → conferma cliccando su **Apri comunque** nella finestra di dialogo.
+
+<p align="center">
+<img src="assets/macos-gatekeeper-allow.jpg" alt="macOS Privacy e sicurezza — Apri comunque" width="600">
+</p>
+
+Dopo questo passaggio una tantum, `picoclaw-launcher` si aprirà normalmente ai lanci successivi.
+
+</details>
+
 ### 💻 TUI Launcher (Consigliato per Headless / SSH)
 
 Il TUI (Terminal UI) Launcher fornisce un'interfaccia terminale completa per la configurazione e la gestione. Ideale per server, Raspberry Pi e altri ambienti headless.
@@ -367,6 +392,7 @@ PicoClaw supporta 30+ provider LLM tramite la configurazione `model_list`. Usa i
 | [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | Richiesta | Modelli ospitati NVIDIA |
 | [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | Richiesta | Inferenza veloce |
 | [Novita AI](https://novita.ai/) | `novita/` | Richiesta | Vari modelli open |
+| [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Richiesta | Modelli MiMo |
 | [Ollama](https://ollama.com/) | `ollama/` | Non necessaria | Modelli locali, self-hosted |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Non necessaria | Deploy locale, compatibile OpenAI |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Variabile | Proxy per 100+ provider |
@@ -423,9 +449,7 @@ Parla con il tuo PicoClaw attraverso 17+ piattaforme di messaggistica:
 | **DingTalk** | Medio (credenziali client) | Stream | [Guida](docs/channels/dingtalk/README.md) |
 | **Feishu / Lark** | Medio (App ID + Secret) | WebSocket/SDK | [Guida](docs/channels/feishu/README.md) |
 | **LINE** | Medio (credenziali + webhook) | Webhook | [Guida](docs/channels/line/README.md) |
-| **WeCom Bot** | Medio (webhook URL) | Webhook | [Guida](docs/channels/wecom/wecom_bot/README.md) |
-| **WeCom App** | Medio (credenziali aziendali) | Webhook | [Guida](docs/channels/wecom/wecom_app/README.md) |
-| **WeCom AI Bot** | Medio (token + AES key) | WebSocket / Webhook | [Guida](docs/channels/wecom/wecom_aibot/README.md) |
+| **WeCom** | Facile (login QR o manuale) | WebSocket | [Guida](docs/channels/wecom/README.md) |
 | **IRC** | Medio (server + nick) | Protocollo IRC | [Guida](docs/chat-apps.md#irc) |
 | **OneBot** | Medio (WebSocket URL) | OneBot v11 | [Guida](docs/channels/onebot/README.md) |
 | **MaixCam** | Facile (abilita) | TCP socket | [Guida](docs/channels/maixcam/README.md) |
@@ -433,6 +457,8 @@ Parla con il tuo PicoClaw attraverso 17+ piattaforme di messaggistica:
 | **Pico Client** | Facile (WebSocket URL) | WebSocket | Integrato |
 
 > Tutti i channel basati su webhook condividono un singolo server HTTP Gateway (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). Feishu usa la modalità WebSocket/SDK e non usa il server HTTP condiviso.
+
+> La verbosità dei log è controllata da `gateway.log_level` (default: `warn`). Valori supportati: `debug`, `info`, `warn`, `error`, `fatal`. Può essere impostato anche tramite `PICOCLAW_LOG_LEVEL`. Vedi [Configurazione](docs/configuration.md#gateway-log-level) per i dettagli.
 
 Per istruzioni dettagliate sulla configurazione dei channel, vedi [Configurazione App di Chat](docs/chat-apps.md).
 
@@ -534,7 +560,7 @@ Connetti PicoClaw al Social Network degli Agent semplicemente inviando un singol
 | `picoclaw skills list`    | Elenca le skill installate         |
 | `picoclaw skills install` | Installa una skill                 |
 | `picoclaw migrate`        | Migra i dati dalle versioni precedenti |
-| `picoclaw auth login`     | Autenticazione con i provider      |
+| `picoclaw auth login`     | Autenticazione con i provider          |
 
 ### ⏰ Task Pianificati / Promemoria
 

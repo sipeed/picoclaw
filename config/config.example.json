@@ -49,6 +49,10 @@
       "api_key": "sk-your-deepseek-key"
     },
     {
+      "model_name": "lmstudio-local",
+      "model": "lmstudio/openai/gpt-oss-20b"
+    },
+    {
       "model_name": "longcat",
       "model": "longcat/LongCat-Flash-Thinking",
       "api_key": "your-longcat-api-key"
