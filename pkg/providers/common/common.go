@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -43,17 +44,18 @@ func NewHTTPClient(proxy string) *http.Client {
 	client := &http.Client{
 		Timeout: DefaultRequestTimeout,
 	}
+	base := http.DefaultTransport
 	if proxy != "" {
 		parsed, err := url.Parse(proxy)
 		if err == nil {
 			// Preserve http.DefaultTransport settings (TLS, HTTP/2, timeouts, etc.)
-			if base, ok := http.DefaultTransport.(*http.Transport); ok {
-				tr := base.Clone()
-				tr.Proxy = http.ProxyURL(parsed)
-				client.Transport = tr
+			if tr, ok := http.DefaultTransport.(*http.Transport); ok {
+				clone := tr.Clone()
+				clone.Proxy = http.ProxyURL(parsed)
+				base = clone
 			} else {
 				// Fallback: minimal transport if DefaultTransport is not *http.Transport.
-				client.Transport = &http.Transport{
+				base = &http.Transport{
 					Proxy: http.ProxyURL(parsed),
 				}
 			}
@@ -61,6 +63,7 @@ func NewHTTPClient(proxy string) *http.Client {
 			log.Printf("common: invalid proxy URL %q: %v", proxy, err)
 		}
 	}
+	client.Transport = config.WrapTransportUserAgent(base)
 	return client
 }
 

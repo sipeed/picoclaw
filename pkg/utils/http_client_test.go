@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestCreateHTTPClient_ProxyConfigured(t *testing.T) {
@@ -16,9 +18,10 @@ func TestCreateHTTPClient_ProxyConfigured(t *testing.T) {
 		t.Fatalf("client.Timeout = %v, want %v", client.Timeout, 12*time.Second)
 	}
 
-	tr, ok := client.Transport.(*http.Transport)
+	base := config.UnwrapUserAgent(client.Transport)
+	tr, ok := base.(*http.Transport)
 	if !ok {
-		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
+		t.Fatalf("base transport type = %T, want *http.Transport", base)
 	}
 	if tr.Proxy == nil {
 		t.Fatal("transport.Proxy is nil, want non-nil")
@@ -50,9 +53,10 @@ func TestCreateHTTPClient_Socks5ProxyConfigured(t *testing.T) {
 		t.Fatalf("createHTTPClient() error: %v", err)
 	}
 
-	tr, ok := client.Transport.(*http.Transport)
+	base := config.UnwrapUserAgent(client.Transport)
+	tr, ok := base.(*http.Transport)
 	if !ok {
-		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
+		t.Fatalf("base transport type = %T, want *http.Transport", base)
 	}
 	req, err := http.NewRequest("GET", "https://example.com", nil)
 	if err != nil {
@@ -92,9 +96,10 @@ func TestCreateHTTPClient_ProxyFromEnvironmentWhenConfigEmpty(t *testing.T) {
 		t.Fatalf("createHTTPClient() error: %v", err)
 	}
 
-	tr, ok := client.Transport.(*http.Transport)
+	base := config.UnwrapUserAgent(client.Transport)
+	tr, ok := base.(*http.Transport)
 	if !ok {
-		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
+		t.Fatalf("base transport type = %T, want *http.Transport", base)
 	}
 	if tr.Proxy == nil {
 		t.Fatal("transport.Proxy is nil, want proxy function from environment")
