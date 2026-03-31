@@ -550,7 +550,8 @@ func extractTarFromReader(tr *tar.Reader, destDir string) error {
 			return err
 		}
 		target := filepath.Clean(filepath.Join(filepath.Clean(destDir), hdr.Name))
-		if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) && target != filepath.Clean(destDir) {
+		if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) &&
+			target != filepath.Clean(destDir) {
 			return fmt.Errorf("path traversal detected: %s", hdr.Name)
 		}
 		switch hdr.Typeflag {
