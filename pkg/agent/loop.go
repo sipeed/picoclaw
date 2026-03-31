@@ -2260,6 +2260,36 @@ turnLoop:
 					// Hook returns result directly, skip tool execution
 					if toolReq != nil && toolReq.HookResult != nil {
 						hookResult := toolReq.HookResult
+
+						// Emit ToolExecStart event (same as normal tool execution)
+						al.emitEvent(
+							EventKindToolExecStart,
+							ts.eventMeta("runTurn", "turn.tool.start"),
+							ToolExecStartPayload{
+								Tool:      toolName,
+								Arguments: cloneEventArguments(toolArgs),
+							},
+						)
+
+						// Send tool feedback to chat channel if enabled (same as normal tool execution)
+						if al.cfg.Agents.Defaults.IsToolFeedbackEnabled() &&
+							ts.channel != "" &&
+							!ts.opts.SuppressToolFeedback {
+							argsJSON, _ := json.Marshal(toolArgs)
+							feedbackPreview := utils.Truncate(
+								string(argsJSON),
+								al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
+							)
+							feedbackMsg := fmt.Sprintf("\U0001f527 `%s`\n```\n%s\n```", toolName, feedbackPreview)
+							fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
+							_ = al.bus.PublishOutbound(fbCtx, bus.OutboundMessage{
+								Channel: ts.channel,
+								ChatID:  ts.chatID,
+								Content: feedbackMsg,
+							})
+							fbCancel()
+						}
+
 						toolDuration := time.Duration(0) // Hook execution time unknown
 
 						// Emit ToolExecEnd event
@@ -2283,6 +2313,11 @@ turnLoop:
 								ChatID:  ts.chatID,
 								Content: hookResult.ForUser,
 							})
+						}
+
+						// Track response handling status (same as normal tool execution)
+						if !hookResult.ResponseHandled {
+							allResponsesHandled = false
 						}
 
 						// Build tool message
