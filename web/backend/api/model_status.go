@@ -193,29 +193,17 @@ func runLocalModelProbe(m *config.ModelConfig) bool {
 func modelProbeCacheKey(m *config.ModelConfig) string {
 	protocol, modelID := splitModel(m.Model)
 
-	modelName := strings.ToLower(strings.TrimSpace(m.ModelName))
 	apiBaseRaw := modelProbeAPIBase(m)
 	apiBase := strings.ToLower(strings.TrimRight(strings.TrimSpace(apiBaseRaw), "/"))
-	authMethod := strings.ToLower(strings.TrimSpace(m.AuthMethod))
-	connectMode := strings.ToLower(strings.TrimSpace(m.ConnectMode))
 	apiKeyFingerprint := modelProbeAPIKeyFingerprint(m.APIKey())
 
 	var b strings.Builder
-	b.Grow(
-		len(modelName) + len(protocol) + len(modelID) + len(apiBase) + len(authMethod) +
-			len(connectMode) + len(apiKeyFingerprint) + 8,
-	)
-	b.WriteString(modelName)
-	b.WriteByte('|')
+	b.Grow(len(protocol) + len(modelID) + len(apiBase) + len(apiKeyFingerprint) + 8)
 	b.WriteString(protocol)
 	b.WriteByte('|')
 	b.WriteString(modelID)
 	b.WriteByte('|')
 	b.WriteString(apiBase)
-	b.WriteByte('|')
-	b.WriteString(authMethod)
-	b.WriteByte('|')
-	b.WriteString(connectMode)
 	b.WriteByte('|')
 	b.WriteString(apiKeyFingerprint)
 

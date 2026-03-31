@@ -129,6 +129,29 @@ func TestModelProbeCacheKey_NormalizesTrailingSlashInAPIBase(t *testing.T) {
 	}
 }
 
+func TestModelProbeCacheKey_IgnoresDisplayAndConnectionFields(t *testing.T) {
+	base := &config.ModelConfig{
+		ModelName:   "vllm-one",
+		Model:       "vllm/custom-model",
+		APIBase:     "http://127.0.0.1:8000/v1",
+		AuthMethod:  "none",
+		ConnectMode: "http",
+	}
+	changed := &config.ModelConfig{
+		ModelName:   "vllm-two",
+		Model:       "vllm/custom-model",
+		APIBase:     "http://127.0.0.1:8000/v1",
+		AuthMethod:  "token",
+		ConnectMode: "ws",
+	}
+
+	k1 := modelProbeCacheKey(base)
+	k2 := modelProbeCacheKey(changed)
+	if k1 != k2 {
+		t.Fatalf("modelProbeCacheKey() should ignore non-probe fields, got %q vs %q", k1, k2)
+	}
+}
+
 func TestProbeLocalModelAvailability_SuccessBackoff(t *testing.T) {
 	resetModelProbeHooks(t)
 
