@@ -4,8 +4,9 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,7 +28,7 @@ import (
 // release of the current project is used. platform/arch can be used to
 // select the correct asset (e.g. "linux", "amd64").
 func DownloadAndExtractRelease(releaseURL, platform, arch string) (string, error) {
-	assetURL, err := findAssetURL(releaseURL, platform, arch)
+	assetURL, checksum, err := findAssetInfo(releaseURL, platform, arch)
 	if err != nil {
 		return "", err
 	}
@@ -57,7 +58,7 @@ func DownloadAndExtractRelease(releaseURL, platform, arch string) (string, error
 		return "", err
 	}
 	tmpPath := tmpFile.Name()
-	defer func() { _ = tmpFile.Close() }()
+	defer tmpFile.Close()
 
 	resp, err := http.Get(assetURL)
 	if err != nil {
@@ -71,8 +72,21 @@ func DownloadAndExtractRelease(releaseURL, platform, arch string) (string, error
 	}
 
 	if _, err = io.Copy(tmpFile, resp.Body); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return "", err
+	}
+
+	// verify checksum if available
+	if checksum != "" {
+		got, err := computeSHA256HexFromPath(tmpPath)
+		if err != nil {
+			_ = os.Remove(tmpPath)
+			return "", err
+		}
+		if !strings.EqualFold(got, checksum) {
+			_ = os.Remove(tmpPath)
+			return "", fmt.Errorf("checksum mismatch: got %s expected %s", got, checksum)
+		}
 	}
 
 	// Extract
@@ -128,7 +142,13 @@ func UpdateSelfFromRelease(releaseURL, platform, arch, programName string) error
 	}
 	defer f.Close()
 
-	if err := selfupdate.Apply(f, selfupdate.Options{}); err != nil {
+	// Backup current executable so we can roll back if needed.
+	var opts selfupdate.Options
+	if exePath, err := os.Executable(); err == nil {
+		opts.OldSavePath = exePath + ".old"
+	}
+
+	if err := selfupdate.Apply(f, opts); err != nil {
 		return fmt.Errorf("apply update: %w", err)
 	}
 
@@ -138,8 +158,8 @@ func UpdateSelfFromRelease(releaseURL, platform, arch, programName string) error
 // UpdateSelf updates the running executable by fetching the latest release
 // and applying the binary matching programName.
 func UpdateSelf(programName string) error {
-	// By default, let findAssetURL select the nightly build when no explicit
-	// release URL is provided. Passing an empty releaseURL triggers that path.
+	// By default, select the latest stable release when no explicit
+	// release URL is provided. Use --nightly or a custom URL to override.
 	return UpdateSelfFromRelease("", runtime.GOOS, runtime.GOARCH, programName)
 }
 
@@ -168,30 +188,26 @@ func GetNightlyReleaseAPIURL() string {
 // findAssetURL resolves the appropriate asset URL for the given release
 // selector. It accepts direct archive URLs as well as GitHub release URLs
 // or empty (latest release for the project).
-func findAssetURL(releaseURL, platform, arch string) (string, error) {
+func findAssetInfo(releaseURL, platform, arch string) (string, string, error) {
+	// returns (assetURL, sha256ChecksumHex, error)
 	if looksLikeDirectAssetURL(releaseURL) {
-		return releaseURL, nil
+		return "", "", fmt.Errorf("no checksum found for asset %s", releaseURL)
 	}
 
 	apiURL := buildReleaseAPIURL(releaseURL)
 	if apiURL == "" {
-		// If caller provided an empty releaseURL, default to the nightly tag
-		// from the production repo. Otherwise fall back to the production
-		// latest release API URL.
-		if strings.TrimSpace(releaseURL) == "" {
-			apiURL = GetNightlyReleaseAPIURL()
-		} else {
-			apiURL = GetProdReleaseAPIURL()
-		}
+		// If caller provided an empty releaseURL, default to the
+		// production latest release API URL (stable release).
+		apiURL = GetProdReleaseAPIURL()
 	}
 
 	resp, err := http.Get(apiURL)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to query releases: status %d", resp.StatusCode)
+		return "", "", fmt.Errorf("failed to query releases: status %d", resp.StatusCode)
 	}
 
 	var data struct {
@@ -199,10 +215,11 @@ func findAssetURL(releaseURL, platform, arch string) (string, error) {
 		Assets  []struct {
 			Name               string `json:"name"`
 			BrowserDownloadURL string `json:"browser_download_url"`
+			Digest             string `json:"digest"`
 		} `json:"assets"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	// Selection order: platform -> arch -> extension.
@@ -226,11 +243,12 @@ func findAssetURL(releaseURL, platform, arch string) (string, error) {
 		}
 	}
 
-	pickBest := func(idxs []int) (string, bool) {
+	pickBest := func(idxs []int) (string, int, bool) {
 		if len(idxs) == 0 {
-			return "", false
+			return "", -1, false
 		}
-		// prefer arch matches within idxs
+		// prefer arch matches within idxs; if arch was specified but
+		// no arch match exists among idxs, treat as no candidate.
 		var archIdx []int
 		if arch != "" {
 			aliases := archAliases(archLower)
@@ -243,6 +261,9 @@ func findAssetURL(releaseURL, platform, arch string) (string, error) {
 					}
 				}
 			}
+			if len(archIdx) == 0 {
+				return "", -1, false
+			}
 		}
 		candidates := archIdx
 		if len(candidates) == 0 {
@@ -254,57 +275,82 @@ func findAssetURL(releaseURL, platform, arch string) (string, error) {
 			// prefer .zip only
 			for _, i := range candidates {
 				if isZip(strings.ToLower(data.Assets[i].Name)) {
-					return data.Assets[i].BrowserDownloadURL, true
+					return data.Assets[i].BrowserDownloadURL, i, true
 				}
 			}
 			// if no zip found, fallthrough to first candidate
-			return data.Assets[candidates[0]].BrowserDownloadURL, true
+			return data.Assets[candidates[0]].BrowserDownloadURL, candidates[0], true
 		}
 
 		// non-windows: prefer tar.gz/tgz, then tar, then zip
 		for _, i := range candidates {
 			if isTarGz(strings.ToLower(data.Assets[i].Name)) {
-				return data.Assets[i].BrowserDownloadURL, true
+				return data.Assets[i].BrowserDownloadURL, i, true
 			}
 		}
 		for _, i := range candidates {
 			if isTar(strings.ToLower(data.Assets[i].Name)) {
-				return data.Assets[i].BrowserDownloadURL, true
+				return data.Assets[i].BrowserDownloadURL, i, true
 			}
 		}
 		for _, i := range candidates {
 			if isZip(strings.ToLower(data.Assets[i].Name)) {
-				return data.Assets[i].BrowserDownloadURL, true
+				return data.Assets[i].BrowserDownloadURL, i, true
 			}
 		}
 		// fallback to first candidate
-		return data.Assets[candidates[0]].BrowserDownloadURL, true
+		return data.Assets[candidates[0]].BrowserDownloadURL, candidates[0], true
 	}
 
 	// Try platform matches first
-	if url, ok := pickBest(platformIdx); ok {
-		return url, nil
-	}
-
-	// If no platform matches, try arch-only matches
-	if arch != "" {
-		var archOnlyIdx []int
-		for i, a := range data.Assets {
-			n := strings.ToLower(a.Name)
-			if strings.Contains(n, archLower) {
-				archOnlyIdx = append(archOnlyIdx, i)
+	if url, idx, ok := pickBest(platformIdx); ok {
+		// attempt to find checksum: prefer asset digest from API if present
+		if d := strings.TrimSpace(data.Assets[idx].Digest); d != "" {
+			if strings.HasPrefix(strings.ToLower(d), "sha256:") {
+				hexpart := strings.TrimPrefix(d, "sha256:")
+				// compute actual hash of the asset and compare
+				if got, err := computeSHA256HexFromURL(url); err == nil {
+					if strings.EqualFold(got, hexpart) {
+						return url, got, nil
+					}
+				}
 			}
 		}
-		if url, ok := pickBest(archOnlyIdx); ok {
-			return url, nil
+		// Look for checksum assets and verify by computing the asset's sha256.
+		for j, a := range data.Assets {
+			n := strings.ToLower(a.Name)
+			if strings.Contains(n, "sha256") || strings.Contains(n, "sha256sum") || strings.Contains(n, "checksums") || strings.HasSuffix(n, ".sha256") || strings.HasSuffix(n, ".sha256sum") {
+				resp2, err := http.Get(data.Assets[j].BrowserDownloadURL)
+				if err != nil {
+					continue
+				}
+				bs, err := io.ReadAll(resp2.Body)
+				resp2.Body.Close()
+				if err != nil {
+					continue
+				}
+				// compute asset hash once
+				assetHash, err := computeSHA256HexFromURL(url)
+				if err != nil {
+					continue
+				}
+				if strings.Contains(strings.ToLower(string(bs)), strings.ToLower(assetHash)) {
+					return url, assetHash, nil
+				}
+			}
 		}
+		// No checksum found for the selected platform asset -> error
+		return "", "", fmt.Errorf("no checksum found for asset %s", url)
 	}
 
-	// Fallback to first asset
-	if len(data.Assets) > 0 {
-		return data.Assets[0].BrowserDownloadURL, nil
-	}
-	return "", errors.New("no suitable release asset found")
+	// No platform match — require explicit platform+arch; fail fast.
+	return "", "", fmt.Errorf("no release asset matching platform %q and arch %q", platform, arch)
+}
+
+// findAssetURL preserves the original, single-value signature used elsewhere.
+func findAssetURL(releaseURL, platform, arch string) (string, error) {
+	u, _, err := findAssetInfo(releaseURL, platform, arch)
+	return u, err
 }
 
 func looksLikeDirectAssetURL(u string) bool {
@@ -351,6 +397,37 @@ func buildReleaseAPIURL(releaseURL string) string {
 	}
 	// default to latest
 	return fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
+}
+
+// computeSHA256HexFromURL downloads the resource at u and returns its sha256 hex (lowercase).
+func computeSHA256HexFromURL(u string) (string, error) {
+	resp, err := http.Get(u)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to download for checksum: status %d", resp.StatusCode)
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, resp.Body); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// computeSHA256HexFromPath computes the SHA256 hex (lowercase) of the file at path.
+func computeSHA256HexFromPath(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // archAliases returns common name variants for an architecture string
@@ -401,21 +478,26 @@ func extractZip(archivePath, destDir string) error {
 		return err
 	}
 	defer r.Close()
-
+	destClean := filepath.Clean(destDir)
 	for _, f := range r.File {
-		fp := filepath.Join(destDir, f.Name)
+		target := filepath.Clean(filepath.Join(destClean, f.Name))
+		if !strings.HasPrefix(target, destClean+string(os.PathSeparator)) && target != destClean {
+			return fmt.Errorf("path traversal detected: %s", f.Name)
+		}
 		if f.FileInfo().IsDir() {
-			_ = os.MkdirAll(fp, f.Mode())
+			if err := os.MkdirAll(target, f.FileInfo().Mode()); err != nil {
+				return err
+			}
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(fp), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
 		rc, err := f.Open()
 		if err != nil {
 			return err
 		}
-		out, err := os.OpenFile(fp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, f.FileInfo().Mode())
 		if err != nil {
 			rc.Close()
 			return err
@@ -451,7 +533,10 @@ func extractTarGz(archivePath, destDir string) error {
 		if err != nil {
 			return err
 		}
-		target := filepath.Join(destDir, hdr.Name)
+		target := filepath.Clean(filepath.Join(filepath.Clean(destDir), hdr.Name))
+		if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) && target != filepath.Clean(destDir) {
+			return fmt.Errorf("path traversal detected: %s", hdr.Name)
+		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0o755); err != nil {
@@ -490,7 +575,10 @@ func extractTar(archivePath, destDir string) error {
 		if err != nil {
 			return err
 		}
-		target := filepath.Join(destDir, hdr.Name)
+		target := filepath.Clean(filepath.Join(filepath.Clean(destDir), hdr.Name))
+		if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) && target != filepath.Clean(destDir) {
+			return fmt.Errorf("path traversal detected: %s", hdr.Name)
+		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0o755); err != nil {
@@ -524,7 +612,7 @@ func findBinaryInDir(dir, programName string) (string, error) {
 	}
 
 	var found string
-	filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+	if err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil || found != "" {
 			return err
 		}
@@ -539,7 +627,9 @@ func findBinaryInDir(dir, programName string) (string, error) {
 			}
 		}
 		return nil
-	})
+	}); err != nil && err != io.EOF {
+		return "", err
+	}
 	if found == "" {
 		return "", fmt.Errorf("binary %q not found in archive", programName)
 	}

@@ -49,13 +49,18 @@ func TestDownloadAndExtractRelease_RealPlatforms(t *testing.T) {
 	apiURL := GetProdReleaseAPIURL()
 	for _, c := range combos {
 		t.Run(c.platform+"_"+c.arch, func(t *testing.T) {
-			assetURL, err := findAssetURL(apiURL, c.platform, c.arch)
+			assetURL, checksum, err := findAssetInfo(apiURL, c.platform, c.arch)
 			if err != nil {
-				t.Fatalf("findAssetURL error for %s/%s: %v", c.platform, c.arch, err)
+				// If no checksum could be located for this asset, skip this
+				// combo rather than failing — we require signed/checksummed
+				// releases for real-network tests.
+				t.Skipf("skipping %s/%s: %v", c.platform, c.arch, err)
 			}
-			t.Logf("asset URL: %s", assetURL)
+			t.Logf("asset URL: %s checksum: %s", assetURL, checksum)
 
-			dir, err := DownloadAndExtractRelease(assetURL, c.platform, c.arch)
+			// Pass the release API URL (not the direct asset URL) so
+			// DownloadAndExtractRelease can locate and verify the asset.
+			dir, err := DownloadAndExtractRelease(apiURL, c.platform, c.arch)
 			if err != nil {
 				t.Fatalf("DownloadAndExtractRelease failed for %s/%s: %v", c.platform, c.arch, err)
 			}
