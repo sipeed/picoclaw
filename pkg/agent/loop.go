@@ -574,11 +574,12 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					return
 				}
 
-				if response.Content != "" {
-					al.publishAgentResponseIfNeeded(ctx, response, target.Channel, target.ChatID)
-				}
-
+				// Accumulate the final response before publishing so that a
+				// steering continuation can supersede the initial reply.
+				// We publish exactly once at the end (matching upstream behavior).
+				finalResponse := response
 				prevContent := response.Content
+
 				for al.pendingSteeringCountForScope(target.SessionKey) > 0 {
 					logger.InfoCF("agent", "Continuing queued steering after turn end",
 						map[string]any{
@@ -607,7 +608,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					if continued.Content == "" {
 						return
 					}
-					al.publishAgentResponseIfNeeded(ctx, continued, target.Channel, target.ChatID)
+					finalResponse = continued
 					prevContent = continued.Content
 				}
 
@@ -641,8 +642,12 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					if continued.Content == "" {
 						break
 					}
-					al.publishAgentResponseIfNeeded(ctx, continued, target.Channel, target.ChatID)
+					finalResponse = continued
 					prevContent = continued.Content
+				}
+
+				if finalResponse.Content != "" {
+					al.publishAgentResponseIfNeeded(ctx, finalResponse, target.Channel, target.ChatID)
 				}
 			}()
 		}
