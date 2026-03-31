@@ -26,6 +26,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
@@ -2181,6 +2182,21 @@ turnLoop:
 		}
 
 		if err != nil {
+			// Handle safety filter triggers gracefully
+			var safetyErr *common.SafetyFilterError
+			if errors.As(err, &safetyErr) {
+				logger.WarnCF("agent", "LLM call blocked by safety filter",
+					map[string]any{
+						"agent_id":  ts.agent.ID,
+						"iteration": iteration,
+						"model":     llmModel,
+						"error":     err.Error(),
+					})
+
+				finalContent = "I'm sorry, but I cannot fulfill this request as it triggers content safety filters. Please try rephrasing your request to ensure it complies with safety policies."
+				break turnLoop
+			}
+
 			turnStatus = TurnEndStatusError
 			al.emitEvent(
 				EventKindError,
@@ -2231,6 +2247,19 @@ turnLoop:
 				innerTS.SetLastUsage(response.Usage)
 			}
 		}
+
+		if response.FinishReason == "content_filter" {
+			logger.WarnCF("agent", "LLM response blocked by content filter",
+				map[string]any{
+					"agent_id":  ts.agent.ID,
+					"iteration": iteration,
+					"model":     llmModel,
+				})
+
+			finalContent = "I'm sorry, but the response was filtered due to content safety policies. Please try a different approach."
+			break turnLoop
+		}
+
 
 		reasoningContent := response.Reasoning
 		if reasoningContent == "" {

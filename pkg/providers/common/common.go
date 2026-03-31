@@ -295,20 +295,44 @@ func DecodeToolCallArguments(raw json.RawMessage, name string) map[string]any {
 
 // --- HTTP response helpers ---
 
+// SafetyFilterError is returned when a request or response is blocked by
+// an LLM provider's content safety filters.
+type SafetyFilterError struct {
+	Message string
+}
+
+func (e *SafetyFilterError) Error() string {
+	return e.Message
+}
+
 // HandleErrorResponse reads a non-200 response body and returns an appropriate error.
 func HandleErrorResponse(resp *http.Response, apiBase string) error {
 	contentType := resp.Header.Get("Content-Type")
-	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 256))
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024)) // Increased limit for detailed error bodies
 	if readErr != nil {
 		return fmt.Errorf("failed to read response: %w", readErr)
 	}
 	if LooksLikeHTML(body, contentType) {
 		return WrapHTMLResponseError(resp.StatusCode, body, contentType, apiBase)
 	}
+
+	bodyStr := string(body)
+	bodyLower := strings.ToLower(bodyStr)
+
+	// Detect content safety filters (Azure, OpenAI, etc.)
+	if strings.Contains(bodyLower, "content_filter") ||
+		strings.Contains(bodyLower, "content management policy") ||
+		strings.Contains(bodyLower, "safety filter") ||
+		strings.Contains(bodyLower, "pii filter") {
+		return &SafetyFilterError{
+			Message: "request blocked by provider safety filters: " + ResponsePreview(body, 256),
+		}
+	}
+
 	return fmt.Errorf(
 		"API request failed:\n  Status: %d\n  Body:   %s",
 		resp.StatusCode,
-		ResponsePreview(body, 128),
+		ResponsePreview(body, 512),
 	)
 }
 
