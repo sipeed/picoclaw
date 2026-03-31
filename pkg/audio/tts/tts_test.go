@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestNewOpenAITTSProvider_APIBaseNormalization(t *testing.T) {
@@ -48,7 +50,7 @@ func TestNewOpenAITTSProvider_APIBaseNormalization(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			provider := NewOpenAITTSProvider("key", tc.input, "")
+			provider := NewOpenAITTSProvider("key", tc.input, "", "")
 			if provider.apiBase != tc.expect {
 				t.Fatalf("apiBase mismatch: got %q, want %q", provider.apiBase, tc.expect)
 			}
@@ -78,7 +80,7 @@ func TestOpenAITTSProvider_SynthesizeSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewOpenAITTSProvider("k123", server.URL, "")
+	provider := NewOpenAITTSProvider("k123", server.URL, "", "")
 	stream, err := provider.Synthesize(context.Background(), "hello")
 	if err != nil {
 		t.Fatalf("Synthesize failed: %v", err)
@@ -118,12 +120,50 @@ func TestOpenAITTSProvider_SynthesizeNon200(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewOpenAITTSProvider("k123", server.URL, "")
+	provider := NewOpenAITTSProvider("k123", server.URL, "", "")
 	_, err := provider.Synthesize(context.Background(), "hello")
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	if !strings.Contains(err.Error(), "API error (status 500): nope") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNewOpenAITTSProvider_UsesConfiguredModel(t *testing.T) {
+	t.Parallel()
+
+	provider := NewOpenAITTSProvider("key", "https://api.xiaomimimo.com/v1", "", "mimo-v2-tts")
+	if provider.model != "mimo-v2-tts" {
+		t.Fatalf("model mismatch: got %q, want %q", provider.model, "mimo-v2-tts")
+	}
+	if provider.apiBase != "https://api.xiaomimimo.com/v1/audio/speech" {
+		t.Fatalf("apiBase mismatch: got %q", provider.apiBase)
+	}
+}
+
+func TestDetectTTS_UsesConfiguredModelAndProviderBase(t *testing.T) {
+	t.Parallel()
+
+	provider := DetectTTS(&config.Config{
+		Voice: config.VoiceConfig{TTSModelName: "mimo-tts"},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "mimo-tts",
+				Model:     "mimo/mimo-v2-tts",
+				APIKeys:   config.SimpleSecureStrings("sk-mimo"),
+			},
+		},
+	})
+
+	ttsProvider, ok := provider.(*OpenAITTSProvider)
+	if !ok {
+		t.Fatalf("DetectTTS() type = %T, want *OpenAITTSProvider", provider)
+	}
+	if ttsProvider.model != "mimo-v2-tts" {
+		t.Fatalf("model mismatch: got %q, want %q", ttsProvider.model, "mimo-v2-tts")
+	}
+	if ttsProvider.apiBase != "https://api.xiaomimimo.com/v1/audio/speech" {
+		t.Fatalf("apiBase mismatch: got %q", ttsProvider.apiBase)
 	}
 }

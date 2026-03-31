@@ -23,7 +23,7 @@ type OpenAITTSProvider struct {
 	httpClient *http.Client
 }
 
-func NewOpenAITTSProvider(apiKey string, apiBase string, proxyURL string) *OpenAITTSProvider {
+func NewOpenAITTSProvider(apiKey string, apiBase string, proxyURL string, model string) *OpenAITTSProvider {
 	// Normalize apiBase to avoid malformed endpoints like
 	// "https://api.openai.com/audio/speech" when "/v1" is required.
 	if apiBase == "" {
@@ -70,11 +70,16 @@ func NewOpenAITTSProvider(apiKey string, apiBase string, proxyURL string) *OpenA
 	client := common.NewHTTPClient(proxyURL)
 	client.Timeout = 60 * time.Second
 
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = "tts-1"
+	}
+
 	return &OpenAITTSProvider{
 		apiKey:     apiKey,
 		apiBase:    apiBase,
 		voice:      "alloy",
-		model:      "tts-1",
+		model:      model,
 		httpClient: client,
 	}
 }

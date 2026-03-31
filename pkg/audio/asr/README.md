@@ -1,27 +1,85 @@
 # ASR (Automatic Speech Recognition)
 
-This package handles Automatic Speech Recognition (speech-to-text) capabilities.
+This package handles speech-to-text for PicoClaw voice input.
 
-## Configuration
+If you are new to ASR setup, the simplest mental model is:
 
-PicoClaw uses the unified and secure `ModelList` configuration for ASR. Instead of plain-text API keys in the `voice` configuration, you should define your ASR providers in the global `model_list` and reference them by name in the `voice` configuration section.
+1. Add one or more ASR-capable entries to `model_list`.
+2. Point `voice.model_name` at the one you want to use.
+3. Put the API key in `.security.yml`.
 
-To configure an ASR model, set the `model_name` under the `voice` configuration to match a defined model in your `model_list`.
+## Quick Recommendation
 
-### Example `config.json`
+For most new users, start with one of these:
+
+| Provider | Example model | Why start here |
+| --- | --- | --- |
+| [Groq](https://console.groq.com/keys) | `groq/whisper-large-v3-turbo` | Fast Whisper-style transcription and a straightforward OpenAI-compatible API. Groq currently advertises a free tier plan for 2000 reqs/day. |
+| [ElevenLabs](https://elevenlabs.io/pricing) | `elevenlabs/scribe_v1` | Easy setup and strong speech-to-text quality. ElevenLabs currently advertises a free plan that includes speech-to-text usage. |
+
+Pricing and free-plan limits can change, so check the linked pricing pages before depending on them in production.
+
+## How ASR Configuration Works
+
+PicoClaw does not keep ASR API keys inside the `voice` section.
+
+Instead:
+
+- `voice.model_name` chooses a named entry from `model_list`.
+- The matching `model_list` entry describes the actual provider and model.
+- `.security.yml` stores the API key for that named model entry.
+
+This is the recommended pattern because it is explicit, reusable, and consistent with the rest of PicoClaw's model configuration.
+
+## Recommended Setup
+
+### Option A: Groq Whisper
+
+`config.json`
 
 ```json
 {
   "voice": {
-    "model_name": "my-asr-model",
+    "model_name": "groq-asr",
     "echo_transcription": true
   },
   "model_list": [
     {
-      "model_name": "my-asr-model",
-      "model": "openai/whisper-1",
-      "api_base": "https://api.openai.com/v1"
-    },
+      "model_name": "groq-asr",
+      "model": "groq/whisper-large-v3-turbo"
+    }
+  ]
+}
+```
+
+`.security.yml`
+
+```yaml
+model_list:
+  groq-asr:
+    api_keys:
+      - "gsk_your_groq_key"
+```
+
+Notes:
+
+- You can omit `api_base` and PicoClaw will use Groq's default API base automatically.
+- If you set `api_base` manually for Groq Whisper, both of these forms work:
+  - `https://api.groq.com/openai/v1`
+  - `https://api.groq.com/openai/v1/audio/transcriptions`
+- Any OpenAI-compatible Whisper model name containing `whisper` can use the Whisper transcription path, not only `whisper-large-v3-turbo`.
+
+### Option B: ElevenLabs
+
+`config.json`
+
+```json
+{
+  "voice": {
+    "model_name": "elevenlabs-asr",
+    "echo_transcription": true
+  },
+  "model_list": [
     {
       "model_name": "elevenlabs-asr",
       "model": "elevenlabs/scribe_v1"
@@ -30,29 +88,79 @@ To configure an ASR model, set the `model_name` under the `voice` configuration 
 }
 ```
 
-### Security Configuration
-
-API keys for the ASR model should be supplied in your `.security.yml` file matching the respective `model_name`:
+`.security.yml`
 
 ```yaml
 model_list:
-  my-asr-model:
-    api_keys:
-      - "sk-openai-your-key-here"
   elevenlabs-asr:
     api_keys:
       - "sk-elevenlabs-your-key"
 ```
 
-## How It Works
+### Option C: OpenAI Whisper
 
-PicoClaw's `DetectTranscriber` function will attempt to detect the appropriate Transcriber in the following order:
+`config.json`
 
-1. **Targeted Selection**: Resolve `cfg.Voice.ModelName` against `model_list`, then create the transcriber from that resolved model entry.
-    - This means aliases such as `my-asr-model` are the primary ASR contract.
-    - If the resolved model uses `elevenlabs/...`, the ElevenLabs transcriber is initiated.
-    - If the resolved model uses an OpenAI-compatible Whisper model name such as `openai/whisper-1` or `groq/whisper-large-v3`, the Whisper transcriber is initiated.
-    - If the resolved model uses an OpenAI-compatible audio-capable provider (for example `openai`, `azure`, `gemini`, `deepseek`), `AudioModelTranscriber` is leveraged.
-2. **Fallback Scanning**: If no `model_name` is selected, PicoClaw performs a compatibility scan through `model_list` for legacy auto-detected ASR providers such as `elevenlabs/...` entries and OpenAI-compatible Whisper models.
+```json
+{
+  "voice": {
+    "model_name": "openai-asr"
+  },
+  "model_list": [
+    {
+      "model_name": "openai-asr",
+      "model": "openai/whisper-1"
+    }
+  ]
+}
+```
 
-Fallback scanning exists for compatibility, but the recommended configuration is to set `voice.model_name` to a named `model_list` entry such as `my-asr-model`.
+`.security.yml`
+
+```yaml
+model_list:
+  openai-asr:
+    api_keys:
+      - "sk-openai-your-key"
+```
+
+## Other ASR-Capable Model Types
+
+PicoClaw currently supports three main ASR routes:
+
+| Route | Example models | Behavior |
+| --- | --- | --- |
+| ElevenLabs ASR | `elevenlabs/scribe_v1` | Uses the ElevenLabs transcription API. |
+| Whisper endpoint models | `openai/whisper-1`, `groq/whisper-large-v3` | Uses an OpenAI-compatible `/audio/transcriptions` endpoint. |
+| Audio-capable chat models **(Under construction)** | `openai/gpt-4o-audio-preview`, `gemini/gemini-2.5-flash` | Sends audio to a multimodal chat model and asks it to transcribe. |
+
+If you are unsure which one to pick, choose Groq Whisper or ElevenLabs first.
+
+## How PicoClaw Chooses a Transcriber
+
+`DetectTranscriber` resolves ASR in this order:
+
+1. **Preferred path**: resolve `voice.model_name` against `model_list`.
+2. If that resolved model is:
+   - `elevenlabs/...`, PicoClaw uses the ElevenLabs transcriber.
+   - an OpenAI-compatible Whisper model, PicoClaw uses the Whisper transcriber.
+   - an audio-capable chat model, PicoClaw uses `AudioModelTranscriber`.
+3. **Fallback path**: if `voice.model_name` is not set, PicoClaw performs a compatibility scan through `model_list` for legacy auto-detected ASR entries.
+
+Fallback scanning exists for backward compatibility. New configurations should set `voice.model_name` explicitly.
+
+## Common Mistakes
+
+- Defining an ASR model in `model_list` but forgetting to set `voice.model_name`.
+- Putting the API key in `voice` instead of `.security.yml`.
+- Using a non-ASR model and expecting Whisper-style transcription behavior.
+- Setting a custom `api_base` that points to the wrong provider endpoint.
+
+## Minimal Checklist
+
+Before testing voice input, make sure:
+
+- `voice.model_name` matches a `model_list[].model_name`.
+- The matching `.security.yml` entry contains a valid API key.
+- The selected model is actually ASR-capable.
+- Voice input is enabled for the channel you are using.

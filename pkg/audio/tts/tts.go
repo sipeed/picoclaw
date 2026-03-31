@@ -11,6 +11,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 type TTSProvider interface {
@@ -18,16 +19,37 @@ type TTSProvider interface {
 	Synthesize(ctx context.Context, text string) (io.ReadCloser, error)
 }
 
+func providerFromModelConfig(mc *config.ModelConfig) TTSProvider {
+	if mc == nil || mc.APIKey() == "" {
+		return nil
+	}
+
+	_, modelID := providers.ExtractProtocol(mc.Model)
+	if modelID == "" {
+		modelID = strings.TrimSpace(mc.Model)
+	}
+
+	return NewOpenAITTSProvider(mc.APIKey(), providers.ResolveAPIBase(mc), mc.Proxy, modelID)
+}
+
 func DetectTTS(cfg *config.Config) TTSProvider {
+	if cfg == nil {
+		return nil
+	}
+
 	if modelName := strings.TrimSpace(cfg.Voice.TTSModelName); modelName != "" {
-		if mc, err := cfg.GetModelConfig(modelName); err == nil && mc.APIKey() != "" {
-			return NewOpenAITTSProvider(mc.APIKey(), mc.APIBase, mc.Proxy)
+		if mc, err := cfg.GetModelConfig(modelName); err == nil {
+			if provider := providerFromModelConfig(mc); provider != nil {
+				return provider
+			}
 		}
 	}
 
 	for _, mc := range cfg.ModelList {
 		if strings.Contains(strings.ToLower(mc.Model), "tts") && mc.APIKey() != "" {
-			return NewOpenAITTSProvider(mc.APIKey(), mc.APIBase, mc.Proxy)
+			if provider := providerFromModelConfig(mc); provider != nil {
+				return provider
+			}
 		}
 	}
 	return nil
