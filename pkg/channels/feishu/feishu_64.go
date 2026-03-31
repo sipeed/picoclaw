@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -41,10 +42,16 @@ type FeishuChannel struct {
 	wsClient   *larkws.Client
 	tokenCache *tokenCache // custom cache that supports invalidation
 
-	botOpenID atomic.Value // stores string; populated lazily for @mention detection
+	botOpenID    atomic.Value // stores string; populated lazily for @mention detection
+	messageCache sync.Map     // caches fetched messages (messageID -> *larkim.Message)
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
+}
+
+type cachedMessage struct {
+	msg    *larkim.Message
+	expiry time.Time
 }
 
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {

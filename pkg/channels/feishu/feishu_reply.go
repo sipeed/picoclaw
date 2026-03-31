@@ -14,6 +14,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+const messageCacheTTL = 30 * time.Second
+
 const (
 	maxReplyContextLen = 600
 )
@@ -122,6 +124,14 @@ func (c *FeishuChannel) resolveReplyTargetMessageID(ctx context.Context, message
 }
 
 func (c *FeishuChannel) fetchMessageByID(ctx context.Context, messageID string) (*larkim.Message, error) {
+	if cached, ok := c.messageCache.Load(messageID); ok {
+		cm := cached.(*cachedMessage)
+		if time.Now().Before(cm.expiry) {
+			return cm.msg, nil
+		}
+		c.messageCache.Delete(messageID)
+	}
+
 	req := larkim.NewGetMessageReqBuilder().
 		MessageId(messageID).
 		Build()
@@ -138,7 +148,9 @@ func (c *FeishuChannel) fetchMessageByID(ctx context.Context, messageID string) 
 		return nil, fmt.Errorf("feishu get message: empty response")
 	}
 
-	return resp.Data.Items[0], nil
+	msg := resp.Data.Items[0]
+	c.messageCache.Store(messageID, &cachedMessage{msg: msg, expiry: time.Now().Add(messageCacheTTL)})
+	return msg, nil
 }
 
 func replyTargetID(message *larkim.EventMessage) string {
