@@ -83,10 +83,10 @@ Drag with steps: 20. Wait 500ms after.
 14. In Search Fields, click + Add Item button
     Selector: page.locator('.modal-dialog button').filter({ hasText: /Add Item/ }).first()
 15. Enter: body
-    The input is inside .array-item-content (NOT .array-item-fields — that class does NOT exist).
-    CORRECT selector for the newly added item's input:
-      page.locator('.modal-dialog .array-item-content .v-field__input').first()
-    waitFor visible before filling.
+    NodeConfigurationModal wraps each array item's fields in .array-item-fields (NOT .array-item-content).
+    Inside .array-item-fields, only plain text inputs exist (no comboboxes) — so this selector is unambiguous:
+      page.locator('.modal-dialog .array-item-fields input[type="text"]').first()
+    waitFor visible before filling. Do NOT use input[type="text"] scoped to the whole modal — it matches comboboxes too.
 
 16. Verify Size is: 5
     Size is a number input. Use inputValue() on it — it IS a real input element.
@@ -99,8 +99,8 @@ Drag with steps: 20. Wait 500ms after.
     Use the SECOND "Add Item" button (nth(1)) — Search Fields has the first one.
     Selector: page.locator('.modal-dialog button').filter({ hasText: /Add Item/ }).nth(1)
 20. Enter: context
-    The new item's input is the LAST .array-item-content .v-field__input at that point:
-      page.locator('.modal-dialog .array-item-content .v-field__input').last()
+    After the second Add Item, the response field is the LAST .array-item-fields input:
+      page.locator('.modal-dialog .array-item-fields input[type="text"]').last()
     waitFor visible before filling.
 
 21. Verify Arguments is set to: Knowledge Search Arguments

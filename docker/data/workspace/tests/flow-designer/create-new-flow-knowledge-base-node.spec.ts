@@ -114,7 +114,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   console.log('✅ PASS: Step 11 - Node ID changed to Kb');
 
   console.log('📍 Step 12: Set Is Tool to False');
-  const isToolSelect = page.locator('.modal-dialog .v-select').nth(0);
+  const isToolSelect = page.locator('.modal-dialog').locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(0);
   await isToolSelect.click();
   await page.waitForTimeout(300);
   await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /False/ }).click();
@@ -122,12 +122,12 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   console.log('✅ PASS: Step 12 - Is Tool set to False');
 
   console.log('📍 Step 13: Verify Source is Document Search Options');
-  const sourceSelect = page.locator('.modal-dialog .v-select').nth(1);
+  const sourceSelect = page.locator('.modal-dialog').locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(1);
   await expect(sourceSelect).toContainText(/Document Search/);
   console.log('✅ PASS: Step 13 - Source verified as Document Search Options');
 
   console.log('📍 Step 14: Select Document Search Cluster testing kb');
-  const clusterSelect = page.locator('.modal-dialog .v-select').nth(2);
+  const clusterSelect = page.locator('.modal-dialog').locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(2);
   await clusterSelect.click();
   await page.waitForTimeout(300);
   await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /testing kb/ }).click();
@@ -139,7 +139,8 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   const firstAddButton = addItemButtons.first();
   await firstAddButton.click();
   await page.waitForTimeout(300);
-  const searchFieldInput = page.locator('.modal-dialog .array-item .v-field__input').first();
+  // Search Fields uses GlobalFormField inputType="array" → items render inside .array-item-content
+  const searchFieldInput = page.locator('.modal-dialog .array-item-content input[type="text"]').first();
   await searchFieldInput.waitFor({ state: 'visible', timeout: 5000 });
   await searchFieldInput.fill('body');
   await searchFieldInput.press('Tab');
@@ -157,18 +158,16 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
 
   console.log('📍 Step 17: Set Min Score to 0');
   const minScoreInput = page.locator('.modal-dialog .field-container')
-    .filter({ has: page.locator('label', { hasText: /min score/ }) })
+    .filter({ has: page.locator('label', { hasText: /minimum|min.*score/i }) })
     .locator('.v-field__input');
-  await minScoreInput.click();
   await minScoreInput.fill('0');
   await minScoreInput.press('Tab');
   console.log('✅ PASS: Step 17 - Min Score set to 0');
 
   console.log('📍 Step 18: Set Inner Hits Size to 10');
   const innerHitsInput = page.locator('.modal-dialog .field-container')
-    .filter({ has: page.locator('label', { hasText: /Number of chunks/ }) })
+    .filter({ has: page.locator('label', { hasText: /Inner Hits/ }) })
     .locator('.v-field__input');
-  await innerHitsInput.click();
   await innerHitsInput.fill('10');
   await innerHitsInput.press('Tab');
   console.log('✅ PASS: Step 18 - Inner Hits Size set to 10');
@@ -177,22 +176,29 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   const secondAddButton = addItemButtons.nth(1);
   await secondAddButton.click();
   await page.waitForTimeout(300);
-  const responseFieldInput = page.locator('.modal-dialog .array-item .v-field__input').last();
+  // Response Fields also uses GlobalFormField inputType="array" → .array-item-content wrapper
+  // After both Search and Response fields have one item each, the last input is the response one
+  const responseFieldInput = page.locator('.modal-dialog .array-item-content input[type="text"]').last();
   await responseFieldInput.waitFor({ state: 'visible', timeout: 5000 });
   await responseFieldInput.fill('context');
   await responseFieldInput.press('Tab');
   console.log('✅ PASS: Step 19 - Response Field context added');
 
-  console.log('📍 Step 20: Verify Arguments is Knowledge Search Arguments');
-  const argumentsSelect = page.locator('.modal-dialog .v-select').nth(3);
+  console.log('📍 Step 20: Set Arguments to Knowledge Search Arguments');
+  const argumentsSelect = page.locator('.modal-dialog').locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(3);
+  await argumentsSelect.scrollIntoViewIfNeeded();
+  await argumentsSelect.click();
+  await page.waitForTimeout(300);
+  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /Knowledge Search Arguments/ }).click();
+  await page.waitForTimeout(300);
   await expect(argumentsSelect).toContainText(/Knowledge Search Arguments/);
-  console.log('✅ PASS: Step 20 - Arguments verified as Knowledge Search Arguments');
+  console.log('✅ PASS: Step 20 - Arguments set to Knowledge Search Arguments');
 
-  console.log('📍 Step 21: Set Query to intent');
-  const queryInput = page.locator('.modal-dialog .field-container')
-    .filter({ has: page.locator('label', { hasText: /Search Tool Description/ }) })
-    .locator('.v-field__input');
-  await queryInput.click();
+  console.log('📍 Step 21: Enter Query value intent');
+  // Query field uses div-based label (no <label> element) — appears after Arguments is set
+  // It is the last textbox in the modal at this point
+  const queryInput = page.locator('.modal-dialog').getByRole('textbox').last();
+  await queryInput.scrollIntoViewIfNeeded();
   await queryInput.fill('intent');
   await queryInput.press('Tab');
   console.log('✅ PASS: Step 21 - Query set to intent');
@@ -201,6 +207,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   const saveButton = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton.click();
   await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+  await page.waitForTimeout(500); // let canvas re-render before connecting
   console.log('✅ PASS: Step 22 - Knowledge Base node saved');
 
   // ============================================================================
@@ -208,6 +215,14 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 23: Connect START → Kb');
+
+  // Zoom out to ~100% before connecting — at 400% zoom the canvas auto-pans during drag
+  await page.mouse.move(640, 360);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, 100); }
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(500);
+
   const edgesBefore1 = await page.locator('.vue-flow__edge[data-id]').count();
 
   const startHandle = page.locator('.vue-flow__node')
@@ -321,6 +336,13 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   // PHASE 11: CONNECT KB → REPLY MESSAGE
   // ============================================================================
 
+  // Zoom out to ~100% before connecting — at high zoom the canvas auto-pans during drag
+  await page.mouse.move(640, 360);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, 100); }
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(500);
+
   console.log('📍 Step 32: Connect Kb → ReplyMessage');
   const edgesBefore2 = await page.locator('.vue-flow__edge[data-id]').count();
 
@@ -352,6 +374,13 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   // ============================================================================
   // PHASE 12: CONNECT REPLY MESSAGE → END
   // ============================================================================
+
+  // Zoom out to ~100% before connecting — at high zoom the canvas auto-pans during drag
+  await page.mouse.move(640, 360);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, 100); }
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(500);
 
   console.log('📍 Step 33: Connect ReplyMessage → END');
   const edgesBefore3 = await page.locator('.vue-flow__edge[data-id]').count();

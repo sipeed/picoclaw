@@ -1,82 +1,69 @@
 docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m "$(cat <<'EOF'
-Your job is to run the following Playwright test, and if it fails, fix the spec file and re-run — repeat until the test passes (or you've exhausted all fixable root causes).
+## YOUR ONLY JOB
 
-## Test command (run from /workspace)
-npx playwright test tests/flow-designer/create-new-flow-knowledge-base-node.spec.ts --reporter=line
+Run a Playwright test. If it fails, edit the spec file to fix it. Run again. Repeat until it passes.
 
-## Reference files — read ALL of these before starting
+## STRICT RULES — violating these is failure
+
+❌ DO NOT create any .md files
+❌ DO NOT create any .sh files
+❌ DO NOT create any summary, report, or documentation files of any kind
+❌ DO NOT describe what you will do — just do it
+❌ DO NOT say "fixes applied" or "test is running" without having actually done the action
+❌ DO NOT predict "Expected Result: PASS" — run it and report real output only
+✅ DO edit /tests/flow-designer/create-new-flow-knowledge-base-node.spec.ts directly when a fix is needed
+✅ DO run the actual test command and show real terminal output
+✅ DO loop: run → check output → fix if failed → run again → repeat
+
+## Before your first run — read these files
+
 - /skills/playwright/SKILL.md
 - /skills/app-selectors/SKILL.md
 - /skills/app-selectors-flow-designer/SKILL.md
 - /skills/app-selectors-flow-designer-canvas/SKILL.md
 - /tests/flow-designer/FLOW_DESIGNER_REFERENCE.md
 - /tests/flow-designer/create-new-flow-user-utterance-node.spec.ts   ← passing test, use as pattern reference
+- /tests/flow-designer/create-new-flow-knowledge-base-node.spec.ts   ← the file you will fix
 
-## Fix loop — repeat until PASS
+## The loop
 
-STEP 1: Run the test.
+STEP 1 — Run this exact command:
+  cd /workspace && npx playwright test tests/flow-designer/create-new-flow-knowledge-base-node.spec.ts --reporter=line
 
-STEP 2: If it PASSES → stop. Report "✅ PASS" and the final output.
+STEP 2 — Check real output:
+  - All tests PASSED → print the terminal output and stop. Done.
+  - Test FAILED → go to STEP 3.
 
-STEP 3: If it FAILS:
-  a) Read the full error output carefully.
-  b) If there is an error-context.md file referenced in the output, read it.
-  c) Read the current contents of /tests/flow-designer/create-new-flow-knowledge-base-node.spec.ts.
-  d) Identify the root cause from the list below.
-  e) Apply the fix to the spec file.
+STEP 3 — Fix the spec file:
+  a) Read the error message and failing line number from the terminal output.
+  b) If the error mentions an error-context.md path, read that file.
+  c) Read /tests/flow-designer/create-new-flow-knowledge-base-node.spec.ts.
+  d) Find the exact line that caused the error.
+  e) Edit the file to fix it. Use the fix guide below.
   f) Go back to STEP 1.
 
-## Root cause guide
+## Fix guide
 
-| Symptom | Root cause | Fix |
-|---------|-----------|-----|
-| `inputValue: Node is not an <input>` | Called `.inputValue()` on a v-select div | Switch to `await expect(locator).toContainText(/text/)` |
-| `locator.fill: Test timeout exceeded` on `.array-item-fields` | Class `.array-item-fields` does not exist | Use `.array-item-content .v-field__input` instead |
-| `locator.evaluate: Test timeout exceeded` on `.vue-flow__node` filter | Clicked `.vue-flow__node` wrapper instead of `.node-container` | Change to: `page.locator('.node-container').filter({ hasText: /TYPE/ }).first().evaluate(el => el.click())` |
-| `waitForURL: timeout` on `select_org` | `waitForURL(/\?select_org/)` times out when server skips org selection | Use: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 })` then check `page.url().includes('select_org')` |
-| Edge not found, `[data-id^="e-SOURCE-"]` | Edges use timestamp IDs, not source-target IDs | Use count-based verification: count `.vue-flow__edge[data-id]` before and after drag |
-| Node overlap / handle not found | Relative positioning broke at current zoom | Use absolute canvas coords: `x = 250*tf.scale+tf.tx`, `y = N*tf.scale+tf.ty` |
-| `toHaveValue` on a dropdown | v-select is a div, not an input | Use `toContainText()` |
+| Error message contains | Root cause | Fix |
+|------------------------|-----------|-----|
+| `inputValue: Node is not an <input>` | `.inputValue()` called on a v-select div | Replace with `await expect(locator).toContainText(/text/)` |
+| `locator.fill: timeout` or `intercepts pointer events` on array input | `input[type="text"]` matches comboboxes too — nth(N) lands on wrong element | Use `.array-item-fields input[type="text"]` (scoped to array sections only, no comboboxes): first item → `.first()`, last item → `.last()` |
+| `locator.fill: timeout` waiting for array input | Item not yet rendered after clicking Add Item | Add `await input.waitFor({ state: 'visible', timeout: 5000 })` before fill |
+| `locator.evaluate: timeout` on `.vue-flow__node` filter | Clicked `.vue-flow__node` wrapper — it does not open the modal | Change to: `page.locator('.node-container').filter({ hasText: /TYPE/ }).first().evaluate(el => (el as HTMLElement).click())` |
+| `waitForURL: timeout` on `\?select_org` | `waitForURL(/\?select_org/)` fails when server skips org selection | Replace with: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 }); if (page.url().includes('select_org')) { await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click(); await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 }); }` |
+| Edge count did not increase | Edge drag failed silently | Increase post-drag waitForTimeout to 1500ms; ensure hover 200ms before mousedown, dwell 200ms on target before mouseup |
+| `toHaveValue` on dropdown | v-select is a div, not an input | Use `toContainText()` |
+| `strict mode violation` | Locator matched multiple elements | Add `.first()` or `.nth(N)` |
 
-## Critical rules (do NOT violate these when fixing)
+## Final output (required — print this after the loop ends)
 
-1. Clicking canvas nodes: ALWAYS use `.node-container` evaluate click — NEVER click the `.vue-flow__node` wrapper:
-   CORRECT: page.locator('.node-container').filter({ hasText: /KnowledgeBaseNode/ }).first().evaluate(el => (el as HTMLElement).click())
-   WRONG:   kbWrapper.evaluate(el => (el as HTMLElement).click())
-
-2. Array field inputs (Search Fields, Response Fields):
-   - Class `.array-item-fields` does NOT exist
-   - Input is at: `.array-item-content .v-field__input`
-   - First array field: `.first()`
-   - After second Add Item click: `.last()`
-
-3. v-select verification: NEVER inputValue() / toHaveValue() on a v-select
-   CORRECT: await expect(locator).toContainText(/text/)
-
-4. Edge verification: count-based ONLY
-   const before = await page.locator('.vue-flow__edge[data-id]').count();
-   // drag
-   await page.waitForTimeout(1000);
-   const after = await page.locator('.vue-flow__edge[data-id]').count();
-   if (after <= before) throw new Error(`Edge NOT created — before: ${before}, after: ${after}`);
-
-5. Node positioning: use absolute canvas coords with DOMMatrix (NOT relative to other nodes):
-   const tf = await page.locator('.vue-flow__transformationpane').evaluate(el => {
-     const m = new DOMMatrix((el as HTMLElement).style.transform);
-     return { scale: m.a, tx: m.e, ty: m.f };
-   });
-   // Node 1 → canvas (250, 100): targetX = 250*tf.scale+tf.tx, targetY = 100*tf.scale+tf.ty
-   // Node 2 → canvas (250, 200): targetX = 250*tf.scale+tf.tx, targetY = 200*tf.scale+tf.ty
-
-6. Drag connections: use page.mouse with steps: 20 minimum, hover 200ms before mousedown, dwell 200ms on target before mouseup
-
-## Final report (required after loop ends)
-
-Print:
-- Number of fix iterations
-- Each fix applied (what was wrong → what was changed)
-- Final terminal output
-- Final result: ✅ PASS or ❌ FAIL with unresolved root cause
+  Iterations: N
+  Fixes applied:
+    1. Line NN — what was wrong → what was changed
+    2. ...
+  Terminal output:
+    [paste actual terminal output]
+  Result: ✅ PASS  OR  ❌ FAIL — [unresolved error message]
 
 EOF
 )"
