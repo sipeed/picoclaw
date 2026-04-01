@@ -277,6 +277,10 @@ func registerSharedTools(
 			agent.Tools.Register(sendFileTool)
 		}
 
+		if ttsProvider != nil {
+			agent.Tools.Register(tools.NewSendTTSTool(ttsProvider, nil))
+		}
+
 		if cfg.Tools.IsToolEnabled("load_image") {
 			loadImageTool := tools.NewLoadImageTool(
 				agent.Workspace,
