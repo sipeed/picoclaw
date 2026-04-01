@@ -5,7 +5,7 @@ test.describe('Knowledge Base - Create KB Bucket with GCS', () => {
     const testEmail = 'heidi@intnt.ai';
     const testPassword = 'testing2026!';
     const orgName = 'Testing2026!';
-    const kbName = 'Picotest2';
+    const kbName = 'Picotest1';
 
     // Step 1: Perform case "Login"
     console.log('\n📍 Step 1: Perform case "Login"');
