@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -164,6 +165,42 @@ func TestProviderChat_AzureHTTPError(t *testing.T) {
 	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestProviderChat_AzureRateLimitError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error":{"message":"Rate limit exceeded","type":"rate_limit_error"}}`))
+	}))
+	defer server.Close()
+
+	p := NewProvider("test-key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)
+	if err == nil {
+		t.Fatal("expected error for 429, got nil")
+	}
+	if !strings.Contains(err.Error(), "429") {
+		t.Errorf("error should contain status code 429, got: %v", err)
+	}
+}
+
+func TestProviderChat_AzureServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":{"message":"Internal server error","type":"server_error"}}`))
+	}))
+	defer server.Close()
+
+	p := NewProvider("test-key", server.URL, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)
+	if err == nil {
+		t.Fatal("expected error for 500, got nil")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error should contain status code 500, got: %v", err)
 	}
 }
 

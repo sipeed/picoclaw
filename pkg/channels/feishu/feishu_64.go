@@ -131,26 +131,26 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 
 // Send sends a message using Interactive Card format for markdown rendering.
 // Falls back to plain text message if card sending fails (e.g., table limit exceeded).
-func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	if msg.ChatID == "" {
-		return fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
 	}
 
 	// Build interactive card with markdown content
 	cardContent, err := buildMarkdownCard(msg.Content)
 	if err != nil {
 		// If card build fails, fall back to plain text
-		return c.sendText(ctx, msg.ChatID, msg.Content)
+		return nil, c.sendText(ctx, msg.ChatID, msg.Content)
 	}
 
 	// First attempt: try sending as interactive card
 	err = c.sendCard(ctx, msg.ChatID, cardContent)
 	if err == nil {
-		return nil
+		return nil, nil
 	}
 
 	// Check if error is due to card table limit (error code 11310)
@@ -167,14 +167,14 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		// Second attempt: fall back to plain text message
 		textErr := c.sendText(ctx, msg.ChatID, msg.Content)
 		if textErr == nil {
-			return nil
+			return nil, nil
 		}
 		// If text also fails, return the text error
-		return textErr
+		return nil, textErr
 	}
 
 	// For other errors, return the original card error
-	return err
+	return nil, err
 }
 
 // EditMessage implements channels.MessageEditor.
@@ -245,15 +245,18 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 // ReactToMessage implements channels.ReactionCapable.
 // Adds a reaction (randomly chosen from config) and returns an undo function to remove it.
 func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
-	// Get emoji list from config
-	emojiList := c.config.RandomReactionEmoji
-	var chosenEmoji string
-	if len(emojiList) == 0 {
-		// Default to "Pin" if no config
-		chosenEmoji = "Pin"
-	} else {
-		idx := rand.Intn(len(emojiList))
-		chosenEmoji = emojiList[idx]
+	// Get emoji list from config (Feishu emoji_type keys, e.g. Pin, THUMBSUP).
+	// Ignore empty entries so a list like ["", "Pin"] does not randomly pick "" (API 231001).
+	var candidates []string
+	for _, e := range c.config.RandomReactionEmoji {
+		e = strings.TrimSpace(e)
+		if e != "" {
+			candidates = append(candidates, e)
+		}
+	}
+	chosenEmoji := "Pin"
+	if len(candidates) > 0 {
+		chosenEmoji = candidates[rand.Intn(len(candidates))]
 	}
 
 	req := larkim.NewCreateMessageReactionReqBuilder().
@@ -307,27 +310,27 @@ func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID st
 
 // SendMedia implements channels.MediaSender.
 // Uploads images/files via Feishu API then sends as messages.
-func (c *FeishuChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *FeishuChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	if msg.ChatID == "" {
-		return fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
 	}
 
 	store := c.GetMediaStore()
 	if store == nil {
-		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
 	for _, part := range msg.Parts {
 		if err := c.sendMediaPart(ctx, msg.ChatID, part, store); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // sendMediaPart resolves and sends a single media part.

@@ -42,6 +42,24 @@ type Option func(*Provider)
 
 const defaultRequestTimeout = common.DefaultRequestTimeout
 
+var stripModelPrefixProviders = map[string]struct{}{
+	"litellm":    {},
+	"venice":     {},
+	"moonshot":   {},
+	"nvidia":     {},
+	"groq":       {},
+	"ollama":     {},
+	"deepseek":   {},
+	"google":     {},
+	"openrouter": {},
+	"zhipu":      {},
+	"mistral":    {},
+	"vivgrid":    {},
+	"minimax":    {},
+	"novita":     {},
+	"lmstudio":   {},
+}
+
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {
 		p.maxTokensField = maxTokensField
@@ -397,13 +415,11 @@ func normalizeModel(model, apiBase string) string {
 	}
 
 	prefix := strings.ToLower(before)
-	switch prefix {
-	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google",
-		"openrouter", "zhipu", "mistral", "vivgrid", "minimax", "novita":
+	if _, ok := stripModelPrefixProviders[prefix]; ok {
 		return after
-	default:
-		return model
 	}
+
+	return model
 }
 
 func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {

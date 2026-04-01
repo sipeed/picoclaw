@@ -56,6 +56,8 @@
 
 ## 📢 Tin tức
 
+2026-03-31 📱 **Hỗ trợ Android!** PicoClaw giờ chạy trên Android! Tải APK tại [picoclaw.io](https://picoclaw.io/download)
+
 2026-03-25 🚀 **v0.2.4 đã phát hành!** Tái cấu trúc kiến trúc Agent (SubTurn, Hooks, Steering, EventBus), tích hợp WeChat/WeCom, tăng cường bảo mật (.security.yml, lọc dữ liệu nhạy cảm), provider mới (AWS Bedrock, Azure, Xiaomi MiMo) và 35 bản vá lỗi. PicoClaw đã đạt **26K Stars**!
 
 2026-03-17 🚀 **v0.2.3 đã phát hành!** Giao diện system tray (Windows & Linux), truy vấn trạng thái sub-agent (`spawn_status`), thử nghiệm Gateway hot-reload, bảo mật Cron, và 2 bản vá bảo mật. PicoClaw đã đạt **25K Stars**!
@@ -318,9 +320,9 @@ Sau đó làm theo phần Terminal Launcher bên dưới để hoàn tất cấu
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
 
-**Tùy chọn 2: Cài đặt APK (sắp ra mắt)**
+**Tùy chọn 2: Cài đặt APK**
 
-Một APK Android độc lập với WebUI tích hợp đang được phát triển. Hãy đón chờ!
+Tải APK từ [picoclaw.io](https://picoclaw.io/download/) và cài đặt trực tiếp. Không cần Termux!
 
 <details>
 <summary><b>Terminal Launcher (cho môi trường hạn chế tài nguyên)</b></summary>
@@ -457,6 +459,8 @@ Trò chuyện với PicoClaw của bạn qua 17+ nền tảng nhắn tin:
 | **Pico Client** | Dễ (WebSocket URL) | WebSocket | Tích hợp sẵn |
 
 > Tất cả các Channel dựa trên webhook dùng chung một Gateway HTTP server (`gateway.host`:`gateway.port`, mặc định `127.0.0.1:18790`). Feishu sử dụng chế độ WebSocket/SDK và không dùng HTTP server chung.
+
+> Mức độ chi tiết log được kiểm soát bởi `gateway.log_level` (mặc định: `warn`). Các giá trị được hỗ trợ: `debug`, `info`, `warn`, `error`, `fatal`. Cũng có thể đặt qua `PICOCLAW_LOG_LEVEL`. Xem [Cấu hình](docs/vi/configuration.md#mức-log-của-gateway) để biết thêm chi tiết.
 
 Để biết hướng dẫn thiết lập Channel chi tiết, xem [Cấu hình Ứng dụng Chat](docs/vi/chat-apps.md).
 

@@ -24,6 +24,11 @@ type ToolLoopConfig struct {
 	Tools         *ToolRegistry
 	MaxIterations int
 	LLMOptions    map[string]any
+
+	// MediaResolver resolves media:// refs in messages before each LLM call.
+	// This is optional and is mainly used by subagent legacy fallback execution
+	// so subagents can reuse the same multimodal media handling as the main loop.
+	MediaResolver func(messages []providers.Message) []providers.Message
 }
 
 // ToolLoopResult contains the result of running the tool loop.
@@ -63,8 +68,27 @@ func RunToolLoop(
 		if llmOpts == nil {
 			llmOpts = map[string]any{}
 		}
-		// 3. Call LLM
-		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
+
+		// 3. Resolve media:// refs and Call LLM.
+		// Tools like load_image produce media:// refs in their result messages.
+		// Without this step, the LLM would receive raw "media://uuid" strings
+		// instead of base64-encoded image data URLs.
+		//
+		// We build a separate callMessages slice so that:
+		//   (a) the resolver output is used for the LLM call only,
+		//   (b) the original `messages` slice keeps the unresolved refs for
+		//       subsequent iterations — the resolver is idempotent but working
+		//       on the original avoids double-encoding issues.
+		//
+		// On iteration 1 the initial user messages typically have no media://
+		// refs (they come from plain text), so this is effectively a no-op;
+		// it becomes relevant from iteration 2 onward when tool results may
+		// contain media refs.
+		callMessages := messages
+		if config.MediaResolver != nil && iteration > 1 {
+			callMessages = config.MediaResolver(messages)
+		}
+		response, err := config.Provider.Chat(ctx, callMessages, providerToolDefs, config.Model, llmOpts)
 		if err != nil {
 			logger.ErrorCF("toolloop", "LLM call failed",
 				map[string]any{
@@ -161,11 +185,15 @@ func RunToolLoop(
 		for _, r := range results {
 			contentForLLM := r.result.ContentForLLM()
 
-			messages = append(messages, providers.Message{
+			toolMsg := providers.Message{
 				Role:       "tool",
 				Content:    contentForLLM,
 				ToolCallID: r.tc.ID,
-			})
+			}
+			if len(r.result.Media) > 0 && !r.result.ResponseHandled {
+				toolMsg.Media = append(toolMsg.Media, r.result.Media...)
+			}
+			messages = append(messages, toolMsg)
 		}
 	}
 

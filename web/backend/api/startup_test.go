@@ -45,6 +45,29 @@ func TestResolveLaunchCommandUsesConfigFileDefaults(t *testing.T) {
 	}
 }
 
+func TestResolveLaunchCommandIncludesDebugFlagWhenEnabled(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	h.SetDebug(true)
+
+	_, args, err := h.resolveLaunchCommand()
+	if err != nil {
+		t.Fatalf("resolveLaunchCommand() error = %v", err)
+	}
+	if len(args) != 3 {
+		t.Fatalf("args len = %d, want 3 (got %v)", len(args), args)
+	}
+	if args[0] != "-no-browser" {
+		t.Fatalf("args[0] = %q, want %q", args[0], "-no-browser")
+	}
+	if args[1] != "-d" {
+		t.Fatalf("args[1] = %q, want %q", args[1], "-d")
+	}
+	if args[2] != configPath {
+		t.Fatalf("args[2] = %q, want %q", args[2], configPath)
+	}
+}
+
 func TestBuildDarwinPlistIncludesRunAtLoad(t *testing.T) {
 	plist := buildDarwinPlist("/tmp/picoclaw-web", []string{"-no-browser", "/tmp/config.json"})
 	if !strings.Contains(plist, "<key>RunAtLoad</key>") {

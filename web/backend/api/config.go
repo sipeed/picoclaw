@@ -20,6 +20,14 @@ func (h *Handler) registerConfigRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/config/test-command-patterns", h.handleTestCommandPatterns)
 }
 
+func (h *Handler) applyRuntimeLogLevel() {
+	if h.debug {
+		logger.SetLevel(logger.DEBUG)
+		return
+	}
+	logger.SetLevelFromString(config.ResolveGatewayLogLevel(h.configPath))
+}
+
 // handleGetConfig returns the complete system configuration.
 //
 //	GET /api/config
@@ -52,6 +60,11 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
+	var raw map[string]any
+	if err = json.Unmarshal(body, &raw); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
 	if execAllowRemoteOmitted(body) {
 		cfg.Tools.Exec.AllowRemote = config.DefaultConfig().Tools.Exec.AllowRemote
 	}
@@ -63,6 +76,7 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to apply security config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	applyConfigSecretsFromMap(&cfg, raw)
 
 	if errs := validateConfig(&cfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -74,12 +88,15 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Infof("configuration updated successfully")
-
 	if err := config.SaveConfig(h.configPath, &cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	// Refresh cached pico token in case user changed it.
+	refreshPicoToken(&cfg)
+	h.applyRuntimeLogLevel()
+	logger.Infof("configuration updated successfully")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -124,7 +141,6 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
-
 	existing, err := json.Marshal(cfg)
 	if err != nil {
 		http.Error(w, "Failed to serialize current config", http.StatusInternalServerError)
@@ -159,6 +175,7 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to apply security config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	applyConfigSecretsFromMap(&newCfg, base)
 
 	if errs := validateConfig(&newCfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -174,6 +191,11 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	// Refresh cached pico token in case user changed it.
+	refreshPicoToken(&newCfg)
+	h.applyRuntimeLogLevel()
+	logger.Infof("configuration updated successfully")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -322,6 +344,149 @@ func mergeMap(dst, src map[string]any) {
 			mergeMap(dstMap, srcMap)
 		} else {
 			dst[key] = srcVal
+		}
+	}
+}
+
+func asMapField(value map[string]any, key string) (map[string]any, bool) {
+	raw, exists := value[key]
+	if !exists {
+		return nil, false
+	}
+	m, isMap := raw.(map[string]any)
+	return m, isMap
+}
+
+func getSecretString(m map[string]any, key string) (string, bool) {
+	if raw, exists := m[key]; exists {
+		s, isString := raw.(string)
+		if isString {
+			return s, true
+		}
+	}
+	if raw, exists := m["_"+key]; exists {
+		s, isString := raw.(string)
+		if isString {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+func applyConfigSecretsFromMap(cfg *config.Config, raw map[string]any) {
+	channels, hasChannels := asMapField(raw, "channels")
+	if hasChannels {
+		if telegram, hasTelegram := asMapField(channels, "telegram"); hasTelegram {
+			if token, hasToken := getSecretString(telegram, "token"); hasToken {
+				cfg.Channels.Telegram.SetToken(token)
+			}
+		}
+		if feishu, hasFeishu := asMapField(channels, "feishu"); hasFeishu {
+			if appSecret, hasAppSecret := getSecretString(feishu, "app_secret"); hasAppSecret {
+				cfg.Channels.Feishu.AppSecret.Set(appSecret)
+			}
+			if encryptKey, hasEncryptKey := getSecretString(feishu, "encrypt_key"); hasEncryptKey {
+				cfg.Channels.Feishu.EncryptKey.Set(encryptKey)
+			}
+			if verificationToken, hasVerificationToken := getSecretString(
+				feishu,
+				"verification_token",
+			); hasVerificationToken {
+				cfg.Channels.Feishu.VerificationToken.Set(verificationToken)
+			}
+		}
+		if discord, hasDiscord := asMapField(channels, "discord"); hasDiscord {
+			if token, hasToken := getSecretString(discord, "token"); hasToken {
+				cfg.Channels.Discord.Token.Set(token)
+			}
+		}
+		if weixin, hasWeixin := asMapField(channels, "weixin"); hasWeixin {
+			if token, hasToken := getSecretString(weixin, "token"); hasToken {
+				cfg.Channels.Weixin.SetToken(token)
+			}
+		}
+		if qq, hasQQ := asMapField(channels, "qq"); hasQQ {
+			if appSecret, hasAppSecret := getSecretString(qq, "app_secret"); hasAppSecret {
+				cfg.Channels.QQ.AppSecret.Set(appSecret)
+			}
+		}
+		if dingtalk, hasDingTalk := asMapField(channels, "dingtalk"); hasDingTalk {
+			if clientSecret, hasClientSecret := getSecretString(dingtalk, "client_secret"); hasClientSecret {
+				cfg.Channels.DingTalk.ClientSecret.Set(clientSecret)
+			}
+		}
+		if slack, hasSlack := asMapField(channels, "slack"); hasSlack {
+			if botToken, hasBotToken := getSecretString(slack, "bot_token"); hasBotToken {
+				cfg.Channels.Slack.BotToken.Set(botToken)
+			}
+			if appToken, hasAppToken := getSecretString(slack, "app_token"); hasAppToken {
+				cfg.Channels.Slack.AppToken.Set(appToken)
+			}
+		}
+		if matrix, hasMatrix := asMapField(channels, "matrix"); hasMatrix {
+			if accessToken, hasAccessToken := getSecretString(matrix, "access_token"); hasAccessToken {
+				cfg.Channels.Matrix.AccessToken.Set(accessToken)
+			}
+		}
+		if line, hasLine := asMapField(channels, "line"); hasLine {
+			if channelSecret, hasChannelSecret := getSecretString(line, "channel_secret"); hasChannelSecret {
+				cfg.Channels.LINE.ChannelSecret.Set(channelSecret)
+			}
+			if channelAccessToken, hasChannelAccessToken := getSecretString(
+				line,
+				"channel_access_token",
+			); hasChannelAccessToken {
+				cfg.Channels.LINE.ChannelAccessToken.Set(channelAccessToken)
+			}
+		}
+		if onebot, hasOneBot := asMapField(channels, "onebot"); hasOneBot {
+			if accessToken, hasAccessToken := getSecretString(onebot, "access_token"); hasAccessToken {
+				cfg.Channels.OneBot.AccessToken.Set(accessToken)
+			}
+		}
+		if wecom, hasWeCom := asMapField(channels, "wecom"); hasWeCom {
+			if secret, hasSecret := getSecretString(wecom, "secret"); hasSecret {
+				cfg.Channels.WeCom.SetSecret(secret)
+			}
+		}
+		if pico, hasPico := asMapField(channels, "pico"); hasPico {
+			if token, hasToken := getSecretString(pico, "token"); hasToken {
+				cfg.Channels.Pico.SetToken(token)
+			}
+		}
+		if irc, hasIRC := asMapField(channels, "irc"); hasIRC {
+			if password, hasPassword := getSecretString(irc, "password"); hasPassword {
+				cfg.Channels.IRC.Password.Set(password)
+			}
+			if nickservPassword, hasNickservPassword := getSecretString(irc, "nickserv_password"); hasNickservPassword {
+				cfg.Channels.IRC.NickServPassword.Set(nickservPassword)
+			}
+			if saslPassword, hasSASLPassword := getSecretString(irc, "sasl_password"); hasSASLPassword {
+				cfg.Channels.IRC.SASLPassword.Set(saslPassword)
+			}
+		}
+	}
+
+	tools, hasTools := asMapField(raw, "tools")
+	if !hasTools {
+		return
+	}
+	skills, hasSkills := asMapField(tools, "skills")
+	if !hasSkills {
+		return
+	}
+	if github, hasGithub := asMapField(skills, "github"); hasGithub {
+		if token, hasToken := getSecretString(github, "token"); hasToken {
+			cfg.Tools.Skills.Github.Token.Set(token)
+		}
+	}
+	registries, hasRegistries := asMapField(skills, "registries")
+	if !hasRegistries {
+		return
+	}
+	if clawHub, hasClawHub := asMapField(registries, "clawhub"); hasClawHub {
+		if authToken, hasAuthToken := getSecretString(clawHub, "auth_token"); hasAuthToken {
+			cfg.Tools.Skills.Registries.ClawHub.AuthToken.Set(authToken)
 		}
 	}
 }

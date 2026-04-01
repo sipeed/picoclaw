@@ -56,6 +56,8 @@
 
 ## 📢 Berita
 
+2026-03-31 📱 **Dukungan Android!** PicoClaw sekarang berjalan di Android! Unduh APK di [picoclaw.io](https://picoclaw.io/download)
+
 2026-03-25 🚀 **v0.2.4 Dirilis!** Perombakan arsitektur Agent (SubTurn, Hooks, Steering, EventBus), integrasi WeChat/WeCom, penguatan keamanan (.security.yml, penyaringan data sensitif), provider baru (AWS Bedrock, Azure, Xiaomi MiMo), dan 35 perbaikan bug. PicoClaw telah mencapai **26K Stars**!
 
 2026-03-17 🚀 **v0.2.3 Dirilis!** UI system tray (Windows & Linux), pelacakan status sub-agent (`spawn_status`), eksperimental Gateway hot-reload, gerbang keamanan Cron, dan 2 perbaikan keamanan. PicoClaw telah mencapai **25K Stars**!
@@ -318,9 +320,9 @@ Kemudian ikuti bagian Terminal Launcher di bawah untuk menyelesaikan konfigurasi
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
 
-**Opsi 2: Instal APK (segera hadir)**
+**Opsi 2: Instal APK**
 
-APK Android mandiri dengan WebUI bawaan sedang dalam pengembangan. Pantau terus!
+Unduh APK dari [picoclaw.io](https://picoclaw.io/download/) dan instal langsung. Tanpa Termux!
 
 <details>
 <summary><b>Terminal Launcher (untuk lingkungan dengan sumber daya terbatas)</b></summary>
@@ -457,6 +459,8 @@ Bicara dengan PicoClaw Anda melalui 17+ platform pesan:
 | **Pico Client** | Mudah (WebSocket URL) | WebSocket | Bawaan |
 
 > Semua channel berbasis webhook berbagi satu server HTTP Gateway (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). Feishu menggunakan mode WebSocket/SDK dan tidak menggunakan server HTTP bersama.
+
+> Verbositas log dikontrol oleh `gateway.log_level` (default: `warn`). Nilai yang didukung: `debug`, `info`, `warn`, `error`, `fatal`. Juga dapat diatur melalui `PICOCLAW_LOG_LEVEL`. Lihat [Konfigurasi](docs/configuration.md#gateway-log-level) untuk detail.
 
 Untuk instruksi pengaturan channel lengkap, lihat [Konfigurasi Aplikasi Chat](docs/chat-apps.md).
 

@@ -1,6 +1,7 @@
 import { IconTrash } from "@tabler/icons-react"
 import { useTranslation } from "react-i18next"
 
+import { LogLevelSelect } from "@/components/logs/log-level-select"
 import { LogsPanel } from "@/components/logs/logs-panel"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
@@ -17,15 +18,19 @@ export function LogsPage() {
       <PageHeader
         title={t("navigation.logs")}
         children={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={clearLogs}
-            disabled={logs.length === 0 || clearing}
-          >
-            <IconTrash className="size-4" />
-            {t("pages.logs.clear")}
-          </Button>
+          <>
+            <LogLevelSelect />
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearLogs}
+              disabled={logs.length === 0 || clearing}
+            >
+              <IconTrash className="size-4" />
+              {t("pages.logs.clear")}
+            </Button>
+          </>
         }
       />
 

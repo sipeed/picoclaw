@@ -56,6 +56,8 @@
 
 ## 📢 News
 
+2026-03-31 📱 **Android Support!** PicoClaw now runs on Android! Download the APK at [picoclaw.io](https://picoclaw.io/download)
+
 2026-03-25 🚀 **v0.2.4 Released!** Agent architecture overhaul (SubTurn, Hooks, Steering, EventBus), WeChat/WeCom integration, security hardening (.security.yml, sensitive data filtering), new providers (AWS Bedrock, Azure, Xiaomi MiMo), and 35 bug fixes. PicoClaw has reached **26K Stars**!
 
 2026-03-17 🚀 **v0.2.3 Released!** System tray UI (Windows & Linux), sub-agent status query (`spawn_status`), experimental Gateway hot-reload, Cron security gating, and 2 security fixes. PicoClaw has reached **25K Stars**!
@@ -318,9 +320,9 @@ Then follow the Terminal Launcher section below to complete configuration.
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
 
-**Option 2: APK Install (coming soon)**
+**Option 2: APK Install**
 
-A standalone Android APK with built-in WebUI is in development. Stay tuned!
+Download the APK from [picoclaw.io](https://picoclaw.io/download/) and install directly. No Termux required!
 
 <details>
 <summary><b>Terminal Launcher (for resource-constrained environments)</b></summary>
@@ -464,6 +466,8 @@ Talk to your PicoClaw through 17+ messaging platforms:
 
 > All webhook-based channels share a single Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). Feishu uses WebSocket/SDK mode and does not use the shared HTTP server.
 
+> Log verbosity is controlled by `gateway.log_level` (default: `warn`). Supported values: `debug`, `info`, `warn`, `error`, `fatal`. Can also be set via `PICOCLAW_LOG_LEVEL`. See [Configuration](docs/configuration.md#gateway-log-level) for details.
+
 For detailed channel setup instructions, see [Chat Apps Configuration](docs/chat-apps.md).
 
 ## 🔧 Tools
@@ -574,6 +578,8 @@ PicoClaw supports scheduled reminders and recurring tasks through the `cron` too
 * **Recurring tasks**: "Remind me every 2 hours" -> triggers every 2 hours
 * **Cron expressions**: "Remind me at 9am daily" -> uses cron expression
 
+See [docs/cron.md](docs/cron.md) for current schedule types, execution modes, command-job gates, and persistence details.
+
 ## 📚 Documentation
 
 For detailed guides beyond this README:
@@ -583,6 +589,7 @@ For detailed guides beyond this README:
 | [Docker & Quick Start](docs/docker.md) | Docker Compose setup, Launcher/Agent modes |
 | [Chat Apps](docs/chat-apps.md) | All 17+ channel setup guides |
 | [Configuration](docs/configuration.md) | Environment variables, workspace layout, security sandbox |
+| [Scheduled Tasks and Cron Jobs](docs/cron.md) | Cron schedule types, deliver modes, command gates, job storage |
 | [Providers & Models](docs/providers.md) | 30+ LLM providers, model routing, model_list configuration |
 | [Spawn & Async Tasks](docs/spawn-tasks.md) | Quick tasks, long tasks with spawn, async sub-agent orchestration |
 | [Hooks](docs/hooks/README.md) | Event-driven hook system: observers, interceptors, approval hooks |

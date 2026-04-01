@@ -56,6 +56,8 @@
 
 ## 📢 Novidades
 
+2026-03-31 📱 **Suporte Android!** PicoClaw agora roda no Android! Baixe o APK em [picoclaw.io](https://picoclaw.io/download)
+
 2026-03-25 🚀 **v0.2.4 Lançada!** Reformulação da arquitetura Agent (SubTurn, Hooks, Steering, EventBus), integração WeChat/WeCom, fortalecimento de segurança (.security.yml, filtragem de dados sensíveis), novos providers (AWS Bedrock, Azure, Xiaomi MiMo) e 35 correções de bugs. O PicoClaw atingiu **26K Stars**!
 
 2026-03-17 🚀 **v0.2.3 Lançada!** UI na bandeja do sistema (Windows e Linux), consulta de status de sub-agent (`spawn_status`), hot-reload experimental do Gateway, controle de segurança do Cron e 2 correções de segurança. O PicoClaw atingiu **25K Stars**!
@@ -318,9 +320,9 @@ Em seguida, siga a seção Terminal Launcher abaixo para concluir a configuraç�
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
 
-**Opção 2: Instalação via APK (em breve)**
+**Opção 2: Instalação via APK**
 
-Um APK Android independente com WebUI integrado está em desenvolvimento. Fique ligado!
+Baixe o APK de [picoclaw.io](https://picoclaw.io/download/) e instale diretamente. Sem necessidade de Termux!
 
 <details>
 <summary><b>Terminal Launcher (para ambientes com recursos limitados)</b></summary>
@@ -457,6 +459,8 @@ Converse com seu PicoClaw por meio de mais de 17 plataformas de mensagens:
 | **Pico Client** | Fácil (WebSocket URL) | WebSocket | Integrado |
 
 > Todos os channels baseados em webhook compartilham um único servidor HTTP do Gateway (`gateway.host`:`gateway.port`, padrão `127.0.0.1:18790`). O Feishu usa modo WebSocket/SDK e não utiliza o servidor HTTP compartilhado.
+
+> A verbosidade dos logs é controlada por `gateway.log_level` (padrão: `warn`). Valores suportados: `debug`, `info`, `warn`, `error`, `fatal`. Também pode ser definido via `PICOCLAW_LOG_LEVEL`. Veja [Configuração](docs/pt-br/configuration.md#nível-de-log-do-gateway) para detalhes.
 
 Para instruções detalhadas de configuração de channels, veja [Configuração de Apps de Chat](docs/pt-br/chat-apps.md).
 

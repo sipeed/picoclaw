@@ -27,7 +27,6 @@ type CronPayload struct {
 	Kind    string `json:"kind"`
 	Message string `json:"message"`
 	Command string `json:"command,omitempty"`
-	Deliver bool   `json:"deliver"`
 	Channel string `json:"channel,omitempty"`
 	To      string `json:"to,omitempty"`
 }
@@ -409,7 +408,6 @@ func (cs *CronService) AddJob(
 	name string,
 	schedule CronSchedule,
 	message string,
-	deliver bool,
 	channel, to string,
 ) (*CronJob, error) {
 	cs.mu.Lock()
@@ -428,7 +426,6 @@ func (cs *CronService) AddJob(
 		Payload: CronPayload{
 			Kind:    "agent_turn",
 			Message: message,
-			Deliver: deliver,
 			Channel: channel,
 			To:      to,
 		},

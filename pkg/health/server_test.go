@@ -15,6 +15,7 @@ func newTestServer() *Server {
 		ready:     false,
 		checks:    make(map[string]Check),
 		startTime: time.Now(),
+		authToken: "test",
 	}
 	return s
 }
@@ -36,9 +37,6 @@ func TestHealthHandler_ReturnsOK(t *testing.T) {
 	}
 	if resp.Status != "ok" {
 		t.Errorf("status = %q, want %q", resp.Status, "ok")
-	}
-	if resp.Pid == 0 {
-		t.Error("pid should not be 0")
 	}
 	if resp.Uptime == "" {
 		t.Error("uptime should not be empty")
@@ -168,6 +166,7 @@ func TestReloadHandler_NoReloadFunc(t *testing.T) {
 	s := newTestServer()
 
 	req := httptest.NewRequest(http.MethodPost, "/reload", nil)
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 
 	s.reloadHandler(w, req)
@@ -186,6 +185,7 @@ func TestReloadHandler_Success(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/reload", nil)
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 
 	s.reloadHandler(w, req)
@@ -205,6 +205,7 @@ func TestReloadHandler_Error(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/reload", nil)
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 
 	s.reloadHandler(w, req)
@@ -292,7 +293,7 @@ func TestRegisterOnMux(t *testing.T) {
 }
 
 func TestNewServer(t *testing.T) {
-	s := NewServer("127.0.0.1", 0)
+	s := NewServer("127.0.0.1", 0, "")
 	if s == nil {
 		t.Fatal("NewServer returned nil")
 	}
@@ -305,7 +306,7 @@ func TestNewServer(t *testing.T) {
 }
 
 func TestStartContext_Cancellation(t *testing.T) {
-	s := NewServer("127.0.0.1", 0)
+	s := NewServer("127.0.0.1", 0, "")
 
 	ctx, cancel := context.WithCancel(context.Background())
 

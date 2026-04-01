@@ -56,6 +56,8 @@
 
 ## 📢 Novità
 
+2026-03-31 📱 **Supporto Android!** PicoClaw ora funziona su Android! Scarica l'APK su [picoclaw.io](https://picoclaw.io/download)
+
 2026-03-25 🚀 **v0.2.4 rilasciata!** Revisione dell'architettura Agent (SubTurn, Hooks, Steering, EventBus), integrazione WeChat/WeCom, rafforzamento della sicurezza (.security.yml, filtraggio dati sensibili), nuovi provider (AWS Bedrock, Azure, Xiaomi MiMo) e 35 correzioni di bug. PicoClaw raggiunge **26K Stars**!
 
 2026-03-17 🚀 **v0.2.3 rilasciata!** Interfaccia system tray (Windows & Linux), query sullo stato dei sub-agent (`spawn_status`), hot-reload sperimentale del Gateway, gate di sicurezza per Cron e 2 correzioni di sicurezza. PicoClaw raggiunge **25K Stars**!
@@ -318,9 +320,9 @@ Poi segui la sezione Terminal Launcher qui sotto per completare la configurazion
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
 
-**Opzione 2: APK Install (prossimamente)**
+**Opzione 2: Installazione APK**
 
-Un APK Android standalone con WebUI integrato è in sviluppo. Resta sintonizzato!
+Scarica l'APK da [picoclaw.io](https://picoclaw.io/download/) e installa direttamente. Senza Termux!
 
 <details>
 <summary><b>Terminal Launcher (per ambienti con risorse limitate)</b></summary>
@@ -457,6 +459,8 @@ Parla con il tuo PicoClaw attraverso 17+ piattaforme di messaggistica:
 | **Pico Client** | Facile (WebSocket URL) | WebSocket | Integrato |
 
 > Tutti i channel basati su webhook condividono un singolo server HTTP Gateway (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). Feishu usa la modalità WebSocket/SDK e non usa il server HTTP condiviso.
+
+> La verbosità dei log è controllata da `gateway.log_level` (default: `warn`). Valori supportati: `debug`, `info`, `warn`, `error`, `fatal`. Può essere impostato anche tramite `PICOCLAW_LOG_LEVEL`. Vedi [Configurazione](docs/configuration.md#gateway-log-level) per i dettagli.
 
 Per istruzioni dettagliate sulla configurazione dei channel, vedi [Configurazione App di Chat](docs/chat-apps.md).
 

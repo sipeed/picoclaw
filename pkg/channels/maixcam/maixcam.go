@@ -240,15 +240,15 @@ func (c *MaixCamChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	// Check ctx before entering write path
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
 
@@ -257,7 +257,7 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 
 	if len(c.clients) == 0 {
 		logger.WarnC("maixcam", "No MaixCam devices connected")
-		return fmt.Errorf("no connected MaixCam devices")
+		return nil, fmt.Errorf("no connected MaixCam devices")
 	}
 
 	response := map[string]any{
@@ -269,7 +269,7 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 
 	data, err := json.Marshal(response)
 	if err != nil {
-		return fmt.Errorf("failed to marshal response: %w", err)
+		return nil, fmt.Errorf("failed to marshal response: %w", err)
 	}
 
 	var sendErr error
@@ -285,5 +285,5 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 		_ = conn.SetWriteDeadline(time.Time{})
 	}
 
-	return sendErr
+	return nil, sendErr
 }

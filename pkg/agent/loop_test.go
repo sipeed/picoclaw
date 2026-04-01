@@ -25,23 +25,25 @@ import (
 
 type fakeChannel struct{ id string }
 
-func (f *fakeChannel) Name() string                                            { return "fake" }
-func (f *fakeChannel) Start(ctx context.Context) error                         { return nil }
-func (f *fakeChannel) Stop(ctx context.Context) error                          { return nil }
-func (f *fakeChannel) Send(ctx context.Context, msg bus.OutboundMessage) error { return nil }
-func (f *fakeChannel) IsRunning() bool                                         { return true }
-func (f *fakeChannel) IsAllowed(string) bool                                   { return true }
-func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool              { return true }
-func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
+func (f *fakeChannel) Name() string                    { return "fake" }
+func (f *fakeChannel) Start(ctx context.Context) error { return nil }
+func (f *fakeChannel) Stop(ctx context.Context) error  { return nil }
+func (f *fakeChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
+	return nil, nil
+}
+func (f *fakeChannel) IsRunning() bool                            { return true }
+func (f *fakeChannel) IsAllowed(string) bool                      { return true }
+func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool { return true }
+func (f *fakeChannel) ReasoningChannelID() string                 { return f.id }
 
 type fakeMediaChannel struct {
 	fakeChannel
 	sentMedia []bus.OutboundMediaMessage
 }
 
-func (f *fakeMediaChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (f *fakeMediaChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	f.sentMedia = append(f.sentMedia, msg)
-	return nil
+	return nil, nil
 }
 
 func newStartedTestChannelManager(
@@ -530,6 +532,20 @@ func TestToolContext_Updates(t *testing.T) {
 	// Empty context returns empty strings
 	if got := tools.ToolChannel(context.Background()); got != "" {
 		t.Errorf("expected empty channel from bare context, got %q", got)
+	}
+
+	inboundCtx := tools.WithToolInboundContext(
+		context.Background(),
+		"telegram",
+		"chat-42",
+		"msg-123",
+		"msg-100",
+	)
+	if got := tools.ToolMessageID(inboundCtx); got != "msg-123" {
+		t.Errorf("expected messageID 'msg-123', got %q", got)
+	}
+	if got := tools.ToolReplyToMessageID(inboundCtx); got != "msg-100" {
+		t.Errorf("expected replyToMessageID 'msg-100', got %q", got)
 	}
 }
 

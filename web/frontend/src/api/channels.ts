@@ -1,5 +1,7 @@
 // API client for channels navigation and channel-specific config flows.
 
+import { launcherFetch } from "@/api/http"
+
 export type ChannelConfig = Record<string, unknown>
 export type AppConfig = Record<string, unknown>
 
@@ -22,7 +24,7 @@ interface ConfigActionResponse {
 const BASE_URL = ""
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, options)
+  const res = await launcherFetch(`${BASE_URL}${path}`, options)
   if (!res.ok) {
     let message = `API error: ${res.status} ${res.statusText}`
     try {

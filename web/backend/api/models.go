@@ -40,9 +40,11 @@ type modelResponse struct {
 	ThinkingLevel  string         `json:"thinking_level,omitempty"`
 	ExtraBody      map[string]any `json:"extra_body,omitempty"`
 	// Meta
-	Configured bool `json:"configured"`
-	IsDefault  bool `json:"is_default"`
-	IsVirtual  bool `json:"is_virtual"`
+	Enabled   bool   `json:"enabled"`
+	Available bool   `json:"available"`
+	Status    string `json:"status"`
+	IsDefault bool   `json:"is_default"`
+	IsVirtual bool   `json:"is_virtual"`
 }
 
 // handleListModels returns all model_list entries with masked API keys.
@@ -56,14 +58,14 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defaultModel := cfg.Agents.Defaults.GetModelName()
-	configured := make([]bool, len(cfg.ModelList))
+	modelStatuses := make([]modelConfigurationSummary, len(cfg.ModelList))
 
 	var wg sync.WaitGroup
 	wg.Add(len(cfg.ModelList))
 	for i, m := range cfg.ModelList {
 		go func(i int, m *config.ModelConfig) {
 			defer wg.Done()
-			configured[i] = isModelConfigured(m)
+			modelStatuses[i] = modelConfigurationStatus(m)
 		}(i, m)
 	}
 	wg.Wait()
@@ -85,7 +87,9 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,
 			ExtraBody:      m.ExtraBody,
-			Configured:     configured[i],
+			Enabled:        m.Enabled,
+			Available:      modelStatuses[i].Available,
+			Status:         modelStatuses[i].Status,
 			IsDefault:      m.ModelName == defaultModel,
 			IsVirtual:      m.IsVirtual(),
 		})
