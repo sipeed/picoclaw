@@ -3046,3 +3046,115 @@ func TestProcessMessage_ContextOverflow_AnthropicStyle(t *testing.T) {
 		t.Fatalf("expected 2 calls for retry, got %d", provider.calls)
 	}
 }
+
+// emptyProvider returns an empty LLM response (no text, no tool calls).
+type emptyProvider struct{}
+
+func (e *emptyProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	return &providers.LLMResponse{Content: "", ToolCalls: []providers.ToolCall{}}, nil
+}
+
+func (e *emptyProvider) GetDefaultModel() string { return "mock-model" }
+
+// TestSilentProcessing_EmptyResponseSuppressed verifies that when
+// silent_processing is enabled, an empty LLM response does not produce the
+// default error fallback — the agent returns "" so the channel sends nothing.
+func TestSilentProcessing_EmptyResponseSuppressed(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				SilentProcessing:  true,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &emptyProvider{})
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "group-1",
+		Content:  "hello from the group",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "" {
+		t.Fatalf("processMessage() response = %q, want empty string in silent mode", response)
+	}
+}
+
+// TestSilentProcessing_TextResponseStillSent verifies that when
+// silent_processing is enabled, an LLM response that contains text is still
+// returned normally — silent mode only suppresses the empty-response fallback.
+func TestSilentProcessing_TextResponseStillSent(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				SilentProcessing:  true,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &mockProvider{})
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "group-1",
+		Content:  "hey @samanda what time is it?",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "Mock response")
+	}
+}
+
+// TestDefaultMode_EmptyResponseGetsFallback verifies that without
+// silent_processing the default error message is returned for empty LLM output.
+func TestDefaultMode_EmptyResponseGetsFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &emptyProvider{})
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "hello",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != defaultResponse {
+		t.Fatalf("processMessage() response = %q, want default fallback %q", response, defaultResponse)
+	}
+}

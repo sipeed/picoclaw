@@ -375,6 +375,57 @@ The `restrict_to_workspace` setting applies consistently across all execution pa
 
 All paths share the same workspace restriction — there's no way to bypass the security boundary through subagents or scheduled tasks.
 
+### Agent Response Behavior
+
+#### `silent_processing`
+
+When `silent_processing` is `true`, the agent runs fully on every inbound message — tool calls execute, session history is written, memory files are updated — but if the LLM produces no text output, nothing is sent to the channel. The automatic empty-response fallback message is suppressed.
+
+If the LLM does produce text, it is sent as normal. `silent_processing` only suppresses the fallback, not intentional responses.
+
+| Option | Default | Description |
+|---|---|---|
+| `silent_processing` | `false` | Suppress empty-response fallback; send nothing when LLM produces no text |
+
+**Config:**
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "silent_processing": true
+    }
+  }
+}
+```
+
+**Environment variable:** `PICOCLAW_AGENTS_DEFAULTS_SILENT_PROCESSING=true`
+
+**Use case — group observer agent:**
+
+An agent added to a group chat that silently reads every message, uses `write_file` to maintain a memory log, and only responds when explicitly addressed. Do not set `group_trigger.mention_only` — that would drop non-mention messages before the agent sees them, defeating the purpose. Instead, instruct the LLM via `AGENT.md` to only produce text when addressed:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "silent_processing": true
+    }
+  },
+  "channels": {
+    "telegram": {
+      "allow_from": ["YOUR_USER_ID", "-YOUR_GROUP_ID"]
+    }
+  }
+}
+```
+
+With this setup the agent processes every group message (for memory/analysis). When the LLM produces no text, `silent_processing` suppresses the fallback and nothing is sent. When the LLM does produce text (e.g. when @mentioned), it is sent as normal.
+
+> **Note:** In silent mode, the tool-iteration-limit message is also suppressed. Background observer agents should not surface internal diagnostics to the channel.
+
+---
+
 ### Heartbeat (Periodic Tasks)
 
 PicoClaw can perform periodic tasks automatically. Create a `HEARTBEAT.md` file in your workspace:

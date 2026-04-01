@@ -1334,6 +1334,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"route_channel": route.Channel,
 		})
 
+	resolvedDefaultResponse := defaultResponse
+	if agent.SilentProcessing {
+		resolvedDefaultResponse = ""
+	}
 	opts := processOptions{
 		SessionKey:        sessionKey,
 		Channel:           msg.Channel,
@@ -1344,7 +1348,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		SenderDisplayName: msg.Sender.DisplayName,
 		UserMessage:       msg.Content,
 		Media:             msg.Media,
-		DefaultResponse:   defaultResponse,
+		DefaultResponse:   resolvedDefaultResponse,
 		EnableSummary:     true,
 		SendResponse:      false,
 	}
@@ -2704,7 +2708,11 @@ turnLoop:
 		return al.abortTurn(ts)
 	}
 
-	if finalContent == "" {
+	if finalContent == "" && ts.opts.DefaultResponse != "" {
+		// In silent_processing mode DefaultResponse is "", so both the empty-response
+		// fallback and the tool-iteration-limit message are suppressed. This is
+		// intentional: a background observer agent must not surface internal
+		// diagnostics to the channel.
 		if ts.currentIteration() >= ts.agent.MaxIterations && ts.agent.MaxIterations > 0 {
 			finalContent = toolLimitResponse
 		} else {
@@ -2715,9 +2723,11 @@ turnLoop:
 	ts.setPhase(TurnPhaseFinalizing)
 	ts.setFinalContent(finalContent)
 	if !ts.opts.NoHistory {
-		finalMsg := providers.Message{Role: "assistant", Content: finalContent}
-		ts.agent.Sessions.AddMessage(ts.sessionKey, finalMsg.Role, finalMsg.Content)
-		ts.recordPersistedMessage(finalMsg)
+		if finalContent != "" {
+			finalMsg := providers.Message{Role: "assistant", Content: finalContent}
+			ts.agent.Sessions.AddMessage(ts.sessionKey, finalMsg.Role, finalMsg.Content)
+			ts.recordPersistedMessage(finalMsg)
+		}
 		if err := ts.agent.Sessions.Save(ts.sessionKey); err != nil {
 			turnStatus = TurnEndStatusError
 			al.emitEvent(
