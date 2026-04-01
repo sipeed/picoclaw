@@ -1082,3 +1082,8 @@ func processEmoji(match string) string {
 	}
 	return ""
 }
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *QQChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
+}
