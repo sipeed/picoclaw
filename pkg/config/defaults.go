@@ -434,6 +434,9 @@ func DefaultConfig() *Config {
 			SendFile: ToolConfig{
 				Enabled: true,
 			},
+			SendTTS: ToolConfig{
+				Enabled: false,
+			},
 			MCP: MCPConfig{
 				ToolConfig: ToolConfig{
 					Enabled: false,

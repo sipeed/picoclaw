@@ -56,6 +56,8 @@
 
 ## 📢 News
 
+2026-03-31 📱 **Android Support!** PicoClaw now runs on Android! Download the APK at [picoclaw.io](https://picoclaw.io/download)
+
 2026-03-25 🚀 **v0.2.4 Released!** Agent architecture overhaul (SubTurn, Hooks, Steering, EventBus), WeChat/WeCom integration, security hardening (.security.yml, sensitive data filtering), new providers (AWS Bedrock, Azure, Xiaomi MiMo), and 35 bug fixes. PicoClaw has reached **26K Stars**!
 
 2026-03-17 🚀 **v0.2.3 Released!** System tray UI (Windows & Linux), sub-agent status query (`spawn_status`), experimental Gateway hot-reload, Cron security gating, and 2 security fixes. PicoClaw has reached **25K Stars**!
@@ -318,9 +320,9 @@ Then follow the Terminal Launcher section below to complete configuration.
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
 
-**Option 2: APK Install (coming soon)**
+**Option 2: APK Install**
 
-A standalone Android APK with built-in WebUI is in development. Stay tuned!
+Download the APK from [picoclaw.io](https://picoclaw.io/download/) and install directly. No Termux required!
 
 <details>
 <summary><b>Terminal Launcher (for resource-constrained environments)</b></summary>
