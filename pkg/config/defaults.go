@@ -189,6 +189,7 @@ func DefaultConfig() *Config {
 			{
 				ModelName: "venice-uncensored",
 				Model:     "venice/venice-uncensored",
+				APIBase:   "https://api.venice.ai/v1",
 			},
 
 			// Google Gemini - https://ai.google.dev/
@@ -339,6 +340,13 @@ func DefaultConfig() *Config {
 				ModelName: "local-model",
 				Model:     "vllm/custom-model",
 				APIBase:   "http://localhost:8000/v1",
+			},
+
+			// LM Studio (local) - http://localhost:1234
+			{
+				ModelName: "lmstudio-local",
+				Model:     "lmstudio/openai/gpt-oss-20b",
+				APIBase:   "http://localhost:1234/v1",
 			},
 
 			// Azure OpenAI - https://portal.azure.com
