@@ -24,6 +24,7 @@ type protocolMeta struct {
 
 var protocolMetaByName = map[string]protocolMeta{
 	"openai":                   {defaultAPIBase: "https://api.openai.com/v1"},
+	"venice":                   {defaultAPIBase: "https://api.venice.ai/api/v1"},
 	"openrouter":               {defaultAPIBase: "https://openrouter.ai/api/v1"},
 	"litellm":                  {defaultAPIBase: "http://localhost:4000/v1"},
 	"lmstudio":                 {defaultAPIBase: "http://localhost:1234/v1", emptyAPIKeyAllowed: true},
@@ -209,7 +210,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return provider, modelID, nil
 
-	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "nvidia",
+	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "nvidia", "venice",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",

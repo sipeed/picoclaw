@@ -185,6 +185,12 @@ func DefaultConfig() *Config {
 				APIBase:   "https://api.deepseek.com/v1",
 			},
 
+			// Venice AI - https://venice.ai
+			{
+				ModelName: "venice-uncensored",
+				Model:     "venice/venice-uncensored",
+			},
+
 			// Google Gemini - https://ai.google.dev/
 			{
 				ModelName: "gemini-2.0-flash",

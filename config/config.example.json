@@ -49,6 +49,11 @@
       "api_key": "sk-your-deepseek-key"
     },
     {
+      "model_name": "venice-uncensored",
+      "model": "venice/venice-uncensored",
+      "api_key": "your-venice-api-key"
+    },
+    {
       "model_name": "lmstudio-local",
       "model": "lmstudio/openai/gpt-oss-20b"
     },

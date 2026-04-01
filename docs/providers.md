@@ -16,6 +16,7 @@
 | `openrouter` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                       |
 | `anthropic`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com)       |
 | `openai`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)           |
+| `venice`     | LLM (Venice AI direct)                  | [venice.ai](https://venice.ai)                               |
 | `deepseek`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)       |
 | `qwen`       | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq`       | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                 |
@@ -46,6 +47,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | Vendor              | `model` Prefix    | Default API Base                                    | Protocol  | API Key                                                          |
 | ------------------- | ----------------- |-----------------------------------------------------| --------- | ---------------------------------------------------------------- |
 | **OpenAI**          | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
+| **Venice AI**       | `venice/`         | `https://api.venice.ai/api/v1`                      | OpenAI    | [Get Key](https://venice.ai)                                     |
 | **Anthropic**       | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**   | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
 | **Z.AI Coding Plan** | `openai/`         | `https://api.z.ai/api/coding/paas/v4`              | OpenAI    | [Get Key](https://z.ai/manage-apikey/apikey-list) |
