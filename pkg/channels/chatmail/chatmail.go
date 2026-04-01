@@ -54,7 +54,7 @@ func (c *ChatmailChannel) Start(ctx context.Context) error {
 		accountPath = filepath.Join(homeDir, ".accounts", "chatmail")
 	}
 
-	if err := os.MkdirAll(accountPath, 0700); err != nil {
+	if err := os.MkdirAll(accountPath, 0o700); err != nil {
 		return fmt.Errorf("failed to create account directory: %w", err)
 	}
 
@@ -96,9 +96,9 @@ func (c *ChatmailChannel) Start(ctx context.Context) error {
 
 	if !isConfigured {
 		botFlag := "1"
-		if err := c.rpc.SetConfig(accId, "bot", &botFlag); err != nil {
+		if cfgErr := c.rpc.SetConfig(accId, "bot", &botFlag); cfgErr != nil {
 			transport.Close()
-			return fmt.Errorf("failed to set bot flag: %w", err)
+			return fmt.Errorf("failed to set bot flag: %w", cfgErr)
 		}
 		logger.InfoC("chatmail", "Account configured as bot")
 
@@ -107,9 +107,9 @@ func (c *ChatmailChannel) Start(ctx context.Context) error {
 			inviteQR = "dcaccount:https://nine.testrun.org/new"
 		}
 
-		if err := c.rpc.AddTransportFromQr(accId, inviteQR); err != nil {
+		if qrErr := c.rpc.AddTransportFromQr(accId, inviteQR); qrErr != nil {
 			transport.Close()
-			return fmt.Errorf("failed to add transport from QR: %w", err)
+			return fmt.Errorf("failed to add transport from QR: %w", qrErr)
 		}
 		logger.InfoCF("chatmail", "Account configured from invite", map[string]any{"qr": inviteQR})
 	}
@@ -232,13 +232,13 @@ func (c *ChatmailChannel) ReactToMessage(ctx context.Context, chatID, messageID 
 
 	msgId, err := c.parseMsgID(messageID)
 	if err != nil {
-		return func() {}, nil
+		return func() {}, err
 	}
 
 	reactions := []string{"\U0001F440"}
-	if _, err := c.rpc.SendReaction(c.accId, msgId, reactions); err != nil {
-		logger.DebugCF("chatmail", "Failed to add reaction", map[string]any{"error": err.Error()})
-		return func() {}, nil
+	if _, reactErr := c.rpc.SendReaction(c.accId, msgId, reactions); reactErr != nil {
+		logger.DebugCF("chatmail", "Failed to add reaction", map[string]any{"error": reactErr.Error()})
+		return func() {}, reactErr
 	}
 
 	// Keep the reaction permanently - return no-op undo function

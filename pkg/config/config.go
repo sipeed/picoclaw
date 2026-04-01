@@ -630,12 +630,12 @@ type IRCConfig struct {
 }
 
 type ChatmailConfig struct {
-	Enabled            bool                `json:"enabled"              yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_ENABLED"`
-	AccountPath        string              `json:"account_path"         yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_ACCOUNT_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"           yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled"                 yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_ENABLED"`
+	AccountPath        string              `json:"account_path"            yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_ACCOUNT_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty" yaml:"-"`
-	ReasoningChannelID string              `json:"reasoning_channel_id" yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_REASONING_CHANNEL_ID"`
-	InviteQR           string              `json:"invite_qr"            yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_INVITE_QR"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_REASONING_CHANNEL_ID"`
+	InviteQR           string              `json:"invite_qr"               yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_INVITE_QR"`
 }
 
 type HeartbeatConfig struct {
