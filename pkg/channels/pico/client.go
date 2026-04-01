@@ -81,8 +81,8 @@ func (c *PicoClientChannel) Stop(ctx context.Context) error {
 
 func (c *PicoClientChannel) dial() error {
 	header := http.Header{}
-	if c.config.Token != "" {
-		header.Set("Authorization", "Bearer "+c.config.Token)
+	if c.config.Token.String() != "" {
+		header.Set("Authorization", "Bearer "+c.config.Token.String())
 	}
 
 	ws, resp, err := websocket.DefaultDialer.DialContext(c.ctx, c.config.URL, header)
@@ -273,22 +273,22 @@ func (c *PicoClientChannel) handleServerMessage(pc *picoConn, msg PicoMessage) {
 }
 
 // Send sends a message to the remote server.
-func (c *PicoClientChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *PicoClientChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 	c.mu.Lock()
 	pc := c.conn
 	c.mu.Unlock()
 	if pc == nil || pc.closed.Load() {
-		return channels.ErrSendFailed
+		return nil, channels.ErrSendFailed
 	}
 
 	outMsg := newMessage(TypeMessageSend, map[string]any{
 		"content": msg.Content,
 	})
 	outMsg.SessionID = strings.TrimPrefix(msg.ChatID, "pico_client:")
-	return pc.writeJSON(outMsg)
+	return nil, pc.writeJSON(outMsg)
 }
 
 // StartTyping implements channels.TypingCapable.

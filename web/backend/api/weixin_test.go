@@ -44,7 +44,7 @@ func TestSaveWeixinBindingReturnsSuccessWhenRestartFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if got := savedCfg.Channels.Weixin.Token(); got != "bot-token" {
+	if got := savedCfg.Channels.Weixin.Token.String(); got != "bot-token" {
 		t.Fatalf("Weixin.Token() = %q, want %q", got, "bot-token")
 	}
 	if got := savedCfg.Channels.Weixin.AccountID; got != "bot-account" {

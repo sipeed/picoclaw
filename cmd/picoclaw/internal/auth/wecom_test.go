@@ -121,7 +121,7 @@ func TestApplyWeComAuthResult(t *testing.T) {
 
 	assert.True(t, cfg.Channels.WeCom.Enabled)
 	assert.Equal(t, "bot-1", cfg.Channels.WeCom.BotID)
-	assert.Equal(t, "secret-1", cfg.Channels.WeCom.Secret())
+	assert.Equal(t, "secret-1", cfg.Channels.WeCom.Secret.String())
 	assert.Equal(t, wecomDefaultWebSocketURL, cfg.Channels.WeCom.WebSocketURL)
 }
 
@@ -151,7 +151,7 @@ func TestAuthWeComCmdWithScanner(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, cfg.Channels.WeCom.Enabled)
 	assert.Equal(t, "bot-1", cfg.Channels.WeCom.BotID)
-	assert.Equal(t, "secret-1", cfg.Channels.WeCom.Secret())
+	assert.Equal(t, "secret-1", cfg.Channels.WeCom.Secret.String())
 	assert.Equal(t, wecomDefaultWebSocketURL, cfg.Channels.WeCom.WebSocketURL)
 	assert.Contains(t, output.String(), "WeCom connected.")
 }

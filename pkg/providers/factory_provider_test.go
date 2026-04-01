@@ -121,6 +121,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"vllm", "vllm"},
 		{"deepseek", "deepseek"},
 		{"ollama", "ollama"},
+		{"lmstudio", "lmstudio"},
 		{"longcat", "longcat"},
 		{"modelscope", "modelscope"},
 		{"mimo", "mimo"},
@@ -153,6 +154,12 @@ func TestGetDefaultAPIBase_LiteLLM(t *testing.T) {
 	}
 }
 
+func TestGetDefaultAPIBase_LMStudio(t *testing.T) {
+	if got := getDefaultAPIBase("lmstudio"); got != "http://localhost:1234/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "lmstudio", got, "http://localhost:1234/v1")
+	}
+}
+
 func TestCreateProviderFromConfig_LiteLLM(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-litellm",
@@ -170,6 +177,85 @@ func TestCreateProviderFromConfig_LiteLLM(t *testing.T) {
 	}
 	if modelID != "my-proxy-alias" {
 		t.Errorf("modelID = %q, want %q", modelID, "my-proxy-alias")
+	}
+}
+
+func TestCreateProviderFromConfig_LocalProviders(t *testing.T) {
+	tests := []struct {
+		name        string
+		modelName   string
+		model       string
+		apiKey      string
+		wantModelID string
+	}{
+		{
+			name:        "LMStudio with API key",
+			modelName:   "test-lmstudio",
+			model:       "lmstudio/openai/gpt-oss-20b",
+			apiKey:      "test-key",
+			wantModelID: "openai/gpt-oss-20b",
+		},
+		{
+			name:        "LMStudio without API key",
+			modelName:   "test-lmstudio",
+			model:       "lmstudio/openai/gpt-oss-20b",
+			apiKey:      "",
+			wantModelID: "openai/gpt-oss-20b",
+		},
+		{
+			name:        "Ollama with API key",
+			modelName:   "test-ollama",
+			model:       "ollama/llama3.1:8b",
+			apiKey:      "test-key",
+			wantModelID: "llama3.1:8b",
+		},
+		{
+			name:        "Ollama without API key",
+			modelName:   "test-ollama",
+			model:       "ollama/llama3.1:8b",
+			apiKey:      "",
+			wantModelID: "llama3.1:8b",
+		},
+		{
+			name:        "VLLM with API key",
+			modelName:   "test-vllm",
+			model:       "vllm/Qwen/Qwen3-8B",
+			apiKey:      "test-key",
+			wantModelID: "Qwen/Qwen3-8B",
+		},
+		{
+			name:        "VLLM without API key",
+			modelName:   "test-vllm",
+			model:       "vllm/Qwen/Qwen3-8B",
+			apiKey:      "",
+			wantModelID: "Qwen/Qwen3-8B",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.ModelConfig{
+				ModelName: tt.modelName,
+				Model:     tt.model,
+			}
+			if tt.apiKey != "" {
+				cfg.SetAPIKey(tt.apiKey)
+			}
+
+			provider, modelID, err := CreateProviderFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("CreateProviderFromConfig() error = %v", err)
+			}
+			if provider == nil {
+				t.Fatal("CreateProviderFromConfig() returned nil provider")
+			}
+			if modelID != tt.wantModelID {
+				t.Errorf("modelID = %q, want %q", modelID, tt.wantModelID)
+			}
+			if _, ok := provider.(*HTTPProvider); !ok {
+				t.Fatalf("expected *HTTPProvider, got %T", provider)
+			}
+		})
 	}
 }
 

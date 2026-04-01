@@ -46,7 +46,7 @@ func TestSend_NotRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = ch.Send(context.Background(), bus.OutboundMessage{Content: "hi"})
+	_, err = ch.Send(context.Background(), bus.OutboundMessage{Content: "hi"})
 	if !errors.Is(err, channels.ErrNotRunning) {
 		t.Fatalf("expected ErrNotRunning, got %v", err)
 	}
@@ -106,7 +106,7 @@ func TestClientChannel_ConnectAndSend(t *testing.T) {
 	mb := bus.NewMessageBus()
 	ch, err := NewPicoClientChannel(config.PicoClientConfig{
 		URL:          wsURL(srv.URL),
-		Token:        "test-token",
+		Token:        *config.NewSecureString("test-token"),
 		SessionID:    "sess-1",
 		PingInterval: 60,
 		ReadTimeout:  10,
@@ -124,7 +124,7 @@ func TestClientChannel_ConnectAndSend(t *testing.T) {
 	defer ch.Stop(ctx)
 
 	// Send a message
-	err = ch.Send(ctx, bus.OutboundMessage{
+	_, err = ch.Send(ctx, bus.OutboundMessage{
 		ChatID:  "pico_client:sess-1",
 		Content: "hello",
 	})
@@ -139,7 +139,7 @@ func TestClientChannel_AuthFailure(t *testing.T) {
 
 	ch, err := NewPicoClientChannel(config.PicoClientConfig{
 		URL:   wsURL(srv.URL),
-		Token: "wrong-token",
+		Token: *config.NewSecureString("wrong-token"),
 	}, bus.NewMessageBus())
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestClientChannel_ReceivesServerMessage(t *testing.T) {
 	defer ch.Stop(ctx)
 
 	// Send a message; the echo server replies with message.create
-	err = ch.Send(ctx, bus.OutboundMessage{
+	_, err = ch.Send(ctx, bus.OutboundMessage{
 		ChatID:  "pico_client:sess-echo",
 		Content: "ping",
 	})
@@ -252,7 +252,7 @@ func TestSend_ClosedConnection(t *testing.T) {
 	ch.conn.close()
 	ch.mu.Unlock()
 
-	err = ch.Send(ctx, bus.OutboundMessage{
+	_, err = ch.Send(ctx, bus.OutboundMessage{
 		ChatID:  "pico_client:sess-close",
 		Content: "should fail",
 	})

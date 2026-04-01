@@ -16,6 +16,9 @@ import (
 // JobExecutor is the interface for executing cron jobs through the agent
 type JobExecutor interface {
 	ProcessDirectWithChannel(ctx context.Context, content, sessionKey, channel, chatID string) (string, error)
+	// PublishResponseIfNeeded sends response to the outbound bus only when the
+	// agent did not already deliver content through the message tool in this round.
+	PublishResponseIfNeeded(ctx context.Context, channel, chatID, response string)
 }
 
 // CronTool provides scheduling capabilities for the agent
@@ -89,7 +92,7 @@ func (t *CronTool) Parameters() map[string]any {
 			},
 			"command": map[string]any{
 				"type":        "string",
-				"description": "Optional: Shell command to execute directly (e.g., 'df -h'). If set, the agent will run this command and report output instead of just showing the message. 'deliver' will be forced to false for commands.",
+				"description": "Optional: Shell command to execute directly (e.g., 'df -h'). If set, the agent will run this command and report output instead of just showing the message.",
 			},
 			"command_confirm": map[string]any{
 				"type":        "boolean",
@@ -110,10 +113,6 @@ func (t *CronTool) Parameters() map[string]any {
 			"job_id": map[string]any{
 				"type":        "string",
 				"description": "Job ID (for remove/enable/disable)",
-			},
-			"deliver": map[string]any{
-				"type":        "boolean",
-				"description": "If true, send message directly to channel. If false, let agent process message (for complex tasks). Default: false",
 			},
 		},
 		"required": []string{"action"},
@@ -191,12 +190,6 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		return ErrorResult("one of at_seconds, every_seconds, or cron_expr is required")
 	}
 
-	// Read deliver parameter, default to false so scheduled tasks execute through the agent
-	deliver := false
-	if d, ok := args["deliver"].(bool); ok {
-		deliver = d
-	}
-
 	// GHSA-pv8c-p6jf-3fpp: command scheduling requires internal channel. When
 	// allow_command is disabled, explicit confirmation is required as an override.
 	// Non-command reminders remain open to all channels.
@@ -212,7 +205,6 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		if !t.allowCommand && !commandConfirm {
 			return ErrorResult("command_confirm=true is required when allow_command is disabled")
 		}
-		deliver = false
 	}
 
 	// Truncate message for job name (max 30 chars)
@@ -222,7 +214,6 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		messagePreview,
 		schedule,
 		message,
-		deliver,
 		channel,
 		chatID,
 	)
@@ -230,9 +221,13 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		return ErrorResult(fmt.Sprintf("Error adding job: %v", err))
 	}
 
+	// Apply optional payload fields and persist in a single UpdateJob call
+	needsUpdate := false
 	if command != "" {
 		job.Payload.Command = command
-		// Need to save the updated payload
+		needsUpdate = true
+	}
+	if needsUpdate {
 		t.cronService.UpdateJob(job)
 	}
 
@@ -347,22 +342,9 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return "ok"
 	}
 
-	// If deliver=true, send message directly without agent processing
-	if job.Payload.Deliver {
-		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer pubCancel()
-		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-			Channel: channel,
-			ChatID:  chatID,
-			Content: job.Payload.Message,
-		})
-		return "ok"
-	}
-
-	// For deliver=false, process through agent (for complex tasks)
 	sessionKey := fmt.Sprintf("cron-%s", job.ID)
 
-	// Call agent with job's message
+	// Call agent with the job message
 	response, err := t.executor.ProcessDirectWithChannel(
 		ctx,
 		job.Payload.Message,
@@ -374,7 +356,8 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return fmt.Sprintf("Error: %v", err)
 	}
 
-	// Response is automatically sent via MessageBus by AgentLoop
-	_ = response // Will be sent by AgentLoop
+	if response != "" {
+		t.executor.PublishResponseIfNeeded(ctx, channel, chatID, response)
+	}
 	return "ok"
 }

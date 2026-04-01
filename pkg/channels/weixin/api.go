@@ -12,6 +12,14 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
+)
+
+const (
+	weixinChannelVersion = "2.1.1"
+	weixinIlinkAppID     = "bot"
+	// 2.1.1 encoded as 0x00MMNNPP => 0x00020101 => 131329
+	weixinClientVersion = 131329
 )
 
 type ApiClient struct {
@@ -80,13 +88,9 @@ func (c *ApiClient) post(ctx context.Context, endpoint string, body any, respons
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if endpoint == "ilink/bot/get_bot_qrcode" || endpoint == "ilink/bot/get_qrcode_status" {
-		// QR routes have different headers sometimes, but let's stick to base ones
-		if endpoint == "ilink/bot/get_qrcode_status" {
-			// Use direct map assignment to send exact header name the Tencent API expects
-			req.Header["iLink-App-ClientVersion"] = []string{"1"}
-		}
-	} else {
+	req.Header["iLink-App-Id"] = []string{weixinIlinkAppID}
+	req.Header["iLink-App-ClientVersion"] = []string{strconv.Itoa(weixinClientVersion)}
+	if endpoint != "ilink/bot/get_bot_qrcode" && endpoint != "ilink/bot/get_qrcode_status" {
 		req.Header["AuthorizationType"] = []string{"ilink_bot_token"}
 		req.Header["X-WECHAT-UIN"] = []string{randomWechatUIN()}
 		if c.Token != "" {
@@ -119,7 +123,7 @@ func (c *ApiClient) post(ctx context.Context, endpoint string, body any, respons
 }
 
 func (c *ApiClient) GetUpdates(ctx context.Context, req GetUpdatesReq) (*GetUpdatesResp, error) {
-	req.BaseInfo = BaseInfo{ChannelVersion: "1.0.2"}
+	req.BaseInfo = BaseInfo{ChannelVersion: weixinChannelVersion}
 	var resp GetUpdatesResp
 	err := c.post(ctx, "ilink/bot/getupdates", req, &resp)
 	if err != nil {
@@ -129,7 +133,7 @@ func (c *ApiClient) GetUpdates(ctx context.Context, req GetUpdatesReq) (*GetUpda
 }
 
 func (c *ApiClient) SendMessage(ctx context.Context, req SendMessageReq) (*SendMessageResp, error) {
-	req.BaseInfo = BaseInfo{ChannelVersion: "1.0.2"}
+	req.BaseInfo = BaseInfo{ChannelVersion: weixinChannelVersion}
 	var resp SendMessageResp
 	if err := c.post(ctx, "ilink/bot/sendmessage", req, &resp); err != nil {
 		return nil, err
@@ -138,7 +142,7 @@ func (c *ApiClient) SendMessage(ctx context.Context, req SendMessageReq) (*SendM
 }
 
 func (c *ApiClient) GetUploadUrl(ctx context.Context, req GetUploadUrlReq) (*GetUploadUrlResp, error) {
-	req.BaseInfo = BaseInfo{ChannelVersion: "1.0.2"}
+	req.BaseInfo = BaseInfo{ChannelVersion: weixinChannelVersion}
 	var resp GetUploadUrlResp
 	err := c.post(ctx, "ilink/bot/getuploadurl", req, &resp)
 	if err != nil {
@@ -148,7 +152,7 @@ func (c *ApiClient) GetUploadUrl(ctx context.Context, req GetUploadUrlReq) (*Get
 }
 
 func (c *ApiClient) GetConfig(ctx context.Context, req GetConfigReq) (*GetConfigResp, error) {
-	req.BaseInfo = BaseInfo{ChannelVersion: "1.0.2"}
+	req.BaseInfo = BaseInfo{ChannelVersion: weixinChannelVersion}
 	var resp GetConfigResp
 	if err := c.post(ctx, "ilink/bot/getconfig", req, &resp); err != nil {
 		return nil, err
@@ -157,7 +161,7 @@ func (c *ApiClient) GetConfig(ctx context.Context, req GetConfigReq) (*GetConfig
 }
 
 func (c *ApiClient) SendTyping(ctx context.Context, req SendTypingReq) (*SendTypingResp, error) {
-	req.BaseInfo = BaseInfo{ChannelVersion: "1.0.2"}
+	req.BaseInfo = BaseInfo{ChannelVersion: weixinChannelVersion}
 	var resp SendTypingResp
 	if err := c.post(ctx, "ilink/bot/sendtyping", req, &resp); err != nil {
 		return nil, err
@@ -165,38 +169,51 @@ func (c *ApiClient) SendTyping(ctx context.Context, req SendTypingReq) (*SendTyp
 	return &resp, nil
 }
 
-func (c *ApiClient) GetQRCode(ctx context.Context, botType string) (*QRCodeResponse, error) {
-	// get_bot_qrcode is GET, not POST
+func (c *ApiClient) getQR(ctx context.Context, endpoint string, query map[string]string, respObj any) error {
 	u, err := url.Parse(c.BaseURL)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	u.Path = path.Join(u.Path, "ilink/bot/get_bot_qrcode")
+	u.Path = path.Join(u.Path, endpoint)
 	q := u.Query()
-	q.Set("bot_type", botType)
+	for key, value := range query {
+		q.Set(key, value)
+	}
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	req.Header["iLink-App-Id"] = []string{weixinIlinkAppID}
+	req.Header["iLink-App-ClientVersion"] = []string{strconv.Itoa(weixinClientVersion)}
 
 	resp, err := c.HttpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("get_bot_qrcode failed: %d %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("%s failed: %d %s", endpoint, resp.StatusCode, string(respBody))
+	}
+	if err := json.Unmarshal(respBody, respObj); err != nil {
+		return err
 	}
 
+	return nil
+}
+
+func (c *ApiClient) GetQRCode(ctx context.Context, botType string) (*QRCodeResponse, error) {
+	// get_bot_qrcode is GET, not POST
 	var qrcodeResp QRCodeResponse
-	if err := json.Unmarshal(respBody, &qrcodeResp); err != nil {
+	if err := c.getQR(ctx, "ilink/bot/get_bot_qrcode", map[string]string{
+		"bot_type": botType,
+	}, &qrcodeResp); err != nil {
 		return nil, err
 	}
 	return &qrcodeResp, nil
@@ -204,37 +221,10 @@ func (c *ApiClient) GetQRCode(ctx context.Context, botType string) (*QRCodeRespo
 
 func (c *ApiClient) GetQRCodeStatus(ctx context.Context, qrcode string) (*StatusResponse, error) {
 	// get_qrcode_status is GET
-	u, err := url.Parse(c.BaseURL)
-	if err != nil {
-		return nil, err
-	}
-	u.Path = path.Join(u.Path, "ilink/bot/get_qrcode_status")
-	q := u.Query()
-	q.Set("qrcode", qrcode)
-	u.RawQuery = q.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header["iLink-App-ClientVersion"] = []string{"1"}
-
-	resp, err := c.HttpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("get_qrcode_status failed: %d %s", resp.StatusCode, string(respBody))
-	}
-
 	var statusResp StatusResponse
-	if err := json.Unmarshal(respBody, &statusResp); err != nil {
+	if err := c.getQR(ctx, "ilink/bot/get_qrcode_status", map[string]string{
+		"qrcode": qrcode,
+	}, &statusResp); err != nil {
 		return nil, err
 	}
 	return &statusResp, nil

@@ -58,24 +58,27 @@ func TestNewModelCommand(t *testing.T) {
 }
 
 func TestShowCurrentModel_WithDefaultModel(t *testing.T) {
-	cfg := (&config.Config{
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				ModelName: "gpt-4",
 			},
 		},
 		ModelList: []*config.ModelConfig{
-			{ModelName: "gpt-4", Model: "openai/gpt-4"},
-			{ModelName: "claude-3", Model: "anthropic/claude-3"},
+			{
+				ModelName: "gpt-4",
+				Model:     "openai/gpt-4",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
+			{
+				ModelName: "claude-3",
+				Model:     "anthropic/claude-3",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
 		},
-	}).WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
-		"gpt-4": {
-			APIKeys: []string{"test"},
-		},
-		"claude-3": {
-			APIKeys: []string{"test"},
-		},
-	}})
+	}
 
 	output := captureStdout(func() {
 		showCurrentModel(cfg)
@@ -88,20 +91,21 @@ func TestShowCurrentModel_WithDefaultModel(t *testing.T) {
 }
 
 func TestShowCurrentModel_NoDefaultModel(t *testing.T) {
-	cfg := (&config.Config{
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				ModelName: "",
 			},
 		},
 		ModelList: []*config.ModelConfig{
-			{ModelName: "gpt-4", Model: "openai/gpt-4"},
+			{
+				ModelName: "gpt-4",
+				Model:     "openai/gpt-4",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
 		},
-	}).WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
-		"gpt-4": {
-			APIKeys: []string{"test"},
-		},
-	}})
+	}
 
 	output := captureStdout(func() {
 		showCurrentModel(cfg)
@@ -124,25 +128,28 @@ func TestListAvailableModels_Empty(t *testing.T) {
 }
 
 func TestListAvailableModels_WithModels(t *testing.T) {
-	cfg := (&config.Config{
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				ModelName: "gpt-4",
 			},
 		},
 		ModelList: []*config.ModelConfig{
-			{ModelName: "gpt-4", Model: "openai/gpt-4"},
-			{ModelName: "claude-3", Model: "anthropic/claude-3"},
+			{
+				ModelName: "gpt-4",
+				Model:     "openai/gpt-4",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
+			{
+				ModelName: "claude-3",
+				Model:     "anthropic/claude-3",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
 			{ModelName: "no-key-model", Model: "openai/test"},
 		},
-	}).WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
-		"gpt-4": {
-			APIKeys: []string{"test"},
-		},
-		"claude-3": {
-			APIKeys: []string{"test"},
-		},
-	}})
+	}
 
 	output := captureStdout(func() {
 		listAvailableModels(cfg)
@@ -157,24 +164,27 @@ func TestListAvailableModels_WithModels(t *testing.T) {
 func TestSetDefaultModel_ValidModel(t *testing.T) {
 	initTest(t)
 
-	cfg := (&config.Config{
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				ModelName: "old-model",
 			},
 		},
 		ModelList: []*config.ModelConfig{
-			{ModelName: "new-model", Model: "openai/new-model"},
-			{ModelName: "old-model", Model: "openai/old-model"},
+			{
+				ModelName: "new-model",
+				Model:     "openai/new-model",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
+			{
+				ModelName: "old-model",
+				Model:     "openai/old-model",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
 		},
-	}).WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
-		"new-model": {
-			APIKeys: []string{"test"},
-		},
-		"old-model": {
-			APIKeys: []string{"test"},
-		},
-	}})
+	}
 
 	output := captureStdout(func() {
 		err := setDefaultModel(configPath, cfg, "new-model")
@@ -192,20 +202,21 @@ func TestSetDefaultModel_ValidModel(t *testing.T) {
 func TestSetDefaultModel_InvalidModel(t *testing.T) {
 	initTest(t)
 
-	cfg := (&config.Config{
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				ModelName: "existing-model",
 			},
 		},
 		ModelList: []*config.ModelConfig{
-			{ModelName: "existing-model", Model: "openai/existing"},
+			{
+				ModelName: "existing-model",
+				Model:     "openai/existing",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
 		},
-	}).WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
-		"existing-model": {
-			APIKeys: []string{"test"},
-		},
-	}})
+	}
 
 	assert.Error(t, setDefaultModel(configPath, cfg, "nonexistent-model"))
 }
@@ -213,24 +224,22 @@ func TestSetDefaultModel_InvalidModel(t *testing.T) {
 func TestSetDefaultModel_ModelWithoutAPIKey(t *testing.T) {
 	initTest(t)
 
-	cfg := (&config.Config{
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				ModelName: "existing-model",
 			},
 		},
 		ModelList: []*config.ModelConfig{
-			{ModelName: "existing-model", Model: "openai/existing"},
+			{
+				ModelName: "existing-model",
+				Model:     "openai/existing",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
 			{ModelName: "no-key-model", Model: "openai/nokey"},
 		},
-	}).WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
-		"existing-model": {
-			APIKeys: []string{"test"},
-		},
-		"no-key-model": {
-			APIKeys: []string{""},
-		},
-	}})
+	}
 
 	assert.Error(t, setDefaultModel(configPath, cfg, "no-key-model"))
 }
@@ -239,20 +248,21 @@ func TestSetDefaultModel_SaveConfigError(t *testing.T) {
 	// Use an invalid path to trigger save error
 	invalidPath := "/nonexistent/directory/config.json"
 
-	cfg := (&config.Config{
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				ModelName: "old-model",
 			},
 		},
 		ModelList: []*config.ModelConfig{
-			{ModelName: "new-model", Model: "openai/new-model"},
+			{
+				ModelName: "new-model",
+				Model:     "openai/new-model",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
 		},
-	}).WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
-		"new-model": {
-			APIKeys: []string{"test"},
-		},
-	}})
+	}
 
 	err := setDefaultModel(invalidPath, cfg, "new-model")
 
@@ -284,20 +294,21 @@ func TestModelCommandExecution_Show(t *testing.T) {
 	initTest(t)
 
 	// Create a test config
-	cfg := (&config.Config{
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				ModelName: "test-model",
 			},
 		},
 		ModelList: []*config.ModelConfig{
-			{ModelName: "test-model", Model: "openai/test"},
+			{
+				ModelName: "test-model",
+				Model:     "openai/test",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
 		},
-	}).WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
-		"test-model": {
-			APIKeys: []string{"test"},
-		},
-	}})
+	}
 
 	err := config.SaveConfig(configPath, cfg)
 	require.NoError(t, err)
@@ -315,25 +326,27 @@ func TestModelCommandExecution_Show(t *testing.T) {
 func TestModelCommandExecution_Set(t *testing.T) {
 	initTest(t)
 
-	sec := &config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
-		"old-model": {
-			APIKeys: []string{"test"},
-		},
-		"new-model": {
-			APIKeys: []string{"test"},
-		},
-	}}
-	cfg := (&config.Config{
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				ModelName: "old-model",
 			},
 		},
 		ModelList: []*config.ModelConfig{
-			{ModelName: "old-model", Model: "openai/old"},
-			{ModelName: "new-model", Model: "openai/new"},
+			{
+				ModelName: "old-model",
+				Model:     "openai/old",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
+			{
+				ModelName: "new-model",
+				Model:     "openai/new",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
 		},
-	}).WithSecurity(sec)
+	}
 
 	err := config.SaveConfig(configPath, cfg)
 	require.NoError(t, err)
@@ -357,28 +370,33 @@ func TestModelCommandExecution_TooManyArgs(t *testing.T) {
 }
 
 func TestListAvailableModels_MarkerLogic(t *testing.T) {
-	cfg := (&config.Config{
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				ModelName: "middle-model",
 			},
 		},
 		ModelList: []*config.ModelConfig{
-			{ModelName: "first-model", Model: "openai/first"},
-			{ModelName: "middle-model", Model: "openai/middle"},
-			{ModelName: "last-model", Model: "openai/last"},
+			{
+				ModelName: "first-model",
+				Model:     "openai/first",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
+			{
+				ModelName: "middle-model",
+				Model:     "openai/middle",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
+			{
+				ModelName: "last-model",
+				Model:     "openai/last",
+				APIKeys:   config.SecureStrings{config.NewSecureString("test")},
+				Enabled:   true,
+			},
 		},
-	}).WithSecurity(&config.SecurityConfig{ModelList: map[string]config.ModelSecurityEntry{
-		"first-model": {
-			APIKeys: []string{"test"},
-		},
-		"middle-model": {
-			APIKeys: []string{"test"},
-		},
-		"last-model": {
-			APIKeys: []string{"test"},
-		},
-	}})
+	}
 
 	output := captureStdout(func() {
 		listAvailableModels(cfg)

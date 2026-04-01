@@ -83,7 +83,7 @@ type Manager struct {
 	config        *config.Config
 	mediaStore    media.MediaStore
 	dispatchTask  *asyncTask
-	mux           *http.ServeMux
+	mux           *dynamicServeMux
 	httpServer    *http.Server
 	mu            sync.RWMutex
 	placeholders  sync.Map          // "channel:chatID" → placeholderID (string)
@@ -158,8 +158,8 @@ func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
 }
 
 // preSend handles typing stop, reaction undo, and placeholder editing before sending a message.
-// Returns true if the message was already delivered (skip Send).
-func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) bool {
+// Returns the delivered message IDs and true when delivery completed before a normal Send.
+func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) ([]string, bool) {
 	key := name + ":" + msg.ChatID
 
 	// 1. Stop typing
@@ -188,7 +188,7 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 				}
 			}
 		}
-		return true
+		return nil, true
 	}
 
 	// 4. Try editing placeholder
@@ -196,14 +196,14 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := ch.(MessageEditor); ok {
 				if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
-					return true // edited successfully, skip Send
+					return []string{entry.id}, true
 				}
 				// edit failed → fall through to normal Send
 			}
 		}
 	}
 
-	return false
+	return nil, false
 }
 
 // preSendMedia handles typing stop, reaction undo, and placeholder cleanup
@@ -353,7 +353,7 @@ func (m *Manager) initChannel(name, displayName string) {
 func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 	logger.InfoC("channels", "Initializing channel manager")
 
-	if channels.Telegram.Enabled && channels.Telegram.Token() != "" {
+	if channels.Telegram.Enabled && channels.Telegram.Token.String() != "" {
 		m.initChannel("telegram", "Telegram")
 	}
 
@@ -370,7 +370,7 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("feishu", "Feishu")
 	}
 
-	if channels.Discord.Enabled && channels.Discord.Token() != "" {
+	if channels.Discord.Enabled && channels.Discord.Token.String() != "" {
 		m.initChannel("discord", "Discord")
 	}
 
@@ -386,18 +386,18 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("dingtalk", "DingTalk")
 	}
 
-	if channels.Slack.Enabled && channels.Slack.BotToken() != "" {
+	if channels.Slack.Enabled && channels.Slack.BotToken.String() != "" {
 		m.initChannel("slack", "Slack")
 	}
 
 	if channels.Matrix.Enabled &&
 		m.config.Channels.Matrix.Homeserver != "" &&
 		m.config.Channels.Matrix.UserID != "" &&
-		m.config.Channels.Matrix.AccessToken() != "" {
+		m.config.Channels.Matrix.AccessToken.String() != "" {
 		m.initChannel("matrix", "Matrix")
 	}
 
-	if channels.LINE.Enabled && channels.LINE.ChannelAccessToken() != "" {
+	if channels.LINE.Enabled && channels.LINE.ChannelAccessToken.String() != "" {
 		m.initChannel("line", "LINE")
 	}
 
@@ -405,15 +405,15 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("onebot", "OneBot")
 	}
 
-	if channels.WeCom.Enabled && channels.WeCom.BotID != "" && channels.WeCom.Secret() != "" {
+	if channels.WeCom.Enabled && channels.WeCom.BotID != "" && channels.WeCom.Secret.String() != "" {
 		m.initChannel("wecom", "WeCom")
 	}
 
-	if channels.Weixin.Enabled && channels.Weixin.Token() != "" {
+	if channels.Weixin.Enabled && channels.Weixin.Token.String() != "" {
 		m.initChannel("weixin", "Weixin")
 	}
 
-	if channels.Pico.Enabled && channels.Pico.Token() != "" {
+	if channels.Pico.Enabled && channels.Pico.Token.String() != "" {
 		m.initChannel("pico", "Pico")
 	}
 
@@ -436,7 +436,7 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 // It registers health endpoints from the health server and discovers channels
 // that implement WebhookHandler and/or HealthChecker to register their handlers.
 func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
-	m.mux = http.NewServeMux()
+	m.mux = newDynamicServeMux()
 
 	// Register health endpoints
 	if healthServer != nil {
@@ -444,28 +444,60 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 	}
 
 	// Discover and register webhook handlers and health checkers
-	for name, ch := range m.channels {
-		if wh, ok := ch.(WebhookHandler); ok {
-			m.mux.Handle(wh.WebhookPath(), wh)
-			logger.InfoCF("channels", "Webhook handler registered", map[string]any{
-				"channel": name,
-				"path":    wh.WebhookPath(),
-			})
-		}
-		if hc, ok := ch.(HealthChecker); ok {
-			m.mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
-			logger.InfoCF("channels", "Health endpoint registered", map[string]any{
-				"channel": name,
-				"path":    hc.HealthPath(),
-			})
-		}
-	}
+	m.registerHTTPHandlersLocked()
 
 	m.httpServer = &http.Server{
 		Addr:         addr,
 		Handler:      m.mux,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
+	}
+}
+
+// registerHTTPHandlersLocked registers webhook and health-check handlers for
+// all channels currently in m.channels. Caller must hold m.mu (or ensure
+// exclusive access).
+func (m *Manager) registerHTTPHandlersLocked() {
+	for name, ch := range m.channels {
+		m.registerChannelHTTPHandler(name, ch)
+	}
+}
+
+// registerChannelHTTPHandler registers the webhook/health handlers for a
+// single channel onto m.mux.
+func (m *Manager) registerChannelHTTPHandler(name string, ch Channel) {
+	if wh, ok := ch.(WebhookHandler); ok {
+		m.mux.Handle(wh.WebhookPath(), wh)
+		logger.InfoCF("channels", "Webhook handler registered", map[string]any{
+			"channel": name,
+			"path":    wh.WebhookPath(),
+		})
+	}
+	if hc, ok := ch.(HealthChecker); ok {
+		m.mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
+		logger.InfoCF("channels", "Health endpoint registered", map[string]any{
+			"channel": name,
+			"path":    hc.HealthPath(),
+		})
+	}
+}
+
+// unregisterChannelHTTPHandler removes the webhook/health handlers for a
+// single channel from m.mux.
+func (m *Manager) unregisterChannelHTTPHandler(name string, ch Channel) {
+	if wh, ok := ch.(WebhookHandler); ok {
+		m.mux.Unhandle(wh.WebhookPath())
+		logger.InfoCF("channels", "Webhook handler unregistered", map[string]any{
+			"channel": name,
+			"path":    wh.WebhookPath(),
+		})
+	}
+	if hc, ok := ch.(HealthChecker); ok {
+		m.mux.Unhandle(hc.HealthPath())
+		logger.InfoCF("channels", "Health endpoint unregistered", map[string]any{
+			"channel": name,
+			"path":    hc.HealthPath(),
+		})
 	}
 }
 
@@ -667,23 +699,29 @@ func splitByLength(content string, maxLen int) []string {
 //   - ErrNotRunning / ErrSendFailed: permanent, no retry
 //   - ErrRateLimit: fixed delay retry
 //   - ErrTemporary / unknown: exponential backoff retry
-func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMessage) {
+func (m *Manager) sendWithRetry(
+	ctx context.Context,
+	name string,
+	w *channelWorker,
+	msg bus.OutboundMessage,
+) ([]string, bool) {
 	// Rate limit: wait for token
 	if err := w.limiter.Wait(ctx); err != nil {
 		// ctx canceled, shutting down
-		return
+		return nil, false
 	}
 
 	// Pre-send: stop typing and try to edit placeholder
-	if m.preSend(ctx, name, msg, w.ch) {
-		return // placeholder was edited successfully, skip Send
+	if msgIDs, handled := m.preSend(ctx, name, msg, w.ch); handled {
+		return msgIDs, true
 	}
 
 	var lastErr error
+	var msgIDs []string
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		lastErr = w.ch.Send(ctx, msg)
+		msgIDs, lastErr = w.ch.Send(ctx, msg)
 		if lastErr == nil {
-			return
+			return msgIDs, true
 		}
 
 		// Permanent failures — don't retry
@@ -702,7 +740,7 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 			case <-time.After(rateLimitDelay):
 				continue
 			case <-ctx.Done():
-				return
+				return nil, false
 			}
 		}
 
@@ -711,7 +749,7 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 		select {
 		case <-time.After(backoff):
 		case <-ctx.Done():
-			return
+			return nil, false
 		}
 	}
 
@@ -722,6 +760,8 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 		"error":   lastErr.Error(),
 		"retries": maxRetries,
 	})
+
+	return nil, false
 }
 
 func dispatchLoop[M any](
@@ -823,7 +863,7 @@ func (m *Manager) runMediaWorker(ctx context.Context, name string, w *channelWor
 			if !ok {
 				return
 			}
-			_ = m.sendMediaWithRetry(ctx, name, w, msg)
+			_, _ = m.sendMediaWithRetry(ctx, name, w, msg)
 		case <-ctx.Done():
 			return
 		}
@@ -831,14 +871,14 @@ func (m *Manager) runMediaWorker(ctx context.Context, name string, w *channelWor
 }
 
 // sendMediaWithRetry sends a media message through the channel with rate limiting and
-// retry logic. It returns nil on success, or the last error after retries,
-// including when the channel does not support MediaSender.
+// retry logic. It returns the message IDs and nil on success, or nil and the last error
+// after retries, including when the channel does not support MediaSender.
 func (m *Manager) sendMediaWithRetry(
 	ctx context.Context,
 	name string,
 	w *channelWorker,
 	msg bus.OutboundMediaMessage,
-) error {
+) ([]string, error) {
 	ms, ok := w.ch.(MediaSender)
 	if !ok {
 		err := fmt.Errorf("channel %q does not support media sending", name)
@@ -846,22 +886,23 @@ func (m *Manager) sendMediaWithRetry(
 			"channel": name,
 			"error":   err.Error(),
 		})
-		return err
+		return nil, err
 	}
 
 	// Rate limit: wait for token
 	if err := w.limiter.Wait(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Pre-send: stop typing and clean up any placeholder before sending media.
 	m.preSendMedia(ctx, name, msg, w.ch)
 
 	var lastErr error
+	var msgIDs []string
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		lastErr = ms.SendMedia(ctx, msg)
+		msgIDs, lastErr = ms.SendMedia(ctx, msg)
 		if lastErr == nil {
-			return nil
+			return msgIDs, nil
 		}
 
 		// Permanent failures — don't retry
@@ -880,7 +921,7 @@ func (m *Manager) sendMediaWithRetry(
 			case <-time.After(rateLimitDelay):
 				continue
 			case <-ctx.Done():
-				return ctx.Err()
+				return nil, ctx.Err()
 			}
 		}
 
@@ -889,7 +930,7 @@ func (m *Manager) sendMediaWithRetry(
 		select {
 		case <-time.After(backoff):
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		}
 	}
 
@@ -900,7 +941,7 @@ func (m *Manager) sendMediaWithRetry(
 		"error":   lastErr.Error(),
 		"retries": maxRetries,
 	})
-	return lastErr
+	return nil, lastErr
 }
 
 // runTTLJanitor periodically scans the typingStops and placeholders maps
@@ -984,8 +1025,17 @@ func (m *Manager) GetEnabledChannels() []string {
 func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Save old config so we can revert on error.
+	oldConfig := m.config
+
+	// Update config early: initChannel uses m.config via factory(m.config, m.bus).
+	m.config = cfg
+
 	list := toChannelHashes(cfg)
 	added, removed := compareChannels(m.channelHashes, list)
+
+	deferFuncs := make([]func(), 0, len(removed)+len(added))
 	for _, name := range removed {
 		// Stop all channels
 		channel := m.channels[name]
@@ -998,20 +1048,24 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 				"error":   err.Error(),
 			})
 		}
-		go func() {
+		deferFuncs = append(deferFuncs, func() {
 			m.UnregisterChannel(name)
-		}()
+		})
 	}
 	dispatchCtx, cancel := context.WithCancel(ctx)
 	m.dispatchTask = &asyncTask{cancel: cancel}
 	cc, err := toChannelConfig(cfg, added)
 	if err != nil {
 		logger.ErrorC("channels", fmt.Sprintf("toChannelConfig error: %v", err))
+		m.config = oldConfig
+		cancel()
 		return err
 	}
 	err = m.initChannels(cc)
 	if err != nil {
 		logger.ErrorC("channels", fmt.Sprintf("initChannels error: %v", err))
+		m.config = oldConfig
+		cancel()
 		return err
 	}
 	for _, name := range added {
@@ -1031,13 +1085,18 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 		m.workers[name] = w
 		go m.runWorker(dispatchCtx, name, w)
 		go m.runMediaWorker(dispatchCtx, name, w)
-		go func() {
+		deferFuncs = append(deferFuncs, func() {
 			m.RegisterChannel(name, channel)
-		}()
+		})
 	}
 
-	m.config = cfg
-	m.channelHashes = toChannelHashes(cfg)
+	// Commit hashes only on full success.
+	m.channelHashes = list
+	go func() {
+		for _, f := range deferFuncs {
+			f()
+		}
+	}()
 	return nil
 }
 
@@ -1045,11 +1104,17 @@ func (m *Manager) RegisterChannel(name string, channel Channel) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.channels[name] = channel
+	if m.mux != nil {
+		m.registerChannelHTTPHandler(name, channel)
+	}
 }
 
 func (m *Manager) UnregisterChannel(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if ch, ok := m.channels[name]; ok && m.mux != nil {
+		m.unregisterChannelHTTPHandler(name, ch)
+	}
 	if w, ok := m.workers[name]; ok && w != nil {
 		close(w.queue)
 		<-w.done
@@ -1110,7 +1175,8 @@ func (m *Manager) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) e
 		return fmt.Errorf("channel %s has no active worker", msg.Channel)
 	}
 
-	return m.sendMediaWithRetry(ctx, msg.Channel, w, msg)
+	_, err := m.sendMediaWithRetry(ctx, msg.Channel, w, msg)
+	return err
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {
@@ -1140,5 +1206,6 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 
 	// Fallback: direct send (should not happen)
 	channel, _ := m.channels[channelName]
-	return channel.Send(ctx, msg)
+	_, err := channel.Send(ctx, msg)
+	return err
 }

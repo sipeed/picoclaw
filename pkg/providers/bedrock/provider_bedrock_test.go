@@ -8,6 +8,7 @@
 package bedrock
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -538,4 +539,69 @@ func TestParseResponse_ToolCallWithNilInput(t *testing.T) {
 	// Arguments should be empty map, not nil
 	assert.NotNil(t, resp.ToolCalls[0].Arguments)
 	assert.Empty(t, resp.ToolCalls[0].Arguments)
+}
+
+func TestIsSSOTokenError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "generic error",
+			err:      fmt.Errorf("connection refused"),
+			expected: false,
+		},
+		{
+			name:     "SSO config error not expiration",
+			err:      fmt.Errorf("failed to load SSO profile: invalid SSO session"),
+			expected: false,
+		},
+		{
+			name:     "STS ExpiredToken error",
+			err:      fmt.Errorf("ExpiredToken: The security token included in the request is expired"),
+			expected: false,
+		},
+		{
+			name:     "SSO token refresh error",
+			err:      fmt.Errorf("refresh cached SSO token failed"),
+			expected: true,
+		},
+		{
+			name:     "InvalidGrantException",
+			err:      fmt.Errorf("operation error SSO OIDC: CreateToken, InvalidGrantException"),
+			expected: true,
+		},
+		{
+			name:     "SSO OIDC error",
+			err:      fmt.Errorf("operation error SSO OIDC: CreateToken, failed"),
+			expected: true,
+		},
+		{
+			name: "full SSO error message",
+			err: fmt.Errorf(
+				"get identity: get credentials: failed to refresh cached credentials, refresh cached SSO token failed, unable to refresh SSO token",
+			),
+			expected: true,
+		},
+		{
+			name: "SSO token file missing",
+			err: fmt.Errorf(
+				"get identity: get credentials: failed to refresh cached credentials, failed to read cached SSO token file, open ~/.aws/sso/cache/abc123.json: no such file or directory",
+			),
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isSSOTokenError(tt.err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }

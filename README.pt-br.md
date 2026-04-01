@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | **Português** | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [English](README.md)
+[中文](README.zh.md) | [日本語](README.ja.md) | **Português** | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [Malay](README.my.md) | [English](README.md)
 
 </div>
 
@@ -56,16 +56,20 @@
 
 ## 📢 Novidades
 
+2026-03-31 📱 **Suporte Android!** PicoClaw agora roda no Android! Baixe o APK em [picoclaw.io](https://picoclaw.io/download)
+
+2026-03-25 🚀 **v0.2.4 Lançada!** Reformulação da arquitetura Agent (SubTurn, Hooks, Steering, EventBus), integração WeChat/WeCom, fortalecimento de segurança (.security.yml, filtragem de dados sensíveis), novos providers (AWS Bedrock, Azure, Xiaomi MiMo) e 35 correções de bugs. O PicoClaw atingiu **26K Stars**!
+
 2026-03-17 🚀 **v0.2.3 Lançada!** UI na bandeja do sistema (Windows e Linux), consulta de status de sub-agent (`spawn_status`), hot-reload experimental do Gateway, controle de segurança do Cron e 2 correções de segurança. O PicoClaw atingiu **25K Stars**!
 
 2026-03-09 🎉 **v0.2.1 — Maior atualização até agora!** Suporte ao protocolo MCP, 4 novos channels (Matrix/IRC/WeCom/Discord Proxy), 3 novos providers (Kimi/Minimax/Avian), pipeline de visão, armazenamento de memória JSONL, roteamento de modelos.
 
 2026-02-28 📦 **v0.2.0** lançada com suporte a Docker Compose e Web UI Launcher.
 
-2026-02-26 🎉 O PicoClaw atinge **20K Stars** em apenas 17 dias! Orquestração automática de channels e interfaces de capacidade estão disponíveis.
-
 <details>
 <summary>Notícias anteriores...</summary>
+
+2026-02-26 🎉 O PicoClaw atinge **20K Stars** em apenas 17 dias! Orquestração automática de channels e interfaces de capacidade estão disponíveis.
 
 2026-02-16 🎉 O PicoClaw ultrapassa 12K Stars em uma semana! Funções de mantenedor da comunidade e [Roadmap](ROADMAP.md) lançados oficialmente.
 
@@ -254,6 +258,29 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 
 </details>
 
+<details>
+<summary><b>macOS — Aviso de segurança no primeiro lançamento</b></summary>
+
+O macOS pode bloquear o `picoclaw-launcher` no primeiro lançamento porque ele foi baixado da internet e não é notarizado pela Mac App Store.
+
+**Passo 1:** Dê um duplo clique em `picoclaw-launcher`. Você verá um aviso de segurança:
+
+<p align="center">
+<img src="assets/macos-gatekeeper-warning.jpg" alt="Aviso do macOS Gatekeeper" width="400">
+</p>
+
+> *"picoclaw-launcher" não foi aberto — A Apple não conseguiu verificar se "picoclaw-launcher" está livre de malware que possa prejudicar seu Mac ou comprometer sua privacidade.*
+
+**Passo 2:** Abra **Configurações do Sistema** → **Privacidade e Segurança** → role até a seção **Segurança** → clique em **Abrir Mesmo Assim** → confirme clicando em **Abrir Mesmo Assim** na caixa de diálogo.
+
+<p align="center">
+<img src="assets/macos-gatekeeper-allow.jpg" alt="macOS Privacidade e Segurança — Abrir Mesmo Assim" width="600">
+</p>
+
+Após esta etapa única, o `picoclaw-launcher` abrirá normalmente nos lançamentos seguintes.
+
+</details>
+
 ### 💻 TUI Launcher (Recomendado para Headless / SSH)
 
 O TUI (Terminal UI) Launcher fornece uma interface de terminal completa para configuração e gerenciamento. Ideal para servidores, Raspberry Pi e outros ambientes headless.
@@ -293,9 +320,9 @@ Em seguida, siga a seção Terminal Launcher abaixo para concluir a configuraç�
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
 
-**Opção 2: Instalação via APK (em breve)**
+**Opção 2: Instalação via APK**
 
-Um APK Android independente com WebUI integrado está em desenvolvimento. Fique ligado!
+Baixe o APK de [picoclaw.io](https://picoclaw.io/download/) e instale diretamente. Sem necessidade de Termux!
 
 <details>
 <summary><b>Terminal Launcher (para ambientes com recursos limitados)</b></summary>
@@ -367,6 +394,7 @@ O PicoClaw suporta mais de 30 providers de LLM através da configuração `model
 | [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | Obrigatória | Modelos hospedados pela NVIDIA |
 | [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | Obrigatória | Inferência rápida |
 | [Novita AI](https://novita.ai/) | `novita/` | Obrigatória | Vários modelos abertos |
+| [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Obrigatória | Modelos MiMo |
 | [Ollama](https://ollama.com/) | `ollama/` | Não necessária | Modelos locais, self-hosted |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Não necessária | Implantação local, compatível com OpenAI |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Varia | Proxy para 100+ providers |
@@ -423,9 +451,7 @@ Converse com seu PicoClaw por meio de mais de 17 plataformas de mensagens:
 | **DingTalk** | Médio (credenciais do cliente) | Stream | [Guia](docs/channels/dingtalk/README.pt-br.md) |
 | **Feishu / Lark** | Médio (App ID + Secret) | WebSocket/SDK | [Guia](docs/channels/feishu/README.pt-br.md) |
 | **LINE** | Médio (credenciais + webhook) | Webhook | [Guia](docs/channels/line/README.pt-br.md) |
-| **WeCom Bot** | Médio (webhook URL) | Webhook | [Guia](docs/channels/wecom/wecom_bot/README.pt-br.md) |
-| **WeCom App** | Médio (credenciais corporativas) | Webhook | [Guia](docs/channels/wecom/wecom_app/README.pt-br.md) |
-| **WeCom AI Bot** | Médio (token + chave AES) | WebSocket / Webhook | [Guia](docs/channels/wecom/wecom_aibot/README.pt-br.md) |
+| **WeCom** | Fácil (login QR ou manual) | WebSocket | [Guia](docs/channels/wecom/README.md) |
 | **IRC** | Médio (servidor + nick) | Protocolo IRC | [Guia](docs/pt-br/chat-apps.md#irc) |
 | **OneBot** | Médio (WebSocket URL) | OneBot v11 | [Guia](docs/channels/onebot/README.pt-br.md) |
 | **MaixCam** | Fácil (habilitar) | TCP socket | [Guia](docs/channels/maixcam/README.pt-br.md) |
@@ -433,6 +459,8 @@ Converse com seu PicoClaw por meio de mais de 17 plataformas de mensagens:
 | **Pico Client** | Fácil (WebSocket URL) | WebSocket | Integrado |
 
 > Todos os channels baseados em webhook compartilham um único servidor HTTP do Gateway (`gateway.host`:`gateway.port`, padrão `127.0.0.1:18790`). O Feishu usa modo WebSocket/SDK e não utiliza o servidor HTTP compartilhado.
+
+> A verbosidade dos logs é controlada por `gateway.log_level` (padrão: `warn`). Valores suportados: `debug`, `info`, `warn`, `error`, `fatal`. Também pode ser definido via `PICOCLAW_LOG_LEVEL`. Veja [Configuração](docs/pt-br/configuration.md#nível-de-log-do-gateway) para detalhes.
 
 Para instruções detalhadas de configuração de channels, veja [Configuração de Apps de Chat](docs/pt-br/chat-apps.md).
 

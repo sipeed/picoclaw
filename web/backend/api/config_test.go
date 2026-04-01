@@ -9,7 +9,37 @@ import (
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
+
+func assertGatewayLogLevelApplied(t *testing.T, method, body string, want logger.LogLevel) {
+	t.Helper()
+
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	initialLevel := logger.GetLevel()
+	logger.SetLevel(logger.INFO)
+	t.Cleanup(func() {
+		logger.SetLevel(initialLevel)
+	})
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(method, "/api/config", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s /api/config status = %d, want %d, body=%s", method, rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if got := logger.GetLevel(); got != want {
+		t.Fatalf("logger.GetLevel() = %v, want %v", got, want)
+	}
+}
 
 func TestHandleUpdateConfig_PreservesExecAllowRemoteDefaultWhenOmitted(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
@@ -163,17 +193,11 @@ func setupPicoEnabledEnv(t *testing.T) (string, func()) {
 	cfg.ModelList = []*config.ModelConfig{{
 		ModelName: "custom-default",
 		Model:     "openai/gpt-4o",
+		APIKeys:   config.SimpleSecureStrings("sk-default"),
 	}}
 	cfg.Agents.Defaults.ModelName = "custom-default"
 	cfg.Channels.Pico.Enabled = true
-	cfg.WithSecurity(&config.SecurityConfig{
-		ModelList: map[string]config.ModelSecurityEntry{
-			"custom-default": {APIKeys: []string{"sk-default"}},
-		},
-		Channels: &config.ChannelsSecurity{
-			Pico: &config.PicoSecurity{Token: "test-pico-token"},
-		},
-	})
+	cfg.Channels.Pico.Token = *config.NewSecureString("test-pico-token")
 
 	configPath := filepath.Join(tmp, "config.json")
 	if err := config.SaveConfig(configPath, cfg); err != nil {
@@ -254,6 +278,104 @@ func TestHandlePatchConfig_SucceedsWhenPicoTokenInSecurityOnly(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestHandleUpdateConfig_AppliesGatewayLogLevel(t *testing.T) {
+	assertGatewayLogLevelApplied(t, http.MethodPut, `{
+		"version": 1,
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model_name": "custom-default"
+			}
+		},
+		"gateway": {
+			"log_level": "error"
+		},
+		"model_list": [
+			{
+				"model_name": "custom-default",
+				"model": "openai/gpt-4o",
+				"api_keys": ["sk-default"]
+			}
+		]
+	}`, logger.ERROR)
+}
+
+func TestHandlePatchConfig_AppliesGatewayLogLevel(t *testing.T) {
+	assertGatewayLogLevelApplied(t, http.MethodPatch, `{
+		"gateway": {
+			"log_level": "debug"
+		}
+	}`, logger.DEBUG)
+}
+
+func TestHandlePatchConfig_PreservesDebugFlagOverride(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	initialLevel := logger.GetLevel()
+	logger.SetLevel(logger.INFO)
+	t.Cleanup(func() {
+		logger.SetLevel(initialLevel)
+	})
+
+	h := NewHandler(configPath)
+	h.SetDebug(true)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"gateway": {
+			"log_level": "error"
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if got := logger.GetLevel(); got != logger.DEBUG {
+		t.Fatalf("logger.GetLevel() = %v, want %v", got, logger.DEBUG)
+	}
+}
+
+func TestHandlePatchConfig_SavesDiscordTokenFromPayload(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"channels": {
+			"discord": {
+				"enabled": true,
+				"token": "discord-test-token"
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if !cfg.Channels.Discord.Enabled {
+		t.Fatal("discord should be enabled after PATCH")
+	}
+	if got := cfg.Channels.Discord.Token.String(); got != "discord-test-token" {
+		t.Fatalf("discord token = %q, want %q", got, "discord-test-token")
 	}
 }
 
