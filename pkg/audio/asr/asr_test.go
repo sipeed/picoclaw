@@ -75,20 +75,6 @@ func TestDetectTranscriber(t *testing.T) {
 			wantName: "whisper",
 		},
 		{
-			name: "lmstudio whisper alias selects whisper transcriber",
-			cfg: &config.Config{
-				Voice: config.VoiceConfig{ModelName: "my-asr-model"},
-				ModelList: []*config.ModelConfig{
-					{
-						ModelName: "my-asr-model",
-						Model:     "lmstudio/whisper-1",
-						APIKeys:   config.SimpleSecureStrings("sk-lmstudio-model"),
-					},
-				},
-			},
-			wantName: "whisper",
-		},
-		{
 			name: "whisper via model list fallback",
 			cfg: &config.Config{
 				ModelList: []*config.ModelConfig{
@@ -111,34 +97,6 @@ func TestDetectTranscriber(t *testing.T) {
 						ModelName: "my-asr-model",
 						Model:     "openai/gpt-4o-audio-preview",
 						APIKeys:   config.SimpleSecureStrings("sk-openai"),
-					},
-				},
-			},
-			wantName: "audio-model",
-		},
-		{
-			name: "voice model name selects venice audio model transcriber",
-			cfg: &config.Config{
-				Voice: config.VoiceConfig{ModelName: "voice-venice"},
-				ModelList: []*config.ModelConfig{
-					{
-						ModelName: "voice-venice",
-						Model:     "venice/venice-uncensored",
-						APIKeys:   config.SimpleSecureStrings("venice-key"),
-					},
-				},
-			},
-			wantName: "audio-model",
-		},
-		{
-			name: "voice model name selects lmstudio audio model transcriber",
-			cfg: &config.Config{
-				Voice: config.VoiceConfig{ModelName: "voice-lmstudio"},
-				ModelList: []*config.ModelConfig{
-					{
-						ModelName: "voice-lmstudio",
-						Model:     "lmstudio/openai/gpt-4o-audio-preview",
-						APIKeys:   config.SimpleSecureStrings("sk-lmstudio-model"),
 					},
 				},
 			},

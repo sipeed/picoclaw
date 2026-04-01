@@ -24,8 +24,8 @@ func supportsAudioTranscription(model string) bool {
 
 	switch protocol {
 	case "openai", "azure", "azure-openai",
-		"litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia", "venice",
-		"ollama", "lmstudio", "moonshot", "shengsuanyun", "deepseek", "cerebras",
+		"litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
+		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding":
@@ -45,8 +45,8 @@ func supportsWhisperTranscription(model string) bool {
 	protocol, _ := providers.ExtractProtocol(model)
 
 	switch protocol {
-	case "openai", "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia", "venice",
-		"ollama", "lmstudio", "moonshot", "shengsuanyun", "deepseek", "cerebras",
+	case "openai", "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
+		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
