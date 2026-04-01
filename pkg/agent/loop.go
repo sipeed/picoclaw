@@ -2128,6 +2128,7 @@ turnLoop:
 				if compactErr := al.contextManager.Compact(turnCtx, &CompactRequest{
 					SessionKey: ts.sessionKey,
 					Reason:     ContextCompressReasonRetry,
+					Budget:     ts.agent.ContextWindow,
 				}); compactErr != nil {
 					logger.WarnCF("agent", "Context overflow compact failed", map[string]any{
 						"session_key": ts.sessionKey,
