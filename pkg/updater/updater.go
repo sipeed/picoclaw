@@ -13,14 +13,24 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/minio/selfupdate"
 	"github.com/spf13/cobra"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
+
+// httpClient is a shared HTTP client used for release checks and downloads.
+// The Timeout value applies to the entire HTTP request: dialing, TLS
+// handshake, redirects, and reading the response body. It is NOT only
+// a connection (dial) timeout. To control lower-level timeouts (dial,
+// TLS handshake, response header wait), supply a custom Transport with
+// an appropriately configured net.Dialer.
+var httpClient = &http.Client{Timeout: 2 * time.Minute}
 
 // DownloadAndExtractRelease downloads a release archive (or uses a direct
 // asset URL) and extracts it to a temporary directory. It returns the
@@ -60,7 +70,7 @@ func DownloadAndExtractRelease(releaseURL, platform, arch string) (string, error
 	tmpPath := tmpFile.Name()
 	defer tmpFile.Close()
 
-	resp, err := http.Get(assetURL)
+	resp, err := httpClient.Get(assetURL)
 	if err != nil {
 		os.Remove(tmpPath)
 		return "", err
@@ -71,19 +81,21 @@ func DownloadAndExtractRelease(releaseURL, platform, arch string) (string, error
 		return "", fmt.Errorf("failed to download asset: status %d", resp.StatusCode)
 	}
 
-	if _, err = io.Copy(tmpFile, resp.Body); err != nil {
+	// Stream download while computing SHA256 to avoid a second download.
+	// Also show a simple progress line to stderr so users see activity.
+	h := sha256.New()
+	pw := &progressWriter{total: resp.ContentLength}
+	mw := io.MultiWriter(tmpFile, h, pw)
+	if _, err = io.Copy(mw, resp.Body); err != nil {
 		_ = os.Remove(tmpPath)
 		return "", err
 	}
+	// ensure final progress line ends with newline
+	pw.Finish()
 
 	// verify checksum if available
-	var got string
 	if checksum != "" {
-		got, err = computeSHA256HexFromPath(tmpPath)
-		if err != nil {
-			_ = os.Remove(tmpPath)
-			return "", err
-		}
+		got := hex.EncodeToString(h.Sum(nil))
 		if !strings.EqualFold(got, checksum) {
 			_ = os.Remove(tmpPath)
 			return "", fmt.Errorf("checksum mismatch: got %s expected %s", got, checksum)
@@ -202,7 +214,7 @@ func findAssetInfo(releaseURL, platform, arch string) (string, string, error) {
 		apiURL = GetProdReleaseAPIURL()
 	}
 
-	resp, err := http.Get(apiURL)
+	resp, err := httpClient.Get(apiURL)
 	if err != nil {
 		return "", "", err
 	}
@@ -307,14 +319,14 @@ func findAssetInfo(releaseURL, platform, arch string) (string, string, error) {
 	if url, idx, ok := pickBest(platformIdx); ok {
 		// attempt to find checksum: prefer asset digest from API if present
 		if d := strings.TrimSpace(data.Assets[idx].Digest); d != "" {
-			if strings.HasPrefix(strings.ToLower(d), "sha256:") {
-				hexpart := strings.TrimPrefix(d, "sha256:")
-				// compute actual hash of the asset and compare
-				if got, err := computeSHA256HexFromURL(url); err == nil {
-					if strings.EqualFold(got, hexpart) {
-						return url, got, nil
-					}
-				}
+			dLower := strings.ToLower(d)
+			if strings.HasPrefix(dLower, "sha256:") {
+				hexpart := strings.TrimPrefix(dLower, "sha256:")
+				return url, hexpart, nil
+			}
+			// If digest already looks like a 64-hex, return it
+			if ok, _ := regexp.MatchString("(?i)^[a-f0-9]{64}$", dLower); ok {
+				return url, dLower, nil
 			}
 		}
 		// Look for checksum assets and verify by computing the asset's sha256.
@@ -325,7 +337,7 @@ func findAssetInfo(releaseURL, platform, arch string) (string, string, error) {
 				strings.Contains(n, "checksums") ||
 				strings.HasSuffix(n, ".sha256") ||
 				strings.HasSuffix(n, ".sha256sum") {
-				resp2, err := http.Get(data.Assets[j].BrowserDownloadURL)
+				resp2, err := httpClient.Get(data.Assets[j].BrowserDownloadURL)
 				if err != nil {
 					continue
 				}
@@ -334,13 +346,8 @@ func findAssetInfo(releaseURL, platform, arch string) (string, string, error) {
 				if err != nil {
 					continue
 				}
-				// compute asset hash once
-				assetHash, err := computeSHA256HexFromURL(url)
-				if err != nil {
-					continue
-				}
-				if strings.Contains(strings.ToLower(string(bs)), strings.ToLower(assetHash)) {
-					return url, assetHash, nil
+				if h, ok := findHashInChecksumContent(bs, url); ok {
+					return url, h, nil
 				}
 			}
 		}
@@ -398,35 +405,96 @@ func buildReleaseAPIURL(releaseURL string) string {
 	return fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
 }
 
-// computeSHA256HexFromURL downloads the resource at u and returns its sha256 hex (lowercase).
-func computeSHA256HexFromURL(u string) (string, error) {
-	resp, err := http.Get(u)
-	if err != nil {
-		return "", err
+// NOTE: helper functions to compute SHA256 from URL/path were removed
+// after refactoring to stream the download and verify the checksum
+// during the single download to avoid double-transfer.
+
+// findHashInChecksumContent attempts to locate a 64-hex SHA256 in the
+// checksum file content that corresponds to assetURL. It returns the
+// found hash (lowercase) and true, or "", false if not found.
+func findHashInChecksumContent(bs []byte, assetURL string) (string, bool) {
+	s := strings.ToLower(string(bs))
+	var assetBase string
+	if u, err := url.Parse(assetURL); err == nil {
+		assetBase = strings.ToLower(filepath.Base(u.Path))
+	} else {
+		assetBase = strings.ToLower(filepath.Base(assetURL))
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to download for checksum: status %d", resp.StatusCode)
+	re := regexp.MustCompile(`(?i)\b([a-f0-9]{64})\b`)
+	// prefer a line containing the asset filename
+	for _, line := range strings.Split(s, "\n") {
+		if strings.Contains(line, assetBase) {
+			if m := re.FindString(line); m != "" {
+				return m, true
+			}
+		}
 	}
-	h := sha256.New()
-	if _, err := io.Copy(h, resp.Body); err != nil {
-		return "", err
+	// fallback: if there's exactly one unique 64-hex value, return it
+	matches := re.FindAllString(s, -1)
+	uniq := map[string]struct{}{}
+	for _, m := range matches {
+		uniq[m] = struct{}{}
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	if len(uniq) == 1 {
+		for k := range uniq {
+			return k, true
+		}
+	}
+	return "", false
 }
 
-// computeSHA256HexFromPath computes the SHA256 hex (lowercase) of the file at path.
-func computeSHA256HexFromPath(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
+// progressWriter implements io.Writer and prints a simple progress
+// line to stderr while bytes are written. It is intended to be used
+// as one writer in an io.MultiWriter so we can stream-to-disk, compute
+// the sha256, and update the progress display in a single pass.
+type progressWriter struct {
+	total   int64
+	written int64
+	last    time.Time
+}
+
+func (pw *progressWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	pw.written += int64(n)
+	now := time.Now()
+	if pw.last.IsZero() || now.Sub(pw.last) >= 200*time.Millisecond || (pw.total > 0 && pw.written == pw.total) {
+		pw.print()
+		pw.last = now
 	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
+	return n, nil
+}
+
+func (pw *progressWriter) print() {
+	if pw.total > 0 {
+		pct := float64(pw.written) * 100.0 / float64(pw.total)
+		fmt.Fprintf(os.Stderr, "\rDownloading: %s / %s (%.1f%%)", humanBytes(pw.written), humanBytes(pw.total), pct)
+	} else {
+		fmt.Fprintf(os.Stderr, "\rDownloading: %s", humanBytes(pw.written))
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func (pw *progressWriter) Finish() {
+	pw.print()
+	fmt.Fprintln(os.Stderr, "")
+}
+
+func humanBytes(n int64) string {
+	f := float64(n)
+	const (
+		KB = 1024.0
+		MB = KB * 1024.0
+		GB = MB * 1024.0
+	)
+	switch {
+	case f >= GB:
+		return fmt.Sprintf("%.2f GB", f/GB)
+	case f >= MB:
+		return fmt.Sprintf("%.2f MB", f/MB)
+	case f >= KB:
+		return fmt.Sprintf("%.2f KB", f/KB)
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
 
 // archAliases returns common name variants for an architecture string
