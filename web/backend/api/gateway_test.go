@@ -15,8 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
+	ppid "github.com/sipeed/picoclaw/pkg/pid"
 	"github.com/sipeed/picoclaw/web/backend/utils"
 )
 
@@ -444,7 +447,7 @@ func TestGatewayStatusKeepsRunningWhenHealthProbeFailsAfterRunning(t *testing.T)
 	}
 }
 
-func TestGatewayStatusReportsRunningFromHealthProbe(t *testing.T) {
+func TestGatewayStatusReportsRunningFromPidProbe(t *testing.T) {
 	resetGatewayTestState(t)
 
 	configPath := filepath.Join(t.TempDir(), "config.json")
@@ -467,6 +470,9 @@ func TestGatewayStatusReportsRunningFromHealthProbe(t *testing.T) {
 	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
 		return mockGatewayHealthResponse(http.StatusOK, cmd.Process.Pid), nil
 	}
+
+	_, err := ppid.WritePidFile(globalConfigDir(), "localhost", 0)
+	require.NoError(t, err)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
@@ -513,6 +519,8 @@ func TestGatewayStatusRequiresRestartAfterDefaultModelChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindProcess() error = %v", err)
 	}
+	_, err = ppid.WritePidFile(globalConfigDir(), "localhost", 0)
+	require.NoError(t, err)
 
 	bootSignature := computeConfigSignature(cfg)
 	gateway.mu.Lock()

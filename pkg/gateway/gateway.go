@@ -125,6 +125,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	// Enforce singleton: write PID file with generated token.
 	pidData, err := pid.WritePidFile(homePath, cfg.Gateway.Host, cfg.Gateway.Port)
 	if err != nil {
+		logger.Warnf("write pid file failed: %v", err)
 		return fmt.Errorf("singleton check failed: %w", err)
 	}
 	defer pid.RemovePidFile(homePath)
