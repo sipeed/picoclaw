@@ -44,6 +44,7 @@ const defaultRequestTimeout = common.DefaultRequestTimeout
 
 var stripModelPrefixProviders = map[string]struct{}{
 	"litellm":    {},
+	"venice":     {},
 	"moonshot":   {},
 	"nvidia":     {},
 	"groq":       {},

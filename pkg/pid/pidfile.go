@@ -94,6 +94,7 @@ func WritePidFile(homePath, host string, port int) (*PidFileData, error) {
 		os.Remove(tmp)
 		return nil, fmt.Errorf("failed to rename pid file: %w", err)
 	}
+	logger.Debugf("wrote pid file: %s success", pidPath)
 
 	return data, nil
 }
@@ -108,10 +109,12 @@ func ReadPidFileWithCheck(homePath string) *PidFileData {
 	pidPath := pidFilePath(homePath)
 	data, err := readPidFileUnlocked(pidPath)
 	if err != nil {
+		logger.Debugf("failed to read pid file: %s", err)
 		return nil
 	}
 
 	if !isProcessRunning(data.PID) {
+		logger.Debugf("process not running, remove pid file: %s", pidPath)
 		os.Remove(pidPath)
 		return nil
 	}

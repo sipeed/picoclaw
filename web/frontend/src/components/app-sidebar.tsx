@@ -6,6 +6,7 @@ import {
   IconKey,
   IconListDetails,
   IconMessageCircle,
+  IconSearch,
   IconSettings,
   IconSparkles,
   IconTools,
@@ -24,14 +25,15 @@ import {
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
-  SidebarFooter,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import { useSidebarChannels } from "@/hooks/use-sidebar-channels"
 
@@ -71,6 +73,7 @@ const baseNavGroups: Omit<NavGroup, "items">[] = [
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const routerState = useRouterState()
   const { i18n, t } = useTranslation()
+  const { isMobile, setOpenMobile } = useSidebar()
   const currentPath = routerState.location.pathname
   const {
     channelItems,
@@ -88,6 +91,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   })
 
   const versionText = versionInfo?.version ?? t("footer.version_unknown")
+  const handleNavItemClick = React.useCallback(() => {
+    if (isMobile) {
+      setOpenMobile(false)
+    }
+  }, [isMobile, setOpenMobile])
 
   const navGroups: NavGroup[] = React.useMemo(() => {
     return [
@@ -133,6 +141,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       {
         ...baseNavGroups[2],
         items: [
+          {
+            title: "navigation.hub",
+            url: "/agent/hub",
+            icon: IconSearch,
+            translateTitle: true,
+          },
           {
             title: "navigation.skills",
             url: "/agent/skills",
@@ -199,7 +213,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                           <SidebarMenuButton
                             asChild
                             isActive={isActive}
-                            data-tour={item.url === "/models" ? "models-nav" : undefined}
+                            onClick={handleNavItemClick}
+                            data-tour={
+                              item.url === "/models" ? "models-nav" : undefined
+                            }
                             className={`h-9 px-3 ${isActive ? "bg-accent/80 text-foreground font-medium" : "text-muted-foreground hover:bg-muted/60"}`}
                           >
                             <Link to={item.url}>
@@ -246,7 +263,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </Collapsible>
         ))}
       </SidebarContent>
-      <SidebarFooter className="border-t-border/30 group-data-[collapsible=icon]:hidden border-t px-3 py-2">
+      <SidebarFooter className="border-t-border/30 border-t px-3 py-2 group-data-[collapsible=icon]:hidden">
         <div className="text-muted-foreground flex flex-col gap-0.5 text-[11px] leading-4">
           <div className="truncate" title={versionText}>
             <span className="text-foreground/80">{t("footer.version")}:</span>{" "}

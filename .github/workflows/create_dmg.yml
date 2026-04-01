@@ -1,0 +1,62 @@
+name: Create macOS DMG
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        # This creates two parallel jobs
+        arch: [arm64, amd64]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      # 1. 安装指定版本的 Go (可选，但推荐)
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # 2. 安装 pnpm
+      - name: Install pnpm
+        run: brew install pnpm
+
+      # 3. 运行你的 Makefile 编译二进制文件
+      - name: Build with Make
+        run: make build ARCH=${{ matrix.arch }} && make build-macos-app ARCH=${{ matrix.arch }}
+
+      # 4. 签名
+      - name: Ad-hoc Sign
+        run: codesign --force --deep --sign - "build/PicoClaw Launcher.app"
+
+      # 5. 安装打包工具
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      # 6. 执行打包命令
+      - name: Create DMG
+        run: |
+          mkdir -p dist
+          create-dmg \
+            --volname "PicoClaw Installer" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "PicoClaw Launcher.app" 200 190 \
+            --hide-extension "PicoClaw Launcher.app" \
+            --app-drop-link 600 185 \
+            "dist/picoclaw-${{ matrix.arch }}.dmg" \
+            "build/PicoClaw Launcher.app"
+
+      # 6. 上传文件到 GitHub Artifacts (供你下载)
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg-${{ matrix.arch }}
+          path: dist/*.dmg

@@ -24,6 +24,7 @@ type protocolMeta struct {
 
 var protocolMetaByName = map[string]protocolMeta{
 	"openai":                   {defaultAPIBase: "https://api.openai.com/v1"},
+	"venice":                   {defaultAPIBase: "https://api.venice.ai/api/v1"},
 	"openrouter":               {defaultAPIBase: "https://openrouter.ai/api/v1"},
 	"litellm":                  {defaultAPIBase: "http://localhost:4000/v1"},
 	"lmstudio":                 {defaultAPIBase: "http://localhost:1234/v1", emptyAPIKeyAllowed: true},
@@ -96,6 +97,19 @@ func ExtractProtocol(model string) (protocol, modelID string) {
 		return "openai", model
 	}
 	return protocol, modelID
+}
+
+// ResolveAPIBase returns the configured API base, or the protocol default when
+// the model uses an HTTP-based provider family with a known default endpoint.
+func ResolveAPIBase(cfg *config.ModelConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	if apiBase := strings.TrimSpace(cfg.APIBase); apiBase != "" {
+		return strings.TrimRight(apiBase, "/")
+	}
+	protocol, _ := ExtractProtocol(cfg.Model)
+	return strings.TrimRight(getDefaultAPIBase(protocol), "/")
 }
 
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
@@ -196,7 +210,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return provider, modelID, nil
 
-	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "nvidia",
+	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "nvidia", "venice",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",

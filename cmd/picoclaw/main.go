@@ -25,6 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/status"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/version"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/updater"
 )
 
 var rootNoColor bool
@@ -88,6 +89,7 @@ picoclaw --no-color status`,
 		migrate.NewMigrateCommand(),
 		skills.NewSkillsCommand(),
 		model.NewModelCommand(),
+		updater.NewUpdateCommand("picoclaw"),
 		version.NewVersionCommand(),
 	)
 

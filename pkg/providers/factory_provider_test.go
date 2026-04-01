@@ -112,6 +112,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		protocol string
 	}{
 		{"openai", "openai"},
+		{"venice", "venice"},
 		{"groq", "groq"},
 		{"novita", "novita"},
 		{"openrouter", "openrouter"},
@@ -157,6 +158,12 @@ func TestGetDefaultAPIBase_LiteLLM(t *testing.T) {
 func TestGetDefaultAPIBase_LMStudio(t *testing.T) {
 	if got := getDefaultAPIBase("lmstudio"); got != "http://localhost:1234/v1" {
 		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "lmstudio", got, "http://localhost:1234/v1")
+	}
+}
+
+func TestGetDefaultAPIBase_Venice(t *testing.T) {
+	if got := getDefaultAPIBase("venice"); got != "https://api.venice.ai/api/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "venice", got, "https://api.venice.ai/api/v1")
 	}
 }
 
@@ -356,6 +363,28 @@ func TestCreateProviderFromConfig_Mimo(t *testing.T) {
 	}
 	if modelID != "mimo-v2-pro" {
 		t.Errorf("modelID = %q, want %q", modelID, "mimo-v2-pro")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_Venice(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-venice",
+		Model:     "venice/venice-uncensored",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "venice-uncensored" {
+		t.Errorf("modelID = %q, want %q", modelID, "venice-uncensored")
 	}
 	if _, ok := provider.(*HTTPProvider); !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", provider)
