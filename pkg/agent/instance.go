@@ -175,8 +175,7 @@ func NewAgentInstance(
 	candidates := resolveModelCandidates(cfg, defaults.Provider, model, fallbacks)
 
 	candidateProviders := make(map[string]providers.LLMProvider)
-	modelIndex := buildModelIndex(cfg)
-	populateCandidateProviders(modelIndex, cfg.WorkspacePath(), candidates, candidateProviders)
+	populateCandidateProvidersFromNames(cfg, workspace, fallbacks, candidateProviders)
 
 	// Model routing setup: pre-resolve light model candidates at creation time
 	// to avoid repeated model_list lookups on every incoming message.
@@ -202,7 +201,7 @@ func NewAgentInstance(
 					})
 					lightCandidates = resolved
 					lightProvider = lp
-					populateCandidateProviders(modelIndex, cfg.WorkspacePath(), resolved, candidateProviders)
+					populateCandidateProvidersFromNames(cfg, workspace, []string{rc.LightModel}, candidateProviders)
 				}
 			}
 		} else {
@@ -238,79 +237,40 @@ func NewAgentInstance(
 	}
 }
 
-// buildModelIndex returns a normalised "provider/model" → *ModelConfig lookup for
-// cfg.ModelList. First entry wins for duplicate keys. Returns nil when the list is empty.
-//
-// Uses ExtractProtocol + NormalizeProvider (not cfg.GetModelConfig) because candidates
-// hold resolved (Provider, Model) pairs that must be matched against the Model field,
-// not the model_name alias.
-func buildModelIndex(cfg *config.Config) map[string]*config.ModelConfig {
-	if cfg == nil || len(cfg.ModelList) == 0 {
-		return nil
-	}
-	index := make(map[string]*config.ModelConfig, len(cfg.ModelList))
-	for _, mc := range cfg.ModelList {
-		entry := strings.TrimSpace(mc.Model)
-		if entry == "" {
-			continue
-		}
-		protocol, modelID := providers.ExtractProtocol(entry)
-		k := providers.ModelKey(providers.NormalizeProvider(protocol), modelID)
-		if _, exists := index[k]; !exists {
-			index[k] = mc
-		}
-	}
-	return index
-}
-
-// populateCandidateProviders creates an LLMProvider for each candidate using the
-// pre-built model index and stores it in out. Candidates absent from the index are
-// skipped with a warning; they inherit the primary provider's credentials at runtime.
-func populateCandidateProviders(
-	index map[string]*config.ModelConfig,
-	workspacePath string,
-	candidates []providers.FallbackCandidate,
+// populateCandidateProvidersFromNames resolves each model name (alias or
+// "provider/model") via resolvedModelConfig and creates a dedicated LLMProvider
+// for it. This reuses the canonical config resolution path (GetModelConfig) so
+// alias handling and load-balancing stay consistent with the rest of the codebase.
+func populateCandidateProvidersFromNames(
+	cfg *config.Config,
+	workspace string,
+	names []string,
 	out map[string]providers.LLMProvider,
 ) {
-	for _, c := range candidates {
-		key := providers.ModelKey(c.Provider, c.Model)
+	if cfg == nil || len(names) == 0 {
+		return
+	}
+	for _, name := range names {
+		mc, err := resolvedModelConfig(cfg, strings.TrimSpace(name), workspace)
+		if err != nil {
+			logger.WarnCF("agent",
+				"fallback provider: no model_list entry found; will inherit primary provider credentials",
+				map[string]any{"name": name, "error": err.Error()})
+			continue
+		}
+		protocol, modelID := providers.ExtractProtocol(strings.TrimSpace(mc.Model))
+		key := providers.ModelKey(providers.NormalizeProvider(protocol), modelID)
 		if _, exists := out[key]; exists {
 			continue
 		}
-		mc, found := index[key]
-		if !found {
-			logger.WarnCF(
-				"agent",
-				"fallback provider: no model_list entry found; will inherit primary provider credentials",
-				map[string]any{"provider": c.Provider, "model": c.Model},
-			)
-			continue
-		}
-		mCopy := *mc
-		if mCopy.Workspace == "" {
-			mCopy.Workspace = workspacePath
-		}
-		p, _, err := providers.CreateProviderFromConfig(&mCopy)
-		if err == nil {
-			out[key] = p
-		} else {
+		p, _, err := providers.CreateProviderFromConfig(mc)
+		if err != nil {
 			logger.WarnCF("agent", "fallback provider: failed to create provider",
 				map[string]any{"model": mc.Model, "error": err.Error()})
+			continue
 		}
+		out[key] = p
 	}
-}
-
-// registerCandidateProviders is the test-facing entry point that wraps
-// buildModelIndex + populateCandidateProviders in a single call.
-func registerCandidateProviders(
-	cfg *config.Config,
-	candidates []providers.FallbackCandidate,
-	out map[string]providers.LLMProvider,
-) {
-	if cfg == nil || len(cfg.ModelList) == 0 || len(candidates) == 0 {
-		return
-	}
-	populateCandidateProviders(buildModelIndex(cfg), cfg.WorkspacePath(), candidates, out)
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.

@@ -249,149 +249,120 @@ func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 	}
 }
 
-// TestRegisterCandidateProviders_NilCfgIsNoop verifies that passing a nil
+// TestPopulateCandidateProviders_NilCfgIsNoop verifies that passing a nil
 // config does not panic and leaves the output map empty.
-func TestRegisterCandidateProviders_NilCfgIsNoop(t *testing.T) {
+func TestPopulateCandidateProviders_NilCfgIsNoop(t *testing.T) {
 	out := map[string]providers.LLMProvider{}
-	registerCandidateProviders(nil, []providers.FallbackCandidate{{Provider: "openai", Model: "gpt-4o"}}, out)
+	populateCandidateProvidersFromNames(nil, t.TempDir(), []string{"gpt-4o"}, out)
 	if len(out) != 0 {
 		t.Fatalf("expected empty map, got %d entries", len(out))
 	}
 }
 
-// TestRegisterCandidateProviders_SkipsExistingKeys verifies that a key already
+// TestPopulateCandidateProviders_SkipsExistingKeys verifies that a key already
 // present in the output map is not overwritten.
-func TestRegisterCandidateProviders_SkipsExistingKeys(t *testing.T) {
+func TestPopulateCandidateProviders_SkipsExistingKeys(t *testing.T) {
 	existing := &mockProvider{}
 	key := providers.ModelKey("openai", "gpt-4o")
 	out := map[string]providers.LLMProvider{key: existing}
 
 	cfg := &config.Config{
 		ModelList: []*config.ModelConfig{
-			{Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("test-key")},
+			{ModelName: "my-gpt", Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("test-key")},
 		},
 	}
-	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "openai", Model: "gpt-4o"}}, out)
+	populateCandidateProvidersFromNames(cfg, t.TempDir(), []string{"my-gpt"}, out)
 
 	if out[key] != existing {
 		t.Fatal("existing provider entry was overwritten; expected it to be preserved")
 	}
 }
 
-// TestRegisterCandidateProviders_MatchesBareModelName verifies that a
-// model_list entry without a provider prefix (e.g. "gpt-4o") still matches a
-// candidate whose provider is "openai" — the default protocol that
-// ExtractProtocol assigns to bare names.
-func TestRegisterCandidateProviders_MatchesBareModelName(t *testing.T) {
+// TestPopulateCandidateProviders_ResolvesAlias verifies that a model_name
+// alias (e.g. "my-gpt") is resolved via GetModelConfig and the provider
+// is created using the underlying model's config.
+func TestPopulateCandidateProviders_ResolvesAlias(t *testing.T) {
 	workspace := t.TempDir()
 	out := map[string]providers.LLMProvider{}
 
 	cfg := &config.Config{
 		ModelList: []*config.ModelConfig{
-			// Bare name — no "openai/" prefix. ExtractProtocol should
-			// assign "openai" as the default protocol.
-			{Model: "gpt-4o", APIBase: "https://api.openai.com/v1", Workspace: workspace},
+			{ModelName: "my-gpt", Model: "openai/gpt-4o", APIBase: "https://api.openai.com/v1", Workspace: workspace},
 		},
 	}
-	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "openai", Model: "gpt-4o"}}, out)
+	populateCandidateProvidersFromNames(cfg, workspace, []string{"my-gpt"}, out)
 
 	key := providers.ModelKey("openai", "gpt-4o")
 	if out[key] == nil {
-		t.Fatalf("expected CandidateProviders[%q] to be populated for bare model name", key)
+		t.Fatalf("expected CandidateProviders[%q] to be populated for alias", key)
 	}
 }
 
-// TestRegisterCandidateProviders_MatchesWithProtocolPrefix verifies that a
+// TestPopulateCandidateProviders_ResolvesProtocolPrefix verifies that a
 // model_list entry using full "provider/model" notation (e.g.
-// "gemini/gemma-3-27b-it") is matched correctly.
-func TestRegisterCandidateProviders_MatchesWithProtocolPrefix(t *testing.T) {
+// "gemini/gemma-3-27b-it") is matched correctly when referenced by model_name.
+func TestPopulateCandidateProviders_ResolvesProtocolPrefix(t *testing.T) {
 	workspace := t.TempDir()
 	out := map[string]providers.LLMProvider{}
 
 	cfg := &config.Config{
 		ModelList: []*config.ModelConfig{
 			{
+				ModelName: "gemma",
 				Model:     "gemini/gemma-3-27b-it",
 				APIKeys:   config.SimpleSecureStrings("gemini-test-key"),
 				Workspace: workspace,
 			},
 		},
 	}
-	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "gemini", Model: "gemma-3-27b-it"}}, out)
+	populateCandidateProvidersFromNames(cfg, workspace, []string{"gemma"}, out)
 
 	key := providers.ModelKey("gemini", "gemma-3-27b-it")
 	if out[key] == nil {
-		t.Fatalf("expected CandidateProviders[%q] to be populated for protocol-prefixed model name", key)
+		t.Fatalf("expected CandidateProviders[%q] to be populated for protocol-prefixed model", key)
 	}
 }
 
-// TestRegisterCandidateProviders_EmptyCandidatesIsNoop verifies the early-exit
-// path when the candidates slice is empty — no index is built and the map
-// remains unchanged.
-func TestRegisterCandidateProviders_EmptyCandidatesIsNoop(t *testing.T) {
+// TestPopulateCandidateProviders_EmptyNamesIsNoop verifies the early-exit
+// path when the names slice is empty.
+func TestPopulateCandidateProviders_EmptyNamesIsNoop(t *testing.T) {
 	out := map[string]providers.LLMProvider{}
 	cfg := &config.Config{
 		ModelList: []*config.ModelConfig{
-			{Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("key")},
+			{ModelName: "my-gpt", Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("key")},
 		},
 	}
-	registerCandidateProviders(cfg, nil, out)
+	populateCandidateProvidersFromNames(cfg, t.TempDir(), nil, out)
 	if len(out) != 0 {
 		t.Fatalf("expected empty map, got %d entries", len(out))
 	}
 }
 
-// TestRegisterCandidateProviders_EmptyModelListIsNoop verifies the early-exit
+// TestPopulateCandidateProviders_EmptyModelListIsNoop verifies the early-exit
 // path when model_list is empty — no provider can be created.
-func TestRegisterCandidateProviders_EmptyModelListIsNoop(t *testing.T) {
+func TestPopulateCandidateProviders_EmptyModelListIsNoop(t *testing.T) {
 	out := map[string]providers.LLMProvider{}
 	cfg := &config.Config{}
-	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "openai", Model: "gpt-4o"}}, out)
+	populateCandidateProvidersFromNames(cfg, t.TempDir(), []string{"gpt-4o"}, out)
 	if len(out) != 0 {
 		t.Fatalf("expected empty map, got %d entries", len(out))
 	}
 }
 
-// TestRegisterCandidateProviders_FirstModelListEntryWinsForDuplicates verifies
-// that when model_list contains two entries with the same normalised
-// provider/model key, the first one is used (mirrors model_list precedence).
-func TestRegisterCandidateProviders_FirstModelListEntryWinsForDuplicates(t *testing.T) {
-	workspace := t.TempDir()
-	out := map[string]providers.LLMProvider{}
-
-	cfg := &config.Config{
-		ModelList: []*config.ModelConfig{
-			{Model: "openai/gpt-4o", APIBase: "https://first.example.com/v1", Workspace: workspace},
-			{Model: "openai/gpt-4o", APIBase: "https://second.example.com/v1", Workspace: workspace},
-		},
-	}
-	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "openai", Model: "gpt-4o"}}, out)
-
-	key := providers.ModelKey("openai", "gpt-4o")
-	if out[key] == nil {
-		t.Fatalf("expected CandidateProviders[%q] to be populated", key)
-	}
-	// Only one entry should be registered despite two model_list entries.
-	if len(out) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(out))
-	}
-}
-
-// TestRegisterCandidateProviders_UnmatchedCandidateIsSkipped verifies that a
-// candidate with no matching model_list entry is silently skipped and does not
+// TestPopulateCandidateProviders_UnmatchedNameIsSkipped verifies that a
+// name with no matching model_list entry is skipped and does not
 // cause a panic or leave a nil entry in the map.
-func TestRegisterCandidateProviders_UnmatchedCandidateIsSkipped(t *testing.T) {
+func TestPopulateCandidateProviders_UnmatchedNameIsSkipped(t *testing.T) {
 	out := map[string]providers.LLMProvider{}
 	cfg := &config.Config{
 		ModelList: []*config.ModelConfig{
-			{Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("key")},
+			{ModelName: "my-gpt", Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("key")},
 		},
 	}
-	// "anthropic/claude-3-opus" has no matching model_list entry.
-	registerCandidateProviders(cfg, []providers.FallbackCandidate{{Provider: "anthropic", Model: "claude-3-opus"}}, out)
+	populateCandidateProvidersFromNames(cfg, t.TempDir(), []string{"nonexistent-model"}, out)
 
 	if len(out) != 0 {
-		t.Fatalf("expected empty map for unmatched candidate, got %d entries", len(out))
+		t.Fatalf("expected empty map for unmatched name, got %d entries", len(out))
 	}
 }
 
@@ -436,8 +407,8 @@ func TestNewAgentInstance_CandidateProvidersPopulatedForCrossProviderFallbacks(t
 	primaryProvider := &mockProvider{}
 	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, primaryProvider)
 
+	// Only fallback models need entries — the primary uses the injected provider directly.
 	wantKeys := []string{
-		providers.ModelKey("openrouter", "mistralai/mistral-small-3.1-24b-instruct:free"),
 		providers.ModelKey("gemini", "gemma-3-27b-it"),
 		providers.ModelKey("gemini", "gemini-2.5-flash-lite"),
 	}
