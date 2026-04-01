@@ -124,7 +124,7 @@ func TestCollectFlagRows_BasicFlags(t *testing.T) {
 	}
 
 	// Rows must be sorted alphabetically by flag name.
-	names := []string{}
+	names := make([]string, 0, len(rows))
 	for _, r := range rows {
 		names = append(names, r[0])
 	}

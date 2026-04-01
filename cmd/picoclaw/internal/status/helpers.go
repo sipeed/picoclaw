@@ -109,19 +109,19 @@ func statusCmd() {
 		}
 
 		report.Providers = []cliui.ProviderRow{
-			{"OpenRouter API", val(hasOpenRouter)},
-			{"Anthropic API", val(hasAnthropic)},
-			{"OpenAI API", val(hasOpenAI)},
-			{"Gemini API", val(hasGemini)},
-			{"Zhipu API", val(hasZhipu)},
-			{"Qwen API", val(hasQwen)},
-			{"Groq API", val(hasGroq)},
-			{"Moonshot API", val(hasMoonshot)},
-			{"DeepSeek API", val(hasDeepSeek)},
-			{"VolcEngine API", val(hasVolcEngine)},
-			{"Nvidia API", val(hasNvidia)},
-			{"vLLM / local", val(hasVLLM, vllmBase)},
-			{"Ollama", val(hasOllama, ollamaBase)},
+			{Name: "OpenRouter API", Val: val(hasOpenRouter)},
+			{Name: "Anthropic API", Val: val(hasAnthropic)},
+			{Name: "OpenAI API", Val: val(hasOpenAI)},
+			{Name: "Gemini API", Val: val(hasGemini)},
+			{Name: "Zhipu API", Val: val(hasZhipu)},
+			{Name: "Qwen API", Val: val(hasQwen)},
+			{Name: "Groq API", Val: val(hasGroq)},
+			{Name: "Moonshot API", Val: val(hasMoonshot)},
+			{Name: "DeepSeek API", Val: val(hasDeepSeek)},
+			{Name: "VolcEngine API", Val: val(hasVolcEngine)},
+			{Name: "Nvidia API", Val: val(hasNvidia)},
+			{Name: "vLLM / local", Val: val(hasVLLM, vllmBase)},
+			{Name: "Ollama", Val: val(hasOllama, ollamaBase)},
 		}
 
 		store, _ := auth.LoadStore()
