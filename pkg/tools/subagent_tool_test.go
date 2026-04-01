@@ -324,3 +324,27 @@ func TestSubagentTool_ForUserTruncation(t *testing.T) {
 		t.Error("ForLLM should contain reference to original task")
 	}
 }
+
+func TestSubagentTool_Execute_LeavesToolsUnsetForRuntimeInheritance(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	manager.RegisterTool(&managerSnapshotTool{name: "snapshot_tool"})
+
+	tool := NewSubagentTool(manager)
+	spawner := &recordingSpawner{}
+	tool.SetSpawner(spawner)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"task": "inspect tools",
+	})
+	if result == nil {
+		t.Fatal("Result should not be nil")
+	}
+	if result.IsError {
+		t.Fatalf("Expected success, got error: %s", result.ForLLM)
+	}
+
+	if !spawner.toolsNil {
+		t.Fatalf("expected cfg.Tools to be nil for runtime inheritance, got %v", spawner.toolNames)
+	}
+}
