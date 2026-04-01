@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
@@ -41,11 +40,7 @@ func (c *AuthCredential) NeedsRefresh() bool {
 }
 
 func authFilePath() string {
-	if home := os.Getenv(config.EnvHome); home != "" {
-		return filepath.Join(home, "auth.json")
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, pkg.DefaultPicoClawHome, "auth.json")
+	return filepath.Join(config.GetHome(), "auth.json")
 }
 
 func LoadStore() (*AuthStore, error) {

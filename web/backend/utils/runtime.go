@@ -9,16 +9,13 @@ import (
 	"runtime"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // GetPicoclawHome returns the picoclaw home directory.
 // Priority: $PICOCLAW_HOME > ~/.picoclaw
 func GetPicoclawHome() string {
-	if home := os.Getenv(config.EnvHome); home != "" {
-		return home
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw")
+	return config.GetHome()
 }
 
 // GetDefaultConfigPath returns the default path to the picoclaw config file.
@@ -47,6 +44,7 @@ func FindPicoclawBinary() string {
 	}
 
 	if exe, err := os.Executable(); err == nil {
+		logger.Debugf("Trying to find picoclaw binary in %s", exe)
 		candidate := filepath.Join(filepath.Dir(exe), binaryName)
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 			return candidate

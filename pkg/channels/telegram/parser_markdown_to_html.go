@@ -16,13 +16,14 @@ func markdownToTelegramHTML(text string) string {
 	inlineCodes := extractInlineCodes(text)
 	text = inlineCodes.text
 
+	links := extractLinks(text)
+	text = links.text
+
 	text = reHeading.ReplaceAllString(text, "$1")
 
 	text = reBlockquote.ReplaceAllString(text, "$1")
 
 	text = escapeHTML(text)
-
-	text = reLink.ReplaceAllString(text, `<a href="$2">$1</a>`)
 
 	text = reBoldStar.ReplaceAllString(text, "<b>$1</b>")
 
@@ -40,6 +41,12 @@ func markdownToTelegramHTML(text string) string {
 
 	text = reListItem.ReplaceAllString(text, "• ")
 
+	for i, lnk := range links.links {
+		label := escapeHTML(lnk[0])
+		url := lnk[1]
+		text = strings.ReplaceAll(text, fmt.Sprintf("\x00LK%d\x00", i), fmt.Sprintf(`<a href="%s">%s</a>`, url, label))
+	}
+
 	for i, code := range inlineCodes.codes {
 		escaped := escapeHTML(code)
 		text = strings.ReplaceAll(text, fmt.Sprintf("\x00IC%d\x00", i), fmt.Sprintf("<code>%s</code>", escaped))
@@ -55,6 +62,29 @@ func markdownToTelegramHTML(text string) string {
 	}
 
 	return text
+}
+
+type linkMatch struct {
+	text  string
+	links [][2]string // [label, url]
+}
+
+func extractLinks(text string) linkMatch {
+	matches := reLink.FindAllStringSubmatch(text, -1)
+
+	extracted := make([][2]string, 0, len(matches))
+	for _, match := range matches {
+		extracted = append(extracted, [2]string{match[1], match[2]})
+	}
+
+	i := 0
+	text = reLink.ReplaceAllStringFunc(text, func(m string) string {
+		placeholder := fmt.Sprintf("\x00LK%d\x00", i)
+		i++
+		return placeholder
+	})
+
+	return linkMatch{text: text, links: extracted}
 }
 
 type codeBlockMatch struct {

@@ -15,7 +15,7 @@ function AgentLayout() {
   })
 
   if (pathname === "/agent") {
-    return <Navigate to="/agent/skills" />
+    return <Navigate to="/agent/hub" />
   }
 
   return <Outlet />

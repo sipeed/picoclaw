@@ -206,6 +206,13 @@ func (p *Provider) Chat(
 	// Call Bedrock Converse API
 	output, err := p.client.Converse(ctx, input)
 	if err != nil {
+		// Check for SSO token expiration errors and provide actionable guidance
+		if isSSOTokenError(err) {
+			return nil, fmt.Errorf(
+				"bedrock converse: AWS credentials may have expired. If using AWS SSO, run 'aws sso login' to refresh: %w",
+				err,
+			)
+		}
 		return nil, fmt.Errorf("bedrock converse: %w", err)
 	}
 
@@ -579,4 +586,31 @@ func parseResponse(output *bedrockruntime.ConverseOutput) (*LLMResponse, error) 
 		FinishReason: finishReason,
 		Usage:        usage,
 	}, nil
+}
+
+// isSSOTokenError checks if the error is related to expired or invalid AWS SSO tokens.
+// This helps provide actionable guidance when SSO credentials need to be refreshed.
+// Only matches SSO-specific error patterns to avoid misclassifying other AWS credential errors.
+func isSSOTokenError(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+
+	// Check for specific SSO token expiration/refresh-related error patterns (case-insensitive)
+	// Avoid matching generic patterns that could match non-SSO AWS errors (e.g., STS ExpiredToken)
+	if strings.Contains(lower, "refresh cached sso token") {
+		return true
+	}
+	if strings.Contains(lower, "read cached sso token") {
+		return true
+	}
+	if strings.Contains(lower, "sso oidc") {
+		return true
+	}
+	if strings.Contains(lower, "invalidgrantexception") {
+		return true
+	}
+
+	return false
 }

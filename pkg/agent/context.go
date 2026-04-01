@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -59,14 +58,7 @@ func (cb *ContextBuilder) WithSplitOnMarker(enabled bool) *ContextBuilder {
 }
 
 func getGlobalConfigDir() string {
-	if home := os.Getenv(config.EnvHome); home != "" {
-		return home
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, pkg.DefaultPicoClawHome)
+	return config.GetHome()
 }
 
 func NewContextBuilder(workspace string) *ContextBuilder {

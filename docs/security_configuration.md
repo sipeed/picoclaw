@@ -401,7 +401,7 @@ The pattern is: `PICOCLAW_<SECTION>_<KEY>_<FIELD>` with underscores separating p
 3. **Set file permissions**: `chmod 600 ~/.picoclaw/.security.yml`
 4. **Use different keys** for different environments (dev, staging, production)
 5. **Rotate keys regularly** and update `.security.yml`
-6. **Backup securely**: Encrypt backups containing `.security.yml`
+6. **Backup securely**: Encrypt backups containing `.security.yml`. Note that config migrations automatically create date-stamped backups (e.g., `config.json.20260330.bak` and `.security.yml.20260330.bak`)
 7. **Review access**: Ensure only authorized users have read access to the file
 
 ## API
@@ -444,7 +444,7 @@ Returns the path to `.security.yml` relative to the config file.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "agents": {
     "defaults": {
       "workspace": "~/picoclaw-workspace",
@@ -557,6 +557,8 @@ go test ./pkg/config -run TestSecurityConfig
 
 ### Step 1: Backup your config
 
+The system automatically creates a date-stamped backup before saving a migrated config (e.g., `config.json.20260330.bak` and `.security.yml.20260330.bak`). If you prefer a manual backup:
+
 ```bash
 cp ~/.picoclaw/config.json ~/.picoclaw/config.json.backup
 ```
@@ -597,9 +599,11 @@ Test your models and channels to ensure everything works correctly.
 
 ### Step 8: Clean up (optional)
 
-If everything works, you can delete the backup:
+If everything works, you can delete the backups:
 ```bash
 rm ~/.picoclaw/config.json.backup
+# Also remove auto-generated date-stamped backups if desired:
+rm ~/.picoclaw/config.json.20*.bak ~/.picoclaw/.security.yml.20*.bak
 ```
 
 ## Advanced: Encrypted API Keys

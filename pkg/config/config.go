@@ -7,8 +7,8 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 
@@ -20,89 +20,8 @@ import (
 // rrCounter is a global counter for round-robin load balancing across models.
 var rrCounter atomic.Uint64
 
-// FlexibleStringSlice is a []string that also accepts JSON numbers,
-// so allow_from can contain both "123" and 123.
-// It also supports parsing comma-separated strings from environment variables,
-// including both English (,) and Chinese (，) commas.
-type FlexibleStringSlice []string
-
-func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
-	// Accept a single JSON string for convenience, e.g.:
-	// "text": "Thinking..."
-	var singleString string
-	if err := json.Unmarshal(data, &singleString); err == nil {
-		*f = FlexibleStringSlice{singleString}
-		return nil
-	}
-
-	// Accept a single JSON number too, to keep symmetry with mixed allow_from
-	// payloads that may contain numeric identifiers.
-	var singleNumber float64
-	if err := json.Unmarshal(data, &singleNumber); err == nil {
-		*f = FlexibleStringSlice{fmt.Sprintf("%.0f", singleNumber)}
-		return nil
-	}
-
-	// Try []string first
-	var ss []string
-	if err := json.Unmarshal(data, &ss); err == nil {
-		*f = ss
-		return nil
-	}
-
-	// Try []interface{} to handle mixed types
-	var raw []any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		var s string
-		// fail over to compatible to old format string
-		if err = json.Unmarshal(data, &s); err != nil {
-			return err
-		}
-		*f = []string{s}
-		return nil
-	}
-
-	result := make([]string, 0, len(raw))
-	for _, v := range raw {
-		switch val := v.(type) {
-		case string:
-			result = append(result, val)
-		case float64:
-			result = append(result, fmt.Sprintf("%.0f", val))
-		default:
-			result = append(result, fmt.Sprintf("%v", val))
-		}
-	}
-	*f = result
-	return nil
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler to support env variable parsing.
-// It handles comma-separated values with both English (,) and Chinese (，) commas.
-func (f *FlexibleStringSlice) UnmarshalText(text []byte) error {
-	if len(text) == 0 {
-		*f = nil
-		return nil
-	}
-
-	s := string(text)
-	// Replace Chinese comma with English comma, then split
-	s = strings.ReplaceAll(s, "，", ",")
-	parts := strings.Split(s, ",")
-
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			result = append(result, part)
-		}
-	}
-	*f = result
-	return nil
-}
-
 // CurrentVersion is the latest config schema version
-const CurrentVersion = 1
+const CurrentVersion = 2
 
 // Config is the current config structure with version support
 type Config struct {
@@ -639,9 +558,9 @@ type DevicesConfig struct {
 }
 
 type VoiceConfig struct {
-	ModelName         string `json:"model_name,omitempty"         env:"PICOCLAW_VOICE_MODEL_NAME"`
-	EchoTranscription bool   `json:"echo_transcription"           env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
-	ElevenLabsAPIKey  string `json:"elevenlabs_api_key,omitempty" env:"PICOCLAW_VOICE_ELEVENLABS_API_KEY"`
+	ModelName         string `json:"model_name,omitempty"     env:"PICOCLAW_VOICE_MODEL_NAME"`
+	TTSModelName      string `json:"tts_model_name,omitempty" env:"PICOCLAW_VOICE_TTS_MODEL_NAME"`
+	EchoTranscription bool   `json:"echo_transcription"       env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
 }
 
 // ModelConfig represents a model-centric provider configuration.
@@ -674,6 +593,11 @@ type ModelConfig struct {
 	ExtraBody      map[string]any `json:"extra_body,omitempty"`     // Additional fields to inject into request body
 
 	APIKeys SecureStrings `json:"api_keys,omitzero" yaml:"api_keys,omitempty"` // API authentication keys (multiple keys for failover)
+
+	// Enabled indicates whether this model entry is active. When omitted in
+	// existing configs, the field is inferred during load: models with API keys
+	// or the reserved "local-model" name are auto-enabled.
+	Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 
 	// isVirtual marks this model as a virtual model generated from multi-key expansion.
 	// Virtual models should not be persisted to config files.
@@ -710,13 +634,6 @@ func (c *ModelConfig) SetAPIKey(value string) {
 	} else {
 		c.APIKeys = append(c.APIKeys, NewSecureString(value))
 	}
-}
-
-type GatewayConfig struct {
-	Host      string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
-	Port      int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
-	HotReload bool   `json:"hot_reload"          env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
-	LogLevel  string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
 }
 
 type ToolDiscoveryConfig struct {
@@ -912,6 +829,7 @@ type ToolsConfig struct {
 	Message         ToolConfig         `json:"message"           yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
 	ReadFile        ReadFileToolConfig `json:"read_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
 	SendFile        ToolConfig         `json:"send_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
+	SendTTS         ToolConfig         `json:"send_tts"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SEND_TTS_"`
 	Spawn           ToolConfig         `json:"spawn"             yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
 	SpawnStatus     ToolConfig         `json:"spawn_status"      yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_STATUS_"`
 	SPI             ToolConfig         `json:"spi"               yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPI_"`
@@ -1047,6 +965,35 @@ func LoadConfig(path string) (*Config, error) {
 		defer func(cfg *Config) {
 			_ = SaveConfig(path, cfg)
 		}(cfg)
+	case 1:
+		// V1→V2 migration: infer Enabled and migrate channel config fields
+		logger.InfoF("config migrate start", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		cfg, err = loadConfig(data)
+		if err != nil {
+			return nil, err
+		}
+		secPath := securityPath(path)
+		err = loadSecurityConfig(cfg, secPath)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("failed to load security config: %w", err)
+		}
+
+		oldCfg := &configV1{Config: *cfg}
+		cfg, err = oldCfg.Migrate()
+		if err != nil {
+			logger.ErrorF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+			return nil, err
+		}
+
+		err = makeBackup(path)
+		if err != nil {
+			return nil, err
+		}
+
+		defer func(cfg *Config) {
+			_ = SaveConfig(path, cfg)
+		}(cfg)
+		logger.InfoF("config migrate success", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
 	case CurrentVersion:
 		// Current version
 		cfg, err = loadConfig(data)
@@ -1064,29 +1011,21 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("unsupported config version: %d", versionInfo.Version)
 	}
 
-	if err := env.Parse(cfg); err != nil {
+	if err = env.Parse(cfg); err != nil {
 		return nil, err
 	}
 
 	// Expand multi-key configs into separate entries for key-level failover
 	cfg.ModelList = expandMultiKeyModels(cfg.ModelList)
 
-	// Migrate legacy channel config fields to new unified structures
-	cfg.migrateChannelConfigs()
-
 	// Validate model_list for uniqueness and required fields
-	if err := cfg.ValidateModelList(); err != nil {
+	if err = cfg.ValidateModelList(); err != nil {
 		return nil, err
 	}
 
 	// Ensure Workspace has a default if not set
 	if cfg.Agents.Defaults.Workspace == "" {
-		homePath, _ := os.UserHomeDir()
-		if picoclawHome := os.Getenv(EnvHome); picoclawHome != "" {
-			homePath = picoclawHome
-		} else if homePath != "" {
-			homePath = filepath.Join(homePath, pkg.DefaultPicoClawHome)
-		}
+		homePath := GetHome()
 		cfg.Agents.Defaults.Workspace = filepath.Join(homePath, pkg.WorkspaceName)
 	}
 
@@ -1097,11 +1036,21 @@ func makeBackup(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil
 	}
-	// Create backup of the config file before migration
-	bakPath := path + ".bak"
+	dateSuffix := time.Now().Format(".20060102.bak")
+	// Backup config file
+	bakPath := path + dateSuffix
 	if err := fileutil.CopyFile(path, bakPath, 0o600); err != nil {
 		logger.ErrorF("failed to create config backup", map[string]any{"error": err})
 		return fmt.Errorf("failed to create config backup: %w", err)
+	}
+	// Backup security config file
+	secPath := securityPath(path)
+	if _, err := os.Stat(secPath); err == nil {
+		secBakPath := secPath + dateSuffix
+		if secErr := fileutil.CopyFile(secPath, secBakPath, 0o600); secErr != nil {
+			logger.ErrorF("failed to create security backup", map[string]any{"error": secErr})
+			return fmt.Errorf("failed to create security backup: %w", secErr)
+		}
 	}
 	return nil
 }
@@ -1118,19 +1067,6 @@ func toNameIndex(list []*ModelConfig) []string {
 	return nameList
 }
 
-func (c *Config) migrateChannelConfigs() {
-	// Discord: mention_only -> group_trigger.mention_only
-	if c.Channels.Discord.MentionOnly && !c.Channels.Discord.GroupTrigger.MentionOnly {
-		c.Channels.Discord.GroupTrigger.MentionOnly = true
-	}
-
-	// OneBot: group_trigger_prefix -> group_trigger.prefixes
-	if len(c.Channels.OneBot.GroupTriggerPrefix) > 0 &&
-		len(c.Channels.OneBot.GroupTrigger.Prefixes) == 0 {
-		c.Channels.OneBot.GroupTrigger.Prefixes = c.Channels.OneBot.GroupTriggerPrefix
-	}
-}
-
 func SaveConfig(path string, cfg *Config) error {
 	if cfg.Version < CurrentVersion {
 		cfg.Version = CurrentVersion
@@ -1144,6 +1080,10 @@ func SaveConfig(path string, cfg *Config) error {
 	}
 	// Temporarily replace ModelList with filtered version for serialization
 	originalModelList := cfg.ModelList
+	defer func() {
+		// Restore original ModelList after serialization
+		cfg.ModelList = originalModelList
+	}()
 	cfg.ModelList = nonVirtualModels
 
 	if err := saveSecurityConfig(securityPath(path), cfg); err != nil {
@@ -1152,8 +1092,6 @@ func SaveConfig(path string, cfg *Config) error {
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
-	// Restore original ModelList after serialization
-	cfg.ModelList = originalModelList
 	if err != nil {
 		return err
 	}
@@ -1221,29 +1159,6 @@ func (c *Config) ValidateModelList() error {
 
 func (c *Config) SecurityCopyFrom(path string) error {
 	return loadSecurityConfig(c, securityPath(path))
-}
-
-func MergeAPIKeys(apiKey string, apiKeys []string) []string {
-	seen := make(map[string]struct{})
-	var all []string
-
-	if k := strings.TrimSpace(apiKey); k != "" {
-		if _, exists := seen[k]; !exists {
-			seen[k] = struct{}{}
-			all = append(all, k)
-		}
-	}
-
-	for _, k := range apiKeys {
-		if trimmed := strings.TrimSpace(k); trimmed != "" {
-			if _, exists := seen[trimmed]; !exists {
-				seen[trimmed] = struct{}{}
-				all = append(all, trimmed)
-			}
-		}
-	}
-
-	return all
 }
 
 // expandMultiKeyModels expands ModelConfig entries with multiple API keys into
@@ -1367,6 +1282,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.WebFetch.Enabled
 	case "send_file":
 		return t.SendFile.Enabled
+	case "send_tts":
+		return t.SendTTS.Enabled
 	case "write_file":
 		return t.WriteFile.Enabled
 	case "mcp":

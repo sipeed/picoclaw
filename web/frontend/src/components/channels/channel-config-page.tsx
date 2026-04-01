@@ -62,10 +62,8 @@ function asBool(value: unknown): boolean {
 
 function buildEditConfig(config: ChannelConfig): ChannelConfig {
   const edit: ChannelConfig = { ...config }
-  for (const secretKey of Object.keys(SECRET_FIELD_MAP)) {
-    if (secretKey in config) {
-      edit[SECRET_FIELD_MAP[secretKey]] = ""
-    }
+  for (const editKey of Object.values(SECRET_FIELD_MAP)) {
+    edit[editKey] = ""
   }
   return edit
 }
@@ -94,15 +92,20 @@ function buildSavePayload(
   for (const [key, value] of Object.entries(editConfig)) {
     if (key.startsWith("_")) continue
     if (key === "enabled") continue
-
-    if (key in SECRET_FIELD_MAP) {
-      const editKey = SECRET_FIELD_MAP[key]
-      const incoming = asString(editConfig[editKey])
-      payload[key] = incoming !== "" ? incoming : value
-      continue
-    }
+    if (key in SECRET_FIELD_MAP) continue
 
     payload[key] = value
+  }
+
+  for (const [secretKey, editKey] of Object.entries(SECRET_FIELD_MAP)) {
+    const incoming = asString(editConfig[editKey])
+    if (incoming !== "") {
+      payload[secretKey] = incoming
+      continue
+    }
+    if (secretKey in editConfig) {
+      payload[secretKey] = editConfig[secretKey]
+    }
   }
 
   if (channel.name === "whatsapp_native") {

@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/audio/asr"
+	"github.com/sipeed/picoclaw/pkg/audio/tts"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/commands"
@@ -31,7 +33,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 type AgentLoop struct {
@@ -51,7 +52,7 @@ type AgentLoop struct {
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
-	transcriber    voice.Transcriber
+	transcriber    asr.Transcriber
 	cmdRegistry    *commands.Registry
 	mcp            mcpRuntime
 	hookRuntime    hookRuntime
@@ -75,6 +76,8 @@ type processOptions struct {
 	SessionKey              string              // Session identifier for history/context
 	Channel                 string              // Target channel for tool execution
 	ChatID                  string              // Target chat ID for tool execution
+	MessageID               string              // Current inbound platform message ID
+	ReplyToMessageID        string              // Current inbound reply target message ID
 	SenderID                string              // Current sender ID for dynamic context
 	SenderDisplayName       string              // Current sender display name for dynamic context
 	UserMessage             string              // User message content (may include prefix)
@@ -104,6 +107,7 @@ const (
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"
+	metadataKeyReplyToMessage  = "reply_to_message_id"
 	metadataKeyParentPeerKind  = "parent_peer_kind"
 	metadataKeyParentPeerID    = "parent_peer_id"
 )
@@ -156,6 +160,13 @@ func registerSharedTools(
 	provider providers.LLMProvider,
 ) {
 	allowReadPaths := buildAllowReadPatterns(cfg)
+	var ttsProvider tts.TTSProvider
+	if cfg.Tools.IsToolEnabled("send_tts") {
+		ttsProvider = tts.DetectTTS(cfg)
+		if ttsProvider == nil {
+			logger.WarnCF("voice-tts", "send_tts enabled but no TTS provider configured", nil)
+		}
+	}
 
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
@@ -222,16 +233,36 @@ func registerSharedTools(
 		// Message tool
 		if cfg.Tools.IsToolEnabled("message") {
 			messageTool := tools.NewMessageTool()
-			messageTool.SetSendCallback(func(channel, chatID, content string) error {
+			messageTool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
 				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer pubCancel()
 				return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-					Channel: channel,
-					ChatID:  chatID,
-					Content: content,
+					Channel:          channel,
+					ChatID:           chatID,
+					Content:          content,
+					ReplyToMessageID: replyToMessageID,
 				})
 			})
 			agent.Tools.Register(messageTool)
+		}
+		if cfg.Tools.IsToolEnabled("reaction") {
+			reactionTool := tools.NewReactionTool()
+			reactionTool.SetReactionCallback(func(ctx context.Context, channel, chatID, messageID string) error {
+				if al.channelManager == nil {
+					return fmt.Errorf("channel manager not configured")
+				}
+				ch, ok := al.channelManager.GetChannel(channel)
+				if !ok {
+					return fmt.Errorf("channel %s not found", channel)
+				}
+				rc, ok := ch.(channels.ReactionCapable)
+				if !ok {
+					return fmt.Errorf("channel %s does not support reactions", channel)
+				}
+				_, err := rc.ReactToMessage(ctx, chatID, messageID)
+				return err
+			})
+			agent.Tools.Register(reactionTool)
 		}
 
 		// Send file tool (outbound media via MediaStore — store injected later by SetMediaStore)
@@ -406,10 +437,17 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		return err
 	}
 
-	for al.running.Load() {
+	idleTicker := time.NewTicker(100 * time.Millisecond)
+	defer idleTicker.Stop()
+
+	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-idleTicker.C:
+			if !al.running.Load() {
+				return nil
+			}
 		case msg, ok := <-al.bus.InboundChan():
 			if !ok {
 				return nil
@@ -473,7 +511,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				if target == nil {
 					cancelDrain()
 					if finalResponse != "" {
-						al.publishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, finalResponse)
+						al.PublishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, finalResponse)
 					}
 					return
 				}
@@ -533,15 +571,11 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				}
 
 				if finalResponse != "" {
-					al.publishResponseIfNeeded(ctx, target.Channel, target.ChatID, finalResponse)
+					al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, finalResponse)
 				}
 			}()
-		default:
-			time.Sleep(time.Microsecond * 200)
 		}
 	}
-
-	return nil
 }
 
 // drainBusToSteering consumes inbound messages and redirects messages from the
@@ -619,7 +653,7 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
-func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
+func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
 	if response == "" {
 		return
 	}
@@ -1052,10 +1086,15 @@ func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 			agent.Tools.SetMediaStore(s)
 		}
 	}
+	registry.ForEachTool("send_tts", func(t tools.Tool) {
+		if st, ok := t.(*tools.SendTTSTool); ok {
+			st.SetMediaStore(s)
+		}
+	})
 }
 
 // SetTranscriber injects a voice transcriber for agent-level audio transcription.
-func (al *AgentLoop) SetTranscriber(t voice.Transcriber) {
+func (al *AgentLoop) SetTranscriber(t asr.Transcriber) {
 	al.transcriber = t
 }
 
@@ -1076,19 +1115,23 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 
 	// Transcribe each audio media ref in order.
 	var transcriptions []string
+	var keptMedia []string
 	for _, ref := range msg.Media {
 		path, meta, err := al.mediaStore.ResolveWithMeta(ref)
 		if err != nil {
 			logger.WarnCF("voice", "Failed to resolve media ref", map[string]any{"ref": ref, "error": err})
+			keptMedia = append(keptMedia, ref)
 			continue
 		}
 		if !utils.IsAudioFile(meta.Filename, meta.ContentType) {
+			keptMedia = append(keptMedia, ref)
 			continue
 		}
 		result, err := al.transcriber.Transcribe(ctx, path)
 		if err != nil {
 			logger.WarnCF("voice", "Transcription failed", map[string]any{"ref": ref, "error": err})
 			transcriptions = append(transcriptions, "")
+			keptMedia = append(keptMedia, ref)
 			continue
 		}
 		transcriptions = append(transcriptions, result.Text)
@@ -1108,15 +1151,21 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 		}
 		text := transcriptions[idx]
 		idx++
+		if text == "" {
+			return match
+		}
 		return "[voice: " + text + "]"
 	})
 
 	// Append any remaining transcriptions not matched by an annotation.
 	for ; idx < len(transcriptions); idx++ {
-		newContent += "\n[voice: " + transcriptions[idx] + "]"
+		if transcriptions[idx] != "" {
+			newContent += "\n[voice: " + transcriptions[idx] + "]"
+		}
 	}
 
 	msg.Content = newContent
+	msg.Media = keptMedia
 	return msg, true
 }
 
@@ -1331,6 +1380,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		SessionKey:        sessionKey,
 		Channel:           msg.Channel,
 		ChatID:            msg.ChatID,
+		MessageID:         msg.MessageID,
+		ReplyToMessageID:  inboundMetadata(msg, metadataKeyReplyToMessage),
 		SenderID:          msg.SenderID,
 		SenderDisplayName: msg.Sender.DisplayName,
 		UserMessage:       msg.Content,
@@ -2408,8 +2459,15 @@ turnLoop:
 			}
 
 			toolStart := time.Now()
-			toolResult := ts.agent.Tools.ExecuteWithContext(
+			execCtx := tools.WithToolInboundContext(
 				turnCtx,
+				ts.channel,
+				ts.chatID,
+				ts.opts.MessageID,
+				ts.opts.ReplyToMessageID,
+			)
+			toolResult := ts.agent.Tools.ExecuteWithContext(
+				execCtx,
 				toolName,
 				toolArgs,
 				ts.channel,
@@ -2456,6 +2514,28 @@ turnLoop:
 			if toolResult == nil {
 				toolResult = tools.ErrorResult("hook returned nil tool result")
 			}
+
+			// Send ForUser if not silent and has content.
+			// For ResponseHandled tools, send regardless of SendResponse setting,
+			// since they've already handled the response (e.g., send_tts, send_file).
+			shouldSendForUser := !toolResult.Silent && toolResult.ForUser != "" &&
+				(ts.opts.SendResponse || toolResult.ResponseHandled)
+			if shouldSendForUser {
+				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+					Channel: ts.channel,
+					ChatID:  ts.chatID,
+					Content: toolResult.ForUser,
+					Metadata: map[string]string{
+						"is_tool_call": "true",
+					},
+				})
+				logger.DebugCF("agent", "Sent tool result to user",
+					map[string]any{
+						"tool":        toolName,
+						"content_len": len(toolResult.ForUser),
+					})
+			}
+
 			if len(toolResult.Media) > 0 && toolResult.ResponseHandled {
 				parts := make([]bus.MediaPart, 0, len(toolResult.Media))
 				for _, ref := range toolResult.Media {
@@ -2506,19 +2586,6 @@ turnLoop:
 
 			if !toolResult.ResponseHandled {
 				allResponsesHandled = false
-			}
-
-			if !toolResult.Silent && toolResult.ForUser != "" && ts.opts.SendResponse {
-				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-					Channel: ts.channel,
-					ChatID:  ts.chatID,
-					Content: toolResult.ForUser,
-				})
-				logger.DebugCF("agent", "Sent tool result to user",
-					map[string]any{
-						"tool":        toolName,
-						"content_len": len(toolResult.ForUser),
-					})
 			}
 
 			contentForLLM := toolResult.ContentForLLM()

@@ -13,18 +13,20 @@ The Telegram channel uses long polling via the Telegram Bot API for bot-based co
       "enabled": true,
       "token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
       "allow_from": ["123456789"],
-      "proxy": ""
+      "proxy": "",
+      "use_markdown_v2": false
     }
   }
 }
 ```
 
-| Field      | Type   | Required | Description                                                        |
-| ---------- | ------ | -------- | ------------------------------------------------------------------ |
-| enabled    | bool   | Yes      | Whether to enable the Telegram channel                             |
-| token      | string | Yes      | Telegram Bot API Token                                             |
-| allow_from | array  | No       | Allowlist of user IDs; empty means all users are allowed           |
-| proxy      | string | No       | Proxy URL for connecting to the Telegram API (e.g. http://127.0.0.1:7890) |
+| Field            | Type   | Required | Description                                                        |
+| ---------------- | ------ | -------- | ------------------------------------------------------------------ |
+| enabled          | bool   | Yes      | Whether to enable the Telegram channel                             |
+| token            | string | Yes      | Telegram Bot API Token                                             |
+| allow_from       | array  | No       | Allowlist of user IDs; empty means all users are allowed           |
+| proxy            | string | No       | Proxy URL for connecting to the Telegram API (e.g. http://127.0.0.1:7890) |
+| use_markdown_v2 | bool   | No       | Enable Telegram MarkdownV2 formatting                              |
 
 ## Setup
 
@@ -52,4 +54,21 @@ Examples:
 /use git explain how to squash the last 3 commits
 /use git
 explain how to squash the last 3 commits
+```
+
+## Advanced Formatting
+
+You can set `use_markdown_v2: true` to enable enhanced formatting options. This allows the bot to utilize the full range of Telegram MarkdownV2 features, including nested styles, spoilers, and custom fixed-width blocks.
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_BOT_TOKEN",
+      "allow_from": ["YOUR_USER_ID"],
+      "use_markdown_v2": true
+    }
+  }
+}
 ```
